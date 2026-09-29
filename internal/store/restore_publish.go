@@ -489,6 +489,7 @@ func syncTree(root string) error {
 		return file.Close()
 	}
 	dirs := []string{}
+	//nolint:gosec // Backup/restore callers validate or construct root under trusted directories; the callback rejects symlink entries.
 	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
