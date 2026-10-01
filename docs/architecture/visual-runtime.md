@@ -181,7 +181,9 @@ ahead of that tick and overlap after it.
    host derives that boundary from `DirectorPhase.timeToNextMS` in audible time, including the
    output path's effective latency. A cut or iris starts on the boundary. If preparation is not
    complete in time, the host moves the switch to the next boundary of the same grain instead of
-   landing late. A user-picked Visual always targets the next beat.
+   landing late. A user-picked Visual always targets the next beat. Luma Key, including photo-key,
+   and Melt are midpoint-landed styles: their temporal midpoint lands on the selected boundary just
+   as a crossfade's does.
 3. **VS-3 — Duration and easing.** Luma Key (including photo-key) and Melt last 1.2 s and apply
    `smoothstep` exactly once. Downbeat Cut + Light Leak cuts on the boundary and runs a 0.6 s leak
    with linear progress. Beat Iris lasts 1.0 s and applies `smoothstep` exactly once. No host or
@@ -195,16 +197,34 @@ ahead of that tick and overlap after it.
    side; `incomingDownOneRung` lowers only the incoming Visual by one degradation rung. The
    performance governor ignores overlap frames so a planned switch cannot permanently lower the
    steady-state quality tier.
-6. **VS-6 — Luminance and limiter continuity.** A switch never resets limiter state. Across every
-   transition style, the transition itself may add no more than 0.08 relative luminance to any
-   cell; the always-on flash/luminance guard may hold or further clamp the switch.
+6. **VS-6 — Luminance and limiter continuity.** A switch never resets limiter state. Measure the
+   named style against a plain reference rendered from the same outgoing and incoming frames, at the
+   same progress and easing, through the same compositing and post-processing. The reference is an
+   ordinary source-over dissolve for Luma Key/photo-key and Melt, the same boundary cut without the
+   light leak for Downbeat Cut + Light Leak, and the same hard aperture mask without emissive rim or
+   added light for Beat Iris. Reduce Motion's candidate and reference are its identical 0.8 s linear
+   dissolve; Dark Room presents only its dominant near-black, motion-free output.
+
+   Measure candidate and reference after compositing, bloom/chroma/vignette, and tone mapping, but
+   before final grain or dither. Divide the frame into a 16×9 grid; in each cell sample a fixed 4×4
+   lattice at the centers of sixteen equal subcells. Treat sampled RGB as sRGB-encoded, decode each
+   channel with the IEC sRGB EOTF, compute `Y = 0.2126R + 0.7152G + 0.0722B`, and average the sixteen
+   `Y` values. At the limiter stage, clamp positive candidate-minus-reference cell luminance to 0.08,
+   then run the existing always-on flash/red limiter without resetting its prior presented state. A
+   tighter active ceiling may clamp further. This is a new transition-contribution cap; current host
+   limiter delivery is not implied, and downstream tickets must prove the metric and rendered output.
 7. **VS-7 — Reduce Motion.** With Reduce Motion active, every animated style becomes a 0.8 s plain
-   dissolve with linear progress. Boundary selection and the safety clamps remain unchanged.
+   dissolve with linear progress. Boundary selection and the safety clamps remain unchanged. Dark
+   Room is dominant while active: displayed output stays near-black and motion-free through
+   `Preparing`, landing, and `Overlap`; offscreen preparation may continue without animating the
+   presented frame.
 8. **VS-8 — Photo handoff.** A photo-key transition receives a prepared, authorized photo input
-   before it becomes `Armed` and keeps that input stable through `Overlap`. If the photo is
-   unavailable or restricted, the host substitutes the neutral dark plate before shader input; no
-   artwork bytes, filename, identifier, or token from the restricted photo may enter the shader or
-   trace.
+   before it becomes `Armed` and keeps that input stable through `Overlap` only while authorization
+   remains valid. Relock, Profile change, or any authorization revocation immediately clears the
+   retained photo reference and substitutes the neutral dark plate before the next shader submission
+   and trace emission, including during `Overlap`. If the photo is unavailable or restricted, the
+   same substitution applies; no artwork bytes, filename, identifier, or token from the restricted
+   photo may enter the shader or trace.
 9. **VS-9 — Named styles.** The portable style names are `lumaKey` (with the `photoKey` input
    treatment), `melt`, `downbeatCutLightLeak`, and `beatIris`.
 10. **VS-10 — Host trace.** Each attempted switch records `boundaryMs`, `landedMs`, `style`,
