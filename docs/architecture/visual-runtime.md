@@ -167,6 +167,54 @@ across cue transitions and Visual switches; when the active flash-rate or lumina
 would be exceeded, it holds the transition, clamps intensity to the runtime guard ceiling, records
 `photosensitivity-runtime-guard`, and appends `runtime-flash-guard` to the ladder steps.
 
+## Visual switch transitions
+
+The following numbered rules are the host contract for switching between Visuals. `LandingTick`
+stays the decision tick: it selects the boundary and transition plan, while rendering may prepare
+ahead of that tick and overlap after it.
+
+1. **VS-1 — State machine.** A switch moves through `Idle`, `Preparing`, `Armed`, and `Overlap`.
+   `Preparing` builds or warms the incoming Visual without displaying it. `Armed` means the plan is
+   ready and waiting for its chosen boundary. `Overlap` renders the outgoing and incoming Visuals
+   until the transition completes, then returns to `Idle` with only the incoming Visual active.
+2. **VS-2 — Landing.** For a crossfade, the transition midpoint lands on the chosen boundary. The
+   host derives that boundary from `DirectorPhase.timeToNextMS` in audible time, including the
+   output path's effective latency. A cut or iris starts on the boundary. If preparation is not
+   complete in time, the host moves the switch to the next boundary of the same grain instead of
+   landing late. A user-picked Visual always targets the next beat.
+3. **VS-3 — Duration and easing.** Luma Key (including photo-key) and Melt last 1.2 s and apply
+   `smoothstep` exactly once. Downbeat Cut + Light Leak cuts on the boundary and runs a 0.6 s leak
+   with linear progress. Beat Iris lasts 1.0 s and applies `smoothstep` exactly once. No host or
+   shader may apply a second easing curve.
+4. **VS-4 — Blend placement.** Both Visuals and their blend are evaluated in linear HDR. The blend
+   occurs before bloom, tonemapping, and the final luminance limiter, so those stages process one
+   composited signal.
+5. **VS-5 — Overlap budget.** A host chooses one recorded overlap mode: `full`, `halfResolution`,
+   `frozen`, or `incomingDownOneRung`. `full` renders both Visuals at their normal setting;
+   `halfResolution` renders the overlap at half resolution; `frozen` holds a prepared frame for one
+   side; `incomingDownOneRung` lowers only the incoming Visual by one degradation rung. The
+   performance governor ignores overlap frames so a planned switch cannot permanently lower the
+   steady-state quality tier.
+6. **VS-6 — Luminance and limiter continuity.** A switch never resets limiter state. Across every
+   transition style, the transition itself may add no more than 0.08 relative luminance to any
+   cell; the always-on flash/luminance guard may hold or further clamp the switch.
+7. **VS-7 — Reduce Motion.** With Reduce Motion active, every animated style becomes a 0.8 s plain
+   dissolve with linear progress. Boundary selection and the safety clamps remain unchanged.
+8. **VS-8 — Photo handoff.** A photo-key transition receives a prepared, authorized photo input
+   before it becomes `Armed` and keeps that input stable through `Overlap`. If the photo is
+   unavailable or restricted, the host substitutes the neutral dark plate before shader input; no
+   artwork bytes, filename, identifier, or token from the restricted photo may enter the shader or
+   trace.
+9. **VS-9 — Named styles.** The portable style names are `lumaKey` (with the `photoKey` input
+   treatment), `melt`, `downbeatCutLightLeak`, and `beatIris`.
+10. **VS-10 — Host trace.** Each attempted switch records `boundaryMs`, `landedMs`, `style`,
+    `overlapMode`, `overlapFrames`, `framesOver16_7`, `criticalPathCompiles`, and `minCellLuma`.
+    Times use the same audible-time basis as VS-2; counters cover the complete preparation and
+    overlap interval, including a deferred landing.
+
+`VISXFADE0927-SHADERS-1`, `VISXFADE0927-WEB-1`, `VISXFADE0927-APPLE-UI-1`, and
+`VISXFADE0927-ANDROID-UI-1` implement these rules on their owned shader and host surfaces.
+
 ## Music Visuals v1 launch catalog
 
 Dark Room is the motion-free display-mode floor, not a Visual.
