@@ -12,8 +12,13 @@ import (
 
 func TestRelayFrameReadBoundaries(t *testing.T) {
 	framed := func(payload string) []byte {
-		wire := make([]byte, 4+len(payload))
-		binary.BigEndian.PutUint32(wire[:4], uint32(len(payload)))
+		n := len(payload)
+		if n < 0 || n > relayMaxFrameSize {
+			t.Fatalf("fixture payload exceeds frame limit: %d", n)
+			return nil
+		}
+		wire := make([]byte, 4+n)
+		binary.BigEndian.PutUint32(wire[:4], uint32(n))
 		copy(wire[4:], payload)
 		return wire
 	}
