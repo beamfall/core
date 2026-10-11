@@ -567,32 +567,33 @@ relay-vector-freshness:
 # and asserted to red, and two good inputs are asserted to pass so the target
 # cannot be trivially-always-red either.
 relay-vector-freshness-prove:
-	@tmp="$$(mktemp -d)"; trap 'rm -rf "$$tmp"' EXIT; \
-	run() { $(MAKE) --no-print-directory relay-vector-freshness "$$@" >"$$tmp/out" 2>&1; }; \
-	reds() { if run "$$@"; then cat "$$tmp/out" >&2; echo "relay-vector-freshness-prove: FAIL - $$1 did not red" >&2; exit 1; fi; }; \
-	greens() { if ! run "$$@"; then cat "$$tmp/out" >&2; echo "relay-vector-freshness-prove: FAIL - $$1 did not pass" >&2; exit 1; fi; }; \
-	cp "$(RELAY_VECTORS_CORE_COPY)" "$$tmp/mutated.json"; \
-	printf ' ' >>"$$tmp/mutated.json"; \
-	reds RELAY_VECTORS_CORE_COPY="$$tmp/mutated.json"; \
-	grep -q 'core copy digest drifted' "$$tmp/out" || { echo "relay-vector-freshness-prove: FAIL - mutated copy red for the wrong reason" >&2; exit 1; }; \
-	reds RELAY_VECTORS_CORE_COPY="$$tmp/absent.json"; \
-	grep -q 'is missing' "$$tmp/out" || { echo "relay-vector-freshness-prove: FAIL - missing copy red for the wrong reason" >&2; exit 1; }; \
-	printf 'regenerated\n' >"$$tmp/producer.json"; \
-	reds RELAY_VECTORS_PRODUCER="$$tmp/producer.json"; \
-	grep -q 'producer artifact digest drifted' "$$tmp/out" || { echo "relay-vector-freshness-prove: FAIL - regenerated producer red for the wrong reason" >&2; exit 1; }; \
-	reds RELAY_VECTORS_PRODUCER="$$tmp/producer.json" RELAY_VECTORS_TODAY=2999-01-01; \
-	grep -q 'expired' "$$tmp/out" || { echo "relay-vector-freshness-prove: FAIL - expired waiver red for the wrong reason" >&2; exit 1; }; \
-	reds RELAY_VECTORS_PRODUCER="$$tmp/producer.json" RELAY_VECTORS_DRIFT_TICKET=; \
-	grep -q 'no recorded waiver' "$$tmp/out" || { echo "relay-vector-freshness-prove: FAIL - unwaived drift red for the wrong reason" >&2; exit 1; }; \
-	reds RELAY_VECTORS_PRODUCER="$$tmp/producer.json" RELAY_VECTORS_PRODUCER_SHA256="$(RELAY_VECTORS_CORE_SHA256)"; \
-	grep -q 'stale waiver' "$$tmp/out" || { echo "relay-vector-freshness-prove: FAIL - stale waiver red for the wrong reason" >&2; exit 1; }; \
-	greens RELAY_VECTORS_PRODUCER="$$tmp/producer.json" \
-		RELAY_VECTORS_PRODUCER_SHA256="$$(shasum -a 256 "$$tmp/producer.json" | awk '{print $$1}')"; \
-	greens RELAY_VECTORS_CORE_COPY="$$tmp/producer.json" \
-		RELAY_VECTORS_CORE_SHA256="$$(shasum -a 256 "$$tmp/producer.json" | awk '{print $$1}')" \
-		RELAY_VECTORS_PRODUCER="$$tmp/producer.json" \
-		RELAY_VECTORS_PRODUCER_SHA256="$$(shasum -a 256 "$$tmp/producer.json" | awk '{print $$1}')" \
-		RELAY_VECTORS_DRIFT_TICKET=; \
-	greens RELAY_VECTORS_PRODUCER=/nonexistent/vectors.json; \
-	grep -q 'LOUD SKIP' "$$tmp/out" || { echo "relay-vector-freshness-prove: FAIL - an absent producer skipped silently" >&2; exit 1; }; \
-	echo "relay-vector-freshness-prove: ok - every rejection path red on bad input, good input still passes"
+	@set -eu; tmp="$$(mktemp -d)"; trap 'rm -rf "$$tmp"' EXIT; trap 'exit 130' INT; trap 'exit 143' TERM; \
+	printf '{}\n' >"$$tmp/core.json"; \
+	printf '{"fixture":"producer"}\n' >"$$tmp/producer.json"; \
+	core_sha="$$(shasum -a 256 "$$tmp/core.json" | awk '{print $$1}')"; \
+	producer_sha="$$(shasum -a 256 "$$tmp/producer.json" | awk '{print $$1}')"; \
+	[ -n "$$core_sha" ] && [ -n "$$producer_sha" ] && [ "$$core_sha" != "$$producer_sha" ]; \
+	run() { $(MAKE) --no-print-directory relay-vector-freshness \
+		RELAY_VECTORS_CORE_COPY="$$tmp/core.json" RELAY_VECTORS_CORE_SHA256="$$core_sha" \
+		RELAY_VECTORS_PRODUCER="$$tmp/producer.json" RELAY_VECTORS_PRODUCER_SHA256="$$producer_sha" \
+		RELAY_VECTORS_DRIFT_TICKET=FIXTURE-DRIFT RELAY_VECTORS_DRIFT_DEADLINE=2026-01-02 \
+		RELAY_VECTORS_TODAY=2026-01-01 "$$@" >"$$tmp/out" 2>&1; }; \
+	greens() { if ! run "$$@"; then cat "$$tmp/out" >&2; echo "relay-vector-freshness-prove: FAIL - valid fixture did not pass" >&2; exit 1; fi; }; \
+	assert_output() { if ! grep -q "$$1" "$$tmp/out"; then cat "$$tmp/out" >&2; echo "relay-vector-freshness-prove: FAIL - expected diagnostic $$1" >&2; exit 1; fi; }; \
+	reds() { expected="$$1"; shift; greens; if run "$$@"; then cat "$$tmp/out" >&2; echo "relay-vector-freshness-prove: FAIL - $$expected did not red" >&2; exit 1; fi; assert_output "$$expected"; }; \
+	greens; assert_output 'copy and producer both match their pins'; \
+	cp "$$tmp/core.json" "$$tmp/mutated.json"; printf ' ' >>"$$tmp/mutated.json"; \
+	reds 'core copy digest drifted' RELAY_VECTORS_CORE_COPY="$$tmp/mutated.json"; \
+	reds 'is missing' RELAY_VECTORS_CORE_COPY="$$tmp/absent.json"; \
+	reds 'producer artifact digest drifted' RELAY_VECTORS_PRODUCER="$$tmp/mutated.json"; \
+	reds 'expired on 2026-01-02 (today 2026-01-03)' RELAY_VECTORS_TODAY=2026-01-03; \
+	reds 'expired on 2026-01-02 (today 2999-01-01)' RELAY_VECTORS_TODAY=2999-01-01; \
+	reds 'no recorded waiver' RELAY_VECTORS_DRIFT_TICKET=; \
+	reds 'stale waiver' RELAY_VECTORS_PRODUCER="$$tmp/core.json" RELAY_VECTORS_PRODUCER_SHA256="$$core_sha"; \
+	greens RELAY_VECTORS_TODAY=2026-01-02; \
+	greens RELAY_VECTORS_PRODUCER="$$tmp/core.json" RELAY_VECTORS_PRODUCER_SHA256="$$core_sha" \
+		RELAY_VECTORS_DRIFT_TICKET= RELAY_VECTORS_DRIFT_DEADLINE=; \
+	assert_output 'copy and producer both match their pins'; \
+	greens; \
+	greens RELAY_VECTORS_PRODUCER="$$tmp/absent.json"; assert_output 'LOUD SKIP'; \
+	echo "relay-vector-freshness-prove: ok - isolated fixtures reach every rejection path, valid input passes"
