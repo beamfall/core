@@ -78,13 +78,18 @@ func (s *relayQUICStream) CloseWrite() error    { return s.Close() }
 // read or write — a malformed or hostile peer, never a normal handshake.
 var errRelayFrameTooLarge = errors.New("relay protocol frame too large")
 
-// relayFrame is the carrier handshake envelope. Only one of Hello/Ack/Error is
-// populated per frame, keyed by Type.
+// relayFrame represents the carrier control envelope, keyed by Type. Cache
+// payloads preserve the relay wire contract; they do not enable cache handling.
 type relayFrame struct {
 	Type  string      `json:"type"`
 	Hello *relayHello `json:"hello,omitempty"`
 	Ack   *relayAck   `json:"ack,omitempty"`
 	Error string      `json:"error,omitempty"`
+
+	CachePush             *relayCachePush             `json:"cache_push,omitempty"`
+	CacheAck              *relayCacheAck              `json:"cache_ack,omitempty"`
+	CacheInventoryRequest *relayCacheInventoryRequest `json:"cache_inventory_request,omitempty"`
+	CacheInventory        *relayCacheInventory        `json:"cache_inventory,omitempty"`
 }
 
 // relayHello is the client's registration: the opaque carrier token (JSON
@@ -103,6 +108,43 @@ type relayAck struct {
 	Version   int      `json:"version"`
 	CarrierID string   `json:"carrier_id"`
 	Hostnames []string `json:"hostnames"`
+}
+
+// Cache payload field order and omission rules match the authoritative v1
+// relay contract, including signed 64-bit byte counts and RFC3339 timestamps.
+type relayCachePush struct {
+	SegmentSetID string    `json:"segment_set_id"`
+	Segment      string    `json:"segment"`
+	ContentType  string    `json:"content_type,omitempty"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	Bytes        int64     `json:"bytes"`
+}
+
+type relayCacheAck struct {
+	Status string               `json:"status"`
+	Error  string               `json:"error,omitempty"`
+	Quota  relayCacheQuotaState `json:"quota"`
+}
+
+type relayCacheQuotaState struct {
+	UsedBytes int64 `json:"used_bytes"`
+	CapBytes  int64 `json:"cap_bytes"`
+}
+
+type relayCacheInventoryRequest struct {
+	SegmentSetID string `json:"segment_set_id"`
+}
+
+type relayCacheInventory struct {
+	Entries []relayCacheInventoryEntry `json:"entries"`
+	Quota   relayCacheQuotaState       `json:"quota"`
+}
+
+type relayCacheInventoryEntry struct {
+	Segment     string    `json:"segment"`
+	Bytes       int64     `json:"bytes"`
+	ContentType string    `json:"content_type"`
+	ExpiresAt   time.Time `json:"expires_at"`
 }
 
 // writeRelayFrame marshals and length-prefixes one handshake frame.

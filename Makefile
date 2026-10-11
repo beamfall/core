@@ -497,12 +497,12 @@ vuln-check:
 # Re-sync procedure: copy the producer file over the core copy, update BOTH
 # digests below, drop the waiver, and make relayproto.go speak the new frames.
 RELAY_VECTORS_CORE_COPY ?= internal/remoteaccess/testdata/relay_vectors_v1.json
-RELAY_VECTORS_CORE_SHA256 ?= 72240e5899791f2efca3e22185fdc96cd3e3e42af2a924329d3e8e5a8b044e2c
+RELAY_VECTORS_CORE_SHA256 ?= 9f46cdf948af68f13618da1b1a428f3aa3277d9d2a07b093cf7af496bbe55503
 RELAY_VECTORS_PRODUCER_REL ?= beamfall-relay/contracts/protocol/v1/vectors.json
 RELAY_VECTORS_PRODUCER ?=
 RELAY_VECTORS_PRODUCER_SHA256 ?= 9f46cdf948af68f13618da1b1a428f3aa3277d9d2a07b093cf7af496bbe55503
-RELAY_VECTORS_DRIFT_TICKET ?= MCACHE-CORE-CHAIN-1
-RELAY_VECTORS_DRIFT_DEADLINE ?= 2026-10-01
+RELAY_VECTORS_DRIFT_TICKET ?=
+RELAY_VECTORS_DRIFT_DEADLINE ?=
 RELAY_VECTORS_TODAY ?= $(shell date -u +%Y-%m-%d)
 
 relay-vector-freshness:
