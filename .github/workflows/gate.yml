@@ -31,6 +31,8 @@ jobs:
           cache-dependency-path: internal/web/app/package-lock.json
       - name: install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+      - name: install golangci-lint
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
       - name: install worker sandbox
         run: sh .github/install-worker-sandbox.sh
       - name: check trust documents
@@ -38,6 +40,10 @@ jobs:
       - name: install web e2e dependencies
         run: sh script/install-web-e2e-deps.sh
       - name: make gate
+        # A standalone core checkout has no sibling client repos; the workspace
+        # gate still scans them, CI scans core's own web app.
+        env:
+          ALLOW_MISSING_NATIVE_REPOS: "1"
         run: make gate
 
   race:
