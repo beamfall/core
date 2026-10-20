@@ -29,6 +29,10 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: internal/web/app/package-lock.json
+      - name: install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+      - name: install worker sandbox
+        run: sh .github/install-worker-sandbox.sh
       - name: check trust documents
         run: sh .github/check-trust-docs.sh
       - name: make gate
@@ -42,6 +46,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: install worker sandbox
+        run: sh .github/install-worker-sandbox.sh
       - name: make gate-race
         run: make gate-race
 
