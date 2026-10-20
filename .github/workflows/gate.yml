@@ -35,6 +35,8 @@ jobs:
         run: sh .github/install-worker-sandbox.sh
       - name: check trust documents
         run: sh .github/check-trust-docs.sh
+      - name: install web e2e dependencies
+        run: sh script/install-web-e2e-deps.sh
       - name: make gate
         run: make gate
 
