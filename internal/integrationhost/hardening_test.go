@@ -21,8 +21,8 @@ func TestDefaultWorkerRlimitsAreSane(t *testing.T) {
 	if lim.CPUSeconds != 30*60 {
 		t.Errorf("RLIMIT_CPU default changed: got %d, want %d", lim.CPUSeconds, 30*60)
 	}
-	if lim.ASBytes != 1<<30 {
-		t.Errorf("RLIMIT_AS default changed: got %d, want %d", lim.ASBytes, 1<<30)
+	if lim.ASBytes != 4<<30 {
+		t.Errorf("RLIMIT_AS default changed: got %d, want %d", lim.ASBytes, 4<<30)
 	}
 	if lim.NoFile != 256 {
 		t.Errorf("RLIMIT_NOFILE default changed: got %d, want 256", lim.NoFile)
