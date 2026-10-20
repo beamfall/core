@@ -19,6 +19,9 @@ func runProcessTree(mode, pidFile, holdFile string, termResistant bool) {
 		"--term-resistant="+strconv.FormatBool(termResistant),
 		"--ready-file="+readyFile,
 	)
+	// Inherit this worker's descriptors: left nil, os/exec opens /dev/null,
+	// which the local inference landlock profile deliberately does not grant.
+	child.Stdin, child.Stdout, child.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := child.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "start descendant: %v\n", err)
 		os.Exit(10)
