@@ -1,0 +1,196 @@
+# Release supply-chain pipeline (PANEL-11, ADR-0013 §A).
+#
+# On a version tag, build the bare-metal archives, then SIGN the release manifest
+# and emit an SBOM + SLSA provenance via `beamfall release attest`, verify the
+# whole dist against the pinned trust anchor, and publish the signature + SBOM +
+# provenance as release artifacts.
+#
+# The signing key is a repo secret (BEAMFALL_RELEASE_SIGNING_KEY: base64 ed25519
+# 32-byte seed) whose PUBLIC half is the pinned trust anchor compiled into the
+# binary (internal/release/key.go). Without the secret the build fails closed —
+# it never produces an unsigned release.
+#
+# The OCI image is signed separately by `cosign sign` over the pushed digest in
+# the image-publish job (keyless/OIDC or the same key); this workflow owns the
+# binary-archive attestation. The tamper-rejection logic itself is asserted in
+# `make gate` (internal/release + internal/updatecheck tests), so a tampered
+# artifact is proven-rejected on every PR, not only at release time.
+
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # create the GitHub Release and upload artifacts
+  actions: read # fetch the exact green release-gate evidence for this commit
+
+jobs:
+  attest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: internal/web/app/package-lock.json
+
+      - name: Install locked web dependencies
+        working-directory: internal/web/app
+        run: npm ci
+
+      - name: Resolve green Core release-gate run for this commit
+        id: release_gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          run_id="$(gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "/repos/${GITHUB_REPOSITORY}/actions/workflows/release-gate.yml/runs?head_sha=${COMMIT}&status=success&per_page=20" \
+            | jq -r --arg commit "${COMMIT}" \
+              '.workflow_runs | map(select(.conclusion == "success" and .head_sha == $commit)) | first | .id // empty')"
+          if [ -z "${run_id}" ]; then
+            echo "no successful release-gate run exists for ${COMMIT}" >&2
+            exit 1
+          fi
+          echo "run_id=${run_id}" >>"${GITHUB_OUTPUT}"
+
+      - name: Download exact release-gate evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-gate-signed-input
+          path: /tmp/release-gate-signed-input
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.release_gate.outputs.run_id }}
+
+      # The gh api query above is the only thing binding publication to this SHA.
+      # Open the packet and make it say so itself: a mismatched or non-PASS
+      # aggregate must fail the release closed, before anything is signed.
+      - name: Verify release-gate evidence binds this commit
+        env:
+          COMMIT: ${{ github.sha }}
+        run: script/release-gate-evidence.sh verify /tmp/release-gate-signed-input --expect-commit "${COMMIT}"
+
+      - name: Archive release-gate evidence
+        run: tar -C /tmp/release-gate-signed-input -czf /tmp/release-gate-evidence.tar.gz .
+
+      - name: build + sign + SBOM + provenance
+        env:
+          BEAMFALL_RELEASE_SIGNING_KEY: ${{ secrets.BEAMFALL_RELEASE_SIGNING_KEY }}
+          VERSION: ${{ github.ref_name }}
+          CHANNEL: stable
+          INVOCATION_ID: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+          RELEASE_GATE_EVIDENCE_ARCHIVE: /tmp/release-gate-evidence.tar.gz
+        run: |
+          if [ -z "${BEAMFALL_RELEASE_SIGNING_KEY}" ]; then
+            echo "BEAMFALL_RELEASE_SIGNING_KEY secret is not set — cannot sign the release" >&2
+            exit 1
+          fi
+          script/release.sh
+          script/source-artifact-check.sh script/dist
+
+      - name: verify the signed dist rejects tampering (fail-closed gate)
+        run: |
+          go build -o /tmp/beamfall ./cmd/beamfall
+          # A clean dist must verify…
+          /tmp/beamfall release verify --dist script/dist
+          # …and a tampered copy must be rejected without mutating publication bytes.
+          cp -a script/dist /tmp/tampered-dist
+          printf 'TAMPER' >> "$(find /tmp/tampered-dist -name '*.tar.gz' -type f | head -n1)"
+          if /tmp/beamfall release verify --dist /tmp/tampered-dist; then
+            echo "FAIL: release verify accepted a tampered artifact" >&2
+            exit 1
+          fi
+          echo "OK: tampered artifact rejected"
+          script/source-artifact-check.sh script/dist
+
+      - name: publish release artifacts
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          files: |
+            script/dist/*.tar.gz
+            script/dist/*.source.json
+            script/dist/SHA256SUMS
+            script/dist/release-manifest.json
+            script/dist/sbom.spdx.json
+            script/dist/provenance.slsa.json
+            script/dist/wire-contract.json
+            script/dist/release-gate-evidence.tar.gz
+
+  image:
+    runs-on: ubuntu-latest
+    # The signed image is the trust anchor the unattended-upgrade path verifies.
+    # It must not publish unless the exact-SHA release-gate resolution in `attest`
+    # succeeded; without this it published regardless of the gate's result.
+    needs: attest
+    permissions:
+      contents: write # upload the digest-pinned deployment manifest bundle
+      packages: write # push to ghcr.io
+      id-token: write # cosign keyless (OIDC) signing
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: sigstore/cosign-installer@f713795cb21599bc4e5c4b58cbad1da852d7eeb9 # v3
+
+      # Build + push the multi-arch image WITH the SBOM/provenance attestations
+      # declared in docker-bake.hcl. The pushed digest is captured for signing.
+      - name: build + push (attested)
+        id: bake
+        env:
+          VERSION: ${{ github.ref_name }}
+          CHANNEL: stable
+        uses: docker/bake-action@4a9a8d494466d37134e2bfca2d3a8de8fb2681ad # v5
+        with:
+          push: true
+          set: |
+            *.output=type=image,name=ghcr.io/beamfall/core,push-by-digest=true,name-canonical=true
+
+      # cosign-sign the image by digest (keyless / OIDC). This signature is the
+      # trust anchor the blessed unattended-upgrade path verifies before pulling
+      # a new server image (PANEL-11, ADR-0013 §A).
+      - name: cosign sign image
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          digest="$(echo '${{ steps.bake.outputs.metadata }}' | jq -r '.["beamfall-core"]["containerimage.digest"]')"
+          if [ -z "${digest}" ] || [ "${digest}" = "null" ]; then
+            echo "could not resolve pushed image digest from bake metadata" >&2
+            exit 1
+          fi
+          cosign sign --yes "ghcr.io/beamfall/core@${digest}"
+
+      # Released deployment artifacts must select the image by immutable
+      # digest, never by a mutable channel tag. Render the fail-closed source
+      # templates against the same digest cosign just signed, verify the
+      # rendered bundle rejects drift, and publish it on the GitHub release
+      # (SECAUDIT-20260817-DEPLOY-DIGEST-PINS-1).
+      - name: render + verify digest-pinned deployment manifests
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          digest="$(echo '${{ steps.bake.outputs.metadata }}' | jq -r '.["beamfall-core"]["containerimage.digest"]')"
+          if [ -z "${digest}" ] || [ "${digest}" = "null" ]; then
+            echo "could not resolve pushed image digest from bake metadata" >&2
+            exit 1
+          fi
+          python3 script/release-deploy-manifests.py render --digest "${digest}" --version "${VERSION}" --out /tmp/deploy-manifests
+          python3 script/release-deploy-manifests.py verify --digest "${digest}" --dir /tmp/deploy-manifests
+          tar -C /tmp/deploy-manifests -czf /tmp/beamfall-deploy-manifests.tar.gz .
+
+      - name: publish deployment manifest bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${GITHUB_REF_NAME}" /tmp/beamfall-deploy-manifests.tar.gz --clobber

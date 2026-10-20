@@ -1,0 +1,33 @@
+{
+  "capture": {
+    "date": "2026-07-10",
+    "server": "Jellyfin Server 10.11.11",
+    "target": "https://demo.jellyfin.org/stable",
+    "consumers": {
+      "Radarr": "90d0e26bd1d41c88e7a6bf710219edc818577f8e",
+      "Sonarr": "97d24acf06e636ddc888babc3df8f689da879304"
+    }
+  },
+  "cases": [
+    {
+      "name": "radarr-item-lookup",
+      "request": { "method": "GET", "path": "/Items?recursive=true&includeItemTypes=Movie&fields=Path%2CProviderIds&years=1976", "headers": { "X-MediaBrowser-Token": "<api-key>" } },
+      "response": { "status": 200, "headers": { "Content-Type": "application/json; charset=utf-8" }, "body": { "Items": [{ "Name": "The Boy in the Plastic Bubble", "Id": "<item-id>", "Path": "<media-path>", "ProviderIds": { "Imdb": "<provider-id>", "Tmdb": "<provider-id>" } }], "TotalRecordCount": 1, "StartIndex": 0 } }
+    },
+    {
+      "name": "sonarr-item-lookup",
+      "request": { "method": "GET", "path": "/Items?recursive=true&includeItemTypes=Series&fields=Path%2CProviderIds&years=2015", "headers": { "X-MediaBrowser-Token": "<api-key>" } },
+      "response": { "status": 200, "headers": { "Content-Type": "application/json; charset=utf-8" }, "body": { "Items": [], "TotalRecordCount": 0, "StartIndex": 0 } }
+    },
+    {
+      "name": "library-update",
+      "request": { "method": "POST", "path": "/Library/Media/Updated", "headers": { "X-MediaBrowser-Token": "<api-key>", "Content-Type": "application/json" }, "body": { "Updates": [{ "Path": "/media/example", "UpdateType": "Created" }] } },
+      "response": { "status": 204, "headers": {}, "body": null }
+    },
+    {
+      "name": "connection-test-notification",
+      "request": { "method": "POST", "path": "/Notifications/Admin", "headers": { "X-MediaBrowser-Token": "<api-key>", "Content-Type": "application/json" }, "body": { "Name": "Test from <consumer>", "Description": "Success! MediaBrowser has been successfully configured!", "ImageUrl": "<consumer-logo-url>" } },
+      "response": { "status": 404, "headers": { "Content-Type": "text/html" }, "body": "<demo-edge-not-found-page>" }
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "id": "regression-forced-not-auto-enabling",
+  "regression": true,
+  "notes": "Shipped competitor bug: once the playing audio matched the preferred language, ALL subtitles were disabled, including forced tracks for foreign-language dialogue inserts. smart mode with preferred-language audio must still auto-enable a matching forced track.",
+  "input": {
+    "mode": "smart",
+    "langPrefs": ["en"],
+    "preferSDH": false,
+    "audioTrackLang": "en",
+    "tracks": [
+      { "language": "en", "kind": "muxed", "forced": true, "sdh": false, "visualImpaired": false, "commentary": false }
+    ],
+    "perItemRecord": null
+  },
+  "expected": {
+    "selection": {
+      "track": { "language": "en", "kind": "muxed", "roles": { "forced": true, "sdh": false, "visualImpaired": false, "commentary": false } },
+      "reason": "forced subtitles in your preferred language"
+    },
+    "unavailableReason": ""
+  }
+}

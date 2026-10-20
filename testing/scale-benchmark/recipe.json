@@ -1,0 +1,11 @@
+{
+  "generator_version": "1",
+  "seed": 171,
+  "tier": "10k",
+  "profile": "perf-realistic",
+  "minimum_throughput_per_second": {
+    "scan": 5000,
+    "search": 5000,
+    "thumbnail": 1000
+  }
+}

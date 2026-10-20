@@ -1,0 +1,23 @@
+{
+  "id": "forced-only-selects-matching-forced-track",
+  "regression": false,
+  "notes": "subtitleMode forced-only selects a forced track in a preferred language, ignoring an unrelated full track.",
+  "input": {
+    "mode": "forced-only",
+    "langPrefs": ["es"],
+    "preferSDH": false,
+    "audioTrackLang": "es",
+    "tracks": [
+      { "language": "es", "kind": "muxed", "forced": true, "sdh": false, "visualImpaired": false, "commentary": false },
+      { "language": "en", "kind": "muxed", "forced": false, "sdh": false, "visualImpaired": false, "commentary": false }
+    ],
+    "perItemRecord": null
+  },
+  "expected": {
+    "selection": {
+      "track": { "language": "es", "kind": "muxed", "roles": { "forced": true, "sdh": false, "visualImpaired": false, "commentary": false } },
+      "reason": "forced subtitles in your preferred language"
+    },
+    "unavailableReason": ""
+  }
+}

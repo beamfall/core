@@ -1,0 +1,20 @@
+# Coarse ownership from DEC-12. Revisit as teams grow.
+
+# Default core source ownership.
+* @beamfall/core-runtime
+
+# Test surfaces and gate wiring are release-manager owned.
+*_test.go @beamfall/release-manager
+*.test.mjs @beamfall/release-manager
+*.test.ts @beamfall/release-manager
+*.test.tsx @beamfall/release-manager
+/script/*_test.py @beamfall/release-manager
+/script/*_test.sh @beamfall/release-manager
+/tools/gate/ @beamfall/release-manager
+/.github/workflows/ @beamfall/release-manager
+
+# Architecture-owned contracts and vocabulary.
+/contracts/ @beamfall/architecture
+/CONTEXT.md @beamfall/architecture
+/docs/design-system.md @beamfall/architecture
+/docs/design/ @beamfall/architecture

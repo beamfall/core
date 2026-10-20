@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "envelope": "beamfall-20260820T170057.696424000Z/set.bbk",
+  "expectations": "expectations.json",
+  "encryptedLibraryIDs": [
+    "library-acc-archive"
+  ],
+  "syntheticTestBackupKey": "DCDAK-2GPMT-67BDV-MCV68-EW5Z5-VSTP0-Y286Q-73576-A5GCE-PMM6F-HG8T9-N",
+  "credentialScope": "public synthetic fixture data only; never accepted for production"
+}

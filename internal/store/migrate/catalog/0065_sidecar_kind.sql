@@ -1,0 +1,17 @@
+-- Generic sidecar kind (ADULT-3 / ADR-0005 §4). The 0059 sidecar table shipped
+-- as caption-only — a .srt/.vtt subtitle next to the media file. ADR-0005 §4
+-- frames sidecars as a GENERIC scan-time mechanic: "captions/subtitles are a
+-- Core v1 sidecar type"; an interactive track (heatmaps, toy control) is a
+-- second sidecar type a plugin recognises. Both are external sibling files
+-- discovered at scan and served behind a Stream Token; they differ only in
+-- their on-the-wire representation, so they share the one sidecar table rather
+-- than each growing its own.
+--
+-- kind is the closed, GENERIC sidecar-type discriminator (invariant #1): a
+-- shape word, never domain vocabulary. 'caption' is the 0059 type (served as
+-- WebVTT, with language/forced/SDH track hints). 'interactive' is the
+-- player-agnostic interactive-control track type — served as RAW bytes, with no
+-- caption hints; which file EXTENSIONS map to it is plugin-declared data
+-- (Bundle.InteractiveSidecars), never named in Core. The DEFAULT backfills the
+-- 0059 rows — every existing sidecar is a caption — which is their truth.
+ALTER TABLE media_file_sidecar_caption ADD COLUMN kind TEXT NOT NULL DEFAULT 'caption';

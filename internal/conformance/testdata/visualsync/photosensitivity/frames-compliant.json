@@ -1,0 +1,17 @@
+{
+  "description": "PEAT-style compliant sequence: gentle onsets that stay under the declared 0.35 luminance-delta ceiling with no flash-threshold events, so no flash rate or strobe accrues.",
+  "frames": [
+    {"mediaTimeMs": 0,    "onset": {"broadband": 0.20}},
+    {"mediaTimeMs": 100,  "onset": {"broadband": 0.30}},
+    {"mediaTimeMs": 200,  "onset": {"broadband": 0.34}},
+    {"mediaTimeMs": 300,  "onset": {"broadband": 0.25}},
+    {"mediaTimeMs": 400,  "onset": {"broadband": 0.20}},
+    {"mediaTimeMs": 500,  "onset": {"broadband": 0.30}},
+    {"mediaTimeMs": 600,  "onset": {"broadband": 0.22}},
+    {"mediaTimeMs": 700,  "onset": {"broadband": 0.18}},
+    {"mediaTimeMs": 800,  "onset": {"broadband": 0.15}},
+    {"mediaTimeMs": 900,  "onset": {"broadband": 0.30}},
+    {"mediaTimeMs": 1000, "onset": {"broadband": 0.28}},
+    {"mediaTimeMs": 1100, "onset": {"broadband": 0.20}}
+  ]
+}

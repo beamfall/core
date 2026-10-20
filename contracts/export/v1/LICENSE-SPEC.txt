@@ -1,0 +1,9 @@
+SPDX-License-Identifier: CC-BY-4.0
+
+The specification prose in this directory is licensed under the Creative Commons
+Attribution 4.0 International license.
+
+License text: https://creativecommons.org/licenses/by/4.0/legalcode
+
+Attribution: "Beamfall Export Format", Beamfall contributors.
+

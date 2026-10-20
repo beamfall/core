@@ -1,0 +1,19 @@
+{
+  "id": "regression-wrong-language-forced-fallback",
+  "regression": true,
+  "notes": "Shipped competitor bug: with no forced track matching the preferred language, a wrong-language forced track was silently selected anyway. The correct behavior is to select none and surface a non-blocking notice, never a wrong-language track, never silent.",
+  "input": {
+    "mode": "forced-only",
+    "langPrefs": ["en"],
+    "preferSDH": false,
+    "audioTrackLang": "en",
+    "tracks": [
+      { "language": "es", "kind": "muxed", "forced": true, "sdh": false, "visualImpaired": false, "commentary": false }
+    ],
+    "perItemRecord": null
+  },
+  "expected": {
+    "selection": null,
+    "unavailableReason": "no-forced-subtitle-in-preferred-language"
+  }
+}

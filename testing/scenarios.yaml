@@ -1,0 +1,543 @@
+# Beamfall scenario registry
+#
+# The journey axis beside:
+#   - testing/features.yaml  (functionality breadth via feature:<id>)
+#   - testing/io-ops.yaml    (I/O breadth via io:<id>)
+#
+# Tests prove scenarios with `scenario:<id>` markers in Go/Swift/Kotlin/JS tests
+# or script tests. `go run ./cmd/scenariocheck -strict` fails when any
+# unblocked, assessable scenario lacks a marker. A blocked scenario is a named,
+# visible gap; remove `blocked:` when the journey lands.
+
+schemaVersion: 1
+
+targets: [server, web, tvos, androidtv, iphone, ipad, androidmobile, macos, windows]
+
+scenarios:
+  - id: agent-test-selection
+    area: testing
+    summary: Agent maps changed paths to focused verification before the final gate.
+    features: []
+    io: []
+    applies: [server]
+    tier: gate
+    commands: [make gate]
+    status: shipped
+
+  - id: restricted-reveal-playback
+    area: privacy
+    summary: Restricted Library navigation and byte-serving stay hidden until Reveal, then stream with a revealed session.
+    features: [reveal-unlock, navigation-manifest, playback-info, direct-play]
+    io: []
+    applies: [server]
+    tier: gate
+    commands: [go test ./internal/server, make gate]
+    status: shipped
+
+  - id: reveal-leak-to-child
+    area: privacy
+    summary: Reveal-gated Media never reaches a restricted Profile across switch and certification-ceiling changes.
+    features: [reveal-unlock, relock, profile-switch]
+    io: []
+    applies: [server, web, iphone, ipad, androidmobile]
+    tier: release
+    commands: [make io-journeys, make release-gate]
+    status: planned
+    blocked: "Server journey landed in E2E-P0-CATALOG; non-server target coverage remains blocked."
+    releaseWaiver:
+      ticket: TEST-XCUT-5
+      owner: release@beamfall.local
+      expiresAt: "2027-06-30"
+      evidencePath: "testing/scenarios.yaml"
+      humanAccepted: true
+
+  - id: pair-auth-bypass
+    area: auth
+    summary: Unpaired or unauthorized devices cannot reach Manager or Console mutations.
+    features: [pairing-enroll, session-lifecycle, admin-session]
+    io: []
+    applies: [server, web, ipad, macos]
+    tier: release
+    commands: [make io-journeys, make release-gate]
+    status: planned
+    blocked: "Server journey landed in E2E-P0-CATALOG; non-server target coverage remains blocked."
+    releaseWaiver:
+      ticket: TEST-XCUT-5
+      owner: release@beamfall.local
+      expiresAt: "2027-06-30"
+      evidencePath: "testing/scenarios.yaml"
+      humanAccepted: true
+
+  - id: scan-media-identity-stability
+    area: scan
+    summary: Re-scanning preserves Media fingerprint identity without duplicates, orphans, or My Data loss.
+    features: [scan-pipeline, my-data-panel]
+    io: [fs-scan-walk, fs-store-datadir]
+    applies: [server]
+    tier: release
+    commands: [make io-journeys, make release-gate]
+    status: planned
+    blocked: "Server journey landed in E2E-P0-CATALOG; non-server target coverage remains blocked."
+    releaseWaiver:
+      ticket: TEST-XCUT-5
+      owner: release@beamfall.local
+      expiresAt: "2027-06-30"
+      evidencePath: "testing/scenarios.yaml"
+      humanAccepted: true
+
+  - id: audited-delete-bypass
+    area: file-operations
+    summary: With trash disabled, destructive autonomous operations require human confirmation and never hard-delete silently.
+    features: [trash-review, file-operations]
+    io: [fs-trash-move]
+    applies: [server, web, ipad, macos]
+    tier: release
+    commands: [make io-journeys, make release-gate]
+    status: planned
+    blocked: "Server journey landed in E2E-P0-CATALOG; non-server target coverage remains blocked."
+    releaseWaiver:
+      ticket: TEST-XCUT-5
+      owner: release@beamfall.local
+      expiresAt: "2027-06-30"
+      evidencePath: "testing/scenarios.yaml"
+      humanAccepted: true
+
+  - id: first-run-library-media-appears
+    area: setup
+    summary: First run creates the server, adds a Library, scans it, and newly discovered Media appears.
+    features: [first-run-wizard, scan-pipeline, navigation-manifest]
+    io: [fs-store-datadir, fs-scan-walk]
+    applies: [server, web, ipad, macos]
+    tier: release
+    commands: [make io-journeys, make release-gate]
+    status: planned
+    blocked: "E2E-P1-CATALOG has not landed this journey yet."
+    releaseWaiver:
+      ticket: TEST-XCUT-5
+      owner: release@beamfall.local
+      expiresAt: "2027-06-30"
+      evidencePath: "testing/scenarios.yaml"
+      humanAccepted: true
+
+  - id: resume-scrobble-round-trip
+    area: playback
+    summary: Playback progress resumes correctly and scrobble adapters receive the expected watch/listen event.
+    features: [canonical-timeline, playback-info]
+    io: [egress-scrobble-trakt-history, egress-scrobble-lastfm-submit, egress-scrobble-listenbrainz-submit]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile]
+    tier: release
+    commands: [make io-journeys, make release-gate]
+    status: planned
+    blocked: "E2E-P1-CATALOG has not landed this journey yet."
+    releaseWaiver:
+      ticket: TEST-XCUT-5
+      owner: release@beamfall.local
+      expiresAt: "2027-06-30"
+      evidencePath: "testing/scenarios.yaml"
+      humanAccepted: true
+
+  - id: secret-leak-to-logs
+    area: security
+    summary: Auth failures never write OAuth, refresh, pairing, device/session, API key, Stream Token, Recovery Key, response-body, support-bundle, CI, or export secrets.
+    features: [pairing-enroll, session-lifecycle, api-keys, stream-token, recovery-key-compromise]
+    io: [fs-secrets-0600]
+    applies: [server, web, ipad, macos, windows]
+    tier: release
+    commands: [make io-journeys, make release-gate]
+    status: planned
+    blocked: "E2E-P1-CATALOG has not landed this journey yet."
+    releaseWaiver:
+      ticket: TEST-XCUT-5
+      owner: release@beamfall.local
+      expiresAt: "2027-06-30"
+      evidencePath: "testing/scenarios.yaml"
+      humanAccepted: true
+
+  - id: ios-enroll-browse-play
+    area: apple
+    summary: iOS enrolls against the seeded core, browses to seeded Media, and starts playback.
+    features: [pairing-enroll, navigation-manifest, playback-info, direct-play]
+    io: []
+    applies: [iphone, ipad]
+    tier: nightly
+    commands: [apple-e2e.sh]
+    status: planned
+    blocked: "ATEST-6/7 and Apple e2e harness work are still open."
+
+  - id: androidtv-enroll-browse-play
+    area: android
+    summary: Android TV enrolls against the seeded core, browses to seeded Media, and starts playback.
+    features: [pairing-enroll, navigation-manifest, playback-info, direct-play]
+    io: []
+    applies: [androidtv]
+    tier: nightly
+    commands: [connectedCheck]
+    status: planned
+    blocked: "ANTEST-6 has not landed this journey yet."
+
+  - id: manager-enroll-connect-browse
+    area: manage
+    summary: Manager enrolls or connects to a seeded core and browses the management surface.
+    features: [pairing-enroll, device-promotion, navigation-manifest]
+    io: []
+    applies: [ipad, macos]
+    tier: nightly
+    commands: [apple-e2e.sh]
+    status: planned
+    blocked: "ATEST-28 Manager workflow journey ledger has not landed yet."
+
+  - id: manager-search-entity-detail
+    area: manage
+    summary: Manager searches, opens an Entity detail view, and preserves reveal-filtered results.
+    features: [search-keyword, entity-detail, entity-manager]
+    io: []
+    applies: [ipad, macos]
+    tier: nightly
+    commands: [apple-e2e.sh]
+    status: planned
+    blocked: "ATEST-28 Manager workflow journey ledger has not landed yet."
+
+  - id: manager-my-data-export-delete
+    area: privacy
+    summary: Manager exports and deletes a Profile's My Data footprint without crossing Profile boundaries.
+    features: [my-data-panel]
+    io: [fs-store-datadir]
+    applies: [web, ipad, macos]
+    tier: release
+    commands: [make release-gate, apple-e2e.sh]
+    status: planned
+    blocked: "ATEST-28 Manager workflow journey ledger has not landed yet."
+    releaseWaiver:
+      ticket: TEST-XCUT-5
+      owner: release@beamfall.local
+      expiresAt: "2027-06-30"
+      evidencePath: "testing/scenarios.yaml"
+      humanAccepted: true
+
+  - id: manager-managed-rename
+    area: file-operations
+    summary: Manager renames a managed file; server authorizes, commits catalog state, and disk path changes.
+    features: [file-operations]
+    io: [fs-managed-rename]
+    applies: [server, web, macos]
+    tier: release
+    commands: [make scenario-ledger STRICT=1, make release-gate]
+    status: planned
+    blocked: "POWERTOOLS-2/3/4 and fs-managed-rename journey are not landed yet."
+    releaseWaiver:
+      ticket: TEST-XCUT-5
+      owner: release@beamfall.local
+      expiresAt: "2027-06-30"
+      evidencePath: "testing/scenarios.yaml"
+      humanAccepted: true
+
+  - id: app-store-firewall-api-manifest
+    area: policy
+    summary: App Store-class capability/schema/management manifests suppress acquisition-adjacent APIs, capabilities, strings, and plugin rows.
+    features: [ipad-console-firewall, android-release-safety, apple-release-safety]
+    io: []
+    applies: [server, iphone, ipad, tvos, androidmobile, androidtv]
+    tier: release
+    commands: [make capability-manifest-check, make release-gate]
+    status: planned
+    blocked: "CORE-AUDIT-5 and native App Store firewall conformance gaps remain open."
+    releaseWaiver:
+      ticket: TEST-XCUT-5
+      owner: release@beamfall.local
+      expiresAt: "2027-06-30"
+      evidencePath: "testing/scenarios.yaml"
+      humanAccepted: true
+
+  - id: appstore-api-firewall
+    area: policy
+    summary: App Store builds do not advertise or dispatch acquisition-adjacent GraphQL/API fields, including qBittorrent ingest, and select the no-powertools capability set.
+    features: [qbittorrent-ingest, capability-manifest]
+    io: []
+    applies: [server, ipad]
+    tier: release
+    commands: [go test -tags beamfall_appstore ./internal/conformance ./internal/capabilities, make release-gate]
+    status: planned
+    blocked: "CORE-AUDIT-5 is open."
+    releaseWaiver:
+      ticket: TEST-XCUT-5
+      owner: release@beamfall.local
+      expiresAt: "2027-06-30"
+      evidencePath: "testing/scenarios.yaml"
+      humanAccepted: true
+
+  - id: appstore-firewall-review-pack
+    area: policy
+    summary: App Store review pack strings, screenshots, demo data, disabled reasons, reviewer notes, and metadata omit acquisition-adjacent service names and controls.
+    features: [ipad-console-firewall, android-release-safety, apple-release-safety]
+    io: []
+    applies: [iphone, ipad, tvos, androidmobile, androidtv]
+    tier: release
+    commands: [make release-gate]
+    status: planned
+    blocked: "Native review-pack scanners and evidence artifacts are not landed."
+    releaseWaiver:
+      ticket: TEST-XCUT-5
+      owner: release@beamfall.local
+      expiresAt: "2027-06-30"
+      evidencePath: "testing/scenarios.yaml"
+      humanAccepted: true
+
+  - id: ipad-admin-console-firewall
+    area: policy
+    summary: iPad Manager/Console proves Admin Session, Manager authority, Reveal separation, destructive denial without authority, and acquisition-surface absence.
+    features: [ipad-console-firewall, admin-session, admin-owner-reauth, device-access-admin, managed-profile-policy]
+    io: []
+    applies: [ipad]
+    tier: nightly
+    commands: [apple-e2e.sh]
+    status: planned
+    blocked: "ATEST-11 and ATEST-28 remain held/open."
+
+  - id: pairing-admin-session-cross-surface
+    area: auth
+    summary: Enroll, promote, revoke, owner reauth expiry, relock/profile switch, token invalidation, and stale transport denial across clients.
+    features: [pairing-enroll, device-promotion, admin-session, admin-owner-reauth, relock, profile-switch, session-lifecycle]
+    io: []
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile, macos, windows]
+    tier: release
+    commands: [make scenario-ledger STRICT=1, make release-gate]
+    status: planned
+    blocked: "Server auth paths have coverage, but cross-surface journey coverage is not complete."
+    releaseWaiver:
+      ticket: TEST-XCUT-5
+      owner: release@beamfall.local
+      expiresAt: "2027-06-30"
+      evidencePath: "testing/scenarios.yaml"
+      humanAccepted: true
+
+  - id: no-access-non-leak
+    area: privacy
+    summary: No-access states are indistinguishable from empty states to pixels, accessibility trees, byte routes, and detached OS surfaces.
+    features: [system-state-families, reveal-unlock, relock, navigation-manifest]
+    io: []
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile, macos, windows]
+    tier: release
+    commands: [make scenario-ledger STRICT=1, make release-gate]
+    status: planned
+    blocked: "Cross-client no-access leak evidence remains incomplete outside server."
+    releaseWaiver:
+      ticket: TEST-XCUT-5
+      owner: release@beamfall.local
+      expiresAt: "2027-06-30"
+      evidencePath: "testing/scenarios.yaml"
+      humanAccepted: true
+
+  - id: relay-metadata-retention
+    area: privacy
+    summary: Hosted Relay metadata expires on the configured retention window, is access-controlled, and never joins library/playback data to account data.
+    features: [self-hosted-relay]
+    io: []
+    applies: [server]
+    tier: release
+    commands: [make scenario-ledger STRICT=1, make release-gate]
+    status: planned
+    blocked: "Hosted Relay/cloud retention fixtures and the human-selected transient-log window are not landed."
+    releaseWaiver:
+      ticket: TEST-XCUT-5
+      owner: release@beamfall.local
+      expiresAt: "2027-06-30"
+      evidencePath: "testing/scenarios.yaml"
+      humanAccepted: true
+
+  - id: zkbackup-restore-boundary
+    area: backup
+    summary: BYO and hosted zero-knowledge backup restore without exposing plaintext or adding account/entitlement logic to Core.
+    features: [zero-knowledge-offsite-backup, recovery-key-compromise, backup-restore-export]
+    io: [fs-store-datadir, fs-secrets-0600]
+    applies: [server, web, ipad, macos, windows]
+    tier: release
+    commands: [make scenario-ledger STRICT=1, make release-gate]
+    status: planned
+    blocked: "ZKBACKUP-1 still needs child tickets for BYO replication, hosted ciphertext metadata, restore UX, migration, and AGPL/account firewall."
+    releaseWaiver:
+      ticket: TEST-XCUT-5
+      owner: release@beamfall.local
+      expiresAt: "2027-06-30"
+      evidencePath: "testing/scenarios.yaml"
+      humanAccepted: true
+
+  - id: core-client-auth-contract-drift
+    area: contract
+    summary: Clients reject stale Core auth/playback/Reveal/management contracts and knownDrift entries expire or self-evict.
+    features: [server-authoritative-compat, stream-token, reveal-unlock, playback-info, web-console-parity]
+    io: []
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile, macos, windows]
+    tier: release
+    commands: [make coverage STRICT=1, make scenario-ledger STRICT=1, make release-gate]
+    status: planned
+    blocked: "XCONTRACT-0/1a/1b are still open for producer artifact and consumer drift checks."
+    releaseWaiver:
+      ticket: TEST-XCUT-5
+      owner: release@beamfall.local
+      expiresAt: "2027-06-30"
+      evidencePath: "testing/scenarios.yaml"
+      humanAccepted: true
+
+  - id: scan-missing-after-full-scan
+    area: scan
+    summary: Successful full scan marks unseen files under the scanned root missing; yielded, canceled, or failed scans do not.
+    features: [scan-pipeline]
+    io: [fs-scan-walk]
+    applies: [server]
+    tier: release
+    commands: [make io-journeys, make release-gate]
+    status: planned
+    blocked: "CORE-AUDIT-4 is open."
+    releaseWaiver:
+      ticket: TEST-XCUT-5
+      owner: release@beamfall.local
+      expiresAt: "2027-06-30"
+      evidencePath: "testing/scenarios.yaml"
+      humanAccepted: true
+
+  - id: offlinepack-store-invariants
+    area: playback
+    summary: Offline-pack storage validates Profile ownership, state/progress bounds, parent/items atomicity, revoke/expiry denial, and corrupt-pack denial.
+    features: [offline-packs, android-offline-privacy, apple-offline-privacy]
+    io: [fs-store-datadir, fs-secrets-0600]
+    applies: [server, iphone, ipad, androidmobile]
+    tier: release
+    commands: [make scenario-ledger STRICT=1, make release-gate]
+    status: planned
+    blocked: "CORE-AUDIT-7 is open."
+    releaseWaiver:
+      ticket: TEST-XCUT-5
+      owner: release@beamfall.local
+      expiresAt: "2027-06-30"
+      evidencePath: "testing/scenarios.yaml"
+      humanAccepted: true
+
+  - id: destructive-lifecycle-e2e
+    area: file-operations
+    summary: Destructive Manager/API paths prove trash-enabled restore, restore collision, trash-disabled rejection, and audit record {op, actor, reversible}.
+    features: [trash-review, file-operations, object-history-undo]
+    io: [fs-trash-move]
+    applies: [server, web, ipad, macos, windows]
+    tier: release
+    commands: [make io-journeys, make release-gate]
+    status: planned
+    blocked: "Server journey landed in CORE-AUDIT-16 (internal/ioe2e/lifecycle_destructive_test.go); non-server target coverage remains blocked."
+    releaseWaiver:
+      ticket: TEST-XCUT-5
+      owner: release@beamfall.local
+      expiresAt: "2027-06-30"
+      evidencePath: "testing/scenarios.yaml"
+      humanAccepted: true
+
+  - id: origin-node-lifecycle
+    area: transport
+    summary: Origin Node lifecycle covers same-fingerprint isolation, node-confirmed trash, queued restore, offline-not-missing, and mid-reap node death.
+    features: [origin-nodes, node-host-contract]
+    io: [fs-store-datadir]
+    applies: [server, web, ipad, macos, windows]
+    tier: release
+    commands: [make scenario-ledger STRICT=1, make release-gate]
+    status: planned
+    blocked: "NODE-4/7/8/16 remain open."
+    releaseWaiver:
+      ticket: TEST-XCUT-5
+      owner: release@beamfall.local
+      expiresAt: "2027-06-30"
+      evidencePath: "testing/scenarios.yaml"
+      humanAccepted: true
+
+  - id: node-host-contract-wire
+    area: distributed-serving
+    summary: Node-host revision negotiation fails closed; token issuance is absent; down-leg spoofing is rejected; byte proxy honors Range, backpressure, buffer cap, and per-node 503 ceiling.
+    features: [node-host-contract]
+    io: []
+    applies: [server]
+    tier: release
+    commands: [go test ./internal/conformance ./internal/serverrole, make release-gate]
+    status: planned
+    blocked: "Production node-host transport is not implemented yet."
+    releaseWaiver:
+      ticket: TEST-XCUT-5
+      owner: release@beamfall.local
+      expiresAt: "2027-06-30"
+      evidencePath: "testing/scenarios.yaml"
+      humanAccepted: true
+
+  - id: integration-worker-loop-tripwire
+    area: integration
+    summary: Worker mutation seams stay dormant, and promoting Jobs/Ingest/FileMutation/Outbound fails without a loop-containment marker/design.
+    features: [integration-worker-events, integration-worker-loop-tripwire]
+    io: []
+    applies: [server]
+    tier: gate
+    commands: [go test ./internal/app ./internal/integrationhost ./internal/conformance, make gate]
+    status: planned
+    blocked: "ADR-0125 mechanical nil-seam/containment-marker tripwire test is not landed."
+
+  - id: release-gate-native-artifacts
+    area: release
+    summary: Release gate either fetches native evidence artifacts or explicitly waives absent sibling repos with documented blockers.
+    features: [accessibility-contract, design-token-conformance, apple-release-safety, android-release-safety]
+    io: []
+    applies: [server]
+    tier: release
+    commands: [make release-gate]
+    status: planned
+    blocked: "CORE-AUDIT-6 must choose native artifact fetch vs core-only documented waiver."
+    releaseWaiver:
+      ticket: TEST-XCUT-5
+      owner: release@beamfall.local
+      expiresAt: "2027-06-30"
+      evidencePath: "testing/scenarios.yaml"
+      humanAccepted: true
+
+  - id: ops-observability-redaction
+    area: ops
+    summary: Request/job logs carry correlation IDs, Console live logs read the same stream, and logs redact secrets, stream URLs, private endpoints, restricted names, and telemetry.
+    features: [job-management, library-health, session-lifecycle, api-keys, stream-token]
+    io: [fs-store-datadir]
+    applies: [server, web, ipad, macos, windows]
+    tier: release
+    commands: [make scenario-ledger STRICT=1, make release-gate]
+    status: planned
+    blocked: "ADR-0013 health/metrics coverage exists, but structured log/live-log release evidence is missing."
+    releaseWaiver:
+      ticket: TEST-XCUT-5
+      owner: release@beamfall.local
+      expiresAt: "2027-06-30"
+      evidencePath: "testing/scenarios.yaml"
+      humanAccepted: true
+
+  - id: operations-control-journey
+    area: ops
+    summary: Job cancel/retry eligibility, restart recovery, schedule catch-up, watcher degradation/backstop, and governor preemption render correctly.
+    features: [job-management, scheduler, watcher, capability-manifest]
+    io: [fs-store-datadir]
+    applies: [server, web, ipad, macos, windows]
+    tier: release
+    commands: [make scenario-ledger STRICT=1, make release-gate]
+    status: planned
+    blocked: "Server operations-control journey landed in CORE-AUDIT-14 (internal/ioe2e/ops_control_journey_test.go); non-server target coverage remains blocked."
+    releaseWaiver:
+      ticket: TEST-XCUT-5
+      owner: release@beamfall.local
+      expiresAt: "2027-06-30"
+      evidencePath: "testing/scenarios.yaml"
+      humanAccepted: true
+
+  - id: upgrade-restore-drill
+    area: ops
+    summary: Backup restores into a clean data dir under the candidate binary, migrates, boots ready, exposes metrics, and supports representative read/write.
+    features: [backup-restore-export, update-awareness]
+    io: [fs-store-datadir]
+    applies: [server]
+    tier: release
+    commands: [make release-gate]
+    status: planned
+    blocked: "Release-gate restore drill is not automated or recorded as an accepted manual residual."
+    releaseWaiver:
+      ticket: TEST-XCUT-5
+      owner: release@beamfall.local
+      expiresAt: "2027-06-30"
+      evidencePath: "testing/scenarios.yaml"
+      humanAccepted: true

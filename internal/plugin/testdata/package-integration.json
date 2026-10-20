@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "id": "starlink",
+  "tier": "integration",
+  "version": "1.0.0",
+  "capabilities": [
+    {"id": "starlink-sync", "version": 1}
+  ],
+  "updatePin": {
+    "kind": "hash",
+    "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "permissions": [
+    {
+      "Kind": "declared-outbound",
+      "Label": {"en": "Declared outbound access"},
+      "Description": {"en": "Allows the plugin to send data to operator-approved network destinations."}
+    },
+    {
+      "Kind": "status-write",
+      "Label": {"en": "Write plugin status"},
+      "Description": {"en": "Allows the plugin to write its own status and dead-letter records."}
+    }
+  ],
+  "outbound": ["https://api.starlink.example"],
+  "actions": [
+    {
+      "ID": "sync",
+      "Label": {"en": "Sync"},
+      "Risk": "low",
+      "RequiredPermissions": ["declared-outbound", "status-write"]
+    }
+  ],
+  "configFields": [
+    {"Name": "account", "Type": "text", "Label": {"en": "Account"}, "Required": true}
+  ],
+  "status": [
+    {"name": "last-sync", "type": "date", "label": {"en": "Last sync"}}
+  ]
+}

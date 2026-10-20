@@ -1,0 +1,23 @@
+{
+  "id": "pin-fallback-tier-excludes-commentary",
+  "regression": false,
+  "notes": "Only the EXACT pin-match tier may land on a commentary or visual-impaired track. Here the pin's exact role tuple matches no track; the language-only fallback tier must skip the same-language commentary track and land on the other English candidate instead.",
+  "input": {
+    "mode": "always",
+    "langPrefs": ["en"],
+    "preferSDH": false,
+    "audioTrackLang": "en",
+    "tracks": [
+      { "language": "en", "kind": "muxed", "forced": false, "sdh": false, "visualImpaired": false, "commentary": true },
+      { "language": "en", "kind": "muxed", "forced": false, "sdh": true, "visualImpaired": false, "commentary": false }
+    ],
+    "perItemRecord": { "selected": true, "language": "en", "kind": "muxed", "forced": false, "sdh": false, "visualImpaired": false, "commentary": false }
+  },
+  "expected": {
+    "selection": {
+      "track": { "language": "en", "kind": "muxed", "roles": { "forced": false, "sdh": true, "visualImpaired": false, "commentary": false } },
+      "reason": "pinned choice for this series"
+    },
+    "unavailableReason": ""
+  }
+}

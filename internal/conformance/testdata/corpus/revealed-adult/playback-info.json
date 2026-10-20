@@ -1,0 +1,51 @@
+{
+  "assets": {
+    "expiresAt": "1970-01-01T01:00:00Z",
+    "markerThumbnailBase": "/api/media/assets/eyJ0YXJnZXQiOiJtZWRpYS1hc3NldHMiLCJtZWRpYUlEIjoibWVkaWEtYWxwaGEiLCJkZXZpY2VJRCI6ImRldmljZS10diIsInNlc3Npb25JRCI6InNlc3Npb24tcmV2ZWFsZWQiLCJwcm9maWxlSUQiOiJwcm9maWxlLWRlZmF1bHQiLCJyZXN0cmljdGVkIjpmYWxzZSwicHJvZmlsZUNhcGFiaWxpdHkiOiJhNDVhMmM4OTY3YzgxNmE1IiwiZXhwaXJlc0F0IjoiMTk3MC0wMS0wMVQwMTowMDowMFoifQ._UQIWYinPSgMRqN7l1WBhEShGRdQU4D8i2HZZpUcP_A/"
+  },
+  "decision": "direct-play",
+  "mediaClass": "video",
+  "mediaID": "media-alpha",
+  "streamTokenRequired": true,
+  "streams": [
+    {
+      "expiresAt": "1970-01-01T01:00:00Z",
+      "id": "direct-main",
+      "kind": "direct-play",
+      "token": "eyJ0YXJnZXQiOiJtZWRpYS1kaXJlY3QiLCJtZWRpYUlEIjoibWVkaWEtYWxwaGEiLCJkZXZpY2VJRCI6ImRldmljZS10diIsInNlc3Npb25JRCI6InNlc3Npb24tcmV2ZWFsZWQiLCJwcm9maWxlSUQiOiJwcm9maWxlLWRlZmF1bHQiLCJyZXN0cmljdGVkIjpmYWxzZSwicHJvZmlsZUNhcGFiaWxpdHkiOiJhNDVhMmM4OTY3YzgxNmE1IiwiZXhwaXJlc0F0IjoiMTk3MC0wMS0wMVQwMTowMDowMFoifQ.hRRgM4seLZQU6M-eKwRDPvYFUF0ozVJ-fxjckSLjGVc",
+      "url": "/api/media/direct/eyJ0YXJnZXQiOiJtZWRpYS1kaXJlY3QiLCJtZWRpYUlEIjoibWVkaWEtYWxwaGEiLCJkZXZpY2VJRCI6ImRldmljZS10diIsInNlc3Npb25JRCI6InNlc3Npb24tcmV2ZWFsZWQiLCJwcm9maWxlSUQiOiJwcm9maWxlLWRlZmF1bHQiLCJyZXN0cmljdGVkIjpmYWxzZSwicHJvZmlsZUNhcGFiaWxpdHkiOiJhNDVhMmM4OTY3YzgxNmE1IiwiZXhwaXJlc0F0IjoiMTk3MC0wMS0wMVQwMTowMDowMFoifQ.hRRgM4seLZQU6M-eKwRDPvYFUF0ozVJ-fxjckSLjGVc"
+    },
+    {
+      "expiresAt": "1970-01-01T01:00:00Z",
+      "id": "hls-main",
+      "kind": "hls",
+      "renditions": [
+        {
+          "bandwidth": 4256000,
+          "height": 720,
+          "id": "720p"
+        },
+        {
+          "bandwidth": 1756000,
+          "height": 480,
+          "id": "480p"
+        }
+      ],
+      "token": "eyJ0YXJnZXQiOiJtZWRpYS1obHMiLCJtZWRpYUlEIjoibWVkaWEtYWxwaGEiLCJkZXZpY2VJRCI6ImRldmljZS10diIsInNlc3Npb25JRCI6InNlc3Npb24tcmV2ZWFsZWQiLCJwcm9maWxlSUQiOiJwcm9maWxlLWRlZmF1bHQiLCJyZXN0cmljdGVkIjpmYWxzZSwicHJvZmlsZUNhcGFiaWxpdHkiOiJhNDVhMmM4OTY3YzgxNmE1IiwiZXhwaXJlc0F0IjoiMTk3MC0wMS0wMVQwMTowMDowMFoifQ.CuZpqMpf1l34iJyxosKkbvzxabaYs87R7t5cXX0SApk",
+      "url": "/api/media/hls/eyJ0YXJnZXQiOiJtZWRpYS1obHMiLCJtZWRpYUlEIjoibWVkaWEtYWxwaGEiLCJkZXZpY2VJRCI6ImRldmljZS10diIsInNlc3Npb25JRCI6InNlc3Npb24tcmV2ZWFsZWQiLCJwcm9maWxlSUQiOiJwcm9maWxlLWRlZmF1bHQiLCJyZXN0cmljdGVkIjpmYWxzZSwicHJvZmlsZUNhcGFiaWxpdHkiOiJhNDVhMmM4OTY3YzgxNmE1IiwiZXhwaXJlc0F0IjoiMTk3MC0wMS0wMVQwMTowMDowMFoifQ.CuZpqMpf1l34iJyxosKkbvzxabaYs87R7t5cXX0SApk/master.m3u8"
+    }
+  ],
+  "systemSurfaceDisclosure": {
+    "metadataAllowed": true,
+    "snapshotVersion": "1"
+  },
+  "timeline": {
+    "durationSeconds": 120
+  },
+  "trackPreferences": {
+    "audioLanguages": [],
+    "preferSDH": false,
+    "subtitleLanguages": [],
+    "subtitleMode": "off"
+  }
+}

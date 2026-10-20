@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "aggregate": 67.2,
+  "floors": {
+    "github.com/beamfall/core/internal/app": 75.8,
+    "github.com/beamfall/core/internal/auth": 75.7,
+    "github.com/beamfall/core/internal/graph": 74.9,
+    "github.com/beamfall/core/internal/libencrypt": 69.3,
+    "github.com/beamfall/core/internal/mediahttp": 74.2,
+    "github.com/beamfall/core/internal/pairing": 75.3,
+    "github.com/beamfall/core/internal/playback": 74.8,
+    "github.com/beamfall/core/internal/scrape": 78.0,
+    "github.com/beamfall/core/internal/server": 82.4,
+    "github.com/beamfall/core/internal/streamtoken": 78.5
+  }
+}

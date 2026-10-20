@@ -1,0 +1,125 @@
+# web.pairing-mint.error.desktop
+
+## visible header
+
+<header> <span class="brand"><span class="mark" aria-hidden="true"></span><span id="brand-text">Beamfall</span></span> <!-- Manage-register header state: the crumb replaces the Viewer nav and the Device Role chip keeps the role visible (design-system: role is visible state, never a hidden mode). --> <span id="manage-crumb" class="manage-crumb"><span id="manage-crumb-text">Manage</span><span id="role-chip" class="status-badge role-chip">MANAGER</span></span> <!-- Restrictions state (ADR-0004): the revealed session is visually explicit — the iris chip plus a Relock control; the Reveal affordance shows only while an adult Profile's session is locked. --> <button id="restrictions-open" type="button">Restrictions</button> <button id="profile-open" type="button">Profile</button> <button id="sign-out" type="button">Sign out</button> </header>
+
+## visible main
+
+<main> <dialog id="restrictions-view"> <h1 id="restrictions-title">Restrictions</h1> <p id="restrictions-lead">Enter this profile's PIN to show restricted content for this session.</p> <form id="restrictions-form"> <label id="reveal-pin-label" for="reveal-pin">PIN</label> <input id="reveal-pin" name="pin" type="password" inputmode="numeric" autocomplete="off" spellcheck="false" required="" style=""> <button id="restrictions-submit" type="submit">Reveal</button> <button id="restrictions-cancel" type="button">Cancel</button> </form> </dialog> <section id="manage-view"> <button id="manage-close" type="button">Back</button> <h1 id="manage-title">Manage</h1> <button id="manage-theme-toggle" type="button" class="manage-action">Switch to light theme</button> <section class="manage-section"> <h2 id="libraries-heading">Libraries</h2> <ul id="manage-libraries" class="manage-list"><li class="manage-row"><span class="manage-row-title">Local Library</span><label class="manage-toggle"><input type="checkbox" style=""><span>Preview clips</span></label><input placeholder="Folder to scan" autocomplete="off" spellcheck="false" style=""><button type="button">Scan</button><span class="manage-row-detail">Library roots</span><textarea placeholder="One folder per line" spellcheck="false" style=""></textarea><button type="button">Save</button></li></ul> <form id="create-library-form" class="manage-form"> <label id="library-title-label" for="library-title">Title</label> <input id="library-title" name="title" autocomplete="off" required="" style=""> <label id="library-plugin-label" for="library-plugin">Plugin</label> <select id="library-plugin" name="pluginID"> <option id="library-plugin-none" value="">None</option> <option value="filmtv">Film &amp; TV</option><option value="adult">Adult</option><option value="music">Music</option><option value="podcasts">Podcasts</option><option value="photos">Photos</option><option value="audiobook">Audiobooks</option><option value="familyarchive">Family Archive</option></select> <button id="create-library-submit" type="submit">Create Library</button> </form> </section> <section class="manage-section"> <h2 id="jobs-heading">Jobs</h2> <span id="jobs-live" class="jobs-live" data-state="live">Live</span> <ul id="manage-jobs" class="manage-list"><li class="manage-row"><span class="manage-row-title">artwork-sweep</span><span class="manage-row-detail"></span><span class="status-badge status-green">completed</span></li><li class="manage-row"><span class="manage-row-title">asset-sweep</span><span class="manage-row-detail"></span><span class="status-badge status-green">completed</span></li><li class="manage-row"><span class="manage-row-title">skip-detect-sweep</span><span class="manage-row-detail"></span><span class="status-badge status-green">completed</span></li></ul> </section> <section class="manage-section"> <h2 id="schedules-heading">Schedules</h2> <button id="schedules-refresh" type="button" class="manage-action">Refresh</button> <ul id="manage-schedules" class="manage-list"><li class="manage-row"><span class="manage-row-title">database-backup</span><span class="manage-row-detail">Daily 03:00 · Next due: 6/22/2026, 3:00:00 AM · Last enqueued: 6/21/2026, 4:34:00 PM</span><label class="manage-toggle"><input type="checkbox" style=""><span>Enabled</span></label><span class="schedule-editor"><select><option value="every">Every</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select><span class="schedule-editor"><input type="number" name="hour" min="0" max="23" step="1" style=""><input type="number" name="minute" min="0" max="59" step="1" style=""></span><button type="button">Save</button></span></li><li class="manage-row"><span class="manage-row-title">decode-verify</span><span class="manage-row-detail">Weekly Sunday 05:00 · Next due: 6/28/2026, 5:00:00 AM · Last enqueued: 6/21/2026, 4:34:00 PM</span><label class="manage-toggle"><input type="checkbox" style=""><span>Enabled</span></label><span class="schedule-editor"><select><option value="every">Every</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select><span class="schedule-editor"><select name="weekday"><option value="0">Sunday</option><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option></select><input type="number" name="hour" min="0" max="23" step="1" style=""><input type="number" name="minute" min="0" max="59" step="1" style=""></span><button type="button">Save</button></span></li><li class="manage-row"><span class="manage-row-title">events-compaction</span><span class="manage-row-detail">Daily 03:30 · Next due: 6/22/2026, 3:30:00 AM · Last enqueued: 6/21/2026, 4:34:00 PM</span><label class="manage-toggle"><input type="checkbox" style=""><span>Enabled</span></label><span class="schedule-editor"><select><option value="every">Every</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select><span class="schedule-editor"><input type="number" name="hour" min="0" max="23" step="1" style=""><input type="number" name="minute" min="0" max="59" step="1" style=""></span><button type="button">Save</button></span></li><li class="manage-row"><span class="manage-row-title">qbittorrent-ingest-poll</span><span class="manage-row-detail">Every 5 minutes · Next due: 6/21/2026, 4:39:00 PM · Last enqueued: 6/21/2026, 4:34:00 PM</span><label class="manage-toggle"><input type="checkbox" style=""><span>Enabled</span></label><span class="schedule-editor"><select><option value="every">Every</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select><span class="schedule-editor"><input type="number" name="n" min="1" max="999" step="1" style=""><select name="unit"><option value="minutes">Minutes</option><option value="hours">Hours</option></select></span><button type="button">Save</button></span></li><li class="manage-row"><span class="manage-row-title">retention-sweep</span><span class="manage-row-detail">Daily 04:00 · Next due: 6/22/2026, 4:00:00 AM · Last enqueued: 6/21/2026, 4:34:00 PM</span><label class="manage-toggle"><input type="checkbox" style=""><span>Enabled</span></label><span class="schedule-editor"><select><option value="every">Every</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select><span class="schedule-editor"><input type="number" name="hour" min="0" max="23" step="1" style=""><input type="number" name="minute" min="0" max="59" step="1" style=""></span><button type="button">Save</button></span></li><li class="manage-row"><span class="manage-row-title">scan</span><span class="manage-row-detail">Every 12 hours · Next due: 6/22/2026, 4:34:00 AM · Last enqueued: 6/21/2026, 4:34:00 PM</span><label class="manage-toggle"><input type="checkbox" style=""><span>Enabled</span></label><span class="schedule-editor"><select><option value="every">Every</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select><span class="schedule-editor"><input type="number" name="n" min="1" max="999" step="1" style=""><select name="unit"><option value="minutes">Minutes</option><option value="hours">Hours</option></select></span><button type="button">Save</button></span></li><li class="manage-row"><span class="manage-row-title">scan</span><span class="manage-row-detail">Every 12 hours · Next due: 6/22/2026, 4:34:00 AM · Last enqueued: 6/21/2026, 4:34:00 PM</span><label class="manage-toggle"><input type="checkbox" style=""><span>Enabled</span></label><span class="schedule-editor"><select><option value="every">Every</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select><span class="schedule-editor"><input type="number" name="n" min="1" max="999" step="1" style=""><select name="unit"><option value="minutes">Minutes</option><option value="hours">Hours</option></select></span><button type="button">Save</button></span></li><li class="manage-row"><span class="manage-row-title">subscription-poll</span><span class="manage-row-detail">Every 1 hours · Next due: 6/21/2026, 5:34:00 PM · Last enqueued: 6/21/2026, 4:34:00 PM</span><label class="manage-toggle"><input type="checkbox" style=""><span>Enabled</span></label><span class="schedule-editor"><select><option value="every">Every</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select><span class="schedule-editor"><input type="number" name="n" min="1" max="999" step="1" style=""><select name="unit"><option value="minutes">Minutes</option><option value="hours">Hours</option></select></span><button type="button">Save</button></span></li></ul> </section> <section class="manage-section"> <h2 id="trash-heading">Trash</h2> <ul id="manage-trash" class="manage-list"></ul> <p id="trash-empty" class="manage-empty">Trash is empty.</p> </section> <!-- Fix Match dialog: operator-driven identification review (PIPE-1/ADR-0003 §4). Lets a manager search for candidates via a chosen scraper and pin the correct match. --> <!-- External ID dialog: manually attach a scheme/value identifier to a Media item so downstream enrichment and matching can pick it up (PIPE-1/ADR-0003 §4). --> <section class="manage-section"> <h2 id="subscriptions-heading">Subscriptions</h2> <label id="subscription-library-label" for="subscription-library">Library</label> <select id="subscription-library"><option value="library-local">Local Library</option></select> <ul id="manage-subscriptions" class="manage-list"></ul> <p id="subscriptions-empty" class="manage-empty">No subscriptions for this Library.</p> <form id="add-subscription-form" class="manage-form"> <label id="subscription-feed-label" for="subscription-feed">Feed URL</label> <input id="subscription-feed" name="feedURL" autocomplete="off" spellcheck="false" required="" style=""> <label id="subscription-root-label" for="subscription-root">Download folder</label> <input id="subscription-root" name="root" autocomplete="off" spellcheck="false" style=""> <label id="subscription-auth-label" for="subscription-auth">Authorization header</label> <input id="subscription-auth" name="authHeader" autocomplete="off" spellcheck="false" style=""> <button id="add-subscription-submit" type="submit">Add Subscription</button> </form> </section> <section class="manage-section"> <h2 id="pairing-codes-heading">Pairing codes</h2> <p id="pairing-codes-lead">Mint a one-time code (valid 10 minutes) to enroll a new device.</p> <div class="manage-actions"> <button id="mint-viewer-code" type="button">New viewer code</button> <button id="mint-manager-code" type="button">New manager code</button> </div> <p id="pairing-mint-error" class="error">Could not mint a pairing code.</p> </section> <section class="manage-section"> <h2 id="api-tokens-heading">API tokens</h2> <p id="api-tokens-lead">Create and revoke manager automation tokens for this server.</p> <ul id="manage-api-tokens" class="manage-list"></ul> <p id="api-tokens-empty" class="manage-empty">No API tokens.</p> <form id="create-api-token-form" class="manage-form"> <label id="api-token-name-label" for="api-token-name">Token name</label> <input id="api-token-name" name="name" autocomplete="off" required="" style=""> <button id="create-api-token-submit" type="submit">Create token</button> </form> </section> <section id="console-section" class="manage-section"> <h2 id="console-heading">Console</h2> <p id="console-lead">Operator settings. Enter the server admin password to unlock.</p> <div id="console-active"> <p id="console-active-lead">Console unlocked. The admin session is active.</p> <button id="admin-lock" type="button" class="manage-action">Lock Console</button> </div> <!-- Two-level Console IA (ADR-0007 §4): a category nav selects which group of subsections is visible; only one category shown at a time. Console screens become reachable only when the Admin Session is active. --> <div id="console-screens"> <nav id="console-nav" class="console-nav" aria-label="Console"> <button type="button" class="console-nav-item active" data-cat="health">Health</button> <button type="button" class="console-nav-item" data-cat="operations">Operations</button> <button type="button" class="console-nav-item" data-cat="access-profiles">Access &amp; Profiles</button> <button type="button" class="console-nav-item" data-cat="activity">Activity</button> <button type="button" class="console-nav-item" data-cat="setup">Setup</button> </nav> <!-- Category: Health (ADR-0042) — Library Health Dashboard with drill-down. --> <div id="console-cat-health" class="console-category"> <section class="manage-subsection"> <h3 id="library-health-heading">Library health</h3> <p id="library-health-lead">Per-library quality across five dimensions.</p> <button id="library-health-refresh" type="button" class="manage-action">Refresh</button> <ul id="manage-library-health" class="manage-list"><li class="manage-row"><span class="manage-row-title">All libraries</span><span class="manage-row-detail">Unmatched 1 · Broken 0 · Scrape failures 1 · Missing artwork 1 · Duplicates 0</span></li><li class="manage-row"><span class="manage-row-title">Local Library</span><span class="manage-row-detail manage-row-drill-counts"><button type="button" class="manage-action manage-action-count">Unmatched 1</button><button type="button" class="manage-action manage-action-count">Broken 0</button><button type="button" class="manage-action manage-action-count">Scrape failures 1</button><button type="button" class="manage-action manage-action-count">Missing artwork 1</button><button type="button" class="manage-action manage-action-count">Duplicates 0</button></span><button type="button" class="manage-action">Rescan unmatched</button><button type="button" class="manage-action">Trash broken</button><button type="button" class="manage-action">Rescrape failures</button><button type="button" class="manage-action">Fetch missing artwork</button><button type="button" class="manage-action">Merge duplicates</button></li></ul> </section> <!-- Drill-down panel: live-queried items for one (library, dimension) pair. Hidden until an operator clicks a dimension count in the summary list above. --> </div> <!-- Category: Operations — jobs, transcode, live sessions, watcher, remote access, server config (workers + plugin toggles), bulk edit, file organize. --> <!-- Category: Access & Profiles — API keys, access schedules, enforced filters, field locks, pairing codes (pairing codes remain in Manage, not here). --> <!-- Category: Activity — the append-only reveal-filtered activity log (ADR-0012). --> <!-- Category: Setup — first-run wizard + migration wizard. --> </div> </section> </section> </main>
+
+## hidden element summaries
+
+nav#nav aria="Navigation" text="HomeLocal Library"
+span#revealed-chip.status-badge.status-restricted text="Revealed"
+button#relock text="Relock"
+button#mydata-open text="My Data"
+button#manage-open text="Manage"
+button#promote-open text="Promote this browser"
+aside#connection-banner.connection-banner text="Connection lost. Showing the last rendered view until the server responds."
+section#setup-view
+p#setup-error.error
+section#enroll-view text="Connect this browser Enter a pairing code from a manager device to enroll this browser as a viewer. Pairing code Device name Connect"
+p#enroll-error.error
+section#promote-view text="Promote this browser Enter a manager pairing code to promote this browser to a manager device. Manager pairing code Promote Cancel"
+p#promote-error.error
+section#profile-view text="Profiles Choose a profile for this session. Cancel"
+p#profile-error.error
+p#restrictions-error.error
+section#browse-view text="Search Search mode Keyword Semantic Auto Search Search results Clear Titles People & Studios No matches. Nothing to show in this library yet. This library has no visible content for the current profil"
+select#search-mode.search-mode text="Keyword Semantic Auto"
+section#search-results-view text="Search results Clear Titles People & Studios No matches."
+p#search-mode-notice.manage-empty
+section#search-titles-section text="Titles"
+section#search-entities-section text="People & Studios"
+p#search-empty.manage-empty text="No matches."
+p#search-error.error
+section#library-empty.library-empty text="Nothing to show in this library yet. This library has no visible content for the current profile and filters."
+section#mydata-view text="Back My Data & Privacy Everything here is your own data, scoped to this profile. Nothing is shared and nothing is sent anywhere. Export my engagement Download a copy of your playback progress, favorit"
+p#mydata-export-summary.manage-row-detail
+p#mydata-export-error.error
+p#mydata-sessions-empty.manage-empty text="No active sessions."
+p#mydata-tokens-empty.manage-empty text="No outstanding stream tokens."
+p#mydata-sessions-error.error
+p#mydata-delete-result.manage-row-detail
+p#mydata-delete-error.error
+section#entity-view text="Back"
+section#seeall-view text="Back Load more"
+button#seeall-more text="Load more"
+p#libraries-error.error
+button#jobs-refresh.manage-action text="Refresh"
+p#jobs-empty.manage-empty text="No jobs."
+p#jobs-error.error
+p#schedules-empty.manage-empty text="No schedules."
+p#schedules-error.error
+p#trash-error.error
+div#artwork-dialog.manage-dialog-backdrop
+p#artwork-dialog-error.error
+div#fix-match-dialog.manage-dialog-backdrop text="Fix match Scraper Search query Search No matches found."
+p#fix-match-dialog-hint.manage-row-detail
+p#fix-match-no-candidates.manage-empty text="No matches found."
+p#fix-match-error.error
+div#external-id-dialog.manage-dialog-backdrop text="Add external ID Scheme (e.g. musicbrainz.recording) Value Add"
+p#external-id-error.error
+p#subscriptions-error.error
+p#pairing-result.pairing-result
+div#api-token-created.api-token-created
+p#api-tokens-error.error
+form#admin-unlock-form.manage-form text="Admin password Unlock Console"
+p#admin-unlock-error.error
+p#library-health-empty.manage-empty text="No libraries to report."
+p#library-health-error.error
+div#health-drill-panel.manage-subsection text="← Back Select all No items in this category."
+button#health-drill-bulk-action.manage-action
+p#health-drill-empty.manage-empty text="No items in this category."
+p#health-drill-no-selection.manage-empty
+p#health-drill-error.error
+div#console-cat-operations.console-category text="Remote access How this server is reachable from outside the LAN. Status only — no secret or token is ever shown here. Refresh LAN (direct)Always reachable on the local network over HTTP.Direct HTTPS ("
+p#remote-access-error.error
+p#console-config-error.error
+p#transcode-config-error.error
+p#live-sessions-error.error
+p#watcher-status-empty.manage-empty text="No libraries to watch."
+p#watcher-status-error.error
+div#bulk-ops-batch.manage-empty
+button#bulk-ops-undo.manage-action text="Undo batch"
+p#bulk-ops-error.error
+p#qbittorrent-error.error
+p#enrichment-index-empty.manage-empty text="No libraries to index."
+p#enrichment-error.error
+p#enrichment-review-error.error
+div#console-cat-access-profiles.console-category text="API keys Create scoped, named keys for third-party tools. Revoke any time. No API keys. Key name Scopes Read catalog Read sessions Ingest Subscribe to events Control playback Create key Access schedul"
+div#api-key-created.api-token-created
+p#api-keys-error.error
+p#access-schedule-empty.manage-empty
+div#access-schedule-controls text="Add window Save schedule"
+p#access-schedules-error.error
+p#enforced-filters-empty.manage-empty text="No installed plugin declares a certification scale."
+p#enforced-filters-error.error
+p#field-locks-empty.manage-empty text="Enter a media ID to view its field locks."
+p#field-locks-error.error
+div#console-cat-activity.console-category text="Activity Refresh admin.login12/31/1, 6:42:28 PMreveal.denied6/21/2026, 4:34:10 PMenroll.denied12/31/1, 6:42:28 PM No activity yet."
+p#activity-log-empty.manage-empty text="No activity yet."
+p#activity-log-error.error
+div#console-cat-setup.console-category text="First-run setup The onboarding steps this server still needs. Reading this leaks no secret — only whether setup finished. Admin password setDoneFirst library createdDoneOwner profile createdDonePlugin"
+p#setup-wizard-error.error
+p#migration-wizard-empty.manage-empty text="No importers available. Install an import-capable plugin to migrate."
+p#migration-wizard-error.error
+section#player-view text="Back 0:00 -0:00 − 0.0s +"
+canvas#player-visual-canvas.player-visual-canvas
+div#player-trickplay-preview.player-trickplay-preview
+button#player-skip-segment
+div#player-audio-menu.player-menu-list
+div#player-subtitle-menu.player-menu-list
+button#player-subtitle-style-button
+div#player-subtitle-style-panel.player-style-panel text="− 0.0s +"
+p#player-subtitle-style-unsupported.player-style-note
+div#player-quality-menu.player-menu-list
+div#player-info-overlay.player-info-overlay
+div#player-up-next.player-up-next
+p#player-message.error
+button#player-message-back
+
+## accessibility snapshot
+
+null

@@ -1,0 +1,19 @@
+{
+  "id": "pin-off-selects-none",
+  "regression": false,
+  "notes": "A pinned choice of \"subtitles off\" (selected=false) selects none even though the profile mode and available tracks would otherwise pre-select one.",
+  "input": {
+    "mode": "always",
+    "langPrefs": ["en"],
+    "preferSDH": false,
+    "audioTrackLang": "en",
+    "tracks": [
+      { "language": "en", "kind": "muxed", "forced": false, "sdh": false, "visualImpaired": false, "commentary": false }
+    ],
+    "perItemRecord": { "selected": false, "language": "", "kind": "", "forced": false, "sdh": false, "visualImpaired": false, "commentary": false }
+  },
+  "expected": {
+    "selection": null,
+    "unavailableReason": ""
+  }
+}

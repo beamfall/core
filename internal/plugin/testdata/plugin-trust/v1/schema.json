@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://beamfall.dev/contracts/plugin-trust/v1/schema.json",
+  "title": "Beamfall plugin artifact trust contract v1",
+  "$defs": {
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plugin_id", "version", "artifact_sha256", "author_key_id", "issued_at"],
+      "properties": {
+        "plugin_id": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "minLength": 1},
+        "artifact_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "author_key_id": {"type": "string", "minLength": 1},
+        "issued_at": {"type": "string", "format": "date-time"}
+      }
+    },
+    "authorSigned": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifest", "author_signature"],
+      "properties": {
+        "manifest": {"$ref": "#/$defs/manifest"},
+        "author_signature": {"type": "string", "description": "Raw URL-safe base64 Ed25519 signature over canonical JSON(manifest)."}
+      }
+    },
+    "countersigned": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["author_signed", "checks_version", "registry_key_id", "registry_countersignature"],
+      "properties": {
+        "author_signed": {"$ref": "#/$defs/authorSigned"},
+        "checks_version": {"type": "string", "minLength": 1},
+        "registry_key_id": {"type": "string", "minLength": 1},
+        "registry_countersignature": {"type": "string", "description": "Raw URL-safe base64 Ed25519 signature over canonical JSON(author_signed)."}
+      }
+    },
+    "revocationList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "issued_at", "revoked_key_ids"],
+      "properties": {
+        "version": {"type": "integer", "minimum": 1},
+        "issued_at": {"type": "string", "format": "date-time"},
+        "revoked_key_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+      }
+    },
+    "signedRevocationList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["list", "registry_key_id", "signature"],
+      "properties": {
+        "list": {"$ref": "#/$defs/revocationList"},
+        "registry_key_id": {"type": "string", "minLength": 1},
+        "signature": {"type": "string", "description": "Raw URL-safe base64 Ed25519 signature over canonical JSON({list,registry_key_id})."}
+      }
+    },
+    "keyset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "authors", "registries"],
+      "properties": {
+        "version": {"const": "1"},
+        "authors": {"type": "object", "additionalProperties": {"type": "string", "description": "Raw URL-safe base64 Ed25519 public key."}},
+        "registries": {"type": "object", "additionalProperties": {"type": "string", "description": "Raw URL-safe base64 Ed25519 public key."}}
+      }
+    },
+    "vector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "artifact", "envelope", "revocations", "author_signing_payload", "registry_signing_payload", "revocation_signing_payload", "expected"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "artifact": {"type": "string", "description": "Raw URL-safe base64 artifact bytes."},
+        "envelope": {"$ref": "#/$defs/countersigned"},
+        "revocations": {"$ref": "#/$defs/signedRevocationList"},
+        "author_signing_payload": {"type": "string", "description": "Raw URL-safe base64 canonical signing bytes."},
+        "registry_signing_payload": {"type": "string", "description": "Raw URL-safe base64 canonical signing bytes."},
+        "revocation_signing_payload": {"type": "string", "description": "Raw URL-safe base64 canonical signing bytes."},
+        "expected": {"enum": ["valid", "artifact_hash_mismatch", "author_signature_invalid", "registry_signature_invalid", "author_root_unknown", "registry_root_unknown", "author_key_revoked"]}
+      }
+    },
+    "vectors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "vectors"],
+      "properties": {
+        "version": {"const": "1"},
+        "vectors": {"type": "array", "minItems": 7, "maxItems": 7, "items": {"$ref": "#/$defs/vector"}}
+      }
+    }
+  }
+}

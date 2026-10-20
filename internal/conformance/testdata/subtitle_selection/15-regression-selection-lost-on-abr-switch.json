@@ -1,0 +1,23 @@
+{
+  "id": "regression-selection-lost-on-abr-switch",
+  "regression": true,
+  "eventSequence": true,
+  "notes": "Shipped competitor bug: a mid-session ABR rendition switch reset the player and silently lost the subtitle selection because it depended on transient session state. The resolver is a pure function of (tracks, prefs, audioTrackLang, pin) with no session-local memory, so a rendition-switch re-negotiation (encoded here as a second identical resolve) must reproduce a byte-identical selection and reason every time. Conformance runners for this case MUST resolve the input twice and assert both results equal this fixture's expected output.",
+  "input": {
+    "mode": "always",
+    "langPrefs": ["en"],
+    "preferSDH": false,
+    "audioTrackLang": "fr",
+    "tracks": [
+      { "language": "en", "kind": "muxed", "forced": false, "sdh": false, "visualImpaired": false, "commentary": false }
+    ],
+    "perItemRecord": null
+  },
+  "expected": {
+    "selection": {
+      "track": { "language": "en", "kind": "muxed", "roles": { "forced": false, "sdh": false, "visualImpaired": false, "commentary": false } },
+      "reason": "preferred-language subtitles"
+    },
+    "unavailableReason": ""
+  }
+}

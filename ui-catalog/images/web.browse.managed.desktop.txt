@@ -1,0 +1,136 @@
+# web.browse.managed.desktop
+
+## visible header
+
+<header> <span class="brand"><span class="mark" aria-hidden="true"></span><span id="brand-text">Beamfall</span></span> <nav id="nav" aria-label="Navigation"><button type="button" data-focus-navigation="0" class="active" aria-current="page">Home</button><button type="button" data-focus-navigation="1">Local Library</button></nav> <!-- Manage-register header state: the crumb replaces the Viewer nav and the Device Role chip keeps the role visible (design-system: role is visible state, never a hidden mode). --> <!-- Restrictions state (ADR-0004): the revealed session is visually explicit — the iris chip plus a Relock control; the Reveal affordance shows only while an adult Profile's session is locked. --> <button id="profile-open" type="button">Profile</button> <button id="mydata-open" type="button">My Data</button> <button id="promote-open" type="button">Promote this browser</button> <button id="sign-out" type="button">Sign out</button> </header>
+
+## visible main
+
+<main> <dialog id="restrictions-view"> <h1 id="restrictions-title">Restrictions</h1> <p id="restrictions-lead">Enter this profile's PIN to show restricted content for this session.</p> <form id="restrictions-form"> <label id="reveal-pin-label" for="reveal-pin">PIN</label> <input id="reveal-pin" name="pin" type="password" inputmode="numeric" autocomplete="off" spellcheck="false" required="" style=""> <button id="restrictions-submit" type="submit">Reveal</button> <button id="restrictions-cancel" type="button">Cancel</button> </form> </dialog> <section id="browse-view"> <form id="search-form" class="search-form" role="search"> <label id="search-label" class="sr-only" for="search-input">Search</label> <input id="search-input" name="query" type="search" autocomplete="off" spellcheck="false" placeholder="Search your libraries" style=""> <!-- Search-mode toggle (ADR-0041 #62): keyword always; semantic/auto appear/enable only when the capability endpoint reports the Enrichment Plugin present. Hidden until capability is known. --> <label id="search-mode-label" class="sr-only" for="search-mode">Search mode</label> <button id="search-submit" type="submit">Search</button> </form> <div id="sections"><div class="section-slot" data-focus-section="0"></div><div class="section-slot" data-focus-section="1"><section class="media-section" data-focus-section="1"><h2>Recently Added<button type="button" class="see-all">See all</button></h2><ul class="items kind-shelf"><li><button type="button" class="item-card" data-focus-section="1" data-focus-item="0"><div class="poster-frame"><img alt="" loading="lazy" src="/api/media/artwork/media-alpha/poster?v=1x59wkl0vk76c&amp;bucket=w320"></div><div class="card-copy"><span class="item-title">Sample Media</span><span class="item-summary">2 min</span></div></button></li></ul></section></div></div> </section> </main>
+
+## hidden element summaries
+
+span#manage-crumb.manage-crumb text="ManageMANAGER"
+span#revealed-chip.status-badge.status-restricted text="Revealed"
+button#relock text="Relock"
+button#restrictions-open text="Restrictions"
+button#manage-open text="Manage"
+aside#connection-banner.connection-banner text="Connection lost. Showing the last rendered view until the server responds."
+section#setup-view
+p#setup-error.error
+section#enroll-view text="Connect this browser Enter a pairing code from a manager device to enroll this browser as a viewer. Pairing code Device name Connect"
+p#enroll-error.error
+section#promote-view text="Promote this browser Enter a manager pairing code to promote this browser to a manager device. Manager pairing code Promote Cancel"
+p#promote-error.error
+section#profile-view text="Profiles Choose a profile for this session. Cancel"
+p#profile-error.error
+p#restrictions-error.error
+select#search-mode.search-mode text="Keyword Semantic Auto"
+section#search-results-view text="Search results Clear Titles People & Studios No matches."
+p#search-mode-notice.manage-empty
+section#search-titles-section text="Titles"
+section#search-entities-section text="People & Studios"
+p#search-empty.manage-empty text="No matches."
+p#search-error.error
+section#library-empty.library-empty text="Nothing to show in this library yet. This library has no visible content for the current profile and filters."
+section#mydata-view text="Back My Data & Privacy Everything here is your own data, scoped to this profile. Nothing is shared and nothing is sent anywhere. Export my engagement Download a copy of your playback progress, favorit"
+p#mydata-export-summary.manage-row-detail
+p#mydata-export-error.error
+p#mydata-sessions-empty.manage-empty text="No active sessions."
+p#mydata-tokens-empty.manage-empty text="No outstanding stream tokens."
+p#mydata-sessions-error.error
+p#mydata-delete-result.manage-row-detail
+p#mydata-delete-error.error
+section#entity-view text="Back"
+section#seeall-view text="Back Load more"
+button#seeall-more text="Load more"
+section#manage-view text="Back Manage Switch to light theme Libraries Title Plugin None Create Library Jobs Refresh No jobs. Schedules Refresh No schedules. Trash Trash is empty. Subscriptions Library No subscriptions for this"
+p#libraries-error.error
+span#jobs-live.jobs-live
+p#jobs-empty.manage-empty text="No jobs."
+p#jobs-error.error
+p#schedules-empty.manage-empty text="No schedules."
+p#schedules-error.error
+p#trash-empty.manage-empty text="Trash is empty."
+p#trash-error.error
+div#artwork-dialog.manage-dialog-backdrop
+p#artwork-dialog-error.error
+div#fix-match-dialog.manage-dialog-backdrop
+p#fix-match-dialog-hint.manage-row-detail
+p#fix-match-no-candidates.manage-empty
+p#fix-match-error.error
+div#external-id-dialog.manage-dialog-backdrop
+p#external-id-error.error
+p#subscriptions-empty.manage-empty text="No subscriptions for this Library."
+p#subscriptions-error.error
+p#pairing-result.pairing-result
+p#pairing-mint-error.error
+div#api-token-created.api-token-created
+p#api-tokens-empty.manage-empty text="No API tokens."
+p#api-tokens-error.error
+section#console-section.manage-section text="Console Operator settings. Enter the server admin password to unlock. Admin password Unlock Console Lock Console Library health Per-library quality across five dimensions. Refresh No libraries to repo"
+div#console-active text="Lock Console"
+p#admin-unlock-error.error
+div#console-screens text="Library health Per-library quality across five dimensions. Refresh No libraries to report. Remote access How this server is reachable from outside the LAN. Status only — no secret or token is ever sho"
+div#console-cat-health.console-category text="Library health Per-library quality across five dimensions. Refresh No libraries to report."
+p#library-health-empty.manage-empty text="No libraries to report."
+p#library-health-error.error
+div#health-drill-panel.manage-subsection
+button#health-drill-bulk-action.manage-action
+p#health-drill-empty.manage-empty
+p#health-drill-no-selection.manage-empty
+p#health-drill-error.error
+div#console-cat-operations.console-category text="Remote access How this server is reachable from outside the LAN. Status only — no secret or token is ever shown here. Refresh Server configuration Operational runtime settings and plugin activation. B"
+p#remote-access-error.error
+p#console-config-error.error
+p#transcode-config-error.error
+p#live-sessions-empty.manage-empty text="No active sessions."
+p#live-sessions-error.error
+p#watcher-status-empty.manage-empty text="No libraries to watch."
+p#watcher-status-error.error
+div#bulk-ops-batch.manage-empty
+button#bulk-ops-undo.manage-action text="Undo batch"
+p#bulk-ops-error.error
+p#qbittorrent-empty.manage-empty text="qBittorrent ingest is not configured."
+p#qbittorrent-error.error
+p#enrichment-index-empty.manage-empty text="No libraries to index."
+p#enrichment-error.error
+p#enrichment-review-empty.manage-empty text="No tags awaiting review."
+p#enrichment-review-error.error
+div#console-cat-access-profiles.console-category text="API keys Create scoped, named keys for third-party tools. Revoke any time. No API keys. Key name Scopes Read catalog Read sessions Ingest Subscribe to events Control playback Create key Access schedul"
+div#api-key-created.api-token-created
+p#api-keys-empty.manage-empty text="No API keys."
+p#api-keys-error.error
+p#access-schedule-empty.manage-empty
+div#access-schedule-controls text="Add window Save schedule"
+p#access-schedules-error.error
+p#enforced-filters-empty.manage-empty text="No installed plugin declares a certification scale."
+p#enforced-filters-error.error
+p#field-locks-empty.manage-empty text="Enter a media ID to view its field locks."
+p#field-locks-error.error
+div#console-cat-activity.console-category text="Activity Refresh No activity yet."
+p#activity-log-empty.manage-empty text="No activity yet."
+p#activity-log-error.error
+div#console-cat-setup.console-category text="First-run setup The onboarding steps this server still needs. Reading this leaks no secret — only whether setup finished. Migration wizard Import from another system through an installed importer. Imp"
+p#setup-wizard-summary.manage-empty
+p#setup-wizard-error.error
+p#migration-wizard-empty.manage-empty text="No importers available. Install an import-capable plugin to migrate."
+p#migration-wizard-error.error
+section#player-view text="Back 0:00 -0:00 − 0.0s +"
+canvas#player-visual-canvas.player-visual-canvas
+div#player-trickplay-preview.player-trickplay-preview
+button#player-skip-segment
+div#player-audio-menu.player-menu-list
+div#player-subtitle-menu.player-menu-list
+button#player-subtitle-style-button
+div#player-subtitle-style-panel.player-style-panel text="− 0.0s +"
+p#player-subtitle-style-unsupported.player-style-note
+div#player-quality-menu.player-menu-list
+div#player-info-overlay.player-info-overlay
+div#player-up-next.player-up-next
+p#player-message.error
+button#player-message-back
+
+## accessibility snapshot
+
+null

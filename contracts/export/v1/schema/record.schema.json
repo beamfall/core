@@ -1,0 +1,98 @@
+{
+  "$comment": "SPDX-License-Identifier: Apache-2.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.beamfall.org/export/v1.0.0/schema/record.schema.json",
+  "title": "Beamfall Export JSON Lines Record v1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["formatVersion", "class", "id", "updatedAt", "payload"],
+  "properties": {
+    "formatVersion": { "const": "1.0.0" },
+    "class": { "$ref": "#/$defs/entityClass" },
+    "id": { "$ref": "#/$defs/nonEmptyString" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "payload": { "type": "object" }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/library" },
+    { "$ref": "#/$defs/profile" },
+    { "$ref": "#/$defs/profilePolicy" },
+    { "$ref": "#/$defs/media" },
+    { "$ref": "#/$defs/entity" },
+    { "$ref": "#/$defs/metadataEdit" },
+    { "$ref": "#/$defs/disposition" },
+    { "$ref": "#/$defs/tag" },
+    { "$ref": "#/$defs/tagAssignment" },
+    { "$ref": "#/$defs/collection" },
+    { "$ref": "#/$defs/collectionItem" },
+    { "$ref": "#/$defs/marker" },
+    { "$ref": "#/$defs/watchState" },
+    { "$ref": "#/$defs/fieldLock" },
+    { "$ref": "#/$defs/objectHistory" }
+  ],
+  "$defs": {
+    "nonEmptyString": { "type": "string", "minLength": 1 },
+    "nullableID": { "type": ["string", "null"], "minLength": 1 },
+    "relativePath": { "type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*//)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^/\\u0000]+(?:/[^/\\u0000]+)*$" },
+    "entityClass": { "enum": ["library", "profile", "profilePolicy", "media", "entity", "metadataEdit", "disposition", "tag", "tagAssignment", "collection", "collectionItem", "marker", "watchState", "fieldLock", "objectHistory"] },
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["class", "id"],
+      "properties": {
+        "class": { "$ref": "#/$defs/entityClass" },
+        "id": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "classPayload": {
+      "type": "object",
+      "required": ["class", "payload"],
+      "properties": { "class": {}, "payload": {} }
+    },
+    "library": {
+      "allOf": [{ "$ref": "#/$defs/classPayload" }, { "properties": { "class": { "const": "library" }, "payload": { "type": "object", "additionalProperties": false, "required": ["title", "pluginID", "restricted", "configuration"], "properties": { "title": { "$ref": "#/$defs/nonEmptyString" }, "pluginID": { "type": ["string", "null"] }, "restricted": { "type": "boolean" }, "configuration": { "type": "object" } } } } }]
+    },
+    "profile": {
+      "allOf": [{ "$ref": "#/$defs/classPayload" }, { "properties": { "class": { "const": "profile" }, "payload": { "type": "object", "additionalProperties": false, "required": ["name", "kind", "libraryIDs"], "properties": { "name": { "$ref": "#/$defs/nonEmptyString" }, "kind": { "$ref": "#/$defs/nonEmptyString" }, "libraryIDs": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" }, "uniqueItems": true } } } } }]
+    },
+    "profilePolicy": {
+      "allOf": [{ "$ref": "#/$defs/classPayload" }, { "properties": { "class": { "const": "profilePolicy" }, "payload": { "type": "object", "additionalProperties": false, "required": ["profileID", "configuration"], "properties": { "profileID": { "$ref": "#/$defs/nonEmptyString" }, "configuration": { "type": "object" } } } } }]
+    },
+    "media": {
+      "allOf": [{ "$ref": "#/$defs/classPayload" }, { "properties": { "class": { "const": "media" }, "payload": { "type": "object", "additionalProperties": false, "required": ["libraryID", "title", "fields", "relations", "objects"], "properties": { "libraryID": { "$ref": "#/$defs/nonEmptyString" }, "title": { "$ref": "#/$defs/nonEmptyString" }, "fields": { "type": "object" }, "relations": { "type": "array", "items": { "type": "object" } }, "objects": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["path"], "properties": { "path": { "allOf": [{ "$ref": "#/$defs/relativePath" }, { "type": "string", "pattern": "^media/[^/]+(?:/[^/]+)*$" }] } } } } } } } }]
+    },
+    "entity": {
+      "allOf": [{ "$ref": "#/$defs/classPayload" }, { "properties": { "class": { "const": "entity" }, "payload": { "type": "object", "additionalProperties": false, "required": ["libraryID", "kind", "title", "fields", "relations"], "properties": { "libraryID": { "$ref": "#/$defs/nonEmptyString" }, "kind": { "$ref": "#/$defs/nonEmptyString" }, "title": { "$ref": "#/$defs/nonEmptyString" }, "fields": { "type": "object" }, "relations": { "type": "array", "items": { "type": "object" } } } } } }]
+    },
+    "metadataEdit": {
+      "allOf": [{ "$ref": "#/$defs/classPayload" }, { "properties": { "class": { "const": "metadataEdit" }, "payload": { "type": "object", "additionalProperties": false, "required": ["target", "field", "value", "profileID"], "properties": { "target": { "$ref": "#/$defs/reference" }, "field": { "$ref": "#/$defs/nonEmptyString" }, "value": {}, "profileID": { "$ref": "#/$defs/nullableID" } } } } }]
+    },
+    "disposition": {
+      "allOf": [{ "$ref": "#/$defs/classPayload" }, { "properties": { "class": { "const": "disposition" }, "payload": { "type": "object", "additionalProperties": false, "required": ["target", "profileID", "value"], "properties": { "target": { "$ref": "#/$defs/reference" }, "profileID": { "$ref": "#/$defs/nullableID" }, "value": { "$ref": "#/$defs/nonEmptyString" } } } } }]
+    },
+    "tag": {
+      "allOf": [{ "$ref": "#/$defs/classPayload" }, { "properties": { "class": { "const": "tag" }, "payload": { "type": "object", "additionalProperties": false, "required": ["name", "parentTagID"], "properties": { "name": { "$ref": "#/$defs/nonEmptyString" }, "parentTagID": { "$ref": "#/$defs/nullableID" } } } } }]
+    },
+    "tagAssignment": {
+      "allOf": [{ "$ref": "#/$defs/classPayload" }, { "properties": { "class": { "const": "tagAssignment" }, "payload": { "type": "object", "additionalProperties": false, "required": ["tagID", "target"], "properties": { "tagID": { "$ref": "#/$defs/nonEmptyString" }, "target": { "$ref": "#/$defs/reference" } } } } }]
+    },
+    "collection": {
+      "allOf": [{ "$ref": "#/$defs/classPayload" }, { "properties": { "class": { "const": "collection" }, "payload": { "type": "object", "additionalProperties": false, "required": ["libraryID", "name", "parentCollectionID", "sortOrder"], "properties": { "libraryID": { "$ref": "#/$defs/nonEmptyString" }, "name": { "$ref": "#/$defs/nonEmptyString" }, "parentCollectionID": { "$ref": "#/$defs/nullableID" }, "sortOrder": { "type": "integer" } } } } }]
+    },
+    "collectionItem": {
+      "allOf": [{ "$ref": "#/$defs/classPayload" }, { "properties": { "class": { "const": "collectionItem" }, "payload": { "type": "object", "additionalProperties": false, "required": ["collectionID", "target", "sortOrder"], "properties": { "collectionID": { "$ref": "#/$defs/nonEmptyString" }, "target": { "$ref": "#/$defs/reference" }, "sortOrder": { "type": "integer" } } } } }]
+    },
+    "marker": {
+      "allOf": [{ "$ref": "#/$defs/classPayload" }, { "properties": { "class": { "const": "marker" }, "payload": { "type": "object", "additionalProperties": false, "required": ["mediaID", "title", "startSeconds", "endSeconds", "segmentKind"], "properties": { "mediaID": { "$ref": "#/$defs/nonEmptyString" }, "title": { "type": "string" }, "startSeconds": { "type": "number", "minimum": 0 }, "endSeconds": { "type": ["number", "null"], "exclusiveMinimum": 0 }, "segmentKind": { "type": ["string", "null"], "enum": ["intro", "credits", "recap", "preview", "commercial", null] } } } } }]
+    },
+    "watchState": {
+      "allOf": [{ "$ref": "#/$defs/classPayload" }, { "properties": { "class": { "const": "watchState" }, "payload": { "type": "object", "additionalProperties": false, "required": ["profileID", "mediaID", "positionSeconds", "durationSeconds", "watched", "rating", "playCount"], "properties": { "profileID": { "$ref": "#/$defs/nonEmptyString" }, "mediaID": { "$ref": "#/$defs/nonEmptyString" }, "positionSeconds": { "type": "number", "minimum": 0 }, "durationSeconds": { "type": "number", "minimum": 0 }, "watched": { "type": "boolean" }, "rating": { "type": ["number", "null"] }, "playCount": { "type": "integer", "minimum": 0 } } } } }]
+    },
+    "fieldLock": {
+      "allOf": [{ "$ref": "#/$defs/classPayload" }, { "properties": { "class": { "const": "fieldLock" }, "payload": { "type": "object", "additionalProperties": false, "required": ["target", "field", "locked", "profileID"], "properties": { "target": { "$ref": "#/$defs/reference" }, "field": { "$ref": "#/$defs/nonEmptyString" }, "locked": { "type": "boolean" }, "profileID": { "$ref": "#/$defs/nullableID" } } } } }]
+    },
+    "objectHistory": {
+      "allOf": [{ "$ref": "#/$defs/classPayload" }, { "properties": { "class": { "const": "objectHistory" }, "payload": { "type": "object", "additionalProperties": false, "required": ["target", "actorProfileID", "kind", "occurredAt", "before", "after"], "properties": { "target": { "$ref": "#/$defs/reference" }, "actorProfileID": { "$ref": "#/$defs/nullableID" }, "kind": { "$ref": "#/$defs/nonEmptyString" }, "occurredAt": { "type": "string", "format": "date-time" }, "before": { "type": ["object", "null"] }, "after": { "type": ["object", "null"] } } } } }]
+    }
+  }
+}

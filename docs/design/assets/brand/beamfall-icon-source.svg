@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+<title id="title">Beamfall</title>
+<desc id="desc">Cut Beam: a geometric B with subtle cyan depth and a highlighted diagonal cut.</desc>
+<defs>
+<path id="mark" d="M96 48H256C336 48 384 90 384 158C384 199 365 228 328 244C380 262 408 301 408 350C408 423 355 464 280 464H212V248L312 344V270C312 243 300 225 278 204L188 130V464H96Z"/>
+<clipPath id="clip"><use href="#mark"/></clipPath>
+<linearGradient id="body" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#b1f4f7"/><stop offset=".34" stop-color="#55dce7"/><stop offset=".68" stop-color="#37c9dd"/><stop offset="1" stop-color="#248ea9"/></linearGradient>
+<linearGradient id="rim" x1="0" y1="0" x2=".8" y2="1"><stop stop-color="#efffff" stop-opacity=".58"/><stop offset=".55" stop-color="#d2faff" stop-opacity=".1"/><stop offset="1" stop-color="#094e6c" stop-opacity=".3"/></linearGradient>
+<linearGradient id="edge" x1="188" y1="130" x2="312" y2="300" gradientUnits="userSpaceOnUse"><stop stop-color="#f1ffff"/><stop offset=".62" stop-color="#d6ffff" stop-opacity=".75"/><stop offset="1" stop-color="#d6ffff" stop-opacity="0"/></linearGradient>
+
+</defs>
+<use href="#mark" fill="url(#body)"/>
+<g clip-path="url(#clip)">
+  <use href="#mark" fill="none" stroke="url(#rim)" stroke-width="2"/>
+  <path d="M188 130L278 204C300 225 312 243 312 270V292" fill="none" stroke="url(#edge)" stroke-width="2.4"/>
+</g>
+</svg>

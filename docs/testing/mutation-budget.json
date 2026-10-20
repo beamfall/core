@@ -1,0 +1,36 @@
+{
+  "_doc": "ADR-0121 §5 / TEST-CORE-6 surviving-mutant budget. Each entry's max_surviving is a RATCHET FLOOR: script/mutation-test.sh FAILS if a package's gremlins `mutants_lived` exceeds it. The floor may only be re-pinned DOWNWARD to a newly-measured value (a kill that lands), never raised by rot. Seeds below came from real exit-0 gremlins v0.6.0 runs (TEST-CORE-6). Advisory nightly tier only — NOT part of `make gate`.",
+  "tool": "gremlins",
+  "tool_version": "0.6.0",
+  "adr": "0121",
+  "ticket": "TEST-CORE-6",
+  "migrations": [],
+  "source_exclusions": {
+    "./internal/streamtoken": [],
+    "./internal/webhook": [],
+    "./internal/offlinepack": []
+  },
+  "packages": {
+    "./internal/streamtoken": {
+      "max_surviving": 0,
+      "measured_killed": 24,
+      "measured_lived": 0,
+      "measured_not_covered": 0,
+      "note": "spike package — demonstrated green first (ADR-0121 §5)"
+    },
+    "./internal/webhook": {
+      "max_surviving": 0,
+      "measured_killed": 46,
+      "measured_lived": 0,
+      "measured_not_covered": 13,
+      "note": "not_covered mutants are untested (no fail); ratchet target is to cover them"
+    },
+    "./internal/offlinepack": {
+      "max_surviving": 0,
+      "measured_killed": 58,
+      "measured_lived": 0,
+      "measured_not_covered": 3,
+      "note": "offline-pack cipher modules (ADR-0121 §5 named set)"
+    }
+  }
+}

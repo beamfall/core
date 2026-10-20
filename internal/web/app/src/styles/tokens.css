@@ -1,0 +1,173 @@
+/* Beamfall design-system tokens — canonical sRGB token import.
+ *
+ * Source of truth: beamfall-design-system/tokens/generated/beamfall-tokens.css
+ * Governance: core-web-app is registered as an import-marker client in
+ * beamfall-design-system/tokens/clients.json (ADR-0106).
+ *
+ * @import beamfall-tokens.css  ← governance marker (conformance.mjs)
+ *
+ * The generated canonical tokens live in a sibling repo. This embedded app
+ * keeps an inlined copy so the Go binary builds without a cross-repo runtime
+ * dependency; re-inline after regenerating canonical tokens.
+ *
+ * Registers switch by attribute on <html>:
+ *   (default :root)                           -> Cinema Dark (Viewer)
+ *   data-register="manage"                    -> Workbench Dark
+ *   data-register="manage" data-theme="light" -> Workbench Light
+ */
+
+/* ---- Canonical primitives + theme blocks (inlined from beamfall-tokens.css) ---- */
+
+:root {
+  /* color primitives */
+  --night-950: #070c10;
+  --night-900: #0f171d;
+  --night-800: #18232b;
+  --paper-50: #f3f7f9;
+  --paper-100: #e7eff3;
+  --paper-200: #d6e3e9;
+  --brand-cyan-300: #9fd8e5;
+  --brand-cyan-500: #4ba6be;
+  --brand-cyan-700: #176a80;
+  --beam-500: #9fd8e5;
+  --green-500: #52bc7f;
+  --cyan-500: #6f8fc9;
+  --iris-500: #bd81c5;
+  --amber-500: #e0b34a;
+  --red-500: #d96e63;
+
+  /* radius */
+  --radius-control: 6px;
+  --radius-card: 8px;
+
+  /* motion */
+  --duration-fast: 140ms;
+  --duration-normal: 220ms;
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-emphasis: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ---- Derived primitives (not in canonical; used by chrome.css and other surfaces) ----
+ * These sRGB values correspond to the OKLCH originals used in chrome.css.
+ * Kept as local bridge tokens until those surfaces migrate to canonical semantic vars.
+ * Do not add new uses of these primitives; prefer the semantic tokens below instead. */
+:root {
+  /* Between --night-950 and --night-900 */
+  --night-925: #0b1217;
+  /* Between --night-900 and --night-800 */
+  --night-850: #131d24;
+  /* Workbench text (maps to canonical cinema --text and workbench --text) */
+  --mist-100: #eef6f8;
+  --mist-200: #d9e7ec;
+  --mist-500: #9bb0ba;
+  /* Workbench light text (maps to canonical workbench --text / --text-muted) */
+  --ink-950: #162128;
+  --ink-700: #52656f;
+  /* A slightly darker beam for pressed/active states */
+  --beam-600: #4ba6be;
+  /* Cinema border; matches canonical .theme-cinema --line exactly */
+  --line-dark: #31414a;
+}
+
+/* ---- Cinema Dark (Viewer default) — :root semantic roles ---- */
+:root {
+  color-scheme: dark;
+
+  --bg-root: var(--night-950);
+  --bg-surface: var(--night-900);
+  --bg-raised: var(--night-800);
+
+  /* Canonical rename: border-subtle → line (kept as alias for existing consumers) */
+  --line: var(--line-dark);
+  --border-subtle: var(--line);
+
+  /* Canonical rename: text-primary → text (kept as alias) */
+  --text: var(--mist-100);
+  --text-primary: var(--text);
+  --text-secondary: var(--mist-200);
+  --text-muted: var(--mist-500);
+
+  --accent: var(--beam-500);
+  --accent-ink: var(--night-950);
+  --state-direct: var(--green-500);
+  --state-remote: var(--cyan-500);
+  --state-restricted: var(--iris-500);
+  --state-warning: var(--amber-500);
+  --state-danger: var(--red-500);
+  --focus-ring: rgba(159, 216, 229, 0.92);
+
+  --control-bg: rgba(32, 36, 44, 0.6);
+  --control-bg-hover: var(--night-800);
+}
+
+/* ---- Workbench Dark (Manage register default) ---- */
+[data-register="manage"] {
+  color-scheme: dark;
+
+  --bg-root: var(--night-950);
+  --bg-surface: var(--night-900);
+  --bg-raised: var(--night-800);
+
+  --line: var(--line-dark);
+  --border-subtle: var(--line);
+  --border-strong: #3e4450;
+
+  --text: var(--mist-100);
+  --text-primary: var(--text);
+  --text-secondary: var(--mist-200);
+  --text-muted: var(--mist-500);
+
+  --accent: var(--beam-500);
+  --accent-ink: var(--night-950);
+  --state-direct: var(--green-500);
+  --state-remote: var(--cyan-500);
+  --state-restricted: var(--iris-500);
+  --state-warning: var(--amber-500);
+  --state-danger: var(--red-500);
+  --focus-ring: rgba(159, 216, 229, 0.92);
+
+  /* Workbench chrome (consumed by chrome.css [data-register="manage"]) */
+  --workbench-root-foot: #070c10;
+  --workbench-header-bg: #0f171d;
+  --workbench-header-accent: rgba(75, 166, 190, 0.22);
+}
+
+/* ---- Workbench Light (Manage + light theme) ---- */
+[data-register="manage"][data-theme="light"] {
+  color-scheme: light;
+
+  --bg-root: var(--paper-50);
+  --bg-surface: #f8fbfc;
+  --bg-raised: #fcfeff;
+  --bg-overlay: rgba(248, 251, 252, 0.94);
+
+  --line: #7b929e;
+  --line-soft: rgba(23, 51, 64, 0.1);
+  --border-subtle: var(--line);
+  --border-strong: #657f8b;
+
+  /* Canonical paper-* primitives bridge for Workbench Light */
+  --text: var(--ink-950);
+  --text-primary: var(--text);
+  --text-secondary: var(--ink-700);
+  --text-muted: var(--ink-700);
+
+  --accent: var(--brand-cyan-500);
+  --accent-on-light: #176a80;
+  --accent-ink: var(--night-950);
+  --state-direct: #267d4f;
+  --state-remote: #3f619e;
+  --state-restricted: #8f5a97;
+  --state-warning: #92670f;
+  --state-danger: #b8453a;
+  --focus-ring: rgba(23, 106, 128, 0.82);
+  --shadow-card: 0 6px 18px rgba(20, 46, 58, 0.1);
+  --shadow-window: 0 24px 60px rgba(20, 46, 58, 0.16);
+
+  --control-bg: #f8fbfc;
+  --control-bg-hover: var(--paper-100);
+
+  --workbench-root-foot: var(--paper-100);
+  --workbench-header-bg: #f8fbfc;
+  --workbench-header-accent: rgba(23, 106, 128, 0.2);
+}

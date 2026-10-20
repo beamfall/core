@@ -1,0 +1,1 @@
+{"formatVersion":"1.0.0","class":"media","id":"media-1","updatedAt":"2026-07-11T00:00:00Z","payload":{"libraryID":"library-1","title":"Example Media","fields":{"durationSeconds":120},"relations":[],"objects":[{"path":"media/library-1/example-media.bin"}]}}

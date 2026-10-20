@@ -1,0 +1,719 @@
+/* Console (Admin) area — the Workbench register treatment.
+ *
+ * Source of truth: docs/design-system.md and the Console Workbench mockups:
+ * server-shaped, dense, table-like, restrained accent (beam only on primary
+ * action + focus).
+ *
+ * Everything is scoped under `.console-area` so it never leaks into the
+ * Viewer or Manager areas. The shadcn primitives are already themed by the
+ * Beamfall tokens (src/styles/global.css); this layer tightens density and
+ * adds the OKLCH status fills Tailwind utilities can't express cleanly. */
+
+.console-area {
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Section sidebar: grouped rail, beam-keyline active state --- */
+
+.console-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.console-nav-group {
+  margin-top: 14px;
+}
+
+.console-nav-group:first-child {
+  margin-top: 0;
+}
+
+.console-nav-group-label {
+  margin: 0 0 4px;
+  padding: 0 8px;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+summary.console-nav-group-label {
+  cursor: pointer;
+  list-style-position: inside;
+}
+
+summary.console-nav-group-label:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.console-nav-link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px 7px 12px;
+  border-radius: var(--radius-control);
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
+}
+
+.console-nav-link:hover {
+  color: var(--text-primary);
+  background: var(--control-bg-hover);
+}
+
+.console-nav-link:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+/* Active section: a quiet beam keyline + raised fill — accent as selection
+ * state, never a full beam tab (design system: restrained accent). */
+.console-nav-link.is-active {
+  color: var(--text-primary);
+  background: var(--bg-raised);
+  font-weight: 650;
+}
+
+.console-nav-link.is-active::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.console-nav-icon {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  opacity: 0.85;
+}
+
+.console-overview-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.console-overview-tile,
+.console-triage-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 18px;
+  text-decoration: none;
+}
+
+.console-triage-row {
+  border-width: 0 0 1px;
+  border-radius: 0;
+}
+
+.console-triage-row:last-child {
+  border-bottom: 0;
+}
+
+.console-triage-row:hover {
+  background: var(--control-bg-hover);
+}
+
+.console-triage-row:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.console-disclosure {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+}
+
+.console-disclosure > summary {
+  cursor: pointer;
+  padding: 11px 16px;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 700;
+}
+
+.console-disclosure > summary:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.console-disclosure-body {
+  border-top: 1px solid var(--border-subtle);
+  padding: 14px 16px;
+}
+
+/* --- Active-session bar: "Console unlocked" operator state --- */
+
+.console-session-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 8px 14px 8px 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+}
+
+.console-session-bar::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.console-session-lead {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--text-secondary);
+}
+
+.console-session-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--green-500);
+  box-shadow: 0 0 0 3px oklch(70% 0.14 150 / 22%);
+}
+
+/* --- Admin gate: a calm, centered unlock surface --- */
+
+.console-gate {
+  max-width: 26rem;
+  margin: 40px auto 0;
+}
+
+.console-gate-mark {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  margin-bottom: 4px;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-raised);
+  color: var(--accent);
+}
+
+/* --- Section cards: dense, hairline-separated, restrained --- */
+
+.console-section + .console-section {
+  margin-top: 32px;
+}
+
+.console-card {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+}
+
+.console-card-pad {
+  padding: 14px 16px;
+}
+
+/* Grouped fieldsets — a settings-console read: a labeled keyline-separated
+ * block of controls. */
+.console-fieldset {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+  padding: 0;
+  margin: 0;
+}
+
+.console-fieldset-head {
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.console-fieldset-title {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.console-fieldset-help {
+  margin: 3px 0 0;
+  max-width: 60ch;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text-muted);
+}
+
+.console-fieldset-body {
+  padding: 14px 16px;
+}
+
+/* A key/value control row inside a fieldset (label left, control right). */
+.console-control-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.console-control-row:first-child {
+  padding-top: 0;
+}
+
+.console-control-row:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.console-control-label {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.console-control-help {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text-muted);
+}
+
+/* --- Dense data table — table-like rows, hover, aligned numerics --- */
+
+.console-table {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+/* Tighten the shadcn table to Workbench density: shorter header, denser
+ * cells, hairline rows, hover, and a quiet raised header band. */
+.console-table table {
+  font-size: 13px;
+}
+
+.console-table thead th {
+  height: 34px;
+  padding: 0 12px;
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.console-table tbody td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: middle;
+}
+
+.console-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.console-table tbody tr:hover {
+  background: var(--control-bg-hover);
+}
+
+/* The aggregate / total row reads heavier and is set off by a band. */
+.console-table tbody tr.is-aggregate {
+  background: var(--bg-raised);
+  font-weight: 650;
+}
+
+.console-table tbody tr.is-aggregate:hover {
+  background: var(--bg-raised);
+}
+
+.console-num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* A muted, monospace timestamp / id cell. */
+.console-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Secret-shown-once banner: the one moment the screen must be
+ * unmissable (ported from .api-token-created). Beam keyline — this is a
+ * sanctioned accent surface (a primary, irreversible result). --- */
+
+.console-secret {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid oklch(82% 0.145 92 / 40%);
+  border-radius: var(--radius-card);
+  background: oklch(82% 0.145 92 / 10%);
+}
+
+[data-theme="light"] .console-secret {
+  border-color: oklch(63% 0.135 92 / 55%);
+  background: oklch(63% 0.135 92 / 12%);
+}
+
+.console-secret-lead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.console-secret-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.console-secret-value {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: 9px 11px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--bg-root);
+  color: var(--text-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* --- Empty / unavailable states: quiet, centered in their card --- */
+
+.console-empty {
+  display: grid;
+  place-items: center;
+  gap: 6px;
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.console-empty-icon {
+  width: 20px;
+  height: 20px;
+  opacity: 0.6;
+}
+
+.console-empty-line {
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* --- Setup wizard: numbered checklist rows --- */
+
+.console-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.console-step:last-child {
+  border-bottom: none;
+}
+
+/* The setup-funnel checklist renders each step as a deep-link (Seam B): make
+   it read as clickable without changing the row layout. */
+a.console-step {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.console-step:hover {
+  background: var(--surface-hover, oklch(60% 0 0 / 8%));
+}
+
+.console-step-index {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.console-step.is-done .console-step-index {
+  border-color: oklch(70% 0.14 150 / 60%);
+  color: var(--green-500);
+}
+
+.console-step-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------------------
+ * Jobs-live (mockup web-app/console-jobs-live.html): the live-connection
+ * indicator, the flat job-row list, and the channel segmented toggle. The
+ * indicator is the heart of the screen — a pulsing dot signals SSE liveness
+ * (live), an amber blink signals auto-retry (reconnecting), and the paused
+ * state demotes to a manual-refresh fallback button. Tokens only, no hex.
+ * ------------------------------------------------------------------------- */
+.console-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.console-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.console-live.is-live {
+  color: var(--green-500);
+}
+.console-live.is-live .console-live-dot {
+  animation: console-live-pulse 1.6s ease-in-out infinite;
+}
+
+.console-live.is-reconnecting {
+  color: var(--amber-500);
+}
+.console-live.is-reconnecting .console-live-dot {
+  animation: console-live-blink 1s steps(2) infinite;
+}
+
+.console-live.is-paused {
+  color: var(--text-muted);
+}
+
+/* The paused-state fallback button reuses the indicator shell plus an accent
+ * label — the only state that exposes a manual refresh (honest, never-silent). */
+.console-live-refresh {
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--accent);
+  gap: 6px;
+}
+.console-live-refresh .console-live-dot {
+  background: var(--text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .console-live .console-live-dot {
+    animation: none;
+  }
+}
+
+@keyframes console-live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.8);
+  }
+}
+
+@keyframes console-live-blink {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.25;
+  }
+}
+
+/* Flat job-row list (mockup .job-row): name + progress bar + numeric + badge,
+ * hairline-separated — replaces the dense data table for the live jobs panel. */
+.console-job-list {
+  padding: 2px 0;
+}
+
+.console-job-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 12px;
+}
+.console-job-row:first-child {
+  border-top: 0;
+}
+
+.console-job-name {
+  width: 140px;
+  flex: 0 0 auto;
+  color: var(--text-primary);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.console-jbar {
+  flex: 1;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--bg-raised);
+  overflow: hidden;
+}
+.console-jbar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+.console-jbar i.warn {
+  background: var(--amber-500);
+}
+.console-jbar i.danger {
+  background: var(--red-500);
+}
+
+.console-job-num {
+  width: 64px;
+  flex: 0 0 auto;
+  text-align: right;
+}
+
+/* Per-job action tail (mockup .jactions): Logs + Cancel/Retry, right of the
+ * status badge. Operations job-rows carry actions and may flow-wrap on a narrow
+ * console; the inline log opens full-width beneath the row. */
+.console-job-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+.console-job-row-ops {
+  flex-wrap: wrap;
+}
+.console-job-log {
+  flex: 1 0 100%;
+  margin-top: 8px;
+}
+
+/* Labeled disk/budget meter (mockup .meter): a head row (label + numeric read)
+ * over a rounded track. The fill warns amber when over budget. Distinct from
+ * the inline .console-jbar (which has no head row). */
+.console-meter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.console-meter-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 12px;
+}
+.console-meter-track {
+  height: 7px;
+  border-radius: 999px;
+  background: var(--bg-raised);
+  overflow: hidden;
+}
+.console-meter-track i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+.console-meter-track i.warn {
+  background: var(--amber-500);
+}
+
+/* Stream-state dim: reconnecting/paused fade the last-good rows (fail-soft). */
+.console-job-list[data-stream="reconnecting"] {
+  opacity: 0.6;
+}
+.console-job-list[data-stream="paused"] {
+  opacity: 0.5;
+}
+
+/* Channel segmented toggle (mockup .segmented): Stable / Beta pill switch. */
+.console-segmented {
+  display: inline-flex;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.console-segmented button {
+  border: 0;
+  padding: 6px 12px;
+  font-size: 12px;
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.console-segmented button + button {
+  border-left: 1px solid var(--border-subtle);
+}
+.console-segmented button.sel {
+  background: var(--accent);
+  color: var(--color-primary-foreground);
+  font-weight: 600;
+}
+.console-segmented button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

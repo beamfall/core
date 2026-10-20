@@ -1,0 +1,1473 @@
+[
+  {
+    "id": "web.enroll.signed-out.desktop",
+    "surface": "web",
+    "screen": "enroll",
+    "state": "signed-out",
+    "features": [
+      "pairing-enroll",
+      "session-lifecycle"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007",
+      "0012"
+    ],
+    "fixture": "conformance:unenrolled",
+    "intent": "An unenrolled browser sees only the enrollment view: a pairing-code field and device-name field with a submit affordance. No catalog, Profile, Manage, or Reveal affordance is present — nothing hints at restricted content. The device secret is never placed in JS-readable space (it rides HttpOnly cookies set by the server).",
+    "screenshot": "images/web.enroll.signed-out.desktop.png",
+    "hierarchy": "images/web.enroll.signed-out.desktop.txt",
+    "baseline": "baselines/web.enroll.signed-out.desktop.png",
+    "status": "listed",
+    "note": "React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.enroll.signed-out.mobile",
+    "surface": "web",
+    "screen": "enroll",
+    "state": "signed-out",
+    "features": [
+      "pairing-enroll",
+      "session-lifecycle"
+    ],
+    "viewport": {
+      "name": "mobile",
+      "w": 390,
+      "h": 844
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007",
+      "0012"
+    ],
+    "fixture": "conformance:unenrolled",
+    "intent": "The enrollment view reflows to a narrow viewport without truncation or horizontal scroll: pairing-code and device-name fields stack, the submit affordance stays reachable. Still no catalog/Manage/Reveal affordance.",
+    "screenshot": "images/web.enroll.signed-out.mobile.png",
+    "hierarchy": "images/web.enroll.signed-out.mobile.txt",
+    "baseline": "baselines/web.enroll.signed-out.mobile.png",
+    "status": "listed",
+    "note": "React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.enroll.invalid-code.desktop",
+    "surface": "web",
+    "screen": "enroll",
+    "state": "error",
+    "features": [
+      "pairing-enroll"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007",
+      "0012"
+    ],
+    "fixture": "conformance:bad-pairing-code",
+    "intent": "Submitting an invalid pairing code surfaces an inline error message in the enroll view and keeps the form available for retry. The error text reveals no server internals and the failure does not enroll the device.",
+    "screenshot": "images/web.enroll.invalid-code.desktop.png",
+    "hierarchy": "images/web.enroll.invalid-code.desktop.txt",
+    "baseline": "baselines/web.enroll.invalid-code.desktop.png",
+    "status": "listed",
+    "note": "React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.browse.populated.desktop",
+    "surface": "web",
+    "screen": "browse",
+    "state": "populated",
+    "features": [
+      "navigation-manifest",
+      "layout-render",
+      "section-sources",
+      "artwork-slots"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [
+      "large-text",
+      "reduce-motion",
+      "high-contrast"
+    ],
+    "adr": [
+      "0007",
+      "0014"
+    ],
+    "fixture": "conformance:adult-locked",
+    "intent": "An enrolled adult session (locked) renders the Navigation Manifest as a nav plus the selected Library's Layout Sections, each hydrated from its Source. Sections render in declared order; empty/unknown-kind Sections are silently omitted (never a broken placeholder). Because the session is locked, no restricted Library content, titles, artwork, or counts appear anywhere in the DOM, and a single Reveal affordance is present in the header.",
+    "screenshot": "images/web.browse.populated.desktop.png",
+    "hierarchy": "images/web.browse.populated.desktop.txt",
+    "baseline": "baselines/web.browse.populated.desktop.png",
+    "status": "listed",
+    "note": "React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.browse.populated.mobile",
+    "surface": "web",
+    "screen": "browse",
+    "state": "populated",
+    "features": [
+      "navigation-manifest",
+      "layout-render",
+      "section-sources"
+    ],
+    "viewport": {
+      "name": "mobile",
+      "w": 390,
+      "h": 844
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [
+      "large-text",
+      "reduce-motion",
+      "high-contrast"
+    ],
+    "adr": [
+      "0007",
+      "0014"
+    ],
+    "fixture": "conformance:adult-locked",
+    "intent": "The browse Layout reflows to a narrow viewport: the nav and Sections remain usable without horizontal scroll or overlap. The same Reveal/leak invariants as the desktop populated state hold.",
+    "screenshot": "images/web.browse.populated.mobile.png",
+    "hierarchy": "images/web.browse.populated.mobile.txt",
+    "baseline": "baselines/web.browse.populated.mobile.png",
+    "status": "listed",
+    "note": "React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.browse.reveal-locked.desktop",
+    "surface": "web",
+    "screen": "browse",
+    "state": "reveal-locked",
+    "features": [
+      "reveal-unlock",
+      "defensive-render",
+      "navigation-manifest"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0004",
+      "0007",
+      "0014"
+    ],
+    "fixture": "conformance:adult-locked",
+    "intent": "LEAK-PROOF CONTRACT: with an adult Profile session locked, the restricted Library ('Archive', IsRestricted) and every restricted Media must be entirely absent from the DOM — no restricted title, summary, artwork URL, item count, or even a hidden-state placeholder that names them. Scope is re-derived server-side, so restricted content is simply not in the manifest/Sources. A single Reveal affordance (and only that) signals a locked adult session exists.",
+    "screenshot": "images/web.browse.reveal-locked.desktop.png",
+    "hierarchy": "images/web.browse.reveal-locked.desktop.txt",
+    "baseline": "baselines/web.browse.reveal-locked.desktop.png",
+    "status": "listed",
+    "leakProof": true,
+    "note": "React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.browse.revealed.desktop",
+    "surface": "web",
+    "screen": "browse",
+    "state": "revealed",
+    "features": [
+      "reveal-unlock",
+      "navigation-manifest",
+      "layout-render"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0004",
+      "0007"
+    ],
+    "fixture": "conformance:adult-revealed",
+    "intent": "After a successful PIN Reveal the session is visually explicit: the iris/Revealed chip and a Relock control appear in the header, the body carries the revealed keyline, and the Reveal affordance is gone. Restricted Libraries and Media now appear in the nav and Sections. Relock is always one click away.",
+    "screenshot": "images/web.browse.revealed.desktop.png",
+    "hierarchy": "images/web.browse.revealed.desktop.txt",
+    "baseline": "baselines/web.browse.revealed.desktop.png",
+    "status": "listed",
+    "note": "React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.browse.managed.desktop",
+    "surface": "web",
+    "screen": "browse",
+    "state": "profile-managed",
+    "features": [
+      "profile-switch",
+      "defensive-render"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0004",
+      "0007"
+    ],
+    "fixture": "conformance:managed",
+    "intent": "A managed Profile session has NO reveal path: no Reveal affordance, chip, or any hint that restricted content exists is present in the DOM (ADR-0004). Only the managed Profile's permitted Libraries render. The header offers profile switching but never a Restrictions control.",
+    "screenshot": "images/web.browse.managed.desktop.png",
+    "hierarchy": "images/web.browse.managed.desktop.txt",
+    "baseline": "baselines/web.browse.managed.desktop.png",
+    "status": "listed",
+    "leakProof": true,
+    "note": "React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.browse.connection-lost.desktop",
+    "surface": "web",
+    "screen": "browse",
+    "state": "error",
+    "features": [
+      "defensive-render",
+      "navigation-manifest"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007",
+      "0014"
+    ],
+    "fixture": "conformance:adult-locked",
+    "intent": "When the manifest/Source fetch fails after a prior good render, a non-destructive connection-lost banner appears while the last good content remains; the app degrades honestly (no fabricated content) and recovers on reconnect. No restricted content leaks via the error path.",
+    "screenshot": "images/web.browse.connection-lost.desktop.png",
+    "hierarchy": "images/web.browse.connection-lost.desktop.txt",
+    "baseline": "baselines/web.browse.connection-lost.desktop.png",
+    "status": "listed",
+    "note": "React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.profile.switcher-open.desktop",
+    "surface": "web",
+    "screen": "profile",
+    "state": "profile-switcher-open",
+    "features": [
+      "profile-switch"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0004"
+    ],
+    "fixture": "conformance:adult-locked",
+    "intent": "The Profile switcher lists the session's selectable Profiles as cards. It names Profiles only — no restricted Library content or counts — and a cancel affordance returns to browse. Switching re-derives all scope server-side.",
+    "screenshot": "images/web.profile.switcher-open.desktop.png",
+    "hierarchy": "images/web.profile.switcher-open.desktop.txt",
+    "baseline": "baselines/web.profile.switcher-open.desktop.png",
+    "status": "listed",
+    "note": "React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.reveal.pin-entry.desktop",
+    "surface": "web",
+    "screen": "restrictions",
+    "state": "reveal-pin-entry",
+    "features": [
+      "reveal-unlock"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0004"
+    ],
+    "fixture": "conformance:adult-locked",
+    "intent": "The Reveal PIN-entry view shows a masked numeric PIN field and submit/cancel affordances only. It names no restricted content and leaks nothing about what Reveal would expose; the PIN is server-verified (the client never holds the verifier).",
+    "screenshot": "images/web.reveal.pin-entry.desktop.png",
+    "hierarchy": "images/web.reveal.pin-entry.desktop.txt",
+    "baseline": "baselines/web.reveal.pin-entry.desktop.png",
+    "status": "listed",
+    "leakProof": true,
+    "note": "React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.reveal.pin-denied.desktop",
+    "surface": "web",
+    "screen": "restrictions",
+    "state": "reveal-throttled",
+    "features": [
+      "reveal-unlock"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0004"
+    ],
+    "fixture": "conformance:bad-pin",
+    "intent": "A wrong PIN surfaces an inline error in the PIN-entry view and keeps the session locked; no restricted content is revealed and the error text discloses nothing about the correct PIN or restricted catalog.",
+    "screenshot": "images/web.reveal.pin-denied.desktop.png",
+    "hierarchy": "images/web.reveal.pin-denied.desktop.txt",
+    "baseline": "baselines/web.reveal.pin-denied.desktop.png",
+    "status": "listed",
+    "leakProof": true,
+    "note": "React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.entity-detail.populated.desktop",
+    "surface": "web",
+    "screen": "entity-detail",
+    "state": "populated",
+    "features": [
+      "entity-detail",
+      "section-sources",
+      "artwork-slots"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007",
+      "0014"
+    ],
+    "fixture": "conformance:adult-locked",
+    "intent": "An entity-detail view renders the Entity's display fields, its artwork, and its child Sections (e.g. the Media belonging to it) per the defensive Layout rules. Restricted children obey the same reveal filtering as browse.",
+    "screenshot": "images/web.entity-detail.populated.desktop.png",
+    "hierarchy": "images/web.entity-detail.populated.desktop.txt",
+    "baseline": "baselines/web.entity-detail.populated.desktop.png",
+    "status": "listed",
+    "note": "The conformance/development seed plants flat Media with no Entity rows (Kinds), so no entity-detail nav target renders. Capturable once the seed includes a plugin Entity. React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.see-all.populated.desktop",
+    "surface": "web",
+    "screen": "see-all",
+    "state": "populated",
+    "features": [
+      "see-all-paging",
+      "section-sources"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007",
+      "0014"
+    ],
+    "fixture": "conformance:adult-locked",
+    "intent": "The See-All view renders the full paged item grid for one Section with a load-more affordance; it carries the same reveal filtering as the originating Section and never exposes restricted items the session may not see.",
+    "screenshot": "images/web.see-all.populated.desktop.png",
+    "hierarchy": "images/web.see-all.populated.desktop.txt",
+    "baseline": "baselines/web.see-all.populated.desktop.png",
+    "status": "listed",
+    "note": "See-All requires a Section with more items than its inline cap plus a 'see all' affordance; the conformance seed's single non-restricted Media does not overflow any Section. Capturable with a larger seeded Library. React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.search.results.desktop",
+    "surface": "web",
+    "screen": "search",
+    "state": "populated",
+    "features": [
+      "search-keyword"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007"
+    ],
+    "fixture": "conformance:adult-locked",
+    "intent": "Keyword search returns reveal-filtered Media matching the query; restricted results never appear for a locked or managed session. An empty query state and a no-results state are distinct and both non-leaking.",
+    "screenshot": "images/web.search.results.desktop.png",
+    "hierarchy": "images/web.search.results.desktop.txt",
+    "baseline": "baselines/web.search.results.desktop.png",
+    "status": "listed",
+    "note": "Search lives in the React Viewer app, but the catalog does not yet drive that route against a searchable conformance fixture."
+  },
+  {
+    "id": "web.search.empty.desktop",
+    "surface": "web",
+    "screen": "search",
+    "state": "search-empty",
+    "features": [
+      "search-keyword",
+      "defensive-render"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007"
+    ],
+    "fixture": "conformance:adult-locked",
+    "intent": "A search yielding no results shows an explicit empty-results state (not a broken/blank page) and reveals nothing about restricted content that might have matched.",
+    "screenshot": "images/web.search.empty.desktop.png",
+    "hierarchy": "images/web.search.empty.desktop.txt",
+    "baseline": "baselines/web.search.empty.desktop.png",
+    "status": "listed",
+    "note": "Search is not yet captured by this catalog driver (see web.search.results.desktop)."
+  },
+  {
+    "id": "web.manage.libraries.desktop",
+    "surface": "web",
+    "screen": "manage.libraries",
+    "state": "populated",
+    "features": [
+      "entity-manager",
+      "job-management",
+      "trash-review",
+      "api-keys"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [
+      "large-text",
+      "reduce-motion",
+      "high-contrast"
+    ],
+    "adr": [
+      "0007"
+    ],
+    "fixture": "conformance:manager",
+    "intent": "A MANAGER-role browser opens the Manage register (the Viewer nav gives way to a Manage crumb plus the visible Device-Role chip — role is visible state, never a hidden mode). It exposes the Manage sections that exist in the embedded app: Libraries (create + per-Library controls), Jobs, Schedules, Trash, Subscriptions, Pairing codes, and API tokens. This is the Manager surface, distinct from the operator Console. Per the manage-folder-tree mockup (beamfall-design-system/mockups/web-app/manage-folder-tree.html), the per-Library folder picker renders the bounded `folderTree` as flat `.node.depth-N` treeitem rows — a leading glyph (▸ folder / · file), the name, and a right-aligned `.meta` (child count for folders, byte size for files); files read muted. The selected target is a labeled `.selected` readout row carrying the path plus a Folder/File kind chip, not bare text.",
+    "screenshot": "images/web.manage.libraries.desktop.png",
+    "hierarchy": "images/web.manage.libraries.desktop.txt",
+    "baseline": "baselines/web.manage.libraries.desktop.png",
+    "status": "listed",
+    "note": "React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.manage.libraries.mobile",
+    "surface": "web",
+    "screen": "manage.libraries",
+    "state": "populated",
+    "features": [
+      "entity-manager",
+      "job-management"
+    ],
+    "viewport": {
+      "name": "mobile",
+      "w": 390,
+      "h": 844
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007"
+    ],
+    "fixture": "conformance:manager",
+    "intent": "The Manage register reflows to a narrow viewport: the Manage crumb + Device-Role chip stay visible and the Manage sections stack without horizontal scroll or control overlap.",
+    "screenshot": "images/web.manage.libraries.mobile.png",
+    "hierarchy": "images/web.manage.libraries.mobile.txt",
+    "baseline": "baselines/web.manage.libraries.mobile.png",
+    "status": "listed",
+    "note": "React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.manage.tags.desktop",
+    "surface": "web",
+    "screen": "manage.tags",
+    "state": "populated",
+    "features": [
+      "tag-manager",
+      "tag-assignment",
+      "trash-review"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0061",
+      "0005"
+    ],
+    "fixture": "conformance:manager",
+    "intent": "The Tag manager (mockup mockups/web-app/manage-tags.html) renders four panels for first-class, domain-agnostic Core Tags. The hierarchy panel shows tags as a depth-indented tree, each node trailing an inline assignment-count badge, with a Rename / Move / Delete row-action cluster and a panel-head total-count chip; the panel body carries the create-tag control row (name + parent). The single-assign panel attaches/detaches Tags on one Media/Entity/Marker target, assigned tags shown as removable ×-pills. The bulk panel applies Add/Remove/Replace (a segmented mode selector in the panel head) across many targets, the selected Tags shown as ×-pills with an add-picker. The restore panel lists soft-deleted Tags with per-row Restore (HARD invariant #6 — delete is recoverable via trash). Every label is domain-agnostic (HARD invariant #1) and every mutation routes through the manager-gated GraphQL; the server is the authority.",
+    "screenshot": "images/web.manage.tags.desktop.png",
+    "hierarchy": "images/web.manage.tags.desktop.txt",
+    "baseline": "baselines/web.manage.tags.desktop.png",
+    "status": "listed",
+    "note": "The Tag manager lives in the React Manage app (internal/web/app/src/areas/manage/pages/TagsPage.tsx), but the catalog does not yet drive that route; this entry binds the screen's intent to its governing mockup until the React surface is captured. Mockup: beamfall-design-system/mockups/web-app/manage-tags.html."
+  },
+  {
+    "id": "web.promote.code-entry.desktop",
+    "surface": "web",
+    "screen": "promote",
+    "state": "admin-session-prompt",
+    "features": [
+      "device-promotion",
+      "admin-session"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007"
+    ],
+    "fixture": "conformance:adult-locked",
+    "intent": "The browser→MANAGER promotion view shows a manager pairing-code field plus submit/cancel. Promotion is deliberate and per-device; redeeming a manager code changes the role server-side (cookies untouched) so a re-init picks up the new role everywhere.",
+    "screenshot": "images/web.promote.code-entry.desktop.png",
+    "hierarchy": "images/web.promote.code-entry.desktop.txt",
+    "baseline": "baselines/web.promote.code-entry.desktop.png",
+    "status": "listed",
+    "note": "React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.console.locked.desktop",
+    "surface": "web",
+    "screen": "console.locked",
+    "state": "admin-locked",
+    "features": [
+      "admin-session"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007"
+    ],
+    "fixture": "conformance:manager",
+    "intent": "A MANAGER browser sees the Console section inside Manage, but every Console operation stays gated behind the Admin Session: only the admin-password unlock form is present. The API-keys and Activity screens are absent from the DOM until the admin password is verified — admin is a re-auth tier orthogonal to the manager Device Role (ADR-0007 §4). A managed or non-manager session has no Console section at all.",
+    "screenshot": "images/web.console.locked.desktop.png",
+    "hierarchy": "images/web.console.locked.desktop.txt",
+    "baseline": "baselines/web.console.locked.desktop.png",
+    "status": "listed",
+    "note": "React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.console.unlocked.desktop",
+    "surface": "web",
+    "screen": "console.unlocked",
+    "state": "admin-active",
+    "features": [
+      "admin-session",
+      "api-keys",
+      "activity-log"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007",
+      "0040",
+      "0012"
+    ],
+    "fixture": "conformance:manager",
+    "intent": "After the admin password verifies, the Admin Session is active (visible state, never a hidden mode): the unlock form yields to a Lock-Console affordance and the admin-gated Console screens appear — scoped API keys (create with the five-scope vocabulary, list metadata only with no secret material, revoke) and the append-only, reveal-filtered Activity log. The full key secret is shown exactly once at creation and never folds back into the list.",
+    "screenshot": "images/web.console.unlocked.desktop.png",
+    "hierarchy": "images/web.console.unlocked.desktop.txt",
+    "baseline": "baselines/web.console.unlocked.desktop.png",
+    "status": "listed",
+    "note": "React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.player.transport-overlay.desktop",
+    "surface": "web",
+    "screen": "player",
+    "state": "transport-overlay",
+    "features": [
+      "transport-ui",
+      "playback-info",
+      "canonical-timeline"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [
+      "reduce-motion",
+      "high-contrast"
+    ],
+    "adr": [
+      "0007",
+      "0010",
+      "0014"
+    ],
+    "fixture": "conformance:revealed-adult",
+    "intent": "The player view presents the unified custom transport overlay: a scrubber with elapsed/remaining times, play/pause + seek controls, and the audio/subtitle/quality/info menu buttons. The transport is keyboard-operable and chrome is capturable even without a decoded frame.",
+    "screenshot": "images/web.player.transport-overlay.desktop.png",
+    "hierarchy": "images/web.player.transport-overlay.desktop.txt",
+    "baseline": "baselines/web.player.transport-overlay.desktop.png",
+    "status": "listed",
+    "note": "React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.player.audio-menu.desktop",
+    "surface": "web",
+    "screen": "player",
+    "state": "audio-menu",
+    "features": [
+      "audio-track-select",
+      "transport-ui"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007"
+    ],
+    "fixture": "conformance:revealed-adult",
+    "intent": "Opening the audio-track menu shows a listbox of available audio tracks with the active one indicated; the menu has correct ARIA (role=listbox, aria-expanded on its button) and is keyboard-navigable.",
+    "screenshot": "images/web.player.audio-menu.desktop.png",
+    "hierarchy": "images/web.player.audio-menu.desktop.txt",
+    "baseline": "baselines/web.player.audio-menu.desktop.png",
+    "status": "listed",
+    "note": "React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.player.subtitle-menu.desktop",
+    "surface": "web",
+    "screen": "player",
+    "state": "subtitle-menu",
+    "features": [
+      "subtitle-tracks",
+      "transport-ui"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007"
+    ],
+    "fixture": "conformance:revealed-adult",
+    "intent": "The subtitle menu lists available subtitle tracks plus an off option, active track indicated, correct listbox ARIA; a subtitle-style affordance is present where supported.",
+    "screenshot": "images/web.player.subtitle-menu.desktop.png",
+    "hierarchy": "images/web.player.subtitle-menu.desktop.txt",
+    "baseline": "baselines/web.player.subtitle-menu.desktop.png",
+    "status": "listed",
+    "note": "React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.player.quality-menu.desktop",
+    "surface": "web",
+    "screen": "player",
+    "state": "quality-menu",
+    "features": [
+      "transport-ui",
+      "hls-transcode"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007",
+      "0010"
+    ],
+    "fixture": "conformance:revealed-adult",
+    "intent": "The quality menu lists the honest set of available renditions (Auto plus the ladder the server offers), active one indicated; selecting a manual rendition is reflected without misrepresenting an unavailable quality.",
+    "screenshot": "images/web.player.quality-menu.desktop.png",
+    "hierarchy": "images/web.player.quality-menu.desktop.txt",
+    "baseline": "baselines/web.player.quality-menu.desktop.png",
+    "status": "listed",
+    "note": "React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.player.info-overlay.desktop",
+    "surface": "web",
+    "screen": "player",
+    "state": "info-overlay",
+    "features": [
+      "transport-ui",
+      "playback-info"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007",
+      "0010"
+    ],
+    "fixture": "conformance:revealed-adult",
+    "intent": "The info overlay (role=dialog) shows the playback route summary — direct-play vs transcode decision, container/codec, rendition — honestly reflecting the server's playbackInfo decision, not an aspirational claim.",
+    "screenshot": "images/web.player.info-overlay.desktop.png",
+    "hierarchy": "images/web.player.info-overlay.desktop.txt",
+    "baseline": "baselines/web.player.info-overlay.desktop.png",
+    "status": "listed",
+    "note": "React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.player.terminal-hidden.desktop",
+    "surface": "web",
+    "screen": "player",
+    "state": "terminal-error",
+    "features": [
+      "playback-info",
+      "reveal-unlock",
+      "stream-token"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0004",
+      "0007",
+      "0010"
+    ],
+    "fixture": "conformance:adult-locked-restricted-media",
+    "intent": "Requesting playback of restricted Media from a locked session yields a reveal-safe terminal state: a generic message with a Back affordance, and NO restricted title, artwork, or detail anywhere — the terminal state cannot be used to confirm restricted content exists. Stream Tokens join the Reveal contract (bytes are gated identically).",
+    "screenshot": "images/web.player.terminal-hidden.desktop.png",
+    "hierarchy": "images/web.player.terminal-hidden.desktop.txt",
+    "baseline": "baselines/web.player.terminal-hidden.desktop.png",
+    "status": "listed",
+    "leakProof": true,
+    "note": "React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.player.decoded-frame.desktop",
+    "surface": "web",
+    "screen": "player",
+    "state": "playing",
+    "features": [
+      "direct-play",
+      "transport-ui"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0010"
+    ],
+    "fixture": "conformance:revealed-adult",
+    "intent": "A playing decoded video frame fills the player shell behind the auto-hiding transport chrome; direct-play is used when the client's Capability Profile matches the source.",
+    "screenshot": "images/web.player.decoded-frame.desktop.png",
+    "hierarchy": "images/web.player.decoded-frame.desktop.txt",
+    "baseline": "baselines/web.player.decoded-frame.desktop.png",
+    "status": "device-only",
+    "note": "The conformance corpus serves single-byte placeholder media files (0x00/0x01), not decodable video; a live decoded frame requires a real GPU/decoder. The transport chrome over the (empty) video element is captured separately by web.player.transport-overlay.desktop."
+  },
+  {
+    "id": "web.console.onboarding-wizard.desktop",
+    "surface": "web",
+    "screen": "console.onboarding",
+    "state": "listed",
+    "features": [
+      "first-run-wizard",
+      "admin-session"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007"
+    ],
+    "fixture": "n-a",
+    "intent": "The first-run onboarding wizard (ADR-0007 §4) walks the operator: set admin password → create first Library → owner Profile → plugin activation. Gated by the Admin Session (server admin password), never accepted from an unenrolled client.",
+    "screenshot": "images/web.console.onboarding-wizard.desktop.png",
+    "hierarchy": "images/web.console.onboarding-wizard.desktop.txt",
+    "baseline": "baselines/web.console.onboarding-wizard.desktop.png",
+    "status": "listed",
+    "note": "The React Console onboarding route is not yet captured by this catalog driver."
+  },
+  {
+    "id": "web.console.admin-login.desktop",
+    "surface": "web",
+    "screen": "console.admin-login",
+    "state": "admin-login",
+    "features": [
+      "admin-session"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007"
+    ],
+    "fixture": "n-a",
+    "intent": "Console operations require a short-lived Admin Session: the operator re-authenticates with the single server admin password (owner-flagged adult Profile). PINs never grant admin; the Admin tier is orthogonal to Device Role.",
+    "screenshot": "images/web.console.admin-login.desktop.png",
+    "hierarchy": "images/web.console.admin-login.desktop.txt",
+    "baseline": "baselines/web.console.admin-login.desktop.png",
+    "status": "listed",
+    "note": "The React Console Admin Session prompt is not yet captured by this catalog driver."
+  },
+  {
+    "id": "web.console.libraries.desktop",
+    "surface": "web",
+    "screen": "console.libraries",
+    "state": "listed",
+    "features": [
+      "console-config",
+      "scan-pipeline"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007"
+    ],
+    "fixture": "n-a",
+    "intent": "Console Libraries (ADR-0007 §4): manage roots, plugin binding, the Restrictions flag, and scan triggers/schedules per Library.",
+    "screenshot": "images/web.console.libraries.desktop.png",
+    "hierarchy": "images/web.console.libraries.desktop.txt",
+    "baseline": "baselines/web.console.libraries.desktop.png",
+    "status": "listed",
+    "note": "The React Console Libraries screen is not yet captured by this catalog driver."
+  },
+  {
+    "id": "web.console.plugins.desktop",
+    "surface": "web",
+    "screen": "console.plugins",
+    "state": "populated",
+    "features": [
+      "console-config"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007",
+      "0003",
+      "0013"
+    ],
+    "fixture": "conformance:manager",
+    "intent": "Console Plugins (ADR-0007 §4 / ADR-0003 / ADR-0013, mockup web-app/console-plugins.html): activate/configure plugins and review each plugin's Core-owned permissions, runtime/declaration status, and server-declared Action Descriptors. Per the mockup, the activation list is a flat `.panel` of `.row` entries (plugin name + Active/Inactive state chip + activation switch), not a data table; each active plugin's detail panel carries its typed non-secret config (`setPluginConfig`), permission rows (high-risk tinted), status rows, and risk-tinted action controls the client never executes itself (high-risk confirm before calling Core back). Secrets stay behind the scraper-credential seam, never in the typed-config surface.",
+    "screenshot": "images/web.console.plugins.desktop.png",
+    "hierarchy": "images/web.console.plugins.desktop.txt",
+    "baseline": "baselines/web.console.plugins.desktop.png",
+    "status": "listed",
+    "note": "Built in the React Console Plugins section (internal/web/app/src/areas/console/sections/Plugins.tsx), but this catalog does not yet drive that route; this entry binds the screen's intent to its mockup until the React surface is captured. Mockup: beamfall-design-system/mockups/web-app/console-plugins.html."
+  },
+  {
+    "id": "web.console.identification.desktop",
+    "surface": "web",
+    "screen": "console.identification",
+    "state": "listed",
+    "features": [
+      "identify-scrape",
+      "console-config"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007"
+    ],
+    "fixture": "n-a",
+    "intent": "Console Identification (ADR-0007 §4): scraper config/credentials, match thresholds, and identification-run monitoring.",
+    "screenshot": "images/web.console.identification.desktop.png",
+    "hierarchy": "images/web.console.identification.desktop.txt",
+    "baseline": "baselines/web.console.identification.desktop.png",
+    "status": "listed",
+    "note": "The React Console Identification screen is not yet captured by this catalog driver."
+  },
+  {
+    "id": "web.console.profiles-access.desktop",
+    "surface": "web",
+    "screen": "console.profiles-access",
+    "state": "listed",
+    "features": [
+      "console-config",
+      "field-locks",
+      "access-schedules",
+      "enforced-filters",
+      "api-keys"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007",
+      "0004"
+    ],
+    "fixture": "n-a",
+    "intent": "Console Profiles & access (ADR-0007 §4): Profile CRUD, per-Profile Library access and policies (enforced filters, access schedules), device enroll/revoke/promote, pairing codes, and API keys.",
+    "screenshot": "images/web.console.profiles-access.desktop.png",
+    "hierarchy": "images/web.console.profiles-access.desktop.txt",
+    "baseline": "baselines/web.console.profiles-access.desktop.png",
+    "status": "listed",
+    "note": "The React Console Profiles & access screen is not yet captured by this catalog driver."
+  },
+  {
+    "id": "web.console.layout-editor.desktop",
+    "surface": "web",
+    "screen": "console.layout-editor",
+    "state": "listed",
+    "features": [
+      "layout-render",
+      "console-config"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007",
+      "0014"
+    ],
+    "fixture": "n-a",
+    "intent": "Console Layout editor (ADR-0007 §4): per-node Section composition, per-Profile overrides, and theme-token editing.",
+    "screenshot": "images/web.console.layout-editor.desktop.png",
+    "hierarchy": "images/web.console.layout-editor.desktop.txt",
+    "baseline": "baselines/web.console.layout-editor.desktop.png",
+    "status": "listed",
+    "note": "The React Console Layout editor is not yet captured by this catalog driver."
+  },
+  {
+    "id": "web.console.restrictions.desktop",
+    "surface": "web",
+    "screen": "console.restrictions",
+    "state": "listed",
+    "features": [
+      "console-config",
+      "reveal-unlock"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007",
+      "0004"
+    ],
+    "fixture": "n-a",
+    "intent": "Console Restrictions (ADR-0007 §4): Library Restrictions designation and the re-lock policy that governs the Reveal contract.",
+    "screenshot": "images/web.console.restrictions.desktop.png",
+    "hierarchy": "images/web.console.restrictions.desktop.txt",
+    "baseline": "baselines/web.console.restrictions.desktop.png",
+    "status": "listed",
+    "note": "The React Console Restrictions screen is not yet captured by this catalog driver."
+  },
+  {
+    "id": "web.console.operations-jobs.desktop",
+    "surface": "web",
+    "screen": "console.operations.jobs",
+    "state": "populated",
+    "features": [
+      "job-management",
+      "console-config",
+      "live-sessions"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007",
+      "0013",
+      "0040"
+    ],
+    "fixture": "conformance:manager",
+    "intent": "Console Operations — Jobs (ADR-0007 §4 / ADR-0013 / ADR-0040, mockup web-app/console-jobs-live.html): the live job panel renders a connection indicator driven by the /api/events SSE lifecycle — a pulsing green dot when live, an amber blink while reconnecting (last-good rows retained, fail-soft), and a manual-refresh fallback only once retries are exhausted (the live path shows no refresh button, honest and never-silent). Jobs render as flat rows (name + progress bar + numeric + status badge), the yielded bar warn-tinted. Update awareness owns the default-off opt-in switch, a Stable/Beta segmented channel toggle, current/latest version rows, the plain-GET disclosure, and the pre-migration backup warning; enabling sends only a public-channel manifest GET (no library/account/identity).",
+    "screenshot": "images/web.console.operations-jobs.desktop.png",
+    "hierarchy": "images/web.console.operations-jobs.desktop.txt",
+    "baseline": "baselines/web.console.operations-jobs.desktop.png",
+    "status": "listed",
+    "note": "Built in the React Console Operations section (internal/web/app/src/areas/console/sections/Operations.tsx — JobsQueue + UpdateAwareness), but this catalog does not yet drive that route; this entry binds the screen's intent to its mockup until the React surface is captured. Mockup: beamfall-design-system/mockups/web-app/console-jobs-live.html."
+  },
+  {
+    "id": "web.console.operations-live-sessions.desktop",
+    "surface": "web",
+    "screen": "console.operations.live-sessions",
+    "state": "listed",
+    "features": [
+      "live-sessions"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007"
+    ],
+    "fixture": "n-a",
+    "intent": "Console Operations — live sessions dashboard (ADR-0007 §4/§5): what is now playing per device/Profile, direct-play vs transcode, with kill/message-session controls and live log streaming.",
+    "screenshot": "images/web.console.operations-live-sessions.desktop.png",
+    "hierarchy": "images/web.console.operations-live-sessions.desktop.txt",
+    "baseline": "baselines/web.console.operations-live-sessions.desktop.png",
+    "status": "listed",
+    "note": "The React Console live-sessions dashboard is not yet captured by this catalog driver."
+  },
+  {
+    "id": "web.console.operations-transcode.desktop",
+    "surface": "web",
+    "screen": "console.operations.transcode",
+    "state": "listed",
+    "features": [
+      "transcode-config",
+      "hls-transcode"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007"
+    ],
+    "fixture": "n-a",
+    "intent": "Console Operations — hardware transcoding config (ADR-0007 §4/§5): select and tune the hardware acceleration the on-the-fly HLS transcode uses.",
+    "screenshot": "images/web.console.operations-transcode.desktop.png",
+    "hierarchy": "images/web.console.operations-transcode.desktop.txt",
+    "baseline": "baselines/web.console.operations-transcode.desktop.png",
+    "status": "listed",
+    "note": "The React Console hardware-transcode config is not yet captured by this catalog driver."
+  },
+  {
+    "id": "web.console.operations-trash.desktop",
+    "surface": "web",
+    "screen": "console.operations.trash",
+    "state": "listed",
+    "features": [
+      "trash-review"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007",
+      "0005"
+    ],
+    "fixture": "n-a",
+    "intent": "Console Operations — Trash policy + restore browser (ADR-0007 §4): retention-window policy and a browser to restore trashed items (destruction is recoverable by default).",
+    "screenshot": "images/web.console.operations-trash.desktop.png",
+    "hierarchy": "images/web.console.operations-trash.desktop.txt",
+    "baseline": "baselines/web.console.operations-trash.desktop.png",
+    "status": "listed",
+    "note": "The React Console Trash policy + restore browser is not yet captured by this catalog driver (the Manager Manage register has a simpler Trash list)."
+  },
+  {
+    "id": "web.console.activity.desktop",
+    "surface": "web",
+    "screen": "console.activity",
+    "state": "listed",
+    "features": [
+      "activity-log"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007",
+      "0012"
+    ],
+    "fixture": "n-a",
+    "intent": "Console Activity (ADR-0007 §4): the server-backed, reveal-filtered append-only activity log with undo for reversible operations.",
+    "screenshot": "images/web.console.activity.desktop.png",
+    "hierarchy": "images/web.console.activity.desktop.txt",
+    "baseline": "baselines/web.console.activity.desktop.png",
+    "status": "listed",
+    "note": "The React Console Activity log is not yet captured by this catalog driver."
+  },
+  {
+    "id": "web.mydata.export.desktop",
+    "surface": "web",
+    "screen": "mydata",
+    "state": "export",
+    "features": [
+      "my-data-export"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0036"
+    ],
+    "fixture": "conformance:adult-locked",
+    "intent": "My Data export (ADR-0036): the user-facing export trigger that kicks off a server-side export job and reveals a download link when complete. No server, library, or watch-history data is included (HARD invariant #7).",
+    "screenshot": "images/web.mydata.export.desktop.png",
+    "hierarchy": "images/web.mydata.export.desktop.txt",
+    "baseline": "baselines/web.mydata.export.desktop.png",
+    "status": "listed",
+    "note": "React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.mydata.delete-confirm.desktop",
+    "surface": "web",
+    "screen": "mydata",
+    "state": "delete-confirm",
+    "features": [
+      "my-data-delete"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0036"
+    ],
+    "fixture": "conformance:adult-locked",
+    "intent": "The My Data hard-DELETE confirm view presents a disclosure that the operation permanently deletes the user's engagement history (watch progress, bookmarks) and is NOT routed through trash — it is not recoverable. A deliberate separate confirmation action is required before the server executes the hard DELETE mutation.",
+    "screenshot": "images/web.mydata.delete-confirm.desktop.png",
+    "hierarchy": "images/web.mydata.delete-confirm.desktop.txt",
+    "baseline": "baselines/web.mydata.delete-confirm.desktop.png",
+    "status": "listed",
+    "note": "React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.migration-wizard.empty.desktop",
+    "surface": "web",
+    "screen": "migration-wizard",
+    "state": "importer-list",
+    "features": [
+      "migration-wizard"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0013"
+    ],
+    "fixture": "conformance:manager",
+    "intent": "Migration Wizard importer list (ADR-0013): the operator selects from available importers (plugins with ImporterSpec). With no importers, an empty state is shown rather than a broken list.",
+    "screenshot": "images/web.migration-wizard.empty.desktop.png",
+    "hierarchy": "images/web.migration-wizard.empty.desktop.txt",
+    "baseline": "baselines/web.migration-wizard.empty.desktop.png",
+    "status": "listed",
+    "note": "React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.migration-wizard.run-confirm.desktop",
+    "surface": "web",
+    "screen": "migration-wizard",
+    "state": "run-confirm",
+    "features": [
+      "migration-wizard"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0013"
+    ],
+    "fixture": "n-a",
+    "intent": "Migration Wizard run-confirm (ADR-0013): before launching a migration run the operator sees a summary of the importer scope, the estimated operation, and a confirmation action.",
+    "screenshot": "images/web.migration-wizard.run-confirm.desktop.png",
+    "hierarchy": "images/web.migration-wizard.run-confirm.desktop.txt",
+    "baseline": "baselines/web.migration-wizard.run-confirm.desktop.png",
+    "status": "listed",
+    "note": "Migration Wizard run-confirm has no separate UI state: runMigrationImport() fires the mutation directly on button click with no intermediate confirm view. Capturable only if a confirm dialog is added to the implementation."
+  },
+  {
+    "id": "web.pairing-mint.viewer-code.desktop",
+    "surface": "web",
+    "screen": "pairing-mint",
+    "state": "viewer-code",
+    "features": [
+      "device-promotion",
+      "admin-session"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007"
+    ],
+    "fixture": "conformance:manager",
+    "intent": "Minting a viewer pairing code (ADR-0007 §3) shows a short-lived, single-use viewer enrollment code under the manager gate. The code is displayed once; no permanent storage or re-display of the secret is possible.",
+    "screenshot": "images/web.pairing-mint.viewer-code.desktop.png",
+    "hierarchy": "images/web.pairing-mint.viewer-code.desktop.txt",
+    "baseline": "baselines/web.pairing-mint.viewer-code.desktop.png",
+    "status": "listed",
+    "note": "React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.pairing-mint.manager-code.desktop",
+    "surface": "web",
+    "screen": "pairing-mint",
+    "state": "manager-code",
+    "features": [
+      "device-promotion",
+      "admin-session"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007"
+    ],
+    "fixture": "conformance:manager",
+    "intent": "Minting a manager pairing code (ADR-0007 §3) shows a short-lived, single-use manager promotion code under the manager gate. Same single-display-no-relist invariant as the viewer code.",
+    "screenshot": "images/web.pairing-mint.manager-code.desktop.png",
+    "hierarchy": "images/web.pairing-mint.manager-code.desktop.txt",
+    "baseline": "baselines/web.pairing-mint.manager-code.desktop.png",
+    "status": "listed",
+    "note": "React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.pairing-mint.error.desktop",
+    "surface": "web",
+    "screen": "pairing-mint",
+    "state": "mint-error",
+    "features": [
+      "device-promotion"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007"
+    ],
+    "fixture": "n-a",
+    "intent": "A pairing-code mint failure shows an inline error state (server rejected the request) and keeps the mint form available for retry; no partial or stale code is displayed.",
+    "screenshot": "images/web.pairing-mint.error.desktop.png",
+    "hierarchy": "images/web.pairing-mint.error.desktop.txt",
+    "baseline": "baselines/web.pairing-mint.error.desktop.png",
+    "status": "listed",
+    "note": "React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  }
+]

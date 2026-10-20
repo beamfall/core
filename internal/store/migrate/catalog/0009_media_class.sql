@@ -1,0 +1,1 @@
+ALTER TABLE media ADD COLUMN media_class TEXT NOT NULL DEFAULT 'video';

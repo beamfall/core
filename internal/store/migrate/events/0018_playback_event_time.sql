@@ -1,0 +1,20 @@
+-- ABPARITY-1 (ADR-0011 §3 "derived truth, materialized reads") — guard the
+-- (profile, media) resume projection by a monotonic client playback event-time,
+-- not server-arrival order.
+--
+-- Bug: the projection UPSERT (engagement.go) unconditionally overwrote
+-- position_seconds/updated_at_ms with server-now on every write. A device that
+-- played offline (ADR-0094 packs) and flushed late could stomp a newer position
+-- already written by another device, silently rewinding continue-watching.
+--
+-- event_time_ms is the client-reported monotonic instant the reported position
+-- was observed (never server-arrival time). NULL on every pre-migration row and
+-- on any client that has not upgraded yet — those rows fall back to the old
+-- unconditional-overwrite behavior (last write wins), so this is additive and
+-- backward compatible. Once a row carries a non-NULL event_time_ms, the UPSERT
+-- guard (engagement.go) only applies an incoming write when its event_time_ms is
+-- >= the row's stored value: a late replay of stale progress is then a no-op,
+-- while a genuine newer position (even a deliberate rewind) still advances.
+-- play_count / last_played_at_ms / rebuild-from-canonical are untouched by this
+-- column — it guards only the position projection.
+ALTER TABLE playback_progress ADD COLUMN event_time_ms INTEGER;

@@ -1,0 +1,23 @@
+{
+  "id": "always-mode-preferred-language-full-track",
+  "regression": false,
+  "notes": "subtitleMode always ranks candidates by preferred-language order first; the higher-ranked language wins even when it is not first in the track list.",
+  "input": {
+    "mode": "always",
+    "langPrefs": ["en", "fr"],
+    "preferSDH": false,
+    "audioTrackLang": "fr",
+    "tracks": [
+      { "language": "fr", "kind": "muxed", "forced": false, "sdh": false, "visualImpaired": false, "commentary": false },
+      { "language": "en", "kind": "muxed", "forced": false, "sdh": false, "visualImpaired": false, "commentary": false }
+    ],
+    "perItemRecord": null
+  },
+  "expected": {
+    "selection": {
+      "track": { "language": "en", "kind": "muxed", "roles": { "forced": false, "sdh": false, "visualImpaired": false, "commentary": false } },
+      "reason": "preferred-language subtitles"
+    },
+    "unavailableReason": ""
+  }
+}

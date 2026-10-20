@@ -1,0 +1,17 @@
+{
+  "name": "beamfall-ui-catalog",
+  "version": "0.0.0",
+  "private": true,
+  "description": "LLM-consumable screenshot catalog of the embedded React Viewer/Manage web UI (ADR-0007). Isolated from the React app test suite: this package owns Playwright + pixelmatch only and never participates in `make gate`.",
+  "type": "module",
+  "scripts": {
+    "capture": "node capture.mjs",
+    "record": "node capture.mjs --record",
+    "diff": "node capture.mjs --diff-only"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.1",
+    "pixelmatch": "^6.0.0",
+    "pngjs": "^7.0.0"
+  }
+}

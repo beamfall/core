@@ -1,0 +1,33 @@
+# Weekly entity-query latency benchmark (`make bench`): the ADR-0011 §2
+# synthetic 100k-Media fixture + P95 budget suite. Budget regressions fail
+# this job; the nightly release-gate also runs the same bench.
+name: bench
+
+on:
+  schedule:
+    - cron: "17 6 * * 1" # Mondays 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: make bench
+        run: |
+          make bench 2>&1 | tee bench.out
+          {
+            echo "## Entity-query benchmark (make bench)"
+            echo
+            echo '```'
+            cat bench.out
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

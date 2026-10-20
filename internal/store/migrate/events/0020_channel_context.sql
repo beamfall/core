@@ -1,0 +1,18 @@
+-- CHAN-3 (ADR-0158 Decision 4) — flag channel-context playback so it never
+-- poisons the resume projection.
+--
+-- A running Channel emits partial plays constantly; under the normal ADR-0011
+-- rules a shuffle Channel would flood Continue Watching with dozens of
+-- half-watched grazed items. The Channel itself is the resumable object, not
+-- each grazed item, so channel-context playback is FLAGGED here and EXCLUDED
+-- from the continue-watching / resume projection (engagement.go
+-- inProgressItemsSQL). The signals that ARE real still apply unchanged: an item
+-- played past the completion threshold from a Channel still marks watched, and
+-- history/play_count still record the play (with its channel context).
+--
+-- channel_context is additive and backward compatible: it backfills 0 on every
+-- existing row (all prior playback was direct, non-channel) and on any client
+-- that has not upgraded — so direct playback is unaffected. It sits off the
+-- entity-query hot path (playback_progress is the events-DB engagement
+-- projection, not the catalog).
+ALTER TABLE playback_progress ADD COLUMN channel_context INTEGER NOT NULL DEFAULT 0;

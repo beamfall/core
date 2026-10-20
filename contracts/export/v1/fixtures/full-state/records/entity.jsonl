@@ -1,0 +1,1 @@
+{"formatVersion":"1.0.0","class":"entity","id":"entity-1","updatedAt":"2026-07-11T00:00:00Z","payload":{"libraryID":"library-1","kind":"contributor","title":"Example Contributor","fields":{"role":"creator"},"relations":[{"relation":"contributed-to","target":{"class":"media","id":"media-1"}}]}}

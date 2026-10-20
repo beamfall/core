@@ -1,0 +1,24 @@
+{
+  "id": "regression-sdh-beats-default-and-forced",
+  "regression": true,
+  "notes": "Shipped competitor bug: the first-listed ('default') or a forced track won over an SDH match when preferSDH is set. The tie-break must favor SDH regardless of source order, and a forced track is never considered a full-subtitle candidate.",
+  "input": {
+    "mode": "always",
+    "langPrefs": ["en"],
+    "preferSDH": true,
+    "audioTrackLang": "en",
+    "tracks": [
+      { "language": "en", "kind": "muxed", "forced": false, "sdh": false, "visualImpaired": false, "commentary": false },
+      { "language": "en", "kind": "muxed", "forced": true, "sdh": false, "visualImpaired": false, "commentary": false },
+      { "language": "en", "kind": "muxed", "forced": false, "sdh": true, "visualImpaired": false, "commentary": false }
+    ],
+    "perItemRecord": null
+  },
+  "expected": {
+    "selection": {
+      "track": { "language": "en", "kind": "muxed", "roles": { "forced": false, "sdh": true, "visualImpaired": false, "commentary": false } },
+      "reason": "preferred-language SDH subtitles"
+    },
+    "unavailableReason": ""
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "targets": {
+    "server": { "minProven": 50 },
+    "web": { "minProven": 59 },
+    "tvos": { "minProven": 37 },
+    "androidtv": { "minProven": 15 },
+    "iphone": { "minProven": 40 },
+    "ipad": { "minProven": 64 },
+    "androidmobile": { "minProven": 16 },
+    "macos": { "minProven": 31 },
+    "windows": { "minProven": 0 }
+  }
+}

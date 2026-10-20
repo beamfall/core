@@ -1,0 +1,17 @@
+# sha256 of the canonical ADR-0194 §3 subtitle-selection corpus.
+# Paths are relative to internal/conformance/testdata/subtitle_selection/.
+8ef7a13de0ce6a332175e7b769b1a660c888988f141ce76de9d060dfe8920b38  01-mode-off-no-selection.json
+157786a6ce14a0fdfe8730c0130a1d951427d8558f3abfaae61d1387ae8f6902  02-always-mode-preferred-language-full-track.json
+51fdb0ba4746c62fedcfb90d43489faae6465114bf27d1f054db1e1f8957ead0  03-forced-only-selects-matching-forced-track.json
+5fba81afc45515643f31b872fc5c1c8f61a3c2e28e9a54789f2ef6697b575570  04-smart-mode-foreign-audio-no-match-surfaces-notice.json
+e57b744c627fb63713b61fc45b0efd1ef6899f622f49c994755e069fdc5653e6  05-pin-exact-tier-overrides-profile-preference.json
+f35f3f99d74c0dfe93c208c7edce7d0bd3bd6949485814d8e310c20838fb02e1  06-pin-off-selects-none.json
+295d79b46e6dcd4b070f5927d69ddf3f15bb1e5f9a0b05bb44ede1795fecac9f  07-pin-fallback-tier-excludes-commentary.json
+ce240c1b9a7425f248ef8878de5a113130cfd4c640555e22edbf7dd57310b04b  08-always-mode-last-resort-only-available-track.json
+9361a3a2b7b7dc6dfb9766406f2cefbb2f143e32f00ccbf7bf2585202450e139  09-regression-sdh-beats-default-and-forced.json
+e89160f867b35d52249867f6e08f60d66b4caa81dd1fd7f17e4ed4af08331f25  10-regression-forced-not-auto-enabling.json
+6732286cb3a6e910a8795666ec51fff326d80a56e76a9f8b36d45184adfcc520  11-regression-smart-mode-kills-subs-on-multi-audio.json
+d8a709d704d7e7e1af17c9c7aa5796ac40f8295d5abf5aa000dec2dc46aa0d4d  12-regression-sidecars-ignore-mode.json
+1a9bae2aacdfedf24715d75befc84bf15288d44016e1968047c4550ac39a15db  13-regression-wrong-language-forced-fallback.json
+dfe7794e1ff3e4cf0e99990097c2a3082bef7ab06ca5e55aee738622791c2e66  14-regression-next-episode-only-memory.json
+44b816277f8f7049317800f76022aec8060eccd7dd47365a3e962cca29f63cd3  15-regression-selection-lost-on-abr-switch.json

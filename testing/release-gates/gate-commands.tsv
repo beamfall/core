@@ -1,0 +1,25 @@
+# repo	source	gate	contract_bearing	pin
+# pin: the immutable 40-hex revision this row is certified at, or SELF for the
+#   repo under release (resolved from the invoking checkout's HEAD). Release mode
+#   (--release / GATE_MODE=release) refuses any row without a resolvable pin and
+#   checks out exactly that revision, so release evidence names the revisions it
+#   actually tested instead of whatever a default branch happened to be.
+#   Advance pins deliberately at release prep; the pinned commit must be pushed.
+beamfall	../beamfall	make gate	yes	SELF
+beamfall-android	../beamfall-android	make gate	no	5db96000d89c72af5fc01f7780e92feb40e65fd5
+beamfall-android-ui	../beamfall-android-ui	make gate	yes	937c9783d59c5c45f3f9c8f0697072c83ba2b3f3
+beamfall-apple	../beamfall-apple	make gate-host	no	38da0a567290d25ab1da972b4feacbe499375fa6
+beamfall-apple-ui	../beamfall-apple-ui	make gate	yes	43dbb2552451b36dd067ad6e7d0056dbf9373fba
+beamfall-cloud	../beamfall-cloud	make gate	yes	050afd203e1553cb3b90f375dcce9ba38170c2cf
+beamfall-design-system	../beamfall-design-system	make gate	yes	11bcac1cab2557564d79984d0d65f3820cd4bab3
+beamfall-plugin-audiobook	../beamfall-plugin-audiobook	go test ./...	no	70f4b28cd4d5a2adfcd0ce08408b34696572387e
+beamfall-plugin-enrichment	../beamfall-plugin-enrichment	go test ./...	no	72261bfaf4c8aa8ecc726ff4a9716ddcd1710480
+beamfall-plugin-familyarchive	../beamfall-plugin-familyarchive	go test ./...	no	eeef2e97a08c4ff627941d5d8877fedc3483dadd
+beamfall-plugin-filmtv	../beamfall-plugin-filmtv	go test ./...	no	6becb0191add241c625a74556654f1c15ef79e72
+beamfall-plugin-music	../beamfall-plugin-music	go test ./...	no	7f35df71776cd063b5ea68c84d842580e6a139f8
+beamfall-plugin-photos	../beamfall-plugin-photos	go test ./...	no	20df8d7d65281651b23fee8f280f83ee082acf42
+beamfall-plugin-podcasts	../beamfall-plugin-podcasts	go test ./...	no	44d8d0267317a6552830a88e58f9763d6ac47aa0
+beamfall-plugin-sdk	../beamfall-plugin-sdk	go test ./...	no	3e40a9e9f5ccdb5b7a97e0e152bd953ff1293d9e
+beamfall-relay	../beamfall-relay	make gate	yes	ca2aca2a2a54f7502a7088fea9548c5af064293d
+beamfall-web	../beamfall-web	make gate	yes	cb8692fb15bef250b7c9be14c40395a7f1f5c6e1
+beamfall-windows	../beamfall-windows	script/release-gate.sh	yes	2c14c112a7758fa13bf836940e81d3bc6c49e0f0

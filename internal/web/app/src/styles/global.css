@@ -1,0 +1,77 @@
+@import "tailwindcss";
+@import "./tokens.css";
+
+/* Bridge the Beamfall design tokens to the names shadcn/ui components expect,
+ * so every copied-in component is themed by our OKLCH tokens — not shadcn's
+ * defaults. Changing a register (Viewer/Manage) reskins shadcn automatically. */
+@theme inline {
+  --color-background: var(--bg-root);
+  --color-foreground: var(--text-primary);
+  --color-card: var(--bg-surface);
+  --color-card-foreground: var(--text-primary);
+  --color-popover: var(--bg-raised);
+  --color-popover-foreground: var(--text-primary);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--night-950);
+  --color-secondary: var(--bg-raised);
+  --color-secondary-foreground: var(--text-primary);
+  --color-muted: var(--bg-surface);
+  --color-muted-foreground: var(--text-muted);
+  --color-accent: var(--bg-raised);
+  --color-accent-foreground: var(--text-primary);
+  --color-destructive: var(--red-500);
+  /* Dark ink on red-500: 5.27:1 (WCAG AA); mist-100 on red-500 was 2.84:1
+   * and failed the ADR-0100 axe color-contrast gate on every destructive fill. */
+  --color-destructive-foreground: var(--ink-950);
+  --color-border: var(--border-subtle);
+  --color-input: var(--border-subtle);
+  --color-ring: var(--focus-ring);
+
+  --radius-sm: calc(var(--radius-control) - 2px);
+  --radius-md: var(--radius-control);
+  --radius-lg: var(--radius-card);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg-root);
+  color: var(--text-primary);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+[data-slot="tabs-tab"][data-focus-visible]:focus,
+[data-slot="select-item"][data-focus-visible]:focus {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+[data-slot="select-trigger"] {
+  margin-block-end: 0 !important;
+}
+
+form.console-card .space-y-1 > [data-slot="select-trigger"] {
+  margin-block-end: 4px !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

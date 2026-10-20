@@ -1,0 +1,6 @@
+# Catalog tooling artifacts — never committed. The committed products live in
+# ../../ui-catalog/ (manifest.json, images/, baselines/). package.json +
+# package-lock.json + *.mjs ARE committed.
+node_modules/
+.bin/
+.data/

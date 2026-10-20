@@ -1,0 +1,38 @@
+-- MIGREV-11 (ADR-0037 §2.4 follow-up from MIGREV-7) — run-scoped import
+-- provenance on the item_state_import (0072) replay ledger.
+--
+-- MIGREV-7 added import_run_id / import_importer_id / import_match_method to
+-- playback_progress (events 0017) for the DIRECT import write paths (watch-state
+-- upsert + scrobble apply). Item-state replay (0072) writes engagement through
+-- UpsertPlaybackProgressWithProvenance too, but only ever passes Source — the
+-- desired state sits in this catalog-persisted ledger and is APPLIED in a later
+-- run, so by the time it reaches the engagement write it has already lost the
+-- run/importer/method that produced it. Replayed rows therefore carry weaker
+-- provenance than freshly-imported ones. No regression today (this is metadata
+-- widening, not a behavior change), but per-run audit and re-run skip-explanation
+-- (ADR-0037 §2.4) cannot cover replayed rows without it.
+--
+-- Three additive, row-preserving columns on item_state_import, mirroring the
+-- MIGREV-7 shape exactly so the ledger can carry the same provenance forward to
+-- the eventual EngagementProvenance the replay write path stamps:
+--
+--   * import_run_id — the import job's ID (the run) that recorded this desired
+--     state. NULL on every pre-migration row and on rows recorded before a
+--     caller threads a run id through. Off the entity-query hot path.
+--
+--   * import_importer_id — the importer that produced the row (a shape-named
+--     plugin-owned id, invariant #1 — never a source-system domain term),
+--     stored verbatim and only ever compared/grouped, never parsed by core.
+--
+--   * import_match_method — how the item's identity was resolved: 'path',
+--     'external-id', or 'scrobble'. Records the strategy that actually matched
+--     the row (the producing branch), never an ADR-ideal ordering.
+--
+-- All three are NULL on every existing row (plain ALTER ADD COLUMN, no table
+-- recreation), so this is byte-for-byte the pre-MIGREV-11 behavior until a
+-- caller starts populating them. The ledger's PRIMARY KEY, indexes, and pending
+-- predicate (applied_at_ms) are unchanged; these are audit metadata, never a
+-- query predicate.
+ALTER TABLE item_state_import ADD COLUMN import_run_id TEXT;
+ALTER TABLE item_state_import ADD COLUMN import_importer_id TEXT;
+ALTER TABLE item_state_import ADD COLUMN import_match_method TEXT;

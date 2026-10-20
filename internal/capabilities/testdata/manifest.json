@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "namespace": "flat",
+  "buildTags": ["beamfall"],
+  "capabilities": [
+    {"id": "conversion", "version": 1},
+    {"id": "inference", "version": 1},
+    {"id": "rename", "version": 1}
+  ]
+}

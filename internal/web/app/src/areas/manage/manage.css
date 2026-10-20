@@ -1,0 +1,483 @@
+/* Beamfall MANAGE area — the Workbench register treatment.
+ *
+ * Source of truth: docs/design-system.md §"Cinematic when watching, dense when
+ * managing" and the Manage Workbench mockups. The React Manage screens wire real
+ * data through shadcn primitives; this stylesheet skins them into the
+ * operator-grade Workbench register: denser
+ * spacing (`dense` mode 4/8/12/16/20), table-like lists with hairline rows,
+ * tabular numerals, a refined left-nav, and restrained accent (beam on the
+ * primary action + focus only).
+ *
+ * Everything is scoped under `.manage-area`, so the Viewer's Cinema Dark and
+ * other areas are never touched. Tokens come from src/styles/tokens.css
+ * ([data-register="manage"] Workbench Dark + [data-theme="light"] overrides);
+ * this file only sets density, geometry, and component chrome — never color
+ * primitives. Imported from the Manage area index (in-scope).
+ */
+
+.manage-area {
+  /* Workbench `dense` spacing scale (design-system §Layout: 4/8/12/16/20). */
+  --mg-space-1: 4px;
+  --mg-space-2: 8px;
+  --mg-space-3: 12px;
+  --mg-space-4: 16px;
+  --mg-space-5: 20px;
+
+  /* Body-compact type role (13/18) + metadata role (12/16); tables and rows
+   * read at table density, not the Viewer's 15px body. */
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--text-secondary);
+}
+
+/* ---------------------------------------------------------------------------
+ * Left-nav: a dense, grouped operator rail with a beam active marker.
+ * Ported in spirit from the vanilla manage nav; the active state borrows the
+ * accent only as a left-edge marker (design-system §accent use: "selected
+ * state, focus, and primary action"), never a full accent fill.
+ * ------------------------------------------------------------------------- */
+.manage-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.manage-nav-group + .manage-nav-group {
+  margin-top: var(--mg-space-3);
+  padding-top: var(--mg-space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.manage-nav-link {
+  position: relative;
+  display: block;
+  padding: 6px 10px 6px 12px;
+  border-radius: var(--radius-control);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 550;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
+}
+
+.manage-nav-link:hover {
+  color: var(--text-primary);
+  background: var(--control-bg-hover);
+}
+
+.manage-nav-link:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.manage-nav-link[aria-current="page"] {
+  color: var(--text-primary);
+  font-weight: 650;
+  background: var(--bg-raised);
+}
+
+/* The beam left-edge marker — the only accent the nav carries. */
+.manage-nav-link[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+/* ---------------------------------------------------------------------------
+ * Section chrome: an operator panel, not a consumer card. Thin border, surface
+ * fill, no drop shadow (design-system §Elevation: "prefer contrast, borders,
+ * and z-order over heavy shadows"), 13px bold heading.
+ * ------------------------------------------------------------------------- */
+.manage-area .manage-section {
+  gap: var(--mg-space-3);
+  padding: var(--mg-space-3) 0;
+  border-radius: var(--radius-card);
+  border-color: var(--border-strong);
+  box-shadow: none;
+}
+
+.manage-area .manage-section-header {
+  padding: 0 var(--mg-space-3);
+}
+
+.manage-area .manage-section-title {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--text-primary);
+}
+
+.manage-area .manage-section-lead {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text-muted);
+}
+
+.manage-area .manage-section-body {
+  padding: 0 var(--mg-space-3);
+}
+
+/* ---------------------------------------------------------------------------
+ * Tables: the table-like list register. Dense rows, hairline separators, subtle
+ * zebra + hover, uppercase muted column heads, tabular numerals. This is the
+ * single biggest visible shift from the Viewer — lists read as a workbench
+ * table, not a stack of cards.
+ * ------------------------------------------------------------------------- */
+.manage-area .manage-table {
+  font-size: 13px;
+  line-height: 18px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.manage-area .manage-table thead th {
+  height: 30px;
+  padding: 0 var(--mg-space-2);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle);
+  background: transparent;
+  white-space: nowrap;
+}
+
+.manage-area .manage-table tbody td {
+  height: 40px;
+  padding: 5px var(--mg-space-2);
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+}
+
+.manage-area .manage-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Subtle zebra: even rows pick up the raised surface at low strength so the
+ * scan-line never dominates (design-system §accent stays <10%). */
+.manage-area .manage-table tbody tr:nth-child(even) td {
+  background: color-mix(in oklab, var(--bg-raised) 32%, transparent);
+}
+
+.manage-area .manage-table tbody tr:hover td {
+  background: var(--control-bg-hover);
+}
+
+/* The primary cell (title/name) reads as the row's anchor. */
+.manage-area .manage-cell-primary {
+  font-weight: 620;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.manage-folder-tools {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(240px, 1fr);
+  gap: var(--mg-space-3);
+  align-items: start;
+}
+
+.manage-folder-tree {
+  max-height: 220px;
+  overflow: auto;
+  padding: var(--mg-space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--bg-root);
+}
+
+/* Folder-tree node (mockup manage-folder-tree.html .node): a flat treeitem row,
+ * not a nested indented button. Depth is expressed by left padding, the leading
+ * glyph signals folder (▸) vs file (·), and a right-aligned .meta carries the
+ * child count or file size. Files read muted. */
+.manage-folder-node {
+  display: flex;
+  align-items: center;
+  gap: var(--mg-space-1);
+  padding: 3px var(--mg-space-1);
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.manage-folder-node.depth-1 {
+  padding-left: calc(var(--mg-space-1) + 18px);
+}
+.manage-folder-node.depth-2 {
+  padding-left: calc(var(--mg-space-1) + 36px);
+}
+.manage-folder-node.depth-3 {
+  padding-left: calc(var(--mg-space-1) + 54px);
+}
+
+.manage-folder-node:hover {
+  color: var(--text-primary);
+  background: var(--control-bg-hover);
+}
+
+.manage-folder-node[aria-selected="true"] {
+  color: var(--text-primary);
+  background: var(--bg-raised);
+  outline: 1px solid var(--border-strong);
+}
+
+.manage-folder-glyph {
+  flex: 0 0 13px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.manage-folder-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.manage-folder-node.file .manage-folder-name {
+  color: var(--text-muted);
+}
+
+.manage-folder-meta {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.manage-folder-controls {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--mg-space-2);
+}
+
+/* Selected-path readout (mockup .selected): a labeled chip-bearing row, not bare
+ * text — the path plus a Folder/File kind chip. */
+.manage-folder-selected {
+  display: flex;
+  align-items: center;
+  gap: var(--mg-space-2);
+  padding: var(--mg-space-1) var(--mg-space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--bg-raised);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.manage-folder-selected-label {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+.manage-folder-selected-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.manage-folder-selected .status-chip {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 900px) {
+  .manage-folder-tools {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Numeric / metadata cells: tabular, muted, right-aligned where used as a
+ * trailing detail column. */
+.manage-area .manage-cell-num {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------------------
+ * Status badges: the StatusBadge idiom. Tinted fills derive from semantic state
+ * tokens. Tabular for any count/percent inside a badge.
+ * ------------------------------------------------------------------------- */
+.manage-area .manage-badge {
+  min-height: 20px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border-color: transparent;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
+  background: color-mix(in oklab, var(--border-subtle) 70%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+
+.manage-area .manage-badge[data-state="green"] {
+  background: color-mix(in oklab, var(--state-direct) 28%, transparent);
+}
+.manage-area .manage-badge[data-state="amber"] {
+  background: color-mix(in oklab, var(--state-warning) 30%, transparent);
+}
+.manage-area .manage-badge[data-state="red"] {
+  background: color-mix(in oklab, var(--state-danger) 32%, transparent);
+}
+.manage-area .manage-badge[data-state="cyan"] {
+  background: color-mix(in oklab, var(--state-remote) 28%, transparent);
+}
+.manage-area .manage-badge[data-state="restricted"] {
+  background: color-mix(in oklab, var(--state-restricted) 30%, transparent);
+}
+
+/* Workbench Light remaps: the dark fills would swallow ink text on paper. */
+[data-theme="light"] .manage-area .manage-badge {
+  background: var(--paper-200);
+}
+[data-theme="light"] .manage-area .manage-badge[data-state="green"] {
+  background: color-mix(in oklab, var(--state-direct) 28%, transparent);
+}
+[data-theme="light"] .manage-area .manage-badge[data-state="amber"] {
+  background: color-mix(in oklab, var(--state-warning) 30%, transparent);
+}
+[data-theme="light"] .manage-area .manage-badge[data-state="red"] {
+  background: color-mix(in oklab, var(--state-danger) 32%, transparent);
+}
+[data-theme="light"] .manage-area .manage-badge[data-state="cyan"] {
+  background: color-mix(in oklab, var(--state-remote) 28%, transparent);
+}
+[data-theme="light"] .manage-area .manage-badge[data-state="restricted"] {
+  background: color-mix(in oklab, var(--state-restricted) 30%, transparent);
+}
+
+/* The Revealed / role pill in a section action slot keeps the iris hairline. */
+.manage-area .manage-badge[data-state="revealed"] {
+  border-color: color-mix(in oklab, var(--state-restricted) 55%, transparent);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+/* ---------------------------------------------------------------------------
+ * Inline count badge: the small pill that trails a tag name in the Tag tree
+ * (manage-tags mockup .count) — assignment total, muted, tabular, never a
+ * focusable control. Distinct from the tinted manage-badge status pill.
+ * ------------------------------------------------------------------------- */
+.manage-area .manage-count {
+  flex: 0 0 auto;
+  min-width: 18px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 16px;
+  letter-spacing: 0.04em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* ---------------------------------------------------------------------------
+ * Field row: the dense key/value + control row used by the editor sections
+ * (schedules, retention, scan). Hairline-separated, 40px min — the same row
+ * idiom as a table, for surfaces that aren't a real <table>.
+ * ------------------------------------------------------------------------- */
+.manage-area .manage-fieldrow {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  padding: var(--mg-space-3);
+  background: color-mix(in oklab, var(--bg-raised) 24%, transparent);
+}
+
+/* ---------------------------------------------------------------------------
+ * Empty + loading states. Skeletons are never focusable (design-system §Motion
+ * + §Accessibility) — they are presentational divs only. The empty line stays
+ * calm and literal.
+ * ------------------------------------------------------------------------- */
+.manage-area .manage-empty {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: var(--mg-space-2) 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------------------
+ * Artwork candidate cell: the 2:3 poster slot the candidate grid renders into.
+ * Dense, bordered, applied state carries a green hairline (the only place a
+ * state color frames a tile, matching the vanilla artwork treatment).
+ * ------------------------------------------------------------------------- */
+.manage-area .manage-art-tile {
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-root);
+}
+
+.manage-area .manage-art-tile[data-applied="true"] {
+  border-color: color-mix(in oklab, var(--state-direct) 70%, transparent);
+}
+
+/* ---------------------------------------------------------------------------
+ * Collections (WEB-5F): the ordered-row reorder handle, the opaque Media-ID
+ * mono cell, the manual/smart tab cluster, the add-row separator, and the
+ * selected-row marker. Layout-only; colours come from the register tokens.
+ * ------------------------------------------------------------------------- */
+.manage-area .manage-reorder {
+  gap: 1px;
+  margin-right: 2px;
+  vertical-align: middle;
+}
+
+.manage-area .manage-reorder button {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  line-height: 0.8;
+  font-size: 11px;
+  padding: 0 2px;
+}
+
+.manage-area .manage-reorder button:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.manage-area .manage-reorder button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.manage-area .manage-mono {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  overflow-wrap: anywhere;
+}
+
+.manage-area .manage-tabs {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.manage-area .manage-add-row {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.manage-area .manage-table tbody tr[data-selected] td {
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}

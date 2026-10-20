@@ -1,0 +1,3610 @@
+{
+  "snapshotVersion": "1",
+  "fields": [
+    {
+      "field": "acceptpendingaitag",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "id",
+        "mediaID",
+        "mediaTitle",
+        "proposedAt",
+        "proposedBy",
+        "tagKind",
+        "value"
+      ]
+    },
+    {
+      "field": "acceptwatchparty",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "degraded",
+        "item",
+        "partyID",
+        "positionMS",
+        "presentAtMS"
+      ]
+    },
+    {
+      "field": "accessgrantsforprofile",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "actorProfileID",
+        "createdAt",
+        "mediaID",
+        "profileID",
+        "requestID",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "accessrequest",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "id",
+        "mediaID",
+        "profileID",
+        "responder",
+        "status",
+        "ttlExpiresAt",
+        "verdict"
+      ]
+    },
+    {
+      "field": "accessschedule",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "profileID",
+        "windows"
+      ]
+    },
+    {
+      "field": "activity",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "action",
+        "apiKeyID",
+        "deviceID",
+        "id",
+        "libraryID",
+        "occurredAt",
+        "profileID",
+        "reversible",
+        "sessionID",
+        "targetID",
+        "targetType",
+        "tokenID"
+      ]
+    },
+    {
+      "field": "activitylog",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "action",
+        "apiKeyID",
+        "deviceID",
+        "id",
+        "libraryID",
+        "occurredAt",
+        "profileID",
+        "reversible",
+        "sessionID",
+        "targetID",
+        "targetType",
+        "tokenID"
+      ]
+    },
+    {
+      "field": "addcollectionmedia",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "id",
+        "libraryID",
+        "memberCount",
+        "members",
+        "name",
+        "parentID",
+        "sortOrder",
+        "trashedAt",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "addmediaexternalid",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "favorited",
+        "id",
+        "summary",
+        "title",
+        "year"
+      ]
+    },
+    {
+      "field": "addpathpickerroot",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "entryClass",
+        "name",
+        "path"
+      ]
+    },
+    {
+      "field": "addsubscription",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "addedAt",
+        "feedURL",
+        "followed",
+        "hasAuth",
+        "id",
+        "lastPolledAt",
+        "libraryID",
+        "retentionKind",
+        "retentionN",
+        "root",
+        "title"
+      ]
+    },
+    {
+      "field": "adminsession",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "active",
+        "expiresAt"
+      ]
+    },
+    {
+      "field": "ambientqueue",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "artwork",
+        "artworkSlots",
+        "id",
+        "kind",
+        "locked",
+        "muted",
+        "restricted",
+        "summary",
+        "title"
+      ]
+    },
+    {
+      "field": "apikeys",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "createdAt",
+        "id",
+        "lastUsedAt",
+        "name",
+        "profileID",
+        "revoked",
+        "scopes"
+      ]
+    },
+    {
+      "field": "apitokens",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "createdAt",
+        "id",
+        "lastUsedAt",
+        "name",
+        "revoked"
+      ]
+    },
+    {
+      "field": "approvepluginpermission",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "artifactSHA256",
+        "grants",
+        "installed",
+        "lastError",
+        "lifecycleActions",
+        "pluginID",
+        "state",
+        "updateSource",
+        "version"
+      ]
+    },
+    {
+      "field": "artworkcandidates",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "applied",
+        "id",
+        "pluginID",
+        "previewURL",
+        "scraperID",
+        "slot"
+      ]
+    },
+    {
+      "field": "assigntag",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "libraryID",
+        "tags",
+        "targetID",
+        "targetType"
+      ]
+    },
+    {
+      "field": "associatesubscriptionentry",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "guid",
+        "mediaID",
+        "path",
+        "replayedItemStateSweep",
+        "subscriptionID"
+      ]
+    },
+    {
+      "field": "backup",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "manifest"
+      ]
+    },
+    {
+      "field": "backuphistory",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "createdAt",
+        "directory",
+        "error",
+        "sizeBytes",
+        "valid"
+      ]
+    },
+    {
+      "field": "batchrenamemanagedpaths",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "affected",
+        "batchID",
+        "kind"
+      ]
+    },
+    {
+      "field": "browseserverfolders",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "children",
+        "kind",
+        "modifiedAt",
+        "name",
+        "path",
+        "size"
+      ]
+    },
+    {
+      "field": "bulkassigntags",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "affected",
+        "tags"
+      ]
+    },
+    {
+      "field": "bulkeditapply",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "affected",
+        "batchID",
+        "kind"
+      ]
+    },
+    {
+      "field": "bulkeditpreview",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "libraryID",
+        "mediaID",
+        "new",
+        "old",
+        "title"
+      ]
+    },
+    {
+      "field": "bulkfetchmissingartwork",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "affected"
+      ]
+    },
+    {
+      "field": "bulkfetchmissingartworkselected",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "affected"
+      ]
+    },
+    {
+      "field": "bulkmergeduplicates",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "affected"
+      ]
+    },
+    {
+      "field": "bulkmergeduplicatesselected",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "affected"
+      ]
+    },
+    {
+      "field": "bulkrescanunmatched",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "affected"
+      ]
+    },
+    {
+      "field": "bulkrescanunmatchedselected",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "affected"
+      ]
+    },
+    {
+      "field": "bulkrescrapescrapefailures",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "affected"
+      ]
+    },
+    {
+      "field": "bulkrescrapescrapefailuresselected",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "affected"
+      ]
+    },
+    {
+      "field": "bulktrashbroken",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "affected"
+      ]
+    },
+    {
+      "field": "bulktrashbrokenselected",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "affected"
+      ]
+    },
+    {
+      "field": "capabilitystates",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "enabled",
+        "flippable",
+        "id",
+        "kind",
+        "reason"
+      ]
+    },
+    {
+      "field": "channels",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "id",
+        "libraryID",
+        "name",
+        "ordering",
+        "profileID",
+        "repeat",
+        "sourceExpr"
+      ]
+    },
+    {
+      "field": "clearallmutes",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "cleared"
+      ]
+    },
+    {
+      "field": "clearmute",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "includeDescendants",
+        "kind",
+        "muted",
+        "targetID"
+      ]
+    },
+    {
+      "field": "clientprefs",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "key",
+        "updatedAt",
+        "value"
+      ]
+    },
+    {
+      "field": "collections",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "id",
+        "libraryID",
+        "memberCount",
+        "members",
+        "name",
+        "parentID",
+        "sortOrder",
+        "trashedAt",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "connectionendpoints",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "endpoints",
+        "version"
+      ]
+    },
+    {
+      "field": "consoleconfig",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "backgroundWorkers",
+        "eventsRetentionDays",
+        "observabilityEnabled",
+        "plugins",
+        "remoteEnrollmentEnabled",
+        "updateCheckChannel",
+        "updateCheckEnabled"
+      ]
+    },
+    {
+      "field": "controlsession",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "command",
+        "sessionID"
+      ]
+    },
+    {
+      "field": "createapikey",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "info",
+        "key"
+      ]
+    },
+    {
+      "field": "createapitoken",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "info",
+        "token"
+      ]
+    },
+    {
+      "field": "createchannel",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "id",
+        "libraryID",
+        "name",
+        "ordering",
+        "profileID",
+        "repeat",
+        "sourceExpr"
+      ]
+    },
+    {
+      "field": "createcollection",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "id",
+        "libraryID",
+        "memberCount",
+        "members",
+        "name",
+        "parentID",
+        "sortOrder",
+        "trashedAt",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "createlibrary",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "custodial",
+        "encrypted",
+        "familyScope",
+        "id",
+        "pluginID",
+        "previewClips",
+        "restricted",
+        "roots",
+        "title"
+      ]
+    },
+    {
+      "field": "createmanagedfolder",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "kind",
+        "path"
+      ]
+    },
+    {
+      "field": "createmarker",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "endSeconds",
+        "id",
+        "mediaID",
+        "segmentKind",
+        "startSeconds",
+        "tags",
+        "title",
+        "trashedAt"
+      ]
+    },
+    {
+      "field": "createmediafromunmatched",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "favorited",
+        "id",
+        "summary",
+        "title",
+        "year"
+      ]
+    },
+    {
+      "field": "createofflinepack",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "bytesReady",
+        "bytesTotal",
+        "createdAt",
+        "expiresAt",
+        "id",
+        "itemCount",
+        "keyToken",
+        "manifestToken",
+        "state",
+        "targetKind",
+        "targetRef",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "createprofile",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "audioLanguages",
+        "certificationCeilings",
+        "disabled",
+        "id",
+        "kind",
+        "libraryIDs",
+        "maxConcurrentStreams",
+        "name",
+        "preferSDH",
+        "subtitleLanguages",
+        "subtitleMode",
+        "transcodeAllowed"
+      ]
+    },
+    {
+      "field": "createretentionrule",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "createdAt",
+        "enabled",
+        "graceDays",
+        "id",
+        "name",
+        "revealedAtAuthoring",
+        "smartCollectionID",
+        "sourceExpr",
+        "targetLibraryID",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "createsavedfilter",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "filterJSON",
+        "id",
+        "libraryID",
+        "name",
+        "pinned",
+        "profileID"
+      ]
+    },
+    {
+      "field": "createsmartcollection",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "id",
+        "libraryID",
+        "name",
+        "sortExpr",
+        "sourceExpr"
+      ]
+    },
+    {
+      "field": "createtag",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "assignmentCount",
+        "createdAt",
+        "id",
+        "name",
+        "parentTagID",
+        "trashedAt",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "createwatchparty",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "content",
+        "hostID",
+        "invitees",
+        "members",
+        "partyID",
+        "relaxed"
+      ]
+    },
+    {
+      "field": "currentsession",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "audioLanguages",
+        "deviceRole",
+        "expiresAt",
+        "id",
+        "preferSDH",
+        "profile",
+        "profileID",
+        "revealed",
+        "subtitleLanguages",
+        "subtitleMode"
+      ]
+    },
+    {
+      "field": "deletechannel",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "id",
+        "libraryID",
+        "name",
+        "ordering",
+        "profileID",
+        "repeat",
+        "sourceExpr"
+      ]
+    },
+    {
+      "field": "deletecollection",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "id",
+        "libraryID",
+        "memberCount",
+        "members",
+        "name",
+        "parentID",
+        "sortOrder",
+        "trashedAt",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "deletelibrary",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
+      "field": "deletemanagedpath",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "kind",
+        "originalPath",
+        "trashID"
+      ]
+    },
+    {
+      "field": "deletemarker",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "endSeconds",
+        "id",
+        "mediaID",
+        "segmentKind",
+        "startSeconds",
+        "tags",
+        "title",
+        "trashedAt"
+      ]
+    },
+    {
+      "field": "deletemyengagement",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "complete",
+        "excludedLibraries",
+        "exclusionMessage",
+        "scope",
+        "sealedLibrariesExcluded"
+      ]
+    },
+    {
+      "field": "deletemypacktokens",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
+      "field": "deleteretentionrule",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "createdAt",
+        "enabled",
+        "graceDays",
+        "id",
+        "name",
+        "revealedAtAuthoring",
+        "smartCollectionID",
+        "sourceExpr",
+        "targetLibraryID",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "deletesavedfilter",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "filterJSON",
+        "id",
+        "libraryID",
+        "name",
+        "pinned",
+        "profileID"
+      ]
+    },
+    {
+      "field": "deletesmartcollection",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "id",
+        "libraryID",
+        "name",
+        "sortExpr",
+        "sourceExpr"
+      ]
+    },
+    {
+      "field": "deletetag",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "assignmentCount",
+        "createdAt",
+        "id",
+        "name",
+        "parentTagID",
+        "trashedAt",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "devices",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "current",
+        "deviceID",
+        "name",
+        "revoked",
+        "role"
+      ]
+    },
+    {
+      "field": "disablescrapercredential",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "authRef",
+        "credentialConfigured",
+        "credentialError",
+        "credentialStatus",
+        "scraperIDs"
+      ]
+    },
+    {
+      "field": "dismissunmatched",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
+      "field": "encryptedlibrarystatus",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "keyLocusClass",
+        "keyLocusDisclosure",
+        "libraryID",
+        "provisioned",
+        "sealed",
+        "unsealMode"
+      ]
+    },
+    {
+      "field": "endadminsession",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "active",
+        "expiresAt"
+      ]
+    },
+    {
+      "field": "engagementcounter",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "counter",
+        "history"
+      ]
+    },
+    {
+      "field": "entitiesformedia",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "attributes",
+        "fields",
+        "id",
+        "kind",
+        "kindDisplayName",
+        "title"
+      ]
+    },
+    {
+      "field": "entity",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "fields",
+        "id",
+        "kind",
+        "kindDisplayName",
+        "title"
+      ]
+    },
+    {
+      "field": "entityrelations",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "attributes",
+        "entity",
+        "media",
+        "relation",
+        "sortOrder",
+        "targetKind"
+      ]
+    },
+    {
+      "field": "evictplaybackrenditioncache",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "affected"
+      ]
+    },
+    {
+      "field": "extensionrequest",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "expiresAt",
+        "grantMinutes",
+        "id",
+        "profileID",
+        "responder",
+        "status",
+        "triggerSource"
+      ]
+    },
+    {
+      "field": "fixmatch",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "favorited",
+        "id",
+        "summary",
+        "title",
+        "year"
+      ]
+    },
+    {
+      "field": "fixmatchcandidates",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "artwork",
+        "confidence",
+        "id",
+        "pluginID",
+        "reason",
+        "scored",
+        "scraperID",
+        "summary",
+        "threshold",
+        "title",
+        "year"
+      ]
+    },
+    {
+      "field": "fixmatchpreview",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "changed",
+        "current",
+        "field",
+        "proposed"
+      ]
+    },
+    {
+      "field": "foldertree",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "children",
+        "kind",
+        "modifiedAt",
+        "name",
+        "path",
+        "size"
+      ]
+    },
+    {
+      "field": "formgroup",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "groupID",
+        "members"
+      ]
+    },
+    {
+      "field": "identifyapply",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "favorited",
+        "id",
+        "summary",
+        "title",
+        "year"
+      ]
+    },
+    {
+      "field": "identifylookup",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "artwork",
+        "id",
+        "summary",
+        "title",
+        "year"
+      ]
+    },
+    {
+      "field": "identifysearch",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "artwork",
+        "id",
+        "summary",
+        "title",
+        "year"
+      ]
+    },
+    {
+      "field": "importers",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "categories",
+        "conflict",
+        "credentialConfigured",
+        "credentialRef",
+        "credentialRequired",
+        "credentialStatus",
+        "displayName",
+        "id",
+        "input",
+        "pluginID"
+      ]
+    },
+    {
+      "field": "importmanagedfile",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "kind",
+        "path"
+      ]
+    },
+    {
+      "field": "importstatus",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "attempts",
+        "class",
+        "createdAt",
+        "error",
+        "finishedAt",
+        "id",
+        "kind",
+        "progress",
+        "startedAt",
+        "status",
+        "unmatchedRecords",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "invitetowatchparty",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "content",
+        "hostID",
+        "invitees",
+        "members",
+        "partyID",
+        "relaxed"
+      ]
+    },
+    {
+      "field": "job",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "attempts",
+        "class",
+        "createdAt",
+        "error",
+        "finishedAt",
+        "id",
+        "kind",
+        "progress",
+        "startedAt",
+        "status",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "jobcancel",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "attempts",
+        "class",
+        "createdAt",
+        "error",
+        "finishedAt",
+        "id",
+        "kind",
+        "progress",
+        "startedAt",
+        "status",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "jobevents",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "id",
+        "jobID",
+        "occurredAt",
+        "payload",
+        "type"
+      ]
+    },
+    {
+      "field": "jobretry",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "attempts",
+        "class",
+        "createdAt",
+        "error",
+        "finishedAt",
+        "id",
+        "kind",
+        "progress",
+        "startedAt",
+        "status",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "jobs",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "attempts",
+        "class",
+        "createdAt",
+        "error",
+        "finishedAt",
+        "id",
+        "kind",
+        "progress",
+        "startedAt",
+        "status",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "joingroup",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "groupID",
+        "members"
+      ]
+    },
+    {
+      "field": "leavegroup",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "groupID"
+      ]
+    },
+    {
+      "field": "leavewatchparty",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "partyID"
+      ]
+    },
+    {
+      "field": "libraries",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "custodial",
+        "encrypted",
+        "familyScope",
+        "id",
+        "pluginID",
+        "previewClips",
+        "restricted",
+        "roots",
+        "title"
+      ]
+    },
+    {
+      "field": "libraryduplicategroups",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "items"
+      ]
+    },
+    {
+      "field": "libraryhealth",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "counts",
+        "libraryID",
+        "title"
+      ]
+    },
+    {
+      "field": "libraryhealthitems",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "libraryID",
+        "mediaID",
+        "title"
+      ]
+    },
+    {
+      "field": "libraryindexstatus",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "aiIndexing",
+        "failures",
+        "indexed",
+        "libraryID",
+        "state",
+        "title",
+        "total"
+      ]
+    },
+    {
+      "field": "linkmediarelation",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "relation",
+        "sourceID",
+        "targetID"
+      ]
+    },
+    {
+      "field": "linkscrobble",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "accountLabel",
+        "linked",
+        "linkedAt",
+        "service"
+      ]
+    },
+    {
+      "field": "livesessions",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "deviceID",
+        "deviceName",
+        "deviceRole",
+        "durationSeconds",
+        "expiresAt",
+        "libraryID",
+        "mediaID",
+        "positionSeconds",
+        "profileID",
+        "profileName",
+        "sessionID",
+        "title",
+        "transcoding"
+      ]
+    },
+    {
+      "field": "manifest",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "generatedAt",
+        "layouts",
+        "libraries",
+        "navigation",
+        "profileID",
+        "revealed",
+        "systemSurfaceDisclosure",
+        "theme"
+      ]
+    },
+    {
+      "field": "markers",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "endSeconds",
+        "id",
+        "mediaID",
+        "segmentKind",
+        "startSeconds",
+        "tags",
+        "title",
+        "trashedAt"
+      ]
+    },
+    {
+      "field": "marknotificationread",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "found",
+        "id"
+      ]
+    },
+    {
+      "field": "media",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "favorited",
+        "id",
+        "summary",
+        "title",
+        "year"
+      ]
+    },
+    {
+      "field": "mediafieldlocks",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "field",
+        "locked"
+      ]
+    },
+    {
+      "field": "mediafields",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "label",
+        "name",
+        "type",
+        "value"
+      ]
+    },
+    {
+      "field": "mediafiles",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "contentFingerprint",
+        "mediaID",
+        "osHash",
+        "pHash",
+        "partOrdinal",
+        "path",
+        "versionLabel"
+      ]
+    },
+    {
+      "field": "mediaforentity",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "artwork",
+        "artworkSlots",
+        "id",
+        "kind",
+        "locked",
+        "muted",
+        "restricted",
+        "summary",
+        "title"
+      ]
+    },
+    {
+      "field": "mediarelations",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "media",
+        "relation"
+      ]
+    },
+    {
+      "field": "mergeentities",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "affected",
+        "batchID",
+        "kind"
+      ]
+    },
+    {
+      "field": "mergemedia",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "affected",
+        "batchID",
+        "kind"
+      ]
+    },
+    {
+      "field": "metadataexport",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "collections",
+        "entities",
+        "exportedAt",
+        "libraries",
+        "media",
+        "mediaLinks",
+        "relations",
+        "schema"
+      ]
+    },
+    {
+      "field": "movemanagedpath",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "kind",
+        "path"
+      ]
+    },
+    {
+      "field": "mutes",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "includeDescendants",
+        "kind",
+        "mutedAt",
+        "targetID"
+      ]
+    },
+    {
+      "field": "mydatasummary",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "favorites",
+        "firstActivity",
+        "lastActivity",
+        "libraryBreakdown",
+        "libraryCount",
+        "plays",
+        "queueEntries",
+        "watched"
+      ]
+    },
+    {
+      "field": "myengagement",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "collections",
+        "complete",
+        "connections",
+        "engagementEvents",
+        "excludedLibraries",
+        "exclusionMessage",
+        "exportedAt",
+        "favorites",
+        "markers",
+        "mutes",
+        "playbackProgress",
+        "profile",
+        "queue",
+        "savedFilters",
+        "schema",
+        "sealedLibrariesExcluded"
+      ]
+    },
+    {
+      "field": "myengagementlog",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "events",
+        "total"
+      ]
+    },
+    {
+      "field": "mysessions",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "packTokens",
+        "sessions",
+        "streamTokens"
+      ]
+    },
+    {
+      "field": "navigationmanifest",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "generatedAt",
+        "layouts",
+        "libraries",
+        "navigation",
+        "profileID",
+        "revealed",
+        "systemSurfaceDisclosure",
+        "theme"
+      ]
+    },
+    {
+      "field": "navoverride",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "hiddenNodeIDs",
+        "layoutSectionOverrides",
+        "nodeLabelOverrides",
+        "nodeOrder",
+        "themeAccentColor"
+      ]
+    },
+    {
+      "field": "navoverridehistory",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "data",
+        "id",
+        "scope"
+      ]
+    },
+    {
+      "field": "notifications",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "body",
+        "createdAt",
+        "id",
+        "kind",
+        "read",
+        "ref",
+        "title"
+      ]
+    },
+    {
+      "field": "offlinepacks",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "bytesReady",
+        "bytesTotal",
+        "createdAt",
+        "expiresAt",
+        "id",
+        "itemCount",
+        "keyToken",
+        "manifestToken",
+        "state",
+        "targetKind",
+        "targetRef",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "operationsgovernor",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "activeGeneration",
+        "activeTranscodes",
+        "available",
+        "backgroundCPUBudget",
+        "generationAllowed",
+        "generationWorkers",
+        "lowPowerMode",
+        "transcodePreemptingBackground"
+      ]
+    },
+    {
+      "field": "operatordeleteprofiledata",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "profileID"
+      ]
+    },
+    {
+      "field": "organizeapply",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "affected",
+        "batchID",
+        "kind"
+      ]
+    },
+    {
+      "field": "organizepreview",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "mediaID",
+        "newPath",
+        "oldPath",
+        "title"
+      ]
+    },
+    {
+      "field": "pathpicker",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "entries",
+        "maxPreviewEntries",
+        "previewTimeoutMs",
+        "purposeKey",
+        "role",
+        "roles",
+        "roots",
+        "runtime"
+      ]
+    },
+    {
+      "field": "pendingaccessrequests",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "id",
+        "mediaID",
+        "profileID",
+        "responder",
+        "status",
+        "ttlExpiresAt",
+        "verdict"
+      ]
+    },
+    {
+      "field": "pendingaitagqueue",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "id",
+        "mediaID",
+        "mediaTitle",
+        "proposedAt",
+        "proposedBy",
+        "tagKind",
+        "value"
+      ]
+    },
+    {
+      "field": "pinartworkcandidate",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "applied",
+        "id",
+        "pluginID",
+        "previewURL",
+        "scraperID",
+        "slot"
+      ]
+    },
+    {
+      "field": "playbackrenditioncache",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "budgetBytes",
+        "configured",
+        "evicted",
+        "failed",
+        "generating",
+        "ready",
+        "readyBytes"
+      ]
+    },
+    {
+      "field": "plugins",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "certificationScale",
+        "displayName",
+        "id",
+        "mediaClassLabels",
+        "mediaLabel"
+      ]
+    },
+    {
+      "field": "pluginworker",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "artifactSHA256",
+        "grants",
+        "installed",
+        "lastError",
+        "lifecycleActions",
+        "pluginID",
+        "state",
+        "updateSource",
+        "version"
+      ]
+    },
+    {
+      "field": "precomputeplaybackrenditions",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "affected"
+      ]
+    },
+    {
+      "field": "profiles",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "certificationCeilings",
+        "id",
+        "kind",
+        "name"
+      ]
+    },
+    {
+      "field": "profilesessions",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "current",
+        "deviceID",
+        "deviceName",
+        "deviceRole",
+        "durationSeconds",
+        "libraryID",
+        "mediaID",
+        "positionSeconds",
+        "sessionID",
+        "title",
+        "transcoding"
+      ]
+    },
+    {
+      "field": "provisionencryptedlibrary",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "acknowledgementRequired",
+        "backupRotationArtifacts",
+        "recoveryKey",
+        "residualRiskNotice",
+        "status"
+      ]
+    },
+    {
+      "field": "purgetrash",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "affected"
+      ]
+    },
+    {
+      "field": "qbittorrentingest",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "config",
+        "status"
+      ]
+    },
+    {
+      "field": "qualitypolicy",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "cutoff",
+        "libraryID",
+        "order"
+      ]
+    },
+    {
+      "field": "queueadd",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "artwork",
+        "artworkSlots",
+        "id",
+        "kind",
+        "locked",
+        "muted",
+        "restricted",
+        "summary",
+        "title"
+      ]
+    },
+    {
+      "field": "queueclear",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "artwork",
+        "artworkSlots",
+        "id",
+        "kind",
+        "locked",
+        "muted",
+        "restricted",
+        "summary",
+        "title"
+      ]
+    },
+    {
+      "field": "queuemove",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "artwork",
+        "artworkSlots",
+        "id",
+        "kind",
+        "locked",
+        "muted",
+        "restricted",
+        "summary",
+        "title"
+      ]
+    },
+    {
+      "field": "queueremove",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "artwork",
+        "artworkSlots",
+        "id",
+        "kind",
+        "locked",
+        "muted",
+        "restricted",
+        "summary",
+        "title"
+      ]
+    },
+    {
+      "field": "recordengagement",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "count",
+        "entityID",
+        "events",
+        "kind",
+        "lastOccurredAt",
+        "mediaID"
+      ]
+    },
+    {
+      "field": "registerdevicepushtoken",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "enabled",
+        "registered"
+      ]
+    },
+    {
+      "field": "registerimportsource",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
+      "field": "rejectpendingaitag",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "id",
+        "mediaID",
+        "mediaTitle",
+        "proposedAt",
+        "proposedBy",
+        "tagKind",
+        "value"
+      ]
+    },
+    {
+      "field": "relock",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "revealed"
+      ]
+    },
+    {
+      "field": "remoteaccess",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "directHTTPS",
+        "endpoints",
+        "plainHTTPPublicWarning",
+        "relay"
+      ]
+    },
+    {
+      "field": "removecollectionmedia",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "id",
+        "libraryID",
+        "memberCount",
+        "members",
+        "name",
+        "parentID",
+        "sortOrder",
+        "trashedAt",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "removelastengagement",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "count",
+        "entityID",
+        "events",
+        "kind",
+        "lastOccurredAt",
+        "mediaID"
+      ]
+    },
+    {
+      "field": "removesubscription",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "addedAt",
+        "feedURL",
+        "followed",
+        "hasAuth",
+        "id",
+        "lastPolledAt",
+        "libraryID",
+        "retentionKind",
+        "retentionN",
+        "root",
+        "title"
+      ]
+    },
+    {
+      "field": "renamemanagedpath",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "kind",
+        "path"
+      ]
+    },
+    {
+      "field": "reordercollectionmedia",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "id",
+        "libraryID",
+        "memberCount",
+        "members",
+        "name",
+        "parentID",
+        "sortOrder",
+        "trashedAt",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "reportdrift",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "action",
+        "groupID",
+        "rate"
+      ]
+    },
+    {
+      "field": "reportplayback",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "mediaID",
+        "positionSeconds",
+        "watched"
+      ]
+    },
+    {
+      "field": "requestaccess",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "id",
+        "mediaID",
+        "profileID",
+        "responder",
+        "status",
+        "ttlExpiresAt",
+        "verdict"
+      ]
+    },
+    {
+      "field": "requestextension",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "expiresAt",
+        "grantMinutes",
+        "id",
+        "profileID",
+        "responder",
+        "status",
+        "triggerSource"
+      ]
+    },
+    {
+      "field": "requestwatchpartytransport",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "approved",
+        "partyID"
+      ]
+    },
+    {
+      "field": "resetnavoverride",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "hiddenNodeIDs",
+        "layoutSectionOverrides",
+        "nodeLabelOverrides",
+        "nodeOrder",
+        "themeAccentColor"
+      ]
+    },
+    {
+      "field": "resetunmatchedsuppression",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
+      "field": "resolveaccessrequest",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "id",
+        "mediaID",
+        "profileID",
+        "responder",
+        "status",
+        "ttlExpiresAt",
+        "verdict"
+      ]
+    },
+    {
+      "field": "respondextension",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "expiresAt",
+        "grantMinutes",
+        "id",
+        "profileID",
+        "responder",
+        "status",
+        "triggerSource"
+      ]
+    },
+    {
+      "field": "restorecollection",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "id",
+        "libraryID",
+        "memberCount",
+        "members",
+        "name",
+        "parentID",
+        "sortOrder",
+        "trashedAt",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "restoremanagedpath",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "kind",
+        "path"
+      ]
+    },
+    {
+      "field": "restoremarker",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "endSeconds",
+        "id",
+        "mediaID",
+        "segmentKind",
+        "startSeconds",
+        "tags",
+        "title",
+        "trashedAt"
+      ]
+    },
+    {
+      "field": "restoremedia",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "id",
+        "libraryID",
+        "title",
+        "trashedAt"
+      ]
+    },
+    {
+      "field": "restorenavoverride",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "hiddenNodeIDs",
+        "layoutSectionOverrides",
+        "nodeLabelOverrides",
+        "nodeOrder",
+        "themeAccentColor"
+      ]
+    },
+    {
+      "field": "restoretag",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "assignmentCount",
+        "createdAt",
+        "id",
+        "name",
+        "parentTagID",
+        "trashedAt",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "retentionrules",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "createdAt",
+        "enabled",
+        "graceDays",
+        "id",
+        "name",
+        "revealedAtAuthoring",
+        "smartCollectionID",
+        "sourceExpr",
+        "targetLibraryID",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "reveal",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "revealed"
+      ]
+    },
+    {
+      "field": "revokeaccessgrant",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "actorProfileID",
+        "createdAt",
+        "mediaID",
+        "profileID",
+        "requestID",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "revokealldevices",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "revokedCount",
+        "transcodesAborted"
+      ]
+    },
+    {
+      "field": "revokeapikey",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "createdAt",
+        "id",
+        "lastUsedAt",
+        "name",
+        "profileID",
+        "revoked",
+        "scopes"
+      ]
+    },
+    {
+      "field": "revokeapitoken",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "createdAt",
+        "id",
+        "lastUsedAt",
+        "name",
+        "revoked"
+      ]
+    },
+    {
+      "field": "revokedevice",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "deviceID",
+        "transcodesAborted"
+      ]
+    },
+    {
+      "field": "revokeofflinepack",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "bytesReady",
+        "bytesTotal",
+        "createdAt",
+        "expiresAt",
+        "id",
+        "itemCount",
+        "keyToken",
+        "manifestToken",
+        "state",
+        "targetKind",
+        "targetRef",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "rewrapencryptedlibrary",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "acknowledgementRequired",
+        "backupRotationArtifacts",
+        "recoveryKey",
+        "residualRiskNotice",
+        "status"
+      ]
+    },
+    {
+      "field": "runeventscompaction",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "attempts",
+        "class",
+        "createdAt",
+        "error",
+        "finishedAt",
+        "id",
+        "kind",
+        "progress",
+        "startedAt",
+        "status",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "runimport",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "attempts",
+        "class",
+        "createdAt",
+        "error",
+        "finishedAt",
+        "id",
+        "kind",
+        "progress",
+        "startedAt",
+        "status",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "runjob",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "attempts",
+        "class",
+        "createdAt",
+        "error",
+        "finishedAt",
+        "id",
+        "kind",
+        "progress",
+        "startedAt",
+        "status",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "runpluginlifecycleaction",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "artifactSHA256",
+        "grants",
+        "installed",
+        "lastError",
+        "lifecycleActions",
+        "pluginID",
+        "state",
+        "updateSource",
+        "version"
+      ]
+    },
+    {
+      "field": "savedfilters",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "filterJSON",
+        "id",
+        "libraryID",
+        "name",
+        "pinned",
+        "profileID"
+      ]
+    },
+    {
+      "field": "scanestimate",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "deferrableWork",
+        "estimatedAudioFiles",
+        "estimatedFiles",
+        "estimatedInlineSeconds",
+        "estimatedVideoFiles",
+        "inlineWorkGatesPlayability"
+      ]
+    },
+    {
+      "field": "scanlibrary",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "attempts",
+        "class",
+        "createdAt",
+        "error",
+        "finishedAt",
+        "id",
+        "kind",
+        "progress",
+        "startedAt",
+        "status",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "schedules",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "enabled",
+        "id",
+        "jobKind",
+        "lastEnqueued",
+        "nextDue",
+        "orphaned",
+        "trigger"
+      ]
+    },
+    {
+      "field": "scrobbleeligibility",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "eligible",
+        "libraryID"
+      ]
+    },
+    {
+      "field": "scrobblelinks",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "accountLabel",
+        "linked",
+        "linkedAt",
+        "service"
+      ]
+    },
+    {
+      "field": "scrobblestatus",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "adapters",
+        "deadLetters",
+        "skips"
+      ]
+    },
+    {
+      "field": "sealencryptedlibrary",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "keyLocusClass",
+        "keyLocusDisclosure",
+        "libraryID",
+        "provisioned",
+        "sealed",
+        "unsealMode"
+      ]
+    },
+    {
+      "field": "search",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "artwork",
+        "artworkSlots",
+        "id",
+        "kind",
+        "locked",
+        "muted",
+        "restricted",
+        "summary",
+        "title"
+      ]
+    },
+    {
+      "field": "searchentities",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "artwork",
+        "artworkSlots",
+        "id",
+        "kind",
+        "locked",
+        "muted",
+        "restricted",
+        "summary",
+        "title"
+      ]
+    },
+    {
+      "field": "searchfeeds",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "artworkURL",
+        "description",
+        "feedURL",
+        "title"
+      ]
+    },
+    {
+      "field": "searchresult",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "items",
+        "mode",
+        "restrictedResultsPresent"
+      ]
+    },
+    {
+      "field": "semanticcapability",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "indexed",
+        "libraryID",
+        "pluginActive",
+        "state",
+        "title",
+        "total"
+      ]
+    },
+    {
+      "field": "serverinfo",
+      "effect": "read",
+      "tier": "public",
+      "children": [
+        "name",
+        "version"
+      ]
+    },
+    {
+      "field": "setaccessschedule",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "profileID",
+        "windows"
+      ]
+    },
+    {
+      "field": "setcapabilityenabled",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "enabled",
+        "flippable",
+        "id",
+        "kind",
+        "reason"
+      ]
+    },
+    {
+      "field": "setcertificationceiling",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "audioLanguages",
+        "certificationCeilings",
+        "disabled",
+        "id",
+        "kind",
+        "libraryIDs",
+        "maxConcurrentStreams",
+        "name",
+        "preferSDH",
+        "subtitleLanguages",
+        "subtitleMode",
+        "transcodeAllowed"
+      ]
+    },
+    {
+      "field": "setclientpref",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "key",
+        "updatedAt",
+        "value"
+      ]
+    },
+    {
+      "field": "setconsoleconfig",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "backgroundWorkers",
+        "eventsRetentionDays",
+        "observabilityEnabled",
+        "plugins",
+        "remoteEnrollmentEnabled",
+        "updateCheckChannel",
+        "updateCheckEnabled"
+      ]
+    },
+    {
+      "field": "setdevicerole",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "current",
+        "deviceID",
+        "name",
+        "revoked",
+        "role"
+      ]
+    },
+    {
+      "field": "setextensionpreauthorization",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "enabled",
+        "profileID"
+      ]
+    },
+    {
+      "field": "setfavorite",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "favorited",
+        "id",
+        "summary",
+        "title",
+        "year"
+      ]
+    },
+    {
+      "field": "setfollow",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "followed",
+        "id",
+        "title"
+      ]
+    },
+    {
+      "field": "setlibraryaiindexing",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "aiIndexing",
+        "failures",
+        "indexed",
+        "libraryID",
+        "state",
+        "title",
+        "total"
+      ]
+    },
+    {
+      "field": "setlibrarybacking",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "custodial",
+        "encrypted",
+        "familyScope",
+        "id",
+        "pluginID",
+        "previewClips",
+        "restricted",
+        "roots",
+        "title"
+      ]
+    },
+    {
+      "field": "setlibrarypreviewclips",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "custodial",
+        "encrypted",
+        "familyScope",
+        "id",
+        "pluginID",
+        "previewClips",
+        "restricted",
+        "roots",
+        "title"
+      ]
+    },
+    {
+      "field": "setlibraryrestricted",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "custodial",
+        "encrypted",
+        "familyScope",
+        "id",
+        "pluginID",
+        "previewClips",
+        "restricted",
+        "roots",
+        "title"
+      ]
+    },
+    {
+      "field": "setlibraryroots",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "custodial",
+        "encrypted",
+        "familyScope",
+        "id",
+        "pluginID",
+        "previewClips",
+        "restricted",
+        "roots",
+        "title"
+      ]
+    },
+    {
+      "field": "setmediafieldlock",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "field",
+        "locked"
+      ]
+    },
+    {
+      "field": "setmute",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "includeDescendants",
+        "kind",
+        "muted",
+        "targetID"
+      ]
+    },
+    {
+      "field": "setnavoverride",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "hiddenNodeIDs",
+        "layoutSectionOverrides",
+        "nodeLabelOverrides",
+        "nodeOrder",
+        "themeAccentColor"
+      ]
+    },
+    {
+      "field": "setpluginactive",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "backgroundWorkers",
+        "eventsRetentionDays",
+        "observabilityEnabled",
+        "plugins",
+        "remoteEnrollmentEnabled",
+        "updateCheckChannel",
+        "updateCheckEnabled"
+      ]
+    },
+    {
+      "field": "setpluginconfig",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "backgroundWorkers",
+        "eventsRetentionDays",
+        "observabilityEnabled",
+        "plugins",
+        "remoteEnrollmentEnabled",
+        "updateCheckChannel",
+        "updateCheckEnabled"
+      ]
+    },
+    {
+      "field": "setpluginupdatesource",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "artifactSHA256",
+        "grants",
+        "installed",
+        "lastError",
+        "lifecycleActions",
+        "pluginID",
+        "state",
+        "updateSource",
+        "version"
+      ]
+    },
+    {
+      "field": "setprofilelibraries",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "audioLanguages",
+        "certificationCeilings",
+        "disabled",
+        "id",
+        "kind",
+        "libraryIDs",
+        "maxConcurrentStreams",
+        "name",
+        "preferSDH",
+        "subtitleLanguages",
+        "subtitleMode",
+        "transcodeAllowed"
+      ]
+    },
+    {
+      "field": "setqbittorrentingest",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "config",
+        "status"
+      ]
+    },
+    {
+      "field": "setqualitypolicy",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "cutoff",
+        "libraryID",
+        "order"
+      ]
+    },
+    {
+      "field": "setretentioncandidatehold",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "hold",
+        "mediaID",
+        "ruleID"
+      ]
+    },
+    {
+      "field": "setrevealpin",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "revealed"
+      ]
+    },
+    {
+      "field": "setscrapercredential",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "authRef",
+        "credentialConfigured",
+        "credentialError",
+        "credentialStatus",
+        "scraperIDs"
+      ]
+    },
+    {
+      "field": "setscrobbleeligibility",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "eligible",
+        "libraryID"
+      ]
+    },
+    {
+      "field": "setskipdetectionenabled",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "enabled",
+        "libraryID"
+      ]
+    },
+    {
+      "field": "setsubscriptionretention",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "addedAt",
+        "feedURL",
+        "followed",
+        "hasAuth",
+        "id",
+        "lastPolledAt",
+        "libraryID",
+        "retentionKind",
+        "retentionN",
+        "root",
+        "title"
+      ]
+    },
+    {
+      "field": "settranscodeconfig",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "codec",
+        "configuredPreference",
+        "device",
+        "hardwareAcceleration",
+        "hardwareEnabled",
+        "quality"
+      ]
+    },
+    {
+      "field": "setupstate",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "adminPasswordSet",
+        "complete",
+        "hasLibrary",
+        "hasOwnerProfile",
+        "pluginsActivated"
+      ]
+    },
+    {
+      "field": "skipdetectionenabled",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "enabled",
+        "libraryID"
+      ]
+    },
+    {
+      "field": "smartcollections",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "id",
+        "libraryID",
+        "name",
+        "sortExpr",
+        "sourceExpr"
+      ]
+    },
+    {
+      "field": "sourceitems",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "artwork",
+        "artworkSlots",
+        "id",
+        "kind",
+        "locked",
+        "muted",
+        "restricted",
+        "summary",
+        "title"
+      ]
+    },
+    {
+      "field": "stationdelete",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "id",
+        "libraryID",
+        "name",
+        "profileID",
+        "rulesJSON",
+        "seedJSON",
+        "tuningJSON"
+      ]
+    },
+    {
+      "field": "stationgenerate",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "candidates",
+        "explanation"
+      ]
+    },
+    {
+      "field": "stations",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "id",
+        "libraryID",
+        "name",
+        "profileID",
+        "rulesJSON",
+        "seedJSON",
+        "tuningJSON"
+      ]
+    },
+    {
+      "field": "stationsave",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "id",
+        "libraryID",
+        "name",
+        "profileID",
+        "rulesJSON",
+        "seedJSON",
+        "tuningJSON"
+      ]
+    },
+    {
+      "field": "stationstart",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "artwork",
+        "artworkSlots",
+        "id",
+        "kind",
+        "locked",
+        "muted",
+        "restricted",
+        "summary",
+        "title"
+      ]
+    },
+    {
+      "field": "subscriptions",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "addedAt",
+        "feedURL",
+        "followed",
+        "hasAuth",
+        "id",
+        "lastPolledAt",
+        "libraryID",
+        "retentionKind",
+        "retentionN",
+        "root",
+        "title"
+      ]
+    },
+    {
+      "field": "suppressunmatched",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
+      "field": "switchprofile",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "audioLanguages",
+        "deviceRole",
+        "expiresAt",
+        "id",
+        "preferSDH",
+        "profile",
+        "profileID",
+        "revealed",
+        "subtitleLanguages",
+        "subtitleMode"
+      ]
+    },
+    {
+      "field": "syncofflinepackprogress",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "bytesReady",
+        "bytesTotal",
+        "createdAt",
+        "expiresAt",
+        "id",
+        "itemCount",
+        "keyToken",
+        "manifestToken",
+        "state",
+        "targetKind",
+        "targetRef",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "tagassignments",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "libraryID",
+        "tags",
+        "targetID",
+        "targetType"
+      ]
+    },
+    {
+      "field": "tags",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "assignmentCount",
+        "createdAt",
+        "id",
+        "name",
+        "parentTagID",
+        "trashedAt",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "terminatesession",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "sessionID"
+      ]
+    },
+    {
+      "field": "transcodeconfig",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "codec",
+        "configuredPreference",
+        "device",
+        "hardwareAcceleration",
+        "hardwareEnabled",
+        "quality"
+      ]
+    },
+    {
+      "field": "transferprofileowner",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "isOwner",
+        "profileID"
+      ]
+    },
+    {
+      "field": "transitiongroup",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "groupID",
+        "item",
+        "positionMS",
+        "presentAtMS"
+      ]
+    },
+    {
+      "field": "trashedmarkers",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "endSeconds",
+        "id",
+        "mediaID",
+        "segmentKind",
+        "startSeconds",
+        "tags",
+        "title",
+        "trashedAt"
+      ]
+    },
+    {
+      "field": "trashlist",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "id",
+        "libraryID",
+        "title",
+        "trashedAt"
+      ]
+    },
+    {
+      "field": "trashmedia",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "id",
+        "libraryID",
+        "title",
+        "trashedAt"
+      ]
+    },
+    {
+      "field": "unassigntag",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "libraryID",
+        "tags",
+        "targetID",
+        "targetType"
+      ]
+    },
+    {
+      "field": "undobatch",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "affected",
+        "batchID",
+        "kind"
+      ]
+    },
+    {
+      "field": "uninstallplugindata",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "backgroundWorkers",
+        "eventsRetentionDays",
+        "observabilityEnabled",
+        "plugins",
+        "remoteEnrollmentEnabled",
+        "updateCheckChannel",
+        "updateCheckEnabled"
+      ]
+    },
+    {
+      "field": "unlinkscrobble",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "accountLabel",
+        "linked",
+        "linkedAt",
+        "service"
+      ]
+    },
+    {
+      "field": "unmatchedqueue",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "candidateID",
+        "candidateTitle",
+        "confidence",
+        "failureReason",
+        "mediaID",
+        "pluginID",
+        "queuedAt",
+        "scraperID",
+        "threshold",
+        "title"
+      ]
+    },
+    {
+      "field": "unmatchedrecords",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "candidateID",
+        "candidateTitle",
+        "confidence",
+        "failureReason",
+        "id",
+        "importRunID",
+        "importerID",
+        "libraryID",
+        "mediaID",
+        "origin",
+        "queuedAt",
+        "sourceHandle"
+      ]
+    },
+    {
+      "field": "unmatchedsuppressions",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "actorProfileID",
+        "candidateID",
+        "createdAt",
+        "key",
+        "recordID",
+        "scope",
+        "sourceHandle"
+      ]
+    },
+    {
+      "field": "unsealencryptedlibrary",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "keyLocusClass",
+        "keyLocusDisclosure",
+        "libraryID",
+        "provisioned",
+        "sealed",
+        "unsealMode"
+      ]
+    },
+    {
+      "field": "updatechannel",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "id",
+        "libraryID",
+        "name",
+        "ordering",
+        "profileID",
+        "repeat",
+        "sourceExpr"
+      ]
+    },
+    {
+      "field": "updatecollection",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "id",
+        "libraryID",
+        "memberCount",
+        "members",
+        "name",
+        "parentID",
+        "sortOrder",
+        "trashedAt",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "updatemarker",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "endSeconds",
+        "id",
+        "mediaID",
+        "segmentKind",
+        "startSeconds",
+        "tags",
+        "title",
+        "trashedAt"
+      ]
+    },
+    {
+      "field": "updateprofile",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "audioLanguages",
+        "certificationCeilings",
+        "disabled",
+        "id",
+        "kind",
+        "libraryIDs",
+        "maxConcurrentStreams",
+        "name",
+        "preferSDH",
+        "subtitleLanguages",
+        "subtitleMode",
+        "transcodeAllowed"
+      ]
+    },
+    {
+      "field": "updateretentionrule",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "createdAt",
+        "enabled",
+        "graceDays",
+        "id",
+        "name",
+        "revealedAtAuthoring",
+        "smartCollectionID",
+        "sourceExpr",
+        "targetLibraryID",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "updateschedule",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "enabled",
+        "id",
+        "jobKind",
+        "lastEnqueued",
+        "nextDue",
+        "orphaned",
+        "trigger"
+      ]
+    },
+    {
+      "field": "updatesmartcollection",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "createdAt",
+        "id",
+        "libraryID",
+        "name",
+        "sortExpr",
+        "sourceExpr"
+      ]
+    },
+    {
+      "field": "updatestatus",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "channel",
+        "currentVersion",
+        "enabled",
+        "latestVersion",
+        "state",
+        "updateAvailable"
+      ]
+    },
+    {
+      "field": "updatetag",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "assignmentCount",
+        "createdAt",
+        "id",
+        "name",
+        "parentTagID",
+        "trashedAt",
+        "updatedAt"
+      ]
+    },
+    {
+      "field": "upsertentityrelation",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "relation",
+        "sourceID",
+        "targetID"
+      ]
+    },
+    {
+      "field": "validatescrapercredential",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "authRef",
+        "credentialConfigured",
+        "credentialError",
+        "credentialStatus",
+        "scraperIDs"
+      ]
+    },
+    {
+      "field": "verifyadminsession",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "active",
+        "expiresAt"
+      ]
+    },
+    {
+      "field": "verifybackup",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "error",
+        "ok"
+      ]
+    },
+    {
+      "field": "watcherstatus",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "libraryID",
+        "reason",
+        "state",
+        "title"
+      ]
+    },
+    {
+      "field": "watchpartyautoskip",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "applied",
+        "item",
+        "partyID",
+        "positionMS",
+        "presentAtMS"
+      ]
+    },
+    {
+      "field": "watchpartytransport",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "groupID",
+        "item",
+        "positionMS",
+        "presentAtMS"
+      ]
+    }
+  ]
+}

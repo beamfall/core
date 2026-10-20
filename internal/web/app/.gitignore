@@ -1,0 +1,8 @@
+node_modules/
+*.local
+.vite/
+*.tsbuildinfo
+playwright-report/
+test-results/
+e2e/.artifacts/
+e2e/.auth/

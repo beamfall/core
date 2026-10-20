@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "vectors": {
+    "device_kid": {
+      "label_prefix_hex": "42464f502d6465766b65792d763100",
+      "test_key_scalar": 1,
+      "expected_device_kid": "oZ1C344sP540aSJagk6ntf8K__QJRSbo8XXAZE8uDlY"
+    },
+    "aad_wrap": {
+      "label_prefix_hex": "42464f502d6161642d763100",
+      "type_tag_hex": "42464b5701010000",
+      "fields": {
+        "issuer": "beamfall:test",
+        "pack_id": "pack-1",
+        "profile_id": "profile-1",
+        "device_enrollment_id": "enrollment-1",
+        "manifest_revision": "1"
+      },
+      "manifest_source": "manifest",
+      "expected_aad_hex": "42464f502d6161642d76310042464b57010100000000000d6265616d66616c6c3a74657374000000067061636b2d310000000970726f66696c652d310000000c656e726f6c6c6d656e742d310000002b6f5a3143333434735035343061534a61676b366e7466384b5f5f514a5253626f385858415a453875446c590000002b42624f72386c656158725a6b41383134766c565f3247426a4f685f694544783251674d4e372d4d735a58380000000131"
+    },
+    "bfkw_wrap": {
+      "device_key_scalar": 1,
+      "ephemeral_key_scalar": 2,
+      "other_device_key_scalar": 3,
+      "rotated_device_key_scalar": 4,
+      "cek_byte_hex": "a5",
+      "cek_len": 32
+    },
+    "bfop_header": {
+      "magic_prefix_hex": "42464f5002010000",
+      "manifest_source": "manifest",
+      "plaintext": "offline bytes",
+      "item_index": 7,
+      "chunk_size": 1048576,
+      "expected_header_hex": "42464f50020100000000000700100000000000000000000d9c78828857e1703a05b3abf2579a5eb66403cd78be557fd860633a1fe2103c7642030defe32c657f"
+    },
+    "cik_separation": {
+      "magic_prefix_hex": "42464f5002010000",
+      "cek_byte_hex": "42",
+      "cek_len": 32,
+      "manifest_a_source": "revision A",
+      "manifest_b_source": "revision B",
+      "item_index": 9,
+      "expected_cik_a_hex": "58f4479fe37b7b5b38d91072bc0d75e3bf3377fd986cebf4135bf35a8713c2de",
+      "expected_cik_b_hex": "92a44de405c5077ae518b89020df0468f084fd2a158058dd4c9d134960ee88e5"
+    },
+    "bfop_framing": {
+      "cek_byte_hex": "24",
+      "cek_len": 32,
+      "manifest_source": "manifest",
+      "item_index": 3,
+      "size_table": [
+        { "plaintext_len": 0, "encoded_size": 80 },
+        { "plaintext_len": 1, "encoded_size": 81 },
+        { "plaintext_len": 1048576, "encoded_size": 1048656 },
+        { "plaintext_len": 1048577, "encoded_size": 1048673 }
+      ]
+    }
+  }
+}

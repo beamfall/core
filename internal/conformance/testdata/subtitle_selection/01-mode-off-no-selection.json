@@ -1,0 +1,19 @@
+{
+  "id": "mode-off-no-selection",
+  "regression": false,
+  "notes": "The server never forces subtitles a Profile did not ask for: subtitleMode off selects none regardless of available tracks.",
+  "input": {
+    "mode": "off",
+    "langPrefs": ["en"],
+    "preferSDH": false,
+    "audioTrackLang": "en",
+    "tracks": [
+      { "language": "en", "kind": "muxed", "forced": false, "sdh": false, "visualImpaired": false, "commentary": false }
+    ],
+    "perItemRecord": null
+  },
+  "expected": {
+    "selection": null,
+    "unavailableReason": ""
+  }
+}

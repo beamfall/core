@@ -1,0 +1,400 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Beamfall Developer API",
+    "version": "1.1.0",
+    "description": "The Beamfall `/v1/` stable developer contract (ADR-0040). Every endpoint under `/v1/` is part of the stability promise: no breaking changes within this major version; a breaking change requires a new prefix (`/v2/`) with a minimum two-release deprecation window. Endpoints are authenticated with a scoped developer API key (`Authorization: Bearer bfk_...`) carrying a subset of the closed API-scope vocabulary; each operation declares the single scope it requires. All catalog and session reads are Reveal-filtered and Profile-bound to the key's binding (ADR-0004): a Profile-bound key never sees content or sessions outside its Profile, and restricted content it cannot Reveal never appears. The wire entity is `Media`; this surface is domain-agnostic (no plugin/domain vocabulary)."
+  },
+  "servers": [
+    { "url": "/", "description": "The Beamfall home server origin." }
+  ],
+  "components": {
+    "securitySchemes": {
+      "scopedKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "bfk_<id>_<secret>",
+        "description": "A scoped developer API key (ADR-0040 §2.2), minted by a server operator from the Console with a chosen scope subset and an optional Profile binding. Presented as `Authorization: Bearer bfk_...`. A session credential or an admin API token carries no API scopes and is rejected by every `/v1/` endpoint."
+      }
+    },
+    "schemas": {
+      "Library": {
+        "type": "object",
+        "description": "A Reveal-filtered Library visible to the key's Profile binding.",
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "restricted": { "type": "boolean", "description": "True for a restricted Library (only present when the key has Revealed it)." }
+        },
+        "required": ["id", "title", "restricted"]
+      },
+      "MediaSummary": {
+        "type": "object",
+        "description": "A Media item in a library feed. Generic, plugin-agnostic fields only.",
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "summary": { "type": "string" }
+        },
+        "required": ["id", "title"]
+      },
+      "MediaDetail": {
+        "type": "object",
+        "description": "Full detail for one Media row, Reveal-filtered. A hidden or unknown id resolves to 404 (never an existence oracle).",
+        "properties": {
+          "id": { "type": "string" },
+          "libraryID": { "type": "string" },
+          "title": { "type": "string" },
+          "summary": { "type": "string" },
+          "year": { "type": "integer" },
+          "durationSeconds": { "type": "integer" }
+        },
+        "required": ["id", "libraryID", "title"]
+      },
+      "Session": {
+        "type": "object",
+        "description": "One active playback session. Media-identifying fields (mediaID/title/libraryID) are omitted when the key cannot currently see that Media under its Reveal filter.",
+        "properties": {
+          "sessionID": { "type": "string" },
+          "profileID": { "type": "string" },
+          "deviceName": { "type": "string" },
+          "mediaID": { "type": "string" },
+          "title": { "type": "string" },
+          "libraryID": { "type": "string" },
+          "transcoding": { "type": "boolean" },
+          "positionSeconds": { "type": "integer" },
+          "durationSeconds": { "type": "integer" }
+        },
+        "required": ["sessionID", "profileID", "transcoding"]
+      },
+      "PlaybackControlRequest": {
+        "type": "object",
+        "description": "A closed-vocabulary transport command for one active playback session. Target and Media visibility failures all resolve to 404 to avoid session/Profile/restricted-Media oracles.",
+        "properties": {
+          "sessionID": { "type": "string" },
+          "command": {
+            "type": "string",
+            "enum": ["pause", "resume", "skip-media", "skip-track"]
+          }
+        },
+        "required": ["sessionID", "command"]
+      },
+      "PlaybackControlResponse": {
+        "type": "object",
+        "properties": {
+          "sessionID": { "type": "string" },
+          "command": {
+            "type": "string",
+            "enum": ["pause", "resume", "skip-media", "skip-track"]
+          }
+        },
+        "required": ["sessionID", "command"]
+      },
+      "ScanRequest": {
+        "type": "object",
+        "properties": {
+          "libraryID": { "type": "string", "description": "The Library to scan. Must be visible to the key." },
+          "root": { "type": "string", "description": "Optional root path. Empty scans the Library's persisted roots." }
+        },
+        "required": ["libraryID"]
+      },
+      "BackupStatus": {
+        "type": "object",
+        "description": "Profile-bound backup ingest status for one Library. Paused is explicit so clients never silently drop uploads.",
+        "properties": {
+          "libraryID": { "type": "string" },
+          "paused": { "type": "boolean" },
+          "quotaBytes": { "type": "integer" }
+        },
+        "required": ["libraryID", "paused", "quotaBytes"]
+      },
+      "BackupMediaResponse": {
+        "type": "object",
+        "description": "Result of a profile-owned backup upload registered as Media.",
+        "properties": {
+          "mediaID": { "type": "string" },
+          "libraryID": { "type": "string" },
+          "fingerprint": { "type": "string" },
+          "paused": { "type": "boolean" }
+        },
+        "required": ["libraryID"]
+      },
+      "Error": {
+        "type": "object",
+        "properties": { "error": { "type": "string" } },
+        "required": ["error"]
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "No valid credential was presented.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "Forbidden": {
+        "description": "The scoped key does not carry the scope this operation requires.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      }
+    }
+  },
+  "security": [{ "scopedKey": [] }],
+  "paths": {
+    "/v1/libraries": {
+      "get": {
+        "operationId": "listLibraries",
+        "summary": "List the Libraries visible to the key.",
+        "description": "Requires the `read-catalog` scope. Reveal-filtered and Profile-bound: a Profile-bound key sees only its Profile's granted Libraries, and a restricted Library it has not Revealed never appears.",
+        "x-required-scope": "read-catalog",
+        "security": [{ "scopedKey": ["read-catalog"] }],
+        "parameters": [
+          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Opaque cursor returned as nextCursor by the previous page." },
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 }, "description": "Maximum number of Libraries to return." }
+        ],
+        "responses": {
+          "200": {
+            "description": "The visible Libraries.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "libraries": { "type": "array", "maxItems": 100, "items": { "$ref": "#/components/schemas/Library" } },
+                    "nextCursor": { "type": "string", "description": "Opaque cursor for the next page; omitted on the final page." }
+                  },
+                  "required": ["libraries"]
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/v1/libraries/{libraryID}/media": {
+      "get": {
+        "operationId": "listLibraryMedia",
+        "summary": "List the Media in one Library.",
+        "description": "Requires the `read-catalog` scope. Reveal-filtered: a Library outside the key's grants (or restricted and unrevealed) yields an empty list, never an error.",
+        "x-required-scope": "read-catalog",
+        "security": [{ "scopedKey": ["read-catalog"] }],
+        "parameters": [
+          { "name": "libraryID", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Opaque cursor returned as nextCursor by the previous page." },
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 }, "description": "Maximum number of Media items to return." }
+        ],
+        "responses": {
+          "200": {
+            "description": "The Media in the Library, Reveal-filtered.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "media": { "type": "array", "maxItems": 100, "items": { "$ref": "#/components/schemas/MediaSummary" } },
+                    "nextCursor": { "type": "string", "description": "Opaque cursor for the next page; omitted on the final page." }
+                  },
+                  "required": ["media"]
+                }
+              }
+            }
+          },
+          "400": { "description": "libraryID missing.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/v1/media/{mediaID}": {
+      "get": {
+        "operationId": "getMedia",
+        "summary": "Read one Media's detail.",
+        "description": "Requires the `read-catalog` scope. Reveal-filtered: a hidden or unknown id both resolve to 404, so the read is never an existence oracle for Media the key cannot see.",
+        "x-required-scope": "read-catalog",
+        "security": [{ "scopedKey": ["read-catalog"] }],
+        "parameters": [
+          { "name": "mediaID", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "The Media detail.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MediaDetail" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "description": "Media not found or not visible.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/v1/sessions": {
+      "get": {
+        "operationId": "listSessions",
+        "summary": "List active playback sessions.",
+        "description": "Requires the `read-sessions` scope. A Profile-bound key sees only its own Profile's sessions; an admin-scoped key (no Profile binding) sees all. Media-identifying fields are omitted for sessions playing Media the key cannot currently Reveal.",
+        "x-required-scope": "read-sessions",
+        "security": [{ "scopedKey": ["read-sessions"] }],
+        "parameters": [
+          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Opaque cursor returned as nextCursor by the previous page." },
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 }, "description": "Maximum number of active sessions to return." }
+        ],
+        "responses": {
+          "200": {
+            "description": "The active sessions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sessions": { "type": "array", "maxItems": 100, "items": { "$ref": "#/components/schemas/Session" } },
+                    "nextCursor": { "type": "string", "description": "Opaque cursor for the next page; omitted on the final page." }
+                  },
+                  "required": ["sessions"]
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/v1/playback-control": {
+      "post": {
+        "operationId": "controlPlaybackSession",
+        "summary": "Issue a transport command to an active playback session.",
+        "description": "Requires the `playback-control` scope. Publishes one closed-vocabulary transport command (`pause`, `resume`, `skip-media`, `skip-track`) to the target session's event channel; success means the command was authorized and published, not that the target device has applied it. A Profile-bound key can control only its own Profile's reveal-visible active sessions. An admin-scoped key (no Profile binding) can control reveal-visible active sessions across Profiles, matching ADR-0040's operator-created all-session automation key model. Missing, cross-Profile, inactive, and reveal-hidden targets all resolve to 404.",
+        "x-required-scope": "playback-control",
+        "security": [{ "scopedKey": ["playback-control"] }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PlaybackControlRequest" } } }
+        },
+        "responses": {
+          "202": {
+            "description": "The transport command was accepted for delivery.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PlaybackControlResponse" } } }
+          },
+          "400": { "description": "sessionID missing, command missing or outside the closed transport vocabulary, or invalid JSON.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "description": "Session not found, not active, outside the key's Profile binding, or not reveal-visible.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/v1/scans": {
+      "post": {
+        "operationId": "triggerScan",
+        "summary": "Trigger a library scan/import.",
+        "description": "Requires the `ingest` scope. Enqueues a durable scan job for a Library the key can see; an empty root scans the Library's persisted roots. A Library outside the key's grants is reported as 404 (never an existence oracle).",
+        "x-required-scope": "ingest",
+        "security": [{ "scopedKey": ["ingest"] }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScanRequest" } } }
+        },
+        "responses": {
+          "202": {
+            "description": "The scan job(s) were enqueued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "jobIDs": { "type": "array", "maxItems": 200, "items": { "type": "string" } } },
+                  "required": ["jobIDs"]
+                }
+              }
+            }
+          },
+          "400": { "description": "libraryID missing, the Library has no roots, or more than 200 roots require selecting one root.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "description": "Unknown or invisible Library.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/v1/backups/{libraryID}/status": {
+      "get": {
+        "operationId": "getBackupStatus",
+        "summary": "Read backup ingest status for one Library.",
+        "description": "Requires the `backup` scope and a Profile-bound key. Returns the caller Profile's pause/quota state for the target Library; paused state is explicit so a client can surface that backup is stopped instead of silently dropping uploads.",
+        "x-required-scope": "backup",
+        "security": [{ "scopedKey": ["backup"] }],
+        "parameters": [
+          { "name": "libraryID", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Backup ingest status.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/BackupStatus" } } }
+          },
+          "400": { "description": "libraryID missing.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "500": { "description": "Backup status could not be read due to an internal failure.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/v1/backups/media": {
+      "post": {
+        "operationId": "uploadBackupMedia",
+        "summary": "Upload one profile-owned backup Media blob.",
+        "description": "Requires the `backup` scope and a Profile-bound key. The request is multipart/form-data with `libraryID`, optional `title`, `class`, `container`, `codec`, and a `file` part. The server applies quota and disk-headroom checks, rejects hostile image headers for image uploads, encrypts the uploaded bytes before durable storage, and registers Media through the target Library catalog plane.",
+        "x-required-scope": "backup",
+        "security": [{ "scopedKey": ["backup"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "libraryID": { "type": "string" },
+                  "title": { "type": "string" },
+                  "class": { "type": "string", "enum": ["video", "audio", "image"] },
+                  "container": { "type": "string" },
+                  "codec": { "type": "string" },
+                  "file": { "type": "string", "format": "binary" }
+                },
+                "required": ["libraryID", "file"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The upload was encrypted, deduplicated by content fingerprint, and registered as Media.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/BackupMediaResponse" } } }
+          },
+          "400": { "description": "Invalid multipart request, missing fields, hostile image bytes, or rejected backup policy.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "423": {
+            "description": "Backup ingest is paused and must be surfaced to the user.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/BackupMediaResponse" } } }
+          },
+          "500": { "description": "Backup ingest failed due to an internal storage failure.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "507": { "description": "Quota or disk-headroom guard refused the upload.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/v1/events": {
+      "get": {
+        "operationId": "subscribeEvents",
+        "summary": "Subscribe to the server-sent event stream.",
+        "description": "Requires the `events-subscribe` scope. A long-lived `text/event-stream` of Reveal-filtered server events (playback, library, and — for admin-scoped keys — Profile lifecycle). Event payloads carry only identifiers and state; a restricted-Media event never reaches a key that cannot Reveal it. This is an alias of the pre-existing `/api/events` route on the stable prefix; both resolve through the same `events-subscribe` gate. Reconnect with the standard `Last-Event-ID` header or the `?after=` query cursor.",
+        "x-required-scope": "events-subscribe",
+        "security": [{ "scopedKey": ["events-subscribe"] }],
+        "parameters": [
+          { "name": "after", "in": "query", "required": false, "schema": { "type": "integer" }, "description": "Resume cursor: deliver only events after this sequence number." }
+        ],
+        "responses": {
+          "200": {
+            "description": "The SSE stream.",
+            "content": { "text/event-stream": { "schema": { "type": "string" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    }
+  }
+}

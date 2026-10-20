@@ -1,0 +1,69 @@
+# Nightly vulnerability scan (CAUDIT-18). Two independent jobs:
+#
+#   govulncheck — scans the full Go module graph for known CVEs via the Go
+#   vulnerability database. Fails if any vulnerability is found that affects
+#   reachable symbols. Always expected to be clean; any failure is actionable.
+#
+#   npm-audit — runs npm audit at high/critical severity for the embedded web
+#   UI. A baseline of known advisories is stored in
+#   internal/web/app/.audit-baseline; CI fails only on NEW advisories not
+#   listed there. Update the baseline when a known issue is fixed or
+#   confirmed as infeasible to address short-term.
+#
+# Intentionally outside make gate — a full vuln scan adds latency per merge
+# and is most useful as a daily alert rather than a hard push gate. Any new
+# finding becomes a roadmap ticket before the next release gate.
+name: vuln-nightly
+
+on:
+  schedule:
+    - cron: "17 4 * * *" # Daily 04:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: govulncheck ./...
+        run: govulncheck ./...
+
+  npm-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: internal/web/app/package-lock.json
+      - name: install deps
+        run: npm --prefix internal/web/app ci --ignore-scripts
+      - name: npm audit (high/critical, baseline-aware)
+        run: bash script/audit-npm.sh
+
+  last-green:
+    runs-on: ubuntu-latest
+    needs:
+      - govulncheck
+      - npm-audit
+    if: success()
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - name: Record last green
+        run: script/nightly-freshness.sh record --tier vuln-nightly
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: nightly-last-green-vuln-nightly
+          path: .agent-evidence/nightly-last-green/vuln-nightly.json

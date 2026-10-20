@@ -1,0 +1,19 @@
+{
+  "id": "regression-sidecars-ignore-mode",
+  "regression": true,
+  "notes": "Shipped competitor bug: sidecar caption tracks bypassed the subtitleMode policy entirely (always attaching), unlike muxed tracks which correctly obeyed 'off'. A sidecar-kind track must flow through the exact same mode-gated resolver path as a muxed one.",
+  "input": {
+    "mode": "off",
+    "langPrefs": ["en"],
+    "preferSDH": false,
+    "audioTrackLang": "en",
+    "tracks": [
+      { "language": "en", "kind": "sidecar", "forced": false, "sdh": false, "visualImpaired": false, "commentary": false }
+    ],
+    "perItemRecord": null
+  },
+  "expected": {
+    "selection": null,
+    "unavailableReason": ""
+  }
+}

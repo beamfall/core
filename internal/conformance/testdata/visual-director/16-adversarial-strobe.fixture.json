@@ -1,0 +1,1232 @@
+{
+  "version": "visual-director-pack.v1",
+  "name": "16-adversarial-strobe",
+  "matrixRow": "adversarial-strobe",
+  "notes": "Synthetic dense onsets exercising the Director rate limit under photosensitive-safe: runtime flash guard fires.",
+  "input": {
+    "tickMs": 0,
+    "durationMs": 4000,
+    "seed": "strobe",
+    "userIntensity": 1,
+    "playbackRate": 0,
+    "smartPresetMin": 0,
+    "smartPresetMax": 0,
+    "profile": {
+      "surface": "web",
+      "photosensitiveSafe": true
+    },
+    "candidates": [
+      {
+        "visualId": "liquid-optics",
+        "smartPresetId": "liquid-optics-calm",
+        "tier": "Lite",
+        "overlaySafe": true,
+        "reducedMotionSafe": true,
+        "photosensitiveSafe": true,
+        "performanceCost": 1,
+        "supportsCrossfade": true
+      },
+      {
+        "visualId": "volumetric-light",
+        "smartPresetId": "volumetric-light-balanced",
+        "tier": "Lite",
+        "overlaySafe": true,
+        "reducedMotionSafe": true,
+        "photosensitiveSafe": true,
+        "performanceCost": 1,
+        "supportsCrossfade": true
+      },
+      {
+        "visualId": "spectral-city",
+        "smartPresetId": "spectral-city-kinetic",
+        "tier": "Standard",
+        "overlaySafe": true,
+        "reducedMotionSafe": false,
+        "photosensitiveSafe": false,
+        "performanceCost": 2,
+        "supportsCrossfade": false
+      },
+      {
+        "visualId": "cymatics-prism",
+        "smartPresetId": "cymatics-prism-build",
+        "tier": "Standard",
+        "overlaySafe": true,
+        "reducedMotionSafe": false,
+        "photosensitiveSafe": false,
+        "performanceCost": 2,
+        "supportsCrossfade": false
+      },
+      {
+        "visualId": "event-horizon",
+        "smartPresetId": "event-horizon-drop",
+        "tier": "Flagship",
+        "overlaySafe": false,
+        "reducedMotionSafe": false,
+        "photosensitiveSafe": false,
+        "performanceCost": 3,
+        "supportsCrossfade": false
+      }
+    ],
+    "photosensitivity": {
+      "maxFlashHz": 3,
+      "maxLuminanceDelta": 0.8,
+      "maxFlashArea": 0.25,
+      "strobeBanned": true
+    },
+    "frames": [
+      {
+        "mediaTimeMs": 0,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 100,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 200,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 300,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 400,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 500,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 600,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 700,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 800,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 900,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 1000,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 1100,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 1200,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 1300,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 1400,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 1500,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 1600,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 1700,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 1800,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 1900,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 2000,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 2100,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 2200,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 2300,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 2400,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 2500,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 2600,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 2700,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 2800,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 2900,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 3000,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 3100,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 3200,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 3300,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 3400,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 3500,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 3600,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 3700,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 3800,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 3900,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      },
+      {
+        "mediaTimeMs": 4000,
+        "rms": 0.6,
+        "onsetBroadband": 0.95,
+        "onsetHigh": 0.9,
+        "beatConfidence": 0.8,
+        "barConfidence": 0.8,
+        "hasBeat": true,
+        "hasBar": true,
+        "hasPhrase": false
+      }
+    ]
+  },
+  "expectedTrace": [
+    {
+      "contractVersion": "visual-director.v1",
+      "tick": 0,
+      "effectiveMediaTimeMs": 0,
+      "cue": "intro",
+      "landingTick": 0,
+      "selection": {
+        "visualId": "liquid-optics",
+        "smartPresetId": "liquid-optics-calm"
+      },
+      "transition": "hold",
+      "alignment": "safety",
+      "fallbackReason": "photosensitivity-runtime-guard",
+      "intensity": 0.25,
+      "intensityClamp": 0.25,
+      "clamp": {
+        "name": "composed",
+        "maxIntensity": 0.5,
+        "maxFlashHz": 1,
+        "maxLuminanceDelta": 0.35,
+        "maxFlashArea": 0.1,
+        "maxCameraVelocity": 1,
+        "maxZoom": 1,
+        "maxRotation": 1,
+        "maxParticleDensity": 1,
+        "requiresReducedMotion": false,
+        "requiresOverlaySafe": false
+      },
+      "ladderSteps": [
+        "smart-preset-intensity-cap",
+        "runtime-flash-guard"
+      ]
+    },
+    {
+      "contractVersion": "visual-director.v1",
+      "tick": 1,
+      "effectiveMediaTimeMs": 250,
+      "cue": "intro",
+      "landingTick": 1,
+      "selection": {
+        "visualId": "liquid-optics",
+        "smartPresetId": "liquid-optics-calm"
+      },
+      "transition": "none",
+      "alignment": "none",
+      "intensity": 0.39,
+      "intensityClamp": 0.5,
+      "clamp": {
+        "name": "composed",
+        "maxIntensity": 0.5,
+        "maxFlashHz": 1,
+        "maxLuminanceDelta": 0.35,
+        "maxFlashArea": 0.1,
+        "maxCameraVelocity": 1,
+        "maxZoom": 1,
+        "maxRotation": 1,
+        "maxParticleDensity": 1,
+        "requiresReducedMotion": false,
+        "requiresOverlaySafe": false
+      },
+      "ladderSteps": [
+        "smart-preset-intensity-cap"
+      ]
+    },
+    {
+      "contractVersion": "visual-director.v1",
+      "tick": 2,
+      "effectiveMediaTimeMs": 500,
+      "cue": "groove",
+      "landingTick": 2,
+      "selection": {
+        "visualId": "liquid-optics",
+        "smartPresetId": "liquid-optics-calm"
+      },
+      "transition": "none",
+      "alignment": "none",
+      "intensity": 0.5,
+      "intensityClamp": 0.5,
+      "clamp": {
+        "name": "composed",
+        "maxIntensity": 0.5,
+        "maxFlashHz": 1,
+        "maxLuminanceDelta": 0.35,
+        "maxFlashArea": 0.1,
+        "maxCameraVelocity": 1,
+        "maxZoom": 1,
+        "maxRotation": 1,
+        "maxParticleDensity": 1,
+        "requiresReducedMotion": false,
+        "requiresOverlaySafe": false
+      },
+      "ladderSteps": [
+        "smart-preset-intensity-cap"
+      ]
+    },
+    {
+      "contractVersion": "visual-director.v1",
+      "tick": 3,
+      "effectiveMediaTimeMs": 750,
+      "cue": "groove",
+      "landingTick": 3,
+      "selection": {
+        "visualId": "liquid-optics",
+        "smartPresetId": "liquid-optics-calm"
+      },
+      "transition": "none",
+      "alignment": "none",
+      "intensity": 0.5,
+      "intensityClamp": 0.5,
+      "clamp": {
+        "name": "composed",
+        "maxIntensity": 0.5,
+        "maxFlashHz": 1,
+        "maxLuminanceDelta": 0.35,
+        "maxFlashArea": 0.1,
+        "maxCameraVelocity": 1,
+        "maxZoom": 1,
+        "maxRotation": 1,
+        "maxParticleDensity": 1,
+        "requiresReducedMotion": false,
+        "requiresOverlaySafe": false
+      },
+      "ladderSteps": [
+        "smart-preset-intensity-cap"
+      ]
+    },
+    {
+      "contractVersion": "visual-director.v1",
+      "tick": 4,
+      "effectiveMediaTimeMs": 1000,
+      "cue": "build",
+      "landingTick": 4,
+      "selection": {
+        "visualId": "liquid-optics",
+        "smartPresetId": "liquid-optics-calm"
+      },
+      "transition": "hold",
+      "alignment": "safety",
+      "fallbackReason": "photosensitivity-runtime-guard",
+      "intensity": 0.25,
+      "intensityClamp": 0.25,
+      "clamp": {
+        "name": "composed",
+        "maxIntensity": 0.5,
+        "maxFlashHz": 1,
+        "maxLuminanceDelta": 0.35,
+        "maxFlashArea": 0.1,
+        "maxCameraVelocity": 1,
+        "maxZoom": 1,
+        "maxRotation": 1,
+        "maxParticleDensity": 1,
+        "requiresReducedMotion": false,
+        "requiresOverlaySafe": false
+      },
+      "ladderSteps": [
+        "smart-preset-intensity-cap",
+        "runtime-flash-guard"
+      ]
+    },
+    {
+      "contractVersion": "visual-director.v1",
+      "tick": 5,
+      "effectiveMediaTimeMs": 1250,
+      "cue": "groove",
+      "landingTick": 5,
+      "selection": {
+        "visualId": "liquid-optics",
+        "smartPresetId": "liquid-optics-calm"
+      },
+      "transition": "none",
+      "alignment": "none",
+      "intensity": 0.5,
+      "intensityClamp": 0.5,
+      "clamp": {
+        "name": "composed",
+        "maxIntensity": 0.5,
+        "maxFlashHz": 1,
+        "maxLuminanceDelta": 0.35,
+        "maxFlashArea": 0.1,
+        "maxCameraVelocity": 1,
+        "maxZoom": 1,
+        "maxRotation": 1,
+        "maxParticleDensity": 1,
+        "requiresReducedMotion": false,
+        "requiresOverlaySafe": false
+      },
+      "ladderSteps": [
+        "smart-preset-intensity-cap"
+      ]
+    },
+    {
+      "contractVersion": "visual-director.v1",
+      "tick": 6,
+      "effectiveMediaTimeMs": 1500,
+      "cue": "groove",
+      "landingTick": 6,
+      "selection": {
+        "visualId": "liquid-optics",
+        "smartPresetId": "liquid-optics-calm"
+      },
+      "transition": "none",
+      "alignment": "none",
+      "intensity": 0.5,
+      "intensityClamp": 0.5,
+      "clamp": {
+        "name": "composed",
+        "maxIntensity": 0.5,
+        "maxFlashHz": 1,
+        "maxLuminanceDelta": 0.35,
+        "maxFlashArea": 0.1,
+        "maxCameraVelocity": 1,
+        "maxZoom": 1,
+        "maxRotation": 1,
+        "maxParticleDensity": 1,
+        "requiresReducedMotion": false,
+        "requiresOverlaySafe": false
+      },
+      "ladderSteps": [
+        "smart-preset-intensity-cap"
+      ]
+    },
+    {
+      "contractVersion": "visual-director.v1",
+      "tick": 7,
+      "effectiveMediaTimeMs": 1750,
+      "cue": "groove",
+      "landingTick": 7,
+      "selection": {
+        "visualId": "liquid-optics",
+        "smartPresetId": "liquid-optics-calm"
+      },
+      "transition": "none",
+      "alignment": "none",
+      "intensity": 0.5,
+      "intensityClamp": 0.5,
+      "clamp": {
+        "name": "composed",
+        "maxIntensity": 0.5,
+        "maxFlashHz": 1,
+        "maxLuminanceDelta": 0.35,
+        "maxFlashArea": 0.1,
+        "maxCameraVelocity": 1,
+        "maxZoom": 1,
+        "maxRotation": 1,
+        "maxParticleDensity": 1,
+        "requiresReducedMotion": false,
+        "requiresOverlaySafe": false
+      },
+      "ladderSteps": [
+        "smart-preset-intensity-cap"
+      ]
+    },
+    {
+      "contractVersion": "visual-director.v1",
+      "tick": 8,
+      "effectiveMediaTimeMs": 2000,
+      "cue": "build",
+      "landingTick": 8,
+      "selection": {
+        "visualId": "liquid-optics",
+        "smartPresetId": "liquid-optics-calm"
+      },
+      "transition": "hold",
+      "alignment": "safety",
+      "fallbackReason": "photosensitivity-runtime-guard",
+      "intensity": 0.25,
+      "intensityClamp": 0.25,
+      "clamp": {
+        "name": "composed",
+        "maxIntensity": 0.5,
+        "maxFlashHz": 1,
+        "maxLuminanceDelta": 0.35,
+        "maxFlashArea": 0.1,
+        "maxCameraVelocity": 1,
+        "maxZoom": 1,
+        "maxRotation": 1,
+        "maxParticleDensity": 1,
+        "requiresReducedMotion": false,
+        "requiresOverlaySafe": false
+      },
+      "ladderSteps": [
+        "smart-preset-intensity-cap",
+        "runtime-flash-guard"
+      ]
+    },
+    {
+      "contractVersion": "visual-director.v1",
+      "tick": 9,
+      "effectiveMediaTimeMs": 2250,
+      "cue": "groove",
+      "landingTick": 9,
+      "selection": {
+        "visualId": "liquid-optics",
+        "smartPresetId": "liquid-optics-calm"
+      },
+      "transition": "none",
+      "alignment": "none",
+      "intensity": 0.5,
+      "intensityClamp": 0.5,
+      "clamp": {
+        "name": "composed",
+        "maxIntensity": 0.5,
+        "maxFlashHz": 1,
+        "maxLuminanceDelta": 0.35,
+        "maxFlashArea": 0.1,
+        "maxCameraVelocity": 1,
+        "maxZoom": 1,
+        "maxRotation": 1,
+        "maxParticleDensity": 1,
+        "requiresReducedMotion": false,
+        "requiresOverlaySafe": false
+      },
+      "ladderSteps": [
+        "smart-preset-intensity-cap"
+      ]
+    },
+    {
+      "contractVersion": "visual-director.v1",
+      "tick": 10,
+      "effectiveMediaTimeMs": 2500,
+      "cue": "groove",
+      "landingTick": 10,
+      "selection": {
+        "visualId": "liquid-optics",
+        "smartPresetId": "liquid-optics-calm"
+      },
+      "transition": "none",
+      "alignment": "none",
+      "intensity": 0.5,
+      "intensityClamp": 0.5,
+      "clamp": {
+        "name": "composed",
+        "maxIntensity": 0.5,
+        "maxFlashHz": 1,
+        "maxLuminanceDelta": 0.35,
+        "maxFlashArea": 0.1,
+        "maxCameraVelocity": 1,
+        "maxZoom": 1,
+        "maxRotation": 1,
+        "maxParticleDensity": 1,
+        "requiresReducedMotion": false,
+        "requiresOverlaySafe": false
+      },
+      "ladderSteps": [
+        "smart-preset-intensity-cap"
+      ]
+    },
+    {
+      "contractVersion": "visual-director.v1",
+      "tick": 11,
+      "effectiveMediaTimeMs": 2750,
+      "cue": "groove",
+      "landingTick": 11,
+      "selection": {
+        "visualId": "liquid-optics",
+        "smartPresetId": "liquid-optics-calm"
+      },
+      "transition": "none",
+      "alignment": "none",
+      "intensity": 0.5,
+      "intensityClamp": 0.5,
+      "clamp": {
+        "name": "composed",
+        "maxIntensity": 0.5,
+        "maxFlashHz": 1,
+        "maxLuminanceDelta": 0.35,
+        "maxFlashArea": 0.1,
+        "maxCameraVelocity": 1,
+        "maxZoom": 1,
+        "maxRotation": 1,
+        "maxParticleDensity": 1,
+        "requiresReducedMotion": false,
+        "requiresOverlaySafe": false
+      },
+      "ladderSteps": [
+        "smart-preset-intensity-cap"
+      ]
+    },
+    {
+      "contractVersion": "visual-director.v1",
+      "tick": 12,
+      "effectiveMediaTimeMs": 3000,
+      "cue": "build",
+      "landingTick": 12,
+      "selection": {
+        "visualId": "liquid-optics",
+        "smartPresetId": "liquid-optics-calm"
+      },
+      "transition": "hold",
+      "alignment": "safety",
+      "fallbackReason": "photosensitivity-runtime-guard",
+      "intensity": 0.25,
+      "intensityClamp": 0.25,
+      "clamp": {
+        "name": "composed",
+        "maxIntensity": 0.5,
+        "maxFlashHz": 1,
+        "maxLuminanceDelta": 0.35,
+        "maxFlashArea": 0.1,
+        "maxCameraVelocity": 1,
+        "maxZoom": 1,
+        "maxRotation": 1,
+        "maxParticleDensity": 1,
+        "requiresReducedMotion": false,
+        "requiresOverlaySafe": false
+      },
+      "ladderSteps": [
+        "smart-preset-intensity-cap",
+        "runtime-flash-guard"
+      ]
+    },
+    {
+      "contractVersion": "visual-director.v1",
+      "tick": 13,
+      "effectiveMediaTimeMs": 3250,
+      "cue": "groove",
+      "landingTick": 13,
+      "selection": {
+        "visualId": "liquid-optics",
+        "smartPresetId": "liquid-optics-calm"
+      },
+      "transition": "none",
+      "alignment": "none",
+      "intensity": 0.5,
+      "intensityClamp": 0.5,
+      "clamp": {
+        "name": "composed",
+        "maxIntensity": 0.5,
+        "maxFlashHz": 1,
+        "maxLuminanceDelta": 0.35,
+        "maxFlashArea": 0.1,
+        "maxCameraVelocity": 1,
+        "maxZoom": 1,
+        "maxRotation": 1,
+        "maxParticleDensity": 1,
+        "requiresReducedMotion": false,
+        "requiresOverlaySafe": false
+      },
+      "ladderSteps": [
+        "smart-preset-intensity-cap"
+      ]
+    },
+    {
+      "contractVersion": "visual-director.v1",
+      "tick": 14,
+      "effectiveMediaTimeMs": 3500,
+      "cue": "groove",
+      "landingTick": 14,
+      "selection": {
+        "visualId": "liquid-optics",
+        "smartPresetId": "liquid-optics-calm"
+      },
+      "transition": "none",
+      "alignment": "none",
+      "intensity": 0.5,
+      "intensityClamp": 0.5,
+      "clamp": {
+        "name": "composed",
+        "maxIntensity": 0.5,
+        "maxFlashHz": 1,
+        "maxLuminanceDelta": 0.35,
+        "maxFlashArea": 0.1,
+        "maxCameraVelocity": 1,
+        "maxZoom": 1,
+        "maxRotation": 1,
+        "maxParticleDensity": 1,
+        "requiresReducedMotion": false,
+        "requiresOverlaySafe": false
+      },
+      "ladderSteps": [
+        "smart-preset-intensity-cap"
+      ]
+    },
+    {
+      "contractVersion": "visual-director.v1",
+      "tick": 15,
+      "effectiveMediaTimeMs": 3750,
+      "cue": "finale",
+      "landingTick": 15,
+      "selection": {
+        "visualId": "liquid-optics",
+        "smartPresetId": "liquid-optics-calm"
+      },
+      "transition": "cut",
+      "alignment": "bar",
+      "intensity": 0.5,
+      "intensityClamp": 0.5,
+      "clamp": {
+        "name": "composed",
+        "maxIntensity": 0.5,
+        "maxFlashHz": 1,
+        "maxLuminanceDelta": 0.35,
+        "maxFlashArea": 0.1,
+        "maxCameraVelocity": 1,
+        "maxZoom": 1,
+        "maxRotation": 1,
+        "maxParticleDensity": 1,
+        "requiresReducedMotion": false,
+        "requiresOverlaySafe": false
+      },
+      "ladderSteps": [
+        "smart-preset-intensity-cap"
+      ]
+    },
+    {
+      "contractVersion": "visual-director.v1",
+      "tick": 16,
+      "effectiveMediaTimeMs": 4000,
+      "cue": "finale",
+      "landingTick": 16,
+      "selection": {
+        "visualId": "liquid-optics",
+        "smartPresetId": "liquid-optics-calm"
+      },
+      "transition": "hold",
+      "alignment": "safety",
+      "fallbackReason": "photosensitivity-runtime-guard",
+      "intensity": 0.25,
+      "intensityClamp": 0.25,
+      "clamp": {
+        "name": "composed",
+        "maxIntensity": 0.5,
+        "maxFlashHz": 1,
+        "maxLuminanceDelta": 0.35,
+        "maxFlashArea": 0.1,
+        "maxCameraVelocity": 1,
+        "maxZoom": 1,
+        "maxRotation": 1,
+        "maxParticleDensity": 1,
+        "requiresReducedMotion": false,
+        "requiresOverlaySafe": false
+      },
+      "ladderSteps": [
+        "smart-preset-intensity-cap",
+        "runtime-flash-guard"
+      ]
+    }
+  ],
+  "smartPresetEval": {
+    "presetId": "liquid-optics-calm",
+    "visualId": "liquid-optics",
+    "samples": [
+      {
+        "target": "param0",
+        "curve": {
+          "kind": "constant",
+          "value": 0.3,
+          "min": 0,
+          "max": 1
+        },
+        "input": {},
+        "want": 0.3
+      },
+      {
+        "target": "param1",
+        "curve": {
+          "kind": "easing",
+          "from": 0,
+          "to": 1,
+          "duration": 2,
+          "unit": "seconds",
+          "easing": "easeInOut"
+        },
+        "input": {
+          "elapsedSeconds": 0.5
+        },
+        "want": 0.125
+      },
+      {
+        "target": "param1",
+        "curve": {
+          "kind": "easing",
+          "from": 0,
+          "to": 1,
+          "duration": 2,
+          "unit": "seconds",
+          "easing": "easeInOut"
+        },
+        "input": {
+          "elapsedSeconds": 1.5
+        },
+        "want": 0.875
+      },
+      {
+        "target": "param2",
+        "curve": {
+          "kind": "envelope",
+          "value": 1,
+          "unit": "seconds",
+          "attack": 0.5,
+          "release": 0.5,
+          "releaseAt": 1
+        },
+        "input": {
+          "elapsedSeconds": 0.25
+        },
+        "want": 0.5
+      },
+      {
+        "target": "param2",
+        "curve": {
+          "kind": "envelope",
+          "value": 1,
+          "unit": "seconds",
+          "attack": 0.5,
+          "release": 0.5,
+          "releaseAt": 1
+        },
+        "input": {
+          "elapsedSeconds": 1.25
+        },
+        "want": 0.5
+      },
+      {
+        "target": "motion",
+        "curve": {
+          "kind": "lfo",
+          "unit": "beats",
+          "shape": "sine",
+          "period": 4,
+          "min": 0,
+          "max": 1
+        },
+        "input": {
+          "elapsedBeats": 1
+        },
+        "want": 1
+      },
+      {
+        "target": "motion",
+        "curve": {
+          "kind": "lfo",
+          "unit": "beats",
+          "shape": "sine",
+          "period": 4,
+          "min": 0,
+          "max": 1
+        },
+        "input": {
+          "elapsedBeats": 3
+        },
+        "want": 0
+      },
+      {
+        "target": "camera",
+        "curve": {
+          "kind": "lfo",
+          "unit": "seconds",
+          "shape": "triangle",
+          "period": 8,
+          "min": 0.2,
+          "max": 0.8
+        },
+        "input": {
+          "elapsedSeconds": 2
+        },
+        "want": 0.5
+      },
+      {
+        "target": "palette",
+        "curve": {
+          "kind": "easing",
+          "from": 0.1,
+          "to": 0.9,
+          "duration": 4,
+          "unit": "seconds",
+          "easing": "linear"
+        },
+        "input": {
+          "elapsedSeconds": 2
+        },
+        "want": 0.5
+      },
+      {
+        "target": "overlay",
+        "curve": {
+          "kind": "constant",
+          "value": 0.5,
+          "min": 0,
+          "max": 1
+        },
+        "input": {},
+        "want": 0.5
+      },
+      {
+        "target": "intensity",
+        "curve": {
+          "kind": "envelope",
+          "value": 0.8,
+          "unit": "seconds",
+          "attack": 1,
+          "release": 2,
+          "releaseAt": 3
+        },
+        "input": {
+          "elapsedSeconds": 2
+        },
+        "want": 0.8
+      }
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+-- ADR-0009 §7 (FREEZE-3) — pre-importer schema reservation for the import
+-- match-pin. A media_file row IS the file->Media match (its content identity
+-- bound to a Media). A rescan that re-identifies content can move a file to a
+-- different Media; an IMPORTED match (one an importer asserted from Plex/Jellyfin/
+-- Stash metadata, ADR-0037) must SURVIVE that rescan rather than be silently
+-- re-matched. match_pinned marks such a match as operator/import-authoritative so
+-- the (later) rescan path leaves it alone.
+--
+-- SHARED column with PIPE-1: PIPE-1 ("Fix match") wires the fixMatch mutation
+-- that lets an operator manually pin/correct a match and CONSUMES this same
+-- column. FREEZE-3 OWNS the column (schema + a minimal set/read path in store.go:
+-- SetMatchPinned / MatchPinned); PIPE-1 just reads/writes it through the mutation.
+-- One column, one owner here, so the two land without collision.
+--
+-- Importers and the rescan-respects-pin logic ship LATER (MIG cluster / PIPE-1).
+-- This migration is the column only — the part that is expensive to retrofit
+-- after the ADR-0011 freeze. DEFAULT 0 keeps every existing and future scanned
+-- match unpinned (a normal rescan re-identifies it freely), which is exactly the
+-- pre-migration behavior. Append-only forward migration (catalog 0053 already
+-- rebuilt media_file on beta DBs; this is a plain additive ALTER, no rebuild).
+ALTER TABLE media_file ADD COLUMN match_pinned INTEGER NOT NULL DEFAULT 0;

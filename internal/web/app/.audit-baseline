@@ -1,0 +1,4 @@
+{
+  "//": "npm audit baseline (TECHDUR-WEB-2). Bounded waivers only — each entry is a temporary, EXPIRING acceptance of a high/critical advisory that has no fix yet. script/audit-npm.sh fails closed on: a NEW advisory not listed here; an entry past its `expires` date; an entry whose advisory has a fix available (`fixAvailable` — apply the fix, do not waive); and a stale entry whose advisory no longer appears (remove it). Keep this array empty whenever the tree is clean.",
+  "waivers": []
+}

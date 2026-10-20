@@ -1,0 +1,24 @@
+{
+  "ffmpeg_version": "7.1.4-Jellyfin",
+  "generated_at": "2026-07-19T03:16:07Z",
+  "fixtures": [
+    {
+      "path": "probe_media_corpus.json",
+      "sha256": "32417065ecd640775502a1e898b74e4195124aec2064f8d12ee2fc7a6f2a101e",
+      "mode": "fabricated",
+      "synthesis_args": []
+    },
+    {
+      "path": "stream_inventory_dv_hdr10plus_pgs_71_font.ffprobe.json",
+      "sha256": "d9e737627937d7c81fb2ff2b06c17c2a783eb758164c281752844e5a4b5306a9",
+      "mode": "fabricated",
+      "synthesis_args": []
+    },
+    {
+      "path": "stream_inventory_subtitle_dispositions.ffprobe.json",
+      "sha256": "a92a8a1a620366f69b2cd7a1367d70c2ff0dc3959419d5afe1722224ea9bb1c1",
+      "mode": "fabricated",
+      "synthesis_args": []
+    }
+  ]
+}

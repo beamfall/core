@@ -1,0 +1,19 @@
+services:
+  core:
+    build: .
+    command: ["serve"]
+    ports:
+      - "8090:8090"
+    env_file:
+      - .env.example
+    environment:
+      BEAMFALL_ADDR: ":8090"
+      BEAMFALL_DATA_DIR: /data
+    volumes:
+      - ./.beamfall-dev:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8090/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3

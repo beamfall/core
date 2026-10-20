@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "floors": {
+    "github.com/beamfall/core/internal/app": 100.0,
+    "github.com/beamfall/core/internal/server": 100.0
+  }
+}

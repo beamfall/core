@@ -1,0 +1,110 @@
+export const backupRetentionStrings = {
+  en: {
+    // WEB-5L — Backup / metadata export / Trash policy / Activity undo.
+    backupHeading: "Backups",
+    backupLead:
+      "Run a database backup to a server-side destination. The mutation returns the written manifest path, shown below as the run record.",
+    backupDestLabel: "Destination",
+    backupDestPlaceholder: "/var/lib/beamfall/backups/2026-06-20",
+    backupRun: "Run backup",
+    backupRunning: "Running…",
+    backupManifestLabel: "Latest manifest",
+    backupNoneYet: "No backup has been run from here yet.",
+    backupFailed: "The backup could not be run.",
+    backupNeedDest: "Enter a destination path.",
+    backupRestoreNote:
+      "Restore is operator-run from the destination with the server stopped; use the guided restore flow below, documented in ",
+    backupRestoreNoteDocLabel: "docs/operations/restore.md",
+    backupRestoreNoteDocHref: "docs/operations/restore.md",
+    backupRestoreNoteAfterDoc: ". The Console never writes over a live database.",
+    backupRestoreHeading: "Guided restore",
+    backupRestoreLead:
+      "Use this when startup refuses a corrupt database or you need to roll back to a known-good backup.",
+    backupRestoreStepStop: "Stop Beamfall and leave the corrupt data directory in place.",
+    backupRestoreStepChoose:
+      "Choose the newest trusted manifest, usually under <data-dir>/backups/pre-migration or the backup destination shown above.",
+    backupRestoreStepRun:
+      "Run the offline restore command on the server host; it refuses a live server lock and verifies manifest hashes before touching the data directory.",
+    backupRestoreStepStart:
+      "Start Beamfall again and keep the pre-restore snapshot until the restored server is verified.",
+    backupRestoreSafety:
+      "The web Console only guides restore. It never overwrites a live database.",
+    // MIGREV-3 — Backup panel: history + verify + manifest + restore assistant.
+    backupHistoryHeading: "Backup history",
+    backupHistoryLead:
+      "The run record of the backup sets written to this destination — when each ran, its size, and its last integrity verify status. Enter a destination and load its history, or run a backup to publish a new set.",
+    backupHistoryLoad: "Load history",
+    backupHistoryLoading: "Loading…",
+    backupHistoryEmpty: "No backup sets under this destination yet.",
+    backupHistoryNeedDest: "Enter a backup destination to load its history.",
+    backupHistoryUnavailable: "Could not read the backup history for this destination.",
+    backupHistoryCount: "{count} sets",
+    backupColSet: "Set",
+    backupColCaptured: "Captured",
+    backupColSize: "Size",
+    backupColVerify: "Verify",
+    backupVerifyAction: "Verify",
+    backupVerifyRunning: "Verifying…",
+    backupVerified: "Verified",
+    backupVerifyFailed: "Failed",
+    backupVerifyNotRun: "Not verified",
+    backupVerifyPassBanner:
+      "Integrity check passed. All files present and every content hash matches the manifest — this set is safe to restore.",
+    backupVerifyFailBanner:
+      "Integrity check failed. This set is incomplete or was modified after capture and cannot be trusted for restore.",
+    backupManifestHeading: "Manifest detail",
+    backupManifestLead:
+      "The contents of the selected set: its published manifest path and the recovery-key exclusion that restore depends on. Select a set from the history above.",
+    backupManifestNone: "Select a backup set to see its manifest detail.",
+    backupManifestPathLabel: "Manifest path",
+    backupKeysCalloutTitle: "Recovery Keys are NOT in this backup",
+    backupKeysCalloutBody:
+      "This set contains no key material by design. If you lose your Recovery Keys, restoring this backup will not recover encrypted content. Save your Recovery Keys separately and store them somewhere this backup is not.",
+    exportHeading: "Metadata export",
+    exportLead:
+      "Generate the full, self-describing portability export of catalog curation, reveal-filtered to what this session can see. Download as JSON.",
+    exportGenerate: "Generate export",
+    exportGenerating: "Generating…",
+    exportDownload: "Download JSON",
+    exportFailed: "The metadata export could not be generated.",
+    exportSchema: "Schema",
+    exportLibrariesCount: "Libraries",
+    exportMediaCount: "Media",
+    exportCollectionsCount: "Collections",
+    exportExportedAt: "Exported at",
+    trashPolicyHeading: "Trash policy",
+    trashPolicyLead:
+      "The server-side retention window. Browse retained deleted Media and restore any row; destruction is recoverable by default.",
+    trashRetainedCount: "{count} retained",
+    purgeHeading: "Purge retained Trash",
+    purgeBeforeLabel: "Purge items trashed before",
+    purgeConfirmGate: "I understand this permanently deletes retained items and cannot be undone.",
+    purgeIrreversible: "Irreversible",
+    purgeAction: "Purge before cutoff",
+    purgeRunning: "Purging…",
+    purgeNeedCutoff: "Pick a cutoff date and time.",
+    purgeFailed: "The purge could not be completed.",
+    purgeDone: "Purged · {count} removed",
+    // Retention rules (ADR-0051, RET-2)
+    retentionRulesTitle: "Retention rules",
+    retentionRulesEmpty: "No retention rules configured.",
+    retentionRulesLoadError: "Could not load retention rules.",
+    retentionRuleAdd: "Add rule",
+    retentionRuleCreate: "Create",
+    retentionRuleDelete: "Delete rule",
+    retentionRuleEnabledToggle: "Toggle enabled",
+    retentionRuleDeleteConfirm: "Delete this retention rule?",
+    retentionRuleNamePlaceholder: "Rule name",
+    retentionRuleSourceExprPlaceholder: "Source expression (JSON)",
+    retentionRuleTargetLibraryIDPlaceholder: "Target library ID",
+    activityUndoHeading: "Activity",
+    activityUndoLead:
+      "The append-only operator feed. Reversible actions jump to the Trash table where Restore lives; irreversible actions carry no undo.",
+    activityUndo: "Undo",
+    activityNoUndo: "No undo",
+  },
+  fr: {},
+  de: {},
+  es: {},
+  pt: {},
+} as const;

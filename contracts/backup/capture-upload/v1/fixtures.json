@@ -1,0 +1,65 @@
+{
+  "contractVersion": "1.0.0",
+  "fixtures": [
+    {
+      "name": "wifi-background-upload-completes",
+      "endpoint": {
+        "method": "POST",
+        "path": "/v1/backups/media",
+        "scope": "backup",
+        "profileBound": true,
+        "multipartRequired": ["libraryID", "file"]
+      },
+      "queue": {
+        "backgroundTransfer": true,
+        "networkPolicy": "wifiOnly",
+        "pauseReasons": [],
+        "progress": { "itemBytesSent": 5242880, "itemBytesTotal": 5242880, "queueState": "complete" },
+        "resumable": true,
+        "dedupNoopOnReoffer": false,
+        "deleteAfterBackup": { "mode": "explicitOptIn", "requiresConfirmedStorage": true }
+      },
+      "serverResult": { "status": 201, "mediaID": "media-photo-001", "libraryID": "library-private-photos", "fingerprint": "sha256:8e54f31f1f9a6c2d0a6bfb8d23dd7d82f7b32286fb4e50f26fb51b54c28d8f3a" }
+    },
+    {
+      "name": "server-paused-is-visible",
+      "endpoint": {
+        "method": "POST",
+        "path": "/v1/backups/media",
+        "scope": "backup",
+        "profileBound": true,
+        "multipartRequired": ["libraryID", "file"]
+      },
+      "queue": {
+        "backgroundTransfer": true,
+        "networkPolicy": "wifiOnly",
+        "pauseReasons": ["serverPaused"],
+        "progress": { "itemBytesSent": 1048576, "itemBytesTotal": 7340032, "queueState": "paused" },
+        "resumable": true,
+        "dedupNoopOnReoffer": false,
+        "deleteAfterBackup": { "mode": "disabled", "requiresConfirmedStorage": true }
+      },
+      "serverResult": { "status": 423, "libraryID": "library-private-photos", "paused": true }
+    },
+    {
+      "name": "resume-reoffer-dedups-before-delete",
+      "endpoint": {
+        "method": "POST",
+        "path": "/v1/backups/media",
+        "scope": "backup",
+        "profileBound": true,
+        "multipartRequired": ["libraryID", "file"]
+      },
+      "queue": {
+        "backgroundTransfer": true,
+        "networkPolicy": "wifiOrCellular",
+        "pauseReasons": [],
+        "progress": { "itemBytesSent": 12845056, "itemBytesTotal": 12845056, "queueState": "complete" },
+        "resumable": true,
+        "dedupNoopOnReoffer": true,
+        "deleteAfterBackup": { "mode": "explicitOptIn", "requiresConfirmedStorage": true }
+      },
+      "serverResult": { "status": 201, "mediaID": "media-photo-001", "libraryID": "library-private-photos", "fingerprint": "sha256:8e54f31f1f9a6c2d0a6bfb8d23dd7d82f7b32286fb4e50f26fb51b54c28d8f3a" }
+    }
+  ]
+}

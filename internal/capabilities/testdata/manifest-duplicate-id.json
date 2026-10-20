@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "namespace": "flat",
+  "buildTags": [],
+  "capabilities": [
+    {"id": "shared-sync", "version": 1},
+    {"id": "shared-sync", "version": 1}
+  ]
+}

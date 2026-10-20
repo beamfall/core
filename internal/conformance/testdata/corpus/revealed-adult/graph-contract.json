@@ -1,0 +1,48 @@
+{
+  "data": {
+    "currentSession": {
+      "deviceRole": "viewer",
+      "id": "session-revealed",
+      "profile": "adult",
+      "profileID": "profile-default",
+      "revealed": true,
+      "subtitleMode": "off"
+    },
+    "plugins": [
+      {
+        "displayName": "Demo",
+        "id": "demo",
+        "mediaClassLabels": {
+          "chapter": "Chapter",
+          "feature": {
+            "en": "Feature",
+            "fr": "Long métrage"
+          }
+        },
+        "mediaLabel": "Item"
+      }
+    ],
+    "sourceItems": [
+      {
+        "id": "media-archive",
+        "kind": "media",
+        "restricted": true,
+        "summary": "2 min",
+        "title": "Archive Media"
+      },
+      {
+        "artwork": {
+          "poster": "/api/media/artwork/media-alpha/poster?v=av1"
+        },
+        "artworkSlots": {
+          "backdrop": "/api/media/artwork/media-alpha/backdrop?v=av1",
+          "poster": "/api/media/artwork/media-alpha/poster?v=av1"
+        },
+        "id": "media-alpha",
+        "kind": "media",
+        "summary": "2 min",
+        "title": "Sample Media"
+      }
+    ]
+  }
+}

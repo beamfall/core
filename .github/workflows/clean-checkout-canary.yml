@@ -1,0 +1,58 @@
+name: clean-checkout-canary
+
+on:
+  schedule:
+    - cron: "07 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  clean-checkout-canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          fetch-depth: 0
+          path: beamfall
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: beamfall/go.mod
+          cache: true
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: Clean-checkout canary
+        working-directory: beamfall
+        env:
+          BEAMFALL_WORKSPACE: ${{ github.workspace }}
+        run: script/clean-checkout-canary.sh --repo beamfall
+
+  alert-on-failure:
+    if: ${{ always() && github.event_name == 'schedule' && needs.clean-checkout-canary.result == 'failure' }}
+    needs: clean-checkout-canary
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Open failure alert
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Clean-checkout canary nightly failure"
+          existing="$(gh issue list --state open --search "$title in:title" --json title --jq "map(select(.title == \"$title\")) | length")"
+          if [ "$existing" -eq 0 ]; then
+            gh issue create \
+              --title "$title" \
+              --body "The scheduled clean-checkout canary failed. Inspect the run and restore a green detached Core build: $RUN_URL"
+          else
+            echo "An open clean-checkout canary alert already exists. Failed run: $RUN_URL"
+          fi

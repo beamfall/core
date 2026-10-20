@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("<?xml version=\"1.0\" encoding=\"utf-8\"?><feed><entry><id>urn:entry</id><title>Entry</title><link rel=\"enclosure\" href=\"https://media.example.test/one.mp3\" type=\"audio/mpeg\"/></entry></feed>")

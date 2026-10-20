@@ -1,0 +1,204 @@
+{
+  "schemaVersion": 1,
+  "hashAlgorithm": "sha256",
+  "fixtures": [
+    {
+      "id": "WIN-NATIVE-1080P",
+      "host": {
+        "class": "windows-integrated-gpu-sdr",
+        "requirements": "Windows 11 current; integrated GPU; 1080p SDR display",
+        "evidenceSku": "record-at-run"
+      },
+      "file": {
+        "container": "mp4",
+        "video": "H.264 1080p",
+        "audio": "AAC",
+        "subtitles": "SRT",
+        "dynamicRange": "SDR"
+      },
+      "expected": {
+        "engine": "native-media",
+        "pipeline": "direct-play",
+        "decision": "Native playback is selected when the probed native profile accepts the file."
+      },
+      "automation": {
+        "class": "automated",
+        "manualResidualTicket": null
+      },
+      "source": {
+        "kind": "synthesized",
+        "recipe": "Generate color bars and a sine tone, encode as H.264/AAC MP4, and add a synthetic SRT sidecar."
+      },
+      "artifact": {
+        "path": null,
+        "sha256": null,
+        "status": "required-missing"
+      }
+    },
+    {
+      "id": "WIN-NATIVE-HDR",
+      "host": {
+        "class": "windows-discrete-gpu-hdr",
+        "requirements": "Windows 11 current; DXVA/D3D11-capable discrete GPU; HDR-capable display",
+        "evidenceSku": "record-at-run"
+      },
+      "file": {
+        "container": "mp4-or-mkv",
+        "video": "HEVC Main10 4K",
+        "audio": "E-AC-3",
+        "subtitles": "none",
+        "dynamicRange": "HDR10"
+      },
+      "expected": {
+        "engine": "native-media",
+        "pipeline": "direct-play",
+        "decision": "Native playback is selected only when the probed host reports the required HDR path."
+      },
+      "automation": {
+        "class": "automated-plus-manual-device",
+        "manualResidualTicket": "required-before-release"
+      },
+      "source": {
+        "kind": "synthesized",
+        "recipe": "Generate a test pattern and inject authored HDR10 metadata; do not use commercial source clips."
+      },
+      "artifact": {
+        "path": null,
+        "sha256": null,
+        "status": "required-missing"
+      }
+    },
+    {
+      "id": "WIN-LIBMPV-SUBS",
+      "host": {
+        "class": "windows-integrated-gpu-sdr",
+        "requirements": "Windows 11 current; integrated GPU",
+        "evidenceSku": "record-at-run"
+      },
+      "file": {
+        "container": "mkv",
+        "video": "H.264 or HEVC",
+        "audio": "DTS or TrueHD edge case",
+        "subtitles": "ASS/SSA with synthesized font attachment",
+        "dynamicRange": "SDR"
+      },
+      "expected": {
+        "engine": "compatibility-engine",
+        "pipeline": "direct-play-or-direct-stream-as-returned",
+        "decision": "The compatibility engine is selected when native playback cannot preserve the declared subtitle or audio requirements."
+      },
+      "automation": {
+        "class": "automated",
+        "manualResidualTicket": null
+      },
+      "source": {
+        "kind": "synthesized",
+        "recipe": "Mux generated video/audio with authored ASS/SSA events and an openly licensed or generated test font."
+      },
+      "artifact": {
+        "path": null,
+        "sha256": null,
+        "status": "required-missing"
+      }
+    },
+    {
+      "id": "WIN-TRANSCODE",
+      "host": {
+        "class": "windows-low-power-remote-shaped",
+        "requirements": "Windows 11 current; low-end integrated GPU; network-shaped remote server",
+        "evidenceSku": "record-at-run"
+      },
+      "file": {
+        "container": "mkv",
+        "video": "unsupported-by-declared-profile codec",
+        "audio": "synthetic multichannel audio",
+        "subtitles": "unsupported-by-declared-profile subtitle or bandwidth constraint",
+        "dynamicRange": "SDR"
+      },
+      "expected": {
+        "engine": "native-or-compatibility-engine-for-returned-stream",
+        "pipeline": "direct-stream-or-transcode",
+        "decision": "The server returns the first safe pipeline supported by the enrolled profiles and the shaped bandwidth."
+      },
+      "automation": {
+        "class": "automated",
+        "manualResidualTicket": null
+      },
+      "source": {
+        "kind": "synthesized",
+        "recipe": "Generate a deterministic unsupported-input case and apply the pinned network-shaping profile during the run."
+      },
+      "artifact": {
+        "path": null,
+        "sha256": null,
+        "status": "required-missing"
+      }
+    },
+    {
+      "id": "WIN-RELOCK",
+      "host": {
+        "class": "windows-any-pinned-class",
+        "requirements": "Any pinned Windows fixture host",
+        "evidenceSku": "record-at-run"
+      },
+      "file": {
+        "container": "mp4",
+        "video": "H.264 1080p",
+        "audio": "AAC",
+        "subtitles": "none",
+        "dynamicRange": "SDR"
+      },
+      "expected": {
+        "engine": "active-engine-stops-safely",
+        "pipeline": "stream-rejected-session-stopped",
+        "decision": "Reveal relock or Profile switch invalidates playback authorization and stops the active engine."
+      },
+      "automation": {
+        "class": "automated",
+        "manualResidualTicket": null
+      },
+      "source": {
+        "kind": "derived",
+        "recipe": "Reuse WIN-NATIVE-1080P and inject a deterministic Reveal relock or Profile-switch event."
+      },
+      "artifact": {
+        "path": null,
+        "sha256": null,
+        "status": "required-missing"
+      }
+    },
+    {
+      "id": "WIN-CRASH-RECOVER",
+      "host": {
+        "class": "windows-any-pinned-class",
+        "requirements": "Any pinned Windows fixture host",
+        "evidenceSku": "record-at-run"
+      },
+      "file": {
+        "container": "mp4",
+        "video": "H.264 1080p",
+        "audio": "AAC",
+        "subtitles": "none",
+        "dynamicRange": "SDR"
+      },
+      "expected": {
+        "engine": "active-engine-restart-path",
+        "pipeline": "session-recovers-or-refuses-safely",
+        "decision": "A forced player or local-Core crash cannot corrupt playback state or resume with stale authorization."
+      },
+      "automation": {
+        "class": "automated",
+        "manualResidualTicket": null
+      },
+      "source": {
+        "kind": "derived",
+        "recipe": "Reuse WIN-NATIVE-1080P and inject the pinned player or local-Core crash point."
+      },
+      "artifact": {
+        "path": null,
+        "sha256": null,
+        "status": "required-missing"
+      }
+    }
+  ]
+}

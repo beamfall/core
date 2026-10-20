@@ -1,0 +1,68 @@
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 22px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--text-primary);
+  background: color-mix(in oklab, var(--bg-raised) 70%, transparent);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.status-chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.9;
+}
+
+.status-chip.is-green {
+  background: color-mix(in oklab, var(--state-direct) 28%, transparent);
+}
+
+.status-chip.is-amber {
+  background: color-mix(in oklab, var(--state-warning) 30%, transparent);
+}
+
+.status-chip.is-red {
+  background: color-mix(in oklab, var(--state-danger) 32%, transparent);
+}
+
+.status-chip.is-cyan {
+  background: color-mix(in oklab, var(--state-remote) 28%, transparent);
+}
+
+.status-chip.is-iris {
+  background: color-mix(in oklab, var(--state-restricted) 32%, transparent);
+}
+
+[data-theme="light"] .status-chip {
+  background: var(--paper-200);
+}
+
+[data-theme="light"] .status-chip.is-green {
+  background: color-mix(in oklab, var(--state-direct) 28%, transparent);
+}
+
+[data-theme="light"] .status-chip.is-amber {
+  background: color-mix(in oklab, var(--state-warning) 30%, transparent);
+}
+
+[data-theme="light"] .status-chip.is-red {
+  background: color-mix(in oklab, var(--state-danger) 32%, transparent);
+}
+
+[data-theme="light"] .status-chip.is-cyan {
+  background: color-mix(in oklab, var(--state-remote) 28%, transparent);
+}
+
+[data-theme="light"] .status-chip.is-iris {
+  background: color-mix(in oklab, var(--state-restricted) 30%, transparent);
+}

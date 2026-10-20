@@ -1,0 +1,33 @@
+# Beamfall Core — TrueNAS SCALE custom-app deployment.
+#
+# TrueNAS SCALE (Electric Eel / 24.10+) installs custom apps from a Docker
+# Compose spec. Paste this file into Apps -> Discover Apps -> Custom App ->
+# "Install via YAML", or use it as the source for a truenas/apps catalog PR.
+#
+# Host paths default to the standard /mnt/<pool>/... layout; override the
+# BEAMFALL_* variables in the UI's environment section for your pool name.
+#
+# The management HTTP port is plaintext, so the host bind defaults to loopback
+# (127.0.0.1). Set BEAMFALL_HTTP_BIND explicitly to publish on another
+# interface — only behind an intentional TLS/reverse-proxy boundary.
+#
+# If you do front this with your own reverse proxy (TrueNAS built-in
+# certificates + proxy, nginx, Traefik…), also set BEAMFALL_KNOWN_PROXIES to
+# that proxy's address or CIDR. Without it every relayed client reads as a
+# direct LAN peer of this container, skipping the pairing LAN gate.
+services:
+  beamfall:
+    image: ${BEAMFALL_IMAGE:?immutable-digest-reference-required}
+    container_name: beamfall
+    restart: unless-stopped
+    ports:
+      - "${BEAMFALL_HTTP_BIND:-127.0.0.1}:${BEAMFALL_HTTP_PORT:-8800}:8800"
+    environment:
+      BEAMFALL_ADDR: "0.0.0.0:8800"
+      BEAMFALL_DATA_DIR: "/data"
+      BEAMFALL_TRANSCODE_CAP: "${BEAMFALL_TRANSCODE_CAP:-2}"
+      BEAMFALL_KNOWN_PROXIES: "${BEAMFALL_KNOWN_PROXIES:-}"
+    volumes:
+      - "${BEAMFALL_DATA_HOST_PATH:-/mnt/tank/apps/beamfall/data}:/data"
+      - "${BEAMFALL_MEDIA_HOST_PATH:-/mnt/tank/media}:/media:ro"
+      - "${BEAMFALL_TRANSCODE_HOST_PATH:-/mnt/tank/apps/beamfall/transcode}:/transcode"

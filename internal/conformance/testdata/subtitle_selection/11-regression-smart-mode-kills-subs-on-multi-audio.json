@@ -1,0 +1,22 @@
+{
+  "id": "regression-smart-mode-kills-subs-on-multi-audio",
+  "regression": true,
+  "notes": "Shipped competitor bug: 'foreign content' was inferred from the media having multiple audio tracks, killing subtitles once a preferred-language track was merely PRESENT among them, rather than checking which audio track is actually playing. The resolver takes only the single playing audioTrackLang as input, so smart mode must still enable subtitles here because the CURRENTLY PLAYING audio (ja) is not preferred, regardless of any other audio track the item may carry.",
+  "input": {
+    "mode": "smart",
+    "langPrefs": ["en"],
+    "preferSDH": false,
+    "audioTrackLang": "ja",
+    "tracks": [
+      { "language": "en", "kind": "muxed", "forced": false, "sdh": false, "visualImpaired": false, "commentary": false }
+    ],
+    "perItemRecord": null
+  },
+  "expected": {
+    "selection": {
+      "track": { "language": "en", "kind": "muxed", "roles": { "forced": false, "sdh": false, "visualImpaired": false, "commentary": false } },
+      "reason": "subtitles for foreign-language audio"
+    },
+    "unavailableReason": ""
+  }
+}

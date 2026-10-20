@@ -1,0 +1,72 @@
+[
+  {
+    "id": "PBX-001", "media_path": "/fixtures/pbx-001.mp4",
+    "expected": {"container":"mp4","video_codec":"h264","audio_codec":"aac","video_profile":"High","bit_depth":8},
+    "probe": {"streams":[{"codec_type":"video","codec_name":"h264","profile":"High","level":40,"width":1920,"height":1080,"bits_per_raw_sample":"8"},{"codec_type":"audio","codec_name":"aac","profile":"LC","channels":2,"channel_layout":"stereo"}],"format":{"format_name":"mov,mp4,m4a,3gp,3g2,mj2","duration":"12.0"}}
+  },
+  {
+    "id": "PBX-002", "media_path": "/fixtures/pbx-002.mkv",
+    "expected": {"container":"matroska","video_codec":"hevc","audio_codec":"eac3","video_profile":"Main 10","bit_depth":10,"subtitle_codec":"subrip"},
+    "probe": {"streams":[{"codec_type":"video","codec_name":"hevc","profile":"Main 10","width":3840,"height":2160,"bits_per_raw_sample":"10"},{"codec_type":"audio","codec_name":"eac3","channels":6,"channel_layout":"5.1"},{"codec_type":"subtitle","codec_name":"subrip","tags":{"language":"eng"}}],"format":{"format_name":"matroska,webm","duration":"12.0"}}
+  },
+  {
+    "id": "PBX-003", "media_path": "/fixtures/pbx-003.mp4",
+    "expected": {"container":"mp4","video_codec":"hevc","audio_codec":"eac3","video_profile":"Main 10","bit_depth":10,"dovi_profile":5},
+    "probe": {"streams":[{"codec_type":"video","codec_name":"hevc","profile":"Main 10","bits_per_raw_sample":"10","side_data_list":[{"side_data_type":"DOVI configuration record","dv_profile":5,"dv_bl_signal_compatibility_id":0}]},{"codec_type":"audio","codec_name":"eac3","channels":6,"channel_layout":"5.1"}],"format":{"format_name":"mov,mp4,m4a,3gp,3g2,mj2","duration":"12.0"}}
+  },
+  {
+    "id": "PBX-004", "media_path": "/fixtures/pbx-004.mkv",
+    "expected": {"container":"matroska","video_codec":"hevc","audio_codec":"truehd","video_profile":"Main 10","bit_depth":10,"dovi_profile":7,"dovi_bl_compat_id":6,"subtitle_codec":"hdmv_pgs_subtitle"},
+    "probe": {"streams":[{"codec_type":"video","codec_name":"hevc","profile":"Main 10","bits_per_raw_sample":"10","side_data_list":[{"side_data_type":"DOVI configuration record","dv_profile":7,"dv_bl_signal_compatibility_id":6}]},{"codec_type":"audio","codec_name":"truehd","channels":8,"channel_layout":"7.1"},{"codec_type":"subtitle","codec_name":"hdmv_pgs_subtitle"}],"format":{"format_name":"matroska,webm","duration":"12.0"}}
+  },
+  {
+    "id": "PBX-005", "media_path": "/fixtures/pbx-005.mkv",
+    "expected": {"container":"matroska","video_codec":"hevc","audio_codec":"eac3","video_profile":"Main 10","bit_depth":10,"color_transfer":"smpte2084","color_primaries":"bt2020","dovi_profile":8,"dovi_bl_compat_id":1,"subtitle_codec":"ass"},
+    "probe": {"streams":[{"codec_type":"video","codec_name":"hevc","profile":"Main 10","bits_per_raw_sample":"10","color_transfer":"smpte2084","color_primaries":"bt2020","side_data_list":[{"side_data_type":"DOVI configuration record","dv_profile":8,"dv_bl_signal_compatibility_id":1}]},{"codec_type":"audio","codec_name":"eac3","channels":6,"channel_layout":"5.1(side)"},{"codec_type":"subtitle","codec_name":"ass"}],"format":{"format_name":"matroska,webm","duration":"12.0"}}
+  },
+  {
+    "id": "PBX-006", "media_path": "/fixtures/pbx-006.mkv",
+    "expected": {"container":"matroska","video_codec":"hevc","audio_codec":"aac","video_profile":"Main 10","bit_depth":10,"color_transfer":"smpte2084","color_primaries":"bt2020"},
+    "probe": {"streams":[{"codec_type":"video","codec_name":"hevc","profile":"Main 10","bits_per_raw_sample":"10","color_transfer":"smpte2084","color_primaries":"bt2020","side_data_list":[{"side_data_type":"Mastering display metadata"},{"side_data_type":"Content light level metadata"}]},{"codec_type":"audio","codec_name":"aac","channels":6,"channel_layout":"5.1"}],"format":{"format_name":"matroska,webm","duration":"12.0"}}
+  },
+  {
+    "id": "PBX-007", "media_path": "/fixtures/pbx-007.mkv",
+    "expected": {"container":"matroska","video_codec":"hevc","audio_codec":"eac3","video_profile":"Main 10","bit_depth":10,"color_transfer":"smpte2084","color_primaries":"bt2020","hdr10_plus":true},
+    "probe": {"streams":[{"codec_type":"video","codec_name":"hevc","profile":"Main 10","bits_per_raw_sample":"10","color_transfer":"smpte2084","color_primaries":"bt2020","side_data_list":[{"side_data_type":"HDR Dynamic Metadata SMPTE2094-40"}]},{"codec_type":"audio","codec_name":"eac3","channels":6,"channel_layout":"5.1"}],"format":{"format_name":"matroska,webm","duration":"12.0"}}
+  },
+  {
+    "id": "PBX-009", "media_path": "/fixtures/pbx-009.mkv",
+    "expected": {"container":"matroska","video_codec":"hevc","audio_codec":"truehd","video_profile":"Main","bit_depth":8},
+    "probe": {"streams":[{"codec_type":"video","codec_name":"hevc","profile":"Main","bits_per_raw_sample":"8"},{"codec_type":"audio","codec_name":"truehd","profile":"TrueHD + Dolby Atmos","channels":8,"channel_layout":"7.1"}],"format":{"format_name":"matroska,webm","duration":"12.0"}}
+  },
+  {
+    "id": "PBX-010", "media_path": "/fixtures/pbx-010.mkv",
+    "expected": {"container":"matroska","video_codec":"h264","audio_codec":"dts","video_profile":"High","bit_depth":8},
+    "probe": {"streams":[{"codec_type":"video","codec_name":"h264","profile":"High","bits_per_raw_sample":"8"},{"codec_type":"audio","codec_name":"dts","profile":"DTS-HD MA","channels":8,"channel_layout":"7.1"}],"format":{"format_name":"matroska,webm","duration":"12.0"}}
+  },
+  {
+    "id": "PBX-013", "media_path": "/fixtures/pbx-013.flac",
+    "expected": {"container":"flac","audio_codec":"flac"},
+    "probe": {"streams":[{"codec_type":"audio","codec_name":"flac","bits_per_sample":24,"channels":2,"channel_layout":"stereo"}],"format":{"format_name":"flac","duration":"12.0"}}
+  },
+  {
+    "id": "PBX-021", "media_path": "/fixtures/pbx-021.ts",
+    "expected": {"container":"mpegts","video_codec":"vc1","audio_codec":"dts","video_profile":"Advanced"},
+    "probe": {"streams":[{"codec_type":"video","codec_name":"vc1","profile":"Advanced"},{"codec_type":"audio","codec_name":"dts","channels":6,"channel_layout":"5.1"}],"format":{"format_name":"mpegts","duration":"12.0"}}
+  },
+  {
+    "id": "EDGE-AV1-WEBM", "media_path": "/fixtures/av1.webm",
+    "expected": {"container":"webm","video_codec":"av1","audio_codec":"opus","video_profile":"Main","bit_depth":10},
+    "probe": {"streams":[{"codec_type":"video","codec_name":"av1","profile":"Main","bits_per_raw_sample":"10"},{"codec_type":"audio","codec_name":"opus","channels":2,"channel_layout":"stereo"}],"format":{"format_name":"matroska,webm","duration":"12.0"}}
+  },
+  {
+    "id": "EDGE-VVC-MKV", "media_path": "/fixtures/vvc.mkv",
+    "expected": {"container":"matroska","video_codec":"vvc","audio_codec":"aac","video_profile":"Main 10","bit_depth":10},
+    "probe": {"streams":[{"codec_type":"video","codec_name":"vvc","profile":"Main 10","bits_per_raw_sample":"10"},{"codec_type":"audio","codec_name":"aac","channels":2,"channel_layout":"stereo"}],"format":{"format_name":"matroska,webm","duration":"12.0"}}
+  },
+  {
+    "id": "EDGE-MOV-FAMILY", "media_path": "/fixtures/camera.mov",
+    "expected": {"container":"mov","video_codec":"prores","audio_codec":"pcm_s24le","video_profile":"HQ","bit_depth":10},
+    "probe": {"streams":[{"codec_type":"video","codec_name":"prores","profile":"HQ","bits_per_raw_sample":"10"},{"codec_type":"audio","codec_name":"pcm_s24le","bits_per_sample":24,"channels":2,"channel_layout":"stereo"}],"format":{"format_name":"mov,mp4,m4a,3gp,3g2,mj2","duration":"12.0"}}
+  }
+]

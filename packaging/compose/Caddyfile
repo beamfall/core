@@ -1,0 +1,3 @@
+{$BEAMFALL_PUBLIC_HOST} {
+	reverse_proxy beamfall:8800
+}

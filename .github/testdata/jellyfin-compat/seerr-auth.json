@@ -1,0 +1,70 @@
+{
+  "capture": {
+    "date": "2026-07-10",
+    "server": "Jellyfin Server 10.11.11",
+    "target": "https://demo.jellyfin.org/stable",
+    "consumer": "Seerr 5ae70d05e1ee123b3cda43153ed415754fd8e816"
+  },
+  "cases": [
+    {
+      "name": "current-authorization-header",
+      "request": {
+        "method": "POST",
+        "path": "/Users/AuthenticateByName",
+        "headers": {
+          "Authorization": "MediaBrowser Client=\"Seerr\", Device=\"Seerr\", DeviceId=\"<device-id>\", Version=\"<version>\"",
+          "Content-Type": "application/json"
+        },
+        "body": { "Username": "demo", "Pw": "" }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json; charset=utf-8" },
+        "body": {
+          "User": {
+            "Name": "demo",
+            "ServerId": "<server-id>",
+            "Id": "<user-id>",
+            "HasPassword": false,
+            "Configuration": { "GroupedFolders": [] },
+            "Policy": { "IsAdministrator": false, "IsDisabled": false }
+          },
+          "SessionInfo": {
+            "Id": "<session-id>",
+            "UserId": "<user-id>",
+            "UserName": "demo",
+            "Client": "Seerr",
+            "DeviceId": "<device-id>",
+            "ApplicationVersion": "<version>",
+            "IsActive": true,
+            "ServerId": "<server-id>"
+          },
+          "AccessToken": "<access-token>",
+          "ServerId": "<server-id>"
+        }
+      }
+    },
+    {
+      "name": "legacy-x-emby-authorization-header",
+      "request": {
+        "method": "POST",
+        "path": "/Users/AuthenticateByName",
+        "headers": {
+          "X-Emby-Authorization": "MediaBrowser Client=\"Seerr\", Device=\"Seerr\", DeviceId=\"<device-id>\", Version=\"<version>\"",
+          "Content-Type": "application/json"
+        },
+        "body": { "Username": "demo", "Pw": "" }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json; charset=utf-8" },
+        "body": {
+          "User": { "Name": "demo", "ServerId": "<server-id>", "Id": "<user-id>" },
+          "SessionInfo": { "Id": "<session-id>", "UserId": "<user-id>", "Client": "Seerr" },
+          "AccessToken": "<access-token>",
+          "ServerId": "<server-id>"
+        }
+      }
+    }
+  ]
+}

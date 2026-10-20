@@ -1,0 +1,31 @@
+# gremlins mutation-testing config (ADR-0121 §5, TEST-CORE-6).
+#
+# Mutation testing is an ADVISORY nightly tier, NOT part of `make gate`. It runs
+# only on the named security/crypto packages (never `./...`) — see
+# script/mutation-test.sh and docs/testing/mutation-budget.json.
+#
+# Build-tag / cgo EXCLUSION LIST (ADR-0121 §5 mandate):
+#   - exclude-files drops generated cgo shims and any *_cgo.go from analysis. The
+#     gremlins worker recompiles each mutated source; cgo files break that loop on
+#     hosts without a C toolchain, so they are excluded by policy even though no
+#     currently-named package contains one (future-proofing).
+#   - the `integration` build tag is NOT passed, so integration-tagged files stay
+#     out of the mutation set (they need external fixtures the per-mutant runner
+#     can't provide).
+# Both exclusions are documented here so the list is the single source of truth.
+
+unleash:
+  # Only the default, well-behaved mutators. (invert-* / increment-decrement off
+  # by default — they add noise without strengthening the named crypto suites.)
+  arithmetic-base: true
+  conditionals-boundary: true
+  conditionals-negation: true
+  increment-decrement: true
+  invert-negatives: true
+  # cgo / generated shims: never mutate (the per-mutant recompile needs CGO).
+  exclude-files:
+    - ".*_cgo\\.go$"
+    - ".*\\.cgo[0-9]*\\.go$"
+    - "cgo\\.go$"
+  # Build tags excluded by omission: `integration` (needs external fixtures).
+  # tags: ""  # left empty on purpose — see header.

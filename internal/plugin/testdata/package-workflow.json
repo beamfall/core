@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "tidy-files",
+  "tier": "workflow",
+  "version": "1.0.0",
+  "capabilities": [
+    {"id": "tidy-files", "version": 1}
+  ],
+  "actions": [
+    {"ID": "run", "Label": {"en": "Run"}, "Risk": "low"}
+  ],
+  "status": [
+    {"name": "queued", "type": "number", "label": {"en": "Queued"}}
+  ]
+}

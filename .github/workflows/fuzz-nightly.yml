@@ -1,0 +1,68 @@
+# Nightly active-fuzz pass (ADR-0121 §3, TEST-CORE-2). The push/PR gate runs
+# deterministic seed replay; this nightly job runs each target for a longer
+# active window to surface deeper bugs.
+# Newly discovered crashers should be minimized and committed to testdata/fuzz/.
+#
+# Intentionally outside the push/PR gate — long fuzz windows are too slow for
+# every autonomous merge.
+name: fuzz-nightly
+
+on:
+  schedule:
+    - cron: "47 3 * * *" # Daily 03:47 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  manifest:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.manifest.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Validate and publish fuzz manifest
+        id: manifest
+        run: |
+          matrix="$(go run ./tools/fuzzmanifest -mode matrix)"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  fuzz:
+    needs: manifest
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.manifest.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: fuzz ${{ matrix.target }}
+        env:
+          FUZZ_PACKAGE: ${{ matrix.pkg }}
+          FUZZ_TARGET: ${{ matrix.target }}
+          FUZZ_TAGS_JSON: ${{ toJSON(matrix.tags) }}
+          FUZZ_GOOS_JSON: ${{ toJSON(matrix.goos) }}
+          FUZZ_GOARCH_JSON: ${{ toJSON(matrix.goarch) }}
+        run: python3 script/fuzz-one.py --duration 5m
+
+  last-green:
+    runs-on: ubuntu-latest
+    needs: fuzz
+    if: success()
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - name: Record last green
+        run: script/nightly-freshness.sh record --tier fuzz-nightly
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: nightly-last-green-fuzz-nightly
+          path: .agent-evidence/nightly-last-green/fuzz-nightly.json

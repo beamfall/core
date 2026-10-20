@@ -1,0 +1,23 @@
+{
+  "id": "pin-exact-tier-overrides-profile-preference",
+  "regression": false,
+  "notes": "A series-scoped pinned choice beats the Profile's SubtitleMode policy: the pin selects the French track even though the profile prefers English.",
+  "input": {
+    "mode": "always",
+    "langPrefs": ["en"],
+    "preferSDH": false,
+    "audioTrackLang": "en",
+    "tracks": [
+      { "language": "en", "kind": "muxed", "forced": false, "sdh": false, "visualImpaired": false, "commentary": false },
+      { "language": "fr", "kind": "muxed", "forced": false, "sdh": false, "visualImpaired": false, "commentary": false }
+    ],
+    "perItemRecord": { "selected": true, "language": "fr", "kind": "muxed", "forced": false, "sdh": false, "visualImpaired": false, "commentary": false }
+  },
+  "expected": {
+    "selection": {
+      "track": { "language": "fr", "kind": "muxed", "roles": { "forced": false, "sdh": false, "visualImpaired": false, "commentary": false } },
+      "reason": "pinned choice for this series"
+    },
+    "unavailableReason": ""
+  }
+}

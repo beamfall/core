@@ -1,0 +1,32 @@
+{
+  "format": "beamfall-export",
+  "formatVersion": "1.0.0",
+  "exportID": "fixture-full-state-v1",
+  "createdAt": "2026-07-11T00:00:00Z",
+  "generator": { "name": "beamfall-export-fixture", "version": "1.0.0" },
+  "householdDataDisclosureAcknowledged": true,
+  "dataFiles": [
+    { "class": "library", "path": "records/library.jsonl", "recordSchema": "schema/record.schema.json", "recordCount": 1, "byteLength": 229, "sha256": "644ce38e02e8f2e677a9659344f63db0c3b8193673079eb647a3d868db2e040d" },
+    { "class": "profile", "path": "records/profile.jsonl", "recordSchema": "schema/record.schema.json", "recordCount": 1, "byteLength": 177, "sha256": "788b11d1b9e287a5847990a7c7cd7188bcb50dd5286b83e7854b4691b6273aa6" },
+    { "class": "profilePolicy", "path": "records/profile-policy.jsonl", "recordSchema": "schema/record.schema.json", "recordCount": 1, "byteLength": 200, "sha256": "f9146122131acf7ef6c7b6bd88661f90c9bc5fff2a7e706e521af7cddb421a4d" },
+    { "class": "media", "path": "records/media.jsonl", "recordSchema": "schema/record.schema.json", "recordCount": 1, "byteLength": 257, "sha256": "bc558831e4ddd5248c81ce6d37fbc7ca795d7801f7d5df905c7b3ba6cddfe9d6" },
+    { "class": "entity", "path": "records/entity.jsonl", "recordSchema": "schema/record.schema.json", "recordCount": 1, "byteLength": 295, "sha256": "2aab9c1684f7434d2b418c163ff298f491dcda18a4d7b9ed7b0a39edb20c9712" },
+    { "class": "metadataEdit", "path": "records/metadata-edit.jsonl", "recordSchema": "schema/record.schema.json", "recordCount": 1, "byteLength": 225, "sha256": "0211b5631bdff77e6706fe7ad167969864e5fe7b9ba16ea62d12111595ea34c5" },
+    { "class": "disposition", "path": "records/disposition.jsonl", "recordSchema": "schema/record.schema.json", "recordCount": 1, "byteLength": 201, "sha256": "ed6872156404b4fe1cb4abe039cacabd327b1820afafa00c15a0d3d09a108297" },
+    { "class": "tag", "path": "records/tag.jsonl", "recordSchema": "schema/record.schema.json", "recordCount": 1, "byteLength": 133, "sha256": "577f951aa9fe50a1e18a0b2d96fad577c280e713f7a896c7b015e032eb3fc8e0" },
+    { "class": "tagAssignment", "path": "records/tag-assignment.jsonl", "recordSchema": "schema/record.schema.json", "recordCount": 1, "byteLength": 179, "sha256": "806d9a06b2376c93e497196026ea291c6258db0a4274e8e4703448d59f405925" },
+    { "class": "collection", "path": "records/collection.jsonl", "recordSchema": "schema/record.schema.json", "recordCount": 1, "byteLength": 206, "sha256": "3418f2066137231e5aff7c6801794222dcddbc422b4befea0960a0d494ad9b25" },
+    { "class": "collectionItem", "path": "records/collection-item.jsonl", "recordSchema": "schema/record.schema.json", "recordCount": 1, "byteLength": 209, "sha256": "52e0ee034f15d99ed38063969a8fb1db5842cdc73365ee5822dd5f4afb264b9f" },
+    { "class": "marker", "path": "records/marker.jsonl", "recordSchema": "schema/record.schema.json", "recordCount": 1, "byteLength": 201, "sha256": "16ba31474b527ed313b705f4ad45f1b9d796bc9e5709312dc68a36793073fb47" },
+    { "class": "watchState", "path": "records/watch-state.jsonl", "recordSchema": "schema/record.schema.json", "recordCount": 1, "byteLength": 245, "sha256": "284e388d8d90843c608871c5e2faffacce60b315c932c9c794832828f8a6ebda" },
+    { "class": "fieldLock", "path": "records/field-lock.jsonl", "recordSchema": "schema/record.schema.json", "recordCount": 1, "byteLength": 209, "sha256": "ccb65f2e0bac7989124f6132abc75155abbc223a3d8c1cf18304301a8363d5d2" },
+    { "class": "objectHistory", "path": "records/object-history.jsonl", "recordSchema": "schema/record.schema.json", "recordCount": 1, "byteLength": 319, "sha256": "da48ccc00a946fb91a5beff7c1ad131fe4fc88fc53744a28daa780656b21b26f" }
+  ],
+  "mediaObjects": [
+    { "mediaID": "media-1", "path": "media/library-1/example-media.bin", "byteLength": 27, "sha256": "ce8e75f9b9291fd9fb826f24155e2dd2ff60f5151c9dddaaac8b32277dcb48d3", "protection": "plaintext" }
+  ],
+  "exclusions": [
+    { "category": "device-bound-secrets", "reason": "Authentication credentials, signing material, device-bound keys, and non-exportable secret key bytes are excluded by design.", "permanent": true },
+    { "category": "face-biometric-templates", "reason": "Face embeddings and face-recognition templates are permanently non-portable by ADR-0179.", "permanent": true }
+  ]
+}

@@ -1,0 +1,33 @@
+-- MIGREV-7 (ADR-0037 §2.4) — run-scoped import provenance on imported engagement
+-- rows. The FREEZE-3 reservation (events 0013) added `provenance` (a shape-named
+-- source discriminator) + `occurred_at_ms` (the true historical instant). That is
+-- enough to DISTINGUISH imported from native engagement, but not enough to AUDIT
+-- one import RUN: it carries neither the run that wrote the row, the importer that
+-- produced it, nor the match method that resolved identity. Without those, ADR-0037
+-- §2.4's re-run skip-explanations ("this row was already applied by run X via a
+-- path match") and per-run audit are underivable.
+--
+-- Three additive, row-preserving columns on playback_progress (0005/0006/0013):
+--
+--   * import_run_id — the import job's ID (the run). NULL on native rows and on
+--     pre-migration imports. Lets a per-run audit group every engagement row a run
+--     wrote, and a re-run explain a skip by naming the run that already applied it.
+--
+--   * import_importer_id — the importer that produced the row (the run's source
+--     discriminator, e.g. the Plex/Jellyfin importer slug). It is a shape-named
+--     plugin-owned id (invariant #1 — never a source-system domain term), stored
+--     verbatim and only ever compared/grouped, never parsed by core. NULL native.
+--
+--   * import_match_method — how the item's identity was resolved: 'path',
+--     'external-id', or 'scrobble'. Records the strategy that ACTUALLY matched the
+--     row (the producing branch), never an ADR-ideal ordering. NULL/'' native.
+--
+-- All three are NULL on every native write and every pre-migration row, so this is
+-- byte-for-byte the pre-MIGREV-7 behaviour for native engagement — the native
+-- append path never sets them. Off the entity-query hot path (playback_progress is
+-- keyed by (profile_id, media_id); these columns are audit metadata, never a query
+-- predicate). No table recreation. Safe against the engagement-prune sweep, which
+-- prunes by Media existence, never by these columns.
+ALTER TABLE playback_progress ADD COLUMN import_run_id TEXT;
+ALTER TABLE playback_progress ADD COLUMN import_importer_id TEXT;
+ALTER TABLE playback_progress ADD COLUMN import_match_method TEXT;

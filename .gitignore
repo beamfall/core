@@ -1,0 +1,64 @@
+# Binaries
+/beamfall-core
+/bin/
+/dist/
+/script/dist/
+
+# Test artifacts
+*.test
+coverage.out
+
+# Local dev state
+/.cache/
+/.venv-skillopt/
+/.data/
+/.env
+*.db
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# OS cruft
+.DS_Store
+
+# Local editor/agent state
+.claude/
+
+# Build artifact
+/beamfall
+
+# Scratch and local gate logs
+*.tmp
+/RESULT.md
+.roadmap/
+.agent-evidence/
+
+# Local Go build cache (GOCACHE=.gocache; never commit)
+.gocache/
+
+# Generated embedded web bundle (rebuilt before Go compile). Keep only the
+# standalone-clone placeholder; production/ and every other build output stay
+# ignored and must never be committed.
+internal/web/app-dist/*
+!internal/web/app-dist/assets/
+internal/web/app-dist/assets/*
+!internal/web/app-dist/assets/placeholder.css
+!internal/web/app-dist/assets/placeholder.js
+!internal/web/app-dist/favicon.svg
+!internal/web/app-dist/index.html
+!internal/web/app-dist/manifest-icon.svg
+!internal/web/app-dist/manifest.webmanifest
+!internal/web/app-dist/sw.js
+
+# UI catalog current renders are generated; baselines remain committed.
+ui-catalog/images/*.png
+
+# Kotlin Kover / Gradle tooling cache (never commit)
+kotlinx/
+
+# Local app runtime state (db, stream tokens)
+.beamfall/
+
+# Python bytecode cache for script/ helpers
+script/__pycache__/
+.roadmap-db.*.tmp*

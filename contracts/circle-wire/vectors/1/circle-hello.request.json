@@ -1,0 +1,11 @@
+{
+  "revision": 1,
+  "circleSessionId": "session-revision-1",
+  "operation": "circle-hello",
+  "kind": "request",
+  "requestId": "request-revision-1",
+  "payload": {
+    "circleWireRevision": 1,
+    "supported": [1, 0]
+  }
+}

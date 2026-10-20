@@ -1,0 +1,70 @@
+# Quarantine manifest — beamfall (core)
+#
+# Format: each entry identifies ONE intentionally-suppressed CI check, with a
+# mandatory expiry date, owner, and reason. The quarantine checker
+# (script/check-quarantine.sh) enforces:
+#
+#   - Every entry MUST have an expiresAt (unbounded skips are prohibited).
+#   - Once expiresAt passes, the gate FAILS until the entry is removed and
+#     the check either runs or is deleted.
+#   - Hard cap: no more than maxEntries entries at once (default 5).
+#   - Every entry names exactly one skip kind (below).
+#
+# Skip kinds (ADR-0121 §6 + Amendment A §3 — set exactly one per entry):
+#   test:        in-test green-skip — Go "package/path:TestName[/subtest]",
+#                or a Swift/Kotlin XCTSkip/assumeTrue identifier.
+#   pathFilter:  a workflow `paths:` / `paths-ignore:` filter that gates a
+#                test tier on file patterns. Identify as "workflow:job".
+#   envGate:     a tier gated on an env var that CI never sets (so it always
+#                green-skips). Identify as "ENV_VAR:package/path:TestName".
+#   strictFlag:  a strictness flag defaulting off, making a check a no-op.
+#                Identify as "tool:--flag".
+#
+# Common fields (all kinds):
+#   reason:     Short human-readable reason for quarantine.
+#   ticket:     Tracking ticket that must be resolved before expiry.
+#   owner:      GitHub handle of the nightly reviewer responsible for this entry.
+#   expiresAt:  ISO 8601 date (YYYY-MM-DD). Gate FAILS on or after this date.
+#
+# Multi-repo adoption: apple/android/web/design-system each maintain their own
+# quarantine.yaml in their own testing/ directory and run check-quarantine.sh
+# from their gate. The format and checker are identical; the manifest is per-repo.
+# Each non-test skip instance lives in the OWNING repo's manifest, not here.
+#
+# Adding an entry: open a tracking ticket, set expiresAt to ≤30 days out,
+# name an owner, and reference it here. Removing an entry: delete the entry
+# and close or re-ticket the root cause.
+#
+# ── Workspace skip-shape sweep (TEST-XCUT-9, 2026-07-06) ────────────────────
+# Sweep of every repo's workflows/gates for the three Amendment A §3 shapes, so
+# absence of an entry means VERIFIED-ABSENT, not unswept:
+#   pathFilter: NONE workspace-wide. No `paths:`/`paths-ignore:` filter gates any
+#     tier in beamfall, apple-ui, android-ui, or design-system. The apple-ui
+#     shader CI (AUDIT-APPLEUI-10) formerly ran only on `.metal` changes; it now
+#     runs on every gate event (apple-ui .github/workflows/gate.yml `shaders`
+#     job) — RESOLVED at source, no entry needed.
+#   envGate: apple-ui `BEAMFALL_KEYCHAIN_TESTS` is never set in CI, so the
+#     real-Keychain integration tests always green-skip → LIVE; quarantined in
+#     beamfall-apple-ui/testing/quarantine.yaml (AUDIT-APPLEUI-20). Other env
+#     gates DO run in CI (verified-absent): apple-ui BEAMFALL_CANONICAL_SNAPSHOTS
+#     (set in gate.yml), android-ui BEAMFALL_REQUIRE_LIVE (set in gate.yml +
+#     nightly-e2e.yml) and BEAMFALL_REQUIRE_CORE (set in gate.yml). Android
+#     native-availability Assume guards are hardware-conditional, not env-green-
+#     skips. Core has no env-gated tiers.
+#   strictFlag: NONE live. design-system `compare.py` (AUDIT-DESIGN-6) formerly
+#     no-op'd without --strict; the gate now runs `compare.py --check` (strict),
+#     which reds on mismatch — RESOLVED at source, no entry needed.
+# Core (beamfall) itself has no live instance of any of the three shapes.
+
+version: 1
+maxEntries: 5
+
+entries:
+  # No entries currently quarantined.
+  # Example (do not uncomment — for documentation only):
+  #
+  # - test: "internal/ffmpeg:TestFfmpegRealBinaryDecodeVerify"
+  #   reason: "Flakes under CI when ffmpeg binary resolves inconsistently across runs."
+  #   ticket: "TEST-XCUT-EXAMPLE"
+  #   owner: "russlewis"
+  #   expiresAt: "2026-07-22"

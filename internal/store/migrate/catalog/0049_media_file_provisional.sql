@@ -1,0 +1,14 @@
+-- ADR-0052 §2.2-2.3 (BF-47) — pre-ADR-0011-freeze reservation for the podcast
+-- "stream-first, archive-always" model. A media_file may be a *provisional*
+-- copy — one the streaming proxy-tee materialized on play (streamed-on-a-whim,
+-- reapable under a retention rule, ADR-0051) — as opposed to an *archived*,
+-- keep-all copy from a deliberate download or operator scan.
+--
+-- Default 0 keeps every existing and future scanned file archived: operator-owned
+-- originals are never provisional. The streaming feature sets provisional = 1 when
+-- it tees an item on play, and clears it on promotion to a kept copy. This is a
+-- generic file-provenance flag (invariant #1 — no podcast vocabulary in core
+-- schema); the availability Source predicate that reads it (archived /
+-- streamed-provisional / not-downloaded) is feature work, not part of this
+-- reservation — the column is the part that is expensive to add after the freeze.
+ALTER TABLE media_file ADD COLUMN provisional INTEGER NOT NULL DEFAULT 0;

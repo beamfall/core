@@ -1,0 +1,582 @@
+{
+  "schemaVersion": "1",
+  "graphqlOperations": [
+    {
+      "field": "acceptpendingaitag",
+      "effect": "write"
+    },
+    {
+      "field": "accessschedule",
+      "effect": "read"
+    },
+    {
+      "field": "addpathpickerroot",
+      "effect": "write"
+    },
+    {
+      "field": "apikeys",
+      "effect": "read"
+    },
+    {
+      "field": "apitokens",
+      "effect": "read"
+    },
+    {
+      "field": "backup",
+      "effect": "write"
+    },
+    {
+      "field": "backuphistory",
+      "effect": "read"
+    },
+    {
+      "field": "browseserverfolders",
+      "effect": "read"
+    },
+    {
+      "field": "bulkfetchmissingartwork",
+      "effect": "write"
+    },
+    {
+      "field": "bulkfetchmissingartworkselected",
+      "effect": "write"
+    },
+    {
+      "field": "bulkmergeduplicates",
+      "effect": "write"
+    },
+    {
+      "field": "bulkmergeduplicatesselected",
+      "effect": "write"
+    },
+    {
+      "field": "bulkrescanunmatched",
+      "effect": "write"
+    },
+    {
+      "field": "bulkrescanunmatchedselected",
+      "effect": "write"
+    },
+    {
+      "field": "bulkrescrapescrapefailures",
+      "effect": "write"
+    },
+    {
+      "field": "bulkrescrapescrapefailuresselected",
+      "effect": "write"
+    },
+    {
+      "field": "bulktrashbroken",
+      "effect": "write"
+    },
+    {
+      "field": "bulktrashbrokenselected",
+      "effect": "write"
+    },
+    {
+      "field": "consoleconfig",
+      "effect": "read"
+    },
+    {
+      "field": "createapikey",
+      "effect": "write"
+    },
+    {
+      "field": "createapitoken",
+      "effect": "write"
+    },
+    {
+      "field": "createlibrary",
+      "effect": "write"
+    },
+    {
+      "field": "createprofile",
+      "effect": "write"
+    },
+    {
+      "field": "createretentionrule",
+      "effect": "write"
+    },
+    {
+      "field": "deletelibrary",
+      "effect": "write"
+    },
+    {
+      "field": "deleteretentionrule",
+      "effect": "write"
+    },
+    {
+      "field": "devices",
+      "effect": "read"
+    },
+    {
+      "field": "disablescrapercredential",
+      "effect": "write"
+    },
+    {
+      "field": "encryptedlibrarystatus",
+      "effect": "read"
+    },
+    {
+      "field": "evictplaybackrenditioncache",
+      "effect": "write"
+    },
+    {
+      "field": "importers",
+      "effect": "read"
+    },
+    {
+      "field": "importmanagedfile",
+      "effect": "write"
+    },
+    {
+      "field": "importstatus",
+      "effect": "read"
+    },
+    {
+      "field": "job",
+      "effect": "read"
+    },
+    {
+      "field": "jobcancel",
+      "effect": "write"
+    },
+    {
+      "field": "jobevents",
+      "effect": "read"
+    },
+    {
+      "field": "jobretry",
+      "effect": "write"
+    },
+    {
+      "field": "jobs",
+      "effect": "read"
+    },
+    {
+      "field": "libraries",
+      "effect": "read"
+    },
+    {
+      "field": "libraryduplicategroups",
+      "effect": "read"
+    },
+    {
+      "field": "libraryhealth",
+      "effect": "read"
+    },
+    {
+      "field": "libraryhealthitems",
+      "effect": "read"
+    },
+    {
+      "field": "libraryindexstatus",
+      "effect": "read"
+    },
+    {
+      "field": "livesessions",
+      "effect": "read"
+    },
+    {
+      "field": "metadataexport",
+      "effect": "read"
+    },
+    {
+      "field": "operationsgovernor",
+      "effect": "read"
+    },
+    {
+      "field": "operatordeleteprofiledata",
+      "effect": "write"
+    },
+    {
+      "field": "pathpicker",
+      "effect": "read"
+    },
+    {
+      "field": "pendingaitagqueue",
+      "effect": "read"
+    },
+    {
+      "field": "playbackrenditioncache",
+      "effect": "read"
+    },
+    {
+      "field": "precomputeplaybackrenditions",
+      "effect": "write"
+    },
+    {
+      "field": "provisionencryptedlibrary",
+      "effect": "write"
+    },
+    {
+      "field": "purgetrash",
+      "effect": "write"
+    },
+    {
+      "field": "qualitypolicy",
+      "effect": "read"
+    },
+    {
+      "field": "registerimportsource",
+      "effect": "write"
+    },
+    {
+      "field": "rejectpendingaitag",
+      "effect": "write"
+    },
+    {
+      "field": "remoteaccess",
+      "effect": "read"
+    },
+    {
+      "field": "retentionrules",
+      "effect": "read"
+    },
+    {
+      "field": "revokealldevices",
+      "effect": "write"
+    },
+    {
+      "field": "revokeapikey",
+      "effect": "write"
+    },
+    {
+      "field": "revokeapitoken",
+      "effect": "write"
+    },
+    {
+      "field": "revokedevice",
+      "effect": "write"
+    },
+    {
+      "field": "rewrapencryptedlibrary",
+      "effect": "write"
+    },
+    {
+      "field": "runeventscompaction",
+      "effect": "write"
+    },
+    {
+      "field": "runimport",
+      "effect": "write"
+    },
+    {
+      "field": "runjob",
+      "effect": "write"
+    },
+    {
+      "field": "scanestimate",
+      "effect": "read"
+    },
+    {
+      "field": "scanlibrary",
+      "effect": "write"
+    },
+    {
+      "field": "schedules",
+      "effect": "read"
+    },
+    {
+      "field": "scrobblestatus",
+      "effect": "read"
+    },
+    {
+      "field": "sealencryptedlibrary",
+      "effect": "write"
+    },
+    {
+      "field": "setaccessschedule",
+      "effect": "write"
+    },
+    {
+      "field": "setcertificationceiling",
+      "effect": "write"
+    },
+    {
+      "field": "setconsoleconfig",
+      "effect": "write"
+    },
+    {
+      "field": "setdevicerole",
+      "effect": "write"
+    },
+    {
+      "field": "setextensionpreauthorization",
+      "effect": "write"
+    },
+    {
+      "field": "setlibraryaiindexing",
+      "effect": "write"
+    },
+    {
+      "field": "setlibrarybacking",
+      "effect": "write"
+    },
+    {
+      "field": "setlibrarypreviewclips",
+      "effect": "write"
+    },
+    {
+      "field": "setlibraryrestricted",
+      "effect": "write"
+    },
+    {
+      "field": "setlibraryroots",
+      "effect": "write"
+    },
+    {
+      "field": "setpluginactive",
+      "effect": "write"
+    },
+    {
+      "field": "setpluginconfig",
+      "effect": "write"
+    },
+    {
+      "field": "setprofilelibraries",
+      "effect": "write"
+    },
+    {
+      "field": "setqualitypolicy",
+      "effect": "write"
+    },
+    {
+      "field": "setscrapercredential",
+      "effect": "write"
+    },
+    {
+      "field": "setscrobbleeligibility",
+      "effect": "write"
+    },
+    {
+      "field": "setskipdetectionenabled",
+      "effect": "write"
+    },
+    {
+      "field": "settranscodeconfig",
+      "effect": "write"
+    },
+    {
+      "field": "skipdetectionenabled",
+      "effect": "read"
+    },
+    {
+      "field": "terminatesession",
+      "effect": "write"
+    },
+    {
+      "field": "transcodeconfig",
+      "effect": "read"
+    },
+    {
+      "field": "transferprofileowner",
+      "effect": "write"
+    },
+    {
+      "field": "uninstallplugindata",
+      "effect": "write"
+    },
+    {
+      "field": "unsealencryptedlibrary",
+      "effect": "write"
+    },
+    {
+      "field": "updateprofile",
+      "effect": "write"
+    },
+    {
+      "field": "updateretentionrule",
+      "effect": "write"
+    },
+    {
+      "field": "updateschedule",
+      "effect": "write"
+    },
+    {
+      "field": "updatestatus",
+      "effect": "read"
+    },
+    {
+      "field": "validatescrapercredential",
+      "effect": "write"
+    },
+    {
+      "field": "verifybackup",
+      "effect": "write"
+    },
+    {
+      "field": "watcherstatus",
+      "effect": "read"
+    }
+  ],
+  "managementRoutes": [
+    {
+      "method": "POST",
+      "pattern": "/api/setup",
+      "note": "First-run setup bootstrap (admin password, first Library, owner Profile)"
+    },
+    {
+      "method": "POST",
+      "pattern": "/api/media/artwork-upload/{recordID}",
+      "note": "Create Media from an unmatched-review record and pin uploaded poster artwork",
+      "authorization": "manager-admin-session",
+      "request": {
+        "contentType": "multipart/form-data",
+        "maxBodyBytes": 10551296,
+        "pathFields": [
+          {
+            "name": "recordID",
+            "type": "string",
+            "required": true
+          }
+        ],
+        "multipartFields": [
+          {
+            "name": "libraryID",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "title",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "year",
+            "type": "integer",
+            "required": false,
+            "minimumInteger": 0
+          },
+          {
+            "name": "artwork",
+            "type": "binary",
+            "required": true,
+            "maxBytes": 10485760,
+            "maxPixels": 40000000,
+            "acceptedContentTypes": [
+              "image/jpeg",
+              "image/png"
+            ]
+          }
+        ]
+      },
+      "success": {
+        "status": 201,
+        "contentType": "application/json",
+        "fields": [
+          {
+            "name": "mediaID",
+            "type": "string",
+            "required": true
+          }
+        ]
+      },
+      "errors": [
+        {
+          "status": 400,
+          "messages": [
+            "recordID, libraryID, and title are required",
+            "artwork is required",
+            "could not read artwork",
+            "invalid multipart body"
+          ]
+        },
+        {
+          "status": 401,
+          "messages": [
+            "invalid session"
+          ]
+        },
+        {
+          "status": 403,
+          "messages": [
+            "manager role required"
+          ]
+        },
+        {
+          "status": 409,
+          "messages": [
+            "unmatched record was resolved by a different request"
+          ]
+        },
+        {
+          "status": 413,
+          "messages": [
+            "artwork is too large"
+          ]
+        },
+        {
+          "status": 415,
+          "messages": [
+            "Content-Type must be multipart/form-data",
+            "artwork must be a valid JPEG or PNG image"
+          ]
+        },
+        {
+          "status": 500,
+          "messages": [
+            "could not create Media with artwork"
+          ]
+        },
+        {
+          "status": 503,
+          "messages": [
+            "artwork upload unavailable",
+            "privileged audit unavailable"
+          ]
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "pattern": "/api/web/enroll",
+      "note": "Enroll a web device session"
+    },
+    {
+      "method": "POST",
+      "pattern": "/api/web/logout",
+      "note": "Logout a web device session"
+    },
+    {
+      "method": "POST",
+      "pattern": "/api/web/promote",
+      "note": "Promote a web session to Admin Session"
+    },
+    {
+      "method": "POST",
+      "pattern": "/api/beam/offers",
+      "note": "Create a Beam offer for device pairing"
+    },
+    {
+      "method": "POST",
+      "pattern": "/api/beam/claims",
+      "note": "Claim a Beam offer (device pairing)"
+    },
+    {
+      "method": "POST",
+      "pattern": "/api/pairing-codes",
+      "note": "Generate a pairing code for device enrollment"
+    },
+    {
+      "method": "POST",
+      "pattern": "/api/enroll",
+      "note": "Enroll a native device"
+    },
+    {
+      "method": "POST",
+      "pattern": "/api/group/calibrate",
+      "note": "Calibrate group watch sync"
+    },
+    {
+      "method": "GET",
+      "pattern": "/api/manifest",
+      "note": "Navigation Manifest: server-side layout and section configuration"
+    },
+    {
+      "method": "GET",
+      "pattern": "/api/events",
+      "note": "SSE event fanout: real-time server events for Console/Manage UIs"
+    }
+  ]
+}

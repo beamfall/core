@@ -1,0 +1,41 @@
+{
+  "version": "smart-preset.v1",
+  "cases": [
+    {
+      "name": "constant",
+      "curve": { "kind": "constant", "value": 0.3, "min": 0, "max": 1 },
+      "input": {},
+      "want": 0.3
+    },
+    {
+      "name": "easing-linear-seconds",
+      "curve": { "kind": "easing", "from": 0, "to": 1, "duration": 2, "unit": "seconds", "easing": "linear" },
+      "input": { "elapsedSeconds": 0.5 },
+      "want": 0.25
+    },
+    {
+      "name": "envelope-attack-seconds",
+      "curve": { "kind": "envelope", "value": 1, "attack": 0.5, "release": 0.5, "releaseAt": 1, "unit": "seconds" },
+      "input": { "elapsedSeconds": 0.25 },
+      "want": 0.5
+    },
+    {
+      "name": "lfo-sine-beats",
+      "curve": { "kind": "lfo", "shape": "sine", "period": 4, "unit": "beats", "min": 0, "max": 1 },
+      "input": { "elapsedBeats": 1 },
+      "want": 1
+    },
+    {
+      "name": "wrap",
+      "curve": { "kind": "constant", "value": 1.25, "min": 0, "max": 1, "wrap": true },
+      "input": {},
+      "want": 0.25
+    },
+    {
+      "name": "smoothing",
+      "curve": { "kind": "constant", "value": 1, "smoothingSeconds": 0.1 },
+      "input": { "deltaSeconds": 0.1, "previousValue": 0, "hasPrevious": true },
+      "want": 0.632121
+    }
+  ]
+}

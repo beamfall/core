@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>Beamfall Core</Name>
+  <Repository>ghcr.io/beamfall/core@sha256:RELEASE_DIGEST_REQUIRED</Repository>
+  <Registry>https://github.com/beamfall/core/pkgs/container/core</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/beamfall/core/issues</Support>
+  <Project>https://github.com/beamfall/core</Project>
+  <Overview>Beamfall Core media server. Icon and CA metadata are placeholders until branding assets are published.</Overview>
+  <Category>MediaServer:Video MediaServer:Music</Category>
+  <WebUI>http://[IP]:[PORT:8800]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/beamfall/core/main/packaging/unraid/beamfall-core.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/beamfall/core/main/packaging/unraid/beamfall-placeholder-icon.png</Icon>
+  <ExtraParams/>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+  <Config Name="Web UI" Target="8800" Default="8800" Mode="tcp" Description="Beamfall HTTP port." Type="Port" Display="always" Required="true" Mask="false">8800</Config>
+  <Config Name="Data Directory" Target="/data" Default="/mnt/user/appdata/beamfall" Mode="rw" Description="Beamfall server state and SQLite databases." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/beamfall</Config>
+  <Config Name="Media Directory" Target="/media" Default="/mnt/user/media" Mode="ro" Description="Read-only media library mount. Add more Library roots from the Beamfall Console." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/media</Config>
+  <Config Name="Transcode Scratch" Target="/transcode" Default="/tmp/beamfall-transcode" Mode="rw" Description="Scratch space for future transcode output. Current server builds still place HLS scratch under /data; see packaging friction report." Type="Path" Display="advanced" Required="false" Mask="false">/tmp/beamfall-transcode</Config>
+  <Config Name="Intel QSV/VAAPI Device" Target="/dev/dri" Default="/dev/dri" Mode="rw" Description="Optional: enable Intel QSV/VAAPI passthrough by setting this to /dev/dri. Leave blank for CPU-only." Type="Device" Display="advanced" Required="false" Mask="false">/dev/dri</Config>
+  <Config Name="Address" Target="BEAMFALL_ADDR" Default="0.0.0.0:8800" Mode="" Description="Beamfall listen address inside the container." Type="Variable" Display="advanced" Required="true" Mask="false">0.0.0.0:8800</Config>
+  <Config Name="Data Dir Env" Target="BEAMFALL_DATA_DIR" Default="/data" Mode="" Description="Beamfall data directory inside the container." Type="Variable" Display="advanced" Required="true" Mask="false">/data</Config>
+  <Config Name="Transcode Cap" Target="BEAMFALL_TRANSCODE_CAP" Default="2" Mode="" Description="Maximum concurrent transcode sessions." Type="Variable" Display="advanced" Required="false" Mask="false">2</Config>
+  <Config Name="Known Proxies" Target="BEAMFALL_KNOWN_PROXIES" Default="" Mode="" Description="Set to your reverse proxy's address or CIDR when one fronts this container (nginx, Traefik, a Caddy sidecar, Unraid's built-in reverse proxy…). Leave blank when the Web UI port is reached directly. Without this set, the server refuses to treat any relayed request as LAN, so a fronting proxy's clients would otherwise fail the pairing LAN gate." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+</Container>

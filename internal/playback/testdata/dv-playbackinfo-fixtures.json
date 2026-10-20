@@ -1,0 +1,123 @@
+{
+  "_comment": "Cross-repo Dolby Vision playbackInfo contract fixtures (NGAUDIT-B4, ADR-0017 §4). Each case pins a probed source-stream shape (the Android probe emits DoViProfile + DoViBLCompatID) against a CapabilityProfile whose hdrFormats are the CLOSED per-profile vocabulary the Android device-quirks table declares verbatim (beamfall-android-ui/kit/.../DeviceQuirksTable.kt:68,81,93,119). A server-side token rename that diverges from these tokens breaks this gate instead of silently forcing DV content into transcode or a false direct-play. The Android repo consuming this same corpus is a follow-up ticket in that repo.",
+  "profiles": {
+    "shield": {
+      "_note": "NVIDIA Shield quirk (DeviceQuirksTable.kt:68): dolby-vision-p5 + dolby-vision-p8.",
+      "client": "beamfall-android-tv",
+      "containers": ["mp4", "mkv"],
+      "videoCodecs": [{ "codec": "hevc", "profiles": ["Main", "Main 10"], "maxHeight": 2160 }],
+      "audioCodecs": [{ "codec": "eac3", "maxChannels": 8 }, { "codec": "aac", "maxChannels": 8 }],
+      "hdrFormats": ["hdr10", "hdr10plus", "dolby-vision-p5", "dolby-vision-p8", "hlg"]
+    },
+    "streamer": {
+      "_note": "Google TV Streamer quirk (DeviceQuirksTable.kt:81): dolby-vision-p5 + dolby-vision-p8.",
+      "client": "beamfall-android-tv",
+      "containers": ["mp4", "mkv"],
+      "videoCodecs": [{ "codec": "hevc", "profiles": ["Main", "Main 10"], "maxHeight": 2160 }],
+      "audioCodecs": [{ "codec": "eac3", "maxChannels": 6 }, { "codec": "aac", "maxChannels": 6 }],
+      "hdrFormats": ["hdr10", "hdr10plus", "dolby-vision-p5", "dolby-vision-p8", "hlg"]
+    },
+    "chromecast": {
+      "_note": "Chromecast with Google TV quirk (DeviceQuirksTable.kt:93): dolby-vision-p5 only, no p8.",
+      "client": "beamfall-android-tv",
+      "containers": ["mp4", "mkv"],
+      "videoCodecs": [{ "codec": "hevc", "profiles": ["Main", "Main 10"], "maxHeight": 2160 }],
+      "audioCodecs": [{ "codec": "eac3", "maxChannels": 6 }, { "codec": "aac", "maxChannels": 6 }],
+      "hdrFormats": ["hdr10", "dolby-vision-p5", "hlg"]
+    },
+    "pixel": {
+      "_note": "Pixel phone quirk (DeviceQuirksTable.kt:141): no Dolby Vision, hdr10 + hlg only.",
+      "client": "beamfall-android-tv",
+      "containers": ["mp4", "mkv"],
+      "videoCodecs": [{ "codec": "hevc", "profiles": ["Main", "Main 10"], "maxHeight": 2160 }],
+      "audioCodecs": [{ "codec": "eac3", "maxChannels": 6 }, { "codec": "aac", "maxChannels": 6 }],
+      "hdrFormats": ["hdr10", "hlg"]
+    }
+  },
+  "cases": [
+    {
+      "name": "P8.1 file + Shield direct-plays",
+      "container": "mp4",
+      "codec": "hevc",
+      "width": 3840,
+      "height": 2160,
+      "video": { "profile": "Main 10", "doViProfile": 8, "doViBLCompatID": 6, "colorTransfer": "smpte2084" },
+      "audio": { "codec": "eac3", "channels": 6 },
+      "profile": "shield",
+      "wantDecision": "direct-play",
+      "wantReason": ""
+    },
+    {
+      "name": "P5 file + Shield (advertises dolby-vision-p5) direct-plays",
+      "container": "mp4",
+      "codec": "hevc",
+      "width": 1920,
+      "height": 1080,
+      "video": { "profile": "Main 10", "doViProfile": 5, "doViBLCompatID": 0, "colorTransfer": "" },
+      "audio": { "codec": "eac3", "channels": 6 },
+      "profile": "shield",
+      "wantDecision": "direct-play",
+      "wantReason": ""
+    },
+    {
+      "name": "P5 file + Pixel (no DV) is unavailable (no transcode fallback)",
+      "container": "mp4",
+      "codec": "hevc",
+      "width": 1920,
+      "height": 1080,
+      "video": { "profile": "Main 10", "doViProfile": 5, "doViBLCompatID": 0, "colorTransfer": "" },
+      "audio": { "codec": "eac3", "channels": 6 },
+      "profile": "pixel",
+      "wantDecision": "unavailable",
+      "wantReason": "dolby-vision-p5-transcode-unavailable"
+    },
+    {
+      "name": "P7 file + Streamer plays base-layer-only with honesty reason",
+      "container": "mp4",
+      "codec": "hevc",
+      "width": 3840,
+      "height": 2160,
+      "video": { "profile": "Main 10", "doViProfile": 7, "doViBLCompatID": 6, "colorTransfer": "smpte2084" },
+      "audio": { "codec": "eac3", "channels": 6 },
+      "profile": "streamer",
+      "wantDecision": "direct-play",
+      "wantReason": "dolby-vision-p7-base-layer"
+    },
+    {
+      "name": "P7 file + Pixel (renders hdr10 base) plays base-layer-only",
+      "container": "mp4",
+      "codec": "hevc",
+      "width": 1920,
+      "height": 1080,
+      "video": { "profile": "Main 10", "doViProfile": 7, "doViBLCompatID": 6, "colorTransfer": "smpte2084" },
+      "audio": { "codec": "eac3", "channels": 6 },
+      "profile": "pixel",
+      "wantDecision": "direct-play",
+      "wantReason": "dolby-vision-p7-base-layer"
+    },
+    {
+      "name": "P8.4 file (no HDR10 base) + Shield transcodes, never false p8 match",
+      "container": "mp4",
+      "codec": "hevc",
+      "width": 3840,
+      "height": 2160,
+      "video": { "profile": "Main 10", "doViProfile": 8, "doViBLCompatID": 4, "colorTransfer": "smpte2084" },
+      "audio": { "codec": "eac3", "channels": 6 },
+      "profile": "shield",
+      "wantDecision": "transcode",
+      "wantReason": "requires-transcode"
+    },
+    {
+      "name": "P8.1 file + Chromecast (no dolby-vision-p8) transcodes",
+      "container": "mp4",
+      "codec": "hevc",
+      "width": 3840,
+      "height": 2160,
+      "video": { "profile": "Main 10", "doViProfile": 8, "doViBLCompatID": 6, "colorTransfer": "smpte2084" },
+      "audio": { "codec": "eac3", "channels": 6 },
+      "profile": "chromecast",
+      "wantDecision": "transcode",
+      "wantReason": "requires-transcode"
+    }
+  ]
+}

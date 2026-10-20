@@ -1,0 +1,231 @@
+{
+  "version": "1",
+  "vectors": [
+    {
+      "name": "valid",
+      "artifact": "YmVhbWZhbGwgcGx1Z2luIHRydXN0IGNvbnRyYWN0IGZpeHR1cmUgdjEK",
+      "envelope": {
+        "author_signed": {
+          "manifest": {
+            "plugin_id": "plugin.fixture",
+            "version": "1.0.0",
+            "artifact_sha256": "b67976f7b63a7586a5db9dbfa18f70f65cbabf62489d9f4855b68e50b12da8ec",
+            "author_key_id": "author-fixture-1",
+            "issued_at": "2026-07-18T12:00:00Z"
+          },
+          "author_signature": "yOIIdNQ7B_t7Fby5xhAqpgm_znrpeQmD_6t_8Hk4zG_6pBzuj8m6BV_0NAlB7X5UOAM9aQQCJfI7Fm_b84-cBw"
+        },
+        "checks_version": "1",
+        "registry_key_id": "registry-fixture-1",
+        "registry_countersignature": "ie28iOwLlqtNa2HLZUyu8NIexklApi2-_LQmiU-b13inteihIk2qq1mvm4otkjQs1s372Qidc-hFwkyc9P3lCg"
+      },
+      "revocations": {
+        "list": {
+          "version": 1,
+          "issued_at": "2026-07-18T12:00:00Z",
+          "revoked_key_ids": []
+        },
+        "registry_key_id": "registry-fixture-1",
+        "signature": "5KRrNTdEa7PhQby_xj3wYliBbArustQZBvHNHJ-kO8sMriRXB7MDOw2eVDrCuFjqc1-FOb1ZMTCftvy0PlauBg"
+      },
+      "author_signing_payload": "eyJhcnRpZmFjdF9zaGEyNTYiOiJiNjc5NzZmN2I2M2E3NTg2YTVkYjlkYmZhMThmNzBmNjVjYmFiZjYyNDg5ZDlmNDg1NWI2OGU1MGIxMmRhOGVjIiwiYXV0aG9yX2tleV9pZCI6ImF1dGhvci1maXh0dXJlLTEiLCJpc3N1ZWRfYXQiOiIyMDI2LTA3LTE4VDEyOjAwOjAwWiIsInBsdWdpbl9pZCI6InBsdWdpbi5maXh0dXJlIiwidmVyc2lvbiI6IjEuMC4wIn0",
+      "registry_signing_payload": "eyJhdXRob3Jfc2lnbmF0dXJlIjoieU9JSWROUTdCX3Q3RmJ5NXhoQXFwZ21fem5ycGVRbURfNnRfOEhrNHpHXzZwQnp1ajhtNkJWXzBOQWxCN1g1VU9BTTlhUVFDSmZJN0ZtX2I4NC1jQnciLCJtYW5pZmVzdCI6eyJhcnRpZmFjdF9zaGEyNTYiOiJiNjc5NzZmN2I2M2E3NTg2YTVkYjlkYmZhMThmNzBmNjVjYmFiZjYyNDg5ZDlmNDg1NWI2OGU1MGIxMmRhOGVjIiwiYXV0aG9yX2tleV9pZCI6ImF1dGhvci1maXh0dXJlLTEiLCJpc3N1ZWRfYXQiOiIyMDI2LTA3LTE4VDEyOjAwOjAwWiIsInBsdWdpbl9pZCI6InBsdWdpbi5maXh0dXJlIiwidmVyc2lvbiI6IjEuMC4wIn19",
+      "revocation_signing_payload": "eyJsaXN0Ijp7Imlzc3VlZF9hdCI6IjIwMjYtMDctMThUMTI6MDA6MDBaIiwicmV2b2tlZF9rZXlfaWRzIjpbXSwidmVyc2lvbiI6MX0sInJlZ2lzdHJ5X2tleV9pZCI6InJlZ2lzdHJ5LWZpeHR1cmUtMSJ9",
+      "expected": "valid"
+    },
+    {
+      "name": "tampered-hash",
+      "artifact": "Y2VhbWZhbGwgcGx1Z2luIHRydXN0IGNvbnRyYWN0IGZpeHR1cmUgdjEK",
+      "envelope": {
+        "author_signed": {
+          "manifest": {
+            "plugin_id": "plugin.fixture",
+            "version": "1.0.0",
+            "artifact_sha256": "b67976f7b63a7586a5db9dbfa18f70f65cbabf62489d9f4855b68e50b12da8ec",
+            "author_key_id": "author-fixture-1",
+            "issued_at": "2026-07-18T12:00:00Z"
+          },
+          "author_signature": "yOIIdNQ7B_t7Fby5xhAqpgm_znrpeQmD_6t_8Hk4zG_6pBzuj8m6BV_0NAlB7X5UOAM9aQQCJfI7Fm_b84-cBw"
+        },
+        "checks_version": "1",
+        "registry_key_id": "registry-fixture-1",
+        "registry_countersignature": "ie28iOwLlqtNa2HLZUyu8NIexklApi2-_LQmiU-b13inteihIk2qq1mvm4otkjQs1s372Qidc-hFwkyc9P3lCg"
+      },
+      "revocations": {
+        "list": {
+          "version": 1,
+          "issued_at": "2026-07-18T12:00:00Z",
+          "revoked_key_ids": []
+        },
+        "registry_key_id": "registry-fixture-1",
+        "signature": "5KRrNTdEa7PhQby_xj3wYliBbArustQZBvHNHJ-kO8sMriRXB7MDOw2eVDrCuFjqc1-FOb1ZMTCftvy0PlauBg"
+      },
+      "author_signing_payload": "eyJhcnRpZmFjdF9zaGEyNTYiOiJiNjc5NzZmN2I2M2E3NTg2YTVkYjlkYmZhMThmNzBmNjVjYmFiZjYyNDg5ZDlmNDg1NWI2OGU1MGIxMmRhOGVjIiwiYXV0aG9yX2tleV9pZCI6ImF1dGhvci1maXh0dXJlLTEiLCJpc3N1ZWRfYXQiOiIyMDI2LTA3LTE4VDEyOjAwOjAwWiIsInBsdWdpbl9pZCI6InBsdWdpbi5maXh0dXJlIiwidmVyc2lvbiI6IjEuMC4wIn0",
+      "registry_signing_payload": "eyJhdXRob3Jfc2lnbmF0dXJlIjoieU9JSWROUTdCX3Q3RmJ5NXhoQXFwZ21fem5ycGVRbURfNnRfOEhrNHpHXzZwQnp1ajhtNkJWXzBOQWxCN1g1VU9BTTlhUVFDSmZJN0ZtX2I4NC1jQnciLCJtYW5pZmVzdCI6eyJhcnRpZmFjdF9zaGEyNTYiOiJiNjc5NzZmN2I2M2E3NTg2YTVkYjlkYmZhMThmNzBmNjVjYmFiZjYyNDg5ZDlmNDg1NWI2OGU1MGIxMmRhOGVjIiwiYXV0aG9yX2tleV9pZCI6ImF1dGhvci1maXh0dXJlLTEiLCJpc3N1ZWRfYXQiOiIyMDI2LTA3LTE4VDEyOjAwOjAwWiIsInBsdWdpbl9pZCI6InBsdWdpbi5maXh0dXJlIiwidmVyc2lvbiI6IjEuMC4wIn19",
+      "revocation_signing_payload": "eyJsaXN0Ijp7Imlzc3VlZF9hdCI6IjIwMjYtMDctMThUMTI6MDA6MDBaIiwicmV2b2tlZF9rZXlfaWRzIjpbXSwidmVyc2lvbiI6MX0sInJlZ2lzdHJ5X2tleV9pZCI6InJlZ2lzdHJ5LWZpeHR1cmUtMSJ9",
+      "expected": "artifact_hash_mismatch"
+    },
+    {
+      "name": "tampered-author-signature",
+      "artifact": "YmVhbWZhbGwgcGx1Z2luIHRydXN0IGNvbnRyYWN0IGZpeHR1cmUgdjEK",
+      "envelope": {
+        "author_signed": {
+          "manifest": {
+            "plugin_id": "plugin.fixture",
+            "version": "1.0.0",
+            "artifact_sha256": "b67976f7b63a7586a5db9dbfa18f70f65cbabf62489d9f4855b68e50b12da8ec",
+            "author_key_id": "author-fixture-1",
+            "issued_at": "2026-07-18T12:00:00Z"
+          },
+          "author_signature": "yeIIdNQ7B_t7Fby5xhAqpgm_znrpeQmD_6t_8Hk4zG_6pBzuj8m6BV_0NAlB7X5UOAM9aQQCJfI7Fm_b84-cBw"
+        },
+        "checks_version": "1",
+        "registry_key_id": "registry-fixture-1",
+        "registry_countersignature": "ie28iOwLlqtNa2HLZUyu8NIexklApi2-_LQmiU-b13inteihIk2qq1mvm4otkjQs1s372Qidc-hFwkyc9P3lCg"
+      },
+      "revocations": {
+        "list": {
+          "version": 1,
+          "issued_at": "2026-07-18T12:00:00Z",
+          "revoked_key_ids": []
+        },
+        "registry_key_id": "registry-fixture-1",
+        "signature": "5KRrNTdEa7PhQby_xj3wYliBbArustQZBvHNHJ-kO8sMriRXB7MDOw2eVDrCuFjqc1-FOb1ZMTCftvy0PlauBg"
+      },
+      "author_signing_payload": "eyJhcnRpZmFjdF9zaGEyNTYiOiJiNjc5NzZmN2I2M2E3NTg2YTVkYjlkYmZhMThmNzBmNjVjYmFiZjYyNDg5ZDlmNDg1NWI2OGU1MGIxMmRhOGVjIiwiYXV0aG9yX2tleV9pZCI6ImF1dGhvci1maXh0dXJlLTEiLCJpc3N1ZWRfYXQiOiIyMDI2LTA3LTE4VDEyOjAwOjAwWiIsInBsdWdpbl9pZCI6InBsdWdpbi5maXh0dXJlIiwidmVyc2lvbiI6IjEuMC4wIn0",
+      "registry_signing_payload": "eyJhdXRob3Jfc2lnbmF0dXJlIjoieWVJSWROUTdCX3Q3RmJ5NXhoQXFwZ21fem5ycGVRbURfNnRfOEhrNHpHXzZwQnp1ajhtNkJWXzBOQWxCN1g1VU9BTTlhUVFDSmZJN0ZtX2I4NC1jQnciLCJtYW5pZmVzdCI6eyJhcnRpZmFjdF9zaGEyNTYiOiJiNjc5NzZmN2I2M2E3NTg2YTVkYjlkYmZhMThmNzBmNjVjYmFiZjYyNDg5ZDlmNDg1NWI2OGU1MGIxMmRhOGVjIiwiYXV0aG9yX2tleV9pZCI6ImF1dGhvci1maXh0dXJlLTEiLCJpc3N1ZWRfYXQiOiIyMDI2LTA3LTE4VDEyOjAwOjAwWiIsInBsdWdpbl9pZCI6InBsdWdpbi5maXh0dXJlIiwidmVyc2lvbiI6IjEuMC4wIn19",
+      "revocation_signing_payload": "eyJsaXN0Ijp7Imlzc3VlZF9hdCI6IjIwMjYtMDctMThUMTI6MDA6MDBaIiwicmV2b2tlZF9rZXlfaWRzIjpbXSwidmVyc2lvbiI6MX0sInJlZ2lzdHJ5X2tleV9pZCI6InJlZ2lzdHJ5LWZpeHR1cmUtMSJ9",
+      "expected": "author_signature_invalid"
+    },
+    {
+      "name": "tampered-registry-signature",
+      "artifact": "YmVhbWZhbGwgcGx1Z2luIHRydXN0IGNvbnRyYWN0IGZpeHR1cmUgdjEK",
+      "envelope": {
+        "author_signed": {
+          "manifest": {
+            "plugin_id": "plugin.fixture",
+            "version": "1.0.0",
+            "artifact_sha256": "b67976f7b63a7586a5db9dbfa18f70f65cbabf62489d9f4855b68e50b12da8ec",
+            "author_key_id": "author-fixture-1",
+            "issued_at": "2026-07-18T12:00:00Z"
+          },
+          "author_signature": "yOIIdNQ7B_t7Fby5xhAqpgm_znrpeQmD_6t_8Hk4zG_6pBzuj8m6BV_0NAlB7X5UOAM9aQQCJfI7Fm_b84-cBw"
+        },
+        "checks_version": "1",
+        "registry_key_id": "registry-fixture-1",
+        "registry_countersignature": "iO28iOwLlqtNa2HLZUyu8NIexklApi2-_LQmiU-b13inteihIk2qq1mvm4otkjQs1s372Qidc-hFwkyc9P3lCg"
+      },
+      "revocations": {
+        "list": {
+          "version": 1,
+          "issued_at": "2026-07-18T12:00:00Z",
+          "revoked_key_ids": []
+        },
+        "registry_key_id": "registry-fixture-1",
+        "signature": "5KRrNTdEa7PhQby_xj3wYliBbArustQZBvHNHJ-kO8sMriRXB7MDOw2eVDrCuFjqc1-FOb1ZMTCftvy0PlauBg"
+      },
+      "author_signing_payload": "eyJhcnRpZmFjdF9zaGEyNTYiOiJiNjc5NzZmN2I2M2E3NTg2YTVkYjlkYmZhMThmNzBmNjVjYmFiZjYyNDg5ZDlmNDg1NWI2OGU1MGIxMmRhOGVjIiwiYXV0aG9yX2tleV9pZCI6ImF1dGhvci1maXh0dXJlLTEiLCJpc3N1ZWRfYXQiOiIyMDI2LTA3LTE4VDEyOjAwOjAwWiIsInBsdWdpbl9pZCI6InBsdWdpbi5maXh0dXJlIiwidmVyc2lvbiI6IjEuMC4wIn0",
+      "registry_signing_payload": "eyJhdXRob3Jfc2lnbmF0dXJlIjoieU9JSWROUTdCX3Q3RmJ5NXhoQXFwZ21fem5ycGVRbURfNnRfOEhrNHpHXzZwQnp1ajhtNkJWXzBOQWxCN1g1VU9BTTlhUVFDSmZJN0ZtX2I4NC1jQnciLCJtYW5pZmVzdCI6eyJhcnRpZmFjdF9zaGEyNTYiOiJiNjc5NzZmN2I2M2E3NTg2YTVkYjlkYmZhMThmNzBmNjVjYmFiZjYyNDg5ZDlmNDg1NWI2OGU1MGIxMmRhOGVjIiwiYXV0aG9yX2tleV9pZCI6ImF1dGhvci1maXh0dXJlLTEiLCJpc3N1ZWRfYXQiOiIyMDI2LTA3LTE4VDEyOjAwOjAwWiIsInBsdWdpbl9pZCI6InBsdWdpbi5maXh0dXJlIiwidmVyc2lvbiI6IjEuMC4wIn19",
+      "revocation_signing_payload": "eyJsaXN0Ijp7Imlzc3VlZF9hdCI6IjIwMjYtMDctMThUMTI6MDA6MDBaIiwicmV2b2tlZF9rZXlfaWRzIjpbXSwidmVyc2lvbiI6MX0sInJlZ2lzdHJ5X2tleV9pZCI6InJlZ2lzdHJ5LWZpeHR1cmUtMSJ9",
+      "expected": "registry_signature_invalid"
+    },
+    {
+      "name": "unknown-author-root",
+      "artifact": "YmVhbWZhbGwgcGx1Z2luIHRydXN0IGNvbnRyYWN0IGZpeHR1cmUgdjEK",
+      "envelope": {
+        "author_signed": {
+          "manifest": {
+            "plugin_id": "plugin.fixture",
+            "version": "1.0.0",
+            "artifact_sha256": "b67976f7b63a7586a5db9dbfa18f70f65cbabf62489d9f4855b68e50b12da8ec",
+            "author_key_id": "author-unknown-1",
+            "issued_at": "2026-07-18T12:00:00Z"
+          },
+          "author_signature": "m5TdFxgmqYDg9KMNPjKbCYNdn4QQG45OQMJb04o74ORCHuaDb5LHrb3qbxfkmQgahlEMCWP-XUpxfL6iBpg4AQ"
+        },
+        "checks_version": "1",
+        "registry_key_id": "registry-fixture-1",
+        "registry_countersignature": "vVFktZdTMN8svZyycfP-wASD0l2jV-naY_yQzMyFQOOqOTCG71yBDSt-VQ5N_Dvplr33XfOeFb_X8Mc_hwEZAA"
+      },
+      "revocations": {
+        "list": {
+          "version": 1,
+          "issued_at": "2026-07-18T12:00:00Z",
+          "revoked_key_ids": []
+        },
+        "registry_key_id": "registry-fixture-1",
+        "signature": "5KRrNTdEa7PhQby_xj3wYliBbArustQZBvHNHJ-kO8sMriRXB7MDOw2eVDrCuFjqc1-FOb1ZMTCftvy0PlauBg"
+      },
+      "author_signing_payload": "eyJhcnRpZmFjdF9zaGEyNTYiOiJiNjc5NzZmN2I2M2E3NTg2YTVkYjlkYmZhMThmNzBmNjVjYmFiZjYyNDg5ZDlmNDg1NWI2OGU1MGIxMmRhOGVjIiwiYXV0aG9yX2tleV9pZCI6ImF1dGhvci11bmtub3duLTEiLCJpc3N1ZWRfYXQiOiIyMDI2LTA3LTE4VDEyOjAwOjAwWiIsInBsdWdpbl9pZCI6InBsdWdpbi5maXh0dXJlIiwidmVyc2lvbiI6IjEuMC4wIn0",
+      "registry_signing_payload": "eyJhdXRob3Jfc2lnbmF0dXJlIjoibTVUZEZ4Z21xWURnOUtNTlBqS2JDWU5kbjRRUUc0NU9RTUpiMDRvNzRPUkNIdWFEYjVMSHJiM3FieGZrbVFnYWhsRU1DV1AtWFVweGZMNmlCcGc0QVEiLCJtYW5pZmVzdCI6eyJhcnRpZmFjdF9zaGEyNTYiOiJiNjc5NzZmN2I2M2E3NTg2YTVkYjlkYmZhMThmNzBmNjVjYmFiZjYyNDg5ZDlmNDg1NWI2OGU1MGIxMmRhOGVjIiwiYXV0aG9yX2tleV9pZCI6ImF1dGhvci11bmtub3duLTEiLCJpc3N1ZWRfYXQiOiIyMDI2LTA3LTE4VDEyOjAwOjAwWiIsInBsdWdpbl9pZCI6InBsdWdpbi5maXh0dXJlIiwidmVyc2lvbiI6IjEuMC4wIn19",
+      "revocation_signing_payload": "eyJsaXN0Ijp7Imlzc3VlZF9hdCI6IjIwMjYtMDctMThUMTI6MDA6MDBaIiwicmV2b2tlZF9rZXlfaWRzIjpbXSwidmVyc2lvbiI6MX0sInJlZ2lzdHJ5X2tleV9pZCI6InJlZ2lzdHJ5LWZpeHR1cmUtMSJ9",
+      "expected": "author_root_unknown"
+    },
+    {
+      "name": "unknown-registry-root",
+      "artifact": "YmVhbWZhbGwgcGx1Z2luIHRydXN0IGNvbnRyYWN0IGZpeHR1cmUgdjEK",
+      "envelope": {
+        "author_signed": {
+          "manifest": {
+            "plugin_id": "plugin.fixture",
+            "version": "1.0.0",
+            "artifact_sha256": "b67976f7b63a7586a5db9dbfa18f70f65cbabf62489d9f4855b68e50b12da8ec",
+            "author_key_id": "author-fixture-1",
+            "issued_at": "2026-07-18T12:00:00Z"
+          },
+          "author_signature": "yOIIdNQ7B_t7Fby5xhAqpgm_znrpeQmD_6t_8Hk4zG_6pBzuj8m6BV_0NAlB7X5UOAM9aQQCJfI7Fm_b84-cBw"
+        },
+        "checks_version": "1",
+        "registry_key_id": "registry-unknown-1",
+        "registry_countersignature": "P7YjyzC_A3cQJNMUDBnRKnylQ-vJD6AmnVlpwULHSzWLXzMmsph8VL4a7PVrksV_pMp6wp9FWDAM8iIKbuXBBQ"
+      },
+      "revocations": {
+        "list": {
+          "version": 1,
+          "issued_at": "2026-07-18T12:00:00Z",
+          "revoked_key_ids": []
+        },
+        "registry_key_id": "registry-fixture-1",
+        "signature": "5KRrNTdEa7PhQby_xj3wYliBbArustQZBvHNHJ-kO8sMriRXB7MDOw2eVDrCuFjqc1-FOb1ZMTCftvy0PlauBg"
+      },
+      "author_signing_payload": "eyJhcnRpZmFjdF9zaGEyNTYiOiJiNjc5NzZmN2I2M2E3NTg2YTVkYjlkYmZhMThmNzBmNjVjYmFiZjYyNDg5ZDlmNDg1NWI2OGU1MGIxMmRhOGVjIiwiYXV0aG9yX2tleV9pZCI6ImF1dGhvci1maXh0dXJlLTEiLCJpc3N1ZWRfYXQiOiIyMDI2LTA3LTE4VDEyOjAwOjAwWiIsInBsdWdpbl9pZCI6InBsdWdpbi5maXh0dXJlIiwidmVyc2lvbiI6IjEuMC4wIn0",
+      "registry_signing_payload": "eyJhdXRob3Jfc2lnbmF0dXJlIjoieU9JSWROUTdCX3Q3RmJ5NXhoQXFwZ21fem5ycGVRbURfNnRfOEhrNHpHXzZwQnp1ajhtNkJWXzBOQWxCN1g1VU9BTTlhUVFDSmZJN0ZtX2I4NC1jQnciLCJtYW5pZmVzdCI6eyJhcnRpZmFjdF9zaGEyNTYiOiJiNjc5NzZmN2I2M2E3NTg2YTVkYjlkYmZhMThmNzBmNjVjYmFiZjYyNDg5ZDlmNDg1NWI2OGU1MGIxMmRhOGVjIiwiYXV0aG9yX2tleV9pZCI6ImF1dGhvci1maXh0dXJlLTEiLCJpc3N1ZWRfYXQiOiIyMDI2LTA3LTE4VDEyOjAwOjAwWiIsInBsdWdpbl9pZCI6InBsdWdpbi5maXh0dXJlIiwidmVyc2lvbiI6IjEuMC4wIn19",
+      "revocation_signing_payload": "eyJsaXN0Ijp7Imlzc3VlZF9hdCI6IjIwMjYtMDctMThUMTI6MDA6MDBaIiwicmV2b2tlZF9rZXlfaWRzIjpbXSwidmVyc2lvbiI6MX0sInJlZ2lzdHJ5X2tleV9pZCI6InJlZ2lzdHJ5LWZpeHR1cmUtMSJ9",
+      "expected": "registry_root_unknown"
+    },
+    {
+      "name": "revoked-key",
+      "artifact": "YmVhbWZhbGwgcGx1Z2luIHRydXN0IGNvbnRyYWN0IGZpeHR1cmUgdjEK",
+      "envelope": {
+        "author_signed": {
+          "manifest": {
+            "plugin_id": "plugin.fixture",
+            "version": "1.0.0",
+            "artifact_sha256": "b67976f7b63a7586a5db9dbfa18f70f65cbabf62489d9f4855b68e50b12da8ec",
+            "author_key_id": "author-fixture-1",
+            "issued_at": "2026-07-18T12:00:00Z"
+          },
+          "author_signature": "yOIIdNQ7B_t7Fby5xhAqpgm_znrpeQmD_6t_8Hk4zG_6pBzuj8m6BV_0NAlB7X5UOAM9aQQCJfI7Fm_b84-cBw"
+        },
+        "checks_version": "1",
+        "registry_key_id": "registry-fixture-1",
+        "registry_countersignature": "ie28iOwLlqtNa2HLZUyu8NIexklApi2-_LQmiU-b13inteihIk2qq1mvm4otkjQs1s372Qidc-hFwkyc9P3lCg"
+      },
+      "revocations": {
+        "list": {
+          "version": 2,
+          "issued_at": "2026-07-18T13:00:00Z",
+          "revoked_key_ids": [
+            "author-fixture-1"
+          ]
+        },
+        "registry_key_id": "registry-fixture-1",
+        "signature": "eS5m2L4UjvtNAoNud6PYedLRqgMhIrRv43bSKiIK59vhN9395eYDaycGuSXFunH9wkoEOSpErP0RahfjINHRDg"
+      },
+      "author_signing_payload": "eyJhcnRpZmFjdF9zaGEyNTYiOiJiNjc5NzZmN2I2M2E3NTg2YTVkYjlkYmZhMThmNzBmNjVjYmFiZjYyNDg5ZDlmNDg1NWI2OGU1MGIxMmRhOGVjIiwiYXV0aG9yX2tleV9pZCI6ImF1dGhvci1maXh0dXJlLTEiLCJpc3N1ZWRfYXQiOiIyMDI2LTA3LTE4VDEyOjAwOjAwWiIsInBsdWdpbl9pZCI6InBsdWdpbi5maXh0dXJlIiwidmVyc2lvbiI6IjEuMC4wIn0",
+      "registry_signing_payload": "eyJhdXRob3Jfc2lnbmF0dXJlIjoieU9JSWROUTdCX3Q3RmJ5NXhoQXFwZ21fem5ycGVRbURfNnRfOEhrNHpHXzZwQnp1ajhtNkJWXzBOQWxCN1g1VU9BTTlhUVFDSmZJN0ZtX2I4NC1jQnciLCJtYW5pZmVzdCI6eyJhcnRpZmFjdF9zaGEyNTYiOiJiNjc5NzZmN2I2M2E3NTg2YTVkYjlkYmZhMThmNzBmNjVjYmFiZjYyNDg5ZDlmNDg1NWI2OGU1MGIxMmRhOGVjIiwiYXV0aG9yX2tleV9pZCI6ImF1dGhvci1maXh0dXJlLTEiLCJpc3N1ZWRfYXQiOiIyMDI2LTA3LTE4VDEyOjAwOjAwWiIsInBsdWdpbl9pZCI6InBsdWdpbi5maXh0dXJlIiwidmVyc2lvbiI6IjEuMC4wIn19",
+      "revocation_signing_payload": "eyJsaXN0Ijp7Imlzc3VlZF9hdCI6IjIwMjYtMDctMThUMTM6MDA6MDBaIiwicmV2b2tlZF9rZXlfaWRzIjpbImF1dGhvci1maXh0dXJlLTEiXSwidmVyc2lvbiI6Mn0sInJlZ2lzdHJ5X2tleV9pZCI6InJlZ2lzdHJ5LWZpeHR1cmUtMSJ9",
+      "expected": "author_key_revoked"
+    }
+  ]
+}

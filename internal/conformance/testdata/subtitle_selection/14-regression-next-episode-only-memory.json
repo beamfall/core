@@ -1,0 +1,23 @@
+{
+  "id": "regression-next-episode-only-memory",
+  "regression": true,
+  "notes": "Shipped competitor bug: a manual pick only propagated to the immediately-next episode and reverted to profile defaults afterward. The resolver applies the persisted series-scoped record directly with no adjacency/recency limitation, so a later item in the group still resolves the pin. langPrefs is deliberately set to a language absent from this item's tracks (fr) so an implementation that dropped the pin would visibly diverge (it would fall back to policy and pick the first-listed track under 'default subtitles' instead of the pinned German track).",
+  "input": {
+    "mode": "always",
+    "langPrefs": ["fr"],
+    "preferSDH": false,
+    "audioTrackLang": "en",
+    "tracks": [
+      { "language": "en", "kind": "muxed", "forced": false, "sdh": false, "visualImpaired": false, "commentary": false },
+      { "language": "de", "kind": "muxed", "forced": false, "sdh": false, "visualImpaired": false, "commentary": false }
+    ],
+    "perItemRecord": { "selected": true, "language": "de", "kind": "muxed", "forced": false, "sdh": false, "visualImpaired": false, "commentary": false }
+  },
+  "expected": {
+    "selection": {
+      "track": { "language": "de", "kind": "muxed", "roles": { "forced": false, "sdh": false, "visualImpaired": false, "commentary": false } },
+      "reason": "pinned choice for this series"
+    },
+    "unavailableReason": ""
+  }
+}

@@ -1,0 +1,1387 @@
+[
+  {
+    "field": "acceptpendingaitag",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "acceptwatchparty",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "accessgrantsforprofile",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "accessrequest",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "accessschedule",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "activity",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "activitylog",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "addcollectionmedia",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "addmediaexternalid",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "addpathpickerroot",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "addsubscription",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "adminsession",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "ambientqueue",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "apikeys",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "apitokens",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "artworkcandidates",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "assigntag",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "associatesubscriptionentry",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "backup",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "backuphistory",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "batchrenamemanagedpaths",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "browseserverfolders",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "bulkassigntags",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "bulkeditapply",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "bulkeditpreview",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "bulkfetchmissingartwork",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "bulkfetchmissingartworkselected",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "bulkmergeduplicates",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "bulkmergeduplicatesselected",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "bulkrescanunmatched",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "bulkrescanunmatchedselected",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "bulkrescrapescrapefailures",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "bulkrescrapescrapefailuresselected",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "bulktrashbroken",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "bulktrashbrokenselected",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "channels",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "clearallmutes",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "clearmute",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "clientprefs",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "collections",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "connectionendpoints",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "consoleconfig",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "controlsession",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "createapikey",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "createapitoken",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "createchannel",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "createcollection",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "createlibrary",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "createmanagedfolder",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "createmarker",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "createmediafromunmatched",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "createofflinepack",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "createprofile",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "createretentionrule",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "createsavedfilter",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "createsmartcollection",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "createtag",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "createwatchparty",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "currentsession",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "deletechannel",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "deletecollection",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "deletelibrary",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "deletemanagedpath",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "deletemarker",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "deletemyengagement",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "deletemypacktokens",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "deleteretentionrule",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "deletesavedfilter",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "deletesmartcollection",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "deletetag",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "devices",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "disablescrapercredential",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "dismissunmatched",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "encryptedlibrarystatus",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "endadminsession",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "engagementcounter",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "entitiesformedia",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "entity",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "entityrelations",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "evictplaybackrenditioncache",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "extensionrequest",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "fixmatch",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "fixmatchcandidates",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "fixmatchpreview",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "foldertree",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "formgroup",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "identifyapply",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "identifylookup",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "identifysearch",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "importers",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "importmanagedfile",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "importstatus",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "invitetowatchparty",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "job",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "jobcancel",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "jobevents",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "jobretry",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "jobs",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "joingroup",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "leavegroup",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "leavewatchparty",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "libraries",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "libraryduplicategroups",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "libraryhealth",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "libraryhealthitems",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "libraryindexstatus",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "linkmediarelation",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "linkscrobble",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "livesessions",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "manifest",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "markers",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "marknotificationread",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "media",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "mediafieldlocks",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "mediafields",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "mediafiles",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "mediaforentity",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "mediarelations",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "mergeentities",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "mergemedia",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "metadataexport",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "movemanagedpath",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "mutes",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "mydatasummary",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "myengagement",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "myengagementlog",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "mysessions",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "navigationmanifest",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "navoverride",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "navoverridehistory",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "notifications",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "offlinepacks",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "operationsgovernor",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "operatordeleteprofiledata",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "organizeapply",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "organizepreview",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "pathpicker",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "pendingaccessrequests",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "pendingaitagqueue",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "pinartworkcandidate",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "playbackrenditioncache",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "plugins",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "precomputeplaybackrenditions",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "profiles",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "profilesessions",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "provisionencryptedlibrary",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "purgetrash",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "qualitypolicy",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "queueadd",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "queueclear",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "queuemove",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "queueremove",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "recordengagement",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "registerdevicepushtoken",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "registerimportsource",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "rejectpendingaitag",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "relock",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "remoteaccess",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "removecollectionmedia",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "removelastengagement",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "removesubscription",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "renamemanagedpath",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "reordercollectionmedia",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "reportdrift",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "reportplayback",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "requestaccess",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "requestextension",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "requestwatchpartytransport",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "resetnavoverride",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "resetunmatchedsuppression",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "resolveaccessrequest",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "respondextension",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "restorecollection",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "restoremanagedpath",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "restoremarker",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "restoremedia",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "restorenavoverride",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "restoretag",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "retentionrules",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "reveal",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "revokeaccessgrant",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "revokealldevices",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "revokeapikey",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "revokeapitoken",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "revokedevice",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "revokeofflinepack",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "rewrapencryptedlibrary",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "runeventscompaction",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "runimport",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "runjob",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "savedfilters",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "scanestimate",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "scanlibrary",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "schedules",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "scrobbleeligibility",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "scrobblelinks",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "scrobblestatus",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "sealencryptedlibrary",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "search",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "searchentities",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "searchfeeds",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "searchresult",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "semanticcapability",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "serverinfo",
+    "effect": "read",
+    "tier": "public"
+  },
+  {
+    "field": "setaccessschedule",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "setcertificationceiling",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "setclientpref",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "setconsoleconfig",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "setdevicerole",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "setextensionpreauthorization",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "setfavorite",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "setfollow",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "setlibraryaiindexing",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "setlibrarybacking",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "setlibrarypreviewclips",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "setlibraryrestricted",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "setlibraryroots",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "setmediafieldlock",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "setmute",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "setnavoverride",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "setpluginactive",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "setpluginconfig",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "setprofilelibraries",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "setqualitypolicy",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "setretentioncandidatehold",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "setrevealpin",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "setscrapercredential",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "setscrobbleeligibility",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "setskipdetectionenabled",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "setsubscriptionretention",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "settranscodeconfig",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "setupstate",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "skipdetectionenabled",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "smartcollections",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "sourceitems",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "stationdelete",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "stationgenerate",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "stations",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "stationsave",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "stationstart",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "subscriptions",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "suppressunmatched",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "switchprofile",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "syncofflinepackprogress",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "tagassignments",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "tags",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "terminatesession",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "transcodeconfig",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "transferprofileowner",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "transitiongroup",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "trashedmarkers",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "trashlist",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "trashmedia",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "unassigntag",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "undobatch",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "uninstallplugindata",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "unlinkscrobble",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "unmatchedqueue",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "unmatchedrecords",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "unmatchedsuppressions",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "unsealencryptedlibrary",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "updatechannel",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "updatecollection",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "updatemarker",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "updateprofile",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "updateretentionrule",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "updateschedule",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "updatesmartcollection",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "updatestatus",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "updatetag",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "upsertentityrelation",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "validatescrapercredential",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "verifyadminsession",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "verifybackup",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "watcherstatus",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "watchpartyautoskip",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "watchpartytransport",
+    "effect": "write",
+    "tier": "session"
+  }
+]

@@ -1,0 +1,25 @@
+{
+  "streams": [
+    {
+      "codec_type": "video",
+      "codec_name": "h264",
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "codec_type": "subtitle",
+      "codec_name": "subrip",
+      "tags": {"language": "eng"},
+      "disposition": {
+        "default": 1,
+        "hearing_impaired": 1,
+        "visual_impaired": 1,
+        "comment": 1
+      }
+    }
+  ],
+  "format": {
+    "format_name": "matroska,webm",
+    "duration": "60.0"
+  }
+}

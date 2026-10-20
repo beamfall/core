@@ -1,0 +1,5 @@
+{
+  "namespace": "flat",
+  "keyField": "id",
+  "keys": ["conversion", "inference", "rename"]
+}

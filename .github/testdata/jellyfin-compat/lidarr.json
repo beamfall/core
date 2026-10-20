@@ -1,0 +1,30 @@
+{
+  "capture": {
+    "date": "2026-07-10",
+    "server": "Jellyfin Server 10.11.11",
+    "target": "https://demo.jellyfin.org/stable",
+    "consumer": "Lidarr d93342d8d2cdc81b1c29f2135354f9bab9f4bc7b"
+  },
+  "base_path": {
+    "configured_url_base": "/compat/jellyfin",
+    "constructed_base": "http://<host>:<port>/compat/jellyfin/mediabrowser",
+    "finding": "requires /compat/jellyfin/mediabrowser alias or upstream connector change"
+  },
+  "cases": [
+    {
+      "name": "music-folder-discovery",
+      "request": { "method": "GET", "path": "/mediabrowser/Library/MediaFolders", "headers": { "X-MediaBrowser-Token": "<api-key>" } },
+      "response": { "status": 403, "headers": { "Content-Type": "text/html" }, "body": "<demo-edge-forbidden-page>" }
+    },
+    {
+      "name": "fallback-library-refresh",
+      "request": { "method": "POST", "path": "/mediabrowser/Library/Refresh", "headers": { "X-MediaBrowser-Token": "<api-key>" } },
+      "response": { "status": 403, "headers": { "Content-Type": "text/html" }, "body": "<demo-edge-forbidden-page>" }
+    },
+    {
+      "name": "music-library-update-when-folders-found",
+      "request": { "method": "POST", "path": "/mediabrowser/Library/Media/Updated", "headers": { "X-MediaBrowser-Token": "<api-key>", "Content-Type": "application/json" }, "body": { "Updates": [{ "Path": "<music-library-path>", "UpdateType": "Created" }] } },
+      "response": { "status": "<not-replayed-because-demo-blocked-parent-path>", "headers": {}, "body": null }
+    }
+  ]
+}

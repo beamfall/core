@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "generated_by": "cmd/gen-vectors (go run ./cmd/gen-vectors)",
+  "carriers": [
+    "tcp",
+    "quic"
+  ],
+  "vectors": [
+    {
+      "name": "hello_basic",
+      "description": "Minimal hello frame: version=1, single hostname, short token.",
+      "struct": {
+        "type": "hello",
+        "hello": {
+          "version": 1,
+          "token": "b3BhcXVlLXRva2VuLWFiYw==",
+          "hostnames": [
+            "home.relay.example"
+          ]
+        }
+      },
+      "wire_bytes_hex": "0000006c7b2274797065223a2268656c6c6f222c2268656c6c6f223a7b2276657273696f6e223a312c22746f6b656e223a22623342686358566c4c585276613256754c57466959773d3d222c22686f73746e616d6573223a5b22686f6d652e72656c61792e6578616d706c65225d7d7d"
+    },
+    {
+      "name": "hello_multi_hostname",
+      "description": "Hello frame with multiple hostnames.",
+      "struct": {
+        "type": "hello",
+        "hello": {
+          "version": 1,
+          "token": "dG9r",
+          "hostnames": [
+            "a.example.com",
+            "b.example.com",
+            "c.example.com"
+          ]
+        }
+      },
+      "wire_bytes_hex": "000000737b2274797065223a2268656c6c6f222c2268656c6c6f223a7b2276657273696f6e223a312c22746f6b656e223a2264473972222c22686f73746e616d6573223a5b22612e6578616d706c652e636f6d222c22622e6578616d706c652e636f6d222c22632e6578616d706c652e636f6d225d7d7d"
+    },
+    {
+      "name": "ack_basic",
+      "description": "Basic ack frame returned by server on acceptance.",
+      "struct": {
+        "type": "ack",
+        "ack": {
+          "version": 1,
+          "carrier_id": "carrier-uuid-0001",
+          "hostnames": [
+            "home.relay.example"
+          ]
+        }
+      },
+      "wire_bytes_hex": "000000667b2274797065223a2261636b222c2261636b223a7b2276657273696f6e223a312c22636172726965725f6964223a22636172726965722d757569642d30303031222c22686f73746e616d6573223a5b22686f6d652e72656c61792e6578616d706c65225d7d7d"
+    },
+    {
+      "name": "error_invalid_hello",
+      "description": "Error frame sent by server for malformed or version-mismatch hello.",
+      "struct": {
+        "type": "error",
+        "error": "invalid hello"
+      },
+      "wire_bytes_hex": "000000287b2274797065223a226572726f72222c226572726f72223a22696e76616c69642068656c6c6f227d"
+    },
+    {
+      "name": "error_unauthorized",
+      "description": "Error frame sent by server when token verification fails.",
+      "struct": {
+        "type": "error",
+        "error": "unauthorized"
+      },
+      "wire_bytes_hex": "000000277b2274797065223a226572726f72222c226572726f72223a22756e617574686f72697a6564227d"
+    }
+  ]
+}

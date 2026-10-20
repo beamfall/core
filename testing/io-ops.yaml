@@ -1,0 +1,134 @@
+# Beamfall I/O-operations ledger (egress + filesystem only)
+#
+# The I/O-axis sibling of testing/features.yaml. The ioe2e coverage tool
+# (cmd/ioe2e) reconciles three axes into one report:
+#
+#   1. ffmpeg *Runner methods — CODE-DERIVED live from internal/ffmpeg via
+#      go/packages. They are NOT listed here (listing them would duplicate and
+#      could drift from the real exported method set).
+#   2. `// io:<id>` markers in test sources — a marker credits an op as covered.
+#   3. THIS ledger — the hand-maintained ops that are not code-derivable:
+#      network EGRESS ops and FILESYSTEM-subsystem ops.
+#
+# Every op below must have a matching `// io:<id>` marker in a test (else the
+# tool reports it MISSING). Markers will turn green as the I/O E2E journey
+# slice lands — at authoring time most are expected MISSING.
+#
+# Format (stdlib-parseable, mirrors features.yaml shape): a top-level `ops:`
+# list, each entry one flat block of:
+#   - id:    dashed lowercase id, also the marker token (`io:<id>`)
+#     desc:  one-line human description
+#     pkg:   the package path that owns the op
+#     kind:  egress | fs
+#
+# Live-egress drift tier (D4, E2E-IO-LIVE-EGRESS): the egress ops below are
+# verified two ways. The default fast `io` tier drives each client against a
+# loopback httptest double (deterministic, ZERO live egress — what `make io-gate`
+# runs). A SEPARATE opt-in `io_live` tier (internal/ioe2e/live_test.go, behind
+# INTEGRATION_LIVE=1, run via `script/io-e2e.sh live` / `make io-live`) points the
+# SAME client at a real endpoint for weekly drift detection. The live tier reuses
+# these op ids (same `io:<id>` markers) and is never part of any local gate.
+
+schemaVersion: 1
+
+ops:
+  # ── egress ────────────────────────────────────────────────────────────────
+  - id: egress-webhook-post
+    desc: POST event payloads to operator-configured webhook endpoints
+    pkg: internal/webhook
+    kind: egress
+  - id: egress-scrobble-trakt-history
+    desc: POST watch history to the Trakt scrobble adapter (/sync/history)
+    pkg: internal/scrobble
+    kind: egress
+  - id: egress-scrobble-lastfm-submit
+    desc: POST scrobbles to the Last.fm-style scrobble endpoint
+    pkg: internal/scrobble
+    kind: egress
+  - id: egress-scrobble-listenbrainz-submit
+    desc: POST listens to ListenBrainz (/1/submit-listens)
+    pkg: internal/scrobble
+    kind: egress
+  - id: egress-qbittorrent-login
+    desc: POST credentials to the qBittorrent Web API (/api/v2/auth/login)
+    pkg: internal/qbittorrent
+    kind: egress
+  - id: egress-qbittorrent-query
+    desc: GET categories / completed torrents / files from the qBittorrent Web API
+    pkg: internal/qbittorrent
+    kind: egress
+  - id: egress-scrape-fetch
+    desc: GET source documents/pages for plugin scrapers (search, lookup, RSS)
+    pkg: internal/scrape
+    kind: egress
+  - id: egress-scrape-authorized-post
+    desc: POST authorized scraper requests (login + JSON search) to source endpoints
+    pkg: internal/scrape
+    kind: egress
+  - id: egress-push-apns
+    desc: POST aps-typed payloads to APNs (HTTP/2) for device push delivery
+    pkg: internal/push
+    kind: egress
+  - id: egress-push-fcm
+    desc: POST messages and fetch OAuth tokens for FCM push delivery
+    pkg: internal/push
+    kind: egress
+  - id: egress-updatecheck-manifest
+    desc: GET the signed update manifest from the release endpoint
+    pkg: internal/updatecheck
+    kind: egress
+  - id: egress-plugin-catalog-fetch
+    desc: GET the signed plugin catalog index from the registry endpoint
+    pkg: internal/plugin
+    kind: egress
+  - id: egress-backup-s3-compatible
+    desc: PUT, GET, DELETE, and LIST opaque backup ciphertext against an S3-compatible bucket
+    pkg: internal/backup
+    kind: egress
+
+  # ── filesystem ──────────────────────────────────────────────────────────────
+  - id: fs-scan-walk
+    desc: Walk a library root tree to discover candidate media files
+    pkg: internal/scan
+    kind: fs
+  - id: fs-ingest-move
+    desc: Atomically rename ingested media into its managed target path
+    pkg: internal/ingest
+    kind: fs
+    blocked: subscription-poll job needs a loopback feed/enclosure double (see internal/ioe2e/lifecycle_fs_blocked_test.go)
+  - id: fs-managed-rename
+    desc: Rename a managed Library file path through the server and update catalog paths
+    pkg: internal/store
+    kind: fs
+    blocked: bulk power-tool and manager-managed-rename journeys are not landed yet
+  - id: fs-store-datadir
+    desc: Create and write the server data dir (store/sqlite, managed file ops)
+    pkg: internal/store
+    kind: fs
+  - id: fs-trash-move
+    desc: Route deletes through the audited server-side Trash (recoverable)
+    pkg: internal/store
+    kind: fs
+  - id: fs-artwork-cache
+    desc: Write content-addressed artwork into the artwork cache directory
+    pkg: internal/artwork
+    kind: fs
+    blocked: poster write needs a network candidate; local sweep skips unidentified media (see internal/ioe2e/lifecycle_fs_blocked_test.go)
+  - id: fs-transcode-output
+    desc: Write HLS/segment + generated-asset output files for transcode jobs
+    pkg: internal/genassets
+    kind: fs
+    blocked: precompute needs the discovered mediaID via the sourceitems browse query (see internal/ioe2e/lifecycle_fs_blocked_test.go)
+  - id: fs-secrets-0600
+    desc: Write operator secrets to 0600 files under <DataDir>/secrets
+    pkg: internal/app
+    kind: fs
+  - id: fs-store-backup
+    desc: Write and ingest store backup archives
+    pkg: internal/store
+    kind: fs
+  - id: fs-libencrypt-atrest
+    desc: Write the at-rest encrypted library database files
+    pkg: internal/libencrypt
+    kind: fs
+    blocked: STOPPED feature (ENC-3) behind store.Options.EnableEncryptedLibraryDBLifecycle, not honored by app.New (see internal/ioe2e/lifecycle_fs_blocked_test.go)

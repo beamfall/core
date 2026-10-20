@@ -1,0 +1,22 @@
+{
+  "id": "always-mode-last-resort-only-available-track",
+  "regression": false,
+  "notes": "always mode with no full or preferred-language-forced candidate falls back to the only remaining autoSelectable track (a forced track in a non-preferred language) rather than selecting none.",
+  "input": {
+    "mode": "always",
+    "langPrefs": ["en"],
+    "preferSDH": false,
+    "audioTrackLang": "en",
+    "tracks": [
+      { "language": "ja", "kind": "muxed", "forced": true, "sdh": false, "visualImpaired": false, "commentary": false }
+    ],
+    "perItemRecord": null
+  },
+  "expected": {
+    "selection": {
+      "track": { "language": "ja", "kind": "muxed", "roles": { "forced": true, "sdh": false, "visualImpaired": false, "commentary": false } },
+      "reason": "only available subtitle track"
+    },
+    "unavailableReason": ""
+  }
+}

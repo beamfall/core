@@ -1,0 +1,7 @@
+[
+  {"ownerCurrent": 2, "guestCurrent": 2, "serve": true, "revision": 2},
+  {"ownerCurrent": 2, "guestCurrent": 1, "serve": true, "revision": 1},
+  {"ownerCurrent": 1, "guestCurrent": 2, "serve": true, "revision": 1},
+  {"ownerCurrent": 1, "guestCurrent": 1, "serve": true, "revision": 1},
+  {"ownerCurrent": 3, "guestCurrent": 1, "serve": false, "closeReason": "revision-unsupported"}
+]

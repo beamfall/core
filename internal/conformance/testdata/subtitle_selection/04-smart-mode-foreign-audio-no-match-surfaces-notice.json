@@ -1,0 +1,19 @@
+{
+  "id": "smart-mode-foreign-audio-no-match-surfaces-notice",
+  "regression": false,
+  "notes": "smart mode with non-preferred playing audio falls back to forced-only; with no matching forced track it selects none and surfaces a non-blocking notice rather than a wrong-language track.",
+  "input": {
+    "mode": "smart",
+    "langPrefs": ["en"],
+    "preferSDH": false,
+    "audioTrackLang": "ja",
+    "tracks": [
+      { "language": "fr", "kind": "muxed", "forced": true, "sdh": false, "visualImpaired": false, "commentary": false }
+    ],
+    "perItemRecord": null
+  },
+  "expected": {
+    "selection": null,
+    "unavailableReason": "no-forced-subtitle-in-preferred-language"
+  }
+}

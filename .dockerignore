@@ -1,0 +1,11 @@
+.git
+.cache
+.beamfall
+.DS_Store
+docs
+packaging
+script/dist
+tmp
+internal/web/app/node_modules
+internal/web/app-dist
+**/*_test.go

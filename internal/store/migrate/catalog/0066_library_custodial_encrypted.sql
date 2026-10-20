@@ -1,0 +1,27 @@
+-- Two orthogonal Library attributes (ADR-0045 §2.1) — the foundation for
+-- self-hosted encrypted photo backup. Neither column carries any key material
+-- or crypto state: the at-rest regime itself lands in ENC-2 (DEK/KEK/Recovery
+-- Key) and ENC-3 (SQLCipher at rest). ENC-1 is modeling only.
+--
+--   - custodial: the backing-model axis. 0 = a Scanned Library (the default
+--     ADR-0009 plane — it indexes the operator's own files on disk; a vanished
+--     fingerprint goes *missing*, never deleted). 1 = a Custodial Library —
+--     Beamfall holds the canonical copy itself, fed by device uploads through
+--     the Incoming Folder seam. Its durability contract is the headline new
+--     semantic: the server is custodian of the only copy, so losing a
+--     fingerprint is data loss, not a health-report missing (PurgeTrashedBefore
+--     exempts custodial Media — trash stays recoverable indefinitely, invariant
+--     #6). DEFAULT 0 makes every existing Library Scanned, preserving today's
+--     behavior.
+--   - encrypted: the at-rest regime is active for this Library (ADR-0045
+--     §2.2-2.3). 0 = not encrypted (today's plaintext-at-rest, ADR-0011 §9). The
+--     flag is the attribute and the invariants it implies only; the keys,
+--     ciphers, and sealing belong to ENC-2/3. DEFAULT 0 leaves every existing
+--     Library not-encrypted.
+--
+-- The two axes are independent and compose (Photo Backup is a Library that is
+-- Custodial + Encrypted); either is meaningful alone. Both mirror the
+-- preview_clips_enabled (0022) / ai_indexing_enabled (0046) integer-bool column
+-- style with sensible NOT NULL DEFAULTs so the migration is back-compatible.
+ALTER TABLE library ADD COLUMN custodial INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE library ADD COLUMN encrypted INTEGER NOT NULL DEFAULT 0;

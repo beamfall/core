@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "boundary": "circle-federation-wire",
+  "artifactVersion": "1.0.0",
+  "currentRevision": 2,
+  "previousRevision": 1,
+  "supportedRevisions": [2, 1],
+  "frameFields": ["revision", "circleSessionId", "operation", "kind", "requestId", "payload"],
+  "kinds": ["request", "response", "event"],
+  "operations": [
+    "circle-hello",
+    "catalog-read",
+    "playback-authorize",
+    "lease-renew",
+    "access-request-create",
+    "access-request-status",
+    "revoke-notice",
+    "session-close"
+  ],
+  "payloadFields": {
+    "circle-hello": ["circleWireRevision", "supported"],
+    "catalog-read": ["circleId", "remoteProfileId", "lease", "refusalCode"],
+    "playback-authorize": ["circleId", "remoteProfileId", "mediaId", "lease", "playbackDecision", "refusalCode"],
+    "lease-renew": ["lease", "refusalCode"],
+    "access-request-create": ["circleId", "remoteProfileId", "mediaId", "refusalCode"],
+    "access-request-status": ["accessRequestId", "status", "verdict", "refusalCode"],
+    "revoke-notice": ["circleId"],
+    "session-close": ["reason"]
+  },
+  "terminalCloseReasons": [
+    "revision-unsupported",
+    "revision-mismatch",
+    "operation-unsupported",
+    "peer-revoked",
+    "protocol-error"
+  ],
+  "refusalCodes": [
+    "principal-unresolved",
+    "policy-denied",
+    "lease-expired",
+    "lease-context-mismatch",
+    "media-ineligible"
+  ],
+  "leaseScopes": ["catalog-read", "media-stream"],
+  "leaseTTLSeconds": 120,
+  "leaseRenewByRemainingSeconds": 60,
+  "leaseMaximumTTLSeconds": 300,
+  "compatibilityMatrix": [
+    {"ownerCurrent": 2, "guestCurrent": 2, "serve": true, "revision": 2},
+    {"ownerCurrent": 2, "guestCurrent": 1, "serve": true, "revision": 1},
+    {"ownerCurrent": 1, "guestCurrent": 2, "serve": true, "revision": 1},
+    {"ownerCurrent": 1, "guestCurrent": 1, "serve": true, "revision": 1},
+    {"ownerCurrent": 3, "guestCurrent": 1, "serve": false, "closeReason": "revision-unsupported"}
+  ]
+}

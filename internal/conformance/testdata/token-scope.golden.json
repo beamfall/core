@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "tokenSource": "POST /api/playback-info",
+  "revealMutation": "mutation { relock { revealed } }",
+  "routeTemplate": "/api/media/direct/{token}",
+  "playbackRequest": {
+    "mediaID": "media-archive",
+    "capabilityProfile": {
+      "client": "token-scope",
+      "containers": [
+        "mp4"
+      ],
+      "directCodecs": [
+        "h264"
+      ]
+    }
+  },
+  "authorizationHeaders": {
+    "X-Beamfall-Device": "device-tv",
+    "X-Beamfall-Device-Secret": "dev-tv-secret",
+    "X-Beamfall-Session": "session-revealed"
+  },
+  "expectedBytesBase64": "YmVhbWZhbGwtdG9rZW4tc2NvcGUtc2VudGluZWw=",
+  "cases": [
+    {
+      "name": "revealed-serves-restricted",
+      "target": "media-direct",
+      "mediaID": "media-archive",
+      "scope": "minted-revealed",
+      "routeExercised": true,
+      "httpStatus": 200,
+      "verifyReason": ""
+    },
+    {
+      "name": "locked-rejects-restricted",
+      "target": "media-direct",
+      "mediaID": "media-archive",
+      "scope": "minted-relocked",
+      "routeExercised": true,
+      "httpStatus": 401,
+      "verifyReason": "stream token requires reveal"
+    },
+    {
+      "name": "wrong-session-scope-mismatch",
+      "target": "media-direct",
+      "mediaID": "media-archive",
+      "scope": "wrong-session",
+      "routeExercised": false,
+      "verifyReason": "stream token scope mismatch",
+      "sessionID": "session-default"
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+-- Private-feed credential moves off plaintext and into the secure store
+-- (invariant #5 / ADR-0030 §4). The shipped private-feed support (BF-28)
+-- stored the literal Authorization header in subscription.auth_header (0026) —
+-- the secret lived unencrypted in catalog SQLite and round-tripped to the
+-- manager client. Invariant #5 requires secrets to live in a platform secure
+-- store or a 0600 file, never plaintext, and never to be echoed to a client.
+--
+-- auth_ref is the secure-store KEY, not the secret: it names a 0600
+-- one-secret-per-file entry under <DataDir>/secrets/<auth_ref> (the same
+-- secretFiles store the scraper AuthRef and qBittorrent password use). The
+-- poller resolves the literal header from that store at fetch time via the
+-- ref; the ref itself carries no credential and is safe to persist and to scan.
+-- An empty auth_ref means an anonymous (public) feed with no stored secret.
+--
+-- The 0026 auth_header column is now DEPRECATED and UNUSED: code no longer
+-- writes or reads it. The catalog schema is append-only past the FREEZE-4
+-- marker (ADR-0011 §2), so the dead column stays in place rather than being
+-- dropped. No existing-value migration is needed: there is no production data
+-- yet (the data-review waiver), so auth_header rows are not migrated into the
+-- secure store.
+ALTER TABLE subscription
+  ADD COLUMN auth_ref TEXT NOT NULL DEFAULT '';

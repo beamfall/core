@@ -1,0 +1,136 @@
+{
+  "artifact": "beamfall.visualsync.audio-frame",
+  "artifactVersion": "1.0.0",
+  "frameContractVersion": "audio-frame.v1",
+  "evolution": {
+    "additiveOnly": true,
+    "rule": "Consumers must ignore unknown fields and flags; producers must not remove or change the meaning of existing v1 fields."
+  },
+  "audibleTimeDefinition": "audibleTimeMs = mediaTimeMs - outputLatencyMs",
+  "referenceDsp": {
+    "sampleRateHz": 48000,
+    "monoMixdown": "average channels",
+    "fftWindowSamples": 2048,
+    "hopSamples": 512,
+    "window": "hann",
+    "spectrumBands": 24,
+    "spectrumMinHz": 40,
+    "spectrumMaxHz": 16000,
+    "dbFloor": -90,
+    "ballisticsAttackMs": 10,
+    "ballisticsReleaseMs": 200,
+    "rmsWindowMs": 300,
+    "loudnessReferenceLufs": -18,
+    "onset": "half-wave rectified log-spectral flux with running peak normalization",
+    "onsetBandGroups": [
+      [
+        0,
+        7
+      ],
+      [
+        8,
+        15
+      ],
+      [
+        16,
+        23
+      ]
+    ],
+    "gapToleranceHops": 1,
+    "outputTimeReference": "mediaTimeMs is the analysis-window end; audibleTimeMs subtracts outputLatencyMs",
+    "publishedTolerances": {
+      "timeMs": 0.02,
+      "scalar": 0.000001,
+      "spectrum": 0.000001
+    }
+  },
+  "fields": [
+    {
+      "name": "contractVersion",
+      "type": "string",
+      "required": true,
+      "meaning": "Explicit AudioFrame contract version."
+    },
+    {
+      "name": "sequence",
+      "type": "uint64",
+      "required": true,
+      "meaning": "Monotonic frame index in producer order."
+    },
+    {
+      "name": "mediaTimeMs",
+      "type": "number",
+      "required": true,
+      "meaning": "Media timeline at the end of the DSP analysis window."
+    },
+    {
+      "name": "hostTimeNanos",
+      "type": "int64",
+      "required": true,
+      "meaning": "Monotonic host clock sample time."
+    },
+    {
+      "name": "outputLatencyMs",
+      "type": "number",
+      "required": true,
+      "meaning": "Continuously updated device output-latency estimate."
+    },
+    {
+      "name": "audibleTimeMs",
+      "type": "number",
+      "required": true,
+      "meaning": "mediaTimeMs minus outputLatencyMs."
+    },
+    {
+      "name": "rms",
+      "type": "number",
+      "required": true,
+      "meaning": "300 ms mono RMS normalized to [0,1]."
+    },
+    {
+      "name": "loudnessDb",
+      "type": "number",
+      "required": true,
+      "meaning": "RMS level relative to the fixed LUFS reference."
+    },
+    {
+      "name": "spectrum",
+      "type": "[24]number",
+      "required": true,
+      "meaning": "Smoothed log-spaced 40 Hz-16 kHz band magnitudes normalized to [0,1]."
+    },
+    {
+      "name": "onset",
+      "type": "object",
+      "required": true,
+      "meaning": "Rectified log-spectral-flux onset strength, broadband and low/mid/high groups."
+    },
+    {
+      "name": "beat/bar/phrase",
+      "type": "object|null",
+      "required": false,
+      "meaning": "Optional phase and next-boundary prediction in audible time."
+    },
+    {
+      "name": "flags",
+      "type": "[]string",
+      "required": false,
+      "meaning": "Fixed capability/safety/degrade flags."
+    }
+  ],
+  "capabilityFlags": [
+    "analysis-gap",
+    "analysis-stalled",
+    "dark-room",
+    "live-analysis-unavailable",
+    "overlay-safe",
+    "photosensitive-safe",
+    "reduced-motion"
+  ],
+  "platformTapRules": {
+    "android": "Tap app-owned decoded PCM before AudioTrack; do not use system Visualizer.",
+    "apple": "Tap AVAudioEngine PCM and apply live AVAudioSession.outputLatency route updates.",
+    "drm": "Protected content sets live-analysis-unavailable and uses generated assets only.",
+    "web": "Run the reference analysis in AudioWorklet; do not use AnalyserNode."
+  }
+}

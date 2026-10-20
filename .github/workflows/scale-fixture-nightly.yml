@@ -1,0 +1,85 @@
+name: scale fixture nightly
+
+on:
+  schedule:
+    - cron: "43 5 * * *"
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: Fixture tier
+        required: true
+        default: 10k
+        type: choice
+        options: [10k, 100k, 1m]
+      profile:
+        description: Fixture profile
+        required: true
+        default: perf-realistic
+        type: choice
+        options: [perf-realistic, messy-correctness]
+      seed:
+        description: Deterministic seed
+        required: true
+        default: "171"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  fixture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      SCALE_TIER: ${{ inputs.tier || '1m' }}
+      SCALE_PROFILE: ${{ inputs.profile || 'perf-realistic' }}
+      SCALE_SEED: ${{ inputs.seed || '171' }}
+      SCALE_OUTPUT: ${{ github.workspace }}/.scale-fixture/corpus
+      SCALE_TIMINGS: ${{ github.workspace }}/.scale-fixture/timings.json
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - id: version
+        name: Read generator version
+        run: echo "value=$(tr -d '[:space:]' < tools/scale-fixture/VERSION)" >> "$GITHUB_OUTPUT"
+      - id: corpus-cache
+        name: Restore generated corpus
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.SCALE_OUTPUT }}
+          key: scale-fixture-v${{ steps.version.outputs.value }}-${{ env.SCALE_SEED }}-${{ env.SCALE_TIER }}-${{ env.SCALE_PROFILE }}-${{ hashFiles('tools/scale-fixture/**') }}
+      - name: Generate corpus on cache miss
+        if: steps.corpus-cache.outputs.cache-hit != 'true'
+        run: >-
+          go run ./tools/scale-fixture
+          --tier "$SCALE_TIER"
+          --profile "$SCALE_PROFILE"
+          --seed "$SCALE_SEED"
+          --output "$SCALE_OUTPUT"
+      - name: Emit raw timings
+        run: >-
+          go run ./tools/scale-fixture
+          --tier "$SCALE_TIER"
+          --profile "$SCALE_PROFILE"
+          --seed "$SCALE_SEED"
+          --output "$SCALE_OUTPUT"
+          --measure-only
+          --timings "$SCALE_TIMINGS"
+      - name: Record timing summary
+        run: |
+          echo "## Scale fixture raw timings" >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          cat "$SCALE_TIMINGS" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload corpus and timings
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: scale-fixture-v${{ steps.version.outputs.value }}-${{ env.SCALE_TIER }}-${{ env.SCALE_PROFILE }}-${{ env.SCALE_SEED }}
+          path: |
+            ${{ env.SCALE_OUTPUT }}
+            ${{ env.SCALE_TIMINGS }}
+          if-no-files-found: error
+          retention-days: 7

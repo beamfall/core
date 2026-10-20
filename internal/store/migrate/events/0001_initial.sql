@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS activity_log (
+  id INTEGER PRIMARY KEY,
+  occurred_at INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  payload TEXT NOT NULL
+);

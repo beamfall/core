@@ -1,0 +1,326 @@
+/* ============================================================ *
+ *  Player — deferred transport chrome (Viewer).
+ *  Track menus, info overlay, subtitle styling/sync, Up Next, and
+ *  the idle auto-hide. The base transport (scrubber/markers/trickplay/
+ *  controls) is styled in components/chrome/chrome.css; this sheet only
+ *  adds the deferred surfaces and lives under the viewer area so it never
+ *  touches the shared chrome stylesheet.
+ * ============================================================ */
+
+/* The menu/dialog buttons sit in the controls row alongside the base
+ * .bf-control buttons and inherit their look. The track/quality/info buttons
+ * are pushed to the trailing edge so play/seek stay centered-left. */
+.bf-transport-secondary {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Anchor wrapper so a menu/dialog can float above its trigger button. */
+.bf-menu-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+/* A listbox menu (audio / subtitle / quality) floating above its trigger. */
+.bf-menu {
+  position: absolute;
+  inset: auto 0 calc(100% + 8px) auto;
+  z-index: 6;
+  min-width: 180px;
+  max-height: 50vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid oklch(86% 0.02 250 / 24%);
+  border-radius: var(--radius-control);
+  background: oklch(14% 0.014 250 / 97%);
+  box-shadow: 0 18px 44px oklch(0% 0 0 / 55%);
+}
+
+.bf-menu-interactive {
+  position: static;
+  inset: auto;
+  opacity: 0;
+}
+
+.bf-menu-visual {
+  pointer-events: none;
+}
+
+.bf-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bf-menu-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 8px;
+  color: oklch(96% 0.006 250);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bf-menu-option[aria-selected="true"],
+.bf-menu-option[data-selected] {
+  background: oklch(30% 0.03 250 / 90%);
+  font-weight: 600;
+}
+
+.bf-menu-option:hover:not(:disabled),
+.bf-menu-option:focus,
+.bf-menu-option.is-focused {
+  background: oklch(34% 0.034 250 / 92%);
+}
+
+.bf-menu-option:focus,
+.bf-menu-option.is-focused {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.bf-menu-option:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.bf-menu-reason {
+  font-size: 11px;
+  font-weight: 400;
+  color: oklch(78% 0.02 250);
+}
+
+/* The info overlay + subtitle-styling panel are role="dialog" surfaces — the
+ * same floating treatment, wider, holding ordinary form rows. */
+.bf-player-dialog {
+  position: absolute;
+  inset: auto 0 calc(100% + 8px) auto;
+  z-index: 6;
+  width: min(320px, 80vw);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid oklch(86% 0.02 250 / 24%);
+  border-radius: var(--radius-control);
+  background: oklch(14% 0.014 250 / 97%);
+  box-shadow: 0 18px 44px oklch(0% 0 0 / 55%);
+  color: oklch(96% 0.006 250);
+}
+
+.bf-player-dialog:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.bf-player-dialog h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* Info overlay: a definition list of honest route detail. */
+.bf-info-rows {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  gap: 6px 16px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.bf-info-rows dt {
+  color: oklch(80% 0.02 250);
+}
+
+.bf-info-rows dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Subtitle styling panel rows. */
+.bf-subtitle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.bf-subtitle-row label {
+  color: oklch(82% 0.02 250);
+}
+
+.bf-subtitle-row select {
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 1px solid oklch(86% 0.02 250 / 24%);
+  border-radius: 8px;
+  color: oklch(96% 0.006 250);
+  background: oklch(20% 0.014 250);
+  font: inherit;
+  font-size: 13px;
+}
+
+.bf-subtitle-sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bf-subtitle-sync button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
+  border: 1px solid oklch(86% 0.02 250 / 24%);
+  border-radius: 8px;
+  color: oklch(96% 0.006 250);
+  background: oklch(24% 0.014 250 / 82%);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.bf-subtitle-sync button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.bf-subtitle-sync-value {
+  min-width: 48px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.bf-subtitle-unsupported {
+  font-size: 12px;
+  color: oklch(78% 0.04 78);
+}
+
+.bf-subtitle-reset {
+  align-self: flex-start;
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 1px solid oklch(86% 0.02 250 / 24%);
+  border-radius: 8px;
+  color: oklch(96% 0.006 250);
+  background: oklch(24% 0.014 250 / 82%);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* --- Up Next countdown card (floats top-trailing over the stage). --- */
+.bf-up-next {
+  position: absolute;
+  inset: clamp(16px, 5vh, 56px) clamp(16px, 4vw, 40px) auto auto;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(300px, 70vw);
+  padding: 16px;
+  border: 1px solid oklch(86% 0.02 250 / 24%);
+  border-radius: var(--radius-card);
+  background: oklch(12% 0.014 250 / 96%);
+  box-shadow: 0 20px 48px oklch(0% 0 0 / 55%);
+  color: oklch(96% 0.006 250);
+}
+
+.bf-up-next-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: oklch(82% 0.025 250);
+}
+
+.bf-up-next-media {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.bf-up-next-countdown {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: oklch(86% 0.02 250);
+}
+
+.bf-up-next-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* --- Idle auto-hide: the transport + top bar fade out while playing. The Up
+   Next card is deliberately NOT in this set: it must stay opaque and clickable
+   while its countdown runs, or an idle viewer can neither see nor dismiss it. --- */
+.bf-player-stage.is-chrome-hidden .bf-transport {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 320ms var(--ease-standard);
+}
+
+.bf-player-stage.is-chrome-hidden {
+  cursor: none;
+}
+
+.bf-transport,
+.bf-up-next {
+  transition: opacity 140ms var(--ease-standard);
+}
+
+/* Reduce-motion (and prefers-reduced-motion) drops the fade — chrome appears and
+ * disappears instantly rather than animating (design system motion rule). */
+@media (prefers-reduced-motion: reduce) {
+  .bf-player-stage.is-chrome-hidden .bf-transport,
+  .bf-player-stage.is-chrome-hidden .bf-up-next,
+  .bf-transport,
+  .bf-up-next {
+    transition: none;
+  }
+}
+
+/* --- Subtitle rendering styling (native ::cue + size scale). ---
+ * Sizing rides a CSS custom property; the background variant rides a class on
+ * the stage. hls.js renders its own cue DOM, which these rules do not reach —
+ * the panel degrades honestly there (size/background still apply to native
+ * cues). */
+.bf-player-stage {
+  --bf-subtitle-size-scale: 1;
+}
+
+.bf-player-stage video::cue {
+  font-size: calc(1em * var(--bf-subtitle-size-scale));
+  line-height: 1.3;
+}
+
+.bf-player-stage.bf-subtitle-bg-none video::cue {
+  background: transparent;
+}
+
+.bf-player-stage.bf-subtitle-bg-dark video::cue {
+  background: oklch(8% 0 0 / 55%);
+}
+
+.bf-player-stage.bf-subtitle-bg-solid video::cue {
+  background: oklch(8% 0 0 / 92%);
+}

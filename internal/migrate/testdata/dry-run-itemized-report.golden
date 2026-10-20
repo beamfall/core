@@ -1,0 +1,1 @@
+3 of 6 items matched (watch-state=3; strategies: external-id=1, path=1, filename=1, unmatched=3); items: #1=would-apply(match=external-id), #2=would-apply(match=file-path), #3=would-apply(match=filename-heuristic), #4=skip(match=unmatched,reason=no-candidates), #5=skip(match=unmatched,reason=external-id-conflict), #6=skip(match=file-path,reason=library-mismatch)

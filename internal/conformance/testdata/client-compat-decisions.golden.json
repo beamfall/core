@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "contractVersion": "1.0.0",
+  "cases": [
+    {
+      "name": "compatible-direct",
+      "contract": {
+        "surface": "macos-manager",
+        "appVersion": "1.0.0",
+        "buildID": "macos-manager-build",
+        "artifactHash": "a271b892d05942a801f7d15916a4f79b875f6b5ebd691741c61f6615a1ad3b0c",
+        "coreContractRevRange": [1, 1],
+        "renderingContractRevRange": [1, 1],
+        "renderingStamps": ["core-web-ui-v1"],
+        "fixedVocabularies": [],
+        "requestedCapabilities": ["known"],
+        "developerAPIMajor": 1
+      },
+      "distribution": "direct",
+      "decision": "compatible",
+      "messageClass": "compat-compatible"
+    },
+    {
+      "name": "degraded-unknown-capability",
+      "contract": {
+        "surface": "android-viewer",
+        "appVersion": "1.0.0",
+        "buildID": "android-viewer-build",
+        "artifactHash": "10c5f555e39d6bffeb7c575873e2646e723535a186773ec71db0fa2a54e9966f",
+        "coreContractRevRange": [1, 1],
+        "renderingContractRevRange": [1, 1],
+        "renderingStamps": ["core-web-ui-v1"],
+        "fixedVocabularies": [],
+        "requestedCapabilities": ["known", "unknown-capability"],
+        "developerAPIMajor": 1
+      },
+      "distribution": "appStore",
+      "decision": "degraded",
+      "reasonCode": "unknown-capability",
+      "messageClass": "compat-degraded"
+    },
+    {
+      "name": "client-too-old",
+      "contract": {
+        "surface": "ios-viewer",
+        "appVersion": "0.9.0",
+        "buildID": "ios-viewer-build",
+        "artifactHash": "f78c59025e9602ab9216a42c3051b7368dc5b601282eed25a090956ecbf65dc6",
+        "coreContractRevRange": [0, 0],
+        "renderingContractRevRange": [1, 1],
+        "renderingStamps": ["core-web-ui-v1"],
+        "fixedVocabularies": [],
+        "requestedCapabilities": [],
+        "developerAPIMajor": 1
+      },
+      "distribution": "appStore",
+      "decision": "client-too-old",
+      "reasonCode": "core-revision-too-old",
+      "messageClass": "compat-client-too-old"
+    },
+    {
+      "name": "server-too-old",
+      "contract": {
+        "surface": "developer-api-client",
+        "appVersion": "2.0.0",
+        "buildID": "developer-api-client-build",
+        "artifactHash": "4b561846441ea99a87a53db3465d75b3f88fe889f52b52e75d161dfc46b6129c",
+        "coreContractRevRange": [2, 2],
+        "renderingContractRevRange": [1, 1],
+        "renderingStamps": ["core-web-ui-v1"],
+        "fixedVocabularies": [],
+        "requestedCapabilities": [],
+        "developerAPIMajor": 1
+      },
+      "distribution": "direct",
+      "decision": "server-too-old",
+      "reasonCode": "core-revision-too-new",
+      "messageClass": "compat-server-too-old"
+    },
+    {
+      "name": "embedded-ui-installation-skew",
+      "contract": {
+        "surface": "core-web-ui",
+        "appVersion": "embedded",
+        "buildID": "embedded-core-web-ui-v2",
+        "artifactHash": "bd3d9ae84de1aa93fd9a51ce388a6e74d39746be90ea3f4aa81f071d45380c20",
+        "coreContractRevRange": [2, 2],
+        "renderingContractRevRange": [2, 2],
+        "renderingStamps": ["core-web-ui-v1"],
+        "fixedVocabularies": [],
+        "requestedCapabilities": [],
+        "developerAPIMajor": 0
+      },
+      "distribution": "direct",
+      "decision": "server-installation-inconsistent",
+      "reasonCode": "embedded-ui-skew",
+      "messageClass": "compat-server-installation-inconsistent"
+    }
+  ]
+}

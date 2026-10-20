@@ -1,0 +1,6 @@
+{
+  "maxFlashHz": 3,
+  "maxLuminanceDelta": 0.35,
+  "maxFlashArea": 0.2,
+  "strobeBanned": true
+}

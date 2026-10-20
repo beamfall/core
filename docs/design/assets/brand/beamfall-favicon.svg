@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Beamfall</title>
+  <desc id="desc">Cut Beam: a geometric B with a rising diagonal cut beside its vertical beam.</desc>
+  <path fill="#48d8e6" d="M96 48H256C336 48 384 90 384 158C384 199 365 228 328 244C380 262 408 301 408 350C408 423 355 464 280 464H212V248L312 344V270C312 243 300 225 278 204L188 130V464H96Z"/>
+</svg>

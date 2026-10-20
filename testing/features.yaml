@@ -1,0 +1,1246 @@
+# Beamfall feature-coverage registry
+#
+# The backbone of the "every feature on every device, every release" guarantee.
+# Every product
+# feature is listed once, tagged with the targets it applies to. Tests declare
+# the feature id(s) they prove via a `feature:<id>` marker the ledger tool
+# scans (Go: a `// feature:<id>` comment in the test; Swift/Kotlin/JS: a tag in
+# the test name or a marker comment). The coverage gate fails if any
+# (feature x applicable target) cell lacks a green proof — exactly as
+# TestEveryRouteRegistered fails if any route escapes the reveal registry.
+#
+# This registry is the canonical scope list for "every feature". It is also the
+# matrix the self-hosted device list (strategy doc §9.2) is decided against:
+# the device list only has to cover the targets named here.
+#
+# ── targets ───────────────────────────────────────────────────────────────
+#   server       the Go core (proven in-process: L0/L1 conformance + L2 unit)
+#   web          embedded Viewer/Manage/Admin (internal/web/app)
+#   tvos         Apple TV — Viewer
+#   androidtv    Android TV — Viewer
+#   iphone       iOS — Viewer
+#   ipad         iPadOS — Viewer + Manager + Console
+#   androidmobile Android phone/tablet — Viewer
+#   macos        macOS — Manager + Console (native premium)
+#   windows      Windows — Viewer + Manager + standalone Core supervisor
+#
+# ── field semantics ─────────────────────────────────────────────────────────
+#   applies   targets that must render/exercise the feature. Include `server`
+#             when the server owns enforcement/logic proven by core tests.
+#   status    implementation state (NOT test state): planned | partial | shipped.
+#             First-pass estimate from the 2026-06-13 survey; the coverage
+#             ledger — not this field — is the source of truth for "is it tested".
+#   adr       the governing ADR(s).
+#
+# Convenience groups used in comments only (lists below are always explicit):
+#   viewers       = tvos, androidtv, iphone, ipad, androidmobile, web
+#   apple-mobile  = iphone, ipad
+#   managers      = web, ipad, macos   (Manage + Console areas)
+
+schemaVersion: 1
+
+targets: [server, web, tvos, androidtv, iphone, ipad, androidmobile, macos, windows]
+
+features:
+
+  # ── onboarding / auth / reveal (ADR-0004, 0007, 0012) ──────────────────────
+  - id: pairing-enroll
+    area: auth
+    summary: Pairing code -> device credential enrollment.
+    adr: ["0012"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile, macos]
+    status: partial
+  - id: session-lifecycle
+    area: auth
+    summary: Session validity, expiry, and device revocation enforcement.
+    adr: ["0012"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile, macos]
+    status: partial
+  - id: profile-switch
+    area: auth
+    summary: Switch between adult/managed Profiles (relocks on switch).
+    adr: ["0004"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: partial
+  - id: reveal-unlock
+    area: reveal
+    summary: PIN reveal of restricted content; server-enforced, leak-proof.
+    adr: ["0004", "0010"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: partial
+  - id: relock
+    area: reveal
+    summary: Manual relock + automatic relock on background (mobile).
+    adr: ["0004", "0022"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: partial
+  - id: admin-session
+    area: auth
+    summary: Admin Session tier (server admin password); gates Console ops.
+    adr: ["0007"]
+    applies: [server, web, ipad, macos]
+    status: partial
+  - id: device-promotion
+    area: auth
+    summary: Admin promotes a browser/device VIEWER -> MANAGER (revocable).
+    adr: ["0007"]
+    applies: [server, web, ipad, macos]
+    status: partial
+  - id: first-run-wizard
+    area: onboarding
+    summary: Admin password -> first Library -> owner Profile -> plugin activation.
+    adr: ["0007", "0013"]
+    applies: [server, web, ipad, macos]
+    status: partial
+
+  # ── browse / render (ADR-0001, 0003, 0014, 0034) ───────────────────────────
+  - id: navigation-manifest
+    area: browse
+    summary: Fetch + render the per-Profile reveal-filtered Navigation Manifest.
+    adr: ["0001", "0003"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: partial
+  - id: layout-render
+    area: browse
+    summary: Render Layouts -> Sections from the manifest (defensive rules).
+    adr: ["0014"]
+    applies: [web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: partial
+  - id: section-sources
+    area: browse
+    summary: Source-driven Sections (recently-added, continue-watching, next-up...).
+    adr: ["0003"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: partial
+  - id: defensive-render
+    area: browse
+    summary: Unknown vocabulary (Sections/archetypes/tokens) silently ignored.
+    adr: ["0003", "0014"]
+    applies: [web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: partial
+  - id: entity-detail
+    area: browse
+    summary: Entity cards -> detail Layout + related Media.
+    adr: ["0003"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: partial
+  - id: see-all-paging
+    area: browse
+    summary: Paged expansion of a Section ("See All").
+    adr: ["0003"]
+    applies: [web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: partial
+  - id: artwork-slots
+    area: browse
+    summary: Artwork Slots + derivative buckets (poster/backdrop/thumb), fallback chain.
+    adr: ["0003", "0009", "0014"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: partial
+  - id: search-keyword
+    area: browse
+    summary: FTS keyword search, reveal-filtered.
+    adr: ["0011"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: partial
+  - id: locale-l10n
+    area: l10n
+    summary: Five launch languages (en/fr/de/es/pt); locale-map best-match resolution.
+    adr: ["0034"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile, macos]
+    status: partial
+
+  # ── playback (ADR-0008, 0010, 0017, 0022, 0023, 0033) ──────────────────────
+  - id: playback-info
+    area: playback
+    summary: Capability Profile negotiation + playback decision.
+    adr: ["0010"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: partial
+  - id: direct-play
+    area: playback
+    summary: Direct-play byte range serving gated by Stream Token.
+    adr: ["0010"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: partial
+  - id: hls-transcode
+    area: playback
+    summary: Server HLS transcode rung + honest ABR.
+    adr: ["0010", "0007"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: partial
+  - id: libmpv-rung
+    area: playback
+    summary: Software-decode fallback rung for unsupported codecs.
+    adr: ["0008", "0017", "0023"]
+    applies: [tvos, androidtv, iphone, ipad, androidmobile]
+    status: planned
+  - id: stream-token
+    area: playback
+    summary: Stream Token issue/verify, expiry, live revocation + reveal recheck.
+    adr: ["0010"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: shipped
+  - id: canonical-timeline
+    area: playback
+    summary: Resume position + canonical playback timeline.
+    adr: ["0010"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: partial
+  - id: transport-ui
+    area: playback
+    summary: Unified custom transport (play/pause/seek/scrub/track select).
+    adr: ["0008", "0023"]
+    applies: [web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: partial
+  - id: focus-state
+    area: playback
+    summary: Visible focus/selection state on transport controls (remote + keyboard focus navigation).
+    adr: ["0008", "0023"]
+    applies: [web, tvos, androidtv, ipad]
+    status: partial
+  - id: queue-next-up
+    area: playback
+    summary: Session-declared queue + next item + Up Next.
+    adr: ["0010", "0029", "0030"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: partial
+  - id: trickplay
+    area: playback
+    summary: Scrub thumbnail sprite-sheet scrubbing.
+    adr: ["0033"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: partial
+  - id: markers-skip
+    area: playback
+    summary: Marker ranges (intro/credits) + skip; marker thumbnails.
+    adr: ["0027", "0033"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: partial
+  - id: subtitle-tracks
+    area: playback
+    summary: Sidecar + embedded subtitle tracks, selection + styling.
+    adr: ["0005", "0010"]
+    applies: [web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: partial
+  - id: audio-track-select
+    area: playback
+    summary: Multi-audio-track selection.
+    adr: ["0010"]
+    applies: [web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: partial
+  - id: background-audio
+    area: playback
+    summary: Background playback for audio-class Media (iOS exceeds the no-bg-video rule).
+    adr: ["0022", "0023", "0029"]
+    applies: [iphone, ipad]
+    status: planned
+  - id: pip
+    area: playback
+    summary: Picture-in-picture on the native player rung.
+    adr: ["0022", "0023"]
+    applies: [iphone, ipad, androidmobile]
+    status: planned
+  - id: airplay
+    area: playback
+    summary: Token-scoped AirPlay (sender).
+    adr: ["0023"]
+    applies: [iphone, ipad]
+    status: planned
+  - id: cast
+    area: playback
+    summary: Chromecast (default receiver) sending.
+    adr: ["0022"]
+    applies: [androidmobile]
+    status: partial
+  - id: offline-packs
+    area: playback
+    summary: Downloaded Offline Packs (the sanctioned at-rest exception).
+    adr: ["0023"]
+    applies: [iphone, ipad]
+    status: planned
+  - id: beam-session-handoff
+    area: playback
+    summary: Beam — one-gesture session handoff between enrolled devices at the canonical-timeline position.
+    adr: ["0023"]
+    applies: [server, tvos, iphone, ipad]
+    status: planned
+  - id: snapshot-at-rest
+    area: reveal
+    summary: Per-Profile Snapshot with hidden-state-only at-rest rule.
+    adr: ["0008", "0014"]
+    applies: [tvos, androidtv]
+    status: partial
+
+  # ── manager (Manage area) (ADR-0006, 0007, 0009) ───────────────────────────
+  - id: entity-manager
+    area: manage
+    summary: CRUD over Entities, typed fields, relations.
+    adr: ["0003", "0006", "0007"]
+    applies: [server, web, ipad, macos]
+    status: partial
+  - id: dedupe-review
+    area: manage
+    summary: Duplicate candidates review + merge.
+    adr: ["0005", "0009"]
+    applies: [server, web, ipad, macos]
+    status: partial
+  - id: unmatched-queue
+    area: manage
+    summary: Unmatched queue + fix-match / match pinning.
+    adr: ["0009"]
+    applies: [server, web, ipad, macos]
+    status: partial
+  - id: bulk-edit
+    area: manage
+    summary: Bulk edit with dry-run envelope + batch undo.
+    adr: ["0009"]
+    applies: [server, web, ipad, macos]
+    status: partial
+  - id: file-operations
+    area: manage
+    summary: Organize templates (preview-first), move, merge.
+    adr: ["0009"]
+    applies: [server, web, ipad, macos]
+    status: partial
+  - id: trash-review
+    area: manage
+    summary: Trash store/restore/retention sweep (ON by default).
+    adr: ["0005", "0009"]
+    applies: [server, web, ipad, macos]
+    status: partial
+  - id: artwork-picker
+    area: manage
+    summary: Artwork candidate gallery + pin/unpin.
+    adr: ["0009"]
+    applies: [server, web, ipad, macos]
+    status: partial
+  - id: field-locks
+    area: manage
+    summary: Per-field source precedence + field locks.
+    adr: ["0027", "0009"]
+    applies: [server, web, ipad, macos]
+    status: partial
+
+  # ── console / admin area (ADR-0007 §4, 0013, 0036, 0040, 0042) ──────────────
+  # NOTE: per ADR-0007 the web app MUST carry the Admin/Console area. These web
+  # cells stay in the ledger so Console coverage regressions remain visible.
+  - id: console-config
+    area: console
+    summary: Server config + plugin activation.
+    adr: ["0007", "0013"]
+    applies: [server, web, ipad, macos, windows]
+    status: partial
+  - id: live-sessions
+    area: console
+    summary: Live sessions dashboard.
+    adr: ["0007"]
+    applies: [server, web, ipad, macos, windows]
+    status: partial
+  - id: transcode-config
+    area: console
+    summary: Hardware transcoding configuration.
+    adr: ["0007", "0013"]
+    applies: [server, web, ipad, macos, windows]
+    status: partial
+  - id: access-schedules
+    area: console
+    summary: Server-enforced time windows for managed Profiles.
+    adr: ["0004", "0007"]
+    applies: [server, web, ipad, macos, windows]
+    status: partial
+  - id: enforced-filters
+    area: console
+    summary: Enforced filter variant for managed Profiles (reveal plumbing).
+    adr: ["0004", "0007"]
+    applies: [server, web, ipad, macos, windows]
+    status: partial
+  - id: library-health
+    area: console
+    summary: Library Health Dashboard, five dimensions + bulk ops.
+    adr: ["0042"]
+    applies: [server, web, ipad, macos, windows]
+    status: partial
+  - id: activity-log
+    area: console
+    summary: Append-only, reveal-filtered activity log.
+    adr: ["0012"]
+    applies: [server, web, ipad, macos, windows]
+    status: partial
+  - id: job-management
+    area: console
+    summary: Job substrate status + control (transcode preempts generation).
+    adr: ["0013"]
+    applies: [server, web, ipad, macos, windows]
+    status: partial
+  - id: api-keys
+    area: console
+    summary: Scoped, named, revocable API keys (five-scope vocabulary).
+    adr: ["0040"]
+    applies: [server, web, ipad, macos, windows]
+    status: planned
+  - id: sse-events
+    area: api
+    summary: Reveal-filtered SSE event stream (realtime).
+    adr: ["0040"]
+    applies: [server]
+    status: planned
+  - id: my-data-panel
+    area: privacy
+    summary: My Data / Privacy panel — hard-delete + JSON export + session view.
+    adr: ["0036"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: partial
+
+  # ── ingest / file plane / scheduling (ADR-0009, 0020, 0032, 0033, 0037) ─────
+  - id: scan-pipeline
+    area: ingest
+    summary: Walk -> fingerprint -> probe -> sidecar -> assemble -> identify.
+    adr: ["0009"]
+    applies: [server]
+    status: shipped
+  - id: identify-scrape
+    area: ingest
+    summary: Declarative scraper executor + identification precedence (SSRF-hardened).
+    adr: ["0003", "0009", "0012"]
+    applies: [server]
+    status: shipped
+  - id: qbittorrent-ingest
+    area: ingest
+    summary: qBittorrent Web API ingest, category->Library routing, hardlink-first.
+    adr: ["0020"]
+    applies: [server, web, ipad, macos]
+    status: shipped
+  - id: scheduler
+    area: ops
+    summary: Persisted Schedules (closed trigger vocabulary), anacron catch-up.
+    adr: ["0032"]
+    applies: [server, web, ipad, macos]
+    status: partial
+  - id: watcher
+    area: ops
+    summary: fsnotify per-Library watcher (ON by default), debounced scans.
+    adr: ["0032"]
+    applies: [server, web, ipad, macos]
+    status: partial
+  - id: generated-assets
+    area: assets
+    summary: Scrub thumbnail sprites, preview clips, marker thumbnails, audio waveform.
+    adr: ["0033", "0035"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: partial
+  - id: migration-wizard
+    area: manage
+    summary: Migration Wizard shell + Importer Extension Point (additive, re-runnable).
+    adr: ["0037"]
+    applies: [server, web, ipad, macos]
+    status: planned
+
+  # ── remote access / transport (ADR-0012, 0018) ─────────────────────────────
+  - id: lan-direct
+    area: transport
+    summary: LAN URL direct connection (first try).
+    adr: ["0012"]
+    applies: [web, tvos, androidtv, iphone, ipad, androidmobile, macos]
+    status: partial
+  - id: direct-https-acme
+    area: transport
+    summary: ACME-issued cert + direct HTTPS remote access.
+    adr: ["0012"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile, macos]
+    status: partial
+  - id: overlay-network
+    area: transport
+    summary: Blessed overlay-network path (Tailscale/WireGuard).
+    adr: ["0012"]
+    applies: [tvos, androidtv, iphone, ipad, androidmobile, macos, web]
+    status: partial
+  - id: self-hosted-relay
+    area: transport
+    summary: Direct-first / relay-fallback via the byte-blind self-hosted relay.
+    adr: ["0018"]
+    applies: [server, tvos, androidtv, iphone, ipad, androidmobile, macos, web]
+    # server: config + 0600-token + outbound TLS 1.3 dial/registration + Console
+    # status resolver are real; the carrier byte-forwarding wire is scaffolding
+    # until the beamfall-relay binary defines the SniTun handshake.
+    status: partial
+
+  # ── domain plugins (rendered through the generic contract) (ADR-0027..0030) ─
+  - id: plugin-filmtv
+    area: plugin
+    summary: Film & TV domain plugin (Show/Season/Film Series/Person/Studio/Genre).
+    adr: ["0028"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: partial
+  - id: plugin-music
+    area: plugin
+    summary: Music domain plugin + mobile audio-player posture.
+    adr: ["0029"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: planned
+  - id: plugin-podcasts
+    area: plugin
+    summary: Podcast domain plugin (podcatcher; downloaded-only).
+    adr: ["0030"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: planned
+
+  # ── ADR-0060+ parity and cross-surface contracts ───────────────────────────
+  - id: server-authoritative-compat
+    area: contract
+    summary: Server capability/compatibility decisions fail closed on unsupported clients.
+    adr: ["0063"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile, macos, windows]
+    status: partial
+  - id: web-console-parity
+    area: console
+    summary: Core Web UI carries the full local management surface and parity manifest.
+    adr: ["0060", "0061"]
+    applies: [server, web, ipad, macos, windows]
+    status: partial
+  - id: managed-folder-browser
+    area: manage
+    summary: Server-bounded folder browser and managed file-operation picker.
+    adr: ["0064", "0116"]
+    applies: [server, web, ipad, macos, windows]
+    status: partial
+  - id: tag-manager
+    area: manage
+    summary: Tag CRUD, assignment, filtering, and source-safe tag projection.
+    adr: ["0065"]
+    applies: [server, web, ipad, macos, windows]
+    status: partial
+  - id: collection-editor
+    area: manage
+    summary: Collections, sub-collections, smart-collection predicates, and membership edits.
+    adr: ["0067"]
+    applies: [server, web, ipad, macos, windows]
+    status: partial
+  - id: metadata-overwrite-protection
+    area: manage
+    summary: Field locks protect curated metadata from later scraper/import overwrites.
+    adr: ["0072"]
+    applies: [server, web, ipad, macos, windows]
+    status: partial
+  - id: object-history-undo
+    area: manage
+    summary: Object history and undo for audited user/server mutations.
+    adr: ["0073"]
+    applies: [server, web, ipad, macos, windows]
+    status: partial
+  - id: backup-restore-export
+    area: backup
+    summary: Backup guidance, restore handoff, and metadata export.
+    adr: ["0077"]
+    applies: [server, web, ipad, macos, windows]
+    status: partial
+  - id: update-awareness
+    area: ops
+    summary: Update awareness, migration warnings, and incompatible-client guidance.
+    adr: ["0079"]
+    applies: [server, web, ipad, macos, windows]
+    status: partial
+  - id: browser-enrollment
+    area: auth
+    summary: Browser enrollment, pairing, and device promotion.
+    adr: ["0081"]
+    applies: [server, web, ipad, macos, windows]
+    status: partial
+  - id: profile-settings
+    area: auth
+    summary: Profile settings, viewer preferences, and per-profile mute controls.
+    adr: ["0082", "0054"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile, macos, windows]
+    status: partial
+  - id: access-request-grant
+    area: auth
+    summary: Managed-profile per-title access requests and grants.
+    adr: ["0113"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile, macos, windows]
+    status: partial
+  - id: web-browse-search-nav
+    area: browse
+    summary: Embedded web Viewer browse, search, navigation, and hydrated states.
+    adr: ["0083"]
+    applies: [web]
+    status: partial
+  - id: browser-media-session
+    area: playback
+    summary: Web playback integrates browser Media Session without leaking restricted state.
+    adr: ["0084", "0112"]
+    applies: [web]
+    status: partial
+  - id: admin-owner-reauth
+    area: auth
+    summary: Owner re-auth gates high-risk Console authority.
+    adr: ["0085"]
+    applies: [server, web, ipad, macos, windows]
+    status: partial
+  - id: device-access-admin
+    area: auth
+    summary: Profile, device, and access administration.
+    adr: ["0086"]
+    applies: [server, web, ipad, macos, windows]
+    status: partial
+  - id: managed-profile-policy
+    area: auth
+    summary: Access schedules, enforced filters, and managed-profile policy UI.
+    adr: ["0087"]
+    applies: [server, web, ipad, macos, windows]
+    status: partial
+  - id: accessibility-contract
+    area: a11y
+    summary: Cross-surface WCAG 2.2 AA, screen-reader, focus, contrast, and text expansion contract.
+    adr: ["0100"]
+    applies: [web, tvos, androidtv, iphone, ipad, androidmobile, macos, windows]
+    status: partial
+  - id: system-state-families
+    area: ux
+    summary: Empty, loading, error, and no-access states render with required recovery affordances.
+    adr: ["0101"]
+    applies: [web, tvos, androidtv, iphone, ipad, androidmobile, macos, windows]
+    status: partial
+  - id: design-token-conformance
+    area: design
+    summary: Cross-surface design-token projection and drift conformance.
+    adr: ["0106"]
+    applies: [web, tvos, androidtv, iphone, ipad, androidmobile, macos, windows]
+    status: partial
+  - id: ab-loupe
+    area: ux
+    summary: A/B comparison loupe affordance in UI catalogs.
+    adr: ["0122"]
+    applies: [web, tvos, androidtv, iphone, ipad, androidmobile, macos, windows]
+    status: planned
+  - id: cheat-sheet
+    area: ux
+    summary: Contextual cheat-sheet overlay in UI catalogs.
+    adr: ["0122"]
+    applies: [web, tvos, androidtv, iphone, ipad, androidmobile, macos, windows]
+    status: planned
+  - id: instant-filter
+    area: ux
+    summary: Instant filter affordance in UI catalogs.
+    adr: ["0122"]
+    applies: [web, tvos, androidtv, iphone, ipad, androidmobile, macos, windows]
+    status: planned
+  - id: keyboard-culling
+    area: ux
+    summary: Keyboard-driven candidate culling affordance in UI catalogs.
+    adr: ["0122"]
+    applies: [web, tvos, androidtv, iphone, ipad, androidmobile, macos, windows]
+    status: planned
+  - id: lock-zoom-position
+    area: ux
+    summary: Lock zoom and position affordance in UI catalogs.
+    adr: ["0122"]
+    applies: [web, tvos, androidtv, iphone, ipad, androidmobile, macos, windows]
+    status: planned
+  - id: settings-scene
+    area: ux
+    summary: Settings scene affordance in UI catalogs.
+    adr: ["0122"]
+    applies: [web, tvos, androidtv, iphone, ipad, androidmobile, macos, windows]
+    status: planned
+  - id: synced-compare
+    area: ux
+    summary: Synchronized comparison affordance in UI catalogs.
+    adr: ["0122"]
+    applies: [web, tvos, androidtv, iphone, ipad, androidmobile, macos, windows]
+    status: planned
+
+  # ── audio/music, generated assets, and playback invariants ────────────────
+  - id: music-server-foundations
+    area: plugin
+    summary: Queue stations, saved stations, loudness, recommendations, scrobble, and audio hydration.
+    adr: ["0062", "0098"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: partial
+  - id: precomputed-renditions
+    area: playback
+    summary: Precomputed playback renditions as Core cache objects.
+    adr: ["0057"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile, windows]
+    status: partial
+  - id: no-client-drm-eme
+    area: playback
+    summary: Clients never require DRM/EME for local media playback.
+    adr: ["0112"]
+    applies: [web, tvos, androidtv, iphone, ipad, androidmobile, macos, windows]
+    status: partial
+  - id: beat-grid
+    area: assets
+    summary: Beat Grid generation as a Core Generated Asset.
+    adr: ["0109"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: planned
+  - id: watch-party-privacy
+    area: playback
+    summary: Watch Party hides restricted identity/state across cross-surface sync.
+    adr: ["0038", "0111"]
+    applies: [server, web, tvos, androidtv, iphone, ipad, androidmobile]
+    status: partial
+
+  # ── plugin/data lifecycle and integration/workflow capabilities ───────────
+  - id: plugin-entity-lifecycle
+    area: plugin
+    summary: Plugin deactivation makes data inert; uninstall purges plugin-owned data safely.
+    adr: ["0104"]
+    applies: [server, web, ipad, macos, windows]
+    status: partial
+  - id: plugin-sdk-conformance
+    area: plugin
+    summary: Independent plugin modules satisfy the versioned plugin-sdk conformance harness.
+    adr: ["0114", "0122"]
+    applies: [server]
+    status: partial
+  - id: workflow-capabilities
+    area: workflow
+    summary: Runtime-gated Workflow Plugins orchestrate only existing Core seams and add no new privilege.
+    adr: ["0124"]
+    applies: [server, web, ipad, macos, windows]
+    status: planned
+  - id: capability-manifest
+    area: workflow
+    summary: Binary self-reports embedded and runtime-enabled capability IDs, versions, and build tags.
+    adr: ["0124"]
+    applies: [server, web, ipad, macos, windows]
+    status: partial
+  - id: integration-worker-events
+    area: integration
+    summary: Integration Workers subscribe to the Reveal-filtered event outbox tail.
+    adr: ["0058", "0125"]
+    applies: [server]
+    status: partial
+  - id: integration-worker-loop-tripwire
+    area: integration
+    summary: Worker mutation-seam promotion is blocked until loop containment is designed and enforced.
+    adr: ["0125"]
+    applies: [server]
+    status: partial
+
+  # ── privacy, backup, remote, and distributed serving ───────────────────────
+  - id: zero-knowledge-offsite-backup
+    area: backup
+    summary: BYO-bucket zero-knowledge off-site backup and hosted metered option.
+    adr: ["0115"]
+    applies: [server, web, ipad, macos, windows]
+    status: planned
+  - id: recovery-key-compromise
+    area: backup
+    summary: Recovery-key compromise response re-wraps DEKs and step-up gates exports.
+    adr: ["0117"]
+    applies: [server, web, ipad, macos, windows]
+    status: partial
+  - id: relay-e2e-static-cert
+    area: transport
+    summary: Guarded static carrier cert enables relay-path E2E without weakening byte-blindness.
+    adr: ["0118", "0122"]
+    applies: [server]
+    status: partial
+  - id: origin-nodes
+    area: transport
+    summary: Origin Nodes serve remote library bytes under one catalog authority.
+    adr: ["0123"]
+    applies: [server, web, ipad, macos, windows]
+    status: planned
+  - id: node-host-contract
+    area: contract
+    summary: Closed versioned node-to-main operation surface with fail-closed revision negotiation.
+    adr: ["0129"]
+    applies: [server]
+    status: planned
+
+  # ── platform-specific shells and release gates ─────────────────────────────
+  - id: android-shell-contract
+    area: client
+    summary: Android app shell, navigation, rendering, and compatibility contract.
+    adr: ["0088", "0102"]
+    applies: [androidtv, androidmobile]
+    status: planned
+  - id: android-playback-system
+    area: playback
+    summary: Android background audio, Cast, Auto, media controls, and playback lifecycle.
+    adr: ["0089"]
+    applies: [androidtv, androidmobile]
+    status: planned
+  - id: android-offline-privacy
+    area: playback
+    summary: Android Offline Packs, notifications, and local privacy.
+    adr: ["0090"]
+    applies: [androidmobile]
+    status: planned
+  - id: android-release-safety
+    area: release
+    summary: Play Store release, data safety, and App Store firewall conformance.
+    adr: ["0091"]
+    applies: [androidtv, androidmobile]
+    status: planned
+  - id: apple-shell-contract
+    area: client
+    summary: Apple shared app shell, navigation, rendering, and compatibility contract.
+    adr: ["0092"]
+    applies: [tvos, iphone, ipad, macos]
+    status: partial
+  - id: apple-playback-system
+    area: playback
+    summary: Apple playback, AirPlay, PiP, CarPlay, Now Playing, and media controls.
+    adr: ["0093"]
+    applies: [tvos, iphone, ipad, macos]
+    status: partial
+  - id: apple-offline-privacy
+    area: playback
+    summary: Apple Offline Packs, background transfer, and local privacy.
+    adr: ["0094"]
+    applies: [iphone, ipad, macos]
+    status: planned
+  - id: ipad-console-firewall
+    area: policy
+    summary: iPad Manager/Console suppresses acquisition-adjacent surfaces for App Store safety.
+    adr: ["0095"]
+    applies: [ipad]
+    status: partial
+  - id: tvos-shell-focus
+    area: client
+    summary: tvOS focus, Top Shelf, remote control, and reveal-safe detached surfaces.
+    adr: ["0096"]
+    applies: [tvos]
+    status: partial
+  - id: apple-release-safety
+    area: release
+    summary: Apple App Store privacy, notarization, and distribution release gates.
+    adr: ["0097"]
+    applies: [tvos, iphone, ipad, macos]
+    status: partial
+  - id: macos-standalone-core
+    area: client
+    summary: macOS standalone embedded Core and one-stop media-tool lifecycle.
+    adr: ["0099"]
+    applies: [server, macos]
+    status: partial
+  - id: windows-standalone-core
+    area: client
+    summary: Windows standalone embedded Core, tray supervision, install/update/uninstall, and local security.
+    adr: ["0128"]
+    applies: [server, windows]
+    status: planned
+  - id: windows-playback-stack
+    area: playback
+    summary: Windows native-media/libmpv engine ladder, SMTC controls, fixture matrix, and media-stack compliance.
+    adr: ["0128"]
+    applies: [server, windows]
+    status: planned
+  - id: windows-release-safety
+    area: release
+    summary: Windows signing, SBOM/source delivery, Microsoft Store suppression, privacy, and support bundle gates.
+    adr: ["0128"]
+    applies: [windows]
+    status: planned
+
+  # -- UI catalog traceability ids (AUDIT-DESIGN-5) --------------------------
+  - id: a11y-high-contrast
+    area: a11y
+    summary: High-contrast visual state coverage in UI catalogs.
+    adr: ["0100"]
+    applies: [androidtv, iphone, ipad, androidmobile]
+    status: partial
+  - id: a11y-large-text
+    area: a11y
+    summary: Large-text visual state coverage in UI catalogs.
+    adr: ["0100"]
+    applies: [androidtv, iphone, ipad, androidmobile]
+    status: partial
+  - id: a11y-reduce-motion
+    area: a11y
+    summary: Reduced-motion visual state coverage in UI catalogs.
+    adr: ["0100"]
+    applies: [androidtv, iphone, ipad, androidmobile]
+    status: partial
+  - id: a11y-voiceover
+    area: a11y
+    summary: VoiceOver-focused visual state coverage in Apple UI catalogs.
+    adr: ["0100"]
+    applies: [iphone, ipad]
+    status: partial
+  - id: accessibility-visual
+    area: a11y
+    summary: Marketing-site accessibility visual states.
+    adr: ["0100"]
+    applies: [web]
+    status: partial
+  - id: account-cta
+    area: marketing
+    summary: Marketing home primary action links to the implemented /app Account entry, replacing the former waitlist route.
+    adr: ["0024"]
+    applies: [web]
+    status: partial
+  - id: account-deletion-ui
+    area: account
+    summary: Account deletion portal state presentation.
+    adr: ["0024"]
+    applies: [web]
+    status: planned
+  - id: adaptive-navigation
+    area: client
+    summary: Compact and expanded navigation adaptation.
+    adr: ["0088"]
+    applies: [androidmobile]
+    status: partial
+  - id: ambient-display
+    area: playback
+    summary: Android TV Ambient Display visual states.
+    adr: ["0035", "0102"]
+    applies: [androidtv]
+    status: partial
+  - id: browse
+    area: browse
+    summary: Browse screen shell and populated browse state.
+    adr: ["0003", "0014"]
+    applies: [androidtv, androidmobile]
+    status: partial
+  - id: burn-in-mitigation
+    area: playback
+    summary: Android TV burn-in mitigation visual states.
+    adr: ["0102"]
+    applies: [androidtv]
+    status: partial
+  - id: camera-backup
+    area: photo-backup
+    summary: Phone camera-roll backup with background scheduling, resumable dedup-aware transfer, and visible progress and confidence.
+    adr: ["0045"]
+    applies: [iphone, androidmobile]
+    status: partial
+  - id: checkout-preview-buttons
+    area: account
+    summary: Marketing checkout preview call-to-action states.
+    adr: ["0024"]
+    applies: [web]
+    status: planned
+  - id: checkout-session-preview
+    area: account
+    summary: Marketing checkout session preview state.
+    adr: ["0024"]
+    applies: [web]
+    status: planned
+  - id: client-api-fetch-guard
+    area: account
+    summary: Client-side API fetch error guard presentation.
+    adr: ["0024"]
+    applies: [web]
+    status: partial
+  - id: detail
+    area: browse
+    summary: Android mobile Media detail visual state.
+    adr: ["0003", "0014"]
+    applies: [androidmobile]
+    status: partial
+  - id: device-code-approve-deny
+    area: account
+    summary: Device-code approval and denial controls.
+    adr: ["0024"]
+    applies: [web]
+    status: planned
+  - id: device-code-result-rendering
+    area: account
+    summary: Device-code success and failure result rendering.
+    adr: ["0024"]
+    applies: [web]
+    status: planned
+  - id: device-code-verify
+    area: account
+    summary: Device-code verification entry flow.
+    adr: ["0024"]
+    applies: [web]
+    status: planned
+  - id: downloads
+    area: playback
+    summary: Android mobile Offline Packs visual state.
+    adr: ["0023", "0030"]
+    applies: [androidmobile]
+    status: partial
+  - id: empty-state
+    area: ux
+    summary: Empty library visual state.
+    adr: ["0101"]
+    applies: [androidmobile]
+    status: partial
+  - id: error-recovery
+    area: photo-backup
+    summary: Camera-backup failures remain explicit and retryable without losing queue state.
+    adr: ["0045"]
+    applies: [iphone, androidmobile]
+    status: partial
+  - id: hero-headline
+    area: marketing
+    summary: Marketing home hero headline state.
+    adr: ["0024"]
+    applies: [web]
+    status: partial
+  - id: home-route
+    area: marketing
+    summary: Marketing home route render states.
+    adr: ["0024"]
+    applies: [web]
+    status: partial
+  - id: i18n-lang-attribute
+    area: l10n
+    summary: Marketing page language attribute state.
+    adr: ["0034"]
+    applies: [web]
+    status: partial
+  - id: i18n-resolution
+    area: l10n
+    summary: Marketing locale resolution states.
+    adr: ["0034"]
+    applies: [web]
+    status: partial
+  - id: library
+    area: browse
+    summary: Library tab and library empty-state shell.
+    adr: ["0003", "0014"]
+    applies: [androidmobile]
+    status: partial
+  - id: loading
+    area: ux
+    summary: Android mobile non-focusable loading visual state.
+    adr: ["0014"]
+    applies: [androidmobile]
+    status: partial
+  - id: license-notices
+    area: legal
+    summary: Native legal and license notice surface.
+    adr: ["0099"]
+    applies: [macos]
+    status: partial
+  - id: link-route
+    area: account
+    summary: Device-link route render states.
+    adr: ["0024"]
+    applies: [web]
+    status: planned
+  - id: magic-link-client-flow
+    area: account
+    summary: Magic-link client-side account flow.
+    adr: ["0024"]
+    applies: [web]
+    status: planned
+  - id: magic-link-request
+    area: account
+    summary: Magic-link request form state.
+    adr: ["0024"]
+    applies: [web]
+    status: planned
+  - id: mini-player
+    area: playback
+    summary: Mobile mini-player visual state.
+    adr: ["0089"]
+    applies: [androidmobile]
+    status: planned
+  - id: mock-checkout-output
+    area: account
+    summary: Mock checkout output shown in non-production marketing states.
+    adr: ["0024"]
+    applies: [web]
+    status: planned
+  - id: my-data
+    area: privacy
+    summary: Native My Data profile entry point.
+    adr: ["0036"]
+    applies: [iphone]
+    status: partial
+  - id: my-data-delete
+    area: privacy
+    summary: My Data hard-delete UI state.
+    adr: ["0036"]
+    applies: [web]
+    status: partial
+  - id: my-data-export
+    area: privacy
+    summary: My Data export UI state.
+    adr: ["0036"]
+    applies: [web]
+    status: partial
+  - id: open-source-line
+    area: marketing
+    summary: Open-source positioning line on marketing surfaces.
+    adr: ["0024"]
+    applies: [web]
+    status: partial
+  - id: offline-honesty
+    area: photo-backup
+    summary: Offline camera backup pauses visibly and resumes without claiming server progress.
+    adr: ["0045"]
+    applies: [iphone, androidmobile]
+    status: partial
+  - id: phase-aware-entitlement
+    area: account
+    summary: Marketing entitlement copy varies by product phase.
+    adr: ["0024"]
+    applies: [web]
+    status: planned
+  - id: phase-aware-pricing
+    area: account
+    summary: Marketing pricing copy varies by product phase.
+    adr: ["0024"]
+    applies: [web]
+    status: planned
+  - id: phase-rendering
+    area: marketing
+    summary: Marketing pages render phase-specific content.
+    adr: ["0024"]
+    applies: [web]
+    status: partial
+  - id: permission
+    area: photo-backup
+    summary: Camera-library access gates metadata and upload until the user grants permission.
+    adr: ["0045"]
+    applies: [iphone, androidmobile]
+    status: partial
+  - id: pin-keypad
+    area: reveal
+    summary: PIN keypad visual states.
+    adr: ["0004", "0010"]
+    applies: [iphone]
+    status: partial
+  - id: portal-active
+    area: account
+    summary: Account portal active subscription state.
+    adr: ["0024"]
+    applies: [web]
+    status: planned
+  - id: portal-deleted
+    area: account
+    summary: Account portal deleted-account state.
+    adr: ["0024"]
+    applies: [web]
+    status: planned
+  - id: portal-lapsed
+    area: account
+    summary: Account portal lapsed subscription state.
+    adr: ["0024"]
+    applies: [web]
+    status: planned
+  - id: portal-lifetime
+    area: account
+    summary: Account portal lifetime purchase state.
+    adr: ["0024"]
+    applies: [web]
+    status: planned
+  - id: premium-gate
+    area: photo-backup
+    summary: Premium gates new automatic backup client-side without restricting retrieval or informing Core.
+    adr: ["0045"]
+    applies: [iphone, androidmobile]
+    status: partial
+  - id: pricing-route
+    area: account
+    summary: Marketing pricing route render states.
+    adr: ["0024"]
+    applies: [web]
+    status: partial
+  - id: privacy-pledge-band
+    area: marketing
+    summary: Privacy pledge marketing band.
+    adr: ["0024"]
+    applies: [web]
+    status: partial
+  - id: privacy
+    area: photo-backup
+    summary: Camera-backup metadata and originals remain private across access, storage, and transfer states.
+    adr: ["0045"]
+    applies: [iphone, androidmobile]
+    status: partial
+  - id: reauth
+    area: auth
+    summary: Viewer reauthentication prompt state.
+    adr: ["0085"]
+    applies: [iphone]
+    status: partial
+  - id: recoverable-delete
+    area: photo-backup
+    summary: Phone deletion is opt-in and separately confirmed only after byte-exact server storage.
+    adr: ["0045"]
+    applies: [iphone, androidmobile]
+    status: partial
+  - id: restrictions
+    area: reveal
+    summary: Restricted-profile visual states.
+    adr: ["0004"]
+    applies: [iphone]
+    status: partial
+  - id: route-honesty
+    area: playback
+    summary: Playback route honesty and fallback messaging.
+    adr: ["0010"]
+    applies: [iphone]
+    status: partial
+  - id: search
+    area: browse
+    summary: Native search screen visual states.
+    adr: ["0003", "0011"]
+    applies: [iphone]
+    status: partial
+  - id: server-enrollment
+    area: onboarding
+    summary: Standalone Core enrollment workbench state.
+    adr: ["0099"]
+    applies: [macos]
+    status: partial
+  - id: signed-in-devices
+    area: account
+    summary: Signed-in devices list in account portal.
+    adr: ["0024"]
+    applies: [web]
+    status: planned
+  - id: signed-out-pending-pre-auth
+    area: account
+    summary: Signed-out and pending pre-auth account states.
+    adr: ["0024"]
+    applies: [web]
+    status: planned
+  - id: source-offer
+    area: legal
+    summary: Source-offer legal notice surface.
+    adr: ["0099"]
+    applies: [macos]
+    status: partial
+  - id: tag-assignment
+    area: manage
+    summary: Tag assignment UI state.
+    adr: ["0065"]
+    applies: [web]
+    status: partial
+  - id: text-expansion
+    area: a11y
+    summary: Text expansion visual state.
+    adr: ["0100"]
+    applies: [androidtv, androidmobile]
+    status: partial
+  - id: work-queues
+    area: manage
+    summary: Work queue management visual state.
+    adr: ["0099"]
+    applies: [macos]
+    status: partial
+
+# Evidence — GATE-UICATALOG-FEATURE-REGISTRY-ANDROIDTV-1 (2026-08-21)
+# Command: python3 -c "import yaml,sys; d=yaml.safe_load(open('testing/features.yaml')); ids=[f['id'] for f in d['features']]; assert 'ambient-display' in ids and 'burn-in-mitigation' in ids"
+# Head SHA: f52d0e4e15e616e814ac816d9a607b97a9332d99
+# Exit code: 0
+# Elapsed seconds: 1
+# UTC start: 2026-08-21T01:59:04Z
+# UTC end: 2026-08-21T01:59:05Z
+# Log path: .agent-evidence/GATE-UICATALOG-FEATURE-REGISTRY-ANDROIDTV-1/registry-assertion.log
+# Command: make coverage-ratchet
+# Head SHA: f52d0e4e15e616e814ac816d9a607b97a9332d99
+# Exit code: 0
+# Elapsed seconds: 0
+# UTC start: 2026-08-21T01:59:22Z
+# UTC end: 2026-08-21T01:59:22Z
+# Log path: .agent-evidence/GATE-UICATALOG-FEATURE-REGISTRY-ANDROIDTV-1/coverage-ratchet.log
+# Command: python3 -c "import subprocess,yaml; before=yaml.safe_load(subprocess.check_output(['git','show','HEAD:testing/features.yaml'])); after=yaml.safe_load(open('testing/features.yaml')); old=[f['id'] for f in before['features']]; new=[f['id'] for f in after['features']]; assert set(new)-set(old)=={'ambient-display','burn-in-mitigation'}; assert set(old)-set(new)==set(); assert len(new)==len(old)+2"
+# Head SHA: f52d0e4e15e616e814ac816d9a607b97a9332d99
+# Exit code: 0
+# Elapsed seconds: 1
+# UTC start: 2026-08-21T01:59:49Z
+# UTC end: 2026-08-21T01:59:50Z
+# Log path: .agent-evidence/GATE-UICATALOG-FEATURE-REGISTRY-ANDROIDTV-1/id-diff.log

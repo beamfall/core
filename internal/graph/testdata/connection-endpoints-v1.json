@@ -1,0 +1,1 @@
+{"version":"1.0.0","endpoints":[{"kind":"lan","url":"http://192.168.1.20:8800"},{"kind":"direct","url":"https://home.example.com"},{"kind":"overlay","url":"https://100.96.0.5:8800"},{"kind":"self-hosted-relay","url":"https://relay.example.com"},{"kind":"hosted","url":"https://abc123.relay.beamfall.com"}]}

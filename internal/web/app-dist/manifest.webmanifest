@@ -1,0 +1,14 @@
+{
+  "name": "Beamfall",
+  "short_name": "Beamfall",
+  "start_url": "/web/",
+  "scope": "/web/",
+  "display": "standalone",
+  "icons": [
+    {
+      "src": "/web/manifest-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

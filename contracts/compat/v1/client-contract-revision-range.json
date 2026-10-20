@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "contractVersion": "1.0.0",
+  "surfaceVocabulary": [
+    "core-web-ui",
+    "macos-manager",
+    "ios-viewer",
+    "ipad-manager",
+    "tvos-viewer",
+    "android-viewer",
+    "developer-api-client",
+    "origin-node"
+  ],
+  "distributionVocabulary": [
+    "direct",
+    "appStore"
+  ],
+  "coreContractRevision": {
+    "minimum": 1,
+    "maximum": 1
+  },
+  "renderingContractRevision": {
+    "minimum": 1,
+    "maximum": 1
+  },
+  "embeddedUIContractRevision": 1,
+  "requiredRenderingStamps": [
+    "core-web-ui-v1"
+  ],
+  "requiredVocabularies": [],
+  "decisionVocabulary": [
+    "compatible",
+    "degraded",
+    "client-too-old",
+    "server-too-old",
+    "server-installation-inconsistent"
+  ],
+  "responseStateVocabulary": [
+    "bootstrap",
+    "compatible",
+    "degraded",
+    "client-too-old",
+    "server-too-old",
+    "server-installation-inconsistent"
+  ],
+  "reasonCodeVocabulary": [
+    "unknown-surface",
+    "unknown-build",
+    "revoked-build",
+    "unverified-distribution",
+    "embedded-ui-skew",
+    "core-revision-too-old",
+    "core-revision-too-new",
+    "rendering-revision-too-old",
+    "rendering-revision-too-new",
+    "missing-rendering-stamp",
+    "missing-vocabulary",
+    "unsupported-api-major",
+    "unknown-capability"
+  ],
+  "messageClassVocabulary": [
+    "compat-bootstrap",
+    "compat-compatible",
+    "compat-degraded",
+    "compat-client-too-old",
+    "compat-server-too-old",
+    "compat-server-installation-inconsistent"
+  ]
+}

@@ -1,0 +1,1381 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Beamfall Design Preview</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --night-950: oklch(13% 0.012 255);
+      --night-925: oklch(15% 0.013 255);
+      --night-900: oklch(18% 0.014 255);
+      --night-850: oklch(21% 0.014 252);
+      --night-800: oklch(24% 0.014 250);
+      --paper-50: oklch(97% 0.006 102);
+      --paper-100: oklch(94% 0.008 102);
+      --paper-200: oklch(89% 0.01 98);
+      --ink-950: oklch(18% 0.018 255);
+      --ink-700: oklch(36% 0.02 255);
+      --mist-100: oklch(93% 0.012 235);
+      --mist-200: oklch(86% 0.018 235);
+      --mist-500: oklch(64% 0.025 242);
+      --beam-500: oklch(82% 0.145 92);
+      --beam-600: oklch(72% 0.14 92);
+      --cyan-500: oklch(74% 0.12 218);
+      --green-500: oklch(70% 0.14 150);
+      --iris-500: oklch(67% 0.13 310);
+      --amber-500: oklch(78% 0.16 78);
+      --red-500: oklch(64% 0.17 28);
+      --line-dark: oklch(31% 0.014 250);
+      --line-light: oklch(89% 0.01 98);
+      --shadow: 0 24px 80px oklch(7% 0.02 255 / 60%);
+      --radius: 8px;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 16px;
+      background: var(--night-950);
+      color: var(--mist-100);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 22% 5%, oklch(82% 0.145 92 / 16%), transparent 34rem),
+        radial-gradient(circle at 82% 0%, oklch(74% 0.12 218 / 12%), transparent 30rem),
+        linear-gradient(180deg, var(--night-950), oklch(10% 0.012 255));
+    }
+
+    .page {
+      width: min(1480px, calc(100% - 48px));
+      margin: 0 auto;
+      padding: 32px 0 48px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 32px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .mark {
+      position: relative;
+      width: 34px;
+      height: 34px;
+      border-radius: 7px;
+      background: linear-gradient(150deg, oklch(20% 0.018 255), oklch(12% 0.012 255));
+      border: 1px solid oklch(82% 0.145 92 / 36%);
+      overflow: hidden;
+      box-shadow: 0 0 28px oklch(82% 0.145 92 / 20%);
+    }
+
+    .mark::before {
+      content: "";
+      position: absolute;
+      left: 6px;
+      top: -6px;
+      width: 11px;
+      height: 52px;
+      transform: rotate(31deg);
+      background: linear-gradient(180deg, var(--beam-500), transparent);
+      opacity: 0.95;
+    }
+
+    .mark::after {
+      content: "";
+      position: absolute;
+      right: 5px;
+      bottom: 7px;
+      width: 16px;
+      height: 6px;
+      border-radius: 999px;
+      background: oklch(82% 0.145 92 / 72%);
+      box-shadow: 0 0 20px oklch(82% 0.145 92 / 60%);
+    }
+
+    .nav {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--mist-200);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .nav span {
+      padding: 8px 10px;
+      border-radius: 6px;
+    }
+
+    .nav span:first-child {
+      color: var(--night-950);
+      background: var(--beam-500);
+    }
+
+    .intro {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+      gap: 28px;
+      align-items: end;
+      margin-bottom: 28px;
+    }
+
+    h1 {
+      max-width: 760px;
+      margin: 0;
+      font-size: clamp(44px, 6vw, 82px);
+      line-height: 0.98;
+      letter-spacing: 0;
+      font-weight: 720;
+    }
+
+    .intro p {
+      max-width: 660px;
+      margin: 18px 0 0;
+      color: var(--mist-200);
+      font-size: 18px;
+      line-height: 1.55;
+    }
+
+    .principles {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .principle {
+      min-height: 96px;
+      padding: 16px;
+      border: 1px solid var(--line-dark);
+      border-radius: var(--radius);
+      background: oklch(18% 0.014 255 / 68%);
+    }
+
+    .principle strong {
+      display: block;
+      color: var(--mist-100);
+      font-size: 13px;
+      line-height: 1.3;
+      margin-bottom: 8px;
+    }
+
+    .principle span {
+      display: block;
+      color: var(--mist-500);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .board {
+      display: grid;
+      grid-template-columns: minmax(0, 1.08fr) minmax(420px, 0.92fr);
+      gap: 20px;
+      align-items: start;
+    }
+
+    .stack {
+      display: grid;
+      gap: 20px;
+    }
+
+    .surface {
+      border: 1px solid var(--line-dark);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+      background: var(--night-900);
+    }
+
+    .surface.workbench {
+      background: var(--work-bg);
+      color: var(--work-text);
+      border-color: var(--work-border-strong);
+      box-shadow: 0 22px 60px oklch(9% 0.02 255 / 32%);
+    }
+
+    .surface.workbench-light {
+      color-scheme: light;
+      --work-bg: var(--paper-50);
+      --work-surface: oklch(99% 0.004 102);
+      --work-raised: var(--paper-100);
+      --work-border: var(--line-light);
+      --work-border-strong: oklch(70% 0.012 100);
+      --work-text: var(--ink-950);
+      --work-muted: var(--ink-700);
+      --work-accent-soft: oklch(82% 0.145 92 / 22%);
+      --work-chip: oklch(99% 0.004 102);
+    }
+
+    .surface.workbench-dark {
+      color-scheme: dark;
+      --work-bg: oklch(14% 0.012 255);
+      --work-surface: oklch(18% 0.014 255);
+      --work-raised: oklch(21% 0.014 252);
+      --work-border: oklch(31% 0.014 250);
+      --work-border-strong: oklch(40% 0.016 250);
+      --work-text: var(--mist-100);
+      --work-muted: var(--mist-500);
+      --work-accent-soft: oklch(82% 0.145 92 / 17%);
+      --work-chip: oklch(20% 0.014 252);
+    }
+
+    .surface-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line-dark);
+      background: oklch(15% 0.013 255 / 88%);
+    }
+
+    .workbench .surface-header {
+      background: var(--work-surface);
+      border-color: var(--work-border);
+    }
+
+    .surface-name {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      font-weight: 720;
+    }
+
+    .surface-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--beam-500);
+      box-shadow: 0 0 18px oklch(82% 0.145 92 / 70%);
+    }
+
+    .meta {
+      color: var(--mist-500);
+      font-size: 11px;
+      font-weight: 640;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .workbench .meta {
+      color: var(--work-muted);
+    }
+
+    .viewer {
+      min-height: 620px;
+      background:
+        linear-gradient(90deg, var(--night-925) 0%, oklch(13% 0.012 255 / 94%) 36%, transparent 72%),
+        linear-gradient(180deg, transparent 0%, oklch(12% 0.014 255) 100%),
+        radial-gradient(circle at 74% 27%, oklch(82% 0.145 92 / 22%), transparent 18rem),
+        linear-gradient(135deg, oklch(30% 0.06 242), oklch(15% 0.03 264) 46%, oklch(28% 0.06 78));
+    }
+
+    .viewer-shell {
+      display: grid;
+      grid-template-columns: 124px minmax(0, 1fr);
+      min-height: 620px;
+    }
+
+    .rail {
+      border-right: 1px solid var(--line-dark);
+      padding: 18px 12px;
+      background: oklch(12% 0.011 255 / 80%);
+      scrollbar-width: none;
+    }
+
+    .rail::-webkit-scrollbar {
+      display: none;
+    }
+
+    .rail-item {
+      display: grid;
+      place-items: center;
+      min-height: 70px;
+      margin-bottom: 10px;
+      border-radius: 8px;
+      color: var(--mist-500);
+      font-size: 11px;
+      font-weight: 680;
+    }
+
+    .rail-item.active {
+      color: var(--night-950);
+      background: var(--beam-500);
+      box-shadow: 0 10px 32px oklch(82% 0.145 92 / 26%);
+    }
+
+    .viewer-main {
+      padding: 34px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 34px;
+    }
+
+    .hero-copy {
+      max-width: 560px;
+      padding-top: 20px;
+    }
+
+    .library-label {
+      margin-bottom: 12px;
+      color: var(--beam-500);
+      font-size: 13px;
+      font-weight: 760;
+    }
+
+    .hero-copy h2 {
+      margin: 0;
+      font-size: clamp(42px, 5.2vw, 72px);
+      line-height: 0.95;
+      letter-spacing: 0;
+      font-weight: 760;
+    }
+
+    .hero-copy p {
+      width: min(100%, 520px);
+      margin: 16px 0 0;
+      color: var(--mist-200);
+      font-size: 17px;
+      line-height: 1.55;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin-top: 22px;
+    }
+
+    .button {
+      border: 0;
+      border-radius: 6px;
+      padding: 11px 15px;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 760;
+      color: var(--night-950);
+      background: var(--beam-500);
+    }
+
+    .button.secondary {
+      color: var(--mist-100);
+      background: oklch(24% 0.014 250 / 82%);
+      border: 1px solid var(--line-dark);
+    }
+
+    .shelf {
+      display: grid;
+      gap: 12px;
+    }
+
+    .section-heading {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      color: var(--mist-100);
+      font-size: 18px;
+      font-weight: 720;
+    }
+
+    .section-heading span {
+      color: var(--mist-500);
+      font-size: 12px;
+      font-weight: 680;
+    }
+
+    .media-row {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(110px, 1fr));
+      gap: 12px;
+    }
+
+    .media-card {
+      min-height: 164px;
+      border-radius: 8px;
+      background: oklch(22% 0.012 255);
+      overflow: hidden;
+      border: 1px solid oklch(34% 0.014 250);
+    }
+
+    .media-card.focused {
+      outline: 3px solid var(--beam-500);
+      outline-offset: 3px;
+      box-shadow: 0 0 34px oklch(82% 0.145 92 / 36%);
+    }
+
+    .poster {
+      height: 118px;
+      background:
+        linear-gradient(135deg, oklch(72% 0.13 92 / 80%), transparent 34%),
+        radial-gradient(circle at 76% 28%, oklch(74% 0.12 218), transparent 36%),
+        linear-gradient(150deg, oklch(27% 0.055 248), oklch(16% 0.025 256));
+    }
+
+    .poster.two {
+      background:
+        radial-gradient(circle at 28% 28%, oklch(67% 0.13 310 / 86%), transparent 28%),
+        linear-gradient(140deg, oklch(22% 0.04 286), oklch(13% 0.012 255));
+    }
+
+    .poster.three {
+      background:
+        linear-gradient(120deg, oklch(70% 0.14 150 / 86%), transparent 44%),
+        linear-gradient(160deg, oklch(19% 0.04 168), oklch(12% 0.012 255));
+    }
+
+    .poster.four {
+      background:
+        radial-gradient(circle at 66% 22%, oklch(64% 0.17 28 / 76%), transparent 31%),
+        linear-gradient(160deg, oklch(25% 0.045 45), oklch(12% 0.012 255));
+    }
+
+    .poster.five {
+      background:
+        linear-gradient(145deg, oklch(78% 0.16 78 / 78%), transparent 45%),
+        radial-gradient(circle at 76% 70%, oklch(74% 0.12 218 / 80%), transparent 32%),
+        linear-gradient(160deg, oklch(21% 0.035 235), oklch(11% 0.012 255));
+    }
+
+    .card-copy {
+      padding: 9px 9px 10px;
+    }
+
+    .card-title {
+      font-size: 12px;
+      font-weight: 720;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .card-sub {
+      margin-top: 4px;
+      color: var(--mist-500);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .manager-layout {
+      display: grid;
+      grid-template-columns: 206px minmax(0, 1fr);
+      min-height: 426px;
+    }
+
+    .sidebar {
+      border-right: 1px solid var(--work-border);
+      background: var(--work-raised);
+      padding: 14px;
+    }
+
+    .side-title {
+      color: var(--work-muted);
+      font-size: 11px;
+      font-weight: 740;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 10px;
+    }
+
+    .side-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 34px;
+      padding: 0 9px;
+      border-radius: 6px;
+      color: var(--work-muted);
+      font-size: 13px;
+      font-weight: 640;
+    }
+
+    .side-row.active {
+      background: var(--work-accent-soft);
+      color: var(--work-text);
+    }
+
+    .manager-main {
+      padding: 18px;
+      background: var(--work-bg);
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+
+    .toolbar h3 {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.2;
+    }
+
+    .chip-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .chip {
+      min-height: 28px;
+      padding: 6px 10px;
+      border: 1px solid var(--work-border);
+      border-radius: 999px;
+      color: var(--work-muted);
+      background: var(--work-chip);
+      font-size: 12px;
+      font-weight: 680;
+    }
+
+    .chip.active {
+      color: var(--work-text);
+      border-color: oklch(63% 0.135 92 / 58%);
+      background: var(--work-accent-soft);
+    }
+
+    .split-work {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+    }
+
+    .queue {
+      border: 1px solid var(--work-border);
+      border-radius: 8px;
+      background: var(--work-surface);
+      overflow: hidden;
+    }
+
+    .queue-row {
+      display: grid;
+      grid-template-columns: 44px minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      min-height: 56px;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--work-border);
+    }
+
+    .queue-row:last-child {
+      border-bottom: 0;
+    }
+
+    .thumb {
+      width: 44px;
+      height: 32px;
+      border-radius: 5px;
+      background: linear-gradient(135deg, oklch(70% 0.14 150), oklch(24% 0.05 255));
+    }
+
+    .queue-title {
+      font-size: 13px;
+      font-weight: 720;
+    }
+
+    .queue-sub {
+      margin-top: 3px;
+      color: var(--work-muted);
+      font-size: 12px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      color: var(--work-text);
+      background: oklch(78% 0.16 78 / 42%);
+      font-size: 11px;
+      font-weight: 760;
+    }
+
+    .badge.green {
+      background: oklch(70% 0.14 150 / 32%);
+    }
+
+    .badge.iris {
+      background: oklch(67% 0.13 310 / 26%);
+    }
+
+    .review-panel {
+      border: 1px solid var(--work-border);
+      border-radius: 8px;
+      background: var(--work-surface);
+      padding: 14px;
+    }
+
+    .review-panel h4 {
+      margin: 0 0 10px;
+      font-size: 15px;
+      line-height: 1.2;
+    }
+
+    .compare {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .compare-box {
+      min-height: 122px;
+      border-radius: 8px;
+      border: 1px solid var(--work-border);
+      padding: 10px;
+      background: var(--work-raised);
+    }
+
+    .compare-box strong {
+      display: block;
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+
+    .field {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--work-muted);
+      font-size: 12px;
+      line-height: 1.8;
+    }
+
+    .console {
+      padding: 18px;
+    }
+
+    .console-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(190px, 0.55fr);
+      gap: 14px;
+    }
+
+    .console h3 {
+      margin: 0 0 14px;
+      font-size: 24px;
+      line-height: 1.2;
+    }
+
+    .panel {
+      border: 1px solid var(--work-border);
+      border-radius: 8px;
+      background: var(--work-surface);
+    }
+
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--work-border);
+      font-size: 13px;
+      font-weight: 760;
+    }
+
+    .job {
+      display: grid;
+      gap: 7px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--work-border);
+    }
+
+    .job:last-child {
+      border-bottom: 0;
+    }
+
+    .job-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 13px;
+      font-weight: 720;
+    }
+
+    .bar {
+      height: 7px;
+      border-radius: 999px;
+      background: var(--work-raised);
+      overflow: hidden;
+    }
+
+    .bar span {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--beam-600), var(--cyan-500));
+    }
+
+    .path-stack {
+      display: grid;
+      gap: 8px;
+      padding: 12px;
+    }
+
+    .path {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      min-height: 36px;
+      border: 1px solid var(--work-border);
+      border-radius: 7px;
+      padding: 8px 9px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .path small {
+      color: var(--work-muted);
+      font-weight: 650;
+    }
+
+    .player {
+      min-height: 434px;
+      background:
+        linear-gradient(180deg, transparent 0%, oklch(8% 0.012 255 / 92%) 88%),
+        radial-gradient(circle at 48% 34%, oklch(82% 0.145 92 / 18%), transparent 16rem),
+        linear-gradient(135deg, oklch(31% 0.065 235), oklch(11% 0.012 255) 62%);
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      padding: 22px;
+    }
+
+    .player-status {
+      position: absolute;
+      top: 18px;
+      left: 18px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .dark-badge {
+      display: inline-flex;
+      min-height: 28px;
+      align-items: center;
+      padding: 6px 9px;
+      border-radius: 999px;
+      background: oklch(12% 0.012 255 / 72%);
+      border: 1px solid var(--line-dark);
+      color: var(--mist-200);
+      font-size: 11px;
+      font-weight: 760;
+      backdrop-filter: blur(12px);
+    }
+
+    .dark-badge.direct {
+      color: var(--green-500);
+    }
+
+    .transport {
+      display: grid;
+      gap: 14px;
+      padding: 16px;
+      border: 1px solid oklch(45% 0.014 250);
+      border-radius: 8px;
+      background: oklch(10% 0.012 255 / 72%);
+      backdrop-filter: blur(14px);
+    }
+
+    .now-playing {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: center;
+    }
+
+    .now-playing strong {
+      font-size: 18px;
+    }
+
+    .now-playing span {
+      display: block;
+      margin-top: 3px;
+      color: var(--mist-500);
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: 44px minmax(0, 1fr) 44px;
+      gap: 10px;
+      align-items: center;
+      color: var(--mist-500);
+      font-size: 11px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .scrubber {
+      position: relative;
+      height: 10px;
+      border-radius: 999px;
+      background: oklch(34% 0.014 250);
+    }
+
+    .scrubber::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 46%;
+      border-radius: inherit;
+      background: var(--beam-500);
+    }
+
+    .scrubber::after {
+      content: "";
+      position: absolute;
+      left: calc(46% - 7px);
+      top: -4px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--beam-500);
+      box-shadow: 0 0 24px oklch(82% 0.145 92 / 70%);
+    }
+
+    .transport-actions {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .control-group {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .control {
+      display: grid;
+      place-items: center;
+      min-width: 40px;
+      height: 36px;
+      padding: 0 11px;
+      border-radius: 6px;
+      border: 1px solid var(--line-dark);
+      background: oklch(24% 0.014 250 / 82%);
+      color: var(--mist-100);
+      font-size: 12px;
+      font-weight: 760;
+    }
+
+    .control.primary {
+      min-width: 48px;
+      background: var(--beam-500);
+      color: var(--night-950);
+      border-color: transparent;
+    }
+
+    .state-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .state {
+      border: 1px solid var(--line-dark);
+      border-radius: 8px;
+      padding: 12px;
+      background: oklch(18% 0.014 255 / 66%);
+    }
+
+    .state strong {
+      display: block;
+      font-size: 12px;
+      margin-bottom: 5px;
+    }
+
+    .state span {
+      display: block;
+      color: var(--mist-500);
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    @media (max-width: 1120px) {
+      .intro,
+      .board {
+        grid-template-columns: 1fr;
+      }
+
+      .principles {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 760px) {
+      .page {
+        width: min(100% - 24px, 1480px);
+        padding-top: 20px;
+      }
+
+      .topbar,
+      .now-playing,
+      .toolbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .nav {
+        display: none;
+      }
+
+      .principles,
+      .viewer-shell,
+      .manager-layout,
+      .split-work,
+      .console-grid,
+      .state-strip {
+        grid-template-columns: 1fr;
+      }
+
+      .rail {
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--line-dark);
+      }
+
+      .rail-item {
+        min-width: 84px;
+        min-height: 42px;
+        margin: 0;
+      }
+
+      .viewer-main {
+        padding: 22px;
+      }
+
+      .media-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="topbar">
+      <div class="brand">
+        <span class="mark" aria-hidden="true"></span>
+        <span>Beamfall</span>
+      </div>
+      <nav class="nav" aria-label="Preview sections">
+        <span>Design preview</span>
+        <span>Viewer</span>
+        <span>Manager</span>
+        <span>Console</span>
+        <span>Player</span>
+      </nav>
+    </header>
+
+    <section class="intro" aria-labelledby="page-title">
+      <div>
+        <h1 id="page-title">Quiet cinematic utility for your own media server.</h1>
+        <p>
+          Beamfall should feel native in the living room, exacting on the desktop, and honest
+          whenever it asks for trust. This preview applies the design-system draft to the main
+          product surfaces.
+        </p>
+      </div>
+      <div class="principles" aria-label="Design principles">
+        <div class="principle">
+          <strong>Structure flexible. Behavior fixed.</strong>
+          <span>Plugins compose Layouts and Sections. Clients own polish, focus, and motion.</span>
+        </div>
+        <div class="principle">
+          <strong>Cinematic when watching.</strong>
+          <span>Artwork and transport feel premium without turning every surface dark.</span>
+        </div>
+        <div class="principle">
+          <strong>Trust through state.</strong>
+          <span>Dry runs, provenance, restore, and session state replace privacy theater.</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="board" aria-label="Beamfall surface previews">
+      <div class="surface viewer">
+        <div class="viewer-shell">
+          <aside class="rail" aria-label="Libraries">
+            <div class="rail-item active">Home</div>
+            <div class="rail-item">Movies</div>
+            <div class="rail-item">TV</div>
+            <div class="rail-item">Archive</div>
+            <div class="rail-item">Search</div>
+          </aside>
+          <div class="viewer-main">
+            <div class="hero-copy">
+              <div class="library-label">Family archive</div>
+              <h2>Friday night starts here.</h2>
+              <p>
+                A fast, artwork-led Viewer with profile-aware Libraries, Snapshot launch, and
+                player state that says what is actually happening.
+              </p>
+              <div class="actions">
+                <button class="button">Resume</button>
+                <button class="button secondary">Details</button>
+              </div>
+            </div>
+
+            <div class="shelf" aria-label="Continue watching shelf">
+              <div class="section-heading">
+                Continue watching
+                <span>See all</span>
+              </div>
+              <div class="media-row">
+                <article class="media-card focused">
+                  <div class="poster"></div>
+                  <div class="card-copy">
+                    <div class="card-title">The Long Weekend</div>
+                    <div class="card-sub">42 min left</div>
+                  </div>
+                </article>
+                <article class="media-card">
+                  <div class="poster two"></div>
+                  <div class="card-copy">
+                    <div class="card-title">Field Notes</div>
+                    <div class="card-sub">Direct-play</div>
+                  </div>
+                </article>
+                <article class="media-card">
+                  <div class="poster three"></div>
+                  <div class="card-copy">
+                    <div class="card-title">Summer 1998</div>
+                    <div class="card-sub">Profile resume</div>
+                  </div>
+                </article>
+                <article class="media-card">
+                  <div class="poster four"></div>
+                  <div class="card-copy">
+                    <div class="card-title">Signal Path</div>
+                    <div class="card-sub">Remote path</div>
+                  </div>
+                </article>
+                <article class="media-card">
+                  <div class="poster five"></div>
+                  <div class="card-copy">
+                    <div class="card-title">Blue Hour</div>
+                    <div class="card-sub">New version</div>
+                  </div>
+                </article>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="stack">
+        <section class="surface player" aria-label="Playback transport preview">
+          <div class="player-status">
+            <span class="dark-badge direct">Direct-play</span>
+            <span class="dark-badge">1080p SDR</span>
+            <span class="dark-badge">LAN</span>
+          </div>
+          <div class="transport">
+            <div class="now-playing">
+              <div>
+                <strong>The Long Weekend</strong>
+                <span>Chapter 4: The crossing</span>
+              </div>
+              <div class="dark-badge">Audio: E-AC-3 5.1</div>
+            </div>
+            <div class="timeline">
+              <span>42:18</span>
+              <div class="scrubber" aria-hidden="true"></div>
+              <span>91:04</span>
+            </div>
+            <div class="transport-actions">
+              <div class="control-group">
+                <button class="control">-10</button>
+                <button class="control primary">Play</button>
+                <button class="control">+10</button>
+              </div>
+              <div class="control-group">
+                <button class="control">Tracks</button>
+                <button class="control">Markers</button>
+                <button class="control">Quality</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="surface workbench workbench-light" aria-label="Manager light theme preview">
+          <div class="surface-header">
+            <div class="surface-name"><span class="surface-dot"></span>Manager Light</div>
+            <div class="meta">Curation workbench</div>
+          </div>
+          <div class="manager-layout">
+            <aside class="sidebar" aria-label="Manager navigation">
+              <div class="side-title">Work queues</div>
+              <div class="side-row active"><span>Unmatched</span><span>12</span></div>
+              <div class="side-row"><span>Dedupe</span><span>4</span></div>
+              <div class="side-row"><span>Artwork</span><span>31</span></div>
+              <div class="side-row"><span>Health</span><span>8</span></div>
+              <div class="side-row"><span>Trash</span><span>19</span></div>
+            </aside>
+            <div class="manager-main">
+              <div class="toolbar">
+                <h3>Fix match</h3>
+                <div class="chip-row">
+                  <span class="chip active">Dry run ready</span>
+                  <span class="chip">Field locks</span>
+                  <span class="chip">Undo batch</span>
+                </div>
+              </div>
+              <div class="split-work">
+                <div class="queue">
+                  <div class="queue-row">
+                    <div class="thumb"></div>
+                    <div>
+                      <div class="queue-title">Long Weekend 1080p</div>
+                      <div class="queue-sub">Parse hint from incoming folder</div>
+                    </div>
+                    <span class="badge">82%</span>
+                  </div>
+                  <div class="queue-row">
+                    <div class="thumb"></div>
+                    <div>
+                      <div class="queue-title">Field Notes sample</div>
+                      <div class="queue-sub">Extra candidate</div>
+                    </div>
+                    <span class="badge green">Skip</span>
+                  </div>
+                  <div class="queue-row">
+                    <div class="thumb"></div>
+                    <div>
+                      <div class="queue-title">Blue Hour 4K</div>
+                      <div class="queue-sub">Version suggestion</div>
+                    </div>
+                    <span class="badge iris">New</span>
+                  </div>
+                </div>
+                <div class="review-panel">
+                  <h4>Candidate comparison</h4>
+                  <div class="compare">
+                    <div class="compare-box">
+                      <strong>Current file</strong>
+                      <div class="field"><span>Fingerprint</span><span>matched</span></div>
+                      <div class="field"><span>Quality</span><span>1080p</span></div>
+                      <div class="field"><span>Markers</span><span>survive</span></div>
+                    </div>
+                    <div class="compare-box">
+                      <strong>Selected match</strong>
+                      <div class="field"><span>Title</span><span>locked</span></div>
+                      <div class="field"><span>Artwork</span><span>5 slots</span></div>
+                      <div class="field"><span>Action</span><span>pin</span></div>
+                    </div>
+                  </div>
+                  <button class="button">Apply and pin</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="surface workbench workbench-dark" aria-label="Manager dark theme preview">
+          <div class="surface-header">
+            <div class="surface-name"><span class="surface-dot"></span>Manager Dark</div>
+            <div class="meta">Same density, lower glare</div>
+          </div>
+          <div class="manager-layout">
+            <aside class="sidebar" aria-label="Manager dark navigation">
+              <div class="side-title">Work queues</div>
+              <div class="side-row active"><span>Unmatched</span><span>12</span></div>
+              <div class="side-row"><span>Dedupe</span><span>4</span></div>
+              <div class="side-row"><span>Artwork</span><span>31</span></div>
+              <div class="side-row"><span>Health</span><span>8</span></div>
+              <div class="side-row"><span>Trash</span><span>19</span></div>
+            </aside>
+            <div class="manager-main">
+              <div class="toolbar">
+                <h3>Fix match</h3>
+                <div class="chip-row">
+                  <span class="chip active">Dry run ready</span>
+                  <span class="chip">Field locks</span>
+                  <span class="chip">Undo batch</span>
+                </div>
+              </div>
+              <div class="split-work">
+                <div class="queue">
+                  <div class="queue-row">
+                    <div class="thumb"></div>
+                    <div>
+                      <div class="queue-title">Long Weekend 1080p</div>
+                      <div class="queue-sub">Parse hint from incoming folder</div>
+                    </div>
+                    <span class="badge">82%</span>
+                  </div>
+                  <div class="queue-row">
+                    <div class="thumb"></div>
+                    <div>
+                      <div class="queue-title">Field Notes sample</div>
+                      <div class="queue-sub">Extra candidate</div>
+                    </div>
+                    <span class="badge green">Skip</span>
+                  </div>
+                  <div class="queue-row">
+                    <div class="thumb"></div>
+                    <div>
+                      <div class="queue-title">Blue Hour 4K</div>
+                      <div class="queue-sub">Version suggestion</div>
+                    </div>
+                    <span class="badge iris">New</span>
+                  </div>
+                </div>
+                <div class="review-panel">
+                  <h4>Candidate comparison</h4>
+                  <div class="compare">
+                    <div class="compare-box">
+                      <strong>Current file</strong>
+                      <div class="field"><span>Fingerprint</span><span>matched</span></div>
+                      <div class="field"><span>Quality</span><span>1080p</span></div>
+                      <div class="field"><span>Markers</span><span>survive</span></div>
+                    </div>
+                    <div class="compare-box">
+                      <strong>Selected match</strong>
+                      <div class="field"><span>Title</span><span>locked</span></div>
+                      <div class="field"><span>Artwork</span><span>5 slots</span></div>
+                      <div class="field"><span>Action</span><span>pin</span></div>
+                    </div>
+                  </div>
+                  <button class="button">Apply and pin</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="surface workbench workbench-light" aria-label="Console light theme preview">
+          <div class="surface-header">
+            <div class="surface-name"><span class="surface-dot"></span>Console Light</div>
+            <div class="meta">Server control plane</div>
+          </div>
+          <div class="console">
+            <h3>Operations</h3>
+            <div class="console-grid">
+              <div class="panel">
+                <div class="panel-head">
+                  <span>Jobs</span>
+                  <span class="badge green">Healthy</span>
+                </div>
+                <div class="job">
+                  <div class="job-top"><span>Scan Family archive</span><span>68%</span></div>
+                  <div class="bar"><span style="width: 68%"></span></div>
+                </div>
+                <div class="job">
+                  <div class="job-top"><span>Generate scrub thumbnails</span><span>Yielded</span></div>
+                  <div class="bar"><span style="width: 34%"></span></div>
+                </div>
+                <div class="job">
+                  <div class="job-top"><span>Backup catalog</span><span>Queued</span></div>
+                  <div class="bar"><span style="width: 8%"></span></div>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="panel-head">
+                  <span>Connection paths</span>
+                </div>
+                <div class="path-stack">
+                  <div class="path"><span>LAN</span><small>active</small></div>
+                  <div class="path"><span>Direct remote</span><small>ready</small></div>
+                  <div class="path"><span>Relay</span><small>fallback</small></div>
+                  <div class="path"><span>Admin Session</span><small>11 min</small></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="surface workbench workbench-dark" aria-label="Console dark theme preview">
+          <div class="surface-header">
+            <div class="surface-name"><span class="surface-dot"></span>Console Dark</div>
+            <div class="meta">Server control plane</div>
+          </div>
+          <div class="console">
+            <h3>Operations</h3>
+            <div class="console-grid">
+              <div class="panel">
+                <div class="panel-head">
+                  <span>Jobs</span>
+                  <span class="badge green">Healthy</span>
+                </div>
+                <div class="job">
+                  <div class="job-top"><span>Scan Family archive</span><span>68%</span></div>
+                  <div class="bar"><span style="width: 68%"></span></div>
+                </div>
+                <div class="job">
+                  <div class="job-top"><span>Generate scrub thumbnails</span><span>Yielded</span></div>
+                  <div class="bar"><span style="width: 34%"></span></div>
+                </div>
+                <div class="job">
+                  <div class="job-top"><span>Backup catalog</span><span>Queued</span></div>
+                  <div class="bar"><span style="width: 8%"></span></div>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="panel-head">
+                  <span>Connection paths</span>
+                </div>
+                <div class="path-stack">
+                  <div class="path"><span>LAN</span><small>active</small></div>
+                  <div class="path"><span>Direct remote</span><small>ready</small></div>
+                  <div class="path"><span>Relay</span><small>fallback</small></div>
+                  <div class="path"><span>Admin Session</span><small>11 min</small></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section class="state-strip" aria-label="State language examples">
+      <div class="state">
+        <strong>Restrictions</strong>
+        <span>Visible only during a revealed adult Profile session. Relock preserves focus.</span>
+      </div>
+      <div class="state">
+        <strong>Trash and undo</strong>
+        <span>Bulk changes preview first and resolve to one activity entry with restore path.</span>
+      </div>
+      <div class="state">
+        <strong>Capability honesty</strong>
+        <span>The player names direct-play, direct-stream, transcode, and remote path clearly.</span>
+      </div>
+      <div class="state">
+        <strong>Plugin bounds</strong>
+        <span>Libraries may bring accent and structure, never arbitrary rendering behavior.</span>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

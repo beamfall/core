@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "discovery": {
+    "roots": ["."],
+    "exclude_dirs": [".git", ".claude", ".roadmap", ".roadmap-worktrees", "node_modules", "vendor"],
+    "generated": "exclude",
+    "tag_mappings": []
+  },
+  "targets": [
+    {"pkg": "./internal/ffmpeg", "target": "FuzzParseProbe", "tags": [], "goos": [], "goarch": []},
+    {"pkg": "./internal/graph", "target": "FuzzRequestDecodeAndFieldScan", "tags": [], "goos": [], "goarch": []},
+    {"pkg": "./internal/pairing", "target": "FuzzPairingInputNormalization", "tags": [], "goos": [], "goarch": []},
+    {"pkg": "./internal/plugin", "target": "FuzzLocaleStringJSON", "tags": [], "goos": [], "goarch": []},
+    {"pkg": "./internal/plugin", "target": "FuzzValidateBundleJSON", "tags": [], "goos": [], "goarch": []},
+    {"pkg": "./internal/scrape", "target": "FuzzParseFeedEntries", "tags": [], "goos": [], "goarch": []},
+    {"pkg": "./internal/scrape", "target": "FuzzResolveJSONPath", "tags": [], "goos": [], "goarch": []},
+    {"pkg": "./internal/scrape", "target": "FuzzResolveXMLPath", "tags": [], "goos": [], "goarch": []},
+    {"pkg": "./internal/scrape", "target": "FuzzScrapeTransforms", "tags": [], "goos": [], "goarch": []},
+    {"pkg": "./internal/streamtoken", "target": "FuzzUnverifiedGrant", "tags": [], "goos": [], "goarch": []}
+  ]
+}

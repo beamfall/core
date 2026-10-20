@@ -1,0 +1,90 @@
+{
+  "$comment": "SPDX-License-Identifier: Apache-2.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.beamfall.org/export/v1.0.0/schema/manifest.schema.json",
+  "title": "Beamfall Export Package Manifest v1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "formatVersion", "exportID", "createdAt", "generator", "householdDataDisclosureAcknowledged", "dataFiles", "mediaObjects", "exclusions"],
+  "properties": {
+    "format": { "const": "beamfall-export" },
+    "formatVersion": { "const": "1.0.0" },
+    "exportID": { "$ref": "#/$defs/nonEmptyString" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "generator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "$ref": "#/$defs/nonEmptyString" },
+        "version": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "householdDataDisclosureAcknowledged": { "const": true },
+    "dataFiles": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/dataFile" },
+      "uniqueItems": true
+    },
+    "mediaObjects": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/mediaObject" },
+      "uniqueItems": true
+    },
+    "exclusions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/exclusion" },
+      "allOf": [
+        { "contains": { "type": "object", "required": ["category"], "properties": { "category": { "const": "face-biometric-templates" } } } },
+        { "contains": { "type": "object", "required": ["category"], "properties": { "category": { "const": "device-bound-secrets" } } } }
+      ]
+    }
+  },
+  "$defs": {
+    "nonEmptyString": { "type": "string", "minLength": 1 },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*//)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^/\\u0000]+(?:/[^/\\u0000]+)*$"
+    },
+    "entityClass": {
+      "enum": ["library", "profile", "profilePolicy", "media", "entity", "metadataEdit", "disposition", "tag", "tagAssignment", "collection", "collectionItem", "marker", "watchState", "fieldLock", "objectHistory"]
+    },
+    "dataFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["class", "path", "recordSchema", "recordCount", "byteLength", "sha256"],
+      "properties": {
+        "class": { "$ref": "#/$defs/entityClass" },
+        "path": { "allOf": [{ "$ref": "#/$defs/relativePath" }, { "type": "string", "pattern": "^records/[A-Za-z][A-Za-z0-9-]*\\.jsonl$" }] },
+        "recordSchema": { "const": "schema/record.schema.json" },
+        "recordCount": { "type": "integer", "minimum": 0 },
+        "byteLength": { "type": "integer", "minimum": 0 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "mediaObject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mediaID", "path", "byteLength", "sha256", "protection"],
+      "properties": {
+        "mediaID": { "$ref": "#/$defs/nonEmptyString" },
+        "path": { "allOf": [{ "$ref": "#/$defs/relativePath" }, { "type": "string", "pattern": "^media/[^/]+(?:/[^/]+)*$" }] },
+        "byteLength": { "type": "integer", "minimum": 0 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "protection": { "enum": ["plaintext", "encrypted"] }
+      }
+    },
+    "exclusion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "reason", "permanent"],
+      "properties": {
+        "category": { "$ref": "#/$defs/nonEmptyString" },
+        "reason": { "$ref": "#/$defs/nonEmptyString" },
+        "permanent": { "type": "boolean" }
+      }
+    }
+  }
+}

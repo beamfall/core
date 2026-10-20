@@ -1,0 +1,14 @@
+{
+  "description": "PEAT-style over-ceiling sequence: an evenly-spaced 8 Hz strobe of near-full-luminance flashes within one second. Trips flash-rate, luminance-delta, and strobe axes.",
+  "frames": [
+    {"mediaTimeMs": 0,    "onset": {"broadband": 0.98}},
+    {"mediaTimeMs": 125,  "onset": {"broadband": 0.97}},
+    {"mediaTimeMs": 250,  "onset": {"broadband": 0.99}},
+    {"mediaTimeMs": 375,  "onset": {"broadband": 0.96}},
+    {"mediaTimeMs": 500,  "onset": {"broadband": 0.98}},
+    {"mediaTimeMs": 625,  "onset": {"broadband": 0.97}},
+    {"mediaTimeMs": 750,  "onset": {"broadband": 0.99}},
+    {"mediaTimeMs": 875,  "onset": {"broadband": 0.96}},
+    {"mediaTimeMs": 1000, "onset": {"broadband": 0.98}}
+  ]
+}

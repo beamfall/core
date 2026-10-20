@@ -1,0 +1,18 @@
+version: "2"
+
+# Keep Core's merge gate explicit: staticcheck is part of golangci-lint's
+# default set, while gosec is enabled here as the security-specific addition.
+linters:
+  default: none
+  enable:
+    - staticcheck
+    - gosec
+
+run:
+  timeout: 5m
+
+# Core predates this gate with a large gosec/staticcheck backlog. Pin the
+# adoption baseline so every changed line is enforced without silently
+# grandfathering findings introduced after the gate landed.
+issues:
+  new-from-rev: abeec949217a

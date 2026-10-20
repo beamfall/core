@@ -1,0 +1,159 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://beamfall.dev/contracts/visualsync/smartpreset/v1/schema.json",
+  "title": "Beamfall VisualSync SmartPreset v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "id",
+    "visualId",
+    "defaults",
+    "requiredInputs",
+    "intensityBounds",
+    "cueResponses",
+    "palette",
+    "motion",
+    "camera",
+    "overlay",
+    "reducedMotion",
+    "performance"
+  ],
+  "properties": {
+    "contractVersion": { "const": "smart-preset.v1" },
+    "id": { "type": "string", "minLength": 1 },
+    "visualId": { "type": "string", "minLength": 1 },
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["param0", "param1", "param2"],
+      "properties": {
+        "param0": { "type": "number" },
+        "param1": { "type": "number" },
+        "param2": { "type": "number" }
+      }
+    },
+    "requiredInputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["input", "fallback"],
+        "properties": {
+          "input": {
+            "enum": ["audioFrame", "beatGrid", "syncLanes", "currentImage", "generatedAssets"]
+          },
+          "fallback": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "intensityBounds": { "$ref": "#/definitions/bounds" },
+    "cueResponses": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ambient": { "$ref": "#/definitions/responses" },
+        "intro": { "$ref": "#/definitions/responses" },
+        "groove": { "$ref": "#/definitions/responses" },
+        "build": { "$ref": "#/definitions/responses" },
+        "drop": { "$ref": "#/definitions/responses" },
+        "break": { "$ref": "#/definitions/responses" },
+        "phraseTurn": { "$ref": "#/definitions/responses" },
+        "finale": { "$ref": "#/definitions/responses" }
+      }
+    },
+    "palette": { "$ref": "#/definitions/channelBehavior" },
+    "motion": { "$ref": "#/definitions/channelBehavior" },
+    "camera": { "$ref": "#/definitions/channelBehavior" },
+    "overlay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowed", "blend"],
+      "properties": {
+        "allowed": { "type": "boolean" },
+        "blend": { "enum": ["none", "alpha", "additive"] }
+      }
+    },
+    "reducedMotion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "fallback"],
+      "properties": {
+        "mode": { "enum": ["full", "calm", "static"] },
+        "fallback": { "type": "string", "minLength": 1 }
+      }
+    },
+    "performance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minTier", "maxPasses", "textureBudgetMiB"],
+      "properties": {
+        "minTier": { "enum": ["Lite", "Standard", "Flagship"] },
+        "maxPasses": { "type": "integer", "minimum": 1 },
+        "textureBudgetMiB": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "capabilityRequirements": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    }
+  },
+  "definitions": {
+    "bounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["min", "max"],
+      "properties": {
+        "min": { "type": "number", "minimum": 0, "maximum": 1 },
+        "max": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "responses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["target", "curve"],
+        "properties": {
+          "target": {
+            "enum": ["param0", "param1", "param2", "palette", "motion", "camera", "overlay", "intensity"]
+          },
+          "curve": { "$ref": "#/definitions/curve" }
+        }
+      }
+    },
+    "channelBehavior": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": { "type": "string", "minLength": 1 }
+      }
+    },
+    "curve": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["constant", "easing", "envelope", "lfo"] },
+        "value": { "type": "number" },
+        "from": { "type": "number" },
+        "to": { "type": "number" },
+        "duration": { "type": "number", "exclusiveMinimum": 0 },
+        "unit": { "enum": ["seconds", "beats"] },
+        "easing": { "enum": ["linear", "easeIn", "easeOut", "easeInOut"] },
+        "attack": { "type": "number", "minimum": 0 },
+        "release": { "type": "number", "exclusiveMinimum": 0 },
+        "releaseAt": { "type": "number", "minimum": 0 },
+        "shape": { "enum": ["sine", "triangle", "square"] },
+        "period": { "type": "number", "exclusiveMinimum": 0 },
+        "phase": { "type": "number" },
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "wrap": { "type": "boolean" },
+        "smoothingSeconds": { "type": "number", "minimum": 0 }
+      }
+    }
+  }
+}

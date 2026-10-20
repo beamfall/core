@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "_comment": [
+    "Producer-side registry of every consumer-vendored copy of a Core contract",
+    "artifact. Landing a Core wire-contract change without refreshing ALL of these",
+    "leaves the named consumer repo permanently red on a diff it did not cause.",
+    "Consumer repos and exact obligation IDs are enumerated from workspace-repos.json.",
+    "This registry contains artifact metadata and assertion-file probes only; repo",
+    "names are never baked here, so renames follow the workspace manifest.",
+    "Read by script/consumer-pin-freshness.py."
+  ],
+  "contractSourcePrefixes": [
+    "tools/wire-contract/",
+    "internal/conformance/",
+    "internal/graph/",
+    "internal/server/",
+    "internal/playback/",
+    "internal/streamtoken/",
+    "contracts/registry.json"
+  ],
+  "obligations": [
+    {
+      "id": "apple-ui-wire-contract-pin",
+      "consumerProbe": "Tests/BeamfallKitTests/WireContractConformanceTests.swift",
+      "artifact": "Tests/BeamfallKitTests/Resources/wire-contract.json",
+      "assertedBy": "WireContractConformanceTests.testLiveCoreContractMatchesPin",
+      "refresh": "in beamfall: `make regen-wire-goldens`, then `cp <core>/tools/wire-contract/testdata/wire-contract.json <consumer>/Tests/BeamfallKitTests/Resources/wire-contract.json`",
+      "byteCopies": [
+        {
+          "producer": "tools/wire-contract/testdata/wire-contract.json",
+          "consumer": "Tests/BeamfallKitTests/Resources/wire-contract.json"
+        }
+      ]
+    },
+    {
+      "id": "apple-core-goldens",
+      "consumerProbe": "Tests/BeamfallKitTests/CoreGoldenDriftTests.swift",
+      "artifact": "Tests/BeamfallKitTests/Fixtures/core-goldens.sha256 (+ the three vendored goldens)",
+      "assertedBy": "CoreGoldenDriftTests.testCoreGoldensMatchRecordedHashes",
+      "refresh": "in the consumer repo: `BEAMFALL_SERVER_REPO=<core> script/sync_core_goldens.sh` (verify with `--check`)",
+      "byteCopies": [
+        {
+          "producer": "internal/conformance/testdata/graph-response.golden.json",
+          "consumer": "Tests/BeamfallKitTests/Fixtures/graph-response.golden.json"
+        },
+        {
+          "producer": "internal/conformance/testdata/manifest.golden.json",
+          "consumer": "Tests/BeamfallKitTests/Fixtures/manifest.golden.json"
+        },
+        {
+          "producer": "internal/conformance/testdata/playback-info.golden.json",
+          "consumer": "Tests/BeamfallKitTests/Fixtures/playback-info.golden.json"
+        }
+      ],
+      "digestManifest": {
+        "consumer": "Tests/BeamfallKitTests/Fixtures/core-goldens.sha256",
+        "format": "sha256sum-lines",
+        "producerDir": "internal/conformance/testdata",
+        "keys": [
+          "graph-response.golden.json",
+          "manifest.golden.json",
+          "playback-info.golden.json"
+        ]
+      }
+    },
+    {
+      "id": "apple-core-corpus",
+      "consumerProbe": "Tests/BeamfallKitTests/CoreGoldenDriftTests.swift",
+      "artifact": "Tests/BeamfallKitTests/Fixtures/corpus/corpus.manifest.json (+ the twelve vendored corpus files)",
+      "assertedBy": "CoreGoldenDriftTests.testLiveCoreCorpusMatchesManifest",
+      "refresh": "NO SYNC SCRIPT EXISTS for the corpus. Re-vendor by hand: copy each of the twelve files from <core>/internal/conformance/testdata/corpus/ over <consumer>/Tests/BeamfallKitTests/Fixtures/corpus/, then regenerate corpus.manifest.json from the copied bytes (sha256 per relative path). Until a sync script exists this step is manual and is the one most often forgotten.",
+      "byteCopies": [
+        {
+          "producer": "internal/conformance/testdata/corpus/locked-adult/graph-contract.json",
+          "consumer": "Tests/BeamfallKitTests/Fixtures/corpus/locked-adult/graph-contract.json"
+        },
+        {
+          "producer": "internal/conformance/testdata/corpus/locked-adult/manifest.json",
+          "consumer": "Tests/BeamfallKitTests/Fixtures/corpus/locked-adult/manifest.json"
+        },
+        {
+          "producer": "internal/conformance/testdata/corpus/locked-adult/playback-info.json",
+          "consumer": "Tests/BeamfallKitTests/Fixtures/corpus/locked-adult/playback-info.json"
+        },
+        {
+          "producer": "internal/conformance/testdata/corpus/managed-child/graph-contract.json",
+          "consumer": "Tests/BeamfallKitTests/Fixtures/corpus/managed-child/graph-contract.json"
+        },
+        {
+          "producer": "internal/conformance/testdata/corpus/managed-child/manifest.json",
+          "consumer": "Tests/BeamfallKitTests/Fixtures/corpus/managed-child/manifest.json"
+        },
+        {
+          "producer": "internal/conformance/testdata/corpus/managed-child/playback-info.json",
+          "consumer": "Tests/BeamfallKitTests/Fixtures/corpus/managed-child/playback-info.json"
+        },
+        {
+          "producer": "internal/conformance/testdata/corpus/manager/graph-contract.json",
+          "consumer": "Tests/BeamfallKitTests/Fixtures/corpus/manager/graph-contract.json"
+        },
+        {
+          "producer": "internal/conformance/testdata/corpus/manager/manifest.json",
+          "consumer": "Tests/BeamfallKitTests/Fixtures/corpus/manager/manifest.json"
+        },
+        {
+          "producer": "internal/conformance/testdata/corpus/manager/playback-info.json",
+          "consumer": "Tests/BeamfallKitTests/Fixtures/corpus/manager/playback-info.json"
+        },
+        {
+          "producer": "internal/conformance/testdata/corpus/revealed-adult/graph-contract.json",
+          "consumer": "Tests/BeamfallKitTests/Fixtures/corpus/revealed-adult/graph-contract.json"
+        },
+        {
+          "producer": "internal/conformance/testdata/corpus/revealed-adult/manifest.json",
+          "consumer": "Tests/BeamfallKitTests/Fixtures/corpus/revealed-adult/manifest.json"
+        },
+        {
+          "producer": "internal/conformance/testdata/corpus/revealed-adult/playback-info.json",
+          "consumer": "Tests/BeamfallKitTests/Fixtures/corpus/revealed-adult/playback-info.json"
+        }
+      ],
+      "digestManifest": {
+        "consumer": "Tests/BeamfallKitTests/Fixtures/corpus/corpus.manifest.json",
+        "format": "json-map",
+        "producerDir": "internal/conformance/testdata/corpus",
+        "keys": [
+          "locked-adult/graph-contract.json",
+          "locked-adult/manifest.json",
+          "locked-adult/playback-info.json",
+          "managed-child/graph-contract.json",
+          "managed-child/manifest.json",
+          "managed-child/playback-info.json",
+          "manager/graph-contract.json",
+          "manager/manifest.json",
+          "manager/playback-info.json",
+          "revealed-adult/graph-contract.json",
+          "revealed-adult/manifest.json",
+          "revealed-adult/playback-info.json"
+        ]
+      }
+    }
+  ]
+}

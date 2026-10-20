@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "starlog",
+  "tier": "domain",
+  "version": "1.0.0",
+  "capabilities": [
+    {"id": "starlog-catalog", "version": 1}
+  ],
+  "source": {
+    "file": "source.json",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "offerURL": "https://source.example/starlog/source.json"
+  },
+  "configFields": [
+    {"Name": "language", "Type": "text", "Label": {"en": "Language"}}
+  ],
+  "status": [
+    {"name": "indexed-items", "type": "number", "label": {"en": "Indexed items"}}
+  ]
+}

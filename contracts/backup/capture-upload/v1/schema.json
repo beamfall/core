@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.beamfall.org/backup/capture-upload/v1/schema.json",
+  "title": "Beamfall Backup Capture/Upload v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contractVersion", "endpoint", "queue"],
+  "properties": {
+    "contractVersion": { "const": "1.0.0" },
+    "endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "path", "scope", "profileBound", "multipartRequired"],
+      "properties": {
+        "method": { "const": "POST" },
+        "path": { "const": "/v1/backups/media" },
+        "scope": { "const": "backup" },
+        "profileBound": { "const": true },
+        "multipartRequired": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["libraryID", "file"] },
+          "minItems": 2,
+          "uniqueItems": true
+        }
+      }
+    },
+    "queue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backgroundTransfer", "networkPolicy", "pauseReasons", "progress", "resumable", "deleteAfterBackup"],
+      "properties": {
+        "backgroundTransfer": { "const": true },
+        "networkPolicy": { "enum": ["wifiOnly", "wifiOrCellular"] },
+        "pauseReasons": {
+          "type": "array",
+          "items": { "enum": ["lowBattery", "thermalPressure", "networkPolicy", "quota", "diskHeadroom", "serverPaused"] },
+          "uniqueItems": true
+        },
+        "progress": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["itemBytesSent", "itemBytesTotal", "queueState"],
+          "properties": {
+            "itemBytesSent": { "type": "integer", "minimum": 0 },
+            "itemBytesTotal": { "type": "integer", "minimum": 1 },
+            "queueState": { "enum": ["pending", "uploading", "paused", "complete", "failed"] }
+          }
+        },
+        "resumable": { "const": true },
+        "dedupNoopOnReoffer": { "type": "boolean" },
+        "deleteAfterBackup": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "requiresConfirmedStorage"],
+          "properties": {
+            "mode": { "enum": ["disabled", "explicitOptIn"] },
+            "requiresConfirmedStorage": { "const": true }
+          }
+        }
+      }
+    }
+  }
+}

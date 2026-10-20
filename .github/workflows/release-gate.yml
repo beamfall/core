@@ -1,0 +1,318 @@
+# Core release gate CI (E2E-RELEASE-GATE). Store binaries use the separate,
+# strict `make store-release-test-gates` contract with native artifacts and
+# named human attestations.
+#
+# Runs the full release set, split into independent jobs so slow lanes run in
+# parallel: Core release test gates, scenario/contract checks, bench, full race,
+# I/O release checks, and full Playwright web E2E.
+#
+# A failing run blocks releasing: the aggregate release-gate job must be green
+# before any `v*` release tag is cut.
+
+name: release-gate
+
+on:
+  push:
+    branches:
+      - "release/**"
+    tags:
+      - "v*"
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-test-gates:
+    name: Core release test gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            internal/web/app/package-lock.json
+            tools/ui-catalog/package-lock.json
+
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('internal/web/app/package-lock.json', 'tools/ui-catalog/package-lock.json') }}
+
+      - name: Install web dependencies
+        working-directory: internal/web/app
+        run: npm ci
+
+      - name: Install UI catalog dependencies and browser
+        working-directory: tools/ui-catalog
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Run release test gates
+        env:
+          BEAMFALL_SKIP_NPM_CI: "1"
+          BEAMFALL_SKIP_PLAYWRIGHT_INSTALL: "1"
+          # Mandatory scoped lanes run even with no diff range, and a skipped
+          # mandatory lane reds instead of being recorded as release evidence.
+          GATE_MODE: release
+        run: make release-test-gates
+
+  release-static-checks:
+    name: Release scenario and contract checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Scenario release check
+        run: go run ./cmd/scenariocheck -release
+
+      - name: Contract registry check
+        run: python3 script/check-contract-registry.py
+
+  clean-checkout-canary:
+    name: Clean-checkout canary
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          fetch-depth: 0
+          path: beamfall
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: beamfall/go.mod
+          cache: true
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: Clean-checkout canary
+        working-directory: beamfall
+        env:
+          BEAMFALL_WORKSPACE: ${{ github.workspace }}
+          # Release mode: every row runs, each at the immutable revision its pin
+          # names. Without it this job clones 19 sibling default branches and
+          # certifies whatever their tips happened to be.
+          GATE_MODE: release
+        run: script/clean-checkout-canary.sh
+
+  nightly-freshness:
+    name: Nightly freshness
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - name: Check nightly last-green evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: script/nightly-freshness.sh check
+
+  bench:
+    name: Release bench
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: make bench
+        run: make bench
+
+  race-full:
+    name: Release race-full
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: make race-full
+        run: make race-full
+
+  io-release:
+    name: Release I/O checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      AGENT_EVIDENCE_DIR: .agent-evidence/io-release
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Use the same authenticated artifact lock as the container image so CI
+      # exercises the identical FFmpeg binary as production.
+      - name: Install jellyfin-ffmpeg
+        run: |
+          python3 script/check-release-workflow-pins.py
+          FFMPEG_PIN_SHA256="$(sed -n 's/^FFMPEG_PIN_SHA256=//p' internal/ffmpeg/ffmpeg.lock)"
+          FFMPEG_LINUX_AMD64_URL="$(sed -n 's/^FFMPEG_LINUX_AMD64_URL=//p' internal/ffmpeg/ffmpeg.lock)"
+          FFMPEG_LINUX_AMD64_SHA256="$(sed -n 's/^FFMPEG_LINUX_AMD64_SHA256=//p' internal/ffmpeg/ffmpeg.lock)"
+          printf '%s  %s\n' "$FFMPEG_PIN_SHA256" internal/ffmpeg/ffmpeg.pin | sha256sum -c -
+          ffmpeg_url="$FFMPEG_LINUX_AMD64_URL"
+          ffmpeg_sha="$FFMPEG_LINUX_AMD64_SHA256"
+          ffmpeg_pkg="${ffmpeg_url##*/}"
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ca-certificates curl
+          curl -fsSL "$ffmpeg_url" -o "/tmp/${ffmpeg_pkg}"
+          printf '%s  %s\n' "$ffmpeg_sha" "/tmp/${ffmpeg_pkg}" | sha256sum -c -
+          sudo apt-get install -y --no-install-recommends "/tmp/${ffmpeg_pkg}"
+          sudo ln -sf /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/local/bin/ffmpeg
+          sudo ln -sf /usr/lib/jellyfin-ffmpeg/ffprobe /usr/local/bin/ffprobe
+          ffmpeg_version="$(ffmpeg -version | awk 'NR == 1 { print $3 }')"
+          test "$ffmpeg_version" = "$(cat internal/ffmpeg/ffmpeg.pin)"
+          rm -f "/tmp/${ffmpeg_pkg}"
+
+      - name: Generate I/O test fixtures
+        run: make fixtures
+
+      - name: I/O smoke
+        run: script/run-with-evidence.sh --label io-smoke -- script/io-e2e.sh smoke
+
+      - name: I/O journeys JUnit
+        run: script/run-with-evidence.sh --label io-journeys-junit -- script/io-e2e.sh journeys-junit .agent-evidence/io-release/io-journeys-junit.xml
+
+      - name: I/O release check
+        run: script/run-with-evidence.sh --label ioe2e-release-check -- script/io-e2e.sh ledger release-check .agent-evidence/io-release/io-journeys-junit.xml
+
+      - name: Upload I/O release evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-gate-io-evidence
+          path: .agent-evidence/io-release/**
+          if-no-files-found: error
+
+  web-e2e-full:
+    name: Release web E2E full
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      AGENT_EVIDENCE_DIR: .agent-evidence/web-e2e-full
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: internal/web/app/package-lock.json
+
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-web-${{ hashFiles('internal/web/app/package-lock.json') }}
+
+      - name: Install web dependencies
+        working-directory: internal/web/app
+        run: npm ci
+
+      - name: Install Playwright browser
+        working-directory: internal/web/app
+        run: npx playwright install --with-deps chromium
+
+      - name: Full web E2E
+        run: script/run-with-evidence.sh --label web-e2e-full -- make web-e2e-full
+
+      - name: Upload web E2E evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-gate-web-e2e-evidence
+          path: .agent-evidence/web-e2e-full/**
+          if-no-files-found: error
+
+  release-gate:
+    name: Core release gate (slow E2E journeys + full web suite)
+    runs-on: ubuntu-latest
+    needs:
+      - release-test-gates
+      - release-static-checks
+      - clean-checkout-canary
+      - nightly-freshness
+      - bench
+      - race-full
+      - io-release
+      - web-e2e-full
+    steps:
+      # Checkout FIRST: its default workspace cleanup would delete the downloaded
+      # evidence tree if it ran afterwards.
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Download retained release evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: release-gate-*-evidence
+          path: release-gate-evidence
+
+      - name: Require every expected evidence artifact
+        run: script/release-gate-evidence.sh require-artifacts release-gate-evidence
+
+      - name: Bind aggregate result to workflow identity
+        env:
+          COMMIT: ${{ github.sha }}
+          INVOCATION_ID: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path("release-gate-evidence")
+          root.mkdir(exist_ok=True)
+          (root / "aggregate-result.json").write_text(json.dumps({
+              "commit": os.environ["COMMIT"],
+              "invocation_id": os.environ["INVOCATION_ID"],
+              "result": "PASS",
+          }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+
+      - name: Upload aggregate release evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-gate-signed-input
+          path: release-gate-evidence/**
+          if-no-files-found: error
+
+      - run: 'echo "core release-gate: PASS"'

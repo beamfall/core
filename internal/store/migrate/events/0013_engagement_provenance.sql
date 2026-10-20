@@ -1,0 +1,29 @@
+-- ADR-0009 §7 (FREEZE-3) — pre-importer schema reservation for engagement
+-- provenance + historical (backdated) timestamps. Importers (Plex/Jellyfin/Stash
+-- watch-state, ADR-0037 Migration Wizard) ship LATER as Integration Plugins; this
+-- migration only makes the schema ADMIT them now, so a future import cannot
+-- corrupt "recently watched". No importer code lands in this migration.
+--
+-- playback_progress (0005/0006) is the per-Profile engagement projection. Two
+-- additive, row-preserving columns:
+--
+--   * provenance — a SHAPE-named discriminator (invariant #1: no domain terms),
+--     '' = native (every existing and future locally-recorded play). An importer
+--     stamps an opaque source-shape value (e.g. 'import' or 'import:<source>') so
+--     imported history is distinguishable from native engagement. DEFAULT ''
+--     keeps every pre-migration row and every existing native write unchanged.
+--
+--   * occurred_at_ms — the REAL historical instant the engagement happened, for
+--     backdated imports ("watched 3 years ago" must keep its true timestamp, not
+--     now()). NULL on native rows: the native append path leaves it unset and
+--     keeps using updated_at_ms (the recency-ordering key for continue-watching /
+--     recently-played / next-up). An importer sets occurred_at_ms to the source's
+--     historical time WITHOUT moving updated_at_ms, so a years-old import does not
+--     masquerade as a fresh play on the recency shelves. Readers that want the
+--     true event time read COALESCE(occurred_at_ms, updated_at_ms).
+--
+-- Backdating is safe against the engagement-prune sweep (engagement_prune.go):
+-- it prunes by Media existence, never by timestamp, so an old occurred_at_ms
+-- never causes a native or imported row to be dropped.
+ALTER TABLE playback_progress ADD COLUMN provenance TEXT NOT NULL DEFAULT '';
+ALTER TABLE playback_progress ADD COLUMN occurred_at_ms INTEGER;

@@ -1,0 +1,4 @@
+7ff31f8a5fac5bc9f147af3906b638b18cb6e0a3a0722e402d597b7ffcce90b3  graph-response.golden.json
+4317c6a4208d22b534da79c00fcd528304fe9fe4f05f623a7a5022ede430a566  manifest.golden.json
+74eacbf03a9f6a6496a7ba661ba814eef5d754091b8c2ed490e2bb94360869ee  playback-info.golden.json
+b8e34a8906aa379ffb56581a562fcdab1f92cd59fd0306c6d91d71034358f695  token-scope.golden.json

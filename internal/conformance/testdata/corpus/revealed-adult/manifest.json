@@ -1,0 +1,103 @@
+{
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "layouts": [
+    {
+      "id": "layout-home",
+      "sections": [
+        {
+          "artworkSlot": "poster",
+          "id": "continue",
+          "kind": "shelf",
+          "source": {
+            "kind": "continue-watching"
+          },
+          "title": {
+            "en": "Continue Watching",
+            "fr": "Reprendre la lecture"
+          }
+        },
+        {
+          "artworkSlot": "poster",
+          "id": "recent",
+          "kind": "shelf",
+          "source": {
+            "kind": "recently-added"
+          },
+          "title": {
+            "en": "Recently Added",
+            "fr": "Ajouts récents"
+          }
+        },
+        {
+          "artworkSlot": "poster",
+          "id": "your-most-played",
+          "kind": "shelf",
+          "source": {
+            "kind": "most-played"
+          },
+          "title": {
+            "en": "Your Most-Played",
+            "fr": "Vos plus lus"
+          }
+        }
+      ]
+    }
+  ],
+  "libraries": [
+    {
+      "id": "library-local",
+      "pluginID": null,
+      "previewClips": true,
+      "title": "Local Library"
+    },
+    {
+      "id": "library-archive",
+      "pluginID": null,
+      "previewClips": true,
+      "title": "Archive"
+    }
+  ],
+  "navigation": [
+    {
+      "id": "home",
+      "layoutID": "layout-home",
+      "title": {
+        "en": "Home",
+        "fr": "Accueil"
+      },
+      "view": "layout"
+    },
+    {
+      "id": "ambient",
+      "layoutID": "",
+      "title": {
+        "en": "Ambient",
+        "fr": "Ambiance"
+      },
+      "view": "ambient"
+    },
+    {
+      "id": "library-library-local",
+      "layoutID": "layout-home",
+      "libraryID": "library-local",
+      "title": "Local Library",
+      "view": "layout"
+    },
+    {
+      "id": "library-library-archive",
+      "layoutID": "layout-home",
+      "libraryID": "library-archive",
+      "title": "Archive",
+      "view": "layout"
+    }
+  ],
+  "profileID": "profile-default",
+  "revealed": true,
+  "systemSurfaceDisclosure": {
+    "metadataAllowed": false,
+    "snapshotVersion": "1"
+  },
+  "theme": {
+    "accentColor": "#2F7DFF"
+  }
+}

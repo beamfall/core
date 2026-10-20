@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("{\"query\":\"query { ...A } fragment A on Query { ...B } fragment B on Query { ...A }\"}")

@@ -1,0 +1,66 @@
+# Nightly mutation-testing pass (ADR-0121 §5, TEST-CORE-6). Runs `gremlins` on the
+# NAMED security/crypto packages (internal/streamtoken, internal/webhook,
+# internal/offlinepack — never `./...`) and enforces the ratcheting surviving-mutant
+# budget in docs/testing/mutation-budget.json. Demonstrated green on
+# internal/streamtoken first (the spike), per the §5 binding precondition.
+#
+# ADVISORY tier — intentionally OUTSIDE the push/PR gate: a per-mutant recompile loop
+# is too slow for every autonomous merge, and no "release-ready" claim may rest on a
+# tier the gate runs. timeout-minutes is the per-run window cap; the script also emits
+# a residual note per package when MUTATION_PKG_CAP_SEC is exceeded.
+name: mutation-nightly
+
+on:
+  schedule:
+    - cron: "11 4 * * *" # Daily 04:11 UTC (between fuzz-nightly 03:47 and race-nightly 05:23)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mutation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Read canonical Gremlins version
+        id: gremlins-version
+        run: echo "version=$(python3 -c 'import json; print(json.load(open("docs/testing/mutation-budget.json"))["tool_version"])')" >> "$GITHUB_OUTPUT"
+      # DD-9: cache the gremlins binary so the job does not hit the network on
+      # every nightly run. The cache key is the pinned version + OS; a key miss
+      # falls back to a fresh go install (same network install, but now the
+      # common case is cache-served and network-free).
+      - name: cache gremlins binary
+        id: cache-gremlins
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93eca35 # v4
+        with:
+          path: ~/go/bin/gremlins
+          key: gremlins-v${{ steps.gremlins-version.outputs.version }}-${{ runner.os }}
+      - name: install gremlins (pinned)
+        if: steps.cache-gremlins.outputs.cache-hit != 'true'
+        run: go install github.com/go-gremlins/gremlins/cmd/gremlins@v${{ steps.gremlins-version.outputs.version }}
+      - name: mutation on named packages (budget-enforced)
+        id: mutation
+        run: |
+          make mutation
+          echo "status=$(python3 -c 'import json; print(json.load(open(".agent-evidence/mutation-run/status.json"))["status"])')" >> "$GITHUB_OUTPUT"
+      - name: Record last green
+        if: steps.mutation.outputs.status == 'COMPLETE'
+        run: script/nightly-freshness.sh record --tier mutation-nightly
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: steps.mutation.outputs.status == 'COMPLETE'
+        with:
+          name: nightly-last-green-mutation-nightly
+          path: |
+            .agent-evidence/nightly-last-green/mutation-nightly.json
+            .agent-evidence/mutation-run/status.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: steps.mutation.outputs.status == 'TIMEBOXED'
+        with:
+          name: mutation-nightly-timeboxed-residual
+          path: .agent-evidence/mutation-run/status.json

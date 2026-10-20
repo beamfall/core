@@ -1,0 +1,5 @@
+# Generated lavfi bulk fixtures are NOT committed (D3): regenerate with
+#   script/io-e2e.sh fixtures
+# Committed *synthetic quirk* samples (chapters/PGS/DV/HDR10+) live elsewhere
+# (a separate committed build script per D3), never under generated/.
+generated/
