@@ -132,6 +132,7 @@ func TestLocalInferenceConfinementFailsClosedWithoutLandlock(t *testing.T) {
 	if !errors.Is(err, integrationhost.ErrLocalInferenceConfinementUnavailable) {
 		t.Fatalf("error = %v, want ErrLocalInferenceConfinementUnavailable", err)
 	}
+	// #nosec G204 G702 -- re-executes this test binary with a fixed -test.run pattern.
 	cmd := exec.Command(os.Args[0], "-test.run=^TestLocalInferenceConfinementFailsClosedWithoutLandlock$")
 	cmd.Env = append(os.Environ(), "BEAMFALL_FFMPEG_POSTURE_HELPER=1")
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -206,6 +207,7 @@ func localInferenceConfinementHelper() {
 	case "write-work":
 		err = os.WriteFile(filepath.Join(work, "labels.json"), []byte("{}"), 0o600)
 	case "read-etc":
+		// #nosec G703 -- the parent test sets this probe path; the child only checks it is denied.
 		if _, readErr := os.ReadFile(os.Getenv("BEAMFALL_LOCAL_INFERENCE_ETC")); errors.Is(readErr, os.ErrPermission) {
 			os.Exit(0)
 		}
