@@ -16,7 +16,7 @@ case "$1 ${2:-}" in
     if [[ "$*" == *" go env GOVERSION" ]]; then
       printf '%s\n' "${MOCK_GO_VERSION:-go1.27.2}"
     else
-      printf '%s\n' "v22.17.0"
+      printf '%s\n' "v26.0.0"
     fi
     ;;
   "rm --force") ;;
