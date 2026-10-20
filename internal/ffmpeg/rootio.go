@@ -42,6 +42,10 @@ type outputTemp struct {
 	// id is the identity of the file created at reservation time. The publish
 	// refuses unless the member still names this exact file.
 	id fs.FileInfo
+	// held keeps the reserved inode allocated until the identity check. Without
+	// it, an unlink-and-recreate can be handed the freed inode number (ext4 and
+	// tmpfs reuse it at once), and os.SameFile would accept the substitute.
+	held *os.File
 	// Path is the absolute path handed to the FFmpeg child process.
 	Path string
 }
@@ -86,13 +90,13 @@ func reserveOutput(dst string) (*outputTemp, error) {
 		return nil, fmt.Errorf("creating temp file: %w", err)
 	}
 	id, err := file.Stat()
-	_ = file.Close()
 	if err != nil {
+		_ = file.Close()
 		_ = root.Remove(name)
 		_ = root.Close()
 		return nil, err
 	}
-	return &outputTemp{root: root, dir: dir, name: name, id: id, Path: filepath.Join(dir, name)}, nil
+	return &outputTemp{root: root, dir: dir, name: name, id: id, held: file, Path: filepath.Join(dir, name)}, nil
 }
 
 // recoverOutputTemps removes only dead-process reservations for this exact
@@ -167,6 +171,7 @@ func outputTempOwnerAlive(pid int, recordedStart string, hasStart bool) bool {
 func (o *outputTemp) publish(dst string) error {
 	defer o.close()
 	if err := verifyDirUnreplaced(o.root, o.dir); err != nil {
+		o.release()
 		_ = o.root.Remove(o.name)
 		return err
 	}
@@ -175,9 +180,13 @@ func (o *outputTemp) publish(dst string) error {
 		return err
 	}
 	if !current.Mode().IsRegular() || !os.SameFile(o.id, current) {
+		o.release()
 		_ = o.root.Remove(o.name)
 		return ErrPathSwapped
 	}
+	// Release before the rename: Windows refuses to rename a file with an open
+	// handle, and the identity proof above no longer needs the pin.
+	o.release()
 	if err := o.root.Rename(o.name, filepath.Base(dst)); err != nil {
 		_ = o.root.Remove(o.name)
 		return err
@@ -195,6 +204,7 @@ func (o *outputTemp) discard() error {
 	if o == nil || o.root == nil {
 		return nil
 	}
+	o.release()
 	if err := o.root.Remove(o.name); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("removing temp file: %w", err)
 	}
@@ -214,7 +224,16 @@ func (o *outputTemp) joinDiscardError(err *error) {
 	*err = errors.Join(*err, discardErr)
 }
 
+// release drops the reservation pin; the directory descriptor stays open.
+func (o *outputTemp) release() {
+	if o.held != nil {
+		_ = o.held.Close()
+		o.held = nil
+	}
+}
+
 func (o *outputTemp) close() {
+	o.release()
 	if o.root != nil {
 		_ = o.root.Close()
 		o.root = nil
