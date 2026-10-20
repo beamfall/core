@@ -96,6 +96,9 @@ export async function expectArchivedVisualParity(
   expect(sha256(archived), `${state}: archived pre-migration PNG changed`).toBe(
     expectedArchivedSHA256,
   );
+  // The archive and its approved deltas are macOS captures; on other hosts
+  // only the live per-platform golden (toHaveScreenshot) compares pixels.
+  if (process.platform !== "darwin") return;
   const approvedDelta = approvedVisualDeltas[archiveKey];
 
   if (approvedDelta) {
