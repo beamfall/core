@@ -17,10 +17,9 @@ import (
 )
 
 const (
-	wireContractPublishedBaselinePath      = "../../tools/wire-contract/testdata/wire-contract.json"
-	wireContractRegistryPath               = "../../contracts/registry.json"
-	wireContractFreshnessDriftScope        = "producer-publish-freshness"
-	wireContractDeterminationCandidatePath = "wire-contract-candidate-v2.0.0.json"
+	wireContractPublishedBaselinePath = "../../tools/wire-contract/testdata/wire-contract.json"
+	wireContractRegistryPath          = "../../contracts/registry.json"
+	wireContractFreshnessDriftScope   = "producer-publish-freshness"
 )
 
 type wireContractArtifact struct {
@@ -71,8 +70,8 @@ func TestWireContract(t *testing.T) {
 }
 
 // TestWireContractPublishedArtifactFreshness keeps development drift explicit:
-// the baseline must match either the newest published artifact or the exact
-// unpublished candidate under determination.
+// the baseline must match the newest published artifact unless an unexpired
+// producer-publish-freshness waiver covers the drift.
 func TestWireContractPublishedArtifactFreshness(t *testing.T) {
 	publishedErr := checkWireContractPublishedArtifactFreshness(
 		wireContractPublishedBaselinePath,
@@ -80,22 +79,7 @@ func TestWireContractPublishedArtifactFreshness(t *testing.T) {
 		wireContractRegistryPath,
 		time.Now(),
 	)
-	if publishedErr == nil {
-		return
-	}
-	candidate, err := os.ReadFile(wireContractDeterminationCandidatePath)
-	if err != nil {
-		t.Fatal(publishedErr)
-	}
-	baseline, err := os.ReadFile(wireContractPublishedBaselinePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	matches, err := sameWireContract(baseline, candidate)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !matches {
+	if publishedErr != nil {
 		t.Fatal(publishedErr)
 	}
 }
@@ -200,7 +184,7 @@ func TestWireContractPublicationIsConsolidated(t *testing.T) {
 	}
 	for _, boundary := range registry.Boundaries {
 		if boundary.Boundary == "client-core-wire" {
-			if !reflect.DeepEqual(snapshot.KnownDrift, boundary.KnownDrift) {
+			if (len(snapshot.KnownDrift) != 0 || len(boundary.KnownDrift) != 0) && !reflect.DeepEqual(snapshot.KnownDrift, boundary.KnownDrift) {
 				t.Fatal("published wire contract known drift differs from the registry")
 			}
 			return

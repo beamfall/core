@@ -36,26 +36,26 @@
     {
       "boundary": "client-core-wire",
       "producer": "beamfall",
-      "artifact": "internal/conformance/wire-contract-v1.13.1.json",
-      "version": "1.13.1",
-      "activeArtifactVersion": "1.13.1",
+      "artifact": "internal/conformance/wire-contract-v2.0.0.json",
+      "version": "2.0.0",
+      "activeArtifactVersion": "2.0.0",
       "license": "AGPL",
       "consumers": [
         {
           "repo": "beamfall-web",
-          "pinnedVersion": "1.13.1"
+          "pinnedVersion": "2.0.0"
         },
         {
           "repo": "beamfall-apple",
-          "pinnedVersion": "1.5.0"
+          "pinnedVersion": "2.0.0"
         },
         {
           "repo": "beamfall-android",
-          "pinnedVersion": "1.13.1"
+          "pinnedVersion": "2.0.0"
         },
         {
           "repo": "beamfall-windows",
-          "pinnedVersion": "1.1.0"
+          "pinnedVersion": "2.0.0"
         }
       ],
       "consumerArtifacts": {
@@ -67,14 +67,8 @@
         ],
         "beamfall-windows": ["contracts/core/client-core-wire.binding.json"]
       },
-      "conformanceTest": "internal/conformance/wire_contract_test.go; XCONTRACT-1b consumer wire drift checks",
-      "knownDrift": [
-        {
-          "ticket": "XCONTRACT-1b",
-          "deadline": "2026-10-31",
-          "reason": "Web/native clients consume Core wire artifact and reject stale contracts."
-        }
-      ]
+      "conformanceTest": "internal/conformance/wire_contract_test.go",
+      "knownDrift": []
     },
     {
       "boundary": "client-core-token-scope",
