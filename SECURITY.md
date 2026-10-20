@@ -6,7 +6,7 @@ Email **security@beamfall.com** with a description, affected component and versi
 reproduction steps or a proof of concept. This is the reachable-today primary route.
 
 GitHub's private **[Report a vulnerability](https://github.com/Beamfall/core/security/advisories/new)**
-form activates once the repository is public. Do not open a public issue or discussion for a
+form is also available. Do not open a public issue or discussion for a
 suspected vulnerability.
 
 Report security defects in Beamfall-authored software or Beamfall-operated services. Include the
