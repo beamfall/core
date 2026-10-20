@@ -111,8 +111,14 @@ def migrations(policy: Optional[dict[str, Any]]) -> set[tuple[str, str, str]]:
 
 
 def validate_history(repo: Path, current: dict[str, Any], ref: str = "HEAD") -> None:
-    if git(repo, "rev-parse", "--is-shallow-repository").strip() != "false":
-        raise PolicyError("mutation policy history validation requires a full, non-shallow checkout")
+    shallow = git(repo, "rev-parse", "--is-shallow-repository").strip()
+    if shallow != "false":
+        git_dir = git(repo, "rev-parse", "--absolute-git-dir").strip()
+        raise PolicyError(
+            "mutation policy history validation requires a full, non-shallow checkout "
+            f"(is-shallow-repository={shallow!r}, git-dir={git_dir}, "
+            f"shallow-file={(Path(git_dir) / 'shallow').exists()})"
+        )
     lines = git(
         repo,
         "rev-list",
