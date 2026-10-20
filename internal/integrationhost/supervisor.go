@@ -42,11 +42,20 @@ type WorkerRlimits struct {
 // set on itself before exec'ing the worker artifact.
 //
 // A worker is an integration glue process, not a transcoder: far tighter ceilings
-// than the ffmpeg defaults. 30 min CPU, 1 GiB address space, 256 fds.
+// than the ffmpeg defaults. 30 min CPU, 4 GiB address space, 256 fds.
+//
+// RLIMIT_AS counts every mapping, including PROT_NONE reservations. On 64-bit
+// Linux the Go runtime reserves about 1.1 GiB of address space before its first
+// allocation (page-summary levels plus the scavenge index for a 48-bit heap), so
+// a Go worker's VmSize is ~1.2 GiB at startup. Under a 1 GiB ceiling a Go worker
+// died nondeterministically with a runtime fatal error (exit 2 or SIGSEGV)
+// depending on its ASLR layout: 2 of 200 starts on linux/arm64, and the
+// integrationhost process-tree tests on the amd64 race lane. 4 GiB leaves that
+// reservation plus ~2.8 GiB of real growth while still bounding a runaway map.
 func DefaultWorkerRlimits() WorkerRlimits {
 	return WorkerRlimits{
 		CPUSeconds: 30 * 60,
-		ASBytes:    1 << 30,
+		ASBytes:    4 << 30,
 		NoFile:     256,
 	}
 }

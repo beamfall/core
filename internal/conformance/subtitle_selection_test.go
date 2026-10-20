@@ -109,9 +109,11 @@ func TestSubtitleSelectionCorpus(t *testing.T) {
 }
 
 func TestSubtitleSelectionResolverConformance(t *testing.T) {
+	t.Parallel()
 	for _, fixture := range loadSubtitleSelectionFixtures(t) {
 		fixture := fixture
 		t.Run(fixture.ID, func(t *testing.T) {
+			t.Parallel()
 			service, scope, mediaID := subtitleSelectionService(t, fixture)
 			assertSubtitleSelection(t, fixture, service, scope, mediaID)
 			if fixture.EventSequence {
@@ -167,7 +169,7 @@ func loadSubtitleSelectionFixtures(t *testing.T) []subtitleSelectionFixture {
 func subtitleSelectionService(t *testing.T, fixture subtitleSelectionFixture) (*playback.Service, auth.Scope, string) {
 	t.Helper()
 	ctx := context.Background()
-	st := storetest.Open(t)
+	st := storetest.OpenAt(t, seededDataDir(t))
 	path := filepath.Join(t.TempDir(), fixture.ID+".mkv")
 	if err := os.WriteFile(path, []byte("subtitle selection conformance"), 0o600); err != nil {
 		t.Fatal(err)

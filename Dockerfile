@@ -2,7 +2,7 @@
 
 ARG GO_VERSION=1.27.2
 
-FROM --platform=$BUILDPLATFORM node:22-bookworm-slim@sha256:813a7480f28fdadac1f7f5c824bcdad435b5bc1322a5968bbbdef8d058f9dff4 AS web
+FROM --platform=$BUILDPLATFORM node:26-bookworm-slim@sha256:298992629d69bbd5b2b03ad57094d8e4fcb3a8eeb7c4e25d29de656519568913 AS web
 WORKDIR /src
 
 COPY internal/web/app/package*.json ./internal/web/app/
@@ -26,7 +26,7 @@ ARG TARGETARCH
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
 	go build -trimpath -ldflags="-s -w" -o /out/beamfall ./cmd/beamfall
 
-FROM debian:bookworm-slim@sha256:60eac759739651111db372c07be67863818726f754804b8707c90979bda511df AS runtime
+FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 AS runtime
 
 ARG TARGETARCH
 COPY internal/ffmpeg/ffmpeg.pin internal/ffmpeg/ffmpeg.lock /tmp/

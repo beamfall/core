@@ -5,3 +5,5 @@ FFMPEG_LINUX_AMD64_URL=https://repo.jellyfin.org/files/ffmpeg/debian/7.x/7.1.4-3
 FFMPEG_LINUX_AMD64_SHA256=0cf62bc2423822c9ec7a38dbc8f526d9a58671bd01843daa7817ece35619fc1c
 FFMPEG_LINUX_ARM64_URL=https://repo.jellyfin.org/files/ffmpeg/debian/7.x/7.1.4-3/arm64/jellyfin-ffmpeg7_7.1.4-3-bookworm_arm64.deb
 FFMPEG_LINUX_ARM64_SHA256=9de240f98cc49db7ebc649c72c37d3ef154170d37ec2fbc68483cc84744804bb
+FFMPEG_UBUNTU_NOBLE_AMD64_URL=https://repo.jellyfin.org/files/ffmpeg/ubuntu/7.x/7.1.4-3/amd64/jellyfin-ffmpeg7_7.1.4-3-noble_amd64.deb
+FFMPEG_UBUNTU_NOBLE_AMD64_SHA256=bbaa1a5fea4fe0a23df1bfd9050af6a4a5f7fc934ebbca997d687e528a0931a6
