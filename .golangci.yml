@@ -12,7 +12,8 @@ run:
   timeout: 5m
 
 # Core predates this gate with a large gosec/staticcheck backlog. Pin the
-# adoption baseline so every changed line is enforced without silently
+# baseline to the public repository's initial release commit (the private
+# adoption commit is not in public history) so every changed line is enforced without silently
 # grandfathering findings introduced after the gate landed.
 issues:
-  new-from-rev: abeec949217a
+  new-from-rev: 4b62fe25da35

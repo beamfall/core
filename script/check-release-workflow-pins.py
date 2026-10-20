@@ -32,6 +32,8 @@ LOCK_KEYS = {
     "FFMPEG_LINUX_AMD64_SHA256",
     "FFMPEG_LINUX_ARM64_URL",
     "FFMPEG_LINUX_ARM64_SHA256",
+    "FFMPEG_UBUNTU_NOBLE_AMD64_URL",
+    "FFMPEG_UBUNTU_NOBLE_AMD64_SHA256",
 }
 PIN_RE = re.compile(r"^(\d+\.\d+\.\d+)-Jellyfin\n$")
 LOCK_LINE_RE = re.compile(r"^([A-Z0-9_]+)=([^\s#]+)$")
@@ -45,6 +47,15 @@ FFMPEG_URL_RE = re.compile(
     r"(\d+\.\d+\.\d+-\d+)/(amd64|arm64)/"
     r"jellyfin-ffmpeg\d+_\1-bookworm_\2\.deb$"
 )
+# GitHub's ubuntu-latest runner lacks the bookworm deb's libraries, so CI installs
+# Jellyfin's noble build of the same release through .github/install-ffmpeg.sh.
+FFMPEG_NOBLE_URL_RE = re.compile(
+    r"^https://repo\.jellyfin\.org/files/ffmpeg/ubuntu/\d+\.x/"
+    r"(\d+\.\d+\.\d+-\d+)/amd64/"
+    r"jellyfin-ffmpeg\d+_\1-noble_amd64\.deb$"
+)
+CI_FFMPEG_INSTALLER = ".github/install-ffmpeg.sh"
+CI_FFMPEG_WORKFLOWS = (".github/workflows/gate.yml", ".github/workflows/release-gate.yml")
 
 
 def check_file(path: Path) -> list[str]:
@@ -194,7 +205,18 @@ def _check_ffmpeg_lock(root: Path) -> list[str]:
         if not SHA256_RE.fullmatch(digest):
             errors.append(f"{lock_path}: {prefix}_SHA256 must be a lowercase SHA-256")
 
-    consumers = [root / "Dockerfile", root / ".github/workflows/release-gate.yml"]
+    prefix = "FFMPEG_UBUNTU_NOBLE_AMD64"
+    url = lock[f"{prefix}_URL"]
+    parsed = urlsplit(url)
+    match = FFMPEG_NOBLE_URL_RE.fullmatch(url)
+    if parsed.query or parsed.fragment or "$" in url or not match:
+        errors.append(f"{lock_path}: {prefix}_URL is not an immutable versioned URL")
+    elif match.group(1).rsplit("-", 1)[0] != pin_version:
+        errors.append(f"{lock_path}: {prefix}_URL ships FFmpeg {match.group(1)}, not ffmpeg.pin's {pin_version}")
+    if not SHA256_RE.fullmatch(lock[f"{prefix}_SHA256"]):
+        errors.append(f"{lock_path}: {prefix}_SHA256 must be a lowercase SHA-256")
+
+    consumers = [root / "Dockerfile", root / CI_FFMPEG_INSTALLER]
     coordinate_literals = [value for key, value in lock.items() if key != "FFMPEG_PIN_SHA256"]
     coordinate_literals += [Path(urlsplit(lock[key]).path).name for key in lock if key.endswith("_URL")]
     for path in consumers:
@@ -213,11 +235,18 @@ def _check_ffmpeg_lock(root: Path) -> list[str]:
                     errors.append(f"{path}: does not map TARGETARCH {arch} to its locked artifact")
         else:
             policy = content.find("python3 script/check-release-workflow-pins.py")
-            use = content.find("$FFMPEG_LINUX_AMD64_URL")
+            use = content.find("$FFMPEG_UBUNTU_NOBLE_AMD64_URL")
             if policy < 0 or use < 0 or policy > use:
-                errors.append(f"{path}: must validate ffmpeg.lock before using the locked linux/amd64 artifact")
-            if any(f"$FFMPEG_LINUX_AMD64_{field}" not in content for field in ("URL", "SHA256")):
-                errors.append(f"{path}: does not use the locked linux/amd64 artifact")
+                errors.append(f"{path}: must validate ffmpeg.lock before using the locked ubuntu noble artifact")
+            if any(f"$FFMPEG_UBUNTU_NOBLE_AMD64_{field}" not in content for field in ("URL", "SHA256")):
+                errors.append(f"{path}: does not use the locked ubuntu noble artifact")
+    for relative in CI_FFMPEG_WORKFLOWS:
+        path = root / relative
+        content = _read(path, errors)
+        if f"sh {CI_FFMPEG_INSTALLER}" not in content:
+            errors.append(f"{path}: must install FFmpeg through {CI_FFMPEG_INSTALLER}")
+        if "repo.jellyfin.org/files/ffmpeg" in content or any(value in content for value in coordinate_literals):
+            errors.append(f"{path}: duplicates FFmpeg artifact coordinates outside ffmpeg.lock")
     return errors
 
 

@@ -22,7 +22,8 @@ scenarios:
     applies: [server]
     tier: gate
     commands: [make gate]
-    status: shipped
+    status: planned
+    blocked: "The agent test-selection tooling that proved this journey is not part of the public core repository."
 
   - id: restricted-reveal-playback
     area: privacy

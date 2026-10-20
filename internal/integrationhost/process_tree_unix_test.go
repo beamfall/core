@@ -208,7 +208,110 @@ func waitFixturePIDs(t *testing.T, path string) []int {
 	if len(pids) != 2 {
 		t.Fatalf("fixture pids = %v, want worker and grandchild", pids)
 	}
-	return pids
+	return hostFixturePIDs(t, pids, path)
+}
+
+// hostFixturePIDs maps the pids the fixture reported from its own PID
+// namespace into this test's. On Linux the supervisor launches workers through
+// bwrap --unshare-all, so os.Getpid inside the sandbox is namespace-local (the
+// worker is pid 2) and names an unrelated host process. Each fixture process is
+// found by its innermost NSpid plus the test-unique pid-file path on its command
+// line; without a PID namespace NSpid is the host pid and the mapping is the
+// identity.
+func hostFixturePIDs(t *testing.T, reported []int, pidFile string) []int {
+	t.Helper()
+	if runtime.GOOS != "linux" {
+		return reported
+	}
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		t.Fatalf("list /proc: %v", err)
+	}
+	host := make([]int, len(reported))
+	for _, entry := range entries {
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil {
+			continue
+		}
+		// #nosec G304 -- a /proc entry named by a numeric pid.
+		cmdline, err := os.ReadFile(filepath.Join("/proc", entry.Name(), "cmdline"))
+		if err != nil || !strings.Contains(string(cmdline), pidFile) {
+			continue
+		}
+		nsPIDs := procStatusInts(pid, "NSpid")
+		if len(nsPIDs) == 0 {
+			continue
+		}
+		for i, want := range reported {
+			if nsPIDs[len(nsPIDs)-1] != want {
+				continue
+			}
+			if host[i] != 0 {
+				t.Fatalf("fixture pid %d matches host pids %d and %d", want, host[i], pid)
+			}
+			host[i] = pid
+		}
+	}
+	for i, pid := range host {
+		if pid == 0 {
+			t.Fatalf("no host process for fixture pid %d (reported %v)", reported[i], reported)
+		}
+	}
+	return host
+}
+
+// procStatusInts returns the integer fields of one /proc/<pid>/status line,
+// or nil when the process or the line is absent.
+func procStatusInts(pid int, key string) []int {
+	// #nosec G304 -- a /proc path built from an integer pid.
+	raw, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "status"))
+	if err != nil {
+		return nil
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		name, value, ok := strings.Cut(line, ":")
+		if !ok || name != key {
+			continue
+		}
+		var values []int
+		for _, field := range strings.Fields(value) {
+			n, err := strconv.Atoi(field)
+			if err != nil {
+				return nil
+			}
+			values = append(values, n)
+		}
+		return values
+	}
+	return nil
+}
+
+// ownedGroupLeader returns the process that must lead the worker tree's
+// process group. Unsandboxed, the supervisor's Setpgid makes the worker its own
+// birth-identity leader. Under bwrap --new-session the setsid runs in the
+// sandbox's PID-namespace init (bwrap's pid 1), so that init leads the group:
+// it must be the worker's direct parent, at the worker's namespace depth, with
+// namespace pid 1.
+func ownedGroupLeader(t *testing.T, worker int) int {
+	t.Helper()
+	if runtime.GOOS != "linux" {
+		return worker
+	}
+	pgid, err := syscall.Getpgid(worker)
+	if err != nil {
+		t.Fatalf("getpgid(%d): %v", worker, err)
+	}
+	if pgid == worker {
+		return worker
+	}
+	parent := procStatusInts(worker, "PPid")
+	workerNS := procStatusInts(worker, "NSpid")
+	leaderNS := procStatusInts(pgid, "NSpid")
+	if len(parent) == 1 && parent[0] == pgid && len(workerNS) > 1 &&
+		len(leaderNS) == len(workerNS) && leaderNS[len(leaderNS)-1] == 1 {
+		return pgid
+	}
+	return worker
 }
 
 func waitForPath(t *testing.T, path string) {
@@ -225,7 +328,7 @@ func waitForPath(t *testing.T, path string) {
 
 func assertOwnedProcessGroup(t *testing.T, pids []int, sentinelPID int) {
 	t.Helper()
-	want := pids[0]
+	want := ownedGroupLeader(t, pids[0])
 	for _, pid := range pids {
 		pgid, err := syscall.Getpgid(pid)
 		if err != nil {

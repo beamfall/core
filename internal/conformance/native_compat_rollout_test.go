@@ -21,8 +21,10 @@ var nativeRolloutSurfaces = []capabilities.Surface{
 }
 
 func TestNativeCompatibilityRolloutFailsClosedPerSurface(t *testing.T) {
+	t.Parallel()
 	for i, surface := range nativeRolloutSurfaces {
 		t.Run(string(surface), func(t *testing.T) {
+			t.Parallel()
 			t.Run("unknown build", func(t *testing.T) {
 				world := nativeRolloutWorld(t)
 				bindNativeRolloutSurface(t, world.store, surface)
@@ -97,7 +99,7 @@ type nativeRolloutResponse struct {
 
 func nativeRolloutWorld(t *testing.T) compatDurabilityWorld {
 	t.Helper()
-	world := bootCompatDurabilityServer(t, t.TempDir())
+	world := bootCompatDurabilityServer(t, seededDataDir(t))
 	world.srv.SetCompatPolicy(nativeRolloutPolicy(), "native-rollout-build", 0)
 	return world
 }

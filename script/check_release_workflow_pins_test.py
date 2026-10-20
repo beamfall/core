@@ -50,6 +50,10 @@ class SupplyChainPolicyTests(unittest.TestCase):
         "https://repo.jellyfin.org/files/ffmpeg/debian/7.x/7.1.4-3/arm64/"
         "jellyfin-ffmpeg7_7.1.4-3-bookworm_arm64.deb"
     )
+    noble_url = (
+        "https://repo.jellyfin.org/files/ffmpeg/ubuntu/7.x/7.1.4-3/amd64/"
+        "jellyfin-ffmpeg7_7.1.4-3-noble_amd64.deb"
+    )
 
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
@@ -85,16 +89,16 @@ RUN FFMPEG_LINUX_AMD64_URL="$(sed -n 's/^FFMPEG_LINUX_AMD64_URL=//p' /tmp/ffmpeg
         with:
           node-version: 22
 """.format(action="a" * 40)
-        self.write(".github/workflows/gate.yml", workflow)
+        install = "      - run: sh .github/install-ffmpeg.sh\n"
+        self.write(".github/workflows/gate.yml", workflow + install)
+        self.write(".github/workflows/release-gate.yml", workflow + install)
         self.write(
-            ".github/workflows/release-gate.yml",
-            workflow
-            + "      - run: |\n"
-            + "          python3 script/check-release-workflow-pins.py\n"
-            + "          FFMPEG_LINUX_AMD64_URL=\"$(sed -n 's/^FFMPEG_LINUX_AMD64_URL=//p' internal/ffmpeg/ffmpeg.lock)\"\n"
-            + "          FFMPEG_LINUX_AMD64_SHA256=\"$(sed -n 's/^FFMPEG_LINUX_AMD64_SHA256=//p' internal/ffmpeg/ffmpeg.lock)\"\n"
-            + "          ffmpeg_url=\"$FFMPEG_LINUX_AMD64_URL\"\n"
-            + "          ffmpeg_sha=\"$FFMPEG_LINUX_AMD64_SHA256\"\n",
+            ".github/install-ffmpeg.sh",
+            "python3 script/check-release-workflow-pins.py\n"
+            "FFMPEG_UBUNTU_NOBLE_AMD64_URL=\"$(sed -n 's/^FFMPEG_UBUNTU_NOBLE_AMD64_URL=//p' internal/ffmpeg/ffmpeg.lock)\"\n"
+            "FFMPEG_UBUNTU_NOBLE_AMD64_SHA256=\"$(sed -n 's/^FFMPEG_UBUNTU_NOBLE_AMD64_SHA256=//p' internal/ffmpeg/ffmpeg.lock)\"\n"
+            "ffmpeg_url=\"$FFMPEG_UBUNTU_NOBLE_AMD64_URL\"\n"
+            "ffmpeg_sha=\"$FFMPEG_UBUNTU_NOBLE_AMD64_SHA256\"\n",
         )
         self.write(
             "packaging/compose/compose.public.yml",
@@ -138,6 +142,8 @@ RUN FFMPEG_LINUX_AMD64_URL="$(sed -n 's/^FFMPEG_LINUX_AMD64_URL=//p' /tmp/ffmpeg
         arm64_url: str | None = None,
         amd64_sha: str | None = None,
         arm64_sha: str | None = None,
+        noble_url: str | None = None,
+        noble_sha: str | None = None,
     ) -> None:
         pin = self.read("internal/ffmpeg/ffmpeg.pin")
         self.write(
@@ -150,6 +156,8 @@ RUN FFMPEG_LINUX_AMD64_URL="$(sed -n 's/^FFMPEG_LINUX_AMD64_URL=//p' /tmp/ffmpeg
                     "FFMPEG_LINUX_AMD64_SHA256=" + (amd64_sha or "1" * 64),
                     "FFMPEG_LINUX_ARM64_URL=" + (arm64_url or self.arm64_url),
                     "FFMPEG_LINUX_ARM64_SHA256=" + (arm64_sha or "2" * 64),
+                    "FFMPEG_UBUNTU_NOBLE_AMD64_URL=" + (noble_url or self.noble_url),
+                    "FFMPEG_UBUNTU_NOBLE_AMD64_SHA256=" + (noble_sha or "3" * 64),
                 )
             )
             + "\n",
@@ -344,10 +352,37 @@ RUN FFMPEG_LINUX_AMD64_URL="$(sed -n 's/^FFMPEG_LINUX_AMD64_URL=//p' /tmp/ffmpeg
         self.write(path, self.read(path).replace("RUN ", "RUN . /tmp/ffmpeg.lock; ", 1))
         self.assert_error("without shell-sourcing")
 
-    def test_requires_workflow_validation_before_lock_use(self) -> None:
-        path = ".github/workflows/release-gate.yml"
-        self.write(path, self.read(path).replace("          python3 script/check-release-workflow-pins.py\n", ""))
+    def test_requires_installer_validation_before_lock_use(self) -> None:
+        path = ".github/install-ffmpeg.sh"
+        self.write(path, self.read(path).replace("python3 script/check-release-workflow-pins.py\n", ""))
         self.assert_error("must validate ffmpeg.lock before using")
+
+    def test_requires_ci_workflows_to_use_the_installer(self) -> None:
+        for path in (".github/workflows/gate.yml", ".github/workflows/release-gate.yml"):
+            with self.subTest(path=path):
+                content = self.read(path)
+                self.write(path, content.replace("sh .github/install-ffmpeg.sh", "true"))
+                self.assert_error("must install FFmpeg through .github/install-ffmpeg.sh")
+                self.write(path, content)
+
+    def test_rejects_duplicate_ffmpeg_coordinate_in_installer(self) -> None:
+        path = ".github/install-ffmpeg.sh"
+        self.write(path, self.read(path) + "# " + self.noble_url + "\n")
+        self.assert_error("duplicates FFmpeg artifact coordinates")
+
+    def test_rejects_non_noble_ci_artifact(self) -> None:
+        for url in (self.amd64_url, self.noble_url.replace("noble", "jammy")):
+            with self.subTest(url=url):
+                self.write_lock(noble_url=url)
+                self.assert_error("FFMPEG_UBUNTU_NOBLE_AMD64_URL is not an immutable versioned URL")
+
+    def test_rejects_ci_artifact_of_another_ffmpeg_release(self) -> None:
+        self.write_lock(noble_url=self.noble_url.replace("7.1.4-3", "7.1.2-1"))
+        self.assert_error("FFMPEG_UBUNTU_NOBLE_AMD64_URL ships FFmpeg 7.1.2-1")
+
+    def test_rejects_unauthenticated_ci_artifact(self) -> None:
+        self.write_lock(noble_sha="not-a-sha")
+        self.assert_error("FFMPEG_UBUNTU_NOBLE_AMD64_SHA256 must be a lowercase SHA-256")
 
     def test_make_gate_runs_policy_and_planted_red_suite(self) -> None:
         root = MODULE_PATH.parent.parent

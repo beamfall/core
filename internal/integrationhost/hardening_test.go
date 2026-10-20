@@ -21,8 +21,8 @@ func TestDefaultWorkerRlimitsAreSane(t *testing.T) {
 	if lim.CPUSeconds != 30*60 {
 		t.Errorf("RLIMIT_CPU default changed: got %d, want %d", lim.CPUSeconds, 30*60)
 	}
-	if lim.ASBytes != 1<<30 {
-		t.Errorf("RLIMIT_AS default changed: got %d, want %d", lim.ASBytes, 1<<30)
+	if lim.ASBytes != 4<<30 {
+		t.Errorf("RLIMIT_AS default changed: got %d, want %d", lim.ASBytes, 4<<30)
 	}
 	if lim.NoFile != 256 {
 		t.Errorf("RLIMIT_NOFILE default changed: got %d, want 256", lim.NoFile)
@@ -55,7 +55,17 @@ func TestWorkerCommandWrapsWithShim(t *testing.T) {
 	if cmd.Path == shimPath {
 		t.Fatal("worker command bypassed the mandatory OS sandbox")
 	}
-	if !containsOrdered(cmd.Args, []string{shimPath, shimSubcommand, "--", artifactPath}) {
+	chain := []string{shimPath, shimSubcommand, "--", artifactPath}
+	if runtime.GOOS == "linux" {
+		// bwrap re-homes both binaries inside the sandbox mount namespace, so
+		// the chain names the in-sandbox paths and the binds map host to sandbox.
+		const shimInSandbox, artifactInSandbox = "/run/beamfall-worker/shim", "/run/beamfall-worker/artifact"
+		if !containsOrdered(cmd.Args, []string{"--ro-bind", shimPath, shimInSandbox, "--ro-bind", artifactPath, artifactInSandbox}) {
+			t.Fatalf("workerCommand args omit the shim/artifact binds: %q", cmd.Args)
+		}
+		chain = []string{shimInSandbox, shimSubcommand, "--", artifactInSandbox}
+	}
+	if !containsOrdered(cmd.Args, chain) {
 		t.Fatalf("workerCommand args omit shim/artifact chain: %q", cmd.Args)
 	}
 }
