@@ -27640,11 +27640,5 @@
     "incompatibleChange": "publish a new contract version; never overwrite an existing artifact",
     "consumerPinRule": "consumer pins must remain on the published major; minor-version lag is allowed"
   },
-  "knownDrift": [
-    {
-      "ticket": "XCONTRACT-1b",
-      "deadline": "2026-10-31",
-      "reason": "Web/native clients consume Core wire artifact and reject stale contracts."
-    }
-  ]
+  "knownDrift": null
 }
