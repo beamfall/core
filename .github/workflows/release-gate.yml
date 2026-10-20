@@ -176,28 +176,10 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # Use the same authenticated artifact lock as the container image so CI
-      # exercises the identical FFmpeg binary as production.
+      # The same authenticated lock and FFmpeg release as the container image;
+      # the runner is noble, so the installer uses the lock's noble build.
       - name: Install jellyfin-ffmpeg
-        run: |
-          python3 script/check-release-workflow-pins.py
-          FFMPEG_PIN_SHA256="$(sed -n 's/^FFMPEG_PIN_SHA256=//p' internal/ffmpeg/ffmpeg.lock)"
-          FFMPEG_LINUX_AMD64_URL="$(sed -n 's/^FFMPEG_LINUX_AMD64_URL=//p' internal/ffmpeg/ffmpeg.lock)"
-          FFMPEG_LINUX_AMD64_SHA256="$(sed -n 's/^FFMPEG_LINUX_AMD64_SHA256=//p' internal/ffmpeg/ffmpeg.lock)"
-          printf '%s  %s\n' "$FFMPEG_PIN_SHA256" internal/ffmpeg/ffmpeg.pin | sha256sum -c -
-          ffmpeg_url="$FFMPEG_LINUX_AMD64_URL"
-          ffmpeg_sha="$FFMPEG_LINUX_AMD64_SHA256"
-          ffmpeg_pkg="${ffmpeg_url##*/}"
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends ca-certificates curl
-          curl -fsSL "$ffmpeg_url" -o "/tmp/${ffmpeg_pkg}"
-          printf '%s  %s\n' "$ffmpeg_sha" "/tmp/${ffmpeg_pkg}" | sha256sum -c -
-          sudo apt-get install -y --no-install-recommends "/tmp/${ffmpeg_pkg}"
-          sudo ln -sf /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/local/bin/ffmpeg
-          sudo ln -sf /usr/lib/jellyfin-ffmpeg/ffprobe /usr/local/bin/ffprobe
-          ffmpeg_version="$(ffmpeg -version | awk 'NR == 1 { print $3 }')"
-          test "$ffmpeg_version" = "$(cat internal/ffmpeg/ffmpeg.pin)"
-          rm -f "/tmp/${ffmpeg_pkg}"
+        run: sh .github/install-ffmpeg.sh
 
       - name: Generate I/O test fixtures
         run: make fixtures
