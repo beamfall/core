@@ -315,6 +315,9 @@ test("mobile touch gestures seek, clamp volume, and exclude transport controls",
 }) => {
   test.skip(!isMobile, "touch gestures run in the mobile Chromium project");
   const { stage, video } = await openPlayer(page);
+  // The per-show skip interval is a server-side pref that other tests change;
+  // pin it to the profile default (10s) so the seek amounts below hold.
+  await page.getByRole("combobox", { name: "This show" }).selectOption({ label: "Skip buttons" });
   const feedback = page.getByRole("status");
   const right = await point(stage, 0.75, 0.2);
   const left = await point(stage, 0.25, 0.2);

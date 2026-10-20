@@ -18,6 +18,17 @@ const globalTimeout = suite === "smoke" ? 10 * 60_000 : 30 * 60_000;
 const authDir = join(import.meta.dirname, "e2e", ".auth", String(E2E_PORT));
 const renderPhase = process.env.BEAMFALL_WEB_E2E_RENDER_PHASE === "1";
 const visualBaselineDir = join(import.meta.dirname, "e2e", "goldens");
+// Linux goldens are rendered against a pinned font set (see the conf file);
+// other platforms keep their native system fonts.
+const linuxFontconfig =
+  process.platform === "linux"
+    ? {
+        env: {
+          ...process.env,
+          FONTCONFIG_FILE: join(import.meta.dirname, "e2e", "linux-fonts.conf"),
+        },
+      }
+    : {};
 const archivedVisualBaselineDir = join(
   import.meta.dirname,
   "..",
@@ -50,7 +61,14 @@ export default defineConfig({
   globalTeardown: "./e2e/global-teardown.ts",
   expect: {
     toHaveScreenshot: {
-      pathTemplate: join(visualBaselineDir, "{projectName}", "{testFilePath}", "{arg}{ext}"),
+      // Live goldens are per platform: font rasterisation differs between hosts.
+      pathTemplate: join(
+        visualBaselineDir,
+        "{platform}",
+        "{projectName}",
+        "{testFilePath}",
+        "{arg}{ext}",
+      ),
     },
   },
   use: {
@@ -59,6 +77,7 @@ export default defineConfig({
     timezoneId: "UTC",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
+    launchOptions: linuxFontconfig,
   },
   projects: [
     // Unauthenticated surfaces (smoke + the enroll flow). No storageState: a
