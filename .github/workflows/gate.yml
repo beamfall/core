@@ -51,4 +51,4 @@ jobs:
       - gate
       - race
     steps:
-      - run: echo "gate: PASS"
+      - run: 'echo "gate: PASS"'
