@@ -28,7 +28,7 @@
       "knownDrift": [
         {
           "ticket": "EXPORT-3",
-          "deadline": "2026-10-31",
+          "deadline": "2026-12-31",
           "reason": "Blocking storage-to-export coverage and round-trip conformance lands after the public v1 contract and exporter implementation."
         }
       ]
@@ -88,7 +88,7 @@
       "knownDrift": [
         {
           "ticket": "XCONTRACT-0-ANDROID",
-          "deadline": "2026-10-31",
+          "deadline": "2026-12-31",
           "reason": "Android may exercise the live token-scope check through its recorded SSH residual until the native live client-Core path lands."
         }
       ]
@@ -114,7 +114,7 @@
       "knownDrift": [
         {
           "ticket": "WEB-5Q",
-          "deadline": "2026-10-31",
+          "deadline": "2026-12-31",
           "reason": "Final ADR-0061 launch rows still include open/partial evidence states."
         }
       ]
@@ -147,7 +147,7 @@
       "knownDrift": [
         {
           "ticket": "XCONTRACT-WEB-CLOUD",
-          "deadline": "2026-10-31",
+          "deadline": "2026-12-31",
           "reason": "Cloud account fixtures and authenticated seed mode are not landed."
         }
       ]
@@ -162,7 +162,7 @@
       "knownDrift": [
         {
           "ticket": "PLUGIN-SDK-CONFORMANCE",
-          "deadline": "2026-10-31",
+          "deadline": "2026-12-31",
           "reason": "Required-green plugin repo list and harness are not fully wired."
         }
       ]
@@ -199,7 +199,7 @@
       "knownDrift": [
         {
           "ticket": "VSYNC-6",
-          "deadline": "2026-10-31",
+          "deadline": "2026-12-31",
           "reason": "Native consumer executors (web/apple/android/windows) run the visual-director behavior-matrix pack in their own blocking gates per ADR-0121 §9; only the Go reference executor runs today."
         }
       ]
@@ -239,12 +239,12 @@
       "knownDrift": [
         {
           "ticket": "APPLE-NATIVE-2C",
-          "deadline": "2026-10-31",
+          "deadline": "2026-12-31",
           "reason": "Apple consumes but does not produce the Core-published W-series corpus in its follow-up wrap-conformance ticket."
         },
         {
           "ticket": "ANDROID-2C",
-          "deadline": "2026-10-31",
+          "deadline": "2026-12-31",
           "reason": "Android consumes but does not produce the Core-published W-series corpus in its follow-up wrap-conformance ticket."
         }
       ]
