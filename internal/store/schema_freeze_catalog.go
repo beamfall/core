@@ -47,6 +47,7 @@ package store
 //     .
 //
 // `make bench` passed on 2026-08-11 for the 0108 bump; the worst measured
-// query was search/fts/revealed at 30.875084 ms against a 60 ms budget. Full P95
-// evidence is recorded under .agent-evidence/PODAD-2-PROVENANCE-1/bench.txt.
+// query was search/fts/revealed at 30.875084 ms against a 60 ms budget (P95
+// across the full bench suite). The original transcript was lost before landing;
+// these are the numbers reported at landing time.
 const schemaFreezeCatalogMigrations = 107
