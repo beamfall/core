@@ -759,6 +759,7 @@ run_support_orchestration_tests() {
     python3 script/check_contract_registry_test.py &&
     script/client-drm-eme-check_test.sh &&
     python3 script/source_artifact_test.py &&
+    python3 script/test_commands_test.py &&
     script/clean-checkout-canary_test.sh &&
     script/release-gate-evidence_test.sh &&
     script/release-workflow-test.sh &&
