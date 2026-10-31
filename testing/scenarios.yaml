@@ -23,7 +23,6 @@ scenarios:
     tier: gate
     commands: [make gate]
     status: shipped
-    blocked: "The flatten dropped script/tests-for-change_test.sh; CORE-0926 restores the proof against the corvint test commands."
 
   - id: restricted-reveal-playback
     area: privacy
