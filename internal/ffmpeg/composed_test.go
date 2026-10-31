@@ -175,6 +175,7 @@ func probeHLS(t *testing.T, playlist string) string {
 	return string(out)
 }
 
+// io:ffmpeg-start-background-composed-hls
 func TestStartBackgroundComposedHLSRealEncode(t *testing.T) {
 	requireComposeCapableFFmpeg(t)
 	// Directory names carry every filtergraph-special character, so the
