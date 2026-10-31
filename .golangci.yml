@@ -13,6 +13,7 @@ run:
 
 # Core predates this gate with a large gosec/staticcheck backlog. Pin the
 # adoption baseline so every changed line is enforced without silently
-# grandfathering findings introduced after the gate landed.
+# grandfathering findings introduced after the gate landed. The baseline is the
+# public repo's initial commit, which carried the history baseline forward.
 issues:
-  new-from-rev: abeec949217a
+  new-from-rev: 4b62fe25da35
