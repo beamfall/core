@@ -288,3 +288,94 @@ func TestFirstRunSetupLogRedactsToken(t *testing.T) {
 		t.Fatalf("setup log line does not carry the redacted token marker: %s", line)
 	}
 }
+
+// TestSecretFilesMoveSecretRefusesUnsafeOrDriftedState covers the move's
+// refusal and resume branches: bad refs, a non-regular destination, a source
+// that changed since the caller read it, an unreadable destination, and a
+// move that already completed (source gone, destination matching).
+func TestSecretFilesMoveSecretRefusesUnsafeOrDriftedState(t *testing.T) {
+	const src, dst = "libenc-bundle-legacy", "libenc-v2-owner-bundle"
+
+	t.Run("invalid refs", func(t *testing.T) {
+		store := secretFiles{dir: t.TempDir()}
+		for _, refs := range [][2]string{{"", dst}, {src, ""}, {"../escape", dst}, {src, ".hidden"}, {src, src}} {
+			if err := store.MoveSecret(refs[0], refs[1], "old", "new"); err == nil || !strings.Contains(err.Error(), "invalid secret move refs") {
+				t.Fatalf("MoveSecret(%q, %q) = %v, want invalid refs", refs[0], refs[1], err)
+			}
+		}
+	})
+
+	t.Run("symlink destination", func(t *testing.T) {
+		dir := t.TempDir()
+		store := secretFiles{dir: dir}
+		if err := store.SetSecret(src, "old"); err != nil {
+			t.Fatal(err)
+		}
+		target := filepath.Join(dir, "target")
+		if err := os.WriteFile(target, []byte("new"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, filepath.Join(dir, dst)); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.MoveSecret(src, dst, "old", "new"); err == nil {
+			t.Fatal("symlink destination accepted")
+		}
+		if got, err := store.Secret(src); err != nil || got != "old" {
+			t.Fatalf("source = %q, %v; want untouched", got, err)
+		}
+	})
+
+	t.Run("source changed", func(t *testing.T) {
+		store := secretFiles{dir: t.TempDir()}
+		if err := store.SetSecret(src, "rotated"); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.MoveSecret(src, dst, "old", "new"); err == nil || !strings.Contains(err.Error(), "changed") {
+			t.Fatalf("err = %v, want source-changed refusal", err)
+		}
+		if _, err := store.Secret(dst); err == nil {
+			t.Fatal("changed source still published the destination")
+		}
+		if got, err := store.Secret(src); err != nil || got != "rotated" {
+			t.Fatalf("source = %q, %v; want untouched", got, err)
+		}
+	})
+
+	t.Run("unreadable destination", func(t *testing.T) {
+		dir := t.TempDir()
+		store := secretFiles{dir: dir}
+		if err := store.SetSecret(src, "old"); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, dst), []byte("new"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.MoveSecret(src, dst, "old", "new"); err == nil || !strings.Contains(err.Error(), "0600") {
+			t.Fatalf("err = %v, want destination mode refusal", err)
+		}
+		if got, err := store.Secret(src); err != nil || got != "old" {
+			t.Fatalf("source = %q, %v; want untouched", got, err)
+		}
+	})
+
+	t.Run("already completed", func(t *testing.T) {
+		store := secretFiles{dir: t.TempDir()}
+		if err := store.SetSecret(dst, "new"); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.MoveSecret(src, dst, "old", "new"); err != nil {
+			t.Fatalf("completed move did not converge: %v", err)
+		}
+		if got, err := store.Secret(dst); err != nil || got != "new" {
+			t.Fatalf("destination = %q, %v", got, err)
+		}
+	})
+
+	t.Run("nothing to move", func(t *testing.T) {
+		store := secretFiles{dir: t.TempDir()}
+		if err := store.MoveSecret(src, dst, "old", "new"); !errors.Is(err, fs.ErrNotExist) {
+			t.Fatalf("err = %v, want missing-source error", err)
+		}
+	})
+}

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/beamfall/core/internal/identify"
@@ -532,5 +533,65 @@ func TestScrobbleSelectorsFromBundle(t *testing.T) {
 				t.Errorf("selector %q must be unqualified (no kind/ prefix)", name)
 			}
 		}
+	}
+}
+
+// TestHydrateMetadataRejectsUndeclaredMarkerAndRelationNames covers the plan
+// checks that depend on the completion marker or on relation names rather than
+// on a field's shape: the marker stays under MarkComplete's control, relations
+// and their prerequisites must be declared, and MarkComplete needs a declared
+// flag marker.
+func TestHydrateMetadataRejectsUndeclaredMarkerAndRelationNames(t *testing.T) {
+	album := HydrationEntity{Kind: "album", Title: "Container"}
+	for _, tt := range []struct {
+		name   string
+		marker string
+		plan   HydrationPlan
+		want   string
+	}{
+		{
+			name:   "media field writes the completion marker",
+			marker: testHydrationMarkerField,
+			plan: HydrationPlan{MediaFields: []store.MediaField{
+				{Name: testHydrationMarkerField, Type: store.EntityFieldFlag, Flag: true},
+			}},
+			want: "must be controlled by MarkComplete",
+		},
+		{
+			name:   "undeclared relation name",
+			marker: testHydrationMarkerField,
+			plan:   HydrationPlan{Relations: []HydrationRelation{{From: album, Name: "not-declared"}}},
+			want:   "relation \"not-declared\" from entity kind \"album\" is not declared",
+		},
+		{
+			name:   "undeclared prerequisite relation",
+			marker: testHydrationMarkerField,
+			plan: HydrationPlan{Relations: []HydrationRelation{{
+				From: album, Name: "album-track", Cardinality: "one", RequiresRelation: "not-declared",
+			}}},
+			want: "prerequisite relation \"not-declared\"",
+		},
+		{
+			name:   "completion marker not declared",
+			marker: "not-declared",
+			plan:   HydrationPlan{MarkComplete: true, MediaFields: []store.MediaField{{Name: "title", Type: store.EntityFieldText, Text: "x"}}},
+			want:   "completion marker \"not-declared\" is not declared",
+		},
+		{
+			name:   "completion marker is not a flag",
+			marker: "album",
+			plan:   HydrationPlan{MarkComplete: true, MediaFields: []store.MediaField{{Name: "title", Type: store.EntityFieldText, Text: "x"}}},
+			want:   "want \"flag\"",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			st := newFakeHydrationStore()
+			adapter := newTestAdapterWithMapper(st, fixedHydrationMapper{plan: tt.plan, marker: tt.marker})
+			err := hydrateTestMetadata(adapter, "/x.bin", nil)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("HydrateMetadata = %v, want error containing %q", err, tt.want)
+			}
+			assertNoHydrationWrites(t, st)
+		})
 	}
 }
