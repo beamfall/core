@@ -56,8 +56,9 @@ Use normal repo-local CLI and shell tools.
 ## Corvint context
 
 Before editing, read `corvint context "<task>"` or `corvint impact <path>...`; before choosing tests,
-run `corvint affected --base <origin/main sha>`. **Verify:** `make gate` (or `go test ./...` for a
-focused change).
+run `corvint affected --base <origin/main sha>`; `corvint test --base <sha>` runs that set with the
+commands declared in `.github/cishards/test-commands.json`. **Verify:** `make gate` (a narrowed
+`corvint test` PASS is not a gate PASS).
 
 ## Contributing and license
 
