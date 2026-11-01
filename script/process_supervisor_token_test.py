@@ -322,9 +322,7 @@ class ProcessSupervisorTokenTest(unittest.TestCase):
             PROCESS_SUPERVISOR,
             "owned_process_ids",
             side_effect=lambda *_args, **_kwargs: next(inventory, ([], False)),
-        ) as owned_process_ids, mock.patch.object(
-            PROCESS_SUPERVISOR, "group_alive", return_value=False
-        ), mock.patch.object(PROCESS_SUPERVISOR.os, "kill") as kill:
+        ) as owned_process_ids, mock.patch.object(PROCESS_SUPERVISOR.os, "kill") as kill:
             self.assertTrue(
                 PROCESS_SUPERVISOR.reap_owned(
                     None, secrets.token_hex(24), grace_seconds=5.0
@@ -335,6 +333,83 @@ class ProcessSupervisorTokenTest(unittest.TestCase):
             kill.call_args_list,
             [mock.call(4242, signal.SIGTERM), mock.call(4242, signal.SIGCONT)] * 2,
         )
+
+    def test_reap_escalation_takes_one_inventory_sweep_per_kill_round(self) -> None:
+        # A fake clock ticks one second per sleep, so a two-second grace gives
+        # exactly two TERM rounds before escalation. Escalation takes one fresh
+        # sweep; every SIGKILL round then takes exactly one more.
+        clock = [0.0]
+        fake_time = mock.Mock()
+        fake_time.monotonic.side_effect = lambda: clock[0]
+        fake_time.sleep.side_effect = lambda _seconds: clock.__setitem__(
+            0, clock[0] + 1.0
+        )
+        live = ([4242], False)
+        inventory = iter([live, live, live, live, live, ([], False)])
+        with mock.patch.object(PROCESS_SUPERVISOR, "time", fake_time), mock.patch.object(
+            PROCESS_SUPERVISOR,
+            "owned_process_ids",
+            side_effect=lambda *_args, **_kwargs: next(inventory, ([], False)),
+        ) as owned_process_ids, mock.patch.object(PROCESS_SUPERVISOR.os, "kill") as kill:
+            self.assertTrue(
+                PROCESS_SUPERVISOR.reap_owned(
+                    None, secrets.token_hex(24), grace_seconds=2.0
+                )
+            )
+        # Initial sweep, two TERM rounds, the escalation sweep, one live
+        # SIGKILL round and the retiring sweep.
+        self.assertEqual(owned_process_ids.call_count, 6)
+        self.assertEqual(
+            kill.call_args_list,
+            [mock.call(4242, signal.SIGTERM), mock.call(4242, signal.SIGCONT)] * 3
+            + [mock.call(4242, signal.SIGKILL)] * 2,
+        )
+
+    def test_reap_signals_live_group_when_inventory_names_no_pids(self) -> None:
+        inventory = iter([([], False), ([], False)])
+        with mock.patch.object(
+            PROCESS_SUPERVISOR,
+            "owned_process_ids",
+            side_effect=lambda *_args, **_kwargs: next(inventory, ([], False)),
+        ), mock.patch.object(
+            PROCESS_SUPERVISOR, "group_alive", side_effect=[True, False]
+        ), mock.patch.object(
+            PROCESS_SUPERVISOR, "signal_group"
+        ) as signal_group, mock.patch.object(PROCESS_SUPERVISOR.os, "kill") as kill:
+            self.assertTrue(
+                PROCESS_SUPERVISOR.reap_owned(
+                    77, secrets.token_hex(24), grace_seconds=5.0
+                )
+            )
+        self.assertEqual(
+            signal_group.call_args_list,
+            [mock.call(77, signal.SIGTERM), mock.call(77, signal.SIGCONT)],
+        )
+        kill.assert_not_called()
+
+    def test_reap_treats_indeterminate_inventory_as_live(self) -> None:
+        # An unreadable owned process is not proof of retirement: the group is
+        # still signalled and the reap reports that it had work to do.
+        inventory = iter([([], True), ([], False)])
+        with mock.patch.object(
+            PROCESS_SUPERVISOR,
+            "owned_process_ids",
+            side_effect=lambda *_args, **_kwargs: next(inventory, ([], False)),
+        ), mock.patch.object(
+            PROCESS_SUPERVISOR, "group_alive", return_value=False
+        ), mock.patch.object(
+            PROCESS_SUPERVISOR, "signal_group"
+        ) as signal_group, mock.patch.object(PROCESS_SUPERVISOR.os, "kill") as kill:
+            self.assertTrue(
+                PROCESS_SUPERVISOR.reap_owned(
+                    77, secrets.token_hex(24), grace_seconds=5.0
+                )
+            )
+        self.assertEqual(
+            signal_group.call_args_list,
+            [mock.call(77, signal.SIGTERM), mock.call(77, signal.SIGCONT)],
+        )
+        kill.assert_not_called()
 
     def test_unreadable_concurrent_peer_does_not_poison_ownership(self) -> None:
         protected = frozenset({(150, 1)})
