@@ -348,7 +348,7 @@ func TestSecretFilesMoveSecretRefusesUnsafeOrDriftedState(t *testing.T) {
 		if err := store.SetSecret(src, "old"); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, dst), []byte("new"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, dst), []byte("new"), 0o644); err != nil { // #nosec G306 -- the over-broad mode is the condition under test
 			t.Fatal(err)
 		}
 		if err := store.MoveSecret(src, dst, "old", "new"); err == nil || !strings.Contains(err.Error(), "0600") {

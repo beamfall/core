@@ -206,7 +206,7 @@ func newAuthQBTEndpoint(t *testing.T, password string) *authQBTEndpoint {
 			_, _ = w.Write([]byte("Fails."))
 			return
 		}
-		http.SetCookie(w, &http.Cookie{Name: "SID", Value: "session", Path: "/"})
+		http.SetCookie(w, &http.Cookie{Name: "SID", Value: "session", Path: "/"}) // #nosec G124 -- a fake qBittorrent login over plain httptest HTTP; a Secure cookie would never be sent back
 		_, _ = w.Write([]byte("Ok."))
 	})
 	authed := func(next http.HandlerFunc) http.HandlerFunc {
