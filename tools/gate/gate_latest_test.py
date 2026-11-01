@@ -314,7 +314,10 @@ class GateLatestTest(unittest.TestCase):
         return command, environment
 
     def wait_for(self, predicate, message: str) -> None:
-        deadline = time.monotonic() + 5
+        # A readiness bound, not a speed assertion: under a loaded gate host
+        # (load average 50+) supervised Python startups measured p50 3.0s and
+        # max 5.9s (CORE-0954), so 5s produced false reds.
+        deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
             if predicate():
                 return
@@ -412,6 +415,29 @@ class GateLatestTest(unittest.TestCase):
         self.assertTrue(self.event_seen("start nested-capacity"))
         self.assertTrue(self.event_seen("end nested-capacity"))
         self.assert_capacity_available(self.repository)
+
+    def test_cancellation_during_common_dir_lookup_reports_signal(self) -> None:
+        # CORE-0954: a group-delivered cancellation reaches the coordinator
+        # and its git child together; the dead git child must not turn the
+        # cancellation into a coordinator failure (70).
+        fake_bin = self.directory / "signalling-git-bin"
+        fake_bin.mkdir()
+        fake_git = fake_bin / "git"
+        fake_git.write_text(
+            "#!/bin/sh\nkill -INT \"$PPID\"\nkill -INT $$\nsleep 5\n",
+            encoding="utf-8",
+        )
+        fake_git.chmod(0o755)
+        command, environment = self.invocation(
+            self.directory / "lookup-signal-state", "exit", "lookup-signal", 0, 0
+        )
+        environment["PATH"] = f"{fake_bin}{os.pathsep}{environment['PATH']}"
+        completed = subprocess.run(
+            command, env=environment, check=False, capture_output=True, text=True, timeout=5
+        )
+        self.assertEqual(completed.returncode, 128 + signal.SIGINT, completed.stderr)
+        self.assertNotIn("gate coordinator:", completed.stderr)
+        self.assertFalse(self.event_seen("start lookup-signal"))
 
     def test_spawn_failure_leaves_persistent_cache_dir(self) -> None:
         environment = os.environ.copy()
@@ -779,16 +805,20 @@ class GateLatestTest(unittest.TestCase):
                 )
                 waiter = subprocess.Popen(waiter_command, env=waiter_environment)
                 self.addCleanup(self.cleanup_invocation, waiter)
-                self.wait_for(
-                    lambda: (waiter_state / "generation").exists(),
-                    f"{suffix} waiter did not reach capacity queue",
-                )
-                self.assertIsNone(waiter.poll(), "capacity waiter did not queue")
-                self.assertFalse(self.event_seen(f"start waiter-{suffix}"))
-                waiter.send_signal(signum)
-                self.assertEqual(waiter.wait(timeout=5), 128 + signum)
-                self.assertFalse(waiter_pids.exists(), "queued waiter spawned descendants")
-                holder_release.touch()
+                try:
+                    self.wait_for(
+                        lambda: (waiter_state / "generation").exists(),
+                        f"{suffix} waiter did not reach capacity queue",
+                    )
+                    self.assertIsNone(waiter.poll(), "capacity waiter did not queue")
+                    self.assertFalse(self.event_seen(f"start waiter-{suffix}"))
+                    waiter.send_signal(signum)
+                    self.assertEqual(waiter.wait(timeout=5), 128 + signum)
+                    self.assertFalse(waiter_pids.exists(), "queued waiter spawned descendants")
+                finally:
+                    # Release capacity even on failure so the next subtest's
+                    # holder is not stranded behind this one.
+                    holder_release.touch()
                 self.assertEqual(holder.wait(timeout=5), 0)
                 self.assertTrue(self.event_seen(f"end holder-{suffix}"))
                 self.assert_capacity_available(self.repository)

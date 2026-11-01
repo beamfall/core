@@ -190,7 +190,6 @@ def supervise(command: list[str]) -> int:
     )
     state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     generation_path = state_dir / "generation"
-    generation = allocate_generation(state_dir / "control.lock", generation_path)
     grace = float(os.environ.get("GATE_CANCEL_GRACE_SECONDS", "2"))
     if grace < 0:
         raise ValueError("GATE_CANCEL_GRACE_SECONDS must be non-negative")
@@ -205,11 +204,23 @@ def supervise(command: list[str]) -> int:
         if not received_signal:
             received_signal = signum
 
+    # Handlers go in before the generation is published: once a run is
+    # visible as queued, a cancellation must be remembered, not lost to a
+    # default handler.
     handled = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
     previous_handlers = {signum: signal.signal(signum, remember_signal) for signum in handled}
     try:
+        generation = allocate_generation(state_dir / "control.lock", generation_path)
+        try:
+            common_dir = git_common_dir()
+        except subprocess.CalledProcessError:
+            # A group-delivered cancellation also kills the git child; report
+            # the cancellation, not a coordinator failure.
+            if received_signal:
+                return 128 + received_signal
+            raise
         capacity_fd = os.open(
-            git_common_dir() / "beamfall-gate.capacity.lock",
+            common_dir / "beamfall-gate.capacity.lock",
             os.O_CLOEXEC | os.O_CREAT | os.O_RDWR,
             0o600,
         )
