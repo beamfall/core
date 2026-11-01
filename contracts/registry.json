@@ -36,9 +36,9 @@
     {
       "boundary": "client-core-wire",
       "producer": "beamfall",
-      "artifact": "internal/conformance/wire-contract-v1.13.1.json",
-      "version": "1.13.1",
-      "activeArtifactVersion": "1.13.1",
+      "artifact": "internal/conformance/wire-contract-v1.13.2.json",
+      "version": "1.13.2",
+      "activeArtifactVersion": "1.13.2",
       "license": "AGPL",
       "consumers": [
         {

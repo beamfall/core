@@ -1,9 +1,9 @@
---- wire-contract-v1.13.1.json
+--- wire-contract-v1.13.2.json
 +++ wire-contract-candidate-v2.0.0.json
 @@ -1,6 +1,6 @@
  {
    "snapshotVersion": "1",
--  "contractVersion": "1.13.1",
+-  "contractVersion": "1.13.2",
 +  "contractVersion": "2.0.0",
    "fields": [
      {
