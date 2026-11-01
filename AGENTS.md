@@ -8,6 +8,10 @@ family archives, karaoke) lives in plugins built on
 > **This file is canonical.** `CLAUDE.md` is a symlink to it — edit `AGENTS.md`, never maintain a
 > second copy.
 
+> **Documentation:** keep public docs in `README.md`, `CONTEXT.md`, `CONTRIBUTING.md`, `SECURITY.md`,
+> `docs/` and this file. When this repo is checked out inside the Beamfall multi-repo workspace, also
+> follow that workspace's `DOCUMENTATION-GOVERNANCE.md` before adding, moving, or archiving any doc.
+
 Use normal repo-local CLI and shell tools.
 
 ## Layout
