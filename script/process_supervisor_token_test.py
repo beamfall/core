@@ -313,6 +313,29 @@ class ProcessSupervisorTokenTest(unittest.TestCase):
             "quiescence accepted the first empty ownership snapshot",
         )
 
+    def test_reap_takes_one_inventory_sweep_per_round(self) -> None:
+        # Two live rounds, then retirement. Each round's sweep must both prove
+        # liveness and name the signal targets; a rescan per signal multiplied
+        # loaded cleanup time past the SIGKILL-holder wrapper budget.
+        inventory = iter([([4242], False), ([4242], False), ([], False)])
+        with mock.patch.object(
+            PROCESS_SUPERVISOR,
+            "owned_process_ids",
+            side_effect=lambda *_args, **_kwargs: next(inventory, ([], False)),
+        ) as owned_process_ids, mock.patch.object(
+            PROCESS_SUPERVISOR, "group_alive", return_value=False
+        ), mock.patch.object(PROCESS_SUPERVISOR.os, "kill") as kill:
+            self.assertTrue(
+                PROCESS_SUPERVISOR.reap_owned(
+                    None, secrets.token_hex(24), grace_seconds=5.0
+                )
+            )
+        self.assertEqual(owned_process_ids.call_count, 3)
+        self.assertEqual(
+            kill.call_args_list,
+            [mock.call(4242, signal.SIGTERM), mock.call(4242, signal.SIGCONT)] * 2,
+        )
+
     def test_unreadable_concurrent_peer_does_not_poison_ownership(self) -> None:
         protected = frozenset({(150, 1)})
         with mock.patch.object(

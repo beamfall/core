@@ -146,7 +146,10 @@ def process_has_token(
             # inherited supervisor token. Other live inspection errors remain
             # indeterminate.
             return False if error == errno.EINVAL else None
-        return token_entry + b"\0" in buffer.raw[: size.value]
+        # Copy only the bytes the kernel wrote: ``buffer.raw`` materializes the
+        # whole ARG_MAX buffer per process, about a gigabyte per full sweep.
+        image = ctypes.string_at(buffer, min(size.value, len(buffer)))
+        return token_entry + b"\0" in image
     try:
         return token_entry + b"\0" in Path(f"/proc/{pid}/environ").read_bytes()
     except (FileNotFoundError, ProcessLookupError):
@@ -361,6 +364,12 @@ def signal_owned(
     preexisting_indeterminate: frozenset[ProcessIdentity] = frozenset(),
 ) -> None:
     pids, _ = owned_process_ids(session_id, token, preexisting_indeterminate)
+    signal_owned_ids(session_id, pids, sig)
+
+
+def signal_owned_ids(
+    session_id: Optional[int], pids: list[int], sig: signal.Signals
+) -> None:
     if not pids:
         if session_id is not None:
             signal_group(session_id, sig)
@@ -390,23 +399,40 @@ def reap_owned(
     preexisting_indeterminate: frozenset[ProcessIdentity] = frozenset(),
     grace_seconds: float = 1.0,
 ) -> bool:
-    if not owned_alive(session_id, token, preexisting_indeterminate):
+    # Each round takes one inventory sweep that both proves liveness and names
+    # the signal targets. A sweep is a full process-table scan; repeating it
+    # per signal tripled every round's cost and stretched loaded cleanup far
+    # past its grace windows.
+    def sweep() -> Optional[list[int]]:
+        pids, indeterminate = owned_process_ids(
+            session_id, token, preexisting_indeterminate
+        )
+        if pids or indeterminate or (
+            session_id is not None and group_alive(session_id)
+        ):
+            return pids
+        return None
+
+    pids = sweep()
+    if pids is None:
         return False
-    signal_owned(session_id, token, signal.SIGTERM, preexisting_indeterminate)
-    signal_owned(session_id, token, signal.SIGCONT, preexisting_indeterminate)
+    signal_owned_ids(session_id, pids, signal.SIGTERM)
+    signal_owned_ids(session_id, pids, signal.SIGCONT)
     deadline = time.monotonic() + grace_seconds
     while time.monotonic() < deadline:
-        if not owned_alive(session_id, token, preexisting_indeterminate):
+        pids = sweep()
+        if pids is None:
             return True
-        signal_owned(session_id, token, signal.SIGTERM, preexisting_indeterminate)
-        signal_owned(session_id, token, signal.SIGCONT, preexisting_indeterminate)
+        signal_owned_ids(session_id, pids, signal.SIGTERM)
+        signal_owned_ids(session_id, pids, signal.SIGCONT)
         time.sleep(0.05)
     signal_owned(session_id, token, signal.SIGKILL, preexisting_indeterminate)
     deadline = time.monotonic() + grace_seconds
-    while time.monotonic() < deadline and owned_alive(
-        session_id, token, preexisting_indeterminate
-    ):
-        signal_owned(session_id, token, signal.SIGKILL, preexisting_indeterminate)
+    while time.monotonic() < deadline:
+        pids = sweep()
+        if pids is None:
+            break
+        signal_owned_ids(session_id, pids, signal.SIGKILL)
         time.sleep(0.05)
     return True
 
