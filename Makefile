@@ -1,4 +1,4 @@
-.PHONY: gate gate-preflight gate-race consumer-pin-freshness consumer-pin-freshness-prove-red crossrepo-conformance crossrepo-conformance-fixture crossrepo-conformance-prove-red crossrepo-conformance-interrupt-test image-buildability-check ffmpeg-tonemap-conforming vidparity-hdr-tonemap-gate store-release-waiver-check lint dev-run orient build test bench performance-scale mutation race-short race-full race-prove coverage coverage-ratchet scenario-ledger capability-manifest-check client-drm-eme-check fixtures io-doctor io-ledger io-egress-lint io-e2e io-journeys io-fast io-gate io-smoke io-live web-build web-e2e web-e2e-full web-ui-e2e-smoke web-ui-e2e-runner-test ui-catalog ui-catalog-record ui-catalog-apple-a11y-check ui-catalog-native-evidence-check release source-artifact-check release-test-gates store-release-test-gates app-store-binary-firewall-check secret-scan-release release-workflow-pins-check release-toolchain-images-check flagship-visuals-photosensitivity-gate backup-fixture-generate backup-fixture-staleness backup-restore-drill backup-fixture-rc-check release-gate release-gate-evidence fuzz fuzz-active publish-wire-contract regen-wire-goldens mgmt-manifest vuln-check relay-vector-freshness relay-vector-freshness-prove
+.PHONY: gate gate-preflight gate-affected gate-race consumer-pin-freshness consumer-pin-freshness-prove-red crossrepo-conformance crossrepo-conformance-fixture crossrepo-conformance-prove-red crossrepo-conformance-interrupt-test image-buildability-check ffmpeg-tonemap-conforming vidparity-hdr-tonemap-gate store-release-waiver-check lint dev-run orient build test bench performance-scale mutation race-short race-full race-prove coverage coverage-ratchet scenario-ledger capability-manifest-check client-drm-eme-check fixtures io-doctor io-ledger io-egress-lint io-e2e io-journeys io-fast io-gate io-smoke io-live web-build web-e2e web-e2e-full web-ui-e2e-smoke web-ui-e2e-runner-test ui-catalog ui-catalog-record ui-catalog-apple-a11y-check ui-catalog-native-evidence-check release source-artifact-check release-test-gates store-release-test-gates app-store-binary-firewall-check secret-scan-release release-workflow-pins-check release-toolchain-images-check flagship-visuals-photosensitivity-gate backup-fixture-generate backup-fixture-staleness backup-restore-drill backup-fixture-rc-check release-gate release-gate-evidence fuzz fuzz-active publish-wire-contract regen-wire-goldens mgmt-manifest vuln-check relay-vector-freshness relay-vector-freshness-prove
 
 # GATE-WEB-E2E-DEDUP-1: gate.sh keeps web-ui-e2e-smoke first so browser
 # failures fail fast while every check remains under the same supervisor.
@@ -23,6 +23,13 @@ gate: web-ui-e2e-runner-test
 # load that produces false reds.
 gate-preflight:
 	@GATE_PREFLIGHT=1 GATE_WORKER_REAPS_DESCENDANTS=1 tools/gate/gate-entry.sh
+
+# CORE-0944: the iteration loop. `corvint test --base` runs only what the change
+# can reach (a FALLBACK prints its reason and runs the full Go suite), then
+# gate-preflight. BASE defaults to the merge-base with main. A PASS is NOT a
+# merge signal and never substitutes for `gate`.
+gate-affected:
+	@script/gate-affected.sh "$(BASE)"
 
 # ADR-0122: a Core wire-contract change carries THREE consumer re-vendor
 # obligations (web, Apple and Android client repositories).
