@@ -67,6 +67,7 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
       - name: Record red contract triage note
         run: script/nightly-freshness.sh red-contract --tier ui-catalog-nightly --repo beamfall
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
