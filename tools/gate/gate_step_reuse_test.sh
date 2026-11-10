@@ -5,6 +5,11 @@
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 set -euo pipefail
 
+# The gate that runs this selftest exports its own diff range and reuse
+# settings; none of them describe the fixture repository below.
+unset GATE_DIFF_BASE GATE_DIFF_HEAD GATE_MODE GATE_PREFLIGHT RELAY_VECTORS_PATH \
+  GATE_STEP_REUSE GATE_STEP_REUSE_DIR GATE_STEP_REUSE_MAX_AGE_S
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -157,6 +162,8 @@ GATE_DIFF_BASE="$(git -C "$REPO" rev-parse HEAD)" step "race-short"
 expect_ran "$((before + 4))" "race-short with a different base"
 GATE_DIFF_BASE=not-a-commit step "race-short"
 expect_ran "$((before + 5))" "race-short with an unresolvable base"
+GATE_DIFF_BASE="$BASE" GATE_DIFF_HEAD=not-a-commit step "race-short"
+expect_ran "$((before + 6))" "race-short with an unresolvable head"
 
 # race-short scopes from base..HEAD commits, so an edit that was uncommitted when
 # it passed has not been raced: committing it must run the step again.

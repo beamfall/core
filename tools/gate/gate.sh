@@ -747,7 +747,9 @@ gate_step_reuse_record() {  # <step> <command> <policy> <material before the ste
   # while that same bundle is still in place.
   material="$(gate_step_reuse_material "$name" "$rerun" "$policy")" || return 0
   if [ "$(printf '%s\n' "$material" | grep -v '^built=')" != "$(printf '%s\n' "$before" | grep -v '^built=')" ]; then
-    echo "NOREUSE $name (inputs changed while the step ran; pass not recorded for reuse)"
+    echo "NOREUSE $name (inputs changed while the step ran; pass not recorded for reuse): $(
+      diff <(printf '%s\n' "$before") <(printf '%s\n' "$material") | sed -n 's/^> \([^=]*\)=.*/\1/p' |
+        grep -v '^built$' | LC_ALL=C sort -u | tr '\n' ' ')"
     return 0
   fi
   key="$(printf '%s\n' "$material" | gate_step_reuse_key)" || return 0
