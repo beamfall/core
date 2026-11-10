@@ -5,6 +5,7 @@ import type { SourceItem } from "@/lib/graphql/types";
 import { artworkBucketURL, artworkSlotURL } from "../lib/artwork";
 import { fetchPreviewInfo } from "../lib/playback";
 import { type RenderFocusAnchor, rememberRenderFocus } from "../lib/renderFocus";
+import { preloadPlayer } from "../player/preload";
 
 export const PREVIEW_DWELL_MS = 400;
 const POINTER_PREVIEW_QUERY = "(hover: hover) and (pointer: fine)";
@@ -125,6 +126,7 @@ export function MediaItemCard({
   }
 
   function handlePointerEnter(event: PointerEvent<HTMLButtonElement>) {
+    if (isMedia) preloadPlayer();
     clearPreviewTimer();
     if (previewClip || !canStartPreview(event)) {
       return;
@@ -139,6 +141,7 @@ export function MediaItemCard({
     if (focusAnchor) {
       rememberRenderFocus(focusAnchor);
     }
+    if (isMedia) preloadPlayer();
     clearPreviewTimer();
     if (previewClip || !canStartPreview()) {
       return;

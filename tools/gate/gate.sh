@@ -577,12 +577,218 @@ gate_group_wrapper() {
   return "$status"
 }
 
+# --- step result reuse -------------------------------------------------------
+#
+# A listed step that already passed on byte-identical inputs is not run again:
+# the gate prints `REUSE <step>` and records a `reuse` evidence row naming the
+# run that produced the pass. Spec: openspec/specs/gate-step-reuse.
+#
+# The reuse key covers the step name, its exact command, the gate mode, the
+# toolchain, the gate-relevant environment and the content address of the WHOLE
+# worktree (tracked and untracked files, minus ignored ones). Nothing narrower
+# is sound today: Go tests in this repository read scripts, docs and fixtures
+# from all over the tree, so any tracked change is treated as an input change
+# for every step. Whatever cannot be established means the step runs.
+#
+# Never reused: release mode, steps missing from the list below (anything that
+# reads the network, sibling checkouts, the clock, or host performance, and
+# fuzzing, whose value is the fresh run), and a step whose inputs changed while
+# it ran. Disable with GATE_STEP_REUSE=0.
+
+gate_step_reuse_policy() {  # <step> -> "tree" | "tree+base"; non-zero = never reused
+  case "$1" in
+    "go build"|"go vet"|"golangci-lint (staticcheck + gosec)"|\
+    "go test -tags beamfall_appstore conformance capabilities graph"|\
+    "go test + line-coverage ratchet"|"race-prove"|\
+    "web app build"|"web app typecheck + tests"|"web UI E2E smoke (pre-gate)"|\
+    "support script tests")
+      # The support selftests build their own fixtures and stub every external
+      # command; beyond the tree they depend only on the interpreters keyed below.
+      printf 'tree\n' ;;
+    # race-short picks its packages from the diff against the merge base, so the
+    # base's content is an input as well.
+    "race-short") printf 'tree+base\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+gate_step_reuse_enabled() {
+  [ "${GATE_STEP_REUSE:-1}" = "1" ] || return 1
+  ! gate_release_mode
+}
+
+gate_step_reuse_dir() {
+  local common
+  if [ -n "${GATE_STEP_REUSE_DIR:-}" ]; then
+    printf '%s\n' "$GATE_STEP_REUSE_DIR"
+    return 0
+  fi
+  # The common git dir is shared by every worktree of this clone and is never
+  # tracked, so a pass in a lane worktree is visible to the landing checkout.
+  common="$(git rev-parse --git-common-dir 2>/dev/null)" || return 1
+  printf '%s/gate-step-reuse\n' "$common"
+}
+
+gate_step_reuse_tree() {  # content address of the worktree as it is on disk now
+  local index real tree=""
+  index="$(mktemp)" || return 1
+  real="$(git rev-parse --git-path index 2>/dev/null)" || { rm -f "$index"; return 1; }
+  # Start from the real index so unchanged files are not rehashed; the real
+  # index itself is never written.
+  if [ -f "$real" ]; then
+    cp "$real" "$index" 2>/dev/null || { rm -f "$index"; return 1; }
+  else
+    rm -f "$index"
+  fi
+  if GIT_INDEX_FILE="$index" git add -A >/dev/null 2>&1; then
+    tree="$(GIT_INDEX_FILE="$index" git write-tree 2>/dev/null)" || tree=""
+  fi
+  rm -f "$index" "$index.lock"
+  [ -n "$tree" ] || return 1
+  printf '%s\n' "$tree"
+}
+
+gate_step_reuse_dirhash() {  # <dir> -> content hash of an ignored directory, or "absent"
+  python3 - "$1" <<'PY'
+import hashlib, os, sys
+root = sys.argv[1]
+if not os.path.isdir(root):
+    print("absent")
+    raise SystemExit(0)
+digest = hashlib.sha256()
+for base, dirs, files in os.walk(root):
+    dirs.sort()
+    for name in sorted(files):
+        path = os.path.join(base, name)
+        digest.update(os.path.relpath(path, root).encode() + b"\0")
+        with open(path, "rb") as fh:
+            digest.update(hashlib.sha256(fh.read()).digest())
+print(digest.hexdigest())
+PY
+}
+
+gate_step_reuse_material() {  # <step> <command> <policy> -> everything the key covers
+  local name="$1" rerun="$2" policy="$3" tree base="-" head="-" gowork built lock="absent"
+  # Inputs that live outside the worktree and cannot be content-addressed here
+  # make every step run: an external relay vector file, or an active go.work.
+  [ -z "${RELAY_VECTORS_PATH:-}" ] || return 1
+  gowork="$(go env GOWORK 2>/dev/null)" || return 1
+  case "$gowork" in ''|off) ;; *) return 1 ;; esac
+  tree="$(gate_step_reuse_tree)" || return 1
+  if [ "$policy" = "tree+base" ]; then
+    # Diff-scoped steps select work from base..head commits, not from the
+    # worktree, so both ends are part of the key.
+    [ -n "${GATE_DIFF_BASE:-}" ] || return 1
+    base="$(git rev-parse --verify "${GATE_DIFF_BASE}^{tree}" 2>/dev/null)" || return 1
+    head="$(git rev-parse --verify "${GATE_DIFF_HEAD:-HEAD}^{tree}" 2>/dev/null)" || return 1
+  fi
+  # The built web bundle is ignored by git but embedded by the Go build, so a
+  # checkout with a missing or different bundle never shares a pass.
+  built="$(gate_step_reuse_dirhash internal/web/app-dist/production 2>/dev/null)" || return 1
+  [ -n "$built" ] || return 1
+  if [ -f internal/web/app/node_modules/.package-lock.json ]; then
+    lock="$(git hash-object internal/web/app/node_modules/.package-lock.json 2>/dev/null)" || return 1
+  fi
+  printf 'gate-step-reuse/1\nstep=%s\ncommand=%s\nmode=%s\npreflight=%s\ntree=%s\nbase=%s\nhead=%s\n' \
+    "$name" "$rerun" "${GATE_MODE:-}" "${GATE_PREFLIGHT:-}" "$tree" "$base" "$head"
+  printf 'built=%s\n' "$built"
+  printf 'node_modules=%s\n' "$lock"
+  printf 'npm=%s\n' "$(npm --version 2>/dev/null)"
+  printf 'browsers=%s\n' "$(ls "${PLAYWRIGHT_BROWSERS_PATH:-$HOME/Library/Caches/ms-playwright}" 2>/dev/null | LC_ALL=C sort | tr '\n' ' ')"
+  printf 'ffmpeg=%s %s\n' "$(command -v ffmpeg 2>/dev/null)" "$(ffmpeg -version 2>/dev/null | head -n 1)"
+  printf 'ffprobe=%s %s\n' "$(command -v ffprobe 2>/dev/null)" "$(ffprobe -version 2>/dev/null | head -n 1)"
+  printf 'host=%s\n' "$(uname -sm 2>/dev/null)"
+  printf 'go=%s\n' "$(go version 2>/dev/null)"
+  printf 'goenv=%s\n' "$(go env GOOS GOARCH CGO_ENABLED GOFLAGS GOEXPERIMENT 2>/dev/null | tr '\n' ' ')"
+  printf 'node=%s\n' "$(node --version 2>/dev/null)"
+  printf 'golangci-lint=%s\n' "$(golangci-lint version 2>/dev/null | head -n 1)"
+  printf 'python=%s\n' "$(python3 --version 2>&1)"
+  printf 'bash=%s\n' "$(bash --version 2>/dev/null | head -n 1)"
+  printf 'git=%s\n' "$(git --version 2>/dev/null)"
+  # Per-run bookkeeping is excluded; an unknown variable only ever costs a miss.
+  { env | LC_ALL=C grep -E '^(GO[A-Z0-9_]*|CGO_[A-Z0-9_]*|BEAMFALL_[A-Z0-9_]*|GATE_[A-Z0-9_]*|NODE_[A-Z0-9_]*|PLAYWRIGHT_[A-Z0-9_]*|CI)=' |
+    LC_ALL=C grep -Ev '^(GATE_RUN_ID|GATE_PROCESS_[A-Z0-9_]*|GATE_INHERITED_RSS_FILE|GATE_PARALLEL_RSS_[A-Za-z0-9_]*|GATE_DIFF_(BASE|HEAD)|GATE_LANE_DIR|GATE_LOG_TAIL|GATE_STEP_REUSE[A-Z0-9_]*)=' |
+    LC_ALL=C sort; } || true
+}
+
+gate_step_reuse_key() {  # stdin: material -> sha256
+  python3 -c 'import hashlib, sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())'
+}
+
+gate_step_reuse_lookup() {  # <record> <key> -> "run=<id> age_s=<n> saved_s=<n>"; non-zero = run the step
+  python3 - "$1" "$2" "${GATE_STEP_REUSE_MAX_AGE_S:-604800}" <<'PY'
+import sys
+import time
+
+path, key, max_age = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    max_age = int(max_age)
+    with open(path, encoding="utf-8") as f:
+        lines = f.read().splitlines()
+    if not lines or lines[0] != "gate-step-reuse-record/1":
+        raise ValueError("format")
+    fields = dict(line.split("=", 1) for line in lines[1:] if "=" in line)
+    if fields["key"] != key or fields["status"] != "pass":
+        raise ValueError("key")
+    age = int(time.time()) - int(fields["passed_at"])
+    if age < 0 or age > max_age:
+        raise ValueError("age")
+    saved = int(fields["elapsed_ns"]) // 1_000_000_000
+    run_id = fields["run_id"]
+    if not run_id or any(c.isspace() for c in run_id):
+        raise ValueError("run")
+except Exception:
+    sys.exit(1)
+print(f"run={run_id} age_s={age} saved_s={saved}")
+PY
+}
+
+gate_step_reuse_record() {  # <step> <command> <policy> <material before the step> <elapsed_ns>
+  local name="$1" rerun="$2" policy="$3" before="$4" elapsed_ns="$5" dir material key tmp
+  dir="$(gate_step_reuse_dir)" || return 0
+  # The pass only proves the inputs it started from. If they moved while the
+  # step ran, there is no single input state to bind the pass to. The built
+  # web bundle is the one output a step may write: the pass is recorded
+  # against the bundle the step left behind, so a later run reuses it only
+  # while that same bundle is still in place.
+  material="$(gate_step_reuse_material "$name" "$rerun" "$policy")" || return 0
+  if [ "$(printf '%s\n' "$material" | grep -v '^built=')" != "$(printf '%s\n' "$before" | grep -v '^built=')" ]; then
+    echo "NOREUSE $name (inputs changed while the step ran; pass not recorded for reuse): $(
+      diff <(printf '%s\n' "$before") <(printf '%s\n' "$material") | sed -n 's/^> \([^=]*\)=.*/\1/p' |
+        grep -v '^built$' | LC_ALL=C sort -u | tr '\n' ' ')"
+    return 0
+  fi
+  key="$(printf '%s\n' "$material" | gate_step_reuse_key)" || return 0
+  mkdir -p "$dir" 2>/dev/null || return 0
+  find "$dir" -type f -mtime +"$(( (${GATE_STEP_REUSE_MAX_AGE_S:-604800} + 86399) / 86400 ))" -delete 2>/dev/null || true
+  tmp="$(mktemp "$dir/.tmp.XXXXXX" 2>/dev/null)" || return 0
+  {
+    printf 'gate-step-reuse-record/1\nkey=%s\nstatus=pass\npassed_at=%s\nelapsed_ns=%s\nrun_id=%s\n\n' \
+      "$key" "$(date +%s)" "$elapsed_ns" "${GATE_RUN_ID:-direct-$$}"
+    printf '%s\n' "$material"
+  } >"$tmp" 2>/dev/null && mv -f "$tmp" "$dir/$key" 2>/dev/null || rm -f "$tmp"
+  return 0
+}
+
 run_step() {
   local name="$1" log status rerun start elapsed_ns elapsed_s failure_dir failure_log slug command_pid
   local owns_group=0 retire_status=0
   local step_pgid="" rss_tracker_pid="" rss_tracker_file="" peak_rss_kb=0 pgid_tries
   shift
   rerun="$(format_command "$@")"
+  local reuse_policy="" reuse_material="" reuse_key="" reuse_dir="" reuse_hit=""
+  if gate_step_reuse_enabled && reuse_policy="$(gate_step_reuse_policy "$name")" &&
+    reuse_dir="$(gate_step_reuse_dir)" &&
+    reuse_material="$(gate_step_reuse_material "$name" "$rerun" "$reuse_policy")" &&
+    reuse_key="$(printf '%s\n' "$reuse_material" | gate_step_reuse_key)"; then
+    if reuse_hit="$(gate_step_reuse_lookup "$reuse_dir/$reuse_key" "$reuse_key")"; then
+      gate_metric "$name" reuse 0 0 "$rerun [$reuse_hit key=$reuse_key]"
+      echo "REUSE $name ($reuse_hit)"
+      return 0
+    fi
+  else
+    reuse_key=""
+  fi
   log="$(mktemp)"
   start="$(gate_monotonic_ns)"
   gate_metric "$name" running 0 0 "$rerun"
@@ -659,6 +865,7 @@ run_step() {
   if [[ "$status" -eq 0 ]]; then
     echo "PASS $name elapsed_s=$elapsed_s"
     rm -f "$log"
+    [ -z "$reuse_key" ] || gate_step_reuse_record "$name" "$rerun" "$reuse_policy" "$reuse_material" "$elapsed_ns"
     return 0
   fi
   echo "FAIL $name elapsed_s=$elapsed_s" >&2
@@ -772,6 +979,7 @@ run_support_orchestration_tests() {
     script/ui_catalog_test.sh &&
     tools/gate/race_short_cache_test.sh &&
     tools/gate/gate_rerun_test.sh &&
+    tools/gate/gate_step_reuse_test.sh &&
     tools/gate/gate_cleanup_test.sh &&
     tools/gate/race_prove_test.sh
   )
@@ -900,6 +1108,20 @@ retire_lane() {  # retire_lane <slot>
   return 0
 }
 
+# CORE-0979: a local main that is merely behind origin/main (nobody pulled the
+# shared checkout) made a lane cut from origin/main diff against the stale tip,
+# pulling main's own commits (go.mod, tools/gate) into the lane's scope and
+# forcing the full race tier. Prefer origin/main only when local main is its
+# ancestor; a local main that is ahead or diverged keeps today's behaviour.
+gate_main_ref() {
+  if git rev-parse --verify --quiet 'refs/remotes/origin/main^{commit}' >/dev/null 2>&1 &&
+    git merge-base --is-ancestor 'refs/heads/main' 'refs/remotes/origin/main' 2>/dev/null; then
+    printf '%s\n' 'refs/remotes/origin/main'
+  else
+    printf '%s\n' 'refs/heads/main'
+  fi
+}
+
 changed_paths() {
   local base="${GATE_BASE_SHA:-}" head="${GATE_HEAD_SHA:-}" base_sha head_sha merge_base_sha
   local committed staged unstaged
@@ -917,7 +1139,7 @@ changed_paths() {
   # branch commits from the merge base so a dirty worktree cannot hide them.
   # Untracked-only trees do not add paths, but still retain the committed range.
   head_sha="$(git rev-parse --verify 'HEAD^{commit}' 2>/dev/null)" || return 1
-  base_sha="$(git rev-parse --verify 'refs/heads/main^{commit}' 2>/dev/null)" || return 1
+  base_sha="$(git rev-parse --verify "$(gate_main_ref)^{commit}" 2>/dev/null)" || return 1
   merge_base_sha="$(git merge-base "$base_sha" "$head_sha" 2>/dev/null)" || return 1
   committed="$(git diff --name-only "$merge_base_sha" "$head_sha" 2>/dev/null)" || return 1
   printf '%s\n%s\n%s\n' "$committed" "$staged" "$unstaged" | sort -u | sed '/^$/d'
@@ -935,7 +1157,7 @@ configure_race_short_scope() {
     git merge-base --is-ancestor "$base_sha" "$head_sha" 2>/dev/null || return 0
   else
     head_sha="$(git rev-parse --verify 'HEAD^{commit}' 2>/dev/null)" || return 0
-    base_sha="$(git merge-base 'refs/heads/main' "$head_sha" 2>/dev/null)" || return 0
+    base_sha="$(git merge-base "$(gate_main_ref)" "$head_sha" 2>/dev/null)" || return 0
   fi
   export GATE_DIFF_BASE="$base_sha" GATE_DIFF_HEAD="$head_sha"
 }
@@ -1105,6 +1327,10 @@ run_outer_checks() {
   if [[ "${GATE_PREFLIGHT:-0}" == "1" ]]; then
     return
   fi
+  # CORE-0977: the only browser smoke pass. Its global-setup rebuilds the web
+  # bundle and server binary from source, so no later gate step can change what
+  # it tests; the late "second pass" (re-added by GATE-OUTER-COORDINATION-1 after
+  # GATE-WEB-E2E-DEDUP-1 removed it) repeated identical inputs and is gone.
   run_scoped_step "web UI E2E smoke (pre-gate)" webe2e make web-ui-e2e-smoke
   run_step "release workflow pins check" make release-workflow-pins-check
   full_gate_only_step "vulnerability check" make vuln-check
@@ -1339,7 +1565,5 @@ run_scoped_step "design token drift gate" web node tools/gate/design-token-drift
 # surface served at /web/. Static verification and the production build ran
 # above before Go embedded app-dist; web-scoped changes still run unit tests.
 run_scoped_step "web app typecheck + tests" web run_web_app test
-
-run_scoped_step "web UI E2E smoke (second pass)" webe2e make web-ui-e2e-smoke
 
 echo "gate: green"

@@ -121,6 +121,7 @@ describe("ViewerArea Profile scope", () => {
       <MemoryRouter initialEntries={["/"]}>
         <ViewerArea />
       </MemoryRouter>,
+      { wrapper: I18nProvider },
     );
 
     await user.type(screen.getByLabelText("profile-bound-state"), "departed");
@@ -160,6 +161,7 @@ describe("ViewerArea Profile scope", () => {
       <MemoryRouter initialEntries={["/"]}>
         <ViewerArea />
       </MemoryRouter>,
+      { wrapper: I18nProvider },
     );
 
     await user.type(screen.getByLabelText("profile-bound-state"), "departed");
@@ -206,6 +208,7 @@ describe("ViewerArea Profile scope", () => {
       <MemoryRouter initialEntries={["/"]}>
         <ViewerArea />
       </MemoryRouter>,
+      { wrapper: I18nProvider },
     );
 
     mocks.sessionState = { ...mocks.sessionState, session: null };

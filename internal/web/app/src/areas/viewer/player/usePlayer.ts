@@ -249,6 +249,10 @@ export function usePlayer(
     };
 
     async function start() {
+      // Markers do not depend on playback info, so their request runs in
+      // parallel with it; neither markers nor trickplay ever gate attaching
+      // the stream (best-effort, applied when they arrive).
+      const markersRequest = fetchPlaybackMarkers(mediaID).catch((): PlaybackMarker[] => []);
       let info: PlaybackInfo;
       try {
         info = await fetchPlaybackInfo(mediaID);
@@ -288,14 +292,6 @@ export function usePlayer(
         return;
       }
 
-      // Markers + trickplay manifest (best-effort; never block playback).
-      const markers = await fetchPlaybackMarkers(mediaID).catch(() => []);
-      const { trickplay, trickplayBaseURL } = await loadTrickplay(
-        info.assets?.trickplay,
-        info.assets?.expiresAt,
-      );
-      if (!alive) return;
-
       const video = videoRef.current;
       if (!video) return;
       boundVideo = video;
@@ -324,7 +320,10 @@ export function usePlayer(
       }
 
       const resume = startAtSeconds > 0 ? startAtSeconds : resumePositionFromInfo(info);
-      if (resume > 0) {
+      // hls.js takes the resume point as its startPosition and loads (and
+      // seeks to) it directly; only the native <video src> route seeks on
+      // metadata, so a resumed HLS session never fetches from 0 first.
+      if (resume > 0 && !useHlsJs) {
         resumeMetadataHandler = () => {
           if (alive) video.currentTime = resume;
         };
@@ -346,7 +345,7 @@ export function usePlayer(
       };
 
       if (useHlsJs) {
-        const hls = new Hls();
+        const hls = new Hls(resume > 0 ? { startPosition: resume } : undefined);
         hlsRef.current = hls;
         // Fatal-error recovery (policy in hlsRecovery.ts): network errors
         // re-arm loading after a backoff, media errors go through hls.js's own
@@ -390,6 +389,10 @@ export function usePlayer(
               video.addEventListener("loadedmetadata", tokenRefreshMetadataHandler, {
                 once: true,
               });
+              // loadSource re-runs hls.js's auto startLoad with the configured
+              // startPosition; point it at the current position rather than
+              // the original resume point.
+              hls.config.startPosition = resumePosition;
               hls.loadSource(refreshedStream.url);
               setState((s) => ({ ...s, info: refreshedInfo, stream: refreshedStream }));
             })
@@ -487,13 +490,26 @@ export function usePlayer(
         info,
         stream,
         decision,
-        markers,
-        trickplay,
-        trickplayBaseURL,
+        markers: [],
+        trickplay: null,
+        trickplayBaseURL: "",
         hlsActive: useHlsJs,
         recovering: false,
         tracksVersion: 0,
       });
+
+      // Applied only while still playing: a terminal or message state must not
+      // pick the revealed markers/trickplay back up.
+      void markersRequest.then((markers) => {
+        if (alive) setState((s) => (s.phase === "playing" ? { ...s, markers } : s));
+      });
+      void loadTrickplay(info.assets?.trickplay, info.assets?.expiresAt).then(
+        ({ trickplay, trickplayBaseURL }) => {
+          if (alive) {
+            setState((s) => (s.phase === "playing" ? { ...s, trickplay, trickplayBaseURL } : s));
+          }
+        },
+      );
 
       if (useHlsJs) {
         void video.play().catch(() => {});

@@ -1,5 +1,14 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { FullConfig } from "@playwright/test";
@@ -47,6 +56,15 @@ const REPO_ROOT = join(import.meta.dirname, "..", "..", "..", "..");
 // landing on the binary a sibling run is still launching kills that server —
 // the surviving symptom is ECONNREFUSED partway through the suite.
 const SERVER_BIN = `/tmp/beamfall-e2e-${process.env.BEAMFALL_E2E_PORT ?? 8830}`;
+// script/web-ui-e2e-smoke.sh runs several Playwright invocations per smoke and
+// exports a fresh, run-private BEAMFALL_E2E_BUILD_REUSE_DIR so they share one
+// web + server build. The first build records the source-tree key and the
+// binary's digest there; a later invocation reuses SERVER_BIN only when both
+// still match. Anything else (no stamp, edited tree, rewritten or missing
+// binary, key not computable) rebuilds. Without the variable (a plain `npx
+// playwright test`) every run builds fresh, as above.
+const BUILD_REUSE_DIR = process.env.BEAMFALL_E2E_BUILD_REUSE_DIR || undefined;
+const BUILD_STAMP = BUILD_REUSE_DIR ? join(BUILD_REUSE_DIR, "server-build.stamp") : undefined;
 
 interface HarnessState {
   baseURL: string;
@@ -94,9 +112,50 @@ async function waitForServer(
   return false;
 }
 
+// The tree object git would record for the whole working tree right now:
+// committed, staged, unstaged and untracked (non-ignored) files. Hashed through
+// a throwaway copy of the index so the real index is never touched. Returns
+// undefined when it cannot be computed; callers then rebuild.
+function sourceTreeKey(): string | undefined {
+  const git = (args: string[], env: NodeJS.ProcessEnv = process.env) =>
+    spawnSync("git", args, { cwd: REPO_ROOT, encoding: "utf8", env });
+  const index = git(["rev-parse", "--path-format=absolute", "--git-path", "index"]);
+  if (index.status !== 0) return undefined;
+  const scratch = mkdtempSync(join(tmpdir(), "beamfall-web-e2e-key-"));
+  try {
+    const env = { ...process.env, GIT_INDEX_FILE: join(scratch, "index") };
+    copyFileSync(index.stdout.trim(), env.GIT_INDEX_FILE);
+    if (git(["add", "-A"], env).status !== 0) return undefined;
+    const tree = git(["write-tree"], env);
+    return tree.status === 0 && tree.stdout.trim() ? tree.stdout.trim() : undefined;
+  } catch {
+    return undefined;
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+function buildStamp(key: string): string | undefined {
+  if (!existsSync(SERVER_BIN)) return undefined;
+  const digest = createHash("sha256").update(readFileSync(SERVER_BIN)).digest("hex");
+  return `source-tree=${key}\nserver-sha256=${digest}\n`;
+}
+
 // Build the server binary fresh from source so it embeds the current web bundle.
 // Throws with the compiler output if the build fails.
 function buildServer(): void {
+  // Taken before building: an edit landing mid-build leaves a stale key, so the
+  // next invocation rebuilds rather than trusting this binary.
+  const key = BUILD_STAMP ? sourceTreeKey() : undefined;
+  if (key && BUILD_STAMP && existsSync(BUILD_STAMP)) {
+    const recorded = readFileSync(BUILD_STAMP, "utf8");
+    if (recorded === buildStamp(key)) {
+      // eslint-disable-next-line no-console
+      console.log(`[e2e] reusing ${SERVER_BIN} built earlier this run (source tree ${key})`);
+      return;
+    }
+  }
+  if (BUILD_STAMP) rmSync(BUILD_STAMP, { force: true });
   // eslint-disable-next-line no-console
   console.log("[e2e] building embedded web app (npm run build)...");
   const webResult = spawnSync("npm", ["--prefix", "internal/web/app", "run", "build"], {
@@ -119,6 +178,8 @@ function buildServer(): void {
       `go build failed (status ${result.status}):\n${result.stderr || result.stdout}`,
     );
   }
+  const stamp = key && BUILD_STAMP ? buildStamp(key) : undefined;
+  if (stamp && BUILD_STAMP) writeFileSync(BUILD_STAMP, stamp);
 }
 
 // Boot a fresh server with a known admin password and dev seed. Returns the pid

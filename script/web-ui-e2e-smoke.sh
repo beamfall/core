@@ -13,6 +13,7 @@ output_dir="${BEAMFALL_WEB_E2E_OUTPUT_DIR:-}"
 pending_receipt=""
 receipt_file=""
 publisher_file=""
+build_reuse_dir=""
 global_timeout_seconds=600
 runner_timeout_seconds="${BEAMFALL_WEB_E2E_RUNNER_TIMEOUT_SECONDS:-630}"
 
@@ -66,6 +67,9 @@ cleanup() {
   if [[ -n "${publisher_file}" ]]; then
     rm -f "${publisher_file}"
   fi
+  if [[ -n "${build_reuse_dir}" ]]; then
+    rm -rf "${build_reuse_dir}"
+  fi
   if [[ ${cleanup_output} -eq 1 && ${status} -eq 0 ]]; then
     rm -rf "${output_dir}"
   elif [[ ${cleanup_output} -eq 1 ]]; then
@@ -118,6 +122,12 @@ if [[ -z "${BEAMFALL_E2E_PORT:-}" ]]; then
 fi
 export BEAMFALL_E2E_PORT
 echo "[e2e] isolation: port=${BEAMFALL_E2E_PORT} auth=${ROOT}/internal/web/app/e2e/.auth/${BEAMFALL_E2E_PORT} binary=/tmp/beamfall-e2e-${BEAMFALL_E2E_PORT}"
+# One web + server build per smoke: the first Playwright invocation stamps its
+# build here and later ones reuse the binary only while global-setup's
+# source-tree key and binary digest still match (any mismatch rebuilds). Always
+# fresh, never inherited, so no stamp outlives or predates this run.
+build_reuse_dir="$(mktemp -d "${TMPDIR:-/tmp}/beamfall-web-e2e-build.XXXXXX")"
+export BEAMFALL_E2E_BUILD_REUSE_DIR="${build_reuse_dir}"
 
 if [[ -z "${output_dir}" ]]; then
   output_dir="$(mktemp -d "${TMPDIR:-/tmp}/beamfall-web-e2e.XXXXXX")"

@@ -164,4 +164,56 @@ describe("Beamfall shell service worker", () => {
     expect(networkFetch).toHaveBeenCalledWith(request);
     expect(match).toHaveBeenCalledWith("/web/index.html");
   });
+
+  it("stores fetched lazy /assets/ chunks and skips other responses", async () => {
+    const source = workerSource("index bytes");
+    const handlers: WorkerHandlers = {};
+    const put = vi.fn().mockResolvedValue(undefined);
+    const open = vi.fn().mockResolvedValue({ put });
+    const basic = (status: number, type = "basic") => {
+      const res = new Response("chunk", { status });
+      Object.defineProperty(res, "type", { value: type });
+      return res;
+    };
+    const networkFetch = vi.fn();
+
+    runInNewContext(source, {
+      Response,
+      URL,
+      caches: { match: vi.fn().mockResolvedValue(undefined), open },
+      fetch: networkFetch,
+      self: {
+        addEventListener: (type: keyof WorkerHandlers, handler: WorkerHandlers[typeof type]) => {
+          handlers[type] = handler;
+        },
+        clients: { claim: vi.fn() },
+        location: { origin: "https://beamfall.test" },
+        skipWaiting: vi.fn(),
+      },
+    });
+
+    const run = async (path: string, res: Response) => {
+      networkFetch.mockResolvedValueOnce(res);
+      const request = new Request(`https://beamfall.test${path}`);
+      let response: Promise<unknown> | undefined;
+      handlers.fetch?.({
+        request,
+        respondWith(promise) {
+          response = promise;
+        },
+      });
+      await expect(response).resolves.toBe(res);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      return request;
+    };
+
+    const request = await run("/web/assets/lazy-Ab3dEf9_.js", basic(200));
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(put.mock.calls[0]?.[0]).toBe(request);
+
+    await run("/web/assets/missing-Ab3dEf9_.js", basic(404));
+    await run("/web/assets/redirected-Ab3dEf9_.js", basic(200, "opaque"));
+    await run("/web/other.json", basic(200));
+    expect(put).toHaveBeenCalledTimes(1);
+  });
 });
