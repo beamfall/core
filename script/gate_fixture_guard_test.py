@@ -92,6 +92,42 @@ class FixtureGuardTest(unittest.TestCase):
             time.sleep(0.4)
             self.assertFalse((root / "fixtures/late").exists())
 
+    def test_inherited_capacity_fd_stays_open_for_the_command(self) -> None:
+        # CORE-0392: the canonical coordinator under the guard must still see
+        # the outer capacity holder's FD, or it waits on its own ancestor.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "fixtures").mkdir()
+            lock = root / "capacity.lock"
+            with lock.open("a+b") as stream:
+                env = os.environ.copy()
+                env[GUARD.CAPACITY_LOCK_FD] = str(stream.fileno())
+                probe = root / "probe"
+                command = [
+                    sys.executable,
+                    "-c",
+                    "import os,sys;"
+                    "fd=int(os.environ['BEAMFALL_GATE_CAPACITY_FD']);"
+                    "st=os.fstat(fd);"
+                    "open(sys.argv[1],'w').write(f'{st.st_dev}:{st.st_ino}')",
+                    str(probe),
+                ]
+                os.set_inheritable(stream.fileno(), False)
+                self.assertEqual(GUARD.run_guarded(root, ("fixtures",), command, env), 0)
+                expected = os.stat(lock)
+                self.assertEqual(
+                    probe.read_text(encoding="utf-8"),
+                    f"{expected.st_dev}:{expected.st_ino}",
+                )
+
+    def test_stale_capacity_fd_is_dropped(self) -> None:
+        read_fd, write_fd = os.pipe()
+        os.close(read_fd)
+        os.close(write_fd)
+        env = {GUARD.CAPACITY_LOCK_FD: str(read_fd)}
+        self.assertEqual(GUARD.inherited_capacity_fds(env), ())
+        self.assertNotIn(GUARD.CAPACITY_LOCK_FD, env)
+
 
 if __name__ == "__main__":
     unittest.main()

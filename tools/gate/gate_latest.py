@@ -10,6 +10,7 @@ retires every tagged descendant before any inherited lock can become available.
 from __future__ import annotations
 
 from contextlib import ExitStack
+import errno
 import fcntl
 import os
 from pathlib import Path
@@ -98,6 +99,46 @@ def acquire_if_latest(stream, generation: int, generation_path: Path, stopped) -
         except BlockingIOError:
             time.sleep(POLL_SECONDS)
     return False
+
+
+def inherited_capacity_lock(lock_path: Path) -> int | None:
+    """Return a private duplicate of an ancestor-owned capacity lock, if any.
+
+    `script/gate-capacity.py` is the one capacity authority: whichever process
+    first acquires the common-dir lock names its FD in CAPACITY_LOCK_FD, and
+    every nested gate layer adopts that ownership instead of opening a new
+    description, which would wait forever on its own ancestor (CORE-0392).
+    An FD naming another repository's lock (a nested gate for a different
+    repository) or a closed FD is not ours; an FD naming this lock without
+    owning it is refused rather than trusted.
+    """
+    raw_fd = os.environ.get(CAPACITY_LOCK_FD)
+    if raw_fd is None:
+        return None
+    if not raw_fd.isdecimal():
+        raise OSError(errno.EBADF, f"invalid {CAPACITY_LOCK_FD}: {raw_fd!r}")
+    lock = int(raw_fd)
+    try:
+        inherited = os.fstat(lock)
+    except OSError as error:
+        if error.errno != errno.EBADF:
+            raise
+        return None
+    try:
+        canonical = lock_path.stat()
+    except FileNotFoundError:
+        return None
+    if (inherited.st_dev, inherited.st_ino) != (canonical.st_dev, canonical.st_ino):
+        return None
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError as error:
+        raise OSError(
+            errno.EBUSY, f"{CAPACITY_LOCK_FD} does not own {lock_path}"
+        ) from error
+    # The duplicate shares the ancestor's open file description, so the lock
+    # it already holds is ours too, and closing the duplicate never releases it.
+    return os.dup(lock)
 
 
 def group_exists(process_group: int) -> bool:
@@ -219,11 +260,14 @@ def supervise(command: list[str]) -> int:
             if received_signal:
                 return 128 + received_signal
             raise
-        capacity_fd = os.open(
-            common_dir / "beamfall-gate.capacity.lock",
-            os.O_CLOEXEC | os.O_CREAT | os.O_RDWR,
-            0o600,
-        )
+        capacity_path = common_dir / "beamfall-gate.capacity.lock"
+        capacity_fd = inherited_capacity_lock(capacity_path)
+        if capacity_fd is None:
+            capacity_fd = os.open(
+                capacity_path,
+                os.O_CLOEXEC | os.O_CREAT | os.O_RDWR,
+                0o600,
+            )
         with ExitStack() as locks:
             capacity_lock = locks.enter_context(os.fdopen(capacity_fd, "a+b"))
             if not acquire_if_latest(

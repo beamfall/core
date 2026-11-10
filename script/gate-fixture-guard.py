@@ -22,6 +22,7 @@ SCOPES = (
     "internal/conformance/testdata",
     "tools/visualsync/contract/testdata",
 )
+CAPACITY_LOCK_FD = "BEAMFALL_GATE_CAPACITY_FD"
 
 
 def tree_digest(root: Path, relative: str) -> str:
@@ -85,9 +86,37 @@ def cleanup_group(group_id: int) -> tuple[bool, bool]:
     return True, False
 
 
+def inherited_capacity_fds(env: dict[str, str]) -> tuple[int, ...]:
+    """Keep an ancestor's gate-capacity lock open across the guard.
+
+    An outer `script/gate-capacity.py` (for example the one
+    `script/run-with-evidence.sh -- make gate` starts) owns capacity through
+    the FD it names in BEAMFALL_GATE_CAPACITY_FD. Closing that FD here would
+    leave the canonical coordinator unable to prove the inherited ownership,
+    so it would wait forever on its own ancestor's lock (CORE-0392). A stale
+    name is dropped, as the process supervisor does; any other value is
+    forwarded for the coordinator to validate.
+    """
+    raw_fd = env.get(CAPACITY_LOCK_FD)
+    if raw_fd is None or not raw_fd.isdecimal():
+        return ()
+    try:
+        os.fstat(int(raw_fd))
+    except OSError:
+        env.pop(CAPACITY_LOCK_FD, None)
+        return ()
+    return (int(raw_fd),)
+
+
 def run_guarded(root: Path, scopes: tuple[str, ...], command: list[str], env: dict[str, str]) -> int:
     before = snapshot(root, scopes)
-    child = subprocess.Popen(command, cwd=root, env=env, start_new_session=True)
+    child = subprocess.Popen(
+        command,
+        cwd=root,
+        env=env,
+        pass_fds=inherited_capacity_fds(env),
+        start_new_session=True,
+    )
     received = 0
     received_at = 0.0
 
