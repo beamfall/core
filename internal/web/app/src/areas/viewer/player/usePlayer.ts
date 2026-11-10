@@ -274,6 +274,9 @@ export function usePlayer(
     let videoErrorHandler: (() => void) | null = null;
     let videoCanPlayHandler: (() => void) | null = null;
     let resumeMetadataHandler: (() => void) | null = null;
+    // The native resume point not yet applied: until loadedmetadata seeks to it,
+    // video.currentTime is 0 and must not stand in for the viewer's position.
+    let pendingNativeResume = 0;
     let tracksMetadataHandler: (() => void) | null = null;
     let tokenRefreshMetadataHandler: (() => void) | null = null;
     // The <video> the listeners were bound to: on unmount React detaches the
@@ -410,8 +413,11 @@ export function usePlayer(
         // hls.js takes the resume point as its startPosition and loads (and
         // seeks to) it directly; only the native <video src> route seeks on
         // metadata, so a resumed HLS session never fetches from 0 first.
+        pendingNativeResume = 0;
         if (resume > 0 && !useHlsJs) {
+          pendingNativeResume = resume;
           resumeMetadataHandler = () => {
+            pendingNativeResume = 0;
             if (alive) video.currentTime = resume;
           };
           video.addEventListener("loadedmetadata", resumeMetadataHandler, { once: true });
@@ -629,7 +635,12 @@ export function usePlayer(
           pinLevel = renditionIndex(sibling.renditions, renditionKey);
           if (pinLevel < 0) return false;
         }
-        const position = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+        const position =
+          pendingNativeResume > 0
+            ? pendingNativeResume
+            : Number.isFinite(video.currentTime)
+              ? video.currentTime
+              : 0;
         // A rendition pick keeps the viewer's pause. The failover also plays when
         // playback never began: the error can fire before `canplay`, while the
         // element is still paused only because autoplay had not yet kicked in.

@@ -54,6 +54,11 @@ unsupported-codec message.
 - **WHEN** the native player reports `MediaError` 3 and an HLS stream is available
 - **THEN** the player attaches the HLS stream at the position it had
 
+#### Scenario: Decode failure before the resume seek applied
+
+- **WHEN** the decode error fires before the requested start position was applied to the native player
+- **THEN** the HLS stream starts at the requested start position, not at zero
+
 #### Scenario: Details show the active route after the switch
 
 - **WHEN** direct play has switched to HLS

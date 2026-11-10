@@ -898,6 +898,19 @@ describe("usePlayer", () => {
       expect(screen.getByTestId("message")).toHaveTextContent("");
     });
 
+    it("keeps the requested start position when the failover beats loadedmetadata", async () => {
+      vi.mocked(Hls.isSupported).mockReturnValue(true);
+      vi.mocked(fetchPlaybackInfo).mockResolvedValue(inventory);
+      render(<Harness startAtSeconds={37} />);
+      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+      const video = screen.getByTestId("player") as HTMLVideoElement;
+      // The element has not applied the resume seek yet: currentTime is still 0.
+      Object.defineProperty(video, "error", { configurable: true, value: { code: 3 } });
+      fireEvent.error(video);
+      await waitFor(() => expect(fakeHlsInstances).toHaveLength(1));
+      expect(fakeHlsInstances[0].config.startPosition).toBe(37);
+    });
+
     it("resumes playback after a failover that fires before playback started", async () => {
       vi.mocked(Hls.isSupported).mockReturnValue(true);
       vi.mocked(fetchPlaybackInfo).mockResolvedValue(inventory);
