@@ -8,7 +8,8 @@ set -euo pipefail
 # The gate that runs this selftest exports its own diff range and reuse
 # settings; none of them describe the fixture repository below.
 unset GATE_DIFF_BASE GATE_DIFF_HEAD GATE_MODE GATE_PREFLIGHT RELAY_VECTORS_PATH \
-  GATE_STEP_REUSE GATE_STEP_REUSE_DIR GATE_STEP_REUSE_MAX_AGE_S
+  GATE_STEP_REUSE GATE_STEP_REUSE_DIR GATE_STEP_REUSE_MAX_AGE_S PLAYWRIGHT_BROWSERS_PATH \
+  npm_config_playwright_browsers_path npm_package_config_playwright_browsers_path XDG_CACHE_HOME
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -64,8 +65,18 @@ step() {  # step <name> [command...]; default command appends one line to $COUNT
   shift
   [ "$#" -gt 0 ] || set -- bash -c 'echo ran >>"$1"' _ "$COUNT"
   RUN_ID=$((RUN_ID + 1))
+  local status=0
   (cd "$REPO" && GATE_RUN_ID="run-$RUN_ID" AGENT_EVIDENCE_DIR="$TMP/evidence" "$TMP/steps.sh" "$name" "$@") \
-    >"$TMP/out" 2>"$TMP/err"
+    >"$TMP/out" 2>"$TMP/err" || status=$?
+  # The gate's EXIT trap can turn a shell abort into status 0 (bash 3.2 reports
+  # $? as 0 after a `set -u` failure), so the status alone cannot prove the
+  # run finished: a reuse bug must never abort the gate.
+  if grep -Eq 'unbound variable|value too great for base|syntax error' "$TMP/err"; then
+    echo "step reuse: $name aborted the shell" >&2
+    cat "$TMP/out" "$TMP/err" >&2
+    exit 1
+  fi
+  return "$status"
 }
 expect_ran() {  # <want-total-runs> <label>
   [ "$(runs)" = "$1" ] || { echo "step reuse: $2: want $1 executions, got $(runs)" >&2; cat "$TMP/out" "$TMP/err" >&2; exit 1; }
@@ -152,6 +163,24 @@ tamper "unknown record format" '1s/.*/gate-step-reuse-record\/2/'
 before="$(runs)"; step "go vet"; expect_ran "$((before + 1))" "empty record"
 before="$(runs)"; GATE_STEP_REUSE_MAX_AGE_S=nope step "go vet"; expect_ran "$((before + 1))" "unparseable age limit"
 
+# A malformed age limit never reuses, never records and never aborts the run;
+# the pass still lands. A zero-padded limit is decimal, not octal.
+printf 'age\n' >>"$REPO/tracked.txt"
+before="$(runs)"
+for bad in nope -1 +5 1e3 ' 60' 60s; do
+  GATE_STEP_REUSE_MAX_AGE_S="$bad" step "go vet" || { echo "age limit '$bad' failed the step" >&2; exit 1; }
+  if ! grep -q '^PASS go vet' "$TMP/out" || ! grep -q '^NOREUSE go vet (GATE_STEP_REUSE_MAX_AGE_S' "$TMP/out"; then
+    echo "age limit '$bad' did not skip recording" >&2; cat "$TMP/out" "$TMP/err" >&2; exit 1
+  fi
+done
+expect_ran "$((before + 6))" "malformed age limits"
+step "go vet"; expect_ran "$((before + 7))" "a malformed age limit leaves no record"
+step "go vet"; expect_ran "$((before + 7))" "a valid age limit records again"
+printf 'padded\n' >>"$REPO/tracked.txt"
+GATE_STEP_REUSE_MAX_AGE_S=09 step "go vet"; expect_ran "$((before + 8))" "zero-padded age limit runs"
+step "go vet"; expect_ran "$((before + 8))" "zero-padded age limit records"
+git -C "$REPO" checkout -q -- tracked.txt
+
 # The support selftests are a listed step; a step off the list always runs.
 before="$(runs)"
 step "support script tests"; step "support script tests"
@@ -234,6 +263,56 @@ expect_ran "$((before + 4))" "an empty node_modules is not an input"
 printf '{}\n' >"$REPO/internal/web/app/node_modules/.package-lock.json"
 step "go build"
 expect_ran "$((before + 5))" "a different installed dependency set"
+
+# The web E2E step keys the browsers in Playwright's registry directory for
+# this host, and runs whenever that directory cannot be established; other
+# steps stay reusable without it.
+os() {  # os <uname -s> <step...>: run a step on a host reporting that system
+  mkdir -p "$TMP/os-$1"
+  printf '#!/bin/sh\n[ "$1" = -s ] && { echo %s; exit 0; }\necho "%s fixture"\n' "$1" "$1" >"$TMP/os-$1/uname"
+  chmod +x "$TMP/os-$1/uname"
+  local system="$1"
+  shift
+  PATH="$TMP/os-$system:$PATH" step "$@"
+}
+SMOKE="web UI E2E smoke (pre-gate)"
+mkdir -p "$TMP/xdg/ms-playwright/chromium-1" "$TMP/home/Library/Caches/ms-playwright/chromium-1" \
+  "$TMP/home/.cache/ms-playwright/chromium-1"
+before="$(runs)"
+os Plan9 "$SMOKE"; os Plan9 "$SMOKE"
+expect_ran "$((before + 2))" "web E2E smoke on a host without a known browser directory"
+os Plan9 "go build"; os Plan9 "go build"
+expect_ran "$((before + 3))" "go build on a host without a known browser directory"
+HOME="" os Linux "$SMOKE"; HOME="" os Linux "$SMOKE"
+expect_ran "$((before + 5))" "web E2E smoke on Linux without HOME or XDG_CACHE_HOME"
+before="$(runs)"
+XDG_CACHE_HOME="$TMP/xdg" os Linux "$SMOKE"; XDG_CACHE_HOME="$TMP/xdg" os Linux "$SMOKE"
+expect_ran "$((before + 1))" "web E2E smoke on Linux with the same browsers"
+mkdir "$TMP/xdg/ms-playwright/chromium-2"
+XDG_CACHE_HOME="$TMP/xdg" os Linux "$SMOKE"
+expect_ran "$((before + 2))" "web E2E smoke on Linux after a browser install under XDG_CACHE_HOME"
+HOME="$TMP/home" os Linux "$SMOKE"; HOME="$TMP/home" os Linux "$SMOKE"
+expect_ran "$((before + 3))" "web E2E smoke on Linux keyed from ~/.cache"
+mkdir "$TMP/home/.cache/ms-playwright/chromium-2"
+HOME="$TMP/home" os Linux "$SMOKE"
+expect_ran "$((before + 4))" "web E2E smoke on Linux after a browser install under ~/.cache"
+HOME="$TMP/home" os Darwin "$SMOKE"; HOME="$TMP/home" os Darwin "$SMOKE"
+expect_ran "$((before + 5))" "web E2E smoke on macOS with the same browsers"
+mkdir "$TMP/home/Library/Caches/ms-playwright/chromium-2"
+HOME="$TMP/home" os Darwin "$SMOKE"
+expect_ran "$((before + 6))" "web E2E smoke on macOS after a browser install"
+# PLAYWRIGHT_BROWSERS_PATH=0 keeps the browsers inside the installed package.
+LOCAL="$REPO/internal/web/app/node_modules/playwright-core/.local-browsers"
+mkdir -p "$LOCAL/chromium-1"
+before="$(runs)"
+PLAYWRIGHT_BROWSERS_PATH=0 os Plan9 "$SMOKE"; PLAYWRIGHT_BROWSERS_PATH=0 os Plan9 "$SMOKE"
+expect_ran "$((before + 1))" "web E2E smoke with in-package browsers"
+mkdir "$LOCAL/chromium-2"
+PLAYWRIGHT_BROWSERS_PATH=0 os Plan9 "$SMOKE"
+expect_ran "$((before + 2))" "web E2E smoke after an in-package browser install"
+PLAYWRIGHT_BROWSERS_PATH="$TMP/xdg/ms-playwright" os Plan9 "$SMOKE"
+PLAYWRIGHT_BROWSERS_PATH="$TMP/xdg/ms-playwright" os Plan9 "$SMOKE"
+expect_ran "$((before + 3))" "web E2E smoke with an explicit browser directory"
 
 # No usable store means the step runs; reuse never turns into a failure.
 before="$(runs)"

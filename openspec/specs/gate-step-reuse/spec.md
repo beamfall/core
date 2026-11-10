@@ -63,6 +63,11 @@ run every step when an input outside the worktree cannot be content-addressed.
 - **WHEN** `RELAY_VECTORS_PATH` is set or a `go.work` file is active
 - **THEN** no step is reused
 
+#### Scenario: Unknown browser directory
+
+- **WHEN** Playwright's browser directory for this host cannot be established
+- **THEN** the step that launches a browser runs and is not recorded, and other steps are unaffected
+
 ### Requirement: Reuse never weakens the gate
 
 The gate SHALL NOT reuse a result in release mode, for a step outside the reuse list, from a failed
@@ -98,3 +103,8 @@ the record store is unusable.
 
 - **WHEN** the record directory cannot be created or written
 - **THEN** the step runs and its result alone decides the outcome
+
+#### Scenario: Malformed age limit
+
+- **WHEN** `GATE_STEP_REUSE_MAX_AGE_S` is not a plain decimal number of seconds
+- **THEN** the step runs, its pass is not recorded, and the gate carries on
