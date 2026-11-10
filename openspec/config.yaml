@@ -1,0 +1,16 @@
+schema: spec-driven
+
+context: |
+  Work items live in the Corvint Tasks store (queue:core:main, prefix CORE). Name the ticket ID in
+  every proposal. tasks.md is a checklist for one change, never a work queue.
+  This repository is public (AGPL-3.0). Never copy private ADR text, entitlement or auth mechanics,
+  or release evidence into an artifact; cite the ADR id instead.
+  Existing ADRs and docs/ pages stay canonical. openspec/specs/ covers only capabilities that a
+  change has touched since adoption; do not backfill untouched behaviour.
+
+rules:
+  proposal:
+    - Name the Tasks ticket ID.
+    - State non-goals, failure modes, acceptance evidence and rollback.
+  tasks:
+    - End with the gate to run (make gate) and the archive step.
