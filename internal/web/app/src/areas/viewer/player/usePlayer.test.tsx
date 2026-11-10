@@ -172,6 +172,7 @@ function Harness({
       <output data-testid="terminal-flag">{state.terminal ? "yes" : "no"}</output>
       <output data-testid="info">{state.info ? "present" : "none"}</output>
       <output data-testid="decision">{state.decision}</output>
+      <output data-testid="info-decision">{state.info?.decision ?? ""}</output>
       <output data-testid="markers">{state.markers.length}</output>
     </>
   );
@@ -892,6 +893,7 @@ describe("usePlayer", () => {
       expect(screen.getByTestId("phase")).toHaveTextContent("playing");
       expect(screen.getByTestId("active-kind")).toHaveTextContent("hls");
       expect(screen.getByTestId("decision")).toHaveTextContent("transcode");
+      expect(screen.getByTestId("info-decision")).toHaveTextContent("transcode");
       expect(screen.getByTestId("hls-active")).toHaveTextContent("yes");
       expect(screen.getByTestId("message")).toHaveTextContent("");
     });

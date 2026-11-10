@@ -641,6 +641,7 @@ export function usePlayer(
           ...s,
           stream: sibling,
           decision: "transcode",
+          // Keep the info in step: the details dialog reads info.decision first.
           hlsActive: engine === "hlsjs",
           recovering: false,
           tracksVersion: s.tracksVersion + 1,

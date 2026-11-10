@@ -54,6 +54,11 @@ unsupported-codec message.
 - **WHEN** the native player reports `MediaError` 3 and an HLS stream is available
 - **THEN** the player attaches the HLS stream at the position it had
 
+#### Scenario: Details show the active route after the switch
+
+- **WHEN** direct play has switched to HLS
+- **THEN** the playback details dialog shows the server transcode route, not direct play
+
 ### Requirement: Native-route relock is reveal-terminal
 
 On a native-route `MEDIA_ERR_NETWORK`, the player SHALL probe the stream URL, and on a 401, 403 or
