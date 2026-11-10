@@ -1097,6 +1097,7 @@ run_gate_preflight_steps() {
   preflight_step "backup restore drill scope gate selftest" tools/gate/backup-restore-drill-scope_test.sh
   preflight_step "backup restore drill (PR-scoped)" tools/gate/backup-restore-drill-pr.sh
   preflight_step "internet-exposure gate" tools/gate/internet-exposure.sh
+  preflight_step "openspec validate gate" tools/gate/openspec-validate.sh
   preflight_scoped_step "design token drift gate" web node tools/gate/design-token-drift.mjs
 }
 
@@ -1330,6 +1331,7 @@ run_step "backup restore drill scope gate selftest" tools/gate/backup-restore-dr
 run_step "backup restore drill (PR-scoped)" tools/gate/backup-restore-drill-pr.sh
 
 run_step "internet-exposure gate" tools/gate/internet-exposure.sh
+run_step "openspec validate gate" tools/gate/openspec-validate.sh
 
 run_scoped_step "design token drift gate" web node tools/gate/design-token-drift.mjs
 

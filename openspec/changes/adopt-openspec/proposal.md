@@ -1,7 +1,7 @@
 # Adopt OpenSpec for new changes
 
 Ticket: CORE-0959 (`queue:core:main`).
-Status: proposed. Only the owner accepts this intent.
+Status: accepted by the owner on 2026-11-10.
 
 ## Why
 
