@@ -7,8 +7,8 @@
 
 ## 2. Prove
 
-- [ ] 2.1 Full gate passes on the lane
-- [ ] 2.2 A second gate on the same tree reuses the listed steps; record both wall times
+- [x] 2.1 Full gate passes on the lane (head eee7fd0, 2026-11-10)
+- [x] 2.2 A second gate on the same tree reuses the listed steps; record both wall times (781 s with no reuse on the parent head; 546 s with six steps reused from an earlier partial run; 385 s with all ten listed steps reused)
 
 ## 3. Close
 
