@@ -261,8 +261,9 @@ itself tripwired.
 
 **Step reuse.** In normal mode the gate skips a build, vet, lint, test or web step when the same
 step already passed for identical inputs: the step command, the gate mode, the content of the whole
-worktree (tracked and untracked, minus ignored files), the toolchain and the gate-relevant
-environment. The output shows `REUSE <step>` and the evidence file gets a `reuse` row naming the
+worktree (tracked and untracked, minus ignored files), the built web bundle, the installed web
+dependencies, the toolchain and the gate-relevant environment. An active `go.work` or a set
+`RELAY_VECTORS_PATH` stops all reuse. The output shows `REUSE <step>` and the evidence file gets a `reuse` row naming the
 run that produced the pass. Any change to those inputs runs the step. Release mode never reuses,
 `GATE_STEP_REUSE=0` turns reuse off, and steps that depend on state outside the worktree (the
 vulnerability check, the secret scan, cross-repository conformance, fuzzing, performance budgets)

@@ -158,6 +158,64 @@ expect_ran "$((before + 4))" "race-short with a different base"
 GATE_DIFF_BASE=not-a-commit step "race-short"
 expect_ran "$((before + 5))" "race-short with an unresolvable base"
 
+# race-short scopes from base..HEAD commits, so an edit that was uncommitted when
+# it passed has not been raced: committing it must run the step again.
+printf 'raced later\n' >>"$REPO/tracked.txt"
+before="$(runs)"
+GATE_DIFF_BASE="$BASE" step "race-short"
+git -C "$REPO" add -A
+git -C "$REPO" commit -q -m "commit the edit"
+GATE_DIFF_BASE="$BASE" step "race-short"
+expect_ran "$((before + 2))" "race-short after committing an edit it passed with uncommitted"
+GATE_DIFF_BASE="$BASE" step "race-short"
+expect_ran "$((before + 2))" "race-short with the same base and head"
+
+# The built web bundle is ignored by git but embedded by the Go build. A step
+# that writes it is reused only while the bundle it left behind is in place,
+# and no step is reused over a missing or different bundle.
+printf 'internal/web/app-dist/\n' >>"$REPO/.gitignore"
+BUNDLE="$REPO/internal/web/app-dist/production"
+build() { step "web app build" bash -c 'echo ran >>"$1"; mkdir -p "$2"; printf built >"$2/index.html"' _ "$COUNT" "$BUNDLE"; }
+before="$(runs)"
+build; build
+expect_ran "$((before + 1))" "a step that writes the bundle is reused while the bundle stands"
+step "go build"; step "go build"
+expect_ran "$((before + 2))" "go build over an unchanged bundle"
+printf stale >"$BUNDLE/index.html"
+step "go build"
+expect_ran "$((before + 3))" "go build over a different bundle"
+build
+expect_ran "$((before + 4))" "web app build over a different bundle"
+rm -rf "$REPO/internal"
+build
+expect_ran "$((before + 5))" "web app build with the bundle missing"
+step "go build"
+expect_ran "$((before + 5))" "go build once the same bundle is back"
+
+# Inputs outside the worktree that cannot be content-addressed stop reuse.
+before="$(runs)"
+RELAY_VECTORS_PATH="$TMP/vectors.json" step "go build"
+expect_ran "$((before + 1))" "external relay vectors"
+GOWORK="$TMP/go.work" step "go build"
+expect_ran "$((before + 2))" "active go.work"
+# Go finds a go.work in any parent directory without being told.
+: >"$TMP/go.work"
+step "go build"
+expect_ran "$((before + 3))" "go.work discovered in a parent directory"
+rm -f "$TMP/go.work"
+mkdir -p "$TMP/bin"
+printf '#!/bin/sh\necho "ffmpeg version fixture"\n' >"$TMP/bin/ffmpeg"
+chmod +x "$TMP/bin/ffmpeg"
+PATH="$TMP/bin:$PATH" step "go build"
+expect_ran "$((before + 4))" "a different ffmpeg on PATH"
+mkdir -p "$REPO/internal/web/app/node_modules"
+printf 'node_modules\n' >>"$REPO/.git/info/exclude"
+step "go build"
+expect_ran "$((before + 4))" "an empty node_modules is not an input"
+printf '{}\n' >"$REPO/internal/web/app/node_modules/.package-lock.json"
+step "go build"
+expect_ran "$((before + 5))" "a different installed dependency set"
+
 # No usable store means the step runs; reuse never turns into a failure.
 before="$(runs)"
 GATE_STEP_REUSE_DIR="$TMP/count/not-a-dir" step "go vet"

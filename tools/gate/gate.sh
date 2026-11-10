@@ -645,15 +645,55 @@ gate_step_reuse_tree() {  # content address of the worktree as it is on disk now
   printf '%s\n' "$tree"
 }
 
+gate_step_reuse_dirhash() {  # <dir> -> content hash of an ignored directory, or "absent"
+  python3 - "$1" <<'PY'
+import hashlib, os, sys
+root = sys.argv[1]
+if not os.path.isdir(root):
+    print("absent")
+    raise SystemExit(0)
+digest = hashlib.sha256()
+for base, dirs, files in os.walk(root):
+    dirs.sort()
+    for name in sorted(files):
+        path = os.path.join(base, name)
+        digest.update(os.path.relpath(path, root).encode() + b"\0")
+        with open(path, "rb") as fh:
+            digest.update(hashlib.sha256(fh.read()).digest())
+print(digest.hexdigest())
+PY
+}
+
 gate_step_reuse_material() {  # <step> <command> <policy> -> everything the key covers
-  local name="$1" rerun="$2" policy="$3" tree base="-"
+  local name="$1" rerun="$2" policy="$3" tree base="-" head="-" gowork built lock="absent"
+  # Inputs that live outside the worktree and cannot be content-addressed here
+  # make every step run: an external relay vector file, or an active go.work.
+  [ -z "${RELAY_VECTORS_PATH:-}" ] || return 1
+  gowork="$(go env GOWORK 2>/dev/null)" || return 1
+  case "$gowork" in ''|off) ;; *) return 1 ;; esac
   tree="$(gate_step_reuse_tree)" || return 1
   if [ "$policy" = "tree+base" ]; then
+    # Diff-scoped steps select work from base..head commits, not from the
+    # worktree, so both ends are part of the key.
     [ -n "${GATE_DIFF_BASE:-}" ] || return 1
     base="$(git rev-parse --verify "${GATE_DIFF_BASE}^{tree}" 2>/dev/null)" || return 1
+    head="$(git rev-parse --verify "${GATE_DIFF_HEAD:-HEAD}^{tree}" 2>/dev/null)" || return 1
   fi
-  printf 'gate-step-reuse/1\nstep=%s\ncommand=%s\nmode=%s\npreflight=%s\ntree=%s\nbase=%s\n' \
-    "$name" "$rerun" "${GATE_MODE:-}" "${GATE_PREFLIGHT:-}" "$tree" "$base"
+  # The built web bundle is ignored by git but embedded by the Go build, so a
+  # checkout with a missing or different bundle never shares a pass.
+  built="$(gate_step_reuse_dirhash internal/web/app-dist/production 2>/dev/null)" || return 1
+  [ -n "$built" ] || return 1
+  if [ -f internal/web/app/node_modules/.package-lock.json ]; then
+    lock="$(git hash-object internal/web/app/node_modules/.package-lock.json 2>/dev/null)" || return 1
+  fi
+  printf 'gate-step-reuse/1\nstep=%s\ncommand=%s\nmode=%s\npreflight=%s\ntree=%s\nbase=%s\nhead=%s\n' \
+    "$name" "$rerun" "${GATE_MODE:-}" "${GATE_PREFLIGHT:-}" "$tree" "$base" "$head"
+  printf 'built=%s\n' "$built"
+  printf 'node_modules=%s\n' "$lock"
+  printf 'npm=%s\n' "$(npm --version 2>/dev/null)"
+  printf 'browsers=%s\n' "$(ls "${PLAYWRIGHT_BROWSERS_PATH:-$HOME/Library/Caches/ms-playwright}" 2>/dev/null | LC_ALL=C sort | tr '\n' ' ')"
+  printf 'ffmpeg=%s %s\n' "$(command -v ffmpeg 2>/dev/null)" "$(ffmpeg -version 2>/dev/null | head -n 1)"
+  printf 'ffprobe=%s %s\n' "$(command -v ffprobe 2>/dev/null)" "$(ffprobe -version 2>/dev/null | head -n 1)"
   printf 'host=%s\n' "$(uname -sm 2>/dev/null)"
   printf 'go=%s\n' "$(go version 2>/dev/null)"
   printf 'goenv=%s\n' "$(go env GOOS GOARCH CGO_ENABLED GOFLAGS GOEXPERIMENT 2>/dev/null | tr '\n' ' ')"
@@ -697,17 +737,20 @@ print(f"run={run_id} age_s={age} saved_s={saved}")
 PY
 }
 
-gate_step_reuse_record() {  # <step> <command> <policy> <key> <elapsed_ns>
-  local name="$1" rerun="$2" policy="$3" key="$4" elapsed_ns="$5" dir material after tmp
+gate_step_reuse_record() {  # <step> <command> <policy> <material before the step> <elapsed_ns>
+  local name="$1" rerun="$2" policy="$3" before="$4" elapsed_ns="$5" dir material key tmp
   dir="$(gate_step_reuse_dir)" || return 0
-  # The pass only proves the inputs it started from. If the worktree moved
-  # while the step ran, there is no single input state to bind the pass to.
+  # The pass only proves the inputs it started from. If they moved while the
+  # step ran, there is no single input state to bind the pass to. The built
+  # web bundle is the one output a step may write: the pass is recorded
+  # against the bundle the step left behind, so a later run reuses it only
+  # while that same bundle is still in place.
   material="$(gate_step_reuse_material "$name" "$rerun" "$policy")" || return 0
-  after="$(printf '%s\n' "$material" | gate_step_reuse_key)" || return 0
-  if [ "$after" != "$key" ]; then
+  if [ "$(printf '%s\n' "$material" | grep -v '^built=')" != "$(printf '%s\n' "$before" | grep -v '^built=')" ]; then
     echo "NOREUSE $name (inputs changed while the step ran; pass not recorded for reuse)"
     return 0
   fi
+  key="$(printf '%s\n' "$material" | gate_step_reuse_key)" || return 0
   mkdir -p "$dir" 2>/dev/null || return 0
   find "$dir" -type f -mtime +"$(( (${GATE_STEP_REUSE_MAX_AGE_S:-604800} + 86399) / 86400 ))" -delete 2>/dev/null || true
   tmp="$(mktemp "$dir/.tmp.XXXXXX" 2>/dev/null)" || return 0
@@ -814,7 +857,7 @@ run_step() {
   if [[ "$status" -eq 0 ]]; then
     echo "PASS $name elapsed_s=$elapsed_s"
     rm -f "$log"
-    [ -z "$reuse_key" ] || gate_step_reuse_record "$name" "$rerun" "$reuse_policy" "$reuse_key" "$elapsed_ns"
+    [ -z "$reuse_key" ] || gate_step_reuse_record "$name" "$rerun" "$reuse_policy" "$reuse_material" "$elapsed_ns"
     return 0
   fi
   echo "FAIL $name elapsed_s=$elapsed_s" >&2

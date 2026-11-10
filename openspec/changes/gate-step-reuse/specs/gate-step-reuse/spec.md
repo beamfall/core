@@ -32,6 +32,32 @@ mode, the toolchain version or a gate-relevant environment variable differs from
   base cannot be resolved
 - **THEN** the step runs
 
+### Requirement: Inputs outside the tracked tree
+
+The gate SHALL include in the key the built web bundle, the installed web dependency set, the
+browser and media tools the steps call, and for a diff-scoped step both ends of the diff. It SHALL
+run every step when an input outside the worktree cannot be content-addressed.
+
+#### Scenario: Missing or different web bundle
+
+- **WHEN** the ignored built web bundle is absent or differs from the one in place when the step passed
+- **THEN** the step runs
+
+#### Scenario: Step that writes the web bundle
+
+- **WHEN** a step passes and leaves a new web bundle behind
+- **THEN** the pass is recorded against that bundle and reused only while it is in place
+
+#### Scenario: Committing an edit a diff-scoped step never saw
+
+- **WHEN** a diff-scoped step passed with an uncommitted edit and the edit is then committed
+- **THEN** the step runs
+
+#### Scenario: External test inputs
+
+- **WHEN** `RELAY_VECTORS_PATH` is set or a `go.work` file is active
+- **THEN** no step is reused
+
 ### Requirement: Reuse never weakens the gate
 
 The gate SHALL NOT reuse a result in release mode, for a step outside the reuse list, from a failed
