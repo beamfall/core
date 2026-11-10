@@ -63,8 +63,15 @@ type Endpoint struct {
 	// (never the URL, which may embed a token).
 	ID string
 	// URL is the POST target (https in production; http allowed for LAN
-	// receivers and tests).
+	// receivers and tests). New rejects a URL that is not an absolute http(s)
+	// URL with a host, carries user info, or names a refused IP literal.
 	URL string
+	// AllowPrivateNetwork is the operator's approval for a LAN receiver named
+	// by hostname: the default delivery client may then connect to loopback,
+	// private, shared and site-local addresses. An endpoint whose URL host is
+	// such an IP literal is approved without it. Link-local, multicast and
+	// unspecified addresses stay refused either way.
+	AllowPrivateNetwork bool
 	// Secret keys the HMAC-SHA256 body signature. Required.
 	Secret []byte
 	// EventKinds is the per-endpoint filter: the subset of the SSE event
@@ -113,8 +120,6 @@ const (
 	outboxBatchLimit = 256
 )
 
-var defaultHTTPClient = &http.Client{Timeout: defaultHTTPTimeout}
-
 // Doer is the HTTP client seam (interface at the consumer). *http.Client
 // satisfies it; tests inject a stub.
 type Doer interface {
@@ -153,7 +158,7 @@ type DeadLetter struct {
 type Emitter struct {
 	cfg        Config
 	events     EventStore
-	client     Doer
+	clients    map[string]Doer // by Endpoint.ID
 	deadLetter DeadLetterSink
 	cursor     CursorStore
 	logger     *slog.Logger
@@ -165,6 +170,11 @@ type Emitter struct {
 // configured — the dormant case the app treats as "plugin off" (ADR-0003:
 // opt-in, not always-on). It validates each endpoint up front so a
 // misconfiguration fails at boot, not silently at first event.
+//
+// A nil client installs one bounded default client per endpoint (see
+// newDeliveryClient): it never follows redirects and refuses dials outside the
+// endpoint's approved address classes. An injected client is used as is for
+// every endpoint and owns its own redirect and destination policy.
 func New(cfg Config, events EventStore, client Doer, deadLetter DeadLetterSink, logger *slog.Logger) (*Emitter, error) {
 	if len(cfg.Endpoints) == 0 {
 		return nil, nil // dormant: opt-in plugin with nothing configured
@@ -172,13 +182,11 @@ func New(cfg Config, events EventStore, client Doer, deadLetter DeadLetterSink, 
 	if events == nil {
 		return nil, ErrConfigDiagnostic
 	}
-	if client == nil {
-		client = defaultHTTPClient
-	}
 	if logger == nil {
 		logger = slog.Default()
 	}
 	seen := map[string]bool{}
+	clients := make(map[string]Doer, len(cfg.Endpoints))
 	for _, ep := range cfg.Endpoints {
 		if strings.TrimSpace(ep.ID) == "" {
 			return nil, ErrConfigDiagnostic
@@ -193,6 +201,15 @@ func New(cfg Config, events EventStore, client Doer, deadLetter DeadLetterSink, 
 		if len(ep.Secret) == 0 {
 			return nil, ErrConfigDiagnostic
 		}
+		allowLocal, err := endpointAllowsLocal(ep)
+		if err != nil {
+			return nil, ErrConfigDiagnostic
+		}
+		if client != nil {
+			clients[ep.ID] = client
+		} else {
+			clients[ep.ID] = newDeliveryClient(allowLocal)
+		}
 	}
 	if cfg.MaxAttempts < 1 {
 		cfg.MaxAttempts = defaultMaxAttempts
@@ -206,7 +223,7 @@ func New(cfg Config, events EventStore, client Doer, deadLetter DeadLetterSink, 
 	return &Emitter{
 		cfg:        cfg,
 		events:     events,
-		client:     client,
+		clients:    clients,
 		deadLetter: deadLetter,
 		cursor:     cursorStore(deadLetter),
 		logger:     logger,
@@ -350,9 +367,13 @@ func (e *Emitter) deliverTo(ctx context.Context, ep Endpoint, event store.Outbox
 	return nil
 }
 
-// post performs one delivery attempt. A non-2xx response or transport error is
-// a failure worth retrying.
+// post performs one delivery attempt. A non-2xx response (including a refused
+// redirect) or transport error is a failure worth retrying.
 func (e *Emitter) post(ctx context.Context, ep Endpoint, event store.OutboxEvent, body, signature []byte) error {
+	client, ok := e.clients[ep.ID]
+	if !ok {
+		return ErrRequestDiagnostic
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, ep.URL, strings.NewReader(string(body)))
 	if err != nil {
 		return ErrRequestDiagnostic
@@ -360,7 +381,7 @@ func (e *Emitter) post(ctx context.Context, ep Endpoint, event store.OutboxEvent
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(SignatureHeader, "sha256="+hex.EncodeToString(signature))
 	req.Header.Set(EventIDHeader, fmt.Sprintf("%d", event.Seq))
-	resp, err := e.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return ctxErr

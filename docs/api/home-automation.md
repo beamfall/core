@@ -38,6 +38,48 @@ are part of the `/v1` compatibility promise. Additive fields and new event kinds
 are allowed within `/v1`; breaking changes require `/v2` and the ADR-0040
 deprecation window.
 
+## Webhook delivery rules
+
+Each endpoint in `webhook-endpoints.json` gets an HMAC-signed POST per matching
+event, retried with exponential backoff up to `max_attempts`, then dead-lettered.
+Delivery is bounded:
+
+- The endpoint `url` must be an absolute `http` or `https` URL with a host and
+  no user info. Put credentials in the path or query token the receiver issues,
+  or rely on the HMAC signature. A malformed or unsafe URL stops the server at
+  boot. Nothing is sent.
+- Redirects are never followed. A `3xx` answer counts as a failed attempt, so
+  the event body and `X-Beamfall-Signature` reach only the configured endpoint.
+- Unspecified, `0.0.0.0/8`, link-local (including `169.254.169.254`),
+  multicast and broadcast addresses are always refused.
+- Loopback, private (`10/8`, `172.16/12`, `192.168/16`, `fc00::/7`), shared
+  (`100.64/10`) and `fec0::/10` addresses are refused unless the endpoint is
+  approved for the local network. This is checked on the address actually
+  dialed, after DNS resolution.
+- Environment proxy settings are ignored.
+
+A LAN receiver such as Home Assistant is approved for the local network in one
+of two ways. Configure it by private IP literal
+(`http://192.168.1.10:8123/api/webhook/<id>`), or name it by hostname and set
+`allow_private_network`:
+
+```json
+{
+  "endpoints": [
+    {
+      "id": "home-assistant",
+      "url": "http://homeassistant.local:8123/api/webhook/beamfall",
+      "secret_ref": "home-assistant-webhook",
+      "event_kinds": ["session.control"],
+      "allow_private_network": true
+    }
+  ]
+}
+```
+
+Leave `allow_private_network` unset for internet receivers so that a DNS answer
+pointing inward is refused.
+
 ## Recipes
 
 ### Movie mode

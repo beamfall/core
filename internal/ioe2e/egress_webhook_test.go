@@ -121,3 +121,77 @@ func TestEgress_webhook_post(t *testing.T) {
 		t.Errorf("envelope = %+v, want kind=media.created aggregateID=media-123", env)
 	}
 }
+
+// TestEgress_webhook_redirect_refused drives the REAL webhook.Emitter with its
+// default delivery client (no injected client) against two loopback servers:
+// the configured endpoint answers 307 or 308 pointing at a second origin, and
+// the second origin must never receive the event body or its signature.
+func TestEgress_webhook_redirect_refused(t *testing.T) {
+	for _, status := range []int{http.StatusTemporaryRedirect, http.StatusPermanentRedirect} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			leaked := make(chan string, 4)
+			second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				select {
+				case leaked <- r.Header.Get(webhook.SignatureHeader):
+				default:
+				}
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer second.Close()
+			attempts := make(chan struct{}, 4)
+			configured := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				select {
+				case attempts <- struct{}{}:
+				default:
+				}
+				http.Redirect(w, r, second.URL+"/collect", status)
+			}))
+			defer configured.Close()
+
+			events := &oneShotOutbox{event: store.OutboxEvent{
+				Seq:           11,
+				OccurredAt:    time.Unix(1700000000, 0).UTC(),
+				Kind:          "media.created",
+				AggregateType: store.OutboxAggregateMedia,
+				AggregateID:   "media-123",
+				Payload:       []byte(`{"id":"media-123"}`),
+			}}
+			emitter, err := webhook.New(webhook.Config{
+				Endpoints: []webhook.Endpoint{{
+					ID:     "redirecting-endpoint",
+					URL:    configured.URL,
+					Secret: []byte("shhh-secret"),
+				}},
+				MaxAttempts:  1,
+				PollInterval: 10 * time.Millisecond,
+			}, events, nil, nil, nil)
+			if err != nil {
+				t.Fatalf("webhook.New: %v", err)
+			}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan struct{})
+			go func() { emitter.Run(ctx); close(done) }()
+			select {
+			case <-attempts:
+			case <-time.After(5 * time.Second):
+				cancel()
+				<-done
+				t.Fatal("configured endpoint never received the POST")
+			}
+			// Give a followed redirect ample time to land before stopping.
+			select {
+			case sig := <-leaked:
+				cancel()
+				<-done
+				t.Fatalf("second origin received the redirected delivery (signature %q)", sig)
+			case <-time.After(300 * time.Millisecond):
+			}
+			cancel()
+			<-done
+			if len(leaked) != 0 {
+				t.Fatal("second origin received the redirected delivery")
+			}
+		})
+	}
+}
