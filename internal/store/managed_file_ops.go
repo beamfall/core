@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
@@ -184,6 +185,21 @@ func openStagedSource(stagingPath string) (*stagedSource, error) {
 		return nil, errManagedPathIdentity
 	}
 	return &stagedSource{file: file, root: root, name: name, id: opened}, nil
+}
+
+// hashStagedFile returns the "sha256:<hex>" content fingerprint of a staging
+// artifact, read through the same stable reference openStagedSource proves.
+func hashStagedFile(stagingPath string) (string, error) {
+	staged, err := openStagedSource(stagingPath)
+	if err != nil {
+		return "", err
+	}
+	defer staged.close()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, staged.file); err != nil {
+		return "", err
+	}
+	return "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 // remove deletes the staging artifact through the staging-directory descriptor,
@@ -385,7 +401,8 @@ func (s *Store) ImportManagedFile(ctx context.Context, libraryID LibraryID, impo
 		return ManagedPath{}, err
 	}
 	defer os.Remove(stagingPath)
-	if err := copyOpenFileToStaging(srcFd, stagingPath); err != nil {
+	fingerprint, err := copyOpenFileToStaging(srcFd, stagingPath)
+	if err != nil {
 		return ManagedPath{}, err
 	}
 	if err := admitStagedFileNoReplace(stagingPath, target); err != nil {
@@ -404,7 +421,7 @@ func (s *Store) ImportManagedFile(ctx context.Context, libraryID LibraryID, impo
 		Container:          container,
 		Codec:              codec,
 		Class:              class,
-		ContentFingerprint: HashMediaFilePath(target),
+		ContentFingerprint: fingerprint,
 	})
 	if err != nil {
 		_ = os.Remove(target)
@@ -448,33 +465,36 @@ func newImportStagingPath(stagingRoot string) (string, error) {
 // copyOpenFileToStaging copies FROM the already-open source fd (the stable
 // reference bound by ImportManagedFile) into a fresh 0600 staging file. It NEVER
 // reopens the source by path, so the admitted bytes are exactly those the fd
-// points at.
+// points at. It returns the content fingerprint of the bytes it wrote, hashed
+// during the copy, so the catalog identity is the identity of the admitted
+// content (the same "sha256:<hex>" form HashMediaFileContent produces).
 //
 // The write runs through a descriptor on the staging directory, so the file is
 // created inside the directory that was proved rather than wherever the staging
 // name resolves at write time.
-func copyOpenFileToStaging(src *os.File, stagingPath string) error {
+func copyOpenFileToStaging(src *os.File, stagingPath string) (string, error) {
 	dir := filepath.Dir(stagingPath)
 	name := filepath.Base(stagingPath)
 	root, err := openManagedDir(dir)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer root.Close()
 	dst, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
-		return err
+		return "", err
 	}
-	if _, err := io.Copy(dst, src); err != nil {
+	hash := sha256.New()
+	if _, err := io.Copy(io.MultiWriter(dst, hash), src); err != nil {
 		_ = dst.Close()
 		_ = root.Remove(name)
-		return err
+		return "", err
 	}
 	if err := dst.Close(); err != nil {
 		_ = root.Remove(name)
-		return err
+		return "", err
 	}
-	return nil
+	return "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 // admitStagedFileNoReplace positions a staged file into the Library root with a

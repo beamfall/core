@@ -3360,7 +3360,9 @@ func HashDeviceSecret(secret string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// HashMediaFilePath provides a deterministic placeholder fingerprint until import hashing lands.
+// HashMediaFilePath returns a deterministic fingerprint derived from a path,
+// not from file content. It exists for catalog-only fixtures; managed import
+// and convert fingerprint the admitted bytes instead (HashMediaFileContent form).
 func HashMediaFilePath(path string) string {
 	sum := sha256.Sum256([]byte(path))
 	return "sha256:" + hex.EncodeToString(sum[:])

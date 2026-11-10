@@ -220,6 +220,15 @@ func (s *Store) ConvertManagedFile(ctx context.Context, libraryID LibraryID, src
 		return ConvertResult{}, statErr
 	}
 
+	// Fingerprint the staged artifact's content before it is admitted: the
+	// admission links this inode at dst, so the catalog identity is the identity
+	// of the bytes that land in the root.
+	fingerprint, err := hashStagedFile(tmpOut)
+	if err != nil {
+		_ = os.Remove(tmpOut)
+		return ConvertResult{}, err
+	}
+
 	// Durable succession journal write — the intent record, lease-fenced, and
 	// strictly BEFORE any side effect. A stale owner is rejected here with
 	// nothing on disk but its own staging, which it removes on the way out.
@@ -277,7 +286,7 @@ func (s *Store) ConvertManagedFile(ctx context.Context, libraryID LibraryID, src
 		Container:          container,
 		Codec:              codec,
 		Class:              class,
-		ContentFingerprint: HashMediaFilePath(dst),
+		ContentFingerprint: fingerprint,
 	})
 	if err != nil {
 		_ = removeConvertResidue(dst)
