@@ -8,5 +8,5 @@
 
 ## 2. Close
 
-- [ ] 2.1 Run `make gate`
-- [ ] 2.2 Archive this change with `openspec archive web-viewer-instant-bootstrap`
+- [x] 2.1 Run `make gate`
+- [x] 2.2 Archive this change with `openspec archive web-viewer-instant-bootstrap`

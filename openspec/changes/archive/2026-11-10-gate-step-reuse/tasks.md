@@ -12,4 +12,4 @@
 
 ## 3. Close
 
-- [ ] 3.1 Archive this change after landing, before completing the ticket
+- [x] 3.1 Archive this change after landing, before completing the ticket
