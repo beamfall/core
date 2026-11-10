@@ -577,12 +577,167 @@ gate_group_wrapper() {
   return "$status"
 }
 
+# --- step result reuse -------------------------------------------------------
+#
+# A listed step that already passed on byte-identical inputs is not run again:
+# the gate prints `REUSE <step>` and records a `reuse` evidence row naming the
+# run that produced the pass. Spec: openspec/specs/gate-step-reuse.
+#
+# The reuse key covers the step name, its exact command, the gate mode, the
+# toolchain, the gate-relevant environment and the content address of the WHOLE
+# worktree (tracked and untracked files, minus ignored ones). Nothing narrower
+# is sound today: Go tests in this repository read scripts, docs and fixtures
+# from all over the tree, so any tracked change is treated as an input change
+# for every step. Whatever cannot be established means the step runs.
+#
+# Never reused: release mode, steps missing from the list below (anything that
+# reads the network, sibling checkouts, the clock, or host performance, and
+# fuzzing, whose value is the fresh run), and a step whose inputs changed while
+# it ran. Disable with GATE_STEP_REUSE=0.
+
+gate_step_reuse_policy() {  # <step> -> "tree" | "tree+base"; non-zero = never reused
+  case "$1" in
+    "go build"|"go vet"|"golangci-lint (staticcheck + gosec)"|\
+    "go test -tags beamfall_appstore conformance capabilities graph"|\
+    "go test + line-coverage ratchet"|"race-prove"|\
+    "web app build"|"web app typecheck + tests"|"web UI E2E smoke (pre-gate)")
+      printf 'tree\n' ;;
+    # race-short picks its packages from the diff against the merge base, so the
+    # base's content is an input as well.
+    "race-short") printf 'tree+base\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+gate_step_reuse_enabled() {
+  [ "${GATE_STEP_REUSE:-1}" = "1" ] || return 1
+  ! gate_release_mode
+}
+
+gate_step_reuse_dir() {
+  local common
+  if [ -n "${GATE_STEP_REUSE_DIR:-}" ]; then
+    printf '%s\n' "$GATE_STEP_REUSE_DIR"
+    return 0
+  fi
+  # The common git dir is shared by every worktree of this clone and is never
+  # tracked, so a pass in a lane worktree is visible to the landing checkout.
+  common="$(git rev-parse --git-common-dir 2>/dev/null)" || return 1
+  printf '%s/gate-step-reuse\n' "$common"
+}
+
+gate_step_reuse_tree() {  # content address of the worktree as it is on disk now
+  local index real tree=""
+  index="$(mktemp)" || return 1
+  real="$(git rev-parse --git-path index 2>/dev/null)" || { rm -f "$index"; return 1; }
+  # Start from the real index so unchanged files are not rehashed; the real
+  # index itself is never written.
+  if [ -f "$real" ]; then
+    cp "$real" "$index" 2>/dev/null || { rm -f "$index"; return 1; }
+  else
+    rm -f "$index"
+  fi
+  if GIT_INDEX_FILE="$index" git add -A >/dev/null 2>&1; then
+    tree="$(GIT_INDEX_FILE="$index" git write-tree 2>/dev/null)" || tree=""
+  fi
+  rm -f "$index" "$index.lock"
+  [ -n "$tree" ] || return 1
+  printf '%s\n' "$tree"
+}
+
+gate_step_reuse_material() {  # <step> <command> <policy> -> everything the key covers
+  local name="$1" rerun="$2" policy="$3" tree base="-"
+  tree="$(gate_step_reuse_tree)" || return 1
+  if [ "$policy" = "tree+base" ]; then
+    [ -n "${GATE_DIFF_BASE:-}" ] || return 1
+    base="$(git rev-parse --verify "${GATE_DIFF_BASE}^{tree}" 2>/dev/null)" || return 1
+  fi
+  printf 'gate-step-reuse/1\nstep=%s\ncommand=%s\nmode=%s\npreflight=%s\ntree=%s\nbase=%s\n' \
+    "$name" "$rerun" "${GATE_MODE:-}" "${GATE_PREFLIGHT:-}" "$tree" "$base"
+  printf 'host=%s\n' "$(uname -sm 2>/dev/null)"
+  printf 'go=%s\n' "$(go version 2>/dev/null)"
+  printf 'goenv=%s\n' "$(go env GOOS GOARCH CGO_ENABLED GOFLAGS GOEXPERIMENT 2>/dev/null | tr '\n' ' ')"
+  printf 'node=%s\n' "$(node --version 2>/dev/null)"
+  printf 'golangci-lint=%s\n' "$(golangci-lint version 2>/dev/null | head -n 1)"
+  # Per-run bookkeeping is excluded; an unknown variable only ever costs a miss.
+  { env | LC_ALL=C grep -E '^(GO[A-Z0-9_]*|CGO_[A-Z0-9_]*|BEAMFALL_[A-Z0-9_]*|GATE_[A-Z0-9_]*|NODE_[A-Z0-9_]*|PLAYWRIGHT_[A-Z0-9_]*|CI)=' |
+    LC_ALL=C grep -Ev '^(GATE_RUN_ID|GATE_PROCESS_[A-Z0-9_]*|GATE_INHERITED_RSS_FILE|GATE_PARALLEL_RSS_[A-Za-z0-9_]*|GATE_DIFF_(BASE|HEAD)|GATE_LANE_DIR|GATE_LOG_TAIL|GATE_STEP_REUSE[A-Z0-9_]*)=' |
+    LC_ALL=C sort; } || true
+}
+
+gate_step_reuse_key() {  # stdin: material -> sha256
+  python3 -c 'import hashlib, sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())'
+}
+
+gate_step_reuse_lookup() {  # <record> <key> -> "run=<id> age_s=<n> saved_s=<n>"; non-zero = run the step
+  python3 - "$1" "$2" "${GATE_STEP_REUSE_MAX_AGE_S:-604800}" <<'PY'
+import sys
+import time
+
+path, key, max_age = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    max_age = int(max_age)
+    with open(path, encoding="utf-8") as f:
+        lines = f.read().splitlines()
+    if not lines or lines[0] != "gate-step-reuse-record/1":
+        raise ValueError("format")
+    fields = dict(line.split("=", 1) for line in lines[1:] if "=" in line)
+    if fields["key"] != key or fields["status"] != "pass":
+        raise ValueError("key")
+    age = int(time.time()) - int(fields["passed_at"])
+    if age < 0 or age > max_age:
+        raise ValueError("age")
+    saved = int(fields["elapsed_ns"]) // 1_000_000_000
+    run_id = fields["run_id"]
+    if not run_id or any(c.isspace() for c in run_id):
+        raise ValueError("run")
+except Exception:
+    sys.exit(1)
+print(f"run={run_id} age_s={age} saved_s={saved}")
+PY
+}
+
+gate_step_reuse_record() {  # <step> <command> <policy> <key> <elapsed_ns>
+  local name="$1" rerun="$2" policy="$3" key="$4" elapsed_ns="$5" dir material after tmp
+  dir="$(gate_step_reuse_dir)" || return 0
+  # The pass only proves the inputs it started from. If the worktree moved
+  # while the step ran, there is no single input state to bind the pass to.
+  material="$(gate_step_reuse_material "$name" "$rerun" "$policy")" || return 0
+  after="$(printf '%s\n' "$material" | gate_step_reuse_key)" || return 0
+  if [ "$after" != "$key" ]; then
+    echo "NOREUSE $name (inputs changed while the step ran; pass not recorded for reuse)"
+    return 0
+  fi
+  mkdir -p "$dir" 2>/dev/null || return 0
+  find "$dir" -type f -mtime +"$(( (${GATE_STEP_REUSE_MAX_AGE_S:-604800} + 86399) / 86400 ))" -delete 2>/dev/null || true
+  tmp="$(mktemp "$dir/.tmp.XXXXXX" 2>/dev/null)" || return 0
+  {
+    printf 'gate-step-reuse-record/1\nkey=%s\nstatus=pass\npassed_at=%s\nelapsed_ns=%s\nrun_id=%s\n\n' \
+      "$key" "$(date +%s)" "$elapsed_ns" "${GATE_RUN_ID:-direct-$$}"
+    printf '%s\n' "$material"
+  } >"$tmp" 2>/dev/null && mv -f "$tmp" "$dir/$key" 2>/dev/null || rm -f "$tmp"
+  return 0
+}
+
 run_step() {
   local name="$1" log status rerun start elapsed_ns elapsed_s failure_dir failure_log slug command_pid
   local owns_group=0 retire_status=0
   local step_pgid="" rss_tracker_pid="" rss_tracker_file="" peak_rss_kb=0 pgid_tries
   shift
   rerun="$(format_command "$@")"
+  local reuse_policy="" reuse_material="" reuse_key="" reuse_dir="" reuse_hit=""
+  if gate_step_reuse_enabled && reuse_policy="$(gate_step_reuse_policy "$name")" &&
+    reuse_dir="$(gate_step_reuse_dir)" &&
+    reuse_material="$(gate_step_reuse_material "$name" "$rerun" "$reuse_policy")" &&
+    reuse_key="$(printf '%s\n' "$reuse_material" | gate_step_reuse_key)"; then
+    if reuse_hit="$(gate_step_reuse_lookup "$reuse_dir/$reuse_key" "$reuse_key")"; then
+      gate_metric "$name" reuse 0 0 "$rerun [$reuse_hit key=$reuse_key]"
+      echo "REUSE $name ($reuse_hit)"
+      return 0
+    fi
+  else
+    reuse_key=""
+  fi
   log="$(mktemp)"
   start="$(gate_monotonic_ns)"
   gate_metric "$name" running 0 0 "$rerun"
@@ -659,6 +814,7 @@ run_step() {
   if [[ "$status" -eq 0 ]]; then
     echo "PASS $name elapsed_s=$elapsed_s"
     rm -f "$log"
+    [ -z "$reuse_key" ] || gate_step_reuse_record "$name" "$rerun" "$reuse_policy" "$reuse_key" "$elapsed_ns"
     return 0
   fi
   echo "FAIL $name elapsed_s=$elapsed_s" >&2
@@ -772,6 +928,7 @@ run_support_orchestration_tests() {
     script/ui_catalog_test.sh &&
     tools/gate/race_short_cache_test.sh &&
     tools/gate/gate_rerun_test.sh &&
+    tools/gate/gate_step_reuse_test.sh &&
     tools/gate/gate_cleanup_test.sh &&
     tools/gate/race_prove_test.sh
   )
