@@ -9,6 +9,7 @@ import {
   setIdentityEpochSignal,
 } from "@/lib/api";
 import { fetchPlaybackMarkers } from "@/lib/graphql";
+import type { PlaybackMarker } from "@/lib/graphql/types";
 import { ApiError, fetchPlaybackInfo } from "../lib/playback";
 import { usePlayer } from "./usePlayer";
 
@@ -59,6 +60,8 @@ const { fakeHlsInstances } = vi.hoisted(() => ({
     startLoad: ReturnType<typeof vi.fn>;
     recoverMediaError: ReturnType<typeof vi.fn>;
     swapAudioCodec: ReturnType<typeof vi.fn>;
+    config: { startPosition: number };
+    sources: string[];
   }>,
 }));
 
@@ -82,8 +85,11 @@ vi.mock("hls.js", () => {
     startLoad = vi.fn();
     recoverMediaError = vi.fn();
     swapAudioCodec = vi.fn();
+    config: { startPosition: number };
+    sources: string[] = [];
 
-    constructor() {
+    constructor(userConfig?: { startPosition?: number }) {
+      this.config = { startPosition: userConfig?.startPosition ?? -1 };
       const emit = (event: string, data?: unknown) =>
         this.handlers.get(event)?.forEach((handler) => handler(event, data));
       fakeHlsInstances.push({
@@ -95,12 +101,16 @@ vi.mock("hls.js", () => {
         startLoad: this.startLoad,
         recoverMediaError: this.recoverMediaError,
         swapAudioCodec: this.swapAudioCodec,
+        config: this.config,
+        sources: this.sources,
       });
     }
     on(event: string, handler: (event: string, data: unknown) => void) {
       (this.handlers.get(event) ?? this.handlers.set(event, []).get(event)!).push(handler);
     }
-    loadSource() {}
+    loadSource(url: string) {
+      this.sources.push(url);
+    }
     attachMedia() {}
     destroy() {
       this.isDestroyed = true;
@@ -140,6 +150,7 @@ function Harness({
       <output data-testid="stream-url">{state.stream?.url ?? ""}</output>
       <output data-testid="info">{state.info ? "present" : "none"}</output>
       <output data-testid="decision">{state.decision}</output>
+      <output data-testid="markers">{state.markers.length}</output>
     </>
   );
 }
@@ -520,6 +531,77 @@ describe("usePlayer", () => {
     expect(video.currentTime).toBe(0);
   });
 
+  it("attaches the stream without waiting for a markers request that never resolves", async () => {
+    vi.mocked(fetchPlaybackMarkers).mockReturnValue(new Promise(() => {}));
+    render(<Harness />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("player")).toHaveAttribute("src", "/api/media/direct/token"),
+    );
+    expect(screen.getByTestId("phase")).toHaveTextContent("playing");
+    // Requested alongside playback info, not after it.
+    expect(fetchPlaybackMarkers).toHaveBeenCalledWith("media-alpha");
+  });
+
+  it("loads the HLS source without waiting for a markers request that never resolves", async () => {
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+    vi.mocked(fetchPlaybackMarkers).mockReturnValue(new Promise(() => {}));
+    vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce({
+      decision: "transcode",
+      streams: [{ kind: "hls", url: "/api/media/hls/token.m3u8" }],
+    });
+    render(<Harness />);
+
+    await waitFor(() => expect(fakeHlsInstances).toHaveLength(1));
+    expect(fakeHlsInstances[0].sources).toEqual(["/api/media/hls/token.m3u8"]);
+    expect(screen.getByTestId("phase")).toHaveTextContent("playing");
+  });
+
+  it("applies markers that arrive after playback has started", async () => {
+    let resolveMarkers: (markers: PlaybackMarker[]) => void = () => {};
+    vi.mocked(fetchPlaybackMarkers).mockReturnValue(
+      new Promise((resolve) => {
+        resolveMarkers = resolve;
+      }),
+    );
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    expect(screen.getByTestId("markers")).toHaveTextContent("0");
+
+    await act(async () => {
+      resolveMarkers([{ segmentKind: "intro", startSeconds: 1, endSeconds: 2, title: "Intro" }]);
+    });
+    expect(screen.getByTestId("markers")).toHaveTextContent("1");
+  });
+
+  it("starts a resumed hls.js session at the resume position instead of seeking after metadata", async () => {
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+    vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce({
+      decision: "transcode",
+      timeline: { positionSeconds: 91 },
+      streams: [{ kind: "hls", url: "/api/media/hls/token.m3u8" }],
+    });
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    expect(fakeHlsInstances[0].config.startPosition).toBe(91);
+
+    // hls.js owns the seek to startPosition; the player must not seek again.
+    const video = screen.getByTestId("player") as HTMLVideoElement;
+    fireEvent.loadedMetadata(video);
+    expect(video.currentTime).toBe(0);
+  });
+
+  it("leaves hls.js on its default start position when there is nothing to resume", async () => {
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+    vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce({
+      decision: "transcode",
+      streams: [{ kind: "hls", url: "/api/media/hls/token.m3u8" }],
+    });
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    expect(fakeHlsInstances[0].config.startPosition).toBe(-1);
+  });
+
   it("applies server track preferences once and keeps a manual subtitle-off across track updates", async () => {
     vi.mocked(Hls.isSupported).mockReturnValue(true);
     vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce({
@@ -682,6 +764,7 @@ describe("usePlayer", () => {
     expect(resetIdentityEpoch).not.toHaveBeenCalled();
 
     // The reloaded source resumes at the position playback was at, not from zero.
+    expect(fakeHlsInstances[0].config.startPosition).toBe(87);
     video.currentTime = 0;
     fireEvent.loadedMetadata(video);
     expect(video.currentTime).toBe(87);
