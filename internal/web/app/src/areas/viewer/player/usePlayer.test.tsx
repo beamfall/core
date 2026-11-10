@@ -53,6 +53,7 @@ const { fakeHlsInstances } = vi.hoisted(() => ({
     destroyed: () => boolean;
     tracks: {
       subtitleTrack: number;
+      currentLevel: number;
       subtitleTracks: Array<{ lang?: string; name?: string }>;
       audioTracks: Array<{ lang?: string; name?: string }>;
     };
@@ -78,6 +79,11 @@ vi.mock("hls.js", () => {
     private handlers = new Map<string, Array<(event: string, data: unknown) => void>>();
     private isDestroyed = false;
     subtitleTrack = -1;
+    // hls.js: assigning currentLevel makes it the manual level (-1 is Auto).
+    currentLevel = -1;
+    get manualLevel() {
+      return this.currentLevel;
+    }
     subtitleDisplay = false;
     audioTrack = -1;
     subtitleTracks: Array<{ lang?: string; name?: string }> = [];
@@ -965,6 +971,51 @@ describe("usePlayer", () => {
       // A second request while HLS is active is not a switch.
       fireEvent.click(screen.getByText("switch-hls"));
       expect(screen.getByTestId("switch-result")).toHaveTextContent("false");
+    });
+
+    describe("rendition pin across a stream-token refresh", () => {
+      const twoRenditions = {
+        ...inventory,
+        streams: [
+          inventory.streams[0],
+          {
+            ...inventory.streams[1],
+            renditions: [
+              { id: "720", height: 720 },
+              { id: "480", height: 480 },
+            ],
+          },
+        ],
+      };
+
+      // The viewer picks 720 on direct play, then changes the choice (what the quality menu
+      // does: assign hls.currentLevel), then a 401 refreshes the token and reloads the source.
+      async function pickThenChooseThenRefresh(choice: number) {
+        vi.mocked(Hls.isSupported).mockReturnValue(true);
+        vi.mocked(fetchPlaybackInfo).mockResolvedValue(twoRenditions);
+        render(<Harness />);
+        await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+        fireEvent.click(screen.getByText("switch-hls"));
+        await waitFor(() => expect(fakeHlsInstances).toHaveLength(1));
+        const hls = fakeHlsInstances[0];
+        hls.emit("manifestParsed");
+        expect(hls.tracks.currentLevel).toBe(0);
+        hls.tracks.currentLevel = choice;
+        hls.emitError({ fatal: true, response: { code: 401 } });
+        await waitFor(() => expect(hls.sources).toHaveLength(2));
+        hls.emit("manifestParsed");
+        return hls;
+      }
+
+      it("keeps a later manual rendition instead of restoring the first pick", async () => {
+        const hls = await pickThenChooseThenRefresh(1);
+        expect(hls.tracks.currentLevel).toBe(1);
+      });
+
+      it("keeps Auto instead of restoring the first pick", async () => {
+        const hls = await pickThenChooseThenRefresh(-1);
+        expect(hls.tracks.currentLevel).toBe(-1);
+      });
     });
 
     it("refuses a rendition switch the HLS stream does not advertise", async () => {

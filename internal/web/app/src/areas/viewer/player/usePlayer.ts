@@ -435,6 +435,9 @@ export function usePlayer(
 
         if (useHlsJs) {
           const hls = new Hls(resume > 0 ? { startPosition: resume } : undefined);
+          // The level to pin at the next manifest parse (the rendition the viewer picked
+          // on direct play); consumed by that parse.
+          let pendingPin = options.pinLevel;
           hlsRef.current = hls;
           // Fatal-error recovery (policy in hlsRecovery.ts): network errors
           // re-arm loading after a backoff, media errors go through hls.js's own
@@ -482,6 +485,9 @@ export function usePlayer(
                 // startPosition; point it at the current position rather than
                 // the original resume point.
                 hls.config.startPosition = resumePosition;
+                // The reload re-parses the manifest: carry the viewer's current manual
+                // rendition (Auto is -1, so nothing is re-pinned) onto the new parse.
+                if (hls.manualLevel >= 0) pendingPin = hls.manualLevel;
                 hls.loadSource(refreshedStream.url);
                 activeStream = refreshedStream;
                 setState((s) => ({
@@ -537,7 +543,10 @@ export function usePlayer(
             setRecovering(false);
           });
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
-            if (options.pinLevel !== undefined) hls.currentLevel = options.pinLevel;
+            // One-shot: a later manifest parse (token refresh) must not restore an
+            // earlier pick over the viewer's current choice (see refreshStreamToken).
+            if (pendingPin !== undefined) hls.currentLevel = pendingPin;
+            pendingPin = undefined;
             applyPreferencesThenBump();
           });
           hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, bumpTracks);
