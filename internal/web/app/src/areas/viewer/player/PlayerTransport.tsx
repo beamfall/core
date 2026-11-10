@@ -1,5 +1,19 @@
 import type Hls from "hls.js";
 import {
+  ChevronsLeft,
+  ChevronsRight,
+  Maximize,
+  Minimize,
+  Pause,
+  PictureInPicture2,
+  Play,
+  Share2,
+  SkipBack,
+  SkipForward,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
+import {
   type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
@@ -490,25 +504,28 @@ export function PlayerTransport({
           type="button"
           onClick={() => seekBy(-skipInterval)}
           aria-label={skipBackLabel}
-          className="bf-control"
+          className="bf-control is-icon"
         >
-          {skipBackLabel}
+          <SkipBack aria-hidden="true" />
+          <span className="sr-only">{skipBackLabel}</span>
         </button>
         <button
           type="button"
           onClick={togglePlay}
           aria-label={paused ? t("play") : t("pause")}
-          className="bf-control is-primary"
+          className="bf-control is-icon is-primary"
         >
-          {paused ? t("play") : t("pause")}
+          {paused ? <Play aria-hidden="true" /> : <Pause aria-hidden="true" />}
+          <span className="sr-only">{paused ? t("play") : t("pause")}</span>
         </button>
         <button
           type="button"
           onClick={() => seekBy(skipInterval)}
           aria-label={skipForwardLabel}
-          className="bf-control"
+          className="bf-control is-icon"
         >
-          {skipForwardLabel}
+          <SkipForward aria-hidden="true" />
+          <span className="sr-only">{skipForwardLabel}</span>
         </button>
       </div>
 
@@ -596,37 +613,41 @@ export function PlayerTransport({
           onClick={() => seekTo(previousChapter)}
           disabled={previousChapter === null}
           aria-label={t("previousChapter")}
-          className="bf-control"
+          className="bf-control is-icon"
         >
-          {t("previousChapter")}
+          <ChevronsLeft aria-hidden="true" />
+          <span className="sr-only">{t("previousChapter")}</span>
         </button>
         <button
           type="button"
           onClick={() => seekTo(nextChapter)}
           disabled={nextChapter === null}
           aria-label={t("nextChapter")}
-          className="bf-control"
+          className="bf-control is-icon"
         >
-          {t("nextChapter")}
+          <ChevronsRight aria-hidden="true" />
+          <span className="sr-only">{t("nextChapter")}</span>
         </button>
         <button
           type="button"
           onClick={toggleFullscreen}
           aria-label={fullscreen ? t("exitFullscreen") : t("enterFullscreen")}
-          className="bf-control"
+          className="bf-control is-icon"
         >
-          {fullscreen ? t("exitFullscreen") : t("enterFullscreen")}
+          {fullscreen ? <Minimize aria-hidden="true" /> : <Maximize aria-hidden="true" />}
+          <span className="sr-only">{fullscreen ? t("exitFullscreen") : t("enterFullscreen")}</span>
         </button>
         <button
           type="button"
           onClick={toggleMute}
           aria-label={muted ? t("unmute") : t("mute")}
-          className="bf-control"
+          className="bf-control is-icon"
         >
-          {muted ? t("unmute") : t("mute")}
+          {muted ? <VolumeX aria-hidden="true" /> : <Volume2 aria-hidden="true" />}
+          <span className="sr-only">{muted ? t("unmute") : t("mute")}</span>
         </button>
         <label className="bf-control bf-volume-control">
-          {t("volume")}
+          <span className="sr-only">{t("volume")}</span>
           <Slider.Root
             min={0}
             max={1}
@@ -684,10 +705,13 @@ export function PlayerTransport({
           disabled={!pipSupported}
           aria-label={pipActive ? t("exitPictureInPicture") : t("pictureInPicture")}
           aria-describedby={pipStatusId}
-          className="bf-control"
+          className="bf-control is-icon"
           title={!pipSupported ? t("pictureInPictureUnavailable") : undefined}
         >
-          {pipActive ? t("exitPictureInPicture") : t("pictureInPicture")}
+          <PictureInPicture2 aria-hidden="true" />
+          <span className="sr-only">
+            {pipActive ? t("exitPictureInPicture") : t("pictureInPicture")}
+          </span>
         </button>
         <span
           id={pipStatusId}
@@ -705,9 +729,10 @@ export function PlayerTransport({
             type="button"
             onClick={() => onShare(Math.floor(current))}
             aria-label={t("shareCurrentTime")}
-            className="bf-control"
+            className="bf-control is-icon"
           >
-            {t("share")}
+            <Share2 aria-hidden="true" />
+            <span className="sr-only">{t("share")}</span>
           </button>
         )}
         {markerModel.skip && (

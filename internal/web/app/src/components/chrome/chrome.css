@@ -850,21 +850,45 @@
 }
 
 /* Transport chrome appears fast and exits slowly enough to preserve
- * orientation (design system Player chrome rule). Floats over the stage on a
- * scrim gradient so it never fights the image. */
+ * orientation (design system Player chrome rule). It is one floating glass
+ * card inset from the stage edges (approved v-player mockup, CORE-0045). The
+ * glass layer is a pseudo-element so the card itself never becomes the
+ * containing block of the fixed gesture feedback. */
 .bf-transport {
   position: absolute;
-  inset: auto 0 0;
+  inset: auto clamp(12px, 3vw, 32px) clamp(12px, 3vw, 32px);
+  isolation: isolate;
   display: grid;
-  gap: 12px;
-  padding: 16px clamp(16px, 4vw, 40px) 20px;
-  background: linear-gradient(
-    to top,
-    oklch(8% 0.012 255 / 94%),
-    oklch(8% 0.012 255 / 64%) 60%,
-    transparent
-  );
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "meta primary"
+    "scrub scrub"
+    "aux aux";
+  align-items: center;
+  gap: 4px 16px;
+  padding: 12px 16px;
   color: oklch(96% 0.006 250);
+}
+
+.bf-transport::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border: 1px solid oklch(86% 0.02 250 / 16%);
+  border-radius: var(--radius-card);
+  background: oklch(12% 0.014 250 / 88%);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .bf-transport::before {
+    background: oklch(12% 0.014 250);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 
 .bf-route-summary {
@@ -877,8 +901,10 @@
 }
 
 .bf-player-meta {
+  grid-area: meta;
   display: grid;
   gap: 4px;
+  min-width: 0;
 }
 
 .bf-player-meta h2 {
@@ -898,6 +924,7 @@
 }
 
 .bf-scrub-row {
+  grid-area: scrub;
   display: grid;
   grid-template-columns: minmax(48px, auto) minmax(0, 1fr) minmax(48px, auto);
   align-items: center;
@@ -954,10 +981,16 @@
 
 .bf-slider-track {
   width: 100%;
-  height: 6px;
+  height: 4px;
   overflow: hidden;
   border-radius: 999px;
   background: oklch(72% 0.02 250 / 45%);
+  transition: height var(--duration-fast) var(--ease-standard);
+}
+
+.bf-scrub-wrap:hover .bf-slider-track,
+.bf-scrub-wrap:has(.bf-slider-control:focus-within) .bf-slider-track {
+  height: 6px;
 }
 
 .bf-slider-indicator {
@@ -973,13 +1006,39 @@
   background: white;
 }
 
+/* The scrubber is drawn by the Base UI slider (thin track, round beam thumb);
+ * the native range input only reserves the 44px row and stays hidden. */
+.bf-scrub-wrap .bf-slider-control {
+  opacity: 1;
+}
+
+.bf-scrub-wrap .bf-scrubber-visual {
+  visibility: hidden;
+}
+
+.bf-scrub-wrap .bf-slider-thumb {
+  width: 14px;
+  height: 14px;
+  background: var(--beam-500);
+  border-color: oklch(98% 0.004 250);
+}
+
+.bf-scrub-wrap:has(.bf-slider-control :focus-visible) .bf-slider-thumb {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
 .bf-marker-strip {
   position: absolute;
   inset: 50% 0 auto;
-  height: 6px;
+  height: 4px;
   transform: translateY(-50%);
   pointer-events: none;
-  z-index: 1;
+  z-index: 4;
+}
+
+.bf-scrub-wrap:hover .bf-marker-strip {
+  height: 6px;
 }
 
 .bf-marker-tick {
@@ -1037,11 +1096,14 @@
 }
 
 .bf-primary-controls {
-  justify-content: flex-start;
+  grid-area: primary;
+  justify-content: flex-end;
+  gap: 4px;
 }
 
 .bf-aux-controls {
-  align-items: flex-start;
+  grid-area: aux;
+  align-items: center;
 }
 
 .bf-control {
@@ -1095,8 +1157,7 @@
 }
 
 .bf-control select:focus-visible,
-.bf-volume-control:has(.bf-slider-control:focus-within) .bf-volume-slider,
-.bf-scrub-wrap:has(.bf-slider-control:focus-within) .bf-scrubber-visual {
+.bf-volume-control:has(.bf-slider-control:focus-within) .bf-volume-slider {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
@@ -1113,8 +1174,8 @@
 }
 
 .bf-volume-control .bf-slider-control {
-  top: 8px;
-  right: 12px;
+  top: 0;
+  right: 14px;
   width: 112px;
 }
 
@@ -1130,18 +1191,13 @@
 
 @media (max-width: 760px) {
   .bf-transport {
-    gap: 10px;
-    padding: 12px 14px 16px;
+    gap: 2px 8px;
+    padding: 10px 12px;
   }
 
   .bf-player-meta h2 {
     font-size: 16px;
     line-height: 20px;
-  }
-
-  .bf-primary-controls {
-    justify-content: center;
-    gap: 18px;
   }
 
   .bf-scrub-row {
@@ -1223,6 +1279,92 @@
 
 .bf-control.is-primary:hover {
   background: var(--beam-600);
+}
+
+/* Transport controls (CORE-0045): every button keeps a 44px box (touch floor)
+ * while the visible surface is a pill chip or a 40px circular disc painted by
+ * ::before. Scoped to .bf-transport so the Up Next / skipped-overlay buttons
+ * keep their own look. */
+.bf-transport .bf-control {
+  position: relative;
+  isolation: isolate;
+  gap: 6px;
+  padding: 0 14px;
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.bf-transport .bf-control::before {
+  content: "";
+  position: absolute;
+  inset: 6px 0;
+  z-index: -1;
+  border: 1px solid oklch(86% 0.02 250 / 24%);
+  border-radius: 999px;
+  background: oklch(24% 0.014 250 / 60%);
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.bf-transport .bf-control:hover:not(:disabled) {
+  background: transparent;
+}
+
+.bf-transport .bf-control:hover:not(:disabled)::before {
+  background: oklch(32% 0.028 250 / 80%);
+}
+
+.bf-transport .bf-control:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.bf-transport .bf-control svg {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+
+.bf-transport .bf-control.is-icon {
+  width: 44px;
+  padding: 0;
+}
+
+.bf-transport .bf-control.is-icon::before {
+  inset: 2px;
+  border-radius: 50%;
+}
+
+.bf-transport .bf-control.is-primary {
+  width: 48px;
+  min-width: 48px;
+  min-height: 48px;
+  color: var(--night-950);
+}
+
+.bf-transport .bf-control.is-primary::before {
+  inset: 0;
+  border-color: transparent;
+  background: var(--beam-500);
+}
+
+.bf-transport .bf-control.is-primary:hover:not(:disabled)::before {
+  background: var(--beam-600);
+}
+
+.bf-transport .bf-control select {
+  padding: 0 4px;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  color-scheme: dark;
+  font: inherit;
+}
+
+.bf-transport .bf-control select option {
+  color: oklch(96% 0.006 250);
+  background: oklch(20% 0.014 250);
 }
 
 /* The player top bar: a back affordance over the dark stage. */
