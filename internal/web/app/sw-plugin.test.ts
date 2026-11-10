@@ -106,6 +106,7 @@ describe("Beamfall shell service worker", () => {
     Object.defineProperty(request, "mode", { value: "navigate" });
     handlers.fetch?.({
       request,
+      waitUntil: vi.fn(),
       respondWith(promise) {
         response = promise;
       },
@@ -156,6 +157,7 @@ describe("Beamfall shell service worker", () => {
     Object.defineProperty(request, "mode", { value: "navigate" });
     handlers.fetch?.({
       request,
+      waitUntil: vi.fn(),
       respondWith(promise) {
         response = promise;
       },
