@@ -502,10 +502,15 @@ func webAppHandlerFS(assets fs.FS, base *url.URL) http.HandlerFunc {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		}
 		if compressibleWebAsset(rel) && r.Header.Get("Range") == "" && acceptsGzip(r) {
-			if !rewritten {
-				body, _ = fs.ReadFile(assets, rel)
+			// Read the original only on a cache miss.
+			load := func() []byte {
+				if rewritten {
+					return body
+				}
+				b, _ := fs.ReadFile(assets, rel)
+				return b
 			}
-			if gz, ok := compressed.get(rel, body); ok {
+			if gz, ok := compressed.get(rel, load); ok {
 				h := w.Header()
 				if contentType := mime.TypeByExtension(path.Ext(rel)); contentType != "" {
 					h.Set("Content-Type", contentType)
@@ -573,7 +578,7 @@ type gzipCache struct {
 	files map[string][]byte
 }
 
-func (c *gzipCache) get(name string, body []byte) ([]byte, bool) {
+func (c *gzipCache) get(name string, load func() []byte) ([]byte, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if gz, ok := c.files[name]; ok {
@@ -581,7 +586,7 @@ func (c *gzipCache) get(name string, body []byte) ([]byte, bool) {
 	}
 	var buf bytes.Buffer
 	zw, _ := gzip.NewWriterLevel(&buf, gzip.BestCompression)
-	if _, err := zw.Write(body); err != nil || zw.Close() != nil {
+	if _, err := zw.Write(load()); err != nil || zw.Close() != nil {
 		return nil, false
 	}
 	if c.files == nil {

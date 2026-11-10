@@ -3,7 +3,9 @@ import { useNavigate } from "react-router";
 import { displayString } from "@/lib/display";
 import type { Section, SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
+import { useViewerIdentity } from "@/lib/session";
 import { artworkBucketURL, artworkSlotURL } from "../lib/artwork";
+import { entityLinkState } from "../lib/entityPreview";
 import { rememberRenderFocus } from "../lib/renderFocus";
 
 // Hero Section, ported from the vanilla buildHero (app.js): one prominent
@@ -24,6 +26,7 @@ export function Hero({
   const t = useT();
   const displayLocale = useDisplayLocale();
   const navigate = useNavigate();
+  const identity = useViewerIdentity();
   const [imageFailed, setImageFailed] = useState(false);
   const background = artworkSlotURL(item, "backdrop") || artworkSlotURL(item, "poster");
   const isMedia = item.kind === "media";
@@ -36,7 +39,9 @@ export function Hero({
         state: { title: item.title },
       });
     } else {
-      navigate(`/entity/${encodeURIComponent(item.id)}`);
+      navigate(`/entity/${encodeURIComponent(item.id)}`, {
+        state: entityLinkState(item, identity),
+      });
     }
   }
 

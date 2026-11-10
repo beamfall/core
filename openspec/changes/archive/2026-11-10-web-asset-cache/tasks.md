@@ -11,5 +11,5 @@
 
 ## 3. Verify and close
 
-- [ ] 3.1 Run `make gate`
-- [ ] 3.2 Run `openspec archive web-asset-cache` after landing, before completing CORE-0963
+- [x] 3.1 Run `make gate`
+- [x] 3.2 Run `openspec archive web-asset-cache` after landing, before completing CORE-0963

@@ -667,11 +667,48 @@ print(digest.hexdigest())
 PY
 }
 
+gate_step_reuse_max_age() {  # -> GATE_STEP_REUSE_MAX_AGE_S in seconds; non-zero = malformed
+  local age="${GATE_STEP_REUSE_MAX_AGE_S:-604800}"
+  # Only plain decimal digits: anything else would reach shell arithmetic,
+  # where a name aborts the gate under `set -u` and a leading zero means octal.
+  case "$age" in ''|*[!0-9]*) return 1 ;; esac
+  printf '%s\n' "$((10#$age))"
+}
+
+gate_step_reuse_browsers_dir() {  # -> the Playwright browser directory; non-zero = unknown
+  # Playwright's registry directory: PLAYWRIGHT_BROWSERS_PATH (or its npm
+  # config forms), where 0 means inside the installed package; otherwise the
+  # per-OS cache directory. A relative path resolves where the E2E step runs npm.
+  local dir="${PLAYWRIGHT_BROWSERS_PATH-${npm_config_playwright_browsers_path-${npm_package_config_playwright_browsers_path-}}}"
+  if [ "$dir" = "0" ]; then
+    dir="node_modules/playwright-core/.local-browsers"
+  elif [ -z "$dir" ]; then
+    case "$(uname -s 2>/dev/null)" in
+      Darwin) [ -n "${HOME:-}" ] || return 1; dir="$HOME/Library/Caches/ms-playwright" ;;
+      Linux)
+        dir="${XDG_CACHE_HOME:-}"
+        [ -n "$dir" ] || { [ -n "${HOME:-}" ] || return 1; dir="$HOME/.cache"; }
+        dir="$dir/ms-playwright" ;;
+      *) return 1 ;;
+    esac
+  fi
+  case "$dir" in /*) ;; *) dir="$PWD/internal/web/app/$dir" ;; esac
+  printf '%s\n' "$dir"
+}
+
 gate_step_reuse_material() {  # <step> <command> <policy> -> everything the key covers
-  local name="$1" rerun="$2" policy="$3" tree base="-" head="-" gowork built lock="absent"
+  local name="$1" rerun="$2" policy="$3" tree base="-" head="-" gowork built lock="absent" browsers
   # Inputs that live outside the worktree and cannot be content-addressed here
   # make every step run: an external relay vector file, or an active go.work.
   [ -z "${RELAY_VECTORS_PATH:-}" ] || return 1
+  # The web E2E step launches a browser from this directory; when it cannot be
+  # established, that browser is an input the key cannot cover.
+  if browsers="$(gate_step_reuse_browsers_dir)"; then
+    browsers="$browsers: $(ls "$browsers" 2>/dev/null | LC_ALL=C sort | tr '\n' ' ')"
+  else
+    [ "$name" != "web UI E2E smoke (pre-gate)" ] || return 1
+    browsers="unknown"
+  fi
   gowork="$(go env GOWORK 2>/dev/null)" || return 1
   case "$gowork" in ''|off) ;; *) return 1 ;; esac
   tree="$(gate_step_reuse_tree)" || return 1
@@ -694,7 +731,7 @@ gate_step_reuse_material() {  # <step> <command> <policy> -> everything the key 
   printf 'built=%s\n' "$built"
   printf 'node_modules=%s\n' "$lock"
   printf 'npm=%s\n' "$(npm --version 2>/dev/null)"
-  printf 'browsers=%s\n' "$(ls "${PLAYWRIGHT_BROWSERS_PATH:-$HOME/Library/Caches/ms-playwright}" 2>/dev/null | LC_ALL=C sort | tr '\n' ' ')"
+  printf 'browsers=%s\n' "$browsers"
   printf 'ffmpeg=%s %s\n' "$(command -v ffmpeg 2>/dev/null)" "$(ffmpeg -version 2>/dev/null | head -n 1)"
   printf 'ffprobe=%s %s\n' "$(command -v ffprobe 2>/dev/null)" "$(ffprobe -version 2>/dev/null | head -n 1)"
   printf 'host=%s\n' "$(uname -sm 2>/dev/null)"
@@ -716,7 +753,9 @@ gate_step_reuse_key() {  # stdin: material -> sha256
 }
 
 gate_step_reuse_lookup() {  # <record> <key> -> "run=<id> age_s=<n> saved_s=<n>"; non-zero = run the step
-  python3 - "$1" "$2" "${GATE_STEP_REUSE_MAX_AGE_S:-604800}" <<'PY'
+  local max_age
+  max_age="$(gate_step_reuse_max_age)" || return 1
+  python3 - "$1" "$2" "$max_age" <<'PY'
 import sys
 import time
 
@@ -744,8 +783,12 @@ PY
 }
 
 gate_step_reuse_record() {  # <step> <command> <policy> <material before the step> <elapsed_ns>
-  local name="$1" rerun="$2" policy="$3" before="$4" elapsed_ns="$5" dir material key tmp
+  local name="$1" rerun="$2" policy="$3" before="$4" elapsed_ns="$5" dir material key tmp max_age
   dir="$(gate_step_reuse_dir)" || return 0
+  if ! max_age="$(gate_step_reuse_max_age)"; then
+    echo "NOREUSE $name (GATE_STEP_REUSE_MAX_AGE_S is not a whole number of seconds; pass not recorded for reuse)"
+    return 0
+  fi
   # The pass only proves the inputs it started from. If they moved while the
   # step ran, there is no single input state to bind the pass to. The built
   # web bundle is the one output a step may write: the pass is recorded
@@ -760,7 +803,7 @@ gate_step_reuse_record() {  # <step> <command> <policy> <material before the ste
   fi
   key="$(printf '%s\n' "$material" | gate_step_reuse_key)" || return 0
   mkdir -p "$dir" 2>/dev/null || return 0
-  find "$dir" -type f -mtime +"$(( (${GATE_STEP_REUSE_MAX_AGE_S:-604800} + 86399) / 86400 ))" -delete 2>/dev/null || true
+  find "$dir" -type f -mtime +"$(( (max_age + 86399) / 86400 ))" -delete 2>/dev/null || true
   tmp="$(mktemp "$dir/.tmp.XXXXXX" 2>/dev/null)" || return 0
   {
     printf 'gate-step-reuse-record/1\nkey=%s\nstatus=pass\npassed_at=%s\nelapsed_ns=%s\nrun_id=%s\n\n' \

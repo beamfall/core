@@ -8,6 +8,7 @@ type ExtendableEvent = {
 
 type FetchEvent = {
   request: Request;
+  waitUntil(promise: Promise<unknown>): void;
   respondWith(promise: Promise<unknown>): void;
 };
 
@@ -176,6 +177,7 @@ describe("Beamfall shell service worker", () => {
       return res;
     };
     const networkFetch = vi.fn();
+    const held: Promise<unknown>[] = [];
 
     runInNewContext(source, {
       Response,
@@ -198,6 +200,9 @@ describe("Beamfall shell service worker", () => {
       let response: Promise<unknown> | undefined;
       handlers.fetch?.({
         request,
+        waitUntil(promise) {
+          held.push(promise);
+        },
         respondWith(promise) {
           response = promise;
         },
@@ -210,10 +215,13 @@ describe("Beamfall shell service worker", () => {
     const request = await run("/web/assets/lazy-Ab3dEf9_.js", basic(200));
     expect(put).toHaveBeenCalledTimes(1);
     expect(put.mock.calls[0]?.[0]).toBe(request);
+    // The cache write is held on the event lifetime, not left floating.
+    expect(held).toHaveLength(1);
 
     await run("/web/assets/missing-Ab3dEf9_.js", basic(404));
     await run("/web/assets/redirected-Ab3dEf9_.js", basic(200, "opaque"));
     await run("/web/other.json", basic(200));
     expect(put).toHaveBeenCalledTimes(1);
+    expect(held).toHaveLength(1);
   });
 });

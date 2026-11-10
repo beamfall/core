@@ -1,14 +1,19 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { MemoryRouter, useNavigate } from "react-router";
+import { MemoryRouter, useLocation, useNavigate } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SourceItem } from "@/lib/graphql/types";
+import { readEntityPreview } from "../lib/entityPreview";
 import { fetchPreviewInfo } from "../lib/playback";
 import { preloadPlayer } from "../player/preload";
 import { MediaItemCard, PREVIEW_DWELL_MS } from "./MediaItemCard";
 
 vi.mock("../lib/playback", () => ({
   fetchPreviewInfo: vi.fn(),
+}));
+
+vi.mock("@/lib/session", () => ({
+  useViewerIdentity: () => "viewer-1",
 }));
 
 vi.mock("../player/preload", () => ({
@@ -237,6 +242,24 @@ describe("MediaItemCard preview clip behavior", () => {
   });
 });
 
+describe("MediaItemCard entity navigation", () => {
+  it("carries the identity-bound entity preview into the entity page", () => {
+    render(
+      <MemoryRouter>
+        <MediaItemCard item={baseItem({ id: "e1", kind: "series", title: "Show" })} />
+        <LocationState />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Show/ }));
+
+    expect(screen.getByTestId("path")).toHaveTextContent("/entity/e1");
+    const state = JSON.parse(screen.getByTestId("state").textContent || "null");
+    expect(readEntityPreview(state, "viewer-1", "e1")).toEqual({ title: "Show", kind: "series" });
+    expect(readEntityPreview(state, "other", "e1")).toBeNull();
+  });
+});
+
 describe("MediaItemCard player prefetch", () => {
   it("prefetches the player chunk on pointer enter, for any pointer type, without waiting for dwell", () => {
     renderCard();
@@ -271,6 +294,16 @@ function renderCard(overrides: Partial<SourceItem> = {}) {
     <MemoryRouter>
       <MediaItemCard item={baseItem(overrides)} />
     </MemoryRouter>,
+  );
+}
+
+function LocationState() {
+  const location = useLocation();
+  return (
+    <>
+      <span data-testid="path">{location.pathname}</span>
+      <span data-testid="state">{JSON.stringify(location.state)}</span>
+    </>
   );
 }
 
