@@ -1,9 +1,9 @@
 ## 1. Pre-parse scan
 
-- [ ] 1.1 Add the lexical nesting scan and `maxValueDepth` budget in `internal/graphquery`
-- [ ] 1.2 Run it before `parser.ParseQuery` in `PrepareOperation` and `TopLevelFields`
-- [ ] 1.3 Tests for limits, string and comment skipping, pre-parser rejection and peak allocation
-- [ ] 1.4 `FuzzDocumentNesting`, listed in `testing/fuzz-targets.json`
+- [x] 1.1 Add the lexical nesting scan and `maxValueDepth` budget in `internal/graphquery`
+- [x] 1.2 Run it before `parser.ParseQuery` in `PrepareOperation` and `TopLevelFields`
+- [x] 1.3 Tests for limits, string and comment skipping, pre-parser rejection and peak allocation
+- [x] 1.4 `FuzzDocumentNesting`, listed in `testing/fuzz-targets.json`
 
 ## 2. Verify and close
 

@@ -1,0 +1,2 @@
+go test fuzz v1
+string("query Q($v: [[Int!]] = [[1]]) @d(a: {b: [2]}) { f(a: {c: \"}{\"}) { ... on Q { g } ...F } } fragment F on Q { h }")
