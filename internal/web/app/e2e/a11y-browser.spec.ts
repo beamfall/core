@@ -161,21 +161,67 @@ test.describe("ADR-0100 a11y real-browser parity pass", () => {
     });
   }
 
-  // CORE-0089 follow-up: these live under areas/console/**, which another lane owns.
-  // Console Select triggers (ProfilesAccess, Schedules) still need aria-labels and the
-  // Console section shell still renders its title as an h2; enable once that lane lands.
-  for (const route of ["access", "schedules"]) {
-    test.fixme(`console/${route} has no unnamed buttons`, async ({ page }) => {
+  // CORE-0089: every Console route has one h1 and no unnamed buttons (admin session via storageState).
+  const consoleRoutes = [
+    "",
+    "operations",
+    "sessions",
+    "health",
+    "activity",
+    "libraries",
+    "plugins",
+    "identification",
+    "layout",
+    "access",
+    "schedules",
+    "remote",
+    "api",
+    "backups",
+    "retention",
+    "migrate",
+    "updates",
+    "config",
+  ];
+  for (const route of consoleRoutes) {
+    test(`console/${route || "overview"} renders exactly one h1 and no unnamed buttons`, async ({
+      page,
+    }) => {
       await page.goto(`/web/console/${route}`);
+      await expect(page.getByRole("navigation", { name: "Console" })).toBeVisible();
+      await expect(page.locator("h1")).toHaveCount(1);
+      await expect(page.locator("h1")).not.toBeEmpty();
       await settleFrames(page);
       const violations = await runAxe(page);
       expect(violations.filter((violation) => violation.id === "button-name")).toEqual([]);
     });
   }
-  test.fixme("console routes render exactly one h1", async ({ page }) => {
-    for (const route of ["config", "access", "schedules"]) {
-      await page.goto(`/web/console/${route}`);
+
+  // Viewer routes that need a seeded id: reached through the page's own links.
+  test("viewer /watch, /seeall and /profiles each render exactly one h1", async ({ page }) => {
+    await page.goto("/web/watch/media-alpha");
+    await expect(page.getByRole("button", { name: "Back" }).first()).toBeVisible();
+    await expect(page.locator("h1")).toHaveCount(1);
+
+    await page.goto("/web/profiles");
+    await expect(page.locator("h1")).toHaveCount(1);
+
+    await page.goto("/web/");
+    await page.getByRole("button", { name: "See all" }).first().click();
+    await expect(page).toHaveURL(/\/seeall\//);
+    await expect(page.locator("h1")).toHaveCount(1);
+    await expect(page.locator("h1")).not.toBeEmpty();
+  });
+
+  test("viewer /n and /entity render exactly one h1", async ({ page }) => {
+    await page.goto("/web/");
+    await page.getByRole("link").first().waitFor();
+    const node = await page.locator('a[href*="/n/"]').first().getAttribute("href");
+    expect(node, "a seeded /n/ link on the home page").toBeTruthy();
+    // Entity pages are reached by card navigation, not links; a seeded id that resolves to nothing renders the leak-safe unavailable state, which must still carry the h1.
+    for (const href of [node as string, "/web/entity/media-alpha"]) {
+      await page.goto(href);
       await expect(page.locator("h1")).toHaveCount(1);
+      await expect(page.locator("h1")).not.toBeEmpty();
     }
   });
 });

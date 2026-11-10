@@ -19,7 +19,7 @@ export function NotAvailable({
   const t = useT();
   return (
     <div className="bf-empty flex flex-col gap-2" role="status">
-      <p className="text-lg font-semibold text-[var(--text-primary)]">{t(titleKey)}</p>
+      <h1 className="text-lg font-semibold text-[var(--text-primary)]">{t(titleKey)}</h1>
       <p className="text-sm text-[var(--text-secondary)]">{t(leadKey)}</p>
     </div>
   );

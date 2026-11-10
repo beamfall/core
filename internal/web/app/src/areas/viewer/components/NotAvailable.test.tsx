@@ -15,5 +15,7 @@ describe("NotAvailable", () => {
     expect(screen.getByText(/isn’t available for the current profile/i)).toBeInTheDocument();
     // No status role leaks a count or title; it is a calm status region.
     expect(screen.getByRole("status")).toBeInTheDocument();
+    // The unavailable state is still the page's one h1 (CORE-0089).
+    expect(screen.getByRole("heading", { level: 1, name: "Not available" })).toBeInTheDocument();
   });
 });

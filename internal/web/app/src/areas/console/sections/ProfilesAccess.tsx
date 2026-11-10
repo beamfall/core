@@ -85,7 +85,7 @@ export function ProfilesAccess() {
           <div className="max-w-sm space-y-2">
             <Label>{t("accessScheduleProfileLabel")}</Label>
             <Select value={profileID} onValueChange={setProfileID}>
-              <SelectTrigger>
+              <SelectTrigger aria-label={t("accessScheduleProfileLabel")}>
                 <SelectValue placeholder={t("accessScheduleProfileLabel")} />
               </SelectTrigger>
               <SelectContent>
@@ -240,7 +240,10 @@ function CeilingRow({
         {displayString(plugin.displayName, displayLocale)}
       </span>
       <Select value={current || NO_CEILING} onValueChange={(v) => void onChange(v)}>
-        <SelectTrigger className="w-48">
+        <SelectTrigger
+          className="w-48"
+          aria-label={displayString(plugin.displayName, displayLocale)}
+        >
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -303,7 +306,7 @@ function AccessScheduleEditor({ profileID }: { profileID: string }) {
                 value={String(w.weekday)}
                 onValueChange={(v) => editWindow(i, { weekday: Number(v) })}
               >
-                <SelectTrigger className="w-36">
+                <SelectTrigger className="w-36" aria-label={t("accessScheduleWeekday")}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
