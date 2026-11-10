@@ -66,6 +66,15 @@ commands declared in `.github/cishards/test-commands.json`. **Iterate** with `ma
 then `make gate-preflight`; BASE defaults to the merge-base with main. **Verify:** `make gate` (a
 `gate-affected` or narrowed `corvint test` PASS is not a gate PASS).
 
+## Spec-driven changes (OpenSpec)
+
+New or changed behaviour needs an OpenSpec change in `openspec/changes/<id>/` committed before the
+code: `proposal.md` (naming the `CORE` ticket), the spec delta and `tasks.md`. A fix that restores
+an existing requirement or ADR cites it instead. Tickets stay the work queue; `tasks.md` is a
+checklist. Existing ADRs and `docs/` stay canonical; do not backfill specs. Run
+`openspec validate --all --strict` before review and `openspec archive <id>` after landing, before
+completing the ticket. Agent commands are generated per checkout with `openspec update`.
+
 ## Contributing and license
 
 - Licensed under the GNU AGPL v3 (`LICENSE`). Preserve license headers and third-party notices

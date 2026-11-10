@@ -23,6 +23,7 @@ coverage.out
 
 # Local editor/agent state
 .claude/
+.agents/
 
 # Build artifact
 /beamfall
