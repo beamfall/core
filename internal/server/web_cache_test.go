@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"compress/gzip"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync"
 	"testing"
 	"testing/fstest"
 )
@@ -111,5 +113,50 @@ func TestWebAssetRangeStaysIdentity(t *testing.T) {
 	rec := getWeb(h, "/web/assets/index-Ab3dEf9_.js", map[string]string{"Accept-Encoding": "gzip", "Range": "bytes=0-9"})
 	if rec.Code != http.StatusPartialContent || rec.Header().Get("Content-Encoding") != "" || rec.Body.Len() != 10 {
 		t.Fatalf("range: status %d headers %v len %d", rec.Code, rec.Header(), rec.Body.Len())
+	}
+}
+
+// countingFS counts opens of each name so a test can prove a gzip cache hit
+// does not re-read the original asset.
+type countingFS struct {
+	fs.FS
+	mu    sync.Mutex
+	opens map[string]int
+}
+
+func (c *countingFS) Open(name string) (fs.File, error) {
+	c.mu.Lock()
+	if c.opens == nil {
+		c.opens = map[string]int{}
+	}
+	c.opens[name]++
+	c.mu.Unlock()
+	return c.FS.Open(name)
+}
+
+func (c *countingFS) count(name string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.opens[name]
+}
+
+func TestWebAssetGzipHitDoesNotReadOriginal(t *testing.T) {
+	const name = "assets/index-Ab3dEf9_.js"
+	cfs := &countingFS{FS: webCacheFS()}
+	h := webAppHandlerFS(cfs, nil)
+	hdr := map[string]string{"Accept-Encoding": "gzip"}
+
+	getWeb(h, "/web/"+name, hdr)
+	afterMiss := cfs.count(name)
+	if afterMiss == 0 {
+		t.Fatal("cache miss never read the original asset")
+	}
+	rec := getWeb(h, "/web/"+name, hdr)
+	if rec.Header().Get("Content-Encoding") != "gzip" {
+		t.Fatalf("second request not gzip: %v", rec.Header())
+	}
+	if got := cfs.count(name); got != afterMiss+1 {
+		// +1 is the fs.Stat existence check; the body must not be read again.
+		t.Fatalf("opens after hit = %d, want %d", got, afterMiss+1)
 	}
 }

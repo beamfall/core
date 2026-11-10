@@ -84,6 +84,7 @@ vi.mock("@/lib/graphql", () => ({
 // the state under test (the PIN-entry dialog path).
 vi.mock("@/lib/session", () => ({
   useSession: () => ({ revealed: false, reveal: vi.fn(), relock: vi.fn() }),
+  useViewerIdentity: () => null,
 }));
 
 afterEach(() => cleanup());

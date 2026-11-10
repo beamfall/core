@@ -98,6 +98,7 @@ vi.mock("@/lib/graphql", () => ({
 
 vi.mock("@/lib/session", () => ({
   useSession: () => ({ revealed: false, reveal: vi.fn(), relock: vi.fn() }),
+  useViewerIdentity: () => null,
 }));
 
 afterEach(() => cleanup());

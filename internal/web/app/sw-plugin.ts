@@ -163,7 +163,12 @@ self.addEventListener("fetch", (event) => {
       return fetch(req).then((res) => {
         if (cacheable && res.status === 200 && res.type === "basic") {
           const copy = res.clone();
-          caches.open(CACHE).then((cache) => cache.put(req, copy)).catch(() => {});
+          event.waitUntil(
+            caches
+              .open(CACHE)
+              .then((cache) => cache.put(req, copy))
+              .catch(() => {}),
+          );
         }
         return res;
       });

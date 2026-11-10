@@ -2,7 +2,9 @@ import type { PointerEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import type { SourceItem } from "@/lib/graphql/types";
+import { useViewerIdentity } from "@/lib/session";
 import { artworkBucketURL, artworkSlotURL } from "../lib/artwork";
+import { entityLinkState } from "../lib/entityPreview";
 import { fetchPreviewInfo } from "../lib/playback";
 import { type RenderFocusAnchor, rememberRenderFocus } from "../lib/renderFocus";
 import { preloadPlayer } from "../player/preload";
@@ -31,6 +33,7 @@ export function MediaItemCard({
   focusAnchor?: RenderFocusAnchor;
 }) {
   const navigate = useNavigate();
+  const identity = useViewerIdentity();
   const location = useLocation();
   const [imageFailed, setImageFailed] = useState(false);
   const [previewClip, setPreviewClip] = useState("");
@@ -102,7 +105,9 @@ export function MediaItemCard({
         state: { title: item.title },
       });
     } else {
-      navigate(`/entity/${encodeURIComponent(item.id)}`);
+      navigate(`/entity/${encodeURIComponent(item.id)}`, {
+        state: entityLinkState(item, identity),
+      });
     }
   }
 
