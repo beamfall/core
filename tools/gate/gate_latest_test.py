@@ -1412,7 +1412,10 @@ class EvidenceWrappedCanonicalGateTest(unittest.TestCase):
     def test_direct_gate_takes_repository_capacity(self) -> None:
         _holder, holder_release = self.start_capacity_holder()
         process = self.start(["make", "gate"], self.environment(release=True))
-        time.sleep(1)
+        # The coordinator publishes its generation before it waits on
+        # capacity, so a published generation means it is queued.
+        generation = self.repository / ".agent-evidence/gate-latest/generation"
+        self.wait_for(generation.exists, "direct gate coordinator never queued")
         self.assertIsNone(process.poll(), "direct gate did not queue for capacity")
         self.assertEqual(self.event_lines(), [], "direct gate overlapped the capacity holder")
         holder_release.touch()
