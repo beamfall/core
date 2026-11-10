@@ -902,3 +902,191 @@ func TestCompatDecisionBindingReachesByteRoutes(t *testing.T) {
 		t.Fatal("native request binding carried no subject")
 	}
 }
+
+// compatTestServerWithStore is compatTestServer with the backing store, so a
+// test can change a session's grants underneath it.
+func compatTestServerWithStore(t *testing.T) (*Server, *store.Store) {
+	t.Helper()
+	srv, st := newTestServerWithStore(t)
+	policy := srv.compat.snapshot()
+	policy.Builds = compatTestCatalog()
+	srv.SetCompatPolicy(policy, srv.buildSHA, 0)
+	return srv, st
+}
+
+func compatGraphQLRequest(query string, authorize func(*http.Request)) *http.Request {
+	body, _ := json.Marshal(map[string]string{"query": query})
+	req := newJSONRequest(http.MethodPost, "/api/graphql", bytes.NewReader(body))
+	authorize(req)
+	return req
+}
+
+func compatServe(srv *Server, req *http.Request) *httptest.ResponseRecorder {
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	return rec
+}
+
+func compatRequireRefusal(t *testing.T, rec *httptest.ResponseRecorder, decision, reason string) {
+	t.Helper()
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403: %s", rec.Code, rec.Body.String())
+	}
+	var response compatHandshakeResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode refusal: %v", err)
+	}
+	if response.Decision != decision || (reason != "" && response.ReasonCode != reason) {
+		t.Fatalf("refusal = %#v, want %s/%s", response, decision, reason)
+	}
+}
+
+func compatProfileID(t *testing.T, srv *Server, authorize func(*http.Request)) store.ProfileID {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/manifest", nil)
+	authorize(req)
+	scope, err := srv.auth.ScopeFromRequest(req.Context(), req)
+	if err != nil || scope.ProfileID == "" {
+		t.Fatalf("scope = %#v, %v; want a Profile-bound session", scope, err)
+	}
+	return scope.ProfileID
+}
+
+const compatCreateLibraryMutation = `mutation { createLibrary(title: "Home Videos") { id } }`
+
+// TestCompatWebSessionSurvivesItsOwnLibraryGrant drives first-run setup's
+// create-then-read on one web session: creating a Library grants it to the
+// session's Profile, which changes the decision's auth fingerprint, and the
+// next request must still be served without a reload or new handshake.
+func TestCompatWebSessionSurvivesItsOwnLibraryGrant(t *testing.T) {
+	for name, handshake := range map[string]bool{"submitted": true, "server-derived": false} {
+		t.Run(name, func(t *testing.T) {
+			srv, _ := compatTestServerWithStore(t)
+			if handshake {
+				response := compatHandshakeRecord(t, srv, capabilities.EmbeddedUIContract(), authorizeManagerCookies)
+				if response.Decision != "compatible" {
+					t.Fatalf("handshake = %#v", response)
+				}
+			}
+			before := compatAuthFingerprintFor(t, srv, authorizeManagerCookies)
+
+			create := compatServe(srv, compatGraphQLRequest(compatCreateLibraryMutation, authorizeManagerCookies))
+			if create.Code != http.StatusOK || strings.Contains(create.Body.String(), `"errors"`) {
+				t.Fatalf("createLibrary = %d: %s", create.Code, create.Body.String())
+			}
+			if compatAuthFingerprintFor(t, srv, authorizeManagerCookies) == before {
+				t.Fatal("createLibrary did not change the session's auth fingerprint")
+			}
+
+			read := compatServe(srv, compatGraphQLRequest(`query { serverInfo { name } }`, authorizeManagerCookies))
+			if read.Code != http.StatusOK {
+				t.Fatalf("read after createLibrary = %d: %s", read.Code, read.Body.String())
+			}
+			if read.Header().Get("Cache-Control") != "no-store" {
+				t.Fatalf("read after createLibrary cache = %q, want no-store", read.Header().Get("Cache-Control"))
+			}
+		})
+	}
+}
+
+func compatAuthFingerprintFor(t *testing.T, srv *Server, authorize func(*http.Request)) string {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/manifest", nil)
+	authorize(req)
+	scope, err := srv.auth.ScopeFromRequest(req.Context(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return compatAuthFingerprint(scope)
+}
+
+func TestCompatNativeAuthChangeStaysRefused(t *testing.T) {
+	srv, _ := compatTestServerWithStore(t)
+	response := compatHandshakeRecord(t, srv, compatTestContract("macos-manager"), authorizeManager)
+	if response.Decision != "compatible" {
+		t.Fatalf("native handshake = %#v", response)
+	}
+	create := compatServe(srv, compatGraphQLRequest(compatCreateLibraryMutation, authorizeManager))
+	if create.Code != http.StatusOK || strings.Contains(create.Body.String(), `"errors"`) {
+		t.Fatalf("createLibrary = %d: %s", create.Code, create.Body.String())
+	}
+	read := compatServe(srv, compatGraphQLRequest(`query { serverInfo { name } }`, authorizeManager))
+	compatRequireRefusal(t, read, "client-too-old", "unknown-build")
+}
+
+func TestCompatRefusedWebSubjectStaysRefusedAcrossAuthChange(t *testing.T) {
+	for name, restart := range map[string]bool{"in process": false, "durable refusal": true} {
+		t.Run(name, func(t *testing.T) {
+			srv, st := compatTestServerWithStore(t)
+			accepted := compatHandshakeRecord(t, srv, capabilities.EmbeddedUIContract(), authorizeManagerCookies)
+			if accepted.Decision != "compatible" {
+				t.Fatalf("first handshake = %#v", accepted)
+			}
+			refusedContract := capabilities.EmbeddedUIContract()
+			refusedContract.BuildID = ""
+			refused := compatHandshakeRecord(t, srv, refusedContract, authorizeManagerCookies)
+			if refused.Decision != "client-too-old" {
+				t.Fatalf("refused handshake = %#v", refused)
+			}
+			if restart {
+				// Drop the in-process refusal mark; only the registry's
+				// durable refusal remains, as after a restart.
+				srv.compat.clearRefused("session:session-manager")
+			}
+			profileID := compatProfileID(t, srv, authorizeManagerCookies)
+			if _, err := st.CreateLibraryWithRoots(context.Background(), "Granted", false, "", profileID, nil, ""); err != nil {
+				t.Fatal(err)
+			}
+
+			read := compatServe(srv, compatGraphQLRequest(`query { serverInfo { name } }`, authorizeManagerCookies))
+			compatRequireRefusal(t, read, "client-too-old", "")
+			again := compatServe(srv, compatGraphQLRequest(`query { serverInfo { name } }`, authorizeManagerCookies))
+			compatRequireRefusal(t, again, "client-too-old", "")
+
+			rehabilitated := compatHandshakeRecord(t, srv, capabilities.EmbeddedUIContract(), authorizeManagerCookies)
+			if rehabilitated.Decision != "compatible" {
+				t.Fatalf("rehabilitating handshake = %#v", rehabilitated)
+			}
+			served := compatServe(srv, compatGraphQLRequest(`query { serverInfo { name } }`, authorizeManagerCookies))
+			if served.Code != http.StatusOK {
+				t.Fatalf("read after submitted handshake = %d: %s", served.Code, served.Body.String())
+			}
+		})
+	}
+}
+
+// TestCompatAuthChangeDoesNotRenewOtherMismatches pins that the auth-change
+// re-derive is not a side door around expiry or the submitted-record
+// generation rule: with the grants also changed, each still refuses.
+func TestCompatAuthChangeDoesNotRenewOtherMismatches(t *testing.T) {
+	grant := func(t *testing.T, srv *Server, st *store.Store) {
+		t.Helper()
+		profileID := compatProfileID(t, srv, authorizeManagerCookies)
+		if _, err := st.CreateLibraryWithRoots(context.Background(), "Granted", false, "", profileID, nil, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read := func(srv *Server) *httptest.ResponseRecorder {
+		return compatServe(srv, compatGraphQLRequest(`query { serverInfo { name } }`, authorizeManagerCookies))
+	}
+
+	t.Run("submitted decision from an earlier generation", func(t *testing.T) {
+		srv, st := compatTestServerWithStore(t)
+		compatHandshakeRecord(t, srv, capabilities.EmbeddedUIContract(), authorizeManagerCookies)
+		srv.SetCompatPolicy(srv.compat.snapshot(), "next-build", 1)
+		grant(t, srv, st)
+		compatRequireRefusal(t, read(srv), "client-too-old", "unknown-build")
+	})
+
+	t.Run("expired provisional decision", func(t *testing.T) {
+		srv, st := compatTestServerWithStore(t)
+		now := time.Unix(1_800_000_000, 0)
+		srv.compat.now = func() time.Time { return now }
+		if first := read(srv); first.Code != http.StatusOK {
+			t.Fatalf("provisional read = %d: %s", first.Code, first.Body.String())
+		}
+		now = now.Add(compatProvisionalTTL + time.Second)
+		grant(t, srv, st)
+		compatRequireRefusal(t, read(srv), "client-too-old", "unknown-build")
+	})
+}

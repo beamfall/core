@@ -1,9 +1,9 @@
 ## 1. Server
 
-- [ ] 1.1 Re-derive a web UI decision when authorization is its only mismatch
-- [ ] 1.2 Keep native credentials, refused subjects, expired decisions and stale submitted
+- [x] 1.1 Re-derive a web UI decision when authorization is its only mismatch
+- [x] 1.2 Keep native credentials, refused subjects, expired decisions and stale submitted
       decisions refused
-- [ ] 1.3 Regression tests in `internal/server/compat_test.go`
+- [x] 1.3 Regression tests in `internal/server/compat_test.go`
 
 ## 2. Verify and close
 
