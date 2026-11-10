@@ -3,10 +3,12 @@ import { Navigate, Route, Routes } from "react-router";
 import { ErrorState } from "@/components/beamfall/workbench";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { fetchSetupRequired } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
+import { SectionSkeleton } from "./components/HydratedSection";
 import { BrowsePage } from "./pages/BrowsePage";
 import { EntityPage } from "./pages/EntityPage";
 import { MyDataPage } from "./pages/MyDataPage";
@@ -35,6 +37,24 @@ function ViewerSessionError({ onRetry }: { onRetry: () => Promise<void> }) {
         <Button type="button" variant="outline" onClick={() => void onRetry()}>
           {t("jobRetryAction")}
         </Button>
+      </div>
+    </AppShell>
+  );
+}
+
+// Painted while the session spine is still settling: the app chrome (which
+// renders no session-scoped data while no session is bound) around the same
+// inert section skeletons a Layout shows, so the first paint is the viewer's
+// shape rather than a blank screen. No Viewer route mounts here, so no
+// route-local request runs without a bound identity.
+function ViewerSessionPending() {
+  const t = useT();
+  return (
+    <AppShell>
+      <div aria-busy="true" className="flex flex-col gap-8">
+        <span className="sr-only">{t("loading")}</span>
+        <SectionSkeleton hero />
+        <SectionSkeleton hero={false} />
       </div>
     </AppShell>
   );
@@ -73,8 +93,16 @@ export function ViewerArea() {
   // An unenrolled browser cannot browse; decide between the first-run wizard
   // (fresh server) and the enroll gate. Wait for the probe before deciding so
   // a fresh server doesn't briefly flash the enroll form.
+  // The pending probe shows a neutral placeholder, not the chrome: the chrome's
+  // enroll banner is exactly the flash this wait avoids.
   if (needsEnroll) {
-    if (setupRequired === null) return null;
+    if (setupRequired === null) {
+      return (
+        <div aria-busy="true" className="flex min-h-screen items-center justify-center">
+          <Skeleton className="h-12 w-12 rounded-full" />
+        </div>
+      );
+    }
     return <Navigate to={setupRequired ? "/setup" : "/enroll"} replace />;
   }
 
@@ -84,7 +112,7 @@ export function ViewerArea() {
   // the old cookie, and a generic session rejection could leave those results
   // mounted indefinitely.
   if (!session) {
-    if (!error) return null;
+    if (!error) return <ViewerSessionPending />;
     return <ViewerSessionError onRetry={refresh} />;
   }
 

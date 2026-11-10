@@ -15,6 +15,7 @@ vi.mock("../lib/sections", async (importOriginal) => {
 
 vi.mock("@/lib/session", () => ({
   useSession: () => ({ manifest: null, isManager: false }),
+  useViewerIdentity: () => null,
 }));
 
 function section(id: string): Section {
