@@ -259,7 +259,7 @@ additionally runs `tools/gate/gate.sh --selftest`, which feeds the runner a deli
 non-matching `-run` pattern and asserts the non-vacuity check trips — the tripwire is
 itself tripwired.
 
-**Step reuse.** In normal mode the gate skips a build, vet, lint, test or web step when the same
+**Step reuse.** In normal mode the gate skips a build, vet, lint, test, web or support-selftest step when the same
 step already passed for identical inputs: the step command, the gate mode, the content of the whole
 worktree (tracked and untracked, minus ignored files), the built web bundle, the installed web
 dependencies, the toolchain and the gate-relevant environment. An active `go.work` or a set

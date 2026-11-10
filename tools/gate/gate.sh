@@ -600,7 +600,10 @@ gate_step_reuse_policy() {  # <step> -> "tree" | "tree+base"; non-zero = never r
     "go build"|"go vet"|"golangci-lint (staticcheck + gosec)"|\
     "go test -tags beamfall_appstore conformance capabilities graph"|\
     "go test + line-coverage ratchet"|"race-prove"|\
-    "web app build"|"web app typecheck + tests"|"web UI E2E smoke (pre-gate)")
+    "web app build"|"web app typecheck + tests"|"web UI E2E smoke (pre-gate)"|\
+    "support script tests")
+      # The support selftests build their own fixtures and stub every external
+      # command; beyond the tree they depend only on the interpreters keyed below.
       printf 'tree\n' ;;
     # race-short picks its packages from the diff against the merge base, so the
     # base's content is an input as well.
@@ -699,6 +702,9 @@ gate_step_reuse_material() {  # <step> <command> <policy> -> everything the key 
   printf 'goenv=%s\n' "$(go env GOOS GOARCH CGO_ENABLED GOFLAGS GOEXPERIMENT 2>/dev/null | tr '\n' ' ')"
   printf 'node=%s\n' "$(node --version 2>/dev/null)"
   printf 'golangci-lint=%s\n' "$(golangci-lint version 2>/dev/null | head -n 1)"
+  printf 'python=%s\n' "$(python3 --version 2>&1)"
+  printf 'bash=%s\n' "$(bash --version 2>/dev/null | head -n 1)"
+  printf 'git=%s\n' "$(git --version 2>/dev/null)"
   # Per-run bookkeeping is excluded; an unknown variable only ever costs a miss.
   { env | LC_ALL=C grep -E '^(GO[A-Z0-9_]*|CGO_[A-Z0-9_]*|BEAMFALL_[A-Z0-9_]*|GATE_[A-Z0-9_]*|NODE_[A-Z0-9_]*|PLAYWRIGHT_[A-Z0-9_]*|CI)=' |
     LC_ALL=C grep -Ev '^(GATE_RUN_ID|GATE_PROCESS_[A-Z0-9_]*|GATE_INHERITED_RSS_FILE|GATE_PARALLEL_RSS_[A-Za-z0-9_]*|GATE_DIFF_(BASE|HEAD)|GATE_LANE_DIR|GATE_LOG_TAIL|GATE_STEP_REUSE[A-Z0-9_]*)=' |

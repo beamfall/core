@@ -152,6 +152,18 @@ tamper "unknown record format" '1s/.*/gate-step-reuse-record\/2/'
 before="$(runs)"; step "go vet"; expect_ran "$((before + 1))" "empty record"
 before="$(runs)"; GATE_STEP_REUSE_MAX_AGE_S=nope step "go vet"; expect_ran "$((before + 1))" "unparseable age limit"
 
+# The support selftests are a listed step; a step off the list always runs.
+before="$(runs)"
+step "support script tests"; step "support script tests"
+expect_ran "$((before + 1))" "support script tests on identical inputs"
+step "secret scan selftest"; step "secret scan selftest"
+expect_ran "$((before + 3))" "an unlisted step"
+mkdir -p "$TMP/pybin"
+printf '#!/bin/sh\n[ "$1" = --version ] && { echo "Python 0.0.0"; exit 0; }\nexec %s "$@"\n' "$(command -v python3)" >"$TMP/pybin/python3"
+chmod +x "$TMP/pybin/python3"
+PATH="$TMP/pybin:$PATH" step "support script tests"
+expect_ran "$((before + 4))" "a different python3"
+
 # race-short selects packages from the diff base, so the base is part of its key.
 before="$(runs)"
 step "race-short"; step "race-short"
