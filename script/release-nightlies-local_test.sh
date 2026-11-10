@@ -7,7 +7,10 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/release-nightlies-local-test.XXXXXX")"
-trap 'rm -rf "$tmp"' EXIT
+# bash 3.2 (macOS) runs the EXIT trap with status 0 after a `set -u` expansion
+# error, and the script then exits 0; only reaching the last line passes.
+completed=0
+trap 'rm -rf "$tmp"; [ "$completed" = 1 ] || exit 1' EXIT
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GITHUB_ACTIONS GITHUB_REPOSITORY \
   NIGHTLY_FRESHNESS_SOURCE_REPO NIGHTLY_FRESHNESS_TIERS NIGHTLY_FRESHNESS_MAX_HOURS \
   RELEASE_NIGHTLY_EVIDENCE_DIR AGENT_EVIDENCE_DIR MUTATION_EVIDENCE_DIR
@@ -112,7 +115,8 @@ run_runner() {
   done
   [ $# -eq 0 ] || shift
   : >"$tmp/calls"
-  env FAKE_CALLS="$tmp/calls" "${envs[@]}" "$fake/script/release-nightlies-local.sh" "$@" \
+  # ${envs[@]+...}: bash 3.2 treats an empty array as unset under `set -u`.
+  env FAKE_CALLS="$tmp/calls" ${envs[@]+"${envs[@]}"} "$fake/script/release-nightlies-local.sh" "$@" \
     >"$tmp/$label.out" 2>&1 || status=$?
   cp "$tmp/$label.out" "$tmp/current.out"
   return "$status"
@@ -222,4 +226,5 @@ grep -q 'HEAD moved during fuzz-nightly' "$tmp/head-moved.out" || fail "HEAD-mov
 [ ! -e "$evidence/fuzz-nightly.json" ] || fail "record written after HEAD moved"
 [ "$(wc -l <"$tmp/calls")" -eq 1 ] || fail "tiers kept running after HEAD moved"
 
+completed=1
 echo "release-nightlies-local tests: passed"
