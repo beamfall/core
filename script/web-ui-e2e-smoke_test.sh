@@ -26,6 +26,11 @@ cat >"${fixture}/bin/npm" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'npm render=%s %s\n' "${BEAMFALL_WEB_E2E_RENDER_PHASE:-0}" "$*" >>"${SMOKE_TEST_CALLS}"
+if [[ -n "${SMOKE_TEST_REUSE_DIRS:-}" ]]; then
+  reuse_dir="${BEAMFALL_E2E_BUILD_REUSE_DIR:-}"
+  [[ -n "${reuse_dir}" && -d "${reuse_dir}" && -z "$(ls -A "${reuse_dir}")" ]] || reuse_dir="invalid:${reuse_dir}"
+  printf '%s\n' "${reuse_dir}" >>"${SMOKE_TEST_REUSE_DIRS}"
+fi
 if [[ "${SMOKE_TEST_INTERRUPT:-0}" -eq 1 ]]; then
   trap '' INT TERM
   printf '%s\n' "$$" >"${SMOKE_TEST_LEADER_PID_FILE}"
@@ -209,7 +214,27 @@ fi
 
 export SMOKE_TEST_PROVENANCE_MODE=valid
 : >"${SMOKE_TEST_CALLS}"
-"${fixture}/script/web-ui-e2e-smoke.sh" >"${fixture}/stdout" 2>"${fixture}/stderr"
+export SMOKE_TEST_REUSE_DIRS="${fixture}/reuse-dirs"
+: >"${SMOKE_TEST_REUSE_DIRS}"
+BEAMFALL_E2E_BUILD_REUSE_DIR="${fixture}/inherited-reuse-dir" \
+  "${fixture}/script/web-ui-e2e-smoke.sh" >"${fixture}/stdout" 2>"${fixture}/stderr"
+
+# CORE-0978: every Playwright invocation in one smoke shares a single build
+# stamp directory the runner created fresh (never a caller-inherited one) and
+# removes when the run ends, so later phases can reuse only this run's build.
+reuse_dir="$(head -n 1 "${SMOKE_TEST_REUSE_DIRS}")"
+if [[ "$(wc -l <"${SMOKE_TEST_REUSE_DIRS}" | tr -d ' ')" -ne 3 || \
+  "$(sort -u "${SMOKE_TEST_REUSE_DIRS}" | wc -l | tr -d ' ')" -ne 1 || \
+  "${reuse_dir}" = invalid:* || "${reuse_dir}" = "${fixture}/inherited-reuse-dir" ]]; then
+  echo "FAIL web-ui-e2e-smoke did not share one fresh build reuse dir across phases" >&2
+  cat "${SMOKE_TEST_REUSE_DIRS}" >&2
+  exit 1
+fi
+if [[ -e "${reuse_dir}" ]]; then
+  echo "FAIL web-ui-e2e-smoke left build reuse dir ${reuse_dir} behind" >&2
+  exit 1
+fi
+unset SMOKE_TEST_REUSE_DIRS
 
 # The inventory run is the unfiltered command: every Chromium project, the
 # parity reporter, real execution. WEB-SMOKE-FINISH-PARITY-1 additionally runs
