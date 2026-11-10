@@ -154,10 +154,8 @@ const ENTITY_QUERY =
   "query Entity($id: String!) { entity(id: $id) { id kind title fields { name type value } } }";
 
 /** Entity — the detail header: declared fields with server-stringified values. */
-export async function fetchEntity(id: string): Promise<EntityInfo | null> {
-  const data = await graphql<{ entity: EntityInfo | null }>(ENTITY_QUERY, {
-    id,
-  });
+export async function fetchEntity(id: string, signal?: AbortSignal): Promise<EntityInfo | null> {
+  const data = await graphql<{ entity: EntityInfo | null }>(ENTITY_QUERY, { id }, signal);
   return data.entity ?? null;
 }
 
@@ -165,10 +163,15 @@ const MEDIA_FOR_ENTITY_QUERY =
   "query MediaForEntity($entityID: String!) { mediaForEntity(entityID: $entityID) { id kind title summary artwork { poster } artworkSlots } }";
 
 /** MediaForEntity — the hand-rolled related-Media fallback list for a detail view. */
-export async function fetchMediaForEntity(entityID: string): Promise<SourceItem[]> {
-  const data = await graphql<{ mediaForEntity: SourceItem[] | null }>(MEDIA_FOR_ENTITY_QUERY, {
-    entityID,
-  });
+export async function fetchMediaForEntity(
+  entityID: string,
+  signal?: AbortSignal,
+): Promise<SourceItem[]> {
+  const data = await graphql<{ mediaForEntity: SourceItem[] | null }>(
+    MEDIA_FOR_ENTITY_QUERY,
+    { entityID },
+    signal,
+  );
   return data.mediaForEntity ?? [];
 }
 
