@@ -1,7 +1,7 @@
 ## 1. Server
 
-- [ ] 1.1 Implement `FlushError` on the base-URL response writer, keeping `Flush`
-- [ ] 1.2 Tests in `internal/server/base_url_response_writer_test.go`
+- [x] 1.1 Implement `FlushError` on the base-URL response writer, keeping `Flush`
+- [x] 1.2 Tests in `internal/server/base_url_response_writer_test.go`
 
 ## 2. Verify and close
 
