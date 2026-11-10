@@ -900,6 +900,20 @@ retire_lane() {  # retire_lane <slot>
   return 0
 }
 
+# CORE-0979: a local main that is merely behind origin/main (nobody pulled the
+# shared checkout) made a lane cut from origin/main diff against the stale tip,
+# pulling main's own commits (go.mod, tools/gate) into the lane's scope and
+# forcing the full race tier. Prefer origin/main only when local main is its
+# ancestor; a local main that is ahead or diverged keeps today's behaviour.
+gate_main_ref() {
+  if git rev-parse --verify --quiet 'refs/remotes/origin/main^{commit}' >/dev/null 2>&1 &&
+    git merge-base --is-ancestor 'refs/heads/main' 'refs/remotes/origin/main' 2>/dev/null; then
+    printf '%s\n' 'refs/remotes/origin/main'
+  else
+    printf '%s\n' 'refs/heads/main'
+  fi
+}
+
 changed_paths() {
   local base="${GATE_BASE_SHA:-}" head="${GATE_HEAD_SHA:-}" base_sha head_sha merge_base_sha
   local committed staged unstaged
@@ -917,7 +931,7 @@ changed_paths() {
   # branch commits from the merge base so a dirty worktree cannot hide them.
   # Untracked-only trees do not add paths, but still retain the committed range.
   head_sha="$(git rev-parse --verify 'HEAD^{commit}' 2>/dev/null)" || return 1
-  base_sha="$(git rev-parse --verify 'refs/heads/main^{commit}' 2>/dev/null)" || return 1
+  base_sha="$(git rev-parse --verify "$(gate_main_ref)^{commit}" 2>/dev/null)" || return 1
   merge_base_sha="$(git merge-base "$base_sha" "$head_sha" 2>/dev/null)" || return 1
   committed="$(git diff --name-only "$merge_base_sha" "$head_sha" 2>/dev/null)" || return 1
   printf '%s\n%s\n%s\n' "$committed" "$staged" "$unstaged" | sort -u | sed '/^$/d'
@@ -935,7 +949,7 @@ configure_race_short_scope() {
     git merge-base --is-ancestor "$base_sha" "$head_sha" 2>/dev/null || return 0
   else
     head_sha="$(git rev-parse --verify 'HEAD^{commit}' 2>/dev/null)" || return 0
-    base_sha="$(git merge-base 'refs/heads/main' "$head_sha" 2>/dev/null)" || return 0
+    base_sha="$(git merge-base "$(gate_main_ref)" "$head_sha" 2>/dev/null)" || return 0
   fi
   export GATE_DIFF_BASE="$base_sha" GATE_DIFF_HEAD="$head_sha"
 }
@@ -1105,6 +1119,10 @@ run_outer_checks() {
   if [[ "${GATE_PREFLIGHT:-0}" == "1" ]]; then
     return
   fi
+  # CORE-0977: the only browser smoke pass. Its global-setup rebuilds the web
+  # bundle and server binary from source, so no later gate step can change what
+  # it tests; the late "second pass" (re-added by GATE-OUTER-COORDINATION-1 after
+  # GATE-WEB-E2E-DEDUP-1 removed it) repeated identical inputs and is gone.
   run_scoped_step "web UI E2E smoke (pre-gate)" webe2e make web-ui-e2e-smoke
   run_step "release workflow pins check" make release-workflow-pins-check
   full_gate_only_step "vulnerability check" make vuln-check
@@ -1339,7 +1357,5 @@ run_scoped_step "design token drift gate" web node tools/gate/design-token-drift
 # surface served at /web/. Static verification and the production build ran
 # above before Go embedded app-dist; web-scoped changes still run unit tests.
 run_scoped_step "web app typecheck + tests" web run_web_app test
-
-run_scoped_step "web UI E2E smoke (second pass)" webe2e make web-ui-e2e-smoke
 
 echo "gate: green"

@@ -1,7 +1,8 @@
 .PHONY: gate gate-preflight gate-affected gate-race consumer-pin-freshness consumer-pin-freshness-prove-red crossrepo-conformance crossrepo-conformance-fixture crossrepo-conformance-prove-red crossrepo-conformance-interrupt-test image-buildability-check ffmpeg-tonemap-conforming vidparity-hdr-tonemap-gate store-release-waiver-check lint dev-run orient build test bench performance-scale mutation race-short race-full race-prove coverage coverage-ratchet scenario-ledger capability-manifest-check client-drm-eme-check fixtures io-doctor io-ledger io-egress-lint io-e2e io-journeys io-fast io-gate io-smoke io-live web-build web-e2e web-e2e-full web-ui-e2e-smoke web-ui-e2e-runner-test ui-catalog ui-catalog-record ui-catalog-apple-a11y-check ui-catalog-native-evidence-check release source-artifact-check release-test-gates store-release-test-gates app-store-binary-firewall-check secret-scan-release release-workflow-pins-check release-toolchain-images-check flagship-visuals-photosensitivity-gate backup-fixture-generate backup-fixture-staleness backup-restore-drill backup-fixture-rc-check release-gate release-gate-evidence fuzz fuzz-active publish-wire-contract regen-wire-goldens mgmt-manifest vuln-check relay-vector-freshness relay-vector-freshness-prove
 
-# GATE-WEB-E2E-DEDUP-1: gate.sh keeps web-ui-e2e-smoke first so browser
-# failures fail fast while every check remains under the same supervisor.
+# GATE-WEB-E2E-DEDUP-1 / CORE-0977: gate.sh runs web-ui-e2e-smoke exactly once,
+# first, so browser failures fail fast while every check remains under the same
+# supervisor (the smoke rebuilds its own web bundle + server, so no late re-run).
 # XCONTRACT-REGISTRY-CHAIN-1: gate-entry runs relay-vector-freshness(-prove).
 # gate-entry runs the seeded-red controls and relay freshness inside the fixture guard before
 # anything shells out to `go`; keeping them outside would let prerequisites

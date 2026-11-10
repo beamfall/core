@@ -42,38 +42,54 @@ RACE_SHORT_HOT_PKGS=(
 RACE_SHORT_HOT_TESTS='^(TestEventStreamTerminatesOnDeviceRevocation|TestHLSPrecomputedRenditionGatesSegmentAndRange|TestCanDirectPlayRichProfile|TestPrecomputeConcurrentAdmissionNeverExceedsBudget|TestPrecomputeCancellationCleansStagingAndReleasesReservation|TestPrecomputeDiskFullCleansStagingAndReleasesReservation|TestPrecomputeRejectsIncompleteArtifactBeforePublication|TestPrecomputeRejectsPlaylistWithMissingReferencedSegment|TestPrecomputeReplacementFencesStalePublisher|TestPrecomputeInputGenerationChangeCannotPublish|TestPrecomputeAtomicPublicationRejectsReplacedInput|TestSweepPrecomputeResidueRecoversCrashWithoutDeletingReadyGeneration|TestScanJobHandlerYieldsCheckpointAndResumes|TestBootstrapRejectsConcurrentDoubleSubmit|TestRunShutdownCancelsBlockingJobAtDrainBound|TestRunShutdownLetsFastJobDrainWithoutCancellation|TestRunShutdownRepeatedlyJoinsWorkers|TestShutdownSequenceStopsClaimsBeforeCancelJoinCheckpointAndStoreClose|TestDrainBackgroundJobsDrainsQueueInOneTickWindow|TestJobClaimerStartupBacklogRunsImmediatelyAndCancels|TestIntegrationManagerDeactivateCancelsInFlightWorkerAndReports|TestScanScheduleSpecAbortsWhenSchedulerContextCanceled)$'
 
 race_short_diff_scope() { # <work-dir> <discovered-output> <changed-output>
+  # On fallback (return 1), RACE_SHORT_FALLBACK_REASON says why full scope ran.
   local work_dir="$1" discovered_file="$2" changed_file="$3"
   local requested_base="${GATE_DIFF_BASE:-}" requested_head="${GATE_DIFF_HEAD:-HEAD}"
-  local base_sha head_sha path metadata_file changed_paths_file
+  local base_sha head_sha path metadata_file changed_paths_file reason_file
+  local scope_status=0
+  RACE_SHORT_FALLBACK_REASON="GATE_DIFF_BASE unset"
   [ -n "$requested_base" ] || return 1
 
+  RACE_SHORT_FALLBACK_REASON="diff base or head is not a commit"
   base_sha="$(git rev-parse --verify "$requested_base^{commit}" 2>/dev/null)" || return 1
   head_sha="$(git rev-parse --verify "$requested_head^{commit}" 2>/dev/null)" || return 1
+  RACE_SHORT_FALLBACK_REASON="diff base $base_sha is not an ancestor of head $head_sha"
   git merge-base --is-ancestor "$base_sha" "$head_sha" 2>/dev/null || return 1
   RACE_DIFF_BASE_SHA="$base_sha"
   changed_paths_file="$work_dir/changed-paths.txt"
-  git diff --name-only "$base_sha" "$head_sha" >"$changed_paths_file" 2>/dev/null || return 1
+  # --no-renames lists both sides of a rename, so a moved file still selects
+  # the package it left.
+  RACE_SHORT_FALLBACK_REASON="git diff failed"
+  git diff --no-renames --name-only "$base_sha" "$head_sha" >"$changed_paths_file" 2>/dev/null || return 1
+  RACE_SHORT_FALLBACK_REASON="diff has no changed paths"
   [ -s "$changed_paths_file" ] || return 1
 
   while IFS= read -r path; do
     case "$path" in
-      go.mod|go.sum|go.work|Makefile|tools/gate/*|script/race-test.sh) return 1 ;;
+      go.mod|go.sum|go.work|Makefile|tools/gate/*|script/race-test.sh)
+        RACE_SHORT_FALLBACK_REASON="diff changes race-scope input $path"
+        return 1
+        ;;
     esac
   done <"$changed_paths_file"
 
   # Keep the same fail-closed graph proof as ~/.agents/fleet/gate-delta.sh:
   # enumerate the test dependency graph before deriving reverse dependencies.
+  RACE_SHORT_FALLBACK_REASON="go list -deps -test ./... failed"
   go list -deps -test ./... >/dev/null 2>&1 || return 1
   metadata_file="$work_dir/package-metadata.json"
+  RACE_SHORT_FALLBACK_REASON="go list -test -json ./... failed"
   go list -test -json ./... >"$metadata_file" 2>/dev/null || return 1
 
+  reason_file="$work_dir/fallback-reason.txt"
   python3 - "$PWD" "$metadata_file" "$changed_paths_file" \
-    "$changed_file" "$discovered_file" <<'PY' || return 1
+    "$changed_file" "$discovered_file" "$reason_file" <<'PY' || scope_status=$?
+import fnmatch
 import json
 import os
 import sys
 
-root, metadata_path, paths_path, changed_out, closure_out = sys.argv[1:]
+root, metadata_path, paths_path, changed_out, closure_out, reason_out = sys.argv[1:]
 decoder = json.JSONDecoder()
 raw = open(metadata_path, encoding="utf-8").read()
 records = []
@@ -89,6 +105,7 @@ while offset < len(raw):
 normal = {}
 test_deps = {}
 embedded = set()
+embed_roots = []
 for record in records:
     import_path = record.get("ImportPath", "")
     for_test = record.get("ForTest", "")
@@ -105,20 +122,41 @@ for record in records:
     for key in ("EmbedFiles", "TestEmbedFiles", "XTestEmbedFiles"):
         for name in record.get(key, []):
             embedded.add(os.path.normpath(os.path.join(rel_dir, name)))
+    # Patterns also cover embedded files the diff deleted, which no longer
+    # appear in EmbedFiles. Glob matching may over-match; that stays sound.
+    for key in ("EmbedPatterns", "TestEmbedPatterns", "XTestEmbedPatterns"):
+        for pattern in record.get(key, []):
+            pattern = pattern.split(":", 1)[1] if pattern.startswith("all:") else pattern
+            embed_roots.append(os.path.normpath(os.path.join(rel_dir, pattern)))
+
+def is_embed_input(path):
+    path = os.path.normpath(path)
+    return path in embedded or any(
+        path == embed_root or path.startswith(embed_root + os.sep) or
+        fnmatch.fnmatchcase(path, embed_root)
+        for embed_root in embed_roots
+    )
+
+def fall_back(status, reason):
+    with open(reason_out, "w", encoding="utf-8") as output:
+        output.write(reason)
+    raise SystemExit(status)
 
 paths = [line.strip() for line in open(paths_path, encoding="utf-8") if line.strip()]
-if any(path.startswith("internal/") and not path.endswith(".go") and
-       os.path.normpath(path) in embedded for path in paths):
-    raise SystemExit(4)
+for path in paths:
+    if not path.endswith(".go") and is_embed_input(path):
+        fall_back(4, f"diff changes go:embed input {path}")
 
 go_dirs = {os.path.dirname(path) or "." for path in paths if path.endswith(".go")}
 changed = sorted(
     import_path for import_path, (rel_dir, _) in normal.items() if rel_dir in go_dirs
 )
 if go_dirs and not changed:
-    raise SystemExit(5)
+    fall_back(5, "changed Go files outside any listed package: " +
+              " ".join(sorted(go_dirs)))
 
 changed_set = set(changed)
+
 closure = []
 for import_path, (_, deps) in normal.items():
     combined_deps = deps | test_deps.get(import_path, set())
@@ -131,6 +169,12 @@ with open(changed_out, "w", encoding="utf-8") as output:
 with open(closure_out, "w", encoding="utf-8") as output:
     output.writelines(f"{package}\n" for package in closure)
 PY
+  if [ "$scope_status" -ne 0 ]; then
+    RACE_SHORT_FALLBACK_REASON="package selection failed (status $scope_status)"
+    [ ! -s "$reason_file" ] || RACE_SHORT_FALLBACK_REASON="$(<"$reason_file")"
+    return 1
+  fi
+  RACE_SHORT_FALLBACK_REASON=""
 }
 
 # Confirm the C toolchain the race detector needs (CGO). Fail loud and early
@@ -269,11 +313,13 @@ PY
       local list_status="$1" discovered_file="$2" runnable_file="$3"
       local changed_file="$4" scope="$5" base_sha="$6"
       python3 - "$discovery_evidence_file" "$list_status" "$discovered_file" \
-        "$runnable_file" "$changed_file" "$scope" "$base_sha" <<'PY'
+        "$runnable_file" "$changed_file" "$scope" "$base_sha" \
+        "$RACE_SHORT_FALLBACK_REASON" <<'PY'
 import json
 import sys
 
-output_path, status, discovered_path, runnable_path, changed_path, scope, base_sha = sys.argv[1:]
+(output_path, status, discovered_path, runnable_path, changed_path, scope,
+ base_sha, fallback_reason) = sys.argv[1:]
 
 def packages(path):
     with open(path, encoding="utf-8") as f:
@@ -292,6 +338,7 @@ with open(output_path, "w", encoding="utf-8") as f:
             "go_list_status": int(status),
             "discovered_count": len(discovered),
             "discovered_packages": discovered,
+            "fallback_reason": fallback_reason if scope == "full" else None,
             "runnable_count": len(runnable),
             "runnable_packages": runnable,
             "scope": scope,
@@ -311,12 +358,14 @@ PY
     scope=full
     base_sha=""
     RACE_DIFF_BASE_SHA=""
+    RACE_SHORT_FALLBACK_REASON=""
     if race_short_diff_scope "$work_dir" "$discovered_log" "$changed_log"; then
       scope=diff
       base_sha="$RACE_DIFF_BASE_SHA"
       list_status=0
     else
       base_sha="$RACE_DIFF_BASE_SHA"
+      echo "==> race-test short: full scope ($RACE_SHORT_FALLBACK_REASON)"
       set +e
       go list ./... >"$discovered_log"
       list_status=$?

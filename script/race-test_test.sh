@@ -633,6 +633,128 @@ PY
   fi
 }
 
+# Diff scope against a real module: <name> <change> <scope> <changed> <reason>
+# <go-test-args>. <change> is web-src, embed-edit, embed-delete or go-mod.
+run_diff_scope_case() {
+  local name="$1" change="$2" want_scope="$3" want_changed="$4"
+  local want_reason="$5" want_args="$6"
+  local case_dir="$TMP/$name" repo="$TMP/$name-repo"
+  local shim="$TMP/$name-shim" evidence="$case_dir/evidence"
+  local args_file="$case_dir/go-test-args.txt"
+  mkdir -p "$case_dir" "$evidence" "$shim" "$repo/script" "$repo/openspec" \
+    "$repo/internal/web/app-dist" "$repo/internal/web/app/src" \
+    "$repo/internal/consumer" "$repo/internal/other"
+  cp "$RACE_TEST" "$repo/script/race-test.sh"
+  chmod +x "$repo/script/race-test.sh"
+  cat >"$repo/go.mod" <<'EOF'
+module github.com/beamfall/core
+
+go 1.26
+EOF
+  cat >"$repo/internal/web/web.go" <<'EOF'
+package web
+
+import "embed"
+
+//go:embed app-dist
+var appFS embed.FS
+
+func Assets() embed.FS { return appFS }
+EOF
+  cat >"$repo/internal/consumer/consumer.go" <<'EOF'
+package consumer
+
+import "github.com/beamfall/core/internal/web"
+
+func Value() any { return web.Assets() }
+EOF
+  cat >"$repo/internal/other/other.go" <<'EOF'
+package other
+
+func Value() int { return 1 }
+EOF
+  printf '<html></html>\n' >"$repo/internal/web/app-dist/index.html"
+  printf 'extra\n' >"$repo/internal/web/app-dist/extra.txt"
+  printf 'export {}\n' >"$repo/internal/web/app/src/main.ts"
+  printf '# spec\n' >"$repo/openspec/spec.md"
+  git -C "$repo" init -qb main
+  git -C "$repo" add .
+  git -C "$repo" -c user.name=t -c user.email=t@e.com commit -qm base
+  local base
+  base="$(git -C "$repo" rev-parse HEAD)"
+  case "$change" in
+    web-src)
+      printf 'export const x = 1\n' >>"$repo/internal/web/app/src/main.ts"
+      printf 'more\n' >>"$repo/openspec/spec.md"
+      ;;
+    embed-edit) printf '<p></p>\n' >>"$repo/internal/web/app-dist/index.html" ;;
+    embed-delete) rm "$repo/internal/web/app-dist/extra.txt" ;;
+    go-mod) printf '\n' >>"$repo/go.mod" ;;
+  esac
+  git -C "$repo" add -A
+  git -C "$repo" -c user.name=t -c user.email=t@e.com commit -qm changed
+
+  cat >"$shim/go" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" != test ]]; then
+  exec "$REAL_GO" "$@"
+fi
+printf '%s\n' "$*" >>"$GO_TEST_ARGS_FILE"
+for package in "$@"; do
+  case "$package" in
+    github.com/beamfall/core/internal/*)
+      printf '{"Action":"pass","Package":"%s","Elapsed":0.001}\n' "$package"
+      ;;
+  esac
+done
+EOF
+  chmod +x "$shim/go"
+
+  local status=0 real_go
+  real_go="$(command -v go)"
+  if ( cd "$repo" && \
+    PATH="$shim:$PATH" \
+    REAL_GO="$real_go" \
+    GOWORK=off \
+    GO_TEST_ARGS_FILE="$args_file" \
+    AGENT_EVIDENCE_DIR="$evidence" \
+    GATE_DIFF_BASE="$base" GATE_DIFF_HEAD=HEAD \
+    script/race-test.sh short >"$case_dir/output.txt" 2>"$case_dir/error.txt" ); then
+    status=0
+  else
+    status=$?
+  fi
+  if [[ "$status" -ne 0 ]]; then
+    cat "$case_dir/error.txt" >&2
+  fi
+  assert_exit_eq "$status" 0 "$name (exit status)"
+  if ! python3 - "$evidence/race-short-discovery.json" "$want_scope" \
+    "$want_changed" "$want_reason" <<'PY'
+import json
+import sys
+
+path, scope, changed, reason = sys.argv[1:]
+with open(path, encoding="utf-8") as f:
+    rec = json.load(f)
+want = {
+    "scope": scope,
+    "changed_packages": json.loads(changed),
+    "fallback_reason": reason or None,
+}
+got = {key: rec.get(key) for key in want}
+if got != want:
+    raise SystemExit(f"discovery mismatch: expected={want!r} actual={got!r}")
+PY
+  then
+    echo "FAIL $name (discovery scope and reason)" >&2
+    ((FAIL++)) || true
+  else
+    ((PASS++)) || true
+  fi
+  assert_file_eq "$args_file" "$want_args" "$name (go test arguments)"
+}
+
 run_interruption_case() {
   local signal="$1" expected_status="$2"
   local name="interrupted-$signal"
@@ -849,6 +971,17 @@ run_promoted_phase_case parser-fail-precedence 0 0 0 14 14
 run_promoted_phase_case mixed-fail-precedence 11 12 13 14 11
 run_promoted_phase_case mixed-promoted-over-focused-parser 0 12 13 14 12
 run_promoted_phase_case mixed-focused-over-parser 0 0 13 14 13
+DIFF_ORDINARY='test -race -short -count=1 -p 4 -parallel 2 -test.timeout=600s -json'
+DIFF_PKG=github.com/beamfall/core/internal
+run_diff_scope_case diff-web-src-only web-src diff '[]' '' ''
+run_diff_scope_case diff-embed-edit embed-edit full '[]' \
+  'diff changes go:embed input internal/web/app-dist/index.html' \
+  "$DIFF_ORDINARY $DIFF_PKG/consumer $DIFF_PKG/other"
+run_diff_scope_case diff-embed-delete embed-delete full '[]' \
+  'diff changes go:embed input internal/web/app-dist/extra.txt' \
+  "$DIFF_ORDINARY $DIFF_PKG/consumer $DIFF_PKG/other"
+run_diff_scope_case diff-fallback-reason go-mod full '[]' \
+  'diff changes race-scope input go.mod' "$DIFF_ORDINARY $DIFF_PKG/consumer $DIFF_PKG/other"
 run_discovery_failure_case list-fail fail 17 0 'package discovery failed'
 run_discovery_failure_case list-empty empty 1 0 'zero packages'
 run_discovery_failure_case list-whitespace whitespace 1 0 'zero packages'

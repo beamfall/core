@@ -15,6 +15,7 @@ fail() { echo "gate_scope_test FAIL: $*" >&2; exit 1; }
 # Extract the functions under test from gate.sh verbatim.
 FUNCS="$TMP/funcs.sh"
 awk '/^gate_release_mode\(\)/,/^\}/' "$ROOT/tools/gate/gate.sh" > "$FUNCS"
+awk '/^gate_main_ref\(\)/,/^\}/' "$ROOT/tools/gate/gate.sh" >> "$FUNCS"
 awk '/^changed_paths\(\)/,/^\}/' "$ROOT/tools/gate/gate.sh" >> "$FUNCS"
 awk '/^configure_race_short_scope\(\)/,/^\}/' "$ROOT/tools/gate/gate.sh" >> "$FUNCS"
 awk '/^scope_matches\(\)/,/^\}/' "$ROOT/tools/gate/gate.sh" >> "$FUNCS"
@@ -29,8 +30,12 @@ grep -Fq 'run_scoped_step "support script tests" script ' "$ROOT/tools/gate/gate
 grep -Fq 'run_scoped_step "ADR-0122 cross-repo wire conformance" contract make crossrepo-conformance' "$ROOT/tools/gate/gate.sh" \
   || { echo "gate_scope_test: cross-repo contract lane missing from required gate" >&2; exit 1; }
 grep -Fq 'run_scoped_step "web UI E2E smoke (pre-gate)" webe2e make web-ui-e2e-smoke' "$ROOT/tools/gate/gate.sh" \
-  && grep -Fq 'run_scoped_step "web UI E2E smoke (second pass)" webe2e make web-ui-e2e-smoke' "$ROOT/tools/gate/gate.sh" \
-  || { echo "gate_scope_test: both web UI E2E smoke steps must use webe2e scope" >&2; exit 1; }
+  || { echo "gate_scope_test: the web UI E2E smoke step must use webe2e scope" >&2; exit 1; }
+# CORE-0977: the browser smoke rebuilds its own web/server inputs, so a second
+# pass on the same head only repeats ~3-4 min of identical work. Exactly one.
+smoke_steps="$(grep -Ec '^[[:space:]]*run[a-z_]*step .*make web-ui-e2e-smoke([[:space:]]|$)' "$ROOT/tools/gate/gate.sh" || true)"
+[[ "$smoke_steps" == "1" ]] \
+  || { echo "gate_scope_test: gate.sh must run web-ui-e2e-smoke exactly once (found $smoke_steps)" >&2; exit 1; }
 
 # --- GATE-PREFLIGHT-1: the cheap fail-fast lane ------------------------------
 #
@@ -127,7 +132,6 @@ excluded = {
     "certification demo server test",
     "certification demo server smoke test",
     "web UI E2E smoke (pre-gate)",
-    "web UI E2E smoke (second pass)",
     "web app typecheck + tests",
 }
 stale_exclusions = excluded - set(inventory_names)
@@ -537,7 +541,6 @@ smoke_dispatch_for_path() {
     run_step() { printf 'RUN\t%s\n' "$1"; }
     gate_metric() { printf 'METRIC\t%s\t%s\t%s\n' "$1" "$2" "$5"; }
     run_scoped_step "web UI E2E smoke (pre-gate)" webe2e make web-ui-e2e-smoke
-    run_scoped_step "web UI E2E smoke (second pass)" webe2e make web-ui-e2e-smoke
   )
 }
 
@@ -545,10 +548,12 @@ assert_smoke_path_runs() {
   local candidate="$1" output step
   output="$(smoke_dispatch_for_path "$candidate")" \
     || fail "web UI E2E smoke dispatch failed for covered input: $candidate"
-  for step in "web UI E2E smoke (pre-gate)" "web UI E2E smoke (second pass)"; do
+  for step in "web UI E2E smoke (pre-gate)"; do
     grep -Fqx $'RUN\t'"$step" <<<"$output" \
       || fail "covered input did not RUN $step: $candidate"
   done
+  [[ "$(grep -c $'^RUN\t' <<<"$output")" == "1" ]] \
+    || fail "covered input must RUN exactly one web UI E2E smoke step: $candidate"
   if grep -Eq '^(SKIP|METRIC)' <<<"$output"; then
     fail "covered input recorded a smoke skip: $candidate"
   fi
@@ -558,7 +563,7 @@ assert_smoke_path_skips() {
   local candidate="$1" output step
   output="$(smoke_dispatch_for_path "$candidate")" \
     || fail "web UI E2E smoke dispatch failed for unrelated input: $candidate"
-  for step in "web UI E2E smoke (pre-gate)" "web UI E2E smoke (second pass)"; do
+  for step in "web UI E2E smoke (pre-gate)"; do
     grep -Fqx $'METRIC\t'"$step"$'\tskip\tscope:webe2e' <<<"$output" \
       || fail "unrelated input did not record SKIP evidence for $step: $candidate"
     grep -Fqx "SKIP $step elapsed_s=0 (no webe2e changes)" <<<"$output" \
@@ -610,7 +615,7 @@ assert_script_path_matches new-area/input.txt
 
 # The Playwright smoke drives the embedded app through the real Go server. Its
 # scheduling scope therefore covers both sides plus the direct runner/config
-# inputs, while a store-only change skips both smoke passes with SKIP evidence.
+# inputs, while a store-only change skips the smoke step with SKIP evidence.
 for webe2e_input in \
   internal/web/app/src/App.tsx \
   internal/web/app/playwright.config.ts \
@@ -666,13 +671,13 @@ if probe script; then fail "clean tree at main must not match script scope"; fi
 ( cd "$REPO" && . "$FUNCS" && GATE_MODE=release scope_matches web ) \
   || fail "clean release checkout must match web scope"
 ( cd "$REPO" && . "$FUNCS" && GATE_MODE=release scope_matches webe2e ) \
-  || fail "GATE_MODE=release must force both web UI E2E smoke steps to run"
+  || fail "GATE_MODE=release must force the web UI E2E smoke step to run"
 ( cd "$REPO" && . "$FUNCS" && GATE_MODE=release scope_matches contract ) \
   || fail "clean release checkout must match contract scope"
 ( cd "$REPO" && . "$FUNCS" && GATE_MODE=normal GITHUB_WORKFLOW=release-gate scope_matches script ) \
   || fail "release workflow must force release scope"
 ( cd "$REPO" && . "$FUNCS" && GATE_MODE=normal GITHUB_WORKFLOW=release-gate scope_matches webe2e ) \
-  || fail "release-gate workflow must force both web UI E2E smoke steps to run"
+  || fail "release-gate workflow must force the web UI E2E smoke step to run"
 
 # 2) committed-clean branch changing script/: lane must RUN (the RMAUD-10 fix).
 git -C "$REPO" checkout -qb run/T1
@@ -805,6 +810,19 @@ git -C "$REPO" update-ref refs/heads/main "$base"
 git -C "$REPO" update-ref -d refs/heads/main
 probe web || fail "missing local main must fail open"
 git -C "$REPO" update-ref refs/heads/main "$base"
+
+# 9b) CORE-0979: a local main that is only behind origin/main must not be the
+# diff base (it drags main's own commits into the lane's scope); a missing or
+# diverged origin/main keeps local main.
+main_ref() { ( cd "$REPO" && . "$FUNCS" && gate_main_ref ); }
+[ "$(main_ref)" = refs/heads/main ] || fail "missing origin/main must keep local main"
+git -C "$REPO" update-ref refs/remotes/origin/main "$head"
+[ "$(main_ref)" = refs/remotes/origin/main ] || fail "local main behind origin/main must use origin/main"
+( cd "$REPO" && . "$FUNCS" && configure_race_short_scope && [ "$GATE_DIFF_BASE" = "$head" ] ) \
+  || fail "race-short base must follow origin/main when local main is behind it"
+git -C "$REPO" update-ref refs/remotes/origin/main "$unrelated"
+[ "$(main_ref)" = refs/heads/main ] || fail "diverged origin/main must keep local main"
+git -C "$REPO" update-ref -d refs/remotes/origin/main
 
 # 10) endpoints are resolved once: moving a named base after resolution cannot
 # turn a non-empty trusted range into an empty one.
