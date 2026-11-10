@@ -415,10 +415,10 @@ if [gate.index(invocation) for invocation in ordered] != sorted(
     gate.index(invocation) for invocation in ordered
 ):
     raise SystemExit("supervised pre-body checks changed order")
-post = 'run_scoped_step "web UI E2E smoke (second pass)" webe2e make web-ui-e2e-smoke'
-web_tests = 'run_scoped_step "web app typecheck + tests" web run_web_app test'
-if gate.count(post) != 1 or gate.index(post) < gate.index(web_tests):
-    raise SystemExit("post-gate web smoke is missing or displaced before the web app tests")
+# CORE-0977: the smoke runs once, before the gate body; a second pass on the
+# same tree repeats the first and must not come back.
+if gate.count("make web-ui-e2e-smoke") != 1:
+    raise SystemExit("the web UI E2E smoke must be registered exactly once")
 PY
 
 python3 - "$ROOT/tools/gate/gate.sh" <<'PY'
@@ -523,7 +523,6 @@ expected = {
     ("design token drift gate", "web"),
     ("web app typecheck + tests", "web"),
     ("web UI E2E smoke (pre-gate)", "webe2e"),
-    ("web UI E2E smoke (second pass)", "webe2e"),
     ("runtime image buildability", "image"),
 }
 if set(steps) != expected or len(steps) != len(expected):
