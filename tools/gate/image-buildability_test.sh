@@ -14,7 +14,7 @@ case "$1 ${2:-}" in
   "buildx version") ;;
   "run --rm")
     if [[ "$*" == *" go env GOVERSION" ]]; then
-      printf '%s\n' "${MOCK_GO_VERSION:-go1.27.2}"
+      printf '%s\n' "${MOCK_GO_VERSION:-go1.27.3}"
     else
       printf '%s\n' "v26.0.0"
     fi
@@ -45,7 +45,7 @@ if MOCK_GO_VERSION=go1.27.1 run_check >"$TMP/go.out" 2>"$TMP/go.err"; then
   echo "image buildability accepted a mismatched Go toolchain" >&2
   exit 1
 fi
-grep -Fq "reports golang 1.27.1, expected 1.27.2" "$TMP/go.err"
+grep -Fq "reports golang 1.27.1, expected 1.27.3" "$TMP/go.err"
 if grep -Fq "buildx build" "$TMP/docker.log"; then
   echo "image buildability continued after toolchain failure" >&2
   exit 1

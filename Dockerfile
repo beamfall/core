@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-ARG GO_VERSION=1.27.2
+ARG GO_VERSION=1.27.3
 
 FROM --platform=$BUILDPLATFORM node:26-bookworm-slim@sha256:298992629d69bbd5b2b03ad57094d8e4fcb3a8eeb7c4e25d29de656519568913 AS web
 WORKDIR /src
@@ -11,7 +11,7 @@ RUN npm --prefix internal/web/app ci --no-audit --no-fund
 COPY internal/web/app ./internal/web/app
 RUN npm --prefix internal/web/app run build
 
-FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-bookworm@sha256:5cf287a799e6b94384bad13d16b14904c531f51ba65792237e122ce42b392f61 AS build
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-bookworm@sha256:dc0963f32053e4bc451d24d87e3892d42d01021b61f093e98eb95c0352bb84b0 AS build
 WORKDIR /src
 
 COPY go.mod go.sum ./
