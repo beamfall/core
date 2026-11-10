@@ -21,6 +21,12 @@ pinned.
 - **WHEN** the viewer picks a rendition while direct play is active
 - **THEN** the player attaches the HLS stream at the current position and pins that rendition
 
+#### Scenario: Stream-token refresh after a later quality choice
+
+- **WHEN** the viewer picked a rendition on direct play, then chose Auto or another rendition, and a
+  stream-token refresh reloads the source
+- **THEN** the reload keeps the viewer's current choice and never restores the first pick
+
 #### Scenario: Native HLS engine
 
 - **WHEN** this browser plays HLS natively (no hls.js) and the viewer picks a rendition

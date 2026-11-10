@@ -5,6 +5,7 @@
 - [x] 1.3 Fail over once from direct play to the HLS sibling on `MediaError` 3 or 4, keeping play intent
 - [x] 1.4 Probe the stream on a native `MEDIA_ERR_NETWORK` with a timeout; 401/403/410 is reveal-terminal
 - [x] 1.5 Use one canonical rendition key for the menu id, selection and `hls.levels` lookup
+- [x] 1.6 Apply the rendition pin once and carry the current manual level across a token refresh
 
 ## 2. Verification
 
