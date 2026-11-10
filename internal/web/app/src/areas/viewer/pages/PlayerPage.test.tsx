@@ -40,6 +40,7 @@ function renderPlayer(state: PlayerState) {
     hlsRef: { current: null },
     state,
     retry,
+    switchToHls: vi.fn(() => false as const),
   });
   render(
     <I18nProvider>

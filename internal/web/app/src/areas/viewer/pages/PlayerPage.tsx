@@ -49,7 +49,7 @@ export function PlayerPage() {
   const navTitle = (location.state as { title?: string } | null)?.title || "";
   const startAtSeconds = parseTimestampParam(new URLSearchParams(location.search).get("t"));
 
-  const { videoRef, hlsRef, state, retry } = usePlayer(
+  const { videoRef, hlsRef, state, retry, switchToHls } = usePlayer(
     mediaId || "",
     {
       couldNotReachServer: t("couldNotReachServer"),
@@ -218,6 +218,7 @@ export function PlayerPage() {
               showSkipInterval={showSkipInterval}
               onShowSkipIntervalChange={setShowSkipInterval}
               onShare={shareAt}
+              switchToHls={switchToHls}
               onMenuOpenChange={setMenuOpen}
             />
           )}

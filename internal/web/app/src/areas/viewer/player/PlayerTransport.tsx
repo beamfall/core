@@ -24,7 +24,7 @@ import { InfoOverlay } from "./InfoOverlay";
 import { SubtitleStylePanel } from "./SubtitleStylePanel";
 import { TransportMenu } from "./TransportMenu";
 import { useLiveTracks } from "./useLiveTracks";
-import type { PlayerState } from "./usePlayer";
+import type { PlayerState, SwitchResult } from "./usePlayer";
 import { useSubtitleStyling } from "./useSubtitleStyling";
 
 // The custom transport chrome, ported from the vanilla renderTransportStatic /
@@ -55,6 +55,7 @@ export function PlayerTransport({
   showSkipInterval = "",
   onShowSkipIntervalChange,
   onShare,
+  switchToHls,
   onMenuOpenChange,
 }: {
   videoRef: React.RefObject<HTMLVideoElement | null>;
@@ -70,6 +71,8 @@ export function PlayerTransport({
   showSkipInterval?: SkipInterval | "";
   onShowSkipIntervalChange?: (value: SkipInterval | "") => void;
   onShare?: (seconds: number) => void;
+  /** Switches direct play to its HLS rendition stream at the current position. */
+  switchToHls?: (renditionKey?: string) => SwitchResult;
   /** Reports whether any menu/overlay is open (drives auto-hide suppression). */
   onMenuOpenChange?: (open: boolean) => void;
 }) {
@@ -124,6 +127,8 @@ export function PlayerTransport({
     videoRef,
     hlsRef,
     stream: state.stream,
+    streams: state.streams,
+    switchToHls,
     manualRenditionID,
     setManualRenditionID,
     onSubtitleChanged: subtitle.applySync,

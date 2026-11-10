@@ -135,10 +135,25 @@ function Harness({
   mediaID?: string;
   startAtSeconds?: number;
 }) {
-  const { videoRef, state, retry } = usePlayer(mediaID, messages, startAtSeconds);
+  const { videoRef, state, retry, switchToHls } = usePlayer(mediaID, messages, startAtSeconds);
   return (
     <>
       <video data-testid="player" ref={videoRef} />
+      <output data-testid="stream-kinds">
+        {(state.streams ?? []).map((s) => s.kind).join(",")}
+      </output>
+      <output data-testid="active-kind">{state.stream?.kind ?? ""}</output>
+      <output data-testid="hls-active">{state.hlsActive ? "yes" : "no"}</output>
+      <output data-testid="switch-result" />
+      <button
+        type="button"
+        onClick={() => {
+          const out = screen.getByTestId("switch-result");
+          out.textContent = String(switchToHls("720"));
+        }}
+      >
+        switch-hls
+      </button>
       <output data-testid="phase">{state.phase}</output>
       <output data-testid="message">{state.message}</output>
       <output data-testid="recovering">{state.recovering ? "yes" : "no"}</output>
@@ -148,6 +163,7 @@ function Harness({
       {/* The revealed playback document, surfaced so a test can assert it stops
           being addressable once the reveal goes terminal. */}
       <output data-testid="stream-url">{state.stream?.url ?? ""}</output>
+      <output data-testid="terminal-flag">{state.terminal ? "yes" : "no"}</output>
       <output data-testid="info">{state.info ? "present" : "none"}</output>
       <output data-testid="decision">{state.decision}</output>
       <output data-testid="markers">{state.markers.length}</output>
@@ -832,6 +848,157 @@ describe("usePlayer", () => {
   });
 
   // feature:hls-error-recovery
+  describe("stream inventory and failover (CORE-0048)", () => {
+    const inventory = {
+      decision: "direct-play",
+      streams: [
+        { kind: "direct-play", url: "/api/media/direct/token" },
+        {
+          kind: "hls",
+          url: "/api/media/hls/token/master.m3u8",
+          renditions: [{ id: "720", height: 720 }],
+        },
+      ],
+    };
+
+    it("keeps the whole stream inventory while playing streams[0]", async () => {
+      vi.mocked(fetchPlaybackInfo).mockResolvedValue(inventory);
+      render(<Harness />);
+      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+      expect(screen.getByTestId("stream-kinds")).toHaveTextContent("direct-play,hls");
+      expect(screen.getByTestId("active-kind")).toHaveTextContent("direct-play");
+      expect(screen.getByTestId("player")).toHaveAttribute("src", "/api/media/direct/token");
+    });
+
+    it("fails a native decode error over to the HLS stream at the same position", async () => {
+      vi.mocked(Hls.isSupported).mockReturnValue(true);
+      vi.mocked(fetchPlaybackInfo).mockResolvedValue(inventory);
+      render(<Harness />);
+      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+      const video = screen.getByTestId("player") as HTMLVideoElement;
+      video.currentTime = 42;
+      Object.defineProperty(video, "error", { configurable: true, value: { code: 3 } });
+      fireEvent.error(video);
+
+      await waitFor(() => expect(fakeHlsInstances).toHaveLength(1));
+      expect(fakeHlsInstances[0].sources).toEqual(["/api/media/hls/token/master.m3u8"]);
+      expect(fakeHlsInstances[0].config.startPosition).toBe(42);
+      expect(screen.getByTestId("phase")).toHaveTextContent("playing");
+      expect(screen.getByTestId("active-kind")).toHaveTextContent("hls");
+      expect(screen.getByTestId("decision")).toHaveTextContent("transcode");
+      expect(screen.getByTestId("hls-active")).toHaveTextContent("yes");
+      expect(screen.getByTestId("message")).toHaveTextContent("");
+    });
+
+    it("keeps the unsupported-codec message when no HLS stream exists", async () => {
+      vi.mocked(Hls.isSupported).mockReturnValue(true);
+      render(<Harness />);
+      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+      const video = screen.getByTestId("player") as HTMLVideoElement;
+      Object.defineProperty(video, "error", { configurable: true, value: { code: 4 } });
+      fireEvent.error(video);
+      await waitFor(() =>
+        expect(screen.getByTestId("message")).toHaveTextContent("unsupported codec"),
+      );
+      expect(fakeHlsInstances).toHaveLength(0);
+    });
+
+    it("keeps the unsupported-codec message when this browser cannot play HLS", async () => {
+      vi.mocked(Hls.isSupported).mockReturnValue(false);
+      vi.mocked(fetchPlaybackInfo).mockResolvedValue(inventory);
+      render(<Harness />);
+      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+      const video = screen.getByTestId("player") as HTMLVideoElement;
+      Object.defineProperty(video, "error", { configurable: true, value: { code: 3 } });
+      fireEvent.error(video);
+      await waitFor(() =>
+        expect(screen.getByTestId("message")).toHaveTextContent("unsupported codec"),
+      );
+    });
+
+    it("switches direct play to the pinned HLS rendition on request", async () => {
+      vi.mocked(Hls.isSupported).mockReturnValue(true);
+      vi.mocked(fetchPlaybackInfo).mockResolvedValue(inventory);
+      render(<Harness />);
+      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+      const video = screen.getByTestId("player") as HTMLVideoElement;
+      video.currentTime = 9;
+      fireEvent.click(screen.getByText("switch-hls"));
+      expect(screen.getByTestId("switch-result")).toHaveTextContent("hlsjs");
+      await waitFor(() => expect(screen.getByTestId("active-kind")).toHaveTextContent("hls"));
+      expect(fakeHlsInstances).toHaveLength(1);
+      expect(fakeHlsInstances[0].config.startPosition).toBe(9);
+      // A second request while HLS is active is not a switch.
+      fireEvent.click(screen.getByText("switch-hls"));
+      expect(screen.getByTestId("switch-result")).toHaveTextContent("false");
+    });
+
+    it("refuses a rendition switch the HLS stream does not advertise", async () => {
+      vi.mocked(Hls.isSupported).mockReturnValue(true);
+      vi.mocked(fetchPlaybackInfo).mockResolvedValue({
+        ...inventory,
+        streams: [
+          inventory.streams[0],
+          { ...inventory.streams[1], renditions: [{ id: "480", height: 480 }] },
+        ],
+      });
+      render(<Harness />);
+      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+      fireEvent.click(screen.getByText("switch-hls"));
+      expect(screen.getByTestId("switch-result")).toHaveTextContent("false");
+      expect(screen.getByTestId("active-kind")).toHaveTextContent("direct-play");
+      expect(fakeHlsInstances).toHaveLength(0);
+    });
+
+    describe("native MEDIA_ERR_NETWORK", () => {
+      function failNetwork(): HTMLVideoElement {
+        const video = screen.getByTestId("player") as HTMLVideoElement;
+        Object.defineProperty(video, "error", { configurable: true, value: { code: 2 } });
+        fireEvent.error(video);
+        return video;
+      }
+
+      it("goes reveal-terminal when the probe shows a relock", async () => {
+        const fetchSpy = vi
+          .spyOn(globalThis, "fetch")
+          .mockResolvedValue(new Response("", { status: 403 }));
+        render(<Harness />);
+        await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+        await expectEpochReset(() => {
+          failNetwork();
+        });
+        expect(fetchSpy).toHaveBeenCalledWith(
+          "/api/media/direct/token",
+          expect.objectContaining({ headers: { Range: "bytes=0-0" } }),
+        );
+        await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("terminal"));
+        expect(screen.getByTestId("terminal-flag")).toHaveTextContent("yes");
+      });
+
+      it("reports a generic failure when the probe is not a relock", async () => {
+        vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 500 }));
+        render(<Harness />);
+        await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+        failNetwork();
+        await waitFor(() =>
+          expect(screen.getByTestId("message")).toHaveTextContent("playback failed"),
+        );
+        expect(resetIdentityEpoch).not.toHaveBeenCalled();
+      });
+
+      it("reports a generic failure when the probe itself fails", async () => {
+        vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("offline"));
+        render(<Harness />);
+        await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+        failNetwork();
+        await waitFor(() =>
+          expect(screen.getByTestId("message")).toHaveTextContent("playback failed"),
+        );
+        expect(resetIdentityEpoch).not.toHaveBeenCalled();
+      });
+    });
+  });
+
   describe("hls.js fatal-error recovery", () => {
     async function renderHlsPlaying() {
       vi.mocked(Hls.isSupported).mockReturnValue(true);
