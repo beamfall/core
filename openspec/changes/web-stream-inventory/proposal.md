@@ -18,8 +18,11 @@ an id-less rendition pins level 0.
   switches the engine to HLS at the current position with that rendition pinned.
 - A `MediaError` 3 or 4 during direct play switches once to the HLS sibling at the current position;
   without a usable sibling it keeps the unsupported-codec message.
-- A native-route `MEDIA_ERR_NETWORK` probes the stream URL; a 401, 403 or 410 enters reveal-terminal
-  and retires the identity epoch, anything else shows the generic failure message.
+- The failover keeps the intent to play: it resumes when the viewer was playing or startup had not
+  finished.
+- A native-route `MEDIA_ERR_NETWORK` probes the stream URL (bounded by a timeout); a 401, 403 or 410
+  enters reveal-terminal and retires the identity epoch, anything else, including a probe timeout,
+  shows the generic failure message.
 - One canonical rendition key serves the menu id, the selection and the `hls.levels` lookup. A key
   that matches no level changes nothing.
 

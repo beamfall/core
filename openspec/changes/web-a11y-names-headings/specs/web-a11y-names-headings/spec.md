@@ -2,22 +2,32 @@
 
 ### Requirement: Select triggers have an accessible name
 
-Every Select trigger in the Manage area SHALL expose a localized accessible name.
+Every Select trigger in the Manage and Console areas SHALL expose a localized accessible name.
+
+#### Scenario: Console access, schedules, remote access and plugins
+
+- **WHEN** any Console route is audited with axe
+- **THEN** there is no `button-name` violation
 
 #### Scenario: Operations form
 
 - **WHEN** the Manage operations page is audited with axe
 - **THEN** there is no `button-name` violation
 
-### Requirement: One h1 per Manage and Viewer route
+### Requirement: One h1 per Manage, Console and Viewer route
 
-Each Manage and Viewer route SHALL render exactly one `h1` naming the page, and section or card titles
+Each Manage, Console and Viewer route SHALL render exactly one `h1` naming the page, and section or card titles
 SHALL be level-2 headings or lower.
 
 #### Scenario: Manage route
 
 - **WHEN** a Manage route is rendered
 - **THEN** exactly one `h1` is present and it names the route
+
+#### Scenario: Console route
+
+- **WHEN** a Console route is rendered, signed in or admin-locked
+- **THEN** exactly one `h1` is present and it names the route; section titles are level-2 headings
 
 #### Scenario: Viewer route without a loaded title
 
