@@ -4,10 +4,15 @@ import { MemoryRouter, useNavigate } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SourceItem } from "@/lib/graphql/types";
 import { fetchPreviewInfo } from "../lib/playback";
+import { preloadPlayer } from "../player/preload";
 import { MediaItemCard, PREVIEW_DWELL_MS } from "./MediaItemCard";
 
 vi.mock("../lib/playback", () => ({
   fetchPreviewInfo: vi.fn(),
+}));
+
+vi.mock("../player/preload", () => ({
+  preloadPlayer: vi.fn(),
 }));
 
 let playSpy: ReturnType<typeof vi.spyOn>;
@@ -18,6 +23,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   installMatchMedia();
   vi.mocked(fetchPreviewInfo).mockReset();
+  vi.mocked(preloadPlayer).mockReset();
   vi.mocked(fetchPreviewInfo).mockResolvedValue({
     assets: { previewClip: "/api/media/assets/token/preview.mp4" },
   });
@@ -228,6 +234,35 @@ describe("MediaItemCard preview clip behavior", () => {
     active.unmount();
 
     expect(pauseSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("MediaItemCard player prefetch", () => {
+  it("prefetches the player chunk on pointer enter, for any pointer type, without waiting for dwell", () => {
+    renderCard();
+    const card = screen.getByRole("button", { name: /Alpha/ });
+
+    fireEvent.pointerEnter(card, { pointerType: "touch" });
+
+    expect(preloadPlayer).toHaveBeenCalledTimes(1);
+  });
+
+  it("prefetches the player chunk on keyboard focus", () => {
+    renderCard();
+
+    fireEvent.focus(screen.getByRole("button", { name: /Alpha/ }));
+
+    expect(preloadPlayer).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not prefetch the player for a non-media card", () => {
+    renderCard({ kind: "collection" });
+    const card = screen.getByRole("button", { name: /Alpha/ });
+
+    fireEvent.pointerEnter(card, { pointerType: "mouse" });
+    fireEvent.focus(card);
+
+    expect(preloadPlayer).not.toHaveBeenCalled();
   });
 });
 
