@@ -13,9 +13,9 @@
 
 ## 3. Not-found semantics
 
-- [ ] 3.1 Return not-found only for missing saved filter and smart collection rows
-- [ ] 3.2 Propagate restricted-library lookup failures
-- [ ] 3.3 Injected database failure tests
+- [x] 3.1 Return not-found only for missing saved filter and smart collection rows
+- [x] 3.2 Propagate restricted-library lookup failures
+- [x] 3.3 Injected database failure tests
 
 ## 4. Verify and close
 
