@@ -287,6 +287,7 @@ func (s *Store) ConvertManagedFile(ctx context.Context, libraryID LibraryID, src
 		Codec:              codec,
 		Class:              class,
 		ContentFingerprint: fingerprint,
+		managedAdmission:   true,
 	})
 	if err != nil {
 		_ = removeConvertResidue(dst)

@@ -634,6 +634,11 @@ type ImportMediaFile struct {
 	// the convention (e.g. a renamed parent folder) does not silently
 	// un-exclude the Extra.
 	Extra bool
+	// managedAdmission marks a managed import or convert. Such an admission
+	// is refused when its fingerprint is already live at another path or in
+	// another library, instead of repointing that row (content_fingerprint is
+	// unique, and a scan's rename detection relies on the repoint).
+	managedAdmission bool
 }
 
 // ImportMediaFilePart is one file in a parser-confirmed Parts group. The scan

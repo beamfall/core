@@ -3,7 +3,7 @@
 - [x] 1.1 Hash managed imports while copying into staging and store the content fingerprint
 - [x] 1.2 Hash the staged convert artifact before admission and store its content fingerprint
 - [x] 1.3 Tests for same bytes at two paths, new bytes at a reused path and convert output
-- [ ] 1.4 Refuse a managed import or convert whose fingerprint is live at another path or library
+- [x] 1.4 Refuse a managed import or convert whose fingerprint is live at another path or library
 
 ## 2. JSON validation
 

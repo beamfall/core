@@ -422,6 +422,7 @@ func (s *Store) ImportManagedFile(ctx context.Context, libraryID LibraryID, impo
 		Codec:              codec,
 		Class:              class,
 		ContentFingerprint: fingerprint,
+		managedAdmission:   true,
 	})
 	if err != nil {
 		_ = os.Remove(target)
