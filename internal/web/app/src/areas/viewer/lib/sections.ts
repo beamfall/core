@@ -42,6 +42,7 @@ export interface SectionFetchContext {
 export async function fetchSectionItems(
   section: Section,
   ctx: SectionFetchContext,
+  signal?: AbortSignal,
 ): Promise<SourceItem[]> {
   const source = section.source || { kind: "" };
   const merged: FieldFilters = {
@@ -55,14 +56,17 @@ export async function fetchSectionItems(
       : section.kind === "shelf"
         ? 20
         : 100;
-  return fetchSourceItems({
-    kind: source.kind || "",
-    entityKind: source.entityKind || "",
-    libraryID: ctx.libraryID || "",
-    entityID: ctx.entityID || "",
-    fieldFilters: Object.keys(merged).length ? merged : null,
-    entityFilter: source.entityFilter || null,
-    limit,
-    offset: ctx.paging ? ctx.paging.offset : 0,
-  });
+  return fetchSourceItems(
+    {
+      kind: source.kind || "",
+      entityKind: source.entityKind || "",
+      libraryID: ctx.libraryID || "",
+      entityID: ctx.entityID || "",
+      fieldFilters: Object.keys(merged).length ? merged : null,
+      entityFilter: source.entityFilter || null,
+      limit,
+      offset: ctx.paging ? ctx.paging.offset : 0,
+    },
+    signal,
+  );
 }
