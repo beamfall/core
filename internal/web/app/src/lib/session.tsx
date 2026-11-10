@@ -28,6 +28,7 @@ import {
   switchProfile as switchProfileMutation,
 } from "@/lib/graphql";
 import type { NavigationManifest, ProfileSummary, SessionInfo } from "@/lib/graphql/types";
+import { clearViewerCache, viewerIdentityKey } from "@/lib/viewerCache";
 
 // The app-wide session spine every area consumes. Bootstraps the bound
 // device session, the Navigation Manifest, and the Profile picker, and owns
@@ -67,8 +68,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   // One identity epoch per load(): a device-role promotion, Profile switch,
   // Reveal, relock, or manual refresh aborts the in-flight epoch's fetches and
-  // clears every scoped field (session/manifest/profiles) before issuing the
-  // next epoch's fetches.
+  // clears every scoped field (session/manifest/profiles) and the in-memory
+  // viewer data cache (viewerCache.ts) before issuing the next epoch's fetches.
   // This is the stale-callback guard ADR-0082 §50/§58 requires — a slow
   // session/manifest/profiles fetch issued for the *previous* epoch can never
   // overwrite the new epoch's state (its AbortSignal has already fired), and
@@ -81,6 +82,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const controller = new AbortController();
     controllerRef.current = controller;
     setIdentityEpochSignal(controller.signal);
+    clearViewerCache();
     setSession(null);
     setManifest(null);
     setProfiles([]);
@@ -96,6 +98,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const compatibility = await performHandshake();
       if (!current()) return;
       if (isBlocked()) {
+        clearViewerCache();
         setSession(null);
         setManifest(null);
         setProfiles([]);
@@ -121,6 +124,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         (m.status === "rejected" && isAuthRejection(m.reason)) ||
         (p.status === "rejected" && isAuthRejection(p.reason))
       ) {
+        clearViewerCache();
         setSession(null);
         setManifest(null);
         setProfiles([]);
@@ -138,6 +142,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         const messageClass = Reflect.get(err.payload as object, "messageClass");
         setError(typeof messageClass === "string" ? messageClass : "compat-client-too-old");
       } else if (isAuthRejection(err)) {
+        clearViewerCache();
         setNeedsEnroll(true);
         setSession(null);
         setManifest(null);
@@ -163,6 +168,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       subscribeCompatibilityBlock((result) => {
         controllerRef.current?.abort();
         setIdentityEpochSignal();
+        clearViewerCache();
         setSession(null);
         setManifest(null);
         setProfiles([]);
@@ -193,6 +199,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     void load();
     return () => {
       controllerRef.current?.abort();
+      clearViewerCache();
       advanceCompatibilityEpoch();
       setIdentityEpochSignal();
       setIdentityEpochReset();
@@ -279,6 +286,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
+}
+
+/**
+ * The viewer data cache scope for the bound identity (see viewerCache.ts), or
+ * null when no session is bound or no SessionProvider is mounted — callers
+ * then fetch uncached, exactly as before the cache existed.
+ */
+export function useViewerIdentity(): string | null {
+  return viewerIdentityKey(useContext(SessionContext)?.session ?? null);
 }
 
 export function useSession(): SessionState {
