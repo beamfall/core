@@ -442,4 +442,7 @@ YAML
 expect_policy_failure "$tmp/wp-artifact-cross.yml" \
   'publisher job file-red-ticket must not download artifacts'
 
+# The local producer of these records (CORE-0539), run with fake tiers.
+"$ROOT/script/release-nightlies-local_test.sh"
+
 echo "nightly-freshness tests: passed"
