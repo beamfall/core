@@ -3,6 +3,7 @@ package server
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -16,8 +17,11 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"regexp"
 	"runtime/debug"
+	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -417,7 +421,10 @@ func webAppHandler(configuredBase ...*url.URL) http.HandlerFunc {
 	if len(configuredBase) != 0 {
 		base = configuredBase[0]
 	}
-	assets := web.AppAssets()
+	return webAppHandlerFS(web.AppAssets(), base)
+}
+
+func webAppHandlerFS(assets fs.FS, base *url.URL) http.HandlerFunc {
 	fileServer := http.StripPrefix("/web/", http.FileServerFS(assets))
 	index, _ := fs.ReadFile(assets, "index.html")
 	rewrittenText := make(map[string][]byte)
@@ -436,6 +443,7 @@ func webAppHandler(configuredBase ...*url.URL) http.HandlerFunc {
 			index = rewritten
 		}
 	}
+	compressed := &gzipCache{}
 	serveShell := func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("Content-Type", "text/html; charset=utf-8")
@@ -485,7 +493,34 @@ func webAppHandler(configuredBase ...*url.URL) http.HandlerFunc {
 			serveShell(w, r) // unknown client route → SPA shell
 			return
 		}
-		if body, ok := rewrittenText[rel]; ok {
+		body, rewritten := rewrittenText[rel]
+		// Hashed bundle files are fully determined by the build, so they are
+		// immutable — unless this server rewrote their bytes for a configured
+		// base path: that content depends on runtime config, and a later
+		// restart under another base would reuse the same URL.
+		if !rewritten && hashedWebAsset(rel) {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		}
+		if compressibleWebAsset(rel) && r.Header.Get("Range") == "" && acceptsGzip(r) {
+			if !rewritten {
+				body, _ = fs.ReadFile(assets, rel)
+			}
+			if gz, ok := compressed.get(rel, body); ok {
+				h := w.Header()
+				if contentType := mime.TypeByExtension(path.Ext(rel)); contentType != "" {
+					h.Set("Content-Type", contentType)
+				}
+				h.Set("Content-Encoding", "gzip")
+				h.Add("Vary", "Accept-Encoding")
+				h.Set("Content-Length", strconv.Itoa(len(gz)))
+				_, _ = w.Write(gz)
+				return
+			}
+		}
+		if compressibleWebAsset(rel) {
+			w.Header().Add("Vary", "Accept-Encoding")
+		}
+		if rewritten {
 			if contentType := mime.TypeByExtension(path.Ext(rel)); contentType != "" {
 				w.Header().Set("Content-Type", contentType)
 			}
@@ -494,6 +529,66 @@ func webAppHandler(configuredBase ...*url.URL) http.HandlerFunc {
 		}
 		fileServer.ServeHTTP(w, r)
 	}
+}
+
+// hashedWebAsset reports whether rel is a Vite content-hashed bundle file
+// (assets/<name>-<hash>.<ext>).
+func hashedWebAsset(rel string) bool {
+	return strings.HasPrefix(rel, "assets/") && webAssetHashName.MatchString(path.Base(rel))
+}
+
+var webAssetHashName = regexp.MustCompile(`-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$`)
+
+// compressibleWebAsset reports whether the embedded file is a text type worth
+// compressing; images and fonts are already compressed.
+func compressibleWebAsset(rel string) bool {
+	switch strings.ToLower(path.Ext(rel)) {
+	case ".js", ".mjs", ".css", ".html", ".json", ".webmanifest", ".svg", ".map":
+		return true
+	default:
+		return false
+	}
+}
+
+func acceptsGzip(r *http.Request) bool {
+	for _, part := range strings.Split(r.Header.Get("Accept-Encoding"), ",") {
+		coding, params, _ := strings.Cut(strings.TrimSpace(part), ";")
+		if !strings.EqualFold(strings.TrimSpace(coding), "gzip") {
+			continue
+		}
+		weight, ok := strings.CutPrefix(strings.TrimSpace(params), "q=")
+		if !ok {
+			return true
+		}
+		q, err := strconv.ParseFloat(strings.TrimSpace(weight), 64)
+		return err != nil || q > 0
+	}
+	return false
+}
+
+// gzipCache compresses each embedded file at most once, on first request.
+// The bundle is static, so entries never go stale.
+type gzipCache struct {
+	mu    sync.Mutex
+	files map[string][]byte
+}
+
+func (c *gzipCache) get(name string, body []byte) ([]byte, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if gz, ok := c.files[name]; ok {
+		return gz, true
+	}
+	var buf bytes.Buffer
+	zw, _ := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+	if _, err := zw.Write(body); err != nil || zw.Close() != nil {
+		return nil, false
+	}
+	if c.files == nil {
+		c.files = make(map[string][]byte)
+	}
+	c.files[name] = buf.Bytes()
+	return c.files[name], true
 }
 
 func textWebAsset(name string) bool {

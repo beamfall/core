@@ -89,7 +89,8 @@ export function renderShellServiceWorker(base: string, assets: readonly ShellAss
  *
  * Caching contract:
  *   - Precache the content-hashed entry shell (JS/CSS/index + manifest + icons).
- *   - Serve the hashed assets cache-first (a new build gets new hashes).
+ *   - Serve the hashed assets cache-first (a new build gets new hashes); lazy
+ *     /assets/ chunks are cached the first time they are fetched.
  *   - Navigations are NETWORK-FIRST: the server's current index.html wins, so
  *     the first load after a binary upgrade references chunks the new server
  *     has, and the precached shell is only the offline fallback (SPA deep
@@ -152,8 +153,21 @@ self.addEventListener("fetch", (event) => {
   }
 
   // Hashed shell assets: cache-first (immutable — a new build gets new hashes).
+  // Lazy chunks are not precached, so a successful same-origin /assets/
+  // response is stored on first fetch and served from the cache afterwards.
+  // The cache is versioned, so activation drops it with the build.
+  const cacheable = url.pathname.startsWith(BASE + "assets/");
   event.respondWith(
-    caches.match(req).then((cached) => cached || fetch(req))
+    caches.match(req).then((cached) => {
+      if (cached) return cached;
+      return fetch(req).then((res) => {
+        if (cacheable && res.status === 200 && res.type === "basic") {
+          const copy = res.clone();
+          caches.open(CACHE).then((cache) => cache.put(req, copy)).catch(() => {});
+        }
+        return res;
+      });
+    })
   );
 });
 `;
