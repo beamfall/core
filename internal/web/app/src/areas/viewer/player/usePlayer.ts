@@ -174,8 +174,12 @@ export type SwitchResult = "hlsjs" | "native" | false;
 // Ranged GET of the first byte, aborted once headers arrive: the status of a
 // native-route stream URL after MEDIA_ERR_NETWORK, which hides the HTTP status.
 // The media routes are GET-only, so a HEAD probe would 405.
+const STREAM_PROBE_TIMEOUT_MS = 5000;
+
 async function probeStreamStatus(url: string): Promise<number | undefined> {
   const controller = new AbortController();
+  // A hung probe must still end in a message, so it is bounded.
+  const timeout = window.setTimeout(() => controller.abort(), STREAM_PROBE_TIMEOUT_MS);
   try {
     const response = await fetch(url, {
       headers: { Range: "bytes=0-0" },
@@ -186,6 +190,7 @@ async function probeStreamStatus(url: string): Promise<number | undefined> {
   } catch {
     return undefined;
   } finally {
+    window.clearTimeout(timeout);
     controller.abort();
   }
 }
@@ -616,7 +621,10 @@ export function usePlayer(
           if (pinLevel < 0) return false;
         }
         const position = Number.isFinite(video.currentTime) ? video.currentTime : 0;
-        const play = !video.paused;
+        // A rendition pick keeps the viewer's pause. The failover also plays when
+        // playback never began: the error can fire before `canplay`, while the
+        // element is still paused only because autoplay had not yet kicked in.
+        const play = !video.paused || (renditionKey === undefined && video.played.length === 0);
         detachEngine();
         activeStream = sibling;
         attachEngine(sibling, engine, position, { play, pinLevel });

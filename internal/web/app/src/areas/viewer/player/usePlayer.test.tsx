@@ -890,6 +890,40 @@ describe("usePlayer", () => {
       expect(screen.getByTestId("message")).toHaveTextContent("");
     });
 
+    it("resumes playback after a failover that fires before playback started", async () => {
+      vi.mocked(Hls.isSupported).mockReturnValue(true);
+      vi.mocked(fetchPlaybackInfo).mockResolvedValue(inventory);
+      render(<Harness />);
+      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+      const video = screen.getByTestId("player") as HTMLVideoElement;
+      // Startup: the element is paused and has never played.
+      Object.defineProperty(video, "paused", { configurable: true, value: true });
+      Object.defineProperty(video, "error", { configurable: true, value: { code: 3 } });
+      vi.mocked(HTMLMediaElement.prototype.play).mockClear();
+      fireEvent.error(video);
+      await waitFor(() => expect(fakeHlsInstances).toHaveLength(1));
+      expect(HTMLMediaElement.prototype.play).toHaveBeenCalledOnce();
+    });
+
+    it("keeps a viewer's pause across the failover", async () => {
+      vi.mocked(Hls.isSupported).mockReturnValue(true);
+      vi.mocked(fetchPlaybackInfo).mockResolvedValue(inventory);
+      render(<Harness />);
+      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+      const video = screen.getByTestId("player") as HTMLVideoElement;
+      // Playback had begun and the viewer then paused.
+      Object.defineProperty(video, "paused", { configurable: true, value: true });
+      Object.defineProperty(video, "played", {
+        configurable: true,
+        value: { length: 1, start: () => 0, end: () => 5 },
+      });
+      Object.defineProperty(video, "error", { configurable: true, value: { code: 3 } });
+      vi.mocked(HTMLMediaElement.prototype.play).mockClear();
+      fireEvent.error(video);
+      await waitFor(() => expect(fakeHlsInstances).toHaveLength(1));
+      expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+    });
+
     it("keeps the unsupported-codec message when no HLS stream exists", async () => {
       vi.mocked(Hls.isSupported).mockReturnValue(true);
       render(<Harness />);
@@ -984,6 +1018,30 @@ describe("usePlayer", () => {
           expect(screen.getByTestId("message")).toHaveTextContent("playback failed"),
         );
         expect(resetIdentityEpoch).not.toHaveBeenCalled();
+      });
+
+      it("reports a generic failure when the probe hangs past its timeout", async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+        try {
+          vi.spyOn(globalThis, "fetch").mockImplementation(
+            (_url, init) =>
+              new Promise((_resolve, reject) => {
+                init?.signal?.addEventListener("abort", () =>
+                  reject(new DOMException("aborted", "AbortError")),
+                );
+              }),
+          );
+          render(<Harness />);
+          await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+          failNetwork();
+          await vi.advanceTimersByTimeAsync(5001);
+          await waitFor(() =>
+            expect(screen.getByTestId("message")).toHaveTextContent("playback failed"),
+          );
+          expect(resetIdentityEpoch).not.toHaveBeenCalled();
+        } finally {
+          vi.useRealTimers();
+        }
       });
 
       it("reports a generic failure when the probe itself fails", async () => {
