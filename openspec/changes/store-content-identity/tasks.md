@@ -7,9 +7,9 @@
 
 ## 2. JSON validation
 
-- [ ] 2.1 Reject invalid JSON for job payloads, checkpoints and job events
-- [ ] 2.2 Reject invalid JSON for outbox payloads
-- [ ] 2.3 Tests for each entry point
+- [x] 2.1 Reject invalid JSON for job payloads, checkpoints and job events
+- [x] 2.2 Reject invalid JSON for outbox payloads
+- [x] 2.3 Tests for each entry point
 
 ## 3. Not-found semantics
 
