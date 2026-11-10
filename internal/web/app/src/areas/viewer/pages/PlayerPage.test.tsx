@@ -81,6 +81,11 @@ describe("PlayerPage failure and recovery states", () => {
     expect(screen.queryByRole("button", { name: "Back to Browse" })).not.toBeInTheDocument();
   });
 
+  it("renders exactly one h1 on the player route (CORE-0089)", () => {
+    renderPlayer(playerState({ phase: "playing" }));
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+  });
+
   it("keeps a reveal-terminal block terminal: Back to Browse, no retry", () => {
     const { retry } = renderPlayer(
       playerState({ phase: "terminal", terminal: true, message: "Unavailable" }),

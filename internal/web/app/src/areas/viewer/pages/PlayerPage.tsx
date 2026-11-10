@@ -175,6 +175,7 @@ export function PlayerPage() {
 
   return (
     <main className="flex min-h-screen flex-col bg-[oklch(8%_0.012_255)]">
+      <h1 className="sr-only">{navTitle || t("brand")}</h1>
       <div className="bf-player-bar">
         <Button variant="outline" size="sm" onClick={back}>
           {t("back")}

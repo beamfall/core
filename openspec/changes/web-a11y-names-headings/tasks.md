@@ -7,5 +7,5 @@
 
 ## 2. Verification
 
-- [ ] 2.1 Playwright a11y spec for `button-name` and single `h1`
-- [ ] 2.2 `npm run check`, `npm run typecheck`, vitest, `openspec validate --all --strict`
+- [x] 2.1 Playwright a11y spec for `button-name` and single `h1`
+- [x] 2.2 `npm run check`, `npm run typecheck`, vitest, `openspec validate --all --strict`

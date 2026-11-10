@@ -1,7 +1,8 @@
 import { useParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
+import { displayString } from "@/lib/display";
 import type { NavigationNode, Section } from "@/lib/graphql/types";
-import { useT } from "@/lib/i18n";
+import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
 import { LayoutView } from "../components/LayoutView";
 import { RevealControls } from "../components/RevealControls";
@@ -16,6 +17,7 @@ import { seeAllTargetFor } from "../lib/seeall";
 // Defensive: only the "layout" view type is renderable (others are skipped).
 export function BrowsePage({ home = false }: { home?: boolean }) {
   const t = useT();
+  const displayLocale = useDisplayLocale();
   const { nodeId } = useParams();
   const { manifest, loading } = useSession();
 
@@ -54,6 +56,7 @@ export function BrowsePage({ home = false }: { home?: boolean }) {
         </>
       }
     >
+      <h1 className="sr-only">{node ? displayString(node.title, displayLocale) : t("brand")}</h1>
       <LayoutView
         layout={layout}
         libraryID={libraryID}

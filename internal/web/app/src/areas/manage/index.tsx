@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Navigate, NavLink, Route, Routes } from "react-router";
+import { Navigate, NavLink, Route, Routes, useLocation } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { useT } from "@/lib/i18n";
 import { useRegister } from "@/lib/register";
@@ -68,11 +68,22 @@ const NAV_GROUPS: NavItem[][] = [
   ],
 ];
 
+// The page title of the current route: the nav label of the item whose path
+// the location is on or under, falling back to the area title.
+function currentRouteLabel(pathname: string): { label?: StringKey; text?: string } {
+  const item = NAV_GROUPS.flat().find(
+    (entry) => pathname === entry.to || pathname.startsWith(`${entry.to}/`),
+  );
+  return item ?? { label: "manageTitle" };
+}
+
 export function ManageArea() {
   const { setRegister } = useRegister();
+  const location = useLocation();
   const { isManager, loading, needsEnroll, session } = useSession();
   const t = useT();
   useEffect(() => setRegister("manage"), [setRegister]);
+  const routeTitle = currentRouteLabel(location.pathname);
 
   if (loading) {
     return (
@@ -106,6 +117,8 @@ export function ManageArea() {
         </nav>
 
         <div className="min-w-0 grow">
+          {/* The route's one h1; each ManageSection card title below it is an h2. */}
+          <h1 className="sr-only">{routeTitle.text ?? t(routeTitle.label ?? "manageTitle")}</h1>
           <Routes>
             <Route index element={<Navigate to="/manage/libraries" replace />} />
             <Route path="libraries" element={<LibrariesPage />} />

@@ -266,7 +266,12 @@ function SubscriptionRow({
       <TableCell>
         <div className="flex items-center gap-2">
           <Select value={kind} onValueChange={setKind}>
-            <SelectTrigger size="sm" className="w-44" title={t("retentionPolicy")}>
+            <SelectTrigger
+              size="sm"
+              className="w-44"
+              title={t("retentionPolicy")}
+              aria-label={t("retentionPolicy")}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

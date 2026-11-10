@@ -105,4 +105,77 @@ test.describe("ADR-0100 a11y real-browser parity pass", () => {
       expect(errors, errors.join("\n")).toEqual([]);
     });
   }
+
+  // CORE-0089: every Select trigger has an accessible name (axe button-name).
+  const viewports = [
+    { name: "1440x900", width: 1440, height: 900 },
+    { name: "390x844", width: 390, height: 844 },
+  ];
+  for (const route of ["operations", "unmatched"]) {
+    for (const viewport of viewports) {
+      test(`manage/${route} has no unnamed buttons at ${viewport.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        await page.goto(`/web/manage/${route}`);
+        await expect(page.locator("main h1")).toHaveCount(1);
+        await settleFrames(page);
+        const violations = await runAxe(page);
+        expect(violations.filter((violation) => violation.id === "button-name")).toEqual([]);
+      });
+    }
+  }
+
+  // CORE-0089: every Manage and Viewer route renders exactly one h1.
+  const manageRoutes = [
+    "libraries",
+    "operations",
+    "convert",
+    "rename",
+    "trash",
+    "backups",
+    "subscriptions",
+    "collections",
+    "bulk",
+    "tags",
+    "curation",
+    "entities",
+    "artwork",
+    "markers",
+    "field-locks",
+    "navigation",
+    "unmatched",
+    "restrictions",
+    "profile",
+  ];
+  for (const route of manageRoutes) {
+    test(`manage/${route} renders exactly one h1`, async ({ page }) => {
+      await page.goto(`/web/manage/${route}`);
+      await expect(page.locator("h1")).toHaveCount(1);
+      await expect(page.locator("h1")).not.toBeEmpty();
+    });
+  }
+  for (const route of ["", "search", "mydata", "notifications", "settings"]) {
+    test(`viewer /${route} renders exactly one h1`, async ({ page }) => {
+      await page.goto(`/web/${route}`);
+      await expect(page.locator("#root")).not.toBeEmpty();
+      await expect(page.locator("h1")).toHaveCount(1);
+    });
+  }
+
+  // CORE-0089 follow-up: these live under areas/console/**, which another lane owns.
+  // Console Select triggers (ProfilesAccess, Schedules) still need aria-labels and the
+  // Console section shell still renders its title as an h2; enable once that lane lands.
+  for (const route of ["access", "schedules"]) {
+    test.fixme(`console/${route} has no unnamed buttons`, async ({ page }) => {
+      await page.goto(`/web/console/${route}`);
+      await settleFrames(page);
+      const violations = await runAxe(page);
+      expect(violations.filter((violation) => violation.id === "button-name")).toEqual([]);
+    });
+  }
+  test.fixme("console routes render exactly one h1", async ({ page }) => {
+    for (const route of ["config", "access", "schedules"]) {
+      await page.goto(`/web/console/${route}`);
+      await expect(page.locator("h1")).toHaveCount(1);
+    }
+  });
 });
