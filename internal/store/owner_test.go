@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 // TestSetProfileOwnerSingleInvariantAndMovable pins ADR-0007 §4: at most one
@@ -76,6 +77,53 @@ func TestSetProfileOwnerSingleInvariantAndMovable(t *testing.T) {
 	// ProfileIsOwner of an unknown Profile is (false, nil) — the gate fails closed.
 	if isOwner, err := st.ProfileIsOwner(ctx, ProfileID("no-such-profile")); err != nil || isOwner {
 		t.Fatalf("ProfileIsOwner(unknown) = (%v, %v), want (false, nil)", isOwner, err)
+	}
+}
+
+// TestSetProfileOwnerTransferEndsOutgoingOwnerAdminSessions pins CORE-0728:
+// Admin authority is derived from the session's admin window alone, so a
+// transfer must end the outgoing owner's Admin Sessions at once, while a
+// session already bound to the new owner keeps its window.
+// feature:admin-session
+func TestSetProfileOwnerTransferEndsOutgoingOwnerAdminSessions(t *testing.T) {
+	ctx := context.Background()
+	st := openSeeded(t)
+	until := time.Now().Add(15 * time.Minute)
+
+	if err := st.SetProfileOwner(ctx, "profile-default"); err != nil {
+		t.Fatal(err)
+	}
+	incoming, err := st.CreateProfile(ctx, "Incoming Owner", ProfileAdult, LibraryFilter{Revealed: true, AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetSessionProfile(ctx, "session-revealed", incoming.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []SessionID{"session-manager", "session-default", "session-revealed"} {
+		if err := st.SetSessionAdminUntil(ctx, id, until); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := st.SetProfileOwner(ctx, incoming.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []SessionID{"session-manager", "session-default"} {
+		session, err := st.Session(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !session.AdminUntil.IsZero() {
+			t.Fatalf("outgoing owner session %s AdminUntil = %v after transfer, want zero", id, session.AdminUntil)
+		}
+	}
+	kept, err := st.Session(ctx, "session-revealed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kept.AdminUntil.IsZero() {
+		t.Fatal("new owner's session lost its Admin window on designation")
 	}
 }
 

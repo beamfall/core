@@ -3696,6 +3696,13 @@ func (s *Store) SetProfileOwner(ctx context.Context, id ProfileID) error {
 	if _, err := tx.ExecContext(ctx, `UPDATE profile SET is_owner = 1 WHERE id = ?`, id); err != nil {
 		return err
 	}
+	// Admin authority is derived from admin_until_ms alone, so a transfer must
+	// end every Admin Session not bound to the new owner — the outgoing owner's
+	// and, on a first designation, any adult's held under the no-owner fallback.
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE auth_session SET admin_until_ms = NULL WHERE admin_until_ms IS NOT NULL AND profile_id <> ?`, id); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
