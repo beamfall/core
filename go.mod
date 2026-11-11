@@ -1,6 +1,6 @@
 module github.com/beamfall/core
 
-go 1.27.3
+go 1.27.4
 
 require (
 	github.com/beamfall/plugin-audiobook v0.1.4
