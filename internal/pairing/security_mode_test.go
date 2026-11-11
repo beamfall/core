@@ -135,7 +135,7 @@ func TestStrictModeKeepsRenewalAndOwnerCodes(t *testing.T) {
 	service := deterministicService(st, now)
 	service.generateID = func(string) (string, error) { return "session-renewed", nil }
 	if _, err := service.RenewSession(ctx, RenewRequest{
-		DeviceID: "device-browser", DeviceSecret: "browser-secret", OldSessionID: "session-lapsed", RemoteAddr: "192.168.1.5:5000",
+		DeviceID: "device-browser", DeviceSecret: "browser-secret", RemoteAddr: "192.168.1.5:5000",
 	}); err != nil {
 		t.Fatalf("RenewSession in strict mode: %v", err)
 	}

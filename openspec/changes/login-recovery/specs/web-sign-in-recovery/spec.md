@@ -4,8 +4,9 @@
 
 The server SHALL mint a new 30-day session for a browser that presents its device ID and device
 secret cookies and the CSRF header, even when its session cookie is expired or missing. The new
-session SHALL keep the device and the Profile of the session it replaces, and the old session SHALL
-be deleted in the same write. Plain HTTP SHALL be accepted only from the local network.
+session SHALL replace the device's existing session row, expired or not, in the same write and
+keep its Profile, so a device holds at most one session. Plain HTTP SHALL be accepted only from the
+local network.
 
 #### Scenario: Expired session renewed
 
@@ -15,16 +16,20 @@ be deleted in the same write. Plain HTTP SHALL be accepted only from the local n
 
 #### Scenario: Session cookie missing
 
-- **WHEN** a browser presents a valid device credential but no session cookie, and the device has
-  an earlier session
-- **THEN** a new session is created for the Profile of the device's latest session
+- **WHEN** a browser presents a valid device credential but no session cookie
+- **THEN** the device's session row is replaced, not added to, so the device still has one session
+
+#### Scenario: Terminated session
+
+- **WHEN** a session was ended from Live Sessions and its browser then renews
+- **THEN** renewal is refused with 401 and the browser must sign in again
 
 ### Requirement: Session renewal refuses an invalid device credential
 
 Renewal SHALL refuse with 401 and create nothing when the device secret is wrong, the device is
-revoked, either device cookie is missing, the Profile is disabled, the replaced session is not an
-enrolled session, or no Profile can be resolved. Failures SHALL count against the auth backoff
-curve keyed per source address, and a throttled source SHALL be refused with 429.
+revoked, either device cookie is missing, the Profile is disabled, or the device has no session
+row. Failures SHALL count against the auth backoff curve keyed per source address, and a throttled
+source SHALL be refused with 429.
 
 #### Scenario: Wrong device secret
 

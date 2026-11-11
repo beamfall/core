@@ -341,7 +341,6 @@ func (s *Server) renewWebSession(w http.ResponseWriter, r *http.Request) {
 	req := pairing.RenewRequest{
 		DeviceID:     cookie(auth.DeviceCookie),
 		DeviceSecret: cookie(auth.DeviceSecretCookie),
-		OldSessionID: cookie(auth.SessionCookie),
 		RemoteAddr:   r.RemoteAddr,
 	}
 	resp, err := s.pairing.RenewSession(r.Context(), req)

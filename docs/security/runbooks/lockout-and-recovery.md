@@ -78,8 +78,11 @@ There are three ways back in after setup. None of them needs a setup token.
 
 1. **Session renewal.** A browser session lasts 30 days. The device cookies last 400 days. When the
    session ends, the web app calls `POST /api/web/session/renew` once with the device cookies and
-   gets a new session. This fails if the device was revoked, its Profile is disabled, or the
-   cookies are gone. Failed renewals are throttled per source address.
+   gets a new session that replaces the device's one session row. This fails if the device was
+   revoked, its Profile is disabled, the cookies are gone, or the device has no session row. Ending
+   a session from Monitor > Live Sessions deletes that row, so the browser cannot renew and must
+   sign in again: with the admin password in Home mode, or with a pairing code. Failed renewals are
+   throttled per source address.
 2. **Admin password.** The enroll page has a second form, *Sign in with the admin password*. It
    enrolls the browser as a Manager device on the owner Profile. It works over HTTPS from
    anywhere, and over plain HTTP only from the local network, opened by IP address, `localhost` or

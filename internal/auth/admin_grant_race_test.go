@@ -75,12 +75,7 @@ func TestAdminReauthLimitSurvivesSessionRenewal(t *testing.T) {
 			t.Fatalf("attempt %d err = %v, want ErrAdminPassword", i, err)
 		}
 	}
-	if err := st.RenewDeviceSession(ctx, scope.SessionID, store.Session{
-		ID:        "session-renewed",
-		DeviceID:  scope.DeviceID,
-		ProfileID: scope.ProfileID,
-		ExpiresAt: now.Add(30 * 24 * time.Hour),
-	}); err != nil {
+	if _, err := st.RenewDeviceSession(ctx, scope.DeviceID, "session-renewed", now.Add(30*24*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 	renewed, err := service.ScopeFromRequest(ctx, authenticatedRequest("session-renewed", "device-mac", "dev-manager-secret"))

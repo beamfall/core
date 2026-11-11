@@ -51,12 +51,12 @@ func refuse(err error, reason auth.RefusalReason) error {
 	return &Refusal{Err: err, Reason: reason}
 }
 
-// RenewRequest carries a browser's device credential cookies. OldSessionID is
-// the session cookie's value, which may name an expired or deleted session.
+// RenewRequest carries a browser's device credential cookies. The session
+// cookie is not needed: renewal replaces whatever session row the device
+// holds.
 type RenewRequest struct {
 	DeviceID     string
 	DeviceSecret string
-	OldSessionID string
 	RemoteAddr   string
 }
 
@@ -69,10 +69,12 @@ type RenewResponse struct {
 	DeviceRole       string `json:"deviceRole"`
 }
 
-// RenewSession mints a new 30-day session for a device that proves its
-// device secret, keeping the Profile of the session it replaces. The old
-// session's expiry does not matter: the device secret is the long-lived
-// credential, and revoking the device still ends it.
+// RenewSession replaces the session of a device that proves its device
+// secret with a new 30-day session on the same Profile. The old session's
+// expiry does not matter: the device secret is the long-lived credential. The
+// device must still hold its session row, so a device keeps at most one
+// session, and revoking the device or terminating its session ends access
+// until the browser enrolls again.
 func (s *Service) RenewSession(ctx context.Context, req RenewRequest) (RenewResponse, error) {
 	deviceID := store.DeviceID(strings.TrimSpace(req.DeviceID))
 	if deviceID == "" || req.DeviceSecret == "" {
@@ -97,40 +99,15 @@ func (s *Service) RenewSession(ctx context.Context, req RenewRequest) (RenewResp
 	if device.Revoked {
 		return fail(auth.RefusalDeviceRevoked)
 	}
-	oldID := store.SessionID(strings.TrimSpace(req.OldSessionID))
-	var profileID store.ProfileID
-	if oldID != "" {
-		if old, err := s.store.Session(ctx, oldID); err == nil {
-			if old.Kind != store.SessionKindEnrolled {
-				return fail(auth.RefusalIntegrationRestricted)
-			}
-			if old.DeviceID == device.ID {
-				profileID = old.ProfileID
-			}
-		}
-	}
-	if profileID == "" {
-		latest, err := s.store.LatestDeviceSession(ctx, device.ID)
-		if errors.Is(err, store.ErrNoDeviceSession) {
-			return fail(auth.RefusalSessionInvalid)
-		}
-		if err != nil {
-			return RenewResponse{}, err
-		}
-		profileID = latest.ProfileID
-	}
 	sessionID, err := s.generateID("session")
 	if err != nil {
 		return RenewResponse{}, err
 	}
 	expiresAt := now.Add(30 * 24 * time.Hour).UTC()
-	err = s.store.RenewDeviceSession(ctx, oldID, store.Session{
-		ID:        store.SessionID(sessionID),
-		DeviceID:  device.ID,
-		ProfileID: profileID,
-		ExpiresAt: expiresAt,
-	})
+	session, err := s.store.RenewDeviceSession(ctx, device.ID, store.SessionID(sessionID), expiresAt)
 	switch {
+	case errors.Is(err, store.ErrNoDeviceSession):
+		return fail(auth.RefusalSessionInvalid)
 	case errors.Is(err, store.ErrDeviceRevoked):
 		return fail(auth.RefusalDeviceRevoked)
 	case errors.Is(err, store.ErrProfileDisabled):
@@ -143,7 +120,7 @@ func (s *Service) RenewSession(ctx context.Context, req RenewRequest) (RenewResp
 		DeviceID:         string(device.ID),
 		SessionID:        sessionID,
 		SessionExpiresAt: expiresAt.Format(time.RFC3339),
-		ProfileID:        string(profileID),
+		ProfileID:        string(session.ProfileID),
 		DeviceRole:       string(device.Role),
 	}, nil
 }

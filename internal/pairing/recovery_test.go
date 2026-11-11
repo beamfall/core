@@ -39,7 +39,7 @@ func TestRenewSessionReplacesExpiredSession(t *testing.T) {
 	service.generateID = func(string) (string, error) { return "session-renewed", nil }
 
 	resp, err := service.RenewSession(ctx, RenewRequest{
-		DeviceID: "device-browser", DeviceSecret: "browser-secret", OldSessionID: "session-lapsed", RemoteAddr: "192.168.1.5:5000",
+		DeviceID: "device-browser", DeviceSecret: "browser-secret", RemoteAddr: "192.168.1.5:5000",
 	})
 	if err != nil {
 		t.Fatalf("RenewSession: %v", err)
@@ -55,16 +55,55 @@ func TestRenewSessionReplacesExpiredSession(t *testing.T) {
 	}
 }
 
-func TestRenewSessionWithoutSessionCookieUsesLatestSession(t *testing.T) {
+// TestRenewSessionReplacesTheRowRatherThanAddingOne: renewal sends no
+// session cookie, so each renewal must replace the device's one session row;
+// a device secret cannot stockpile spare sessions.
+func TestRenewSessionReplacesTheRowRatherThanAddingOne(t *testing.T) {
 	ctx := context.Background()
 	st := storetest.Open(t)
 	now := time.Unix(1_000_000, 0).UTC()
 	enrollBrowser(t, st, "device-browser", "session-lapsed", now.Add(-time.Hour))
 	service := deterministicService(st, now)
+	ids := []string{"session-first", "session-second"}
+	service.generateID = func(string) (string, error) {
+		id := ids[0]
+		ids = ids[1:]
+		return id, nil
+	}
+	for range 2 {
+		resp, err := service.RenewSession(ctx, RenewRequest{DeviceID: "device-browser", DeviceSecret: "browser-secret", RemoteAddr: "192.168.1.5:5000"})
+		if err != nil || resp.ProfileID != "profile-default" {
+			t.Fatalf("RenewSession = %+v, %v", resp, err)
+		}
+	}
+	for _, gone := range []store.SessionID{"session-lapsed", "session-first"} {
+		if _, err := st.Session(ctx, gone); err == nil {
+			t.Fatalf("%s survived a later renewal", gone)
+		}
+	}
+	if _, err := st.Session(ctx, "session-second"); err != nil {
+		t.Fatalf("latest renewed session: %v", err)
+	}
+}
+
+// TestRenewSessionAfterTerminateIsRefused: killing a session deletes the
+// device's only row, so the device secret alone cannot mint a new one.
+func TestRenewSessionAfterTerminateIsRefused(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	now := time.Unix(1_000_000, 0).UTC()
+	enrollBrowser(t, st, "device-browser", "session-live", now.Add(time.Hour))
+	if err := st.TerminateSession(ctx, "session-live"); err != nil {
+		t.Fatal(err)
+	}
+	service := deterministicService(st, now)
 	service.generateID = func(string) (string, error) { return "session-renewed", nil }
-	resp, err := service.RenewSession(ctx, RenewRequest{DeviceID: "device-browser", DeviceSecret: "browser-secret"})
-	if err != nil || resp.ProfileID != "profile-default" {
-		t.Fatalf("RenewSession = %+v, %v", resp, err)
+	_, err := service.RenewSession(ctx, RenewRequest{DeviceID: "device-browser", DeviceSecret: "browser-secret", RemoteAddr: "192.168.1.5:5000"})
+	if !errors.Is(err, ErrSessionRenewRefused) || refusalReason(err) != auth.RefusalSessionInvalid {
+		t.Fatalf("renewal after terminate err = %v (reason %q), want refused with %q", err, refusalReason(err), auth.RefusalSessionInvalid)
+	}
+	if _, err := st.Session(ctx, "session-renewed"); err == nil {
+		t.Fatal("renewal after terminate created a session")
 	}
 }
 
@@ -88,7 +127,7 @@ func TestRenewSessionRefusals(t *testing.T) {
 		{"missing secret", RenewRequest{DeviceID: "device-browser"}, auth.RefusalCredentialIncomplete},
 		{"wrong secret", RenewRequest{DeviceID: "device-browser", DeviceSecret: "guess"}, auth.RefusalDeviceSecretInvalid},
 		{"unknown device", RenewRequest{DeviceID: "device-nope", DeviceSecret: "browser-secret"}, auth.RefusalDeviceSecretInvalid},
-		{"revoked device", RenewRequest{DeviceID: "device-gone", DeviceSecret: "browser-secret", OldSessionID: "session-gone"}, auth.RefusalDeviceRevoked},
+		{"revoked device", RenewRequest{DeviceID: "device-gone", DeviceSecret: "browser-secret"}, auth.RefusalDeviceRevoked},
 	}
 	for _, tc := range cases {
 		tc.req.RemoteAddr = "192.168.1.5:5000"
