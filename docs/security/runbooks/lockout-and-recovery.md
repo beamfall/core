@@ -95,6 +95,13 @@ There are three ways back in after setup. None of them needs a setup token.
    honored in place of `--data-dir`. Like `reset-admin-password`, it refuses to run while the
    server holds its data-directory lock.
 
+**Strict mode.** At setup the owner picks Home (the default) or Strict sign-in security. Strict turns
+off admin-password sign-in, so the enroll page hides that form and the endpoint refuses with the
+same "sign-in failed" as a wrong password. Session renewal and pairing codes from a Manager still
+work. When no signed-in Manager is left, recovery in Strict mode is `beamfall pairing-code` on the
+host (above). A Manager can switch modes in the Console under Access with the admin password; each
+switch is audited as `signin_security.mode`.
+
 ## Database corruption
 
 Signs: the server refuses to start with a SQLite error, migrations fail their checksum check, or
