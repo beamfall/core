@@ -14,41 +14,42 @@ type ApprovedDelta = {
 };
 
 // Exact approved focus and Cut Beam header deltas; archived PNGs remain immutable.
+// Signatures re-recorded for the macOS 27.2.1 system-ui (SF Pro) rasterization (CORE-1109).
 const approvedVisualDeltas: Readonly<Record<string, ApprovedDelta>> = {
   "player-desktop/shared-dialog-open-focused.png": {
     differentPixels: 1190,
-    coordinateSHA256: "b98548126162a410ed554547d63e86b93bf06c23a73b32eb47d53322c4610e63",
-    normalizedSHA256: "6b0800e8790f1a3c3ffbbad0af1d310826e69caeb7c6f8d756a1f463d0490364",
+    coordinateSHA256: "7ddf7e1e702e9de27f160df9570d7280dbfcb7cf25c52aeb8594ec2c6ea88ad6",
+    normalizedSHA256: "79510c0bbf81311a7c7556caf57d49e74f029fe0323935d81a53ee7e676b0556",
   },
   "manage/manage-collections-tab-focused-selected.png": {
     differentPixels: 1032,
-    coordinateSHA256: "c5a9894f0485ae0e3e4bbd7749df94a39412e551364e4ba9cd4bae212e57450e",
-    normalizedSHA256: "2d5ea534b16a957e4a9ab496faece5fa7f5e0eb4c59049e1e317c8bb14bb1093",
+    coordinateSHA256: "353d3f37dd5a048999149beea4ac963ce65e906132b6d2d40acf8dede71f3168",
+    normalizedSHA256: "65f4d038d22b67309c8c073e02ed12261b3fd08e0f9445dfe6334da23e92e419",
   },
   "manage/manage-smart-tab-focused-selected.png": {
     differentPixels: 1032,
-    coordinateSHA256: "c5a9894f0485ae0e3e4bbd7749df94a39412e551364e4ba9cd4bae212e57450e",
-    normalizedSHA256: "2d5ea534b16a957e4a9ab496faece5fa7f5e0eb4c59049e1e317c8bb14bb1093",
+    coordinateSHA256: "353d3f37dd5a048999149beea4ac963ce65e906132b6d2d40acf8dede71f3168",
+    normalizedSHA256: "65f4d038d22b67309c8c073e02ed12261b3fd08e0f9445dfe6334da23e92e419",
   },
   "manage/manage-curation-subject-select-open-focused-selected.png": {
-    differentPixels: 938,
-    coordinateSHA256: "90c6eb2f9c0cbd43f028f03e2e2e29a64626176e3aa2d46e087fac8e11da6c11",
-    normalizedSHA256: "f2efeab6b8ac5f42bd2f9a8463d5d61ad6cbfc7f68645759119366215863b9ea",
+    differentPixels: 939,
+    coordinateSHA256: "777aad9b8856d3c160872e18c2df3203d672b656e8b622be6e5b50bfa3da1b7e",
+    normalizedSHA256: "4bafa14f20e9b0a6bc39253b755b716c80185ab5ff11a64c62341cbd2075d30c",
   },
   "manage/manage-curation-versions-tab-focused-selected.png": {
-    differentPixels: 938,
-    coordinateSHA256: "90c6eb2f9c0cbd43f028f03e2e2e29a64626176e3aa2d46e087fac8e11da6c11",
-    normalizedSHA256: "f2efeab6b8ac5f42bd2f9a8463d5d61ad6cbfc7f68645759119366215863b9ea",
+    differentPixels: 939,
+    coordinateSHA256: "777aad9b8856d3c160872e18c2df3203d672b656e8b622be6e5b50bfa3da1b7e",
+    normalizedSHA256: "4bafa14f20e9b0a6bc39253b755b716c80185ab5ff11a64c62341cbd2075d30c",
   },
   "manage/manage-curation-extras-tab-focused-selected.png": {
-    differentPixels: 938,
-    coordinateSHA256: "90c6eb2f9c0cbd43f028f03e2e2e29a64626176e3aa2d46e087fac8e11da6c11",
-    normalizedSHA256: "f2efeab6b8ac5f42bd2f9a8463d5d61ad6cbfc7f68645759119366215863b9ea",
+    differentPixels: 939,
+    coordinateSHA256: "777aad9b8856d3c160872e18c2df3203d672b656e8b622be6e5b50bfa3da1b7e",
+    normalizedSHA256: "4bafa14f20e9b0a6bc39253b755b716c80185ab5ff11a64c62341cbd2075d30c",
   },
   "manage/manage-curation-relation-select-open-focused-selected.png": {
-    differentPixels: 1389,
-    coordinateSHA256: "deb5104dae71a5e7d261cb67c4d9fa536c2ea6ef878fa034efa157d1e91539af",
-    normalizedSHA256: "943b19b4f60173f6e38fcd04f371fd1639873e044a29ed5d1fc550cecba911e9",
+    differentPixels: 1390,
+    coordinateSHA256: "4467ce0b53c47b225b66b72cea611eb09fe991064a0981c172956de243453465",
+    normalizedSHA256: "207bee3a1556d8f29bd38c64686b376c51cc9acd26f250346e316b364c9dcbd6",
   },
 };
 
