@@ -41,7 +41,7 @@ that approval; the control hierarchy from `mockups/web-player-ergonomics/SPEC.md
   has a non-empty accessible name.
 - `e2e/player.spec.ts`: a mobile assertion measures every transport button at 44 by 44 or larger.
 - Regenerated `player-desktop` and `player-mobile` goldens, listed in the evidence file.
-- `docs/release/evidence/WEB-PLAYER-VISUAL-PARITY-1.md`.
+- Release evidence `WEB-PLAYER-VISUAL-PARITY-1.md`, retained outside this repository.
 
 ## Rollback
 

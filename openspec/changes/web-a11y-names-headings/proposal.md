@@ -35,7 +35,7 @@ WCAG 2 A, critical) on Manage operations and unmatched, and most Manage and View
   manage/unmatched at 1440x900 and 390x844 and on every Console route; exactly one `h1` per Manage,
   Console and Viewer route tested.
 - `strings.test.ts` pins updated for the new key.
-- `docs/release/evidence/DESAUDIT0927-CWEB-A11Y-NAMES-1.md`.
+- Release evidence `DESAUDIT0927-CWEB-A11Y-NAMES-1.md`, retained outside this repository.
 
 ## Rollback
 

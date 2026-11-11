@@ -42,7 +42,7 @@ an id-less rendition pins level 0.
 - `usePlayer.test.tsx`: info with `[direct, hls]` exposes both; `MediaError` 3 on native attaches hls.js
   at the prior position; native `MEDIA_ERR_NETWORK` with a 403 probe enters reveal-terminal.
 - `transport.test.ts`: the rendition menu comes from the sibling; an id-less rendition never pins level 0.
-- `docs/release/evidence/WEB-STREAM-INVENTORY-1.md`.
+- Release evidence `WEB-STREAM-INVENTORY-1.md`, retained outside this repository.
 
 ## Rollback
 
