@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -110,6 +111,11 @@ func endpointAllowsLocal(ep Endpoint) (bool, error) {
 	host := u.Hostname()
 	if host == "" {
 		return false, errUnsafeEndpointURL
+	}
+	if port := u.Port(); port != "" {
+		if _, err := strconv.ParseUint(port, 10, 16); err != nil {
+			return false, errUnsafeEndpointURL // a port no dial can reach
+		}
 	}
 	if addr, err := netip.ParseAddr(host); err == nil {
 		if addr.Zone() != "" {
