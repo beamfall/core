@@ -169,13 +169,18 @@ func TestExportConfigOfflineRoundTripIsStable(t *testing.T) {
 	base := t.TempDir()
 	doc := `{"version":1,"backgroundWorkers":3,"plugins":[{"id":"karaoke","active":false}],"libraries":[` +
 		libraryEntry("Podcasts", "podcasts", filepath.Join(base, "p2"), filepath.Join(base, "p1")) + "," +
-		libraryEntry("Films", "filmtv") + `]}`
+		libraryEntry("Films", "filmtv") + "," +
+		libraryEntry("Home", "", filepath.Join(base, "home")) + `]}`
 	if _, err := applyOffline(t, dataDir, doc); err != nil {
 		t.Fatal(err)
 	}
 	first := exportOffline(t, dataDir)
-	if first.BackgroundWorkers != 3 || len(first.Libraries) != 2 || first.Libraries[0].Title != "Films" {
+	if first.BackgroundWorkers != 3 || len(first.Libraries) != 3 || first.Libraries[0].Title != "Films" {
 		t.Fatalf("export = %#v, want workers 3 and libraries sorted by title", first)
+	}
+	// A pluginless Library exports with an empty plugin and re-applies as a no-op.
+	if home := first.Libraries[1]; home.Title != "Home" || home.Plugin != "" {
+		t.Fatalf("export library[1] = %#v, want the pluginless Home library", home)
 	}
 	encoded, err := json.Marshal(first)
 	if err != nil {
@@ -233,7 +238,6 @@ func TestParseConfigDocumentRejectsInvalidLibraries(t *testing.T) {
 		"duplicate root":    libraryDoc("2", libraryEntry("M", "music", "/m", "/m")),
 		"duplicate library": libraryDoc("2", libraryEntry("M", "music"), libraryEntry("M", "music")),
 		"empty title":       libraryDoc("2", libraryEntry(" ", "music")),
-		"empty plugin":      libraryDoc("2", libraryEntry("M", "")),
 		"unknown field":     libraryDoc("2", `{"title":"M","plugin":"music","roots":[],"id":"x"}`),
 	}
 	for name, doc := range cases {

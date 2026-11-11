@@ -171,7 +171,8 @@ const configUsageHeader = `The config document is JSON:
 
 "libraries" is optional. apply-config creates a missing Library (matched by
 title, case-sensitive, plus plugin) and adds missing roots to an existing one;
-it never removes a Library or a root. Roots must be absolute, clean paths.
+it never removes a Library or a root. An empty "plugin" is a pluginless
+Library. Roots must be absolute, clean paths.
 Re-applying the same document changes nothing.
 
 Online mode (default) needs an admin-authorized --token. Offline mode
@@ -301,7 +302,9 @@ func applyConfigDocument(ctx context.Context, backend configBackend, desired con
 	var creates []configLibraryDocItem
 	var rootWrites []configRootsWrite
 	for _, lib := range desired.Libraries {
-		if !currentPluginExists[lib.Plugin] {
+		// An empty plugin is a pluginless Library, which export-config emits and
+		// the Console can create.
+		if lib.Plugin != "" && !currentPluginExists[lib.Plugin] {
 			return 0, fmt.Errorf("library %q: unknown plugin %q: not loaded on this server", lib.Title, lib.Plugin)
 		}
 		matches := live[lib.key()]
@@ -427,7 +430,15 @@ func (b httpConfigBackend) setPluginActive(ctx context.Context, pluginID string,
 func (b httpConfigBackend) createLibrary(ctx context.Context, lib configLibraryDocItem) error {
 	return cliGraphQL(ctx, b.opts,
 		"mutation CreateLibrary($title: String!, $pluginID: String, $roots: [String!]) { createLibrary(title: $title, pluginID: $pluginID, roots: $roots) { id } }",
-		map[string]any{"title": lib.Title, "pluginID": lib.Plugin, "roots": lib.Roots}, nil)
+		map[string]any{"title": lib.Title, "pluginID": optionalString(lib.Plugin), "roots": lib.Roots}, nil)
+}
+
+// optionalString maps "" to a GraphQL null.
+func optionalString(v string) any {
+	if v == "" {
+		return nil
+	}
+	return v
 }
 
 func (b httpConfigBackend) setLibraryRoots(ctx context.Context, libraryID string, roots []string) error {
@@ -609,9 +620,6 @@ func validateConfigLibraries(libraries []configLibraryDocItem) error {
 		lib := &libraries[i]
 		if strings.TrimSpace(lib.Title) == "" || lib.Title != strings.TrimSpace(lib.Title) {
 			return fmt.Errorf("library %d: title must be non-empty with no surrounding whitespace", i)
-		}
-		if lib.Plugin == "" {
-			return fmt.Errorf("library %q: plugin must not be empty", lib.Title)
 		}
 		if seen[lib.key()] {
 			return fmt.Errorf("duplicate library %q (plugin %q) in config document", lib.Title, lib.Plugin)

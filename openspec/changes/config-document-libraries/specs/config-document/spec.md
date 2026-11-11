@@ -5,7 +5,8 @@
 The config document SHALL accept an optional `libraries` list whose entries carry `title`,
 `plugin` and `roots`. Applying it SHALL create each library not matched by exact title and
 plugin, SHALL add each listed root missing from a matched library, and SHALL NOT remove any
-library or root. Applying the same document twice SHALL change nothing the second time.
+library or root. An empty `plugin` SHALL denote a pluginless library. Applying the same
+document twice SHALL change nothing the second time.
 
 #### Scenario: Create then re-apply
 

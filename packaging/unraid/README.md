@@ -80,5 +80,6 @@ docker run --rm --user 99:100 -v /mnt/cache/appdata/beamfall/data:/data <image> 
 
 `<image>` is the template's **Repository**. Libraries match by title plus plugin; missing ones are
 created, missing roots are added, and nothing is removed, so re-running is safe. Libraries seeded
-before first-run setup are granted to the admin that setup creates. `BEAMFALL_ADMIN_PASSWORD`
-creates that admin headlessly. See `beamfall apply-config -h` for the full document format.
+before first-run setup are granted to the admin that setup creates, so first-run setup in the
+browser is still required; `BEAMFALL_ADMIN_PASSWORD` only presets the admin password and does not
+complete it. See `beamfall apply-config -h` for the full document format.
