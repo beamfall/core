@@ -31,7 +31,9 @@ and doubles per further failure, capped at 10 minutes. The delay counts from the
 success resets the count, and failures older than the window stop counting. Attempts are stored in
 the database, so restarting the server does not clear a lockout. There is no unlock command: stop
 the failing client, wait out the delay (at most 10 minutes after the last failure) and retry once
-with the right credential. A sustained `admin_password_rejected` or `pairing_code_invalid` rate from
+with the right credential. Admin-password sign-in from the enroll page is keyed per source and
+once for the whole server, so a guessing flood from anywhere can delay the owner's own sign-in;
+use a pairing code from the host (below) while it lasts. A sustained `admin_password_rejected` or `pairing_code_invalid` rate from
 one source is a guessing attempt: handle it as an [incident](incident.md).
 
 ## Reset the admin password
@@ -64,9 +66,34 @@ Requests that reach the server from outside the local network, through the relay
 proxy that is not declared as trusted still need the token, and so does a LAN browser that opens
 the server by a DNS name other than `localhost` or a `.local` name: use the server's IP address.
 Once setup has completed no token is
-generated again and the local-network path closes too. There is no command that re-arms
-first-run on a set-up server: reset the admin password instead, or start over with a fresh data
-directory, or restore a backup taken before setup (see [backup-restore](backup-restore.md)).
+generated again and the local-network path closes too. No command re-arms first-run on a set-up
+server. To get a browser back in, use *Sign in again after setup* below. To start over, use a
+fresh data directory or restore a backup taken before setup (see [backup-restore](backup-restore.md)).
+
+## Sign in again after setup
+
+There are three ways back in after setup. None of them needs a setup token.
+
+1. **Session renewal.** A browser session lasts 30 days. The device cookies last 400 days. When the
+   session ends, the web app calls `POST /api/web/session/renew` once with the device cookies and
+   gets a new session. This fails if the device was revoked, its Profile is disabled, or the
+   cookies are gone. Failed renewals are throttled per source address.
+2. **Admin password.** The enroll page has a second form, *Sign in with the admin password*. It
+   enrolls the browser as a Manager device on the owner Profile. It works over HTTPS from
+   anywhere, and over plain HTTP only from the local network, opened by IP address, `localhost` or
+   a `.local` name. Every refusal says only "sign-in failed". Failures are throttled per source
+   and across the server on the admin re-auth curve. If the password is lost, reset it first
+   (above).
+3. **Pairing code from the host.** Stop the server and run, as the service user:
+
+   ```sh
+   beamfall pairing-code --data-dir /var/lib/beamfall
+   ```
+
+   It prints a one-time code. Start the server, open `http://<server>:8800/web/` and enter the
+   code. The new device is a Manager; pass `--role viewer` for a Viewer. `BEAMFALL_DATA_DIR` is
+   honored in place of `--data-dir`. Like `reset-admin-password`, it refuses to run while the
+   server holds its data-directory lock.
 
 ## Database corruption
 
