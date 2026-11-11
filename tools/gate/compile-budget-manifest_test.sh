@@ -63,6 +63,7 @@ expected = {
     ("^FuzzParseProbe$", "./internal/ffmpeg/", "1", ""),
     ("^FuzzPairingInputNormalization$", "./internal/pairing/", "1", ""),
     ("^FuzzRequestDecodeAndFieldScan$", "./internal/graph/", "1", ""),
+    ("^FuzzDocumentNesting$", "./internal/graphquery/", "1", ""),
     ("^FuzzLocaleStringJSON$", "./internal/plugin/", "1", ""),
     ("^FuzzValidateBundleJSON$", "./internal/plugin/", "1", ""),
     ("^FuzzUnverifiedGrant$", "./internal/streamtoken/", "1", ""),
@@ -81,6 +82,7 @@ fuzz_targets=(
   FuzzParseProbe
   FuzzPairingInputNormalization
   FuzzRequestDecodeAndFieldScan
+  FuzzDocumentNesting
   FuzzLocaleStringJSON
   FuzzValidateBundleJSON
   FuzzUnverifiedGrant
