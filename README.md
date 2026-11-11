@@ -135,6 +135,7 @@ The CLI covers day-to-day operation:
 | `beamfall token` | Manage local API tokens. |
 | `beamfall export-config` / `apply-config` | Export or apply a Console config document. |
 | `beamfall reset-admin-password` | Set the local admin password while the server is stopped. |
+| `beamfall pairing-code` | Mint a one-time owner pairing code while the server is stopped, to sign a browser back in. |
 | `beamfall capabilities` / `version` | Print runtime capabilities or build metadata. |
 
 ### Docker Compose (after the first release)

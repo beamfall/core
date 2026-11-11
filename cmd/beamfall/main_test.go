@@ -63,6 +63,7 @@ func TestRunHelpCommandPrintsOperatorCommands(t *testing.T) {
 		"serve",
 		"capabilities [--version]",
 		"reset-admin-password",
+		"pairing-code",
 		"token",
 	} {
 		if !strings.Contains(help, want) {
@@ -116,6 +117,13 @@ func TestSubcommandHelpWritesUsage(t *testing.T) {
 			name: "release leaf",
 			run:  func(out *bytes.Buffer) error { return releaseVerify([]string{"--help"}, out) },
 			want: "-dist",
+		},
+		{
+			name: "pairing-code",
+			run: func(out *bytes.Buffer) error {
+				return pairingCodeCommand(context.Background(), []string{"--help"}, out)
+			},
+			want: "-role",
 		},
 		{
 			name: "reset-admin-password",
