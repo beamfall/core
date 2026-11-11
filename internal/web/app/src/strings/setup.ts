@@ -62,6 +62,12 @@ export const setupStrings = {
     setupPluginsLead:
       "Each plugin teaches Beamfall a kind of media. Turn on what you have; you can change this any time.",
     setupPluginsEmpty: "No plugins are installed.",
+    setupKeysTitle: "Metadata provider keys",
+    setupKeysLead:
+      "These plugins fetch titles, details and artwork from providers that ask for a free API key. Paste one now, or skip and add it later in Console › Plugins.",
+    setupKeyOptional: "Optional — paste your API key",
+    setupKeySaveFailed:
+      "The {provider} key couldn't be saved. Check it, or clear the field to add it later in Console › Plugins.",
     setupUpdateTitle: "Update awareness",
     setupUpdateLead:
       "Beamfall can check the public release manifest for updates. This is off by default.",

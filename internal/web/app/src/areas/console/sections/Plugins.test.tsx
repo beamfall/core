@@ -7,6 +7,7 @@ import {
   fetchConsoleConfig,
   setPluginActive,
   setPluginConfig,
+  setScraperCredential,
   uninstallPluginData,
 } from "@/lib/graphql";
 import type { ConsoleConfigInfo, PluginActivationInfo } from "@/lib/graphql/types";
@@ -181,9 +182,81 @@ function renderPanel() {
   );
 }
 
+async function openDetails(name = "Studio Metadata") {
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: `Details for ${name}` }));
+}
+
+const keyedPlugin: PluginStandingFixture = {
+  ...standingPlugin("catalog", "Catalog Metadata", "First-Party", "Trusted"),
+  scrapers: [
+    {
+      pluginID: "catalog",
+      scraperID: "catalog-movies",
+      displayName: "Example (Movies)",
+      kind: "metadata",
+      endpoint: "https://api.example.org/3",
+      authRef: "example-api-key",
+      authStyle: "query",
+      credentialRequired: true,
+      credentialConfigured: false,
+      credentialStatus: "missing",
+    },
+    {
+      pluginID: "catalog",
+      scraperID: "catalog-tv",
+      displayName: "Example (TV)",
+      kind: "metadata",
+      endpoint: "https://api.example.org/3",
+      authRef: "example-api-key",
+      authStyle: "query",
+      credentialRequired: true,
+      credentialConfigured: false,
+      credentialStatus: "missing",
+    },
+  ],
+};
+
 describe("Plugins", () => {
+  it("keeps plugin details collapsed until asked", async () => {
+    renderPanel();
+    const toggle = await screen.findByRole("button", { name: "Details for Studio Metadata" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByLabelText("Base URL")).not.toBeInTheDocument();
+    await openDetails();
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByLabelText("Base URL")).toBeVisible();
+  });
+
+  it("shows a missing provider key in the card with a human label", async () => {
+    const user = userEvent.setup();
+    mockConsoleConfig({ ...config, plugins: [keyedPlugin] });
+    vi.mocked(setScraperCredential).mockResolvedValue({
+      authRef: "example-api-key",
+      credentialConfigured: true,
+      credentialStatus: "configured",
+      scraperIDs: ["catalog-movies", "catalog-tv"],
+    });
+    renderPanel();
+
+    const card = await screen.findByRole("article", { name: "Catalog Metadata" });
+    expect(within(card).getByText("Key needed")).toBeVisible();
+    expect(within(card).getByText("Example")).toBeVisible();
+    expect(within(card).getByText("Sent only to api.example.org")).toBeVisible();
+    // One field per AuthRef, not per scraper.
+    const field = within(card).getByLabelText("Example API key");
+    expect(field).toHaveAttribute("type", "password");
+    await user.type(field, "test-key-value");
+    await user.click(within(card).getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(setScraperCredential).toHaveBeenCalledWith("example-api-key", "test-key-value"),
+    );
+    await waitFor(() => expect(field).toHaveValue(""));
+  });
+
   it("renders typed config, permissions, status, and action descriptors", async () => {
     renderPanel();
+    await openDetails();
 
     expect(await screen.findAllByText("Studio Metadata")).not.toHaveLength(0);
     // Config field labels.
@@ -354,6 +427,7 @@ describe("Plugins", () => {
     const user = userEvent.setup();
     renderPanel();
     expect(await screen.findByText("Third-party")).toBeVisible();
+    await openDetails();
 
     await user.click(screen.getByRole("switch", { name: "Studio Metadata" }));
     await waitFor(() => expect(graphql).toHaveBeenCalledTimes(2));
@@ -396,6 +470,7 @@ describe("Plugins", () => {
   it("saves edited config through setPluginConfig", async () => {
     const user = userEvent.setup();
     renderPanel();
+    await openDetails();
     await screen.findByLabelText("Base URL");
 
     const input = screen.getByLabelText("Base URL");
@@ -418,6 +493,7 @@ describe("Plugins", () => {
       plugins: [{ ...activePlugin, active: false }],
     });
     renderPanel();
+    await openDetails();
 
     expect(await screen.findByLabelText("Base URL")).toBeDisabled();
     expect(screen.getByRole("button", { name: "Save configuration" })).toBeDisabled();
@@ -426,6 +502,7 @@ describe("Plugins", () => {
   it("runs action descriptors through runPluginAction", async () => {
     const user = userEvent.setup();
     renderPanel();
+    await openDetails();
     await screen.findByText("Refresh catalog");
 
     // The info-risk action runs without a confirm dialog (first "Run" button).
@@ -442,6 +519,7 @@ describe("Plugins", () => {
   it("purges plugin data through uninstallPluginData after confirmation", async () => {
     const user = userEvent.setup();
     renderPanel();
+    await openDetails();
 
     // The destructive Uninstall trigger opens a confirm dialog; only the
     // confirmed action calls the mutation (HARD invariant #6 / ADR-0104).
@@ -465,6 +543,7 @@ describe("Plugins", () => {
   it("deactivates through setPluginActive without purging data", async () => {
     const user = userEvent.setup();
     renderPanel();
+    await openDetails();
 
     await user.click(await screen.findByRole("button", { name: "Deactivate" }));
 

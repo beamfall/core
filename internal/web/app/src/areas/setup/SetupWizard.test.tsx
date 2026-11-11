@@ -23,7 +23,9 @@ const mocks = vi.hoisted(() => ({
   configureUpdateCheck: vi.fn(),
   createFirstLibrary: vi.fn(),
   fetchJobs: vi.fn(),
+  fetchConsoleConfig: vi.fn(),
   fetchPlugins: vi.fn(),
+  setScraperCredential: vi.fn(),
 }));
 
 vi.mock("@/lib/graphql", async () => {
@@ -32,7 +34,9 @@ vi.mock("@/lib/graphql", async () => {
     ...actual,
     browseServerFolders: mocks.browseServerFolders,
     fetchJobs: mocks.fetchJobs,
+    fetchConsoleConfig: mocks.fetchConsoleConfig,
     fetchPlugins: mocks.fetchPlugins,
+    setScraperCredential: mocks.setScraperCredential,
   };
 });
 
@@ -46,6 +50,10 @@ vi.mock("./orchestrate", async () => {
     configureUpdateCheck: mocks.configureUpdateCheck,
     createFirstLibrary: mocks.createFirstLibrary,
   };
+});
+
+beforeEach(() => {
+  mocks.fetchConsoleConfig.mockResolvedValue({ plugins: [] });
 });
 
 function renderSetupWizard() {
@@ -491,5 +499,89 @@ describe("SetupWizard LAN claim (CORE-1105)", () => {
       await screen.findByRole("heading", { name: "Unlock with the setup token" }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Setup token")).toHaveValue("");
+  });
+});
+
+describe("SetupWizard provider keys (CORE-1115)", () => {
+  const scraper = (scraperID: string, displayName: string) => ({
+    pluginID: "catalog",
+    scraperID,
+    displayName,
+    kind: "metadata",
+    endpoint: "https://api.example.org/3",
+    authRef: "example-api-key",
+    authStyle: "query",
+    credentialRequired: true,
+    credentialConfigured: false,
+    credentialStatus: "missing",
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.bootstrapResume.mockResolvedValue({
+      alreadyBootstrapped: false,
+      state: null,
+      tokenRequired: false,
+    });
+    mocks.bootstrapSetup.mockResolvedValue(undefined);
+    mocks.configureUpdateCheck.mockResolvedValue(undefined);
+    mocks.activatePlugins.mockResolvedValue(undefined);
+    mocks.fetchPlugins.mockResolvedValue([{ id: "catalog", displayName: "Catalog" }]);
+    mocks.fetchConsoleConfig.mockResolvedValue({
+      plugins: [
+        {
+          id: "catalog",
+          scrapers: [scraper("movies", "Example (Movies)"), scraper("tv", "Example (TV)")],
+        },
+      ],
+    });
+    mocks.setScraperCredential.mockResolvedValue({
+      authRef: "example-api-key",
+      credentialConfigured: true,
+      credentialStatus: "configured",
+      scraperIDs: ["movies", "tv"],
+    });
+  });
+
+  async function reachPluginsStep(user: ReturnType<typeof userEvent.setup>) {
+    renderSetupWizard();
+    await user.type(await screen.findByLabelText("Admin password"), "correct horse battery staple");
+    await user.type(screen.getByLabelText("Confirm password"), "correct horse battery staple");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByRole("heading", { name: "Choose what Beamfall understands" });
+    await user.click(screen.getByRole("switch", { name: "Catalog" }));
+  }
+
+  it("saves a key typed on the Plugins step after activating plugins", async () => {
+    const user = userEvent.setup();
+    await reachPluginsStep(user);
+
+    const field = await screen.findByLabelText("Example API key");
+    expect(screen.getAllByLabelText(/API key/)).toHaveLength(1);
+    await user.type(field, "test-key-value");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() =>
+      expect(mocks.setScraperCredential).toHaveBeenCalledWith("example-api-key", "test-key-value"),
+    );
+    expect(mocks.activatePlugins.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.setScraperCredential.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("skips saving when the key is left blank and hides it when the plugin is off", async () => {
+    const user = userEvent.setup();
+    await reachPluginsStep(user);
+
+    expect(await screen.findByLabelText("Example API key")).toBeInTheDocument();
+    await user.click(screen.getByRole("switch", { name: "Catalog" }));
+    expect(screen.queryByLabelText("Example API key")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("switch", { name: "Catalog" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => expect(mocks.activatePlugins).toHaveBeenCalled());
+    expect(mocks.setScraperCredential).not.toHaveBeenCalled();
   });
 });

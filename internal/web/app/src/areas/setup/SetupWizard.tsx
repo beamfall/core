@@ -26,10 +26,17 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ApiError, type SignInSecurityMode } from "@/lib/api";
 import { displayString } from "@/lib/display";
-import { browseServerFolders, fetchJobs, fetchPlugins } from "@/lib/graphql";
+import {
+  browseServerFolders,
+  fetchConsoleConfig,
+  fetchJobs,
+  fetchPlugins,
+  setScraperCredential,
+} from "@/lib/graphql";
 import type { FolderEntryInfo, JobInfo, PluginSummary } from "@/lib/graphql/types";
 import { useI18n } from "@/lib/i18n";
 import { jobProgressDetail, jobStatusLabel } from "@/lib/jobDisplay";
+import { groupProviderKeys, keyNeeded, type ProviderKey } from "@/lib/providerKeys";
 import { cn } from "@/lib/utils";
 import type { StringKey } from "@/strings";
 import { FolderPicker } from "./FolderPicker";
@@ -172,6 +179,10 @@ export function SetupWizard() {
   const [activePlugins, setActivePlugins] = useState<Set<string>>(new Set());
   const [updateCheckEnabled, setUpdateCheckEnabled] = useState(false);
   const [updateCheckChannel, setUpdateCheckChannel] = useState<UpdateCheckChannel>("stable");
+  // Provider keys the installed plugins' scrapers need (TMDB-style API keys),
+  // offered on the Plugins step so the owner is not sent hunting in the Console.
+  const [providerKeys, setProviderKeys] = useState<ProviderKey[]>([]);
+  const [keySecrets, setKeySecrets] = useState<Record<string, string>>({});
 
   // True once POST /api/setup has succeeded — drives the "unlocked" banner and
   // guards against re-bootstrapping when navigating back/forward.
@@ -274,10 +285,22 @@ export function SetupWizard() {
         setActivePlugins((prev) => (prev.has("filmtv") ? prev : new Set(prev).add("filmtv")));
       }
     });
+    // Optional: a failure leaves the key list empty and setup carries on.
+    void fetchConsoleConfig()
+      .then((config) => {
+        if (cancelled) return;
+        setProviderKeys(groupProviderKeys(config.plugins.flatMap((p) => p.scrapers ?? [])));
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
   }, [bootstrapped, resumedFromRestart]);
+
+  // Keys still missing for a plugin the owner has switched on.
+  const neededKeys = providerKeys.filter(
+    (key) => keyNeeded(key) && key.pluginIDs.some((id) => activePlugins.has(id)),
+  );
 
   // The Library-type tiles offered are limited to types backed by a plugin the
   // operator just enabled. If nothing is enabled (or on a resumed run where the
@@ -389,7 +412,7 @@ export function SetupWizard() {
         });
       }
       await activatePlugins([...activePlugins]);
-      return true;
+      return await saveProviderKeys();
     } catch (err) {
       announceError(
         err instanceof ApiError || err instanceof Error
@@ -400,6 +423,28 @@ export function SetupWizard() {
     } finally {
       setBusy(false);
     }
+  }
+
+  // Save each provider key the owner typed. Runs after activation; a key that
+  // fails keeps the owner on the step with its name so they can fix or clear it.
+  async function saveProviderKeys(): Promise<boolean> {
+    for (const key of neededKeys) {
+      const secret = keySecrets[key.authRef]?.trim();
+      if (!secret) continue;
+      try {
+        const saved = await setScraperCredential(key.authRef, secret);
+        setProviderKeys((prev) =>
+          prev.map((k) =>
+            k.authRef === key.authRef ? { ...k, status: saved.credentialStatus } : k,
+          ),
+        );
+        setKeySecrets((prev) => ({ ...prev, [key.authRef]: "" }));
+      } catch {
+        announceError(t("setupKeySaveFailed", { provider: key.label }));
+        return false;
+      }
+    }
+    return true;
   }
 
   // Create the first Library after the plugins are active. Runs on leaving the
@@ -925,6 +970,48 @@ export function SetupWizard() {
                       );
                     })}
                   </ul>
+                )}
+                {neededKeys.length > 0 && (
+                  <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex items-start gap-3">
+                      <KeyRound aria-hidden className="mt-0.5 size-4 shrink-0 text-primary" />
+                      <div className="space-y-1">
+                        <h2 className="m-0 text-sm font-semibold">{t("setupKeysTitle")}</h2>
+                        <p className="m-0 text-[12.5px] leading-snug text-muted-foreground">
+                          {t("setupKeysLead")}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid gap-3">
+                      {neededKeys.map((key) => {
+                        const fieldId = `setup-key-${key.authRef}`;
+                        return (
+                          <div key={key.authRef}>
+                            <Label htmlFor={fieldId} className={FIELD_LABEL}>
+                              {t("pluginKeyField", { provider: key.label })}
+                            </Label>
+                            <Input
+                              id={fieldId}
+                              type="password"
+                              autoComplete="off"
+                              className={FIELD}
+                              placeholder={t("setupKeyOptional")}
+                              value={keySecrets[key.authRef] ?? ""}
+                              onChange={(e) =>
+                                setKeySecrets((prev) => ({
+                                  ...prev,
+                                  [key.authRef]: e.target.value,
+                                }))
+                              }
+                            />
+                            <p className="mb-0 mt-1.5 text-[11.5px] leading-snug text-muted-foreground">
+                              {t("pluginKeySentTo", { hosts: key.hosts.join(", ") })}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 )}
                 <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.03] p-4">
                   <div className="flex items-start justify-between gap-4">
