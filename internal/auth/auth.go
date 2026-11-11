@@ -59,6 +59,10 @@ var adminBackoff = store.AuthBackoff{
 	MaxDelay:     adminAttemptWindow,
 }
 
+// AdminBackoff returns the admin re-auth backoff curve, for other lanes that
+// check the admin password (admin-password sign-in, CORE-1106).
+func AdminBackoff() store.AuthBackoff { return adminBackoff }
+
 // ErrAdminLocked means admin re-auth attempts for this session exceeded the
 // short-window limit; the caller must back off.
 var ErrAdminLocked = errors.New("admin re-auth attempts throttled")

@@ -33,6 +33,8 @@ var (
 	// ErrSetupTokenInvalid means the presented setup token is wrong, already
 	// consumed, or setup is already complete.
 	ErrSetupTokenInvalid = errors.New("setup token invalid")
+	// ErrNoOwner means the server has no owner Profile to mint a code for.
+	ErrNoOwner = errors.New("no owner profile")
 )
 
 const (
@@ -373,8 +375,61 @@ func (s *Service) CreateCode(ctx context.Context, scope auth.Scope, req CodeRequ
 	if err != nil {
 		return CodeResponse{}, err
 	}
-	expiresAt := s.now().Add(10 * time.Minute).UTC()
+	resp, err := s.mintCode(ctx, profileID, role)
+	if err != nil {
+		return CodeResponse{}, err
+	}
+	// ADR-0012 §11: log that a code was minted and for which Profile — never
+	// the code itself (it is a credential until consumed or expired).
+	_ = s.store.AppendActivity(ctx, store.ActivityEntry{
+		OccurredAt: s.now().UTC(),
+		Action:     store.ActivityPairingCode,
+		SessionID:  scope.SessionID,
+		DeviceID:   scope.DeviceID,
+		ProfileID:  scope.ProfileID,
+		TargetType: "profile",
+		TargetID:   string(profileID),
+	})
+	return resp, nil
+}
 
+// CreateOwnerCode mints a one-time code for the owner Profile without a
+// session. Only the host recovery command calls it, with the server stopped:
+// whoever can run it already controls the data directory (CORE-1106). An
+// empty role grants manager.
+func (s *Service) CreateOwnerCode(ctx context.Context, deviceRole string) (CodeResponse, error) {
+	role := store.DeviceRoleManager
+	if strings.TrimSpace(deviceRole) != "" {
+		parsed, err := parseRole(deviceRole)
+		if err != nil {
+			return CodeResponse{}, err
+		}
+		role = parsed
+	}
+	owner, err := s.store.OwnerProfile(ctx)
+	if errors.Is(err, store.ErrNoOwnerProfile) {
+		return CodeResponse{}, ErrNoOwner
+	}
+	if err != nil {
+		return CodeResponse{}, err
+	}
+	resp, err := s.mintCode(ctx, owner.ID, role)
+	if err != nil {
+		return CodeResponse{}, err
+	}
+	_ = s.store.AppendActivity(ctx, store.ActivityEntry{
+		OccurredAt: s.now().UTC(),
+		Action:     store.ActivityPairingCode,
+		TargetType: "profile",
+		TargetID:   string(owner.ID),
+	})
+	return resp, nil
+}
+
+// mintCode stores a fresh one-time code for profileID that expires in ten
+// minutes, retrying on the rare collision.
+func (s *Service) mintCode(ctx context.Context, profileID store.ProfileID, role store.DeviceRole) (CodeResponse, error) {
+	expiresAt := s.now().Add(10 * time.Minute).UTC()
 	for range 4 {
 		code, err := s.generateCode()
 		if err != nil {
@@ -384,7 +439,6 @@ func (s *Service) CreateCode(ctx context.Context, scope auth.Scope, req CodeRequ
 		if code == "" {
 			return CodeResponse{}, ErrInvalidRequest
 		}
-
 		err = s.store.CreatePairingCode(ctx, store.PairingCode{
 			Code:       code,
 			ProfileID:  profileID,
@@ -392,18 +446,6 @@ func (s *Service) CreateCode(ctx context.Context, scope auth.Scope, req CodeRequ
 			ExpiresAt:  expiresAt,
 		})
 		if err == nil {
-			// ADR-0012 §11: log that a code was minted and for which
-			// Profile — never the code itself (it is a credential until
-			// consumed or expired).
-			_ = s.store.AppendActivity(ctx, store.ActivityEntry{
-				OccurredAt: s.now().UTC(),
-				Action:     store.ActivityPairingCode,
-				SessionID:  scope.SessionID,
-				DeviceID:   scope.DeviceID,
-				ProfileID:  scope.ProfileID,
-				TargetType: "profile",
-				TargetID:   string(profileID),
-			})
 			return CodeResponse{
 				Code:       code,
 				ExpiresAt:  expiresAt.Format(time.RFC3339),

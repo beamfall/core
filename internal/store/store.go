@@ -1704,7 +1704,12 @@ func (s *Store) ProfileByName(ctx context.Context, name string) (Profile, error)
 	return s.profileSQL(ctx, id)
 }
 
-// OwnerProfile returns the single designated owner Profile.
+// ErrNoOwnerProfile means no Profile is designated owner yet. It wraps
+// sql.ErrNoRows so existing callers keep matching it.
+var ErrNoOwnerProfile = fmt.Errorf("no owner profile: %w", sql.ErrNoRows)
+
+// OwnerProfile returns the single designated owner Profile, or
+// ErrNoOwnerProfile.
 func (s *Store) OwnerProfile(ctx context.Context) (Profile, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -1712,7 +1717,11 @@ func (s *Store) OwnerProfile(ctx context.Context) (Profile, error) {
 		return Profile{}, err
 	}
 	var id ProfileID
-	if err := s.catalogR.QueryRowContext(ctx, `SELECT id FROM profile WHERE is_owner = 1 LIMIT 1`).Scan(&id); err != nil {
+	err := s.catalogR.QueryRowContext(ctx, `SELECT id FROM profile WHERE is_owner = 1 LIMIT 1`).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Profile{}, ErrNoOwnerProfile
+	}
+	if err != nil {
 		return Profile{}, err
 	}
 	return s.profileSQL(ctx, id)
