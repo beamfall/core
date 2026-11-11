@@ -16,5 +16,5 @@
 
 ## 4. Verify and close
 
-- [ ] 4.1 Run `make gate`
-- [ ] 4.2 Run `openspec archive release-nightlies-local` after landing, before completing CORE-0539
+- [x] 4.1 Run `make gate`
+- [x] 4.2 Run `openspec archive release-nightlies-local` after landing, before completing CORE-0539
