@@ -247,16 +247,19 @@ func (s *Service) scopeFromCookies(ctx context.Context, r *http.Request) (Scope,
 	}
 	device, err := r.Cookie(DeviceCookie)
 	if err != nil {
+		noteCredentialRefusal(ctx, RefusalCredentialIncomplete)
 		return Scope{}, errors.New("device credential is required")
 	}
 	secret, err := r.Cookie(DeviceSecretCookie)
 	if err != nil {
+		noteCredentialRefusal(ctx, RefusalCredentialIncomplete)
 		return Scope{}, errors.New("device credential is required")
 	}
 	switch r.Method {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
 	default:
 		if r.Header.Get(CSRFHeader) == "" {
+			noteCredentialRefusal(ctx, RefusalCSRFMissing)
 			return Scope{}, errors.New("missing CSRF header on cookie-authenticated request")
 		}
 	}
@@ -270,6 +273,7 @@ func (s *Service) scopeFromCookies(ctx context.Context, r *http.Request) (Scope,
 func (s *Service) ScopeFromAPIToken(ctx context.Context, token string) (Scope, error) {
 	verified, err := s.store.VerifyAPIToken(ctx, token, s.now())
 	if err != nil {
+		noteCredentialRefusal(ctx, RefusalAPITokenInvalid)
 		return Scope{}, err
 	}
 	return Scope{
@@ -296,6 +300,7 @@ func (s *Service) ScopeFromAPIToken(ctx context.Context, token string) (Scope, e
 func (s *Service) ScopeFromScopedKey(ctx context.Context, key string) (Scope, error) {
 	verified, err := s.store.VerifyScopedAPIKey(ctx, key, s.now())
 	if err != nil {
+		noteCredentialRefusal(ctx, RefusalScopedKeyInvalid)
 		return Scope{}, err
 	}
 	scope := Scope{
@@ -311,12 +316,15 @@ func (s *Service) ScopeFromScopedKey(ctx context.Context, key string) (Scope, er
 	}
 	profile, err := s.store.Profile(ctx, verified.ProfileID)
 	if err != nil {
+		noteCredentialRefusal(ctx, RefusalProfileUnavailable)
 		return Scope{}, err
 	}
 	if profile.Disabled {
+		noteCredentialRefusal(ctx, RefusalProfileUnavailable)
 		return Scope{}, store.ErrProfileDisabled
 	}
 	if err := s.enforceProfileAccessSchedule(ctx, profile, ""); err != nil {
+		noteCredentialRefusal(ctx, RefusalOutsideSchedule)
 		return Scope{}, err
 	}
 	scope.DeviceRole = ""
@@ -359,6 +367,7 @@ func (s *Service) Scope(ctx context.Context, sessionID store.SessionID) (Scope, 
 // ScopeWithDeviceCredential resolves a session and verifies the device credential.
 func (s *Service) ScopeWithDeviceCredential(ctx context.Context, sessionID store.SessionID, deviceID store.DeviceID, deviceSecret string) (Scope, error) {
 	if deviceID == "" || deviceSecret == "" {
+		noteCredentialRefusal(ctx, RefusalCredentialIncomplete)
 		return Scope{}, errors.New("device credential is required")
 	}
 	return s.scope(ctx, sessionID, deviceID, deviceSecret)
@@ -367,36 +376,45 @@ func (s *Service) ScopeWithDeviceCredential(ctx context.Context, sessionID store
 func (s *Service) scope(ctx context.Context, sessionID store.SessionID, credentialDeviceID store.DeviceID, deviceSecret string) (Scope, error) {
 	session, err := s.store.Session(ctx, sessionID)
 	if err != nil {
+		noteCredentialRefusal(ctx, RefusalSessionInvalid)
 		return Scope{}, err
 	}
 	if !session.ExpiresAt.IsZero() && !s.now().Before(session.ExpiresAt) {
+		noteCredentialRefusal(ctx, RefusalSessionExpired)
 		return Scope{}, errors.New("session expired")
 	}
 	if session.Kind != store.SessionKindEnrolled {
+		noteCredentialRefusal(ctx, RefusalIntegrationRestricted)
 		return Scope{}, errors.New("integration session is restricted to compat routes")
 	}
 	device, err := s.store.Device(ctx, session.DeviceID)
 	if err != nil {
+		noteCredentialRefusal(ctx, RefusalDeviceRevoked)
 		return Scope{}, err
 	}
 	if credentialDeviceID != "" {
 		if credentialDeviceID != session.DeviceID {
+			noteCredentialRefusal(ctx, RefusalDeviceMismatch)
 			return Scope{}, errors.New("device credential mismatch")
 		}
 		verified, err := s.store.VerifyDeviceSecret(ctx, credentialDeviceID, deviceSecret)
 		if err != nil {
+			noteCredentialRefusal(ctx, RefusalDeviceSecretInvalid)
 			return Scope{}, err
 		}
 		device = verified
 	}
 	if device.Revoked {
+		noteCredentialRefusal(ctx, RefusalDeviceRevoked)
 		return Scope{}, errors.New("device revoked")
 	}
 	profile, err := s.store.Profile(ctx, session.ProfileID)
 	if err != nil {
+		noteCredentialRefusal(ctx, RefusalProfileUnavailable)
 		return Scope{}, err
 	}
 	if profile.Disabled {
+		noteCredentialRefusal(ctx, RefusalProfileUnavailable)
 		return Scope{}, store.ErrProfileDisabled
 	}
 	// Access-schedule enforcement: a managed Profile
@@ -407,6 +425,7 @@ func (s *Service) scope(ctx context.Context, sessionID store.SessionID, credenti
 	// match the Scheduler's server-timezone-at-rest posture.
 	if profile.Kind == store.ProfileManaged {
 		if err := s.enforceProfileAccessSchedule(ctx, profile, session.ID); err != nil {
+			noteCredentialRefusal(ctx, RefusalOutsideSchedule)
 			return Scope{}, err
 		}
 	}
@@ -501,6 +520,7 @@ func (s *Service) AuthenticateIntegrationByName(ctx context.Context, name, crede
 	}
 	if s.now().Before(lockedUntil) {
 		s.auditIntegrationAttempt(ctx, profile, profileErr, attemptKey, false)
+		NoteRefusal(ctx, refusalOperationIntegrationSignIn, RefusalIntegrationLocked, true)
 		return IntegrationSession{}, s.integrationFailure(started)
 	}
 
@@ -517,6 +537,7 @@ func (s *Service) AuthenticateIntegrationByName(ctx context.Context, name, crede
 	if credentialErr != nil {
 		_ = s.store.RecordAuthAttempt(ctx, store.AuthAttempt{OccurredAt: s.now().UTC(), Action: integrationAttemptAction, Key: attemptKey})
 		s.auditIntegrationAttempt(ctx, profile, profileErr, attemptKey, false)
+		NoteRefusal(ctx, refusalOperationIntegrationSignIn, RefusalIntegrationRejected, true)
 		return IntegrationSession{}, s.integrationFailure(started)
 	}
 
@@ -668,6 +689,7 @@ func (s *Service) BeginAdminSession(ctx context.Context, scope Scope, password s
 		return time.Time{}, err
 	}
 	if now.Before(lockedUntil) {
+		NoteRefusal(ctx, refusalOperationAdminSession, RefusalAdminLocked, true)
 		return time.Time{}, ErrAdminLocked
 	}
 	// Admin is an adult-Profile tier: a managed Profile has no admin path, so
@@ -675,6 +697,7 @@ func (s *Service) BeginAdminSession(ctx context.Context, scope Scope, password s
 	if scope.Profile != store.ProfileAdult {
 		s.recordAdminAttempt(ctx, attemptKey, now, false)
 		s.auditAdmin(ctx, scope, now, store.ActivityAdminLoginDenied)
+		NoteRefusal(ctx, refusalOperationAdminSession, RefusalAdminPasswordRejected, true)
 		return time.Time{}, ErrAdminPassword
 	}
 	// Admin is restricted to the designated owner Profile.
@@ -695,12 +718,14 @@ func (s *Service) BeginAdminSession(ctx context.Context, scope Scope, password s
 		if !isOwner {
 			s.recordAdminAttempt(ctx, attemptKey, now, false)
 			s.auditAdmin(ctx, scope, now, store.ActivityAdminLoginDenied)
+			NoteRefusal(ctx, refusalOperationAdminSession, RefusalAdminPasswordRejected, true)
 			return time.Time{}, ErrAdminPassword
 		}
 	}
 	if verr := s.store.VerifyAdminPassword(ctx, password); verr != nil {
 		s.recordAdminAttempt(ctx, attemptKey, now, false)
 		s.auditAdmin(ctx, scope, now, store.ActivityAdminLoginDenied)
+		NoteRefusal(ctx, refusalOperationAdminSession, RefusalAdminPasswordRejected, true)
 		return time.Time{}, ErrAdminPassword
 	}
 	until := now.Add(adminSessionTTL).UTC()

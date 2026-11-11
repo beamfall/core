@@ -6,9 +6,9 @@
 
 ## 2. Auth refusal audit records
 
-- [ ] 2.1 Note refusal reasons in `internal/auth` from a closed vocabulary
-- [ ] 2.2 Emit one `auth refused` record per refused request and count `beamfall_auth_refusals_total{reason}`
-- [ ] 2.3 Note refused pairing enrollments in the server
+- [x] 2.1 Note refusal reasons in `internal/auth` from a closed vocabulary
+- [x] 2.2 Emit one `auth refused` record per refused request and count `beamfall_auth_refusals_total{reason}`
+- [x] 2.3 Note refused pairing enrollments in the server
 
 ## 3. Health
 

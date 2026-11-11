@@ -109,6 +109,8 @@ type Server struct {
 	eventStreams eventStreamState
 	// requestMetrics counts every request by status class for /metrics.
 	requestMetrics requestMetrics
+	// authRefusals counts `auth refused` audit records by reason for /metrics.
+	authRefusals authRefusalMetrics
 }
 
 type relayedRequestKey struct{}
@@ -811,11 +813,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// the same token (ADR-0013 §5 ops log correlation).
 	reqID := newRequestID()
 	w.Header().Set(requestIDHeader, reqID)
-	r = r.WithContext(context.WithValue(r.Context(), requestIDKey{}, reqID))
+	r = r.WithContext(auth.WithRefusalNote(context.WithValue(r.Context(), requestIDKey{}, reqID)))
 	// r is reassigned below; the deferred access line reads its final value,
 	// whose Pattern the mux fills in place.
 	defer func() {
-		s.recordAccess(r, reqID, tracked.statusCode(), time.Since(started))
+		status := tracked.statusCode()
+		s.recordAccess(r, reqID, status, time.Since(started))
+		s.recordAuthRefusal(r, reqID, status)
 	}()
 	r = s.resolveProxyRequest(r)
 	var ok bool
@@ -1059,6 +1063,7 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	// Request counters: in-process, so always reported. They make the 5xx
 	// ratio alert computable from the server's own scrape.
 	s.requestMetrics.writePrometheus(&body)
+	s.authRefusals.writePrometheus(&body)
 	if s.observability != nil {
 		body.WriteString(s.observability.PrometheusText(r))
 	}
@@ -1287,6 +1292,7 @@ func (s *Server) enrollDevice(w http.ResponseWriter, r *http.Request) {
 	req.IsLAN = requestIsLAN(r)
 	resp, err := s.pairing.Enroll(r.Context(), req)
 	if err != nil {
+		notePairingRefusal(r, refusalOperationEnroll, err)
 		switch {
 		case errors.Is(err, pairing.ErrThrottled):
 			writeError(w, r, http.StatusTooManyRequests, "pairing attempts throttled")
