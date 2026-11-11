@@ -127,6 +127,59 @@ func TestSetProfileOwnerTransferEndsOutgoingOwnerAdminSessions(t *testing.T) {
 	}
 }
 
+// TestGrantAdminWindowRechecksOwnership pins the race fix for CORE-0728: the
+// admin gate checks ownership, an ownership transfer commits, and only then is
+// the window written. The write must re-check ownership and grant nothing.
+func TestGrantAdminWindowRechecksOwnership(t *testing.T) {
+	ctx := context.Background()
+	st := openSeeded(t)
+	until := time.Now().Add(15 * time.Minute)
+
+	// No owner designated: the lockout-safety fallback admits any adult, but
+	// only for the Profile the session is still bound to.
+	if ok, err := st.GrantAdminWindow(ctx, "session-manager", "profile-managed", until); err != nil || ok {
+		t.Fatalf("grant for a Profile the session is not bound to = %v, %v; want false", ok, err)
+	}
+	if ok, err := st.GrantAdminWindow(ctx, "session-manager", "profile-default", until); err != nil || !ok {
+		t.Fatalf("no-owner fallback grant = %v, %v; want true", ok, err)
+	}
+	if err := st.SetSessionAdminUntil(ctx, "session-manager", time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := st.SetProfileOwner(ctx, "profile-default"); err != nil {
+		t.Fatal(err)
+	}
+	incoming, err := st.CreateProfile(ctx, "Incoming Owner", ProfileAdult, LibraryFilter{Revealed: true, AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetSessionProfile(ctx, "session-revealed", incoming.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	isOwner, err := st.ProfileIsOwner(ctx, "profile-default")
+	if err != nil || !isOwner {
+		t.Fatalf("ProfileIsOwner = %v, %v; want true before the transfer", isOwner, err)
+	}
+	if err := st.SetProfileOwner(ctx, incoming.ID); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := st.GrantAdminWindow(ctx, "session-manager", "profile-default", until); err != nil || ok {
+		t.Fatalf("grant after transfer = %v, %v; want false", ok, err)
+	}
+	stale, err := st.Session(ctx, "session-manager")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stale.AdminUntil.IsZero() {
+		t.Fatalf("former owner session AdminUntil = %v, want zero", stale.AdminUntil)
+	}
+	if ok, err := st.GrantAdminWindow(ctx, "session-revealed", incoming.ID, until); err != nil || !ok {
+		t.Fatalf("new owner grant = %v, %v; want true", ok, err)
+	}
+}
+
 // TestCannotDisableOwnerProfile pins the lockout-safety guard:
 // the owner Profile cannot be disabled (it would strand Admin once its sessions
 // lapse); a non-owner Profile disables normally, and the owner can be disabled

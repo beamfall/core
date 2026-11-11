@@ -3706,6 +3706,35 @@ func (s *Store) SetProfileOwner(ctx context.Context, id ProfileID) error {
 	return tx.Commit()
 }
 
+// GrantAdminWindow opens the Admin Session window on session id only while the
+// session is still bound to profile and that Profile may hold admin: the
+// designated owner or, with no owner designated (the lockout-safety fallback),
+// any adult. The authority check and the write are one statement, so an
+// ownership transfer cannot commit between them and leave the outgoing owner
+// with a fresh window. It reports false, writing nothing, when the session no
+// longer qualifies or does not exist.
+func (s *Store) GrantAdminWindow(ctx context.Context, id SessionID, profile ProfileID, until time.Time) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return false, err
+	}
+	result, err := s.catalogW.ExecContext(ctx, `
+		UPDATE auth_session SET admin_until_ms = ?
+		WHERE id = ? AND profile_id = ? AND profile_id IN (
+			SELECT id FROM profile WHERE kind = ?
+				AND (is_owner = 1 OR NOT EXISTS (SELECT 1 FROM profile WHERE is_owner = 1)))
+	`, timeToMillis(until), id, profile, ProfileAdult)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected > 0, nil
+}
+
 // FirstRunSetupComplete reports whether first-run setup has finished: an adult
 // Profile exists and at least one Device has been enrolled. Devices are revoked
 // by flag and never deleted, so once setup completes this stays true. A store

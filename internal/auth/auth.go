@@ -149,6 +149,10 @@ type Service struct {
 	// resolves fail-closed (no certified Media allowed).
 	certificationScales      map[string][]string
 	integrationAttemptSecret []byte
+	// beforeAdminGrant, when non-nil, runs in BeginAdminSession after the
+	// owner and password checks and before the window is written. Test seam
+	// for the ownership-transfer race; nil in production.
+	beforeAdminGrant func()
 }
 
 // NewService creates an auth service.
@@ -704,8 +708,20 @@ func (s *Service) BeginAdminSession(ctx context.Context, scope Scope, password s
 		return time.Time{}, ErrAdminPassword
 	}
 	until := now.Add(adminSessionTTL).UTC()
-	if err := s.store.SetSessionAdminUntil(ctx, scope.SessionID, until); err != nil {
+	if s.beforeAdminGrant != nil {
+		s.beforeAdminGrant()
+	}
+	// The owner check above may be stale by now (an ownership transfer can
+	// commit during the KDF), so the store re-checks it atomically with the
+	// write and a lost race is denied like a non-owner.
+	granted, err := s.store.GrantAdminWindow(ctx, scope.SessionID, scope.ProfileID, until)
+	if err != nil {
 		return time.Time{}, err
+	}
+	if !granted {
+		s.recordAdminAttempt(ctx, attemptKey, now, false)
+		s.auditAdmin(ctx, scope, now, store.ActivityAdminLoginDenied)
+		return time.Time{}, ErrAdminPassword
 	}
 	s.recordAdminAttempt(ctx, attemptKey, now, true)
 	s.auditAdmin(ctx, scope, now, store.ActivityAdminLogin)
