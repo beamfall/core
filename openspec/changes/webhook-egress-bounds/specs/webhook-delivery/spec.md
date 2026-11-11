@@ -20,17 +20,15 @@ dead-lettered.
 
 ### Requirement: Webhook delivery address classes
 
-The default delivery client SHALL check every address it connects to. It SHALL refuse
-unspecified, `0.0.0.0/8`, link-local, multicast and IPv4 broadcast addresses for every endpoint. It
-SHALL refuse loopback, private, shared (`100.64.0.0/10`) and IPv6 site-local (`fec0::/10`)
-addresses unless the endpoint is approved for the local network. An endpoint is approved when its
-URL host is an IP literal in one of those local ranges, or when its configuration sets
-`allow_private_network`. The client SHALL NOT use environment proxies.
+The default delivery client SHALL check every address it connects to and SHALL NOT use
+environment proxies. It SHALL refuse never-routable and IPv4-embedding IPv6 addresses for every
+endpoint, and SHALL refuse local addresses unless the endpoint is approved for the local network.
 
 #### Scenario: Hostname endpoint resolves to a local address
 
 - **WHEN** an endpoint configured by hostname without `allow_private_network` resolves to a
-  loopback or private address
+  loopback (`127.0.0.0/8`, `::1`), private (`10/8`, `172.16/12`, `192.168/16`, `fc00::/7`),
+  shared (`100.64.0.0/10`) or IPv6 site-local (`fec0::/10`) address
 - **THEN** the connection is refused and nothing is sent
 
 #### Scenario: Operator-approved LAN receiver
@@ -43,6 +41,22 @@ URL host is an IP literal in one of those local ranges, or when its configuratio
 
 - **WHEN** an endpoint resolves to a link-local address such as `169.254.169.254`
 - **THEN** the connection is refused even when `allow_private_network` is set
+
+#### Scenario: Never-routable address
+
+- **WHEN** an endpoint resolves to an unspecified, `0.0.0.0/8`, multicast or broadcast address, or
+  to any other special-purpose block the scraper's public-routability predicate refuses, including
+  `192.0.0.0/24`, the documentation ranges (`192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`,
+  `2001:db8::/32`, `3fff::/20`), benchmarking (`198.18.0.0/15`) and reserved (`240.0.0.0/4`)
+- **THEN** the connection is refused even when `allow_private_network` is set
+
+#### Scenario: IPv6 form carrying an IPv4 address
+
+- **WHEN** an endpoint resolves to a NAT64 (`64:ff9b::/96`, `64:ff9b:1::/48`), 6to4
+  (`2002::/16`), IPv4-compatible (`::/96`, other than `::` and `::1`) or Teredo (`2001::/32`)
+  address
+- **THEN** the connection is refused whatever IPv4 address it embeds, even when
+  `allow_private_network` is set
 
 ### Requirement: Webhook endpoint URLs are validated before delivery
 

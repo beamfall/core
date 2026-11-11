@@ -17,7 +17,10 @@ delivery socket connects to.
     the existing bounded budget and then dead-lettered;
   - ignores environment proxies;
   - checks each address it dials. Unspecified, `0.0.0.0/8`, link-local (including
-    `169.254.169.254` cloud metadata), multicast and broadcast addresses are always refused.
+    `169.254.169.254` cloud metadata), multicast and broadcast addresses are always refused, as
+    are the other special-purpose blocks `internal/scrape/public_routability.go` refuses
+    (documentation, benchmarking, reserved, IETF protocol assignments) and IPv6 forms that carry
+    an IPv4 address (NAT64, 6to4, IPv4-compatible, Teredo), whatever address they embed.
     Loopback, private (RFC 1918, ULA), shared (`100.64.0.0/10`) and deprecated site-local
     (`fec0::/10`) addresses are refused unless the operator approved the endpoint for the local
     network.
@@ -27,7 +30,11 @@ delivery socket connects to.
 - `webhook.New` rejects an endpoint URL before any delivery when it does not parse, is not an
   absolute `http` or `https` URL with a host, carries user info, or names an IP literal in an
   always-refused class.
-- `docs/api/home-automation.md` documents the delivery rules and the LAN opt-in.
+- `webhook.New` logs one startup warning for a hostname endpoint that looks like a LAN name
+  (`localhost`, a single label, or a `.local`, `.lan`, `.home`, `.internal`, `.localdomain` or
+  `.home.arpa` suffix) without `allow_private_network`, since such an endpoint configured before
+  this change now dead-letters.
+- `docs/api/home-automation.md` documents the delivery rules, the LAN opt-in and the upgrade note.
 
 ## Non-goals
 
@@ -35,7 +42,7 @@ delivery socket connects to.
 - Following same-origin redirects. Webhook receivers answer the POST directly.
 - Reusing `scrape.IsPublicRoutableIP`. The architecture rules allow `webhook` to import only
   `store` and `jsonstate`, and a webhook that the operator approved for the LAN must reach private
-  addresses the scraper refuses.
+  addresses the scraper refuses. A webhook test pins agreement with it instead.
 - Applying the policy to an injected `Doer`. A caller that injects a client owns its policy; the
   app passes none.
 
