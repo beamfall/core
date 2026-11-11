@@ -694,7 +694,7 @@ func TestBeginAdminSessionBackoffGrowsAndResets(t *testing.T) {
 		if _, e := service.BeginAdminSession(context.Background(), scope, "wrong"); e != ErrAdminPassword && e != ErrAdminLocked {
 			t.Fatalf("unexpected wrong-password err = %v", e)
 		}
-		until, e := st.AuthBackoffUntil(context.Background(), adminAttemptAction, "session:"+string(scope.SessionID), clock, adminBackoff)
+		until, e := st.AuthBackoffUntil(context.Background(), adminAttemptAction, adminAttemptKey(scope), clock, adminBackoff)
 		if e != nil {
 			t.Fatal(e)
 		}

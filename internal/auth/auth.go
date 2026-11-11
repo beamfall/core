@@ -63,7 +63,7 @@ var adminBackoff = store.AuthBackoff{
 // check the admin password (admin-password sign-in, CORE-1106).
 func AdminBackoff() store.AuthBackoff { return adminBackoff }
 
-// ErrAdminLocked means admin re-auth attempts for this session exceeded the
+// ErrAdminLocked means admin re-auth attempts for this Profile exceeded the
 // short-window limit; the caller must back off.
 var ErrAdminLocked = errors.New("admin re-auth attempts throttled")
 
@@ -680,7 +680,7 @@ func (s *Service) RevokeIntegrationSession(ctx context.Context, token string) er
 // admin password and, on success, opens the short-lived Admin Session window.
 // The session must already resolve to an adult Profile —
 // PINs/managed Profiles never grant admin, and a non-adult caller cannot open
-// the window even with the right password. Throttled per session
+// the window even with the right password. Throttled per Profile
 // and audited (success and failure) without ever recording the password.
 //
 // The returned time is the window's end; every Console-op read re-derives
@@ -691,7 +691,7 @@ func (s *Service) BeginAdminSession(ctx context.Context, scope Scope, password s
 		return time.Time{}, errors.New("session is required")
 	}
 	now := s.now()
-	attemptKey := "session:" + string(scope.SessionID)
+	attemptKey := adminAttemptKey(scope)
 	lockedUntil, err := s.store.AuthBackoffUntil(ctx, adminAttemptAction, attemptKey, now, adminBackoff)
 	if err != nil {
 		return time.Time{}, err
@@ -731,6 +731,15 @@ func (s *Service) EndAdminSession(ctx context.Context, scope Scope) error {
 		return errors.New("session is required")
 	}
 	return s.store.SetSessionAdminUntil(ctx, scope.SessionID, time.Time{})
+}
+
+// adminAttemptKey keys the admin re-auth lane by Profile, not session:
+// renewal mints a new session ID on demand and a Manager can mint pairing
+// codes for new Devices, so a session or device key would let a holder of a
+// Manager browser's credentials reset the limit. Only the owner (or, with no
+// owner, an adult) can pass, so the Profile is the account under attack.
+func adminAttemptKey(scope Scope) string {
+	return "profile:" + string(scope.ProfileID)
 }
 
 func (s *Service) recordAdminAttempt(ctx context.Context, key string, now time.Time, success bool) {
@@ -792,7 +801,7 @@ var ErrNotManager = errors.New("a manager device is required")
 // ChangeSignInSecurityMode switches the server between Home and Strict sign-in
 // security (ADR-0007, CORE-1110). It needs a Manager Device and the admin
 // password in the same request. A wrong or missing password is refused,
-// throttled and audited exactly like an admin re-auth on the same session
+// throttled and audited exactly like an admin re-auth on the same Profile
 // lane. A change is audited with the old and new mode, never the password, and
 // the replaced mode is returned.
 func (s *Service) ChangeSignInSecurityMode(ctx context.Context, scope Scope, mode store.SignInSecurityMode, password string) (store.SignInSecurityMode, error) {
@@ -810,7 +819,7 @@ func (s *Service) ChangeSignInSecurityMode(ctx context.Context, scope Scope, mod
 		return "", ErrNotManager
 	}
 	now := s.now()
-	attemptKey := "session:" + string(scope.SessionID)
+	attemptKey := adminAttemptKey(scope)
 	lockedUntil, err := s.store.AuthBackoffUntil(ctx, adminAttemptAction, attemptKey, now, adminBackoff)
 	if err != nil {
 		return "", err

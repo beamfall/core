@@ -25,7 +25,7 @@ incident ticket.
 
 ## Lockout curves
 
-Admin re-auth (keyed per session), integration sign-in and pairing enrollment (keyed per code and per
+Admin re-auth (keyed per Profile, so a new session does not reset it), integration sign-in and pairing enrollment (keyed per code and per
 source) share one curve: 5 free failures inside a 10-minute window, then a delay that starts at 2 s
 and doubles per further failure, capped at 10 minutes. The delay counts from the last failure, a
 success resets the count, and failures older than the window stop counting. Attempts are stored in

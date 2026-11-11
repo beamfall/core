@@ -52,3 +52,45 @@ func TestBeginAdminSessionLosesRaceWithOwnershipTransfer(t *testing.T) {
 		t.Fatalf("former owner holds an Admin Session after the transfer: %#v", after)
 	}
 }
+
+// TestAdminReauthLimitSurvivesSessionRenewal: renewal mints a new session ID,
+// so a session-keyed lane would hand a holder of a Manager browser's device
+// credential a fresh guess budget per renewal. The lane is keyed by Profile,
+// so the attempt after the budget is still throttled from the renewed session.
+// feature:admin-session
+func TestAdminReauthLimitSurvivesSessionRenewal(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	now := time.Unix(2_700_000, 0).UTC()
+	if err := st.SetAdminPassword(ctx, "right-password", now); err != nil {
+		t.Fatal(err)
+	}
+	service := NewServiceWithClock(st, func() time.Time { return now })
+	scope, err := service.ScopeFromRequest(ctx, authenticatedRequest("session-manager", "device-mac", "dev-manager-secret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < adminBackoff.FreeAttempts; i++ {
+		if _, err := service.BeginAdminSession(ctx, scope, "wrong"); err != ErrAdminPassword {
+			t.Fatalf("attempt %d err = %v, want ErrAdminPassword", i, err)
+		}
+	}
+	if err := st.RenewDeviceSession(ctx, scope.SessionID, store.Session{
+		ID:        "session-renewed",
+		DeviceID:  scope.DeviceID,
+		ProfileID: scope.ProfileID,
+		ExpiresAt: now.Add(30 * 24 * time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	renewed, err := service.ScopeFromRequest(ctx, authenticatedRequest("session-renewed", "device-mac", "dev-manager-secret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.BeginAdminSession(ctx, renewed, "right-password"); err != ErrAdminLocked {
+		t.Fatalf("BeginAdminSession after renewal err = %v, want ErrAdminLocked", err)
+	}
+	if _, err := service.ChangeSignInSecurityMode(ctx, renewed, store.SignInSecurityStrict, "right-password"); err != ErrAdminLocked {
+		t.Fatalf("ChangeSignInSecurityMode after renewal err = %v, want ErrAdminLocked", err)
+	}
+}

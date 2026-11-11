@@ -56,7 +56,8 @@ sign-in page SHALL hide the admin-password form in strict mode.
 
 `POST /api/web/signin-security` SHALL change the mode only for a Manager session that presents the
 correct admin password in the same request. A wrong or missing password SHALL be refused with 401
-and count against the caller's admin re-auth backoff lane; a throttled caller SHALL get 429.
+and count against the admin re-auth backoff lane of the caller's Profile, which a renewed session
+shares; a throttled caller SHALL get 429.
 
 #### Scenario: Wrong password
 
