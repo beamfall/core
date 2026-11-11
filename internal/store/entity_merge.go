@@ -36,12 +36,17 @@ type entityRelationRow struct {
 	SortOrder    *int64   `json:"sort,omitempty"`
 }
 
-// entityMergeItemState is the per-loser merge journal snapshot: every relation
-// row that touched the loser OR the winner before the merge, plus the loser's
-// trashed flag. Undo deletes all rows touching either entity, re-inserts both
-// snapshots verbatim, and un-trashes the loser — an exact reversal regardless of
-// which loser rows were deduped away or dropped as self-loops on apply.
+// entityMergeItemState is the per-loser merge journal snapshot: the winner's id,
+// every relation row that touched the loser OR the winner before the merge, plus
+// the loser's trashed flag. Undo deletes all rows touching either entity,
+// re-inserts both snapshots verbatim, and un-trashes the loser — an exact
+// reversal regardless of which loser rows were deduped away or dropped as
+// self-loops on apply. WinnerID is journaled, never inferred from the rows: a
+// loser row pointing at an unrelated Entity would otherwise be mistaken for the
+// winner and have its relations wiped (CORE-0743). Journals written before the
+// field existed carry no WinnerID and are refused on undo.
 type entityMergeItemState struct {
+	WinnerID        EntityID            `json:"winner,omitempty"`
 	LoserRelations  []entityRelationRow `json:"loserRelations"`
 	WinnerRelations []entityRelationRow `json:"winnerRelations"`
 	Trashed         bool                `json:"trashed"`
@@ -150,6 +155,7 @@ func (s *Store) MergeEntities(ctx context.Context, winnerID, loserID EntityID, f
 	}
 
 	state, err := json.Marshal(entityMergeItemState{
+		WinnerID:        winnerID,
 		LoserRelations:  loserRows,
 		WinnerRelations: winnerRows,
 		Trashed:         true,
@@ -382,16 +388,17 @@ func undoMergeEntityItemTx(ctx context.Context, tx *sql.Tx, s *Store, item opBat
 		return err
 	}
 	loserID := item.EntityID
-	// The winner is the re-point target shared by every journaled row; recover it
-	// from any loser row that pointed at it, else from the snapshot's from-ids.
-	winnerID := winnerFromState(state, loserID)
+	winnerID := state.WinnerID
+	// A journal without the winner (written before it was recorded) cannot name
+	// the pair to reverse; guessing could wipe an unrelated Entity's relations, so
+	// refuse and let the caller's transaction roll back untouched.
+	if winnerID == "" || winnerID == loserID {
+		return ValidationError("entity merge journal does not record its winner; undo refused")
+	}
 
 	// Clear the post-merge rows for both entities, then restore the exact prior
 	// sets. Deleting by both endpoints covers winner rows the merge created.
 	for _, id := range []EntityID{loserID, winnerID} {
-		if id == "" {
-			continue
-		}
 		if _, err := tx.ExecContext(ctx,
 			`DELETE FROM entity_relation WHERE from_entity_id = ? OR to_entity_id = ?`,
 			id, id); err != nil {
@@ -430,29 +437,6 @@ func undoMergeEntityItemTx(ctx context.Context, tx *sql.Tx, s *Store, item opBat
 		}
 	}
 	return nil
-}
-
-// winnerFromState recovers the merge's winner id from a journal snapshot: it is
-// the entity (other than the loser) that the loser's relations pointed at, or
-// failing that the non-loser source of any winner-snapshot row.
-func winnerFromState(state entityMergeItemState, loserID EntityID) EntityID {
-	for _, row := range state.LoserRelations {
-		if row.ToEntityID != "" && row.ToEntityID != loserID {
-			return row.ToEntityID
-		}
-		if row.FromEntityID != loserID {
-			return row.FromEntityID
-		}
-	}
-	for _, row := range state.WinnerRelations {
-		if row.FromEntityID != loserID {
-			return row.FromEntityID
-		}
-		if row.ToEntityID != "" && row.ToEntityID != loserID {
-			return row.ToEntityID
-		}
-	}
-	return ""
 }
 
 // resyncEntityFTSRowTx rebuilds one restored Entity's FTS document (title +
