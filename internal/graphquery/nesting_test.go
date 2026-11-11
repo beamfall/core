@@ -1,6 +1,7 @@
 package graphquery
 
 import (
+	"fmt"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -67,6 +68,34 @@ func TestScanNesting(t *testing.T) {
 	}
 }
 
+func TestCountTokens(t *testing.T) {
+	tests := map[string]struct {
+		query string
+		want  int
+	}{
+		"empty":                {``, 0},
+		"shorthand":            {`{ serverInfo }`, 3},
+		"commas and spaces":    {"{ a, b,,\t\r\n c }", 5},
+		"punctuators":          {`query($v: [Int!]! = [1]) @d { ...F ... on Q { f } }`, 27},
+		"alias and arguments":  {`{ x: f(a: 1, b: "s", c: """b""", d: $v) }`, 20},
+		"negative float":       {`{ f(a: -1.5e+3) }`, 8},
+		"name after number":    {`{ f(a: 10A, b: 0x1) }`, 13},
+		"comments":             {"# one\n{ # two\r f }", 5},
+		"strings hide tokens":  {`{ f(a: "{ x y }", b: """ ( ) """) }`, 11},
+		"rejected bytes":       {"{ a ~ \x00 .. b }", 8},
+		"breadth unit":         {strings.Repeat("a ", 10), 10},
+		"unterminated string":  {`{ f(a: "x y`, 6},
+		"unterminated comment": {"{ a # b c", 3},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := countTokens(tc.query); got != tc.want {
+				t.Fatalf("countTokens(%q) = %d, want %d", tc.query, got, tc.want)
+			}
+		})
+	}
+}
+
 // countParses replaces the parser for one test and reports how many times
 // it ran. Callers must not be parallel.
 func countParses(t *testing.T) *int {
@@ -115,8 +144,36 @@ func TestPrepareOperationRejectsDeepNestingBeforeParsing(t *testing.T) {
 	}
 }
 
+// commented returns `query { f }` padded with comments to tokens tokens.
+func commented(tokens int) string {
+	return "query { f }" + strings.Repeat("\n#", tokens-4)
+}
+
+func TestPrepareOperationRejectsBroadDocumentsBeforeParsing(t *testing.T) {
+	documents := map[string]string{"one token over": commented(maxDocumentTokens + 1)}
+	for name, doc := range breadthDocuments(fill) {
+		documents[name] = doc.query
+	}
+	for name, query := range documents {
+		t.Run(name, func(t *testing.T) {
+			calls := countParses(t)
+			_, err := PrepareOperation(query, "", nil)
+			if err == nil || err.Error() != "invalid GraphQL document" {
+				t.Fatalf("error = %v, want %q", err, "invalid GraphQL document")
+			}
+			if *calls != 0 {
+				t.Fatalf("parser ran %d times, want 0", *calls)
+			}
+			if fields := TopLevelFields(query); len(fields) != 0 || *calls != 0 {
+				t.Fatalf("TopLevelFields = %v after %d parses, want empty without parsing", fields, *calls)
+			}
+		})
+	}
+}
+
 func TestPrepareOperationAcceptsNestingAtLimits(t *testing.T) {
 	tests := map[string]string{
+		"token count":    commented(maxDocumentTokens),
 		"selection sets": nestedSelections(maxSelectionDepth),
 		"argument list":  nestedList(maxValueDepth),
 		"input object":   nestedObject(maxValueDepth),
@@ -141,14 +198,14 @@ func TestPrepareOperationAcceptsNestingAtLimits(t *testing.T) {
 // takes for query: heap bytes allocated plus the growth of goroutine stacks.
 // It runs the call on a fresh goroutine with the collector off, so a grown
 // stack is neither shrunk nor its allocation hidden before it is measured.
-func preparePeakBytes(query string) int64 {
+func preparePeakBytes(query, operation string) int64 {
 	defer debug.SetGCPercent(debug.SetGCPercent(-1))
 	runtime.GC()
 	result := make(chan int64)
 	go func() {
 		var before, after runtime.MemStats
 		runtime.ReadMemStats(&before)
-		_, _ = PrepareOperation(query, "", nil)
+		_, _ = PrepareOperation(query, operation, nil)
 		runtime.ReadMemStats(&after)
 		heap := int64(after.TotalAlloc - before.TotalAlloc)               // #nosec G115 -- test measurement, far below int64 range
 		stack := max(int64(after.StackInuse)-int64(before.StackInuse), 0) // #nosec G115 -- test measurement, far below int64 range
@@ -157,23 +214,134 @@ func preparePeakBytes(query string) int64 {
 	return <-result
 }
 
-// fill repeats unit after prefix until the document reaches the request cap.
-func fill(prefix, unit string) string {
-	return prefix + strings.Repeat(unit, (maxRequestBody-len(prefix))/len(unit))
+// breadthDocument is a complete, valid document and the operation to select.
+type breadthDocument struct{ query, operation string }
+
+// repeater builds a document: prefix, then unit(i) repeated as many times as
+// fit, then suffix. The suffix is reserved up front so closing delimiters
+// never push the document over the limit.
+type repeater func(prefix string, unit func(i int) string, suffix string) string
+
+func constant(unit string) func(int) string { return func(int) string { return unit } }
+
+// fill repeats unit until the document reaches the request cap.
+func fill(prefix string, unit func(int) string, suffix string) string {
+	var b strings.Builder
+	b.WriteString(prefix)
+	for i := 0; b.Len()+len(unit(i))+len(suffix) <= maxRequestBody; i++ {
+		b.WriteString(unit(i))
+	}
+	b.WriteString(suffix)
+	return b.String()
+}
+
+// fillTokens repeats unit while the document, suffix included, stays within
+// maxDocumentTokens: the largest document of that shape the scan accepts.
+func fillTokens(prefix string, unit func(int) string, suffix string) string {
+	var b strings.Builder
+	b.WriteString(prefix)
+	for i, tokens := 0, countTokens(prefix)+countTokens(suffix); tokens+countTokens(unit(i)) <= maxDocumentTokens; i++ {
+		b.WriteString(unit(i))
+		tokens += countTokens(unit(i))
+	}
+	b.WriteString(suffix)
+	return b.String()
+}
+
+// breadthDocuments returns depth-one documents built by repeat, one per
+// shape the parser allocates for per token. Each is valid once complete:
+// variables and operations get distinct names, and the fragment is defined.
+func breadthDocuments(repeat repeater) map[string]breadthDocument {
+	one := func(query string) breadthDocument { return breadthDocument{query: query} }
+	return map[string]breadthDocument{
+		"fields":           one(repeat("{", constant("a "), "}")),
+		"aliases":          one(repeat("{", constant("a:b "), "}")),
+		"arguments":        one(repeat("{f(", func(i int) string { return fmt.Sprintf("a%d:1 ", i) }, ")}")),
+		"list values":      one(repeat("{f(a:[", constant("1 "), "])}")),
+		"object fields":    one(repeat("{f(a:{", func(i int) string { return fmt.Sprintf("a%d:1 ", i) }, "})}")),
+		"directives":       one(repeat("{f", constant("@a "), "}")),
+		"variables":        one(repeat("query(", func(i int) string { return fmt.Sprintf("$a%d:I=1 ", i) }, "){f}")),
+		"variable values":  one(repeat("query($a:I){f(a:[", constant("$a "), "])}")),
+		"strings":          one(repeat("{f(a:[", constant(`"" `), "])}")),
+		"fragment spreads": one(repeat("{", constant("...a "), "} fragment a on T{b}")),
+		"comments":         one(repeat("{", constant("#\n"), "a}")),
+		"operations":       {query: repeat("", func(i int) string { return fmt.Sprintf("query q%d{a} ", i) }, ""), operation: "q0"},
+	}
+}
+
+// stage classifies how far PrepareOperation got: scan and parse, operation
+// selection, or the later variable, validation and collection steps.
+func stage(err error) string {
+	switch msg := ""; {
+	case err == nil:
+		return "collected"
+	default:
+		msg = err.Error()
+		switch {
+		case strings.Contains(msg, "invalid GraphQL document"), strings.Contains(msg, "depth exceeds"):
+			return "refused before parsing"
+		case strings.Contains(msg, "operation"):
+			return "selection"
+		}
+		return "later"
+	}
+}
+
+func TestPrepareOperationAcceptedBreadthReachesLaterSteps(t *testing.T) {
+	for name, doc := range breadthDocuments(fillTokens) {
+		t.Run(name, func(t *testing.T) {
+			if got := countTokens(doc.query); got > maxDocumentTokens {
+				t.Fatalf("%d tokens, want <= %d", got, maxDocumentTokens)
+			}
+			parsed, err := parseQuery(&ast.Source{Input: doc.query})
+			if err != nil {
+				t.Fatalf("document does not parse: %v", err)
+			}
+			operations, _, err := definitions(parsed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := selectOperation(parsed, operations, doc.operation); err != nil {
+				t.Fatalf("operation selection: %v", err)
+			}
+			_, err = PrepareOperation(doc.query, doc.operation, nil)
+			if got := stage(err); got == "refused before parsing" || got == "selection" {
+				t.Fatalf("PrepareOperation stopped at %s: %v", got, err)
+			}
+		})
+	}
+}
+
+func TestPrepareOperationAcceptedBreadthCollects(t *testing.T) {
+	for _, name := range []string{"variables", "variable values", "arguments", "object fields", "list values", "strings", "comments", "operations"} {
+		doc := breadthDocuments(fillTokens)[name]
+		if _, err := PrepareOperation(doc.query, doc.operation, nil); err != nil {
+			t.Errorf("%s: want the collector to accept the document, got %v", name, err)
+		}
+	}
 }
 
 func TestPrepareOperationPathologicalDocumentPeakAllocation(t *testing.T) {
 	const budget = 4 << 20
 	documents := map[string]string{
-		"nested selections": fill("query {", "a{"),
-		"bare braces":       fill("", "{"),
-		"nested lists":      fill("query { f(a: ", "["),
-		"nested objects":    fill("query { f(a: ", "{a:"),
-		"nested list types": fill("query($v: ", "["),
+		"nested selections": fill("query {", constant("a{"), ""),
+		"bare braces":       fill("", constant("{"), ""),
+		"nested lists":      fill("query { f(a: ", constant("["), ""),
+		"nested objects":    fill("query { f(a: ", constant("{a:"), ""),
+		"nested list types": fill("query($v: ", constant("["), ""),
+	}
+	operations := map[string]string{}
+	for name, doc := range breadthDocuments(fill) {
+		documents["breadth "+name] = doc.query
+		operations["breadth "+name] = doc.operation
+	}
+	for name, doc := range breadthDocuments(fillTokens) {
+		documents["accepted breadth "+name] = doc.query
+		operations["accepted breadth "+name] = doc.operation
 	}
 	for name, query := range documents {
 		t.Run(name, func(t *testing.T) {
-			if got := preparePeakBytes(query); got >= budget {
+			if got := preparePeakBytes(query, operations[name]); got >= budget {
 				t.Fatalf("PrepareOperation on a %d-byte document took %d bytes, want < %d", len(query), got, budget)
 			}
 		})
@@ -272,7 +440,8 @@ func valueNesting(value *ast.Value) int {
 // FuzzDocumentNesting checks the pre-parse scanner against the parser: on
 // every document within budget that parses, the lexical nesting equals the
 // nesting of the parsed AST, and no document the scanner calls unbalanced
-// parses. Documents over budget are never handed to the parser.
+// parses, and the parser reads no more tokens than countTokens reports.
+// Documents over budget are never handed to the parser.
 func FuzzDocumentNesting(f *testing.F) {
 	seeds := []string{
 		`{ serverInfo }`,
@@ -293,13 +462,17 @@ func FuzzDocumentNesting(f *testing.F) {
 	}
 	f.Fuzz(func(t *testing.T, query string) {
 		n := scanNesting(query)
+		tokens := countTokens(query)
 		err := checkNesting(query)
-		overBudget := n.selection > maxSelectionDepth || n.value > maxValueDepth
+		overBudget := n.selection > maxSelectionDepth || n.value > maxValueDepth || tokens > maxDocumentTokens
 		if (err != nil) != (overBudget || n.unbalanced) {
 			t.Fatalf("checkNesting(%q) = %v for %+v", query, err, n)
 		}
 		if overBudget {
 			return
+		}
+		if _, limitErr := parser.ParseQueryWithTokenLimit(&ast.Source{Input: query}, tokens); limitErr != nil && strings.Contains(limitErr.Error(), "exceeded token limit") {
+			t.Fatalf("countTokens(%q) = %d, below the tokens the parser read", query, tokens)
 		}
 		doc, parseErr := parser.ParseQuery(&ast.Source{Input: query})
 		if n.unbalanced {
