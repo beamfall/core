@@ -55,7 +55,13 @@ func TestWorkerCommandWrapsWithShim(t *testing.T) {
 	if cmd.Path == shimPath {
 		t.Fatal("worker command bypassed the mandatory OS sandbox")
 	}
-	if !containsOrdered(cmd.Args, []string{shimPath, shimSubcommand, "--", artifactPath}) {
+	// The Linux sandbox bind-mounts the shim and artifact at fixed in-sandbox
+	// paths and rewrites argv to them; macOS sandbox-exec runs the host paths.
+	wantShim, wantArtifact := shimPath, artifactPath
+	if runtime.GOOS == "linux" {
+		wantShim, wantArtifact = "/run/beamfall-worker/shim", "/run/beamfall-worker/artifact"
+	}
+	if !containsOrdered(cmd.Args, []string{wantShim, shimSubcommand, "--", wantArtifact}) {
 		t.Fatalf("workerCommand args omit shim/artifact chain: %q", cmd.Args)
 	}
 }

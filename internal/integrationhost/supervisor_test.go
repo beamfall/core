@@ -28,6 +28,7 @@ func mustJSONBytes(v any) []byte {
 // supervisor isolation tests launch it as a real out-of-process worker.
 var (
 	fixtureWorkerPath     string
+	treeWorkerPath        string
 	beamfallShimPath      string
 	supervisorFixturePath string
 )
@@ -56,6 +57,13 @@ func TestMain(m *testing.M) {
 		if out, err := build.CombinedOutput(); err != nil {
 			_ = os.RemoveAll(dir)
 			panic("integrationhost test: beamfall shim build failed: " + err.Error() + "\n" + string(out))
+		}
+		treeWorkerPath = filepath.Join(dir, "tree-worker")
+		// #nosec G204 -- go is a fixed tool; output is the private TestMain temp directory.
+		build = exec.Command("go", "build", "-o", treeWorkerPath, "./testdata/treeworker")
+		if out, err := build.CombinedOutput(); err != nil {
+			_ = os.RemoveAll(dir)
+			panic("integrationhost test: tree worker build failed: " + err.Error() + "\n" + string(out))
 		}
 		supervisorFixturePath = filepath.Join(dir, "supervisor-fixture")
 		// #nosec G204 -- go is a fixed tool; output is the private TestMain temp directory.

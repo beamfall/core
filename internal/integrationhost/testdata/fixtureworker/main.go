@@ -24,26 +24,11 @@ import (
 func main() {
 	socket := flag.String("host-api-socket", "", "Host API unix-domain socket path")
 	probe := flag.String("probe", "read-catalog", "Host API method to invoke")
-	treeMode := flag.String("tree-mode", "", "test-only process-tree mode")
-	pidFile := flag.String("pid-file", "", "test-only process-tree pid file")
-	holdFile := flag.String("hold-file", "", "test-only process-tree release file")
-	descendant := flag.Bool("descendant", false, "run as a test-only descendant")
-	termResistant := flag.Bool("term-resistant", false, "ignore TERM in test-only descendant mode")
-	readyFile := flag.String("ready-file", "", "test-only descendant readiness file")
 	isolationSecret := flag.String("isolation-secret", "", "test-only forbidden file probe")
 	isolationNetwork := flag.Bool("isolation-network", false, "test-only raw network probe")
 	flag.Parse()
 	if *isolationSecret != "" || *isolationNetwork {
 		runIsolationProbe(*isolationSecret, *isolationNetwork)
-		return
-	}
-
-	if *descendant {
-		runDescendant(*termResistant, *readyFile)
-		return
-	}
-	if *treeMode != "" {
-		runProcessTree(*treeMode, *pidFile, *holdFile, *termResistant)
 		return
 	}
 
