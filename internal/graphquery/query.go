@@ -18,7 +18,8 @@ import (
 // boundary: a document sitting precisely at the limit is accepted.
 //
 //   - maxSelectionDepth bounds selection nesting; fields, inline fragments,
-//     and fragment spreads each add one level.
+//     and fragment spreads each add one level. Lexical selection-set nesting
+//     is also checked against it before parsing (see checkNesting).
 //   - maxDocumentSelections bounds the total selection nodes visited during
 //     validation. Fragment bodies are counted once per spread, so this is
 //     also the fragment-amplification bound.
@@ -51,10 +52,19 @@ type Operation struct {
 	Occurrences []Occurrence
 }
 
+// parseQuery is the parser entry point, replaceable by tests that prove a
+// document is rejected before parsing.
+var parseQuery = parser.ParseQuery
+
 // PrepareOperation parses, validates, expands, and evaluates one operation.
 // Schema-specific field membership/effect validation remains in package graph.
+// Nesting budgets are checked lexically first, so the parser never recurses
+// past them.
 func PrepareOperation(query, operationName string, variables map[string]any) (Operation, error) {
-	doc, err := parser.ParseQuery(&ast.Source{Input: query})
+	if err := checkNesting(query); err != nil {
+		return Operation{}, err
+	}
+	doc, err := parseQuery(&ast.Source{Input: query})
 	if err != nil {
 		return Operation{}, fmt.Errorf("invalid GraphQL document")
 	}
@@ -443,7 +453,10 @@ func SelectedOperationFields(query, operationName string) (map[string]bool, erro
 
 // TopLevelFields preserves the small helper used by focused tests.
 func TopLevelFields(query string) map[string]bool {
-	doc, err := parser.ParseQuery(&ast.Source{Input: query})
+	if checkNesting(query) != nil {
+		return map[string]bool{}
+	}
+	doc, err := parseQuery(&ast.Source{Input: query})
 	if err != nil {
 		return map[string]bool{}
 	}

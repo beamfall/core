@@ -403,6 +403,219 @@ func TestManagedMediaPathsSQLFilterIsolation(t *testing.T) {
 	}
 }
 
+// TestAuditManagedFolderCaseIsolation proves a folder rename, move or delete
+// rewrites or marks missing only its own descendants as the volume names them.
+// SQLite LIKE folds ASCII case, so /Photos/% also matched /photos/x; on a
+// case-sensitive volume those are independent folders and the lower-case rows
+// must stay put. On a case-insensitive volume both spellings name one folder,
+// so those rows are descendants and follow it. The case-distinct rows are
+// catalog-only (no bytes on disk); percent and underscore names pin the LIKE
+// wildcard escaping.
+func TestAuditManagedFolderCaseIsolation(t *testing.T) {
+	for _, folder := range []string{"Photos", "Pct%Dir", "Under_Dir"} {
+		for _, op := range []string{"rename", "move", "delete"} {
+			t.Run(folder+"/"+op, func(t *testing.T) {
+				ctx := context.Background()
+				st := storetest.Open(t)
+				root := t.TempDir()
+				canonicalRoot, err := filepath.EvalSymlinks(root)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := st.SetLibraryRoots(ctx, "library-local", []string{root}); err != nil {
+					t.Fatal(err)
+				}
+				filter := store.LibraryFilter{AllLibraries: true}
+
+				target := filepath.Join(canonicalRoot, folder)
+				inside := filepath.Join(target, "inside.mp4")
+				importManagedFile(t, st, "library-local", inside, "Inside", "cafecafe00000010")
+
+				caps, err := st.MountCapabilities(canonicalRoot)
+				if err != nil {
+					t.Fatal(err)
+				}
+				foldsCase := caps.CaseSensitive == store.CapabilityUnsupported
+				lower := filepath.Join(canonicalRoot, strings.ToLower(folder))
+				caseVariants := []string{
+					filepath.Join(lower, "sibling.mp4"),
+					filepath.Join(lower, "nested", "deep.mp4"),
+				}
+				bystanders := []string{lower + "-suffix.mp4"}
+				if !foldsCase {
+					bystanders = append(bystanders, caseVariants...)
+				}
+				// A sibling a wildcard would match if the folder name were unescaped.
+				wild := strings.NewReplacer("%", "X", "_", "Y").Replace(folder)
+				if wild != folder {
+					bystanders = append(bystanders, filepath.Join(canonicalRoot, wild, "wild.mp4"))
+				}
+				for i, path := range append(append([]string(nil), bystanders...), caseVariants...) {
+					if _, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+						LibraryID:          "library-local",
+						Path:               path,
+						Title:              fmt.Sprintf("Bystander %d", i),
+						Container:          "mp4",
+						Codec:              "h264",
+						Class:              store.MediaClassVideo,
+						ContentFingerprint: store.HashMediaFilePath(path),
+						OSHash:             fmt.Sprintf("cafecafe000001%02d", i),
+					}); err != nil {
+						t.Fatalf("ImportMediaFile(%s): %v", path, err)
+					}
+				}
+
+				var wantInside, newFolder string
+				switch op {
+				case "rename":
+					renamed, err := st.RenameManagedPath(ctx, "library-local", target, "Album", filter)
+					if err != nil {
+						t.Fatalf("RenameManagedPath: %v", err)
+					}
+					newFolder = renamed.Path
+				case "move":
+					dest, err := st.CreateManagedFolder(ctx, "library-local", canonicalRoot, "archive", filter)
+					if err != nil {
+						t.Fatalf("CreateManagedFolder: %v", err)
+					}
+					moved, err := st.MoveManagedPath(ctx, "library-local", target, dest.Path, filter)
+					if err != nil {
+						t.Fatalf("MoveManagedPath: %v", err)
+					}
+					newFolder = moved.Path
+				case "delete":
+					if _, err := st.DeleteManagedPath(ctx, "library-local", target, filter, time.Unix(1700020000, 0)); err != nil {
+						t.Fatalf("DeleteManagedPath: %v", err)
+					}
+				}
+
+				var followers []string
+				if newFolder != "" {
+					wantInside = filepath.Join(newFolder, "inside.mp4")
+					if foldsCase {
+						for _, path := range caseVariants {
+							followers = append(followers, filepath.Join(newFolder, path[len(lower)+1:]))
+						}
+					}
+				}
+
+				files, err := st.MediaFilesForLibrary(ctx, "library-local")
+				if err != nil {
+					t.Fatal(err)
+				}
+				live := map[string]bool{}
+				for _, file := range files {
+					live[file.Path] = true
+				}
+				for _, path := range bystanders {
+					if !live[path] {
+						t.Errorf("bystander %q was rewritten or marked missing; live paths = %v", path, live)
+					}
+				}
+				if live[inside] {
+					t.Errorf("source descendant %q is still live after %s", inside, op)
+				}
+				if wantInside != "" && !live[wantInside] {
+					t.Errorf("descendant %q not rewritten to %q; live paths = %v", inside, wantInside, live)
+				}
+				if foldsCase {
+					for _, path := range caseVariants {
+						if live[path] {
+							t.Errorf("case-variant descendant %q is still live after %s on a case-insensitive volume", path, op)
+						}
+					}
+				}
+				for _, path := range followers {
+					if !live[path] {
+						t.Errorf("case-variant descendant not rewritten to %q; live paths = %v", path, live)
+					}
+				}
+				wantLive := len(bystanders) + len(followers)
+				if wantInside != "" {
+					wantLive++
+				}
+				if len(live) != wantLive {
+					t.Errorf("live paths = %v, want %d", live, wantLive)
+				}
+			})
+		}
+	}
+}
+
+// TestManagedFolderOpsFollowExternalCaseRename covers a folder renamed outside
+// Beamfall by case only on a case-insensitive volume: its saved paths keep the
+// old spelling, and a delete, restore or rename of the folder under its new
+// spelling must still reach them instead of stranding them at dead paths.
+func TestManagedFolderOpsFollowExternalCaseRename(t *testing.T) {
+	for _, op := range []string{"delete", "rename"} {
+		t.Run(op, func(t *testing.T) {
+			ctx := context.Background()
+			st := storetest.Open(t)
+			root := t.TempDir()
+			canonicalRoot, err := filepath.EvalSymlinks(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			caps, err := st.MountCapabilities(canonicalRoot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if caps.CaseSensitive != store.CapabilityUnsupported {
+				t.Skipf("volume at %s is not case-insensitive (caseSensitive=%s)", canonicalRoot, caps.CaseSensitive)
+			}
+			if err := st.SetLibraryRoots(ctx, "library-local", []string{root}); err != nil {
+				t.Fatal(err)
+			}
+			filter := store.LibraryFilter{AllLibraries: true}
+			saved := filepath.Join(canonicalRoot, "Photos", "inside.mp4")
+			importManagedFile(t, st, "library-local", saved, "Inside", "cafecafe00000020")
+			current := filepath.Join(canonicalRoot, "photos")
+			if err := os.Rename(filepath.Join(canonicalRoot, "Photos"), current); err != nil {
+				t.Fatal(err)
+			}
+
+			livePaths := func() map[string]bool {
+				t.Helper()
+				files, err := st.MediaFilesForLibrary(ctx, "library-local")
+				if err != nil {
+					t.Fatal(err)
+				}
+				live := map[string]bool{}
+				for _, file := range files {
+					live[file.Path] = true
+				}
+				return live
+			}
+
+			switch op {
+			case "delete":
+				trash, err := st.DeleteManagedPath(ctx, "library-local", current, filter, time.Unix(1700030000, 0))
+				if err != nil {
+					t.Fatalf("DeleteManagedPath: %v", err)
+				}
+				if live := livePaths(); len(live) != 0 {
+					t.Fatalf("saved path stayed available after deleting %q: %v", current, live)
+				}
+				if _, err := st.RestoreManagedPath(ctx, "library-local", trash.TrashID, filter, time.Unix(1700030100, 0)); err != nil {
+					t.Fatalf("RestoreManagedPath: %v", err)
+				}
+				if live := livePaths(); !live[saved] {
+					t.Fatalf("saved path %q not restored; live = %v", saved, live)
+				}
+			case "rename":
+				renamed, err := st.RenameManagedPath(ctx, "library-local", current, "Album", filter)
+				if err != nil {
+					t.Fatalf("RenameManagedPath: %v", err)
+				}
+				want := filepath.Join(renamed.Path, "inside.mp4")
+				if live := livePaths(); !live[want] || len(live) != 1 {
+					t.Fatalf("live = %v, want only %q", live, want)
+				}
+			}
+		})
+	}
+}
+
 func TestManagedPathOpsRejectTraversalAndRootEscape(t *testing.T) {
 	ctx := context.Background()
 	st := storetest.Open(t)

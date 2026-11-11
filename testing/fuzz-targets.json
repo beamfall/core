@@ -9,6 +9,7 @@
   "targets": [
     {"pkg": "./internal/ffmpeg", "target": "FuzzParseProbe", "tags": [], "goos": [], "goarch": []},
     {"pkg": "./internal/graph", "target": "FuzzRequestDecodeAndFieldScan", "tags": [], "goos": [], "goarch": []},
+    {"pkg": "./internal/graphquery", "target": "FuzzDocumentNesting", "tags": [], "goos": [], "goarch": []},
     {"pkg": "./internal/pairing", "target": "FuzzPairingInputNormalization", "tags": [], "goos": [], "goarch": []},
     {"pkg": "./internal/plugin", "target": "FuzzLocaleStringJSON", "tags": [], "goos": [], "goarch": []},
     {"pkg": "./internal/plugin", "target": "FuzzValidateBundleJSON", "tags": [], "goos": [], "goarch": []},

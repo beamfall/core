@@ -227,13 +227,15 @@ func (s *Server) compatAuthorize(r *http.Request, scope auth.Scope) (bool, capab
 		}
 		derivedSurface = string(surface)
 	}
-	record, err := s.compat.registry.Resolve(subject, capabilities.ResolveKey{
+	key := capabilities.ResolveKey{
 		Subject:         subject,
 		Distribution:    capabilities.Distribution(scope.DistributionClass),
 		AuthFingerprint: compatAuthFingerprint(scope),
 		Generation:      policy.Generation,
 		DerivedSurface:  derivedSurface,
-	}, s.compat.now())
+	}
+	now := s.compat.now()
+	record, err := s.compat.registry.Resolve(subject, key, now)
 	if err == nil {
 		return compatServable(record.Result), record.Result, strconv.Itoa(record.Key.Generation)
 	}
@@ -246,6 +248,20 @@ func (s *Server) compatAuthorize(r *http.Request, scope auth.Scope) (bool, capab
 	if errors.Is(err, capabilities.ErrNoDecision) {
 		return s.acceptEmbeddedDecision(scope, policy)
 	}
+	if errors.Is(err, capabilities.ErrAuthChanged) {
+		// The session's own grants, Profile or device role changed under a
+		// servable decision. The web UI's contract is the server's embedded
+		// bundle, so re-deriving under the new fingerprint proves exactly what
+		// the original decision did. Resolve reports the auth mismatch ahead of
+		// expiry and generation, so check the record under its own fingerprint
+		// first: an auth change must not renew an expired decision or a
+		// submitted one from an earlier generation.
+		key.AuthFingerprint = record.Key.AuthFingerprint
+		record, err = s.compat.registry.Resolve(subject, key, now)
+		if err == nil {
+			return s.rebindEmbeddedDecision(scope, policy, record)
+		}
+	}
 	if errors.Is(err, capabilities.ErrStaleGeneration) && !record.Submitted {
 		return s.acceptEmbeddedDecision(scope, policy)
 	}
@@ -253,6 +269,25 @@ func (s *Server) compatAuthorize(r *http.Request, scope auth.Scope) (bool, capab
 		return false, record.Result, ""
 	}
 	return false, compatDecisionRequired(), ""
+}
+
+// rebindEmbeddedDecision moves a web session's valid decision to its current
+// auth fingerprint, keeping its submitted status and expiry. The registry
+// applies the change only to the exact record that was resolved, so a
+// concurrent refusal, handshake or generation change is never overwritten;
+// the request is then refused and the client resubmits.
+func (s *Server) rebindEmbeddedDecision(scope auth.Scope, policy capabilities.Policy, prior capabilities.Record) (bool, capabilities.Result, string) {
+	enrollment := compatEnrollment(scope)
+	enrollment.EmbeddedUI = true
+	result := capabilities.Evaluate(capabilities.EmbeddedUIContract(), enrollment, policy)
+	if !compatServable(result) {
+		return false, result, ""
+	}
+	record, err := s.compat.registry.RebindAuth(prior, compatAuthFingerprint(scope), s.compat.now())
+	if err != nil {
+		return false, compatDecisionRequired(), ""
+	}
+	return true, result, strconv.Itoa(record.Key.Generation)
 }
 
 func (s *Server) acceptEmbeddedDecision(scope auth.Scope, policy capabilities.Policy) (bool, capabilities.Result, string) {
