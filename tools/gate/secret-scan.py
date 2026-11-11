@@ -556,6 +556,19 @@ def findings(
     return detected
 
 
+# What scan_target reads, in order (CORE-0622):
+#   1. every tracked file's git-index blob (index_file_bytes), so a staged
+#      credential is rejected even when the working-tree bytes are clean
+#      (secret-scan_test.sh "staged index credential rejected despite clean
+#      working-tree bytes");
+#   2. the working-tree bytes of tracked files that differ from the index
+#      (worktree_divergences), so an unstaged edit that adds a credential is
+#      also rejected (secret-scan_test.sh "unstaged tracked edit credential
+#      rejected from worktree bytes");
+#   3. non-ignored untracked files.
+# Consequence: the index blob is always scanned. Unstaging or editing a file in
+# the working tree does not hide a finding that is still in the index; it
+# disappears only once the fix is staged.
 def scan_target(
     label: str,
     root: Path,
