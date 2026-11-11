@@ -1,0 +1,2 @@
+go test fuzz v1
+string("query ($A:A00@A(A:10A")

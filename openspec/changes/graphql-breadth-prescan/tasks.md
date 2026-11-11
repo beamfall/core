@@ -1,9 +1,9 @@
 ## 1. Pre-parse token budget
 
-- [ ] 1.1 Count lexical tokens in `internal/graphquery` and add the `maxDocumentTokens` budget
-- [ ] 1.2 Reject over-budget documents in the pre-parse check used by `PrepareOperation` and `TopLevelFields`
-- [ ] 1.3 Tests for counting, the boundary, pre-parser rejection and peak allocation of breadth documents
-- [ ] 1.4 Extend `FuzzDocumentNesting` to check the count bounds the parser's tokens
+- [x] 1.1 Count lexical tokens in `internal/graphquery` and add the `maxDocumentTokens` budget
+- [x] 1.2 Reject over-budget documents in the pre-parse check used by `PrepareOperation` and `TopLevelFields`
+- [x] 1.3 Tests for counting, the boundary, pre-parser rejection and peak allocation of breadth documents
+- [x] 1.4 Extend `FuzzDocumentNesting` to check the count bounds the parser's tokens
 
 ## 2. Verify and close
 

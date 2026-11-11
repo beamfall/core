@@ -20,9 +20,10 @@ The pre-parse cost of an unauthenticated request is still linear in body size on
 - A document of more than `maxDocumentTokens` (8192) tokens is rejected before parsing with the
   existing `invalid GraphQL document` error, the refusal the parser and the value-depth guard
   already return. No new error is introduced.
-- The budget is 2 × `maxDocumentSelections`, so every document that fits the existing selection-work
-  budget still passes the token budget. The worst accepted document allocates about 2.5 MB, under
-  the 4 MiB pre-parse budget CORE-0052 pinned for nested documents.
+- The budget is 2 × `maxDocumentSelections`: a document at the existing selection-work budget still
+  fits with one more token (an alias or a brace) per selection. The worst accepted document (8192
+  bare fields) allocates about 2.2 MB, under the 4 MiB pre-parse budget CORE-0052 pinned for nested
+  documents.
 
 A token budget is chosen over lowering the body cap because the parser's allocation depends on the
 token count, not the byte count: a lower body cap would still admit the worst shapes at a smaller
@@ -36,10 +37,11 @@ size, and would also refuse legitimate documents with long string arguments.
 
 ## Failure modes
 
-- Documents rejected by the new budget were accepted before only if they also passed validation;
-  no document within `maxDocumentSelections` and a realistic argument load reaches 8192 tokens.
-- Malformed input may be over-counted (a float counts as more than one token), which only rejects
-  earlier documents the parser would also reject or that are already over budget.
+- A document of more than 8192 tokens is now refused even when it would have passed validation,
+  for example close to 4096 selections that each carry arguments. Beamfall's own clients send far
+  smaller documents; the refusal is the same one a malformed document gets.
+- Input the lexer rejects is over-counted (each stray byte counts as a token), which only refuses
+  earlier a document the parser would also reject.
 
 ## Acceptance evidence
 

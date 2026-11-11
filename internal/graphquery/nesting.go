@@ -12,6 +12,15 @@ import (
 // a hundred megabytes per in-flight anonymous request.
 const maxValueDepth = 64
 
+// maxDocumentTokens bounds the lexical tokens of a document, comments
+// included. The parser allocates per token whatever the nesting, so without
+// it a shallow document at the request body cap (`{a a a ...}`) costs tens of
+// megabytes per anonymous request. At twice maxDocumentSelections, a
+// document at the selection-work budget still fits with one more token, such
+// as an alias or a brace, per selection, and the largest accepted document of
+// any shape allocates about 2 MB.
+const maxDocumentTokens = 2 * maxDocumentSelections
+
 // nesting is the lexical nesting profile of a GraphQL document.
 type nesting struct {
 	// selection is the deepest selection-set nesting: braces opened outside
@@ -112,14 +121,90 @@ func skipString(query string, start int) int {
 	return len(query) - 1
 }
 
-// checkNesting rejects a document whose nesting exceeds a budget before it
-// reaches the parser.
+// countTokens returns at least the number of tokens the gqlparser parser
+// reads from query, comments included, in one linear pass without
+// allocating. Names, numbers, strings, block strings, and comments are
+// delimited as by the lexer (strings and comments as in scanNesting);
+// whitespace and commas do not count. Every other byte counts as one token:
+// that covers the punctuators, and over-counts only input the lexer rejects,
+// where the parser stops.
+func countTokens(query string) int {
+	tokens := 0
+	for i := 0; i < len(query); i++ {
+		switch c := query[i]; {
+		case c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == ',':
+			continue
+		case c == '#':
+			for i+1 < len(query) && (query[i+1] > 0x1f || query[i+1] == '\t') {
+				i++
+			}
+		case c == '"':
+			i = skipString(query, i)
+		case c == '.' && strings.HasPrefix(query[i:], "..."):
+			i += 2
+		case c == '-' || isDigit(c):
+			i = skipNumber(query, i)
+		case isNameStart(c):
+			for i+1 < len(query) && (isNameStart(query[i+1]) || isDigit(query[i+1])) {
+				i++
+			}
+		}
+		tokens++
+	}
+	return tokens
+}
+
+// skipNumber returns the index of the last byte of the number that starts at
+// query[start], delimited as by the gqlparser lexer: an optional minus, a
+// lone zero or a run of digits, then an optional fraction and exponent. A
+// name directly after a number is a separate token.
+func skipNumber(query string, start int) int {
+	i := start
+	if query[i] == '-' {
+		i++
+	}
+	if i < len(query) && query[i] == '0' {
+		i++
+	} else {
+		i = skipDigits(query, i)
+	}
+	if i < len(query) && query[i] == '.' {
+		i = skipDigits(query, i+1)
+	}
+	if i < len(query) && (query[i] == 'e' || query[i] == 'E') {
+		i++
+		if i < len(query) && (query[i] == '+' || query[i] == '-') {
+			i++
+		}
+		i = skipDigits(query, i)
+	}
+	return max(i-1, start)
+}
+
+// skipDigits returns the index of the first non-digit at or after i.
+func skipDigits(query string, i int) int {
+	for i < len(query) && isDigit(query[i]) {
+		i++
+	}
+	return i
+}
+
+func isDigit(c byte) bool {
+	return '0' <= c && c <= '9'
+}
+
+func isNameStart(c byte) bool {
+	return c == '_' || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z')
+}
+
+// checkNesting rejects a document whose nesting or token count exceeds a
+// budget before it reaches the parser.
 func checkNesting(query string) error {
 	n := scanNesting(query)
 	switch {
 	case n.selection > maxSelectionDepth:
 		return fmt.Errorf("GraphQL selection depth exceeds %d", maxSelectionDepth)
-	case n.unbalanced, n.value > maxValueDepth:
+	case n.unbalanced, n.value > maxValueDepth, countTokens(query) > maxDocumentTokens:
 		return fmt.Errorf("invalid GraphQL document")
 	}
 	return nil
