@@ -136,6 +136,89 @@ func TestConcurrentRenewDeviceSessionConverges(t *testing.T) {
 	}
 }
 
+// TestRenewDeviceSessionDoesNotReuseUnlockedSession: a session minted a
+// moment ago is handed back only while it is locked. Once Reveal or an admin
+// window is on it, renewal (which needs only the device secret) replaces it
+// with a fresh locked row instead of returning the unlock.
+func TestRenewDeviceSessionDoesNotReuseUnlockedSession(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		unlock func(*Store, SessionID, time.Time) error
+	}{
+		{"revealed", func(st *Store, id SessionID, _ time.Time) error {
+			return st.SetSessionRevealed(context.Background(), id, true)
+		}},
+		{"admin window", func(st *Store, id SessionID, now time.Time) error {
+			return st.SetSessionAdminUntil(context.Background(), id, now.Add(10*time.Minute))
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			st := openSeeded(t)
+			now := time.Now().UTC().Truncate(time.Millisecond)
+			expires := now.Add(30 * 24 * time.Hour)
+			if err := st.EnrollDevice(ctx,
+				Device{ID: "device-renew", Name: "Browser", Role: DeviceRoleManager, SecretHash: HashDeviceSecret("s")},
+				Session{ID: "session-old", DeviceID: "device-renew", ProfileID: "profile-default", ExpiresAt: now.Add(-time.Hour)},
+			); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := st.RenewDeviceSession(ctx, "device-renew", "session-recent", expires); err != nil {
+				t.Fatal(err)
+			}
+			if err := tc.unlock(st, "session-recent", now); err != nil {
+				t.Fatal(err)
+			}
+
+			got, err := st.RenewDeviceSession(ctx, "device-renew", "session-fresh", expires.Add(time.Second))
+			if err != nil {
+				t.Fatalf("RenewDeviceSession: %v", err)
+			}
+			if got.ID != "session-fresh" {
+				t.Fatalf("renewal returned %q, want a fresh session, not the unlocked one", got.ID)
+			}
+			if _, err := st.Session(ctx, "session-recent"); err == nil {
+				t.Fatal("the unlocked session survived renewal")
+			}
+			stored, err := st.Session(ctx, "session-fresh")
+			if err != nil || stored.Revealed || !stored.AdminUntil.IsZero() {
+				t.Fatalf("fresh session = %+v, %v; want locked", stored, err)
+			}
+			if n := deviceSessionCount(t, st, "device-renew"); n != 1 {
+				t.Fatalf("device session rows = %d, want 1", n)
+			}
+		})
+	}
+}
+
+// TestRenewDeviceSessionReusesRecentLockedSession: a locked session minted a
+// moment ago is still handed back, so overlapping renewals converge.
+func TestRenewDeviceSessionReusesRecentLockedSession(t *testing.T) {
+	ctx := context.Background()
+	st := openSeeded(t)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	expires := now.Add(30 * 24 * time.Hour)
+	if err := st.EnrollDevice(ctx,
+		Device{ID: "device-renew", Name: "Browser", Role: DeviceRoleManager, SecretHash: HashDeviceSecret("s")},
+		Session{ID: "session-old", DeviceID: "device-renew", ProfileID: "profile-default", ExpiresAt: now.Add(-time.Hour)},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.RenewDeviceSession(ctx, "device-renew", "session-recent", expires); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.RenewDeviceSession(ctx, "device-renew", "session-unused", expires.Add(time.Second))
+	if err != nil || got.ID != "session-recent" || !got.ExpiresAt.Equal(expires) {
+		t.Fatalf("renewal = %+v, %v; want the recent locked session", got, err)
+	}
+	if _, err := st.Session(ctx, "session-unused"); err == nil {
+		t.Fatal("a second row was inserted")
+	}
+	if n := deviceSessionCount(t, st, "device-renew"); n != 1 {
+		t.Fatalf("device session rows = %d, want 1", n)
+	}
+}
+
 func TestRenewDeviceSessionRefusals(t *testing.T) {
 	ctx := context.Background()
 	st := openSeeded(t)

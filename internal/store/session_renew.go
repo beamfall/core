@@ -20,8 +20,12 @@ var ErrDeviceRevoked = errors.New("device is revoked")
 // every other enrolled row of the device is deleted, so a device holds at most
 // one session after renewal and a device secret cannot stockpile spare
 // sessions. When the device's session was minted within renewConvergeWindow
-// (an overlapping renewal from another tab), that session is returned rather
-// than replaced, so concurrent renewals converge on one live session.
+// (an overlapping renewal from another tab) and is still locked, that session
+// is returned rather than replaced, so concurrent renewals converge on one live
+// session. A recent session with Reveal or an admin window is never handed
+// back: renewal needs only the device secret, so it must not inherit an unlock
+// the owner made with a PIN or password. That row is replaced like any other,
+// and the tab that unlocked it renews into the new locked session.
 // A device with no row (after TerminateSession, say) gets
 // ErrNoDeviceSession and must enroll again. It refuses a revoked or unknown
 // device and a disabled Profile. The new session starts without Reveal or an
@@ -72,10 +76,10 @@ func (s *Store) RenewDeviceSession(ctx context.Context, deviceID DeviceID, newID
 	}
 	session := Session{ID: newID, DeviceID: deviceID, ProfileID: latest.ProfileID, ExpiresAt: expiresAt, Kind: SessionKindEnrolled}
 	keep := SessionID("")
-	if latest.ExpiresAtMs.Valid && !millisToTime(latest.ExpiresAtMs.Int64).Before(expiresAt.Add(-renewConvergeWindow)) {
+	if latest.Locked && latest.ExpiresAtMs.Valid && !millisToTime(latest.ExpiresAtMs.Int64).Before(expiresAt.Add(-renewConvergeWindow)) {
 		// An overlapping renewal from this device (another tab) committed a
-		// moment ago: hand back its session instead of replacing it, so both
-		// callers converge on one live session.
+		// moment ago and nothing has unlocked it since: hand back its session
+		// instead of replacing it, so both callers converge on one live session.
 		keep = latest.ID
 		session.ID = latest.ID
 		session.ExpiresAt = millisToTime(latest.ExpiresAtMs.Int64)
@@ -120,6 +124,9 @@ type deviceSessionRow struct {
 	ID          SessionID
 	ProfileID   ProfileID
 	ExpiresAtMs sql.NullInt64
+	// Locked: the row carries no elevation (no Reveal, no admin window, no
+	// integration scopes), so renewal may hand it back.
+	Locked bool
 }
 
 // deviceEnrolledSessions lists the device's enrolled sessions, latest expiry
@@ -127,7 +134,9 @@ type deviceSessionRow struct {
 // lifetime, so the latest expiry is the most recently minted one.
 func deviceEnrolledSessions(ctx context.Context, tx *sql.Tx, deviceID DeviceID) ([]deviceSessionRow, error) {
 	rows, err := tx.QueryContext(ctx, `
-		SELECT id, profile_id, expires_at_ms FROM auth_session
+		SELECT id, profile_id, expires_at_ms,
+			revealed = 0 AND admin_until_ms IS NULL AND COALESCE(integration_scopes, '') = ''
+		FROM auth_session
 		WHERE device_id = ? AND (kind = ? OR kind IS NULL OR kind = '')
 		ORDER BY expires_at_ms DESC`,
 		deviceID, SessionKindEnrolled,
@@ -139,7 +148,7 @@ func deviceEnrolledSessions(ctx context.Context, tx *sql.Tx, deviceID DeviceID) 
 	var out []deviceSessionRow
 	for rows.Next() {
 		var row deviceSessionRow
-		if err := rows.Scan(&row.ID, &row.ProfileID, &row.ExpiresAtMs); err != nil {
+		if err := rows.Scan(&row.ID, &row.ProfileID, &row.ExpiresAtMs, &row.Locked); err != nil {
 			return nil, err
 		}
 		out = append(out, row)

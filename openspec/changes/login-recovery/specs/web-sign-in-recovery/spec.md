@@ -4,9 +4,9 @@
 
 The server SHALL mint a new 30-day session for a browser that presents its device ID and device
 secret cookies and the CSRF header, even when its session cookie is expired or missing. It SHALL
-replace the device's session row, expired or not, in the same write and keep its Profile, so a
-device holds at most one session; a row minted in the last minute SHALL be returned instead, so
-overlapping renewals converge. Plain HTTP SHALL be accepted only from the local network.
+replace the device's one session row in the same write, keeping its Profile. A row minted in the
+last minute SHALL be returned instead only while it has no Reveal or admin window, so overlapping
+renewals converge. Plain HTTP SHALL be accepted only from the local network.
 
 #### Scenario: Expired session renewed
 
@@ -23,6 +23,11 @@ overlapping renewals converge. Plain HTTP SHALL be accepted only from the local 
 
 - **WHEN** two tabs of one browser renew at the same moment
 - **THEN** both get the same live session and the device still has one session
+
+#### Scenario: Recent session is unlocked
+
+- **WHEN** a browser renews while its session minted a moment ago has Reveal or an admin window
+- **THEN** that session is deleted and a new locked session is returned
 
 #### Scenario: Terminated session
 
