@@ -19,6 +19,9 @@ func runProcessTree(mode, pidFile, holdFile string, termResistant bool) {
 		"--term-resistant="+strconv.FormatBool(termResistant),
 		"--ready-file="+readyFile,
 	)
+	// Explicit stdio: a nil Stdin/Stdout/Stderr makes os/exec open /dev/null,
+	// which the worker sandbox does not expose.
+	child.Stdin, child.Stdout, child.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := child.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "start descendant: %v\n", err)
 		os.Exit(10)
