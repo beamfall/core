@@ -29,6 +29,11 @@ if [ "${GATE_PROCESS_SUPERVISED:-0}" != 1 ]; then
 fi
 set -euo pipefail
 cd "$GATE_ROOT"
+# Set to 1 only immediately before an intentional successful exit. On /bin/bash
+# 3.2 `$?` reads 0 inside an EXIT trap after a `set -u` abort, so the trap
+# cannot trust a zero status unless this sentinel confirms the exit was ours
+# (CORE-0989).
+GATE_EXIT_OK=0
 # Wall-time vs metric-sum verification (GATE-OUTER-COORDINATION-1)
 # BEFORE da43f26b: wall 1752.065426s vs terminal-metric sum 1025.000000s (56 rows) -> discrepancy 727.065426s (41.50%)
 # AFTER  769b06f5: wall 2505.540252s vs terminal-metric sum 2524.797579s (68 rows; 3 fail rows are the
@@ -150,6 +155,11 @@ gate_retire_group() {
 gate_cleanup_children() {
   local status=$? group held duplicate any attempt ticks full_rss_status=0
   local had_residual=0 survivors=""
+  # Fixtures that source this function without the sentinel leave it unset.
+  if [ "$status" -eq 0 ] && [ "${GATE_EXIT_OK-1}" = 0 ]; then
+    echo "ERROR gate aborted without a successful exit (bash 3.2 reports status 0 in an EXIT trap after a set -u abort)" >&2
+    status=1
+  fi
   local groups=()
   trap - EXIT INT TERM
   # Bash 3.2 treats an empty declared array as unbound under `set -u`.
@@ -1385,6 +1395,7 @@ gate_full_rss_start
 
 if [[ "${GATE_CERT_DEMO_ONLY:-}" == "1" ]]; then
   run_cert_demo_tests
+  GATE_EXIT_OK=1
   exit 0
 fi
 
@@ -1395,6 +1406,7 @@ run_outer_checks
 if [[ "${GATE_PREFLIGHT:-0}" == "1" ]]; then
   run_gate_preflight_steps
   echo "gate-preflight: green"
+  GATE_EXIT_OK=1
   exit 0
 fi
 
@@ -1609,4 +1621,5 @@ run_scoped_step "design token drift gate" web node tools/gate/design-token-drift
 # above before Go embedded app-dist; web-scoped changes still run unit tests.
 run_scoped_step "web app typecheck + tests" web run_web_app test
 
+GATE_EXIT_OK=1
 echo "gate: green"
