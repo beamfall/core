@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { Navigate, Route, Routes } from "react-router";
 import { ErrorState } from "@/components/beamfall/workbench";
 import { AppShell } from "@/components/chrome/AppShell";
@@ -17,16 +17,8 @@ import { ProfilePickerPage } from "./pages/ProfilePickerPage";
 import { ProfileSettingsPage } from "./pages/ProfileSettingsPage";
 import { SearchPage } from "./pages/SearchPage";
 import { SeeAllPage } from "./pages/SeeAllPage";
+import { LazyPlayerPage } from "./player/LazyPlayerPage";
 import "./player/player-deferred.css";
-
-// The player is the only viewer route that pulls in hls.js (~162 KB gzip via
-// usePlayer). Lazying PlayerPage moves that static dependency out of the viewer
-// area chunk and into a PlayerPage chunk, so hls.js is fetched only when the
-// /watch route is actually navigated to — not on every Viewer route. PlayerPage
-// is a named export, re-mapped to the default the lazy() contract wants.
-const PlayerPage = lazy(() =>
-  import("./pages/PlayerPage").then((m) => ({ default: m.PlayerPage })),
-);
 
 function ViewerSessionError({ onRetry }: { onRetry: () => Promise<void> }) {
   const t = useT();
@@ -131,7 +123,7 @@ export function ViewerArea() {
         path="/watch/:mediaId"
         element={
           <Suspense fallback={<div className="min-h-screen bg-black" />}>
-            <PlayerPage />
+            <LazyPlayerPage />
           </Suspense>
         }
       />
