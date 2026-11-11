@@ -1429,7 +1429,7 @@ func logRequestFailure(ctx context.Context, r *http.Request, status int, message
 		// URL.Path never contains the query string so tokens/secrets in ?query
 		// params are not logged here. The request ID correlates this log line
 		// with the X-Beamfall-Request-Id response header.
-		attrs = append(attrs, "method", r.Method, "path", redactTokenPath(r.URL.Path))
+		attrs = append(attrs, "method", r.Method, "path", redactTokenPath(r.URL))
 		if reqID := requestIDFromContext(ctx); reqID != "" {
 			attrs = append(attrs, "requestID", reqID)
 		}
