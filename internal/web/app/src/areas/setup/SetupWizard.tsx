@@ -26,17 +26,11 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ApiError, type SignInSecurityMode } from "@/lib/api";
 import { displayString } from "@/lib/display";
-import {
-  browseServerFolders,
-  fetchConsoleConfig,
-  fetchJobs,
-  fetchPlugins,
-  setScraperCredential,
-} from "@/lib/graphql";
+import { browseServerFolders, fetchJobs, fetchPlugins, setScraperCredential } from "@/lib/graphql";
 import type { FolderEntryInfo, JobInfo, PluginSummary } from "@/lib/graphql/types";
 import { useI18n } from "@/lib/i18n";
 import { jobProgressDetail, jobStatusLabel } from "@/lib/jobDisplay";
-import { groupProviderKeys, keyNeeded, type ProviderKey } from "@/lib/providerKeys";
+import { keyNeeded, type ProviderKey } from "@/lib/providerKeys";
 import { cn } from "@/lib/utils";
 import type { StringKey } from "@/strings";
 import { FolderPicker } from "./FolderPicker";
@@ -51,6 +45,7 @@ import {
   type FirstLibraryProgress,
   LIBRARY_TYPES,
   type LibraryType,
+  loadProviderKeys,
   SetupTokenError,
   type UpdateCheckChannel,
 } from "./orchestrate";
@@ -285,17 +280,26 @@ export function SetupWizard() {
         setActivePlugins((prev) => (prev.has("filmtv") ? prev : new Set(prev).add("filmtv")));
       }
     });
-    // Optional: a failure leaves the key list empty and setup carries on.
-    void fetchConsoleConfig()
-      .then((config) => {
-        if (cancelled) return;
-        setProviderKeys(groupProviderKeys(config.plugins.flatMap((p) => p.scrapers ?? [])));
+    return () => {
+      cancelled = true;
+    };
+  }, [bootstrapped, resumedFromRestart]);
+
+  // Provider keys need the Admin Session, which only a fresh run can open (a
+  // resumed run never collected the password); those owners add keys in the
+  // Console. Optional: a failure leaves the list empty and setup carries on.
+  useEffect(() => {
+    if (!bootstrapped || resumedFromRestart || !adminPassword) return;
+    let cancelled = false;
+    void loadProviderKeys(adminPassword)
+      .then((keys) => {
+        if (!cancelled) setProviderKeys(keys);
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [bootstrapped, resumedFromRestart]);
+  }, [bootstrapped, resumedFromRestart, adminPassword]);
 
   // Keys still missing for a plugin the owner has switched on.
   const neededKeys = providerKeys.filter(

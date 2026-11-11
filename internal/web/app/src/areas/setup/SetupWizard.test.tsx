@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/lib/i18n";
+import { groupProviderKeys } from "@/lib/providerKeys";
 import { FirstLibraryError } from "./orchestrate";
 import { SetupWizard } from "./SetupWizard";
 
@@ -23,8 +24,8 @@ const mocks = vi.hoisted(() => ({
   configureUpdateCheck: vi.fn(),
   createFirstLibrary: vi.fn(),
   fetchJobs: vi.fn(),
-  fetchConsoleConfig: vi.fn(),
   fetchPlugins: vi.fn(),
+  loadProviderKeys: vi.fn(),
   setScraperCredential: vi.fn(),
 }));
 
@@ -34,7 +35,6 @@ vi.mock("@/lib/graphql", async () => {
     ...actual,
     browseServerFolders: mocks.browseServerFolders,
     fetchJobs: mocks.fetchJobs,
-    fetchConsoleConfig: mocks.fetchConsoleConfig,
     fetchPlugins: mocks.fetchPlugins,
     setScraperCredential: mocks.setScraperCredential,
   };
@@ -49,11 +49,12 @@ vi.mock("./orchestrate", async () => {
     bootstrapSetup: mocks.bootstrapSetup,
     configureUpdateCheck: mocks.configureUpdateCheck,
     createFirstLibrary: mocks.createFirstLibrary,
+    loadProviderKeys: mocks.loadProviderKeys,
   };
 });
 
 beforeEach(() => {
-  mocks.fetchConsoleConfig.mockResolvedValue({ plugins: [] });
+  mocks.loadProviderKeys.mockResolvedValue([]);
 });
 
 function renderSetupWizard() {
@@ -527,14 +528,9 @@ describe("SetupWizard provider keys (CORE-1115)", () => {
     mocks.configureUpdateCheck.mockResolvedValue(undefined);
     mocks.activatePlugins.mockResolvedValue(undefined);
     mocks.fetchPlugins.mockResolvedValue([{ id: "catalog", displayName: "Catalog" }]);
-    mocks.fetchConsoleConfig.mockResolvedValue({
-      plugins: [
-        {
-          id: "catalog",
-          scrapers: [scraper("movies", "Example (Movies)"), scraper("tv", "Example (TV)")],
-        },
-      ],
-    });
+    mocks.loadProviderKeys.mockResolvedValue(
+      groupProviderKeys([scraper("movies", "Example (Movies)"), scraper("tv", "Example (TV)")]),
+    );
     mocks.setScraperCredential.mockResolvedValue({
       authRef: "example-api-key",
       credentialConfigured: true,
@@ -566,6 +562,7 @@ describe("SetupWizard provider keys (CORE-1115)", () => {
     await waitFor(() =>
       expect(mocks.setScraperCredential).toHaveBeenCalledWith("example-api-key", "test-key-value"),
     );
+    expect(mocks.loadProviderKeys).toHaveBeenCalledWith("correct horse battery staple");
     expect(mocks.activatePlugins.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.setScraperCredential.mock.invocationCallOrder[0],
     );

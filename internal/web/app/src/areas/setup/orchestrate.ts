@@ -1,6 +1,7 @@
 import { ApiError, fetchSetupStatus, postJSON, type SignInSecurityMode } from "@/lib/api";
 import {
   createLibrary,
+  fetchConsoleConfig,
   fetchLibraries,
   fetchSetupState,
   scanLibrary,
@@ -10,6 +11,7 @@ import {
   verifyAdminSession,
 } from "@/lib/graphql";
 import type { SetupState } from "@/lib/graphql/types";
+import { groupProviderKeys, type ProviderKey } from "@/lib/providerKeys";
 import type { StringKey } from "@/strings";
 
 // First-run setup orchestration (WEB-1, ADR-0007 §2). The wizard's visual step
@@ -158,6 +160,17 @@ export async function activatePlugins(pluginIDs: string[]): Promise<void> {
   for (const pluginID of pluginIDs) {
     await setPluginActive(pluginID, true);
   }
+}
+
+/**
+ * List the provider keys the installed plugins' scrapers declare (CORE-1115).
+ * Console config is Admin-Session-gated, so first-run setup verifies that gate
+ * with the password the operator just created, as `configureUpdateCheck` does.
+ */
+export async function loadProviderKeys(adminPassword: string): Promise<ProviderKey[]> {
+  await verifyAdminSession(adminPassword);
+  const config = await fetchConsoleConfig();
+  return groupProviderKeys(config.plugins.flatMap((p) => p.scrapers ?? []));
 }
 
 /**
