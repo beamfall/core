@@ -2,6 +2,7 @@ package remoteaccess
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
@@ -44,11 +45,12 @@ const (
 )
 
 // RelayClient dials OUT to a self-hosted relay (ADR-0018/0025), authenticates
-// with the carrier token, registers this server's public host, then carries
-// inbound relayed connections byte-blind: the relay opens one yamux stream per
-// inbound public client and the client splices each stream to the local server.
-// The token is resolved from a 0600 secret at dial time and held only in memory
-// for the carrier — never logged, never placed in config (invariant 5).
+// with a freshly minted carrier token, registers this server's public host, then
+// carries inbound relayed connections byte-blind: the relay opens one yamux
+// stream per inbound public client and the client splices each stream to the
+// local server. The shared HMAC secret is resolved from a 0600 file at dial time
+// and only a single-use v2 token derived from it goes on the wire; neither is
+// logged nor placed in config (invariant 5).
 //
 // Client TLS terminates on THIS server: the relay forwards raw
 // bytes, so each yamux stream carries a pristine client ClientHello that the
@@ -66,11 +68,29 @@ type RelayClient struct {
 	// has no local target and Carry refuses to start — set by the caller once
 	// the listener address is known.
 	backendAddr string
+	// now and nonce feed the per-dial token minter; tests inject them.
+	now   func() time.Time
+	nonce io.Reader
 
 	mu        sync.Mutex
 	state     RelayState
 	lastError string
 	lastDial  time.Time
+	// generation counts successful registrations. Only the newest
+	// generation's Carry exit may change the relay state; a superseded
+	// (rotated-out) session draining away is not a carrier loss.
+	generation uint64
+}
+
+// RelaySession is a live carrier session returned by Connect and consumed by
+// Carry.
+type RelaySession = relaySession
+
+// relayGenerationSession tags a session with the registration generation that
+// produced it.
+type relayGenerationSession struct {
+	relaySession
+	generation uint64
 }
 
 // dialFunc abstracts the outbound TLS dial so tests can substitute a local
@@ -96,6 +116,8 @@ func NewRelayClient(ra config.RemoteAccessConfig, secretDir string) (*RelayClien
 		secretDir: secretDir,
 		dial:      dial,
 		dialQUIC:  quicDial,
+		now:       time.Now,
+		nonce:     rand.Reader,
 		state:     RelayDisconnected,
 	}, nil
 }
@@ -139,26 +161,57 @@ func (c *RelayClient) setState(s RelayState, errMsg string) {
 	c.mu.Unlock()
 }
 
+// setGenerationState changes the state only when generation is still the
+// newest registration (0 marks an untracked session and always applies).
+func (c *RelayClient) setGenerationState(generation uint64, s RelayState, errMsg string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if generation != 0 && generation != c.generation {
+		return
+	}
+	c.state = s
+	c.lastError = errMsg
+}
+
 // Connect performs one dial + register + multiplexer-start attempt. It resolves
-// the carrier token, dials the relay over TLS 1.3, writes the hello frame,
-// reads the relay's ack, and starts the yamux client over the same carrier. On
-// success the state is RelayConnected and the live session is returned for the
-// caller's Carry loop; on any failure the state is RelayError with a token-free
-// reason.
+// the shared secret, mints a fresh single-use v2 carrier token, dials the relay
+// over TLS 1.3, writes the hello frame, reads the relay's ack, and starts the
+// yamux client over the same carrier. On success the state is RelayConnected
+// and the live session is returned for the caller's Carry loop; on any failure
+// the state is RelayError with a secret- and token-free reason.
+//
+// A Connect made while a session is already connected is a rotation: it
+// registers a same-identity replacement and leaves the state untouched on
+// failure, since the current session is still carrying.
 func (c *RelayClient) Connect(ctx context.Context) (relaySession, error) {
+	c.mu.Lock()
+	rotating := c.state == RelayConnected
+	c.mu.Unlock()
+	report := func(s RelayState, msg string) {
+		if !rotating {
+			c.setState(s, msg)
+		}
+	}
 	if c.cfg.PublicHost == "" {
 		err := errors.New("relay endpoint set but no public host to register (set --relay-public-host or --public-domain)")
-		c.setState(RelayError, err.Error())
+		report(RelayError, err.Error())
 		return nil, err
 	}
-	token, err := c.resolveToken()
+	secret, err := c.resolveToken()
 	if err != nil {
-		// resolveToken never includes the token in its error (it reports path
+		// resolveToken never includes the secret in its error (it reports path
 		// + permission problems only), so this is safe to surface.
-		c.setState(RelayError, err.Error())
+		report(RelayError, err.Error())
 		return nil, err
 	}
-	c.setState(RelayConnecting, "")
+	hostnames := []string{c.cfg.PublicHost}
+	token, err := mintRelayTokenV2(secret, hostnames, c.now(), c.nonce)
+	if err != nil {
+		// The minter's errors are fixed strings with no secret or token.
+		report(RelayError, err.Error())
+		return nil, err
+	}
+	report(RelayConnecting, "")
 	c.mu.Lock()
 	c.lastDial = time.Now().UTC()
 	c.mu.Unlock()
@@ -168,10 +221,10 @@ func (c *RelayClient) Connect(ctx context.Context) (relaySession, error) {
 		var conn *quic.Conn
 		conn, err = c.dialQUIC(ctx, c.cfg.Endpoint)
 		if err != nil {
-			c.setState(RelayError, sanitizeDialError(err, token))
+			report(RelayError, sanitizeDialError(err, secret, token))
 			return nil, fmt.Errorf("dialing relay: %w", err)
 		}
-		session, err = c.registerQUIC(ctx, conn, token)
+		session, err = c.registerQUIC(ctx, conn, hostnames, token, secret)
 		if err != nil {
 			_ = conn.CloseWithError(0, "")
 		}
@@ -179,34 +232,39 @@ func (c *RelayClient) Connect(ctx context.Context) (relaySession, error) {
 		var conn net.Conn
 		conn, err = c.dial(ctx, c.cfg.Endpoint)
 		if err != nil {
-			c.setState(RelayError, sanitizeDialError(err, token))
+			report(RelayError, sanitizeDialError(err, secret, token))
 			return nil, fmt.Errorf("dialing relay: %w", err)
 		}
-		session, err = c.registerTCP(conn, token)
+		session, err = c.registerTCP(conn, hostnames, token, secret)
 		if err != nil {
 			_ = conn.Close()
 		}
 	}
 	if err != nil {
-		c.setState(RelayError, err.Error())
+		report(RelayError, err.Error())
 		return nil, fmt.Errorf("relay registration: %w", err)
 	}
-	c.setState(RelayConnected, "")
-	return session, nil
+	c.mu.Lock()
+	c.generation++
+	generation := c.generation
+	c.state = RelayConnected
+	c.lastError = ""
+	c.mu.Unlock()
+	return &relayGenerationSession{relaySession: session, generation: generation}, nil
 }
 
 // register authenticates the carrier, registers the public host, and starts the
 // yamux multiplexer. It writes the length-prefixed JSON hello
-// frame (carrier token + the public host as the routed hostname), reads the
-// relay's ack, and on acceptance upgrades the same TLS carrier to a yamux
+// frame (minted carrier token + the public host as the routed hostname), reads
+// the relay's ack, and on acceptance upgrades the same TLS carrier to a yamux
 // client session. A non-ack frame (e.g. error, or a bad version the relay
 // refused) is a rejected carrier. The token rides the encrypted carrier and is
-// never logged here or elsewhere.
-func (c *RelayClient) registerTCP(conn net.Conn, token []byte) (*yamux.Session, error) {
+// never logged here or elsewhere; secret is used only for redaction.
+func (c *RelayClient) registerTCP(conn net.Conn, hostnames []string, token, secret []byte) (*yamux.Session, error) {
 	// Bound the handshake so a silent or slow relay cannot pin the dial
 	// goroutine forever; cleared before yamux (which carries no deadline).
 	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
-	if err := c.handshake(conn, token); err != nil {
+	if err := relayHandshake(conn, hostnames, token, secret); err != nil {
 		return nil, err
 	}
 	_ = conn.SetDeadline(time.Time{})
@@ -217,22 +275,25 @@ func (c *RelayClient) registerTCP(conn net.Conn, token []byte) (*yamux.Session, 
 	return session, nil
 }
 
-func (c *RelayClient) registerQUIC(ctx context.Context, conn *quic.Conn, token []byte) (relaySession, error) {
+func (c *RelayClient) registerQUIC(ctx context.Context, conn *quic.Conn, hostnames []string, token, secret []byte) (relaySession, error) {
 	stream, err := conn.OpenStreamSync(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("open quic carrier handshake stream: %w", err)
 	}
 	_ = stream.SetDeadline(time.Now().Add(10 * time.Second))
-	if err := c.handshake(stream, token); err != nil {
+	if err := relayHandshake(stream, hostnames, token, secret); err != nil {
 		return nil, err
 	}
 	_ = stream.SetDeadline(time.Time{})
 	return &relayQUICSession{conn: conn}, nil
 }
 
-func (c *RelayClient) handshake(rw io.ReadWriter, token []byte) error {
+// relayHandshake sends the hello for hostnames (the same list the token was minted
+// over) and reads the relay's answer, redacting secret and token from any
+// relay-supplied reason.
+func relayHandshake(rw io.ReadWriter, hostnames []string, token, secret []byte) error {
 	hello := relayFrame{Type: relayFrameHello, Hello: &relayHello{
-		Version: relayProtoVersion, Token: token, Hostnames: []string{c.cfg.PublicHost},
+		Version: relayProtoVersion, Token: token, Hostnames: hostnames,
 	}}
 	if err := writeRelayFrame(rw, hello); err != nil {
 		return err
@@ -246,7 +307,7 @@ func (c *RelayClient) handshake(rw io.ReadWriter, token []byte) error {
 			if strings.TrimSpace(frame.Error) == "invalid hello" {
 				return ErrRelayInvalidHello
 			}
-			return fmt.Errorf("relay rejected carrier: %s", redactToken(frame.Error, token))
+			return fmt.Errorf("relay rejected carrier: %s", redactToken(frame.Error, secret, token))
 		}
 		return errors.New("relay rejected carrier")
 	}
@@ -262,16 +323,22 @@ func (c *RelayClient) handshake(rw io.ReadWriter, token []byte) error {
 // blocks until the session ends (relay loss, carrier tear-down) or ctx is
 // cancelled, then marks the carrier disconnected so the Console state is honest
 // — RelayConnected only ever reflects a session that is actually forwarding.
+// A session superseded by a newer registration (rotation) leaves the state to
+// its replacement when it ends.
 //
 // Carry takes ownership of the session and closes it on return.
 func (c *RelayClient) Carry(ctx context.Context, session relaySession) error {
+	var generation uint64
+	if gs, ok := session.(*relayGenerationSession); ok {
+		generation = gs.generation
+	}
 	c.mu.Lock()
 	backend := c.backendAddr
 	c.mu.Unlock()
 	if backend == "" {
 		_ = session.Close()
 		err := errors.New("relay carry has no local backend address")
-		c.setState(RelayError, err.Error())
+		c.setGenerationState(generation, RelayError, err.Error())
 		return err
 	}
 
@@ -323,13 +390,13 @@ func (c *RelayClient) Carry(ctx context.Context, session relaySession) error {
 	// The carrier is no longer forwarding. Reflect that honestly: a clean
 	// ctx-driven exit is a disconnect; an unexpected session loss is an error.
 	if ctx.Err() != nil {
-		c.setState(RelayDisconnected, "")
+		c.setGenerationState(generation, RelayDisconnected, "")
 	} else {
 		msg := "relay carrier session ended"
 		if carryErr != nil {
 			msg = "relay carrier session ended: " + carryErr.Error()
 		}
-		c.setState(RelayError, msg)
+		c.setGenerationState(generation, RelayError, msg)
 	}
 	return carryErr
 }
@@ -417,11 +484,11 @@ func (c *RelayClient) currentState() RelayState {
 	return c.state
 }
 
-// resolveToken reads the carrier token from <secretDir>/relay-token. It refuses
-// a group/other-readable file (invariant 5) and an empty file. The returned
-// error never contains the token's contents or secret path.
-// The token is opaque bytes (the relay passes them to its verifier seam); the
-// trailing newline a 0600 secret file commonly carries is trimmed.
+// resolveToken reads the shared HMAC secret from <secretDir>/relay-token (the
+// same value as relayd --token-file). It refuses a group/other-readable file
+// (invariant 5) and an empty file. The returned error never contains the
+// secret's contents or path. Leading and trailing white space is trimmed, as
+// relayd does; the bytes are used raw, never base64-decoded, and never sent.
 func (c *RelayClient) resolveToken() ([]byte, error) {
 	path := filepath.Join(c.secretDir, relayTokenFile)
 	info, err := os.Stat(path)
@@ -518,16 +585,19 @@ func loadRelayRoots(caPath string) (*x509.CertPool, error) {
 }
 
 // sanitizeDialError returns the dial error string with any accidental
-// occurrence of the token redacted. Dial errors carry network detail, not
-// secrets, but this is belt-and-suspenders for the byte-blindness invariant.
-func sanitizeDialError(err error, token []byte) string {
-	return redactToken(err.Error(), token)
+// occurrence of the secret or token redacted. Dial errors carry network detail,
+// not secrets, but this is belt-and-suspenders for the byte-blindness invariant.
+func sanitizeDialError(err error, secrets ...[]byte) string {
+	return redactToken(err.Error(), secrets...)
 }
 
-func redactToken(msg string, token []byte) string {
-	if len(token) > 0 {
-		msg = strings.ReplaceAll(msg, string(token), "[redacted]")
-		msg = strings.ReplaceAll(msg, base64.StdEncoding.EncodeToString(token), "[redacted]")
+// redactToken replaces every raw or base64 occurrence of each secret in msg.
+func redactToken(msg string, secrets ...[]byte) string {
+	for _, secret := range secrets {
+		if len(secret) > 0 {
+			msg = strings.ReplaceAll(msg, string(secret), "[redacted]")
+			msg = strings.ReplaceAll(msg, base64.StdEncoding.EncodeToString(secret), "[redacted]")
+		}
 	}
 	return msg
 }
