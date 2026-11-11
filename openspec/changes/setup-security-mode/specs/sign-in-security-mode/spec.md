@@ -54,10 +54,16 @@ sign-in page SHALL hide the admin-password form in strict mode.
 
 ### Requirement: Changing the mode needs a Manager and the admin password
 
-`POST /api/web/signin-security` SHALL change the mode only for a Manager session that presents the
-correct admin password in the same request. A wrong or missing password SHALL be refused with 401
-and count against the admin re-auth backoff lane of the caller's Profile, which a renewed session
-shares; a throttled caller SHALL get 429.
+`POST /api/web/signin-security` SHALL change the mode only for the owner's Manager session with the
+correct admin password in the same request, rechecking owner and session in the write's
+transaction. A wrong or missing password SHALL be refused with 401 and count against the admin
+re-auth backoff lane of the caller's Profile, which a renewed session shares; a throttled caller
+SHALL get 429.
+
+#### Scenario: Ownership moves during the password check
+
+- **WHEN** ownership is transferred after the caller's checks pass and before the mode is written
+- **THEN** the change is refused with 401 and the mode is unchanged
 
 #### Scenario: Wrong password
 

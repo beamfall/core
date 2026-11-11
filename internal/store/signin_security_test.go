@@ -107,3 +107,46 @@ func TestSetSignInSecurityModeReturnsOldMode(t *testing.T) {
 		t.Fatalf("mode after refused write = (%q, %v), want home", mode, err)
 	}
 }
+
+func TestSetSignInSecurityModeAsOwnerRechecksTheCaller(t *testing.T) {
+	ctx := context.Background()
+	st := openBackoffStore(t)
+	now := time.Unix(1_000_000, 0).UTC()
+	manager, err := st.Session(ctx, "session-manager")
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := func(session SessionID, profile ProfileID) bool {
+		t.Helper()
+		_, ok, err := st.SetSignInSecurityModeAsOwner(ctx, session, profile, SignInSecurityStrict, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+	if set("session-default", manager.ProfileID) {
+		t.Fatal("a session bound to another device or Profile changed the mode")
+	}
+	if err := st.SetProfileOwner(ctx, manager.ProfileID); err != nil {
+		t.Fatal(err)
+	}
+	other, err := st.CreateProfile(ctx, "Other Owner", ProfileAdult, LibraryFilter{Revealed: true, AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetProfileOwner(ctx, other.ID); err != nil {
+		t.Fatal(err)
+	}
+	if set("session-manager", manager.ProfileID) {
+		t.Fatal("a former owner changed the mode")
+	}
+	if err := st.SetProfileOwner(ctx, manager.ProfileID); err != nil {
+		t.Fatal(err)
+	}
+	if !set("session-manager", manager.ProfileID) {
+		t.Fatal("the owner's Manager session could not change the mode")
+	}
+	if mode, err := st.SignInSecurityMode(ctx); err != nil || mode != SignInSecurityStrict {
+		t.Fatalf("stored mode = (%q, %v), want strict", mode, err)
+	}
+}

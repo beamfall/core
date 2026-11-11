@@ -65,36 +65,81 @@ func (s *Store) SignInSecurityMode(ctx context.Context) (SignInSecurityMode, err
 
 // SetSignInSecurityMode stores mode and returns the mode it replaced, read in
 // the same transaction so the caller's audit entry names the true old value.
+// It checks no caller; a signed-in switch uses SetSignInSecurityModeAsOwner.
 func (s *Store) SetSignInSecurityMode(ctx context.Context, mode SignInSecurityMode, now time.Time) (SignInSecurityMode, error) {
+	old, _, err := s.setSignInSecurityMode(ctx, mode, now, nil)
+	return old, err
+}
+
+// SetSignInSecurityModeAsOwner stores mode only while the caller still
+// qualifies, checked in the same transaction as the write: session is an
+// unexpired enrolled session bound to profile on a non-revoked Manager
+// Device, and profile is the designated owner or, with no owner designated,
+// an adult (the rule GrantAdminWindow applies). An ownership transfer or
+// device revocation that commits during the caller's slow password check
+// therefore cannot be overtaken. It reports false, writing nothing, when the
+// caller no longer qualifies, and otherwise returns the mode it replaced.
+func (s *Store) SetSignInSecurityModeAsOwner(ctx context.Context, session SessionID, profile ProfileID, mode SignInSecurityMode, now time.Time) (SignInSecurityMode, bool, error) {
+	if session == "" || profile == "" {
+		return "", false, ValidationError("session and profile are required")
+	}
+	return s.setSignInSecurityMode(ctx, mode, now, func(tx *sql.Tx) (bool, error) {
+		var qualifies int
+		err := tx.QueryRowContext(ctx, `
+			SELECT EXISTS(
+				SELECT 1 FROM auth_session AS s
+				JOIN device AS d ON d.id = s.device_id
+				JOIN profile AS p ON p.id = s.profile_id
+				WHERE s.id = ? AND s.profile_id = ?
+					AND (s.kind = ? OR s.kind IS NULL OR s.kind = '')
+					AND (s.expires_at_ms IS NULL OR s.expires_at_ms > ?)
+					AND d.revoked = 0 AND d.role = ?
+					AND p.kind = ?
+					AND (p.is_owner = 1 OR NOT EXISTS (SELECT 1 FROM profile WHERE is_owner = 1)))`,
+			session, profile, SessionKindEnrolled, timeToMillis(now), DeviceRoleManager, ProfileAdult,
+		).Scan(&qualifies)
+		return qualifies != 0, err
+	})
+}
+
+// setSignInSecurityMode writes mode in one transaction, after guard (when
+// set) confirms the caller still qualifies in that transaction.
+func (s *Store) setSignInSecurityMode(ctx context.Context, mode SignInSecurityMode, now time.Time, guard func(*sql.Tx) (bool, error)) (SignInSecurityMode, bool, error) {
 	mode, err := ParseSignInSecurityMode(string(mode))
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
-		return "", err
+		return "", false, err
 	}
 	tx, err := s.catalogW.BeginTx(ctx, nil)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	defer tx.Rollback()
+	if guard != nil {
+		ok, err := guard(tx)
+		if err != nil || !ok {
+			return "", false, err
+		}
+	}
 	old := SignInSecurityHome
 	var raw string
 	switch err := tx.QueryRowContext(ctx, `SELECT value FROM server_config WHERE key = ?`, configSignInSecurityMode).Scan(&raw); {
 	case err == nil:
 		old = storedSignInSecurityMode(raw)
 	case !errors.Is(err, sql.ErrNoRows):
-		return "", err
+		return "", false, err
 	}
 	if err := upsertSignInSecurityModeTx(ctx, tx, mode, now); err != nil {
-		return "", err
+		return "", false, err
 	}
 	if err := tx.Commit(); err != nil {
-		return "", err
+		return "", false, err
 	}
-	return old, nil
+	return old, true, nil
 }
 
 func upsertSignInSecurityModeTx(ctx context.Context, tx *sql.Tx, mode SignInSecurityMode, now time.Time) error {

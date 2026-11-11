@@ -157,6 +157,10 @@ type Service struct {
 	// owner and password checks and before the window is written. Test seam
 	// for the ownership-transfer race; nil in production.
 	beforeAdminGrant func()
+	// beforeModeWrite, when non-nil, runs in ChangeSignInSecurityMode after
+	// the owner and password checks and before the mode is written. Test
+	// seam for the ownership-transfer race; nil in production.
+	beforeModeWrite func()
 }
 
 // NewService creates an auth service.
@@ -855,9 +859,21 @@ func (s *Service) ChangeSignInSecurityMode(ctx context.Context, scope Scope, mod
 	if err := s.verifyAdminReauth(ctx, scope, password, attemptKey, now); err != nil {
 		return "", err
 	}
-	old, err := s.store.SetSignInSecurityMode(ctx, mode, now)
+	if s.beforeModeWrite != nil {
+		s.beforeModeWrite()
+	}
+	// As in BeginAdminSession, the owner and Manager checks may be stale
+	// after the KDF, so the store re-checks them in the write's transaction
+	// and a lost race is denied like a non-owner.
+	old, changed, err := s.store.SetSignInSecurityModeAsOwner(ctx, scope.SessionID, scope.ProfileID, mode, now)
 	if err != nil {
 		return "", err
+	}
+	if !changed {
+		// The failure was counted when the attempt was reserved.
+		s.auditAdmin(ctx, scope, now, store.ActivityAdminLoginDenied)
+		NoteRefusal(ctx, refusalOperationAdminSession, RefusalAdminPasswordRejected, true)
+		return "", ErrAdminPassword
 	}
 	s.recordAdminAttempt(ctx, attemptKey, now, true)
 	_ = s.store.AppendActivity(ctx, store.ActivityEntry{
