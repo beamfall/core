@@ -194,7 +194,9 @@ and the architecture test in `internal/conformance` disagree, the test wins.
 ### Clients
 
 Core serves its own Web UI at `/web/`: first-run setup, the Beamfall Console for
-administration, library management, and a browser player. It lives in this repository under the
+administration, library management, and a browser player. On a fresh server, open
+`http://<server-ip>:8800/web/` from a browser on the same network to finish first-run setup; no
+token is needed there. It lives in this repository under the
 same license. Native Beamfall apps are separate products and are not part of this repository.
 They talk to Core over its network API, and Core never needs them to run.
 
