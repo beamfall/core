@@ -13,6 +13,10 @@ unset GATE_DIFF_BASE GATE_DIFF_HEAD GATE_MODE GATE_PREFLIGHT RELAY_VECTORS_PATH 
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+# Browser steps key Playwright's directory under HOME; the host's shared cache
+# changes while other jobs install browsers, so the fixture uses its own HOME.
+mkdir -p "$TMP/default-home"
+export HOME="$TMP/default-home"
 
 python3 - "$ROOT/tools/gate/gate.sh" "$TMP/steps.sh" <<'PY'
 from pathlib import Path
