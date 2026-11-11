@@ -32,6 +32,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -39,6 +40,9 @@ import (
 )
 
 const defaultFloorPath = "testing/coverage-floor.json"
+const defaultDiagDir = ".agent-evidence/covratchet" // gitignored; fixed names keep it bounded
+const diagOutputName = "go-test-output.txt"
+const diagProfileName = "coverage.out"
 const seedHeadroom = 3.0 // pp below measured when seeding
 const aggregateName = "github.com/beamfall/core"
 const unlistedPackageLineThreshold = 500
@@ -56,11 +60,16 @@ type measurement struct {
 	Aggregate float64
 	Packages  map[string]float64
 	Lines     map[string]int
+	// Output and Profile are the successful go test output and coverage profile,
+	// kept so a failing ratchet can be inspected without rerunning the tests.
+	Output  []byte
+	Profile []byte
 }
 
 func main() {
 	floorPath := flag.String("floor", defaultFloorPath, "path to coverage-floor.json")
 	checkFlag := flag.Bool("check", false, "check coverage floors and exit non-zero on regression")
+	diagDir := flag.String("diag-dir", defaultDiagDir, "directory that keeps test output and profile when the ratchet fails")
 	seed := flag.Bool("seed", false, "measure current coverage and print a seeded floor file")
 	flag.Parse()
 	_ = checkFlag // Checking is the default; -check is kept for roadmap/CI callers.
@@ -82,7 +91,32 @@ func main() {
 		os.Exit(1)
 	}
 
-	os.Exit(check(measured, floors))
+	code := check(measured, floors)
+	if code != 0 {
+		retainDiagnostics(*diagDir, measured)
+	}
+	os.Exit(code)
+}
+
+// retainDiagnostics writes the successful go test output and coverage profile
+// of a run whose ratchet failed. Fixed file names are overwritten on the next
+// failure, so retention stays bounded; green runs never call it.
+func retainDiagnostics(dir string, m *measurement) {
+	if len(m.Output) == 0 && len(m.Profile) == 0 {
+		return
+	}
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		fmt.Fprintf(os.Stderr, "covratchet: keep diagnostics: %v\n", err)
+		return
+	}
+	for name, data := range map[string][]byte{diagOutputName: m.Output, diagProfileName: m.Profile} {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			fmt.Fprintf(os.Stderr, "covratchet: keep diagnostics: %v\n", err)
+			return
+		}
+		fmt.Fprintf(os.Stderr, "covratchet: kept %s\n", path)
+	}
 }
 
 type coverageRunner func(profile string) ([]byte, error)
@@ -112,7 +146,9 @@ func measureCoverageWith(run coverageRunner) (*measurement, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &measurement{Aggregate: aggregate, Packages: results, Lines: lines}, parseErr
+	// #nosec G304 -- path is the process-created temp profile.
+	profile, _ := os.ReadFile(tmp.Name())
+	return &measurement{Aggregate: aggregate, Packages: results, Lines: lines, Output: out, Profile: profile}, parseErr
 }
 
 func parseCoverage(out []byte) (map[string]float64, error) {
