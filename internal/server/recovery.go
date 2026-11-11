@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
+	"path"
 	"runtime/debug"
 	"strings"
 )
@@ -29,7 +31,7 @@ func recoverPanics(next http.Handler) http.Handler {
 			attrs := []any{
 				"status", http.StatusInternalServerError,
 				"method", r.Method,
-				"path", redactTokenPath(r.URL.Path),
+				"path", redactTokenPath(r.URL),
 				"panic", fmt.Sprint(panicValue),
 				"stack", string(debug.Stack()),
 			}
@@ -74,22 +76,65 @@ var tokenRoutePrefixes = []string{
 
 const redactedTokenSegment = "[redacted]"
 
-// redactTokenPath replaces the token segment of a token-bearing path, keeping
-// the route prefix and the non-secret trailing segments as safe diagnostics.
-// Paths outside the token prefixes pass through unchanged.
-func redactTokenPath(path string) string {
-	for _, prefix := range tokenRoutePrefixes {
-		rest, found := strings.CutPrefix(path, prefix)
-		if !found || rest == "" {
-			continue
+// redactTokenPath is the loggable form of u's path: normalized, with every
+// token segment replaced. It fails closed: repeated slashes and dot segments
+// are resolved first (the logger runs even when routing redirects or rejects
+// the raw path), a token prefix is matched anywhere in the path, and when the
+// raw path carries an encoded slash nothing after the prefix is kept, because
+// the decoded segment boundary no longer marks where the token ends. The query
+// string is never part of the result.
+func redactTokenPath(u *url.URL) string {
+	clean := normalizeLogPath(u.Path)
+	if strings.Contains(strings.ToLower(u.RawPath), "%2f") {
+		if i, prefix := firstTokenPrefix(clean); i >= 0 {
+			return clean[:i+len(prefix)] + redactedTokenSegment
 		}
-		_, suffix, hasSuffix := strings.Cut(rest, "/")
-		if !hasSuffix {
-			return prefix + redactedTokenSegment
-		}
-		return prefix + redactedTokenSegment + "/" + suffix
+		return clean
 	}
-	return path
+	return redactTokenSegments(clean)
+}
+
+// redactTokenSegments replaces the segment after each token prefix in a
+// normalized path, keeping the non-secret segments as diagnostics.
+func redactTokenSegments(clean string) string {
+	i, prefix := firstTokenPrefix(clean)
+	if i < 0 {
+		return clean
+	}
+	head := clean[:i+len(prefix)] + redactedTokenSegment
+	_, suffix, hasSuffix := strings.Cut(clean[i+len(prefix):], "/")
+	if !hasSuffix {
+		return head
+	}
+	return head + redactTokenSegments("/"+suffix)
+}
+
+// firstTokenPrefix reports the earliest token prefix in a normalized path and
+// its index, or -1.
+func firstTokenPrefix(clean string) (int, string) {
+	first, match := -1, ""
+	for _, prefix := range tokenRoutePrefixes {
+		if i := strings.Index(clean, prefix); i >= 0 && (first < 0 || i < first) {
+			first, match = i, prefix
+		}
+	}
+	return first, match
+}
+
+// isTokenRoutePath reports whether a request path carries a Stream Token.
+func isTokenRoutePath(u *url.URL) bool {
+	i, _ := firstTokenPrefix(normalizeLogPath(u.Path))
+	return i >= 0
+}
+
+// normalizeLogPath collapses repeated slashes and resolves dot segments,
+// keeping a trailing slash so a bare token prefix still matches.
+func normalizeLogPath(p string) string {
+	clean := path.Clean("/" + p)
+	if strings.HasSuffix(p, "/") && clean != "/" {
+		clean += "/"
+	}
+	return clean
 }
 
 func restoreHeader(dst, src http.Header) {
@@ -102,6 +147,8 @@ func restoreHeader(dst, src http.Header) {
 type trackedResponseWriter struct {
 	http.ResponseWriter
 	committed bool
+	// status is the final status sent, set once the response commits.
+	status int
 }
 
 func (w *trackedResponseWriter) WriteHeader(status int) {
@@ -109,13 +156,29 @@ func (w *trackedResponseWriter) WriteHeader(status int) {
 	// Informational responses do not commit the final response, except for the
 	// protocol-switching 101 response.
 	if status == http.StatusSwitchingProtocols || status >= http.StatusOK {
-		w.committed = true
+		w.commit(status)
 	}
 }
 
 func (w *trackedResponseWriter) Write(p []byte) (int, error) {
-	w.committed = true
+	w.commit(http.StatusOK)
 	return w.ResponseWriter.Write(p)
+}
+
+func (w *trackedResponseWriter) commit(status int) {
+	if !w.committed {
+		w.status = status
+	}
+	w.committed = true
+}
+
+// statusCode reports the status the response carried: 200 when the handler
+// returned without writing, as net/http then sends.
+func (w *trackedResponseWriter) statusCode() int {
+	if w.status == 0 {
+		return http.StatusOK
+	}
+	return w.status
 }
 
 func (w *trackedResponseWriter) Unwrap() http.ResponseWriter {
@@ -160,7 +223,7 @@ type trackedHijacker struct {
 func (w *trackedHijacker) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	conn, rw, err := w.hijacker.Hijack()
 	if err == nil {
-		w.committed = true
+		w.commit(http.StatusSwitchingProtocols)
 	}
 	return conn, rw, err
 }
@@ -188,7 +251,7 @@ func (w *trackedFlusherHijacker) FlushError() error {
 func (w *trackedFlusherHijacker) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	conn, rw, err := w.hijacker.Hijack()
 	if err == nil {
-		w.committed = true
+		w.commit(http.StatusSwitchingProtocols)
 	}
 	return conn, rw, err
 }

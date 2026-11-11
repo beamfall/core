@@ -113,7 +113,7 @@ func TestEventStreamOutboxReadErrorsAreLogged(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 
-	lines := strings.Split(strings.TrimSpace(logs.String()), "\n")
+	lines := strings.Split(strings.TrimSpace(withoutAccessLines(logs.String())), "\n")
 	if len(lines) != 1 {
 		t.Fatalf("want 1 structured log, got %d: %q", len(lines), logs.String())
 	}
@@ -148,7 +148,7 @@ func TestEventStreamOutboxReadCancellationIsQuiet(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
-	if got := logs.String(); got != "" {
+	if got := strings.TrimSpace(withoutAccessLines(logs.String())); got != "" {
 		t.Fatalf("unexpected log for cancellation path: %q", got)
 	}
 }

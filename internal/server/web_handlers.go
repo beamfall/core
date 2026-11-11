@@ -66,6 +66,7 @@ func (s *Server) enrollWebDevice(w http.ResponseWriter, r *http.Request) {
 	req.IsLAN = requestIsLAN(r)
 	resp, err := s.pairing.Enroll(r.Context(), req)
 	if err != nil {
+		notePairingRefusal(r, refusalOperationEnroll, err)
 		switch {
 		case errors.Is(err, pairing.ErrThrottled):
 			writeError(w, r, http.StatusTooManyRequests, "pairing attempts throttled")
@@ -116,6 +117,7 @@ func (s *Server) setupFirstRun(w http.ResponseWriter, r *http.Request) {
 	req.RemoteAddr = r.RemoteAddr
 	resp, err := s.pairing.Bootstrap(r.Context(), req)
 	if err != nil {
+		notePairingRefusal(r, refusalOperationSetup, err)
 		switch {
 		case errors.Is(err, pairing.ErrThrottled):
 			writeError(w, r, http.StatusTooManyRequests, "setup attempts throttled")
@@ -178,6 +180,7 @@ func (s *Server) promoteWebDevice(w http.ResponseWriter, r *http.Request) {
 	req.RemoteAddr = r.RemoteAddr
 	resp, err := s.pairing.Promote(r.Context(), scope, req)
 	if err != nil {
+		notePairingRefusal(r, refusalOperationPromote, err)
 		switch {
 		case errors.Is(err, pairing.ErrThrottled):
 			writeError(w, r, http.StatusTooManyRequests, "pairing attempts throttled")

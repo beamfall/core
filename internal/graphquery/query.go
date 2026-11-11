@@ -27,6 +27,9 @@ import (
 //     repetition, and fragment expansion.
 //   - maxReachableFragments bounds the distinct fragment definitions
 //     reachable from the selected operation.
+//
+// maxValueDepth and maxDocumentTokens (see checkNesting) bound value nesting
+// and document breadth before parsing.
 const (
 	maxSelectionDepth      = 64
 	maxDocumentSelections  = 4096

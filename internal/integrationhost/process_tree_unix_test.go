@@ -35,7 +35,7 @@ func TestSupervisorRetiresCompleteWorkerTree(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			pidFile := filepath.Join(t.TempDir(), "worker.pids")
-			worker := fixtureWorkerPath
+			worker := treeWorkerPath
 			digest, err := HashFile(worker)
 			if err != nil {
 				t.Fatal(err)
@@ -58,7 +58,7 @@ func TestSupervisorRetiresCompleteWorkerTree(t *testing.T) {
 			defer cancel(context.Canceled)
 			done := make(chan error, 1)
 			go func() { done <- supervisor.Run(ctx) }()
-			pids := waitFixturePIDs(t, pidFile)
+			pids := hostPIDs(t, waitFixturePIDs(t, pidFile), os.Getpid())
 			assertOwnedProcessGroup(t, pids, sentinel.Process.Pid)
 			releaseFixture(t, pidFile)
 			if tc.cancel {
@@ -82,7 +82,7 @@ func TestSupervisorRetiresCompleteWorkerTree(t *testing.T) {
 func TestLocalInferenceCancellationRetiresCompleteTree(t *testing.T) {
 	req := localInferenceRequest(t)
 	pidFile := filepath.Join(req.WorkRoot, "inference.pids")
-	req.Binary = fixtureWorkerPath
+	req.Binary = treeWorkerPath
 	req.Args = []string{
 		"--tree-mode", "hang", "--pid-file", pidFile,
 		"--hold-file", pidFile + ".release", "--term-resistant=true",
@@ -92,8 +92,8 @@ func TestLocalInferenceCancellationRetiresCompleteTree(t *testing.T) {
 	if runtime.GOOS == "darwin" {
 		// sandbox-exec cannot read the separately built fixture from its private
 		// test directory; exercise the identical tree supervisor directly.
-		// #nosec G204 -- fixtureWorkerPath and all arguments are test-owned.
-		cmd := exec.CommandContext(ctx, fixtureWorkerPath, req.Args...)
+		// #nosec G204 -- treeWorkerPath and all arguments are test-owned.
+		cmd := exec.CommandContext(ctx, treeWorkerPath, req.Args...)
 		go func() { done <- superviseWorker(ctx, cmd, nil) }()
 	} else {
 		go func() {
@@ -101,7 +101,7 @@ func TestLocalInferenceCancellationRetiresCompleteTree(t *testing.T) {
 			done <- err
 		}()
 	}
-	pids := waitFixturePIDs(t, pidFile)
+	pids := hostPIDs(t, waitFixturePIDs(t, pidFile), os.Getpid())
 	releaseFixture(t, pidFile)
 	cancel(context.Canceled)
 	if err := waitResult(t, done); !errors.Is(err, context.Canceled) {
@@ -127,7 +127,7 @@ func TestSupervisorSignalAndUnexpectedParentContainment(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			pidFile := filepath.Join(t.TempDir(), "worker.pids")
-			worker := fixtureWorkerPath
+			worker := treeWorkerPath
 			// #nosec G204 -- supervisorFixturePath is built by TestMain; all arguments are test temp paths.
 			harness := exec.Command(
 				supervisorFixturePath,
@@ -146,7 +146,7 @@ func TestSupervisorSignalAndUnexpectedParentContainment(t *testing.T) {
 					_, _ = harness.Process.Wait()
 				}
 			})
-			pids := waitFixturePIDs(t, pidFile)
+			pids := hostPIDs(t, waitFixturePIDs(t, pidFile), harness.Process.Pid)
 			assertOwnedProcessGroup(t, pids, sentinel.Process.Pid)
 			releaseFixture(t, pidFile)
 			if err := harness.Process.Signal(tc.signal); err != nil {
@@ -171,9 +171,9 @@ func releaseFixture(t *testing.T, pidFile string) {
 func startSentinel(t *testing.T) *exec.Cmd {
 	t.Helper()
 	ready := filepath.Join(t.TempDir(), "sentinel.ready")
-	// #nosec G204 -- fixtureWorkerPath is built by TestMain and receives only fixed test arguments.
+	// #nosec G204 -- treeWorkerPath is built by TestMain and receives only fixed test arguments.
 	cmd := exec.Command(
-		fixtureWorkerPath,
+		treeWorkerPath,
 		"--descendant",
 		"--term-resistant",
 		"--ready-file", ready,
@@ -223,9 +223,92 @@ func waitForPath(t *testing.T, path string) {
 	t.Fatalf("timed out waiting for %s", path)
 }
 
+// hostPIDs maps the pids a fixture reported about itself to host pids. On Linux
+// the worker runs in a bwrap PID namespace, so it reports namespace pids (the
+// shim is 1, the worker 2) that mean nothing, or the wrong process, to the test.
+// The kernel publishes the mapping as NSpid in /proc/<pid>/status: among
+// descendants of root, the process whose innermost NSpid equals the reported pid
+// is the fixture. Elsewhere reported pids already are host pids.
+func hostPIDs(t *testing.T, reported []int, root int) []int {
+	t.Helper()
+	if runtime.GOOS != "linux" {
+		return reported
+	}
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		t.Fatalf("read /proc: %v", err)
+	}
+	parent := map[int]int{}
+	nspid := map[int][]int{}
+	for _, entry := range entries {
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil {
+			continue
+		}
+		// #nosec G304 -- pid comes from numeric /proc entry names.
+		raw, err := os.ReadFile(filepath.Join("/proc", entry.Name(), "status"))
+		if err != nil {
+			continue // exited while scanning
+		}
+		for _, line := range strings.Split(string(raw), "\n") {
+			key, value, ok := strings.Cut(line, ":")
+			if !ok {
+				continue
+			}
+			switch key {
+			case "PPid":
+				parent[pid], _ = strconv.Atoi(strings.TrimSpace(value))
+			case "NSpid":
+				for _, field := range strings.Fields(value) {
+					n, _ := strconv.Atoi(field)
+					nspid[pid] = append(nspid[pid], n)
+				}
+			}
+		}
+	}
+	descendsFromRoot := func(pid int) bool {
+		for hops := 0; pid > 1 && hops < 64; hops++ {
+			if pid == root {
+				return true
+			}
+			pid = parent[pid]
+		}
+		return false
+	}
+	mapped := make([]int, 0, len(reported))
+	for _, want := range reported {
+		found := 0
+		for pid, chain := range nspid {
+			if len(chain) > 0 && chain[len(chain)-1] == want && descendsFromRoot(pid) {
+				if found != 0 {
+					t.Fatalf("reported pid %d maps to host pids %d and %d under %d", want, found, pid, root)
+				}
+				found = pid
+			}
+		}
+		if found == 0 {
+			t.Fatalf("reported pid %d has no host process under %d", want, root)
+		}
+		mapped = append(mapped, found)
+	}
+	return mapped
+}
+
 func assertOwnedProcessGroup(t *testing.T, pids []int, sentinelPID int) {
 	t.Helper()
 	want := pids[0]
+	if runtime.GOOS == "linux" {
+		// The supervisor owns the group of the sandbox launcher, an ancestor of
+		// the namespaced worker, so the worker is a member but not its leader.
+		group, err := syscall.Getpgid(pids[0])
+		if err != nil {
+			t.Fatalf("getpgid(%d): %v", pids[0], err)
+		}
+		if group == syscall.Getpgrp() {
+			t.Fatalf("worker %d stayed in the test's own process group %d", pids[0], group)
+		}
+		want = group
+	}
 	for _, pid := range pids {
 		pgid, err := syscall.Getpgid(pid)
 		if err != nil {

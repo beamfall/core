@@ -5,7 +5,8 @@ First-response for a suspected security or availability incident.
 ## Procedure
 1. **Triage:** confirm scope from `/metrics` deltas + logs ([logs](logs.md), [metrics](metrics.md)).
 2. **Contain:** if a key may be compromised, follow [key-lifecycle](key-lifecycle.md); if relay
-   abuse, follow [relay-abuse](relay-abuse.md).
+   abuse, follow [relay-abuse](relay-abuse.md); if an operator or device is locked out, follow
+   [lockout-and-recovery](lockout-and-recovery.md).
 3. **Preserve:** snapshot the DB ([backup-restore](backup-restore.md)) and capture the log window
    before mutating state.
 4. **Eradicate / recover:** patch or roll back ([rollback](rollback.md)); restore from backup if data

@@ -5,8 +5,11 @@ package conformance
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -85,13 +88,151 @@ func assertCandidateSchemaDiff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	actual := candidateDiff(t, previous, candidate)
-	expected, err := os.ReadFile(wireContractCandidateDiffPath)
+	golden, err := os.ReadFile(wireContractCandidateDiffPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(actual, expected) {
+	// The golden is a unified diff whose hunk boundaries depend on the diff
+	// implementation that wrote it, so apply it instead of byte-comparing a
+	// fresh `diff -u`: the documented diff must turn the previous contract into
+	// exactly the candidate.
+	patched, err := applyUnifiedDiff(previous, golden)
+	if err != nil {
+		t.Fatalf("documented schema diff does not apply to %s: %v", wireContractPreviousPath, err)
+	}
+	if !bytes.Equal(patched, candidate) {
 		t.Fatal("candidate differs from " + wireContractPreviousPath + " outside the documented schema diff")
+	}
+}
+
+// applyUnifiedDiff applies a single-file unified diff to original. Every context
+// and removed line must match the original exactly, and every hunk header must
+// agree with the hunk: the old start with where the hunk applies, the new start
+// with where its output lands, and both counts with the lines the body
+// consumes and produces. A diff that does not describe original is refused
+// rather than approximated.
+func applyUnifiedDiff(original, diff []byte) ([]byte, error) {
+	src := strings.SplitAfter(string(original), "\n")
+	if src[len(src)-1] == "" {
+		src = src[:len(src)-1]
+	}
+	var out []string
+	pos := 0 // next unconsumed line of src
+	hunkHeader := regexp.MustCompile(`^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@`)
+	count := func(field string) int {
+		if field == "" {
+			return 1
+		}
+		n, _ := strconv.Atoi(field)
+		return n
+	}
+	var (
+		inHunk                             bool
+		header                             string
+		wantOld, wantNew, seenOld, seenNew int
+	)
+	closeHunk := func() error {
+		if inHunk && (seenOld != wantOld || seenNew != wantNew) {
+			return fmt.Errorf("hunk %q declares -%d +%d lines but its body has -%d +%d", header, wantOld, wantNew, seenOld, seenNew)
+		}
+		return nil
+	}
+	lines := strings.SplitAfter(string(diff), "\n")
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+		if line == "" {
+			continue
+		}
+		if m := hunkHeader.FindStringSubmatch(line); m != nil {
+			if err := closeHunk(); err != nil {
+				return nil, err
+			}
+			header = strings.TrimSpace(line)
+			oldStart, _ := strconv.Atoi(m[1])
+			newStart, _ := strconv.Atoi(m[3])
+			wantOld, wantNew, seenOld, seenNew = count(m[2]), count(m[4]), 0, 0
+			if wantOld == 0 {
+				oldStart++ // an empty range names the line before the change
+			}
+			if wantNew == 0 {
+				newStart++
+			}
+			if oldStart-1 < pos || oldStart-1 > len(src) {
+				return nil, fmt.Errorf("hunk %q starts outside the unconsumed input", header)
+			}
+			out = append(out, src[pos:oldStart-1]...)
+			pos = oldStart - 1
+			if newStart-1 != len(out) {
+				return nil, fmt.Errorf("hunk %q new start %d does not match output line %d", header, newStart, len(out)+1)
+			}
+			inHunk = true
+			continue
+		}
+		if !inHunk { // file header lines
+			continue
+		}
+		body := line[1:]
+		if strings.HasPrefix(line, "\\") {
+			// "\ No newline at end of file" applies to the preceding line.
+			if len(out) > 0 && lines[i-1][0] != '-' {
+				out[len(out)-1] = strings.TrimSuffix(out[len(out)-1], "\n")
+			}
+			continue
+		}
+		switch line[0] {
+		case ' ', '-':
+			if pos >= len(src) || src[pos] != body && strings.TrimSuffix(src[pos], "\n") != strings.TrimSuffix(body, "\n") {
+				return nil, fmt.Errorf("line %d of the diff does not match input line %d", i+1, pos+1)
+			}
+			seenOld++
+			if line[0] == ' ' {
+				out = append(out, src[pos])
+				seenNew++
+			}
+			pos++
+		case '+':
+			out = append(out, body)
+			seenNew++
+		default:
+			return nil, fmt.Errorf("line %d of the diff has unexpected prefix %q", i+1, line[0])
+		}
+	}
+	if err := closeHunk(); err != nil {
+		return nil, err
+	}
+	out = append(out, src[pos:]...)
+	return []byte(strings.Join(out, "")), nil
+}
+
+func TestApplyUnifiedDiffValidatesHunkHeaders(t *testing.T) {
+	const original = "a\nb\nc\nd\ne\n"
+	const hunk = " b\n-c\n+C\n+C2\n d\n"
+	const want = "a\nb\nC\nC2\nd\ne\n"
+	tests := []struct {
+		name, header string
+		ok           bool
+	}{
+		{"correct", "@@ -2,3 +2,4 @@", true},
+		{"old count too large", "@@ -2,4 +2,4 @@", false},
+		{"old count too small", "@@ -2,2 +2,4 @@", false},
+		{"new count too large", "@@ -2,3 +2,5 @@", false},
+		{"new count too small", "@@ -2,3 +2,3 @@", false},
+		{"old start too early", "@@ -1,3 +1,4 @@", false},
+		{"old start too late", "@@ -3,3 +3,4 @@", false},
+		{"new start wrong", "@@ -2,3 +999,4 @@", false},
+		{"both starts and counts wrong", "@@ -1,600 +999,600 @@", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := applyUnifiedDiff([]byte(original), []byte("--- a\n+++ b\n"+tc.header+"\n"+hunk))
+			if tc.ok {
+				if err != nil || string(got) != want {
+					t.Fatalf("got %q, %v; want %q", got, err, want)
+				}
+			} else if err == nil {
+				t.Fatalf("header %q accepted, result %q", tc.header, got)
+			}
+		})
 	}
 }
 
