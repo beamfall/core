@@ -3774,10 +3774,15 @@ func (s *Store) FirstRunSetupComplete(ctx context.Context) (bool, error) {
 // by an earlier setup that stopped after its Profile write. That Profile is
 // reused as the owner (the designated owner first, else the oldest adult
 // Profile) and renamed to profileName, so a retry never adds a second owner.
-func (s *Store) BootstrapOwner(ctx context.Context, profileName string, device Device, session Session) (Profile, error) {
+// mode is the owner's sign-in security choice (CORE-1110); empty means Home.
+func (s *Store) BootstrapOwner(ctx context.Context, profileName string, device Device, session Session, mode SignInSecurityMode) (Profile, error) {
 	profileName = strings.TrimSpace(profileName)
 	if profileName == "" {
 		return Profile{}, ValidationError("profile name is required")
+	}
+	mode, err := ParseSignInSecurityMode(string(mode))
+	if err != nil {
+		return Profile{}, err
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -3831,6 +3836,9 @@ func (s *Store) BootstrapOwner(ctx context.Context, profileName string, device D
 		"INSERT INTO auth_session(id, device_id, profile_id, revealed, expires_at_ms, kind) VALUES (?, ?, ?, ?, ?, ?)",
 		session.ID, session.DeviceID, session.ProfileID, boolInt(session.Revealed), nullableMillis(session.ExpiresAt), SessionKindEnrolled,
 	); err != nil {
+		return Profile{}, err
+	}
+	if err := upsertSignInSecurityModeTx(ctx, tx, mode, s.serverNow()); err != nil {
 		return Profile{}, err
 	}
 	if err := tx.Commit(); err != nil {

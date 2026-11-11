@@ -331,7 +331,7 @@ func (s *Service) Bootstrap(ctx context.Context, req SetupRequest) (SetupRespons
 	// and its session commit together, so a failure or crash leaves no partial
 	// owner that would suppress the setup token on restart. A Profile left by
 	// such a partial write before this was atomic is reused, not duplicated.
-	profile, err := s.store.BootstrapOwner(ctx, profileName, device, session)
+	profile, err := s.store.BootstrapOwner(ctx, profileName, device, session, "")
 	if err != nil {
 		return SetupResponse{}, err
 	}
