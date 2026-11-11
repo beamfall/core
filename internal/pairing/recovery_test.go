@@ -3,7 +3,9 @@ package pairing
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -63,14 +65,18 @@ func TestRenewSessionReplacesTheRowRatherThanAddingOne(t *testing.T) {
 	st := storetest.Open(t)
 	now := time.Unix(1_000_000, 0).UTC()
 	enrollBrowser(t, st, "device-browser", "session-lapsed", now.Add(-time.Hour))
-	service := deterministicService(st, now)
+	clock := now
+	service := NewService(st, func() time.Time { return clock })
 	ids := []string{"session-first", "session-second"}
 	service.generateID = func(string) (string, error) {
 		id := ids[0]
 		ids = ids[1:]
 		return id, nil
 	}
-	for range 2 {
+	// The second renewal comes after the convergence window, so it replaces
+	// the first renewal's row rather than returning it.
+	for _, at := range []time.Time{now, now.Add(10 * time.Minute)} {
+		clock = at
 		resp, err := service.RenewSession(ctx, RenewRequest{DeviceID: "device-browser", DeviceSecret: "browser-secret", RemoteAddr: "192.168.1.5:5000"})
 		if err != nil || resp.ProfileID != "profile-default" {
 			t.Fatalf("RenewSession = %+v, %v", resp, err)
@@ -83,6 +89,49 @@ func TestRenewSessionReplacesTheRowRatherThanAddingOne(t *testing.T) {
 	}
 	if _, err := st.Session(ctx, "session-second"); err != nil {
 		t.Fatalf("latest renewed session: %v", err)
+	}
+}
+
+// TestConcurrentRenewalsConverge: tabs of one browser that renew at the same
+// moment all get the same live session; none of them deletes another's.
+func TestConcurrentRenewalsConverge(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	now := time.Unix(1_000_000, 0).UTC()
+	enrollBrowser(t, st, "device-browser", "session-lapsed", now.Add(-time.Hour))
+	service := deterministicService(st, now)
+	var next atomic.Int64
+	service.generateID = func(string) (string, error) {
+		return fmt.Sprintf("session-tab-%d", next.Add(1)), nil
+	}
+	const tabs = 6
+	got := make([]RenewResponse, tabs)
+	errs := make([]error, tabs)
+	var start, done sync.WaitGroup
+	start.Add(1)
+	for i := range tabs {
+		done.Add(1)
+		go func(i int) {
+			defer done.Done()
+			start.Wait()
+			got[i], errs[i] = service.RenewSession(ctx, RenewRequest{DeviceID: "device-browser", DeviceSecret: "browser-secret", RemoteAddr: "192.168.1.5:5000"})
+		}(i)
+	}
+	start.Done()
+	done.Wait()
+	for i := range tabs {
+		if errs[i] != nil {
+			t.Fatalf("tab %d: %v", i, errs[i])
+		}
+		if got[i].SessionID != got[0].SessionID {
+			t.Fatalf("tab %d got session %q, tab 0 got %q", i, got[i].SessionID, got[0].SessionID)
+		}
+	}
+	if _, err := st.Session(ctx, store.SessionID(got[0].SessionID)); err != nil {
+		t.Fatalf("the converged session is gone: %v", err)
+	}
+	if _, err := st.Session(ctx, "session-lapsed"); err == nil {
+		t.Fatal("lapsed session survived renewal")
 	}
 }
 

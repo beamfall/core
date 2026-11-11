@@ -150,3 +150,39 @@ func TestSetSignInSecurityModeAsOwnerRechecksTheCaller(t *testing.T) {
 		t.Fatalf("stored mode = (%q, %v), want strict", mode, err)
 	}
 }
+
+func TestEnrollAdminSignInDeviceRereadsModeAndOwner(t *testing.T) {
+	ctx := context.Background()
+	st := openBackoffStore(t)
+	now := time.Now().UTC()
+	device := func(id DeviceID) Device {
+		return Device{ID: id, Name: "Laptop", Role: DeviceRoleManager, SecretHash: HashDeviceSecret("s")}
+	}
+	expires := now.Add(30 * 24 * time.Hour)
+
+	if _, err := st.EnrollAdminSignInDevice(ctx, device("device-a"), "session-a", expires); !errors.Is(err, ErrNoOwnerProfile) {
+		t.Fatalf("no owner err = %v, want ErrNoOwnerProfile", err)
+	}
+	if err := st.SetProfileOwner(ctx, "profile-default"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.SetSignInSecurityMode(ctx, SignInSecurityStrict, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.EnrollAdminSignInDevice(ctx, device("device-a"), "session-a", expires); !errors.Is(err, ErrAdminSignInOff) {
+		t.Fatalf("strict err = %v, want ErrAdminSignInOff", err)
+	}
+	if _, err := st.Device(ctx, "device-a"); err == nil {
+		t.Fatal("strict mode enrolled a device")
+	}
+	if _, err := st.SetSignInSecurityMode(ctx, SignInSecurityHome, now); err != nil {
+		t.Fatal(err)
+	}
+	session, err := st.EnrollAdminSignInDevice(ctx, device("device-a"), "session-a", expires)
+	if err != nil || session.ProfileID != "profile-default" || session.Kind != SessionKindEnrolled {
+		t.Fatalf("home enroll = %+v, %v", session, err)
+	}
+	if got, err := st.Session(ctx, "session-a"); err != nil || got.DeviceID != "device-a" {
+		t.Fatalf("stored session = %+v, %v", got, err)
+	}
+}

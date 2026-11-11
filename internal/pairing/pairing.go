@@ -172,6 +172,11 @@ type Service struct {
 	bootstrapToken      string
 	bootstrapInProgress bool
 	demo                DemoEnrollment
+
+	// afterAdminPasswordCheck, when set, runs after AdminSignIn's password
+	// check passes and before it enrolls. A test seam for races with that
+	// slow check.
+	afterAdminPasswordCheck func()
 }
 
 // NewService creates a pairing service.

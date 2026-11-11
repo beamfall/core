@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 )
@@ -83,6 +85,54 @@ func TestRenewDeviceSessionCollapsesExtraRows(t *testing.T) {
 	}
 	if n := deviceSessionCount(t, st, "device-renew"); n != 1 {
 		t.Fatalf("device session rows = %d, want 1", n)
+	}
+}
+
+// TestConcurrentRenewDeviceSessionConverges: overlapping renewals of one
+// device all return the same session, and the device keeps one row.
+func TestConcurrentRenewDeviceSessionConverges(t *testing.T) {
+	ctx := context.Background()
+	st := openSeeded(t)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	if err := st.EnrollDevice(ctx,
+		Device{ID: "device-renew", Name: "Browser", Role: DeviceRoleManager, SecretHash: HashDeviceSecret("s")},
+		Session{ID: "session-old", DeviceID: "device-renew", ProfileID: "profile-default", ExpiresAt: now.Add(-time.Hour)},
+	); err != nil {
+		t.Fatal(err)
+	}
+	const tabs = 8
+	got := make([]Session, tabs)
+	errs := make([]error, tabs)
+	var start, done sync.WaitGroup
+	start.Add(1)
+	for i := range tabs {
+		done.Add(1)
+		go func(i int) {
+			defer done.Done()
+			start.Wait()
+			got[i], errs[i] = st.RenewDeviceSession(ctx, "device-renew", SessionID(fmt.Sprintf("session-tab-%d", i)), now.Add(30*24*time.Hour))
+		}(i)
+	}
+	start.Done()
+	done.Wait()
+	for i := range tabs {
+		if errs[i] != nil || got[i].ID != got[0].ID {
+			t.Fatalf("tab %d = %+v, %v; tab 0 = %+v", i, got[i], errs[i], got[0])
+		}
+	}
+	if n := deviceSessionCount(t, st, "device-renew"); n != 1 {
+		t.Fatalf("device session rows = %d, want 1", n)
+	}
+	if _, err := st.Session(ctx, got[0].ID); err != nil {
+		t.Fatalf("converged session missing: %v", err)
+	}
+	// Past the window, renewal replaces the row again.
+	later, err := st.RenewDeviceSession(ctx, "device-renew", "session-later", now.Add(30*24*time.Hour+2*renewConvergeWindow))
+	if err != nil || later.ID != "session-later" {
+		t.Fatalf("renewal past the window = %+v, %v", later, err)
+	}
+	if n := deviceSessionCount(t, st, "device-renew"); n != 1 {
+		t.Fatalf("device session rows after later renewal = %d, want 1", n)
 	}
 }
 

@@ -20,12 +20,18 @@ SHALL be refused with 400 and store nothing.
 
 In strict mode, admin-password sign-in SHALL refuse every request with the same 401 as any other
 refusal. It SHALL still verify the password and record the failure in the same per-source and
-server-wide backoff lanes, so the mode cannot be learned from timing or counters.
+server-wide backoff lanes, so the mode cannot be learned from timing or counters. The mode SHALL be
+read in the transaction that would enroll the device.
 
 #### Scenario: Correct password in strict mode
 
 - **WHEN** an unenrolled browser presents the correct admin password in strict mode
 - **THEN** sign-in is refused with 401, no device is created, and one failure is recorded
+
+#### Scenario: Switch to strict during sign-in
+
+- **WHEN** the mode changes to strict while a home-mode sign-in waits for its password check
+- **THEN** sign-in is refused with the same 401 and no device is created
 
 #### Scenario: Correct password in home mode
 

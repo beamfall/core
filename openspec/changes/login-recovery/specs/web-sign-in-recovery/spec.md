@@ -3,10 +3,10 @@
 ### Requirement: A browser can renew its session with its device credential
 
 The server SHALL mint a new 30-day session for a browser that presents its device ID and device
-secret cookies and the CSRF header, even when its session cookie is expired or missing. The new
-session SHALL replace the device's existing session row, expired or not, in the same write and
-keep its Profile, so a device holds at most one session. Plain HTTP SHALL be accepted only from the
-local network.
+secret cookies and the CSRF header, even when its session cookie is expired or missing. It SHALL
+replace the device's session row, expired or not, in the same write and keep its Profile, so a
+device holds at most one session; a row minted in the last minute SHALL be returned instead, so
+overlapping renewals converge. Plain HTTP SHALL be accepted only from the local network.
 
 #### Scenario: Expired session renewed
 
@@ -18,6 +18,11 @@ local network.
 
 - **WHEN** a browser presents a valid device credential but no session cookie
 - **THEN** the device's session row is replaced, not added to, so the device still has one session
+
+#### Scenario: Two tabs renew at once
+
+- **WHEN** two tabs of one browser renew at the same moment
+- **THEN** both get the same live session and the device still has one session
 
 #### Scenario: Terminated session
 

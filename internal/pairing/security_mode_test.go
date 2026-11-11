@@ -3,6 +3,8 @@ package pairing
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -70,6 +72,12 @@ func TestAdminSignInStrictRefusesCorrectPasswordLikeWrongOne(t *testing.T) {
 	home := adminSignInStore(t, store.SignInSecurityHome, now)
 	strictService := deterministicService(strict, now)
 	homeService := deterministicService(home, now)
+	// Strict refuses inside the enrolling transaction, so each attempt mints
+	// IDs it then discards.
+	var minted atomic.Int64
+	strictService.generateID = func(kind string) (string, error) {
+		return fmt.Sprintf("%s-%d", kind, minted.Add(1)), nil
+	}
 	addr := "192.168.1.5:5000"
 
 	// Strict with the right password and Home with a wrong one must look the
@@ -141,5 +149,31 @@ func TestStrictModeKeepsRenewalAndOwnerCodes(t *testing.T) {
 	}
 	if _, err := service.CreateOwnerCode(ctx, ""); err != nil {
 		t.Fatalf("CreateOwnerCode in strict mode: %v", err)
+	}
+}
+
+// TestAdminSignInRefusedWhenStrictLandsDuringPasswordCheck: the mode is Home
+// when the request arrives and switches to Strict while it waits on the
+// password check. The enrolling transaction re-reads the mode, so the request
+// gets the uniform refusal and no device is enrolled.
+func TestAdminSignInRefusedWhenStrictLandsDuringPasswordCheck(t *testing.T) {
+	ctx := context.Background()
+	now := time.Unix(1_000_000, 0).UTC()
+	st := adminSignInStore(t, store.SignInSecurityHome, now)
+	service := deterministicService(st, now)
+	service.afterAdminPasswordCheck = func() {
+		if _, err := st.SetSignInSecurityMode(ctx, store.SignInSecurityStrict, now); err != nil {
+			t.Error(err)
+		}
+	}
+	_, err := service.AdminSignIn(ctx, AdminSignInRequest{Password: "correct horse", DeviceName: "Laptop", RemoteAddr: "192.168.1.5:5000"})
+	if !errors.Is(err, ErrSignInFailed) || refusalReason(err) != auth.RefusalAdminPasswordRejected {
+		t.Fatalf("sign-in after switch to strict err = %v (reason %q), want uniform sign-in failure", err, refusalReason(err))
+	}
+	if _, err := st.Session(ctx, "session-new"); err == nil {
+		t.Fatal("a session was enrolled after the switch to strict")
+	}
+	if _, err := st.Device(ctx, "device-new"); err == nil {
+		t.Fatal("a device was enrolled after the switch to strict")
 	}
 }

@@ -2200,21 +2200,27 @@ func (s *Store) insertDeviceSession(ctx context.Context, device Device, session 
 	if err != nil {
 		return err
 	}
+	defer tx.Rollback()
+	if err := insertDeviceSessionTx(ctx, tx, device, session); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// insertDeviceSessionTx inserts a normalized Device and its enrolled Session
+// inside tx.
+func insertDeviceSessionTx(ctx context.Context, tx *sql.Tx, device Device, session Session) error {
 	if _, err := tx.ExecContext(ctx,
 		"INSERT INTO device(id, name, role, distribution_class, device_surface, secret_hash, revoked) VALUES (?, ?, ?, ?, ?, ?, ?)",
 		device.ID, device.Name, device.Role, device.DistributionClass, device.Surface, device.SecretHash, boolInt(device.Revoked),
 	); err != nil {
-		_ = tx.Rollback()
 		return err
 	}
-	if _, err := tx.ExecContext(ctx,
+	_, err := tx.ExecContext(ctx,
 		"INSERT INTO auth_session(id, device_id, profile_id, revealed, expires_at_ms, kind) VALUES (?, ?, ?, ?, ?, ?)",
 		session.ID, session.DeviceID, session.ProfileID, boolInt(session.Revealed), nullableMillis(session.ExpiresAt), SessionKindEnrolled,
-	); err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-	return tx.Commit()
+	)
+	return err
 }
 
 func (s *Store) insertPairingCode(ctx context.Context, code PairingCode) error {

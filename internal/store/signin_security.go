@@ -63,6 +63,65 @@ func (s *Store) SignInSecurityMode(ctx context.Context) (SignInSecurityMode, err
 	return storedSignInSecurityMode(raw), nil
 }
 
+// ErrAdminSignInOff means admin-password sign-in was refused because the
+// sign-in security mode is Strict.
+var ErrAdminSignInOff = errors.New("admin-password sign-in is off in strict mode")
+
+// EnrollAdminSignInDevice enrolls device with an enrolled session on the
+// owner Profile for admin-password sign-in (CORE-1106, CORE-1110). The mode,
+// the owner and its disabled flag are read in the same transaction that
+// inserts the rows, so a switch to Strict or an ownership change that commits
+// while the caller waited for the password check cannot be overtaken. It
+// returns ErrAdminSignInOff in Strict mode, ErrNoOwnerProfile with no owner
+// and ErrProfileDisabled for a disabled owner, inserting nothing. The
+// returned session carries the owner Profile.
+func (s *Store) EnrollAdminSignInDevice(ctx context.Context, device Device, sessionID SessionID, expiresAt time.Time) (Session, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return Session{}, err
+	}
+	tx, err := s.catalogW.BeginTx(ctx, nil)
+	if err != nil {
+		return Session{}, err
+	}
+	defer tx.Rollback()
+	var raw string
+	switch err := tx.QueryRowContext(ctx, `SELECT value FROM server_config WHERE key = ?`, configSignInSecurityMode).Scan(&raw); {
+	case err == nil:
+		if storedSignInSecurityMode(raw) == SignInSecurityStrict {
+			return Session{}, ErrAdminSignInOff
+		}
+	case !errors.Is(err, sql.ErrNoRows):
+		return Session{}, err
+	}
+	var (
+		owner    ProfileID
+		disabled int
+	)
+	err = tx.QueryRowContext(ctx, `SELECT id, disabled FROM profile WHERE is_owner = 1 LIMIT 1`).Scan(&owner, &disabled)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Session{}, ErrNoOwnerProfile
+	}
+	if err != nil {
+		return Session{}, err
+	}
+	if disabled != 0 {
+		return Session{}, ErrProfileDisabled
+	}
+	device, session, err := normalizeEnrollment(device, Session{ID: sessionID, DeviceID: device.ID, ProfileID: owner, ExpiresAt: expiresAt})
+	if err != nil {
+		return Session{}, err
+	}
+	if err := insertDeviceSessionTx(ctx, tx, device, session); err != nil {
+		return Session{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Session{}, err
+	}
+	return session, nil
+}
+
 // SetSignInSecurityMode stores mode and returns the mode it replaced, read in
 // the same transaction so the caller's audit entry names the true old value.
 // It checks no caller; a signed-in switch uses SetSignInSecurityModeAsOwner.

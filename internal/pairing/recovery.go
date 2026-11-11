@@ -103,8 +103,7 @@ func (s *Service) RenewSession(ctx context.Context, req RenewRequest) (RenewResp
 	if err != nil {
 		return RenewResponse{}, err
 	}
-	expiresAt := now.Add(30 * 24 * time.Hour).UTC()
-	session, err := s.store.RenewDeviceSession(ctx, device.ID, store.SessionID(sessionID), expiresAt)
+	session, err := s.store.RenewDeviceSession(ctx, device.ID, store.SessionID(sessionID), now.Add(30*24*time.Hour).UTC())
 	switch {
 	case errors.Is(err, store.ErrNoDeviceSession):
 		return fail(auth.RefusalSessionInvalid)
@@ -118,8 +117,8 @@ func (s *Service) RenewSession(ctx context.Context, req RenewRequest) (RenewResp
 	_ = s.recordAttemptFor(ctx, renewAttemptAction, key, "", now, true)
 	return RenewResponse{
 		DeviceID:         string(device.ID),
-		SessionID:        sessionID,
-		SessionExpiresAt: expiresAt.Format(time.RFC3339),
+		SessionID:        string(session.ID),
+		SessionExpiresAt: session.ExpiresAt.UTC().Format(time.RFC3339),
 		ProfileID:        string(session.ProfileID),
 		DeviceRole:       string(device.Role),
 	}, nil
@@ -153,15 +152,11 @@ func (s *Service) AdminSignIn(ctx context.Context, req AdminSignInRequest) (Enro
 		s.logDenied(ctx, now, store.ActivityAdminLoginDenied)
 		return EnrollResponse{}, refuse(ErrSignInFailed, auth.RefusalAdminPasswordRejected)
 	}
-	mode, err := s.store.SignInSecurityMode(ctx)
-	if err != nil {
-		return EnrollResponse{}, err
-	}
 	// Verify first: it spends the KDF whether or not a password is set, and in
 	// Strict mode too, so neither timing nor the counters reveal the mode. The
 	// KDF runs inside the process-wide bound, and the attempt is counted on
 	// both lanes before it runs, so parallel guesses cannot outrun the lanes.
-	err = auth.CheckAdminPassword(ctx, s.store, auth.AdminPasswordAttempt{
+	err := auth.CheckAdminPassword(ctx, s.store, auth.AdminPasswordAttempt{
 		Action: adminSignInAttemptAction,
 		Keys:   []string{remoteKey, adminSignInGlobalKey},
 		At:     now,
@@ -178,17 +173,8 @@ func (s *Service) AdminSignIn(ctx context.Context, req AdminSignInRequest) (Enro
 	case err != nil:
 		return EnrollResponse{}, err
 	}
-	// Strict mode turns this path off (CORE-1110): even the right password is
-	// refused and counted exactly like a wrong one.
-	if mode == store.SignInSecurityStrict {
-		return deny()
-	}
-	owner, err := s.store.OwnerProfile(ctx)
-	if errors.Is(err, store.ErrNoOwnerProfile) {
-		return deny()
-	}
-	if err != nil {
-		return EnrollResponse{}, err
+	if s.afterAdminPasswordCheck != nil {
+		s.afterAdminPasswordCheck()
 	}
 	deviceID, err := s.generateID("device")
 	if err != nil {
@@ -202,23 +188,21 @@ func (s *Service) AdminSignIn(ctx context.Context, req AdminSignInRequest) (Enro
 	if err != nil {
 		return EnrollResponse{}, err
 	}
-	sessionExpiresAt := now.Add(30 * 24 * time.Hour).UTC()
 	device := store.Device{
 		ID:         store.DeviceID(deviceID),
 		Name:       name,
 		Role:       store.DeviceRoleManager,
 		SecretHash: store.HashDeviceSecret(deviceSecret),
 	}
-	session := store.Session{
-		ID:        store.SessionID(sessionID),
-		DeviceID:  device.ID,
-		ProfileID: owner.ID,
-		ExpiresAt: sessionExpiresAt,
-	}
-	if err := s.store.EnrollDevice(ctx, device, session); err != nil {
-		if errors.Is(err, store.ErrProfileDisabled) {
-			return deny()
-		}
+	// The store reads the mode and the owner in the enrolling transaction, so
+	// a switch to Strict during the password check still refuses. Strict mode
+	// (CORE-1110), no owner and a disabled owner are refused and counted
+	// exactly like a wrong password.
+	session, err := s.store.EnrollAdminSignInDevice(ctx, device, store.SessionID(sessionID), now.Add(30*24*time.Hour).UTC())
+	switch {
+	case errors.Is(err, store.ErrAdminSignInOff), errors.Is(err, store.ErrNoOwnerProfile), errors.Is(err, store.ErrProfileDisabled):
+		return deny()
+	case err != nil:
 		return EnrollResponse{}, err
 	}
 	_ = s.recordAttemptFor(ctx, adminSignInAttemptAction, adminSignInGlobalKey, remoteKey, now, true)
@@ -227,7 +211,7 @@ func (s *Service) AdminSignIn(ctx context.Context, req AdminSignInRequest) (Enro
 		Action:     store.ActivityEnroll,
 		SessionID:  session.ID,
 		DeviceID:   device.ID,
-		ProfileID:  owner.ID,
+		ProfileID:  session.ProfileID,
 		TargetType: "device",
 		TargetID:   string(device.ID),
 	})
@@ -235,8 +219,8 @@ func (s *Service) AdminSignIn(ctx context.Context, req AdminSignInRequest) (Enro
 		DeviceID:         string(device.ID),
 		DeviceSecret:     deviceSecret,
 		SessionID:        string(session.ID),
-		SessionExpiresAt: sessionExpiresAt.Format(time.RFC3339),
-		ProfileID:        string(owner.ID),
+		SessionExpiresAt: session.ExpiresAt.Format(time.RFC3339),
+		ProfileID:        string(session.ProfileID),
 		DeviceRole:       string(device.Role),
 	}, nil
 }
