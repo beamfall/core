@@ -6,7 +6,7 @@
 # command and its exit status. See docs/store/release-checklist.md for where
 # this sits in the ceremony.
 #
-#   fuzz-nightly        make fuzz
+#   fuzz-nightly        make fuzz-active FUZZ_TIME=5m  (active fuzzing, as the nightly workflow)
 #   mutation-nightly    script/mutation-test.sh named  (green only on COMPLETE)
 #   race-nightly        script/race-test.sh full
 #   ui-catalog-nightly  make ui-catalog
@@ -26,6 +26,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FRESHNESS="$ROOT/script/nightly-freshness.sh"
 EVIDENCE_DIR="${RELEASE_NIGHTLY_EVIDENCE_DIR:-$ROOT/.agent-evidence/nightly-last-green}"
+# Tiers run from different directories (web-compat-nightly.sh changes into
+# internal/web/app), so a relative override must not be re-resolved per tier.
+case "$EVIDENCE_DIR" in /*) ;; *) EVIDENCE_DIR="$PWD/$EVIDENCE_DIR" ;; esac
+export RELEASE_NIGHTLY_EVIDENCE_DIR="$EVIDENCE_DIR"
 ALL_TIERS=(fuzz-nightly mutation-nightly race-nightly ui-catalog-nightly vuln-nightly web-compat-nightly)
 
 # The tiers run in ROOT, so their records must bind ROOT's HEAD.
@@ -38,7 +42,7 @@ usage() {
 
 tier_command() {
   case "$1" in
-    fuzz-nightly) TIER_CMD=(make fuzz) ;;
+    fuzz-nightly) TIER_CMD=(make fuzz-active FUZZ_TIME=5m) ;;
     mutation-nightly) TIER_CMD=(script/mutation-test.sh named) ;;
     race-nightly) TIER_CMD=(script/race-test.sh full) ;;
     ui-catalog-nightly) TIER_CMD=(make ui-catalog) ;;

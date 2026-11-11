@@ -22,7 +22,7 @@ commit, inside one window.
 1. **Check out the release commit with a clean worktree.** `script/release-nightlies-local.sh`
    refuses to start with modified or untracked non-ignored files. Make no commit and do not move
    HEAD from here until the release gate has finished; every record binds HEAD.
-2. **Run `script/release-nightlies-local.sh`.** It runs, in this order, `make fuzz`,
+2. **Run `script/release-nightlies-local.sh`.** It runs, in this order, `make fuzz-active FUZZ_TIME=5m` (active fuzzing, as the nightly workflow),
    `script/mutation-test.sh named`, `script/race-test.sh full`, `make ui-catalog`,
    `make vuln-check` and `script/web-compat-nightly.sh`, recording each tier as it finishes. Each
    record's timestamp is taken when that tier is recorded; the first tier's record is the oldest

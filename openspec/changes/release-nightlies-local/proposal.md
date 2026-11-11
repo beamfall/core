@@ -16,7 +16,7 @@ the release gate cannot pass.
 - Add `script/release-nightlies-local.sh`. It runs each tier's existing local command against the
   current checkout and records the result through `script/nightly-freshness.sh record`, with
   provenance that names the command and its exit status:
-  - fuzz-nightly: `make fuzz`
+  - fuzz-nightly: `make fuzz-active FUZZ_TIME=5m`
   - mutation-nightly: `script/mutation-test.sh named` (green only when its status file says
     `COMPLETE`, as in the hosted workflow)
   - race-nightly: `script/race-test.sh full`

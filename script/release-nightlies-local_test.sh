@@ -35,7 +35,7 @@ fi
 echo "fake $tier passed"
 SH
 cat >"$fake/Makefile" <<'MAKE'
-fuzz:
+fuzz-active:
 	@script/fake-tier.sh fuzz-nightly
 ui-catalog:
 	@script/fake-tier.sh ui-catalog-nightly
@@ -164,7 +164,7 @@ for tier in "${tiers[@]}"; do
 done
 grep -qx 'mutation-nightly named' "$tmp/calls" || fail "mutation tier not run as 'named'"
 grep -qx 'race-nightly full' "$tmp/calls" || fail "race tier not run as 'full'"
-[ "$(field fuzz-nightly 'd["provenance"]["command"]')" = "make fuzz" ] || fail "fuzz provenance command"
+[ "$(field fuzz-nightly 'd["provenance"]["command"]')" = "make fuzz-active FUZZ_TIME=5m" ] || fail "fuzz provenance command"
 [ "$(field fuzz-nightly 'd["provenance"]["exitStatus"]')" = 0 ] || fail "fuzz provenance exit status"
 [ "$(field mutation-nightly 'd["provenance"]["mutationStatus"]')" = COMPLETE ] || fail "mutation provenance status"
 # web-compat-nightly keeps the owning script's receipt, not one from the runner.
@@ -225,6 +225,15 @@ if run_runner head-moved FAKE_MOVE_HEAD=1; then fail "runner passed after HEAD m
 grep -q 'HEAD moved during fuzz-nightly' "$tmp/head-moved.out" || fail "HEAD-move message missing"
 [ ! -e "$evidence/fuzz-nightly.json" ] || fail "record written after HEAD moved"
 [ "$(wc -l <"$tmp/calls")" -eq 1 ] || fail "tiers kept running after HEAD moved"
+
+# 9. A relative evidence directory is resolved once, against the caller's
+# directory, so every tier's record lands in the same place.
+mkdir -p "$tmp/relcwd"
+(cd "$tmp/relcwd" && run_runner relative-dir RELEASE_NIGHTLY_EVIDENCE_DIR=rel-evidence) ||
+  fail "relative-dir run exited non-zero"
+for tier in "${tiers[@]}"; do
+  [ -f "$tmp/relcwd/rel-evidence/$tier.json" ] || fail "relative evidence dir: no $tier record in the caller's directory"
+done
 
 completed=1
 echo "release-nightlies-local tests: passed"
