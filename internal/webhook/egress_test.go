@@ -161,6 +161,33 @@ func TestDefaultClientDeliversToApprovedLANReceivers(t *testing.T) {
 	}
 }
 
+// TestDefaultClientKeepsPoliciesPerEndpoint: two hostname endpoints resolving
+// to the same loopback receiver in one emitter, only one approved for the LAN.
+// Only the approved endpoint's POST arrives; the other never borrows its
+// permissive client and is dead-lettered.
+func TestDefaultClientKeepsPoliciesPerEndpoint(t *testing.T) {
+	srv := newCaptureServer(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	base := localhostURL(t, srv.URL)
+	dl := &recordingDeadLetter{}
+	em := newEmitter(t, Config{
+		Endpoints: []Endpoint{
+			{ID: "approved", URL: base + "/approved", Secret: []byte("a"), AllowPrivateNetwork: true},
+			{ID: "unapproved", URL: base + "/unapproved", Secret: []byte("u")},
+		},
+		MaxAttempts: 1,
+	}, &fixedEvents{events: []store.OutboxEvent{mediaEvent(3, store.MediaEventCreated)}}, nil, dl)
+	if _, err := em.drain(context.Background(), 0); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	hits := srv.received()
+	if len(hits) != 1 || hits[0].path != "/approved" {
+		t.Fatalf("received %+v, want exactly one POST to /approved", hits)
+	}
+	if len(dl.entries) != 1 || dl.entries[0].EndpointID != "unapproved" || dl.entries[0].LastError != ErrTransportDiagnostic.Error() {
+		t.Fatalf("dead-letter = %+v, want one transport-diagnostic entry for unapproved", dl.entries)
+	}
+}
+
 // TestDefaultClientRefusesUnapprovedLocalDial: a hostname endpoint without the
 // LAN opt-in that resolves to loopback is refused at the dial boundary, so a
 // public-looking endpoint that re-resolves inward never receives the POST.
