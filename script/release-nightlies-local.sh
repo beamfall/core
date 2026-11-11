@@ -72,12 +72,18 @@ done
 head_commit() { git -C "$ROOT" rev-parse HEAD; }
 
 start_head="$(head_commit)"
-dirty="$(git -C "$ROOT" status --porcelain --untracked-files=normal)"
-if [ -n "$dirty" ]; then
-  echo "FAIL release-nightlies-local worktree has uncommitted changes; records would bind $start_head without testing it" >&2
-  printf '%s\n' "$dirty" >&2
-  exit 1
-fi
+# Fails the run when tracked files changed or non-ignored untracked files exist:
+# a tier tests, and its record binds, the committed HEAD only. WHEN names the moment.
+require_clean() {
+  local dirty
+  dirty="$(git -C "$ROOT" status --porcelain --untracked-files=normal)"
+  if [ -n "$dirty" ]; then
+    echo "FAIL release-nightlies-local worktree has uncommitted changes $1; records would bind $start_head without testing it" >&2
+    printf '%s\n' "$dirty" >&2
+    exit 1
+  fi
+}
+require_clean "before the run"
 
 log_root="${AGENT_EVIDENCE_DIR:-$ROOT/.agent-evidence}/release-nightlies-local"
 # Tiers run from ROOT, so the per-tier log and mutation paths must be absolute.
@@ -158,6 +164,7 @@ PY
 
 failed=()
 for tier in "${selected[@]}"; do
+  require_clean "before $tier"
   tier_command "$tier"
   command_text="${TIER_CMD[*]}"
   log="$log_dir/$tier.log"
@@ -181,6 +188,8 @@ for tier in "${selected[@]}"; do
     echo "FAIL release-nightlies-local HEAD moved during $tier before=$start_head after=$current_head; nothing recorded for it" >&2
     exit 1
   fi
+
+  require_clean "after $tier; nothing recorded for it"
 
   status=red reason="" mutation=""
   if [ "$exit_status" -ne 0 ]; then
