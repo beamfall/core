@@ -121,7 +121,11 @@ type SetupRequest struct {
 	// password an owner already set. Empty leaves the
 	// existing flow unchanged (backward compatible). Never logged or echoed.
 	AdminPassword string `json:"adminPassword"`
-	RemoteAddr    string `json:"-"`
+	// SecurityMode is the owner's sign-in security choice, "home" (the
+	// default when empty) or "strict" (ADR-0007, CORE-1110). It is stored in
+	// the same transaction as the owner.
+	SecurityMode string `json:"securityMode,omitempty"`
+	RemoteAddr   string `json:"-"`
 	// LANClaim is set by the server, never decoded from the body, when the
 	// request passed the server's LAN test. While setup is pending it lets the
 	// request complete setup without a token (ADR-0007 §2, CORE-1105). A token
@@ -255,6 +259,10 @@ func (s *Service) Bootstrap(ctx context.Context, req SetupRequest) (SetupRespons
 	if err != nil {
 		return SetupResponse{}, ErrInvalidRequest
 	}
+	securityMode, err := store.ParseSignInSecurityMode(strings.TrimSpace(req.SecurityMode))
+	if err != nil {
+		return SetupResponse{}, ErrInvalidRequest
+	}
 
 	now := s.now()
 	attemptKey := setupAttemptKey(req.RemoteAddr)
@@ -331,7 +339,7 @@ func (s *Service) Bootstrap(ctx context.Context, req SetupRequest) (SetupRespons
 	// and its session commit together, so a failure or crash leaves no partial
 	// owner that would suppress the setup token on restart. A Profile left by
 	// such a partial write before this was atomic is reused, not duplicated.
-	profile, err := s.store.BootstrapOwner(ctx, profileName, device, session, "")
+	profile, err := s.store.BootstrapOwner(ctx, profileName, device, session, securityMode)
 	if err != nil {
 		return SetupResponse{}, err
 	}

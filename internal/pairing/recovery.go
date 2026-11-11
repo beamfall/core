@@ -156,9 +156,9 @@ type AdminSignInRequest struct {
 }
 
 // AdminSignIn enrolls a new Manager Device with a 30-day session on the owner
-// Profile when the admin password verifies. Attempts are throttled on the
-// admin re-auth curve per source and server-wide. Every refusal other than a
-// throttle is ErrSignInFailed.
+// Profile when the admin password verifies and the sign-in security mode is
+// Home. Attempts are throttled on the admin re-auth curve per source and
+// server-wide. Every refusal other than a throttle is ErrSignInFailed.
 func (s *Service) AdminSignIn(ctx context.Context, req AdminSignInRequest) (EnrollResponse, error) {
 	name := strings.TrimSpace(req.DeviceName)
 	if name == "" || req.Password == "" {
@@ -176,12 +176,22 @@ func (s *Service) AdminSignIn(ctx context.Context, req AdminSignInRequest) (Enro
 		s.logDenied(ctx, now, store.ActivityAdminLoginDenied)
 		return EnrollResponse{}, refuse(ErrSignInFailed, auth.RefusalAdminPasswordRejected)
 	}
-	// Verify first: it spends the KDF whether or not a password is set.
+	mode, err := s.store.SignInSecurityMode(ctx)
+	if err != nil {
+		return EnrollResponse{}, err
+	}
+	// Verify first: it spends the KDF whether or not a password is set, and in
+	// Strict mode too, so neither timing nor the counters reveal the mode.
 	if err := s.store.VerifyAdminPassword(ctx, req.Password); err != nil {
 		if errors.Is(err, store.ErrNoAdminPassword) || errors.Is(err, store.ErrAdminPasswordMismatch) {
 			return fail()
 		}
 		return EnrollResponse{}, err
+	}
+	// Strict mode turns this path off (CORE-1110): even the right password is
+	// refused and counted exactly like a wrong one.
+	if mode == store.SignInSecurityStrict {
+		return fail()
 	}
 	owner, err := s.store.OwnerProfile(ctx)
 	if errors.Is(err, store.ErrNoOwnerProfile) {
@@ -239,6 +249,12 @@ func (s *Service) AdminSignIn(ctx context.Context, req AdminSignInRequest) (Enro
 		ProfileID:        string(owner.ID),
 		DeviceRole:       string(device.Role),
 	}, nil
+}
+
+// SignInSecurityMode reports the stored sign-in security mode, so the enroll
+// page can hide the admin-password form in Strict mode.
+func (s *Service) SignInSecurityMode(ctx context.Context) (store.SignInSecurityMode, error) {
+	return s.store.SignInSecurityMode(ctx)
 }
 
 func (s *Service) adminSignInThrottled(ctx context.Context, remoteKey string, now time.Time) (bool, error) {
