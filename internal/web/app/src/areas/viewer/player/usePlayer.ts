@@ -151,9 +151,10 @@ function choosePlaybackStream(info: PlaybackInfo): PlaybackStream | null {
 
 // The stream of the same kind in a refreshed playback info: a token refresh
 // must reload the route that is playing, which is not always streams[0] once
-// direct play has switched to its HLS sibling.
+// direct play has switched to its HLS sibling. A missing kind is no match: the
+// running engine cannot load a stream of another kind.
 function streamOfKind(info: PlaybackInfo, kind: string | undefined): PlaybackStream | null {
-  return (info.streams || []).find((entry) => entry.kind === kind) || choosePlaybackStream(info);
+  return (info.streams || []).find((entry) => entry.kind === kind) || null;
 }
 
 type Engine = "hlsjs" | "native" | "unsupported";

@@ -854,6 +854,30 @@ describe("usePlayer", () => {
     expect(screen.getByTestId("info")).toHaveTextContent("none");
   });
 
+  it("never loads a direct-play file into hls.js when the refreshed info lost its HLS stream", async () => {
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+    vi.mocked(fetchPlaybackInfo)
+      .mockResolvedValueOnce({
+        decision: "transcode",
+        streams: [{ kind: "hls", url: "/api/media/hls/token/master.m3u8" }],
+      })
+      .mockResolvedValueOnce({
+        decision: "direct-play",
+        streams: [{ kind: "direct-play", url: "/api/media/direct/token2" }],
+      });
+
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+
+    await expectEpochReset(() => {
+      fakeHlsInstances[0].emitError({ fatal: true, response: { code: 401 } });
+    });
+
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("terminal"));
+    expect(fakeHlsInstances[0].sources).not.toContain("/api/media/direct/token2");
+    expect(screen.getByTestId("stream-url")).toBeEmptyDOMElement();
+  });
+
   // feature:hls-error-recovery
   describe("stream inventory and failover (CORE-0048)", () => {
     const inventory = {

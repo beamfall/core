@@ -27,6 +27,13 @@ pinned.
   stream-token refresh reloads the source
 - **THEN** the reload keeps the viewer's current choice and never restores the first pick
 
+#### Scenario: Stream-token refresh that lost the playing stream kind
+
+- **WHEN** a stream-token refresh returns no stream of the kind that is playing (for example HLS
+  was disabled during playback)
+- **THEN** the player never loads a stream of another kind into the running engine and treats the
+  refresh as failed (reveal-terminal)
+
 #### Scenario: Native HLS engine
 
 - **WHEN** this browser plays HLS natively (no hls.js) and the viewer picks a rendition
