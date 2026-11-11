@@ -147,6 +147,48 @@ func TestAccessLineNeverCarriesCredentialValues(t *testing.T) {
 	}
 }
 
+func TestAccessLineRedactsTokensInUncleanPaths(t *testing.T) {
+	srv := newTestServer(t)
+	logs := captureJSONLogs(t)
+	const (
+		tokenCanary  = "canary-unclean-token-4b8e"
+		secondCanary = "canary-second-token-0c71"
+		queryCanary  = "canary-unclean-query-d2a9"
+	)
+
+	cases := []struct {
+		name     string
+		target   string
+		wantPath string
+	}{
+		{"repeated slashes", "/api//media/direct/" + tokenCanary + "/file.mp4", "/api/media/direct/[redacted]/file.mp4"},
+		{"empty segment before the token", "/api/media/direct//" + tokenCanary + "/file.mp4", "/api/media/direct/[redacted]/file.mp4"},
+		{"dot segment", "/api/media/./direct/" + tokenCanary + "/file.mp4", "/api/media/direct/[redacted]/file.mp4"},
+		{"dot-dot segment", "/web/../api/pack/key/" + tokenCanary, "/api/pack/key/[redacted]"},
+		{"token prefix not at the start", "/base/api/media/hls/" + tokenCanary + "/index.m3u8", "/base/api/media/hls/[redacted]/index.m3u8"},
+		{"second token in the suffix", "/api/media/direct/" + tokenCanary + "/api/pack/key/" + secondCanary, "/api/media/direct/[redacted]/api/pack/key/[redacted]"},
+		{"encoded slashes in the prefix", "/api%2Fmedia%2Fdirect%2F" + tokenCanary + "%2Ffile.mp4", "/api/media/direct/[redacted]"},
+		{"encoded slash inside the token", "/api/media/direct/" + tokenCanary + "%2f" + secondCanary + "/file.mp4", "/api/media/direct/[redacted]"},
+		{"query on an unclean path", "/api//media/direct/" + tokenCanary + "/file.mp4?token=" + queryCanary, "/api/media/direct/[redacted]/file.mp4"},
+	}
+	for _, tc := range cases {
+		logs.Reset()
+		srv.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, tc.target, nil))
+		records := logRecords(t, logs, "http request")
+		if len(records) != 1 {
+			t.Fatalf("%s: access records = %d, want 1: %s", tc.name, len(records), logs.String())
+		}
+		if records[0]["path"] != tc.wantPath || records[0]["principal"] != principalStreamToken {
+			t.Fatalf("%s: access path/principal = %v/%v, want %s/%s", tc.name, records[0]["path"], records[0]["principal"], tc.wantPath, principalStreamToken)
+		}
+		for _, secret := range []string{tokenCanary, secondCanary, queryCanary} {
+			if strings.Contains(logs.String(), secret) {
+				t.Fatalf("%s: logs leaked %q: %s", tc.name, secret, logs.String())
+			}
+		}
+	}
+}
+
 func TestRequestRefusedBeforeRoutingCarriesRequestID(t *testing.T) {
 	srv := newTestServer(t)
 	logs := captureJSONLogs(t)

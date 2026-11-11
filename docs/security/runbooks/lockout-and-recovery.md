@@ -71,8 +71,9 @@ queries fail with `database disk image is malformed`.
    the fallback.
 3. Restore the latest good backup with `beamfall restore` while the server is stopped, following
    [backup-restore](backup-restore.md), including its post-restore verification query.
-4. Start the server and confirm `/health` reports `ready` and `beamfall_up 1`. Anything written after
-   the backup is lost; record the gap in the incident timeline.
+4. Start the server, confirm `/health` reports `"ready": true`, then make a separate authenticated
+   `/metrics` request (see [metrics](metrics.md)) and confirm it reports `beamfall_up 1`. Anything
+   written after the backup is lost; record the gap in the incident timeline.
 
 Do not edit the database by hand to get past a migration checksum error: applied migrations are
 append-only and their checksums are verified at every start.

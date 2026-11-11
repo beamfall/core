@@ -63,7 +63,7 @@ func (s *Server) recordAccess(r *http.Request, requestID string, status int, ela
 		"requestID", requestID,
 		"method", r.Method,
 		"route", route,
-		"path", redactTokenPath(r.URL.Path),
+		"path", redactTokenPath(r.URL),
 		"status", status,
 		"latency_ms", elapsed.Milliseconds(),
 		"principal", principalClass(r),
@@ -73,10 +73,8 @@ func (s *Server) recordAccess(r *http.Request, requestID string, status int, ela
 // principalClass names the credential the request presents. A token route is
 // authorized by its URL-borne Stream Token, whatever cookies ride along.
 func principalClass(r *http.Request) string {
-	for _, prefix := range tokenRoutePrefixes {
-		if strings.HasPrefix(r.URL.Path, prefix) {
-			return principalStreamToken
-		}
+	if isTokenRoutePath(r.URL) {
+		return principalStreamToken
 	}
 	return auth.CredentialClass(r)
 }
