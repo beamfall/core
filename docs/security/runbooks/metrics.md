@@ -9,6 +9,17 @@ Scrape, dashboard, and alert on Beamfall Core.
 - `beamfall_transcode_active` — in-flight transcodes.
 - `beamfall_library_media_total` — library size.
 - `beamfall_events_streams_open` — open SSE event streams (in-process, always reported). A value that climbs with no matching client activity points at orphaned streams.
+- `beamfall_http_requests_total{status_class}` — every HTTP request by response class (`1xx` …
+  `5xx`; all five are always reported). The only label is the class: no path, route, caller or
+  identifier, so the series count is fixed.
+- `beamfall_http_request_duration_seconds_sum` / `_count` — total request latency and request
+  count; `rate(sum) / rate(count)` is the mean latency.
+- `beamfall_auth_refusals_total{reason}` — refused credentials by reason from a closed vocabulary
+  (`device_secret_invalid`, `session_expired`, `admin_locked`, `pairing_code_invalid`, …; every
+  reason is always reported). Each increment has a matching `auth refused` log record carrying the
+  request ID (see [logs](logs.md)). A climbing `admin_locked`, `integration_locked` or
+  `pairing_throttled` count is a guessing attempt hitting the backoff; see
+  [lockout and recovery](lockout-and-recovery.md).
 - `beamfall_*_error` sentinels — set to 1 when a sub-collector fails.
 
 ## Breaking change: every scrape now needs the bearer
@@ -19,6 +30,12 @@ request comes from earns it a scrape any more. There are exactly two ways in:
 1. present the scrape credential (below) — the normal path, for local and remote scrapers alike;
 2. set the `--public-metrics` / `BEAMFALL_PUBLIC_METRICS=true` opt-in, which serves every caller
    the proxy lets through with no credential at all.
+
+**What `--public-metrics` really does.** The flag's `--help` text still reads "allow /metrics from
+non-loopback clients". That describes the withdrawn host-local carve-out, not today's behaviour:
+with the flag set, `/metrics` answers **every** caller — loopback, LAN or relayed from the
+internet — with no credential; with it unset, every caller needs the scrape credential, loopback
+included. Read the flag as "serve /metrics with no scrape credential".
 
 Fix a local scraper before you upgrade:
 
@@ -105,13 +122,18 @@ next restart.
    TLS/reverse-proxy deployment and pair it with authentication at the proxy.
 2. Alert on the error sentinels (`beamfall_jobs_stats_error`, `beamfall_sessions_active_error`,
    `beamfall_library_media_total_error`) > 0.
-3. Wire the DEC-6 alerts (relay over-cap, transcode-failure, HTTP 5xx > 1%) once those counters
-   exist — several are not emitted by core today.
+3. Wire the DEC-6 HTTP 5xx alert from the request counters:
+   `sum(rate(beamfall_http_requests_total{status_class="5xx"}[5m])) /
+   sum(rate(beamfall_http_requests_total[5m])) > 0.01`. The relay over-cap and transcode-failure
+   alerts wait for counters core does not emit today.
+4. Alert on a sustained rise in `beamfall_auth_refusals_total`, and pull the matching
+   `auth refused` records by request ID before acting on it.
 
 ## Targets
 - Alert thresholds:
   - relay over-cap: alert on any sustained over-cap event once the counter exists.
   - transcode-failure: alert on any sustained failure run once the counter exists.
   - HTTP 5xx ratio: alert when 5xx responses exceed 1% of requests over the scrape window.
-- Counters not yet emitted: 5xx ratio and relay over-cap still need instrumentation; until then,
-  operators must derive them from ingress/proxy logs and relay telemetry.
+- Counters not yet emitted: relay over-cap and transcode failure still need instrumentation; until
+  then, operators must derive them from ingress/proxy logs and relay telemetry. The 5xx ratio comes
+  from `beamfall_http_requests_total`.

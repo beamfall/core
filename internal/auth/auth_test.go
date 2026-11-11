@@ -864,3 +864,121 @@ func TestApprovedExtensionLiftsScheduleBlock(t *testing.T) {
 		t.Fatalf("expired-grant Scope err = %v, want ErrAccessOutsideSchedule (grant window closed)", err)
 	}
 }
+
+func TestCredentialClassFollowsScopeRouting(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(*http.Request)
+		want  string
+	}{
+		{"anonymous", func(*http.Request) {}, CredentialAnonymous},
+		{"admin token", func(r *http.Request) { r.Header.Set("Authorization", "Bearer bft_abc") }, CredentialAPIToken},
+		{"scoped key", func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+store.ScopedKeyPrefix+"abc") }, CredentialScopedKey},
+		{"session header", func(r *http.Request) { r.Header.Set("X-Beamfall-Session", "s") }, CredentialSession},
+		{"session cookie", func(r *http.Request) { r.AddCookie(&http.Cookie{Name: SessionCookie, Value: "s"}) }, CredentialSession}, //nolint:gosec // test request cookie
+		{"bearer wins over session", func(r *http.Request) {
+			r.Header.Set("X-Beamfall-Session", "s")
+			r.Header.Set("Authorization", "Bearer bft_abc")
+		}, CredentialAPIToken},
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequest(http.MethodGet, "/api/graphql", nil)
+		tc.setup(req)
+		if got := CredentialClass(req); got != tc.want {
+			t.Fatalf("%s: CredentialClass = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestScopeResolutionNotesRefusalReasons(t *testing.T) {
+	service := NewService(storetest.Open(t))
+	cases := []struct {
+		name string
+		req  *http.Request
+		want RefusalReason
+	}{
+		{"wrong device secret", authenticatedRequest("session-default", "device-tv", "canary-wrong-secret"), RefusalDeviceSecretInvalid},
+		{"unknown session", authenticatedRequest("session-missing", "device-tv", "dev-tv-secret"), RefusalSessionInvalid},
+		{"device mismatch", authenticatedRequest("session-default", "device-mac", "dev-manager-secret"), RefusalDeviceMismatch},
+		{"bad admin token", func() *http.Request {
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Header.Set("Authorization", "Bearer canary-token")
+			return req
+		}(), RefusalAPITokenInvalid},
+		{"cookie without device", func() *http.Request {
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.AddCookie(&http.Cookie{Name: SessionCookie, Value: "session-default"}) //nolint:gosec // test request cookie
+			return req
+		}(), RefusalCredentialIncomplete},
+	}
+	for _, tc := range cases {
+		ctx := WithRefusalNote(context.Background())
+		if _, err := service.ScopeFromRequest(ctx, tc.req); err == nil {
+			t.Fatalf("%s: ScopeFromRequest succeeded", tc.name)
+		}
+		refusal, ok := RefusalFromContext(ctx)
+		if !ok || refusal != (Refusal{Operation: "credential", Reason: tc.want}) {
+			t.Fatalf("%s: refusal = %+v (noted %v), want credential/%s", tc.name, refusal, ok, tc.want)
+		}
+	}
+
+	// A request with no credential at all is not a refusal.
+	ctx := WithRefusalNote(context.Background())
+	if _, err := service.ScopeFromRequest(ctx, httptest.NewRequest(http.MethodGet, "/", nil)); err == nil {
+		t.Fatal("anonymous ScopeFromRequest succeeded")
+	}
+	if refusal, ok := RefusalFromContext(ctx); ok {
+		t.Fatalf("anonymous request noted refusal %+v", refusal)
+	}
+}
+
+func TestNoteRefusalKeepsFirstUnlessDecisive(t *testing.T) {
+	NoteRefusal(context.Background(), "credential", RefusalSessionInvalid, false) // no note installed: no-op
+
+	ctx := WithRefusalNote(context.Background())
+	NoteRefusal(ctx, "credential", RefusalSessionInvalid, false)
+	NoteRefusal(ctx, "credential", RefusalDeviceRevoked, false)
+	if refusal, _ := RefusalFromContext(ctx); refusal.Reason != RefusalSessionInvalid {
+		t.Fatalf("second non-decisive note replaced the first: %+v", refusal)
+	}
+	NoteRefusal(ctx, "admin_session", RefusalAdminLocked, true)
+	NoteRefusal(ctx, "credential", RefusalDeviceRevoked, false)
+	NoteRefusal(ctx, "enroll", RefusalPairingCodeInvalid, true)
+	want := Refusal{Operation: "admin_session", Reason: RefusalAdminLocked, Decisive: true}
+	if refusal, _ := RefusalFromContext(ctx); refusal != want {
+		t.Fatalf("refusal = %+v, want %+v", refusal, want)
+	}
+}
+
+func TestBeginAdminSessionNotesDecisiveRefusals(t *testing.T) {
+	st := storetest.Open(t)
+	now := time.Unix(1_000_000, 0).UTC()
+	if err := st.SetAdminPassword(context.Background(), "right-password", now); err != nil {
+		t.Fatal(err)
+	}
+	service := NewServiceWithClock(st, func() time.Time { return now })
+	scope, err := service.ScopeFromRequest(context.Background(),
+		authenticatedRequest("session-manager", "device-mac", "dev-manager-secret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := WithRefusalNote(context.Background())
+	if _, err := service.BeginAdminSession(ctx, scope, "wrong"); err != ErrAdminPassword {
+		t.Fatalf("err = %v, want ErrAdminPassword", err)
+	}
+	want := Refusal{Operation: "admin_session", Reason: RefusalAdminPasswordRejected, Decisive: true}
+	if refusal, _ := RefusalFromContext(ctx); refusal != want {
+		t.Fatalf("refusal = %+v, want %+v", refusal, want)
+	}
+	for i := 1; i < adminBackoff.FreeAttempts; i++ {
+		_, _ = service.BeginAdminSession(context.Background(), scope, "wrong")
+	}
+	ctx = WithRefusalNote(context.Background())
+	if _, err := service.BeginAdminSession(ctx, scope, "right-password"); err != ErrAdminLocked {
+		t.Fatalf("err = %v, want ErrAdminLocked", err)
+	}
+	want = Refusal{Operation: "admin_session", Reason: RefusalAdminLocked, Decisive: true}
+	if refusal, _ := RefusalFromContext(ctx); refusal != want {
+		t.Fatalf("refusal = %+v, want %+v", refusal, want)
+	}
+}

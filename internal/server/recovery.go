@@ -102,6 +102,8 @@ func restoreHeader(dst, src http.Header) {
 type trackedResponseWriter struct {
 	http.ResponseWriter
 	committed bool
+	// status is the final status sent, set once the response commits.
+	status int
 }
 
 func (w *trackedResponseWriter) WriteHeader(status int) {
@@ -109,13 +111,29 @@ func (w *trackedResponseWriter) WriteHeader(status int) {
 	// Informational responses do not commit the final response, except for the
 	// protocol-switching 101 response.
 	if status == http.StatusSwitchingProtocols || status >= http.StatusOK {
-		w.committed = true
+		w.commit(status)
 	}
 }
 
 func (w *trackedResponseWriter) Write(p []byte) (int, error) {
-	w.committed = true
+	w.commit(http.StatusOK)
 	return w.ResponseWriter.Write(p)
+}
+
+func (w *trackedResponseWriter) commit(status int) {
+	if !w.committed {
+		w.status = status
+	}
+	w.committed = true
+}
+
+// statusCode reports the status the response carried: 200 when the handler
+// returned without writing, as net/http then sends.
+func (w *trackedResponseWriter) statusCode() int {
+	if w.status == 0 {
+		return http.StatusOK
+	}
+	return w.status
 }
 
 func (w *trackedResponseWriter) Unwrap() http.ResponseWriter {
@@ -160,7 +178,7 @@ type trackedHijacker struct {
 func (w *trackedHijacker) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	conn, rw, err := w.hijacker.Hijack()
 	if err == nil {
-		w.committed = true
+		w.commit(http.StatusSwitchingProtocols)
 	}
 	return conn, rw, err
 }
@@ -188,7 +206,7 @@ func (w *trackedFlusherHijacker) FlushError() error {
 func (w *trackedFlusherHijacker) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	conn, rw, err := w.hijacker.Hijack()
 	if err == nil {
-		w.committed = true
+		w.commit(http.StatusSwitchingProtocols)
 	}
 	return conn, rw, err
 }

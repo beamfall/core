@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"strconv"
 	"strings"
 	"testing"
@@ -294,5 +295,43 @@ func TestHealthDistinguishesReadyFromLive(t *testing.T) {
 	}
 	if notReady["ready"] != false {
 		t.Fatalf("not-ready body ready = %v, want false", notReady["ready"])
+	}
+	if notReady["status"] != "not_ready" {
+		t.Fatalf("not-ready body status = %v, want not_ready", notReady["status"])
+	}
+}
+
+// TestHealthReportsFFmpegPresenceWithoutGatingReadiness asserts /health names
+// whether ffmpeg and ffprobe resolve, derives status from ready, and keeps a
+// missing FFmpeg from changing readiness or the response status.
+func TestHealthReportsFFmpegPresenceWithoutGatingReadiness(t *testing.T) {
+	srv, _, _ := newTestServerWithMetrics(t)
+	present := map[string]bool{"ffprobe": true}
+	var looked []string
+	srv.lookPath = func(name string) (string, error) {
+		looked = append(looked, name)
+		if present[name] {
+			return "/usr/bin/" + name, nil
+		}
+		return "", exec.ErrNotFound
+	}
+
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d with ffmpeg missing: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	body := decodeHealth(t, rec.Body.String())
+	want := map[string]any{"status": "ok", "ready": true, "ffmpeg": false, "ffprobe": true}
+	for key, value := range want {
+		if body[key] != value {
+			t.Fatalf("health %s = %v, want %v: %v", key, body[key], value, body)
+		}
+	}
+	if strings.Join(looked, ",") != "ffmpeg,ffprobe" {
+		t.Fatalf("looked up %v, want ffmpeg then ffprobe", looked)
+	}
+	if strings.Contains(rec.Body.String(), "/usr/bin/") {
+		t.Fatalf("health exposes a binary path: %s", rec.Body.String())
 	}
 }

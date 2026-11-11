@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path"
 	"regexp"
 	"runtime/debug"
@@ -107,6 +108,13 @@ type Server struct {
 	// eventStreams counts open /api/events and /v1/events streams for the
 	// per-principal cap and the open-streams gauge.
 	eventStreams eventStreamState
+	// requestMetrics counts every request by status class for /metrics.
+	requestMetrics requestMetrics
+	// authRefusals counts `auth refused` audit records by reason for /metrics.
+	authRefusals authRefusalMetrics
+	// lookPath resolves the FFmpeg binaries /health reports; nil means
+	// exec.LookPath, the same PATH lookup internal/ffmpeg uses.
+	lookPath func(string) (string, error)
 }
 
 type relayedRequestKey struct{}
@@ -802,6 +810,21 @@ func (s *Server) packStatusStream(w http.ResponseWriter, r *http.Request) {
 
 // ServeHTTP implements http.Handler.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	started := time.Now()
+	tracked, w := trackResponseWriter(w)
+	// Attach a per-request correlation ID before anything can refuse the
+	// request, so every response header, 5xx log line and access line carries
+	// the same token (ADR-0013 §5 ops log correlation).
+	reqID := newRequestID()
+	w.Header().Set(requestIDHeader, reqID)
+	r = r.WithContext(auth.WithRefusalNote(context.WithValue(r.Context(), requestIDKey{}, reqID)))
+	// r is reassigned below; the deferred access line reads its final value,
+	// whose Pattern the mux fills in place.
+	defer func() {
+		status := tracked.statusCode()
+		s.recordAccess(r, reqID, status, time.Since(started))
+		s.recordAuthRefusal(r, reqID, status)
+	}()
 	r = s.resolveProxyRequest(r)
 	var ok bool
 	w, r, ok = s.applyBaseURL(w, r)
@@ -825,11 +848,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	// Attach a per-request correlation ID so 5xx log lines and the response
-	// header carry the same token (ADR-0013 §5 ops log correlation).
-	reqID := newRequestID()
-	w.Header().Set(requestIDHeader, reqID)
-	ctx := context.WithValue(r.Context(), requestIDKey{}, reqID)
+	ctx := r.Context()
 	if !requestIsHTTPS(r) && !requestIsLAN(r) {
 		ctx = context.WithValue(ctx, plainHTTPPublicWarningContextKey, true)
 	}
@@ -957,6 +976,9 @@ func (s *Server) SetObservability(observability ObservabilityController) {
 // we can only attest liveness), ready is false. A not-ready result returns 503 so
 // a Docker HEALTHCHECK / uptime probe sheds the instance until the store recovers,
 // while a live-but-not-ready process is still distinguishable in the body.
+// status follows ready ("ok" or "not_ready"). ffmpeg and ffprobe report whether
+// each binary resolves on PATH; they are informational and never gate
+// readiness, because a server without FFmpeg still serves direct play.
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	ready := false
 	if s.readiness != nil {
@@ -966,10 +988,22 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	if !ready {
 		status = http.StatusServiceUnavailable
 	}
+	summary := "ok"
+	if !ready {
+		summary = "not_ready"
+	}
+	lookPath := s.lookPath
+	if lookPath == nil {
+		lookPath = exec.LookPath
+	}
+	_, ffmpegErr := lookPath("ffmpeg")
+	_, ffprobeErr := lookPath("ffprobe")
 	writeJSON(w, status, map[string]any{
-		"status":       "ok",
+		"status":       summary,
 		"live":         true,
 		"ready":        ready,
+		"ffmpeg":       ffmpegErr == nil,
+		"ffprobe":      ffprobeErr == nil,
 		"buildSHA":     s.buildSHA,
 		"seedProfile":  s.seedProfile,
 		"seedVersion":  s.seedVersion,
@@ -1047,6 +1081,10 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	openStreams := s.eventStreams.openStreams()
 	_, _ = fmt.Fprintf(&body, "beamfall_events_streams_open %d\n", openStreams)
 	s.recordGauge(r.Context(), "beamfall_observability_events_streams_open", int64(openStreams), nil)
+	// Request counters: in-process, so always reported. They make the 5xx
+	// ratio alert computable from the server's own scrape.
+	s.requestMetrics.writePrometheus(&body)
+	s.authRefusals.writePrometheus(&body)
 	if s.observability != nil {
 		body.WriteString(s.observability.PrometheusText(r))
 	}
@@ -1275,6 +1313,7 @@ func (s *Server) enrollDevice(w http.ResponseWriter, r *http.Request) {
 	req.IsLAN = requestIsLAN(r)
 	resp, err := s.pairing.Enroll(r.Context(), req)
 	if err != nil {
+		notePairingRefusal(r, refusalOperationEnroll, err)
 		switch {
 		case errors.Is(err, pairing.ErrThrottled):
 			writeError(w, r, http.StatusTooManyRequests, "pairing attempts throttled")
