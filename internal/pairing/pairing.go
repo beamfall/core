@@ -250,9 +250,8 @@ func (s *Service) Bootstrap(ctx context.Context, req SetupRequest) (SetupRespons
 	}
 
 	now := s.now()
-	remoteKey := remoteAttemptKey(req.RemoteAddr)
-	attemptKey := setupAttemptKey()
-	if throttled, err := s.throttledFor(ctx, setupAttemptAction, attemptKey, remoteKey, now); err != nil {
+	attemptKey := setupAttemptKey(req.RemoteAddr)
+	if throttled, err := s.throttledFor(ctx, setupAttemptAction, attemptKey, "", now); err != nil {
 		return SetupResponse{}, err
 	} else if throttled {
 		return SetupResponse{}, ErrThrottled
@@ -262,13 +261,13 @@ func (s *Service) Bootstrap(ctx context.Context, req SetupRequest) (SetupRespons
 	stored := s.bootstrapToken
 	if stored == "" || s.bootstrapInProgress {
 		s.mu.Unlock()
-		_ = s.recordAttemptFor(ctx, setupAttemptAction, attemptKey, remoteKey, now, false)
+		_ = s.recordAttemptFor(ctx, setupAttemptAction, attemptKey, "", now, false)
 		return SetupResponse{}, ErrSetupTokenInvalid
 	}
 	// Constant-time comparison to resist timing attacks on the token.
 	if subtle.ConstantTimeCompare([]byte(token), []byte(stored)) != 1 {
 		s.mu.Unlock()
-		_ = s.recordAttemptFor(ctx, setupAttemptAction, attemptKey, remoteKey, now, false)
+		_ = s.recordAttemptFor(ctx, setupAttemptAction, attemptKey, "", now, false)
 		return SetupResponse{}, ErrSetupTokenInvalid
 	}
 	s.bootstrapInProgress = true
@@ -337,7 +336,7 @@ func (s *Service) Bootstrap(ctx context.Context, req SetupRequest) (SetupRespons
 		TargetType: "device",
 		TargetID:   string(device.ID),
 	})
-	_ = s.recordAttemptFor(ctx, setupAttemptAction, attemptKey, remoteKey, now, true)
+	_ = s.recordAttemptFor(ctx, setupAttemptAction, attemptKey, "", now, true)
 	bootstrapSucceeded = true
 	return SetupResponse{
 		DeviceID:         string(device.ID),
@@ -535,6 +534,20 @@ func (s *Service) enrollDemo(ctx context.Context, req EnrollRequest, profileID s
 	distributionClass, err := store.NormalizeDeviceDistributionClass(store.DeviceDistributionClass(req.DistributionClass))
 	if err != nil {
 		return EnrollResponse{}, ErrInvalidRequest
+	}
+	// The demo grant is reusable, so it obeys the same remote-enrollment gate
+	// as a pairing code: off-LAN with remote enrollment disabled gets the
+	// invalid-code answer.
+	if !req.IsLAN {
+		cfg, err := s.store.ConsoleConfig(ctx)
+		if err != nil {
+			return EnrollResponse{}, err
+		}
+		if !cfg.RemoteEnrollmentEnabled {
+			_ = s.recordAttempt(ctx, attemptKey, remoteKey, now, false)
+			s.logDenied(ctx, now, store.ActivityEnrollDenied)
+			return EnrollResponse{}, ErrInvalidCode
+		}
 	}
 	deviceID, err := s.generateID("device")
 	if err != nil {
@@ -791,8 +804,15 @@ func demoAttemptKey(code string) string {
 	return "review-demo:" + hex.EncodeToString(sum[:])
 }
 
-func setupAttemptKey() string {
-	return "bootstrap"
+// setupAttemptKey is the setup throttle's only lane: the request source. There
+// is deliberately NO server-wide setup lane — like the enroll lane above, a
+// shared lane let a few wrong tokens from anywhere lock the operator's correct
+// token out, renewably. Requests with no source address share one lane.
+func setupAttemptKey(remoteAddr string) string {
+	if key := remoteAttemptKey(remoteAddr); key != "" {
+		return key
+	}
+	return "remote:unknown"
 }
 
 func remoteAttemptKey(remoteAddr string) string {
