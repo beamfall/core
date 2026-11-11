@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -237,7 +238,10 @@ func (s *Store) AppendJobEvent(ctx context.Context, id JobID, typ string, payloa
 		return errors.New("job event type is required")
 	}
 	now = normalizeTime(now)
-	payload = normalizeJSON(payload)
+	payload, err := validatedJSON(payload, "job event payload")
+	if err != nil {
+		return err
+	}
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -307,7 +311,10 @@ func (s *Store) UpdateJobCheckpoint(ctx context.Context, id JobID, leaseOwner st
 	if leaseOwner == "" {
 		return errors.New("job lease owner is required")
 	}
-	checkpoint = normalizeJSON(checkpoint)
+	checkpoint, err := validatedJSON(checkpoint, "job checkpoint")
+	if err != nil {
+		return err
+	}
 	now = normalizeTime(now)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -334,7 +341,10 @@ func (s *Store) YieldJob(ctx context.Context, id JobID, leaseOwner string, check
 		return errors.New("job lease owner is required")
 	}
 	hasCheckpoint := len(checkpoint) > 0
-	checkpoint = normalizeJSON(checkpoint)
+	checkpoint, err := validatedJSON(checkpoint, "job checkpoint")
+	if err != nil {
+		return err
+	}
 	runAfter = normalizeTime(runAfter)
 	now = normalizeTime(now)
 	s.mu.RLock()
@@ -506,12 +516,27 @@ func normalizeNewJob(job Job) (Job, error) {
 	} else {
 		job.RunAfter = job.RunAfter.UTC()
 	}
-	job.Payload = normalizeJSON(job.Payload)
-	job.Checkpoint = normalizeJSON(job.Checkpoint)
+	var err error
+	if job.Payload, err = validatedJSON(job.Payload, "job payload"); err != nil {
+		return Job{}, err
+	}
+	if job.Checkpoint, err = validatedJSON(job.Checkpoint, "job checkpoint"); err != nil {
+		return Job{}, err
+	}
 	if job.CheckpointVersion == 0 {
 		job.CheckpointVersion = 1
 	}
 	return job, nil
+}
+
+// validatedJSON is normalizeJSON for caller-supplied documents: an empty value
+// becomes "{}", and anything else must be one valid JSON value or it is a
+// ValidationError, so malformed bytes never reach a payload_json column.
+func validatedJSON(data []byte, field string) ([]byte, error) {
+	if len(data) > 0 && !json.Valid(data) {
+		return nil, ValidationError(field + " must be valid JSON")
+	}
+	return normalizeJSON(data), nil
 }
 
 func normalizeJSON(data []byte) []byte {

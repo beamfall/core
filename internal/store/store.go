@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -634,6 +635,11 @@ type ImportMediaFile struct {
 	// the convention (e.g. a renamed parent folder) does not silently
 	// un-exclude the Extra.
 	Extra bool
+	// managedAdmission marks a managed import or convert. Such an admission
+	// is refused when its fingerprint is already live at another path or in
+	// another library, instead of repointing that row (content_fingerprint is
+	// unique, and a scan's rename detection relies on the repoint).
+	managedAdmission bool
 }
 
 // ImportMediaFilePart is one file in a parser-confirmed Parts group. The scan
@@ -3204,7 +3210,9 @@ func (s *Store) annotateRestrictedLocked(ctx context.Context, restricted map[Lib
 		key := sourceItemIdentity{kind: kind, id: items[i].ID}
 		pending[key] = append(pending[key], i)
 	}
-	annotateRestrictedFromPlane(ctx, s.catalogR, restricted, items, pending)
+	if err := annotateRestrictedFromPlane(ctx, s.catalogR, restricted, items, pending); err != nil {
+		return err
+	}
 	for _, db := range s.encryptedDBs {
 		if len(pending) == 0 {
 			break
@@ -3212,7 +3220,9 @@ func (s *Store) annotateRestrictedLocked(ctx context.Context, restricted map[Lib
 		if db == nil || db.state != "unsealed-registered" || db.reader == nil {
 			continue
 		}
-		annotateRestrictedFromPlane(ctx, db.reader, restricted, items, pending)
+		if err := annotateRestrictedFromPlane(ctx, db.reader, restricted, items, pending); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -3227,10 +3237,10 @@ type sourceItemLibraryQueryer interface {
 }
 
 // annotateRestrictedFromPlane resolves every still-pending item against one
-// catalog plane. Query/scan failures deliberately remain non-fatal: the old
-// per-item router treated an unresolvable item as Restricted=false, and this
-// batch pass preserves that defensive contract.
-func annotateRestrictedFromPlane(ctx context.Context, db sourceItemLibraryQueryer, restricted map[LibraryID]bool, items []SourceItem, pending map[sourceItemIdentity][]int) {
+// catalog plane. An item missing from this plane stays pending for the next
+// one; a query, scan or iteration failure is returned, because treating an
+// unresolved item as unrestricted would serve a restricted Library unmarked.
+func annotateRestrictedFromPlane(ctx context.Context, db sourceItemLibraryQueryer, restricted map[LibraryID]bool, items []SourceItem, pending map[sourceItemIdentity][]int) error {
 	for _, kind := range []string{"entity", "media"} {
 		ids := make([]MediaID, 0, len(pending))
 		for key := range pending {
@@ -3250,13 +3260,14 @@ func annotateRestrictedFromPlane(ctx context.Context, db sourceItemLibraryQuerye
 		rows, err := db.QueryContext(ctx,
 			`SELECT id, library_id FROM `+kind+` WHERE id IN (`+strings.Join(placeholders, ", ")+`)`, args...)
 		if err != nil {
-			continue
+			return fmt.Errorf("resolve %s libraries for restriction: %w", kind, err)
 		}
 		for rows.Next() {
 			var id MediaID
 			var libraryID LibraryID
 			if err := rows.Scan(&id, &libraryID); err != nil {
-				break
+				_ = rows.Close()
+				return fmt.Errorf("resolve %s libraries for restriction: %w", kind, err)
 			}
 			key := sourceItemIdentity{kind: kind, id: id}
 			for _, index := range pending[key] {
@@ -3266,8 +3277,13 @@ func annotateRestrictedFromPlane(ctx context.Context, db sourceItemLibraryQuerye
 			}
 			delete(pending, key)
 		}
+		err = rows.Err()
 		_ = rows.Close()
+		if err != nil {
+			return fmt.Errorf("resolve %s libraries for restriction: %w", kind, err)
+		}
 	}
+	return nil
 }
 
 func mediaDurationSummary(seconds int) string {
@@ -3360,7 +3376,9 @@ func HashDeviceSecret(secret string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// HashMediaFilePath provides a deterministic placeholder fingerprint until import hashing lands.
+// HashMediaFilePath returns a deterministic fingerprint derived from a path,
+// not from file content. It exists for catalog-only fixtures; managed import
+// and convert fingerprint the admitted bytes instead (HashMediaFileContent form).
 func HashMediaFilePath(path string) string {
 	sum := sha256.Sum256([]byte(path))
 	return "sha256:" + hex.EncodeToString(sum[:])

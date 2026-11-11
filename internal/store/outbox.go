@@ -237,10 +237,14 @@ func (s *Store) AppendMediaEvent(ctx context.Context, kind string, mediaID Media
 // where job_event and event_outbox are BOTH in events.db and so commit together
 // in one tx (appendJobEventSQL).
 func (s *Store) appendMediaEventLocked(ctx context.Context, kind string, mediaID MediaID, payload []byte, now time.Time) error {
+	payloadJSON, err := validatedJSON(payload, "media event payload")
+	if err != nil {
+		return err
+	}
 	now = normalizeTime(now)
-	_, err := s.eventsW.ExecContext(ctx,
+	_, err = s.eventsW.ExecContext(ctx,
 		"INSERT INTO event_outbox(occurred_at_ms, kind, aggregate_type, aggregate_id, payload_json) VALUES (?, ?, ?, ?, ?)",
-		timeToMillis(now), kind, OutboxAggregateMedia, mediaID, string(normalizeJSON(payload)),
+		timeToMillis(now), kind, OutboxAggregateMedia, mediaID, string(payloadJSON),
 	)
 	return err
 }
@@ -260,9 +264,13 @@ func (s *Store) appendMediaEventsLocked(ctx context.Context, kind string, mediaI
 	if len(mediaIDs) == 0 {
 		return nil
 	}
+	validated, err := validatedJSON(payload, "media event payload")
+	if err != nil {
+		return err
+	}
 	now = normalizeTime(now)
 	occurred := timeToMillis(now)
-	payloadJSON := string(normalizeJSON(payload))
+	payloadJSON := string(validated)
 	for start := 0; start < len(mediaIDs); start += bulkWriteChunkSize {
 		chunk := mediaIDs[start:min(start+bulkWriteChunkSize, len(mediaIDs))]
 		rowPlaceholders := make([]string, len(chunk))

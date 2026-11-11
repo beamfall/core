@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -151,8 +152,11 @@ func (s *Store) SavedFilterByID(ctx context.Context, id SavedFilterID) (SavedFil
 		SELECT id, profile_id, library_id, name, filter_json, pinned, created_at_ms
 		FROM saved_filter WHERE id = ?
 	`, id).Scan(&f.ID, &f.ProfileID, &f.LibraryID, &f.Name, &f.FilterJSON, &pinnedInt, &createdAtMS)
-	if err != nil {
+	if errors.Is(err, sql.ErrNoRows) {
 		return SavedFilter{}, ErrSavedFilterNotFound
+	}
+	if err != nil {
+		return SavedFilter{}, err
 	}
 	f.Pinned = pinnedInt != 0
 	f.CreatedAt = time.UnixMilli(createdAtMS).UTC()
@@ -176,8 +180,11 @@ func (s *Store) DeleteSavedFilter(ctx context.Context, id SavedFilterID) (SavedF
 		SELECT id, profile_id, library_id, name, filter_json, pinned, created_at_ms
 		FROM saved_filter WHERE id = ?
 	`, id).Scan(&f.ID, &f.ProfileID, &f.LibraryID, &f.Name, &f.FilterJSON, &pinnedInt, &createdAtMS)
-	if err != nil {
+	if errors.Is(err, sql.ErrNoRows) {
 		return SavedFilter{}, ErrSavedFilterNotFound
+	}
+	if err != nil {
+		return SavedFilter{}, err
 	}
 	f.Pinned = pinnedInt != 0
 	f.CreatedAt = time.UnixMilli(createdAtMS).UTC()
@@ -278,8 +285,11 @@ func (s *Store) SmartCollectionByID(ctx context.Context, id SmartCollectionID) (
 		SELECT id, library_id, name, source_expr, sort_expr, created_at_ms
 		FROM smart_collection WHERE id = ?
 	`, id).Scan(&c.ID, &c.LibraryID, &c.Name, &c.SourceExpr, &c.SortExpr, &createdAtMS)
-	if err != nil {
+	if errors.Is(err, sql.ErrNoRows) {
 		return SmartCollection{}, ErrSmartCollectionNotFound
+	}
+	if err != nil {
+		return SmartCollection{}, err
 	}
 	c.CreatedAt = time.UnixMilli(createdAtMS).UTC()
 	return c, nil
@@ -343,8 +353,11 @@ func (s *Store) DeleteSmartCollection(ctx context.Context, id SmartCollectionID)
 		SELECT id, library_id, name, source_expr, sort_expr, created_at_ms
 		FROM smart_collection WHERE id = ?
 	`, id).Scan(&c.ID, &c.LibraryID, &c.Name, &c.SourceExpr, &c.SortExpr, &createdAtMS)
-	if err != nil {
+	if errors.Is(err, sql.ErrNoRows) {
 		return SmartCollection{}, ErrSmartCollectionNotFound
+	}
+	if err != nil {
+		return SmartCollection{}, err
 	}
 	c.CreatedAt = time.UnixMilli(createdAtMS).UTC()
 	if _, err := s.catalogW.ExecContext(ctx, `DELETE FROM smart_collection WHERE id = ?`, id); err != nil {
