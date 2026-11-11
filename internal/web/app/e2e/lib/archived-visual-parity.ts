@@ -15,20 +15,10 @@ type ApprovedDelta = {
 
 // Exact approved focus and Cut Beam header deltas; archived PNGs remain immutable.
 const approvedVisualDeltas: Readonly<Record<string, ApprovedDelta>> = {
-  "player-desktop/player-quality-listbox-open-focused-selected.png": {
-    differentPixels: 713,
-    coordinateSHA256: "1004e0680fd85221df652b14d90be92b8423d6e2d77d4d65b47d24f564c1623f",
-    normalizedSHA256: "21dc2d54d4360ab60066d3b9eca320f4971aa21c0d04884f139f55d7b0fe0874",
-  },
   "player-desktop/shared-dialog-open-focused.png": {
     differentPixels: 1190,
     coordinateSHA256: "b98548126162a410ed554547d63e86b93bf06c23a73b32eb47d53322c4610e63",
     normalizedSHA256: "6b0800e8790f1a3c3ffbbad0af1d310826e69caeb7c6f8d756a1f463d0490364",
-  },
-  "player-mobile/player-quality-listbox-open-focused-selected.png": {
-    differentPixels: 336,
-    coordinateSHA256: "3068bcd3fd5c5aa1fbc2afbf7157403c63a284543ae51382187de991908ca90e",
-    normalizedSHA256: "9a22aacdcb7a1759d38d6d7e50838e59ccda2c272968584d0303b9109a68ffa7",
   },
   "manage/manage-collections-tab-focused-selected.png": {
     differentPixels: 1032,
@@ -61,6 +51,34 @@ const approvedVisualDeltas: Readonly<Record<string, ApprovedDelta>> = {
     normalizedSHA256: "943b19b4f60173f6e38fcd04f371fd1639873e044a29ed5d1fc550cecba911e9",
   },
 };
+
+// CORE-0045 redesigned the player transport after the migration. These states keep their archived
+// PNG SHA-pinned in the manifest but no longer compare the live render to it; the live
+// goldens under e2e/goldens/ are the regression baseline for them.
+const redesignedSinceMigration: ReadonlySet<string> = new Set([
+  "player-desktop/player-audio-listbox-open-focused-selected.png",
+  "player-desktop/player-details-dialog-open-focused.png",
+  "player-desktop/player-playback-slider-focused-selected.png",
+  "player-desktop/player-quality-listbox-open-focused-selected.png",
+  "player-desktop/player-skip-interval-select-open-focused-selected.png",
+  "player-desktop/player-speed-select-open-focused-selected.png",
+  "player-desktop/player-subtitle-background-open-focused-selected.png",
+  "player-desktop/player-subtitle-dialog-open-focused.png",
+  "player-desktop/player-subtitle-size-open-focused-selected.png",
+  "player-desktop/player-subtitles-listbox-open-focused-selected.png",
+  "player-desktop/player-volume-slider-focused-selected.png",
+  "player-mobile/player-audio-listbox-open-focused-selected.png",
+  "player-mobile/player-details-dialog-open-focused.png",
+  "player-mobile/player-playback-slider-focused-selected.png",
+  "player-mobile/player-quality-listbox-open-focused-selected.png",
+  "player-mobile/player-skip-interval-select-open-focused-selected.png",
+  "player-mobile/player-speed-select-open-focused-selected.png",
+  "player-mobile/player-subtitle-background-open-focused-selected.png",
+  "player-mobile/player-subtitle-dialog-open-focused.png",
+  "player-mobile/player-subtitle-size-open-focused-selected.png",
+  "player-mobile/player-subtitles-listbox-open-focused-selected.png",
+  "player-mobile/player-volume-slider-focused-selected.png",
+]);
 
 function sha256(value: Buffer): string {
   return createHash("sha256").update(value).digest("hex");
@@ -96,6 +114,7 @@ export async function expectArchivedVisualParity(
   expect(sha256(archived), `${state}: archived pre-migration PNG changed`).toBe(
     expectedArchivedSHA256,
   );
+  if (redesignedSinceMigration.has(archiveKey)) return;
   const approvedDelta = approvedVisualDeltas[archiveKey];
 
   if (approvedDelta) {

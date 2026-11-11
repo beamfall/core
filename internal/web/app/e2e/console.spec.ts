@@ -129,7 +129,7 @@ test.describe("console", () => {
     // The unlock form must NOT be present (we are past the gate).
     await expect(page.getByRole("button", { name: "Unlock Console" })).toHaveCount(0);
     // The index section renders the current Console overview.
-    await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Overview" })).toBeVisible();
     expect(errors, errors.join("\n")).toEqual([]);
   });
 
@@ -139,7 +139,7 @@ test.describe("console", () => {
     await gotoConsole(page, "");
 
     await expectForcedColorsActive(page);
-    await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Overview" })).toBeVisible();
     await expectBodyTextContrastsBackground(page);
     expect(errors, errors.join("\n")).toEqual([]);
   });
@@ -181,7 +181,7 @@ test.describe("console", () => {
     page,
   }, testInfo) => {
     await gotoConsole(page, "access");
-    await expect(page.getByRole("heading", { name: "Profiles" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Profiles" })).toBeVisible();
 
     const kind = page.getByRole("combobox", { name: "Kind" }).first();
     await openSelectState(page, kind, "Adult");
@@ -280,7 +280,7 @@ test.describe("console", () => {
     test(`console/${route} renders its data without error`, async ({ page }) => {
       const errors = collectFatalErrors(page);
       await gotoConsole(page, route);
-      await expect(page.getByRole("heading", { name: heading }).first()).toBeVisible();
+      await expect(page.getByRole("heading", { level: 2, name: heading }).first()).toBeVisible();
       expect(errors, errors.join("\n")).toEqual([]);
     });
   }
@@ -289,10 +289,14 @@ test.describe("console", () => {
     const errors = collectFatalErrors(page);
     await gotoConsole(page, "config");
 
-    await expect(page.getByRole("heading", { name: "Server configuration" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 2, name: "Server configuration" }),
+    ).toBeVisible();
     // Hardware transcoding lives behind the section's "Advanced" disclosure.
     await page.locator("details.console-disclosure > summary").click();
-    await expect(page.getByRole("heading", { name: "Hardware transcoding" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 2, name: "Hardware transcoding" }),
+    ).toBeVisible();
     for (const label of ["Hardware acceleration", "Codec", "Quality", "Device"]) {
       await expect(page.getByText(label).first()).toBeVisible();
     }
@@ -308,15 +312,15 @@ test.describe("console", () => {
     const errors = collectFatalErrors(page);
     await gotoConsole(page, "sessions");
 
-    await expect(page.getByRole("heading", { name: "Update awareness" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Update awareness" })).toBeVisible();
     await expect(page.getByText("plain GET").first()).toBeVisible();
     await expect(page.getByText(/backup and review migration notes/i)).toHaveCount(0);
     await expect(page.getByRole("switch", { name: "Check for updates" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Save update settings" })).toBeVisible();
     await expect(page.getByText("Current").first()).toBeVisible();
     await expect(page.getByText("Latest").first()).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Jobs" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Live sessions" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Jobs" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Live sessions" })).toBeVisible();
     await expect(page.getByText(/No active sessions|Terminate|Restricted/i).first()).toBeVisible();
     expect(errors, errors.join("\n")).toEqual([]);
   });
@@ -327,7 +331,7 @@ test.describe("console", () => {
     const errors = collectFatalErrors(page);
     await gotoConsole(page, "health");
 
-    await expect(page.getByRole("heading", { name: "Library health" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Library health" })).toBeVisible();
     for (const label of [
       "Unmatched",
       "Broken",
@@ -423,8 +427,8 @@ test.describe("console", () => {
     const errors = collectFatalErrors(page);
     await gotoConsole(page, "remote");
 
-    await expect(page.getByRole("heading", { name: "Remote access" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Migration wizard" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Remote access" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Migration wizard" })).toBeVisible();
     await expect(page.getByText(/No importers available|Configure/i).first()).toBeVisible();
     expect(errors, errors.join("\n")).toEqual([]);
   });
@@ -445,7 +449,9 @@ test.describe("console locale", () => {
     await expect(nav).toBeVisible();
     await expect(nav.getByRole("link", { name: "Bibliothèques", exact: true })).toBeVisible();
     await nav.getByRole("link", { name: "Bibliothèques", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Bibliothèques", exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 2, name: "Bibliothèques", exact: true }),
+    ).toBeVisible();
 
     await page.goto("/web/console/api");
     await expect(page.getByText("Portées", { exact: true })).toBeVisible();

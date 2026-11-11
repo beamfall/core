@@ -241,7 +241,7 @@ function ScheduleRow({
 
       <div className="mt-2 flex flex-wrap items-end gap-2">
         <Select value={kind} onValueChange={(v) => setKind(v as TriggerKind)}>
-          <SelectTrigger size="sm" className="w-32">
+          <SelectTrigger size="sm" className="w-32" aria-label={t("triggerKind")}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -264,7 +264,7 @@ function ScheduleRow({
               value={fields.unit}
               onValueChange={(v) => setField("unit", v as "minutes" | "hours")}
             >
-              <SelectTrigger size="sm" className="w-28">
+              <SelectTrigger size="sm" className="w-28" aria-label={t("scheduleUnit")}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -280,7 +280,7 @@ function ScheduleRow({
             value={String(fields.weekday)}
             onValueChange={(v) => setField("weekday", Number(v))}
           >
-            <SelectTrigger size="sm" className="w-32">
+            <SelectTrigger size="sm" className="w-32" aria-label={t("weekday")}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

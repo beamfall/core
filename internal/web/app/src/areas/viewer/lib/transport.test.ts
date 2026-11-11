@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { autoSkipSegmentAt, autoSkipSegmentKey, chapterSeekTarget } from "./transport";
+import {
+  autoSkipSegmentAt,
+  autoSkipSegmentKey,
+  buildRenditionMenuModel,
+  chapterSeekTarget,
+  renditionIndex,
+  renditionKey,
+} from "./transport";
 
 describe("chapterSeekTarget", () => {
   it("moves to adjacent marker starts without looping on the current chapter", () => {
@@ -60,5 +67,63 @@ describe("autoSkipSegmentKey", () => {
     const c = { segmentKind: "recap", startSeconds: 0, endSeconds: 30, title: "" };
     expect(autoSkipSegmentKey(a)).toBe(autoSkipSegmentKey(b));
     expect(autoSkipSegmentKey(a)).not.toBe(autoSkipSegmentKey(c));
+  });
+});
+
+describe("rendition keys", () => {
+  it("uses the first non-empty of id, height and bandwidth", () => {
+    expect(renditionKey({ id: "r1", height: 720 })).toBe("r1");
+    expect(renditionKey({ height: 720, bandwidth: 4_000_000 })).toBe("720");
+    expect(renditionKey({ bandwidth: 4_000_000 })).toBe("4000000");
+    expect(renditionKey({})).toBe("");
+  });
+
+  it("never resolves an id-less rendition to level 0 on a miss", () => {
+    const renditions = [{ height: 1080 }, { height: 720 }];
+    expect(renditionIndex(renditions, "720")).toBe(1);
+    expect(renditionIndex(renditions, "480")).toBe(-1);
+    expect(renditionIndex(renditions, "")).toBe(-1);
+    expect(renditionIndex(undefined, "720")).toBe(-1);
+  });
+});
+
+describe("buildRenditionMenuModel", () => {
+  const direct = { kind: "direct-play", url: "/d" };
+  const hls = {
+    kind: "hls",
+    url: "/h",
+    renditions: [{ id: "1080", height: 1080 }, { height: 720 }],
+  };
+
+  it("offers direct play plus the HLS sibling's renditions on a direct-play stream", () => {
+    const model = buildRenditionMenuModel({ stream: direct, alternate: hls });
+    expect(model.manualPinActive).toBe(false);
+    expect(model.options.map((o) => [o.id, o.selected])).toEqual([
+      ["direct", true],
+      ["1080", false],
+      ["720", false],
+    ]);
+  });
+
+  it("keeps a single direct-play row when no sibling exists", () => {
+    const model = buildRenditionMenuModel({ stream: direct });
+    expect(model.options.map((o) => o.id)).toEqual(["direct"]);
+  });
+
+  it("marks the pinned rendition on an HLS stream, including id-less ones", () => {
+    const model = buildRenditionMenuModel({ stream: hls, manualRenditionID: "720" });
+    expect(model.manualPinActive).toBe(true);
+    expect(model.options.map((o) => [o.id, o.selected])).toEqual([
+      ["auto", false],
+      ["1080", false],
+      ["720", true],
+    ]);
+  });
+
+  it("drops renditions that carry no usable key", () => {
+    const model = buildRenditionMenuModel({
+      stream: { kind: "hls", url: "/h", renditions: [{}, { height: 480 }] },
+    });
+    expect(model.options.map((o) => o.id)).toEqual(["auto", "480"]);
   });
 });

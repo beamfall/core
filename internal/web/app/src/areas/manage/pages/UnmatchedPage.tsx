@@ -120,7 +120,7 @@ export function UnmatchedPage() {
           <div className="flex items-center gap-2">
             {libraries.length > 0 && (
               <Select value={libraryID} onValueChange={setLibraryID}>
-                <SelectTrigger className="w-44">
+                <SelectTrigger className="w-44" aria-label={t("library")}>
                   <SelectValue placeholder={t("library")} />
                 </SelectTrigger>
                 <SelectContent>

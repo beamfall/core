@@ -22,7 +22,7 @@ import {
   Users,
 } from "lucide-react";
 import { type ComponentType, type ReactElement, useEffect } from "react";
-import { Link, Navigate, NavLink, Route, Routes } from "react-router";
+import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router";
 import { EmptyState, StatusChip } from "@/components/beamfall/workbench";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
@@ -406,8 +406,14 @@ export function ConsoleArea() {
   const { setRegister } = useRegister();
   const { loading, needsEnroll } = useSession();
   const t = useT();
+  const location = useLocation();
   const groups = groupsForHost(isBeamfallAppStoreHost());
   const allItems = groups.flatMap((g) => g.items);
+  const routeTitle = allItems.find((item) =>
+    item.path === ""
+      ? /^\/console\/?$/.test(location.pathname)
+      : location.pathname === `/console/${item.path}`,
+  )?.label;
 
   useEffect(() => setRegister("manage"), [setRegister]);
 
@@ -430,6 +436,8 @@ export function ConsoleArea() {
   return (
     <AppShell>
       <div className="console-area">
+        {/* The route's one h1 (also while the AdminGate is locked); each Section title is an h2. */}
+        <h1 className="sr-only">{t(routeTitle ?? "consoleHeading")}</h1>
         <AdminGate sessionBar={(lock) => <SessionBar onLock={lock} />}>
           <div className="flex flex-col gap-8 sm:flex-row">
             <ConsoleNav groups={groups} />

@@ -309,6 +309,31 @@ test("visual parity covers every migrated player widget state", async ({
   }
 });
 
+test("mobile transport buttons meet the 44px touch target floor (CORE-0045)", async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(!isMobile, "touch target floors are measured in the mobile Chromium project");
+  await openPlayer(page);
+
+  const buttons = page.locator(".bf-transport button:visible");
+  await expect.poll(() => buttons.count()).toBeGreaterThanOrEqual(10);
+  const boxes = await buttons.evaluateAll((elements) =>
+    elements.map((element) => {
+      const { width, height } = element.getBoundingClientRect();
+      return {
+        name: element.getAttribute("aria-label") ?? element.textContent?.trim() ?? "",
+        width,
+        height,
+      };
+    }),
+  );
+  for (const box of boxes) {
+    expect(box.width, `${box.name} width`).toBeGreaterThanOrEqual(44);
+    expect(box.height, `${box.name} height`).toBeGreaterThanOrEqual(44);
+  }
+});
+
 test("mobile touch gestures seek, clamp volume, and exclude transport controls", async ({
   page,
   isMobile,

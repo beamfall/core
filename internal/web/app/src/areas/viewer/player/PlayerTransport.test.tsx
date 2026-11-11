@@ -388,6 +388,22 @@ describe("PlayerTransport", () => {
     expect(video.volume).toBe(0.5);
   });
 
+  it("gives every icon-only transport button a non-empty accessible name (CORE-0045)", () => {
+    const { container } = render(<Harness onShare={vi.fn()} />);
+
+    const icons = [...container.querySelectorAll<HTMLButtonElement>("button.is-icon")];
+    // back, play/pause, forward, previous/next chapter, fullscreen, mute, PiP, share, info
+    expect(icons).toHaveLength(10);
+    for (const button of icons) {
+      expect(button.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+      expect(button.getAttribute("aria-label")?.trim()).toBeTruthy();
+      expect(button.querySelector(".sr-only")?.textContent?.trim()).toBeTruthy();
+      expect(screen.getByRole("button", { name: button.getAttribute("aria-label") ?? "" })).toBe(
+        button,
+      );
+    }
+  });
+
   it.each([
     ["en", "Volume", "Playback speed", "Picture in Picture"],
     ["fr", "Volume", "Vitesse de lecture", "Image dans l’image"],

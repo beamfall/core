@@ -49,7 +49,7 @@ export function PlayerPage() {
   const navTitle = (location.state as { title?: string } | null)?.title || "";
   const startAtSeconds = parseTimestampParam(new URLSearchParams(location.search).get("t"));
 
-  const { videoRef, hlsRef, state, retry } = usePlayer(
+  const { videoRef, hlsRef, state, retry, switchToHls } = usePlayer(
     mediaId || "",
     {
       couldNotReachServer: t("couldNotReachServer"),
@@ -175,6 +175,7 @@ export function PlayerPage() {
 
   return (
     <main className="flex min-h-screen flex-col bg-[oklch(8%_0.012_255)]">
+      <h1 className="sr-only">{navTitle || t("brand")}</h1>
       <div className="bf-player-bar">
         <Button variant="outline" size="sm" onClick={back}>
           {t("back")}
@@ -218,6 +219,7 @@ export function PlayerPage() {
               showSkipInterval={showSkipInterval}
               onShowSkipIntervalChange={setShowSkipInterval}
               onShare={shareAt}
+              switchToHls={switchToHls}
               onMenuOpenChange={setMenuOpen}
             />
           )}

@@ -1,14 +1,16 @@
 import type Hls from "hls.js";
 import { useCallback, useState } from "react";
 import { useT } from "@/lib/i18n";
-import type { PlaybackStream } from "../lib/playback";
+import { hlsStreamOf, type PlaybackStream } from "../lib/playback";
 import {
   buildRenditionMenuModel,
   buildTrackMenuModel,
   type RenditionMenuOption,
+  renditionIndex,
   type TrackMenuOption,
 } from "../lib/transport";
 import { audioTrackList, audioTracksArray } from "./media-tracks";
+import { type SwitchResult, selectHlsLevel } from "./usePlayer";
 
 // useLiveTracks bridges the live hls.js / native <video> track objects to the
 // pure menu models (transport.ts) and exposes the selection handlers, ported
@@ -57,6 +59,8 @@ export function useLiveTracks({
   videoRef,
   hlsRef,
   stream,
+  streams,
+  switchToHls,
   manualRenditionID,
   setManualRenditionID,
   onSubtitleChanged,
@@ -64,6 +68,10 @@ export function useLiveTracks({
   videoRef: React.RefObject<HTMLVideoElement | null>;
   hlsRef: React.RefObject<Hls | null>;
   stream: PlaybackStream | null;
+  /** The whole stream inventory; its HLS sibling feeds the direct-play quality menu. */
+  streams?: PlaybackStream[];
+  /** Switches direct play to the HLS sibling at the current position. */
+  switchToHls?: (renditionKey?: string) => SwitchResult;
   manualRenditionID: string;
   setManualRenditionID: (id: string) => void;
   /** Called after a subtitle selection so an active sync offset can re-apply. */
@@ -114,8 +122,10 @@ export function useLiveTracks({
     id: index === 0 ? "off" : String(index - 1),
   }));
 
+  const alternate = stream?.kind === "hls" ? null : hlsStreamOf(streams);
   const renditionModel = buildRenditionMenuModel({
     stream,
+    alternate,
     manualRenditionID,
     labels: { auto: t("auto"), directPlay: t("directPlay") },
   });
@@ -172,22 +182,26 @@ export function useLiveTracks({
       const h = hlsRef.current;
       if (id === "auto") {
         setManualRenditionID("");
-        if (h) {
-          h.currentLevel = -1;
-        }
+        if (h) selectHlsLevel(h, -1);
       } else if (id !== "direct") {
-        setManualRenditionID(id);
-        if (h) {
-          const renditions = stream?.renditions || [];
-          const renditionIndex = renditions.findIndex(
-            (rendition) => String(rendition.id) === String(id),
-          );
-          h.currentLevel = Math.max(0, renditionIndex);
+        // A key that matches no rendition changes nothing: never pin level 0.
+        if (stream?.kind !== "hls" && !h) {
+          // Direct play: step down by switching to the HLS sibling, pinned.
+          const sibling = hlsStreamOf(streams);
+          if (!sibling || renditionIndex(sibling.renditions, id) < 0) return;
+          if (switchToHls?.(id) === "hlsjs") setManualRenditionID(id);
+        } else {
+          // Native HLS exposes no level control: stay on Auto rather than
+          // marking a pin the element cannot honour.
+          const index = renditionIndex(stream?.renditions, id);
+          if (index < 0 || !h) return;
+          setManualRenditionID(id);
+          selectHlsLevel(h, index);
         }
       }
       nudge();
     },
-    [hlsRef, stream, setManualRenditionID, nudge],
+    [hlsRef, stream, streams, switchToHls, setManualRenditionID, nudge],
   );
 
   return {

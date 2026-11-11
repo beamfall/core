@@ -536,7 +536,7 @@ function MappingStep({
             value={config.profileID === "" ? PROFILE_DEFAULT : config.profileID}
             onValueChange={(v) => onChange({ profileID: v === PROFILE_DEFAULT ? "" : v })}
           >
-            <SelectTrigger>
+            <SelectTrigger aria-label={t("migrationWizardProfile")}>
               <SelectValue placeholder={t("migrationWizardProfileDefault")} />
             </SelectTrigger>
             <SelectContent>
@@ -555,7 +555,7 @@ function MappingStep({
             value={config.libraryID === "" ? LIBRARY_ALL : config.libraryID}
             onValueChange={(v) => onChange({ libraryID: v === LIBRARY_ALL ? "" : v })}
           >
-            <SelectTrigger>
+            <SelectTrigger aria-label={t("migrationWizardLibrary")}>
               <SelectValue placeholder={t("migrationWizardLibraryAll")} />
             </SelectTrigger>
             <SelectContent>

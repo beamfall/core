@@ -806,7 +806,7 @@ function ConfigField({
   } else if (field.options && field.options.length > 0) {
     control = (
       <Select value={value} disabled={disabled} onValueChange={(v) => onChange(v)}>
-        <SelectTrigger className="w-48">
+        <SelectTrigger className="w-48" aria-label={label}>
           <SelectValue placeholder={t("pluginConfigDefault")} />
         </SelectTrigger>
         <SelectContent>

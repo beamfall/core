@@ -40,6 +40,7 @@ function renderPlayer(state: PlayerState) {
     hlsRef: { current: null },
     state,
     retry,
+    switchToHls: vi.fn(() => false as const),
   });
   render(
     <I18nProvider>
@@ -78,6 +79,11 @@ describe("PlayerPage failure and recovery states", () => {
     fireEvent.click(tryAgain);
     expect(retry).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("button", { name: "Back to Browse" })).not.toBeInTheDocument();
+  });
+
+  it("renders exactly one h1 on the player route (CORE-0089)", () => {
+    renderPlayer(playerState({ phase: "playing" }));
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
   });
 
   it("keeps a reveal-terminal block terminal: Back to Browse, no retry", () => {

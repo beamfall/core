@@ -457,7 +457,9 @@ export function ManageSection({
     <Card className="manage-section">
       <CardHeader className="manage-section-header flex flex-row items-start justify-between gap-2">
         <div className="space-y-0.5">
-          <CardTitle className="manage-section-title">{title}</CardTitle>
+          <CardTitle role="heading" aria-level={2} className="manage-section-title">
+            {title}
+          </CardTitle>
           {lead && <CardDescription className="manage-section-lead">{lead}</CardDescription>}
         </div>
         {actions && <div className="flex items-center gap-2">{actions}</div>}

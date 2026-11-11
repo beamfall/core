@@ -105,4 +105,123 @@ test.describe("ADR-0100 a11y real-browser parity pass", () => {
       expect(errors, errors.join("\n")).toEqual([]);
     });
   }
+
+  // CORE-0089: every Select trigger has an accessible name (axe button-name).
+  const viewports = [
+    { name: "1440x900", width: 1440, height: 900 },
+    { name: "390x844", width: 390, height: 844 },
+  ];
+  for (const route of ["operations", "unmatched"]) {
+    for (const viewport of viewports) {
+      test(`manage/${route} has no unnamed buttons at ${viewport.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        await page.goto(`/web/manage/${route}`);
+        await expect(page.locator("main h1")).toHaveCount(1);
+        await settleFrames(page);
+        const violations = await runAxe(page);
+        expect(violations.filter((violation) => violation.id === "button-name")).toEqual([]);
+      });
+    }
+  }
+
+  // CORE-0089: every Manage and Viewer route renders exactly one h1.
+  const manageRoutes = [
+    "libraries",
+    "operations",
+    "convert",
+    "rename",
+    "trash",
+    "backups",
+    "subscriptions",
+    "collections",
+    "bulk",
+    "tags",
+    "curation",
+    "entities",
+    "artwork",
+    "markers",
+    "field-locks",
+    "navigation",
+    "unmatched",
+    "restrictions",
+    "profile",
+  ];
+  for (const route of manageRoutes) {
+    test(`manage/${route} renders exactly one h1`, async ({ page }) => {
+      await page.goto(`/web/manage/${route}`);
+      await expect(page.locator("h1")).toHaveCount(1);
+      await expect(page.locator("h1")).not.toBeEmpty();
+    });
+  }
+  for (const route of ["", "search", "mydata", "notifications", "settings"]) {
+    test(`viewer /${route} renders exactly one h1`, async ({ page }) => {
+      await page.goto(`/web/${route}`);
+      await expect(page.locator("#root")).not.toBeEmpty();
+      await expect(page.locator("h1")).toHaveCount(1);
+    });
+  }
+
+  // CORE-0089: every Console route has one h1 and no unnamed buttons (admin session via storageState).
+  const consoleRoutes = [
+    "",
+    "operations",
+    "sessions",
+    "health",
+    "activity",
+    "libraries",
+    "plugins",
+    "identification",
+    "layout",
+    "access",
+    "schedules",
+    "remote",
+    "api",
+    "backups",
+    "retention",
+    "migrate",
+    "updates",
+    "config",
+  ];
+  for (const route of consoleRoutes) {
+    test(`console/${route || "overview"} renders exactly one h1 and no unnamed buttons`, async ({
+      page,
+    }) => {
+      await page.goto(`/web/console/${route}`);
+      await expect(page.getByRole("navigation", { name: "Console" })).toBeVisible();
+      await expect(page.locator("h1")).toHaveCount(1);
+      await expect(page.locator("h1")).not.toBeEmpty();
+      await settleFrames(page);
+      const violations = await runAxe(page);
+      expect(violations.filter((violation) => violation.id === "button-name")).toEqual([]);
+    });
+  }
+
+  // Viewer routes that need a seeded id: reached through the page's own links.
+  test("viewer /watch, /seeall and /profiles each render exactly one h1", async ({ page }) => {
+    await page.goto("/web/watch/media-alpha");
+    await expect(page.getByRole("button", { name: "Back" }).first()).toBeVisible();
+    await expect(page.locator("h1")).toHaveCount(1);
+
+    await page.goto("/web/profiles");
+    await expect(page.locator("h1")).toHaveCount(1);
+
+    await page.goto("/web/");
+    await page.getByRole("button", { name: "See all" }).first().click();
+    await expect(page).toHaveURL(/\/seeall\//);
+    await expect(page.locator("h1")).toHaveCount(1);
+    await expect(page.locator("h1")).not.toBeEmpty();
+  });
+
+  test("viewer /n and /entity render exactly one h1", async ({ page }) => {
+    await page.goto("/web/");
+    await page.getByRole("link").first().waitFor();
+    const node = await page.locator('a[href*="/n/"]').first().getAttribute("href");
+    expect(node, "a seeded /n/ link on the home page").toBeTruthy();
+    // Entity pages are reached by card navigation, not links; a seeded id that resolves to nothing renders the leak-safe unavailable state, which must still carry the h1.
+    for (const href of [node as string, "/web/entity/media-alpha"]) {
+      await page.goto(href);
+      await expect(page.locator("h1")).toHaveCount(1);
+      await expect(page.locator("h1")).not.toBeEmpty();
+    }
+  });
 });

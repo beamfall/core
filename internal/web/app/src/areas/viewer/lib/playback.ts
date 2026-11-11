@@ -73,6 +73,11 @@ export interface PreviewInfo {
   assets?: PlaybackAssets;
 }
 
+/** The HLS stream of an inventory (the manual-rendition pin offered beside direct play). */
+export function hlsStreamOf(streams: PlaybackStream[] | undefined): PlaybackStream | null {
+  return (streams || []).find((stream) => stream.kind === "hls" && !!stream.url) || null;
+}
+
 /** A reveal-terminal HTTP status (token expired / relocked / hidden) — ADR-0004/0010. */
 export function isRevealTerminalStatus(status: number): boolean {
   return status === 401 || status === 403 || status === 410;

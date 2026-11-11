@@ -1,3 +1,4 @@
+import { Info } from "lucide-react";
 import { Fragment, useRef } from "react";
 import { Dialog } from "@/components/ui/astryx-primitives";
 import { useT } from "@/lib/i18n";
@@ -51,8 +52,9 @@ export function InfoOverlay({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange} modal={false}>
       <div ref={anchorRef} className="bf-menu-anchor">
-        <Dialog.Trigger className="bf-control" aria-label={t("playbackDetails")}>
-          {t("info")}
+        <Dialog.Trigger className="bf-control is-icon" aria-label={t("playbackDetails")}>
+          <Info aria-hidden="true" />
+          <span className="sr-only">{t("info")}</span>
         </Dialog.Trigger>
         <Dialog.Portal container={anchorRef}>
           <Dialog.Popup className="bf-player-dialog">

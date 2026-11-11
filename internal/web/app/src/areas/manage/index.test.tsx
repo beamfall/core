@@ -224,6 +224,14 @@ describe("Manage navigation", () => {
     }
   });
 
+  it("renders one h1 naming the current route (CORE-0089)", async () => {
+    render(manageRouter("/manage/trash", []));
+
+    const headings = await screen.findAllByRole("heading", { level: 1 });
+    expect(headings).toHaveLength(1);
+    expect(headings[0]).toHaveTextContent("Trash");
+  });
+
   it("redirects an unknown Manage path to Libraries in one bounded hop", async () => {
     const paths: string[] = [];
     render(manageRouter("/manage/not-a-route", paths));

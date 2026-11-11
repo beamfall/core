@@ -460,6 +460,24 @@ function formatBitrate(bandwidth: number | undefined): string {
   return `${mbps.toFixed(1)} Mbps`;
 }
 
+/**
+ * The one key a rendition is known by: the quality menu row id, the manual-pin
+ * selection and the hls.js level lookup all use it. Empty when the rendition
+ * carries no id, height or bandwidth, in which case it cannot be addressed.
+ */
+export function renditionKey(rendition: PlaybackRendition): string {
+  for (const value of [rendition.id, rendition.height, rendition.bandwidth]) {
+    if (value !== undefined && value !== null && value !== "") return String(value);
+  }
+  return "";
+}
+
+/** The index of the rendition with `key`, or -1 on a miss (callers must no-op). */
+export function renditionIndex(renditions: PlaybackRendition[] | undefined, key: string): number {
+  if (!key || !renditions) return -1;
+  return renditions.findIndex((rendition) => renditionKey(rendition) === key);
+}
+
 export interface RenditionMenuOption {
   id: string;
   label: string;
@@ -486,26 +504,40 @@ export interface RenditionMenuLabels {
  */
 export function buildRenditionMenuModel({
   stream,
+  alternate = null,
   manualRenditionID = "",
   labels = {},
 }: {
   stream: PlaybackStream | null;
+  /** The HLS sibling of a direct-play stream: its renditions fill the menu so
+   *  the viewer can step down from direct play (ADR-0010 section 8). */
+  alternate?: PlaybackStream | null;
   manualRenditionID?: string;
   labels?: RenditionMenuLabels;
 }): RenditionMenuModel {
   const renditions = stream && Array.isArray(stream.renditions) ? stream.renditions : [];
+  const rows = (list: PlaybackRendition[], pinned: string) =>
+    list
+      .filter((rendition) => renditionKey(rendition) !== "")
+      .map((rendition) => ({
+        id: renditionKey(rendition),
+        label: renditionLabel(rendition),
+        selected: renditionKey(rendition) === pinned,
+        disabled: false,
+        reason: "",
+      }));
+  const direct: RenditionMenuOption = {
+    id: "direct",
+    label: labels.directPlay || "Direct play",
+    selected: true,
+    disabled: false,
+    reason: "",
+  };
   if (!renditions.length) {
+    const stepDown = alternate && Array.isArray(alternate.renditions) ? alternate.renditions : [];
     return {
       manualPinActive: false,
-      options: [
-        {
-          id: "direct",
-          label: labels.directPlay || "Direct play",
-          selected: true,
-          disabled: false,
-          reason: "",
-        },
-      ],
+      options: [direct, ...rows(stepDown, "")],
     };
   }
   return {
@@ -518,13 +550,7 @@ export function buildRenditionMenuModel({
         disabled: false,
         reason: "",
       },
-      ...renditions.map((rendition) => ({
-        id: String(rendition.id || rendition.height || rendition.bandwidth),
-        label: renditionLabel(rendition),
-        selected: String(rendition.id) === String(manualRenditionID),
-        disabled: false,
-        reason: "",
-      })),
+      ...rows(renditions, manualRenditionID),
     ],
   };
 }
@@ -599,7 +625,7 @@ export function buildRouteDetailModel({
   const renditions = stream && Array.isArray(stream.renditions) ? stream.renditions : [];
   if (renditions.length) {
     const pinned = renditions.find(
-      (rendition) => String(rendition.id) === String(manualRenditionID),
+      (rendition) => manualRenditionID !== "" && renditionKey(rendition) === manualRenditionID,
     );
     if (pinned) {
       rows.push({ labelKey: "infoQuality", value: renditionLabel(pinned) });
