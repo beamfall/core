@@ -9,7 +9,9 @@ import (
 // registry snapshot updated 2025-10-09. Overlapping, more-specific registry
 // rows are represented by their enclosing special-use block because outbound
 // fetches deny the entire special-purpose corpus, including globally reachable
-// protocol anycasts. Ordinary global unicast outside these blocks is allowed.
+// protocol anycasts. The deprecated IPv6 site-local block fec0::/10 (RFC 3879)
+// is not a registry row, but net/netip still reports it as global unicast, so
+// it is denied here too. Ordinary global unicast outside these blocks is allowed.
 var specialUsePrefixes = mustSpecialUsePrefixes(
 	"0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8",
 	"169.254.0.0/16", "172.16.0.0/12", "192.0.0.0/24", "192.0.2.0/24",
@@ -19,7 +21,7 @@ var specialUsePrefixes = mustSpecialUsePrefixes(
 	"::/128", "::1/128", "::ffff:0:0/96", "64:ff9b::/96", "64:ff9b:1::/48",
 	"100::/64", "100:0:0:1::/64", "2001::/23", "2001:db8::/32", "2002::/16",
 	"2620:4f:8000::/48", "3fff::/20", "5f00::/16", "fc00::/7", "fe80::/10",
-	"ff00::/8",
+	"fec0::/10", "ff00::/8",
 )
 
 func mustSpecialUsePrefixes(raw ...string) []netip.Prefix {

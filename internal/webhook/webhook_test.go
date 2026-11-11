@@ -314,15 +314,19 @@ func TestNilClientUsesBoundedDefaultHTTPClient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	client, ok := em.client.(*http.Client)
+	client, ok := em.clients["sink"].(*http.Client)
 	if !ok {
-		t.Fatalf("client type = %T, want *http.Client", em.client)
-	}
-	if client != defaultHTTPClient {
-		t.Fatal("nil client did not use package default")
+		t.Fatalf("client type = %T, want *http.Client", em.clients["sink"])
 	}
 	if client.Timeout != defaultHTTPTimeout {
 		t.Fatalf("timeout = %v, want %v", client.Timeout, defaultHTTPTimeout)
+	}
+	if client.CheckRedirect == nil {
+		t.Fatal("default client follows redirects")
+	}
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok || transport.Proxy != nil {
+		t.Fatalf("default client transport = %T (proxy set: %v), want a proxy-free *http.Transport", client.Transport, ok && transport.Proxy != nil)
 	}
 }
 
@@ -459,8 +463,16 @@ func TestDeadLetterFailureLogRedactsEndpointSecret(t *testing.T) {
 
 func TestMalformedSecretBearingURLIsFixedDiagnostic(t *testing.T) {
 	ep := Endpoint{ID: "sink", URL: "http://%gh.example.invalid/path?token=do-not-leak", Secret: []byte("hmac-secret")}
-	em := newEmitter(t, Config{Endpoints: []Endpoint{ep}, MaxAttempts: 1}, &fixedEvents{}, http.DefaultClient, nil)
-	err := em.post(context.Background(), ep, mediaEvent(1, store.MediaEventCreated), []byte("{}"), []byte("sig"))
+	_, err := New(Config{Endpoints: []Endpoint{ep}}, &fixedEvents{}, http.DefaultClient, nil, nil)
+	if err != ErrConfigDiagnostic {
+		t.Fatalf("New error = %v, want fixed configuration diagnostic", err)
+	}
+	// post keeps its own fixed diagnostic for a URL that fails request
+	// construction after validation.
+	valid := ep
+	valid.URL = "http://example.invalid/path"
+	em := newEmitter(t, Config{Endpoints: []Endpoint{valid}, MaxAttempts: 1}, &fixedEvents{}, http.DefaultClient, nil)
+	err = em.post(context.Background(), ep, mediaEvent(1, store.MediaEventCreated), []byte("{}"), []byte("sig"))
 	if err != ErrRequestDiagnostic {
 		t.Fatalf("error = %q, want fixed request diagnostic", err)
 	}

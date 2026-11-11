@@ -25,6 +25,9 @@ type fileEndpoint struct {
 	URL        string   `json:"url"`
 	SecretRef  string   `json:"secret_ref"`
 	EventKinds []string `json:"event_kinds,omitempty"`
+	// AllowPrivateNetwork approves a hostname-named LAN receiver for local
+	// address classes (see Endpoint.AllowPrivateNetwork).
+	AllowPrivateNetwork bool `json:"allow_private_network,omitempty"`
 }
 
 // fileConfig is the on-disk webhook configuration (DataDir/webhook-endpoints.json).
@@ -77,10 +80,11 @@ func LoadConfig(path string, secrets SecretSource) (Config, error) {
 			return Config{}, ErrSecretDiagnostic
 		}
 		cfg.Endpoints = append(cfg.Endpoints, Endpoint{
-			ID:         fe.ID,
-			URL:        fe.URL,
-			Secret:     []byte(secret),
-			EventKinds: fe.EventKinds,
+			ID:                  fe.ID,
+			URL:                 fe.URL,
+			Secret:              []byte(secret),
+			EventKinds:          fe.EventKinds,
+			AllowPrivateNetwork: fe.AllowPrivateNetwork,
 		})
 	}
 	return cfg, nil
