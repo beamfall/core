@@ -306,21 +306,6 @@ func (s *Service) Bootstrap(ctx context.Context, req SetupRequest) (SetupRespons
 		return SetupResponse{}, err
 	}
 
-	// Create the first owner Profile so the session has a valid binding. The
-	// store's CreateProfile caller is the bootstrap itself (no creator scope
-	// exists yet), so we pass a fully-open filter — there are no Libraries yet
-	// on a truly fresh server, so the granted set is empty but valid.
-	profile, err := s.store.CreateProfile(ctx, profileName, store.ProfileAdult, store.LibraryFilter{Revealed: true, AllLibraries: true})
-	if err != nil {
-		return SetupResponse{}, err
-	}
-	// First-run designates this bootstrap Profile as the single owner (ADR-0007
-	// §2/§4): the only Profile that may later open an Admin Session. Movable
-	// afterwards via SetProfileOwner.
-	if err := s.store.SetProfileOwner(ctx, profile.ID); err != nil {
-		return SetupResponse{}, err
-	}
-
 	sessionExpiresAt := now.Add(30 * 24 * time.Hour).UTC()
 	device := store.Device{
 		ID:                store.DeviceID(deviceID),
@@ -332,10 +317,15 @@ func (s *Service) Bootstrap(ctx context.Context, req SetupRequest) (SetupRespons
 	session := store.Session{
 		ID:        store.SessionID(sessionID),
 		DeviceID:  device.ID,
-		ProfileID: profile.ID,
 		ExpiresAt: sessionExpiresAt,
 	}
-	if err := s.store.EnrollDevice(ctx, device, session); err != nil {
+	// The owner Profile, its owner designation (ADR-0007 §2/§4: the only
+	// Profile that may later open an Admin Session), this first MANAGER device
+	// and its session commit together, so a failure or crash leaves no partial
+	// owner that would suppress the setup token on restart. A Profile left by
+	// such a partial write before this was atomic is reused, not duplicated.
+	profile, err := s.store.BootstrapOwner(ctx, profileName, device, session)
+	if err != nil {
 		return SetupResponse{}, err
 	}
 	_ = s.store.AppendActivity(ctx, store.ActivityEntry{

@@ -905,9 +905,17 @@ func TestBootstrapRetriesAfterSetupWriteFailure(t *testing.T) {
 		return next, nil
 	}
 	service.SetBootstrapToken("setup-token")
+	profilesBefore, err := st.Profiles(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if _, err := service.Bootstrap(ctx, SetupRequest{Token: "setup-token", DeviceName: "Browser"}); err == nil {
 		t.Fatal("Bootstrap with duplicate device succeeded, want setup write failure")
+	}
+	// The failed enrollment must not leave a durable owner Profile behind.
+	if profilesAfter, err := st.Profiles(ctx); err != nil || len(profilesAfter) != len(profilesBefore) {
+		t.Fatalf("profiles after failed setup = %d (err %v), want %d", len(profilesAfter), err, len(profilesBefore))
 	}
 	resp, err := service.Bootstrap(ctx, SetupRequest{Token: "setup-token", DeviceName: "Browser Retry"})
 	if err != nil {

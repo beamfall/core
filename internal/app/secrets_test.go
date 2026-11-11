@@ -259,6 +259,89 @@ func TestBootstrapSetupTokenInstallsToken(t *testing.T) {
 	}
 }
 
+// TestAuditBootstrapRestartsAfterPartialOwnerWrite reproduces the 2026-09-26
+// audit finding (CORE-0757): an earlier non-atomic setup committed the owner
+// Profile and then stopped before enrolling the first device. A new process
+// must still issue a setup token, complete setup through the normal route
+// without duplicating the owner, and never issue a token again afterwards.
+func TestAuditBootstrapRestartsAfterPartialOwnerWrite(t *testing.T) {
+	ctx := context.Background()
+	dataDir := t.TempDir()
+	st, err := store.Open(ctx, dataDir, store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	partial, err := st.CreateProfile(ctx, "Owner", store.ProfileAdult, store.LibraryFilter{Revealed: true, AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetProfileOwner(ctx, partial.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// New process: the partial owner must not suppress the setup token.
+	st, err = store.Open(ctx, dataDir, store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := pairing.NewService(st, nil)
+	token, err := bootstrapSetupToken(ctx, st, svc)
+	if err != nil {
+		t.Fatalf("bootstrapSetupToken after partial write: %v", err)
+	}
+	if token == "" || !svc.SetupRequired() {
+		t.Fatal("no setup token after a partial owner write; setup cannot resume")
+	}
+	resp, err := svc.Bootstrap(ctx, pairing.SetupRequest{Token: token, DeviceName: "Browser", ProfileName: "Owner"})
+	if err != nil {
+		t.Fatalf("Bootstrap after restart: %v", err)
+	}
+	if resp.ProfileID != string(partial.ID) {
+		t.Fatalf("setup ProfileID = %q, want the partial owner %q", resp.ProfileID, partial.ID)
+	}
+	profiles, err := st.Profiles(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("profiles after recovery = %d, want 1 (no duplicate owner)", len(profiles))
+	}
+	if owner, err := st.OwnerProfile(ctx); err != nil || owner.ID != partial.ID {
+		t.Fatalf("OwnerProfile = (%v, %v), want %s", owner.ID, err, partial.ID)
+	}
+	device, err := st.Device(ctx, store.DeviceID(resp.DeviceID))
+	if err != nil {
+		t.Fatalf("Device: %v", err)
+	}
+	if device.Role != store.DeviceRoleManager {
+		t.Fatalf("device role = %q, want manager", device.Role)
+	}
+	if _, err := svc.Bootstrap(ctx, pairing.SetupRequest{Token: token, DeviceName: "Second"}); !errors.Is(err, pairing.ErrSetupTokenInvalid) {
+		t.Fatalf("second Bootstrap = %v, want ErrSetupTokenInvalid", err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Next process after success: no token is ever reissued.
+	st, err = store.Open(ctx, dataDir, store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	svc = pairing.NewService(st, nil)
+	token, err = bootstrapSetupToken(ctx, st, svc)
+	if err != nil {
+		t.Fatalf("bootstrapSetupToken after setup: %v", err)
+	}
+	if token != "" || svc.SetupRequired() {
+		t.Fatal("setup token reissued after successful setup")
+	}
+}
+
 func TestFirstRunSetupURL(t *testing.T) {
 	got := firstRunSetupURL("http", "[::]:0", "a token")
 	want := "http://127.0.0.1:0/web/setup?token=a+token"

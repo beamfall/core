@@ -1707,3 +1707,178 @@ func TestLibraryPreviewClipsToggle(t *testing.T) {
 		t.Fatal("LibraryPreviewClips accepted an unknown library")
 	}
 }
+
+func bootstrapEnrollment(id string) (Device, Session) {
+	device := Device{
+		ID:         DeviceID("device-" + id),
+		Name:       "Browser " + id,
+		Role:       DeviceRoleManager,
+		SecretHash: HashDeviceSecret("secret-" + id),
+	}
+	session := Session{
+		ID:        SessionID("session-" + id),
+		DeviceID:  device.ID,
+		ExpiresAt: time.Unix(1_000_000, 0).UTC(),
+	}
+	return device, session
+}
+
+func countRows(t *testing.T, st *Store, table string) int {
+	t.Helper()
+	var n int
+	if err := st.catalogR.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM "+table).Scan(&n); err != nil {
+		t.Fatalf("count %s: %v", table, err)
+	}
+	return n
+}
+
+// TestBootstrapOwnerRollsBackInjectedEnrollFailure injects a Session write
+// failure into first-run setup: no Profile, owner, Device or Session may
+// survive it, and a restarted store must still need, and then complete, setup.
+func TestBootstrapOwnerRollsBackInjectedEnrollFailure(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	st, err := Open(ctx, dir, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.catalogW.ExecContext(ctx, `
+		CREATE TRIGGER inject_enroll_failure BEFORE INSERT ON auth_session
+		BEGIN SELECT RAISE(ABORT, 'injected enroll failure'); END
+	`); err != nil {
+		t.Fatal(err)
+	}
+	device, session := bootstrapEnrollment("first")
+	if _, err := st.BootstrapOwner(ctx, "Owner", device, session); err == nil {
+		t.Fatal("BootstrapOwner succeeded through an injected session failure")
+	}
+	for _, table := range []string{"profile", "device", "auth_session"} {
+		if n := countRows(t, st, table); n != 0 {
+			t.Fatalf("%s rows after failed setup = %d, want 0", table, n)
+		}
+	}
+	if complete, err := st.FirstRunSetupComplete(ctx); err != nil || complete {
+		t.Fatalf("FirstRunSetupComplete after failed setup = (%v, %v), want (false, nil)", complete, err)
+	}
+	if _, err := st.catalogW.ExecContext(ctx, `DROP TRIGGER inject_enroll_failure`); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err = Open(ctx, dir, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if complete, err := st.FirstRunSetupComplete(ctx); err != nil || complete {
+		t.Fatalf("FirstRunSetupComplete after restart = (%v, %v), want (false, nil)", complete, err)
+	}
+	device, session = bootstrapEnrollment("retry")
+	profile, err := st.BootstrapOwner(ctx, "Owner", device, session)
+	if err != nil {
+		t.Fatalf("BootstrapOwner after restart: %v", err)
+	}
+	if owned, err := st.ProfileIsOwner(ctx, profile.ID); err != nil || !owned {
+		t.Fatalf("ProfileIsOwner = (%v, %v), want (true, nil)", owned, err)
+	}
+	got, err := st.Session(ctx, session.ID)
+	if err != nil {
+		t.Fatalf("Session: %v", err)
+	}
+	if got.ProfileID != profile.ID || got.DeviceID != device.ID {
+		t.Fatalf("session = %+v, want bound to %s/%s", got, profile.ID, device.ID)
+	}
+	if n := countRows(t, st, "profile"); n != 1 {
+		t.Fatalf("profile rows = %d, want 1", n)
+	}
+	if complete, err := st.FirstRunSetupComplete(ctx); err != nil || !complete {
+		t.Fatalf("FirstRunSetupComplete after setup = (%v, %v), want (true, nil)", complete, err)
+	}
+	if err := st.RevokeDevice(ctx, device.ID); err != nil {
+		t.Fatalf("RevokeDevice: %v", err)
+	}
+	if complete, err := st.FirstRunSetupComplete(ctx); err != nil || !complete {
+		t.Fatalf("FirstRunSetupComplete after revoking the only device = (%v, %v), want (true, nil)", complete, err)
+	}
+}
+
+// TestBootstrapOwnerReusesPartialOwner covers stores left by the earlier
+// non-atomic setup: the Profile it wrote is reused as the owner instead of a
+// second one being created.
+func TestBootstrapOwnerReusesPartialOwner(t *testing.T) {
+	open := LibraryFilter{Revealed: true, AllLibraries: true}
+	t.Run("designated owner without device", func(t *testing.T) {
+		ctx := context.Background()
+		st, err := Open(ctx, t.TempDir(), Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = st.Close() })
+		partial, err := st.CreateProfile(ctx, "Owner", ProfileAdult, open)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.SetProfileOwner(ctx, partial.ID); err != nil {
+			t.Fatal(err)
+		}
+		if complete, err := st.FirstRunSetupComplete(ctx); err != nil || complete {
+			t.Fatalf("FirstRunSetupComplete with partial owner = (%v, %v), want (false, nil)", complete, err)
+		}
+		device, session := bootstrapEnrollment("one")
+		profile, err := st.BootstrapOwner(ctx, "Alice", device, session)
+		if err != nil {
+			t.Fatalf("BootstrapOwner: %v", err)
+		}
+		if profile.ID != partial.ID || profile.Name != "Alice" {
+			t.Fatalf("profile = %s %q, want reused %s renamed Alice", profile.ID, profile.Name, partial.ID)
+		}
+		if n := countRows(t, st, "profile"); n != 1 {
+			t.Fatalf("profile rows = %d, want 1", n)
+		}
+	})
+	t.Run("undesignated adult without device", func(t *testing.T) {
+		ctx := context.Background()
+		st, err := Open(ctx, t.TempDir(), Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = st.Close() })
+		partial, err := st.CreateProfile(ctx, "Owner", ProfileAdult, open)
+		if err != nil {
+			t.Fatal(err)
+		}
+		device, session := bootstrapEnrollment("one")
+		profile, err := st.BootstrapOwner(ctx, "Owner", device, session)
+		if err != nil {
+			t.Fatalf("BootstrapOwner: %v", err)
+		}
+		if profile.ID != partial.ID {
+			t.Fatalf("profile = %s, want reused %s", profile.ID, partial.ID)
+		}
+		if owned, err := st.ProfileIsOwner(ctx, partial.ID); err != nil || !owned {
+			t.Fatalf("ProfileIsOwner = (%v, %v), want (true, nil)", owned, err)
+		}
+	})
+	t.Run("enrolled devices create a new owner", func(t *testing.T) {
+		ctx := context.Background()
+		st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = st.Close() })
+		before := countRows(t, st, "profile")
+		device, session := bootstrapEnrollment("one")
+		profile, err := st.BootstrapOwner(ctx, "Fresh Owner", device, session)
+		if err != nil {
+			t.Fatalf("BootstrapOwner: %v", err)
+		}
+		if n := countRows(t, st, "profile"); n != before+1 {
+			t.Fatalf("profile rows = %d, want %d", n, before+1)
+		}
+		if owner, err := st.OwnerProfile(ctx); err != nil || owner.ID != profile.ID {
+			t.Fatalf("OwnerProfile = (%v, %v), want %s", owner.ID, err, profile.ID)
+		}
+	})
+}
