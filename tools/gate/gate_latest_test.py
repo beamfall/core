@@ -416,6 +416,84 @@ class GateLatestTest(unittest.TestCase):
         self.assertTrue(self.event_seen("end nested-capacity"))
         self.assert_capacity_available(self.repository)
 
+    def capacity_lock_path(self, repository: Path) -> Path:
+        common_dir = Path(
+            self.git(
+                repository, "rev-parse", "--path-format=absolute", "--git-common-dir"
+            )
+        ).resolve()
+        return common_dir / "beamfall-gate.capacity.lock"
+
+    def test_coordinator_adopts_ancestor_capacity_instead_of_waiting(self) -> None:
+        # CORE-0392: an outer capacity holder exports its FD; the coordinator
+        # beneath it must adopt that ownership, not wait on its own ancestor.
+        command, environment = self.invocation(
+            self.directory / "outer-capacity-state", "exit", "outer-capacity", 0, 0
+        )
+        # The outer holder has no ancestor: a capacity FD named by a gate
+        # running this suite is not open here and gate-capacity.py refuses it.
+        environment.pop("BEAMFALL_GATE_CAPACITY_FD", None)
+        command = [sys.executable, str(CAPACITY), "--", *command]
+        process = subprocess.Popen(command, cwd=self.repository, env=environment)
+        self.addCleanup(self.cleanup_invocation, process)
+        try:
+            returncode = process.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            self.fail("coordinator deadlocked on ancestor-owned capacity")
+        self.assertEqual(returncode, 0)
+        self.assertTrue(self.event_seen("end outer-capacity"))
+        self.assert_capacity_available(self.repository)
+
+    def test_coordinator_refuses_capacity_fd_that_does_not_own_the_lock(self) -> None:
+        lock_path = self.capacity_lock_path(self.repository)
+        holder = open(lock_path, "a+b")
+        self.addCleanup(holder.close)
+        fcntl.flock(holder, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        unowned = os.open(lock_path, os.O_RDWR)
+        self.addCleanup(os.close, unowned)
+        command, environment = self.invocation(
+            self.directory / "unowned-state", "exit", "unowned", 0, 0
+        )
+        environment["BEAMFALL_GATE_CAPACITY_FD"] = str(unowned)
+        completed = subprocess.run(
+            command,
+            env=environment,
+            pass_fds=(unowned,),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(completed.returncode, 70, completed.stderr)
+        self.assertIn("does not own", completed.stderr)
+        self.assertFalse(self.event_seen("start unowned"))
+
+    def test_coordinator_ignores_foreign_and_stale_capacity_fds(self) -> None:
+        other = self.init_fixture_repository(self.directory / "other-repository")
+        foreign_path = self.capacity_lock_path(other)
+        foreign = open(foreign_path, "a+b")
+        self.addCleanup(foreign.close)
+        fcntl.flock(foreign, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        for name, raw_fd, pass_fds in (
+            ("foreign", str(foreign.fileno()), (foreign.fileno(),)),
+            ("stale", "987", ()),
+        ):
+            with self.subTest(fd=name):
+                command, environment = self.invocation(
+                    self.directory / f"{name}-state", "exit", name, 0, 0
+                )
+                environment["BEAMFALL_GATE_CAPACITY_FD"] = raw_fd
+                completed = subprocess.run(
+                    command,
+                    env=environment,
+                    pass_fds=pass_fds,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertTrue(self.event_seen(f"end {name}"))
+                self.assert_capacity_available(self.repository)
+
     def test_cancellation_during_common_dir_lookup_reports_signal(self) -> None:
         # CORE-0954: a group-delivered cancellation reaches the coordinator
         # and its git child together; the dead git child must not turn the
@@ -1098,6 +1176,296 @@ class GateLatestTest(unittest.TestCase):
             capture.read_text(encoding="utf-8").splitlines(),
             [environment["GOCACHE"], "run --allow-serial-runners ./..."],
         )
+
+
+FAKE_GATE_BODY = r'''#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
+printf '%s\n' "$$" >>"$FAKE_GATE_PIDS"
+printf 'start\n' >>"$FAKE_GATE_EVENTS"
+if python3 script/gate-capacity.py --held "$PWD"; then
+  printf 'capacity held\n' >>"$FAKE_GATE_EVENTS"
+else
+  printf 'capacity free\n' >>"$FAKE_GATE_EVENTS"
+fi
+if [ -n "${FAKE_GATE_RELEASE:-}" ]; then
+  : >"$FAKE_GATE_RELEASE.ready"
+  while [ ! -e "$FAKE_GATE_RELEASE" ]; do
+    sleep 0.02
+  done
+fi
+printf 'end\n' >>"$FAKE_GATE_EVENTS"
+'''
+
+# Inherited gate/coordinator state that would change the routing under test
+# when this suite itself runs inside a canonical gate.
+CANONICAL_ROUTING_ENV = (
+    "BEAMFALL_GATE_CAPACITY_FD",
+    "BEAMFALL_GATE_CAPACITY_HELD",
+    "BEAMFALL_GATE_FIXTURE_GUARDED",
+    "GATE_LATEST_COORDINATOR_SUPERVISED",
+    "GATE_LATEST_STATE_DIR",
+    "GATE_PROCESS_SUPERVISED",
+    "GATE_PROCESS_SUPERVISOR",
+    "GATE_RUN_ID",
+    "GATE_WORKER_REAPS_DESCENDANTS",
+    "MAKEFLAGS",
+    "MAKELEVEL",
+    "MFLAGS",
+)
+
+
+class EvidenceWrappedCanonicalGateTest(unittest.TestCase):
+    """GATECAP-NESTED-REENTRY-1 (CORE-0392): the real evidence-wrapper ->
+    make gate -> gate-entry -> fixture guard -> coordinator routing, with only
+    the gate body faked."""
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.directory = Path(self.temporary.name)
+        self.repository = self.directory / "repository"
+        self.events = self.directory / "events"
+        self.pids = self.directory / "pids"
+        self.release = self.directory / "release"
+        # Registered first so it runs after every per-process cleanup.
+        self.addCleanup(self.temporary.cleanup)
+        self.init_fixture_repository()
+
+    def canonical_gate_recipe(self) -> str:
+        lines = (ROOT / "Makefile").read_text(encoding="utf-8").splitlines()
+        for index, line in enumerate(lines):
+            if line.startswith("gate:"):
+                recipe = lines[index + 1]
+                self.assertTrue(recipe.startswith("\t"), recipe)
+                self.assertIn("tools/gate/gate-entry.sh", recipe)
+                return recipe
+        self.fail("Makefile has no gate target")
+
+    def init_fixture_repository(self) -> None:
+        repository = self.repository
+        (repository / "tools/gate").mkdir(parents=True)
+        (repository / "script").mkdir()
+        for relative in (
+            "tools/gate/gate-entry.sh",
+            "tools/gate/gate_latest.py",
+            "script/gate-capacity.py",
+            "script/gate-fixture-guard.py",
+            "script/run-with-evidence.sh",
+            "script/test-process-supervisor.py",
+        ):
+            shutil.copy2(ROOT / relative, repository / relative)
+        body = repository / "tools/gate/gate.sh"
+        body.write_text(FAKE_GATE_BODY, encoding="utf-8")
+        body.chmod(0o755)
+        # The canonical recipe byte-for-byte, minus prerequisites that need
+        # the full repository.
+        (repository / "Makefile").write_text(
+            f"gate:\n{self.canonical_gate_recipe()}\n", encoding="utf-8"
+        )
+        (repository / ".gitignore").write_text(".agent-evidence/\n", encoding="utf-8")
+        for args in (
+            ("init", "-q", "-b", "main"),
+            ("config", "user.email", "gate-test@example.invalid"),
+            ("config", "user.name", "Gate Test"),
+            ("add", "."),
+            ("-c", "commit.gpgsign=false", "commit", "-q", "-m", "fixture"),
+        ):
+            subprocess.run(
+                ["git", "-C", str(repository), *args],
+                check=True,
+                capture_output=True,
+            )
+
+    def environment(self, *, release: bool = False) -> dict[str, str]:
+        environment = os.environ.copy()
+        for name in CANONICAL_ROUTING_ENV:
+            environment.pop(name, None)
+        # GATE_PREFLIGHT skips gate-entry's repository-wide prerequisites; the
+        # fixture guard and coordinator still run.
+        environment["GATE_PREFLIGHT"] = "1"
+        environment["GATE_CANCEL_GRACE_SECONDS"] = "0.15"
+        environment["GATE_LATEST_GOCACHE_DIR"] = str(self.directory / "gocache")
+        environment["AGENT_EVIDENCE_DIR"] = str(self.directory / "evidence")
+        environment["FAKE_GATE_EVENTS"] = str(self.events)
+        environment["FAKE_GATE_PIDS"] = str(self.pids)
+        if release:
+            environment["FAKE_GATE_RELEASE"] = str(self.release)
+        return environment
+
+    def evidence_wrapped(self) -> list[str]:
+        return ["script/run-with-evidence.sh", "--label", "gate", "--", "make", "gate"]
+
+    def start(self, command: list[str], environment: dict[str, str]) -> subprocess.Popen:
+        process = subprocess.Popen(
+            command,
+            cwd=self.repository,
+            env=environment,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        self.addCleanup(self.cleanup_process, process)
+        return process
+
+    def cleanup_process(self, process: subprocess.Popen) -> None:
+        self.release.touch()
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=10)
+        if process.stderr is not None:
+            process.stderr.close()
+
+    def wait_exit(self, process: subprocess.Popen, message: str) -> int:
+        # A readiness bound, not a speed assertion (see GateLatestTest.wait_for).
+        try:
+            return process.wait(timeout=60)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=10)
+            self.fail(message)
+
+    def wait_for(self, predicate, message: str) -> None:
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            if predicate():
+                return
+            time.sleep(0.02)
+        self.fail(message)
+
+    def event_lines(self) -> list[str]:
+        try:
+            return self.events.read_text(encoding="utf-8").splitlines()
+        except FileNotFoundError:
+            return []
+
+    def body_pids(self) -> list[int]:
+        try:
+            return [int(line) for line in self.pids.read_text(encoding="utf-8").split()]
+        except FileNotFoundError:
+            return []
+
+    def assert_no_body_survives(self) -> None:
+        def gone(pid: int) -> bool:
+            try:
+                os.kill(pid, 0)
+                return False
+            except ProcessLookupError:
+                return True
+
+        for pid in self.body_pids():
+            self.wait_for(lambda: gone(pid), f"gate body descendant still alive: {pid}")
+
+    def capacity_held(self) -> bool:
+        probe = subprocess.run(
+            [sys.executable, str(CAPACITY), "--held", str(self.repository)],
+            check=False,
+            capture_output=True,
+        )
+        self.assertIn(probe.returncode, (0, 1), probe.stderr)
+        return probe.returncode == 0
+
+    def start_capacity_holder(self) -> tuple[subprocess.Popen, Path]:
+        started = self.directory / "holder-started"
+        release = self.directory / "holder-release"
+        holder = subprocess.Popen(
+            [
+                sys.executable,
+                str(CAPACITY),
+                "--",
+                "sh",
+                "-c",
+                'touch "$1"; while [ ! -e "$2" ]; do sleep 0.02; done',
+                "sh",
+                str(started),
+                str(release),
+            ],
+            cwd=self.repository,
+            env=self.environment(),
+        )
+        self.addCleanup(self.cleanup_process, holder)
+        self.addCleanup(release.touch)
+        self.wait_for(started.exists, "external capacity holder did not start")
+        return holder, release
+
+    def test_evidence_wrapped_gate_starts_once_and_completes(self) -> None:
+        process = self.start(self.evidence_wrapped(), self.environment())
+        returncode = self.wait_exit(
+            process, "evidence-wrapped make gate deadlocked on inherited capacity"
+        )
+        self.assertEqual(returncode, 0, process.stderr.read().decode(errors="replace"))
+        self.assertEqual(self.event_lines(), ["start", "capacity held", "end"])
+        self.assertEqual(len(self.body_pids()), 1)
+        self.assert_no_body_survives()
+        self.assertFalse(self.capacity_held(), "capacity leaked after the gate")
+
+    def test_evidence_wrapped_gate_queues_behind_repository_capacity(self) -> None:
+        _holder, holder_release = self.start_capacity_holder()
+        process = self.start(self.evidence_wrapped(), self.environment())
+        time.sleep(1)
+        self.assertIsNone(process.poll(), "evidence-wrapped gate did not queue")
+        self.assertEqual(self.event_lines(), [], "gate overlapped the capacity holder")
+        holder_release.touch()
+        self.assertEqual(self.wait_exit(process, "queued gate never ran"), 0)
+        self.assertEqual(self.event_lines(), ["start", "capacity held", "end"])
+        self.assert_no_body_survives()
+
+    def test_direct_gate_takes_repository_capacity(self) -> None:
+        _holder, holder_release = self.start_capacity_holder()
+        process = self.start(["make", "gate"], self.environment(release=True))
+        # The coordinator publishes its generation before it waits on
+        # capacity, so a published generation means it is queued.
+        generation = self.repository / ".agent-evidence/gate-latest/generation"
+        self.wait_for(generation.exists, "direct gate coordinator never queued")
+        self.assertIsNone(process.poll(), "direct gate did not queue for capacity")
+        self.assertEqual(self.event_lines(), [], "direct gate overlapped the capacity holder")
+        holder_release.touch()
+        self.wait_for(
+            lambda: Path(f"{self.release}.ready").exists(), "direct gate never started"
+        )
+        self.assertTrue(self.capacity_held(), "direct gate body ran without capacity")
+        self.release.touch()
+        self.assertEqual(self.wait_exit(process, "direct gate did not finish"), 0)
+        self.assertEqual(self.event_lines(), ["start", "capacity held", "end"])
+        self.assert_no_body_survives()
+        self.assertFalse(self.capacity_held(), "capacity leaked after the gate")
+
+    def test_running_evidence_wrapped_interruption_is_descendant_clean(self) -> None:
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            with self.subTest(signal=signal.Signals(signum).name):
+                for path in (self.events, self.pids, Path(f"{self.release}.ready")):
+                    path.unlink(missing_ok=True)
+                process = self.start(self.evidence_wrapped(), self.environment(release=True))
+                self.wait_for(
+                    lambda: Path(f"{self.release}.ready").exists(),
+                    "evidence-wrapped gate body never started",
+                )
+                self.assertTrue(self.capacity_held())
+                process.send_signal(signum)
+                self.assertEqual(
+                    self.wait_exit(process, "interrupted gate did not exit"), 128 + signum
+                )
+                self.assertNotIn("end", self.event_lines())
+                self.assert_no_body_survives()
+                self.wait_for(
+                    lambda: not self.capacity_held(),
+                    "interrupted gate left capacity owned",
+                )
+
+    def test_queued_evidence_wrapped_interruption_is_descendant_clean(self) -> None:
+        holder, holder_release = self.start_capacity_holder()
+        process = self.start(self.evidence_wrapped(), self.environment())
+        time.sleep(1)
+        self.assertIsNone(process.poll(), "evidence-wrapped gate did not queue")
+        process.send_signal(signal.SIGTERM)
+        self.assertEqual(self.wait_exit(process, "queued gate did not exit"), 143)
+        self.assertEqual(self.event_lines(), [], "queued gate body started")
+        self.assertTrue(self.capacity_held(), "holder lost capacity")
+        holder_release.touch()
+        self.assertEqual(self.wait_exit(holder, "capacity holder did not finish"), 0)
+        self.assertFalse(self.capacity_held())
 
 
 if __name__ == "__main__":

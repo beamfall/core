@@ -3,7 +3,10 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/nightly-freshness-test.XXXXXX")"
-trap 'rm -rf "$tmp"' EXIT
+# bash 3.2 (macOS) runs the EXIT trap with status 0 after a `set -u` expansion
+# error, and the script then exits 0; only reaching the last line passes.
+completed=0
+trap 'rm -rf "$tmp"; [ "$completed" = 1 ] || exit 1' EXIT
 source_repo="$tmp/source-repo"
 git init -q -b main "$source_repo"
 git -C "$source_repo" config user.name "Nightly Freshness Test"
@@ -442,4 +445,8 @@ YAML
 expect_policy_failure "$tmp/wp-artifact-cross.yml" \
   'publisher job file-red-ticket must not download artifacts'
 
+# The local producer of these records (CORE-0539), run with fake tiers.
+"$ROOT/script/release-nightlies-local_test.sh"
+
+completed=1
 echo "nightly-freshness tests: passed"
