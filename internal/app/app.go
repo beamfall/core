@@ -508,8 +508,11 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	skipDetection := configureSkipDetectionJobs(cfg.DataDir, st, ffmpegRunner, jobRegistry, resourceGovernor, jobWake, logger)
 	// Manual identification uses the hardened scrape engine. Local image
 	// metadata is plugin hook code, wired below by Library plugin ID.
+	// Scraper credentials: the owner's saved secrets, then any defaults an
+	// official build bundled (BundledCredentials).
+	scraperCredentials := withBundledCredentials(secretFiles{dir: filepath.Join(cfg.DataDir, "secrets")}, BundledCredentials)
 	scrapeEngine := scrape.New(
-		scrape.WithCredentials(secretFiles{dir: filepath.Join(cfg.DataDir, "secrets")}),
+		scrape.WithCredentials(scraperCredentials),
 		scrape.WithConfigSource(st),
 	)
 	// Compiled filename-parser hooks, keyed by active plugin ID.
@@ -1090,7 +1093,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		FeedSearcher:                 graphFeedSearcher,
 		AssetSweep:                   func(ctx context.Context) { enqueueAssetSweep(ctx, st, logger, jobWake) },
 		SubscriptionSecrets:          secretFiles{dir: filepath.Join(cfg.DataDir, "secrets")},
-		ScraperCredentialStore:       secretFiles{dir: filepath.Join(cfg.DataDir, "secrets")},
+		ScraperCredentialStore:       scraperCredentials,
 		ScraperCredentialInvalidator: scrapeEngine,
 		PushRegistrar:                graphPushRegistrar,
 		Conductor:                    conductorRegistry,
