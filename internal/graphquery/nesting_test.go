@@ -149,8 +149,8 @@ func preparePeakBytes(query string) int64 {
 		runtime.ReadMemStats(&before)
 		_, _ = PrepareOperation(query, "", nil)
 		runtime.ReadMemStats(&after)
-		heap := int64(after.TotalAlloc - before.TotalAlloc)
-		stack := max(int64(after.StackInuse)-int64(before.StackInuse), 0)
+		heap := int64(after.TotalAlloc - before.TotalAlloc)               // #nosec G115 -- test measurement, far below int64 range
+		stack := max(int64(after.StackInuse)-int64(before.StackInuse), 0) // #nosec G115 -- test measurement, far below int64 range
 		result <- heap + stack
 	}()
 	return <-result
