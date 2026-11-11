@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path"
 	"regexp"
 	"runtime/debug"
@@ -111,6 +112,9 @@ type Server struct {
 	requestMetrics requestMetrics
 	// authRefusals counts `auth refused` audit records by reason for /metrics.
 	authRefusals authRefusalMetrics
+	// lookPath resolves the FFmpeg binaries /health reports; nil means
+	// exec.LookPath, the same PATH lookup internal/ffmpeg uses.
+	lookPath func(string) (string, error)
 }
 
 type relayedRequestKey struct{}
@@ -970,6 +974,9 @@ func (s *Server) SetObservability(observability ObservabilityController) {
 // we can only attest liveness), ready is false. A not-ready result returns 503 so
 // a Docker HEALTHCHECK / uptime probe sheds the instance until the store recovers,
 // while a live-but-not-ready process is still distinguishable in the body.
+// status follows ready ("ok" or "not_ready"). ffmpeg and ffprobe report whether
+// each binary resolves on PATH; they are informational and never gate
+// readiness, because a server without FFmpeg still serves direct play.
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	ready := false
 	if s.readiness != nil {
@@ -979,10 +986,22 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	if !ready {
 		status = http.StatusServiceUnavailable
 	}
+	summary := "ok"
+	if !ready {
+		summary = "not_ready"
+	}
+	lookPath := s.lookPath
+	if lookPath == nil {
+		lookPath = exec.LookPath
+	}
+	_, ffmpegErr := lookPath("ffmpeg")
+	_, ffprobeErr := lookPath("ffprobe")
 	writeJSON(w, status, map[string]any{
-		"status":       "ok",
+		"status":       summary,
 		"live":         true,
 		"ready":        ready,
+		"ffmpeg":       ffmpegErr == nil,
+		"ffprobe":      ffprobeErr == nil,
 		"buildSHA":     s.buildSHA,
 		"seedProfile":  s.seedProfile,
 		"seedVersion":  s.seedVersion,

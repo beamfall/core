@@ -12,7 +12,7 @@
 
 ## 3. Health
 
-- [ ] 3.1 Derive `status` from `ready` and report `ffmpeg` / `ffprobe` presence
+- [x] 3.1 Derive `status` from `ready` and report `ffmpeg` / `ffprobe` presence
 
 ## 4. Runbooks
 
