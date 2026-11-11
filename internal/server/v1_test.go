@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"hash/crc32"
 	"io"
 	"mime/multipart"
@@ -159,6 +160,57 @@ func TestV1ScanRequiresPersistedLibraryRoot(t *testing.T) {
 	rec := v1Post(t, srv, "/v1/scans", key, `{"libraryID":"library-local","root":`+strconv.Quote(scanRoot)+`}`)
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("persisted root POST /v1/scans = %d, want 202: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestV1ScanPartialEnqueueReportsQueuedJobs pins that an enqueue failing
+// part-way through a Library's roots still answers 500, but names the jobs
+// already queued so the caller is not left blind to them.
+func TestV1ScanPartialEnqueueReportsQueuedJobs(t *testing.T) {
+	srv, st := newTestServerWithStore(t)
+	first := filepath.Join(t.TempDir(), "first")
+	second := filepath.Join(t.TempDir(), "second")
+	if err := st.SetLibraryRoots(context.Background(), "library-local", []string{first, second}); err != nil {
+		t.Fatalf("SetLibraryRoots: %v", err)
+	}
+	key := mintKey(t, st, "ingest", "", store.ScopeIngest)
+
+	for _, tc := range []struct {
+		name     string
+		failRoot string
+		wantIDs  []string
+	}{
+		{name: "second root fails", failRoot: second, wantIDs: []string{"job-" + first}},
+		{name: "first root fails", failRoot: first, wantIDs: []string{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv.SetV1ScanEnqueuer(func(_ context.Context, _ store.LibraryID, root string) (store.JobID, error) {
+				if root == tc.failRoot {
+					return "", errors.New("queue full")
+				}
+				return store.JobID("job-" + root), nil
+			})
+			rec := v1Post(t, srv, "/v1/scans", key, `{"libraryID":"library-local"}`)
+			if rec.Code != http.StatusInternalServerError {
+				t.Fatalf("POST /v1/scans = %d, want 500: %s", rec.Code, rec.Body.String())
+			}
+			var body struct {
+				Error  string    `json:"error"`
+				JobIDs *[]string `json:"jobIDs"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decode failure body: %v", err)
+			}
+			if body.Error != "scan enqueue failed" {
+				t.Fatalf("error = %q, want scan enqueue failed", body.Error)
+			}
+			if body.JobIDs == nil {
+				t.Fatalf("failure body has no jobIDs array: %s", rec.Body.String())
+			}
+			if strings.Join(*body.JobIDs, ",") != strings.Join(tc.wantIDs, ",") {
+				t.Fatalf("jobIDs = %#v, want %#v", *body.JobIDs, tc.wantIDs)
+			}
+		})
 	}
 }
 

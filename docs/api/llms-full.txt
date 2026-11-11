@@ -163,6 +163,7 @@ Requires the `ingest` scope. Enqueues a durable scan job for a Library the key c
 | 401 | No valid credential was presented. | [Error](#error) |
 | 403 | The scoped key does not carry the scope this operation requires. | [Error](#error) |
 | 404 | Unknown or invisible Library. | [Error](#error) |
+| 500 | A scan job could not be enqueued. Jobs queued for earlier roots before the failure stay queued and are listed in `jobIDs` (possibly empty). | object {`error`: string, `jobIDs`: array of string} |
 
 ### GET `/v1/backups/{libraryID}/status`
 
@@ -775,7 +776,22 @@ source: docs/api/openapi.json
           "400": { "description": "libraryID missing, the Library has no roots, or more than 200 roots require selecting one root.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "description": "Unknown or invisible Library.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+          "404": { "description": "Unknown or invisible Library.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": {
+            "description": "A scan job could not be enqueued. Jobs queued for earlier roots before the failure stay queued and are listed in `jobIDs` (possibly empty).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": { "type": "string" },
+                    "jobIDs": { "type": "array", "maxItems": 200, "items": { "type": "string" } }
+                  },
+                  "required": ["error", "jobIDs"]
+                }
+              }
+            }
+          }
         }
       }
     },

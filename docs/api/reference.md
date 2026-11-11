@@ -155,6 +155,7 @@ Requires the `ingest` scope. Enqueues a durable scan job for a Library the key c
 | 401 | No valid credential was presented. | [Error](#error) |
 | 403 | The scoped key does not carry the scope this operation requires. | [Error](#error) |
 | 404 | Unknown or invisible Library. | [Error](#error) |
+| 500 | A scan job could not be enqueued. Jobs queued for earlier roots before the failure stay queued and are listed in `jobIDs` (possibly empty). | object {`error`: string, `jobIDs`: array of string} |
 
 ### GET `/v1/backups/{libraryID}/status`
 
