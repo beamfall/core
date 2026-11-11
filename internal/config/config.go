@@ -202,9 +202,11 @@ func (r HardwareAccelReport) SoftwareOnly() bool {
 
 // RemoteAccessConfig configures how the server is reachable from outside the
 // LAN. The two paths are independent and may both be off (the default — a
-// LAN-only server). Neither path holds a secret in this struct: the relay
-// carrier token lives in <DataDir>/secrets/relay-token (0600, invariant 5),
-// resolved at use time and never logged (ADR-0018 byte-blindness).
+// LAN-only server). Neither path holds a secret in this struct: the relay's
+// shared HMAC secret (same value as relayd --token-file) lives in
+// <DataDir>/secrets/relay-token (0600, invariant 5), resolved at use time to
+// mint a single-use carrier token per dial, and never logged (ADR-0018
+// byte-blindness).
 type RemoteAccessConfig struct {
 	DirectHTTPS DirectHTTPSConfig
 	Relay       RelayConfig
@@ -234,8 +236,9 @@ type DirectHTTPSConfig struct {
 // relay forwards inbound connections byte-blind (it never terminates TLS).
 type RelayConfig struct {
 	// Endpoint is the relay's carrier address the server dials out to, e.g.
-	// "relay.example.com:7443". Empty disables the relay path. The carrier
-	// token authenticating the registration is NOT here — it lives in
+	// "relay.example.com:7443". Empty disables the relay path. The shared HMAC
+	// secret the registration's carrier tokens are minted from (same value as
+	// relayd --token-file) is NOT here — it lives in
 	// <DataDir>/secrets/relay-token (0600), resolved at use time.
 	Endpoint string
 	// PublicHost is the SNI hostname the relay routes inbound connections by
