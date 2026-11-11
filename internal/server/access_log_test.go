@@ -172,9 +172,10 @@ func TestRequestRefusedBeforeRoutingCarriesRequestID(t *testing.T) {
 func TestMetricsCountRequestsByStatusClass(t *testing.T) {
 	srv := newTestServer(t)
 
-	for _, path := range []string{"/health", "/api/no-such-route"} {
-		srv.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
-	}
+	// A first scrape is a 2xx (the test server is not ready, so /health is a
+	// 503); the unknown route is a 4xx.
+	srv.ServeHTTP(httptest.NewRecorder(), authorizedScrape(t, srv))
+	srv.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/no-such-route", nil))
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, authorizedScrape(t, srv))
 	if rec.Code != http.StatusOK {
