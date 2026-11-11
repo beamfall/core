@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -133,6 +134,24 @@ func (w *trackedFlusher) Flush() {
 	w.flusher.Flush()
 }
 
+// FlushError lets http.ResponseController report a failed flush through the
+// wrapper instead of falling back to the error-free Flush.
+func (w *trackedFlusher) FlushError() error {
+	if !w.committed {
+		w.WriteHeader(http.StatusOK)
+	}
+	return flushReportingError(w.ResponseWriter, w.flusher)
+}
+
+func flushReportingError(w http.ResponseWriter, flusher http.Flusher) error {
+	err := http.NewResponseController(w).Flush()
+	if errors.Is(err, http.ErrNotSupported) {
+		flusher.Flush()
+		return nil
+	}
+	return err
+}
+
 type trackedHijacker struct {
 	*trackedResponseWriter
 	hijacker http.Hijacker
@@ -157,6 +176,13 @@ func (w *trackedFlusherHijacker) Flush() {
 		w.WriteHeader(http.StatusOK)
 	}
 	w.flusher.Flush()
+}
+
+func (w *trackedFlusherHijacker) FlushError() error {
+	if !w.committed {
+		w.WriteHeader(http.StatusOK)
+	}
+	return flushReportingError(w.ResponseWriter, w.flusher)
 }
 
 func (w *trackedFlusherHijacker) Hijack() (net.Conn, *bufio.ReadWriter, error) {
