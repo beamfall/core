@@ -7,8 +7,10 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
+	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -33,7 +35,104 @@ const eventPollInterval = 250 * time.Millisecond
 // unbounded query.
 const eventBatchLimit = 256
 
+// eventKeepaliveInterval is how long a stream may go without writing before it
+// sends an SSE comment frame. Idle streams through the relay or an operator's
+// reverse proxy are otherwise dropped silently, and the failed write is how the
+// handler learns its peer is gone. Polling is tick-granular, so 10 s keeps the
+// observed gap under 15 s.
+const eventKeepaliveInterval = 10 * time.Second
+
+// eventScopeRecheckInterval bounds how long a stream trusts its cached Scope
+// while idle. The Scope is always re-derived before a batch of events is
+// filtered (see eventStream), so this only bounds how long a revoked or expired
+// session's idle stream stays open without delivering anything.
+const eventScopeRecheckInterval = 5 * time.Second
+
+// eventStreamsPerPrincipal caps concurrently open streams per session, API
+// token or scoped key.
+const eventStreamsPerPrincipal = 8
+
 type beforeEventEmit func(context.Context) (store.ProfileID, store.LibraryFilter, error)
+
+// eventStreamState tracks open event streams for the per-principal cap and
+// the open-streams gauge. The duration and resolver fields are test seams; zero
+// values mean the package defaults and auth.Service.ScopeFromRequest.
+type eventStreamState struct {
+	mu        sync.Mutex
+	perKey    map[string]int
+	open      int
+	keepalive time.Duration
+	recheck   time.Duration
+	resolve   func(context.Context, *http.Request) (auth.Scope, error)
+}
+
+// acquire reserves a stream slot for key, reporting false when key already
+// holds limit open streams.
+func (e *eventStreamState) acquire(key string, limit int) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.perKey == nil {
+		e.perKey = map[string]int{}
+	}
+	if e.perKey[key] >= limit {
+		return false
+	}
+	e.perKey[key]++
+	e.open++
+	return true
+}
+
+func (e *eventStreamState) release(key string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.perKey[key] <= 1 {
+		delete(e.perKey, key)
+	} else {
+		e.perKey[key]--
+	}
+	e.open--
+}
+
+// openStreams is the number of currently open event streams.
+func (e *eventStreamState) openStreams() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.open
+}
+
+// eventStreamKey names the principal a stream counts against. Each credential
+// kind gets its own namespace so ids cannot collide across kinds.
+func eventStreamKey(scope auth.Scope) string {
+	switch {
+	case scope.APIKeyID != "":
+		return "key:" + scope.APIKeyID
+	case scope.APITokenID != "":
+		return "token:" + scope.APITokenID
+	default:
+		return "session:" + string(scope.SessionID)
+	}
+}
+
+func (s *Server) eventScope(ctx context.Context, r *http.Request) (auth.Scope, error) {
+	if s.eventStreams.resolve != nil {
+		return s.eventStreams.resolve(ctx, r)
+	}
+	return s.auth.ScopeFromRequest(ctx, r)
+}
+
+func (s *Server) eventKeepalive() time.Duration {
+	if s.eventStreams.keepalive > 0 {
+		return s.eventStreams.keepalive
+	}
+	return eventKeepaliveInterval
+}
+
+func (s *Server) eventScopeRecheck() time.Duration {
+	if s.eventStreams.recheck > 0 {
+		return s.eventStreams.recheck
+	}
+	return eventScopeRecheckInterval
+}
 
 // SetEvents wires the SSE surface's store. The /api/events route is always
 // mounted (the Reveal registry's completeness invariant — no surface escapes
@@ -56,11 +155,10 @@ func (s *Server) SetEvents(events EventStore) {
 // the client disconnects.
 func (s *Server) eventStream(w http.ResponseWriter, r *http.Request, beforeEmit beforeEventEmit, cacheControl string) {
 	// Gate the handshake: an invalid session is rejected with a 401 before any
-	// stream headers are written. The resolved Scope is checked once for the
-	// events-subscribe API scope but otherwise not kept — the
-	// event loop below re-derives it every poll so reveal/revocation/expiry
-	// changes take effect immediately, never against this connect-time snapshot.
-	scope, err := s.auth.ScopeFromRequest(r.Context(), r)
+	// stream headers are written. The resolved Scope seeds the loop's cache; the
+	// loop re-derives it before filtering any events, so reveal/revocation/expiry
+	// changes still take effect before the next delivery.
+	scope, err := s.eventScope(r.Context(), r)
 	if err != nil {
 		writeError(w, r, http.StatusUnauthorized, "invalid session")
 		return
@@ -86,6 +184,13 @@ func (s *Server) eventStream(w http.ResponseWriter, r *http.Request, beforeEmit 
 		return
 	}
 
+	key := eventStreamKey(scope)
+	if !s.eventStreams.acquire(key, eventStreamsPerPrincipal) {
+		writeError(w, r, http.StatusTooManyRequests, "too many open event streams for this session")
+		return
+	}
+	defer s.eventStreams.release(key)
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", cacheControl)
 	w.Header().Set("Connection", "keep-alive")
@@ -97,20 +202,48 @@ func (s *Server) eventStream(w http.ResponseWriter, r *http.Request, beforeEmit 
 	ticker := time.NewTicker(eventPollInterval)
 	defer ticker.Stop()
 
-	for {
-		// Re-derive the Scope (and thus the LibraryFilter) every poll so a
-		// relock, revocation, expiry, or access-schedule change takes effect
-		// immediately on this long-lived transport (ADR-0004 Reveal contract):
-		// ScopeFromRequest reads the live session/device/Profile each call. A
-		// session that can no longer resolve a Scope (expired/revoked/out of
-		// schedule) ends the stream cleanly rather than keeping a stale filter.
-		scope, err := s.auth.ScopeFromRequest(ctx, r)
+	keepalive := s.eventKeepalive()
+	recheck := s.eventScopeRecheck()
+	lastWrite := time.Now()
+	scopeCheckedAt := lastWrite
+	// fresh marks a Scope derived during the current poll: the handshake's for
+	// the first poll, or the periodic re-check's. Any later poll re-derives
+	// before it filters events.
+	fresh := true
+	refreshScope := func() error {
+		next, err := s.eventScope(ctx, r)
 		if err != nil {
-			return
+			return err
 		}
-		filter := scope.LibraryFilter()
+		scope, scopeCheckedAt, fresh = next, time.Now(), true
+		return nil
+	}
+	// currentScope is what drainEvents filters with. Re-deriving here, only when
+	// the outbox has something to deliver, keeps the ADR-0004 Reveal contract on
+	// this long-lived transport — a relock, revocation, expiry or
+	// access-schedule change is seen before the next event is written — while
+	// an idle poll costs one outbox read. A session that can no longer resolve
+	// a Scope ends the stream.
+	currentScope := func() (store.ProfileID, store.LibraryFilter, error) {
+		if !fresh {
+			if err := refreshScope(); err != nil {
+				return "", store.LibraryFilter{}, err
+			}
+		}
+		return scope.ProfileID, scope.LibraryFilter(), nil
+	}
 
-		next, err := s.drainEvents(ctx, w, flusher, scope.ProfileID, filter, cursor, beforeEmit)
+	for {
+		// An idle stream still re-checks its Scope periodically, so a revoked
+		// or expired session's stream ends rather than polling forever.
+		if time.Since(scopeCheckedAt) >= recheck {
+			if err := refreshScope(); err != nil {
+				return
+			}
+		}
+
+		next, wrote, err := s.drainEventsWith(ctx, w, flusher, cursor, beforeEmit, currentScope)
+		fresh = false
 		if err != nil {
 			var readErr *eventOutboxReadError
 			if errors.As(err, &readErr) && !errors.Is(readErr.err, context.Canceled) && !errors.Is(readErr.err, context.DeadlineExceeded) {
@@ -119,6 +252,14 @@ func (s *Server) eventStream(w http.ResponseWriter, r *http.Request, beforeEmit 
 			return // store error or client gone: end the stream
 		}
 		cursor = next
+		if wrote {
+			lastWrite = time.Now()
+		} else if time.Since(lastWrite) >= keepalive {
+			if err := writeKeepalive(w, flusher); err != nil {
+				return // peer gone: release the handler
+			}
+			lastWrite = time.Now()
+		}
 		select {
 		case <-ctx.Done():
 			return
@@ -132,28 +273,58 @@ func (s *Server) eventStream(w http.ResponseWriter, r *http.Request, beforeEmit 
 // cursor (so a relocked session does not re-examine them forever) but are never
 // written — a hidden event is indistinguishable from no event.
 func (s *Server) drainEvents(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, profileID store.ProfileID, filter store.LibraryFilter, cursor int64, beforeEmit beforeEventEmit) (int64, error) {
+	next, _, err := s.drainEventsWith(ctx, w, flusher, cursor, beforeEmit, func() (store.ProfileID, store.LibraryFilter, error) {
+		return profileID, filter, nil
+	})
+	return next, err
+}
+
+// drainEventsWith is drainEvents with the subscriber's Profile and filter
+// resolved lazily: scope is called once, and only when the outbox read finds
+// something to act on, so an empty poll costs exactly one store read. It also
+// reports whether anything was written.
+func (s *Server) drainEventsWith(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, cursor int64, beforeEmit beforeEventEmit, scope func() (store.ProfileID, store.LibraryFilter, error)) (int64, bool, error) {
+	wrote := false
+	resolved := false
+	var profileID store.ProfileID
+	var filter store.LibraryFilter
+	resolve := func() error {
+		if resolved {
+			return nil
+		}
+		var err error
+		profileID, filter, err = scope()
+		resolved = err == nil
+		return err
+	}
 	for {
 		events, err := s.events.ReadEventOutbox(ctx, cursor, eventBatchLimit)
 		if err != nil {
 			if errors.Is(err, store.ErrEventCursorTooOld) {
+				if err := resolve(); err != nil {
+					return cursor, wrote, err
+				}
 				if beforeEmit != nil {
 					if _, _, err := beforeEmit(ctx); err != nil {
-						return cursor, err
+						return cursor, wrote, err
 					}
 				}
 				if err := writeFullRefreshEvent(w); err != nil {
-					return cursor, err
+					return cursor, wrote, err
 				}
 				flusher.Flush()
 				// The client must replace its local state before it can resume.
 				// End this connection after the one-shot instruction; retaining the
 				// stale cursor would emit the same full-refresh event every poll.
-				return cursor, store.ErrEventCursorTooOld
+				return cursor, true, store.ErrEventCursorTooOld
 			}
-			return cursor, &eventOutboxReadError{err: err}
+			return cursor, wrote, &eventOutboxReadError{err: err}
 		}
 		if len(events) == 0 {
-			return cursor, nil
+			return cursor, wrote, nil
+		}
+		if err := resolve(); err != nil {
+			return cursor, wrote, err
 		}
 		for _, event := range events {
 			cursor = event.Seq
@@ -162,19 +333,20 @@ func (s *Server) drainEvents(ctx context.Context, w http.ResponseWriter, flusher
 			if beforeEmit != nil {
 				currentProfileID, currentFilter, err = beforeEmit(ctx)
 				if err != nil {
-					return cursor, err
+					return cursor, wrote, err
 				}
 			}
 			if !s.eventPermitted(ctx, event, currentProfileID, currentFilter) {
 				continue
 			}
 			if err := writeSSEEvent(w, event); err != nil {
-				return cursor, err
+				return cursor, wrote, err
 			}
+			wrote = true
 		}
 		flusher.Flush()
 		if len(events) < eventBatchLimit {
-			return cursor, nil
+			return cursor, wrote, nil
 		}
 	}
 }
@@ -330,6 +502,21 @@ type sseEventEnvelope struct {
 	AggregateID   string          `json:"aggregateID"`
 	OccurredAt    time.Time       `json:"occurredAt"`
 	Payload       json.RawMessage `json:"payload"`
+}
+
+// writeKeepalive writes an SSE comment frame, which every EventSource client
+// ignores, and flushes it. The flush error is what reveals a peer that is gone;
+// a writer chain without a reportable flush falls back to the plain Flusher.
+func writeKeepalive(w http.ResponseWriter, flusher http.Flusher) error {
+	if _, err := w.Write([]byte(": keepalive\n\n")); err != nil {
+		return err
+	}
+	err := http.NewResponseController(w).Flush()
+	if errors.Is(err, http.ErrNotSupported) {
+		flusher.Flush()
+		return nil
+	}
+	return err
 }
 
 func writeFullRefreshEvent(w http.ResponseWriter) error {

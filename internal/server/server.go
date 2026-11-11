@@ -104,6 +104,9 @@ type Server struct {
 	compat              *compatState
 	compatRefusalDir    string
 	deviceSurfaces      deviceSurfaceStore
+	// eventStreams counts open /api/events and /v1/events streams for the
+	// per-principal cap and the open-streams gauge.
+	eventStreams eventStreamState
 }
 
 type relayedRequestKey struct{}
@@ -1039,6 +1042,11 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 			s.recordGauge(r.Context(), "beamfall_observability_library_media_total", int64(total), nil)
 		}
 	}
+	// Open SSE event streams: in-process, so always reported. A climbing value
+	// with no matching client activity points at orphaned streams.
+	openStreams := s.eventStreams.openStreams()
+	_, _ = fmt.Fprintf(&body, "beamfall_events_streams_open %d\n", openStreams)
+	s.recordGauge(r.Context(), "beamfall_observability_events_streams_open", int64(openStreams), nil)
 	if s.observability != nil {
 		body.WriteString(s.observability.PrometheusText(r))
 	}
