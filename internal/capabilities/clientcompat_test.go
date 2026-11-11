@@ -569,3 +569,59 @@ func TestRegistryReturnsCopies(t *testing.T) {
 		t.Fatal("caller mutated the registry's stored result")
 	}
 }
+
+func TestRegistryRebindAuthOnlyMovesTheResolvedRecord(t *testing.T) {
+	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
+	key := BindingKey{
+		Subject:         "cookie-1",
+		Surface:         string(SurfaceCoreWebUI),
+		Distribution:    DistributionDirect,
+		AuthFingerprint: "auth",
+		Generation:      3,
+	}
+	submit := func(registry *Registry) Record {
+		t.Helper()
+		record, ok, err := registry.Accept(key, EmbeddedUIContract(), Result{Decision: DecisionCompatible}, now, 24*time.Hour)
+		if err != nil || !ok {
+			t.Fatalf("Accept() = (%+v, %t, %v)", record, ok, err)
+		}
+		return record
+	}
+
+	t.Run("keeps submitted status and expiry", func(t *testing.T) {
+		var registry Registry
+		prior := submit(&registry)
+		got, err := registry.RebindAuth(prior, "auth-2", now.Add(time.Hour))
+		if err != nil {
+			t.Fatalf("RebindAuth() = %v", err)
+		}
+		if !got.Submitted || !got.ExpiresAt.Equal(prior.ExpiresAt) || got.Key.AuthFingerprint != "auth-2" || got.DecisionID != prior.DecisionID {
+			t.Fatalf("RebindAuth() = %+v, prior %+v", got, prior)
+		}
+	})
+	t.Run("refuses a replaced record", func(t *testing.T) {
+		var registry Registry
+		prior := submit(&registry)
+		submit(&registry)
+		if _, err := registry.RebindAuth(prior, "auth-2", now); !errors.Is(err, ErrNoDecision) {
+			t.Fatalf("RebindAuth() = %v, want ErrNoDecision", err)
+		}
+	})
+	t.Run("refuses an expired record", func(t *testing.T) {
+		var registry Registry
+		prior := submit(&registry)
+		if _, err := registry.RebindAuth(prior, "auth-2", now.Add(25*time.Hour)); !errors.Is(err, ErrExpired) {
+			t.Fatalf("RebindAuth() = %v, want ErrExpired", err)
+		}
+	})
+	t.Run("refuses after a generation change", func(t *testing.T) {
+		var registry Registry
+		prior := submit(&registry)
+		if err := registry.Invalidate(4); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := registry.RebindAuth(prior, "auth-2", now); err == nil {
+			t.Fatal("RebindAuth() succeeded after a generation change")
+		}
+	})
+}
