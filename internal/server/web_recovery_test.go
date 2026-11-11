@@ -33,7 +33,7 @@ func postRenew(srv *Server, remoteAddr string, cookies map[string]string) *httpt
 	req.Header.Set(auth.CSRFHeader, "1")
 	req.RemoteAddr = remoteAddr
 	for name, value := range cookies {
-		req.AddCookie(&http.Cookie{Name: name, Value: value})
+		req.AddCookie(&http.Cookie{Name: name, Value: value}) //nolint:gosec // test request cookie
 	}
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
