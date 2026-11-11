@@ -252,7 +252,15 @@ func (p *Poller) ingestEntry(ctx context.Context, subscription store.Subscriptio
 		return err
 	}
 	if staged == "" {
-		staged, err = p.downloadToStage(ctx, subscription.Root, key, entry, authHeader)
+		// The feed credential is scoped to the feed origin: the enclosure URL
+		// comes from the feed document, so another host or port gets an
+		// anonymous request. Redirects off the enclosure's own origin are
+		// refused by the scrape client.
+		enclosureAuth := ""
+		if scrape.SameOrigin(subscription.FeedURL, entry.EnclosureURL) {
+			enclosureAuth = authHeader
+		}
+		staged, err = p.downloadToStage(ctx, subscription.Root, key, entry, enclosureAuth)
 		if err != nil {
 			return err
 		}
