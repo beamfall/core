@@ -82,6 +82,11 @@ func (w *baseURLResponseWriter) Flush() {
 	_ = http.NewResponseController(w.ResponseWriter).Flush()
 }
 
+// FlushError reports a failed flush to http.ResponseController callers.
+func (w *baseURLResponseWriter) FlushError() error {
+	return http.NewResponseController(w.ResponseWriter).Flush()
+}
+
 func (w *baseURLResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return http.NewResponseController(w.ResponseWriter).Hijack()
 }

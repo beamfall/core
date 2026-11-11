@@ -206,10 +206,10 @@ func (s *Server) eventStream(w http.ResponseWriter, r *http.Request, beforeEmit 
 	recheck := s.eventScopeRecheck()
 	lastWrite := time.Now()
 	scopeCheckedAt := lastWrite
-	// fresh marks a Scope derived during the current poll: the handshake's for
-	// the first poll, or the periodic re-check's. Any later poll re-derives
-	// before it filters events.
-	fresh := true
+	// fresh marks a Scope derived during the current poll: the periodic
+	// re-check's. The handshake's Scope is not fresh: the header flush can block
+	// long enough for a revocation, so the first backlog re-derives it too.
+	fresh := false
 	refreshScope := func() error {
 		next, err := s.eventScope(ctx, r)
 		if err != nil {

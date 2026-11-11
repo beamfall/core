@@ -3,6 +3,7 @@ package server
 import (
 	"bufio"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -291,9 +292,10 @@ func TestEventStreamRederivesScopeWhenEventsArrive(t *testing.T) {
 	}
 }
 
-// TestEventStreamBacklogUsesHandshakeScope proves a backlog drained on the
-// first poll reuses the Scope the handshake just derived.
-func TestEventStreamBacklogUsesHandshakeScope(t *testing.T) {
+// TestEventStreamBacklogRederivesScope proves a backlog drained on the first
+// poll re-derives the Scope: the header flush after the handshake can block
+// long enough for a revocation, so the handshake Scope is not trusted for it.
+func TestEventStreamBacklogRederivesScope(t *testing.T) {
 	// feature:sse-events
 	srv, st := newTestServerWithStore(t)
 	scopes := countScopes(srv)
@@ -304,8 +306,8 @@ func TestEventStreamBacklogUsesHandshakeScope(t *testing.T) {
 	if !strings.Contains(body, "event: media.updated") {
 		t.Fatalf("stream missing backlog event:\n%s", body)
 	}
-	if got := scopes.Load(); got != 1 {
-		t.Fatalf("Scope derivations = %d, want 1", got)
+	if got := scopes.Load(); got != 2 {
+		t.Fatalf("Scope derivations = %d, want 2 (handshake + one for the backlog)", got)
 	}
 }
 
@@ -386,5 +388,22 @@ func TestMetricsExposesOpenEventStreams(t *testing.T) {
 			t.Fatalf("open streams = %v after close, want 0", scrape())
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// flushFailWriter accepts writes but reports a failing flush via FlushError.
+type flushFailWriter struct {
+	*httptest.ResponseRecorder
+}
+
+func (flushFailWriter) FlushError() error { return errors.New("flush failed") }
+func (flushFailWriter) Flush()            {}
+
+func TestKeepaliveFlushErrorSurfacesThroughWrappers(t *testing.T) {
+	var inner http.ResponseWriter = flushFailWriter{httptest.NewRecorder()}
+	_, tracked := trackResponseWriter(inner)
+	wrapped := &baseURLResponseWriter{ResponseWriter: tracked}
+	if err := writeKeepalive(wrapped, wrapped); err == nil {
+		t.Fatal("keepalive flush failure was swallowed by the response wrappers")
 	}
 }
