@@ -255,7 +255,7 @@ func (c *countingDoer) Do(*http.Request) (*http.Response, error) {
 }
 
 func TestEndpointURLValidation(t *testing.T) {
-	unsafe := map[string]string{
+	unsafe := map[string]string{ // #nosec G101 -- the user-info URL below is a refused test input, not a credential.
 		"no scheme":         "hooks.example.com/x",
 		"relative":          "/hook",
 		"ftp scheme":        "ftp://hooks.example.com/x",
