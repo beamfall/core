@@ -25,6 +25,23 @@ func TestLandlockRuntimeDoesNotGrantEtcTree(t *testing.T) {
 	}
 }
 
+// unlistedEtcFixture returns a readable regular file directly in /etc that no
+// profile lists, or "" when the host has none. A symlink is not a fixture:
+// /etc/os-release often points into /usr/lib, which the profiles grant, so
+// reading it proves nothing about /etc.
+func unlistedEtcFixture() string {
+	for _, path := range []string{"/etc/hostname", "/etc/passwd", "/etc/group", "/etc/os-release"} {
+		info, err := os.Lstat(path)
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		if _, err := os.ReadFile(path); err == nil {
+			return path
+		}
+	}
+	return ""
+}
+
 func TestLandlockDeniesUnlistedEtcFileAndAllowsInput(t *testing.T) {
 	if os.Getenv("BEAMFALL_LANDLOCK_HELPER") == "1" {
 		// Landlock binds the calling thread; probe from the confined one.
@@ -49,8 +66,8 @@ func TestLandlockDeniesUnlistedEtcFileAndAllowsInput(t *testing.T) {
 	if landlockABI() < 1 {
 		t.Skip("Landlock is unavailable on this kernel")
 	}
-	denied := "/etc/os-release"
-	if _, err := os.Stat(denied); err != nil {
+	denied := unlistedEtcFixture()
+	if denied == "" {
 		t.Skip("no stable readable /etc fixture")
 	}
 	cmd := exec.Command(os.Args[0], "-test.run=TestLandlockDeniesUnlistedEtcFileAndAllowsInput")
@@ -155,7 +172,8 @@ func TestLocalInferenceConfinementDeniesHostTrees(t *testing.T) {
 		t.Skipf("kernel landlock ABI %d is below the local inference floor %d",
 			landlockABI(), integrationhost.LocalInferenceMinLandlockABI)
 	}
-	if _, err := os.Stat("/etc/os-release"); err != nil {
+	denied := unlistedEtcFixture()
+	if denied == "" {
 		t.Skip("no stable readable /etc fixture")
 	}
 	input, model, work := t.TempDir(), t.TempDir(), t.TempDir()
@@ -170,6 +188,7 @@ func TestLocalInferenceConfinementDeniesHostTrees(t *testing.T) {
 			"BEAMFALL_LOCAL_INFERENCE_INPUT="+input,
 			"BEAMFALL_LOCAL_INFERENCE_MODEL="+model,
 			"BEAMFALL_LOCAL_INFERENCE_WORK="+work,
+			"BEAMFALL_LOCAL_INFERENCE_ETC="+denied,
 		)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("probe %s did not behave as declared: %v\n%s", probe, err, out)
@@ -195,7 +214,7 @@ func localInferenceConfinementHelper() {
 	case "write-work":
 		err = os.WriteFile(filepath.Join(work, "labels.json"), []byte("{}"), 0o600)
 	case "read-etc":
-		if _, readErr := os.ReadFile("/etc/os-release"); errors.Is(readErr, os.ErrPermission) {
+		if _, readErr := os.ReadFile(os.Getenv("BEAMFALL_LOCAL_INFERENCE_ETC")); errors.Is(readErr, os.ErrPermission) {
 			os.Exit(0)
 		}
 		os.Exit(4)
