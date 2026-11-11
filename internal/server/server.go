@@ -107,6 +107,8 @@ type Server struct {
 	// eventStreams counts open /api/events and /v1/events streams for the
 	// per-principal cap and the open-streams gauge.
 	eventStreams eventStreamState
+	// requestMetrics counts every request by status class for /metrics.
+	requestMetrics requestMetrics
 }
 
 type relayedRequestKey struct{}
@@ -802,6 +804,19 @@ func (s *Server) packStatusStream(w http.ResponseWriter, r *http.Request) {
 
 // ServeHTTP implements http.Handler.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	started := time.Now()
+	tracked, w := trackResponseWriter(w)
+	// Attach a per-request correlation ID before anything can refuse the
+	// request, so every response header, 5xx log line and access line carries
+	// the same token (ADR-0013 §5 ops log correlation).
+	reqID := newRequestID()
+	w.Header().Set(requestIDHeader, reqID)
+	r = r.WithContext(context.WithValue(r.Context(), requestIDKey{}, reqID))
+	// r is reassigned below; the deferred access line reads its final value,
+	// whose Pattern the mux fills in place.
+	defer func() {
+		s.recordAccess(r, reqID, tracked.statusCode(), time.Since(started))
+	}()
 	r = s.resolveProxyRequest(r)
 	var ok bool
 	w, r, ok = s.applyBaseURL(w, r)
@@ -825,15 +840,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	// Attach a per-request correlation ID so 5xx log lines and the response
-	// header carry the same token (ADR-0013 §5 ops log correlation).
-	reqID := newRequestID()
-	w.Header().Set(requestIDHeader, reqID)
-	ctx := context.WithValue(r.Context(), requestIDKey{}, reqID)
 	if !requestIsHTTPS(r) && !requestIsLAN(r) {
-		ctx = context.WithValue(ctx, plainHTTPPublicWarningContextKey, true)
+		r = r.WithContext(context.WithValue(r.Context(), plainHTTPPublicWarningContextKey, true))
 	}
-	r = r.WithContext(ctx)
 	s.handler.ServeHTTP(w, r)
 }
 
@@ -1047,6 +1056,9 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	openStreams := s.eventStreams.openStreams()
 	_, _ = fmt.Fprintf(&body, "beamfall_events_streams_open %d\n", openStreams)
 	s.recordGauge(r.Context(), "beamfall_observability_events_streams_open", int64(openStreams), nil)
+	// Request counters: in-process, so always reported. They make the 5xx
+	// ratio alert computable from the server's own scrape.
+	s.requestMetrics.writePrometheus(&body)
 	if s.observability != nil {
 		body.WriteString(s.observability.PrometheusText(r))
 	}

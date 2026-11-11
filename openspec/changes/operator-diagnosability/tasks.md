@@ -1,8 +1,8 @@
 ## 1. Access log and request metrics
 
-- [ ] 1.1 Record the response status in the request tracker and wrap the whole of `ServeHTTP`
-- [ ] 1.2 Emit the `http request` line and set the request ID before any early refusal
-- [ ] 1.3 Report `beamfall_http_requests_total{status_class}` and the duration sum and count
+- [x] 1.1 Record the response status in the request tracker and wrap the whole of `ServeHTTP`
+- [x] 1.2 Emit the `http request` line and set the request ID before any early refusal
+- [x] 1.3 Report `beamfall_http_requests_total{status_class}` and the duration sum and count
 
 ## 2. Auth refusal audit records
 

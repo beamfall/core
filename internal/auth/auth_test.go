@@ -864,3 +864,28 @@ func TestApprovedExtensionLiftsScheduleBlock(t *testing.T) {
 		t.Fatalf("expired-grant Scope err = %v, want ErrAccessOutsideSchedule (grant window closed)", err)
 	}
 }
+
+func TestCredentialClassFollowsScopeRouting(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(*http.Request)
+		want  string
+	}{
+		{"anonymous", func(*http.Request) {}, CredentialAnonymous},
+		{"admin token", func(r *http.Request) { r.Header.Set("Authorization", "Bearer bft_abc") }, CredentialAPIToken},
+		{"scoped key", func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+store.ScopedKeyPrefix+"abc") }, CredentialScopedKey},
+		{"session header", func(r *http.Request) { r.Header.Set("X-Beamfall-Session", "s") }, CredentialSession},
+		{"session cookie", func(r *http.Request) { r.AddCookie(&http.Cookie{Name: SessionCookie, Value: "s"}) }, CredentialSession},
+		{"bearer wins over session", func(r *http.Request) {
+			r.Header.Set("X-Beamfall-Session", "s")
+			r.Header.Set("Authorization", "Bearer bft_abc")
+		}, CredentialAPIToken},
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequest(http.MethodGet, "/api/graphql", nil)
+		tc.setup(req)
+		if got := CredentialClass(req); got != tc.want {
+			t.Fatalf("%s: CredentialClass = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
