@@ -90,6 +90,37 @@ func TestManagedImportIdentityFollowsContent(t *testing.T) {
 		}
 	})
 
+	t.Run("same bytes as a trashed file are refused and the trashed file restores", func(t *testing.T) {
+		st, root, filter := importStageHarness(t)
+		first := importFromOutside(t, st, root, filter, "first.mkv", "trashed-bytes")
+		firstFile := liveFileAt(t, st, first.Path)
+		trashed, err := st.DeleteManagedPath(context.Background(), "library-local", first.Path, filter, time.Unix(1700000000, 0))
+		if err != nil {
+			t.Fatalf("DeleteManagedPath: %v", err)
+		}
+
+		token, err := st.RegisterImportSource(writeOutOfLibrarySource(t, "second.mkv", "trashed-bytes"))
+		if err != nil {
+			t.Fatalf("RegisterImportSource: %v", err)
+		}
+		_, err = st.ImportManagedFile(context.Background(), "library-local", token, root, "mkv", "h264", store.MediaClassVideo, filter)
+		var validation store.ValidationError
+		if !errors.As(err, &validation) {
+			t.Fatalf("import of trashed content err = %v, want ValidationError", err)
+		}
+		if _, statErr := os.Lstat(filepath.Join(root, "second.mkv")); !os.IsNotExist(statErr) {
+			t.Fatalf("refused import left a file at the second path: %v", statErr)
+		}
+
+		if _, err := st.RestoreManagedPath(context.Background(), "library-local", trashed.TrashID, filter, time.Unix(1700000001, 0)); err != nil {
+			t.Fatalf("RestoreManagedPath: %v", err)
+		}
+		restored := liveFileAt(t, st, first.Path)
+		if restored.MediaID != firstFile.MediaID || restored.ContentFingerprint != firstFile.ContentFingerprint {
+			t.Fatalf("restored row = %#v, want %#v", restored, firstFile)
+		}
+	})
+
 	t.Run("changed bytes at a reused path get new identity", func(t *testing.T) {
 		st, root, filter := importStageHarness(t)
 		original := importFromOutside(t, st, root, filter, "reused.mkv", "original-bytes")

@@ -2603,8 +2603,8 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return Media{}, MediaFile{}, false, err
 	}
-	if mediaID != "" && imported.managedAdmission {
-		if err := refuseLiveDuplicateTx(ctx, tx, imported); err != nil {
+	if imported.managedAdmission {
+		if err := refuseCatalogedDuplicateTx(ctx, tx, imported); err != nil {
 			return Media{}, MediaFile{}, false, err
 		}
 	}
@@ -2661,22 +2661,32 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 	return media, file, created, nil
 }
 
-// refuseLiveDuplicateTx rejects a managed admission whose content is already
-// live at a different path or in a different library.
-func refuseLiveDuplicateTx(ctx context.Context, tx *sql.Tx, imported ImportMediaFile) error {
+// refuseCatalogedDuplicateTx rejects a managed admission whose content is
+// already cataloged at a different path or in a different library, whether that
+// row is live or retained as missing (a trashed file keeps its row so restore
+// can revive it by path; repointing it would orphan the restore).
+func refuseCatalogedDuplicateTx(ctx context.Context, tx *sql.Tx, imported ImportMediaFile) error {
 	var path string
 	var libraryID LibraryID
-	if err := tx.QueryRowContext(ctx, `
-		SELECT f.path, m.library_id FROM media_file f JOIN media m ON m.id = f.media_id
-		WHERE f.content_fingerprint = ? AND f.missing_at_ms IS NULL`,
+	var missingAt sql.NullInt64
+	err := tx.QueryRowContext(ctx, `
+		SELECT f.path, m.library_id, f.missing_at_ms FROM media_file f JOIN media m ON m.id = f.media_id
+		WHERE f.content_fingerprint = ?`,
 		imported.ContentFingerprint,
-	).Scan(&path, &libraryID); err != nil {
+	).Scan(&path, &libraryID, &missingAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
 		return err
 	}
-	if path != imported.Path || libraryID != imported.LibraryID {
-		return ValidationError("a file with the same content is already in a library")
+	if path == imported.Path && libraryID == imported.LibraryID {
+		return nil
 	}
-	return nil
+	if missingAt.Valid {
+		return ValidationError("a file with the same content is retained in a library's trash or missing files")
+	}
+	return ValidationError("a file with the same content is already in a library")
 }
 
 func upsertMediaRowForImportTx(ctx context.Context, tx *sql.Tx, mediaID MediaID, imported ImportMediaFile, encrypted bool) (Media, bool, error) {
