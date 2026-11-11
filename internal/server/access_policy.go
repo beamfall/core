@@ -98,6 +98,10 @@ func setCORSPreflightHeaders(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// tokenByteGETPath reports whether a GET targets a byte route authorized by a
+// signed token in its path, the only private-UI routes a foreign origin may
+// read with `Access-Control-Allow-Origin: *`. Session-authenticated byte routes
+// (media and entity artwork) stay under the same-origin policy.
 func tokenByteGETPath(r *http.Request) bool {
 	if r.Method != http.MethodGet {
 		return false
@@ -105,8 +109,6 @@ func tokenByteGETPath(r *http.Request) bool {
 	path := r.URL.Path
 	return strings.HasPrefix(path, "/api/media/direct/") ||
 		strings.HasPrefix(path, "/api/media/artwork-candidate/") ||
-		strings.HasPrefix(path, "/api/media/artwork/") ||
-		strings.HasPrefix(path, "/api/entity/artwork/") ||
 		strings.HasPrefix(path, "/api/media/hls/") ||
 		strings.HasPrefix(path, "/api/media/assets/") ||
 		strings.HasPrefix(path, "/api/media/subtitle/") ||

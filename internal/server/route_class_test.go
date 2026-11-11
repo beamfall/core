@@ -227,6 +227,35 @@ func TestPackKeyIsNotGenericCrossOriginByteStreaming(t *testing.T) {
 	}
 }
 
+// TestSessionArtworkIsNotTokenByteCrossOrigin pins that the session-authenticated
+// artwork routes stay same-origin: a foreign Origin is refused with no wildcard
+// allow-origin, while an originless request (native client, <img>) still
+// reaches the handler's own session check.
+func TestSessionArtworkIsNotTokenByteCrossOrigin(t *testing.T) {
+	srv := newTestServer(t)
+	for _, path := range []string{"/api/media/artwork/media-alpha/poster", "/api/entity/artwork/entity-alpha/poster"} {
+		cross := httptest.NewRequest(http.MethodGet, path, nil)
+		cross.Host = "beamfall.test"
+		cross.Header.Set("Origin", "https://evil.test")
+		authorizeViewer(cross)
+		crossRec := httptest.NewRecorder()
+		srv.ServeHTTP(crossRec, cross)
+		if crossRec.Code != http.StatusForbidden {
+			t.Fatalf("cross-origin %s status = %d, want 403", path, crossRec.Code)
+		}
+		if got := crossRec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+			t.Fatalf("cross-origin %s allow-origin = %q, want empty", path, got)
+		}
+
+		originless := httptest.NewRequest(http.MethodGet, path, nil)
+		originlessRec := httptest.NewRecorder()
+		srv.ServeHTTP(originlessRec, originless)
+		if originlessRec.Code != http.StatusUnauthorized {
+			t.Fatalf("originless anonymous %s status = %d, want handler 401", path, originlessRec.Code)
+		}
+	}
+}
+
 // v1PublicLine is the frozen set of public /v1 route patterns (GCR-012-D): the
 // deliberate private->public promotion boundary. Promoting a route onto /v1 is a
 // contract change (docs/api/openapi.json is the pinned wire line), so it must be

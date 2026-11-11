@@ -482,6 +482,13 @@ type v1ScanResponse struct {
 	JobIDs []string `json:"jobIDs"`
 }
 
+// v1ScanFailureResponse is the 500 body when an enqueue fails part-way: the
+// usual error envelope plus the IDs of the jobs already queued (possibly none).
+type v1ScanFailureResponse struct {
+	Error  string   `json:"error"`
+	JobIDs []string `json:"jobIDs"`
+}
+
 const v1ScanJobLimit = 200
 
 func (s *Server) v1Scan(w http.ResponseWriter, r *http.Request) {
@@ -549,7 +556,10 @@ func (s *Server) v1Scan(w http.ResponseWriter, r *http.Request) {
 	for _, root := range roots {
 		jobID, err := s.v1ScanEnqueue(r.Context(), libraryID, root)
 		if err != nil {
-			writeErrorCause(w, r, http.StatusInternalServerError, "scan enqueue failed", err)
+			// Jobs queued before the failure stay queued, so the error names
+			// them; a caller can track or skip those roots on retry.
+			logRequestFailure(r.Context(), r, http.StatusInternalServerError, "scan enqueue failed", err)
+			writeJSON(w, http.StatusInternalServerError, v1ScanFailureResponse{Error: "scan enqueue failed", JobIDs: jobIDs})
 			return
 		}
 		jobIDs = append(jobIDs, string(jobID))
