@@ -77,6 +77,9 @@ gate_evidence_kind() {
 }
 
 GATE_OWNED_GROUPS=""
+# "pgid=owner" pairs naming the step or lane that registered each group, so a
+# residual group found at exit can be attributed (CORE-0845).
+GATE_GROUP_OWNERS=""
 GATE_PARALLEL_RSS_DIR=""
 GATE_FULL_RSS_TRACKER_PID=""
 GATE_FULL_RSS_FILE=""
@@ -102,9 +105,20 @@ gate_group_inventory() {
 }
 
 gate_register_group() {
-  local group="$1" held
+  local group="$1" owner="${2:-}" held
   for held in ${GATE_OWNED_GROUPS:-}; do [ "$held" = "$group" ] && return 0; done
   GATE_OWNED_GROUPS="$GATE_OWNED_GROUPS $group"
+  # Owner names hold no whitespace so the list stays word-splittable.
+  owner="$(printf '%s' "$owner" | tr -c '[:alnum:]._:/+-' '_')"
+  [ -z "$owner" ] || GATE_GROUP_OWNERS="$GATE_GROUP_OWNERS $group=$owner"
+}
+
+gate_group_owner() {
+  local target="$1" pair
+  for pair in ${GATE_GROUP_OWNERS:-}; do
+    [ "${pair%%=*}" = "$target" ] && { printf '%s' "${pair#*=}"; return 0; }
+  done
+  printf 'unknown'
 }
 
 gate_unregister_group() {
@@ -178,10 +192,16 @@ gate_cleanup_children() {
   for group in "${groups[@]}"; do
     if gate_group_alive "$group"; then
       had_residual=1
+      # Inventory on a green exit too: the residual group is otherwise
+      # unattributable once cleanup reaps it (CORE-0845).
       if [ "$status" -ne 0 ]; then
-        printf 'gate failure process inventory for group %s:\n' "$group" >&2
-        gate_group_inventory "$group"
+        printf 'gate failure process inventory for group %s (owner: %s):\n' \
+          "$group" "$(gate_group_owner "$group")" >&2
+      else
+        printf 'gate residual process inventory for group %s (owner: %s):\n' \
+          "$group" "$(gate_group_owner "$group")" >&2
       fi
+      gate_group_inventory "$group"
     fi
   done
   for group in "${groups[@]}"; do gate_signal_group TERM "$group"; done
@@ -861,7 +881,7 @@ run_step() {
       gate_group_wrapper "$@"
     ) >"$log" 2>&1 &
     command_pid=$!
-    gate_register_group "$command_pid"
+    gate_register_group "$command_pid" "step:$name"
     owns_group=1
     set +m
   fi
@@ -978,7 +998,7 @@ start_parallel_step() {
     gate_group_wrapper run_parallel_step "$@"
   ) &
   printf -v "$pid_variable" '%s' "$!"
-  gate_register_group "${!pid_variable}"
+  gate_register_group "${!pid_variable}" "parallel:$pid_variable"
   set +m
   gate_rss_track_start "${!pid_variable}" rss_tracker_pid rss_tracker_file "$rss_tracker_file"
   printf -v "GATE_PARALLEL_RSS_TRACKER_${!pid_variable}" '%s' "$rss_tracker_pid"
@@ -1086,7 +1106,7 @@ prestart_lane() {  # prestart_lane <slot> <command...>
   set +m
   printf '%s' "$pid" >"$GATE_LANE_DIR/$slot.pid"
   gate_monotonic_ns >"$GATE_LANE_DIR/$slot.start"
-  gate_register_group "$pid"
+  gate_register_group "$pid" "lane:$slot"
   # The lane's own pid is its pgid (same `set -m` fork shape as run_step and
   # start_parallel_step), so it is RSS-sampled the same way run_step samples
   # its own command. join_lane runs in a different process (it is itself a
