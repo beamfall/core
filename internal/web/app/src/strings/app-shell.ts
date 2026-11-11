@@ -18,6 +18,11 @@ export const appShellStrings = {
     deviceName: "Device name",
     webBrowser: "Web Browser",
     connect: "Connect",
+    adminSignInTitle: "Sign in with the admin password",
+    adminSignInLead: "The owner can sign this browser in with the admin password set during setup.",
+    adminSignIn: "Sign in",
+    adminSignInFailed: "Sign-in failed.",
+    adminSignInNeedsSecure: "Sign-in needs HTTPS or this server’s local network.",
     promoteTitle: "Promote this browser",
     promoteLead: "Enter a manager pairing code to promote this browser to a manager device.",
     managerPairingCode: "Manager pairing code",
@@ -64,6 +69,12 @@ export const appShellStrings = {
     deviceName: "Nom de l’appareil",
     webBrowser: "Navigateur Web",
     connect: "Connecter",
+    adminSignInTitle: "Se connecter avec le mot de passe administrateur",
+    adminSignInLead:
+      "Le propriétaire peut connecter ce navigateur avec le mot de passe administrateur choisi à l’installation.",
+    adminSignIn: "Se connecter",
+    adminSignInFailed: "La connexion a échoué.",
+    adminSignInNeedsSecure: "La connexion exige HTTPS ou le réseau local de ce serveur.",
     promoteTitle: "Promouvoir ce navigateur",
     promoteLead:
       "Entrez un code de jumelage gestionnaire pour promouvoir ce navigateur en appareil gestionnaire.",
@@ -112,6 +123,13 @@ export const appShellStrings = {
     deviceName: "Gerätename",
     webBrowser: "Webbrowser",
     connect: "Verbinden",
+    adminSignInTitle: "Mit dem Admin-Passwort anmelden",
+    adminSignInLead:
+      "Der Eigentümer kann diesen Browser mit dem bei der Einrichtung gewählten Admin-Passwort anmelden.",
+    adminSignIn: "Anmelden",
+    adminSignInFailed: "Anmeldung fehlgeschlagen.",
+    adminSignInNeedsSecure:
+      "Die Anmeldung erfordert HTTPS oder das lokale Netzwerk dieses Servers.",
     promoteTitle: "Diesen Browser hochstufen",
     promoteLead:
       "Gib einen Manager-Kopplungscode ein, um diesen Browser zu einem Manager-Gerät hochzustufen.",
@@ -159,6 +177,12 @@ export const appShellStrings = {
     deviceName: "Nombre del dispositivo",
     webBrowser: "Navegador web",
     connect: "Conectar",
+    adminSignInTitle: "Iniciar sesión con la contraseña de administrador",
+    adminSignInLead:
+      "El propietario puede iniciar sesión en este navegador con la contraseña de administrador elegida en la configuración.",
+    adminSignIn: "Iniciar sesión",
+    adminSignInFailed: "No se pudo iniciar sesión.",
+    adminSignInNeedsSecure: "Iniciar sesión requiere HTTPS o la red local de este servidor.",
     promoteTitle: "Promover este navegador",
     promoteLead:
       "Introduce un código de emparejamiento de administrador para promover este navegador a dispositivo administrador.",
@@ -206,6 +230,12 @@ export const appShellStrings = {
     deviceName: "Nome do dispositivo",
     webBrowser: "Navegador Web",
     connect: "Conectar",
+    adminSignInTitle: "Entrar com a senha de administrador",
+    adminSignInLead:
+      "O proprietário pode conectar este navegador com a senha de administrador definida na configuração.",
+    adminSignIn: "Entrar",
+    adminSignInFailed: "Falha ao entrar.",
+    adminSignInNeedsSecure: "Entrar exige HTTPS ou a rede local deste servidor.",
     promoteTitle: "Promover este navegador",
     promoteLead:
       "Insira um código de pareamento de gerente para promover este navegador a dispositivo gerente.",

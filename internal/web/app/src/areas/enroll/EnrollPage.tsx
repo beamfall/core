@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api";
-import { enroll } from "@/lib/graphql";
+import { adminSignIn, enroll } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
 
 // First contact (ADR-0007 §2): a browser enrolls as a VIEWER device with a
@@ -120,6 +120,90 @@ export function EnrollPage() {
           </p>
         )}
       </form>
+      <AdminSignInForm deviceName={deviceName} />
     </main>
   );
+}
+
+// Owner recovery (CORE-1106): sign this browser in with the admin password set
+// during first-run setup. The server enrolls a MANAGER device on the owner
+// profile. Every refusal is the same 401, so the message never says whether
+// the password was wrong or sign-in is unavailable. The password is never
+// logged or echoed.
+function AdminSignInForm({ deviceName }: { deviceName: string }) {
+  const t = useT();
+  const passwordID = useId();
+  const errorID = useId();
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const rebind = await adminSignIn(password, deviceName.trim() || t("webBrowser"));
+      setStatus(rebind === "bound" ? t("enrollConnected") : t("enrollHandshakeIncomplete"));
+      window.location.assign(import.meta.env.BASE_URL);
+    } catch (err) {
+      setError(adminSignInErrorMessage(err, t));
+      setPassword("");
+      setBusy(false);
+      requestAnimationFrame(() => errorRef.current?.focus());
+    }
+  }
+
+  return (
+    <section className="mt-10 border-t pt-6" aria-labelledby={`${passwordID}-title`}>
+      <h2 id={`${passwordID}-title`} className="text-lg font-semibold">
+        {t("adminSignInTitle")}
+      </h2>
+      <p className="mt-2 text-sm text-muted-foreground">{t("adminSignInLead")}</p>
+      <form onSubmit={onSubmit} className="mt-4 space-y-4" noValidate>
+        <div className="space-y-1.5">
+          <Label htmlFor={passwordID}>{t("adminPasswordLabel")}</Label>
+          <Input
+            id={passwordID}
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+            required
+            aria-invalid={error != null}
+            aria-describedby={error ? errorID : undefined}
+          />
+        </div>
+        <Button type="submit" variant="secondary" disabled={busy || password === ""}>
+          {t("adminSignIn")}
+        </Button>
+        {status && (
+          <p role="status" className="text-sm text-muted-foreground">
+            {status}
+          </p>
+        )}
+        {error && (
+          <p
+            ref={errorRef}
+            id={errorID}
+            role="alert"
+            tabIndex={-1}
+            className="text-sm text-destructive outline-none"
+          >
+            {error}
+          </p>
+        )}
+      </form>
+    </section>
+  );
+}
+
+function adminSignInErrorMessage(err: unknown, t: ReturnType<typeof useT>): string {
+  if (!(err instanceof ApiError)) return t("couldNotReachServer");
+  if (err.status === 429) return t("tooManyAttempts");
+  if (err.status === 403) return t("adminSignInNeedsSecure");
+  return t("adminSignInFailed");
 }

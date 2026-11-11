@@ -108,6 +108,34 @@ export async function promote(code: string, signal?: AbortSignal): Promise<void>
   await rebindCompatibility();
 }
 
+/**
+ * Renew a lapsed session from this browser's device-secret cookies
+ * (POST /api/web/session/renew). Resolves true when the server issued a new
+ * session (the compatibility binding is then refreshed, best effort) and
+ * false on any refusal, so a caller can fall back to the enroll screen.
+ */
+export async function renewSession(signal?: AbortSignal): Promise<boolean> {
+  try {
+    await postJSON("/api/web/session/renew", {}, signal);
+  } catch {
+    return false;
+  }
+  await settleRebind();
+  return true;
+}
+
+/**
+ * Sign this browser in with the server admin password
+ * (POST /api/web/admin-signin). The server enrolls it as a manager device on
+ * the owner profile and sets the cookies. Rejects with an ApiError (`.status`
+ * 401 = sign-in failed, 429 = throttled, 403 = needs HTTPS or the local
+ * network) when the sign-in itself fails.
+ */
+export async function adminSignIn(password: string, deviceName: string): Promise<RebindOutcome> {
+  await postJSON("/api/web/admin-signin", { password, deviceName });
+  return settleRebind();
+}
+
 /** Sign out: drop the session cookie (POST /api/web/logout). */
 export async function logout(): Promise<void> {
   await postJSON("/api/web/logout", {});

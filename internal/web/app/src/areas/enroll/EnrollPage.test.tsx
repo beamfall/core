@@ -3,18 +3,20 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api";
-import { enroll } from "@/lib/graphql";
+import { adminSignIn, enroll } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { EnrollPage } from "./EnrollPage";
 
 vi.mock("@/lib/graphql", () => ({
   enroll: vi.fn(),
+  adminSignIn: vi.fn(),
 }));
 
 const assign = vi.fn();
 
 beforeEach(() => {
   vi.mocked(enroll).mockReset();
+  vi.mocked(adminSignIn).mockReset();
   assign.mockReset();
   Object.defineProperty(window, "location", {
     configurable: true,
@@ -66,5 +68,48 @@ describe("EnrollPage", () => {
     expect(assign).not.toHaveBeenCalled();
     expect(screen.getByRole("alert")).toHaveTextContent("That pairing code is not valid.");
     expect(screen.getByRole("button", { name: "Connect" })).toBeEnabled();
+  });
+
+  async function signInWithPassword(password: string) {
+    render(
+      <I18nProvider>
+        <EnrollPage />
+      </I18nProvider>,
+    );
+    await userEvent.type(screen.getByLabelText("Admin password"), password);
+    await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
+  }
+
+  it("signs in with the admin password and redirects", async () => {
+    vi.mocked(adminSignIn).mockResolvedValue("bound");
+
+    await signInWithPassword("correct horse");
+
+    expect(adminSignIn).toHaveBeenCalledWith("correct horse", "Web Browser");
+    expect(enroll).not.toHaveBeenCalled();
+    expect(assign).toHaveBeenCalledWith("/");
+    expect(screen.getByRole("status")).toHaveTextContent("Connected.");
+  });
+
+  it("reports a refused admin sign-in without saying why and clears the password", async () => {
+    vi.mocked(adminSignIn).mockRejectedValue(
+      new ApiError("POST /api/web/admin-signin failed", 401),
+    );
+
+    await signInWithPassword("wrong");
+
+    expect(assign).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent("Sign-in failed.");
+    expect(screen.getByLabelText("Admin password")).toHaveValue("");
+  });
+
+  it("reports throttled admin sign-in as too many attempts", async () => {
+    vi.mocked(adminSignIn).mockRejectedValue(
+      new ApiError("POST /api/web/admin-signin failed", 429),
+    );
+
+    await signInWithPassword("wrong");
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Too many attempts.");
   });
 });

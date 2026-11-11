@@ -8,7 +8,12 @@ import {
   useRef,
   useState,
 } from "react";
-import { isAuthRejection, setIdentityEpochReset, setIdentityEpochSignal } from "@/lib/api";
+import {
+  ApiError,
+  isAuthRejection,
+  setIdentityEpochReset,
+  setIdentityEpochSignal,
+} from "@/lib/api";
 import { takeBeamfallHostInitialMessages } from "@/lib/beamfallHost";
 import {
   advanceCompatibilityEpoch,
@@ -24,10 +29,25 @@ import {
   fetchProfiles,
   promote as promoteMutation,
   relock as relockMutation,
+  renewSession,
   reveal as revealMutation,
   switchProfile as switchProfileMutation,
 } from "@/lib/graphql";
 import type { NavigationManifest, ProfileSummary, SessionInfo } from "@/lib/graphql/types";
+
+// A lapsed session renews once from the device-secret cookies before the
+// browser is shown the enroll screen (CORE-1106). Any other failure, or a
+// refused renewal, keeps the original error.
+async function fetchSessionRenewingOnce(signal: AbortSignal): Promise<SessionInfo> {
+  try {
+    return await fetchCurrentSession(signal);
+  } catch (err) {
+    if (!(err instanceof ApiError) || err.status !== 401) throw err;
+    if (!(await renewSession(signal))) throw err;
+    return fetchCurrentSession(signal);
+  }
+}
+
 import { clearViewerCache, viewerIdentityKey } from "@/lib/viewerCache";
 
 // The app-wide session spine every area consumes. Bootstraps the bound
@@ -106,12 +126,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       }
       let s: SessionInfo;
       try {
-        s = await fetchCurrentSession(signal);
+        s = await fetchSessionRenewingOnce(signal);
       } catch (err) {
         if (!isCompatibilityRefusal(err)) throw err;
         await rebindCompatibility();
         if (!current()) return;
-        s = await fetchCurrentSession(signal);
+        s = await fetchSessionRenewingOnce(signal);
       }
       if (!current()) return;
       // Manifest + profiles are best-effort; a failure here is not fatal to

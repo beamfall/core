@@ -1,7 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { graphql, postJSON } from "@/lib/api";
 import { rebindCompatibility } from "@/lib/compat";
-import { endAdminSession, enroll, promote, verifyAdminSession } from "./auth";
+import {
+  adminSignIn,
+  endAdminSession,
+  enroll,
+  promote,
+  renewSession,
+  verifyAdminSession,
+} from "./auth";
 
 vi.mock("@/lib/api", () => ({
   graphql: vi.fn(),
@@ -69,6 +76,8 @@ describe("web-session compatibility epochs", () => {
   it.each([
     ["enroll", () => enroll("code", "Browser"), "/api/web/enroll"],
     ["promote", () => promote("code"), "/api/web/promote"],
+    ["admin sign-in", () => adminSignIn("password", "Browser"), "/api/web/admin-signin"],
+    ["session renewal", () => renewSession(), "/api/web/session/renew"],
   ] as const)("rebinds after successful %s", async (_name, mutate, path) => {
     vi.mocked(postJSON).mockResolvedValue(undefined);
 
@@ -100,6 +109,22 @@ describe("web-session compatibility epochs", () => {
     vi.mocked(postJSON).mockRejectedValue(new Error("rejected"));
 
     await expect(promote("code")).rejects.toThrow("rejected");
+
+    expect(rebindCompatibility).not.toHaveBeenCalled();
+  });
+
+  it("reports a refused renewal as false without rebinding", async () => {
+    vi.mocked(postJSON).mockRejectedValue(new Error("refused"));
+
+    await expect(renewSession()).resolves.toBe(false);
+
+    expect(rebindCompatibility).not.toHaveBeenCalled();
+  });
+
+  it("rejects admin sign-in without rebinding when the password is refused", async () => {
+    vi.mocked(postJSON).mockRejectedValue(new Error("sign-in failed"));
+
+    await expect(adminSignIn("wrong", "Browser")).rejects.toThrow("sign-in failed");
 
     expect(rebindCompatibility).not.toHaveBeenCalled();
   });
