@@ -25144,6 +25144,16 @@
       },
       {
         "method": "POST",
+        "pattern": "/api/web/session/renew",
+        "note": "Renew a web session from its device credential"
+      },
+      {
+        "method": "POST",
+        "pattern": "/api/web/admin-signin",
+        "note": "Sign in a web device with the admin password"
+      },
+      {
+        "method": "POST",
         "pattern": "/api/beam/offers",
         "note": "Create a Beam offer for device pairing"
       },

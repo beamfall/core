@@ -113,6 +113,8 @@ func TestRoutesAreRecorded(t *testing.T) {
 		{Method: http.MethodPost, Pattern: "/api/web/enroll", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodPost, Pattern: "/api/web/logout", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodPost, Pattern: "/api/web/promote", RevealClass: reveal.ContentJSON},
+		{Method: http.MethodPost, Pattern: "/api/web/session/renew", RevealClass: reveal.ContentJSON},
+		{Method: http.MethodPost, Pattern: "/api/web/admin-signin", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodPost, Pattern: "/api/setup", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodGet, Pattern: "/api/setup"},
 		{Method: http.MethodGet, Pattern: "/api/events", RevealClass: reveal.EventFanout},

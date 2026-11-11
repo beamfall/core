@@ -19,6 +19,10 @@ func (s *Server) mountWebPrivateHandlers() {
 	s.handle(http.MethodPost, "/api/web/enroll", reveal.ContentJSON, s.enrollWebDevice)
 	s.handle(http.MethodPost, "/api/web/logout", reveal.ContentJSON, s.logoutWebDevice)
 	s.handle(http.MethodPost, "/api/web/promote", reveal.ContentJSON, s.promoteWebDevice)
+	// Sign-in recovery (CORE-1106): renew a lapsed session from the device
+	// credential cookies, or enroll a new Manager Device with the admin password.
+	s.handle(http.MethodPost, "/api/web/session/renew", reveal.ContentJSON, s.renewWebSession)
+	s.handle(http.MethodPost, "/api/web/admin-signin", reveal.ContentJSON, s.adminSignInWebDevice)
 	// First-run setup bootstrap (ADR-0007 §2 / feature:first-run-setup-token):
 	// redeems the one-time setup token printed to the server log, creating the
 	// first MANAGER device+session without requiring an existing manager. Only
@@ -31,6 +35,24 @@ func (s *Server) mountWebPrivateHandlers() {
 	// so it is genuinely reachable pre-enrollment; it leaks only the single
 	// boolean "is this a fresh server" and never the token value.
 	s.handle(http.MethodGet, "/api/setup", "", s.setupRequired)
+}
+
+// webDeviceCookieTTL is the device ID and device secret cookie lifetime: the
+// 400-day browser maximum. They outlive the 30-day session so a browser whose
+// session lapsed can still renew it (CORE-1106). Revoking the device ends them.
+const webDeviceCookieTTL = 400 * 24 * time.Hour
+
+// setWebSignInCookies sets the three browser credential cookies. The session
+// cookie keeps the session's expiry, which the server enforces regardless.
+func setWebSignInCookies(w http.ResponseWriter, r *http.Request, sessionID, sessionExpiresAt, deviceID, deviceSecret string) {
+	expires, err := time.Parse(time.RFC3339, sessionExpiresAt)
+	if err != nil {
+		expires = time.Time{}
+	}
+	deviceExpires := time.Now().Add(webDeviceCookieTTL)
+	setWebCredentialCookie(w, r, auth.SessionCookie, sessionID, expires)
+	setWebCredentialCookie(w, r, auth.DeviceCookie, deviceID, deviceExpires)
+	setWebCredentialCookie(w, r, auth.DeviceSecretCookie, deviceSecret, deviceExpires)
 }
 
 func rejectPublicPlainHTTPWebCredentials(w http.ResponseWriter, r *http.Request) bool {
@@ -81,13 +103,7 @@ func (s *Server) enrollWebDevice(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	expires, parseErr := time.Parse(time.RFC3339, resp.SessionExpiresAt)
-	if parseErr != nil {
-		expires = time.Time{} // session cookie: expiry still enforced server-side
-	}
-	setWebCredentialCookie(w, r, auth.SessionCookie, resp.SessionID, expires)
-	setWebCredentialCookie(w, r, auth.DeviceCookie, resp.DeviceID, expires)
-	setWebCredentialCookie(w, r, auth.DeviceSecretCookie, resp.DeviceSecret, expires)
+	setWebSignInCookies(w, r, resp.SessionID, resp.SessionExpiresAt, resp.DeviceID, resp.DeviceSecret)
 	writeJSON(w, http.StatusCreated, map[string]string{
 		"deviceID":         resp.DeviceID,
 		"sessionExpiresAt": resp.SessionExpiresAt,
@@ -134,13 +150,7 @@ func (s *Server) setupFirstRun(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	expires, parseErr := time.Parse(time.RFC3339, resp.SessionExpiresAt)
-	if parseErr != nil {
-		expires = time.Time{}
-	}
-	setWebCredentialCookie(w, r, auth.SessionCookie, resp.SessionID, expires)
-	setWebCredentialCookie(w, r, auth.DeviceCookie, resp.DeviceID, expires)
-	setWebCredentialCookie(w, r, auth.DeviceSecretCookie, resp.DeviceSecret, expires)
+	setWebSignInCookies(w, r, resp.SessionID, resp.SessionExpiresAt, resp.DeviceID, resp.DeviceSecret)
 	writeJSON(w, http.StatusCreated, map[string]string{
 		"deviceID":         resp.DeviceID,
 		"profileID":        resp.ProfileID,
@@ -173,6 +183,18 @@ func (s *Server) setupRequired(w http.ResponseWriter, r *http.Request) {
 // same-origin checks.
 func lanSetupClaim(r *http.Request) bool {
 	return requestIsLAN(r) && setupHostResistsRebinding(r.Host)
+}
+
+// rejectRebindablePlainHTTPSignIn refuses admin-password sign-in over plain
+// HTTP unless the request passes lanSetupClaim: a LAN source addressing a Host
+// a public website cannot rebind. HTTPS is accepted as for other web
+// credentials (CORE-1106).
+func rejectRebindablePlainHTTPSignIn(w http.ResponseWriter, r *http.Request) bool {
+	if requestIsHTTPS(r) || lanSetupClaim(r) {
+		return false
+	}
+	writeError(w, r, http.StatusForbidden, "secure connection or LAN required")
+	return true
 }
 
 func setupHostResistsRebinding(hostport string) bool {
@@ -234,13 +256,7 @@ func (s *Server) promoteWebDevice(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	expires, parseErr := time.Parse(time.RFC3339, resp.SessionExpiresAt)
-	if parseErr != nil {
-		expires = time.Time{}
-	}
-	setWebCredentialCookie(w, r, auth.SessionCookie, resp.SessionID, expires)
-	setWebCredentialCookie(w, r, auth.DeviceCookie, resp.DeviceID, expires)
-	setWebCredentialCookie(w, r, auth.DeviceSecretCookie, resp.DeviceSecret, expires)
+	setWebSignInCookies(w, r, resp.SessionID, resp.SessionExpiresAt, resp.DeviceID, resp.DeviceSecret)
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -290,4 +306,90 @@ func (s *Server) logoutWebDevice(w http.ResponseWriter, r *http.Request) {
 		setWebCredentialCookie(w, r, name, "", expired)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "logged-out"})
+}
+
+// renewWebSession mints a new session for the calling browser from its device
+// ID and device secret cookies (CORE-1106). The session cookie may be expired
+// or missing: the device secret is the long-lived credential, and revoking the
+// device ends it. The device secret does not rotate.
+func (s *Server) renewWebSession(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	if r.Header.Get(auth.CSRFHeader) == "" {
+		writeError(w, r, http.StatusForbidden, "missing CSRF header")
+		return
+	}
+	if rejectPublicPlainHTTPWebCredentials(w, r) {
+		return
+	}
+	cookie := func(name string) string {
+		if c, err := r.Cookie(name); err == nil {
+			return c.Value
+		}
+		return ""
+	}
+	req := pairing.RenewRequest{
+		DeviceID:     cookie(auth.DeviceCookie),
+		DeviceSecret: cookie(auth.DeviceSecretCookie),
+		OldSessionID: cookie(auth.SessionCookie),
+		RemoteAddr:   r.RemoteAddr,
+	}
+	resp, err := s.pairing.RenewSession(r.Context(), req)
+	if err != nil {
+		notePairingRefusal(r, refusalOperationSessionRenew, err)
+		switch {
+		case errors.Is(err, pairing.ErrThrottled):
+			writeError(w, r, http.StatusTooManyRequests, "renewal attempts throttled")
+		case errors.Is(err, pairing.ErrSessionRenewRefused):
+			writeError(w, r, http.StatusUnauthorized, "session renewal refused")
+		default:
+			writeErrorCause(w, r, http.StatusInternalServerError, "session renewal failed", err)
+		}
+		return
+	}
+	setWebSignInCookies(w, r, resp.SessionID, resp.SessionExpiresAt, req.DeviceID, req.DeviceSecret)
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// adminSignInWebDevice enrolls the calling browser as a new Manager Device on
+// the owner Profile when the admin password verifies (CORE-1106). Every
+// refusal other than a throttle is the same 401, so a caller learns nothing
+// about whether a password or an owner exists.
+func (s *Server) adminSignInWebDevice(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	r.Body = http.MaxBytesReader(w, r.Body, maxControlBody)
+	if r.Header.Get(auth.CSRFHeader) == "" {
+		writeError(w, r, http.StatusForbidden, "missing CSRF header")
+		return
+	}
+	if rejectRebindablePlainHTTPSignIn(w, r) {
+		return
+	}
+	var req pairing.AdminSignInRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeDecodeError(w, r, err)
+		return
+	}
+	req.RemoteAddr = r.RemoteAddr
+	resp, err := s.pairing.AdminSignIn(r.Context(), req)
+	if err != nil {
+		notePairingRefusal(r, refusalOperationAdminSignIn, err)
+		switch {
+		case errors.Is(err, pairing.ErrThrottled):
+			writeError(w, r, http.StatusTooManyRequests, "sign-in attempts throttled")
+		case errors.Is(err, pairing.ErrSignInFailed):
+			writeError(w, r, http.StatusUnauthorized, "sign-in failed")
+		case errors.Is(err, pairing.ErrInvalidRequest):
+			writeError(w, r, http.StatusBadRequest, "invalid sign-in request")
+		default:
+			writeErrorCause(w, r, http.StatusInternalServerError, "sign-in failed", err)
+		}
+		return
+	}
+	setWebSignInCookies(w, r, resp.SessionID, resp.SessionExpiresAt, resp.DeviceID, resp.DeviceSecret)
+	writeJSON(w, http.StatusCreated, map[string]string{
+		"deviceID":         resp.DeviceID,
+		"sessionExpiresAt": resp.SessionExpiresAt,
+		"profileID":        resp.ProfileID,
+		"deviceRole":       resp.DeviceRole,
+	})
 }

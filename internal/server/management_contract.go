@@ -114,6 +114,8 @@ var managementRouteContracts = []ManagementRouteContract{
 	{Method: http.MethodPost, Pattern: "/api/web/enroll", Note: "Enroll a web device session"},
 	{Method: http.MethodPost, Pattern: "/api/web/logout", Note: "Logout a web device session"},
 	{Method: http.MethodPost, Pattern: "/api/web/promote", Note: "Promote a web session to Admin Session"},
+	{Method: http.MethodPost, Pattern: "/api/web/session/renew", Note: "Renew a web session from its device credential"},
+	{Method: http.MethodPost, Pattern: "/api/web/admin-signin", Note: "Sign in a web device with the admin password"},
 	{Method: http.MethodPost, Pattern: "/api/beam/offers", Note: "Create a Beam offer for device pairing"},
 	{Method: http.MethodPost, Pattern: "/api/beam/claims", Note: "Claim a Beam offer (device pairing)"},
 	{Method: http.MethodPost, Pattern: "/api/pairing-codes", Note: "Generate a pairing code for device enrollment"},

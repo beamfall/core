@@ -21,6 +21,9 @@ const (
 	refusalOperationEnroll  = "enroll"
 	refusalOperationSetup   = "setup"
 	refusalOperationPromote = "promote"
+	// Sign-in recovery (CORE-1106).
+	refusalOperationSessionRenew = "session_renew"
+	refusalOperationAdminSignIn  = "admin_sign_in"
 )
 
 // authRefusalMetrics counts refused requests by reason. Only reasons in the
@@ -85,9 +88,13 @@ func (s *Server) recordAuthRefusal(r *http.Request, requestID string, status int
 }
 
 // notePairingRefusal notes a refused pairing credential (a pairing code or
-// setup token) for the request's audit record.
+// setup token, or a sign-in recovery credential) for the request's audit
+// record.
 func notePairingRefusal(r *http.Request, operation string, err error) {
+	var refusal *pairing.Refusal
 	switch {
+	case errors.As(err, &refusal):
+		auth.NoteRefusal(r.Context(), operation, refusal.Reason, true)
 	case errors.Is(err, pairing.ErrThrottled):
 		auth.NoteRefusal(r.Context(), operation, auth.RefusalPairingThrottled, true)
 	case errors.Is(err, pairing.ErrInvalidCode):

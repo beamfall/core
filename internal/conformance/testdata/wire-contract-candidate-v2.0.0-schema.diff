@@ -11228,6 +11228,8 @@
 -        },
 -        {
 -          "name": "locked",
+-          "kind": "scalar",
+-          "optional": true
 +          "elem": {
 +            "kind": "object",
 +            "children": [
@@ -14301,20 +14303,14 @@
 +        },
 +        {
 +          "name": "segmentKind",
-           "kind": "scalar",
-           "optional": true
-         },
-         {
--          "name": "muted",
--          "kind": "scalar",
--          "optional": true
++          "kind": "scalar",
++          "optional": true
++        },
++        {
 +          "name": "startSeconds",
 +          "kind": "scalar"
-         },
-         {
--          "name": "restricted",
--          "kind": "scalar",
--          "optional": true
++        },
++        {
 +          "name": "tags",
 +          "kind": "list",
 +          "nullable": true,
@@ -14323,17 +14319,25 @@
 +          }
          },
          {
--          "name": "summary",
+-          "name": "muted",
 +          "name": "title",
            "kind": "scalar",
            "optional": true
          },
          {
+-          "name": "restricted",
++          "name": "trashedAt",
+           "kind": "scalar",
+           "optional": true
+-        },
+-        {
+-          "name": "summary",
+-          "kind": "scalar",
+-          "optional": true
+-        },
+-        {
 -          "name": "title",
 -          "kind": "scalar"
-+          "name": "trashedAt",
-+          "kind": "scalar",
-+          "optional": true
          }
        ]
      },
@@ -14346,32 +14350,20 @@
 -          "name": "addedAt",
 -          "kind": "scalar",
 -          "optional": true
-+          "name": "id",
-+          "kind": "scalar"
-         },
-         {
--          "name": "feedURL",
-+          "name": "libraryID",
-           "kind": "scalar"
-         },
-         {
--          "name": "followed",
-+          "name": "title",
-           "kind": "scalar"
-         },
-         {
--          "name": "hasAuth",
-+          "name": "trashedAt",
-           "kind": "scalar"
 -        },
-+        }
-+      ]
-+    },
-+    {
-+      "field": "trashmedia",
-+      "kind": "object",
-+      "children": [
-         {
+-        {
+-          "name": "feedURL",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "followed",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "hasAuth",
+-          "kind": "scalar"
+-        },
+-        {
            "name": "id",
            "kind": "scalar"
          },
@@ -14411,7 +14403,7 @@
 -    },
 -    {
 -      "field": "switchprofile",
-+      "field": "unassigntag",
++      "field": "trashmedia",
        "kind": "object",
        "children": [
          {
@@ -14422,13 +14414,63 @@
 -        },
 -        {
 -          "name": "deviceRole",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "expiresAt",
+-          "kind": "scalar",
+-          "optional": true
+-        },
+-        {
+           "name": "id",
+           "kind": "scalar"
+         },
+         {
+-          "name": "preferSDH",
+-          "kind": "scalar",
+-          "optional": true
+-        },
+-        {
+-          "name": "profile",
 +          "name": "libraryID",
            "kind": "scalar"
          },
          {
--          "name": "expiresAt",
+-          "name": "profileID",
++          "name": "title",
+           "kind": "scalar"
+         },
+         {
+-          "name": "revealed",
++          "name": "trashedAt",
+           "kind": "scalar"
+-        },
+-        {
+-          "name": "subtitleLanguages",
+-          "kind": "list",
+-          "optional": true,
+-          "nullable": true
+-        },
+-        {
+-          "name": "subtitleMode",
 -          "kind": "scalar",
 -          "optional": true
+         }
+       ]
+     },
+     {
+-      "field": "syncofflinepackprogress",
++      "field": "unassigntag",
+       "kind": "object",
+       "children": [
+         {
+-          "name": "bytesReady",
++          "name": "libraryID",
+           "kind": "scalar"
+         },
+         {
+-          "name": "bytesTotal",
+-          "kind": "scalar"
 +          "name": "tags",
 +          "kind": "list",
 +          "nullable": true,
@@ -14501,61 +14543,39 @@
 +          ]
          },
          {
--          "name": "id",
+-          "name": "createdAt",
 +          "name": "targetID",
            "kind": "scalar"
          },
          {
--          "name": "preferSDH",
--          "kind": "scalar",
--          "optional": true
--        },
--        {
--          "name": "profile",
+-          "name": "expiresAt",
 +          "name": "targetType",
            "kind": "scalar"
 -        },
--        {
--          "name": "profileID",
--          "kind": "scalar"
--        },
--        {
--          "name": "revealed",
--          "kind": "scalar"
--        },
--        {
--          "name": "subtitleLanguages",
--          "kind": "list",
--          "optional": true,
--          "nullable": true
--        },
--        {
--          "name": "subtitleMode",
--          "kind": "scalar",
--          "optional": true
-         }
-       ]
-     },
-     {
--      "field": "syncofflinepackprogress",
++        }
++      ]
++    },
++    {
 +      "field": "undobatch",
-       "kind": "object",
-       "children": [
++      "kind": "object",
++      "children": [
          {
--          "name": "bytesReady",
+-          "name": "id",
 +          "name": "affected",
            "kind": "scalar"
          },
          {
--          "name": "bytesTotal",
+-          "name": "itemCount",
 +          "name": "batchID",
            "kind": "scalar"
          },
          {
--          "name": "createdAt",
-+          "name": "kind",
-           "kind": "scalar"
+-          "name": "keyToken",
+-          "kind": "scalar",
+-          "optional": true
 -        },
++          "name": "kind",
++          "kind": "scalar"
 +        }
 +      ]
 +    },
@@ -14564,43 +14584,26 @@
 +      "kind": "object",
 +      "children": [
          {
--          "name": "expiresAt",
-+          "name": "backgroundWorkers",
-           "kind": "scalar"
-         },
-         {
--          "name": "id",
-+          "name": "eventsRetentionDays",
-           "kind": "scalar"
-         },
-         {
--          "name": "itemCount",
-+          "name": "observabilityEnabled",
-           "kind": "scalar"
-         },
-         {
--          "name": "keyToken",
--          "kind": "scalar",
--          "optional": true
--        },
--        {
 -          "name": "manifestToken",
 -          "kind": "scalar",
 -          "optional": true
 -        },
 -        {
 -          "name": "state",
--          "kind": "scalar"
--        },
--        {
++          "name": "backgroundWorkers",
+           "kind": "scalar"
+         },
+         {
 -          "name": "targetKind",
--          "kind": "scalar"
--        },
--        {
++          "name": "eventsRetentionDays",
+           "kind": "scalar"
+         },
+         {
 -          "name": "targetRef",
--          "kind": "scalar"
--        },
--        {
++          "name": "observabilityEnabled",
+           "kind": "scalar"
+         },
+         {
 -          "name": "updatedAt",
 -          "kind": "scalar"
 -        }
@@ -16566,7 +16569,24 @@
          }
        ]
      },
-@@ -17083,6 +27522,13 @@
+@@ -15579,6 +26018,16 @@
+       },
+       {
+         "method": "POST",
++        "pattern": "/api/web/session/renew",
++        "note": "Renew a web session from its device credential"
++      },
++      {
++        "method": "POST",
++        "pattern": "/api/web/admin-signin",
++        "note": "Sign in a web device with the admin password"
++      },
++      {
++        "method": "POST",
+         "pattern": "/api/beam/offers",
+         "note": "Create a Beam offer for device pairing"
+       },
+@@ -17083,6 +27532,13 @@
            }
          },
          {
@@ -16580,7 +16600,7 @@
            "name": "burnSubtitleIndex",
            "shape": {
              "type": "integer",
-@@ -17090,6 +27536,20 @@
+@@ -17090,6 +27546,20 @@
            }
          },
          {
