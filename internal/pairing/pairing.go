@@ -535,6 +535,20 @@ func (s *Service) enrollDemo(ctx context.Context, req EnrollRequest, profileID s
 	if err != nil {
 		return EnrollResponse{}, ErrInvalidRequest
 	}
+	// The demo grant is reusable, so it obeys the same remote-enrollment gate
+	// as a pairing code: off-LAN with remote enrollment disabled gets the
+	// invalid-code answer.
+	if !req.IsLAN {
+		cfg, err := s.store.ConsoleConfig(ctx)
+		if err != nil {
+			return EnrollResponse{}, err
+		}
+		if !cfg.RemoteEnrollmentEnabled {
+			_ = s.recordAttempt(ctx, attemptKey, remoteKey, now, false)
+			s.logDenied(ctx, now, store.ActivityEnrollDenied)
+			return EnrollResponse{}, ErrInvalidCode
+		}
+	}
 	deviceID, err := s.generateID("device")
 	if err != nil {
 		return EnrollResponse{}, err
