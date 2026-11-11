@@ -33,6 +33,11 @@ pinned.
 - **THEN** the player switches to the HLS stream at the current position without a pin, because a
   native element exposes no level control, and the quality menu shows Auto
 
+#### Scenario: Quality pick while native HLS is active
+
+- **WHEN** the native HLS engine is already playing (no hls.js) and the viewer picks a rendition
+- **THEN** the player pins nothing and the quality menu keeps showing Auto
+
 #### Scenario: Rendition without an id
 
 - **WHEN** the selected rendition matches no level

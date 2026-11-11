@@ -193,12 +193,12 @@ export function useLiveTracks({
           if (!sibling || renditionIndex(sibling.renditions, id) < 0) return;
           if (switchToHls?.(id) === "hlsjs") setManualRenditionID(id);
         } else {
+          // Native HLS exposes no level control: stay on Auto rather than
+          // marking a pin the element cannot honour.
           const index = renditionIndex(stream?.renditions, id);
-          if (index < 0) return;
+          if (index < 0 || !h) return;
           setManualRenditionID(id);
-          if (h) {
-            h.currentLevel = index;
-          }
+          h.currentLevel = index;
         }
       }
       nudge();
