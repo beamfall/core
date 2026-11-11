@@ -17,7 +17,7 @@
 ## 4. Runbooks
 
 - [ ] 4.1 Document the real `--public-metrics` semantics and the new counters in the metrics runbook
-- [ ] 4.2 Add the lockout and recovery runbook
+- [x] 4.2 Add the lockout and recovery runbook
 
 ## 5. Verify and close
 
