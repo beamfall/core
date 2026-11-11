@@ -98,7 +98,8 @@ func (s *Server) enrollWebDevice(w http.ResponseWriter, r *http.Request) {
 // feature:first-run-setup-token). It bypasses the normal pairing-code flow to
 // create the first MANAGER device+session, resolving the circular dependency on
 // fresh servers. CSRF header required; token is single-use and cleared on
-// success.
+// success. While setup is pending, a request that passes requestIsLAN may omit
+// the token (CORE-1105); off-LAN requests still need it.
 func (s *Server) setupFirstRun(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	r.Body = http.MaxBytesReader(w, r.Body, maxControlBody)
@@ -115,6 +116,7 @@ func (s *Server) setupFirstRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.RemoteAddr = r.RemoteAddr
+	req.LANClaim = requestIsLAN(r)
 	resp, err := s.pairing.Bootstrap(r.Context(), req)
 	if err != nil {
 		notePairingRefusal(r, refusalOperationSetup, err)
@@ -149,9 +151,15 @@ func (s *Server) setupFirstRun(w http.ResponseWriter, r *http.Request) {
 // {"required": true} while the one-time setup token is still installed and
 // {"required": false} once it has been consumed by POST /api/setup. No session,
 // no CSRF header — a fresh, unenrolled browser must be able to call it to decide
-// whether to route to the setup wizard. It leaks only this single boolean.
+// whether to route to the setup wizard. tokenRequired tells the wizard whether
+// this request would need the setup token (false for a LAN request while setup
+// is pending). It leaks only these booleans, never the token.
 func (s *Server) setupRequired(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]bool{"required": s.pairing.SetupRequired()})
+	required := s.pairing.SetupRequired()
+	writeJSON(w, http.StatusOK, map[string]bool{
+		"required":      required,
+		"tokenRequired": required && !requestIsLAN(r),
+	})
 }
 
 // promoteWebDevice upgrades the calling browser's device to MANAGER

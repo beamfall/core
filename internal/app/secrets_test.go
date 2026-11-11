@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io/fs"
 	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -461,4 +462,27 @@ func TestSecretFilesMoveSecretRefusesUnsafeOrDriftedState(t *testing.T) {
 			t.Fatalf("err = %v, want missing-source error", err)
 		}
 	})
+}
+
+func TestLANSetupURLs(t *testing.T) {
+	cidr := func(s string) net.Addr {
+		ip, ipNet, err := net.ParseCIDR(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ipNet.IP = ip
+		return ipNet
+	}
+	addrs := []net.Addr{cidr("127.0.0.1/8"), cidr("192.168.4.3/24"), cidr("169.254.1.2/16"), cidr("fd00::5/64"), cidr("10.0.0.7/8")}
+	got := lanSetupURLs("http", "0.0.0.0:8800", addrs)
+	want := []string{"http://192.168.4.3:8800/web/", "http://10.0.0.7:8800/web/"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("wildcard bind = %v, want %v", got, want)
+	}
+	if got := lanSetupURLs("http", "[::]:8800", addrs); len(got) != 2 {
+		t.Fatalf("IPv6 wildcard bind = %v, want the two IPv4 LAN URLs", got)
+	}
+	if got := lanSetupURLs("http", "127.0.0.1:8800", addrs); got != nil {
+		t.Fatalf("loopback bind = %v, want none", got)
+	}
 }

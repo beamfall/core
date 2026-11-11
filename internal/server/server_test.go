@@ -306,9 +306,12 @@ func TestPackAuthorityRouteDispatchesAndDegrades(t *testing.T) {
 }
 
 func TestSetupRequiredProbe(t *testing.T) {
-	probe := func(srv *Server) bool {
+	probe := func(srv *Server, remoteAddr string) map[string]bool {
 		t.Helper()
 		req := httptest.NewRequest(http.MethodGet, "/api/setup", nil)
+		if remoteAddr != "" {
+			req.RemoteAddr = remoteAddr
+		}
 		rec := httptest.NewRecorder()
 		srv.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
@@ -318,25 +321,31 @@ func TestSetupRequiredProbe(t *testing.T) {
 		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 			t.Fatalf("decode setup probe: %v", err)
 		}
-		if _, ok := body["required"]; !ok || len(body) != 1 {
-			t.Fatalf("body = %#v, want exactly {\"required\": bool}", body)
+		_, hasRequired := body["required"]
+		_, hasTokenRequired := body["tokenRequired"]
+		if !hasRequired || !hasTokenRequired || len(body) != 2 {
+			t.Fatalf("body = %#v, want exactly {\"required\", \"tokenRequired\"}", body)
 		}
-		return body["required"]
+		return body
 	}
 
 	// Fresh server with the bootstrap token installed: setup is required. The
 	// probe must answer without any session or CSRF header (unenrolled browser).
+	// An off-LAN browser needs the token; a LAN browser does not (CORE-1105).
 	srv := newTestServer(t)
 	srv.pairing.SetBootstrapToken("first-run-token")
-	if required := probe(srv); !required {
-		t.Fatalf("required = false, want true while the setup token is installed")
+	if body := probe(srv, "203.0.113.9:51000"); !body["required"] || !body["tokenRequired"] {
+		t.Fatalf("public probe = %#v, want required and tokenRequired", body)
+	}
+	if body := probe(srv, "192.168.4.20:51000"); !body["required"] || body["tokenRequired"] {
+		t.Fatalf("LAN probe = %#v, want required without tokenRequired", body)
 	}
 
 	// After the token is consumed (here: cleared, as a successful Bootstrap
 	// would), the probe reports setup is no longer required.
 	srv.pairing.SetBootstrapToken("")
-	if required := probe(srv); required {
-		t.Fatalf("required = true, want false after the setup token is consumed")
+	if body := probe(srv, ""); body["required"] || body["tokenRequired"] {
+		t.Fatalf("probe = %#v, want neither after the setup token is consumed", body)
 	}
 }
 

@@ -114,12 +114,17 @@ type SetupRequest struct {
 	ProfileName       string `json:"profileName"`
 	DistributionClass string `json:"distributionClass,omitempty"`
 	// AdminPassword, when non-empty, sets the server admin password in-browser
-	// during first-run setup. The setup token gates this: it is
-	// proof of server/log access, so setting the password here does not weaken
-	// the posture versus the CLI reset-admin-password path. Empty leaves the
+	// during first-run setup. The setup token or a LAN claim gates this, and
+	// only while setup is pending (no owner yet), so it never overrides a
+	// password an owner already set. Empty leaves the
 	// existing flow unchanged (backward compatible). Never logged or echoed.
 	AdminPassword string `json:"adminPassword"`
 	RemoteAddr    string `json:"-"`
+	// LANClaim is set by the server, never decoded from the body, when the
+	// request passed the server's LAN test. While setup is pending it lets the
+	// request complete setup without a token (ADR-0007 §2, CORE-1105). A token
+	// that is presented is still checked.
+	LANClaim bool `json:"-"`
 }
 
 // SetupResponse gives the browser its first MANAGER session. The shape is
@@ -241,7 +246,7 @@ func (s *Service) Bootstrap(ctx context.Context, req SetupRequest) (SetupRespons
 		profileName = "Owner"
 	}
 	token := strings.TrimSpace(req.Token)
-	if token == "" || name == "" {
+	if (token == "" && !req.LANClaim) || name == "" {
 		return SetupResponse{}, ErrInvalidRequest
 	}
 	distributionClass, err := store.NormalizeDeviceDistributionClass(store.DeviceDistributionClass(req.DistributionClass))
@@ -264,8 +269,9 @@ func (s *Service) Bootstrap(ctx context.Context, req SetupRequest) (SetupRespons
 		_ = s.recordAttemptFor(ctx, setupAttemptAction, attemptKey, "", now, false)
 		return SetupResponse{}, ErrSetupTokenInvalid
 	}
-	// Constant-time comparison to resist timing attacks on the token.
-	if subtle.ConstantTimeCompare([]byte(token), []byte(stored)) != 1 {
+	// Constant-time comparison to resist timing attacks on the token. A LAN
+	// claim with no token skips the comparison; a presented token is checked.
+	if (token != "" || !req.LANClaim) && subtle.ConstantTimeCompare([]byte(token), []byte(stored)) != 1 {
 		s.mu.Unlock()
 		_ = s.recordAttemptFor(ctx, setupAttemptAction, attemptKey, "", now, false)
 		return SetupResponse{}, ErrSetupTokenInvalid
