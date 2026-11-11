@@ -362,8 +362,10 @@ func (h *Handler) sourceUserMappings(ctx context.Context, req request) (map[stri
 		}
 		sourceUserID, idOK := fields["sourceUserID"].(string)
 		profileID, profileOK := fields["profileID"].(string)
-		sourceUserID, profileID = strings.TrimSpace(sourceUserID), strings.TrimSpace(profileID)
-		if !idOK || !profileOK || sourceUserID == "" || profileID == "" {
+		// The source user ID is matched byte-for-byte by the importer, so it
+		// is kept as sent; trimming only decides whether it is blank.
+		profileID = strings.TrimSpace(profileID)
+		if !idOK || !profileOK || strings.TrimSpace(sourceUserID) == "" || profileID == "" {
 			return nil, clientError("each source user mapping needs sourceUserID and profileID")
 		}
 		if _, dup := mapped[sourceUserID]; dup {

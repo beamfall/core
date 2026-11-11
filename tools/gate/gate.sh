@@ -127,6 +127,12 @@ gate_unregister_group() {
     [ "$held" = "$target" ] || kept="$kept $held"
   done
   GATE_OWNED_GROUPS="$kept"
+  # Drop the owner too: a reused group id must not inherit a stale owner.
+  kept=""
+  for held in ${GATE_GROUP_OWNERS:-}; do
+    [ "${held%%=*}" = "$target" ] || kept="$kept $held"
+  done
+  GATE_GROUP_OWNERS="$kept"
 }
 
 gate_group_is_registered() {
