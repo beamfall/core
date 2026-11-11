@@ -430,6 +430,9 @@ class GateLatestTest(unittest.TestCase):
         command, environment = self.invocation(
             self.directory / "outer-capacity-state", "exit", "outer-capacity", 0, 0
         )
+        # The outer holder has no ancestor: a capacity FD named by a gate
+        # running this suite is not open here and gate-capacity.py refuses it.
+        environment.pop("BEAMFALL_GATE_CAPACITY_FD", None)
         command = [sys.executable, str(CAPACITY), "--", *command]
         process = subprocess.Popen(command, cwd=self.repository, env=environment)
         self.addCleanup(self.cleanup_invocation, process)
