@@ -4,9 +4,8 @@
 
 While first-run setup is pending, the server SHALL accept a setup request with no setup token when
 the request arrived on the local network (the server's LAN test: loopback, private or link-local
-source, not relayed, not forwarded except through a declared proxy) and addressed the server by a
-host name a public website cannot rebind: an IP literal, `localhost` or an mDNS `.local` name. Any
-other setup request SHALL
+source, not relayed, not forwarded except through a declared proxy) and passes the host rule below.
+Any other setup request SHALL
 present the valid token. A presented token SHALL be checked wherever the request came from, and after
 setup completes every setup request SHALL be refused.
 
@@ -26,12 +25,6 @@ setup completes every setup request SHALL be refused.
   a declared proxy submits setup with no token
 - **THEN** setup is refused and nothing is created
 
-#### Scenario: Local-network request addressed by a public host name
-
-- **WHEN** setup is pending and a request from a private address whose Host is a public DNS name
-  submits setup with no token
-- **THEN** setup is refused and nothing is created, so a DNS-rebinding page cannot claim the server
-
 #### Scenario: Wrong token on the local network
 
 - **WHEN** setup is pending and a local-network request submits a wrong token
@@ -41,6 +34,18 @@ setup completes every setup request SHALL be refused.
 
 - **WHEN** setup has completed and a local-network request submits setup with no token
 - **THEN** setup is refused and nothing is created
+
+### Requirement: A tokenless setup claim names a host that cannot be rebound
+
+A setup request without a token SHALL be accepted only when the host the client addressed is an IP
+literal, `localhost` or an mDNS `.local` name, so a public website cannot use DNS rebinding to claim
+the server through a local browser.
+
+#### Scenario: Local-network request addressed by a public host name
+
+- **WHEN** setup is pending and a request from a private address whose Host is a public DNS name
+  submits setup with no token
+- **THEN** setup is refused and nothing is created, so a DNS-rebinding page cannot claim the server
 
 ### Requirement: Setup status reports whether the token is needed
 
