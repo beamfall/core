@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/capabilities"
@@ -246,7 +247,7 @@ func (s *Server) compatAuthorize(r *http.Request, scope auth.Scope) (bool, capab
 		return false, compatDecisionRequired(), ""
 	}
 	if errors.Is(err, capabilities.ErrNoDecision) {
-		return s.acceptEmbeddedDecision(scope, policy)
+		return s.acceptEmbeddedDecision(scope, policy, compatProvisionalTTL, false)
 	}
 	if errors.Is(err, capabilities.ErrAuthChanged) {
 		// The session's own grants, Profile or device role changed under a
@@ -259,11 +260,11 @@ func (s *Server) compatAuthorize(r *http.Request, scope auth.Scope) (bool, capab
 		key.AuthFingerprint = record.Key.AuthFingerprint
 		record, err = s.compat.registry.Resolve(subject, key, now)
 		if err == nil {
-			return s.acceptEmbeddedDecision(scope, policy)
+			return s.acceptEmbeddedDecision(scope, policy, record.ExpiresAt.Sub(now), record.Submitted)
 		}
 	}
 	if errors.Is(err, capabilities.ErrStaleGeneration) && !record.Submitted {
-		return s.acceptEmbeddedDecision(scope, policy)
+		return s.acceptEmbeddedDecision(scope, policy, compatProvisionalTTL, false)
 	}
 	if record.Result.Decision != "" && !compatServable(record.Result) {
 		return false, record.Result, ""
@@ -271,7 +272,9 @@ func (s *Server) compatAuthorize(r *http.Request, scope auth.Scope) (bool, capab
 	return false, compatDecisionRequired(), ""
 }
 
-func (s *Server) acceptEmbeddedDecision(scope auth.Scope, policy capabilities.Policy) (bool, capabilities.Result, string) {
+// acceptEmbeddedDecision derives the embedded web UI's decision and stores it
+// for ttl, as a submitted decision when submitted is set.
+func (s *Server) acceptEmbeddedDecision(scope auth.Scope, policy capabilities.Policy, ttl time.Duration, submitted bool) (bool, capabilities.Result, string) {
 	contract := capabilities.EmbeddedUIContract()
 	enrollment := compatEnrollment(scope)
 	enrollment.EmbeddedUI = true
@@ -281,13 +284,17 @@ func (s *Server) acceptEmbeddedDecision(scope auth.Scope, policy capabilities.Po
 		if !compatServable(result) {
 			return false, result, ""
 		}
-		record, accepted, err := s.compat.registry.AcceptDerived(capabilities.BindingKey{
+		accept := s.compat.registry.AcceptDerived
+		if submitted {
+			accept = s.compat.registry.Accept
+		}
+		record, accepted, err := accept(capabilities.BindingKey{
 			Subject:         compatSubject(scope),
 			Surface:         contract.Surface,
 			Distribution:    distribution,
 			AuthFingerprint: compatAuthFingerprint(scope),
 			Generation:      policy.Generation,
-		}, contract, result, s.compat.now(), compatProvisionalTTL)
+		}, contract, result, s.compat.now(), ttl)
 		if err == nil {
 			return accepted, result, strconv.Itoa(record.Key.Generation)
 		}

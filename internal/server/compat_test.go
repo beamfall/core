@@ -989,6 +989,30 @@ func TestCompatWebSessionSurvivesItsOwnLibraryGrant(t *testing.T) {
 	}
 }
 
+// TestCompatAuthChangeKeepsSubmittedDecisionLifetime pins that re-deriving
+// after a grant change keeps the submitted decision's remaining lifetime
+// rather than shortening it to the provisional TTL.
+func TestCompatAuthChangeKeepsSubmittedDecisionLifetime(t *testing.T) {
+	srv, st := compatTestServerWithStore(t)
+	now := time.Unix(1_800_000_000, 0)
+	srv.compat.now = func() time.Time { return now }
+	compatHandshakeRecord(t, srv, capabilities.EmbeddedUIContract(), authorizeManagerCookies)
+	profileID := compatProfileID(t, srv, authorizeManagerCookies)
+	if _, err := st.CreateLibraryWithRoots(context.Background(), "Granted", false, "", profileID, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	read := func() *httptest.ResponseRecorder {
+		return compatServe(srv, compatGraphQLRequest(`query { serverInfo { name } }`, authorizeManagerCookies))
+	}
+	if first := read(); first.Code != http.StatusOK {
+		t.Fatalf("read after grant = %d: %s", first.Code, first.Body.String())
+	}
+	now = now.Add(compatProvisionalTTL + time.Minute)
+	if later := read(); later.Code != http.StatusOK {
+		t.Fatalf("read past the provisional TTL = %d: %s", later.Code, later.Body.String())
+	}
+}
+
 func compatAuthFingerprintFor(t *testing.T, srv *Server, authorize func(*http.Request)) string {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, "/api/manifest", nil)

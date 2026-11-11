@@ -13,6 +13,11 @@ authorization change until it handshakes again.
 - **WHEN** a web UI session with a servable decision creates a Library and then makes another request
 - **THEN** the next request is served without a new handshake
 
+#### Scenario: Re-derived decision keeps its lifetime
+
+- **WHEN** a web UI session's submitted decision is re-derived after its grants change
+- **THEN** the new decision stays submitted and keeps the original expiry, so it does not lapse at the provisional TTL
+
 #### Scenario: Native credential's authorization changes
 
 - **WHEN** a native credential's authorization state changes after its handshake
