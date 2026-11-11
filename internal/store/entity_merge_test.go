@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"strconv"
 	"testing"
 	"time"
@@ -176,6 +177,128 @@ func TestMergeEntitiesUndoFullyReverses(t *testing.T) {
 	// And the loser is live again.
 	if _, err := st.Entity(ctx, "loser", LibraryFilter{AllLibraries: true}); err != nil {
 		t.Fatalf("loser not restored: %v", err)
+	}
+}
+
+// TestAuditUndoEntityMergePreservesThirdParty pins CORE-0743: when the loser's
+// first relation points at an unrelated Entity T, Undo must still reverse only
+// the loser/winner pair (the winner is journaled, not inferred) and leave every
+// one of T's own relations untouched.
+func TestAuditUndoEntityMergePreservesThirdParty(t *testing.T) {
+	ctx := context.Background()
+	st := openSeeded(t)
+
+	for _, id := range []EntityID{"winner", "loser", "third"} {
+		if err := st.UpsertEntity(ctx, widgetEntity(id, "library-local")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	relations := []EntityRelation{
+		// The loser's only relation points at the third party, so the old
+		// inference picked "third" as the winner.
+		{FromEntityID: "loser", Name: "friend", ToEntityID: "third"},
+		// Third-party media relations unrelated to the merge.
+		{FromEntityID: "third", Name: "linked", ToMediaID: "media-alpha"},
+		{FromEntityID: "third", Name: "linked", ToMediaID: "media-archive"},
+		{FromEntityID: "winner", Name: "linked", ToMediaID: "media-alpha"},
+	}
+	for _, r := range relations {
+		if err := st.UpsertEntityRelation(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := snapshotRelations(t, st)
+
+	batch, err := st.MergeEntities(ctx, "winner", "loser", LibraryFilter{AllLibraries: true}, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("MergeEntities: %v", err)
+	}
+	if _, err := st.UndoBatch(ctx, batch.ID, LibraryFilter{AllLibraries: true}, time.Now().UTC()); err != nil {
+		t.Fatalf("UndoBatch: %v", err)
+	}
+
+	if after := snapshotRelations(t, st); before != after {
+		t.Fatalf("undo did not restore relations exactly:\n before=%q\n after =%q", before, after)
+	}
+	var thirdRows int
+	if err := st.catalogR.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM entity_relation WHERE from_entity_id = 'third' AND to_media_id IS NOT NULL`).Scan(&thirdRows); err != nil {
+		t.Fatal(err)
+	}
+	if thirdRows != 2 {
+		t.Fatalf("third-party media relations = %d, want its two unrelated rows intact", thirdRows)
+	}
+	if _, err := st.Entity(ctx, "loser", LibraryFilter{AllLibraries: true}); err != nil {
+		t.Fatalf("loser not restored: %v", err)
+	}
+}
+
+// TestUndoEntityMergeRefusesJournalWithoutWinner pins CORE-0743's legacy path: a
+// merge journal written before the winner was recorded is refused with a
+// validation error and Undo changes nothing (no guessed winner).
+func TestUndoEntityMergeRefusesJournalWithoutWinner(t *testing.T) {
+	ctx := context.Background()
+	st := openSeeded(t)
+
+	for _, id := range []EntityID{"winner", "loser", "third"} {
+		if err := st.UpsertEntity(ctx, widgetEntity(id, "library-local")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, r := range []EntityRelation{
+		{FromEntityID: "loser", Name: "friend", ToEntityID: "third"},
+		{FromEntityID: "third", Name: "linked", ToMediaID: "media-alpha"},
+	} {
+		if err := st.UpsertEntityRelation(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	batch, err := st.MergeEntities(ctx, "winner", "loser", LibraryFilter{AllLibraries: true}, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("MergeEntities: %v", err)
+	}
+
+	// Rewrite the journal into the pre-CORE-0743 shape: no winner field.
+	var priorState string
+	if err := st.catalogR.QueryRowContext(ctx,
+		`SELECT prior_state FROM op_batch_entity_item WHERE batch_id = ?`, batch.ID).Scan(&priorState); err != nil {
+		t.Fatal(err)
+	}
+	var legacy map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(priorState), &legacy); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := legacy["winner"]; !ok {
+		t.Fatalf("merge journal does not record the winner: %s", priorState)
+	}
+	delete(legacy, "winner")
+	rewritten, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.catalogW.ExecContext(ctx,
+		`UPDATE op_batch_entity_item SET prior_state = ? WHERE batch_id = ?`, string(rewritten), batch.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	merged := snapshotRelations(t, st)
+	_, err = st.UndoBatch(ctx, batch.ID, LibraryFilter{AllLibraries: true}, time.Now().UTC())
+	if _, ok := err.(ValidationError); !ok {
+		t.Fatalf("UndoBatch on a winnerless journal = %T %v, want ValidationError", err, err)
+	}
+	if after := snapshotRelations(t, st); after != merged {
+		t.Fatalf("refused undo mutated relations:\n merged=%q\n after =%q", merged, after)
+	}
+	if _, err := st.Entity(ctx, "loser", LibraryFilter{AllLibraries: true}); err == nil {
+		t.Fatal("refused undo restored the loser")
+	}
+	var undoneAt int64
+	if err := st.catalogR.QueryRowContext(ctx,
+		`SELECT undone_at_ms FROM op_batch WHERE id = ?`, batch.ID).Scan(&undoneAt); err != nil {
+		t.Fatal(err)
+	}
+	if undoneAt != 0 {
+		t.Fatal("refused undo marked the batch undone")
 	}
 }
 
