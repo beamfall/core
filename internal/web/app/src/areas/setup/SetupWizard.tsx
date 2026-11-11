@@ -146,6 +146,10 @@ export function SetupWizard() {
   // When the token POST returns 401, we bounce the user back to step 1 and show
   // the invalid-token message inline there.
   const [tokenError, setTokenError] = useState<string | null>(null);
+  // True when the server says this browser needs no setup token (a LAN browser
+  // while setup is pending, CORE-1105): the wizard starts at the admin step.
+  const [tokenStepSkipped, setTokenStepSkipped] = useState(false);
+  const firstStep = tokenStepSkipped ? 1 : 0;
 
   const errorRef = useRef<HTMLParagraphElement>(null);
   const tokenID = useId();
@@ -172,7 +176,12 @@ export function SetupWizard() {
       .then((resume) => {
         if (cancelled) return;
         if (!resume.alreadyBootstrapped) {
-          // Fresh server: run the wizard from the token step as normal.
+          // Fresh server: run the wizard from the token step, or from the admin
+          // step when this browser needs no token and none was handed to it.
+          if (resume.tokenRequired === false && !initialTokenRef.current) {
+            setTokenStepSkipped(true);
+            setStep(1);
+          }
           setProbing(false);
           return;
         }
@@ -299,6 +308,7 @@ export function SetupWizard() {
         // Wrong/consumed token: bounce to step 1 with the inline message and
         // do NOT advance.
         setTokenError(t("setupTokenInvalid"));
+        setTokenStepSkipped(false);
         setStep(0);
         return false;
       }
@@ -400,7 +410,7 @@ export function SetupWizard() {
   function validate(current: number): string | null {
     switch (current) {
       case 0:
-        return token.trim() ? null : t("setupTokenInvalid");
+        return token.trim() || tokenStepSkipped ? null : t("setupTokenInvalid");
       case 1:
         if (!adminPassword) return t("setupAdminPasswordRequired");
         if (adminPassword !== adminPasswordConfirm) return t("setupAdminPasswordMismatch");
@@ -462,7 +472,7 @@ export function SetupWizard() {
   function onBack() {
     if (busy) return;
     setError(null);
-    setStep((s) => Math.max(s - 1, 0));
+    setStep((s) => Math.max(s - 1, firstStep));
   }
 
   // Load a directory into the picker. An undefined path lists the filesystem
@@ -840,7 +850,7 @@ export function SetupWizard() {
             )}
 
             <div className="mt-[18px] flex items-center gap-2">
-              {step > 0 && !bootstrapped && (
+              {step > firstStep && !bootstrapped && (
                 <Button type="button" variant="outline" onClick={onBack} disabled={busy}>
                   {t("setupBack")}
                 </Button>

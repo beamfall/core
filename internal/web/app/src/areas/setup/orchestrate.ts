@@ -1,4 +1,4 @@
-import { ApiError, fetchSetupRequired, postJSON } from "@/lib/api";
+import { ApiError, fetchSetupStatus, postJSON } from "@/lib/api";
 import {
   createLibrary,
   fetchLibraries,
@@ -186,6 +186,8 @@ export async function configureUpdateCheck(input: {
 export interface SetupResume {
   /** True once the one-time token has been consumed (a session exists). */
   alreadyBootstrapped: boolean;
+  /** False when this browser may finish setup without the token (LAN, CORE-1105). */
+  tokenRequired?: boolean;
   /** Server-derived per-step completion, or null when not yet bootstrapped. */
   state: SetupState | null;
   /** Partially-created first Library state that must survive a reload. */
@@ -206,8 +208,8 @@ export interface SetupResume {
  * rather than surfacing an unhandled error (Gate-A LOW).
  */
 export async function bootstrapResume(): Promise<SetupResume> {
-  const required = await fetchSetupRequired();
-  if (required) return { alreadyBootstrapped: false, state: null };
+  const { required, tokenRequired } = await fetchSetupStatus();
+  if (required) return { alreadyBootstrapped: false, state: null, tokenRequired };
   try {
     const state = await fetchSetupState();
     if (state.hasLibrary) {

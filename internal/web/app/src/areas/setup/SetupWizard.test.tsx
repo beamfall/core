@@ -400,3 +400,54 @@ describe("SetupWizard setup URL", () => {
     expect(window.location.href).not.toContain(canary);
   });
 });
+
+describe("SetupWizard LAN claim (CORE-1105)", () => {
+  beforeEach(() => {
+    window.history.replaceState(null, "", "/web/setup");
+    mocks.fetchPlugins.mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it("starts at the admin step and bootstraps without a token on the local network", async () => {
+    const user = userEvent.setup();
+    mocks.bootstrapResume.mockResolvedValue({
+      alreadyBootstrapped: false,
+      state: null,
+      tokenRequired: false,
+    });
+    mocks.bootstrapSetup.mockResolvedValue(undefined);
+    renderSetupWizard();
+
+    expect(
+      await screen.findByRole("heading", { name: "Set the admin password" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Setup token")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Back" })).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Admin password"), "correct horse battery staple");
+    await user.type(screen.getByLabelText("Confirm password"), "correct horse battery staple");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(await screen.findByRole("heading", { name: "Activate plugins" })).toBeInTheDocument();
+    expect(mocks.bootstrapSetup).toHaveBeenCalledWith(expect.objectContaining({ token: "" }));
+  });
+
+  it("keeps the token step when the server requires the token", async () => {
+    mocks.bootstrapResume.mockResolvedValue({
+      alreadyBootstrapped: false,
+      state: null,
+      tokenRequired: true,
+    });
+    renderSetupWizard();
+
+    expect(
+      await screen.findByRole("heading", { name: "Unlock with the setup token" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Setup token")).toHaveValue("");
+  });
+});

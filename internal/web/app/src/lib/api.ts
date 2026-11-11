@@ -339,6 +339,20 @@ export async function fetchSetupRequired(): Promise<boolean> {
   }
 }
 
+/**
+ * GET /api/setup in full: whether setup is pending and whether this browser
+ * would need the one-time setup token (false on the local network while setup
+ * is pending, CORE-1105). Errors resolve to `{required:false, tokenRequired:true}`.
+ */
+export async function fetchSetupStatus(): Promise<{ required: boolean; tokenRequired: boolean }> {
+  try {
+    const data = await getJSON<{ required?: boolean; tokenRequired?: boolean }>("/api/setup");
+    return { required: data.required === true, tokenRequired: data.tokenRequired !== false };
+  } catch {
+    return { required: false, tokenRequired: true };
+  }
+}
+
 /** Fetch the Navigation Manifest (the Viewer's nav + layout document). */
 export function getManifest<T = unknown>(signal?: AbortSignal): Promise<T> {
   return getJSON<T>("/api/manifest", signal);

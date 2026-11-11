@@ -337,12 +337,20 @@ describe("configureUpdateCheck", () => {
 });
 
 describe("bootstrapResume", () => {
+  it("reports that a LAN browser needs no setup token", async () => {
+    respond = () => ({ status: 200, json: { required: true, tokenRequired: false } });
+
+    const resume = await bootstrapResume();
+
+    expect(resume).toEqual({ alreadyBootstrapped: false, state: null, tokenRequired: false });
+  });
+
   it("reports a fresh server (token not yet consumed) without reading setupState", async () => {
     respond = () => ({ status: 200, json: { required: true } });
 
     const resume = await bootstrapResume();
 
-    expect(resume).toEqual({ alreadyBootstrapped: false, state: null });
+    expect(resume).toEqual({ alreadyBootstrapped: false, state: null, tokenRequired: true });
     // Only the probe ran; no setupState GraphQL query when setup is fresh.
     expect(recorded).toHaveLength(1);
     expect(recorded[0].url).toBe("/api/setup");
