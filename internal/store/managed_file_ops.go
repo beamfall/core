@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
@@ -184,6 +185,21 @@ func openStagedSource(stagingPath string) (*stagedSource, error) {
 		return nil, errManagedPathIdentity
 	}
 	return &stagedSource{file: file, root: root, name: name, id: opened}, nil
+}
+
+// hashStagedFile returns the "sha256:<hex>" content fingerprint of a staging
+// artifact, read through the same stable reference openStagedSource proves.
+func hashStagedFile(stagingPath string) (string, error) {
+	staged, err := openStagedSource(stagingPath)
+	if err != nil {
+		return "", err
+	}
+	defer staged.close()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, staged.file); err != nil {
+		return "", err
+	}
+	return "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 // remove deletes the staging artifact through the staging-directory descriptor,
@@ -385,7 +401,8 @@ func (s *Store) ImportManagedFile(ctx context.Context, libraryID LibraryID, impo
 		return ManagedPath{}, err
 	}
 	defer os.Remove(stagingPath)
-	if err := copyOpenFileToStaging(srcFd, stagingPath); err != nil {
+	fingerprint, err := copyOpenFileToStaging(srcFd, stagingPath)
+	if err != nil {
 		return ManagedPath{}, err
 	}
 	if err := admitStagedFileNoReplace(stagingPath, target); err != nil {
@@ -404,7 +421,8 @@ func (s *Store) ImportManagedFile(ctx context.Context, libraryID LibraryID, impo
 		Container:          container,
 		Codec:              codec,
 		Class:              class,
-		ContentFingerprint: HashMediaFilePath(target),
+		ContentFingerprint: fingerprint,
+		managedAdmission:   true,
 	})
 	if err != nil {
 		_ = os.Remove(target)
@@ -448,33 +466,36 @@ func newImportStagingPath(stagingRoot string) (string, error) {
 // copyOpenFileToStaging copies FROM the already-open source fd (the stable
 // reference bound by ImportManagedFile) into a fresh 0600 staging file. It NEVER
 // reopens the source by path, so the admitted bytes are exactly those the fd
-// points at.
+// points at. It returns the content fingerprint of the bytes it wrote, hashed
+// during the copy, so the catalog identity is the identity of the admitted
+// content (the same "sha256:<hex>" form HashMediaFileContent produces).
 //
 // The write runs through a descriptor on the staging directory, so the file is
 // created inside the directory that was proved rather than wherever the staging
 // name resolves at write time.
-func copyOpenFileToStaging(src *os.File, stagingPath string) error {
+func copyOpenFileToStaging(src *os.File, stagingPath string) (string, error) {
 	dir := filepath.Dir(stagingPath)
 	name := filepath.Base(stagingPath)
 	root, err := openManagedDir(dir)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer root.Close()
 	dst, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
-		return err
+		return "", err
 	}
-	if _, err := io.Copy(dst, src); err != nil {
+	hash := sha256.New()
+	if _, err := io.Copy(io.MultiWriter(dst, hash), src); err != nil {
 		_ = dst.Close()
 		_ = root.Remove(name)
-		return err
+		return "", err
 	}
 	if err := dst.Close(); err != nil {
 		_ = root.Remove(name)
-		return err
+		return "", err
 	}
-	return nil
+	return "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 // admitStagedFileNoReplace positions a staged file into the Library root with a
@@ -823,7 +844,7 @@ func (s *Store) DeleteManagedPath(ctx context.Context, libraryID LibraryID, path
 		return ManagedTrash{}, err
 	}
 	defer tx.Rollback()
-	if err := markManagedMediaMissingTx(ctx, tx, source.Path, source.Kind, now); err != nil {
+	if err := markManagedMediaMissingTx(ctx, tx, source.Path, source.Kind, s.managedPathFoldsCase(source.Path), now); err != nil {
 		unwind()
 		return ManagedTrash{}, err
 	}
@@ -1017,7 +1038,7 @@ func (s *Store) RestoreManagedPath(ctx context.Context, libraryID LibraryID, tra
 		return ManagedPath{}, err
 	}
 	defer tx.Rollback()
-	if err := restoreManagedMediaTx(ctx, tx, manifest.OriginalPath, manifest.Kind, now); err != nil {
+	if err := restoreManagedMediaTx(ctx, tx, manifest.OriginalPath, manifest.Kind, s.managedPathFoldsCase(manifest.OriginalPath), now); err != nil {
 		_ = executeManagedMove(move, manifest.OriginalPath, manifest.TrashPath)
 		return ManagedPath{}, err
 	}
@@ -1049,7 +1070,7 @@ func (s *Store) renameManagedPathLocked(ctx context.Context, source ManagedPath,
 		return ManagedPath{}, err
 	}
 	defer tx.Rollback()
-	if err := updateManagedMediaPathsTx(ctx, tx, source.Path, target, source.Kind); err != nil {
+	if err := updateManagedMediaPathsTx(ctx, tx, source.Path, target, source.Kind, s.managedPathFoldsCase(source.Path)); err != nil {
 		_ = executeManagedMove(move, target, source.Path)
 		return ManagedPath{}, err
 	}
@@ -1288,8 +1309,8 @@ func newManagedTrashID() (string, error) {
 	return hex.EncodeToString(raw[:]), nil
 }
 
-func updateManagedMediaPathsTx(ctx context.Context, tx *sql.Tx, oldPath, newPath, kind string) error {
-	pairs, err := managedMediaPathPairs(ctx, tx, oldPath, newPath, kind)
+func updateManagedMediaPathsTx(ctx context.Context, tx *sql.Tx, oldPath, newPath, kind string, foldCase bool) error {
+	pairs, err := managedMediaPathPairs(ctx, tx, oldPath, newPath, kind, foldCase)
 	if err != nil {
 		return err
 	}
@@ -1301,8 +1322,8 @@ func updateManagedMediaPathsTx(ctx context.Context, tx *sql.Tx, oldPath, newPath
 	return nil
 }
 
-func markManagedMediaMissingTx(ctx context.Context, tx *sql.Tx, path, kind string, now time.Time) error {
-	paths, err := managedMediaPaths(ctx, tx, path, kind, true)
+func markManagedMediaMissingTx(ctx context.Context, tx *sql.Tx, path, kind string, foldCase bool, now time.Time) error {
+	paths, err := managedMediaPaths(ctx, tx, path, kind, true, foldCase)
 	if err != nil {
 		return err
 	}
@@ -1314,8 +1335,8 @@ func markManagedMediaMissingTx(ctx context.Context, tx *sql.Tx, path, kind strin
 	return nil
 }
 
-func restoreManagedMediaTx(ctx context.Context, tx *sql.Tx, path, kind string, _ time.Time) error {
-	paths, err := managedMediaPaths(ctx, tx, path, kind, false)
+func restoreManagedMediaTx(ctx context.Context, tx *sql.Tx, path, kind string, foldCase bool, _ time.Time) error {
+	paths, err := managedMediaPaths(ctx, tx, path, kind, false, foldCase)
 	if err != nil {
 		return err
 	}
@@ -1327,18 +1348,20 @@ func restoreManagedMediaTx(ctx context.Context, tx *sql.Tx, path, kind string, _
 	return nil
 }
 
-func managedMediaPathPairs(ctx context.Context, tx *sql.Tx, oldPath, newPath, kind string) (map[string]string, error) {
-	paths, err := managedMediaPaths(ctx, tx, oldPath, kind, true)
+func managedMediaPathPairs(ctx context.Context, tx *sql.Tx, oldPath, newPath, kind string, foldCase bool) (map[string]string, error) {
+	paths, err := managedMediaPaths(ctx, tx, oldPath, kind, true, foldCase)
 	if err != nil {
 		return nil, err
 	}
 	out := make(map[string]string, len(paths))
 	for _, path := range paths {
-		if path == oldPath {
+		if len(path) == len(oldPath) {
 			out[path] = newPath
 			continue
 		}
-		out[path] = filepath.Join(newPath, strings.TrimPrefix(path, oldPath+string(filepath.Separator)))
+		// managedMediaPaths matched oldPath plus a separator as a prefix that
+		// differs at most in ASCII case, so its byte length is unchanged.
+		out[path] = filepath.Join(newPath, path[len(oldPath)+1:])
 	}
 	return out, nil
 }
@@ -1348,7 +1371,15 @@ func managedMediaPathPairs(ctx context.Context, tx *sql.Tx, oldPath, newPath, ki
 // available selects the availability state to match: true queries rows where
 // missing_at_ms IS NULL (letting the media_file_available_path_uq partial index
 // serve the lookup); false queries rows where missing_at_ms IS NOT NULL.
-func managedMediaPaths(ctx context.Context, tx *sql.Tx, path, kind string, available bool) ([]string, error) {
+//
+// SQLite LIKE folds ASCII case, so on a case-sensitive volume the folder
+// pattern also matches a case-distinct sibling (/Photos/ matches /photos/x).
+// LIKE only narrows the candidates; every row is re-checked against the
+// directory boundary before it is returned. foldCase follows the volume: when
+// it folds case, /Photos and /photos name one folder, so saved paths under
+// either spelling are descendants (an external case-only rename must not strand
+// them); otherwise the comparison is exact and byte-wise.
+func managedMediaPaths(ctx context.Context, tx *sql.Tx, path, kind string, available, foldCase bool) ([]string, error) {
 	missingPredicate := `missing_at_ms IS NOT NULL`
 	if available {
 		missingPredicate = `missing_at_ms IS NULL`
@@ -1363,6 +1394,10 @@ func managedMediaPaths(ctx context.Context, tx *sql.Tx, path, kind string, avail
 			`SELECT path FROM media_file WHERE `+missingPredicate+
 				` AND (path = ? OR path LIKE ? ESCAPE '\')`,
 			path, escapeSQLLike(prefix)+"%")
+	} else if foldCase {
+		rows, err = tx.QueryContext(ctx,
+			`SELECT path FROM media_file WHERE `+missingPredicate+` AND path LIKE ? ESCAPE '\'`,
+			escapeSQLLike(path))
 	} else {
 		rows, err = tx.QueryContext(ctx,
 			`SELECT path FROM media_file WHERE `+missingPredicate+` AND path = ?`,
@@ -1378,9 +1413,33 @@ func managedMediaPaths(ctx context.Context, tx *sql.Tx, path, kind string, avail
 		if err := rows.Scan(&mediaPath); err != nil {
 			return nil, err
 		}
+		if !managedPathWithin(mediaPath, path, prefix, foldCase) {
+			continue
+		}
 		out = append(out, mediaPath)
 	}
 	return out, rows.Err()
+}
+
+// managedPathWithin reports whether mediaPath is path itself or lies under
+// prefix (path plus a separator), comparing ASCII case-insensitively when
+// foldCase is set. LIKE only folds ASCII, so a folded match keeps the byte length.
+func managedPathWithin(mediaPath, path, prefix string, foldCase bool) bool {
+	if !foldCase {
+		return mediaPath == path || strings.HasPrefix(mediaPath, prefix)
+	}
+	if len(mediaPath) == len(path) {
+		return strings.EqualFold(mediaPath, path)
+	}
+	return len(mediaPath) > len(prefix) && strings.EqualFold(mediaPath[:len(prefix)], prefix)
+}
+
+// managedPathFoldsCase reports whether the volume holding path treats names
+// that differ only in case as one entry. An unknown probe keeps the exact,
+// case-sensitive match so a case-distinct sibling is never rewritten.
+func (s *Store) managedPathFoldsCase(path string) bool {
+	caps, err := s.capabilitiesForManagedMutation(path)
+	return err == nil && caps.CaseSensitive == CapabilityUnsupported
 }
 
 // escapeSQLLike escapes '%' and '_' wildcards and the escape character '\' in s

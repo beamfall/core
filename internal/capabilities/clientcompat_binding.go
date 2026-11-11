@@ -102,6 +102,37 @@ func (r *Registry) AcceptDerived(
 	return r.accept(key, contract, result, now, ttl, false)
 }
 
+// RebindAuth moves prior's stored decision to a new auth fingerprint, keeping
+// its submitted status, result and expiry. It applies only while prior is still
+// the subject's exact, unexpired record under the current generation with no
+// live invalidation, so it can neither renew a decision nor overwrite a refusal
+// or a handshake that landed after prior was resolved.
+func (r *Registry) RebindAuth(prior Record, fingerprint string, now time.Time) (Record, error) {
+	if err := r.ensureInvalidations(now); err != nil {
+		return Record{}, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.ensureRecords()
+	subject := prior.Key.Subject
+	if _, invalid := r.liveInvalidationLocked(subject, now); invalid {
+		return Record{}, ErrInvalidated
+	}
+	current, ok := r.records[subject]
+	if !ok || current.DecisionID != prior.DecisionID {
+		return Record{}, ErrNoDecision
+	}
+	if !now.Before(current.ExpiresAt) {
+		return Record{}, ErrExpired
+	}
+	if r.generationSet && current.Key.Generation != r.generation {
+		return Record{}, ErrStaleGeneration
+	}
+	current.Key.AuthFingerprint = fingerprint
+	r.records[subject] = cloneRecord(current)
+	return cloneRecord(current), nil
+}
+
 func (r *Registry) accept(
 	key BindingKey,
 	contract ClientContract,

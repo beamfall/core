@@ -78,8 +78,16 @@ type baseURLResponseWriter struct {
 
 func (w *baseURLResponseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
+// Flush keeps the wrapper an http.Flusher for callers that type-assert it.
 func (w *baseURLResponseWriter) Flush() {
-	_ = http.NewResponseController(w.ResponseWriter).Flush()
+	_ = w.FlushError()
+}
+
+// FlushError is what http.ResponseController.Flush calls ahead of Flush, so a
+// controller flushing through the wrapper reports the underlying writer's
+// result (including http.ErrNotSupported) instead of a void success.
+func (w *baseURLResponseWriter) FlushError() error {
+	return http.NewResponseController(w.ResponseWriter).Flush()
 }
 
 func (w *baseURLResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {

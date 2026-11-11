@@ -8,6 +8,7 @@ Scrape, dashboard, and alert on Beamfall Core.
 - `beamfall_sessions_active` — active sessions.
 - `beamfall_transcode_active` — in-flight transcodes.
 - `beamfall_library_media_total` — library size.
+- `beamfall_events_streams_open` — open SSE event streams (in-process, always reported). A value that climbs with no matching client activity points at orphaned streams.
 - `beamfall_*_error` sentinels — set to 1 when a sub-collector fails.
 
 ## Breaking change: every scrape now needs the bearer
