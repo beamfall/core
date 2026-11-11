@@ -1,6 +1,7 @@
 package graphquery
 
 import (
+	"fmt"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -150,8 +151,8 @@ func commented(tokens int) string {
 
 func TestPrepareOperationRejectsBroadDocumentsBeforeParsing(t *testing.T) {
 	documents := map[string]string{"one token over": commented(maxDocumentTokens + 1)}
-	for name, query := range breadthDocuments(fill) {
-		documents[name] = query
+	for name, doc := range breadthDocuments(fill) {
+		documents[name] = doc.query
 	}
 	for name, query := range documents {
 		t.Run(name, func(t *testing.T) {
@@ -197,14 +198,14 @@ func TestPrepareOperationAcceptsNestingAtLimits(t *testing.T) {
 // takes for query: heap bytes allocated plus the growth of goroutine stacks.
 // It runs the call on a fresh goroutine with the collector off, so a grown
 // stack is neither shrunk nor its allocation hidden before it is measured.
-func preparePeakBytes(query string) int64 {
+func preparePeakBytes(query, operation string) int64 {
 	defer debug.SetGCPercent(debug.SetGCPercent(-1))
 	runtime.GC()
 	result := make(chan int64)
 	go func() {
 		var before, after runtime.MemStats
 		runtime.ReadMemStats(&before)
-		_, _ = PrepareOperation(query, "", nil)
+		_, _ = PrepareOperation(query, operation, nil)
 		runtime.ReadMemStats(&after)
 		heap := int64(after.TotalAlloc - before.TotalAlloc)               // #nosec G115 -- test measurement, far below int64 range
 		stack := max(int64(after.StackInuse)-int64(before.StackInuse), 0) // #nosec G115 -- test measurement, far below int64 range
@@ -213,54 +214,134 @@ func preparePeakBytes(query string) int64 {
 	return <-result
 }
 
-// fill repeats unit after prefix until the document reaches the request cap.
-func fill(prefix, unit string) string {
-	return prefix + strings.Repeat(unit, (maxRequestBody-len(prefix))/len(unit))
+// breadthDocument is a complete, valid document and the operation to select.
+type breadthDocument struct{ query, operation string }
+
+// repeater builds a document: prefix, then unit(i) repeated as many times as
+// fit, then suffix. The suffix is reserved up front so closing delimiters
+// never push the document over the limit.
+type repeater func(prefix string, unit func(i int) string, suffix string) string
+
+func constant(unit string) func(int) string { return func(int) string { return unit } }
+
+// fill repeats unit until the document reaches the request cap.
+func fill(prefix string, unit func(int) string, suffix string) string {
+	var b strings.Builder
+	b.WriteString(prefix)
+	for i := 0; b.Len()+len(unit(i))+len(suffix) <= maxRequestBody; i++ {
+		b.WriteString(unit(i))
+	}
+	b.WriteString(suffix)
+	return b.String()
 }
 
-// fillTokens repeats unit after prefix while the document stays within
+// fillTokens repeats unit while the document, suffix included, stays within
 // maxDocumentTokens: the largest document of that shape the scan accepts.
-func fillTokens(prefix, unit string) string {
-	return prefix + strings.Repeat(unit, (maxDocumentTokens-countTokens(prefix))/countTokens(unit))
+func fillTokens(prefix string, unit func(int) string, suffix string) string {
+	var b strings.Builder
+	b.WriteString(prefix)
+	for i, tokens := 0, countTokens(prefix)+countTokens(suffix); tokens+countTokens(unit(i)) <= maxDocumentTokens; i++ {
+		b.WriteString(unit(i))
+		tokens += countTokens(unit(i))
+	}
+	b.WriteString(suffix)
+	return b.String()
 }
 
 // breadthDocuments returns depth-one documents built by repeat, one per
-// shape the parser allocates for per token.
-func breadthDocuments(repeat func(prefix, unit string) string) map[string]string {
-	return map[string]string{
-		"fields":           repeat("{", "a "),
-		"aliases":          repeat("{", "a:b "),
-		"arguments":        repeat("{f(", "a:1 "),
-		"list values":      repeat("{f(a:[", "1 "),
-		"object fields":    repeat("{f(a:{", "a:1 "),
-		"directives":       repeat("{f", "@a "),
-		"variables":        repeat("query(", "$a:I "),
-		"variable values":  repeat("{f(a:[", "$a "),
-		"strings":          repeat("{f(a:[", `"" `),
-		"fragment spreads": repeat("{", "...a "),
-		"comments":         repeat("{", "#\n"),
-		"operations":       repeat("", "{a}"),
+// shape the parser allocates for per token. Each is valid once complete:
+// variables and operations get distinct names, and the fragment is defined.
+func breadthDocuments(repeat repeater) map[string]breadthDocument {
+	one := func(query string) breadthDocument { return breadthDocument{query: query} }
+	return map[string]breadthDocument{
+		"fields":           one(repeat("{", constant("a "), "}")),
+		"aliases":          one(repeat("{", constant("a:b "), "}")),
+		"arguments":        one(repeat("{f(", func(i int) string { return fmt.Sprintf("a%d:1 ", i) }, ")}")),
+		"list values":      one(repeat("{f(a:[", constant("1 "), "])}")),
+		"object fields":    one(repeat("{f(a:{", func(i int) string { return fmt.Sprintf("a%d:1 ", i) }, "})}")),
+		"directives":       one(repeat("{f", constant("@a "), "}")),
+		"variables":        one(repeat("query(", func(i int) string { return fmt.Sprintf("$a%d:I=1 ", i) }, "){f}")),
+		"variable values":  one(repeat("query($a:I){f(a:[", constant("$a "), "])}")),
+		"strings":          one(repeat("{f(a:[", constant(`"" `), "])}")),
+		"fragment spreads": one(repeat("{", constant("...a "), "} fragment a on T{b}")),
+		"comments":         one(repeat("{", constant("#\n"), "a}")),
+		"operations":       {query: repeat("", func(i int) string { return fmt.Sprintf("query q%d{a} ", i) }, ""), operation: "q0"},
+	}
+}
+
+// stage classifies how far PrepareOperation got: scan and parse, operation
+// selection, or the later variable, validation and collection steps.
+func stage(err error) string {
+	switch msg := ""; {
+	case err == nil:
+		return "collected"
+	default:
+		msg = err.Error()
+		switch {
+		case strings.Contains(msg, "invalid GraphQL document"), strings.Contains(msg, "depth exceeds"):
+			return "refused before parsing"
+		case strings.Contains(msg, "operation"):
+			return "selection"
+		}
+		return "later"
+	}
+}
+
+func TestPrepareOperationAcceptedBreadthReachesLaterSteps(t *testing.T) {
+	for name, doc := range breadthDocuments(fillTokens) {
+		t.Run(name, func(t *testing.T) {
+			if got := countTokens(doc.query); got > maxDocumentTokens {
+				t.Fatalf("%d tokens, want <= %d", got, maxDocumentTokens)
+			}
+			parsed, err := parseQuery(&ast.Source{Input: doc.query})
+			if err != nil {
+				t.Fatalf("document does not parse: %v", err)
+			}
+			operations, _, err := definitions(parsed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := selectOperation(parsed, operations, doc.operation); err != nil {
+				t.Fatalf("operation selection: %v", err)
+			}
+			_, err = PrepareOperation(doc.query, doc.operation, nil)
+			if got := stage(err); got == "refused before parsing" || got == "selection" {
+				t.Fatalf("PrepareOperation stopped at %s: %v", got, err)
+			}
+		})
+	}
+}
+
+func TestPrepareOperationAcceptedBreadthCollects(t *testing.T) {
+	for _, name := range []string{"list values", "strings", "variable values", "comments"} {
+		doc := breadthDocuments(fillTokens)[name]
+		if _, err := PrepareOperation(doc.query, doc.operation, nil); err != nil {
+			t.Errorf("%s: want the collector to accept the document, got %v", name, err)
+		}
 	}
 }
 
 func TestPrepareOperationPathologicalDocumentPeakAllocation(t *testing.T) {
 	const budget = 4 << 20
 	documents := map[string]string{
-		"nested selections": fill("query {", "a{"),
-		"bare braces":       fill("", "{"),
-		"nested lists":      fill("query { f(a: ", "["),
-		"nested objects":    fill("query { f(a: ", "{a:"),
-		"nested list types": fill("query($v: ", "["),
+		"nested selections": fill("query {", constant("a{"), ""),
+		"bare braces":       fill("", constant("{"), ""),
+		"nested lists":      fill("query { f(a: ", constant("["), ""),
+		"nested objects":    fill("query { f(a: ", constant("{a:"), ""),
+		"nested list types": fill("query($v: ", constant("["), ""),
 	}
-	for name, query := range breadthDocuments(fill) {
-		documents["breadth "+name] = query
+	operations := map[string]string{}
+	for name, doc := range breadthDocuments(fill) {
+		documents["breadth "+name] = doc.query
+		operations["breadth "+name] = doc.operation
 	}
-	for name, query := range breadthDocuments(fillTokens) {
-		documents["accepted breadth "+name] = query
+	for name, doc := range breadthDocuments(fillTokens) {
+		documents["accepted breadth "+name] = doc.query
+		operations["accepted breadth "+name] = doc.operation
 	}
 	for name, query := range documents {
 		t.Run(name, func(t *testing.T) {
-			if got := preparePeakBytes(query); got >= budget {
+			if got := preparePeakBytes(query, operations[name]); got >= budget {
 				t.Fatalf("PrepareOperation on a %d-byte document took %d bytes, want < %d", len(query), got, budget)
 			}
 		})
