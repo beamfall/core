@@ -33,7 +33,7 @@ type nesting struct {
 func scanNesting(query string) nesting {
 	var result nesting
 	selection, value := 0, 0
-	inArguments := false
+	parens := 0
 	for i := 0; i < len(query); i++ {
 		switch query[i] {
 		case '#':
@@ -44,11 +44,11 @@ func scanNesting(query string) nesting {
 		case '"':
 			i = skipString(query, i)
 		case '(':
-			inArguments = true
+			parens++
 		case ')':
-			inArguments = false
+			parens = max(parens-1, 0)
 		case '{':
-			if inArguments {
+			if parens > 0 {
 				value++
 				result.value = max(result.value, value)
 			} else {
@@ -59,7 +59,7 @@ func scanNesting(query string) nesting {
 			value++
 			result.value = max(result.value, value)
 		case '}':
-			if inArguments {
+			if parens > 0 {
 				value--
 			} else {
 				selection--

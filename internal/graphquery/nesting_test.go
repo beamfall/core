@@ -48,6 +48,7 @@ func TestScanNesting(t *testing.T) {
 		"list type":            {nestedListType(2), nesting{selection: 1, value: 2}},
 		"default value":        {`query($v: [Int] = [[1]]) { f(a: $v) }`, nesting{selection: 1, value: 2}},
 		"directive argument":   {`query { f @include(if: {a: {b: true}}) }`, nesting{selection: 1, value: 2}},
+		"variable directive":   {`query($a: Int @d(x: 0), $b: [Int] = [{k: [{k: 0}]}]) { f }`, nesting{selection: 1, value: 4}},
 		"string braces":        {`query { f(a: "{{[[\"{{") }`, nesting{selection: 1}},
 		"block string braces":  {`query { f(a: """{{ \""" [[ "" }}""") }`, nesting{selection: 1}},
 		"block string quotes":  {`query { f(a: """x""""") }`, nesting{selection: 1}},
@@ -164,7 +165,7 @@ func fill(prefix, unit string) string {
 func TestPrepareOperationPathologicalDocumentPeakAllocation(t *testing.T) {
 	const budget = 4 << 20
 	documents := map[string]string{
-		"nested selections": fill("query ", "a{"),
+		"nested selections": fill("query {", "a{"),
 		"bare braces":       fill("", "{"),
 		"nested lists":      fill("query { f(a: ", "["),
 		"nested objects":    fill("query { f(a: ", "{a:"),
@@ -283,6 +284,7 @@ func FuzzDocumentNesting(f *testing.F) {
 		`query { f(a: """x""""") }`,
 		`query { f } }`,
 		`query { f(a: [1}) }`,
+		`query ($a: Int @d(x: 0), $b: [Int] = ` + strings.Repeat("[{k:", 33) + `0) { f }`,
 		nestedSelections(maxSelectionDepth),
 		nestedList(maxValueDepth + 1),
 	}
