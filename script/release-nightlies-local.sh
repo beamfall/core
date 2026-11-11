@@ -80,6 +80,8 @@ if [ -n "$dirty" ]; then
 fi
 
 log_root="${AGENT_EVIDENCE_DIR:-$ROOT/.agent-evidence}/release-nightlies-local"
+# Tiers run from ROOT, so the per-tier log and mutation paths must be absolute.
+case "$log_root" in /*) ;; *) log_root="$PWD/$log_root" ;; esac
 mkdir -p "$log_root"
 log_dir="$(mktemp -d "$log_root/$(date -u +%Y%m%dT%H%M%SZ).XXXXXX")"
 echo "release-nightlies-local: commit=$start_head logs=$log_dir" >&2

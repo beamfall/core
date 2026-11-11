@@ -229,8 +229,9 @@ grep -q 'HEAD moved during fuzz-nightly' "$tmp/head-moved.out" || fail "HEAD-mov
 # 9. A relative evidence directory is resolved once, against the caller's
 # directory, so every tier's record lands in the same place.
 mkdir -p "$tmp/relcwd"
-(cd "$tmp/relcwd" && run_runner relative-dir RELEASE_NIGHTLY_EVIDENCE_DIR=rel-evidence) ||
+(cd "$tmp/relcwd" && run_runner relative-dir RELEASE_NIGHTLY_EVIDENCE_DIR=rel-evidence AGENT_EVIDENCE_DIR=rel-agent) ||
   fail "relative-dir run exited non-zero"
+[ -d "$tmp/relcwd/rel-agent/release-nightlies-local" ] || fail "relative AGENT_EVIDENCE_DIR not resolved against the caller's directory"
 for tier in "${tiers[@]}"; do
   [ -f "$tmp/relcwd/rel-evidence/$tier.json" ] || fail "relative evidence dir: no $tier record in the caller's directory"
 done
