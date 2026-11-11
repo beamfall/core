@@ -6,8 +6,8 @@ Managed import and managed convert SHALL fingerprint each admitted file with a S
 whole content, and SHALL NOT derive the fingerprint from the file's path.
 
 Managed import and managed convert SHALL refuse, with a validation error, a file whose content
-fingerprint is already live at a different path or in a different library, and SHALL leave the
-existing media file's path and library unchanged.
+fingerprint is cataloged, live or missing (including trashed), at a different path or in a different library, and
+SHALL leave the existing media file unchanged.
 
 #### Scenario: Same bytes at two paths
 
@@ -15,6 +15,13 @@ existing media file's path and library unchanged.
   same plaintext library at a different path
 - **THEN** the second import fails with a validation error, no file is left at the second path, and
   the first media file keeps its path, library and Media
+
+#### Scenario: Same bytes as a trashed file
+
+- **WHEN** a managed file is deleted to managed trash and a file with identical content is then
+  imported at a different path
+- **THEN** the import fails with a validation error, no file is left at the new path, and restoring
+  the trashed file revives its original media file at its original path
 
 #### Scenario: New bytes at a reused path
 

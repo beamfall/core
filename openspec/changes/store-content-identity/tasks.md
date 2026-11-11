@@ -4,6 +4,7 @@
 - [x] 1.2 Hash the staged convert artifact before admission and store its content fingerprint
 - [x] 1.3 Tests for same bytes at two paths, new bytes at a reused path and convert output
 - [x] 1.4 Refuse a managed import or convert whose fingerprint is live at another path or library
+- [x] 1.5 Extend the refusal to a retained (missing or trashed) media file, with a trash-restore test
 
 ## 2. JSON validation
 
