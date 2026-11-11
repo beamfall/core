@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"time"
 )
@@ -46,15 +47,74 @@ func (s *Store) AuthBackoffUntil(ctx context.Context, action, key string, now ti
 	if err != nil {
 		return time.Time{}, err
 	}
+	return backoffHorizon(failures, lastFailure, now, policy), nil
+}
+
+// ReserveAuthAttempt checks every lane (action, key) in keys against policy
+// and, when none is locked, records a failed attempt on each at now, all in
+// one events transaction. It returns the latest lock horizon, recording
+// nothing, when any lane is locked. Reserving before the slow check stops
+// parallel requests from all passing the throttle before any failure lands;
+// a caller whose attempt then succeeds records a success, which resets the
+// lanes.
+func (s *Store) ReserveAuthAttempt(ctx context.Context, action string, keys []string, now time.Time, policy AuthBackoff) (time.Time, error) {
+	if action == "" || len(keys) == 0 {
+		return time.Time{}, errors.New("auth attempt scope is required")
+	}
+	for _, key := range keys {
+		if key == "" {
+			return time.Time{}, errors.New("auth attempt scope is required")
+		}
+	}
+	if now.IsZero() {
+		return time.Time{}, errors.New("auth attempt time is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return time.Time{}, err
+	}
+	tx, err := s.eventsW.BeginTx(ctx, nil)
+	if err != nil {
+		return time.Time{}, err
+	}
+	defer tx.Rollback()
+	var locked time.Time
+	for _, key := range keys {
+		failures, lastFailure, err := consecutiveAuthFailuresIn(ctx, tx, action, key, now.Add(-policy.Window))
+		if err != nil {
+			return time.Time{}, err
+		}
+		if until := backoffHorizon(failures, lastFailure, now, policy); until.After(locked) {
+			locked = until
+		}
+	}
+	if !locked.IsZero() {
+		return locked, nil
+	}
+	for _, key := range keys {
+		if _, err := tx.ExecContext(ctx,
+			"INSERT INTO auth_attempt(occurred_at_ms, action, key, success) VALUES (?, ?, ?, 0)",
+			timeToMillis(now), action, key,
+		); err != nil {
+			return time.Time{}, err
+		}
+	}
+	return time.Time{}, tx.Commit()
+}
+
+// backoffHorizon is the lock horizon for a lane with failures consecutive
+// failures, the latest at lastFailure: the zero time while the lane is open.
+func backoffHorizon(failures int, lastFailure, now time.Time, policy AuthBackoff) time.Time {
 	if failures < policy.FreeAttempts {
-		return time.Time{}, nil
+		return time.Time{}
 	}
 	delay := backoffDelay(failures-policy.FreeAttempts+1, policy.BaseDelay, policy.MaxDelay)
 	until := lastFailure.Add(delay)
 	if !now.Before(until) {
-		return time.Time{}, nil
+		return time.Time{}
 	}
-	return until, nil
+	return until
 }
 
 // backoffDelay is the exponential curve: BaseDelay doubled (step-1) times,
@@ -83,7 +143,15 @@ func (s *Store) consecutiveAuthFailures(ctx context.Context, action, key string,
 	if err := s.guardLocked(); err != nil {
 		return 0, time.Time{}, err
 	}
-	rows, err := s.eventsR.QueryContext(ctx,
+	return consecutiveAuthFailuresIn(ctx, s.eventsR, action, key, since)
+}
+
+type authAttemptQueryer interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+func consecutiveAuthFailuresIn(ctx context.Context, q authAttemptQueryer, action, key string, since time.Time) (int, time.Time, error) {
+	rows, err := q.QueryContext(ctx,
 		`SELECT occurred_at_ms, success FROM auth_attempt
 		 WHERE action = ? AND key = ? AND occurred_at_ms >= ?
 		 ORDER BY occurred_at_ms DESC, id DESC`,

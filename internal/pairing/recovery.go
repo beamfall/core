@@ -171,8 +171,8 @@ func (s *Service) AdminSignIn(ctx context.Context, req AdminSignInRequest) (Enro
 	} else if throttled {
 		return EnrollResponse{}, refuse(ErrThrottled, auth.RefusalAdminLocked)
 	}
-	fail := func() (EnrollResponse, error) {
-		_ = s.recordAttemptFor(ctx, adminSignInAttemptAction, adminSignInGlobalKey, remoteKey, now, false)
+	// deny refuses an attempt CheckAdminPassword has already counted.
+	deny := func() (EnrollResponse, error) {
 		s.logDenied(ctx, now, store.ActivityAdminLoginDenied)
 		return EnrollResponse{}, refuse(ErrSignInFailed, auth.RefusalAdminPasswordRejected)
 	}
@@ -181,21 +181,34 @@ func (s *Service) AdminSignIn(ctx context.Context, req AdminSignInRequest) (Enro
 		return EnrollResponse{}, err
 	}
 	// Verify first: it spends the KDF whether or not a password is set, and in
-	// Strict mode too, so neither timing nor the counters reveal the mode.
-	if err := s.store.VerifyAdminPassword(ctx, req.Password); err != nil {
-		if errors.Is(err, store.ErrNoAdminPassword) || errors.Is(err, store.ErrAdminPasswordMismatch) {
-			return fail()
-		}
+	// Strict mode too, so neither timing nor the counters reveal the mode. The
+	// KDF runs inside the process-wide bound, and the attempt is counted on
+	// both lanes before it runs, so parallel guesses cannot outrun the lanes.
+	err = auth.CheckAdminPassword(ctx, s.store, auth.AdminPasswordAttempt{
+		Action: adminSignInAttemptAction,
+		Keys:   []string{remoteKey, adminSignInGlobalKey},
+		At:     now,
+	}, req.Password)
+	switch {
+	case errors.Is(err, auth.ErrAdminLocked):
+		return EnrollResponse{}, refuse(ErrThrottled, auth.RefusalAdminLocked)
+	case errors.Is(err, auth.ErrAdminBusy):
+		// No slot: the same answer as a wrong password, not counted.
+		s.logDenied(ctx, now, store.ActivityAdminLoginDenied)
+		return EnrollResponse{}, refuse(ErrSignInFailed, auth.RefusalAdminLocked)
+	case errors.Is(err, store.ErrNoAdminPassword), errors.Is(err, store.ErrAdminPasswordMismatch):
+		return deny()
+	case err != nil:
 		return EnrollResponse{}, err
 	}
 	// Strict mode turns this path off (CORE-1110): even the right password is
 	// refused and counted exactly like a wrong one.
 	if mode == store.SignInSecurityStrict {
-		return fail()
+		return deny()
 	}
 	owner, err := s.store.OwnerProfile(ctx)
 	if errors.Is(err, store.ErrNoOwnerProfile) {
-		return fail()
+		return deny()
 	}
 	if err != nil {
 		return EnrollResponse{}, err
@@ -227,7 +240,7 @@ func (s *Service) AdminSignIn(ctx context.Context, req AdminSignInRequest) (Enro
 	}
 	if err := s.store.EnrollDevice(ctx, device, session); err != nil {
 		if errors.Is(err, store.ErrProfileDisabled) {
-			return fail()
+			return deny()
 		}
 		return EnrollResponse{}, err
 	}

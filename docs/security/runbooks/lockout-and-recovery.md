@@ -33,7 +33,9 @@ the database, so restarting the server does not clear a lockout. There is no unl
 the failing client, wait out the delay (at most 10 minutes after the last failure) and retry once
 with the right credential. Admin-password sign-in from the enroll page is keyed per source and
 once for the whole server, so a guessing flood from anywhere can delay the owner's own sign-in;
-use a pairing code from the host (below) while it lasts. A sustained `admin_password_rejected` or `pairing_code_invalid` rate from
+use a pairing code from the host (below) while it lasts. The server checks at most two admin passwords at
+once and counts each attempt before checking it; a request that waits more than 2 s for a turn is
+refused as a wrong password without being counted. A sustained `admin_password_rejected` or `pairing_code_invalid` rate from
 one source is a guessing attempt: handle it as an [incident](incident.md).
 
 ## Reset the admin password

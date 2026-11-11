@@ -121,6 +121,20 @@ source address and one server-wide key; a throttled request SHALL be refused wit
 - **THEN** further attempts are refused with 429 until the backoff delay passes, even with the
   right password
 
+### Requirement: Admin-password checks are bounded and counted first
+
+At most two admin-password verifications SHALL run at once in the server process, across
+admin-password sign-in, Admin Session re-auth and the sign-in security switch. Each attempt SHALL
+be counted against its backoff lanes before the password is verified. A request that cannot start
+a verification within two seconds SHALL get the same refusal as a wrong password and SHALL NOT be
+counted.
+
+#### Scenario: Parallel guesses
+
+- **WHEN** one source sends many wrong admin passwords at the same moment
+- **THEN** exactly the free attempts are verified and refused with 401, and the rest are refused
+  with 429
+
 ### Requirement: The host can mint a pairing code
 
 `beamfall pairing-code` SHALL mint a single-use pairing code for the owner Profile, with the role

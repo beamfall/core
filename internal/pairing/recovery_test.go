@@ -3,6 +3,7 @@ package pairing
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -203,6 +204,50 @@ func TestAdminSignInThrottlesPerSourceAndServerWide(t *testing.T) {
 	_, err := service.AdminSignIn(ctx, AdminSignInRequest{Password: "correct horse", DeviceName: "x", RemoteAddr: "192.168.1.5:5000"})
 	if !errors.Is(err, ErrThrottled) || refusalReason(err) != auth.RefusalAdminLocked {
 		t.Fatalf("server-wide lane err = %v, want ErrThrottled", err)
+	}
+}
+
+// TestAdminSignInParallelGuessesCannotOutrunTheLanes: the attempt is counted
+// before the KDF runs, so a burst of parallel guesses from one source spends
+// exactly the free attempts and every other request is throttled.
+func TestAdminSignInParallelGuessesCannotOutrunTheLanes(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	now := time.Unix(1_000_000, 0).UTC()
+	if err := st.SetProfileOwner(ctx, "profile-default"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetAdminPassword(ctx, "correct horse", now); err != nil {
+		t.Fatal(err)
+	}
+	service := deterministicService(st, now)
+	free := auth.AdminBackoff().FreeAttempts
+	errs := make([]error, 4*free)
+	var start, done sync.WaitGroup
+	start.Add(1)
+	for i := range errs {
+		done.Add(1)
+		go func(i int) {
+			defer done.Done()
+			start.Wait()
+			_, errs[i] = service.AdminSignIn(ctx, AdminSignInRequest{Password: "guess", DeviceName: "x", RemoteAddr: "203.0.113.9:4000"})
+		}(i)
+	}
+	start.Done()
+	done.Wait()
+	var failed, throttled int
+	for i, err := range errs {
+		switch {
+		case errors.Is(err, ErrSignInFailed):
+			failed++
+		case errors.Is(err, ErrThrottled):
+			throttled++
+		default:
+			t.Fatalf("attempt %d err = %v", i, err)
+		}
+	}
+	if failed != free || throttled != len(errs)-free {
+		t.Fatalf("failed = %d, throttled = %d, want %d and %d", failed, throttled, free, len(errs)-free)
 	}
 }
 

@@ -534,7 +534,11 @@ func (s *Service) AuthenticateIntegrationByName(ctx context.Context, name, crede
 
 	credentialErr := profileErr
 	if credentialErr == nil && setup {
-		credentialErr = s.store.VerifyAdminPassword(ctx, credential)
+		// The admin KDF runs inside the process-wide bound; a busy refusal
+		// is one more uniform failure.
+		credentialErr = withAdminKDFSlot(ctx, func() error {
+			return verifyAdminPasswordKDF(ctx, s.store, credential)
+		})
 	}
 	if credentialErr == nil && !setup {
 		credentialErr = s.store.VerifyProfileEntryPIN(ctx, profile.ID, credential)
@@ -715,7 +719,7 @@ func (s *Service) BeginAdminSession(ctx context.Context, scope Scope, password s
 		return time.Time{}, err
 	}
 	if !granted {
-		s.recordAdminAttempt(ctx, attemptKey, now, false)
+		// The failure was counted when the attempt was reserved.
 		s.auditAdmin(ctx, scope, now, store.ActivityAdminLoginDenied)
 		return time.Time{}, ErrAdminPassword
 	}
@@ -754,7 +758,9 @@ func (s *Service) recordAdminAttempt(ctx context.Context, key string, now time.T
 // verifyAdminReauth runs the admin re-auth checks shared by every path that
 // takes the admin password from a signed-in session: an adult Profile, the
 // designated owner, and the password itself. Each refusal is recorded on the
-// caller's attempt lane, audited and returned as ErrAdminPassword.
+// caller's attempt lane, audited and returned as ErrAdminPassword; a lane
+// locked by a parallel attempt returns ErrAdminLocked. A nil return has
+// counted a failure that the caller clears by recording success.
 func (s *Service) verifyAdminReauth(ctx context.Context, scope Scope, password, attemptKey string, now time.Time) error {
 	// Admin is an adult-Profile tier: a managed Profile has no admin path, so
 	// reject before spending the KDF or burning a verify attempt against it.
@@ -786,13 +792,31 @@ func (s *Service) verifyAdminReauth(ctx context.Context, scope Scope, password, 
 			return ErrAdminPassword
 		}
 	}
-	if verr := s.store.VerifyAdminPassword(ctx, password); verr != nil {
-		s.recordAdminAttempt(ctx, attemptKey, now, false)
+	// The KDF runs inside the process-wide bound, and the attempt is counted
+	// before it runs, so parallel guesses cannot outrun the lane.
+	err = CheckAdminPassword(ctx, s.store, AdminPasswordAttempt{
+		Action: adminAttemptAction,
+		Keys:   []string{attemptKey},
+		At:     now,
+	}, password)
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, ErrAdminLocked):
+		NoteRefusal(ctx, refusalOperationAdminSession, RefusalAdminLocked, true)
+		return ErrAdminLocked
+	case errors.Is(err, ErrAdminBusy):
+		// No slot: refused like a wrong password, not counted.
+		s.auditAdmin(ctx, scope, now, store.ActivityAdminLoginDenied)
+		NoteRefusal(ctx, refusalOperationAdminSession, RefusalAdminLocked, true)
+		return ErrAdminPassword
+	case errors.Is(err, store.ErrAdminPasswordMismatch), errors.Is(err, store.ErrNoAdminPassword):
+		// Already counted when the attempt was reserved.
 		s.auditAdmin(ctx, scope, now, store.ActivityAdminLoginDenied)
 		NoteRefusal(ctx, refusalOperationAdminSession, RefusalAdminPasswordRejected, true)
 		return ErrAdminPassword
 	}
-	return nil
+	return err
 }
 
 // ErrNotManager means the caller's Device is not a Manager.
