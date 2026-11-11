@@ -77,24 +77,22 @@ func bootstrapAdminPassword(ctx context.Context, st *store.Store, logger *slog.L
 	return nil
 }
 
-// bootstrapSetupToken generates and installs the one-time setup token when the
-// server has no owner Profile yet (ADR-0007 §2 / feature:first-run-setup-token).
+// bootstrapSetupToken generates and installs the one-time setup token until
+// first-run setup has completed (ADR-0007 §2 / feature:first-run-setup-token).
+// Setup is complete once an adult Profile and an enrolled Device exist, so a
+// setup that stopped after its Profile write still gets a token on restart.
 // The plaintext token is a credential — it is generated once and never stored
 // on disk. On subsequent starts where setup is complete, this is a no-op so the
 // log stays clean on every normal restart.
 func bootstrapSetupToken(ctx context.Context, st *store.Store, svc *pairing.Service) (string, error) {
-	profiles, err := st.Profiles(ctx)
+	complete, err := st.FirstRunSetupComplete(ctx)
 	if err != nil {
 		return "", err
 	}
-	for _, p := range profiles {
-		if p.Kind == store.ProfileAdult {
-			// At least one owner profile exists: setup is not in the bootstrap
-			// state that requires the token. No token needed.
-			return "", nil
-		}
+	if complete {
+		return "", nil
 	}
-	// No owner profile yet — generate a token so the operator can complete
+	// Setup not complete — generate a token so the operator can complete
 	// first-run setup through the web UI /setup page.
 	var raw [24]byte
 	if _, err := rand.Read(raw[:]); err != nil {
