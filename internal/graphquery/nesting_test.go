@@ -272,19 +272,17 @@ func breadthDocuments(repeat repeater) map[string]breadthDocument {
 // stage classifies how far PrepareOperation got: scan and parse, operation
 // selection, or the later variable, validation and collection steps.
 func stage(err error) string {
-	switch msg := ""; {
-	case err == nil:
+	if err == nil {
 		return "collected"
-	default:
-		msg = err.Error()
-		switch {
-		case strings.Contains(msg, "invalid GraphQL document"), strings.Contains(msg, "depth exceeds"):
-			return "refused before parsing"
-		case strings.Contains(msg, "operation"):
-			return "selection"
-		}
-		return "later"
 	}
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "invalid GraphQL document"), strings.Contains(msg, "depth exceeds"):
+		return "refused before parsing"
+	case strings.Contains(msg, "operation"):
+		return "selection"
+	}
+	return "later"
 }
 
 func TestPrepareOperationAcceptedBreadthReachesLaterSteps(t *testing.T) {
