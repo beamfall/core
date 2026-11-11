@@ -313,7 +313,7 @@ func TestPrepareOperationAcceptedBreadthReachesLaterSteps(t *testing.T) {
 }
 
 func TestPrepareOperationAcceptedBreadthCollects(t *testing.T) {
-	for _, name := range []string{"list values", "strings", "variable values", "comments"} {
+	for _, name := range []string{"variables", "variable values", "arguments", "object fields", "list values", "strings", "comments", "operations"} {
 		doc := breadthDocuments(fillTokens)[name]
 		if _, err := PrepareOperation(doc.query, doc.operation, nil); err != nil {
 			t.Errorf("%s: want the collector to accept the document, got %v", name, err)
