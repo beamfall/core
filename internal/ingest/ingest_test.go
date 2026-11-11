@@ -126,7 +126,7 @@ func TestPollSendsSubscriptionAuthorizationHeader(t *testing.T) {
 func TestAuditFeedAuth(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := context.Background()
-	const secret = "Bearer private-feed-secret"
+	const secret = "Bearer secret"
 
 	var mu sync.Mutex
 	feedOriginAuth := map[string]string{}
