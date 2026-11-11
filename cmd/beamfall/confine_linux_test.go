@@ -274,9 +274,9 @@ const confinedWorkerProbeArg = "beamfall-confined-worker-probe"
 // OS thread between confinement and exec. no_new_privs, seccomp and landlock
 // bind the calling thread only, and execve from any thread replaces the whole
 // process with that thread's credentials, so an unlocked goroutine that
-// migrated would exec an unconfined worker. The helper runs with GOMAXPROCS > 1
-// and yields until it observes a thread change (or gives up) before the real
-// exec, so the unlocked case is provoked rather than left to chance.
+// migrated would exec an unconfined worker. Before the real exec the helper
+// calls moveOffThread, which deterministically moves an unlocked goroutine to
+// another thread, and fails if the goroutine left the thread it confined.
 func TestShimExecsConfinedWorkerWhenThreadsMigrate(t *testing.T) {
 	if mode := os.Getenv(confineShimHelperEnv); mode != "" {
 		confineShimHelper(mode)
@@ -323,9 +323,8 @@ func TestShimExecsConfinedWorkerWhenThreadsMigrate(t *testing.T) {
 }
 
 // confineShimHelper runs one shim exactly as production does, except that the
-// exec is preceded by a forced attempt to migrate the goroutine.
+// exec is preceded by moveOffThread, and a goroutine that moved exits non-zero.
 func confineShimHelper(mode string) {
-	runtime.GOMAXPROCS(8)
 	self, err := os.Executable()
 	if err != nil {
 		os.Exit(2)
@@ -334,7 +333,10 @@ func confineShimHelper(mode string) {
 	probe := []string{self, "-test.run=^TestConfinedWorkerProbe$", confinedWorkerProbeArg, mode, denied}
 	original := execShimTarget
 	execShimTarget = func(path string, argv, env []string) error {
-		fmt.Fprintf(os.Stderr, "shim goroutine changed OS thread before exec: %v\n", forceThreadMigration())
+		if before, after, _ := moveOffThread(); after != before {
+			fmt.Fprintf(os.Stderr, "shim goroutine moved from OS thread %d to %d before exec: not locked to its confined thread\n", before, after)
+			os.Exit(5)
+		}
 		return original(path, argv, env)
 	}
 	switch mode {
@@ -353,26 +355,45 @@ func confineShimHelper(mode string) {
 	os.Exit(3)
 }
 
-// forceThreadMigration yields with every P kept busy until the calling
-// goroutine resumes on a different OS thread, reporting whether it did. A
-// goroutine locked to its thread never moves, so the bound keeps that case
-// cheap.
-func forceThreadMigration() bool {
-	start := unix.Gettid()
-	for range 2 * runtime.GOMAXPROCS(0) {
+// moveOffThread parks the calling goroutine, with a single P, while a second
+// goroutine takes over the OS thread it parked on and locks that thread to
+// itself. An unlocked caller therefore resumes on a different thread; a caller
+// locked to its thread is handed back to that thread. It returns the thread ids
+// before and after, and a release func that ends the second goroutine (its
+// locked thread exits with it).
+func moveOffThread() (before, after int, release func()) {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1))
+	before = unix.Gettid()
+	woke, done := make(chan struct{}), make(chan struct{})
+	go func() {
+		runtime.LockOSThread()
+		close(woke)
+		<-done
+	}()
+	<-woke
+	return before, unix.Gettid(), func() { close(done) }
+}
+
+// TestShimThreadMoveControl proves moveOffThread moves an unlocked goroutine
+// and keeps a locked one, so TestShimExecsConfinedWorkerWhenThreadsMigrate
+// fails when a shim stops calling lockShimThread instead of passing by chance.
+func TestShimThreadMoveControl(t *testing.T) {
+	for _, locked := range []bool{false, true} {
+		got := make(chan [2]int)
 		go func() {
-			for {
-				runtime.Gosched()
+			if locked {
+				runtime.LockOSThread() // never unlocked: the thread exits with this goroutine
 			}
+			before, after, release := moveOffThread()
+			release()
+			got <- [2]int{before, after}
 		}()
-	}
-	for range 2000 {
-		runtime.Gosched()
-		if unix.Gettid() != start {
-			return true
+		tids := <-got
+		if moved := tids[0] != tids[1]; moved == locked {
+			t.Errorf("locked=%v: goroutine went from thread %d to %d, moved=%v, want %v",
+				locked, tids[0], tids[1], moved, !locked)
 		}
 	}
-	return false
 }
 
 // TestConfinedWorkerProbe is the exec'd worker. It only does anything when a
