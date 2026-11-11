@@ -132,7 +132,12 @@ func postSetupFrom(srv *Server, remoteAddr, body string, header map[string]strin
 	req := newJSONRequest(http.MethodPost, "/api/setup", strings.NewReader(body))
 	req.Header.Set(auth.CSRFHeader, "1")
 	req.RemoteAddr = remoteAddr
+	req.Host = "192.168.4.10:8800"
 	for name, value := range header {
+		if name == "Host" {
+			req.Host = value
+			continue
+		}
 		req.Header.Set(name, value)
 	}
 	rec := httptest.NewRecorder()
@@ -172,6 +177,8 @@ func TestWebSetupLANClaimRefusals(t *testing.T) {
 		{name: "public source without token", addr: "203.0.113.9:51000", body: `{"deviceName":"B"}`},
 		{name: "LAN source forwarded through an undeclared proxy", addr: "192.168.4.20:51000", body: `{"deviceName":"B"}`, header: map[string]string{"X-Forwarded-For": "203.0.113.9"}},
 		{name: "LAN source with a wrong token", addr: "192.168.4.20:51000", body: `{"token":"not-the-token","deviceName":"B"}`},
+		{name: "LAN source addressing a rebindable public name", addr: "192.168.4.20:51000", body: `{"deviceName":"B"}`, header: map[string]string{"Host": "attacker.example:8800"}},
+		{name: "loopback source addressing a rebindable public name", addr: "127.0.0.1:51000", body: `{"deviceName":"B"}`, header: map[string]string{"Host": "rebind.attacker.example"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -188,5 +195,27 @@ func TestWebSetupLANClaimRefusals(t *testing.T) {
 				t.Fatal("refused setup consumed the one-time token")
 			}
 		})
+	}
+}
+
+func TestSetupHostResistsRebinding(t *testing.T) {
+	for host, want := range map[string]bool{
+		"192.168.4.10:8800":    true,
+		"192.168.4.10":         true,
+		"[fe80::1%25en0]:8800": true,
+		"[::1]:8800":           true,
+		"localhost:8800":       true,
+		"LOCALHOST.":           true,
+		"app.localhost":        true,
+		"tower.local:8800":     true,
+		"attacker.example":     false,
+		"attacker.example:80":  false,
+		"local.example.com":    false,
+		"localhost.example":    false,
+		"":                     false,
+	} {
+		if got := setupHostResistsRebinding(host); got != want {
+			t.Errorf("setupHostResistsRebinding(%q) = %v, want %v", host, got, want)
+		}
 	}
 }

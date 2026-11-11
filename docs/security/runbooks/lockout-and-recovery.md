@@ -61,7 +61,9 @@ working. A browser on the server's local network does not need the token: open
 `http://<server-ip>:8800/web/` (the server also prints `Beamfall first-run setup from this network (no
 token needed): <url>` for each LAN address when bound to all interfaces) and finish setup there.
 Requests that reach the server from outside the local network, through the relay, or through a
-proxy that is not declared as trusted still need the token. Once setup has completed no token is
+proxy that is not declared as trusted still need the token, and so does a LAN browser that opens
+the server by a DNS name other than `localhost` or a `.local` name: use the server's IP address.
+Once setup has completed no token is
 generated again and the local-network path closes too. There is no command that re-arms
 first-run on a set-up server: reset the admin password instead, or start over with a fresh data
 directory, or restore a backup taken before setup (see [backup-restore](backup-restore.md)).

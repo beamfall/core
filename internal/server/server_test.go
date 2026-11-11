@@ -309,6 +309,7 @@ func TestSetupRequiredProbe(t *testing.T) {
 	probe := func(srv *Server, remoteAddr string) map[string]bool {
 		t.Helper()
 		req := httptest.NewRequest(http.MethodGet, "/api/setup", nil)
+		req.Host = "192.168.4.10:8800"
 		if remoteAddr != "" {
 			req.RemoteAddr = remoteAddr
 		}
@@ -339,6 +340,14 @@ func TestSetupRequiredProbe(t *testing.T) {
 	}
 	if body := probe(srv, "192.168.4.20:51000"); !body["required"] || body["tokenRequired"] {
 		t.Fatalf("LAN probe = %#v, want required without tokenRequired", body)
+	}
+	rebound := httptest.NewRequest(http.MethodGet, "/api/setup", nil)
+	rebound.Host = "attacker.example:8800"
+	rebound.RemoteAddr = "192.168.4.20:51000"
+	reboundRec := httptest.NewRecorder()
+	srv.ServeHTTP(reboundRec, rebound)
+	if !strings.Contains(reboundRec.Body.String(), `"tokenRequired":true`) {
+		t.Fatalf("LAN probe through a rebindable Host = %s, want tokenRequired", reboundRec.Body.String())
 	}
 
 	// After the token is consumed (here: cleared, as a successful Bootstrap

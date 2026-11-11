@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
@@ -98,8 +100,8 @@ func (s *Server) enrollWebDevice(w http.ResponseWriter, r *http.Request) {
 // feature:first-run-setup-token). It bypasses the normal pairing-code flow to
 // create the first MANAGER device+session, resolving the circular dependency on
 // fresh servers. CSRF header required; token is single-use and cleared on
-// success. While setup is pending, a request that passes requestIsLAN may omit
-// the token (CORE-1105); off-LAN requests still need it.
+// success. While setup is pending, a request that passes lanSetupClaim may omit
+// the token (CORE-1105); other requests still need it.
 func (s *Server) setupFirstRun(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	r.Body = http.MaxBytesReader(w, r.Body, maxControlBody)
@@ -116,7 +118,7 @@ func (s *Server) setupFirstRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.RemoteAddr = r.RemoteAddr
-	req.LANClaim = requestIsLAN(r)
+	req.LANClaim = lanSetupClaim(r)
 	resp, err := s.pairing.Bootstrap(r.Context(), req)
 	if err != nil {
 		notePairingRefusal(r, refusalOperationSetup, err)
@@ -158,8 +160,37 @@ func (s *Server) setupRequired(w http.ResponseWriter, r *http.Request) {
 	required := s.pairing.SetupRequired()
 	writeJSON(w, http.StatusOK, map[string]bool{
 		"required":      required,
-		"tokenRequired": required && !requestIsLAN(r),
+		"tokenRequired": required && !lanSetupClaim(r),
 	})
+}
+
+// lanSetupClaim reports whether a first-run setup request may omit the setup
+// token (CORE-1105). The source must pass requestIsLAN, and the Host the
+// browser addressed must be one a public website cannot rebind to a LAN
+// address: an IP literal, localhost, or an mDNS .local name. Otherwise a page
+// on attacker.example could repoint its own name at a fresh server and claim
+// it through a visiting LAN browser, since the matching Host passes the
+// same-origin checks.
+func lanSetupClaim(r *http.Request) bool {
+	return requestIsLAN(r) && setupHostResistsRebinding(r.Host)
+}
+
+func setupHostResistsRebinding(hostport string) bool {
+	host := hostport
+	if h, _, err := net.SplitHostPort(hostport); err == nil {
+		host = h
+	}
+	host = strings.TrimSuffix(strings.ToLower(strings.Trim(host, "[]")), ".")
+	if zone := strings.LastIndexByte(host, '%'); zone >= 0 {
+		host = host[:zone]
+	}
+	if host == "" {
+		return false
+	}
+	if net.ParseIP(host) != nil {
+		return true
+	}
+	return host == "localhost" || strings.HasSuffix(host, ".localhost") || strings.HasSuffix(host, ".local")
 }
 
 // promoteWebDevice upgrades the calling browser's device to MANAGER
