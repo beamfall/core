@@ -11,7 +11,7 @@ import {
 import { fetchPlaybackMarkers } from "@/lib/graphql";
 import type { PlaybackMarker } from "@/lib/graphql/types";
 import { ApiError, fetchPlaybackInfo } from "../lib/playback";
-import { selectHlsLevel, usePlayer } from "./usePlayer";
+import { selectHlsLevel, selectHlsRendition, usePlayer } from "./usePlayer";
 
 vi.mock("@/lib/graphql", () => ({
   fetchPlaybackMarkers: vi.fn().mockResolvedValue([]),
@@ -1051,8 +1051,9 @@ describe("usePlayer", () => {
       }
 
       it("keeps a later manual rendition instead of restoring the first pick", async () => {
-        const hls = await pickThenChooseThenRefresh(1);
-        expect(hls.tracks.currentLevel).toBe(1);
+        // The first pick (720p) is level 1; the later choice is level 0.
+        const hls = await pickThenChooseThenRefresh(0);
+        expect(hls.tracks.currentLevel).toBe(0);
       });
 
       it("pins the picked rendition, not its list position, in hls.js's ascending levels", async () => {
@@ -1114,6 +1115,18 @@ describe("usePlayer", () => {
         hls.emit("manifestParsed");
         return hls;
       }
+
+      it("applies the latest rendition picked before the manifest parsed", async () => {
+        const hls = await pickThenChooseBeforeParse(-1);
+        // Back on a fresh load: picks made with no levels yet are held for the parse.
+        hls.tracks.currentLevel = -1;
+        selectHlsRendition(hls.tracks as unknown as Hls, { id: "1080", height: 1080 });
+        selectHlsRendition(hls.tracks as unknown as Hls, { id: "480", height: 480 });
+        expect(hls.tracks.currentLevel).toBe(-1);
+        hls.tracks.levels = [{ height: 480 }, { height: 1080 }];
+        hls.emit("manifestParsed");
+        expect(hls.tracks.currentLevel).toBe(0);
+      });
 
       it("keeps Auto instead of restoring the pending pick", async () => {
         const hls = await pickThenChooseBeforeParse(-1);

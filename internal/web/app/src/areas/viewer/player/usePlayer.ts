@@ -198,6 +198,23 @@ export function selectHlsLevel(hls: Hls, level: number) {
   hls.currentLevel = level;
 }
 
+/**
+ * Applies a picked rendition to hls.js, resolving it against the level list. While the
+ * manifest is still loading the list is empty, so the pick becomes the pending pin the
+ * parse resolves (the latest pick wins). False when the rendition matches no level.
+ */
+export function selectHlsRendition(hls: Hls, rendition: PlaybackRendition | undefined): boolean {
+  if (!rendition) return false;
+  if (!hls.levels || hls.levels.length === 0) {
+    pendingLevelPins.set(hls, rendition);
+    return true;
+  }
+  const level = hlsLevelIndex(hls.levels, rendition);
+  if (level < 0) return false;
+  selectHlsLevel(hls, level);
+  return true;
+}
+
 // Ranged GET of the first byte, aborted once headers arrive: the status of a
 // native-route stream URL after MEDIA_ERR_NETWORK, which hides the HTTP status.
 // The media routes are GET-only, so a HEAD probe would 405.

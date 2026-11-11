@@ -5,13 +5,12 @@ import { hlsStreamOf, type PlaybackStream } from "../lib/playback";
 import {
   buildRenditionMenuModel,
   buildTrackMenuModel,
-  hlsLevelIndex,
   type RenditionMenuOption,
   renditionIndex,
   type TrackMenuOption,
 } from "../lib/transport";
 import { audioTrackList, audioTracksArray } from "./media-tracks";
-import { type SwitchResult, selectHlsLevel } from "./usePlayer";
+import { type SwitchResult, selectHlsLevel, selectHlsRendition } from "./usePlayer";
 
 // useLiveTracks bridges the live hls.js / native <video> track objects to the
 // pure menu models (transport.ts) and exposes the selection handlers, ported
@@ -197,10 +196,8 @@ export function useLiveTracks({
           const at = renditionIndex(stream?.renditions, id);
           if (at < 0 || !h) return;
           // hls.js orders levels by ascending bitrate, not the server's list order.
-          const index = hlsLevelIndex(h.levels, stream?.renditions?.[at]);
-          if (index < 0) return;
+          if (!selectHlsRendition(h, stream?.renditions?.[at])) return;
           setManualRenditionID(id);
-          selectHlsLevel(h, index);
         }
       }
       nudge();
