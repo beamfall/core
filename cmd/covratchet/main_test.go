@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -204,11 +205,11 @@ func TestRetainDiagnosticsKeepsOutputAndProfileWhenRatchetFails(t *testing.T) {
 	}
 	dir := filepath.Join(t.TempDir(), "diag")
 	retainDiagnostics(dir, m)
-	out, err := os.ReadFile(filepath.Join(dir, diagOutputName))
+	out, err := fs.ReadFile(os.DirFS(dir), diagOutputName)
 	if err != nil || !strings.Contains(string(out), "coverage: 75.0%") {
 		t.Fatalf("output = %q, err = %v", out, err)
 	}
-	prof, err := os.ReadFile(filepath.Join(dir, diagProfileName))
+	prof, err := fs.ReadFile(os.DirFS(dir), diagProfileName)
 	if err != nil || !strings.Contains(string(prof), "x.go:1.1,2.1 3 1") {
 		t.Fatalf("profile = %q, err = %v", prof, err)
 	}
