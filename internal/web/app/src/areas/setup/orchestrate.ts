@@ -1,4 +1,4 @@
-import { ApiError, fetchSetupStatus, postJSON } from "@/lib/api";
+import { ApiError, fetchSetupStatus, postJSON, type SignInSecurityMode } from "@/lib/api";
 import {
   createLibrary,
   fetchLibraries,
@@ -107,6 +107,7 @@ export async function bootstrapSetup(input: {
   deviceName: string;
   profileName: string;
   adminPassword: string;
+  securityMode: SignInSecurityMode;
 }): Promise<SetupBootstrapResult> {
   try {
     return await postJSON<SetupBootstrapResult>("/api/setup", {
@@ -114,6 +115,7 @@ export async function bootstrapSetup(input: {
       deviceName: input.deviceName,
       profileName: input.profileName,
       adminPassword: input.adminPassword,
+      securityMode: input.securityMode,
     });
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) {

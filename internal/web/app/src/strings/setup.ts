@@ -7,11 +7,12 @@ export const setupStrings = {
       "Wizard unlocked — one-time setup token verified from the server logs. The admin password is never accepted from an unenrolled browser without it.",
     setupRailToken: "Unlock with setup token",
     setupRailAdminPassword: "Admin password",
+    setupRailSecurity: "Sign-in security",
     setupRailLibrary: "First Library",
     setupRailProfile: "Owner profile",
     setupRailPlugins: "Activate plugins",
     setupRailScan: "First scan",
-    setupStepCount: "Step {n} of 6",
+    setupStepCount: "Step {n} of 7",
     setupTokenTitle: "Unlock with the setup token",
     setupTokenLead:
       "Use the one-time setup token printed to the server logs. It proves this browser was opened by someone with access to the server process before an admin password exists.",
@@ -24,6 +25,15 @@ export const setupStrings = {
     setupAdminPasswordConfirm: "Confirm password",
     setupAdminPasswordMismatch: "The passwords do not match.",
     setupAdminPasswordRequired: "Enter an admin password.",
+    setupSecurityTitle: "Choose how the owner signs in",
+    setupSecurityLead: "You can change this later in the Console with the admin password.",
+    setupSecurityHome: "Home",
+    setupSecurityHomeDetail:
+      "You can sign in as the owner from any browser with the admin password.",
+    setupSecurityStrict: "Strict",
+    setupSecurityStrictDetail:
+      "Only paired devices can sign in; to recover, run beamfall pairing-code on the server.",
+    setupSecurityRecommended: "Recommended",
     setupLibraryTitle: "Create your first Library",
     setupLibraryLead:
       "Pick what's in this folder. Films, TV Shows and Mixed all use the one Film & TV plugin — the choice tells identification the family so it never has to guess (Mixed detects per file).",

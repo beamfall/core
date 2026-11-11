@@ -339,17 +339,33 @@ export async function fetchSetupRequired(): Promise<boolean> {
   }
 }
 
+/** The owner's sign-in security choice (CORE-1110): Home keeps admin-password sign-in, Strict turns it off. */
+export type SignInSecurityMode = "home" | "strict";
+
 /**
- * GET /api/setup in full: whether setup is pending and whether this browser
+ * GET /api/setup in full: whether setup is pending, whether this browser
  * would need the one-time setup token (false on the local network while setup
- * is pending, CORE-1105). Errors resolve to `{required:false, tokenRequired:true}`.
+ * is pending, CORE-1105) and the sign-in security mode (CORE-1110). Errors
+ * resolve to `{required:false, tokenRequired:true, securityMode:"home"}`.
  */
-export async function fetchSetupStatus(): Promise<{ required: boolean; tokenRequired: boolean }> {
+export async function fetchSetupStatus(): Promise<{
+  required: boolean;
+  tokenRequired: boolean;
+  securityMode: SignInSecurityMode;
+}> {
   try {
-    const data = await getJSON<{ required?: boolean; tokenRequired?: boolean }>("/api/setup");
-    return { required: data.required === true, tokenRequired: data.tokenRequired !== false };
+    const data = await getJSON<{
+      required?: boolean;
+      tokenRequired?: boolean;
+      securityMode?: string;
+    }>("/api/setup");
+    return {
+      required: data.required === true,
+      tokenRequired: data.tokenRequired !== false,
+      securityMode: data.securityMode === "strict" ? "strict" : "home",
+    };
   } catch {
-    return { required: false, tokenRequired: true };
+    return { required: false, tokenRequired: true, securityMode: "home" };
   }
 }
 

@@ -58,7 +58,7 @@ afterEach(() => {
 });
 
 describe("bootstrapSetup", () => {
-  it("posts to /api/setup with the token, admin password, and profile name", async () => {
+  it("posts to /api/setup with the token, admin password, profile name, and security mode", async () => {
     respond = () => ({
       status: 200,
       json: {
@@ -74,6 +74,7 @@ describe("bootstrapSetup", () => {
       deviceName: "Web Browser",
       profileName: "Owner",
       adminPassword: "hunter2",
+      securityMode: "strict",
     });
 
     expect(result.deviceRole).toBe("manager");
@@ -85,6 +86,7 @@ describe("bootstrapSetup", () => {
       deviceName: "Web Browser",
       profileName: "Owner",
       adminPassword: "hunter2",
+      securityMode: "strict",
     });
   });
 
@@ -97,6 +99,7 @@ describe("bootstrapSetup", () => {
         deviceName: "Web Browser",
         profileName: "Owner",
         adminPassword: "hunter2",
+        securityMode: "home",
       }),
     ).rejects.toBeInstanceOf(SetupTokenError);
 

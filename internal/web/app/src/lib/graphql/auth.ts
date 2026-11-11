@@ -9,7 +9,7 @@
 // which throws ApiError (carrying .status) on a non-2xx response — callers
 // inspect that status the way the vanilla app inspects response.status.
 
-import { graphql, postJSON } from "@/lib/api";
+import { graphql, postJSON, type SignInSecurityMode } from "@/lib/api";
 import { rebindCompatibility } from "@/lib/compat";
 import type { AdminSessionInfo } from "./types";
 
@@ -134,6 +134,23 @@ export async function renewSession(signal?: AbortSignal): Promise<boolean> {
 export async function adminSignIn(password: string, deviceName: string): Promise<RebindOutcome> {
   await postJSON("/api/web/admin-signin", { password, deviceName });
   return settleRebind();
+}
+
+/**
+ * Switch the sign-in security mode (POST /api/web/signin-security, CORE-1110).
+ * Needs a MANAGER device and the admin password in the same request. Rejects
+ * with an ApiError (`.status` 401 = wrong password, 403 = not a manager,
+ * 429 = throttled) on failure.
+ */
+export async function setSignInSecurityMode(
+  mode: SignInSecurityMode,
+  adminPassword: string,
+): Promise<SignInSecurityMode> {
+  const data = await postJSON<{ securityMode?: string }>("/api/web/signin-security", {
+    mode,
+    adminPassword,
+  });
+  return data.securityMode === "strict" ? "strict" : "home";
 }
 
 /** Sign out: drop the session cookie (POST /api/web/logout). */

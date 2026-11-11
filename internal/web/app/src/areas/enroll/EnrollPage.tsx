@@ -1,8 +1,8 @@
-import { type FormEvent, useId, useRef, useState } from "react";
+import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ApiError } from "@/lib/api";
+import { ApiError, fetchSetupStatus, type SignInSecurityMode } from "@/lib/api";
 import { adminSignIn, enroll } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
 
@@ -32,6 +32,20 @@ export function EnrollPage() {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // The owner's sign-in security choice (CORE-1110). Strict turns off
+  // admin-password sign-in, so the form stays hidden; it also stays hidden
+  // until the probe settles so it never flashes on a Strict server.
+  const [securityMode, setSecurityMode] = useState<SignInSecurityMode | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchSetupStatus().then((status) => {
+      if (!cancelled) setSecurityMode(status.securityMode);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -120,7 +134,7 @@ export function EnrollPage() {
           </p>
         )}
       </form>
-      <AdminSignInForm deviceName={deviceName} />
+      {securityMode === "home" && <AdminSignInForm deviceName={deviceName} />}
     </main>
   );
 }

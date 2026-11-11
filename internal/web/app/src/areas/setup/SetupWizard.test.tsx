@@ -335,6 +335,7 @@ describe("SetupWizard setup URL", () => {
     await user.type(screen.getByLabelText("Confirm password"), "correct horse battery staple");
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Something went wrong. Please try again.",
@@ -353,6 +354,7 @@ describe("SetupWizard setup URL", () => {
 
     await user.click(screen.getByRole("button", { name: "Back" }));
     await user.click(screen.getByRole("button", { name: "Back" }));
+    await user.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.getByLabelText("Setup token")).toHaveValue("");
   });
 
@@ -368,6 +370,7 @@ describe("SetupWizard setup URL", () => {
     await user.click(await screen.findByRole("button", { name: "Continue" }));
     await user.type(screen.getByLabelText("Admin password"), "correct horse battery staple");
     await user.type(screen.getByLabelText("Confirm password"), "correct horse battery staple");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
@@ -432,9 +435,42 @@ describe("SetupWizard LAN claim (CORE-1105)", () => {
     await user.type(screen.getByLabelText("Confirm password"), "correct horse battery staple");
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
 
     expect(await screen.findByRole("heading", { name: "Activate plugins" })).toBeInTheDocument();
-    expect(mocks.bootstrapSetup).toHaveBeenCalledWith(expect.objectContaining({ token: "" }));
+    expect(mocks.bootstrapSetup).toHaveBeenCalledWith(
+      expect.objectContaining({ token: "", securityMode: "home" }),
+    );
+  });
+
+  it("offers Home and Strict sign-in security and sends the choice with setup (CORE-1110)", async () => {
+    const user = userEvent.setup();
+    mocks.bootstrapResume.mockResolvedValue({
+      alreadyBootstrapped: false,
+      state: null,
+      tokenRequired: false,
+    });
+    mocks.bootstrapSetup.mockResolvedValue(undefined);
+    renderSetupWizard();
+
+    await user.type(await screen.findByLabelText("Admin password"), "correct horse battery staple");
+    await user.type(screen.getByLabelText("Confirm password"), "correct horse battery staple");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(
+      await screen.findByRole("group", { name: "Choose how the owner signs in" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Step 3 of 7")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /Home/ })).toBeChecked();
+    expect(screen.getByText("Recommended")).toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: /Strict/ }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(await screen.findByRole("heading", { name: "Activate plugins" })).toBeInTheDocument();
+    expect(mocks.bootstrapSetup).toHaveBeenCalledWith(
+      expect.objectContaining({ securityMode: "strict" }),
+    );
   });
 
   it("keeps the token step when the server requires the token", async () => {

@@ -1,10 +1,11 @@
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import beamfallLogo from "@/assets/beamfall-logo.png";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { ApiError } from "@/lib/api";
+import { ApiError, type SignInSecurityMode } from "@/lib/api";
 import { displayString } from "@/lib/display";
 import { browseServerFolders, fetchJobs, fetchPlugins } from "@/lib/graphql";
 import type { FolderEntryInfo, JobInfo, PluginSummary } from "@/lib/graphql/types";
@@ -28,7 +29,7 @@ import {
   type UpdateCheckChannel,
 } from "./orchestrate";
 
-// First-run setup wizard (WEB-1, ADR-0007 §2; closed under ADR-0080). A 6-step,
+// First-run setup wizard (WEB-1, ADR-0007 §2; closed under ADR-0080). A 7-step,
 // token-gated first-run flow that ORCHESTRATES existing server mutations — it
 // never duplicates them. Faithful to the approved mockup (setup-wizard.html): a
 // brand bar, an "unlocked" banner once the token is verified, a step rail,
@@ -36,7 +37,8 @@ import {
 // shadcn semantic classes, which resolve to the same cinema theme as the
 // mockup's raw vars).
 //
-// Visual step order: token → admin password → owner → plugins → Library →
+// Visual step order: token → admin password → sign-in security → owner →
+// plugins → Library →
 // first scan. Plugins are activated BEFORE the Library so the
 // Library step can offer only types backed by a plugin the operator enabled;
 // the owner profile follows the admin password. The API shape differs: we
@@ -53,6 +55,7 @@ import {
 const STEP_KEYS: StringKey[] = [
   "setupRailToken",
   "setupRailAdminPassword",
+  "setupRailSecurity",
   "setupRailProfile",
   "setupRailPlugins",
   "setupRailLibrary",
@@ -61,10 +64,16 @@ const STEP_KEYS: StringKey[] = [
 
 // Step indices, named so the step-boundary logic in onNext/render reads
 // intention rather than magic numbers.
-const STEP_PROFILE = 2;
-const STEP_PLUGINS = 3;
-const STEP_LIBRARY = 4;
-const STEP_SCAN = 5;
+const STEP_SECURITY = 2;
+const STEP_PROFILE = 3;
+const STEP_PLUGINS = 4;
+const STEP_LIBRARY = 5;
+const STEP_SCAN = 6;
+
+const SECURITY_MODES: { mode: SignInSecurityMode; label: StringKey; detail: StringKey }[] = [
+  { mode: "home", label: "setupSecurityHome", detail: "setupSecurityHomeDetail" },
+  { mode: "strict", label: "setupSecurityStrict", detail: "setupSecurityStrictDetail" },
+];
 
 const TYPE_LABEL: Record<LibraryType, StringKey> = {
   films: "setupTypeFilms",
@@ -94,9 +103,9 @@ function consumeSetupToken(): string {
 
 export function SetupWizard() {
   const { t, locale } = useI18n();
-  // Visual step index (0..5). The bootstrap POST fires when we leave the owner
-  // profile step (index 2) forward, because that's the first point where token
-  // + admin password + profile name are all collected.
+  // Visual step index (0..6). The bootstrap POST fires when we leave the owner
+  // profile step (index 3) forward, because that's the first point where token
+  // + admin password + security mode + profile name are all collected.
   const [step, setStep] = useState(0);
 
   // Step 1 — token (a CREDENTIAL: autoComplete=off; startup may include it
@@ -107,7 +116,10 @@ export function SetupWizard() {
   // Step 2 — admin password (CREDENTIAL: type=password).
   const [adminPassword, setAdminPassword] = useState("");
   const [adminPasswordConfirm, setAdminPasswordConfirm] = useState("");
-  // Step 5 — first Library.
+  // Sign-in security (CORE-1110): Home keeps admin-password sign-in, Strict
+  // turns it off. Sent with the bootstrap POST.
+  const [securityMode, setSecurityMode] = useState<SignInSecurityMode>("home");
+  // Step 6 — first Library.
   const [libraryType, setLibraryType] = useState<LibraryType>("films");
   const [libraryName, setLibraryName] = useState("");
   const [rootPath, setRootPath] = useState("");
@@ -121,9 +133,9 @@ export function SetupWizard() {
   const [pickerNode, setPickerNode] = useState<FolderEntryInfo | null>(null);
   const [pickerBusy, setPickerBusy] = useState(false);
   const [pickerError, setPickerError] = useState<string | null>(null);
-  // Step 3 — owner profile.
+  // Step 4 — owner profile.
   const [profileName, setProfileName] = useState(t("setupProfileDefault"));
-  // Step 4 — plugin activation.
+  // Step 5 — plugin activation.
   const [plugins, setPlugins] = useState<PluginSummary[]>([]);
   const [activePlugins, setActivePlugins] = useState<Set<string>>(new Set());
   const [updateCheckEnabled, setUpdateCheckEnabled] = useState(false);
@@ -300,6 +312,7 @@ export function SetupWizard() {
         deviceName: t("webBrowser"),
         profileName: profileName.trim() || t("setupProfileDefault"),
         adminPassword,
+        securityMode,
       });
       setBootstrapped(true);
       return true;
@@ -440,7 +453,7 @@ export function SetupWizard() {
     }
     setError(null);
 
-    // Leaving the owner profile step (2) forward is the bootstrap boundary.
+    // Leaving the owner profile step forward is the bootstrap boundary.
     if (step === STEP_PROFILE && !bootstrapped) {
       const ok = await runBootstrap();
       if (!ok) return;
@@ -656,6 +669,36 @@ export function SetupWizard() {
                   required
                 />
               </section>
+            )}
+
+            {step === STEP_SECURITY && (
+              <fieldset className="m-0 grid gap-3 border-0 p-0">
+                <legend className="m-0 p-0 text-lg font-semibold">{t("setupSecurityTitle")}</legend>
+                <p className="mb-1 mt-0.5 text-[13px] text-muted-foreground">
+                  {t("setupSecurityLead")}
+                </p>
+                {SECURITY_MODES.map(({ mode, label, detail }) => (
+                  <label key={mode} className="flex items-start gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="setup-security-mode"
+                      value={mode}
+                      checked={securityMode === mode}
+                      onChange={() => setSecurityMode(mode)}
+                      className="mt-1"
+                    />
+                    <span className="grid gap-0.5">
+                      <span className="flex items-center gap-2 font-medium text-foreground">
+                        {t(label)}
+                        {mode === "home" && (
+                          <Badge variant="outline">{t("setupSecurityRecommended")}</Badge>
+                        )}
+                      </span>
+                      <span className="text-xs text-muted-foreground">{t(detail)}</span>
+                    </span>
+                  </label>
+                ))}
+              </fieldset>
             )}
 
             {step === STEP_LIBRARY && (

@@ -1,8 +1,8 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError } from "@/lib/api";
+import { ApiError, fetchSetupStatus } from "@/lib/api";
 import { adminSignIn, enroll } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { EnrollPage } from "./EnrollPage";
@@ -12,11 +12,19 @@ vi.mock("@/lib/graphql", () => ({
   adminSignIn: vi.fn(),
 }));
 
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api")>()),
+  fetchSetupStatus: vi.fn(),
+}));
+
 const assign = vi.fn();
 
 beforeEach(() => {
   vi.mocked(enroll).mockReset();
   vi.mocked(adminSignIn).mockReset();
+  vi.mocked(fetchSetupStatus)
+    .mockReset()
+    .mockResolvedValue({ required: false, tokenRequired: true, securityMode: "home" });
   assign.mockReset();
   Object.defineProperty(window, "location", {
     configurable: true,
@@ -76,7 +84,7 @@ describe("EnrollPage", () => {
         <EnrollPage />
       </I18nProvider>,
     );
-    await userEvent.type(screen.getByLabelText("Admin password"), password);
+    await userEvent.type(await screen.findByLabelText("Admin password"), password);
     await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
   }
 
@@ -111,5 +119,24 @@ describe("EnrollPage", () => {
     await signInWithPassword("wrong");
 
     expect(screen.getByRole("alert")).toHaveTextContent("Too many attempts.");
+  });
+
+  it("hides the admin-password form when the server is in Strict mode", async () => {
+    vi.mocked(fetchSetupStatus).mockResolvedValue({
+      required: false,
+      tokenRequired: true,
+      securityMode: "strict",
+    });
+    render(
+      <I18nProvider>
+        <EnrollPage />
+      </I18nProvider>,
+    );
+
+    await vi.waitFor(() => expect(fetchSetupStatus).toHaveBeenCalled());
+    // Let the settled probe commit its state before asserting the form stays hidden.
+    await act(async () => {});
+    expect(screen.queryByLabelText("Admin password")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sign in" })).not.toBeInTheDocument();
   });
 });
