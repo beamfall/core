@@ -1,7 +1,8 @@
-import { lazy, type ReactNode, Suspense } from "react";
+import { type ReactNode, Suspense } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router";
 import { AreaErrorBoundary } from "@/components/chrome/ErrorBoundary";
 import { Skeleton } from "@/components/ui/skeleton";
+import { lazyRoute } from "@/lib/lazyRoute";
 
 // ADR-0007 — one web app, three areas: Viewer (root), Manage, Console (Admin).
 // Each area owns its register and its own nested routes; this is the only file
@@ -16,15 +17,48 @@ import { Skeleton } from "@/components/ui/skeleton";
 // the Viewer chunk rather than on the very first paint. The heavier Manage /
 // Console areas and the auth pages stay behind their own route guards. The area
 // roots are named exports, so each dynamic import re-maps the named export to
-// the default the lazy() contract wants — without touching the area files.
-const ViewerArea = lazy(() => import("@/areas/viewer").then((m) => ({ default: m.ViewerArea })));
-const ManageArea = lazy(() => import("@/areas/manage").then((m) => ({ default: m.ManageArea })));
-const ConsoleArea = lazy(() => import("@/areas/console").then((m) => ({ default: m.ConsoleArea })));
-const EnrollPage = lazy(() => import("@/areas/enroll").then((m) => ({ default: m.EnrollPage })));
+// the default the lazyRoute() contract wants — without touching the area files.
+const ViewerArea = lazyRoute(() =>
+  import("@/areas/viewer").then((m) => ({ default: m.ViewerArea })),
+);
+const ManageArea = lazyRoute(() =>
+  import("@/areas/manage").then((m) => ({ default: m.ManageArea })),
+);
+const ConsoleArea = lazyRoute(() =>
+  import("@/areas/console").then((m) => ({ default: m.ConsoleArea })),
+);
+const EnrollPage = lazyRoute(() =>
+  import("@/areas/enroll").then((m) => ({ default: m.EnrollPage })),
+);
 // The first-run setup wizard (WEB-1, ADR-0007 §2). Always renders at /setup;
 // the session spine routes a fresh server here (see areas/viewer).
-const SetupWizard = lazy(() => import("@/areas/setup").then((m) => ({ default: m.SetupWizard })));
-const PromotePage = lazy(() => import("@/areas/enroll").then((m) => ({ default: m.PromotePage })));
+const SetupWizard = lazyRoute(() =>
+  import("@/areas/setup").then((m) => ({ default: m.SetupWizard })),
+);
+const PromotePage = lazyRoute(() =>
+  import("@/areas/enroll").then((m) => ({ default: m.PromotePage })),
+);
+
+// Resolves the area chunk the first URL will render, so the first render can
+// show it directly instead of committing the Suspense fallback (React 19 holds
+// resolved lazy content back ~300 ms after a fallback was shown). Never
+// rejects; a failed chunk falls through to the route's own error boundary.
+export function preloadInitialRoute(pathname: string): Promise<unknown> {
+  const area = /^\/(setup|enroll|promote|manage|console)(\/|$)/.exec(pathname)?.[1];
+  const route =
+    area === "setup"
+      ? SetupWizard
+      : area === "enroll"
+        ? EnrollPage
+        : area === "promote"
+          ? PromotePage
+          : area === "manage"
+            ? ManageArea
+            : area === "console"
+              ? ConsoleArea
+              : ViewerArea;
+  return route.preload().catch(() => {});
+}
 
 // Minimal, register-neutral fallback shown only while a lazy area chunk loads.
 // Kept deliberately spare (a single neutral spinner) so the brief flash while
