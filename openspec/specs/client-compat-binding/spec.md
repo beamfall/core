@@ -1,7 +1,7 @@
 # client-compat-binding Specification
 
 ## Purpose
-TBD - created by archiving change web-compat-auth-change. Update Purpose after archive.
+How a client session's compatibility decision is bound to its authentication state, and when that decision is re-derived.
 
 ## Requirements
 

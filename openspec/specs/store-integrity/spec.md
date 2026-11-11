@@ -1,7 +1,7 @@
 # store-integrity Specification
 
 ## Purpose
-TBD - created by archiving change store-content-identity. Update Purpose after archive.
+Integrity rules of the store: one identity per managed file's content, valid JSON in queued writes, and accurate not-found reporting.
 
 ## Requirements
 

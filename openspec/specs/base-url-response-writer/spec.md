@@ -1,7 +1,7 @@
 # base-url-response-writer Specification
 
 ## Purpose
-TBD - created by archiving change base-url-flush-error. Update Purpose after archive.
+How the server's base-URL response wrapper passes flush, hijack and push through to the underlying writer, so callers see the real result.
 
 ## Requirements
 

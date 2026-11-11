@@ -1,7 +1,7 @@
 # event-stream Specification
 
 ## Purpose
-TBD - created by archiving change sse-stream-limits. Update Purpose after archive.
+Limits and liveness of the server-sent event stream: keepalives, the per-session stream cap and the cached stream scope.
 
 ## Requirements
 

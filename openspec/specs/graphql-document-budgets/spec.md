@@ -1,7 +1,7 @@
 # graphql-document-budgets Specification
 
 ## Purpose
-TBD - created by archiving change graphql-nesting-prescan. Update Purpose after archive.
+Bounds the server applies to a GraphQL document before parsing it, so a hostile document cannot exhaust the parser.
 
 ## Requirements
 
