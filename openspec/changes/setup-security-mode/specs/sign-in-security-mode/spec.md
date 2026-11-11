@@ -51,12 +51,20 @@ pairing-code` SHALL work the same in home and strict mode.
 ### Requirement: The setup probe reports the mode
 
 `GET /api/setup` SHALL report the stored mode as `securityMode` without authentication. The web
-sign-in page SHALL hide the admin-password form in strict mode.
+sign-in page SHALL show the admin-password form only once the probe reports home. When the probe
+fails the mode SHALL stay unknown: the Console switch SHALL show an error with a retry and SHALL NOT
+save.
 
 #### Scenario: Strict mode hides the password form
 
 - **WHEN** the probe reports `strict`
 - **THEN** the sign-in page shows only the pairing-code form
+
+#### Scenario: Probe fails
+
+- **WHEN** the probe request fails
+- **THEN** the sign-in page shows only the pairing-code form and the Console switch offers a retry
+  and no save
 
 ### Requirement: Changing the mode needs a Manager and the admin password
 

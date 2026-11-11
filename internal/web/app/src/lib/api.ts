@@ -346,12 +346,13 @@ export type SignInSecurityMode = "home" | "strict";
  * GET /api/setup in full: whether setup is pending, whether this browser
  * would need the one-time setup token (false on the local network while setup
  * is pending, CORE-1105) and the sign-in security mode (CORE-1110). Errors
- * resolve to `{required:false, tokenRequired:true, securityMode:"home"}`.
+ * resolve to `{required:false, tokenRequired:true, securityMode:null}`: a failed
+ * read leaves the mode unknown, never Home.
  */
 export async function fetchSetupStatus(): Promise<{
   required: boolean;
   tokenRequired: boolean;
-  securityMode: SignInSecurityMode;
+  securityMode: SignInSecurityMode | null;
 }> {
   try {
     const data = await getJSON<{
@@ -365,7 +366,7 @@ export async function fetchSetupStatus(): Promise<{
       securityMode: data.securityMode === "strict" ? "strict" : "home",
     };
   } catch {
-    return { required: false, tokenRequired: true, securityMode: "home" };
+    return { required: false, tokenRequired: true, securityMode: null };
   }
 }
 

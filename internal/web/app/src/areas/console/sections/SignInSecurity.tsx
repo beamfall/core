@@ -46,18 +46,28 @@ export function SignInSecurity() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<StringKey | null>(null);
   const [saved, setSaved] = useState(false);
+  // A failed probe leaves the mode unknown: show the error with a retry and
+  // keep the switch and Save disabled rather than guessing Home. Bumping
+  // loadAttempt re-runs the probe.
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    setLoadFailed(false);
     void fetchSetupStatus().then((status) => {
       if (cancelled) return;
+      if (status.securityMode === null) {
+        setLoadFailed(true);
+        return;
+      }
       setCurrent(status.securityMode);
       setSelected(status.securityMode);
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadAttempt]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -81,6 +91,22 @@ export function SignInSecurity() {
 
   return (
     <Section heading="signinSecurityHeading" lead="signinSecurityLead">
+      {loadFailed && (
+        <div
+          role="alert"
+          className="mb-4 flex max-w-xl items-center gap-3 text-sm text-destructive"
+        >
+          <span>{t("couldNotReachServer")}</span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setLoadAttempt((n) => n + 1)}
+          >
+            {t("tryAgain")}
+          </Button>
+        </div>
+      )}
       <form onSubmit={onSubmit} className="max-w-xl space-y-4" noValidate>
         <fieldset className="m-0 grid gap-3 border-0 p-0" disabled={current === null}>
           <legend className="sr-only">{t("signinSecurityHeading")}</legend>

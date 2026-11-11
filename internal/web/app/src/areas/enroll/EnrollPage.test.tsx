@@ -139,4 +139,22 @@ describe("EnrollPage", () => {
     expect(screen.queryByLabelText("Admin password")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Sign in" })).not.toBeInTheDocument();
   });
+
+  it("hides the admin-password form while the mode is unknown after a failed probe", async () => {
+    vi.mocked(fetchSetupStatus).mockResolvedValue({
+      required: false,
+      tokenRequired: true,
+      securityMode: null,
+    });
+    render(
+      <I18nProvider>
+        <EnrollPage />
+      </I18nProvider>,
+    );
+
+    await vi.waitFor(() => expect(fetchSetupStatus).toHaveBeenCalled());
+    await act(async () => {});
+    expect(screen.queryByLabelText("Admin password")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sign in" })).not.toBeInTheDocument();
+  });
 });

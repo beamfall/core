@@ -98,11 +98,40 @@ describe("SignInSecurity", () => {
 
     await userEvent.type(screen.getByLabelText("Admin password"), "again");
     await userEvent.click(screen.getByRole("button", { name: "Change sign-in security" }));
-    await vi.waitFor(() =>
-      expect(screen.getByRole("alert")).toHaveTextContent(
-        "Only a Manager device can change sign-in security.",
-      ),
+    // Generous waits: under full-suite load the second refusal can take over
+    // the default second to render.
+    await vi.waitFor(() => expect(setSignInSecurityMode).toHaveBeenCalledTimes(2), {
+      timeout: 5_000,
+    });
+    await vi.waitFor(
+      () =>
+        expect(screen.getByRole("alert")).toHaveTextContent(
+          "Only a Manager device can change sign-in security.",
+        ),
+      { timeout: 5_000 },
     );
-    expect(setSignInSecurityMode).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows an error with a retry and offers no save when the probe fails", async () => {
+    vi.mocked(fetchSetupStatus)
+      .mockResolvedValueOnce({ required: false, tokenRequired: true, securityMode: null })
+      .mockResolvedValueOnce({ required: false, tokenRequired: true, securityMode: "strict" });
+    render(
+      <I18nProvider>
+        <SignInSecurity />
+      </I18nProvider>,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not reach the server.");
+    expect(screen.getByRole("radio", { name: /Strict/ })).toBeDisabled();
+    expect(screen.getByRole("radio", { name: /Home/ })).toBeDisabled();
+    await userEvent.type(screen.getByLabelText("Admin password"), "correct horse");
+    expect(screen.getByRole("button", { name: "Change sign-in security" })).toBeDisabled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await vi.waitFor(() => expect(screen.getByRole("radio", { name: /Strict/ })).toBeChecked());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(fetchSetupStatus).toHaveBeenCalledTimes(2);
+    expect(setSignInSecurityMode).not.toHaveBeenCalled();
   });
 });
