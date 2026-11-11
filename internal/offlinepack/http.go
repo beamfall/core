@@ -212,23 +212,79 @@ func (h *HTTPHandlers) Content(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = media
-	f, err := os.Open(found.CiphertextPath) //nolint:gosec // store-owned pack path
+	f, info, err := h.openPackMember(pack.ID, found.CiphertextPath)
 	if err != nil {
 		status := http.StatusInternalServerError
-		if errors.Is(err, os.ErrNotExist) {
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, errPackMemberScope) {
 			status = http.StatusNotFound
 		}
 		http.Error(w, "media file unavailable", status)
 		return
 	}
 	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		http.Error(w, "media file unavailable", http.StatusInternalServerError)
-		return
-	}
 	w.Header().Set("Content-Type", "application/vnd.beamfall.offline-pack")
 	http.ServeContent(w, r, filepath.Base(found.CiphertextPath), info.ModTime(), f)
+}
+
+// errPackMemberScope is the single refusal for a pack member whose stored path
+// or on-disk entry fails the pack-root binding.
+var errPackMemberScope = errors.New("offline pack member failed pack-root validation")
+
+// openPackMember opens a pack member's ciphertext the way the other byte routes
+// open media: beneath the server-owned pack root (os.Root keeps every component
+// from resolving outside it), only when the stored path names a file directly
+// inside this pack's directory, with a regular-file final component (a symlink
+// is refused, never followed), and with the opened descriptor bound by
+// os.SameFile to the entry that was checked. The returned file is the only
+// handle callers may read; the caller closes it.
+func (h *HTTPHandlers) openPackMember(packID store.OfflinePackID, ciphertextPath string) (*os.File, os.FileInfo, error) {
+	if h.svc.packRoot == "" {
+		return nil, nil, errPackMemberScope
+	}
+	dir, err := h.svc.packDir(packID)
+	if err != nil {
+		return nil, nil, errPackMemberScope
+	}
+	name := filepath.Base(ciphertextPath)
+	if name == "." || name == string(filepath.Separator) || filepath.Clean(ciphertextPath) != filepath.Join(dir, name) {
+		return nil, nil, errPackMemberScope
+	}
+	root, err := os.OpenRoot(h.svc.packRoot)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer root.Close()
+	// A pack directory swapped for a symlink is refused here as a scope failure;
+	// a swap racing this check still cannot escape the root (os.Root).
+	packEntry, err := root.Lstat(string(packID))
+	if err != nil {
+		return nil, nil, err
+	}
+	if !packEntry.IsDir() {
+		return nil, nil, errPackMemberScope
+	}
+	rel := filepath.Join(string(packID), name)
+	entry, err := root.Lstat(rel)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !entry.Mode().IsRegular() {
+		return nil, nil, errPackMemberScope
+	}
+	file, err := root.OpenFile(rel, os.O_RDONLY, 0)
+	if err != nil {
+		return nil, nil, err
+	}
+	opened, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, nil, err
+	}
+	if !opened.Mode().IsRegular() || !os.SameFile(entry, opened) {
+		_ = file.Close()
+		return nil, nil, errPackMemberScope
+	}
+	return file, opened, nil
 }
 
 // Key serves the fixed 153-byte BFKW envelope only after the pack checks, an

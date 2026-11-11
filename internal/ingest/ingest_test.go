@@ -118,6 +118,103 @@ func TestPollSendsSubscriptionAuthorizationHeader(t *testing.T) {
 	}
 }
 
+// TestAuditFeedAuth pins CORE-0745: a private feed's credential reaches only
+// the feed origin. The feed lists a same-origin enclosure, an enclosure on
+// another port (an unrelated origin), and a same-origin enclosure that
+// redirects to that other port; the other origin must never see the
+// credential, and the redirect must never reach it at all.
+func TestAuditFeedAuth(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := context.Background()
+	const secret = "Bearer secret"
+
+	var mu sync.Mutex
+	feedOriginAuth := map[string]string{}
+	otherAuth := map[string][]string{}
+
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		otherAuth[r.URL.Path] = append(otherAuth[r.URL.Path], r.Header.Get("Authorization"))
+		mu.Unlock()
+		_, _ = w.Write([]byte("other-origin-payload"))
+	}))
+	t.Cleanup(other.Close)
+
+	mux := http.NewServeMux()
+	feedOrigin := httptest.NewServer(mux)
+	t.Cleanup(feedOrigin.Close)
+	mux.HandleFunc("/feed.xml", func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		feedOriginAuth[r.URL.Path] = r.Header.Get("Authorization")
+		mu.Unlock()
+		_, _ = fmt.Fprintf(w, `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>Feed</title>`+
+			`<item><title>Same</title><guid>g-same</guid><enclosure url="%[1]s/files/one.mp3" type="audio/mpeg"/></item>`+
+			`<item><title>Cross</title><guid>g-cross</guid><enclosure url="%[2]s/files/two.mp3" type="audio/mpeg"/></item>`+
+			`<item><title>Hop</title><guid>g-hop</guid><enclosure url="%[1]s/redirect/three.mp3" type="audio/mpeg"/></item>`+
+			`</channel></rss>`, feedOrigin.URL, other.URL)
+	})
+	mux.HandleFunc("/files/one.mp3", func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		feedOriginAuth[r.URL.Path] = r.Header.Get("Authorization")
+		mu.Unlock()
+		_, _ = w.Write([]byte("same-origin-payload"))
+	})
+	mux.HandleFunc("/redirect/three.mp3", func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		feedOriginAuth[r.URL.Path] = r.Header.Get("Authorization")
+		mu.Unlock()
+		http.Redirect(w, r, other.URL+"/files/three.mp3", http.StatusFound)
+	})
+
+	root := t.TempDir()
+	added, err := st.AddSubscription(ctx, store.Subscription{
+		LibraryID: "library-local",
+		FeedURL:   feedOrigin.URL + "/feed.xml",
+		Root:      root,
+	}, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetSubscriptionAuthRef(ctx, added.ID, "feed-auth-ref"); err != nil {
+		t.Fatal(err)
+	}
+	creds := fakeCredentials{"feed-auth-ref": secret}
+	poller := NewPoller(st, scrape.New(scrape.WithInsecureLoopback(), scrape.WithCredentials(creds)))
+	runPoll(t, st, Handler(poller))
+
+	mu.Lock()
+	defer mu.Unlock()
+	for _, path := range []string{"/feed.xml", "/files/one.mp3", "/redirect/three.mp3"} {
+		if got := feedOriginAuth[path]; got != secret {
+			t.Errorf("feed-origin %s auth = %q, want the feed credential", path, got)
+		}
+	}
+	for path, headers := range otherAuth {
+		for _, header := range headers {
+			if header != "" {
+				t.Errorf("other origin %s received Authorization %q", path, header)
+			}
+		}
+	}
+	if got := len(otherAuth["/files/two.mp3"]); got != 1 {
+		t.Errorf("cross-origin enclosure fetched %d times, want 1 anonymous fetch", got)
+	}
+	if got := len(otherAuth["/files/three.mp3"]); got != 0 {
+		t.Errorf("redirect target fetched %d times, want 0 (cross-origin redirect refused)", got)
+	}
+	// The refused redirect leaves only an abandoned partial for the next
+	// poll to delete; the other two entries publish.
+	for name, want := range map[string]string{"Same.mp3": "same-origin-payload", "Cross.mp3": "other-origin-payload"} {
+		got, err := readTestFile(filepath.Join(root, name))
+		if err != nil || string(got) != want {
+			t.Errorf("%s = %q (%v), want %q", name, got, err, want)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "Hop.mp3")); !os.IsNotExist(err) {
+		t.Errorf("redirected enclosure published (stat err %v), want refused", err)
+	}
+}
+
 func (fs *feedServer) setFeed(items string) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()

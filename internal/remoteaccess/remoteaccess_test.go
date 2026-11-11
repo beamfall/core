@@ -493,9 +493,7 @@ func TestRelayConnectHandshakeAndAck(t *testing.T) {
 	}
 	select {
 	case h := <-hello:
-		if string(h.Token) != "carrier-secret" {
-			t.Fatalf("hello token = %q, want the carrier secret", h.Token)
-		}
+		assertMintedRelayToken(t, "carrier-secret", h.Hostnames, h.Token)
 		if len(h.Hostnames) != 1 || h.Hostnames[0] != "remote.example.com" {
 			t.Fatalf("hello hostnames = %v, want [remote.example.com]", h.Hostnames)
 		}
@@ -821,9 +819,10 @@ func TestRelayQUICConnectAndCarry(t *testing.T) {
 
 	select {
 	case got := <-hello:
-		if string(got.Token) != "carrier-secret" || len(got.Hostnames) != 1 || got.Hostnames[0] != "remote.example.com" {
-			t.Fatalf("QUIC hello = %+v", got)
+		if len(got.Hostnames) != 1 || got.Hostnames[0] != "remote.example.com" {
+			t.Fatalf("QUIC hello hostnames = %v", got.Hostnames)
 		}
+		assertMintedRelayToken(t, "carrier-secret", got.Hostnames, got.Token)
 	case <-time.After(2 * time.Second):
 		t.Fatal("QUIC relay never received hello")
 	}

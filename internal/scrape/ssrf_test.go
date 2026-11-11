@@ -152,3 +152,26 @@ func TestSameHostRedirectFollowed(t *testing.T) {
 		t.Errorf("title = %q", result.Fields["title"])
 	}
 }
+
+func TestSameOrigin(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want bool
+	}{
+		{"https://feeds.example.com/a.xml", "https://feeds.example.com/files/1.mp3", true},
+		{"https://feeds.example.com/a.xml", "https://FEEDS.example.com:443/1.mp3", true},
+		{"http://127.0.0.1/feed", "http://127.0.0.1:80/file", true},
+		{"https://feeds.example.com/a.xml", "https://cdn.example.com/1.mp3", false},
+		{"https://feeds.example.com/a.xml", "https://feeds.example.com:8443/1.mp3", false},
+		{"https://feeds.example.com/a.xml", "http://feeds.example.com/1.mp3", false},
+		{"https://feeds.example.com/a.xml", "https://feeds.example.com.evil.test/1.mp3", false},
+		{"https://feeds.example.com/a.xml", "/relative/1.mp3", false},
+		{"https://feeds.example.com/a.xml", "://bad", false},
+		{"", "", false},
+	}
+	for _, tc := range cases {
+		if got := SameOrigin(tc.a, tc.b); got != tc.want {
+			t.Errorf("SameOrigin(%q, %q) = %v, want %v", tc.a, tc.b, got, tc.want)
+		}
+	}
+}

@@ -74,8 +74,10 @@ func (l *GenerationLease) retireLocked() {
 	l.closeDoneLocked()
 }
 
+// closeDoneLocked signals drain only once the lease is retired and idle. A
+// live lease must keep done open so a later guarded call still holds Retire.
 func (l *GenerationLease) closeDoneLocked() {
-	if l.active != 0 || l.doneClosed {
+	if !l.retired || l.active != 0 || l.doneClosed {
 		return
 	}
 	close(l.done)

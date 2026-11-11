@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"encoding/json"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -185,6 +186,10 @@ type migrationJobPayload struct {
 	LibraryID string `json:"library_id,omitempty"`
 	// Root is the optional target download root for imported feed subscriptions.
 	Root string `json:"root,omitempty"`
+	// SourceUserProfileIDs maps each source user's opaque identifier to the
+	// Profile that receives that user's state (ADR-0037 §5). A source user absent
+	// from the map is skipped and reported, never written to ProfileID.
+	SourceUserProfileIDs map[string]string `json:"source_user_profile_ids,omitempty"`
 }
 
 // runImport enqueues an additive, re-runnable import job for one declared
@@ -271,6 +276,10 @@ func (h *Handler) runImport(ctx context.Context, scope auth.Scope, req request) 
 			return JobInfo{}, clientError("unknown library")
 		}
 	}
+	sourceUsers, err := h.sourceUserMappings(ctx, req)
+	if err != nil {
+		return JobInfo{}, err
+	}
 	payload, err := json.Marshal(migrationJobPayload{
 		Version:    1,
 		PluginID:   pluginID,
@@ -281,6 +290,8 @@ func (h *Handler) runImport(ctx context.Context, scope auth.Scope, req request) 
 		SourcePath: sourcePath,
 		LibraryID:  libraryID,
 		Root:       root,
+
+		SourceUserProfileIDs: sourceUsers,
 	})
 	if err != nil {
 		return JobInfo{}, err
@@ -288,7 +299,7 @@ func (h *Handler) runImport(ctx context.Context, scope auth.Scope, req request) 
 	created, err := h.store.EnqueueJob(ctx, store.Job{
 		Kind:      migrationJobKind,
 		Class:     store.JobClassBackground,
-		DedupeKey: migrationDedupeKey(pluginID, importerID, libraryID, root, sourcePath, categories, dryRun),
+		DedupeKey: migrationDedupeKey(pluginID, importerID, libraryID, root, sourcePath, categories, dryRun, sourceUsers),
 		Payload:   payload,
 		CreatedAt: time.Now().UTC(),
 	})
@@ -302,8 +313,8 @@ func requiresSubscriptionTarget(categories []string) bool {
 	return containsString(categories, "subscriptions") || containsString(categories, "item-state")
 }
 
-func migrationDedupeKey(pluginID, importerID, libraryID, root, sourcePath string, categories []string, dryRun bool) string {
-	return strings.Join([]string{
+func migrationDedupeKey(pluginID, importerID, libraryID, root, sourcePath string, categories []string, dryRun bool, sourceUsers map[string]string) string {
+	parts := []string{
 		pluginID,
 		importerID,
 		libraryID,
@@ -311,7 +322,61 @@ func migrationDedupeKey(pluginID, importerID, libraryID, root, sourcePath string
 		sourcePath,
 		strings.Join(categories, ","),
 		strconv.FormatBool(dryRun),
-	}, "\x1f")
+	}
+	if len(sourceUsers) > 0 {
+		// Sorted so equivalent reordered mappings share one identity; a changed
+		// pair or target Profile yields a different key.
+		ids := make([]string, 0, len(sourceUsers))
+		for id := range sourceUsers {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		for _, id := range ids {
+			parts = append(parts, strconv.Quote(id)+"="+strconv.Quote(sourceUsers[id]))
+		}
+	}
+	return strings.Join(parts, "\x1f")
+}
+
+// sourceUserMappings reads the optional sourceUserMappings variable: a list of
+// {sourceUserID, profileID} pairs. A list (not an object) so a duplicate source
+// user is detectable and refused rather than silently last-wins. Every target
+// Profile must be real and active. Returns nil when no mapping was supplied.
+func (h *Handler) sourceUserMappings(ctx context.Context, req request) (map[string]string, error) {
+	raw, ok := req.Variables["sourceUserMappings"]
+	if !ok || raw == nil {
+		return nil, nil
+	}
+	entries, ok := raw.([]any)
+	if !ok {
+		return nil, clientError("sourceUserMappings must be a list of mappings")
+	}
+	if len(entries) == 0 {
+		return nil, nil
+	}
+	mapped := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		fields, ok := entry.(map[string]any)
+		if !ok {
+			return nil, clientError("sourceUserMappings must be a list of mappings")
+		}
+		sourceUserID, idOK := fields["sourceUserID"].(string)
+		profileID, profileOK := fields["profileID"].(string)
+		// The source user ID is matched byte-for-byte by the importer, so it
+		// is kept as sent; trimming only decides whether it is blank.
+		profileID = strings.TrimSpace(profileID)
+		if !idOK || !profileOK || strings.TrimSpace(sourceUserID) == "" || profileID == "" {
+			return nil, clientError("each source user mapping needs sourceUserID and profileID")
+		}
+		if _, dup := mapped[sourceUserID]; dup {
+			return nil, clientError("duplicate source user in sourceUserMappings")
+		}
+		if err := h.requireProfile(ctx, profileID); err != nil {
+			return nil, err
+		}
+		mapped[sourceUserID] = profileID
+	}
+	return mapped, nil
 }
 
 // importStatus reports one migration job's progress (ADR-0037 §2.3: the

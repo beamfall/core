@@ -771,7 +771,11 @@ func TestCORSExemptsOnlyOrdinaryAPIContentByteGETRoutes(t *testing.T) {
 			continue
 		}
 		req := httptest.NewRequest(http.MethodGet, route.Pattern+"token", nil)
-		want := route.Pattern != "/api/pack/key/"
+		// Pack keys and the session-authenticated artwork routes carry no URL
+		// token, so they never get the token-byte wildcard origin.
+		want := route.Pattern != "/api/pack/key/" &&
+			route.Pattern != "/api/media/artwork/" &&
+			route.Pattern != "/api/entity/artwork/"
 		if got := tokenByteGETPath(req); got != want {
 			t.Fatalf("tokenByteGETPath(%q) = %v, want %v", req.URL.Path, got, want)
 		}

@@ -71,6 +71,22 @@ func (e *Engine) checkRedirect(req *http.Request, via []*http.Request) error {
 	return e.vetURL(req.URL)
 }
 
+// SameOrigin reports whether two absolute URLs share a normalized origin
+// (scheme, case-insensitive hostname, effective port). Unparseable or
+// host-less URLs are never same-origin, so callers scoping credentials with
+// it fail closed.
+func SameOrigin(a, b string) bool {
+	ua, err := url.Parse(a)
+	if err != nil || ua.Hostname() == "" {
+		return false
+	}
+	ub, err := url.Parse(b)
+	if err != nil || ub.Hostname() == "" {
+		return false
+	}
+	return normalizedRedirectOrigin(ua) == normalizedRedirectOrigin(ub)
+}
+
 func normalizedRedirectOrigin(u *url.URL) string {
 	scheme := strings.ToLower(u.Scheme)
 	hostname := strings.ToLower(u.Hostname())

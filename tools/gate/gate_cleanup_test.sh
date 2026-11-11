@@ -545,4 +545,105 @@ if grep -Eq '^\[[0-9]+\]|Terminated: [0-9]+|(^|[[:space:]])(Done|Killed)[[:space
   exit 1
 fi
 
+# CORE-0989: on /bin/bash 3.2 `$?` is 0 inside an EXIT trap after a `set -u`
+# abort. Build a fixture from gate.sh's real cleanup trap and sentinel, plant an
+# unbound variable, and require a non-zero exit on every bash we can find.
+python3 - "$ROOT/tools/gate/gate.sh" "$TMP/unbound-abort.sh" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+gate = Path(sys.argv[1]).read_text()
+sentinel = re.search(r"^GATE_EXIT_OK=0$", gate, re.M)
+assert sentinel, "gate.sh lost its GATE_EXIT_OK=0 sentinel"
+start = gate.index("gate_signal_group() {")
+end = gate.index("\nrun_parallel_step() {", start)
+Path(sys.argv[2]).write_text(
+    "#!/usr/bin/env bash\nset -euo pipefail\n"
+    + sentinel.group(0) + "\n"
+    + gate[start:end]
+    + r"""
+trap gate_cleanup_children EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+gate_metric() { :; }
+case "${1:-}" in
+  unbound) echo "$((PLANTED_UNSET_VAR + 1))" ;;
+  ok) GATE_EXIT_OK=1; exit 0 ;;
+esac
+"""
+)
+PY
+for unbound_bash in /bin/bash /opt/homebrew/bin/bash "$(command -v bash)"; do
+  [ -x "$unbound_bash" ] || continue
+  set +e
+  "$unbound_bash" "$TMP/unbound-abort.sh" unbound >"$TMP/unbound-abort.out" 2>&1
+  unbound_rc=$?
+  "$unbound_bash" "$TMP/unbound-abort.sh" ok >"$TMP/unbound-ok.out" 2>&1
+  ok_rc=$?
+  set -e
+  [ "$unbound_rc" -ne 0 ] || {
+    echo "$unbound_bash exited 0 after a set -u abort in the gate cleanup trap" >&2
+    exit 1
+  }
+  [ "$ok_rc" -eq 0 ] || {
+    echo "$unbound_bash failed an intentional successful exit (rc=$ok_rc): $(cat "$TMP/unbound-ok.out")" >&2
+    exit 1
+  }
+done
+# Every intentional success exit in gate.sh must confirm the sentinel first.
+python3 - "$ROOT/tools/gate/gate.sh" <<'PY'
+import re
+import sys
+
+lines = open(sys.argv[1], encoding="utf-8").read().splitlines()
+for i, line in enumerate(lines):
+    if re.fullmatch(r"\s*exit 0", line) and "GATE_EXIT_OK=1" not in lines[i - 1]:
+        sys.exit(f"gate.sh:{i + 1}: exit 0 without GATE_EXIT_OK=1 on the previous line")
+if lines[-2].strip() != "GATE_EXIT_OK=1":
+    sys.exit("gate.sh final success path does not set GATE_EXIT_OK=1")
+PY
+# CORE-0845: a group still alive at a green exit must fail the gate with an
+# inventory that names its owner, and must be reaped.
+python3 - "$ROOT/tools/gate/gate.sh" "$TMP/residual-green.sh" <<'PY'
+from pathlib import Path
+import sys
+
+gate = Path(sys.argv[1]).read_text()
+start = gate.index("gate_signal_group() {")
+end = gate.index("\nrun_parallel_step() {", start)
+Path(sys.argv[2]).write_text(
+    "#!/usr/bin/env bash\nset -euo pipefail\n"
+    + gate[start:end]
+    + r"""
+trap gate_cleanup_children EXIT
+gate_metric() { :; }
+set -m
+(sleep 30) &
+leaked=$!
+set +m
+printf '%s\n' "$leaked" >"$1"
+gate_register_group "$leaked" "step:leaky step"
+exit 0
+"""
+)
+PY
+chmod +x "$TMP/residual-green.sh"
+set +e
+GATE_TERM_GRACE_TICKS=2 GATE_KILL_WAIT_TICKS=40 \
+  "$TMP/residual-green.sh" "$TMP/residual-green.pid" >"$TMP/residual-green.out" 2>&1
+residual_rc=$?
+set -e
+residual_pid="$(cat "$TMP/residual-green.pid")"
+[ "$residual_rc" -eq 1 ] || { echo "green exit with a residual group returned $residual_rc, want 1" >&2; exit 1; }
+grep -q "gate residual process inventory for group $residual_pid (owner: step:leaky_step)" "$TMP/residual-green.out" \
+  || { echo "green-exit residual group was not attributed: $(cat "$TMP/residual-green.out")" >&2; exit 1; }
+grep -q 'PID PPID PGID SID COMMAND\|PGID' "$TMP/residual-green.out" \
+  || { echo "green-exit residual group printed no inventory" >&2; exit 1; }
+if kill -0 "$residual_pid" 2>/dev/null; then
+  echo "green-exit residual group was not reaped" >&2
+  kill -KILL "$residual_pid" 2>/dev/null || true
+  exit 1
+fi
+
 echo "gate cleanup test: passed"

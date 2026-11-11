@@ -1872,8 +1872,9 @@ func (a *App) Run(ctx context.Context) error {
 	// server's own certificate (ADR-0018 sec 1/sec 2) and serves the same app
 	// handler, so the relay forwards raw bytes and never sees plaintext. It runs
 	// in the background and never blocks or fails boot; the Console reads the
-	// honest connection state. The carrier token is resolved from a 0600 secret
-	// in RelayClient and never logged.
+	// honest connection state. RelayClient resolves the shared HMAC secret from a
+	// 0600 file and mints a fresh single-use carrier token per dial; neither is
+	// logged.
 	//
 	// Carrying inbound client TLS requires the server's own cert. Every server now
 	// holds one — the persistent self-signed identity when direct HTTPS is
@@ -2016,54 +2017,139 @@ func (a *App) Run(ctx context.Context) error {
 
 // runRelayCarrier owns the self-hosted relay carrier lifecycle (ADR-0018/0025):
 // dial + register + carry, and on carrier loss re-dial with bounded exponential
-// backoff until the context is cancelled. The relay token is re-presented on
-// every reconnect, so a service-side cancellation propagates in minutes.
+// backoff until the context is cancelled. Every dial mints a fresh single-use
+// carrier token, so a service-side cancellation propagates in minutes.
 // RelayConnected is only ever set while a yamux session is live
 // and carrying — a dropped carrier reverts the Console state, so the status is
 // truthful rather than reporting a connection that forwards nothing.
 func (a *App) runRelayCarrier(ctx context.Context) {
-	const (
-		backoffMin = time.Second
-		backoffMax = 60 * time.Second
-		// A carrier session must survive this long before the backoff resets.
-		relayCarrierHealthyDuration = 30 * time.Second
-	)
-	backoff := backoffMin
+	runRelayCarrierLoop(ctx, a.relay, a.logger, time.After)
+}
+
+const (
+	relayCarrierBackoffMin = time.Second
+	relayCarrierBackoffMax = 60 * time.Second
+	// A carrier session must survive this long before the backoff resets.
+	relayCarrierHealthyDuration = 30 * time.Second
+	// relayCarrierRotateEvery is how long after each registration a
+	// same-identity replacement carrier is registered with a fresh token. A
+	// minted token's signed lifetime is 5m, backdated 30s, so the relay closes
+	// an unreplaced carrier 4m30s after its dial; rotating at 2m leaves room for
+	// retries before that.
+	relayCarrierRotateEvery = 2 * time.Minute
+)
+
+// relayCarrier is the RelayClient surface the carrier loop drives.
+type relayCarrier interface {
+	Connect(context.Context) (remoteaccess.RelaySession, error)
+	Carry(context.Context, remoteaccess.RelaySession) error
+	Endpoint() string
+	PublicHost() string
+}
+
+// runRelayCarrierLoop is runRelayCarrier with an injectable carrier and timer
+// source (after) so rotation and redial timing can be tested without waiting.
+func runRelayCarrierLoop(ctx context.Context, carrier relayCarrier, logger *slog.Logger, after func(time.Duration) <-chan time.Time) {
+	var carries sync.WaitGroup
+	defer carries.Wait()
+	backoff := relayCarrierBackoffMin
 	for {
 		if ctx.Err() != nil {
 			return
 		}
-		session, err := a.relay.Connect(ctx)
+		session, err := carrier.Connect(ctx)
 		if err != nil {
-			a.logger.Warn("relay carrier connect failed", "endpoint", a.relay.Endpoint(), "error", err)
+			logger.Warn("relay carrier connect failed", "endpoint", carrier.Endpoint(), "error", err)
 			if !relayCarrierShouldRetry(err) {
 				return
 			}
 		} else {
-			a.logger.Info("relay carrier connected", "endpoint", a.relay.Endpoint(), "publicHost", a.relay.PublicHost())
+			logger.Info("relay carrier connected", "endpoint", carrier.Endpoint(), "publicHost", carrier.PublicHost())
 			carryStart := time.Now()
-			if cerr := a.relay.Carry(ctx, session); cerr != nil {
-				a.logger.Warn("relay carrier session ended", "endpoint", a.relay.Endpoint(), "error", cerr)
-			}
+			carryRelayGenerations(ctx, carrier, logger, after, session, &carries)
 			// Reset the backoff only after a session that actually stayed up:
 			// resetting on dial success alone lets a flapping relay (accepts,
 			// then drops immediately) pin the loop at backoffMin forever.
 			if time.Since(carryStart) >= relayCarrierHealthyDuration {
-				backoff = backoffMin
+				backoff = relayCarrierBackoffMin
 			}
 		}
 		if ctx.Err() != nil {
 			return
 		}
-		timer := time.NewTimer(relayCarrierBackoffDelay(backoff, rand.Int63n))
 		select {
 		case <-ctx.Done():
-			timer.Stop()
 			return
-		case <-timer.C:
+		case <-after(relayCarrierBackoffDelay(backoff, rand.Int63n)):
 		}
-		if backoff *= 2; backoff > backoffMax {
-			backoff = backoffMax
+		if backoff *= 2; backoff > relayCarrierBackoffMax {
+			backoff = relayCarrierBackoffMax
+		}
+	}
+}
+
+// carryRelayGenerations carries first and, every relayCarrierRotateEvery,
+// registers a replacement carrier with a freshly minted token while the
+// previous session drains. It returns when the newest generation's carry ends
+// (the caller redials) or ctx is cancelled. A superseded generation ending is
+// expected and is neither a failure nor a redial trigger. Carry goroutines are
+// tracked in carries so shutdown waits for them.
+func carryRelayGenerations(ctx context.Context, carrier relayCarrier, logger *slog.Logger, after func(time.Duration) <-chan time.Time, first remoteaccess.RelaySession, carries *sync.WaitGroup) {
+	type carryEnd struct {
+		session remoteaccess.RelaySession
+		err     error
+	}
+	ended := make(chan carryEnd)
+	quit := make(chan struct{})
+	defer close(quit)
+	startCarry := func(s remoteaccess.RelaySession) {
+		carries.Add(1)
+		go func() {
+			defer carries.Done()
+			err := carrier.Carry(ctx, s)
+			select {
+			case ended <- carryEnd{session: s, err: err}:
+			case <-quit:
+			}
+		}()
+	}
+
+	current := first
+	startCarry(current)
+	rotate := after(relayCarrierRotateEvery)
+	retry := relayCarrierBackoffMin
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case end := <-ended:
+			if end.session != current {
+				continue
+			}
+			if end.err != nil {
+				logger.Warn("relay carrier session ended", "endpoint", carrier.Endpoint(), "error", end.err)
+			}
+			return
+		case <-rotate:
+			next, err := carrier.Connect(ctx)
+			if err != nil {
+				logger.Warn("relay carrier rotation failed", "endpoint", carrier.Endpoint(), "error", err)
+				if !relayCarrierShouldRetry(err) {
+					// Keep carrying until the current session ends; the
+					// redial then reports the terminal error.
+					rotate = nil
+					continue
+				}
+				rotate = after(relayCarrierBackoffDelay(retry, rand.Int63n))
+				if retry *= 2; retry > relayCarrierBackoffMax {
+					retry = relayCarrierBackoffMax
+				}
+				continue
+			}
+			current = next
+			retry = relayCarrierBackoffMin
+			startCarry(current)
+			rotate = after(relayCarrierRotateEvery)
 		}
 	}
 }

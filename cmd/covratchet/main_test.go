@@ -3,7 +3,9 @@ package main
 import (
 	"errors"
 	"io"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -177,4 +179,65 @@ func captureStdout(t *testing.T, fn func()) string {
 		t.Fatal(err)
 	}
 	return string(out)
+}
+
+func passingRun(t *testing.T) *measurement {
+	t.Helper()
+	m, err := measureCoverageWith(func(profile string) ([]byte, error) {
+		if err := os.WriteFile(profile, []byte("mode: set\nx.go:1.1,2.1 3 1\ny.go:1.1,2.1 1 0\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return []byte("ok  \tgithub.com/beamfall/core/internal/foo\t0.01s\tcoverage: 75.0% of statements\n"), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+func TestRetainDiagnosticsKeepsOutputAndProfileWhenRatchetFails(t *testing.T) {
+	m := passingRun(t)
+	floors := &floorFile{SchemaVersion: 1, Floors: map[string]float64{"github.com/beamfall/core/internal/foo": 90}}
+	var code int
+	captureStdout(t, func() { code = check(m, floors) })
+	if code == 0 {
+		t.Fatal("ratchet unexpectedly passed")
+	}
+	dir := filepath.Join(t.TempDir(), "diag")
+	retainDiagnostics(dir, m)
+	out, err := fs.ReadFile(os.DirFS(dir), diagOutputName)
+	if err != nil || !strings.Contains(string(out), "coverage: 75.0%") {
+		t.Fatalf("output = %q, err = %v", out, err)
+	}
+	prof, err := fs.ReadFile(os.DirFS(dir), diagProfileName)
+	if err != nil || !strings.Contains(string(prof), "x.go:1.1,2.1 3 1") {
+		t.Fatalf("profile = %q, err = %v", prof, err)
+	}
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if e.Name() != diagOutputName && e.Name() != diagProfileName {
+			t.Fatalf("unexpected file %q (no receipt formats allowed)", e.Name())
+		}
+	}
+}
+
+func TestMeasurementLeavesNoDiagnosticsOnGreenOrTestFailure(t *testing.T) {
+	// Green: check passes, retainDiagnostics is never invoked by main; nothing is written.
+	m := passingRun(t)
+	floors := &floorFile{SchemaVersion: 1, Floors: map[string]float64{"github.com/beamfall/core/internal/foo": 70}}
+	captureStdout(t, func() {
+		if check(m, floors) != 0 {
+			t.Fatal("green run failed ratchet")
+		}
+	})
+	// Test failure: no measurement is returned to the ratchet, error text keeps the output.
+	failed, err := measureCoverageWith(func(string) ([]byte, error) { return []byte("--- FAIL: TestX\n"), errors.New("exit status 1") })
+	if err == nil || !strings.Contains(err.Error(), "--- FAIL: TestX") {
+		t.Fatalf("err = %v", err)
+	}
+	dir := filepath.Join(t.TempDir(), "diag")
+	retainDiagnostics(dir, failed)
+	if _, statErr := os.Stat(dir); statErr == nil {
+		t.Fatal("diagnostics dir created for a test failure")
+	}
 }

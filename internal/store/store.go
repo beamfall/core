@@ -1227,41 +1227,10 @@ func (s *Store) catalogPlaneForEntityLocked(ctx context.Context, id EntityID) (c
 
 // EnrollDevice inserts an enrolled Device and its initial hidden Session atomically.
 func (s *Store) EnrollDevice(ctx context.Context, device Device, session Session) error {
-	if device.ID == "" {
-		return errors.New("device ID is required")
-	}
-	if device.Name == "" {
-		return errors.New("device name is required")
-	}
-	if device.Role == "" {
-		return errors.New("device role is required")
-	}
-	distributionClass, err := NormalizeDeviceDistributionClass(device.DistributionClass)
+	device, session, err := normalizeEnrollment(device, session)
 	if err != nil {
 		return err
 	}
-	device.DistributionClass = distributionClass
-	deviceSurface, err := NormalizeDeviceSurface(device.Surface)
-	if err != nil {
-		return err
-	}
-	device.Surface = deviceSurface
-	if device.SecretHash == "" {
-		return errors.New("device secret hash is required")
-	}
-	if session.ID == "" {
-		return errors.New("session ID is required")
-	}
-	if session.DeviceID != device.ID {
-		return errors.New("session device mismatch")
-	}
-	if session.ProfileID == "" {
-		return errors.New("session profile is required")
-	}
-	if session.Kind != "" && session.Kind != SessionKindEnrolled {
-		return errors.New("pairing may mint only enrolled sessions")
-	}
-	session.Kind = SessionKindEnrolled
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -1274,6 +1243,47 @@ func (s *Store) EnrollDevice(ctx context.Context, device Device, session Session
 		return ErrProfileDisabled
 	}
 	return s.insertDeviceSession(ctx, device, session)
+}
+
+// normalizeEnrollment validates an enrollment's Device and initial Session and
+// returns them with normalized distribution class, surface and session kind.
+func normalizeEnrollment(device Device, session Session) (Device, Session, error) {
+	if device.ID == "" {
+		return Device{}, Session{}, errors.New("device ID is required")
+	}
+	if device.Name == "" {
+		return Device{}, Session{}, errors.New("device name is required")
+	}
+	if device.Role == "" {
+		return Device{}, Session{}, errors.New("device role is required")
+	}
+	distributionClass, err := NormalizeDeviceDistributionClass(device.DistributionClass)
+	if err != nil {
+		return Device{}, Session{}, err
+	}
+	device.DistributionClass = distributionClass
+	deviceSurface, err := NormalizeDeviceSurface(device.Surface)
+	if err != nil {
+		return Device{}, Session{}, err
+	}
+	device.Surface = deviceSurface
+	if device.SecretHash == "" {
+		return Device{}, Session{}, errors.New("device secret hash is required")
+	}
+	if session.ID == "" {
+		return Device{}, Session{}, errors.New("session ID is required")
+	}
+	if session.DeviceID != device.ID {
+		return Device{}, Session{}, errors.New("session device mismatch")
+	}
+	if session.ProfileID == "" {
+		return Device{}, Session{}, errors.New("session profile is required")
+	}
+	if session.Kind != "" && session.Kind != SessionKindEnrolled {
+		return Device{}, Session{}, errors.New("pairing may mint only enrolled sessions")
+	}
+	session.Kind = SessionKindEnrolled
+	return device, session, nil
 }
 
 // VerifyDeviceSecret returns a Device only when the provided one-time-visible secret matches.
@@ -3609,6 +3619,20 @@ func (s *Store) CreateProfile(ctx context.Context, name string, kind ProfileKind
 		return Profile{}, err
 	}
 	defer tx.Rollback()
+	profile, err := insertProfileTx(ctx, tx, name, kind, grants)
+	if err != nil {
+		return Profile{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Profile{}, err
+	}
+	return profile, nil
+}
+
+// insertProfileTx inserts a Profile with the given Library grants under a
+// unique id derived from name, and echoes the schema defaults so callers see
+// the stored truth without a re-read.
+func insertProfileTx(ctx context.Context, tx *sql.Tx, name string, kind ProfileKind, grants []LibraryID) (Profile, error) {
 	base := profileIDForName(name)
 	id := base
 	for suffix := 2; ; suffix++ {
@@ -3633,10 +3657,6 @@ func (s *Store) CreateProfile(ctx context.Context, name string, kind ProfileKind
 			return Profile{}, err
 		}
 	}
-	if err := tx.Commit(); err != nil {
-		return Profile{}, err
-	}
-	// Echo the schema defaults so callers see the stored truth without a re-read.
 	return Profile{ID: id, Name: name, Kind: kind, Library: grants, TranscodeAllowed: true, SubtitleMode: SubtitleModeOff, CreatedAtMs: createdAt}, nil
 }
 
@@ -3677,6 +3697,125 @@ func (s *Store) SetProfileOwner(ctx context.Context, id ProfileID) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// FirstRunSetupComplete reports whether first-run setup has finished: an adult
+// Profile exists and at least one Device has been enrolled. Devices are revoked
+// by flag and never deleted, so once setup completes this stays true. A store
+// holding Profiles but no Device was left by a setup that stopped after its
+// Profile write, and still needs setup.
+func (s *Store) FirstRunSetupComplete(ctx context.Context) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return false, err
+	}
+	var complete int
+	err := s.catalogR.QueryRowContext(ctx, `
+		SELECT EXISTS(SELECT 1 FROM profile WHERE kind = ?) AND EXISTS(SELECT 1 FROM device)
+	`, ProfileAdult).Scan(&complete)
+	if err != nil {
+		return false, err
+	}
+	return complete != 0, nil
+}
+
+// BootstrapOwner commits first-run setup in one transaction: the owner Profile,
+// its owner designation (ADR-0007 §2/§4), the first Device and its Session.
+// A failure at any step stores none of them. session.ProfileID is ignored and
+// bound to the owner Profile, which is returned.
+//
+// When no Device has ever been enrolled, any existing Profile can only be left
+// by an earlier setup that stopped after its Profile write. That Profile is
+// reused as the owner (the designated owner first, else the oldest adult
+// Profile) and renamed to profileName, so a retry never adds a second owner.
+func (s *Store) BootstrapOwner(ctx context.Context, profileName string, device Device, session Session) (Profile, error) {
+	profileName = strings.TrimSpace(profileName)
+	if profileName == "" {
+		return Profile{}, ValidationError("profile name is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return Profile{}, err
+	}
+	libraries, err := loadLibraries(ctx, s.catalogR)
+	if err != nil {
+		return Profile{}, err
+	}
+	grants := make([]LibraryID, 0, len(libraries))
+	for _, library := range libraries {
+		grants = append(grants, library.ID)
+	}
+	tx, err := s.catalogW.BeginTx(ctx, nil)
+	if err != nil {
+		return Profile{}, err
+	}
+	defer tx.Rollback()
+	profileID, err := partialOwnerTx(ctx, tx)
+	if err != nil {
+		return Profile{}, err
+	}
+	if profileID == "" {
+		profile, err := insertProfileTx(ctx, tx, profileName, ProfileAdult, grants)
+		if err != nil {
+			return Profile{}, err
+		}
+		profileID = profile.ID
+	} else if _, err := tx.ExecContext(ctx, `UPDATE profile SET name = ? WHERE id = ?`, profileName, profileID); err != nil {
+		return Profile{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE profile SET is_owner = 0 WHERE is_owner = 1 AND id <> ?`, profileID); err != nil {
+		return Profile{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE profile SET is_owner = 1 WHERE id = ?`, profileID); err != nil {
+		return Profile{}, err
+	}
+	session.ProfileID = profileID
+	device, session, err = normalizeEnrollment(device, session)
+	if err != nil {
+		return Profile{}, err
+	}
+	if _, err := tx.ExecContext(ctx,
+		"INSERT INTO device(id, name, role, distribution_class, device_surface, secret_hash, revoked) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		device.ID, device.Name, device.Role, device.DistributionClass, device.Surface, device.SecretHash, boolInt(device.Revoked),
+	); err != nil {
+		return Profile{}, err
+	}
+	if _, err := tx.ExecContext(ctx,
+		"INSERT INTO auth_session(id, device_id, profile_id, revealed, expires_at_ms, kind) VALUES (?, ?, ?, ?, ?, ?)",
+		session.ID, session.DeviceID, session.ProfileID, boolInt(session.Revealed), nullableMillis(session.ExpiresAt), SessionKindEnrolled,
+	); err != nil {
+		return Profile{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Profile{}, err
+	}
+	// The setup is stored: a cancelled request must not turn it into a
+	// retryable failure that would enroll a second owner.
+	return s.profileSQL(context.WithoutCancel(ctx), profileID)
+}
+
+// partialOwnerTx returns the Profile an interrupted first-run setup left
+// behind, or "" when there is none. It reports one only while no Device has
+// ever been enrolled: the designated owner if any, else the oldest adult Profile.
+func partialOwnerTx(ctx context.Context, tx *sql.Tx) (ProfileID, error) {
+	var devices int
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM device)`).Scan(&devices); err != nil {
+		return "", err
+	}
+	if devices != 0 {
+		return "", nil
+	}
+	var id ProfileID
+	err := tx.QueryRowContext(ctx, `
+		SELECT id FROM profile WHERE kind = ?
+		ORDER BY is_owner DESC, created_at_ms, id LIMIT 1
+	`, ProfileAdult).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return id, err
 }
 
 // ProfileIsOwner reports whether id is the designated owner Profile. An unknown
