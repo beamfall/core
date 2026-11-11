@@ -875,7 +875,7 @@ func TestCredentialClassFollowsScopeRouting(t *testing.T) {
 		{"admin token", func(r *http.Request) { r.Header.Set("Authorization", "Bearer bft_abc") }, CredentialAPIToken},
 		{"scoped key", func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+store.ScopedKeyPrefix+"abc") }, CredentialScopedKey},
 		{"session header", func(r *http.Request) { r.Header.Set("X-Beamfall-Session", "s") }, CredentialSession},
-		{"session cookie", func(r *http.Request) { r.AddCookie(&http.Cookie{Name: SessionCookie, Value: "s"}) }, CredentialSession},
+		{"session cookie", func(r *http.Request) { r.AddCookie(&http.Cookie{Name: SessionCookie, Value: "s"}) }, CredentialSession}, //nolint:gosec // test request cookie
 		{"bearer wins over session", func(r *http.Request) {
 			r.Header.Set("X-Beamfall-Session", "s")
 			r.Header.Set("Authorization", "Bearer bft_abc")
@@ -907,7 +907,7 @@ func TestScopeResolutionNotesRefusalReasons(t *testing.T) {
 		}(), RefusalAPITokenInvalid},
 		{"cookie without device", func() *http.Request {
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
-			req.AddCookie(&http.Cookie{Name: SessionCookie, Value: "session-default"})
+			req.AddCookie(&http.Cookie{Name: SessionCookie, Value: "session-default"}) //nolint:gosec // test request cookie
 			return req
 		}(), RefusalCredentialIncomplete},
 	}

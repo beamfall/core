@@ -848,9 +848,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	ctx := r.Context()
 	if !requestIsHTTPS(r) && !requestIsLAN(r) {
-		r = r.WithContext(context.WithValue(r.Context(), plainHTTPPublicWarningContextKey, true))
+		ctx = context.WithValue(ctx, plainHTTPPublicWarningContextKey, true)
 	}
+	r = r.WithContext(ctx)
 	s.handler.ServeHTTP(w, r)
 }
 

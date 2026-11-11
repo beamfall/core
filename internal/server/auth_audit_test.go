@@ -30,7 +30,7 @@ func scrapeLine(t *testing.T, srv *Server, name string) string {
 
 func TestWrongDeviceSecretProducesAuthRefusedRecord(t *testing.T) {
 	srv := newTestServer(t)
-	const secretCanary = "canary-device-secret-3e1b"
+	const secretCanary = "canary-device-secret-3e1b" //nolint:gosec // a leak canary, not a credential
 	logs := captureJSONLogs(t)
 	// The audit record must bypass the level filter: raise the default
 	// logger's level above Warn and still expect the record.

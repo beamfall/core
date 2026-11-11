@@ -12,7 +12,7 @@ type RefusalReason string
 
 // Refusal reasons noted by credential resolution and sign-in.
 const (
-	RefusalCredentialIncomplete  RefusalReason = "credential_incomplete"
+	RefusalCredentialIncomplete  RefusalReason = "credential_incomplete" //nolint:gosec // a reason label, not a credential
 	RefusalCSRFMissing           RefusalReason = "csrf_missing"
 	RefusalSessionInvalid        RefusalReason = "session_invalid"
 	RefusalSessionExpired        RefusalReason = "session_expired"
