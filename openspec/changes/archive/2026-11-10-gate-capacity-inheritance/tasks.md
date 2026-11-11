@@ -17,5 +17,5 @@
 
 ## 3. Verify and close
 
-- [ ] 3.1 Run `make gate-preflight` and `make gate`
-- [ ] 3.2 Run `openspec archive gate-capacity-inheritance` after landing, before completing CORE-0392
+- [x] 3.1 Run `make gate-preflight` and `make gate`
+- [x] 3.2 Run `openspec archive gate-capacity-inheritance` after landing, before completing CORE-0392
