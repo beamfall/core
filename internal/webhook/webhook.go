@@ -69,8 +69,9 @@ type Endpoint struct {
 	// AllowPrivateNetwork is the operator's approval for a LAN receiver named
 	// by hostname: the default delivery client may then connect to loopback,
 	// private, shared and site-local addresses. An endpoint whose URL host is
-	// such an IP literal is approved without it. Link-local, multicast and
-	// unspecified addresses stay refused either way.
+	// such an IP literal is approved without it. Link-local, multicast,
+	// unspecified, other never-routable special-purpose addresses and IPv6
+	// forms embedding an IPv4 address stay refused either way.
 	AllowPrivateNetwork bool
 	// Secret keys the HMAC-SHA256 body signature. Required.
 	Secret []byte
@@ -207,8 +208,12 @@ func New(cfg Config, events EventStore, client Doer, deadLetter DeadLetterSink, 
 		}
 		if client != nil {
 			clients[ep.ID] = client
-		} else {
-			clients[ep.ID] = newDeliveryClient(allowLocal)
+			continue
+		}
+		clients[ep.ID] = newDeliveryClient(allowLocal)
+		if !allowLocal && looksLikeLANHostname(ep.URL) {
+			logger.Warn("webhook endpoint hostname looks local but allow_private_network is not set; deliveries to local addresses will be refused and dead-lettered",
+				"endpoint", ep.ID)
 		}
 	}
 	if cfg.MaxAttempts < 1 {

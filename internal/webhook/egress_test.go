@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -303,3 +304,105 @@ func TestLoadConfigReadsAllowPrivateNetwork(t *testing.T) {
 type staticSecrets struct{}
 
 func (staticSecrets) Secret(ref string) (string, error) { return "secret-for-" + ref, nil }
+
+// TestCheckDialAddressRefusesEmbeddedIPv4: IPv6 transition forms that carry
+// an IPv4 address (NAT64, 6to4, IPv4-compatible, Teredo) are refused outright
+// for every endpoint, as internal/scrape/public_routability.go refuses them,
+// so a NAT64 form of the metadata address or a LAN address cannot slip past
+// the IPv4 checks.
+func TestCheckDialAddressRefusesEmbeddedIPv4(t *testing.T) {
+	addresses := []string{
+		"[64:ff9b::a9fe:a9fe]:80",  // NAT64 well-known prefix + 169.254.169.254
+		"[64:ff9b::a00:1]:80",      // NAT64 well-known prefix + 10.0.0.1
+		"[64:ff9b::808:808]:80",    // NAT64 well-known prefix + public 8.8.8.8
+		"[64:ff9b:1::a00:1]:80",    // local-use NAT64 + 10.0.0.1
+		"[2002:a9fe:a9fe::1]:80",   // 6to4 + 169.254.169.254
+		"[2002:c0a8:10a::1]:80",    // 6to4 + 192.168.1.10
+		"[::7f00:1]:80",            // IPv4-compatible 127.0.0.1
+		"[::a9fe:a9fe]:80",         // IPv4-compatible 169.254.169.254
+		"[2001:0:4136:e378::1]:80", // Teredo
+	}
+	for _, allowLocal := range []bool{false, true} {
+		for _, address := range addresses {
+			if err := checkDialAddress(address, allowLocal); err == nil {
+				t.Errorf("allowLocal=%v: dial to %s allowed, want refusal", allowLocal, address)
+			}
+		}
+	}
+}
+
+// TestCheckDialAddressRefusesNeverRoutable: benchmarking, reserved, IETF
+// protocol-assignment and documentation ranges are refused for every
+// endpoint, LAN-approved or not.
+func TestCheckDialAddressRefusesNeverRoutable(t *testing.T) {
+	addresses := []string{
+		"198.18.0.1:80", "198.19.255.254:80", // benchmarking 198.18.0.0/15
+		"240.0.0.1:80", "254.255.255.255:80", // reserved 240.0.0.0/4
+		"192.0.0.8:80",    // IETF protocol assignments 192.0.0.0/24
+		"192.0.2.1:80",    // TEST-NET-1
+		"198.51.100.1:80", // TEST-NET-2
+		"203.0.113.1:80",  // TEST-NET-3
+		"[2001:db8::1]:80",
+		"[3fff::1]:80",
+		"[::ffff:198.18.0.1]:80",
+	}
+	for _, allowLocal := range []bool{false, true} {
+		for _, address := range addresses {
+			if err := checkDialAddress(address, allowLocal); err == nil {
+				t.Errorf("allowLocal=%v: dial to %s allowed, want refusal", allowLocal, address)
+			}
+		}
+	}
+}
+
+func TestLooksLikeLANHostname(t *testing.T) {
+	cases := map[string]bool{
+		"http://homeassistant.local:8123/api/webhook/x": true,
+		"http://HomeAssistant.LOCAL./api":               true,
+		"http://localhost:8123/":                        true,
+		"http://ha.localhost/":                          true,
+		"http://homeassistant:8123/":                    true,
+		"http://nas.lan/":                               true,
+		"http://box.home.arpa/":                         true,
+		"http://svc.internal/":                          true,
+		"https://hooks.example.com/beamfall":            false,
+		"http://192.168.1.10:8123/":                     false,
+		"http://[fd00::1]/":                             false,
+		"://bad":                                        false,
+	}
+	for raw, want := range cases {
+		if got := looksLikeLANHostname(raw); got != want {
+			t.Errorf("looksLikeLANHostname(%q) = %v, want %v", raw, got, want)
+		}
+	}
+}
+
+// TestNewWarnsForLANHostnameWithoutOptIn: an endpoint configured by LAN
+// hostname before allow_private_network existed now dead-letters, so New logs
+// one warning naming the flag (and the endpoint ID, never the URL).
+func TestNewWarnsForLANHostnameWithoutOptIn(t *testing.T) {
+	events := &fixedEvents{}
+	for _, tc := range []struct {
+		name string
+		ep   Endpoint
+		warn bool
+	}{
+		{"lan hostname without opt-in", Endpoint{ID: "ha", URL: "http://homeassistant.local:8123/api/webhook/tok", Secret: []byte("s")}, true},
+		{"lan hostname with opt-in", Endpoint{ID: "ha", URL: "http://homeassistant.local:8123/api/webhook/tok", Secret: []byte("s"), AllowPrivateNetwork: true}, false},
+		{"private literal", Endpoint{ID: "ha", URL: "http://192.168.1.10:8123/", Secret: []byte("s")}, false},
+		{"internet hostname", Endpoint{ID: "ext", URL: "https://hooks.example.com/b", Secret: []byte("s")}, false},
+	} {
+		var buf strings.Builder
+		logger := slog.New(slog.NewTextHandler(&buf, nil))
+		if _, err := New(Config{Endpoints: []Endpoint{tc.ep}}, events, nil, nil, logger); err != nil {
+			t.Fatalf("%s: New: %v", tc.name, err)
+		}
+		out := buf.String()
+		if got := strings.Contains(out, "allow_private_network"); got != tc.warn {
+			t.Errorf("%s: warning logged = %v, want %v (log %q)", tc.name, got, tc.warn, out)
+		}
+		if strings.Contains(out, "tok") {
+			t.Errorf("%s: log leaked the endpoint URL: %q", tc.name, out)
+		}
+	}
+}

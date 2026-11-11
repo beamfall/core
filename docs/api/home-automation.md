@@ -51,7 +51,11 @@ Delivery is bounded:
 - Redirects are never followed. A `3xx` answer counts as a failed attempt, so
   the event body and `X-Beamfall-Signature` reach only the configured endpoint.
 - Unspecified, `0.0.0.0/8`, link-local (including `169.254.169.254`),
-  multicast and broadcast addresses are always refused.
+  multicast and broadcast addresses are always refused. So are the other
+  special-purpose blocks the scraper refuses, such as the documentation
+  ranges, `198.18.0.0/15` and `240.0.0.0/4`, and IPv6 forms that carry an IPv4
+  address (NAT64 `64:ff9b::/96` and `64:ff9b:1::/48`, 6to4 `2002::/16`,
+  IPv4-compatible `::/96`, Teredo `2001::/32`).
 - Loopback, private (`10/8`, `172.16/12`, `192.168/16`, `fc00::/7`), shared
   (`100.64/10`) and `fec0::/10` addresses are refused unless the endpoint is
   approved for the local network. This is checked on the address actually
@@ -79,6 +83,16 @@ of two ways. Configure it by private IP literal
 
 Leave `allow_private_network` unset for internet receivers so that a DNS answer
 pointing inward is refused.
+
+**Upgrading:** an endpoint configured by LAN hostname before these rules
+existed stops receiving deliveries until you set `allow_private_network` on it
+or switch its URL to the receiver's private IP literal. Its deliveries fail
+with `webhook transport failed` and are dead-lettered. At startup the server
+logs one warning per endpoint whose hostname looks local (`localhost`, a
+single-label name, or a `.local`, `.lan`, `.home`, `.internal`, `.localdomain`
+or `.home.arpa` suffix) and lacks the flag. A hostname under a public domain
+that resolves to a LAN address gets no warning, so check the dead-letter after
+upgrading.
 
 ## Recipes
 

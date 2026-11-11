@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -26,16 +27,54 @@ const (
 	classLocal
 	// classRefused is never a webhook destination: unspecified, "this network",
 	// link-local (including the 169.254.169.254 cloud metadata endpoint),
-	// multicast, and IPv4 limited broadcast.
+	// multicast, the never-routable special-purpose blocks, and IPv6 forms that
+	// embed an IPv4 address.
 	classRefused
 )
 
 var (
-	thisNetworkPrefix   = netip.MustParsePrefix("0.0.0.0/8")
-	sharedPrefix        = netip.MustParsePrefix("100.64.0.0/10")
-	ipv6SiteLocalPrefix = netip.MustParsePrefix("fec0::/10")
-	ipv4Broadcast       = netip.AddrFrom4([4]byte{255, 255, 255, 255})
+	thisNetworkPrefix    = netip.MustParsePrefix("0.0.0.0/8")
+	sharedPrefix         = netip.MustParsePrefix("100.64.0.0/10")
+	ipv6SiteLocalPrefix  = netip.MustParsePrefix("fec0::/10")
+	ipv4CompatiblePrefix = netip.MustParsePrefix("::/96")
 )
+
+// neverRoutablePrefixes mirrors the IANA special-purpose blocks that
+// internal/scrape/public_routability.go (specialUsePrefixes) refuses, minus
+// the local classes above and the blocks classify already refuses by
+// predicate. It includes the IPv6 transition prefixes that carry an IPv4
+// address: NAT64 (64:ff9b::/96, 64:ff9b:1::/48), 6to4 (2002::/16) and Teredo
+// (inside 2001::/23). Those are refused outright, whatever they embed, as the
+// scraper refuses them. TestEgressAgreesWithScraperPredicate pins the match.
+var neverRoutablePrefixes = func() []netip.Prefix {
+	raw := []string{
+		"192.0.0.0/24", "192.0.2.0/24", "192.31.196.0/24", "192.52.193.0/24",
+		"192.88.99.0/24", "192.175.48.0/24", "198.18.0.0/15", "198.51.100.0/24",
+		"203.0.113.0/24", "240.0.0.0/4", // 240.0.0.0/4 holds the 255.255.255.255 limited broadcast
+		"64:ff9b::/96", "64:ff9b:1::/48", "100::/64", "100:0:0:1::/64", "2001::/23",
+		"2001:db8::/32", "2002::/16", "2620:4f:8000::/48", "3fff::/20", "5f00::/16",
+	}
+	prefixes := make([]netip.Prefix, len(raw))
+	for i, value := range raw {
+		prefixes[i] = netip.MustParsePrefix(value)
+	}
+	return prefixes
+}()
+
+// neverRoutable reports whether addr (already unmapped) is in a special-purpose
+// block or is an IPv4-compatible IPv6 form (::/96 other than :: and ::1, which
+// the scraper's registry snapshot does not list but which embeds an IPv4).
+func neverRoutable(addr netip.Addr) bool {
+	if ipv4CompatiblePrefix.Contains(addr) && !addr.IsLoopback() {
+		return true
+	}
+	for _, prefix := range neverRoutablePrefixes {
+		if prefix.Contains(addr) {
+			return true
+		}
+	}
+	return false
+}
 
 // classify returns the delivery class of addr after canonical unmapping, so
 // an IPv4-mapped IPv6 form is classified as the IPv4 address it carries.
@@ -43,7 +82,7 @@ func classify(addr netip.Addr) addrClass {
 	addr = addr.WithZone("").Unmap()
 	switch {
 	case !addr.IsValid(), addr.IsUnspecified(), thisNetworkPrefix.Contains(addr),
-		addr.IsLinkLocalUnicast(), addr.IsMulticast(), addr == ipv4Broadcast:
+		addr.IsLinkLocalUnicast(), addr.IsMulticast(), neverRoutable(addr):
 		return classRefused
 	case addr.IsLoopback(), addr.IsPrivate(), sharedPrefix.Contains(addr), ipv6SiteLocalPrefix.Contains(addr):
 		return classLocal
@@ -84,6 +123,37 @@ func endpointAllowsLocal(ep Endpoint) (bool, error) {
 		}
 	}
 	return ep.AllowPrivateNetwork, nil
+}
+
+// lanHostnameSuffixes are DNS suffixes conventionally served only on a home
+// or office network (mDNS, RFC 8375, and common router defaults).
+var lanHostnameSuffixes = []string{".local", ".lan", ".home", ".internal", ".localdomain", ".home.arpa"}
+
+// looksLikeLANHostname reports whether an endpoint URL names a hostname (not an
+// IP literal) that conventionally resolves to the local network: localhost, a
+// single-label name, or a LAN suffix. It does no DNS lookup, so it is only a
+// hint for the startup warning in New, never a security decision.
+func looksLikeLANHostname(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+	if host == "" {
+		return false
+	}
+	if _, err := netip.ParseAddr(host); err == nil {
+		return false
+	}
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") || !strings.Contains(host, ".") {
+		return true
+	}
+	for _, suffix := range lanHostnameSuffixes {
+		if strings.HasSuffix(host, suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 var errDialRefused = errors.New("webhook refused dial to a disallowed address class")
