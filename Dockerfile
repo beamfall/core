@@ -2,7 +2,7 @@
 
 ARG GO_VERSION=1.27.4
 
-FROM --platform=$BUILDPLATFORM node:26-bookworm-slim@sha256:298992629d69bbd5b2b03ad57094d8e4fcb3a8eeb7c4e25d29de656519568913 AS web
+FROM --platform=$BUILDPLATFORM node:26-bookworm-slim@sha256:add5c17c14752c54d2f3d519ec46a3815684d41c33f198bcb09fb998f7dcbf68 AS web
 WORKDIR /src
 
 COPY internal/web/app/package*.json ./internal/web/app/
