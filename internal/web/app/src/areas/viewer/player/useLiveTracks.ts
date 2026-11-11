@@ -10,7 +10,7 @@ import {
   type TrackMenuOption,
 } from "../lib/transport";
 import { audioTrackList, audioTracksArray } from "./media-tracks";
-import type { SwitchResult } from "./usePlayer";
+import { type SwitchResult, selectHlsLevel } from "./usePlayer";
 
 // useLiveTracks bridges the live hls.js / native <video> track objects to the
 // pure menu models (transport.ts) and exposes the selection handlers, ported
@@ -182,9 +182,7 @@ export function useLiveTracks({
       const h = hlsRef.current;
       if (id === "auto") {
         setManualRenditionID("");
-        if (h) {
-          h.currentLevel = -1;
-        }
+        if (h) selectHlsLevel(h, -1);
       } else if (id !== "direct") {
         // A key that matches no rendition changes nothing: never pin level 0.
         if (stream?.kind !== "hls" && !h) {
@@ -198,7 +196,7 @@ export function useLiveTracks({
           const index = renditionIndex(stream?.renditions, id);
           if (index < 0 || !h) return;
           setManualRenditionID(id);
-          h.currentLevel = index;
+          selectHlsLevel(h, index);
         }
       }
       nudge();

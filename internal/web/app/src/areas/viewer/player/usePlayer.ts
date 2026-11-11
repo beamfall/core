@@ -172,6 +172,24 @@ function engineFor(video: HTMLVideoElement, stream: PlaybackStream): Engine {
 /** The engine now playing after a switch to HLS, or false when none was possible. */
 export type SwitchResult = "hlsjs" | "native" | false;
 
+// The hls.js level to pin at an instance's next manifest parse (the rendition the
+// viewer picked on direct play, or the manual level carried across a token refresh);
+// consumed by that parse.
+const pendingLevelPins = new WeakMap<Hls, number>();
+
+/**
+ * Applies the viewer's quality choice (-1 is Auto) to hls.js. A pin still waiting for
+ * the manifest is replaced (or cancelled by Auto), so the parse cannot restore an
+ * earlier choice over this one.
+ */
+export function selectHlsLevel(hls: Hls, level: number) {
+  if (pendingLevelPins.has(hls)) {
+    if (level >= 0) pendingLevelPins.set(hls, level);
+    else pendingLevelPins.delete(hls);
+  }
+  hls.currentLevel = level;
+}
+
 // Ranged GET of the first byte, aborted once headers arrive: the status of a
 // native-route stream URL after MEDIA_ERR_NETWORK, which hides the HTTP status.
 // The media routes are GET-only, so a HEAD probe would 405.
@@ -442,9 +460,7 @@ export function usePlayer(
 
         if (useHlsJs) {
           const hls = new Hls(resume > 0 ? { startPosition: resume } : undefined);
-          // The level to pin at the next manifest parse (the rendition the viewer picked
-          // on direct play); consumed by that parse.
-          let pendingPin = options.pinLevel;
+          if (options.pinLevel !== undefined) pendingLevelPins.set(hls, options.pinLevel);
           hlsRef.current = hls;
           // Fatal-error recovery (policy in hlsRecovery.ts): network errors
           // re-arm loading after a backoff, media errors go through hls.js's own
@@ -494,12 +510,15 @@ export function usePlayer(
                 hls.config.startPosition = resumePosition;
                 // The reload re-parses the manifest: carry the viewer's current manual
                 // rendition (Auto is -1, so nothing is re-pinned) onto the new parse.
-                if (hls.manualLevel >= 0) pendingPin = hls.manualLevel;
+                if (hls.manualLevel >= 0) pendingLevelPins.set(hls, hls.manualLevel);
                 hls.loadSource(refreshedStream.url);
                 activeStream = refreshedStream;
+                // The refreshed info only renews the token: its decision may still name
+                // the direct play this session switched away from, so the details keep
+                // the decision of the stream actually playing.
                 setState((s) => ({
                   ...s,
-                  info: refreshedInfo,
+                  info: { ...refreshedInfo, decision: s.decision },
                   stream: refreshedStream,
                   streams: refreshedInfo.streams ?? [],
                 }));
@@ -552,8 +571,9 @@ export function usePlayer(
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
             // One-shot: a later manifest parse (token refresh) must not restore an
             // earlier pick over the viewer's current choice (see refreshStreamToken).
-            if (pendingPin !== undefined) hls.currentLevel = pendingPin;
-            pendingPin = undefined;
+            const pin = pendingLevelPins.get(hls);
+            pendingLevelPins.delete(hls);
+            if (pin !== undefined) hls.currentLevel = pin;
             applyPreferencesThenBump();
           });
           hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, bumpTracks);

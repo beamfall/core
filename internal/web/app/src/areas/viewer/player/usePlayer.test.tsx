@@ -11,7 +11,7 @@ import {
 import { fetchPlaybackMarkers } from "@/lib/graphql";
 import type { PlaybackMarker } from "@/lib/graphql/types";
 import { ApiError, fetchPlaybackInfo } from "../lib/playback";
-import { usePlayer } from "./usePlayer";
+import { selectHlsLevel, usePlayer } from "./usePlayer";
 
 vi.mock("@/lib/graphql", () => ({
   fetchPlaybackMarkers: vi.fn().mockResolvedValue([]),
@@ -1055,6 +1055,72 @@ describe("usePlayer", () => {
         const hls = await pickThenChooseThenRefresh(-1);
         expect(hls.tracks.currentLevel).toBe(-1);
       });
+    });
+
+    describe("a quality choice made while the manifest loads", () => {
+      // The viewer picks 720 on direct play, then changes the choice through the quality
+      // menu before hls.js has parsed the manifest.
+      async function pickThenChooseBeforeParse(choice: number) {
+        vi.mocked(Hls.isSupported).mockReturnValue(true);
+        vi.mocked(fetchPlaybackInfo).mockResolvedValue({
+          ...inventory,
+          streams: [
+            inventory.streams[0],
+            {
+              ...inventory.streams[1],
+              renditions: [
+                { id: "720", height: 720 },
+                { id: "480", height: 480 },
+              ],
+            },
+          ],
+        });
+        render(<Harness />);
+        await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+        fireEvent.click(screen.getByText("switch-hls"));
+        await waitFor(() => expect(fakeHlsInstances).toHaveLength(1));
+        const hls = fakeHlsInstances[0];
+        selectHlsLevel(hls.tracks as unknown as Hls, choice);
+        hls.emit("manifestParsed");
+        return hls;
+      }
+
+      it("keeps Auto instead of restoring the pending pick", async () => {
+        const hls = await pickThenChooseBeforeParse(-1);
+        expect(hls.tracks.currentLevel).toBe(-1);
+      });
+
+      it("keeps the later rendition instead of restoring the pending pick", async () => {
+        const hls = await pickThenChooseBeforeParse(1);
+        expect(hls.tracks.currentLevel).toBe(1);
+      });
+    });
+
+    it("keeps the HLS decision when a token refresh after the switch still says direct play", async () => {
+      vi.mocked(Hls.isSupported).mockReturnValue(true);
+      vi.mocked(fetchPlaybackInfo)
+        .mockResolvedValueOnce(inventory)
+        .mockResolvedValueOnce({
+          ...inventory,
+          streams: [
+            inventory.streams[0],
+            { ...inventory.streams[1], url: "/api/media/hls/token2/master.m3u8" },
+          ],
+        });
+      render(<Harness />);
+      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+      fireEvent.click(screen.getByText("switch-hls"));
+      await waitFor(() => expect(fakeHlsInstances).toHaveLength(1));
+      const hls = fakeHlsInstances[0];
+      hls.emitError({ fatal: true, response: { code: 401 } });
+      await waitFor(() =>
+        expect(screen.getByTestId("stream-url")).toHaveTextContent(
+          "/api/media/hls/token2/master.m3u8",
+        ),
+      );
+      expect(screen.getByTestId("info-decision")).toHaveTextContent("transcode");
+      expect(screen.getByTestId("decision")).toHaveTextContent("transcode");
+      expect(screen.getByTestId("active-kind")).toHaveTextContent("hls");
     });
 
     it("refuses a rendition switch the HLS stream does not advertise", async () => {
