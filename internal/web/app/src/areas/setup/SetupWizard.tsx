@@ -1,3 +1,22 @@
+import {
+  Blocks,
+  Check,
+  Clapperboard,
+  Film,
+  FolderOpen,
+  House,
+  KeyRound,
+  LoaderCircle,
+  LockKeyhole,
+  type LucideIcon,
+  Music,
+  Podcast,
+  ScanSearch,
+  ShieldCheck,
+  Sparkles,
+  Tv,
+  UserRound,
+} from "lucide-react";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import beamfallLogo from "@/assets/beamfall-logo.png";
 import { Badge } from "@/components/ui/badge";
@@ -31,11 +50,10 @@ import {
 
 // First-run setup wizard (WEB-1, ADR-0007 §2; closed under ADR-0080). A 7-step,
 // token-gated first-run flow that ORCHESTRATES existing server mutations — it
-// never duplicates them. Faithful to the approved mockup (setup-wizard.html): a
-// brand bar, an "unlocked" banner once the token is verified, a step rail,
-// Library-type tiles, and the cinema token palette (rendered via the app's
-// shadcn semantic classes, which resolve to the same cinema theme as the
-// mockup's raw vars).
+// never duplicates them. CORE-1114 restyle: a full-bleed branded
+// backdrop (static CSS; animated effects belong in Oscillux), one centred step
+// with a segmented progress bar, icon tiles for choices, and the cinema token
+// palette via the app's shadcn semantic classes.
 //
 // Visual step order: token → admin password → sign-in security → owner →
 // plugins → Library →
@@ -81,6 +99,20 @@ const TYPE_LABEL: Record<LibraryType, StringKey> = {
   mixed: "setupTypeMixed",
   music: "setupTypeMusic",
   podcasts: "setupTypePodcasts",
+};
+
+const TYPE_ICON: Record<LibraryType, LucideIcon> = {
+  films: Film,
+  tvshows: Tv,
+  mixed: Clapperboard,
+  music: Music,
+  podcasts: Podcast,
+};
+
+const PLUGIN_ICON: Record<string, LucideIcon> = {
+  filmtv: Clapperboard,
+  music: Music,
+  podcasts: Podcast,
 };
 
 const PLUGIN_LABEL: Record<string, StringKey> = {
@@ -535,78 +567,88 @@ export function SetupWizard() {
   // Hold the body blank while the resume probe runs so a resumed server never
   // flashes the token step before bouncing forward.
   if (probing) {
-    return (
-      <main className="theme-cinema flex min-h-screen items-center justify-center bg-background p-7" />
-    );
+    return <main className="theme-cinema min-h-screen bg-background" />;
   }
 
+  // Steps the wizard actually walks: a LAN browser that skipped the token step
+  // never sees it in the progress bar.
+  const visibleSteps = STEP_KEYS.slice(firstStep);
+  const visibleIndex = step - firstStep;
+
   return (
-    <main className="theme-cinema flex min-h-screen items-center justify-center bg-background p-7">
-      <div className="w-[880px] max-w-full overflow-hidden rounded-[var(--radius-card)] border bg-card text-card-foreground">
-        {/* Brand bar */}
-        <div className="flex items-center justify-between border-b bg-muted/40 px-[18px] py-3.5">
-          <div className="flex items-center gap-2.5">
-            <img src={beamfallLogo} alt="" width={22} height={22} className="shrink-0" />
-            <span className="text-[15px] font-semibold">{t("brand")}</span>
-            <span className="text-[13px] text-muted-foreground">{t("setupBrandSuffix")}</span>
-          </div>
-          <span className="text-xs text-muted-foreground">{t("setupFreshServer")}</span>
+    <main className="theme-cinema relative isolate flex min-h-screen flex-col overflow-hidden bg-background text-foreground">
+      {/* Static brand backdrop: layered accent glows over the cinema base. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(55%_55%_at_10%_-5%,color-mix(in_oklab,var(--accent)_42%,transparent),transparent_70%),radial-gradient(50%_45%_at_100%_105%,color-mix(in_oklab,var(--accent)_30%,transparent),transparent_75%),radial-gradient(40%_35%_at_85%_5%,rgba(139,92,246,0.28),transparent_70%),radial-gradient(30%_30%_at_5%_100%,rgba(236,72,153,0.12),transparent_70%)]"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-10 opacity-[0.07] [background-image:linear-gradient(to_right,currentColor_1px,transparent_1px),linear-gradient(to_bottom,currentColor_1px,transparent_1px)] [background-size:56px_56px] [mask-image:radial-gradient(ellipse_at_center,black,transparent_75%)]"
+      />
+
+      {/* Brand bar */}
+      <header className="flex items-center justify-between px-5 py-4 sm:px-8 sm:py-6">
+        <div className="flex items-center gap-2.5">
+          <img src={beamfallLogo} alt="" width={28} height={28} className="shrink-0" />
+          <span className="text-base font-semibold tracking-tight">{t("brand")}</span>
+          <span className="hidden text-sm text-muted-foreground sm:inline">
+            {t("setupBrandSuffix")}
+          </span>
         </div>
+        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-muted-foreground backdrop-blur">
+          {t("setupFreshServer")}
+        </span>
+      </header>
 
-        {/* Unlocked banner — shown once the token POST succeeds */}
-        {bootstrapped && (
-          <div className="mx-[18px] mt-3 rounded-lg border border-primary/35 bg-primary/10 px-3 py-2 text-[12.5px] text-primary">
-            {t("setupUnlockedBanner")}
+      <div className="flex flex-1 items-start justify-center px-4 pb-10 pt-2 sm:items-center sm:px-8 sm:pt-0">
+        <div className="w-full max-w-[600px]">
+          {/* Progress: one segment per visible step; names stay for assistive tech. */}
+          <ol className="m-0 mb-6 flex list-none gap-1.5 p-0" aria-label={t("setupBrandSuffix")}>
+            {visibleSteps.map((key, i) => (
+              <li
+                key={key}
+                aria-current={i === visibleIndex ? "step" : undefined}
+                className={cn(
+                  "h-1 flex-1 rounded-full bg-white/10 transition-colors duration-500",
+                  i < visibleIndex && "bg-primary/70",
+                  i === visibleIndex && "bg-primary shadow-[0_0_12px_var(--accent)]",
+                )}
+              >
+                <span className="sr-only">{t(key)}</span>
+              </li>
+            ))}
+          </ol>
+
+          <div className="mb-3 flex items-center justify-between text-xs font-medium uppercase tracking-[0.14em]">
+            <span className="text-primary">{t(STEP_KEYS[step])}</span>
+            <span className="text-muted-foreground">
+              {t("setupStepCount", { n: visibleIndex + 1, total: visibleSteps.length })}
+            </span>
           </div>
-        )}
 
-        <div className="grid grid-cols-[220px_1fr]">
-          {/* Step rail */}
-          <nav className="border-r py-2 pl-[18px] pr-3.5">
-            <ol className="m-0 flex list-none flex-col gap-0.5 p-0">
-              {STEP_KEYS.map((key, i) => {
-                const done = i < step;
-                const cur = i === step;
-                return (
-                  <li
-                    key={key}
-                    className={cn(
-                      "flex items-center gap-2.5 rounded-lg px-2 py-2.5",
-                      cur && "border bg-muted",
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "inline-flex h-[22px] w-[22px] items-center justify-center rounded-full border text-xs text-muted-foreground",
-                        done && "border-0 bg-primary text-primary-foreground",
-                        cur && "border-0 bg-primary font-semibold text-primary-foreground",
-                      )}
-                    >
-                      {done ? "✓" : i + 1}
-                    </span>
-                    <span
-                      className={cn(
-                        "text-[13px] text-muted-foreground",
-                        cur && "font-semibold text-foreground",
-                      )}
-                    >
-                      {t(key)}
-                    </span>
-                  </li>
-                );
-              })}
-            </ol>
-          </nav>
+          {/* Unlocked banner — shown once the bootstrap POST succeeds */}
+          {bootstrapped && (
+            <div className="mb-4 flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3.5 py-1.5 text-[12.5px] text-primary">
+              <Check aria-hidden className="size-3.5 shrink-0" />
+              {t("setupUnlockedBanner")}
+            </div>
+          )}
 
-          {/* Active pane */}
-          <form onSubmit={onNext} className="px-[22px] pb-[22px] pt-4" noValidate>
+          <form
+            key={step}
+            onSubmit={onNext}
+            noValidate
+            className="animate-in fade-in slide-in-from-bottom-2 rounded-2xl border border-white/10 bg-card/70 p-5 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.7)] backdrop-blur-xl duration-300 sm:p-8"
+          >
             {step === 0 && (
               <section>
-                <h1 className="m-0 text-lg font-semibold">{t("setupTokenTitle")}</h1>
-                <p className="mb-4 mt-0.5 text-[13px] text-muted-foreground">
-                  {t("setupTokenLead")}
-                </p>
-                <Label htmlFor={tokenID} className="mb-1.5 block text-xs">
+                <StepHeading
+                  icon={KeyRound}
+                  title={t("setupTokenTitle")}
+                  lead={t("setupTokenLead")}
+                />
+                <Label htmlFor={tokenID} className={FIELD_LABEL}>
                   {t("setupToken")}
                 </Label>
                 <Input
@@ -616,6 +658,7 @@ export function SetupWizard() {
                     setToken(e.target.value);
                     setTokenError(null);
                   }}
+                  className={cn(FIELD, "font-mono tracking-wider")}
                   autoComplete="off"
                   autoCapitalize="off"
                   autoCorrect="off"
@@ -641,11 +684,12 @@ export function SetupWizard() {
 
             {step === 1 && (
               <section>
-                <h1 className="m-0 text-lg font-semibold">{t("setupAdminPasswordTitle")}</h1>
-                <p className="mb-4 mt-0.5 text-[13px] text-muted-foreground">
-                  {t("setupAdminPasswordLead")}
-                </p>
-                <Label htmlFor={adminID} className="mb-1.5 block text-xs">
+                <StepHeading
+                  icon={LockKeyhole}
+                  title={t("setupAdminPasswordTitle")}
+                  lead={t("setupAdminPasswordLead")}
+                />
+                <Label htmlFor={adminID} className={FIELD_LABEL}>
                   {t("setupAdminPassword")}
                 </Label>
                 <Input
@@ -653,11 +697,12 @@ export function SetupWizard() {
                   type="password"
                   value={adminPassword}
                   onChange={(e) => setAdminPassword(e.target.value)}
+                  className={FIELD}
                   autoComplete="new-password"
                   required
                   autoFocus
                 />
-                <Label htmlFor={adminConfirmID} className="mb-1.5 mt-3.5 block text-xs">
+                <Label htmlFor={adminConfirmID} className={cn(FIELD_LABEL, "mt-4")}>
                   {t("setupAdminPasswordConfirm")}
                 </Label>
                 <Input
@@ -665,6 +710,7 @@ export function SetupWizard() {
                   type="password"
                   value={adminPasswordConfirm}
                   onChange={(e) => setAdminPasswordConfirm(e.target.value)}
+                  className={FIELD}
                   autoComplete="new-password"
                   required
                 />
@@ -672,45 +718,70 @@ export function SetupWizard() {
             )}
 
             {step === STEP_SECURITY && (
-              <fieldset className="m-0 grid gap-3 border-0 p-0">
-                <legend className="m-0 p-0 text-lg font-semibold">{t("setupSecurityTitle")}</legend>
-                <p className="mb-1 mt-0.5 text-[13px] text-muted-foreground">
-                  {t("setupSecurityLead")}
-                </p>
-                {SECURITY_MODES.map(({ mode, label, detail }) => (
-                  <label key={mode} className="flex items-start gap-2 text-sm">
-                    <input
-                      type="radio"
-                      name="setup-security-mode"
-                      value={mode}
-                      checked={securityMode === mode}
-                      onChange={() => setSecurityMode(mode)}
-                      className="mt-1"
-                    />
-                    <span className="grid gap-0.5">
-                      <span className="flex items-center gap-2 font-medium text-foreground">
-                        {t(label)}
-                        {mode === "home" && (
-                          <Badge variant="outline">{t("setupSecurityRecommended")}</Badge>
+              <fieldset className="m-0 border-0 p-0">
+                <legend className="sr-only">{t("setupSecurityTitle")}</legend>
+                <StepHeading
+                  icon={ShieldCheck}
+                  title={t("setupSecurityTitle")}
+                  lead={t("setupSecurityLead")}
+                />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {SECURITY_MODES.map(({ mode, label, detail }) => {
+                    const Icon = mode === "home" ? House : LockKeyhole;
+                    const sel = securityMode === mode;
+                    return (
+                      <label
+                        key={mode}
+                        className={cn(
+                          TILE,
+                          "items-start gap-2 p-4 text-left",
+                          sel && TILE_SELECTED,
                         )}
-                      </span>
-                      <span className="text-xs text-muted-foreground">{t(detail)}</span>
-                    </span>
-                  </label>
-                ))}
+                      >
+                        <span className="flex w-full items-center justify-between">
+                          <Icon
+                            aria-hidden
+                            className={cn("size-5", sel ? "text-primary" : "text-muted-foreground")}
+                          />
+                          <input
+                            type="radio"
+                            name="setup-security-mode"
+                            value={mode}
+                            checked={sel}
+                            onChange={() => setSecurityMode(mode)}
+                            className="size-4 accent-[var(--accent)]"
+                          />
+                        </span>
+                        <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                          {t(label)}
+                          {mode === "home" && (
+                            <Badge variant="outline" className="border-primary/40 text-primary">
+                              {t("setupSecurityRecommended")}
+                            </Badge>
+                          )}
+                        </span>
+                        <span className="text-xs leading-relaxed text-muted-foreground">
+                          {t(detail)}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
               </fieldset>
             )}
 
             {step === STEP_LIBRARY && (
               <section>
-                <h1 className="m-0 text-lg font-semibold">{t("setupLibraryTitle")}</h1>
-                <p className="mb-4 mt-0.5 text-[13px] text-muted-foreground">
-                  {t("setupLibraryLead")}
-                </p>
-                <Label className="mb-1.5 block text-xs">{t("setupLibraryType")}</Label>
-                <div className="mb-3.5 grid grid-cols-5 gap-[7px]">
+                <StepHeading
+                  icon={FolderOpen}
+                  title={t("setupLibraryTitle")}
+                  lead={t("setupLibraryLead")}
+                />
+                <Label className={FIELD_LABEL}>{t("setupLibraryType")}</Label>
+                <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-5">
                   {libraryTypes.map((spec) => {
                     const sel = spec.type === libraryType;
+                    const Icon = TYPE_ICON[spec.type];
                     return (
                       <button
                         key={spec.type}
@@ -718,31 +789,37 @@ export function SetupWizard() {
                         onClick={() => setLibraryType(spec.type)}
                         aria-pressed={sel}
                         className={cn(
-                          "rounded-lg border px-[5px] py-2.5 text-center",
-                          sel && "border-[1.5px] border-primary bg-primary/10",
+                          TILE,
+                          "items-center gap-1.5 px-2 py-3.5 text-center",
+                          sel && TILE_SELECTED,
                         )}
                       >
-                        <div className="mt-[3px] text-xs font-semibold">
+                        <Icon
+                          aria-hidden
+                          className={cn("size-6", sel ? "text-primary" : "text-muted-foreground")}
+                        />
+                        <span className="text-[13px] font-semibold">
                           {t(TYPE_LABEL[spec.type])}
-                        </div>
-                        <div className="text-[10px] text-muted-foreground">
+                        </span>
+                        <span className="text-[10.5px] text-muted-foreground">
                           {t(PLUGIN_LABEL[spec.pluginID])}
-                        </div>
+                        </span>
                       </button>
                     );
                   })}
                 </div>
-                <Label htmlFor={libNameID} className="mb-1.5 block text-xs">
+                <Label htmlFor={libNameID} className={FIELD_LABEL}>
                   {t("setupLibraryName")}
                 </Label>
                 <Input
                   id={libNameID}
                   value={libraryName}
                   onChange={(e) => setLibraryName(e.target.value)}
+                  className={FIELD}
                   placeholder={t(TYPE_LABEL[libraryType])}
                   autoFocus
                 />
-                <Label htmlFor={rootID} className="mb-1.5 mt-3.5 block text-xs">
+                <Label htmlFor={rootID} className={cn(FIELD_LABEL, "mt-4")}>
                   {t("setupLibraryRoot")}
                 </Label>
                 <div className="flex items-stretch gap-2">
@@ -750,7 +827,7 @@ export function SetupWizard() {
                     id={rootID}
                     value={rootPath}
                     onChange={(e) => setRootPath(e.target.value)}
-                    className="flex-1 font-mono"
+                    className={cn(FIELD, "flex-1 font-mono")}
                     placeholder="/media/films"
                     required
                     disabled={firstLibraryProgress.rootsSet}
@@ -758,6 +835,7 @@ export function SetupWizard() {
                   <Button
                     type="button"
                     variant="outline"
+                    className="h-11 rounded-xl"
                     onClick={openPicker}
                     aria-expanded={pickerNode != null}
                     disabled={firstLibraryProgress.rootsSet}
@@ -787,17 +865,19 @@ export function SetupWizard() {
 
             {step === STEP_PROFILE && (
               <section>
-                <h1 className="m-0 text-lg font-semibold">{t("setupProfileTitle")}</h1>
-                <p className="mb-4 mt-0.5 text-[13px] text-muted-foreground">
-                  {t("setupProfileLead")}
-                </p>
-                <Label htmlFor={profileID} className="mb-1.5 block text-xs">
+                <StepHeading
+                  icon={UserRound}
+                  title={t("setupProfileTitle")}
+                  lead={t("setupProfileLead")}
+                />
+                <Label htmlFor={profileID} className={FIELD_LABEL}>
                   {t("setupProfileName")}
                 </Label>
                 <Input
                   id={profileID}
                   value={profileName}
                   onChange={(e) => setProfileName(e.target.value)}
+                  className={FIELD}
                   placeholder={t("setupProfileDefault")}
                   autoFocus
                 />
@@ -806,24 +886,38 @@ export function SetupWizard() {
 
             {step === STEP_PLUGINS && (
               <section>
-                <h1 className="m-0 text-lg font-semibold">{t("setupPluginsTitle")}</h1>
-                <p className="mb-4 mt-0.5 text-[13px] text-muted-foreground">
-                  {t("setupPluginsLead")}
-                </p>
+                <StepHeading
+                  icon={Blocks}
+                  title={t("setupPluginsTitle")}
+                  lead={t("setupPluginsLead")}
+                />
                 {plugins.length === 0 ? (
-                  <p className="text-[13px] text-muted-foreground">{t("setupPluginsEmpty")}</p>
+                  <p className="text-sm text-muted-foreground">{t("setupPluginsEmpty")}</p>
                 ) : (
-                  <ul className="m-0 flex list-none flex-col gap-2 p-0">
+                  <ul className="m-0 grid list-none gap-2 p-0 sm:grid-cols-2">
                     {plugins.map((p) => {
                       const name = displayString(p.displayName, locale);
+                      const on = activePlugins.has(p.id);
+                      const Icon = PLUGIN_ICON[p.id] ?? Blocks;
                       return (
                         <li
                           key={p.id}
-                          className="flex items-center justify-between rounded-lg border px-3 py-2.5"
+                          className={cn(
+                            TILE,
+                            "flex-row items-center gap-3 px-3.5 py-3",
+                            on && TILE_SELECTED,
+                          )}
                         >
-                          <span className="text-[13px]">{name}</span>
+                          <Icon
+                            aria-hidden
+                            className={cn(
+                              "size-5 shrink-0",
+                              on ? "text-primary" : "text-muted-foreground",
+                            )}
+                          />
+                          <span className="flex-1 text-sm font-medium">{name}</span>
                           <Switch
-                            checked={activePlugins.has(p.id)}
+                            checked={on}
                             onCheckedChange={() => togglePlugin(p.id)}
                             aria-label={name}
                           />
@@ -832,11 +926,11 @@ export function SetupWizard() {
                     })}
                   </ul>
                 )}
-                <div className="mt-4 rounded-lg border bg-muted/25 p-3">
+                <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.03] p-4">
                   <div className="flex items-start justify-between gap-4">
                     <div className="space-y-1">
-                      <h2 className="m-0 text-[13px] font-semibold">{t("setupUpdateTitle")}</h2>
-                      <p className="m-0 text-[12px] leading-snug text-muted-foreground">
+                      <h2 className="m-0 text-sm font-semibold">{t("setupUpdateTitle")}</h2>
+                      <p className="m-0 text-[12.5px] leading-snug text-muted-foreground">
                         {t("setupUpdateLead")}
                       </p>
                     </div>
@@ -855,7 +949,7 @@ export function SetupWizard() {
                         aria-pressed={updateCheckChannel === channel}
                         onClick={() => setUpdateCheckChannel(channel)}
                         className={cn(
-                          "rounded-md border px-3 py-1.5 text-xs font-medium disabled:opacity-45",
+                          "rounded-full border border-white/10 px-3.5 py-1.5 text-xs font-medium transition-colors disabled:opacity-45",
                           updateCheckChannel === channel &&
                             "border-primary bg-primary/10 text-primary",
                         )}
@@ -864,7 +958,7 @@ export function SetupWizard() {
                       </button>
                     ))}
                   </div>
-                  <p className="mb-0 mt-2 text-[11.5px] leading-snug text-muted-foreground">
+                  <p className="mb-0 mt-2.5 text-[11.5px] leading-snug text-muted-foreground">
                     {t("setupUpdateDisclosure")}
                   </p>
                 </div>
@@ -873,37 +967,52 @@ export function SetupWizard() {
 
             {isScanStep && (
               <section>
-                <h1 className="m-0 text-lg font-semibold">{t("setupScanTitle")}</h1>
-                <p className="mb-4 mt-0.5 text-[13px] text-muted-foreground">
-                  {t("setupScanLead")}
-                </p>
-                <div className="rounded-lg border bg-muted/25 p-3">
-                  <p className="m-0 text-sm font-semibold">
-                    {t("setupScanStatus", {
-                      status: scanJob ? jobStatusLabel(scanJob.status, t) : t("jobStatusQueued"),
-                    })}
-                  </p>
-                  <p className="m-0 mt-1 text-[13px] text-muted-foreground">
-                    {scanJob && jobProgressDetail(scanJob, t)
-                      ? jobProgressDetail(scanJob, t)
-                      : t("setupScanWaiting")}
-                  </p>
+                <StepHeading
+                  icon={ScanSearch}
+                  title={t("setupScanTitle")}
+                  lead={t("setupScanLead")}
+                />
+                <div className="flex items-center gap-3.5 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                  <span className="relative flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/15">
+                    <span className="absolute inset-0 animate-ping rounded-full bg-primary/20 motion-reduce:hidden" />
+                    <Sparkles aria-hidden className="size-5 text-primary" />
+                  </span>
+                  <div>
+                    <p className="m-0 text-sm font-semibold">
+                      {t("setupScanStatus", {
+                        status: scanJob ? jobStatusLabel(scanJob.status, t) : t("jobStatusQueued"),
+                      })}
+                    </p>
+                    <p className="m-0 mt-0.5 text-[13px] text-muted-foreground">
+                      {scanJob && jobProgressDetail(scanJob, t)
+                        ? jobProgressDetail(scanJob, t)
+                        : t("setupScanWaiting")}
+                    </p>
+                  </div>
                 </div>
               </section>
             )}
 
-            <div className="mt-[18px] flex items-center gap-2">
+            <div className="mt-7 flex items-center gap-2">
               {step > firstStep && !bootstrapped && (
-                <Button type="button" variant="outline" onClick={onBack} disabled={busy}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-11 rounded-full px-5"
+                  onClick={onBack}
+                  disabled={busy}
+                >
                   {t("setupBack")}
                 </Button>
               )}
-              <Button type="submit" disabled={busy}>
+              <Button
+                type="submit"
+                disabled={busy}
+                className="ml-auto h-11 min-w-[148px] rounded-full px-6 text-[15px] font-semibold shadow-[0_8px_30px_-8px_var(--accent)]"
+              >
+                {busy && <LoaderCircle aria-hidden className="size-4 animate-spin" />}
                 {busy ? t("setupWorking") : isLast ? t("setupBrowseReady") : t("setupContinue")}
               </Button>
-              <span className="ml-auto text-xs text-muted-foreground">
-                {t("setupStepCount", { n: step + 1 })}
-              </span>
             </div>
 
             {error && step !== 0 && (
@@ -921,5 +1030,36 @@ export function SetupWizard() {
         </div>
       </div>
     </main>
+  );
+}
+
+const FIELD = "h-11 rounded-xl border-white/10 bg-white/[0.04] text-[15px]";
+const FIELD_LABEL = "mb-2 block text-[13px] font-medium text-foreground/80";
+const TILE =
+  "flex flex-col rounded-xl border border-white/10 bg-white/[0.03] transition-all duration-200 hover:border-white/25 hover:bg-white/[0.06] cursor-pointer";
+const TILE_SELECTED =
+  "border-primary bg-primary/10 shadow-[0_0_0_1px_var(--accent),0_10px_30px_-12px_var(--accent)] hover:border-primary hover:bg-primary/10";
+
+function StepHeading({
+  icon: Icon,
+  title,
+  lead,
+}: {
+  icon: LucideIcon;
+  title: string;
+  lead: string;
+}) {
+  return (
+    <div className="mb-6 flex gap-4">
+      <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary ring-1 ring-primary/25">
+        <Icon aria-hidden className="size-5" />
+      </span>
+      <div>
+        <h1 className="m-0 text-2xl font-semibold tracking-tight sm:text-[28px] sm:leading-tight">
+          {title}
+        </h1>
+        <p className="mb-0 mt-1.5 text-sm leading-relaxed text-muted-foreground">{lead}</p>
+      </div>
+    </div>
   );
 }

@@ -132,7 +132,7 @@ describe("SetupWizard first scan", () => {
     await user.type(screen.getByLabelText("Root folder"), "/media/films");
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
-    await screen.findByRole("heading", { name: "First scan is running" });
+    await screen.findByRole("heading", { name: "Your library is filling up" });
     expect(mocks.createFirstLibrary).toHaveBeenCalledWith({
       title: "Films",
       type: "films",
@@ -172,7 +172,7 @@ describe("SetupWizard first scan", () => {
       expect.objectContaining({ progress: { libraryID: "lib1", rootsSet: false } }),
     );
     expect(
-      await screen.findByRole("heading", { name: "First scan is running" }),
+      await screen.findByRole("heading", { name: "Your library is filling up" }),
     ).toBeInTheDocument();
   });
 
@@ -265,7 +265,7 @@ describe("SetupWizard first scan", () => {
     await screen.findByRole("heading", { name: "Create your first Library" });
     await user.type(screen.getByLabelText("Root folder"), "/media/films");
     await user.click(screen.getByRole("button", { name: "Continue" }));
-    await screen.findByRole("heading", { name: "First scan is running" });
+    await screen.findByRole("heading", { name: "Your library is filling up" });
     await waitFor(() => expect(mocks.fetchJobs).toHaveBeenCalledTimes(1));
 
     await new Promise((resolve) => window.setTimeout(resolve, 2_100));
@@ -374,7 +374,9 @@ describe("SetupWizard setup URL", () => {
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
-    expect(await screen.findByRole("heading", { name: "Activate plugins" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Choose what Beamfall understands" }),
+    ).toBeInTheDocument();
     expect(mocks.bootstrapSetup).toHaveBeenCalledWith(
       expect.objectContaining({
         token: canary,
@@ -437,7 +439,9 @@ describe("SetupWizard LAN claim (CORE-1105)", () => {
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
-    expect(await screen.findByRole("heading", { name: "Activate plugins" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Choose what Beamfall understands" }),
+    ).toBeInTheDocument();
     expect(mocks.bootstrapSetup).toHaveBeenCalledWith(
       expect.objectContaining({ token: "", securityMode: "home" }),
     );
@@ -460,14 +464,16 @@ describe("SetupWizard LAN claim (CORE-1105)", () => {
     expect(
       await screen.findByRole("group", { name: "Choose how the owner signs in" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Step 3 of 7")).toBeInTheDocument();
+    expect(screen.getByText("Step 2 of 6")).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: /Home/ })).toBeChecked();
     expect(screen.getByText("Recommended")).toBeInTheDocument();
     await user.click(screen.getByRole("radio", { name: /Strict/ }));
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
-    expect(await screen.findByRole("heading", { name: "Activate plugins" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Choose what Beamfall understands" }),
+    ).toBeInTheDocument();
     expect(mocks.bootstrapSetup).toHaveBeenCalledWith(
       expect.objectContaining({ securityMode: "strict" }),
     );

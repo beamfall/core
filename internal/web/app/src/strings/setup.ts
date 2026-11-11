@@ -1,26 +1,25 @@
 export const setupStrings = {
   en: {
     // First-run setup wizard (WEB-1, ADR-0007 §2).
-    setupBrandSuffix: "· first-run setup",
-    setupFreshServer: "fresh server · no admin yet",
-    setupUnlockedBanner:
-      "Wizard unlocked — one-time setup token verified from the server logs. The admin password is never accepted from an unenrolled browser without it.",
-    setupRailToken: "Unlock with setup token",
+    setupBrandSuffix: "Server setup",
+    setupFreshServer: "New server",
+    setupUnlockedBanner: "Server claimed — you're the owner now.",
+    setupRailToken: "Unlock",
     setupRailAdminPassword: "Admin password",
     setupRailSecurity: "Sign-in security",
-    setupRailLibrary: "First Library",
+    setupRailLibrary: "First library",
     setupRailProfile: "Owner profile",
-    setupRailPlugins: "Activate plugins",
+    setupRailPlugins: "Plugins",
     setupRailScan: "First scan",
-    setupStepCount: "Step {n} of 7",
+    setupStepCount: "Step {n} of {total}",
     setupTokenTitle: "Unlock with the setup token",
     setupTokenLead:
-      "Use the one-time setup token printed to the server logs. It proves this browser was opened by someone with access to the server process before an admin password exists.",
+      "Paste the one-time code from the server log. It proves you can reach the server itself before anyone sets an admin password.",
     setupToken: "Setup token",
     setupTokenInvalid: "Setup token invalid or already used.",
     setupAdminPasswordTitle: "Set the admin password",
     setupAdminPasswordLead:
-      "This password gates the Console and admin-only operations. Store it somewhere safe.",
+      "It unlocks the Console and owner-only tools. Pick something strong and keep it in your password manager.",
     setupAdminPassword: "Admin password",
     setupAdminPasswordConfirm: "Confirm password",
     setupAdminPasswordMismatch: "The passwords do not match.",
@@ -36,7 +35,7 @@ export const setupStrings = {
     setupSecurityRecommended: "Recommended",
     setupLibraryTitle: "Create your first Library",
     setupLibraryLead:
-      "Pick what's in this folder. Films, TV Shows and Mixed all use the one Film & TV plugin — the choice tells identification the family so it never has to guess (Mixed detects per file).",
+      "Point Beamfall at a folder and say what's inside. Films, TV Shows and Mixed all use the Film & TV plugin; Mixed works it out file by file.",
     setupLibraryType: "Library type",
     setupLibraryName: "Library name",
     setupLibraryRoot: "Root folder",
@@ -56,13 +55,12 @@ export const setupStrings = {
     setupPluginMusic: "Music",
     setupPluginPodcast: "Podcast",
     setupProfileTitle: "Name the owner profile",
-    setupProfileLead:
-      "The owner Profile is the first Profile on this server. You can add more later.",
+    setupProfileLead: "This is you. Everyone else in the house can get their own Profile later.",
     setupProfileName: "Owner profile name",
     setupProfileDefault: "Owner",
-    setupPluginsTitle: "Activate plugins",
+    setupPluginsTitle: "Choose what Beamfall understands",
     setupPluginsLead:
-      "Turn on the plugins this server should run. The plugin behind your first Library is selected for you.",
+      "Each plugin teaches Beamfall a kind of media. Turn on what you have; you can change this any time.",
     setupPluginsEmpty: "No plugins are installed.",
     setupUpdateTitle: "Update awareness",
     setupUpdateLead:
@@ -76,7 +74,7 @@ export const setupStrings = {
     setupBrowseReady: "Browse what's ready",
     setupWorking: "Working…",
     setupFailed: "Something went wrong. Please try again.",
-    setupScanTitle: "First scan is running",
+    setupScanTitle: "Your library is filling up",
     setupScanLead:
       "Beamfall has started scanning your first Library. You can browse as soon as items appear; the scan keeps running in the background.",
     setupScanStatus: "Scan status: {status}",
