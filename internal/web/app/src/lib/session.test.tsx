@@ -837,6 +837,53 @@ describe("SessionProvider identity-epoch fetch lifecycle", () => {
     expect(fetchCurrentSession).toHaveBeenCalledTimes(1);
   });
 
+  it("renews once when the handshake refuses a lapsed session and retries the handshake", async () => {
+    vi.mocked(performHandshake).mockRejectedValueOnce(new ApiError("session expired", 401));
+    vi.mocked(renewSession).mockResolvedValueOnce(true);
+    vi.mocked(fetchCurrentSession).mockResolvedValueOnce(p1Session);
+    render(
+      <SessionProvider>
+        <Probe />
+      </SessionProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByTestId("profile")).toHaveTextContent("p1"));
+    expect(renewSession).toHaveBeenCalledTimes(1);
+    expect(performHandshake).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId("enroll")).toHaveTextContent("false");
+  });
+
+  it("asks to enroll when the handshake refuses a lapsed session and renewal is refused", async () => {
+    vi.mocked(performHandshake).mockRejectedValueOnce(new ApiError("session expired", 401));
+    render(
+      <SessionProvider>
+        <Probe />
+      </SessionProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByTestId("enroll")).toHaveTextContent("true"));
+    expect(renewSession).toHaveBeenCalledTimes(1);
+    expect(performHandshake).toHaveBeenCalledTimes(1);
+    expect(fetchCurrentSession).not.toHaveBeenCalled();
+  });
+
+  it("asks to enroll when the retried handshake is refused again", async () => {
+    vi.mocked(performHandshake)
+      .mockRejectedValueOnce(new ApiError("session expired", 401))
+      .mockRejectedValueOnce(new ApiError("session expired", 401));
+    vi.mocked(renewSession).mockResolvedValueOnce(true);
+    render(
+      <SessionProvider>
+        <Probe />
+      </SessionProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByTestId("enroll")).toHaveTextContent("true"));
+    expect(renewSession).toHaveBeenCalledTimes(1);
+    expect(performHandshake).toHaveBeenCalledTimes(2);
+    expect(fetchCurrentSession).not.toHaveBeenCalled();
+  });
+
   it("does not renew on a 403", async () => {
     vi.mocked(fetchCurrentSession).mockRejectedValueOnce(new ApiError("forbidden", 403));
     render(

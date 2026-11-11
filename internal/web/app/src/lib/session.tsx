@@ -17,6 +17,7 @@ import {
 import { takeBeamfallHostInitialMessages } from "@/lib/beamfallHost";
 import {
   advanceCompatibilityEpoch,
+  type CompatHandshakeResponse,
   isBlocked,
   isCompatibilityRefusal,
   performHandshake,
@@ -42,9 +43,29 @@ async function fetchSessionRenewingOnce(signal: AbortSignal): Promise<SessionInf
   try {
     return await fetchCurrentSession(signal);
   } catch (err) {
-    if (!(err instanceof ApiError) || err.status !== 401) throw err;
+    if (!isUnauthorized(err)) throw err;
     if (!(await renewSession(signal))) throw err;
     return fetchCurrentSession(signal);
+  }
+}
+
+function isUnauthorized(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 401;
+}
+
+// The handshake is the first request a load makes, so a lapsed session cookie
+// is refused there before the session read is reached. It gets the same
+// one-time renewal and one retry; `renewed` tells the caller the renewal is
+// spent, so the session read that follows does not renew again.
+async function handshakeRenewingOnce(
+  signal: AbortSignal,
+): Promise<{ compatibility: CompatHandshakeResponse; renewed: boolean }> {
+  try {
+    return { compatibility: await performHandshake(), renewed: false };
+  } catch (err) {
+    if (!isUnauthorized(err)) throw err;
+    if (!(await renewSession(signal))) throw err;
+    return { compatibility: await performHandshake(), renewed: true };
   }
 }
 
@@ -115,7 +136,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const loadEpoch = useCallback(async (signal: AbortSignal) => {
     const current = () => !signal.aborted;
     try {
-      const compatibility = await performHandshake();
+      const { compatibility, renewed } = await handshakeRenewingOnce(signal);
       if (!current()) return;
       if (isBlocked()) {
         clearViewerCache();
@@ -124,14 +145,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setProfiles([]);
         throw new Error(compatibility.messageClass);
       }
+      const readSession = renewed ? fetchCurrentSession : fetchSessionRenewingOnce;
       let s: SessionInfo;
       try {
-        s = await fetchSessionRenewingOnce(signal);
+        s = await readSession(signal);
       } catch (err) {
         if (!isCompatibilityRefusal(err)) throw err;
         await rebindCompatibility();
         if (!current()) return;
-        s = await fetchSessionRenewingOnce(signal);
+        s = await readSession(signal);
       }
       if (!current()) return;
       // Manifest + profiles are best-effort; a failure here is not fatal to
