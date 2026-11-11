@@ -245,14 +245,24 @@ export function Libraries() {
   const skipDetection = useAsync(fetchSkipDetectionEnabled);
   const [title, setTitle] = useState("");
   const [pluginID, setPluginID] = useState(NO_PLUGIN);
+  const [createError, setCreateError] = useState("");
 
+  // Reload the list after every create attempt, failed ones included: a
+  // response lost after the server committed the row must not leave the list
+  // stale until a manual Refresh (CORE-1102).
   async function onCreate(e: FormEvent) {
     e.preventDefault();
     if (!title.trim()) return;
-    await createLibrary(title.trim(), pluginID === NO_PLUGIN ? null : pluginID);
-    setTitle("");
-    setPluginID(NO_PLUGIN);
-    await libs.refresh();
+    setCreateError("");
+    try {
+      await createLibrary(title.trim(), pluginID === NO_PLUGIN ? null : pluginID);
+      setTitle("");
+      setPluginID(NO_PLUGIN);
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : t("requestFailed"));
+    } finally {
+      await libs.refresh();
+    }
   }
 
   const pluginList = plugins.data ?? [];
@@ -299,6 +309,7 @@ export function Libraries() {
           {t("createLibrary")}
         </Button>
       </form>
+      <ErrorLine message={createError} />
 
       {libs.loading ? (
         <Skeleton className="h-40 w-full" />

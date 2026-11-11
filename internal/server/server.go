@@ -19,7 +19,6 @@ import (
 	"os/exec"
 	"path"
 	"regexp"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -397,14 +396,7 @@ func detectBuildSHA() string {
 	if sha := strings.TrimSpace(os.Getenv("BEAMFALL_BUILD_SHA")); sha != "" {
 		return sha
 	}
-	if info, ok := debug.ReadBuildInfo(); ok {
-		for _, setting := range info.Settings {
-			if setting.Key == "vcs.revision" && setting.Value != "" {
-				return setting.Value
-			}
-		}
-	}
-	return "development"
+	return capabilities.Commit()
 }
 
 // SetBackupIngestEncryptor wires the ENC-4 upload byte encryptor at composition

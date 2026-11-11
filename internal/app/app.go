@@ -1839,11 +1839,15 @@ func (a *App) Run(ctx context.Context) error {
 		// and must never land in a structured/persisted log. The tokened URL goes to
 		// the operator's console (stdout) only; the slog line carries a REDACTED URL.
 		fmt.Fprintf(os.Stdout, "Beamfall first-run setup: %s\n", firstRunSetupURL(scheme, listener.Addr().String(), a.setupToken))
-		a.logger.Info(
-			"=== Beamfall first-run setup ===",
+		setupAttrs := []any{
 			"setupURL", firstRunSetupURLRedacted(scheme, listener.Addr().String()),
 			"headless", "BEAMFALL_ADMIN_PASSWORD",
-		)
+		}
+		if hint := setupLANHint(listener.Addr().String(), nonLoopbackAddrs()); hint != "" {
+			fmt.Fprintf(os.Stdout, "Beamfall first-run setup: %s\n", hint)
+			setupAttrs = append(setupAttrs, "lanHint", hint)
+		}
+		a.logger.Info("=== Beamfall first-run setup ===", setupAttrs...)
 	}
 	if a.cfg.Discovery.Enabled {
 		advertiser := discovery.New()

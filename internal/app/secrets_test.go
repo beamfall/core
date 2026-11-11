@@ -462,3 +462,36 @@ func TestSecretFilesMoveSecretRefusesUnsafeOrDriftedState(t *testing.T) {
 		}
 	})
 }
+
+// CORE-1097: a wildcard bind prints a loopback setup URL that no other device
+// can reach, so the operator also gets a LAN hint.
+func TestSetupLANHint(t *testing.T) {
+	for _, tc := range []struct {
+		addr       string
+		candidates []string
+		want       []string
+		empty      bool
+	}{
+		{addr: "0.0.0.0:8800", want: []string{"<this server's LAN address>:8800/web/setup"}},
+		{addr: "[::]:8800", candidates: []string{"192.168.4.3", "172.17.0.2"}, want: []string{":8800/web/setup", "192.168.4.3, 172.17.0.2", "host's LAN address"}},
+		{addr: "192.168.4.3:8800", candidates: []string{"192.168.4.3"}, empty: true},
+		{addr: "127.0.0.1:8800", empty: true},
+		{addr: "not-an-addr", empty: true},
+	} {
+		got := setupLANHint(tc.addr, tc.candidates)
+		if tc.empty {
+			if got != "" {
+				t.Errorf("setupLANHint(%q) = %q, want empty", tc.addr, got)
+			}
+			continue
+		}
+		for _, w := range tc.want {
+			if !strings.Contains(got, w) {
+				t.Errorf("setupLANHint(%q) = %q, missing %q", tc.addr, got, w)
+			}
+		}
+		if strings.Contains(got, "token=") {
+			t.Errorf("setupLANHint(%q) must not carry the token: %q", tc.addr, got)
+		}
+	}
+}

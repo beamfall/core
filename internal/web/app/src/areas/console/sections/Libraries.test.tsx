@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  createLibrary,
   fetchFolderTree,
   fetchLibraries,
   fetchPlugins,
@@ -71,7 +72,10 @@ describe("Console Libraries scan", () => {
         },
       ],
     });
-    vi.mocked(scanLibrary).mockResolvedValue({ id: "scan-job", status: "queued" });
+    vi.mocked(scanLibrary).mockResolvedValue({
+      id: "scan-job",
+      status: "queued",
+    });
   });
 
   function renderLibraries() {
@@ -133,3 +137,74 @@ describe("Console Libraries scan", () => {
 // ticket's working-tree diff, exit 0, elapsed 13.8 seconds, UTC 2026-08-21T21:48:09Z through
 // 2026-08-21T21:48:31Z, log `/tmp/WEBUI-CONSOLE-SCAN-ERROR-SILENT-1-npm-test.log`;
 // 93 files and 619 tests passed.
+
+describe("Console Libraries create", () => {
+  const existing = {
+    id: "library-1",
+    title: "Library",
+    pluginID: null,
+    roots: [],
+    previewClips: true,
+    restricted: false,
+  };
+  const created = { ...existing, id: "library-2", title: "TV" };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fetchPlugins).mockResolvedValue([]);
+    vi.mocked(fetchSkipDetectionEnabled).mockResolvedValue([]);
+    vi.mocked(fetchFolderTree).mockResolvedValue({
+      name: "roots",
+      path: "",
+      kind: "folder",
+      size: 0,
+      modifiedAt: "",
+      children: [],
+    });
+  });
+
+  it("shows a newly created Library without a manual refresh (CORE-1102)", async () => {
+    vi.mocked(fetchLibraries)
+      .mockResolvedValueOnce([existing])
+      .mockResolvedValue([existing, created]);
+    vi.mocked(createLibrary).mockResolvedValue({
+      id: "library-2",
+      title: "TV",
+      pluginID: null,
+    });
+    const user = userEvent.setup();
+    render(
+      <I18nProvider>
+        <Libraries />
+      </I18nProvider>,
+    );
+    await screen.findByText("Library");
+
+    await user.type(screen.getByLabelText("Title"), "TV");
+    await user.click(screen.getByRole("button", { name: "Create Library" }));
+
+    expect(await screen.findByText("TV")).toBeVisible();
+    expect(createLibrary).toHaveBeenCalledWith("TV", null);
+  });
+
+  it("reloads the list and shows the error when create rejects", async () => {
+    vi.mocked(fetchLibraries)
+      .mockResolvedValueOnce([existing])
+      .mockResolvedValue([existing, created]);
+    vi.mocked(createLibrary).mockRejectedValue(new Error("library title already in use"));
+    const user = userEvent.setup();
+    render(
+      <I18nProvider>
+        <Libraries />
+      </I18nProvider>,
+    );
+    await screen.findByText("Library");
+
+    await user.type(screen.getByLabelText("Title"), "TV");
+    await user.click(screen.getByRole("button", { name: "Create Library" }));
+
+    expect(await screen.findByText("library title already in use")).toBeVisible();
+    expect(await screen.findByText("TV")).toBeVisible();
+    expect(fetchLibraries).toHaveBeenCalledTimes(2);
+  });
+});

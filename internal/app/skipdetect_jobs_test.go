@@ -297,3 +297,19 @@ func mustWriteAudioAdBinary(t *testing.T, dst *bytes.Buffer, value any) {
 		t.Fatal(err)
 	}
 }
+
+// CORE-1100: a fresh install has no podcast ad model; that is the normal
+// state and must not log WARN on a clean first start.
+func TestConfigureSkipDetectionJobsMissingModelLogsNoWarn(t *testing.T) {
+	var logs bytes.Buffer
+	st := storetest.Open(t)
+	registry := jobs.NewRegistry(st, "no-model")
+	configureSkipDetectionJobs(t.TempDir(), st, ffmpeg.New(), registry, governor.New(), newJobWake(), slog.New(slog.NewTextHandler(&logs, nil)))
+	out := logs.String()
+	if strings.Contains(out, "level=WARN") {
+		t.Fatalf("missing model logged WARN: %q", out)
+	}
+	if !strings.Contains(out, "reason=model-absent") {
+		t.Fatalf("missing model should log reason=model-absent at INFO, got %q", out)
+	}
+}

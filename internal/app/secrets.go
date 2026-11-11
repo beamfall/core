@@ -131,6 +131,54 @@ func setupURLHost(listenAddr string) string {
 	return net.JoinHostPort(host, port)
 }
 
+// setupLANHint returns an operator hint for reaching first-run setup from
+// another device, or "" when the listener is bound to a specific host (the
+// printed URL is then already dialable). A wildcard bind prints a loopback URL,
+// which only works on the server itself; from a phone or laptop, and always
+// when the server runs in a container, the operator needs the server's LAN
+// address instead. Detected non-loopback addresses are listed as candidates;
+// inside a bridge-networked container they are container-internal, so the hint
+// says to use the host's own LAN address.
+func setupLANHint(listenAddr string, candidates []string) string {
+	host, port, err := net.SplitHostPort(listenAddr)
+	if err != nil {
+		return ""
+	}
+	switch host {
+	case "", "0.0.0.0", "::":
+	default:
+		return ""
+	}
+	hint := fmt.Sprintf("from another device, open http://<this server's LAN address>:%s/web/setup with the same token", port)
+	if len(candidates) > 0 {
+		hint += " (detected addresses: " + strings.Join(candidates, ", ") + "; in a container, use the host's LAN address)"
+	}
+	return hint
+}
+
+// nonLoopbackAddrs lists this machine's non-loopback, non-link-local unicast
+// addresses, IPv4 first. Errors yield an empty list: the hint still works
+// without candidates.
+func nonLoopbackAddrs() []string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil
+	}
+	var v4, v6 []string
+	for _, a := range addrs {
+		ipnet, ok := a.(*net.IPNet)
+		if !ok || ipnet.IP.IsLoopback() || ipnet.IP.IsLinkLocalUnicast() || !ipnet.IP.IsGlobalUnicast() {
+			continue
+		}
+		if ipnet.IP.To4() != nil {
+			v4 = append(v4, ipnet.IP.String())
+		} else {
+			v6 = append(v6, ipnet.IP.String())
+		}
+	}
+	return append(v4, v6...)
+}
+
 func configureReviewDemoEnrollment(cfgProfileID string, dataDir string, svc *pairing.Service, logger *slog.Logger) error {
 	key, err := (secretFiles{dir: filepath.Join(dataDir, "secrets")}).Secret(reviewDemoEnrollmentSecretRef)
 	if err != nil {

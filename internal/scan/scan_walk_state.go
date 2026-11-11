@@ -41,6 +41,7 @@ type scanWalkState struct {
 	cancelDerivations   context.CancelFunc
 	derivativeWG        sync.WaitGroup
 	pendingCompletions  []*completedFile
+	missingCredentials  credentialNotices
 }
 
 func (s *scanWalkState) acquireBudget(ctx context.Context) error {

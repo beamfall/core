@@ -74,7 +74,9 @@ cmd/beamfall/
   serve.go       thin: config.Load → app.New(ctx, cfg, logger, firstPartyBundles(), firstPartyHooks()) → app.Run(ctx)
   hooks*.go      build-tagged external plugin-module composition into neutral app.Hooks
   http_client.go online administrative subcommands = HTTP clients of the admin API
-                 using an admin-scoped token; scan and backup never open the database
+                 using an admin-scoped token; scan and backup never open the database.
+                 export-config/apply-config also take --data-dir: offline, refusing a live
+                 server lock, like reset-admin-password
   backup.go      restore is offline recovery: it refuses a live server lock before
                  replacing the data directory from a verified backup manifest
 ```

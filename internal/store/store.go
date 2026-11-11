@@ -3451,6 +3451,24 @@ func (s *Store) CreateLibrary(ctx context.Context, title string, restricted bool
 // Navigation Manifest. familyScope is the plugin-declared family scope chosen
 // at creation, stored verbatim — "" leaves it unset.
 func (s *Store) CreateLibraryWithRoots(ctx context.Context, title string, restricted bool, pluginID string, grantTo ProfileID, roots []string, familyScope string) (Library, error) {
+	if grantTo == "" {
+		return Library{}, ValidationError("profile ID is required")
+	}
+	return s.createLibraryWithRoots(ctx, title, restricted, pluginID, grantTo, roots, familyScope)
+}
+
+// CreateUngrantedLibraryWithRoots is CreateLibraryWithRoots for a server that
+// has no Profile yet (offline `beamfall apply-config` before first-run setup).
+// It writes the same Library, roots and default scan schedule but no Profile
+// grant, and refuses once any Profile exists: BootstrapOwner grants every
+// existing Library to the owner it creates, so nothing is left unreachable.
+func (s *Store) CreateUngrantedLibraryWithRoots(ctx context.Context, title string, restricted bool, pluginID string, roots []string, familyScope string) (Library, error) {
+	return s.createLibraryWithRoots(ctx, title, restricted, pluginID, "", roots, familyScope)
+}
+
+// createLibraryWithRoots is the shared creation path. An empty grantTo means
+// "no grant" and is only valid while the server has no Profile at all.
+func (s *Store) createLibraryWithRoots(ctx context.Context, title string, restricted bool, pluginID string, grantTo ProfileID, roots []string, familyScope string) (Library, error) {
 	// Authority face: Library catalog rows are main-only (a Library
 	// is bound to its home node, but the binding is main-authored — decision 4).
 	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
@@ -3459,9 +3477,6 @@ func (s *Store) CreateLibraryWithRoots(ctx context.Context, title string, restri
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return Library{}, ValidationError("library title is required")
-	}
-	if grantTo == "" {
-		return Library{}, ValidationError("profile ID is required")
 	}
 	normalizedRoots, err := normalizeLibraryRoots(roots)
 	if err != nil {
@@ -3472,10 +3487,20 @@ func (s *Store) CreateLibraryWithRoots(ctx context.Context, title string, restri
 	if err := s.guardLocked(); err != nil {
 		return Library{}, err
 	}
-	if exists, err := s.profileExistsSQL(ctx, grantTo); err != nil {
-		return Library{}, err
-	} else if !exists {
-		return Library{}, ValidationError("profile not found")
+	if grantTo != "" {
+		if exists, err := s.profileExistsSQL(ctx, grantTo); err != nil {
+			return Library{}, err
+		} else if !exists {
+			return Library{}, ValidationError("profile not found")
+		}
+	} else {
+		var profiles int
+		if err := s.catalogR.QueryRowContext(ctx, `SELECT COUNT(*) FROM profile`).Scan(&profiles); err != nil {
+			return Library{}, err
+		}
+		if profiles != 0 {
+			return Library{}, ValidationError("profile ID is required once a profile exists")
+		}
 	}
 	tx, err := s.catalogW.BeginTx(ctx, nil)
 	if err != nil {
@@ -3503,11 +3528,13 @@ func (s *Store) CreateLibraryWithRoots(ctx context.Context, title string, restri
 		id, title, pluginValue, boolToInt(restricted), familyScope); err != nil {
 		return Library{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `
+	if grantTo != "" {
+		if _, err := tx.ExecContext(ctx, `
 		INSERT INTO profile_library(profile_id, library_id, position)
 		VALUES (?, ?, COALESCE((SELECT MAX(position) + 1 FROM profile_library WHERE profile_id = ?), 0))
 	`, grantTo, id, grantTo); err != nil {
-		return Library{}, err
+			return Library{}, err
+		}
 	}
 	for _, root := range normalizedRoots {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO library_roots(library_id, root) VALUES (?, ?)`, id, root); err != nil {

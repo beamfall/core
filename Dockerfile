@@ -23,8 +23,16 @@ COPY --from=web /src/internal/web/app-dist ./internal/web/app-dist
 
 ARG TARGETOS
 ARG TARGETARCH
+# Build identity. The build context excludes .git, so Go cannot read VCS info:
+# pass --build-arg BEAMFALL_VERSION=<version> --build-arg BEAMFALL_COMMIT=$(git rev-parse HEAD).
+# An unstamped build reports version "development-unstamped" and commit "development".
+ARG BEAMFALL_VERSION=development-unstamped
+ARG BEAMFALL_COMMIT=
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-	go build -trimpath -ldflags="-s -w" -o /out/beamfall ./cmd/beamfall
+	go build -trimpath -ldflags="-s -w \
+		-X github.com/beamfall/core/internal/capabilities.ReleaseVersion=${BEAMFALL_VERSION} \
+		-X github.com/beamfall/core/internal/capabilities.ReleaseCommit=${BEAMFALL_COMMIT}" \
+		-o /out/beamfall ./cmd/beamfall
 
 FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 AS runtime
 
@@ -69,6 +77,11 @@ RUN set -eux; \
 	rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /out/beamfall /usr/local/bin/beamfall
+
+ARG BEAMFALL_VERSION=development-unstamped
+ARG BEAMFALL_COMMIT=
+LABEL org.opencontainers.image.version="${BEAMFALL_VERSION}" \
+	org.opencontainers.image.revision="${BEAMFALL_COMMIT:-unstamped}"
 
 RUN set -eux; \
 	groupadd --system --gid 1000 beamfall; \

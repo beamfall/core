@@ -133,7 +133,7 @@ The CLI covers day-to-day operation:
 | `beamfall scan` | Queue a library scan. |
 | `beamfall backup` / `beamfall restore` | Request a server-side backup; restore one while the server is stopped. |
 | `beamfall token` | Manage local API tokens. |
-| `beamfall export-config` / `apply-config` | Export or apply a Console config document. |
+| `beamfall export-config` / `apply-config` | Export or apply a Console config document (background workers, plugin activation, libraries and their roots). Apply is additive and idempotent; `--data-dir` works offline while the server is stopped, for seeding libraries before first start. |
 | `beamfall reset-admin-password` | Set the local admin password while the server is stopped. |
 | `beamfall capabilities` / `version` | Print runtime capabilities or build metadata. |
 

@@ -94,7 +94,7 @@ func (l *ModelLoader) activate(root string) (ModelProjection, error) {
 
 func (l *ModelLoader) load(root string) (ModelProjection, error) {
 	if err := CheckLocalInferenceModelRoot(root); err != nil {
-		return ModelProjection{}, fmt.Errorf("%w: model root: %v", ErrModelArtifactInvalid, err)
+		return ModelProjection{}, fmt.Errorf("%w: model root: %w", ErrModelArtifactInvalid, err)
 	}
 	manifestRaw, err := readBoundedRegularFile(filepath.Join(root, ModelManifestFilename), maxModelManifestBytes)
 	if err != nil {
