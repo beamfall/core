@@ -46,9 +46,10 @@ test("app mounts and renders the enroll surface for an unenrolled browser", asyn
   const root = page.locator("#root");
   await expect(root).not.toBeEmpty();
 
-  // Unenrolled → the enroll surface (a pairing-code form) is shown.
+  // Unenrolled → the enroll surface (a pairing-code form) is shown. A Home
+  // server also shows the admin-password form below it.
   await expect(page.getByRole("heading").first()).toBeVisible();
-  await expect(page.locator("form")).toBeVisible();
+  await expect(page.locator("form").first()).toBeVisible();
 
   await page.screenshot({ path: "e2e/.artifacts/smoke-enroll.png", fullPage: true });
 
