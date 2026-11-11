@@ -8,9 +8,15 @@ import {
   hlsStreamOf,
   isRevealTerminalStatus,
   type PlaybackInfo,
+  type PlaybackRendition,
   type PlaybackStream,
 } from "../lib/playback";
-import { renditionIndex, resumePositionFromInfo, type TrickplayManifest } from "../lib/transport";
+import {
+  hlsLevelIndex,
+  renditionIndex,
+  resumePositionFromInfo,
+  type TrickplayManifest,
+} from "../lib/transport";
 import { freshRecoveryBudget, nextRecoveryStep, resetRecoveryBudget } from "./hlsRecovery";
 
 // The player engine, ported from the vanilla play() / startPreparedPlayback /
@@ -175,7 +181,9 @@ export type SwitchResult = "hlsjs" | "native" | false;
 // The hls.js level to pin at an instance's next manifest parse (the rendition the
 // viewer picked on direct play, or the manual level carried across a token refresh);
 // consumed by that parse.
-const pendingLevelPins = new WeakMap<Hls, number>();
+// A picked rendition is resolved against hls.js's level list at the parse, because the
+// server's rendition order is not hls.js's level order.
+const pendingLevelPins = new WeakMap<Hls, number | PlaybackRendition>();
 
 /**
  * Applies the viewer's quality choice (-1 is Auto) to hls.js. A pin still waiting for
@@ -425,7 +433,7 @@ export function usePlayer(
         target: PlaybackStream,
         engine: "hlsjs" | "native",
         resume: number,
-        options: { play: boolean; pinLevel?: number },
+        options: { play: boolean; pinRendition?: PlaybackRendition },
       ) => {
         const useHlsJs = engine === "hlsjs";
         const streamURL = target.url ?? "";
@@ -460,7 +468,7 @@ export function usePlayer(
 
         if (useHlsJs) {
           const hls = new Hls(resume > 0 ? { startPosition: resume } : undefined);
-          if (options.pinLevel !== undefined) pendingLevelPins.set(hls, options.pinLevel);
+          if (options.pinRendition) pendingLevelPins.set(hls, options.pinRendition);
           hlsRef.current = hls;
           // Fatal-error recovery (policy in hlsRecovery.ts): network errors
           // re-arm loading after a backoff, media errors go through hls.js's own
@@ -573,7 +581,10 @@ export function usePlayer(
             // earlier pick over the viewer's current choice (see refreshStreamToken).
             const pin = pendingLevelPins.get(hls);
             pendingLevelPins.delete(hls);
-            if (pin !== undefined) hls.currentLevel = pin;
+            if (pin !== undefined) {
+              const level = typeof pin === "number" ? pin : hlsLevelIndex(hls.levels, pin);
+              if (level >= 0) hls.currentLevel = level;
+            }
             applyPreferencesThenBump();
           });
           hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, bumpTracks);
@@ -651,10 +662,11 @@ export function usePlayer(
         if (!sibling?.url) return false;
         const engine = engineFor(video, sibling);
         if (engine === "unsupported") return false;
-        let pinLevel: number | undefined;
+        let pinRendition: PlaybackRendition | undefined;
         if (renditionKey !== undefined) {
-          pinLevel = renditionIndex(sibling.renditions, renditionKey);
-          if (pinLevel < 0) return false;
+          const at = renditionIndex(sibling.renditions, renditionKey);
+          if (at < 0) return false;
+          pinRendition = sibling.renditions?.[at];
         }
         const position =
           pendingNativeResume > 0
@@ -668,7 +680,7 @@ export function usePlayer(
         const play = !video.paused || (renditionKey === undefined && video.played.length === 0);
         detachEngine();
         activeStream = sibling;
-        attachEngine(sibling, engine, position, { play, pinLevel });
+        attachEngine(sibling, engine, position, { play, pinRendition });
         setState((s) => ({
           ...s,
           stream: sibling,

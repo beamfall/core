@@ -48,10 +48,14 @@ describe("useLiveTracks quality selection", () => {
   });
 
   it("pins the rendition when hls.js can apply it", () => {
-    const hls = { currentLevel: -1 } as unknown as Hls;
+    // hls.js orders levels ascending: 720p is level 0, 1080p is level 1.
+    const hls = {
+      currentLevel: -1,
+      levels: [{ height: 720 }, { height: 1080 }],
+    } as unknown as Hls;
     const { result } = renderTracks(hls);
     act(() => result.current.selectQuality("720"));
-    expect(hls.currentLevel).toBe(1);
+    expect(hls.currentLevel).toBe(0);
     expect(result.current.manualPinActive).toBe(true);
     const selected = result.current.qualityOptions.filter((option) => option.selected);
     expect(selected.map((option) => option.id)).toEqual(["720"]);

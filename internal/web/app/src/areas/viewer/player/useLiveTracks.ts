@@ -5,6 +5,7 @@ import { hlsStreamOf, type PlaybackStream } from "../lib/playback";
 import {
   buildRenditionMenuModel,
   buildTrackMenuModel,
+  hlsLevelIndex,
   type RenditionMenuOption,
   renditionIndex,
   type TrackMenuOption,
@@ -193,8 +194,11 @@ export function useLiveTracks({
         } else {
           // Native HLS exposes no level control: stay on Auto rather than
           // marking a pin the element cannot honour.
-          const index = renditionIndex(stream?.renditions, id);
-          if (index < 0 || !h) return;
+          const at = renditionIndex(stream?.renditions, id);
+          if (at < 0 || !h) return;
+          // hls.js orders levels by ascending bitrate, not the server's list order.
+          const index = hlsLevelIndex(h.levels, stream?.renditions?.[at]);
+          if (index < 0) return;
           setManualRenditionID(id);
           selectHlsLevel(h, index);
         }

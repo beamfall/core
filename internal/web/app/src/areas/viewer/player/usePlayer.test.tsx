@@ -54,6 +54,7 @@ const { fakeHlsInstances } = vi.hoisted(() => ({
     tracks: {
       subtitleTrack: number;
       currentLevel: number;
+      levels: Array<{ height?: number; bitrate?: number }>;
       subtitleTracks: Array<{ lang?: string; name?: string }>;
       audioTracks: Array<{ lang?: string; name?: string }>;
     };
@@ -81,6 +82,7 @@ vi.mock("hls.js", () => {
     subtitleTrack = -1;
     // hls.js: assigning currentLevel makes it the manual level (-1 is Auto).
     currentLevel = -1;
+    levels: Array<{ height?: number; bitrate?: number }> = [];
     get manualLevel() {
       return this.currentLevel;
     }
@@ -1037,8 +1039,10 @@ describe("usePlayer", () => {
         fireEvent.click(screen.getByText("switch-hls"));
         await waitFor(() => expect(fakeHlsInstances).toHaveLength(1));
         const hls = fakeHlsInstances[0];
+        // hls.js orders levels ascending: 480p is level 0, 720p is level 1.
+        hls.tracks.levels = [{ height: 480 }, { height: 720 }];
         hls.emit("manifestParsed");
-        expect(hls.tracks.currentLevel).toBe(0);
+        expect(hls.tracks.currentLevel).toBe(1);
         hls.tracks.currentLevel = choice;
         hls.emitError({ fatal: true, response: { code: 401 } });
         await waitFor(() => expect(hls.sources).toHaveLength(2));
@@ -1049,6 +1053,32 @@ describe("usePlayer", () => {
       it("keeps a later manual rendition instead of restoring the first pick", async () => {
         const hls = await pickThenChooseThenRefresh(1);
         expect(hls.tracks.currentLevel).toBe(1);
+      });
+
+      it("pins the picked rendition, not its list position, in hls.js's ascending levels", async () => {
+        vi.mocked(Hls.isSupported).mockReturnValue(true);
+        vi.mocked(fetchPlaybackInfo).mockResolvedValue({
+          ...inventory,
+          streams: [
+            inventory.streams[0],
+            {
+              ...inventory.streams[1],
+              renditions: [
+                { id: "1080", height: 1080 },
+                { id: "720", height: 720 },
+              ],
+            },
+          ],
+        });
+        render(<Harness />);
+        await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+        fireEvent.click(screen.getByText("switch-hls"));
+        await waitFor(() => expect(fakeHlsInstances).toHaveLength(1));
+        const hls = fakeHlsInstances[0];
+        hls.tracks.levels = [{ height: 720 }, { height: 1080 }];
+        hls.emit("manifestParsed");
+        // The harness picks 720p: level 0 here, though it is list position 1.
+        expect(hls.tracks.currentLevel).toBe(0);
       });
 
       it("keeps Auto instead of restoring the first pick", async () => {
