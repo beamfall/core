@@ -4,11 +4,14 @@ package main
 
 import (
 	"errors"
+	"flag"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 
 	"golang.org/x/sys/unix"
@@ -22,8 +25,27 @@ func TestLandlockRuntimeDoesNotGrantEtcTree(t *testing.T) {
 	}
 }
 
+// unlistedEtcFixture returns a readable regular file directly in /etc that no
+// profile lists, or "" when the host has none. A symlink is not a fixture:
+// /etc/os-release often points into /usr/lib, which the profiles grant, so
+// reading it proves nothing about /etc.
+func unlistedEtcFixture() string {
+	for _, path := range []string{"/etc/hostname", "/etc/passwd", "/etc/group", "/etc/os-release"} {
+		info, err := os.Lstat(path)
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		if _, err := os.ReadFile(path); err == nil {
+			return path
+		}
+	}
+	return ""
+}
+
 func TestLandlockDeniesUnlistedEtcFileAndAllowsInput(t *testing.T) {
 	if os.Getenv("BEAMFALL_LANDLOCK_HELPER") == "1" {
+		// Landlock binds the calling thread; probe from the confined one.
+		runtime.LockOSThread()
 		path := os.Getenv("BEAMFALL_LANDLOCK_PATH")
 		ro := []string(nil)
 		if os.Getenv("BEAMFALL_LANDLOCK_ALLOW") == "1" {
@@ -44,8 +66,8 @@ func TestLandlockDeniesUnlistedEtcFileAndAllowsInput(t *testing.T) {
 	if landlockABI() < 1 {
 		t.Skip("Landlock is unavailable on this kernel")
 	}
-	denied := "/etc/os-release"
-	if _, err := os.Stat(denied); err != nil {
+	denied := unlistedEtcFixture()
+	if denied == "" {
 		t.Skip("no stable readable /etc fixture")
 	}
 	cmd := exec.Command(os.Args[0], "-test.run=TestLandlockDeniesUnlistedEtcFileAndAllowsInput")
@@ -101,9 +123,23 @@ func TestLocalInferenceConfinementFailsClosedWithoutLandlock(t *testing.T) {
 	if !errors.Is(err, integrationhost.ErrLocalInferenceConfinementUnavailable) {
 		t.Fatalf("error = %v, want ErrLocalInferenceConfinementUnavailable", err)
 	}
-	if applyConfinement([]string{"/tmp"}, nil, os.Args[0]) != nil {
+	if onThrowawayThread(func() error { return applyConfinement([]string{"/tmp"}, nil, os.Args[0]) }) != nil {
 		t.Fatal("the ffmpeg profile must keep its own best-effort posture")
 	}
+}
+
+// onThrowawayThread runs f, which may really confine its calling thread, on a
+// goroutine locked to its own OS thread and never unlocked, so the runtime
+// retires that thread when the goroutine exits. Confining a test goroutine's
+// thread directly would leave it confined and silently deny later tests that
+// the scheduler places on it.
+func onThrowawayThread(f func() error) error {
+	done := make(chan error, 1)
+	go func() {
+		runtime.LockOSThread()
+		done <- f()
+	}()
+	return <-done
 }
 
 // TestLocalInferenceConfinementRefusesKernelsWithoutTruncateFence covers the
@@ -136,7 +172,8 @@ func TestLocalInferenceConfinementDeniesHostTrees(t *testing.T) {
 		t.Skipf("kernel landlock ABI %d is below the local inference floor %d",
 			landlockABI(), integrationhost.LocalInferenceMinLandlockABI)
 	}
-	if _, err := os.Stat("/etc/os-release"); err != nil {
+	denied := unlistedEtcFixture()
+	if denied == "" {
 		t.Skip("no stable readable /etc fixture")
 	}
 	input, model, work := t.TempDir(), t.TempDir(), t.TempDir()
@@ -151,6 +188,7 @@ func TestLocalInferenceConfinementDeniesHostTrees(t *testing.T) {
 			"BEAMFALL_LOCAL_INFERENCE_INPUT="+input,
 			"BEAMFALL_LOCAL_INFERENCE_MODEL="+model,
 			"BEAMFALL_LOCAL_INFERENCE_WORK="+work,
+			"BEAMFALL_LOCAL_INFERENCE_ETC="+denied,
 		)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("probe %s did not behave as declared: %v\n%s", probe, err, out)
@@ -161,6 +199,8 @@ func TestLocalInferenceConfinementDeniesHostTrees(t *testing.T) {
 // localInferenceConfinementHelper applies the real profile to itself and exits
 // 0 only when the probe's declared outcome holds.
 func localInferenceConfinementHelper() {
+	// Landlock binds the calling thread; probe from the confined one.
+	runtime.LockOSThread()
 	input := os.Getenv("BEAMFALL_LOCAL_INFERENCE_INPUT")
 	model := os.Getenv("BEAMFALL_LOCAL_INFERENCE_MODEL")
 	work := os.Getenv("BEAMFALL_LOCAL_INFERENCE_WORK")
@@ -174,7 +214,7 @@ func localInferenceConfinementHelper() {
 	case "write-work":
 		err = os.WriteFile(filepath.Join(work, "labels.json"), []byte("{}"), 0o600)
 	case "read-etc":
-		if _, readErr := os.ReadFile("/etc/os-release"); errors.Is(readErr, os.ErrPermission) {
+		if _, readErr := os.ReadFile(os.Getenv("BEAMFALL_LOCAL_INFERENCE_ETC")); errors.Is(readErr, os.ErrPermission) {
 			os.Exit(0)
 		}
 		os.Exit(4)
@@ -217,4 +257,179 @@ func TestNoNetworkFilterChecksArchitectureBeforeSyscallNumber(t *testing.T) {
 	if filter[len(filter)-1].K != unix.SECCOMP_RET_ALLOW {
 		t.Fatalf("last instruction = %+v, want the allow return", filter[len(filter)-1])
 	}
+}
+
+// confineShimHelperEnv selects the shim role of
+// TestShimExecsConfinedWorkerWhenThreadsMigrate: the helper process runs the
+// real shim entry point and execs this test binary as the worker probe.
+const confineShimHelperEnv = "BEAMFALL_CONFINE_SHIM_HELPER"
+
+// confinedWorkerProbeArg is the positional argument that marks the exec'd
+// worker role. It travels in argv rather than the environment because the
+// local inference shim execs its target with an empty environment.
+const confinedWorkerProbeArg = "beamfall-confined-worker-probe"
+
+// TestShimExecsConfinedWorkerWhenThreadsMigrate proves the worker a shim execs
+// is confined even when the Go scheduler moves the shim's goroutine to another
+// OS thread between confinement and exec. no_new_privs, seccomp and landlock
+// bind the calling thread only, and execve from any thread replaces the whole
+// process with that thread's credentials, so an unlocked goroutine that
+// migrated would exec an unconfined worker. Before the real exec the helper
+// calls moveOffThread, which deterministically moves an unlocked goroutine to
+// another thread, and fails if the goroutine left the thread it confined.
+func TestShimExecsConfinedWorkerWhenThreadsMigrate(t *testing.T) {
+	if mode := os.Getenv(confineShimHelperEnv); mode != "" {
+		confineShimHelper(mode)
+		return
+	}
+	abi := landlockABI()
+	if abi < 1 {
+		t.Skip("Landlock is unavailable on this kernel")
+	}
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	for _, mode := range []string{"ffmpeg", "local-inference"} {
+		t.Run(mode, func(t *testing.T) {
+			if mode == "local-inference" && !integrationhost.LocalInferenceLandlockEnforceable(abi) {
+				t.Skipf("kernel landlock ABI %d is below the local inference floor %d",
+					abi, integrationhost.LocalInferenceMinLandlockABI)
+			}
+			outside := t.TempDir()
+			denied := filepath.Join(outside, "denied")
+			if err := os.WriteFile(denied, []byte("secret"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			input, model, work := t.TempDir(), t.TempDir(), t.TempDir()
+			if err := os.Chmod(model, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command(self, "-test.run=^TestShimExecsConfinedWorkerWhenThreadsMigrate$")
+			cmd.Env = append(os.Environ(),
+				confineShimHelperEnv+"="+mode,
+				"BEAMFALL_CONFINE_SHIM_DENIED="+denied,
+				"BEAMFALL_CONFINE_SHIM_INPUT="+input,
+				"BEAMFALL_CONFINE_SHIM_MODEL="+model,
+				"BEAMFALL_CONFINE_SHIM_WORK="+work,
+			)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("exec'd worker was not confined: %v\n%s", err, out)
+			}
+			t.Logf("%s", out)
+		})
+	}
+}
+
+// confineShimHelper runs one shim exactly as production does, except that the
+// exec is preceded by moveOffThread, and a goroutine that moved exits non-zero.
+func confineShimHelper(mode string) {
+	self, err := os.Executable()
+	if err != nil {
+		os.Exit(2)
+	}
+	denied := os.Getenv("BEAMFALL_CONFINE_SHIM_DENIED")
+	probe := []string{self, "-test.run=^TestConfinedWorkerProbe$", confinedWorkerProbeArg, mode, denied}
+	original := execShimTarget
+	execShimTarget = func(path string, argv, env []string) error {
+		if before, after, _ := moveOffThread(); after != before {
+			fmt.Fprintf(os.Stderr, "shim goroutine moved from OS thread %d to %d before exec: not locked to its confined thread\n", before, after)
+			os.Exit(5)
+		}
+		return original(path, argv, env)
+	}
+	switch mode {
+	case "ffmpeg":
+		err = runFFmpegShim(nil, nil, probe)
+	case "local-inference":
+		err = runLocalInferenceShim(
+			os.Getenv("BEAMFALL_CONFINE_SHIM_INPUT"),
+			os.Getenv("BEAMFALL_CONFINE_SHIM_MODEL"),
+			os.Getenv("BEAMFALL_CONFINE_SHIM_WORK"),
+			probe)
+	default:
+		err = fmt.Errorf("unknown shim mode %q", mode)
+	}
+	fmt.Fprintf(os.Stderr, "shim returned without exec: %v\n", err)
+	os.Exit(3)
+}
+
+// moveOffThread parks the calling goroutine, with a single P, while a second
+// goroutine takes over the OS thread it parked on and locks that thread to
+// itself. An unlocked caller therefore resumes on a different thread; a caller
+// locked to its thread is handed back to that thread. It returns the thread ids
+// before and after, and a release func that ends the second goroutine (its
+// locked thread exits with it).
+func moveOffThread() (before, after int, release func()) {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1))
+	before = unix.Gettid()
+	woke, done := make(chan struct{}), make(chan struct{})
+	go func() {
+		runtime.LockOSThread()
+		close(woke)
+		<-done
+	}()
+	<-woke
+	return before, unix.Gettid(), func() { close(done) }
+}
+
+// TestShimThreadMoveControl proves moveOffThread moves an unlocked goroutine
+// and keeps a locked one, so TestShimExecsConfinedWorkerWhenThreadsMigrate
+// fails when a shim stops calling lockShimThread instead of passing by chance.
+func TestShimThreadMoveControl(t *testing.T) {
+	for _, locked := range []bool{false, true} {
+		got := make(chan [2]int)
+		go func() {
+			if locked {
+				runtime.LockOSThread() // never unlocked: the thread exits with this goroutine
+			}
+			before, after, release := moveOffThread()
+			release()
+			got <- [2]int{before, after}
+		}()
+		tids := <-got
+		if moved := tids[0] != tids[1]; moved == locked {
+			t.Errorf("locked=%v: goroutine went from thread %d to %d, moved=%v, want %v",
+				locked, tids[0], tids[1], moved, !locked)
+		}
+	}
+}
+
+// TestConfinedWorkerProbe is the exec'd worker. It only does anything when a
+// shim helper launched it; it then checks, from inside the new process image,
+// every half of the profile its shim promised and exits non-zero on the first
+// gap. It reports through the exit status because the landlock domain denies
+// the filesystem writes the testing framework could otherwise need.
+func TestConfinedWorkerProbe(t *testing.T) {
+	args := flag.Args()
+	if len(args) != 3 || args[0] != confinedWorkerProbeArg {
+		t.Skip("runs only as the worker a shim helper execs")
+	}
+	mode, denied := args[1], args[2]
+	var gaps []string
+	if nnp, err := unix.PrctlRetInt(unix.PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0); err != nil || nnp != 1 {
+		gaps = append(gaps, fmt.Sprintf("no_new_privs = %d (%v), want 1", nnp, err))
+	}
+	if _, err := os.ReadFile(denied); !errors.Is(err, os.ErrPermission) {
+		gaps = append(gaps, fmt.Sprintf("read outside the landlock grants: err = %v, want permission denied", err))
+	}
+	if mode == "local-inference" {
+		if sc, err := unix.PrctlRetInt(unix.PR_GET_SECCOMP, 0, 0, 0, 0); err != nil || sc != unix.SECCOMP_MODE_FILTER {
+			gaps = append(gaps, fmt.Sprintf("seccomp mode = %d (%v), want filter", sc, err))
+		}
+		fd, err := unix.Socket(unix.AF_UNIX, unix.SOCK_STREAM, 0)
+		if err == nil {
+			_ = unix.Close(fd)
+		}
+		if !errors.Is(err, unix.EPERM) {
+			gaps = append(gaps, fmt.Sprintf("socket(2) err = %v, want EPERM", err))
+		}
+	}
+	if len(gaps) > 0 {
+		fmt.Fprintf(os.Stderr, "%s worker is not confined: %s\n", mode, strings.Join(gaps, "; "))
+		os.Exit(4)
+	}
+	fmt.Fprintf(os.Stderr, "%s worker is confined\n", mode)
+	os.Exit(0)
 }

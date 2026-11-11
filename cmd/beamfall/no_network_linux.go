@@ -43,6 +43,8 @@ func noNetworkFilter(arch uint32) []unix.SockFilter {
 	}
 }
 
+// applyNoNetwork sets no_new_privs and installs the filter on the calling OS
+// thread only; the caller must hold runtime.LockOSThread through exec.
 func applyNoNetwork() error {
 	arch, ok := seccompNativeArch[runtime.GOARCH]
 	if !ok {

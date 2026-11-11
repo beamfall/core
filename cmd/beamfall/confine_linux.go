@@ -368,7 +368,9 @@ func landlockAddRule(rulesetFD int, beneath *unix.LandlockPathBeneathAttr) error
 }
 
 // landlockRestrictSelf wraps the SYS_LANDLOCK_RESTRICT_SELF syscall, enforcing
-// the ruleset on the current thread group from this point forward.
+// the ruleset on the calling OS thread (and threads it later creates) from this
+// point forward. Other threads stay unconfined, so a caller that execs must hold
+// runtime.LockOSThread from before this call through exec.
 func landlockRestrictSelf(rulesetFD int) error {
 	_, _, errno := unix.Syscall(unix.SYS_LANDLOCK_RESTRICT_SELF, uintptr(rulesetFD), 0, 0)
 	if errno != 0 {
