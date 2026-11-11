@@ -11230,6 +11230,58 @@
 -          "name": "locked",
 -          "kind": "scalar",
 -          "optional": true
+-        },
+-        {
+-          "name": "muted",
+-          "kind": "scalar",
+-          "optional": true
+-        },
+-        {
+-          "name": "restricted",
+-          "kind": "scalar",
+-          "optional": true
+-        },
+-        {
+-          "name": "summary",
+-          "kind": "scalar",
+-          "optional": true
+-        },
+-        {
+-          "name": "title",
+-          "kind": "scalar"
+-        }
+-      ]
+-    },
+-    {
+-      "field": "subscriptions",
+-      "kind": "object",
+-      "children": [
+-        {
+-          "name": "addedAt",
+-          "kind": "scalar",
+-          "optional": true
+-        },
+-        {
+-          "name": "feedURL",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "followed",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "hasAuth",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "id",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "lastPolledAt",
+-          "kind": "scalar",
+-          "optional": true
+-        },
 +          "elem": {
 +            "kind": "object",
 +            "children": [
@@ -14251,13 +14303,15 @@
 +      "field": "transferprofileowner",
 +      "kind": "object",
 +      "children": [
-+        {
+         {
+-          "name": "libraryID",
 +          "name": "isOwner",
-+          "kind": "scalar"
-+        },
-+        {
+           "kind": "scalar"
+         },
+         {
+-          "name": "retentionKind",
 +          "name": "profileID",
-+          "kind": "scalar"
+           "kind": "scalar"
 +        }
 +      ]
 +    },
@@ -14268,132 +14322,23 @@
 +        {
 +          "name": "groupID",
 +          "kind": "scalar"
-+        },
-+        {
-+          "name": "item",
-+          "kind": "scalar"
-+        },
-+        {
-+          "name": "positionMS",
-+          "kind": "scalar"
-+        },
-+        {
-+          "name": "presentAtMS",
-+          "kind": "scalar"
-+        }
-+      ]
-+    },
-+    {
-+      "field": "trashedmarkers",
-+      "kind": "object",
-+      "children": [
-+        {
-+          "name": "endSeconds",
-+          "kind": "scalar",
-+          "optional": true,
-+          "nullable": true
-+        },
-+        {
-+          "name": "id",
-+          "kind": "scalar"
-+        },
-+        {
-+          "name": "mediaID",
-+          "kind": "scalar"
-+        },
-+        {
-+          "name": "segmentKind",
-+          "kind": "scalar",
-+          "optional": true
-+        },
-+        {
-+          "name": "startSeconds",
-+          "kind": "scalar"
-+        },
-+        {
-+          "name": "tags",
-+          "kind": "list",
-+          "nullable": true,
-+          "elem": {
-+            "kind": "scalar"
-+          }
-         },
-         {
--          "name": "muted",
-+          "name": "title",
-           "kind": "scalar",
-           "optional": true
-         },
-         {
--          "name": "restricted",
-+          "name": "trashedAt",
-           "kind": "scalar",
-           "optional": true
--        },
--        {
--          "name": "summary",
--          "kind": "scalar",
--          "optional": true
--        },
--        {
--          "name": "title",
--          "kind": "scalar"
-         }
-       ]
-     },
-     {
--      "field": "subscriptions",
-+      "field": "trashlist",
-       "kind": "object",
-       "children": [
-         {
--          "name": "addedAt",
--          "kind": "scalar",
--          "optional": true
--        },
--        {
--          "name": "feedURL",
--          "kind": "scalar"
--        },
--        {
--          "name": "followed",
--          "kind": "scalar"
--        },
--        {
--          "name": "hasAuth",
--          "kind": "scalar"
--        },
--        {
-           "name": "id",
-           "kind": "scalar"
-         },
-         {
--          "name": "lastPolledAt",
--          "kind": "scalar",
--          "optional": true
--        },
--        {
-           "name": "libraryID",
-           "kind": "scalar"
-         },
-         {
--          "name": "retentionKind",
-+          "name": "title",
-           "kind": "scalar"
          },
          {
 -          "name": "retentionN",
 -          "kind": "scalar",
 -          "nullable": true
--        },
--        {
++          "name": "item",
++          "kind": "scalar"
+         },
+         {
 -          "name": "root",
-+          "name": "trashedAt",
++          "name": "positionMS",
            "kind": "scalar"
--        },
--        {
+         },
+         {
 -          "name": "title",
--          "kind": "scalar"
++          "name": "presentAtMS",
+           "kind": "scalar"
          }
        ]
      },
@@ -14403,49 +14348,61 @@
 -    },
 -    {
 -      "field": "switchprofile",
-+      "field": "trashmedia",
++      "field": "trashedmarkers",
        "kind": "object",
        "children": [
          {
 -          "name": "audioLanguages",
 -          "kind": "list",
--          "optional": true,
--          "nullable": true
--        },
--        {
++          "name": "endSeconds",
++          "kind": "scalar",
+           "optional": true,
+           "nullable": true
+         },
+         {
 -          "name": "deviceRole",
--          "kind": "scalar"
--        },
--        {
++          "name": "id",
+           "kind": "scalar"
+         },
+         {
 -          "name": "expiresAt",
 -          "kind": "scalar",
 -          "optional": true
 -        },
 -        {
-           "name": "id",
+-          "name": "id",
++          "name": "mediaID",
            "kind": "scalar"
          },
          {
 -          "name": "preferSDH",
--          "kind": "scalar",
--          "optional": true
--        },
--        {
++          "name": "segmentKind",
+           "kind": "scalar",
+           "optional": true
+         },
+         {
 -          "name": "profile",
-+          "name": "libraryID",
++          "name": "startSeconds",
            "kind": "scalar"
          },
          {
 -          "name": "profileID",
-+          "name": "title",
-           "kind": "scalar"
+-          "kind": "scalar"
++          "name": "tags",
++          "kind": "list",
++          "nullable": true,
++          "elem": {
++            "kind": "scalar"
++          }
          },
          {
 -          "name": "revealed",
-+          "name": "trashedAt",
-           "kind": "scalar"
--        },
--        {
+-          "kind": "scalar"
++          "name": "title",
++          "kind": "scalar",
++          "optional": true
+         },
+         {
 -          "name": "subtitleLanguages",
 -          "kind": "list",
 -          "optional": true,
@@ -14453,24 +14410,79 @@
 -        },
 -        {
 -          "name": "subtitleMode",
--          "kind": "scalar",
--          "optional": true
++          "name": "trashedAt",
+           "kind": "scalar",
+           "optional": true
          }
        ]
      },
      {
 -      "field": "syncofflinepackprogress",
-+      "field": "unassigntag",
++      "field": "trashlist",
        "kind": "object",
        "children": [
          {
 -          "name": "bytesReady",
-+          "name": "libraryID",
++          "name": "id",
            "kind": "scalar"
          },
          {
 -          "name": "bytesTotal",
--          "kind": "scalar"
++          "name": "libraryID",
+           "kind": "scalar"
+         },
+         {
+-          "name": "createdAt",
++          "name": "title",
+           "kind": "scalar"
+         },
+         {
+-          "name": "expiresAt",
++          "name": "trashedAt",
+           "kind": "scalar"
+-        },
++        }
++      ]
++    },
++    {
++      "field": "trashmedia",
++      "kind": "object",
++      "children": [
+         {
+           "name": "id",
+           "kind": "scalar"
+         },
+         {
+-          "name": "itemCount",
++          "name": "libraryID",
+           "kind": "scalar"
+         },
+         {
+-          "name": "keyToken",
+-          "kind": "scalar",
+-          "optional": true
++          "name": "title",
++          "kind": "scalar"
+         },
+         {
+-          "name": "manifestToken",
+-          "kind": "scalar",
+-          "optional": true
++          "name": "trashedAt",
++          "kind": "scalar"
++        }
++      ]
++    },
++    {
++      "field": "unassigntag",
++      "kind": "object",
++      "children": [
++        {
++          "name": "libraryID",
++          "kind": "scalar"
+         },
+         {
+-          "name": "state",
 +          "name": "tags",
 +          "kind": "list",
 +          "nullable": true,
@@ -14541,17 +14553,15 @@
 +              "kind": "scalar"
 +            }
 +          ]
-         },
-         {
--          "name": "createdAt",
++        },
++        {
 +          "name": "targetID",
            "kind": "scalar"
          },
          {
--          "name": "expiresAt",
+-          "name": "targetKind",
 +          "name": "targetType",
            "kind": "scalar"
--        },
 +        }
 +      ]
 +    },
@@ -14559,57 +14569,23 @@
 +      "field": "undobatch",
 +      "kind": "object",
 +      "children": [
-         {
--          "name": "id",
++        {
 +          "name": "affected",
-           "kind": "scalar"
++          "kind": "scalar"
          },
          {
--          "name": "itemCount",
+-          "name": "targetRef",
 +          "name": "batchID",
            "kind": "scalar"
          },
          {
--          "name": "keyToken",
--          "kind": "scalar",
--          "optional": true
--        },
-+          "name": "kind",
-+          "kind": "scalar"
-+        }
-+      ]
-+    },
-+    {
-+      "field": "uninstallplugindata",
-+      "kind": "object",
-+      "children": [
-         {
--          "name": "manifestToken",
--          "kind": "scalar",
--          "optional": true
--        },
--        {
--          "name": "state",
-+          "name": "backgroundWorkers",
-           "kind": "scalar"
-         },
-         {
--          "name": "targetKind",
-+          "name": "eventsRetentionDays",
-           "kind": "scalar"
-         },
-         {
--          "name": "targetRef",
-+          "name": "observabilityEnabled",
-           "kind": "scalar"
-         },
-         {
 -          "name": "updatedAt",
--          "kind": "scalar"
--        }
--      ]
--    },
--    {
++          "name": "kind",
+           "kind": "scalar"
+         }
+       ]
+     },
+     {
 -      "field": "tagassignments",
 -      "kind": "object",
 -      "children": [
@@ -14888,6 +14864,22 @@
 -          "name": "tags",
 -          "kind": "list",
 -          "nullable": true,
++      "field": "uninstallplugindata",
++      "kind": "object",
++      "children": [
++        {
++          "name": "backgroundWorkers",
++          "kind": "scalar"
++        },
++        {
++          "name": "eventsRetentionDays",
++          "kind": "scalar"
++        },
++        {
++          "name": "observabilityEnabled",
++          "kind": "scalar"
++        },
++        {
 +          "name": "plugins",
 +          "kind": "list",
 +          "nullable": true,
@@ -16569,10 +16561,13 @@
          }
        ]
      },
-@@ -15579,6 +26018,16 @@
-       },
-       {
+@@ -15576,9 +26015,24 @@
          "method": "POST",
+         "pattern": "/api/web/promote",
+         "note": "Promote a web session to Admin Session"
++      },
++      {
++        "method": "POST",
 +        "pattern": "/api/web/session/renew",
 +        "note": "Renew a web session from its device credential"
 +      },
@@ -16580,27 +16575,32 @@
 +        "method": "POST",
 +        "pattern": "/api/web/admin-signin",
 +        "note": "Sign in a web device with the admin password"
+       },
+       {
+         "method": "POST",
++        "pattern": "/api/web/signin-security",
++        "note": "Switch Home or Strict sign-in security with the admin password"
 +      },
 +      {
 +        "method": "POST",
          "pattern": "/api/beam/offers",
          "note": "Create a Beam offer for device pairing"
        },
-@@ -17083,6 +27532,13 @@
-           }
+@@ -17077,6 +27531,13 @@
          },
          {
-+          "name": "foreground",
+           "name": "degraded",
 +          "shape": {
 +            "type": "boolean",
 +            "optional": true
 +          }
 +        },
 +        {
-           "name": "burnSubtitleIndex",
++          "name": "foreground",
            "shape": {
-             "type": "integer",
-@@ -17090,6 +27546,20 @@
+             "type": "boolean",
+             "optional": true
+@@ -17090,6 +27551,20 @@
            }
          },
          {

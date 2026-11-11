@@ -133,6 +133,7 @@ var exactRouteClasses = map[string]AccessClass{
 	"POST /api/web/promote":           AccessPrivateUI,
 	"POST /api/web/session/renew":     AccessPrivateUI,
 	"POST /api/web/admin-signin":      AccessPrivateUI,
+	"POST /api/web/signin-security":   AccessPrivateUI,
 	"POST /api/setup":                 AccessPrivateUI,
 }
 

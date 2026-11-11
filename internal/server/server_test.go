@@ -115,6 +115,7 @@ func TestRoutesAreRecorded(t *testing.T) {
 		{Method: http.MethodPost, Pattern: "/api/web/promote", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodPost, Pattern: "/api/web/session/renew", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodPost, Pattern: "/api/web/admin-signin", RevealClass: reveal.ContentJSON},
+		{Method: http.MethodPost, Pattern: "/api/web/signin-security", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodPost, Pattern: "/api/setup", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodGet, Pattern: "/api/setup"},
 		{Method: http.MethodGet, Pattern: "/api/events", RevealClass: reveal.EventFanout},
@@ -320,14 +321,24 @@ func TestSetupRequiredProbe(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
 		}
-		var body map[string]bool
-		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
 			t.Fatalf("decode setup probe: %v", err)
 		}
-		_, hasRequired := body["required"]
-		_, hasTokenRequired := body["tokenRequired"]
-		if !hasRequired || !hasTokenRequired || len(body) != 2 {
-			t.Fatalf("body = %#v, want exactly {\"required\", \"tokenRequired\"}", body)
+		var mode string
+		if err := json.Unmarshal(raw["securityMode"], &mode); err != nil || mode != "home" {
+			t.Fatalf("securityMode = %s, want \"home\"", raw["securityMode"])
+		}
+		body := map[string]bool{}
+		for _, key := range []string{"required", "tokenRequired"} {
+			var value bool
+			if err := json.Unmarshal(raw[key], &value); err != nil {
+				t.Fatalf("%s = %s: %v", key, raw[key], err)
+			}
+			body[key] = value
+		}
+		if len(raw) != 3 {
+			t.Fatalf("body = %s, want exactly required, tokenRequired and securityMode", rec.Body.String())
 		}
 		return body
 	}

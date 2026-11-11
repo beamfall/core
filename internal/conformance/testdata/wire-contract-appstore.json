@@ -25154,6 +25154,11 @@
       },
       {
         "method": "POST",
+        "pattern": "/api/web/signin-security",
+        "note": "Switch Home or Strict sign-in security with the admin password"
+      },
+      {
+        "method": "POST",
         "pattern": "/api/beam/offers",
         "note": "Create a Beam offer for device pairing"
       },

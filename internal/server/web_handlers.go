@@ -23,6 +23,9 @@ func (s *Server) mountWebPrivateHandlers() {
 	// credential cookies, or enroll a new Manager Device with the admin password.
 	s.handle(http.MethodPost, "/api/web/session/renew", reveal.ContentJSON, s.renewWebSession)
 	s.handle(http.MethodPost, "/api/web/admin-signin", reveal.ContentJSON, s.adminSignInWebDevice)
+	// Home/Strict sign-in security switch (CORE-1110): a Manager session plus
+	// the admin password re-entered in the same request.
+	s.handle(http.MethodPost, "/api/web/signin-security", reveal.ContentJSON, s.setSignInSecurityMode)
 	// First-run setup bootstrap (ADR-0007 §2 / feature:first-run-setup-token):
 	// redeems the one-time setup token printed to the server log, creating the
 	// first MANAGER device+session without requiring an existing manager. Only
@@ -33,7 +36,9 @@ func (s *Server) mountWebPrivateHandlers() {
 	// reports only whether the one-time setup token is still installed. Like
 	// /health it carries no Reveal surface (empty class) and resolves no session,
 	// so it is genuinely reachable pre-enrollment; it leaks only the single
-	// boolean "is this a fresh server" and never the token value.
+	// boolean "is this a fresh server" and never the token value. It also
+	// reports the sign-in security mode (CORE-1110), which reveals only which
+	// sign-in path exists, so the enroll page can hide a path that is off.
 	s.handle(http.MethodGet, "/api/setup", "", s.setupRequired)
 }
 
@@ -168,9 +173,15 @@ func (s *Server) setupFirstRun(w http.ResponseWriter, r *http.Request) {
 // is pending). It leaks only these booleans, never the token.
 func (s *Server) setupRequired(w http.ResponseWriter, r *http.Request) {
 	required := s.pairing.SetupRequired()
-	writeJSON(w, http.StatusOK, map[string]bool{
+	mode, err := s.pairing.SignInSecurityMode(r.Context())
+	if err != nil {
+		writeErrorCause(w, r, http.StatusInternalServerError, "setup status unavailable", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
 		"required":      required,
 		"tokenRequired": required && !lanSetupClaim(r),
+		"securityMode":  string(mode),
 	})
 }
 
@@ -392,4 +403,54 @@ func (s *Server) adminSignInWebDevice(w http.ResponseWriter, r *http.Request) {
 		"profileID":        resp.ProfileID,
 		"deviceRole":       resp.DeviceRole,
 	})
+}
+
+// signInSecurityRequest is the body of POST /api/web/signin-security.
+type signInSecurityRequest struct {
+	Mode          string `json:"mode"`
+	AdminPassword string `json:"adminPassword"`
+}
+
+// setSignInSecurityMode switches between Home and Strict sign-in security
+// (ADR-0007, CORE-1110). The caller must be a Manager session and re-enter the
+// admin password; a wrong or missing password is 401 and counts against the
+// session's admin re-auth lane, which answers 429 once it locks.
+func (s *Server) setSignInSecurityMode(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	r.Body = http.MaxBytesReader(w, r.Body, maxControlBody)
+	if r.Header.Get(auth.CSRFHeader) == "" {
+		writeError(w, r, http.StatusForbidden, "missing CSRF header")
+		return
+	}
+	if rejectPublicPlainHTTPWebCredentials(w, r) {
+		return
+	}
+	scope, err := s.auth.ScopeFromRequest(r.Context(), r)
+	if err != nil {
+		writeError(w, r, http.StatusUnauthorized, "invalid session")
+		return
+	}
+	var req signInSecurityRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeDecodeError(w, r, err)
+		return
+	}
+	mode := store.SignInSecurityMode(req.Mode)
+	if _, err := s.auth.ChangeSignInSecurityMode(r.Context(), scope, mode, req.AdminPassword); err != nil {
+		var invalid store.ValidationError
+		switch {
+		case errors.As(err, &invalid):
+			writeError(w, r, http.StatusBadRequest, "securityMode must be home or strict")
+		case errors.Is(err, auth.ErrNotManager):
+			writeError(w, r, http.StatusForbidden, "a manager device is required")
+		case errors.Is(err, auth.ErrAdminLocked):
+			writeError(w, r, http.StatusTooManyRequests, "admin password attempts throttled")
+		case errors.Is(err, auth.ErrAdminPassword):
+			writeError(w, r, http.StatusUnauthorized, "admin password rejected")
+		default:
+			writeErrorCause(w, r, http.StatusInternalServerError, "could not change sign-in security", err)
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"securityMode": string(mode)})
 }
