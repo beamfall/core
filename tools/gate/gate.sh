@@ -29,6 +29,11 @@ if [ "${GATE_PROCESS_SUPERVISED:-0}" != 1 ]; then
 fi
 set -euo pipefail
 cd "$GATE_ROOT"
+# Set to 1 only immediately before an intentional successful exit. On /bin/bash
+# 3.2 `$?` reads 0 inside an EXIT trap after a `set -u` abort, so the trap
+# cannot trust a zero status unless this sentinel confirms the exit was ours
+# (CORE-0989).
+GATE_EXIT_OK=0
 # Wall-time vs metric-sum verification (GATE-OUTER-COORDINATION-1)
 # BEFORE da43f26b: wall 1752.065426s vs terminal-metric sum 1025.000000s (56 rows) -> discrepancy 727.065426s (41.50%)
 # AFTER  769b06f5: wall 2505.540252s vs terminal-metric sum 2524.797579s (68 rows; 3 fail rows are the
@@ -72,6 +77,9 @@ gate_evidence_kind() {
 }
 
 GATE_OWNED_GROUPS=""
+# "pgid=owner" pairs naming the step or lane that registered each group, so a
+# residual group found at exit can be attributed (CORE-0845).
+GATE_GROUP_OWNERS=""
 GATE_PARALLEL_RSS_DIR=""
 GATE_FULL_RSS_TRACKER_PID=""
 GATE_FULL_RSS_FILE=""
@@ -97,9 +105,20 @@ gate_group_inventory() {
 }
 
 gate_register_group() {
-  local group="$1" held
+  local group="$1" owner="${2:-}" held
   for held in ${GATE_OWNED_GROUPS:-}; do [ "$held" = "$group" ] && return 0; done
   GATE_OWNED_GROUPS="$GATE_OWNED_GROUPS $group"
+  # Owner names hold no whitespace so the list stays word-splittable.
+  owner="$(printf '%s' "$owner" | tr -c '[:alnum:]._:/+-' '_')"
+  [ -z "$owner" ] || GATE_GROUP_OWNERS="$GATE_GROUP_OWNERS $group=$owner"
+}
+
+gate_group_owner() {
+  local target="$1" pair
+  for pair in ${GATE_GROUP_OWNERS:-}; do
+    [ "${pair%%=*}" = "$target" ] && { printf '%s' "${pair#*=}"; return 0; }
+  done
+  printf 'unknown'
 }
 
 gate_unregister_group() {
@@ -150,6 +169,11 @@ gate_retire_group() {
 gate_cleanup_children() {
   local status=$? group held duplicate any attempt ticks full_rss_status=0
   local had_residual=0 survivors=""
+  # Fixtures that source this function without the sentinel leave it unset.
+  if [ "$status" -eq 0 ] && [ "${GATE_EXIT_OK-1}" = 0 ]; then
+    echo "ERROR gate aborted without a successful exit (bash 3.2 reports status 0 in an EXIT trap after a set -u abort)" >&2
+    status=1
+  fi
   local groups=()
   trap - EXIT INT TERM
   # Bash 3.2 treats an empty declared array as unbound under `set -u`.
@@ -168,10 +192,16 @@ gate_cleanup_children() {
   for group in "${groups[@]}"; do
     if gate_group_alive "$group"; then
       had_residual=1
+      # Inventory on a green exit too: the residual group is otherwise
+      # unattributable once cleanup reaps it (CORE-0845).
       if [ "$status" -ne 0 ]; then
-        printf 'gate failure process inventory for group %s:\n' "$group" >&2
-        gate_group_inventory "$group"
+        printf 'gate failure process inventory for group %s (owner: %s):\n' \
+          "$group" "$(gate_group_owner "$group")" >&2
+      else
+        printf 'gate residual process inventory for group %s (owner: %s):\n' \
+          "$group" "$(gate_group_owner "$group")" >&2
       fi
+      gate_group_inventory "$group"
     fi
   done
   for group in "${groups[@]}"; do gate_signal_group TERM "$group"; done
@@ -851,7 +881,7 @@ run_step() {
       gate_group_wrapper "$@"
     ) >"$log" 2>&1 &
     command_pid=$!
-    gate_register_group "$command_pid"
+    gate_register_group "$command_pid" "step:$name"
     owns_group=1
     set +m
   fi
@@ -968,7 +998,7 @@ start_parallel_step() {
     gate_group_wrapper run_parallel_step "$@"
   ) &
   printf -v "$pid_variable" '%s' "$!"
-  gate_register_group "${!pid_variable}"
+  gate_register_group "${!pid_variable}" "parallel:$pid_variable"
   set +m
   gate_rss_track_start "${!pid_variable}" rss_tracker_pid rss_tracker_file "$rss_tracker_file"
   printf -v "GATE_PARALLEL_RSS_TRACKER_${!pid_variable}" '%s' "$rss_tracker_pid"
@@ -1076,7 +1106,7 @@ prestart_lane() {  # prestart_lane <slot> <command...>
   set +m
   printf '%s' "$pid" >"$GATE_LANE_DIR/$slot.pid"
   gate_monotonic_ns >"$GATE_LANE_DIR/$slot.start"
-  gate_register_group "$pid"
+  gate_register_group "$pid" "lane:$slot"
   # The lane's own pid is its pgid (same `set -m` fork shape as run_step and
   # start_parallel_step), so it is RSS-sampled the same way run_step samples
   # its own command. join_lane runs in a different process (it is itself a
@@ -1385,6 +1415,7 @@ gate_full_rss_start
 
 if [[ "${GATE_CERT_DEMO_ONLY:-}" == "1" ]]; then
   run_cert_demo_tests
+  GATE_EXIT_OK=1
   exit 0
 fi
 
@@ -1395,6 +1426,7 @@ run_outer_checks
 if [[ "${GATE_PREFLIGHT:-0}" == "1" ]]; then
   run_gate_preflight_steps
   echo "gate-preflight: green"
+  GATE_EXIT_OK=1
   exit 0
 fi
 
@@ -1609,4 +1641,5 @@ run_scoped_step "design token drift gate" web node tools/gate/design-token-drift
 # above before Go embedded app-dist; web-scoped changes still run unit tests.
 run_scoped_step "web app typecheck + tests" web run_web_app test
 
+GATE_EXIT_OK=1
 echo "gate: green"
