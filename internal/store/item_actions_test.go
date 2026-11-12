@@ -363,6 +363,39 @@ func TestWatchlistSourcePagesVisibleItems(t *testing.T) {
 	}
 }
 
+// A muted target takes no page slot: the page behind it still fills, and the
+// next page does not skip an item.
+func TestWatchlistSourcePagesPastMutedItems(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	_, child, ids := seedItemTree(t, st)
+	// Oldest to newest; the Source lists newest first, so the muted Media leads.
+	for i, id := range ids {
+		if err := st.SetItemWatchlisted(ctx, "profile-default", ItemTarget{MediaID: id}, true, itemOpenFilter); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.eventsW.ExecContext(ctx, `UPDATE watchlist_item SET added_at_ms = ? WHERE target_id = ?`, i+1, string(id)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.SetMute(ctx, "profile-default", MuteKindEntity, string(child), false, true); err != nil {
+		t.Fatal(err)
+	}
+	page := func(offset int) []SourceItem {
+		t.Helper()
+		return mustSourceItems(t, st, itemOpenFilter, SourceQuery{Kind: "watchlist", ProfileID: "profile-default", Limit: 1, Offset: offset})
+	}
+	if got := page(0); len(got) != 1 || got[0].ID != ids[1] {
+		t.Fatalf("first page = %v, want the newest unmuted Media", got)
+	}
+	if got := page(1); len(got) != 1 || got[0].ID != ids[0] {
+		t.Fatalf("second page = %v, want the oldest Media", got)
+	}
+	if got := page(2); len(got) != 0 {
+		t.Fatalf("third page = %v, want the end of the list", got)
+	}
+}
+
 // A row whose Entity left the catalog is dropped, not an error, by the Sources
 // and by the My Data export.
 func TestItemActionSourcesDropPurgedEntities(t *testing.T) {

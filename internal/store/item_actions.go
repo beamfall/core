@@ -478,9 +478,10 @@ const profileItemsPageSize = 200
 
 // profileItemsSQL walks (kind, id, rating) rows from the events DB in their
 // stored order and resolves them against the catalog under filter. Targets the
-// filter hides, and targets that left the catalog, are dropped before paging,
-// so offset and limit count visible items and a page is short only at the end
-// of the list. A negative limit returns every visible item past offset.
+// filter hides, targets the Profile muted, and targets that left the catalog
+// are dropped before paging, so offset and limit count visible items and a page
+// is short only at the end of the list. A negative limit returns every visible
+// item past offset.
 func (s *Store) profileItemsSQL(ctx context.Context, filter LibraryFilter, query string, profileID ProfileID, limit, offset int) ([]SourceItem, error) {
 	items := []SourceItem{}
 	if limit == 0 {
@@ -493,6 +494,12 @@ func (s *Store) profileItemsSQL(ctx context.Context, filter LibraryFilter, query
 			return nil, err
 		}
 		visible, err := s.visibleProfileItemsSQL(ctx, rows, filter)
+		if err != nil {
+			return nil, err
+		}
+		// SourceItems applies the same Mute predicate to the finished page;
+		// applying it here first keeps a muted target from taking a page slot.
+		visible, err = s.applyMuteFilterLocked(ctx, s.catalogR, profileID, filter, visible)
 		if err != nil {
 			return nil, err
 		}
