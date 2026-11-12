@@ -428,6 +428,9 @@ if ( cd "$RACE_REPO" && PATH="$RACE_SHIM:$PATH" AGENT_EVIDENCE_DIR="$RACE_EVIDEN
 fi
 grep -Eq 'reported no result for: .*TestGraphFixtureNeverRuns' "$TMP/race-graph-missing.out" \
   || fail "race-short did not name the promoted test that reported no result"
+grep -Fq '"package": "github.com/beamfall/core/internal/graph", "status": "fail"' \
+  "$RACE_EVIDENCE/race-short-packages.jsonl" \
+  || fail "race-short recorded a package with an unreported test as passed"
 
 # One shard keeps the single unsharded command.
 : >"$RACE_TEST_LOG"

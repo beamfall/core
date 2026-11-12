@@ -404,6 +404,10 @@ for (pkg, names), (path, status) in zip(plan, results):
             sys.stderr.write(
                 "ERROR: race-test promoted shard for %s reported no result for: %s\n"
                 % (pkg, " ".join(missing)))
+            # The shard itself reported the package as passed; record the
+            # verdict the phase actually reaches.
+            sys.stdout.write(json.dumps(
+                {"Action": "fail", "Package": pkg, "Elapsed": 0}) + "\n")
             failed = failed or 1
 sys.exit(failed)
 PY
