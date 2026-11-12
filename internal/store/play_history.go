@@ -97,8 +97,14 @@ const playedAtMS = `CASE
 		THEN json_extract(payload, '$.eventTimeMs')
 		ELSE occurred_at_ms END`
 
-// derivedPlaysLocked sessionizes progress events in [since, until) newest
-// first. A zero bound is open; an empty profileID covers every Profile.
+// derivedPlaysLocked lists the plays that started in [since, until), newest
+// first, each measured whole even when it runs past either bound. A zero bound
+// is open; an empty profileID covers every Profile.
+//
+// Runs are grouped before the window applies: a play that began just before
+// since is left out, not cut into a shorter play starting at since. Reports
+// from one gap before since are enough to tell, because a run starting at or
+// after since has no report within one gap before its first.
 func (s *Store) derivedPlaysLocked(ctx context.Context, profileID ProfileID, since, until time.Time, visit func(derivedPlay) bool) error {
 	query := `
 		WITH raw AS (
@@ -115,24 +121,14 @@ func (s *Store) derivedPlaysLocked(ctx context.Context, profileID ProfileID, sin
 	}
 	if !since.IsZero() {
 		// A report is never dated after it arrived, so the arrival index can
-		// still bound the scan.
+		// still bound the scan, one gap early.
 		query += ` AND occurred_at_ms >= ?`
-		args = append(args, timeToMillis(since.UTC()))
+		args = append(args, timeToMillis(since.UTC().Add(-playGap)))
 	}
 	query += `
 		), ev AS (
 			SELECT *, LAG(at_ms) OVER (PARTITION BY profile_id, media_id ORDER BY at_ms) AS prev_ms
 			FROM raw
-			WHERE 1 = 1`
-	if !since.IsZero() {
-		query += ` AND at_ms >= ?`
-		args = append(args, timeToMillis(since.UTC()))
-	}
-	if !until.IsZero() {
-		query += ` AND at_ms < ?`
-		args = append(args, timeToMillis(until.UTC()))
-	}
-	query += `
 		), run AS (
 			SELECT *, SUM(CASE WHEN prev_ms IS NULL OR at_ms - prev_ms > ? THEN 1 ELSE 0 END)
 			            OVER (PARTITION BY profile_id, media_id ORDER BY at_ms) AS run_no
@@ -141,8 +137,18 @@ func (s *Store) derivedPlaysLocked(ctx context.Context, profileID ProfileID, sin
 		SELECT profile_id, media_id, MIN(at_ms), MAX(at_ms), MAX(duration), MAX(watched)
 		FROM run
 		GROUP BY profile_id, media_id, run_no
-		ORDER BY MIN(at_ms) DESC, profile_id, media_id`
+		HAVING 1 = 1`
 	args = append(args, playGap.Milliseconds())
+	if !since.IsZero() {
+		query += ` AND MIN(at_ms) >= ?`
+		args = append(args, timeToMillis(since.UTC()))
+	}
+	if !until.IsZero() {
+		query += ` AND MIN(at_ms) < ?`
+		args = append(args, timeToMillis(until.UTC()))
+	}
+	query += `
+		ORDER BY MIN(at_ms) DESC, profile_id, media_id`
 	rows, err := s.eventsR.QueryContext(ctx, query, args...)
 	if err != nil {
 		return err
@@ -209,10 +215,11 @@ func (s *Store) PlayHistory(ctx context.Context, filter LibraryFilter, q PlayHis
 			if err != nil {
 				return nil, err
 			}
-			// A play cut short by the bound starts within one gap of it, so a
-			// full page whose oldest play starts later is exactly the page an
-			// unbounded read returns.
-			if len(plays) == limit && plays[limit-1].StartedAt.After(bound.Add(playGap)) {
+			// Every play on a bounded page started after the bound and is
+			// measured whole, and every play the bound left out started
+			// earlier, so a full page is exactly the page an unbounded read
+			// returns.
+			if len(plays) == limit {
 				return plays, nil
 			}
 		}

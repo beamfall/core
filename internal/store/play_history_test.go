@@ -215,3 +215,55 @@ func TestPlayHistoryOpenEndedReadMatchesTheWholeLog(t *testing.T) {
 		t.Errorf("straddling play = %ds, want the whole 1200s", whole[2].WatchedSeconds)
 	}
 }
+
+// feature:play-history
+func TestPlayHistoryWindowKeepsPlaysWhole(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	all := LibraryFilter{AllLibraries: true}
+	since := time.Date(2026, 11, 10, 20, 0, 0, 0, time.UTC)
+	until := since.Add(6 * time.Hour)
+
+	// One play straddles since, one sits inside, one straddles until.
+	progressAt(t, st, "profile-default", "media-alpha", since.Add(-10*time.Minute), false)
+	progressAt(t, st, "profile-default", "media-alpha", since.Add(10*time.Minute), false)
+	progressAt(t, st, "profile-default", "media-alpha", since.Add(20*time.Minute), false)
+	progressAt(t, st, "profile-managed", "media-alpha", since.Add(2*time.Hour), false)
+	progressAt(t, st, "profile-managed", "media-alpha", since.Add(2*time.Hour+5*time.Minute), false)
+	progressAt(t, st, "profile-default", "media-alpha", until.Add(-10*time.Minute), false)
+	progressAt(t, st, "profile-default", "media-alpha", until.Add(15*time.Minute), true)
+
+	got, err := st.PlayHistory(ctx, all, PlayHistoryQuery{Since: since, Until: until})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("window = %#v, want the two plays that started inside it", got)
+	}
+	if !got[0].StartedAt.Equal(until.Add(-10*time.Minute)) || got[0].WatchedSeconds != 1500 || !got[0].Finished {
+		t.Errorf("play straddling until = %#v, want it whole: 1500s, finished", got[0])
+	}
+	if !got[1].StartedAt.Equal(since.Add(2*time.Hour)) || got[1].WatchedSeconds != 300 {
+		t.Errorf("inner play = %#v, want 300s from since+2h", got[1])
+	}
+
+	earlier, err := st.PlayHistory(ctx, all, PlayHistoryQuery{Since: since.Add(-time.Hour), Until: since})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(earlier) != 1 || !earlier[0].StartedAt.Equal(since.Add(-10*time.Minute)) || earlier[0].WatchedSeconds != 1800 {
+		t.Fatalf("window before since = %#v, want the straddling play whole: 1800s from since-10m", earlier)
+	}
+
+	stats, err := st.PlayStats(ctx, all, since)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plays := 0
+	for _, profile := range stats.Profiles {
+		plays += profile.Plays
+	}
+	if plays != 2 {
+		t.Errorf("stats since = %d plays, want 2 (the straddling play started earlier)", plays)
+	}
+}
