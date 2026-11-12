@@ -222,6 +222,22 @@ describe("Library browse", () => {
     expect(vi.mocked(fetchLibraryItems).mock.calls.at(-1)?.[0]).toMatchObject({ offset: 0 });
     expect(screen.getByText("1,200 items")).toBeInTheDocument();
 
+    // An empty result has no window to reload, yet a change can add its first item.
+    cleanup();
+    let matches = 0;
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) => ({
+      ...pageFor(request),
+      total: matches,
+      items: pageFor(request).items.slice(0, matches),
+    }));
+    mount("/n/films/all?rated=8");
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Item 0" })).toBeNull());
+    await waitFor(() => expect(vi.mocked(fetchLibraryItems)).toHaveBeenCalled());
+    matches = 1;
+    act(() => notifyEngagementChanged());
+    expect(await screen.findByRole("button", { name: "Item 0" })).toBeInTheDocument();
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
+
     cleanup();
     mount("/n/films/all?sort=year");
     expect(await screen.findByText("1,200 items")).toBeInTheDocument();

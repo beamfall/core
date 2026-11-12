@@ -188,8 +188,10 @@ function LibraryBrowse({
     generationRef.current += 1;
     pagesRef.current = new Map();
     pendingRef.current = new Set();
+    // The first page carries the count, so an empty result can gain an item.
+    loadPage(0);
     setRefreshTick((tick) => tick + 1);
-  }, [engagementEpoch, followsEngagement]);
+  }, [engagementEpoch, followsEngagement, loadPage]);
 
   const itemCount = total ?? 0;
   const listRef = useRef<HTMLUListElement | null>(null);
