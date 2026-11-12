@@ -118,9 +118,10 @@ test.describe("viewer", () => {
     await expect(page.getByRole("heading", { name: "Search results" })).toBeVisible();
 
     // "Sample" matches the seeded media-alpha "Sample Media" in library-local.
-    const input = page.getByRole("searchbox");
+    // The header carries its own search box; use the results page's.
+    const input = page.getByRole("main").getByRole("searchbox");
     await input.fill("Sample");
-    await page.getByRole("button", { name: "Search", exact: true }).click();
+    await page.getByRole("main").getByRole("button", { name: "Search", exact: true }).click();
 
     // Either results render or the empty-state shows — both are valid, neither
     // is a crash. Assert the search resolved (no fatal error) and the UI settled
@@ -200,8 +201,10 @@ test.describe("viewer locale", () => {
 
     await page.goto("/web/search");
     await expect(page.getByRole("heading", { name: "Résultats de recherche" })).toBeVisible();
-    await expect(page.getByRole("searchbox", { name: "Rechercher" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Rechercher" })).toBeVisible();
+    await expect(
+      page.getByRole("main").getByRole("searchbox", { name: "Rechercher" }),
+    ).toBeVisible();
+    await expect(page.getByRole("main").getByRole("button", { name: "Rechercher" })).toBeVisible();
 
     await page.goto("/web/notifications");
     await expect(page.getByText("Boîte de réception", { exact: true })).toBeVisible();

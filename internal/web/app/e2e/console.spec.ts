@@ -128,8 +128,8 @@ test.describe("console", () => {
     await gotoConsole(page, "");
     // The unlock form must NOT be present (we are past the gate).
     await expect(page.getByRole("button", { name: "Unlock Console" })).toHaveCount(0);
-    // The index section renders the current Console overview.
-    await expect(page.getByRole("heading", { level: 2, name: "Overview" })).toBeVisible();
+    // The index route titles itself Overview (its sr-only h1).
+    await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible();
     expect(errors, errors.join("\n")).toEqual([]);
   });
 
@@ -139,7 +139,7 @@ test.describe("console", () => {
     await gotoConsole(page, "");
 
     await expectForcedColorsActive(page);
-    await expect(page.getByRole("heading", { level: 2, name: "Overview" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible();
     await expectBodyTextContrastsBackground(page);
     expect(errors, errors.join("\n")).toEqual([]);
   });
