@@ -2,6 +2,7 @@ import { RefreshCw } from "lucide-react";
 import { useEffect, useSyncExternalStore } from "react";
 import { StatusChip } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
+import { isAuthRejection } from "@/lib/api";
 import { fetchJobs, scanLibrary } from "@/lib/graphql";
 import type { JobInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
@@ -30,6 +31,11 @@ const POLL_MS = 1500;
 const states = new Map<string, RescanState>();
 const listeners = new Set<() => void>();
 let timer: number | undefined;
+// Set when the jobs read is refused: the Console was locked or the admin window
+// lapsed, so the scans can no longer be followed. Polling stops and nothing is
+// reported as running until a rescan control is shown again (they sit behind
+// the admin gate, so that means access is back) or a new rescan starts.
+let paused = false;
 
 function emit() {
   for (const listener of listeners) listener();
@@ -73,8 +79,14 @@ async function poll() {
   let jobs: JobInfo[];
   try {
     jobs = await fetchJobs();
-  } catch {
-    return; // keep the last known state; the next tick retries
+  } catch (error) {
+    if (isAuthRejection(error)) {
+      window.clearInterval(timer);
+      timer = undefined;
+      paused = true;
+      emit();
+    }
+    return; // keep the last known state; any other failure retries on the next tick
   }
   const byID = new Map(jobs.map((job) => [job.id, job]));
   for (const [libraryID, state] of watching) {
@@ -91,6 +103,11 @@ async function poll() {
 
 function ensurePolling() {
   if (timer === undefined) timer = window.setInterval(() => void poll(), POLL_MS);
+  if (!paused) return;
+  // Back from a refused read: catch up at once instead of after a tick.
+  paused = false;
+  emit();
+  void poll();
 }
 
 /** Queues a scan of every folder of the library and starts following the jobs. */
@@ -131,10 +148,11 @@ export function useRescanState(libraryID: string): RescanState {
   return useSyncExternalStore(subscribe, () => rescanState(libraryID));
 }
 
-/** True while any library rescan started from this tab is still running. */
+/** True while any library rescan started from this tab is known to be still running. */
 export function useAnyRescanActive(): boolean {
-  return useSyncExternalStore(subscribe, () =>
-    [...states.values()].some((s) => ACTIVE_PHASES.has(s.phase)),
+  return useSyncExternalStore(
+    subscribe,
+    () => !paused && [...states.values()].some((s) => ACTIVE_PHASES.has(s.phase)),
   );
 }
 
@@ -143,6 +161,7 @@ export function resetRescansForTest() {
   states.clear();
   window.clearInterval(timer);
   timer = undefined;
+  paused = false;
   emit();
 }
 
@@ -182,6 +201,9 @@ export function RescanAllButton({
 }) {
   const t = useT();
   const busy = useAnyRescanActive();
+  useEffect(() => {
+    if (paused) ensurePolling();
+  }, []);
   const scannable = libraries.filter((library) => (library.roots ?? []).length > 0);
   return (
     <Button
