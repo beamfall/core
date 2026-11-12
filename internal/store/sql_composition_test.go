@@ -55,12 +55,14 @@ func TestMediaFieldFilterSQLNeverInlinesValues(t *testing.T) {
 }
 
 func TestEntityRelationFilterSQLNeverInlinesValues(t *testing.T) {
-	clause, args := entityRelationFilterSQL(&EntityFilter{Kind: sqlProbe, Name: sqlProbe}, []LibraryID{LibraryID(sqlProbe)})
-	if strings.Contains(clause, sqlProbe) || strings.Contains(clause, "DROP") {
-		t.Fatalf("clause inlines a caller value: %q", clause)
-	}
-	if got, want := strings.Count(clause, "?"), len(args); got != want {
-		t.Fatalf("placeholders = %d, args = %d", got, want)
+	for _, liveOnly := range []bool{false, true} {
+		clause, args := entityRelationFilterSQL(&EntityFilter{Kind: sqlProbe, Name: sqlProbe}, []LibraryID{LibraryID(sqlProbe)}, liveOnly)
+		if strings.Contains(clause, sqlProbe) || strings.Contains(clause, "DROP") {
+			t.Fatalf("clause inlines a caller value: %q", clause)
+		}
+		if got, want := strings.Count(clause, "?"), len(args); got != want {
+			t.Fatalf("placeholders = %d, args = %d", got, want)
+		}
 	}
 }
 

@@ -46,6 +46,11 @@ resolution tier).
 - **WHEN** the calling Profile has a resume position on one item and requests `watch: "in-progress"`
 - **THEN** the response contains that item and no item the Profile has finished or never started
 
+#### Scenario: Grouping value moved to trash
+
+- **WHEN** a client supplies a `groupFilters` value whose entity is in the trash
+- **THEN** the response contains no items, as for a value that does not exist
+
 #### Scenario: Unknown filter value
 
 - **WHEN** a client supplies a `watch` or `quality` value the server does not support
@@ -86,10 +91,22 @@ library. Every control SHALL be keyboard operable and have an accessible name.
 
 The browse view SHALL offer Play all and Shuffle. Play all SHALL start playback at the first item of
 the current filtered set in the current order and continue through the set. Shuffle SHALL play the
-same set in a random order.
+same set in a random order. Both SHALL leave out items a locked certification ceiling blocks for the
+Profile, which stay listed on the page, and SHALL open each item under the title the listing gave.
 
 #### Scenario: Play all with a filter active
 
 - **WHEN** a user activates Play all while a filter is active
 - **THEN** playback starts on the first filtered item and the next item played is the second
   filtered item, never an item the filter excludes
+
+#### Scenario: Locked items in the set
+
+- **WHEN** a user activates Play all over a set whose first item is locked for the Profile
+- **THEN** playback starts on the first item the Profile may play and continues past every locked
+  item to the end of the set
+
+#### Scenario: Later items keep their titles
+
+- **WHEN** Play all advances to the second item of the set
+- **THEN** the player shows that item's title

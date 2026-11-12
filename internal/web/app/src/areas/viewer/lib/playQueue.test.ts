@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setIdentityEpochSignal } from "@/lib/api";
 import { DEFAULT_BROWSE_STATE, type LibraryItemsRequest } from "./libraryBrowse";
-import { nextInPlayQueue, playQueueHandle, startPlayQueue } from "./playQueue";
+import { nextInPlayQueue, playQueueHandle, playQueueTitle, startPlayQueue } from "./playQueue";
 
 const fetchLibraryItems = vi.hoisted(() => vi.fn());
 vi.mock("./libraryBrowse", async (original) => ({
@@ -35,6 +35,57 @@ describe("play queue", () => {
     expect(await nextInPlayQueue("b")).toBe("c");
     expect(fetchLibraryItems).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 2 }));
     expect(await nextInPlayQueue("c")).toBe("");
+  });
+
+  it("leaves out items a locked ceiling blocks, on the first page and later ones", async () => {
+    const locked = (id: string) => ({ id, kind: "media", title: `Title ${id}`, locked: true });
+    fetchLibraryItems.mockImplementation(async ({ offset }: LibraryItemsRequest) =>
+      offset === 0
+        ? { ...page(["b"], 5), items: [locked("a"), ...page(["b"], 5).items, locked("c")] }
+        : { ...page(["e"], 5), items: [locked("d"), ...page(["e"], 5).items] },
+    );
+
+    // The first item is locked: the queue opens on the first playable one.
+    expect(await startPlayQueue(request)).toEqual({ id: "b", title: "Title b" });
+    // The locked items between b and e never become the declared next item.
+    expect(await nextInPlayQueue("b")).toBe("e");
+    expect(fetchLibraryItems).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 3 }));
+    expect(await nextInPlayQueue("e")).toBe("");
+  });
+
+  it("starts on a later page when the first holds nothing playable", async () => {
+    fetchLibraryItems.mockImplementation(async ({ offset }: LibraryItemsRequest) =>
+      offset === 0
+        ? { ...page([], 2), items: [{ id: "a", kind: "media", title: "Title a", locked: true }] }
+        : page(["b"], 2),
+    );
+
+    expect(await startPlayQueue(request)).toEqual({ id: "b", title: "Title b" });
+    expect(await nextInPlayQueue("b")).toBe("");
+  });
+
+  it("plays nothing when every item in the set is locked", async () => {
+    fetchLibraryItems.mockResolvedValue({
+      ...page([], 1),
+      items: [{ id: "a", kind: "media", title: "Title a", locked: true }],
+    });
+
+    expect(await startPlayQueue(request)).toBeNull();
+    expect(playQueueHandle()).toBeNull();
+  });
+
+  it("keeps the titles of queued items for the player", async () => {
+    fetchLibraryItems.mockImplementation(async ({ offset }: LibraryItemsRequest) =>
+      offset === 0 ? page(["a", "b"], 3) : page(["c"], 3),
+    );
+    await startPlayQueue(request);
+
+    expect(playQueueTitle("b")).toBe("Title b");
+    expect(playQueueTitle("c")).toBe("");
+    await nextInPlayQueue("a");
+    await nextInPlayQueue("b");
+    expect(playQueueTitle("c")).toBe("Title c");
+    expect(playQueueTitle("elsewhere")).toBe("");
   });
 
   it("ends the queue when playback starts outside it", async () => {

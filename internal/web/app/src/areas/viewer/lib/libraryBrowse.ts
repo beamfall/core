@@ -109,7 +109,7 @@ export interface LibraryItemsRequest {
 }
 
 const LIBRARY_ITEMS_QUERY =
-  "query LibraryItems($libraryID: String!, $sort: String, $direction: String, $seed: String, $watch: String, $quality: String, $yearFrom: Int, $yearTo: Int, $groupFilters: Map, $limit: Int, $offset: Int) { libraryItems(libraryID: $libraryID, sort: $sort, direction: $direction, seed: $seed, watch: $watch, quality: $quality, yearFrom: $yearFrom, yearTo: $yearTo, groupFilters: $groupFilters, limit: $limit, offset: $offset) { total items { id kind title summary artwork { poster } artworkSlots } facets { groupings { kind title values } decades qualities } } }";
+  "query LibraryItems($libraryID: String!, $sort: String, $direction: String, $seed: String, $watch: String, $quality: String, $yearFrom: Int, $yearTo: Int, $groupFilters: Map, $limit: Int, $offset: Int) { libraryItems(libraryID: $libraryID, sort: $sort, direction: $direction, seed: $seed, watch: $watch, quality: $quality, yearFrom: $yearFrom, yearTo: $yearTo, groupFilters: $groupFilters, limit: $limit, offset: $offset) { total items { id kind title summary artwork { poster } artworkSlots locked } facets { groupings { kind title values } decades qualities } } }";
 
 export function libraryItemsVariables(request: LibraryItemsRequest): Record<string, unknown> {
   const { state } = request;

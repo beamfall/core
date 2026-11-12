@@ -135,6 +135,8 @@ export interface SourceItem {
   artworkSlots?: Record<string, string>;
   /** Present only when the item really has stored artwork (ADR-0014). */
   artwork?: SourceItemArtwork;
+  /** Visible but blocked by a certification ceiling: it is listed, not playable. */
+  locked?: boolean;
 }
 
 /** The current server-side session scope (graph.SessionInfo, currentSession). */

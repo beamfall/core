@@ -1,9 +1,12 @@
 import { getIdentityEpochSignal } from "@/lib/api";
+import type { SourceItem } from "@/lib/graphql/types";
 import { fetchLibraryItems, type LibraryItemsRequest } from "./libraryBrowse";
 
 // The client-owned play queue behind Play all / Shuffle (CORE-1190). The queue
-// is the library query that produced it plus the IDs read so far; later pages
-// load as playback approaches them. playback.ts asks for the item after the
+// is the library query that produced it plus the items read so far; later
+// pages load as playback approaches them. It holds only items the profile can
+// play: one a locked certification ceiling blocks stays on the page but is
+// left out here, because the server will not issue it as a next item. playback.ts asks for the item after the
 // one being played and passes it to the server as nextMediaID, so the player's
 // existing Up Next advance walks the queue. It is held in memory and belongs
 // to the identity epoch that built it: a profile switch, relock or sign-out
@@ -16,6 +19,8 @@ interface PlayQueue {
   request: Omit<LibraryItemsRequest, "limit" | "offset">;
   epoch: AbortSignal | undefined;
   ids: string[];
+  /** The titles the listing gave, by ID: the player's heading for each item. */
+  titles: Map<string, string>;
   /** Index of the item last handed to the player. */
   cursor: number;
   /** Size of the set, and how far into it the server was read, at the last page. */
@@ -25,6 +30,10 @@ interface PlayQueue {
 }
 
 let current: PlayQueue | null = null;
+
+function playable(item: SourceItem): boolean {
+  return item.kind === "media" && !item.locked;
+}
 
 function activeQueue(): PlayQueue | null {
   if (current && current.epoch !== getIdentityEpochSignal()) current = null;
@@ -46,20 +55,24 @@ export async function startPlayQueue(
 ): Promise<PlayQueueStart | null> {
   current = null;
   const epoch = getIdentityEpochSignal();
-  const page = await fetchLibraryItems({ ...request, limit: QUEUE_PAGE, offset: 0 });
-  const media = page.items.filter((item) => item.kind === "media");
-  const ids = media.map((item) => item.id);
-  if (!ids.length || epoch !== getIdentityEpochSignal()) return null;
-  current = {
+  const queue: PlayQueue = {
     request,
     epoch,
-    ids,
+    ids: [],
+    titles: new Map(),
     cursor: 0,
-    total: page.total,
-    fetched: page.items.length,
-    done: page.items.length >= page.total,
+    total: 0,
+    fetched: 0,
+    done: false,
   };
-  return { id: ids[0], title: media[0].title || "" };
+  // Reads on until a page holds something playable, so a set that opens on
+  // locked items still starts at its first playable one.
+  await loadMore(queue, 0);
+  const first = queue.ids[0];
+  if (first === undefined || epoch !== getIdentityEpochSignal()) return null;
+  queue.done = queue.fetched >= queue.total;
+  current = queue;
+  return { id: first, title: queue.titles.get(first) ?? "" };
 }
 
 /**
@@ -88,11 +101,12 @@ async function loadMore(queue: PlayQueue, played: number): Promise<void> {
     }
     queue.fetched = offset + page.items.length;
     const seen = new Set(queue.ids);
-    const more = page.items
-      .filter((item) => item.kind === "media" && !seen.has(item.id))
-      .map((item) => item.id);
+    const more = page.items.filter((item) => playable(item) && !seen.has(item.id));
     if (more.length) {
-      queue.ids.push(...more);
+      for (const item of more) {
+        queue.ids.push(item.id);
+        queue.titles.set(item.id, item.title || "");
+      }
       return;
     }
     if (!page.items.length || queue.fetched >= page.total) {
@@ -109,6 +123,11 @@ async function loadMore(queue: PlayQueue, played: number): Promise<void> {
  */
 export function playQueueHandle(): unknown {
   return activeQueue();
+}
+
+/** The listed title of an item the active queue holds, or "". */
+export function playQueueTitle(mediaID: string): string {
+  return activeQueue()?.titles.get(mediaID) ?? "";
 }
 
 /**

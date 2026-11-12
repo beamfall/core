@@ -178,6 +178,12 @@ func TestLibraryBrowseEntityFacetsSkipTrashedEntities(t *testing.T) {
 	if len(trashed.Facets.Entities) != 1 || !slices.Equal(trashed.Facets.Entities[0].Titles, []string{"Science"}) {
 		t.Fatalf("entity facets with Comedy trashed = %+v, want [Science]", trashed.Facets.Entities)
 	}
+	// A browse address saved before the trash still names the category: it
+	// matches nothing, exactly like a category that does not exist.
+	saved := mustLibraryBrowse(t, st, LibraryBrowseQuery{EntityFilters: []EntityFilter{{Kind: "category", Name: "Comedy"}}})
+	if saved.Total != 0 || len(saved.Items) != 0 {
+		t.Fatalf("filtering by a trashed category matched %d items (%d on the page), want none", saved.Total, len(saved.Items))
+	}
 }
 
 func TestLibraryBrowseHidesItemsWhoseFilesAreAllMissing(t *testing.T) {

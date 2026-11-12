@@ -1,6 +1,6 @@
 import { ApiError, postJSON } from "@/lib/api";
 import { probeCapabilityProfile } from "./capabilityProfile";
-import { nextInPlayQueue, playQueueHandle } from "./playQueue";
+import { nextInPlayQueue, playQueueHandle, playQueueTitle } from "./playQueue";
 
 // Playback-info request + its wire shape (ADR-0010 playbackInfo contract).
 //
@@ -98,11 +98,18 @@ export async function fetchPlaybackInfo(mediaID: string): Promise<PlaybackInfo> 
   // A Play all / Shuffle queue names its next item so the server pre-mints
   // Up Next for it (ADR-0029: the queue is client-owned).
   const nextMediaID = await nextInPlayQueue(mediaID, queue);
-  return postJSON<PlaybackInfo>("/api/playback-info", {
+  const info = await postJSON<PlaybackInfo>("/api/playback-info", {
     mediaID,
     capabilityProfile,
     ...(nextMediaID ? { nextMediaID } : {}),
   });
+  // The server issues a declared next item without a title; the queue kept
+  // the one its listing gave, so Up Next and the next heading can name it.
+  if (info.next && !info.next.title && info.next.mediaID === nextMediaID) {
+    const title = playQueueTitle(nextMediaID);
+    if (title) info.next.title = title;
+  }
+  return info;
 }
 
 /**

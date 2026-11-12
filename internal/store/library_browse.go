@@ -254,7 +254,7 @@ func libraryBrowseCandidates(ctx context.Context, reader *sql.DB, certify func()
 		placeholders[i] = "?"
 		args = append(args, id)
 	}
-	entityClause, entityArgs := entityRelationFilterSQL(entityFilter, visible)
+	entityClause, entityArgs := entityRelationFilterSQL(entityFilter, visible, true)
 	args = append(args, entityArgs...)
 	certClause, certArgs := certify()
 	args = append(args, certArgs...)
