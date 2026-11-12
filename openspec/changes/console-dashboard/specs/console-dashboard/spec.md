@@ -3,12 +3,21 @@
 ### Requirement: Live sessions report the play method and why
 
 `liveSessions` SHALL report for each session a `playMethod` of `direct`, `remux` or `transcode`,
-a `playReason` from a closed vocabulary (`container`, `video-codec`, `resolution`, `bitrate`,
-`video-profile`, `hdr`, `audio`, `subtitles`, `device-quirk`, `capacity`, `cached-rendition`,
-`quality-choice` or empty) and a `bitrate` in bits per second, taken from the most recent
-playback decision the server made for that session and item. When the server holds no decision
-for the session, `playMethod` SHALL fall back to `transcode` when an HLS grant is outstanding and
-`direct` otherwise, with an empty reason and a zero bitrate.
+a `playReason` from a closed vocabulary and a `bitrate` in bits per second, taken from the most
+recent playback decision the server made for that session and item.
+
+#### Scenario: No decision held
+
+- **WHEN** the server holds no playback decision for a live session
+- **THEN** `playMethod` is `transcode` when an HLS grant is outstanding and `direct` otherwise,
+  with an empty reason and a zero bitrate
+
+#### Scenario: Reason vocabulary
+
+- **WHEN** a session reports a `playReason`
+- **THEN** it is empty or one of `container`, `video-codec`, `resolution`, `bitrate`,
+  `video-profile`, `hdr`, `audio`, `subtitles`, `device-quirk`, `capacity`, `cached-rendition`
+  or `quality-choice`
 
 #### Scenario: Direct play
 
