@@ -124,6 +124,8 @@
       "effect": "write",
       "tier": "session",
       "children": [
+        "artworkSlots",
+        "credits",
         "favorited",
         "id",
         "summary",
@@ -616,6 +618,8 @@
       "effect": "write",
       "tier": "session",
       "children": [
+        "artworkSlots",
+        "credits",
         "favorited",
         "id",
         "summary",
@@ -1012,6 +1016,8 @@
       "effect": "write",
       "tier": "session",
       "children": [
+        "artworkSlots",
+        "credits",
         "favorited",
         "id",
         "summary",
@@ -1075,6 +1081,8 @@
       "effect": "write",
       "tier": "session",
       "children": [
+        "artworkSlots",
+        "credits",
         "favorited",
         "id",
         "summary",
@@ -1416,6 +1424,8 @@
       "effect": "read",
       "tier": "session",
       "children": [
+        "artworkSlots",
+        "credits",
         "favorited",
         "id",
         "summary",
@@ -2716,6 +2726,8 @@
       "effect": "write",
       "tier": "session",
       "children": [
+        "artworkSlots",
+        "credits",
         "favorited",
         "id",
         "summary",

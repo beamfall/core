@@ -73,4 +73,20 @@ describe("probeCapabilityProfile", () => {
     expect(profile.hdrFormats).toEqual(["hdr10"]);
     expect(profile.downstreamAudio).toBe("passthrough");
   });
+
+  it("declares the audio containers and file-only codecs a music track direct-plays with", async () => {
+    const profile = await probeCapabilityProfile({
+      video: fakeVideo(["avc1", "audio/mpeg", "audio/flac", "mp4a.40.2"]),
+      mediaCapabilities: fakeMediaCapabilities((config) => {
+        if (config.audio) {
+          return config.type === "file" && config.audio.contentType === "audio/mpeg";
+        }
+        return false;
+      }),
+      clientPrefs: [],
+    });
+
+    expect(profile.containers).toEqual(["mp4", "mp3", "m4a", "flac"]);
+    expect(profile.audioCodecs).toEqual([{ codec: "mp3", maxChannels: 2 }]);
+  });
 });

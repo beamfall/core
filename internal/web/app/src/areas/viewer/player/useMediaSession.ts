@@ -28,6 +28,16 @@ export interface MediaSessionOptions {
   next?: PlaybackNext | null;
   /** Advance to the next item — routed through the player's own nav/engine. */
   onNext?: (next: PlaybackNext) => void;
+  /** Queue-aware next: when set it wins over `next`/`onNext` for nexttrack. */
+  onNextTrack?: () => void;
+  /** Queue-aware previous (enables previoustrack). */
+  onPreviousTrack?: () => void;
+  /** Credited people, shown as the artist line. */
+  artist?: string;
+  /** The container Entity title (the album, the show). */
+  album?: string;
+  /** Artwork for the OS surface. */
+  artworkURL?: string;
 }
 
 export function useMediaSession({
@@ -36,6 +46,11 @@ export function useMediaSession({
   title,
   next,
   onNext,
+  onNextTrack,
+  onPreviousTrack,
+  artist,
+  album,
+  artworkURL,
 }: MediaSessionOptions): void {
   // Metadata: set when active, cleared when not. Kept in its own effect so a
   // title change updates the OS surface without re-binding the action handlers.
@@ -48,12 +63,14 @@ export function useMediaSession({
     }
     ms.metadata = new MediaMetadata({
       title: title || "Beamfall",
-      album: "Beamfall",
+      artist: artist || "",
+      album: album || "Beamfall",
+      ...(artworkURL ? { artwork: [{ src: artworkURL }] } : {}),
     });
     return () => {
       ms.metadata = null;
     };
-  }, [active, title]);
+  }, [active, title, artist, album, artworkURL]);
 
   // Transport action handlers + playbackState/position mirroring.
   useEffect(() => {
@@ -86,11 +103,14 @@ export function useMediaSession({
     });
     // nexttrack only when the server pre-minted a next item; the advance is
     // routed through the player's own handler (Stream-Token'd, queue-aware).
-    if (next && onNext) {
+    if (onNextTrack) {
+      safeSet("nexttrack", onNextTrack);
+    } else if (next && onNext) {
       safeSet("nexttrack", () => onNext(next));
     } else {
       safeSet("nexttrack", null);
     }
+    safeSet("previoustrack", onPreviousTrack ?? null);
 
     const syncPlayback = () => {
       ms.playbackState = video.paused ? "paused" : "playing";
@@ -130,10 +150,11 @@ export function useMediaSession({
         "seekforward",
         "seekto",
         "nexttrack",
+        "previoustrack",
       ] as MediaSessionAction[]) {
         safeSet(action, null);
       }
       ms.playbackState = "none";
     };
-  }, [videoRef, active, next, onNext]);
+  }, [videoRef, active, next, onNext, onNextTrack, onPreviousTrack]);
 }

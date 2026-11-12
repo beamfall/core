@@ -510,7 +510,7 @@ describe("usePlayer", () => {
 
     await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
 
-    expect(fetchPlaybackInfo).toHaveBeenCalledWith("media-alpha");
+    expect(fetchPlaybackInfo).toHaveBeenCalledWith("media-alpha", undefined);
     const video = screen.getByTestId("player");
     expect(video).toHaveAttribute("src", "/api/media/direct/token");
     fireEvent.canPlay(video);

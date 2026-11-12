@@ -1985,9 +1985,44 @@ func canDirectPlay(media store.Media, file store.MediaFile, streams []store.Medi
 		ov.vetoesSourceContainer() {
 		return false
 	}
-	return videoDirectPlayable(media, file, streams, profile) &&
+	videoOK := false
+	if audioOnlyMedia(media, streams) {
+		videoOK = audioOnlyCodecDeclared(media, streams, profile)
+	} else {
+		videoOK = videoDirectPlayable(media, file, streams, profile)
+	}
+	return videoOK &&
 		audioDirectPlayable(streams, profile) &&
 		subtitleFormatsCompatible(streams, profile, selectedSubtitleIndex, ov)
+}
+
+// audioOnlyMedia reports an audio-class item with no video stream. Its
+// Media.Codec is the audio codec (scan sets it from the probe), so the video
+// envelope has nothing to judge: without this exemption a client declaring
+// videoCodecs could never direct-play a track (CORE-1143).
+func audioOnlyMedia(media store.Media, streams []store.MediaFileStream) bool {
+	if media.Class != store.MediaClassAudio {
+		return false
+	}
+	_, hasVideo := primaryVideoStream(streams)
+	return !hasVideo
+}
+
+// audioOnlyCodecDeclared stands in for the video gate on audio-only items.
+// Recorded audio streams are judged by audioDirectPlayable; a probe-less file
+// falls back to Media.Codec against the declared audio envelope, or the legacy
+// DirectCodecs list when no envelope is declared.
+func audioOnlyCodecDeclared(media store.Media, streams []store.MediaFileStream, profile CapabilityProfile) bool {
+	for _, stream := range streams {
+		if stream.Type == "audio" {
+			return true
+		}
+	}
+	if len(profile.AudioCodecs) > 0 {
+		_, ok := audioCodecCap(profile.AudioCodecs, media.Codec)
+		return ok
+	}
+	return slices.Contains(profile.DirectCodecs, media.Codec)
 }
 
 // audioCopyEligible reports whether the audio-only-transcode mode applies:

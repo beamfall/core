@@ -3664,6 +3664,24 @@ type MediaInfo struct {
 	Summary   string `json:"summary,omitempty"`
 	Year      int    `json:"year,omitempty"`
 	Favorited bool   `json:"favorited"`
+	// ArtworkSlots maps each present artwork slot to its URL; filled only by
+	// the media(id) read, omitted when the item carries no artwork.
+	ArtworkSlots map[string]string `json:"artworkSlots,omitempty"`
+	// Credits lists the Entities linked to this Media item through the owning
+	// plugin's Media-targeted relations, in declaration order; filled only by
+	// the media(id) read.
+	Credits []MediaCreditInfo `json:"credits,omitempty"`
+}
+
+// MediaCreditInfo is one Entity a Media item is linked to, with the declared
+// kind's display strings so clients can label it without domain knowledge.
+type MediaCreditInfo struct {
+	EntityID        string              `json:"entityID"`
+	Title           string              `json:"title"`
+	Kind            string              `json:"kind"`
+	KindDisplayName plugin.LocaleString `json:"kindDisplayName,omitempty"`
+	Archetype       string              `json:"archetype,omitempty"`
+	Relation        string              `json:"relation"`
 }
 
 func (h *Handler) mediaInfo(ctx context.Context, scope auth.Scope, media store.Media) (MediaInfo, error) {
@@ -3689,7 +3707,70 @@ func (h *Handler) media(ctx context.Context, scope auth.Scope, req request) (Med
 	if err != nil {
 		return MediaInfo{}, clientError("unknown media")
 	}
-	return h.mediaInfo(ctx, scope, media)
+	info, err := h.mediaInfo(ctx, scope, media)
+	if err != nil {
+		return MediaInfo{}, err
+	}
+	if h.artwork != nil {
+		info.ArtworkSlots = h.mediaArtworkSlots(media.ID, "/api/media/artwork/"+string(media.ID))
+	}
+	info.Credits = h.mediaCredits(ctx, scope, media.ID)
+	return info, nil
+}
+
+// mediaCredits walks the owning bundle's Media-targeted relations in
+// declaration order and returns each linked Entity once. A plugin-less item,
+// or a relation that fails to resolve, yields no credits rather than an error:
+// credits decorate the read, they never gate it.
+func (h *Handler) mediaCredits(ctx context.Context, scope auth.Scope, mediaID store.MediaID) []MediaCreditInfo {
+	libraryID, err := h.store.MediaLibrary(ctx, mediaID)
+	if err != nil {
+		return nil
+	}
+	pluginID, err := h.store.LibraryPluginID(ctx, libraryID)
+	if err != nil || pluginID == "" {
+		return nil
+	}
+	bundle, ok := h.plugins.Bundle(plugin.ID(pluginID))
+	if !ok {
+		return nil
+	}
+	kinds := map[string]plugin.EntityKind{}
+	for _, kind := range bundle.EntityKinds {
+		kinds[kind.Name] = kind
+	}
+	var credits []MediaCreditInfo
+	seenRelation := map[string]bool{}
+	seenEntity := map[string]bool{}
+	for _, kind := range bundle.EntityKinds {
+		for _, relation := range kind.Relations {
+			if relation.ToKind != plugin.MediaKindName || seenRelation[relation.Name] {
+				continue
+			}
+			seenRelation[relation.Name] = true
+			related, err := h.store.EntitiesForMedia(ctx, mediaID, relation.Name, scope.LibraryFilter())
+			if err != nil {
+				continue
+			}
+			for _, item := range related {
+				id := string(item.Entity.ID)
+				if seenEntity[id] {
+					continue
+				}
+				seenEntity[id] = true
+				spec := kinds[item.Entity.Kind]
+				credits = append(credits, MediaCreditInfo{
+					EntityID:        id,
+					Title:           item.Entity.Title,
+					Kind:            item.Entity.Kind,
+					KindDisplayName: spec.DisplayName,
+					Archetype:       spec.Archetype,
+					Relation:        relation.Name,
+				})
+			}
+		}
+	}
+	return credits
 }
 
 func (h *Handler) setFavorite(ctx context.Context, scope auth.Scope, req request) (MediaInfo, error) {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -19,6 +19,7 @@ import { NotAvailable } from "../components/NotAvailable";
 import type { SeeAllTarget } from "../components/SectionView";
 import { ViewerActions } from "../components/ViewerActions";
 import { readEntityPreview } from "../lib/entityPreview";
+import { playQueueOf } from "../lib/playQueue";
 import { seeAllTargetFor } from "../lib/seeall";
 
 const entityCacheKey = (id: string) => `entity:${id}`;
@@ -52,6 +53,8 @@ export function EntityPage() {
   const [fallback, setFallback] = useState<SourceItem[] | null>(
     () => readViewerCache<SourceItem[]>(identity, entityMediaCacheKey(entityId)) ?? null,
   );
+
+  const fallbackQueue = useMemo(() => (fallback ? playQueueOf(fallback) : undefined), [fallback]);
 
   const navPreview = readEntityPreview(location.state, identity, entityId);
   const previewTitle = navPreview?.title ?? findCachedSectionItem(identity, entityId)?.title ?? "";
@@ -187,6 +190,7 @@ export function EntityPage() {
                     item={item}
                     posInSet={index + 1}
                     setSize={fallback.length}
+                    queue={fallbackQueue}
                   />
                 ))}
               </ul>

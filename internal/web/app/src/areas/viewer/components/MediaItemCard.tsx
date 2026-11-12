@@ -6,6 +6,7 @@ import { useViewerIdentity } from "@/lib/session";
 import { artworkBucketURL, artworkSlotURL } from "../lib/artwork";
 import { entityLinkState } from "../lib/entityPreview";
 import { fetchPreviewInfo } from "../lib/playback";
+import type { PlayerNavState, PlayQueueItem } from "../lib/playQueue";
 import { type RenderFocusAnchor, rememberRenderFocus } from "../lib/renderFocus";
 import { preloadPlayer } from "../player/preload";
 
@@ -24,6 +25,7 @@ export function MediaItemCard({
   posInSet,
   setSize,
   focusAnchor,
+  queue,
 }: {
   item: SourceItem;
   /** 1-based aria-posinset for grid a11y; omit outside a grid. */
@@ -31,6 +33,8 @@ export function MediaItemCard({
   setSize?: number;
   /** Stable renderer identity used for initial focus and Reveal/relock restore. */
   focusAnchor?: RenderFocusAnchor;
+  /** The playable siblings this card is shown with, handed to the player as its queue. */
+  queue?: PlayQueueItem[];
 }) {
   const navigate = useNavigate();
   const identity = useViewerIdentity();
@@ -100,10 +104,11 @@ export function MediaItemCard({
   function activate() {
     if (isMedia) {
       // Carry the title forward so the player's info overlay can name the Media
-      // (the playback-info wire does not report it).
-      navigate(`/watch/${encodeURIComponent(item.id)}`, {
-        state: { title: item.title },
-      });
+      // (the playback-info wire does not report it), plus the siblings as the
+      // player's queue (previous/next and the pre-minted next stream).
+      const state: PlayerNavState = { title: item.title };
+      if (queue && queue.length > 1) state.queue = queue;
+      navigate(`/watch/${encodeURIComponent(item.id)}`, { state });
     } else {
       navigate(`/entity/${encodeURIComponent(item.id)}`, {
         state: entityLinkState(item, identity),

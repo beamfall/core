@@ -13,6 +13,7 @@ import type {
   EntityFilter,
   EntityInfo,
   FieldFilters,
+  GenericMediaInfo,
   MyDataDeleteResult,
   MyDataSummary,
   MyEngagementExport,
@@ -157,6 +158,18 @@ const ENTITY_QUERY =
 export async function fetchEntity(id: string, signal?: AbortSignal): Promise<EntityInfo | null> {
   const data = await graphql<{ entity: EntityInfo | null }>(ENTITY_QUERY, { id }, signal);
   return data.entity ?? null;
+}
+
+const MEDIA_QUERY =
+  "query Media($id: String!) { media(id: $id) { id title artworkSlots credits { entityID title kind kindDisplayName archetype relation } } }";
+
+/** Media — the player's now-playing read: title, artwork and linked credits. */
+export async function fetchMedia(
+  id: string,
+  signal?: AbortSignal,
+): Promise<GenericMediaInfo | null> {
+  const data = await graphql<{ media: GenericMediaInfo | null }>(MEDIA_QUERY, { id }, signal);
+  return data.media ?? null;
 }
 
 const MEDIA_FOR_ENTITY_QUERY =

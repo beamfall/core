@@ -1811,6 +1811,88 @@
       "kind": "object",
       "children": [
         {
+          "name": "artworkSlots",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "credits",
+          "kind": "list",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "archetype",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "entityID",
+                "kind": "scalar"
+              },
+              {
+                "name": "kind",
+                "kind": "scalar"
+              },
+              {
+                "name": "kindDisplayName",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "relation",
+                "kind": "scalar"
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "archetype",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "entityID",
+              "kind": "scalar"
+            },
+            {
+              "name": "kind",
+              "kind": "scalar"
+            },
+            {
+              "name": "kindDisplayName",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "relation",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
           "name": "favorited",
           "kind": "scalar"
         },
@@ -5072,6 +5154,88 @@
       "kind": "object",
       "children": [
         {
+          "name": "artworkSlots",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "credits",
+          "kind": "list",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "archetype",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "entityID",
+                "kind": "scalar"
+              },
+              {
+                "name": "kind",
+                "kind": "scalar"
+              },
+              {
+                "name": "kindDisplayName",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "relation",
+                "kind": "scalar"
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "archetype",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "entityID",
+              "kind": "scalar"
+            },
+            {
+              "name": "kind",
+              "kind": "scalar"
+            },
+            {
+              "name": "kindDisplayName",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "relation",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
           "name": "favorited",
           "kind": "scalar"
         },
@@ -6389,6 +6553,88 @@
           "nullable": true,
           "children": [
             {
+              "name": "artworkSlots",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "credits",
+              "kind": "list",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "object",
+                "children": [
+                  {
+                    "name": "archetype",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "entityID",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "kind",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "kindDisplayName",
+                    "kind": "map",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
+                    "name": "relation",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "title",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              "children": [
+                {
+                  "name": "archetype",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityID",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "kind",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "kindDisplayName",
+                  "kind": "map",
+                  "optional": true,
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "relation",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "title",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
               "name": "favorited",
               "kind": "scalar"
             },
@@ -6511,6 +6757,88 @@
         }
       ],
       "children": [
+        {
+          "name": "artworkSlots",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "credits",
+          "kind": "list",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "archetype",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "entityID",
+                "kind": "scalar"
+              },
+              {
+                "name": "kind",
+                "kind": "scalar"
+              },
+              {
+                "name": "kindDisplayName",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "relation",
+                "kind": "scalar"
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "archetype",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "entityID",
+              "kind": "scalar"
+            },
+            {
+              "name": "kind",
+              "kind": "scalar"
+            },
+            {
+              "name": "kindDisplayName",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "relation",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        },
         {
           "name": "favorited",
           "kind": "scalar"
@@ -6709,6 +7037,88 @@
       "field": "identifyapply",
       "kind": "object",
       "children": [
+        {
+          "name": "artworkSlots",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "credits",
+          "kind": "list",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "archetype",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "entityID",
+                "kind": "scalar"
+              },
+              {
+                "name": "kind",
+                "kind": "scalar"
+              },
+              {
+                "name": "kindDisplayName",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "relation",
+                "kind": "scalar"
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "archetype",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "entityID",
+              "kind": "scalar"
+            },
+            {
+              "name": "kind",
+              "kind": "scalar"
+            },
+            {
+              "name": "kindDisplayName",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "relation",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        },
         {
           "name": "favorited",
           "kind": "scalar"
@@ -8547,6 +8957,88 @@
       ],
       "children": [
         {
+          "name": "artworkSlots",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "credits",
+          "kind": "list",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "archetype",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "entityID",
+                "kind": "scalar"
+              },
+              {
+                "name": "kind",
+                "kind": "scalar"
+              },
+              {
+                "name": "kindDisplayName",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "relation",
+                "kind": "scalar"
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "archetype",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "entityID",
+              "kind": "scalar"
+            },
+            {
+              "name": "kind",
+              "kind": "scalar"
+            },
+            {
+              "name": "kindDisplayName",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "relation",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
           "name": "favorited",
           "kind": "scalar"
         },
@@ -8742,6 +9234,88 @@
           "name": "media",
           "kind": "object",
           "children": [
+            {
+              "name": "artworkSlots",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "credits",
+              "kind": "list",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "object",
+                "children": [
+                  {
+                    "name": "archetype",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "entityID",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "kind",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "kindDisplayName",
+                    "kind": "map",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
+                    "name": "relation",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "title",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              "children": [
+                {
+                  "name": "archetype",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "entityID",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "kind",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "kindDisplayName",
+                  "kind": "map",
+                  "optional": true,
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "relation",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "title",
+                  "kind": "scalar"
+                }
+              ]
+            },
             {
               "name": "favorited",
               "kind": "scalar"
@@ -17098,6 +17672,88 @@
       "field": "setfavorite",
       "kind": "object",
       "children": [
+        {
+          "name": "artworkSlots",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "credits",
+          "kind": "list",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "archetype",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "entityID",
+                "kind": "scalar"
+              },
+              {
+                "name": "kind",
+                "kind": "scalar"
+              },
+              {
+                "name": "kindDisplayName",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "relation",
+                "kind": "scalar"
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "archetype",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "entityID",
+              "kind": "scalar"
+            },
+            {
+              "name": "kind",
+              "kind": "scalar"
+            },
+            {
+              "name": "kindDisplayName",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "relation",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        },
         {
           "name": "favorited",
           "kind": "scalar"

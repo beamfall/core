@@ -52,6 +52,32 @@ async function openPlayer(page: Page): Promise<{ stage: Locator; video: Locator 
     }).observe(document, { childList: true, subtree: true });
   });
 
+  // The now-playing read names the item's container Entity, which is what the
+  // per-collection skip-interval row is keyed to and labelled with (CORE-1143).
+  await page.route("**/api/graphql", async (route) => {
+    const body = route.request().postDataJSON() as { query?: string } | null;
+    if (!body?.query?.startsWith("query Media(")) return route.fallback();
+    await route.fulfill({
+      json: {
+        data: {
+          media: {
+            id: "media-alpha",
+            title: "Acceptance review demo",
+            artworkSlots: {},
+            credits: [
+              {
+                entityID: "entity-demo-show",
+                title: "Demo Show",
+                kind: "series",
+                archetype: "container",
+                relation: "part-of",
+              },
+            ],
+          },
+        },
+      },
+    });
+  });
   await page.route("**/api/playback-info", async (route) => {
     expect(route.request().method()).toBe("POST");
     await route.fulfill({
@@ -84,7 +110,9 @@ async function openPlayer(page: Page): Promise<{ stage: Locator; video: Locator 
   const video = page.locator("video");
   const scrubber = page.getByRole("slider", { name: "Playback position" });
   await expect(video).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Playback details" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Acceptance review demo", level: 2 }),
+  ).toBeVisible();
   await expect(scrubber).toBeVisible();
   await expect.poll(() => video.evaluate((element) => element.duration)).toBe(2);
   await video.evaluate(
@@ -238,7 +266,7 @@ test("visual parity covers every migrated player widget state", async ({
   await openPlayer(page);
 
   await setSettingsOpen(page, true);
-  const skipInterval = page.getByRole("combobox", { name: "This show" });
+  const skipInterval = page.getByRole("combobox", { name: "Skip buttons for Demo Show" });
   await openSharedSelectState(page, skipInterval, "30s");
   await expectVisualParity(page, testInfo, "player-skip-interval-select-open-focused-selected");
   await page.keyboard.press("Escape");
@@ -316,7 +344,7 @@ test("visual parity covers every migrated player widget state", async ({
 
   await setSettingsOpen(page, true);
   await page.getByRole("button", { name: "Playback details" }).click();
-  const detailsDialog = page.getByRole("dialog", { name: "Playback details" });
+  const detailsDialog = page.getByRole("dialog", { name: "Acceptance review demo" });
   await expect(detailsDialog).toBeVisible();
   await detailsDialog.focus();
   await expect(detailsDialog).toBeFocused();

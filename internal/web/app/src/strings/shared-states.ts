@@ -29,6 +29,9 @@ export const sharedStateStrings = {
     tooManyAttempts: "Too many attempts. Try again in a few minutes.",
     pinIncorrect: "That PIN is not right.",
     playbackUnavailable: "Playback is unavailable right now.",
+    playbackMediaFileMissing:
+      "The file for this item is missing on the server. It may have been moved, or its drive may be offline.",
+    playbackMediaNotAvailable: "This item is no longer available to this profile.",
     playerTerminalUnavailable: "Playback is no longer available for this session.",
     transcodedPlaybackUnsupported:
       "Transcoded playback is not supported in this browser (it has neither native HLS nor Media Source support).",
@@ -82,6 +85,9 @@ export const sharedStateStrings = {
     tooManyAttempts: "Trop de tentatives. Réessayez dans quelques minutes.",
     pinIncorrect: "Ce PIN n’est pas correct.",
     playbackUnavailable: "La lecture est indisponible pour le moment.",
+    playbackMediaFileMissing:
+      "Le fichier de cet élément est introuvable sur le serveur. Il a peut-être été déplacé, ou son disque est hors ligne.",
+    playbackMediaNotAvailable: "Cet élément n’est plus disponible pour ce profil.",
     playerTerminalUnavailable: "La lecture n’est plus disponible pour cette session.",
     transcodedPlaybackUnsupported:
       "La lecture transcodée n’est pas prise en charge dans ce navigateur (il ne prend en charge ni HLS natif ni Media Source).",
@@ -130,6 +136,9 @@ export const sharedStateStrings = {
     tooManyAttempts: "Zu viele Versuche. Versuche es in einigen Minuten erneut.",
     pinIncorrect: "Diese PIN ist nicht richtig.",
     playbackUnavailable: "Wiedergabe ist derzeit nicht verfügbar.",
+    playbackMediaFileMissing:
+      "Die Datei für dieses Element fehlt auf dem Server. Sie wurde vielleicht verschoben, oder ihr Laufwerk ist offline.",
+    playbackMediaNotAvailable: "Dieses Element ist für dieses Profil nicht mehr verfügbar.",
     playerTerminalUnavailable: "Die Wiedergabe ist für diese Sitzung nicht mehr verfügbar.",
     transcodedPlaybackUnsupported:
       "Transcodierte Wiedergabe wird in diesem Browser nicht unterstützt (er unterstützt weder natives HLS noch Media Source).",
@@ -177,6 +186,9 @@ export const sharedStateStrings = {
     tooManyAttempts: "Demasiados intentos. Inténtalo de nuevo en unos minutos.",
     pinIncorrect: "Ese PIN no es correcto.",
     playbackUnavailable: "La reproducción no está disponible en este momento.",
+    playbackMediaFileMissing:
+      "Falta el archivo de este elemento en el servidor. Puede que se haya movido o que su disco esté desconectado.",
+    playbackMediaNotAvailable: "Este elemento ya no está disponible para este perfil.",
     playerTerminalUnavailable: "La reproducción ya no está disponible para esta sesión.",
     transcodedPlaybackUnsupported:
       "La reproducción transcodificada no es compatible con este navegador (no tiene HLS nativo ni compatibilidad con Media Source).",
@@ -225,6 +237,9 @@ export const sharedStateStrings = {
     tooManyAttempts: "Muitas tentativas. Tente novamente em alguns minutos.",
     pinIncorrect: "Esse PIN não está correto.",
     playbackUnavailable: "A reprodução não está disponível no momento.",
+    playbackMediaFileMissing:
+      "O arquivo deste item não está no servidor. Ele pode ter sido movido, ou o disco pode estar offline.",
+    playbackMediaNotAvailable: "Este item não está mais disponível para este perfil.",
     playerTerminalUnavailable: "A reprodução não está mais disponível para esta sessão.",
     transcodedPlaybackUnsupported:
       "A reprodução transcodificada não é compatível com este navegador (ele não tem HLS nativo nem suporte a Media Source).",
