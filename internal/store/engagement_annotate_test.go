@@ -74,3 +74,65 @@ func TestAnnotateEngagementContainerCountsRespectVisibility(t *testing.T) {
 		t.Fatalf("container engagement = %+v, want nil when no child is visible", items[0].Engagement)
 	}
 }
+
+// An open Encrypted Library keeps its relations in its own database; its
+// containers still report counts, and stop once the Library is sealed.
+func TestAnnotateEngagementCountsAnEncryptedLibrarysChildren(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	library := LibraryID("library-local")
+	if err := st.SetLibraryBacking(ctx, library, false, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UnsealEncryptedLibraryDB(ctx, library, copyEncryptedLibraryDBCipher{}); err != nil {
+		t.Fatal(err)
+	}
+	first, _, err := st.ImportMediaFile(ctx, encryptedImport(library, "sha256:annotate-encrypted-a", "/enc/annotate-a.mkv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, _, err := st.ImportMediaFile(ctx, encryptedImport(library, "sha256:annotate-encrypted-b", "/enc/annotate-b.mkv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	entity := Entity{ID: "entity-annotate-encrypted", LibraryID: library, Kind: "container", Title: "Sealed"}
+	if err := st.UpsertEntity(ctx, entity); err != nil {
+		t.Fatal(err)
+	}
+	for order, id := range []MediaID{first.ID, second.ID} {
+		if _, err := st.encryptedDBs[library].writer.ExecContext(ctx, `
+			INSERT INTO entity_relation(from_entity_id, relation, to_media_id, sort_order)
+			VALUES (?, 'contains', ?, ?)
+		`, entity.ID, id, order+1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	filter := LibraryFilter{AllLibraries: true}
+	if _, err := st.SetItemWatched(ctx, "profile-default", ItemTarget{MediaID: first.ID}, true, filter); err != nil {
+		t.Fatal(err)
+	}
+
+	items := []SourceItem{{ID: MediaID(entity.ID), Kind: "entity"}}
+	if err := st.AnnotateEngagement(ctx, "profile-default", filter, items); err != nil {
+		t.Fatalf("AnnotateEngagement: %v", err)
+	}
+	got := items[0].Engagement
+	if got == nil || got.TotalCount != 2 || got.RemainingCount != 1 || got.Completed {
+		t.Fatalf("encrypted container engagement = %+v, want 1 remaining of 2", got)
+	}
+
+	if err := st.SealEncryptedLibraryDB(ctx, library, copyEncryptedLibraryDBCipher{}); err != nil {
+		t.Fatal(err)
+	}
+	sealed := []SourceItem{{ID: MediaID(entity.ID), Kind: "entity"}}
+	if err := st.AnnotateEngagement(ctx, "profile-default", filter, sealed); err != nil {
+		t.Fatalf("AnnotateEngagement sealed: %v", err)
+	}
+	if sealed[0].Engagement != nil {
+		t.Fatalf("sealed container engagement = %+v, want nil", sealed[0].Engagement)
+	}
+}

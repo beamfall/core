@@ -596,10 +596,6 @@
   [data-register="viewer"] .bf-card-more {
     opacity: 1;
   }
-
-  .bf-card-menu-item {
-    min-height: 44px;
-  }
 }
 
 .bf-card-menu-layer {
@@ -631,6 +627,29 @@
   line-height: 18px;
   cursor: pointer;
   outline: none;
+}
+
+/* After the base rule, so a touch device keeps the 44px target. */
+@media (hover: none) {
+  .bf-card-menu-item {
+    min-height: 44px;
+  }
+}
+
+/* A failed card action, shown over the artwork once the menu has closed. */
+[data-register="viewer"] .bf-card-action-error {
+  position: absolute;
+  top: 40px;
+  right: 6px;
+  left: 6px;
+  z-index: 3;
+  padding: 6px 8px;
+  border-radius: var(--radius-control);
+  background: oklch(14% 0.014 250 / 92%);
+  color: oklch(98% 0.004 250);
+  font-size: 12px;
+  line-height: 16px;
+  pointer-events: none;
 }
 
 .bf-card-menu-item[data-disabled] {

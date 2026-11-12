@@ -204,3 +204,25 @@ func TestLibraryItemsGroupsByThePluginsDeclaredKinds(t *testing.T) {
 		t.Fatalf("plugin-less library groupings = %+v, want none", plain.Facets.Groupings)
 	}
 }
+
+// The full Library grid carries the same playback state every other card
+// surface does, so a grid card shows progress and completion.
+func TestLibraryItemsCarryTheProfilesPlaybackState(t *testing.T) {
+	handler := newDemoLibraryHandler(t)
+	var page LibraryItemsResponse
+	execGraph(t, handler, authorizeDemoViewer,
+		`query($libraryID: String!, $limit: Int) { libraryItems(libraryID: $libraryID, limit: $limit) { items { id engagement { positionSeconds durationSeconds completed } } } }`,
+		map[string]any{"libraryID": "library-demo-open", "limit": 200}, "libraryItems", &page)
+	states := map[string]*SourceItemEngagement{}
+	for _, item := range page.Items {
+		states[item.ID] = item.Engagement
+	}
+	partial := states["media-demo-sintel"]
+	if partial == nil || partial.PositionSeconds == 0 || partial.DurationSeconds == 0 {
+		t.Fatalf("in-progress grid item engagement = %+v, want a position and duration", partial)
+	}
+	done := states["media-demo-bunny"]
+	if done == nil || !done.Completed {
+		t.Fatalf("finished grid item engagement = %+v, want completed", done)
+	}
+}

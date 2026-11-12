@@ -94,10 +94,12 @@ func (s *Store) AnnotateEngagement(ctx context.Context, profileID ProfileID, fil
 // orderedChildrenLocked returns, per container entity, the visible non-extra
 // Media reached through ordered relations: direct ordered children, plus the
 // ordered children of its ordered sub-containers (one level). An entity with
-// no ordered children is absent from the result.
+// no ordered children is absent from the result. An open Encrypted Library
+// keeps its relations in its own database, so every open plane is read.
 func (s *Store) orderedChildrenLocked(ctx context.Context, containerIDs []string, filter LibraryFilter) (map[string][]MediaID, error) {
 	raw := map[string][]MediaID{}
 	var all []MediaID
+	planes := s.openCatalogReadersLocked()
 	for start := 0; start < len(containerIDs); start += engagementChunkSize {
 		chunk := containerIDs[start:min(start+engagementChunkSize, len(containerIDs))]
 		placeholders := sqlPlaceholders(len(chunk))
@@ -107,24 +109,28 @@ func (s *Store) orderedChildrenLocked(ctx context.Context, containerIDs []string
 				args = append(args, id)
 			}
 		}
-		rows, err := s.catalogR.QueryContext(ctx, `
-			SELECT from_entity_id, to_media_id
-			FROM entity_relation
-			WHERE sort_order IS NOT NULL AND to_media_id IS NOT NULL
-			  AND from_entity_id IN (`+placeholders+`)
-			UNION
-			SELECT parent.from_entity_id, child.to_media_id
-			FROM entity_relation parent
-			JOIN entity_relation child ON child.from_entity_id = parent.to_entity_id
-			WHERE parent.sort_order IS NOT NULL AND parent.to_entity_id IS NOT NULL
-			  AND child.sort_order IS NOT NULL AND child.to_media_id IS NOT NULL
-			  AND parent.from_entity_id IN (`+placeholders+`)
-		`, args...)
-		if err != nil {
-			return nil, err
-		}
-		if err := scanChildRows(rows, raw, &all); err != nil {
-			return nil, err
+		for _, db := range planes {
+			rows, err := db.QueryContext(ctx, `
+				SELECT r.from_entity_id, r.to_media_id
+				FROM entity_relation r
+				JOIN media m ON m.id = r.to_media_id AND m.extra = 0
+				WHERE r.sort_order IS NOT NULL
+				  AND r.from_entity_id IN (`+placeholders+`)
+				UNION
+				SELECT parent.from_entity_id, child.to_media_id
+				FROM entity_relation parent
+				JOIN entity_relation child ON child.from_entity_id = parent.to_entity_id
+				JOIN media m ON m.id = child.to_media_id AND m.extra = 0
+				WHERE parent.sort_order IS NOT NULL AND parent.to_entity_id IS NOT NULL
+				  AND child.sort_order IS NOT NULL
+				  AND parent.from_entity_id IN (`+placeholders+`)
+			`, args...)
+			if err != nil {
+				return nil, err
+			}
+			if err := scanChildRows(rows, raw, &all); err != nil {
+				return nil, err
+			}
 		}
 	}
 	if len(all) == 0 {
@@ -134,19 +140,27 @@ func (s *Store) orderedChildrenLocked(ctx context.Context, containerIDs []string
 	if err != nil {
 		return nil, err
 	}
-	extras, err := s.extraMediaIDsSQL(ctx, all)
-	if err != nil {
-		return nil, err
-	}
 	out := make(map[string][]MediaID, len(raw))
 	for containerID, ids := range raw {
 		for _, id := range ids {
-			if _, ok := visible[id]; ok && !extras[id] {
+			if _, ok := visible[id]; ok {
 				out[containerID] = append(out[containerID], id)
 			}
 		}
 	}
 	return out, nil
+}
+
+// openCatalogReadersLocked lists the catalog reader and the reader of every
+// open Encrypted Library. A sealed Library contributes nothing.
+func (s *Store) openCatalogReadersLocked() []*sql.DB {
+	readers := []*sql.DB{s.catalogR}
+	for _, db := range s.encryptedDBs {
+		if db != nil && db.state == "unsealed-registered" && db.reader != nil {
+			readers = append(readers, db.reader)
+		}
+	}
+	return readers
 }
 
 func scanChildRows(rows *sql.Rows, into map[string][]MediaID, all *[]MediaID) error {

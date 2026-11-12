@@ -1,10 +1,13 @@
 import "@testing-library/jest-dom/vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, useLocation, useNavigate } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchItemState, setWatched } from "@/lib/graphql";
 import type { SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
+import { STRINGS } from "@/strings";
 import { readEntityPreview } from "../lib/entityPreview";
 import { fetchPreviewInfo } from "../lib/playback";
 import { readPlayerNavState } from "../lib/watchQueue";
@@ -505,6 +508,41 @@ describe("MediaItemCard actions", () => {
     fireEvent.click(mark);
 
     await waitFor(() => expect(setWatched).toHaveBeenCalledWith({ mediaID: "media-alpha" }, true));
+  });
+
+  it("reports a failed mark-watched on the card after the menu closes", async () => {
+    vi.useRealTimers();
+    const state = {
+      id: "media-alpha",
+      kind: "media",
+      watched: false,
+      watchlisted: false,
+      rating: 0,
+    };
+    vi.mocked(fetchItemState).mockResolvedValue(state);
+    vi.mocked(setWatched).mockRejectedValue(new Error("offline"));
+    renderCard();
+    expect(screen.queryByRole("status")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "More actions for Alpha" }));
+    const mark = await screen.findByRole("menuitem", { name: "Mark watched" });
+    await waitFor(() => expect(mark).not.toHaveAttribute("aria-disabled", "true"));
+    fireEvent.click(mark);
+
+    const status = await screen.findByRole("status");
+    expect(status).toHaveTextContent(STRINGS.en.itemActionFailed);
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    expect(status).toBeInTheDocument();
+  });
+
+  it("keeps the touch menu target at 44px, declared after the base row height", () => {
+    const css = readFileSync(resolve(process.cwd(), "src/components/chrome/chrome.css"), "utf8");
+    const base = css.indexOf(".bf-card-menu-item {\n  display: flex;");
+    const touch = css.search(
+      /@media \(hover: none\) \{\s*\.bf-card-menu-item \{\s*min-height: 44px;/,
+    );
+    expect(base).toBeGreaterThan(-1);
+    expect(touch).toBeGreaterThan(base);
   });
 
   it("offers Open, not Play, for an item that is not playable itself", async () => {
