@@ -1,7 +1,7 @@
 # web-player-overlay Specification
 
 ## Purpose
-TBD - created by archiving change web-player-overlay. Update Purpose after archive.
+Keep the web player's controls out of the picture's way: they sit on a bottom gradient scrim over the video, secondary options live in one settings sheet, and the controls hide when idle, respecting reduced-motion and reduced-transparency preferences.
 
 ## Requirements
 
