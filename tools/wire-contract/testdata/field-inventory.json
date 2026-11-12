@@ -1078,6 +1078,15 @@
       ]
     },
     {
+      "field": "hostmetrics",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "intervalSeconds",
+        "samples"
+      ]
+    },
+    {
       "field": "identifyapply",
       "effect": "write",
       "tier": "session",
@@ -1388,6 +1397,7 @@
       "effect": "read",
       "tier": "admin",
       "children": [
+        "bitrate",
         "deviceID",
         "deviceName",
         "deviceRole",
@@ -1395,6 +1405,8 @@
         "expiresAt",
         "libraryID",
         "mediaID",
+        "playMethod",
+        "playReason",
         "positionSeconds",
         "profileID",
         "profileName",
@@ -1814,6 +1826,32 @@
         "generating",
         "ready",
         "readyBytes"
+      ]
+    },
+    {
+      "field": "playhistory",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "finished",
+        "libraryID",
+        "libraryTitle",
+        "mediaID",
+        "profileID",
+        "profileName",
+        "startedAt",
+        "title",
+        "watchedSeconds"
+      ]
+    },
+    {
+      "field": "playstats",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "items",
+        "profiles",
+        "windowDays"
       ]
     },
     {

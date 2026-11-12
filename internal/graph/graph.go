@@ -292,6 +292,8 @@ type Options struct {
 	Conductor                    *conductor.Registry
 	QueryEmbedder                QueryEmbedder
 	TranscodeTerminator          TranscodeTerminator
+	PlaybackObserver             PlaybackObserver
+	HostMetrics                  HostMetricsSource
 	TranscodeAdmission           TranscodeCapacityProbe
 	UpdateChecker                UpdateChecker
 	ServerVersion                string
@@ -389,6 +391,10 @@ type Handler struct {
 	// and ends the device's event streams (those self-terminate on the next
 	// per-event scope re-evaluation), it just has no in-flight transcode to abort.
 	transcodeTerminator TranscodeTerminator
+	// playbackObserver and hostMetrics feed the Console dashboard: the held
+	// playback decision per live session, and the in-memory host sample ring.
+	playbackObserver PlaybackObserver
+	hostMetrics      HostMetricsSource
 	// transcodeAdmission is the join-time capacity probe:
 	// acceptWatchParty consults it to tell a joining member whether a transcode-
 	// needing client will be degraded to the lowest rung under current server
@@ -622,6 +628,8 @@ func NewHandler(manifests *manifest.Service, authService *auth.Service, st *stor
 	h.conductor = o.Conductor
 	h.queryEmbedder = o.QueryEmbedder
 	h.transcodeTerminator = o.TranscodeTerminator
+	h.playbackObserver = o.PlaybackObserver
+	h.hostMetrics = o.HostMetrics
 	h.transcodeAdmission = o.TranscodeAdmission
 	h.updateChecker = o.UpdateChecker
 	h.serverVersion = o.ServerVersion
@@ -4798,6 +4806,9 @@ var queryFields = map[string]bool{
 	"updatestatus":           true,
 	"transcodeconfig":        true,
 	"livesessions":           true,
+	"hostmetrics":            true,
+	"playhistory":            true,
+	"playstats":              true,
 	"devices":                true,
 	"setupstate":             true,
 	"importers":              true,
@@ -5148,6 +5159,9 @@ var adminFields = map[string]bool{
 	"deleteretentionrule": true,
 	// Operations — live sessions dashboard + kill (§4)
 	"livesessions":     true,
+	"hostmetrics":      true,
+	"playhistory":      true,
+	"playstats":        true,
 	"terminatesession": true,
 	// Operations — device-key revocation propagation
 	"revokedevice": true,

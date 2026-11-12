@@ -440,6 +440,11 @@
     "tier": "session"
   },
   {
+    "field": "hostmetrics",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
     "field": "identifyapply",
     "effect": "write",
     "tier": "session"
@@ -721,6 +726,16 @@
   },
   {
     "field": "playbackrenditioncache",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "playhistory",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "playstats",
     "effect": "read",
     "tier": "admin"
   },

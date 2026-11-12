@@ -464,6 +464,7 @@ type Service struct {
 	sealed          SealedPredicate
 	quirks          QuirkDB
 	composer        PictureComposer
+	observed        observations
 }
 
 type profileSessionStore interface {
@@ -861,6 +862,14 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	file, streams, parts, err := s.negotiateVersion(ctx, media, files, profile, selectedSubtitleIndex, ov)
 	if err != nil {
 		return decision{}, err
+	}
+	// The operator's live-session dashboard reads the main item's decision.
+	if suffix == "main" {
+		defer func() {
+			if err == nil {
+				s.observe(scope.SessionID, dec, file, streams, profile, selectedSubtitleIndex, ov)
+			}
+		}()
 	}
 	loudness, loudnessOK := s.loudnessMeasurement(media, file)
 

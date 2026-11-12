@@ -421,6 +421,9 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"linkmediarelation":                  newFieldHandler("linkMediaRelation", "linkMediaRelation", fieldMutation, roleSession|roleManager, 110),
 	"linkscrobble":                       newFieldHandler("linkScrobble", "linkScrobble", fieldMutation, roleSession, 27),
 	"livesessions":                       newFieldHandler("liveSessions", "liveSessions", fieldRead, roleSession|roleAdmin, 145),
+	"hostmetrics":                        newFieldHandler("hostMetrics", "hostMetrics", fieldRead, roleSession|roleAdmin, 145),
+	"playhistory":                        newFieldHandler("playHistory", "playHistory", fieldRead, roleSession|roleAdmin, 145),
+	"playstats":                          newFieldHandler("playStats", "playStats", fieldRead, roleSession|roleAdmin, 145),
 	"manifest":                           newAliasedFieldHandler("manifest", "navigationManifest", "manifest", fieldRead, roleSession, 4),
 	"markers":                            newFieldHandler("markers", "markers", fieldRead, roleSession, 12),
 	"marknotificationread":               newFieldHandler("markNotificationRead", "markNotificationRead", fieldMutation, roleSession, 89),
@@ -3818,6 +3821,23 @@ func dispatchFieldBlock145(dispatch *fieldDispatchContext) response {
 	// Live sessions dashboard (ADR-0007 §4 Operations): Admin-Session-gated read
 	// of currently-active playback sessions + a kill mutation. Resolves over the
 	// existing Stream Token ledger (no new storage); see graph_livesessions.go.
+	if fields["hostmetrics"] {
+		if resp := resolveField(dispatch, "hostmetrics", h.hostMetricsInfo(), nil); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["playhistory"] {
+		plays, err := h.playHistory(ctx, scope, req)
+		if resp := resolveField(dispatch, "playhistory", plays, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["playstats"] {
+		stats, err := h.playStats(ctx, scope, req)
+		if resp := resolveField(dispatch, "playstats", stats, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
 	if fields["livesessions"] || fields["terminatesession"] || fields["revokedevice"] ||
 		fields["devices"] || fields["revokealldevices"] || fields["setdevicerole"] {
 		if fields["livesessions"] {
