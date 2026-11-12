@@ -21,5 +21,5 @@ beamfall-plugin-photos	../beamfall-plugin-photos	go test ./...	no	20df8d7d652816
 beamfall-plugin-podcasts	../beamfall-plugin-podcasts	go test ./...	no	44d8d0267317a6552830a88e58f9763d6ac47aa0
 beamfall-plugin-sdk	../beamfall-plugin-sdk	go test ./...	no	3e40a9e9f5ccdb5b7a97e0e152bd953ff1293d9e
 beamfall-relay	../beamfall-relay	make gate	yes	ca2aca2a2a54f7502a7088fea9548c5af064293d
-beamfall-web	../beamfall-web	make gate	yes	cb8692fb15bef250b7c9be14c40395a7f1f5c6e1
+beamfall-web	../beamfall-web	make gate	yes	04766134bc24fba2ce40a485eda686d252077304
 beamfall-windows	../beamfall-windows	script/release-gate.sh	yes	2c14c112a7758fa13bf836940e81d3bc6c49e0f0
