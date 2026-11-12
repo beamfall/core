@@ -209,7 +209,9 @@ export function Plugins() {
 
   return (
     <Section heading="consoleConfigPlugins" icon={Plug}>
-      {loading ? (
+      {loading && !data ? (
+        // Only the first load shows a skeleton. A later refresh keeps the cards
+        // mounted, so it cannot discard a typed key or an unsaved config draft.
         <Skeleton className="h-32 w-full" />
       ) : failed ? (
         <ErrorState message="consoleConfigUnavailable" />
@@ -385,27 +387,31 @@ function PluginCard({
         </div>
       )}
 
-      {expanded && (
-        <div id={detailsID} className="space-y-4 border-t border-white/[0.06] px-4 py-4">
-          {plugin.controlPolicy && (
-            <p className="m-0 text-[12px] text-muted-foreground">
-              {t("pluginControlPolicy", { policy: plugin.controlPolicy })}
-            </p>
-          )}
-          <PluginDetail
-            plugin={plugin}
-            displayLocale={displayLocale}
-            onSaveConfig={onSaveConfig}
-            onRunAction={onRunAction}
-          />
-          <PluginLifecycle
-            plugin={plugin}
-            displayLocale={displayLocale}
-            onDeactivate={onDeactivate}
-            onUninstall={onUninstall}
-          />
-        </div>
-      )}
+      {/* Collapsed Details stay mounted and hidden, so closing them keeps an
+          unsaved config draft instead of restoring the saved values. */}
+      <div
+        id={detailsID}
+        hidden={!expanded}
+        className="space-y-4 border-t border-white/[0.06] px-4 py-4"
+      >
+        {plugin.controlPolicy && (
+          <p className="m-0 text-[12px] text-muted-foreground">
+            {t("pluginControlPolicy", { policy: plugin.controlPolicy })}
+          </p>
+        )}
+        <PluginDetail
+          plugin={plugin}
+          displayLocale={displayLocale}
+          onSaveConfig={onSaveConfig}
+          onRunAction={onRunAction}
+        />
+        <PluginLifecycle
+          plugin={plugin}
+          displayLocale={displayLocale}
+          onDeactivate={onDeactivate}
+          onUninstall={onUninstall}
+        />
+      </div>
     </article>
   );
 }

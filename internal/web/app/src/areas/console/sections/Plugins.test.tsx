@@ -222,10 +222,83 @@ describe("Plugins", () => {
     renderPanel();
     const toggle = await screen.findByRole("button", { name: "Details for Studio Metadata" });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByLabelText("Base URL")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Base URL")).not.toBeVisible();
     await openDetails();
     expect(toggle).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByLabelText("Base URL")).toBeVisible();
+  });
+
+  it("keeps an unsaved config draft when Details are closed and reopened", async () => {
+    const user = userEvent.setup();
+    renderPanel();
+    await openDetails();
+    const input = screen.getByLabelText("Base URL");
+    await user.clear(input);
+    await user.type(input, "https://draft.example.org");
+
+    await openDetails();
+    expect(screen.getByLabelText("Base URL")).not.toBeVisible();
+    await openDetails();
+
+    expect(screen.getByLabelText("Base URL")).toBeVisible();
+    expect(screen.getByLabelText("Base URL")).toHaveValue("https://draft.example.org");
+    expect(screen.getByRole("button", { name: "Save configuration" })).toBeEnabled();
+  });
+
+  it("keeps other cards' drafts and key inputs through a provider-key refresh", async () => {
+    const user = userEvent.setup();
+    const secondKeyed: PluginStandingFixture = {
+      ...standingPlugin("lyrics", "Lyrics Metadata", "First-Party", "Trusted"),
+      scrapers: [
+        {
+          ...keyedPlugin.scrapers[0],
+          pluginID: "lyrics",
+          scraperID: "lyrics-main",
+          displayName: "Sample",
+          authRef: "sample-api-key",
+        },
+      ],
+    };
+    mockConsoleConfig({ ...config, plugins: [activePlugin, keyedPlugin, secondKeyed] });
+    vi.mocked(setScraperCredential).mockResolvedValue({
+      authRef: "example-api-key",
+      credentialConfigured: true,
+      credentialStatus: "configured",
+      scraperIDs: ["catalog-movies", "catalog-tv"],
+    });
+    renderPanel();
+    await openDetails();
+    const draft = screen.getByLabelText("Base URL");
+    await user.clear(draft);
+    await user.type(draft, "https://draft.example.org");
+    const otherKey = within(
+      screen.getByRole("article", { name: "Lyrics Metadata" }),
+    ).getByLabelText("Sample API key");
+    await user.type(otherKey, "other-key-draft");
+
+    // Hold the refresh the key save triggers, so the loading state is observable.
+    const refreshed = deferred<ConsoleConfigInfo>();
+    vi.mocked(fetchConsoleConfig).mockReturnValueOnce(refreshed.promise);
+    const card = screen.getByRole("article", { name: "Catalog Metadata" });
+    await user.type(within(card).getByLabelText("Example API key"), "test-key-value");
+    await user.click(within(card).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(fetchConsoleConfig).toHaveBeenCalledTimes(2));
+
+    // Still the same mounted fields while the refresh is in flight.
+    expect(draft).toBeInTheDocument();
+    expect(draft).toHaveValue("https://draft.example.org");
+    expect(otherKey).toBeInTheDocument();
+    expect(otherKey).toHaveValue("other-key-draft");
+
+    await act(async () => {
+      refreshed.resolve(
+        withoutStanding({ ...config, plugins: [activePlugin, keyedPlugin, secondKeyed] }),
+      );
+    });
+    await waitFor(() => expect(within(card).getByLabelText("Example API key")).toHaveValue(""));
+    expect(draft).toBeInTheDocument();
+    expect(draft).toHaveValue("https://draft.example.org");
+    expect(otherKey).toHaveValue("other-key-draft");
   });
 
   it("shows a missing provider key in the card with a human label", async () => {
