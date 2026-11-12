@@ -104,8 +104,9 @@ async function loadMore(queue: PlayQueue, played: number): Promise<void> {
 }
 
 /**
- * The queue item that follows mediaID, or "" when mediaID is not the queue's
- * current or next item (playback started elsewhere) or the queue is finished.
+ * The queue item that follows mediaID, or "" when the queue is finished or
+ * mediaID is not its current or next item. Playback started elsewhere ends
+ * the queue, so a later visit to one of its items does not resume it.
  */
 export async function nextInPlayQueue(mediaID: string): Promise<string> {
   const queue = activeQueue();
@@ -113,7 +114,11 @@ export async function nextInPlayQueue(mediaID: string): Promise<string> {
   let index = -1;
   if (queue.ids[queue.cursor] === mediaID) index = queue.cursor;
   else if (queue.ids[queue.cursor + 1] === mediaID) index = queue.cursor + 1;
-  if (index < 0) return "";
+  if (index < 0) {
+    // Playback started elsewhere: the viewer left the queue, so it ends here.
+    current = null;
+    return "";
+  }
   if (index + 1 >= queue.ids.length && !queue.done) {
     try {
       await loadMore(queue, index + 1);

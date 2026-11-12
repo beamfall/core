@@ -37,11 +37,13 @@ describe("play queue", () => {
     expect(await nextInPlayQueue("c")).toBe("");
   });
 
-  it("offers no successor for playback started outside the queue", async () => {
-    fetchLibraryItems.mockResolvedValue(page(["a", "b"], 2));
+  it("ends the queue when playback starts outside it", async () => {
+    fetchLibraryItems.mockResolvedValue(page(["a", "b", "c"], 3));
     await startPlayQueue(request);
 
     expect(await nextInPlayQueue("elsewhere")).toBe("");
+    // Returning to a queue item later does not resume the abandoned queue.
+    expect(await nextInPlayQueue("a")).toBe("");
   });
 
   it("clears the queue when the filtered set is empty", async () => {
