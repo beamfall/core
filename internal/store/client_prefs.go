@@ -42,6 +42,11 @@ func (s *Store) SetClientPref(ctx context.Context, profileID ProfileID, key, val
 	if len(value) > maxClientPrefValueLen {
 		return ValidationError("preference value is too long")
 	}
+	if key == ProfileAvatarPrefKey {
+		if err := validateProfileAvatar(value); err != nil {
+			return err
+		}
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {

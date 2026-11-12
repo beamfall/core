@@ -1718,11 +1718,14 @@ func libraryIDs(ids []store.LibraryID) []string {
 // just enough to choose — policy detail stays on the manager shapes. The
 // per-plugin certification ceilings ride along so the Console's Enforced
 // Filters picker can render and edit them without a second round trip
-// (ADR-0028 §5; matches setCertificationCeiling's return shape).
+// (ADR-0028 §5; matches setCertificationCeiling's return shape). Avatar is the
+// Profile's chosen avatar token, empty when it has none; it is opaque to core
+// and clients fall back to a generated avatar (CORE-1196).
 type ProfileSummary struct {
 	ID                    string                     `json:"id"`
 	Name                  string                     `json:"name"`
 	Kind                  string                     `json:"kind"`
+	Avatar                string                     `json:"avatar"`
 	CertificationCeilings []CertificationCeilingInfo `json:"certificationCeilings"`
 }
 
@@ -1731,6 +1734,10 @@ type ProfileSummary struct {
 // Profiles are hidden — they refuse new sessions and profile switches alike.
 func (h *Handler) profiles(ctx context.Context) ([]ProfileSummary, error) {
 	all, err := h.store.Profiles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	avatars, err := h.store.ProfileAvatars(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1751,6 +1758,7 @@ func (h *Handler) profiles(ctx context.Context) ([]ProfileSummary, error) {
 			ID:                    string(profile.ID),
 			Name:                  profile.Name,
 			Kind:                  string(profile.Kind),
+			Avatar:                avatars[profile.ID],
 			CertificationCeilings: ceilings,
 		})
 	}

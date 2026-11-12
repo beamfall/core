@@ -11994,6 +11994,10 @@
     "kind": "object",
     "children": [
       {
+        "name": "avatar",
+        "kind": "scalar"
+      },
+      {
         "name": "certificationCeilings",
         "kind": "list",
         "nullable": true,
