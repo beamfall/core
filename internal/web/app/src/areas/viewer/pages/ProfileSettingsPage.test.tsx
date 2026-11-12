@@ -137,6 +137,45 @@ describe("ProfileSettingsPage", () => {
     expect(fetchClientPrefs).toHaveBeenCalledTimes(2);
   });
 
+  function tones() {
+    const group = screen.getByRole("group", { name: "Colour" });
+    return Array.from(group.querySelectorAll<HTMLInputElement>("input[type=radio]"));
+  }
+
+  it("keeps a saved avatar when only the Profile list refresh fails", async () => {
+    const user = userEvent.setup();
+    const refreshProfiles = vi.fn().mockRejectedValue(new Error("offline"));
+    vi.mocked(useSession).mockReturnValue({
+      session: { deviceRole: "manager", profileID: "p1", profile: "adult", revealed: false },
+      profiles: [{ id: "p1", name: "Robin", kind: "adult" }],
+      refreshProfiles,
+    } as unknown as ReturnType<typeof useSession>);
+    renderPage();
+    await screen.findByRole("group", { name: "Colour" });
+    const target = tones().findIndex((tone) => !tone.checked);
+
+    await user.click(tones()[target]);
+
+    await waitFor(() => expect(refreshProfiles).toHaveBeenCalledTimes(1));
+    expect(setClientPref).toHaveBeenCalledWith("profile.avatar", expect.any(String));
+    expect(tones()[target]).toBeChecked();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("undoes the avatar choice and says so when the write fails", async () => {
+    const user = userEvent.setup();
+    vi.mocked(setClientPref).mockRejectedValueOnce(new Error("boom"));
+    renderPage();
+    await screen.findByRole("group", { name: "Colour" });
+    const before = tones().findIndex((tone) => tone.checked);
+    const target = tones().findIndex((tone) => !tone.checked);
+
+    await user.click(tones()[target]);
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    await waitFor(() => expect(tones()[before]).toBeChecked());
+  });
+
   it("does not let a stale Profile preference load overwrite the current Profile", async () => {
     const p1Load = deferred<{ key: string; value: string }[]>();
     const p2Load = deferred<{ key: string; value: string }[]>();

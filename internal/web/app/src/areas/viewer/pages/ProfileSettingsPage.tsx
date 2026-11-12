@@ -85,17 +85,19 @@ export function ProfileSettingsPage() {
   );
 
   // The avatar is a per-Profile pref like the rest, but it is shown from the
-  // Profile list (picker, header), so a save refreshes that list.
+  // Profile list (picker, header), so a save refreshes that list. Only the
+  // write decides whether the save worked: a refresh that fails afterwards
+  // leaves the choice saved, and the list catches up on its next load.
   const saveAvatar = useCallback(
     async (token: string) => {
       setAvatarError(false);
       try {
         await setClientPref(PROFILE_AVATAR_PREF_KEY, token);
-        await refreshProfiles();
       } catch (err) {
         setAvatarError(true);
         throw err;
       }
+      await refreshProfiles().catch(() => undefined);
     },
     [refreshProfiles],
   );
