@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setIdentityEpochSignal } from "@/lib/api";
 import { DEFAULT_BROWSE_STATE, type LibraryItemsRequest } from "./libraryBrowse";
-import { nextInPlayQueue, startPlayQueue } from "./playQueue";
+import { nextInPlayQueue, playQueueHandle, startPlayQueue } from "./playQueue";
 
 const fetchLibraryItems = vi.hoisted(() => vi.fn());
 vi.mock("./libraryBrowse", async (original) => ({
@@ -44,6 +44,16 @@ describe("play queue", () => {
     expect(await nextInPlayQueue("elsewhere")).toBe("");
     // Returning to a queue item later does not resume the abandoned queue.
     expect(await nextInPlayQueue("a")).toBe("");
+  });
+
+  it("keeps a newer queue when an older playback request resumes", async () => {
+    // A playback request issued before Play all, still waiting on its probe.
+    const issuedFor = playQueueHandle();
+    fetchLibraryItems.mockResolvedValue(page(["a", "b", "c"], 3));
+    await startPlayQueue(request);
+
+    expect(await nextInPlayQueue("elsewhere", issuedFor)).toBe("");
+    expect(await nextInPlayQueue("a")).toBe("b");
   });
 
   it("clears the queue when the filtered set is empty", async () => {

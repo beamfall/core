@@ -159,6 +159,27 @@ func TestLibraryBrowseEntityFacetsOnlyNameVisibleItems(t *testing.T) {
 	}
 }
 
+func TestLibraryBrowseEntityFacetsSkipTrashedEntities(t *testing.T) {
+	st := openDemo(t)
+	ctx := context.Background()
+	var comedy EntityID
+	if err := st.catalogR.QueryRowContext(ctx, `SELECT id FROM entity WHERE kind = 'category' AND title = 'Comedy' AND library_id = 'library-demo-open'`).Scan(&comedy); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.TrashEntity(ctx, comedy, LibraryFilter{AllowedIDs: []LibraryID{"library-demo-open"}}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	// The trashed category no longer filters anything, so it is not offered;
+	// its Media stay browsable.
+	trashed := mustLibraryBrowse(t, st, LibraryBrowseQuery{FacetEntityKinds: []string{"category"}})
+	if !slices.ContainsFunc(trashed.Items, func(i SourceItem) bool { return i.ID == "media-demo-bunny" }) {
+		t.Fatal("trashing a category hid its Media")
+	}
+	if len(trashed.Facets.Entities) != 1 || !slices.Equal(trashed.Facets.Entities[0].Titles, []string{"Science"}) {
+		t.Fatalf("entity facets with Comedy trashed = %+v, want [Science]", trashed.Facets.Entities)
+	}
+}
+
 func TestLibraryBrowseHidesItemsWhoseFilesAreAllMissing(t *testing.T) {
 	st := openDemo(t)
 	ctx := context.Background()

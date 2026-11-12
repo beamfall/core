@@ -104,13 +104,26 @@ async function loadMore(queue: PlayQueue, played: number): Promise<void> {
 }
 
 /**
+ * An opaque handle on the queue active right now. A playback request takes it
+ * before its first await and hands it back to {@link nextInPlayQueue}.
+ */
+export function playQueueHandle(): unknown {
+  return activeQueue();
+}
+
+/**
  * The queue item that follows mediaID, or "" when the queue is finished or
  * mediaID is not its current or next item. Playback started elsewhere ends
  * the queue, so a later visit to one of its items does not resume it.
+ * issuedFor is the handle taken when the playback request began: a request
+ * older than the active queue says nothing about it and leaves it alone.
  */
-export async function nextInPlayQueue(mediaID: string): Promise<string> {
+export async function nextInPlayQueue(
+  mediaID: string,
+  issuedFor: unknown = activeQueue(),
+): Promise<string> {
   const queue = activeQueue();
-  if (!queue) return "";
+  if (!queue || issuedFor !== queue) return "";
   let index = -1;
   if (queue.ids[queue.cursor] === mediaID) index = queue.cursor;
   else if (queue.ids[queue.cursor + 1] === mediaID) index = queue.cursor + 1;

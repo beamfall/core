@@ -1,6 +1,6 @@
 import { ApiError, postJSON } from "@/lib/api";
 import { probeCapabilityProfile } from "./capabilityProfile";
-import { nextInPlayQueue } from "./playQueue";
+import { nextInPlayQueue, playQueueHandle } from "./playQueue";
 
 // Playback-info request + its wire shape (ADR-0010 playbackInfo contract).
 //
@@ -91,10 +91,13 @@ export function isRevealTerminalStatus(status: number): boolean {
  * failure — exactly the branch the vanilla play() takes on a non-ok response.
  */
 export async function fetchPlaybackInfo(mediaID: string): Promise<PlaybackInfo> {
+  // Taken before the probe: a request that resumes after a newer Play all
+  // started must not be read as leaving that queue.
+  const queue = playQueueHandle();
   const capabilityProfile = await probeCapabilityProfile();
   // A Play all / Shuffle queue names its next item so the server pre-mints
   // Up Next for it (ADR-0029: the queue is client-owned).
-  const nextMediaID = await nextInPlayQueue(mediaID);
+  const nextMediaID = await nextInPlayQueue(mediaID, queue);
   return postJSON<PlaybackInfo>("/api/playback-info", {
     mediaID,
     capabilityProfile,

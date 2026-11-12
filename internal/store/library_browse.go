@@ -368,7 +368,7 @@ func libraryBrowseEntityTitles(ctx context.Context, reader *sql.DB, kind string,
 		FROM entity e
 		JOIN entity_relation r ON r.from_entity_id = e.id
 		WHERE e.kind = ? AND e.library_id IN (`+strings.Join(placeholders, ", ")+`)
-		  AND r.to_media_id IS NOT NULL
+		  AND e.trashed_at_ms IS NULL AND r.to_media_id IS NOT NULL
 	`, args...)
 	if err != nil {
 		return nil, err
