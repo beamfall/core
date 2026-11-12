@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { RescanAllButton, RescanButton, RescanStatus } from "@/components/beamfall/LibraryRescan";
 import {
   EmptyLine,
   ErrorLine,
@@ -118,7 +119,7 @@ export function LibrariesPage() {
 
   return (
     <div className="space-y-4">
-      <ManageSection title={t("libraries")}>
+      <ManageSection title={t("libraries")} actions={<RescanAllButton libraries={libraries} />}>
         {!loading && libraries.length === 0 ? (
           <EmptyLine message={t("libraryEmptyTitle")} />
         ) : (
@@ -434,6 +435,10 @@ function LibraryRow({
         </div>
       </TableCell>
       <TableCell>
+        <div className="mb-3 space-y-2">
+          <RescanButton libraryID={library.id} roots={library.roots ?? []} />
+          <RescanStatus libraryID={library.id} hasRoots={(library.roots ?? []).length > 0} />
+        </div>
         <div className="manage-folder-tools">
           {tree ? (
             <Tree.Root className="manage-folder-tree" aria-label={t("folderTree")}>
@@ -472,7 +477,7 @@ function LibraryRow({
               disabled={busy || selectedKind !== "folder" || !selectedPath}
               onClick={onScan}
             >
-              {t("scan")}
+              {t("scanOneFolder")}
             </Button>
             <div className="flex flex-wrap gap-2">
               <Input

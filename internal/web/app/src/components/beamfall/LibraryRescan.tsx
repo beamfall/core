@@ -158,6 +158,33 @@ export function RescanButton({
   );
 }
 
+/** Rescans every library that has folders; one click for the whole server. */
+export function RescanAllButton({
+  libraries,
+  variant = "outline",
+}: {
+  libraries: { id: string; roots?: string[] | null }[];
+  variant?: "outline" | "default";
+}) {
+  const t = useT();
+  const busy = useAnyRescanActive();
+  const scannable = libraries.filter((library) => (library.roots ?? []).length > 0);
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant={variant}
+      disabled={busy || scannable.length === 0}
+      onClick={() => {
+        for (const library of scannable) void startRescan(library.id, library.roots ?? []);
+      }}
+    >
+      <RefreshCw className={busy ? "size-4 animate-spin" : "size-4"} aria-hidden />
+      {busy ? t("rescanScanning") : t("rescanAllLibraries")}
+    </Button>
+  );
+}
+
 /** The card's scan status line: nothing until a rescan starts. */
 export function RescanStatus({ libraryID, hasRoots }: { libraryID: string; hasRoots: boolean }) {
   const t = useT();
