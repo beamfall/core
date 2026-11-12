@@ -317,16 +317,16 @@ func TestPathPickerListsLinkedFoldersWithoutReadingThem(t *testing.T) {
 	inside := filepath.Join(base, "elsewhere")
 	outside := t.TempDir()
 	for _, dir := range []string{media, inside} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for _, dir := range []string{inside, outside} {
-		if err := os.WriteFile(filepath.Join(dir, "clip.mp4"), []byte("x"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "clip.mp4"), []byte("x"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(media, "notes.txt"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(media, "notes.txt"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	links := map[string]string{"linked-inside": inside, "linked-outside": outside, "linked-file": filepath.Join(media, "notes.txt")}
