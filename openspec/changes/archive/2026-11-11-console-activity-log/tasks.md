@@ -14,4 +14,4 @@
 
 - [x] 3.1 Check in the running Console on the demo seed
 - [x] 3.2 Run `make gate`
-- [ ] 3.3 Run `openspec archive console-activity-log` after landing, before completing CORE-1198
+- [x] 3.3 Run `openspec archive console-activity-log` after landing, before completing CORE-1198
