@@ -26,6 +26,12 @@ recent playback decision the server made for that session and item.
 - **THEN** the session reports `playMethod` `direct`, an empty `playReason` and the item's
   source bitrate
 
+#### Scenario: Audio conversion is a transcode
+
+- **WHEN** the server copies the video and converts the audio for a session
+- **THEN** the session reports `playMethod` `transcode`, and `remux` only when the item is
+  repackaged with no stream converted
+
 #### Scenario: Transcode because of the video codec
 
 - **WHEN** a device that cannot decode the item's video codec asks for playback info

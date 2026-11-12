@@ -150,7 +150,12 @@ func (s *Service) observe(sessionID store.SessionID, dec decision, file store.Me
 	case "direct-play":
 		obs.Method = PlayMethodDirect
 	case "direct-stream":
+		// The video is copied either way. Repackaging alone is a remux;
+		// converting the audio is a transcode the operator pays for.
 		obs.Method = PlayMethodRemux
+		if dec.reason == "audio-transcode-only" {
+			obs.Method = PlayMethodTranscode
+		}
 		obs.Reason = cause
 	case "transcode", "precomputed-rendition":
 		obs.Method = PlayMethodTranscode

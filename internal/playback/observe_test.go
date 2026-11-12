@@ -117,3 +117,31 @@ func TestPlayObservationFollowsTheRouteReadMostRecently(t *testing.T) {
 		t.Fatalf("bitrate back on the sender route = %d, want 8000000", obs.Bitrate)
 	}
 }
+
+// Copying the video while converting the audio is a transcode on the
+// dashboard; repackaging alone is a remux.
+func TestPlayObservationTellsAudioConversionFromRemux(t *testing.T) {
+	cases := []struct {
+		name       string
+		override   QuirkOverride
+		wantMethod string
+	}{
+		{"audio converted", QuirkOverride{DenyAudioCodecs: []string{"eac3"}}, PlayMethodTranscode},
+		{"repackaged only", QuirkOverride{ForceRemux: true}, PlayMethodRemux},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			service, st, scope := capabilityTestService(t)
+			installQuirks(t, service, QuirkEntry{ID: "tv-x-fixture", Note: "fixture", Selector: QuirkSelector{Client: "tv-x"}, Override: tc.override})
+			mediaID := importQuirkMedia(t, st, "fp-quirk-fixture")
+			resp, err := service.Info(context.Background(), scope, InfoRequest{MediaID: string(mediaID), CapabilityProfile: quirkProfile("gen1", "2.4.0")})
+			if err != nil || resp.Decision != "direct-stream" {
+				t.Fatalf("Info = %q (err %v), want direct-stream", resp.Decision, err)
+			}
+			obs, ok := service.PlayObservation(scope.SessionID, mediaID)
+			if !ok || obs.Method != tc.wantMethod || obs.Reason != PlayReasonDeviceQuirk {
+				t.Fatalf("observation = %#v, want %s because of a device quirk", obs, tc.wantMethod)
+			}
+		})
+	}
+}
