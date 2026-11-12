@@ -92,7 +92,8 @@ export function SearchPage() {
   const answered = live.items !== null && !live.failed;
   // 4-state honesty: requested non-keyword but keyword was served → the plugin
   // is absent or the index is empty; say so without failing.
-  const fellBack = answered && mode !== "keyword" && live.servedMode === "keyword";
+  // Only once the current query and mode have been answered, not while they load.
+  const fellBack = answered && !live.loading && mode !== "keyword" && live.servedMode === "keyword";
 
   return (
     <AppShell actions={<ViewerActions />}>

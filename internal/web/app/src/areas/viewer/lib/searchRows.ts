@@ -31,9 +31,11 @@ function localized(names: Record<string, string> | undefined, locales: string[])
   return names.en || Object.values(names)[0] || "";
 }
 
-function groupKey(item: SearchResultItem): string {
+// Entity kind names are scoped to a plugin, so two plugins can give one name
+// different labels; the label is part of the key so a heading always fits its rows.
+function groupKey(item: SearchResultItem, label: string): string {
   if (item.kind === "media") return `media:${item.mediaClass ?? ""}`;
-  return `entity:${item.entityKind ?? ""}`;
+  return `entity:${item.entityKind ?? ""}:${label}`;
 }
 
 /** The row's type as the viewer reads it, e.g. "Video" or a plugin's kind name. */
@@ -66,10 +68,11 @@ export function groupSearchRows(
 ): SearchRowGroup[] {
   const groups = new Map<string, SearchRowGroup>();
   for (const item of items) {
-    const key = groupKey(item);
+    const label = searchRowTypeLabel(item, t, locales);
+    const key = groupKey(item, label);
     let group = groups.get(key);
     if (!group) {
-      group = { key, label: searchRowTypeLabel(item, t, locales), rows: [] };
+      group = { key, label, rows: [] };
       groups.set(key, group);
     }
     group.rows.push(item);

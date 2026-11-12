@@ -135,6 +135,45 @@ describe("SearchPage mode exposure", () => {
     expect(searchResult).toHaveBeenLastCalledWith("x", "semantic", expect.any(AbortSignal));
   });
 
+  it("holds the keyword-fallback notice until the new mode has answered", async () => {
+    vi.mocked(fetchSemanticCapability).mockResolvedValue([
+      { libraryID: "l1", pluginActive: true, state: "ready" },
+    ]);
+    let answerSemantic: (value: Awaited<ReturnType<typeof searchResult>>) => void = () => {};
+    vi.mocked(searchResult).mockImplementation((_query, mode) => {
+      if (mode === "semantic") {
+        return new Promise((resolve) => {
+          answerSemantic = resolve;
+        });
+      }
+      return Promise.resolve({
+        mode: "keyword",
+        items: [{ id: "m1", kind: "media", title: "Hit", mode: "keyword", score: 0 }],
+        restrictedResultsPresent: false,
+      });
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByLabelText("Search mode");
+    await user.type(screen.getByLabelText("Search"), "x");
+    expect(await screen.findByText("Hit")).toBeInTheDocument();
+
+    await user.click(screen.getByLabelText("Search mode"));
+    await user.click(await screen.findByRole("option", { name: "Semantic" }));
+    await waitFor(() =>
+      expect(searchResult).toHaveBeenLastCalledWith("x", "semantic", expect.any(AbortSignal)),
+    );
+    expect(screen.queryByText(/showing keyword results/i)).toBeNull();
+
+    answerSemantic({
+      mode: "semantic",
+      items: [{ id: "m2", kind: "media", title: "Near", mode: "semantic", score: 0 }],
+      restrictedResultsPresent: false,
+    });
+    expect(await screen.findByText("Near")).toBeInTheDocument();
+    expect(screen.queryByText(/showing keyword results/i)).toBeNull();
+  });
+
   it("cancels a slower previous search and ignores its results", async () => {
     const user = userEvent.setup();
     let resolveSlow: (value: Awaited<ReturnType<typeof searchResult>>) => void = () => {};

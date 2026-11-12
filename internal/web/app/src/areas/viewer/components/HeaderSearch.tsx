@@ -221,12 +221,12 @@ export function HeaderSearch() {
                   )}
                 </div>
               )}
-              {hasRows && (
+              {(hasRows || (settled && !live.failed)) && (
                 <Link
                   to={searchPagePath(live.term)}
                   className="block border-t border-[var(--border-subtle)] px-3 py-2 text-sm font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] focus-visible:text-[var(--text-primary)]"
                 >
-                  {t("searchSeeAll", { query: live.term })}
+                  {hasRows ? t("searchSeeAll", { query: live.term }) : t("searchOpenFull")}
                 </Link>
               )}
             </Autocomplete.Popup>

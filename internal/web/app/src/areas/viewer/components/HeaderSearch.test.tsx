@@ -173,6 +173,10 @@ describe("HeaderSearch", () => {
     await user.type(screen.getByRole("combobox", { name: "Search" }), "zzz");
     expect(await screen.findByText("Check the spelling or try fewer words.")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("No results for “zzz”");
+    expect(screen.getByRole("link", { name: "Open full search" })).toHaveAttribute(
+      "href",
+      "/search?q=zzz",
+    );
     expect(screen.queryByRole("grid")).toBeNull();
   });
 });
