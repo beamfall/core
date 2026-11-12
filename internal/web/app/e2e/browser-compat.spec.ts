@@ -19,7 +19,7 @@ const mediaSegment = readFileSync(join(fixtures, "browser-compat0.m4s"));
 // Prove traversal reaches a named control instead of merely asserting that
 // some element can be focused programmatically.
 async function expectKeyboardFocusReachesAControl(page: Page, browserName: string): Promise<void> {
-  const expected = page.getByRole("button", { name: "Playback details" });
+  const expected = page.getByRole("button", { name: "Settings", exact: true });
   await expect(expected).toBeVisible();
   const key = browserName === "webkit" ? "Alt+Tab" : "Tab";
   await expected.focus();
@@ -27,6 +27,13 @@ async function expectKeyboardFocusReachesAControl(page: Page, browserName: strin
   await expect(expected).not.toBeFocused();
   await page.keyboard.press(key);
   await expect(expected).toBeFocused();
+}
+
+// CORE-1141: secondary playback options live in the transport's settings sheet.
+async function openSettings(page: Page): Promise<void> {
+  const button = page.getByRole("button", { name: "Settings", exact: true });
+  if ((await button.getAttribute("aria-expanded")) !== "true") await button.click();
+  await expect(button).toHaveAttribute("aria-expanded", "true");
 }
 
 async function installPlaybackRoutes(page: Page): Promise<void> {
@@ -132,6 +139,7 @@ test("shell, service worker, keyboard, and HLS selection stay browser-compatible
   await expect(page.locator("#root")).not.toBeEmpty();
   await expectKeyboardFocusReachesAControl(page, browserName);
 
+  await openSettings(page);
   await page.getByRole("button", { name: "Playback details" }).click();
   const dialog = page.getByRole("dialog", { name: "Playback details" });
   await expect(dialog).toBeVisible();
@@ -149,6 +157,7 @@ test("migrated menu, dialog, listbox, and combobox keep axe and keyboard ARIA co
   await page.goto("/web/watch/media-alpha");
   await expect(page.locator("#root")).not.toBeEmpty();
 
+  await openSettings(page);
   const trigger = page.getByRole("combobox", { name: "Subtitles", exact: true });
   await expect(trigger).toBeVisible();
   await expect(trigger).toHaveAttribute("aria-haspopup", "listbox");
@@ -159,7 +168,7 @@ test("migrated menu, dialog, listbox, and combobox keep axe and keyboard ARIA co
   await trigger.focus();
   await page.keyboard.press("ArrowDown");
   const listbox = page.getByRole("listbox", { name: "Subtitles" });
-  const menu = page.locator(".bf-menu-interactive");
+  const menu = page.locator(".bf-menu");
   await expect(menu).toBeVisible();
   await expect(listbox).toBeVisible();
   await expect(trigger).toHaveAttribute("aria-expanded", "true");
@@ -199,6 +208,7 @@ test("migrated menu, dialog, listbox, and combobox keep axe and keyboard ARIA co
   await expect(listbox).toBeHidden();
   await expect(trigger).toBeFocused();
 
+  await openSettings(page);
   await page.getByRole("button", { name: "Playback details" }).click();
   const dialog = page.getByRole("dialog", { name: "Playback details" });
   await expect(dialog).toBeVisible();

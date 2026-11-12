@@ -55,7 +55,8 @@ const approvedVisualDeltas: Readonly<Record<string, ApprovedDelta>> = {
 
 // CORE-0045 redesigned the player transport after the migration. These states keep their archived
 // PNG SHA-pinned in the manifest but no longer compare the live render to it; the live
-// goldens under e2e/goldens/ are the regression baseline for them.
+// goldens under e2e/goldens/ are the regression baseline for them. CORE-1141 (controls over a
+// bottom gradient, one settings sheet) re-recorded all 22 of those live PNGs from the new layout.
 const redesignedSinceMigration: ReadonlySet<string> = new Set([
   "player-desktop/player-audio-listbox-open-focused-selected.png",
   "player-desktop/player-details-dialog-open-focused.png",
