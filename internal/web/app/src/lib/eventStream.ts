@@ -110,15 +110,13 @@ export function openEventStream(url: string, handlers: EventStreamHandlers): () 
       handlers.onError?.(new Event("error"));
       handlers.onState?.("reconnecting");
       await new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, retryMs);
-        signal.addEventListener(
-          "abort",
-          () => {
-            clearTimeout(timer);
-            resolve();
-          },
-          { once: true },
-        );
+        const wake = () => {
+          clearTimeout(timer);
+          signal.removeEventListener("abort", wake);
+          resolve();
+        };
+        const timer = setTimeout(wake, retryMs);
+        signal.addEventListener("abort", wake, { once: true });
       });
       retryMs = Math.min(retryMs * 2, MAX_RETRY_MS);
     }

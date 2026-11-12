@@ -1,10 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
+import { notifyEngagementChanged } from "../actions/engagementSync";
 import { fetchLibraryItems, type LibraryItemsRequest } from "../lib/libraryBrowse";
 import { LibraryBrowsePage } from "./LibraryBrowsePage";
 
@@ -196,5 +197,38 @@ describe("Library browse", () => {
       }),
     );
     expect(screen.getByTestId("where")).not.toHaveTextContent("rated=");
+  });
+
+  it("reloads when engagement changes under a query that depends on it, and only then", async () => {
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
+    const mount = (url: string) =>
+      render(
+        <I18nProvider>
+          <MemoryRouter initialEntries={[url]}>
+            <Routes>
+              <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
+            </Routes>
+          </MemoryRouter>
+        </I18nProvider>,
+      );
+
+    mount("/n/films/all?sort=rating");
+    expect(await screen.findByText("1,200 items")).toBeInTheDocument();
+    const before = vi.mocked(fetchLibraryItems).mock.calls.length;
+    act(() => notifyEngagementChanged());
+    await waitFor(() =>
+      expect(vi.mocked(fetchLibraryItems).mock.calls.length).toBeGreaterThan(before),
+    );
+    expect(vi.mocked(fetchLibraryItems).mock.calls.at(-1)?.[0]).toMatchObject({ offset: 0 });
+    expect(screen.getByText("1,200 items")).toBeInTheDocument();
+
+    cleanup();
+    mount("/n/films/all?sort=year");
+    expect(await screen.findByText("1,200 items")).toBeInTheDocument();
+    await screen.findByRole("button", { name: "Item 0" });
+    const settled = vi.mocked(fetchLibraryItems).mock.calls.length;
+    act(() => notifyEngagementChanged());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(vi.mocked(fetchLibraryItems).mock.calls.length).toBe(settled);
   });
 });

@@ -14,6 +14,7 @@ import type { SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
 import type { StringKey } from "@/strings";
+import { useEngagementEpoch } from "../actions";
 import { MediaItemCard } from "../components/MediaItemCard";
 import { RevealControls } from "../components/RevealControls";
 import { useVirtualGrid, VIRTUAL_GRID_MIN_ITEMS } from "../components/useVirtualGrid";
@@ -169,6 +170,27 @@ function LibraryBrowse({
     loadPage(0);
   }, [loadPage, retryTick]);
 
+  // Watched state and the Profile's own ratings can change under a query that
+  // sorts or filters by them. The cached pages are then stale: drop them and
+  // reload the window in place, keeping the count so the scroll position holds.
+  const engagementEpoch = useEngagementEpoch();
+  const seenEpochRef = useRef(engagementEpoch);
+  const [refreshTick, setRefreshTick] = useState(0);
+  const followsEngagement =
+    state.watch !== "" ||
+    state.minRating > 0 ||
+    state.sort === "rating" ||
+    state.sort === "last-watched";
+  useEffect(() => {
+    if (seenEpochRef.current === engagementEpoch) return;
+    seenEpochRef.current = engagementEpoch;
+    if (!followsEngagement) return;
+    generationRef.current += 1;
+    pagesRef.current = new Map();
+    pendingRef.current = new Set();
+    setRefreshTick((tick) => tick + 1);
+  }, [engagementEpoch, followsEngagement]);
+
   const itemCount = total ?? 0;
   const listRef = useRef<HTMLUListElement | null>(null);
   const gridWindow = useVirtualGrid({
@@ -186,7 +208,8 @@ function LibraryBrowse({
     const first = Math.floor(start / LIBRARY_BROWSE_PAGE);
     const last = Math.floor((end - 1) / LIBRARY_BROWSE_PAGE);
     for (let pageIndex = first; pageIndex <= last; pageIndex += 1) loadPage(pageIndex);
-  }, [start, end, loadPage]);
+    // refreshTick re-runs this after an engagement change emptied the cache.
+  }, [start, end, loadPage, refreshTick]);
 
   function update(patch: Partial<LibraryBrowseState>) {
     setSearchParams(browseStateParams({ ...state, ...patch }), { replace: true });

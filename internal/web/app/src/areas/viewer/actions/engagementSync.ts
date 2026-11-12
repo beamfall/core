@@ -8,6 +8,9 @@ import { subscribeEvents } from "@/lib/api";
 // revalidates when it moves, so nothing needs a manual refresh.
 
 const INVALIDATE_KIND = "client.invalidate";
+// Sent when the client's cursor is too old to replay what it missed, so any
+// engagement change may have been lost.
+const FULL_REFRESH_KIND = "client.fullRefresh";
 const ENGAGEMENT_CHANGED = "engagement-changed";
 
 let epoch = 0;
@@ -49,7 +52,10 @@ export function useEngagementEvents(): void {
   useEffect(
     () =>
       subscribeEvents((event) => {
-        if (event.type === INVALIDATE_KIND && isEngagementInvalidation(event.data))
+        if (
+          event.type === FULL_REFRESH_KIND ||
+          (event.type === INVALIDATE_KIND && isEngagementInvalidation(event.data))
+        )
           notifyEngagementChanged();
       }),
     [],

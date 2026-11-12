@@ -77,6 +77,26 @@ describe("openEventStream", () => {
     expect(fetchMock.mock.calls.length).toBe(calls);
   });
 
+  it("leaves no abort listener behind after each retry wait", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("no", { status: 503 })),
+    );
+    const added = vi.spyOn(AbortSignal.prototype, "addEventListener");
+    const removed = vi.spyOn(AbortSignal.prototype, "removeEventListener");
+    const close = openEventStream("/api/events", { onEvent: () => {} });
+    await vi.advanceTimersByTimeAsync(7500);
+    const waits = added.mock.calls.filter(([kind]) => kind === "abort").length;
+    const dropped = removed.mock.calls.filter(([kind]) => kind === "abort").length;
+    expect(waits).toBeGreaterThanOrEqual(3);
+    // Only the wait still in flight may hold a listener.
+    expect(waits - dropped).toBeLessThanOrEqual(1);
+    close();
+    added.mockRestore();
+    removed.mockRestore();
+  });
+
   it("treats a non-stream response as a failed connection", async () => {
     vi.stubGlobal(
       "fetch",
