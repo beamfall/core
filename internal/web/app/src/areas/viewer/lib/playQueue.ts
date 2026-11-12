@@ -142,8 +142,33 @@ export function leavePlayQueue(issuedFor: unknown): void {
 }
 
 /**
+ * Where mediaID sits in the queue, or -1: the item last handed to the player,
+ * the one after it (moving on) or the one before it (stepping back).
+ */
+function positionOf(queue: PlayQueue, mediaID: string): number {
+  for (const index of [queue.cursor, queue.cursor + 1, queue.cursor - 1]) {
+    if (index >= 0 && queue.ids[index] === mediaID) return index;
+  }
+  return -1;
+}
+
+/**
+ * The queue item before mediaID, or null when no active queue holds mediaID
+ * at its current or next place or it is the queue's first item. Playing it
+ * keeps the queue: its next item is then the one stepped back from.
+ */
+export function previousInPlayQueue(mediaID: string): PlayQueueStart | null {
+  const queue = activeQueue();
+  if (!queue) return null;
+  const index = positionOf(queue, mediaID);
+  const previous = index > 0 ? queue.ids[index - 1] : undefined;
+  if (previous === undefined) return null;
+  return { id: previous, title: queue.titles.get(previous) ?? "" };
+}
+
+/**
  * The queue item that follows mediaID, or "" when the queue is finished or
- * mediaID is not its current or next item. Playback started elsewhere ends
+ * mediaID is not its current, next or previous item. Playback started elsewhere ends
  * the queue, so a later visit to one of its items does not resume it.
  * issuedFor is the handle taken when the playback request began: a request
  * older than the active queue says nothing about it and leaves it alone.
@@ -154,9 +179,7 @@ export async function nextInPlayQueue(
 ): Promise<string> {
   const queue = activeQueue();
   if (!queue || issuedFor !== queue) return "";
-  let index = -1;
-  if (queue.ids[queue.cursor] === mediaID) index = queue.cursor;
-  else if (queue.ids[queue.cursor + 1] === mediaID) index = queue.cursor + 1;
+  const index = positionOf(queue, mediaID);
   if (index < 0) {
     // Playback started elsewhere: the viewer left the queue, so it ends here.
     current = null;

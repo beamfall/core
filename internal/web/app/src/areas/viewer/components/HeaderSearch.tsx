@@ -94,7 +94,8 @@ export function HeaderSearch() {
     const { item } = cell;
     if (cell.play) {
       const state: PlayerNavState = { title: item.title };
-      if (identity && queue.length > 1) {
+      // A one-item queue still goes, so it ends an earlier Play all queue.
+      if (identity && queue.length > 0) {
         state.queue = queueWindow(queue, item.id);
         state.queueIdentity = identity;
       }

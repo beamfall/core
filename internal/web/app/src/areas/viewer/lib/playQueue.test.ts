@@ -6,6 +6,7 @@ import {
   nextInPlayQueue,
   playQueueHandle,
   playQueueTitle,
+  previousInPlayQueue,
   startPlayQueue,
 } from "./playQueue";
 
@@ -147,6 +148,23 @@ describe("play queue", () => {
     leavePlayQueue(playQueueHandle());
     expect(playQueueHandle()).toBeNull();
     expect(await nextInPlayQueue("b")).toBe("");
+  });
+
+  it("steps back to the previous item and keeps the queue going", async () => {
+    fetchLibraryItems.mockResolvedValue(page(["a", "b", "c"], 3));
+    await startPlayQueue(request);
+
+    expect(previousInPlayQueue("a")).toBeNull();
+    expect(await nextInPlayQueue("a")).toBe("b");
+    expect(previousInPlayQueue("b")).toEqual({ id: "a", title: "Title a" });
+    expect(await nextInPlayQueue("b")).toBe("c");
+    expect(await nextInPlayQueue("c")).toBe("");
+    expect(previousInPlayQueue("c")).toEqual({ id: "b", title: "Title b" });
+
+    // Stepping back to b keeps the queue: its next item is the one stepped back from.
+    expect(await nextInPlayQueue("b")).toBe("c");
+    expect(playQueueHandle()).not.toBeNull();
+    expect(previousInPlayQueue("elsewhere")).toBeNull();
   });
 
   it("clears the queue when the filtered set is empty", async () => {

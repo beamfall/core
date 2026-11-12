@@ -7,6 +7,7 @@ import type { ClientPref, GenericMediaInfo } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
 import type { PlaybackNext } from "../lib/playback";
+import { previousInPlayQueue } from "../lib/playQueue";
 import {
   resolvePreferences,
   type SkipInterval,
@@ -96,7 +97,7 @@ export function PlayerPage() {
     : "";
   const queueIndex = queue && mediaId ? queue.findIndex((item) => item.id === mediaId) : -1;
   const queuePosition =
-    queue && queueIndex >= 0
+    queue && queue.length > 1 && queueIndex >= 0
       ? t("queuePosition", { position: queueIndex + 1, total: queue.length })
       : "";
 
@@ -142,10 +143,17 @@ export function PlayerPage() {
     if (issuedNext?.streams) return () => advanceToNext(issuedNext);
     return undefined;
   }, [nextInQueue, issuedNext, goToQueueItem, advanceToNext]);
-  const playPrevious = useMemo(
-    () => (previousInQueue ? () => goToQueueItem(previousInQueue) : undefined),
-    [previousInQueue, goToQueueItem],
+  // A card queue names its own previous item; without one, a Play all queue
+  // that holds this item may (stepping back keeps that queue going).
+  const playAllPrevious = useMemo(
+    () => (queue || !mediaId ? null : previousInPlayQueue(mediaId)),
+    [queue, mediaId],
   );
+  const playPrevious = useMemo(() => {
+    if (previousInQueue) return () => goToQueueItem(previousInQueue);
+    if (playAllPrevious) return () => playItem(playAllPrevious.id, playAllPrevious.title);
+    return undefined;
+  }, [previousInQueue, playAllPrevious, goToQueueItem, playItem]);
 
   // Audio moves straight on to the next item when one ends (no countdown card,
   // which suits a film or an episode, not a track).

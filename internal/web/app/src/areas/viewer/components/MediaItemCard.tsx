@@ -121,9 +121,10 @@ export function MediaItemCard({
     if (isMedia) {
       // Carry the title forward so the player's info overlay can name the Media
       // (the playback-info wire does not report it), plus the siblings as the
-      // player's queue (previous/next and the pre-minted next stream).
+      // player's queue (previous/next and the pre-minted next stream). A
+      // one-item queue still goes, so it ends an earlier Play all queue.
       const state: PlayerNavState = { title: item.title };
-      if (identity && queue && queue.length > 1) {
+      if (identity && queue && queue.length > 0) {
         state.queue = queueWindow(queue, item.id);
         state.queueIdentity = identity;
       }
