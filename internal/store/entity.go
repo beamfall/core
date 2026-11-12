@@ -420,6 +420,13 @@ func (s *Store) EntitiesForMedia(ctx context.Context, mediaID MediaID, relationN
 	if _, err := s.visibleMediaSQLFrom(ctx, plane.reader, mediaID, filter); err != nil {
 		return nil, err
 	}
+	// Read before the relation query: a catalog read nested inside an open
+	// catalog cursor holds two reader connections at once and can exhaust the
+	// pool under concurrent reads.
+	restricted, err := s.libraryRestrictionsLocked(ctx)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := plane.reader.QueryContext(ctx, `
 		SELECT e.id, e.library_id, e.kind, e.title, r.attributes
 		FROM entity_relation r
@@ -432,21 +439,14 @@ func (s *Store) EntitiesForMedia(ctx context.Context, mediaID MediaID, relationN
 	}
 	defer rows.Close()
 	related := []RelatedEntity{}
-	libraries := map[LibraryID]Library{}
 	for rows.Next() {
 		var entity Entity
 		var attributes sql.NullString
 		if err := rows.Scan(&entity.ID, &entity.LibraryID, &entity.Kind, &entity.Title, &attributes); err != nil {
 			return nil, err
 		}
-		library, ok := libraries[entity.LibraryID]
-		if !ok {
-			if library, err = s.libraryByIDLocked(ctx, entity.LibraryID); err != nil {
-				return nil, err
-			}
-			libraries[entity.LibraryID] = library
-		}
-		if !libraryVisible(library, filter) {
+		isRestricted, ok := restricted[entity.LibraryID]
+		if !ok || !libraryVisible(Library{ID: entity.LibraryID, IsRestricted: isRestricted}, filter) {
 			continue
 		}
 		item := RelatedEntity{Entity: entity}
@@ -477,6 +477,26 @@ func (s *Store) EntitiesForMedia(ctx context.Context, mediaID MediaID, relationN
 		sortEntityFields(related[i].Entity.Fields)
 	}
 	return related, nil
+}
+
+// libraryRestrictionsLocked maps every Library row, trashed or not, to its
+// restricted flag: the visibility input a catalog join on library would read.
+func (s *Store) libraryRestrictionsLocked(ctx context.Context) (map[LibraryID]bool, error) {
+	rows, err := s.catalogR.QueryContext(ctx, `SELECT id, is_restricted FROM library`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	restricted := map[LibraryID]bool{}
+	for rows.Next() {
+		var id LibraryID
+		var flag int
+		if err := rows.Scan(&id, &flag); err != nil {
+			return nil, err
+		}
+		restricted[id] = flag != 0
+	}
+	return restricted, rows.Err()
 }
 
 // MediaMembership is one generic Entity an item belongs to: the relation name
