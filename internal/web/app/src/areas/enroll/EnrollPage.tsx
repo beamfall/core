@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api";
 import { enroll } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
+import { PairingCodeHelp } from "./PairingCodeHelp";
 
 // First contact (ADR-0007 §2): a browser enrolls as a VIEWER device with a
 // pairing code minted on a manager device. Faithful to the vanilla enroll-view
@@ -21,11 +22,17 @@ import { useT } from "@/lib/i18n";
 // committed (status line + redirect) as soon as enroll() resolves; the
 // compatibility rebind that follows can only produce a NOTICE, never an
 // enrollment error — the fresh load re-runs the handshake anyway.
+//
+// The page also has to answer "what is a pairing code and where do I get one?"
+// for someone who has never seen this server (CORE-1196): PairingCodeHelp says
+// so in plain words under the form.
 export function EnrollPage() {
   const t = useT();
   const codeID = useId();
   const deviceNameID = useId();
   const errorID = useId();
+  const codeHintID = useId();
+  const deviceNameHintID = useId();
   const errorRef = useRef<HTMLParagraphElement>(null);
   const [code, setCode] = useState("");
   const [deviceName, setDeviceName] = useState("");
@@ -70,7 +77,7 @@ export function EnrollPage() {
   return (
     <main className="mx-auto max-w-md px-4 py-12">
       <h1 className="text-2xl font-semibold">{t("enrollTitle")}</h1>
-      <p className="mt-2 text-sm text-muted-foreground">{t("enrollLead")}</p>
+      <p className="mt-2 text-sm text-muted-foreground">{t("signInLead")}</p>
       <form onSubmit={onSubmit} className="mt-6 space-y-4" noValidate>
         <div className="space-y-1.5">
           <Label htmlFor={codeID}>{t("pairingCode")}</Label>
@@ -87,8 +94,11 @@ export function EnrollPage() {
             autoFocus
             required
             aria-invalid={error != null}
-            aria-describedby={error ? errorID : undefined}
+            aria-describedby={error ? `${codeHintID} ${errorID}` : codeHintID}
           />
+          <p id={codeHintID} className="text-xs text-muted-foreground">
+            {t("signInCodeHint")}
+          </p>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor={deviceNameID}>{t("deviceName")}</Label>
@@ -98,7 +108,11 @@ export function EnrollPage() {
             onChange={(e) => setDeviceName(e.target.value)}
             placeholder={t("webBrowser")}
             autoComplete="off"
+            aria-describedby={deviceNameHintID}
           />
+          <p id={deviceNameHintID} className="text-xs text-muted-foreground">
+            {t("signInDeviceNameHint")}
+          </p>
         </div>
         <Button type="submit" disabled={busy}>
           {t("connect")}
@@ -120,6 +134,7 @@ export function EnrollPage() {
           </p>
         )}
       </form>
+      <PairingCodeHelp />
     </main>
   );
 }

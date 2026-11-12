@@ -182,6 +182,8 @@ export interface ProfileSummary {
   id: string;
   name: string;
   kind: string;
+  /** The chosen avatar token; empty or absent means a generated avatar. */
+  avatar?: string;
 }
 
 /** The reveal/relock/switch result (graph.RevealState). */

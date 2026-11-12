@@ -67,7 +67,7 @@ export async function fetchCurrentSession(signal?: AbortSignal): Promise<Session
   );
 }
 
-const PROFILES_QUERY = "query Profiles { profiles { id name kind } }";
+const PROFILES_QUERY = "query Profiles { profiles { id name kind avatar } }";
 
 /** Profiles — the profile-picker roster. */
 export async function fetchProfiles(signal?: AbortSignal): Promise<ProfileSummary[]> {
@@ -76,17 +76,22 @@ export async function fetchProfiles(signal?: AbortSignal): Promise<ProfileSummar
 }
 
 const SWITCH_PROFILE_MUTATION =
-  "mutation SwitchProfile($profileID: String!) { switchProfile(profileID: $profileID) { profileID revealed } }";
+  "mutation SwitchProfile($profileID: String!, $pin: String) { switchProfile(profileID: $profileID, pin: $pin) { profileID revealed } }";
 
-/** SwitchProfile — rebind the session to another Profile (always relocks). */
+/**
+ * SwitchProfile — rebind the session to another Profile (always relocks).
+ * An adult Profile needs its entry PIN; the PIN goes into this call and
+ * nowhere else.
+ */
 export async function switchProfile(
   profileID: string,
   signalOrCommitted?: AbortSignal | (() => void),
+  pin?: string,
 ): Promise<SwitchProfileResult> {
   const signal = typeof signalOrCommitted === "function" ? undefined : signalOrCommitted;
   const data = await graphql<{ switchProfile: SwitchProfileResult }>(
     SWITCH_PROFILE_MUTATION,
-    { profileID },
+    pin ? { profileID, pin } : { profileID },
     signal,
   );
   if (typeof signalOrCommitted === "function") signalOrCommitted();

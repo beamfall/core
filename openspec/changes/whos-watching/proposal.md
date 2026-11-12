@@ -24,8 +24,8 @@ pairing-code form that does not say where a code comes from. A household should 
   viewer, then continues to where the person was going. The header shows the current Profile's
   avatar, which opens the picker in one click.
 - Profile settings gets an avatar chooser.
-- The signed-out page says in plain words where a pairing code comes from, and keeps offering
-  admin-password sign-in when the server allows it.
+- The signed-out page says in plain words where a pairing code comes from. Other sign-in
+  routes appear there only when the server has them enabled; today the pairing code is the only one.
 
 Uploading a photo as an avatar is not part of this change.
 

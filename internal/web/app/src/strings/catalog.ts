@@ -22,6 +22,7 @@ import { sessionUpdateStrings } from "./sessions-updates";
 import { setupStrings } from "./setup";
 import { sharedStateStrings } from "./shared-states";
 import { viewerAccountStrings } from "./viewer-account";
+import { whosWatchingStrings } from "./whos-watching";
 
 export const en = {
   ...appShellStrings.en,
@@ -34,6 +35,7 @@ export const en = {
   ...backupRetentionStrings.en,
   ...sharedStateStrings.en,
   ...viewerAccountStrings.en,
+  ...whosWatchingStrings.en,
   ...remoteAccessStrings.en,
   ...pluginStrings.en,
   ...sessionUpdateStrings.en,
@@ -61,6 +63,7 @@ export const fr = {
   ...backupRetentionStrings.fr,
   ...sharedStateStrings.fr,
   ...viewerAccountStrings.fr,
+  ...whosWatchingStrings.fr,
   ...remoteAccessStrings.fr,
   ...pluginStrings.fr,
   ...sessionUpdateStrings.fr,
@@ -88,6 +91,7 @@ export const de = {
   ...backupRetentionStrings.de,
   ...sharedStateStrings.de,
   ...viewerAccountStrings.de,
+  ...whosWatchingStrings.de,
   ...remoteAccessStrings.de,
   ...pluginStrings.de,
   ...sessionUpdateStrings.de,
@@ -115,6 +119,7 @@ export const es = {
   ...backupRetentionStrings.es,
   ...sharedStateStrings.es,
   ...viewerAccountStrings.es,
+  ...whosWatchingStrings.es,
   ...remoteAccessStrings.es,
   ...pluginStrings.es,
   ...sessionUpdateStrings.es,
@@ -142,6 +147,7 @@ export const pt = {
   ...backupRetentionStrings.pt,
   ...sharedStateStrings.pt,
   ...viewerAccountStrings.pt,
+  ...whosWatchingStrings.pt,
   ...remoteAccessStrings.pt,
   ...pluginStrings.pt,
   ...sessionUpdateStrings.pt,

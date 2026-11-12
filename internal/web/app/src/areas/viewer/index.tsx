@@ -1,5 +1,6 @@
 import { Suspense, useEffect, useState } from "react";
-import { Navigate, Route, Routes } from "react-router";
+import { Navigate, Route, Routes, useLocation } from "react-router";
+import { profilePickedThisTab } from "@/components/beamfall/profile";
 import { ErrorState } from "@/components/beamfall/workbench";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
@@ -62,7 +63,8 @@ function ViewerSessionPending() {
 // session spine, so this area assumes a bound session.
 export function ViewerArea() {
   const { setRegister } = useRegister();
-  const { error, needsEnroll, refresh, session } = useSession();
+  const { error, needsEnroll, profiles, refresh, session } = useSession();
+  const location = useLocation();
   // When the browser is unenrolled (the 401 state), a FRESH server with setup
   // pending must reach the wizard, not the enroll gate (ADR-0007 §2). We probe
   // the unauthenticated GET /api/setup once needsEnroll flips, leaving the
@@ -108,6 +110,18 @@ export function ViewerArea() {
   if (!session) {
     if (!error) return <ViewerSessionPending />;
     return <ViewerSessionError onRetry={refresh} />;
+  }
+
+  // "Who's watching?" (CORE-1196): a server with more than one Profile opens on
+  // the picker once per tab, then carries on to where the visitor was heading.
+  // Playback links are exempt so a shared or cast-handoff watch URL still plays.
+  if (
+    profiles.length > 1 &&
+    location.pathname !== "/profiles" &&
+    !location.pathname.startsWith("/watch/") &&
+    !profilePickedThisTab()
+  ) {
+    return <Navigate to="/profiles" state={{ from: location }} replace />;
   }
 
   return <ViewerRoutes profileID={session.profileID} />;

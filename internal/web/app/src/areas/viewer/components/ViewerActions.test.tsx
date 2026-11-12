@@ -39,7 +39,10 @@ describe("ViewerActions", () => {
   it("shows the selected Profile and exposes Profile settings", () => {
     renderActions();
 
-    expect(screen.getByRole("link", { name: "Profile: Kid" })).toHaveAttribute("href", "/profiles");
+    expect(screen.getByRole("link", { name: "Switch profile. Watching as Kid." })).toHaveAttribute(
+      "href",
+      "/profiles",
+    );
     expect(screen.getByRole("link", { name: "Profile settings" })).toHaveAttribute(
       "href",
       "/settings",

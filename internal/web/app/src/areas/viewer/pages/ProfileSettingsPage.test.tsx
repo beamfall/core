@@ -37,6 +37,8 @@ function deferred<T>() {
 function setProfileKind(kind: "adult" | "managed", profileID = "p1") {
   vi.mocked(useSession).mockReturnValue({
     session: { deviceRole: "manager", profileID, profile: kind, revealed: false },
+    profiles: [{ id: profileID, name: "Robin", kind }],
+    refreshProfiles: vi.fn().mockResolvedValue(undefined),
   } as unknown as ReturnType<typeof useSession>);
 }
 
