@@ -537,6 +537,26 @@ describe("MediaItemCard actions", () => {
     expect(status).toBeInTheDocument();
   });
 
+  it("retries a failed state load when the More menu opens again", async () => {
+    vi.useRealTimers();
+    vi.mocked(fetchItemState).mockRejectedValueOnce(new Error("offline"));
+    renderCard();
+    const more = screen.getByRole("button", { name: "More actions for Alpha" });
+
+    fireEvent.click(more);
+    const mark = await screen.findByRole("menuitem", { name: "Mark watched" });
+    await screen.findByRole("status");
+    expect(mark).toHaveAttribute("aria-disabled", "true");
+    fireEvent.keyDown(mark, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+
+    fireEvent.click(more);
+    const again = await screen.findByRole("menuitem", { name: "Mark watched" });
+    await waitFor(() => expect(again).not.toHaveAttribute("aria-disabled", "true"));
+    expect(fetchItemState).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
   it("keeps the touch menu target at 44px, declared after the base row height", () => {
     const css = readFileSync(resolve(process.cwd(), "src/components/chrome/chrome.css"), "utf8");
     const base = css.indexOf(".bf-card-menu-item {\n  display: flex;");

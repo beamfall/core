@@ -19,7 +19,8 @@ const COPIED_RESET_MS = 2000;
 // built on the Base UI menu so arrow keys, Escape, typeahead and focus return
 // come from the primitive. The Profile's watched state loads when the menu
 // first opens, so a grid of cards costs no extra requests. A failed load or
-// action is reported on the card itself, because the popup has closed by then.
+// action is reported on the card itself, because the popup has closed by then;
+// opening the menu again retries a failed load.
 export function MediaItemCardMenu({
   title,
   primaryLabel,
@@ -40,7 +41,9 @@ export function MediaItemCardMenu({
   const t = useT();
   const [copied, setCopied] = useState(false);
   const [opened, setOpened] = useState(false);
-  const { state, pending, failed, setWatched } = useItemActions(target, { enabled: opened });
+  const { state, pending, failed, retry, setWatched } = useItemActions(target, {
+    enabled: opened,
+  });
   const watched = state?.watched ?? false;
   const resetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -72,7 +75,14 @@ export function MediaItemCardMenu({
           {t("itemActionFailed")}
         </span>
       )}
-      <Menu.Root onOpenChange={(open) => open && setOpened(true)}>
+      <Menu.Root
+        onOpenChange={(open) => {
+          if (!open) return;
+          // A state load that failed is tried again each time the menu opens.
+          if (opened && failed && !state) retry();
+          setOpened(true);
+        }}
+      >
         <Menu.Trigger className="bf-card-more" aria-label={t("cardMoreActions", { title })}>
           <MoreVertical aria-hidden="true" size={16} />
         </Menu.Trigger>
