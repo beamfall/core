@@ -478,6 +478,26 @@ export function renditionIndex(renditions: PlaybackRendition[] | undefined, key:
   return renditions.findIndex((rendition) => renditionKey(rendition) === key);
 }
 
+/**
+ * The index in hls.js's level list of `rendition`, or -1 on a miss. The server lists
+ * renditions highest-first but hls.js orders levels by ascending bitrate, so a
+ * rendition's list position is not its level index: match by height, else bitrate.
+ */
+export function hlsLevelIndex(
+  levels: ReadonlyArray<{ height?: number; bitrate?: number }> | undefined,
+  rendition: PlaybackRendition | undefined,
+): number {
+  if (!levels || !rendition) return -1;
+  if (rendition.height) {
+    const byHeight = levels.findIndex((level) => level.height === rendition.height);
+    if (byHeight >= 0) return byHeight;
+  }
+  if (rendition.bandwidth) {
+    return levels.findIndex((level) => level.bitrate === rendition.bandwidth);
+  }
+  return -1;
+}
+
 export interface RenditionMenuOption {
   id: string;
   label: string;

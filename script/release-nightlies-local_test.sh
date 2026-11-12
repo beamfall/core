@@ -32,6 +32,11 @@ case " ${FAKE_FAIL:-} " in *" $tier "*) echo "fake $tier failing"; exit 3 ;; esa
 if [ "$tier" = fuzz-nightly ] && [ "${FAKE_MOVE_HEAD:-0}" = 1 ]; then
   git commit -q --allow-empty -m moved
 fi
+if [ "$tier" = fuzz-nightly ] && [ "${FAKE_DIRTY:-}" = untracked ]; then
+  touch tier-left-untracked
+elif [ "$tier" = fuzz-nightly ] && [ "${FAKE_DIRTY:-}" = tracked ]; then
+  echo changed >>Makefile
+fi
 echo "fake $tier passed"
 SH
 cat >"$fake/Makefile" <<'MAKE'
@@ -225,6 +230,18 @@ if run_runner head-moved FAKE_MOVE_HEAD=1; then fail "runner passed after HEAD m
 grep -q 'HEAD moved during fuzz-nightly' "$tmp/head-moved.out" || fail "HEAD-move message missing"
 [ ! -e "$evidence/fuzz-nightly.json" ] || fail "record written after HEAD moved"
 [ "$(wc -l <"$tmp/calls")" -eq 1 ] || fail "tiers kept running after HEAD moved"
+
+# 8b. A tier that dirties the tree (untracked file or tracked edit) is recorded
+# nowhere and stops the run, so later tiers never run on an untested tree.
+for mode in untracked tracked; do
+  rm -rf "$evidence"
+  if run_runner "dirtied-$mode" FAKE_DIRTY=$mode; then fail "runner passed after a tier left a $mode change"; fi
+  grep -q 'uncommitted changes after fuzz-nightly' "$tmp/dirtied-$mode.out" || fail "$mode dirty-after-tier message missing"
+  [ ! -e "$evidence/fuzz-nightly.json" ] || fail "record written for a tier that left a $mode change"
+  [ "$(wc -l <"$tmp/calls")" -eq 1 ] || fail "tiers kept running after a $mode change"
+  rm -f "$fake/tier-left-untracked"
+  git -C "$fake" checkout -q -- Makefile
+done
 
 # 9. A relative evidence directory is resolved once, against the caller's
 # directory, so every tier's record lands in the same place.
