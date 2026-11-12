@@ -315,6 +315,32 @@ if [ "\${1:-}" = test ]; then
     printf '%s\n' "\$RACE_TEST_PHANTOM"
     exit 0
   fi
+  # A promoted shard can be killed before go test reports its package, and
+  # can be counted against its siblings to observe the worker limit.
+  case "\$*" in
+    *" -json -run "*)
+      if [ -n "\${RACE_TEST_KILL_SHARD:-}" ]; then
+        case "\$*" in *"\$RACE_TEST_KILL_SHARD"*) exit 137 ;; esac
+      fi
+      if [ -n "\${RACE_TEST_ACTIVE_DIR:-}" ]; then
+        : >"\$RACE_TEST_ACTIVE_DIR/active.\$\$"
+        waited=0
+        while :; do
+          active="\$(find "\$RACE_TEST_ACTIVE_DIR" -name 'active.*' | wc -l | tr -d ' ')"
+          printf '%s\n' "\$active" >>"\$RACE_TEST_ACTIVE_DIR/seen"
+          if [ "\$active" -ge "\${RACE_TEST_AWAIT_ACTIVE:-1}" ] || [ "\$waited" -ge 300 ]; then
+            break
+          fi
+          sleep 0.1
+          waited=\$((waited + 1))
+        done
+        "$REAL_GO" "\$@"
+        status=\$?
+        rm -f "\$RACE_TEST_ACTIVE_DIR/active.\$\$"
+        exit "\$status"
+      fi
+      ;;
+  esac
 fi
 exec "$REAL_GO" "\$@"
 EOF
@@ -415,6 +441,41 @@ grep -Fq -- '--- PASS: TestGraphFixtureRuns' "$TMP/race-graph-fail.out" \
 grep -Fq '"package": "github.com/beamfall/core/internal/graph", "status": "fail"' \
   "$RACE_EVIDENCE/race-short-packages.jsonl" \
   || fail "a passing shard overwrote the failed graph package evidence"
+
+# A shard killed before it reports its package still records the package as
+# failed, although its sibling shard passes.
+: >"$RACE_TEST_LOG"
+if ( cd "$RACE_REPO" && PATH="$RACE_SHIM:$PATH" AGENT_EVIDENCE_DIR="$RACE_EVIDENCE" \
+    GATE_DIFF_BASE="$RACE_GRAPH_BASE" GATE_DIFF_HEAD=HEAD RACE_TEST_EXECUTE=1 \
+    RACE_SHORT_PROMOTED_SHARDS=4 RACE_SHORT_PROMOTED_JOBS=2 \
+    RACE_TEST_KILL_SHARD=TestGraphFixtureFailsOnRequest script/race-test.sh short ) \
+    >"$TMP/race-graph-killed.out" 2>&1; then
+  fail "race-short passed although a promoted shard was killed"
+fi
+grep -Fq -- '--- PASS: TestGraphFixtureRuns' "$TMP/race-graph-killed.out" \
+  || fail "race-short did not run the sibling of the killed shard"
+grep -Fq '"package": "github.com/beamfall/core/internal/graph", "status": "fail"' \
+  "$RACE_EVIDENCE/race-short-packages.jsonl" \
+  || fail "a passing shard hid a killed shard in the graph package evidence"
+
+# The worker limit bounds how many shards run at once: two workers run the two
+# shards together, one worker never overlaps them.
+promoted_peak() {
+  local jobs="$1" await="$2" dir="$TMP/race-active-$1"
+  mkdir -p "$dir"
+  : >"$RACE_TEST_LOG"
+  ( cd "$RACE_REPO" && PATH="$RACE_SHIM:$PATH" AGENT_EVIDENCE_DIR="$RACE_EVIDENCE" \
+      GATE_DIFF_BASE="$RACE_GRAPH_BASE" GATE_DIFF_HEAD=HEAD RACE_TEST_EXECUTE=1 \
+      RACE_SHORT_PROMOTED_SHARDS=4 RACE_SHORT_PROMOTED_JOBS="$jobs" \
+      RACE_TEST_ACTIVE_DIR="$dir" RACE_TEST_AWAIT_ACTIVE="$await" \
+      script/race-test.sh short ) >"$TMP/race-graph-jobs-$jobs.out" 2>&1 \
+    || fail "race-short graph fixture failed with $jobs promoted workers"
+  sort -n "$dir/seen" | tail -1
+}
+[ "$(promoted_peak 2 2)" = 2 ] \
+  || fail "race-short did not run two promoted shards together with two workers"
+[ "$(promoted_peak 1 1)" = 1 ] \
+  || fail "race-short ran promoted shards together past a one-worker limit"
 
 # A listed test that no shard reports fails the phase by name, even though
 # every go test process exits zero.

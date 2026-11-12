@@ -396,6 +396,11 @@ for (pkg, names), (path, status) in zip(plan, results):
             if event.get("Action") in {"pass", "fail", "skip"}:
                 reported.add(event.get("Test"))
     if status != 0:
+        # A shard killed before its final package event leaves no verdict of
+        # its own, and a passing sibling would then record the package as
+        # passed. Write the failure for every shard that exits nonzero.
+        sys.stdout.write(json.dumps(
+            {"Action": "fail", "Package": pkg, "Elapsed": 0}) + "\n")
         failed = status
         continue
     if names is not None:
