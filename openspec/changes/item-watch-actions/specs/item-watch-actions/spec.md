@@ -6,9 +6,7 @@ The `setWatched` mutation SHALL set the calling Profile's watched state for one 
 for every visible Media a visible Entity relates to directly or through its same-Kind child
 Entities. Marking watched SHALL clear the resume position and count one play when the Media was not
 already watched. Marking unwatched SHALL clear the watched state, the resume position and the play
-count. The mark SHALL be appended to the engagement event log so that a projection rebuild
-reproduces it. A hidden or unknown target SHALL be refused the same way as a missing one, and no
-other Profile's state SHALL change.
+count. The mark SHALL survive a projection rebuild and SHALL NOT change another Profile's state.
 
 #### Scenario: Mark one Media watched
 
