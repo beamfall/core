@@ -36,6 +36,14 @@ const (
 	// watching recovers on its own instead of staying degraded until restart.
 	defaultRetryBase = time.Second
 	defaultRetryMax  = 5 * time.Minute
+	// defaultStableAfter is how long a re-established watch must survive before
+	// its failure count is forgotten. A watch that comes up and dies again
+	// sooner keeps climbing the backoff instead of restarting every
+	// defaultRetryBase forever.
+	defaultStableAfter = time.Minute
+	// defaultWarnInterval is the least time between two degrade warnings for
+	// one root; failures in between are counted and reported on the next one.
+	defaultWarnInterval = 5 * time.Minute
 )
 
 // Status reports the current watcher state for a Library or root.
@@ -88,12 +96,14 @@ type Service struct {
 	maxWatch int
 	addWait  time.Duration
 	// retryBase/retryMax are the restart backoff bounds; tests shrink them.
-	retryBase time.Duration
-	retryMax  time.Duration
-	ctx       context.Context
-	cancel    context.CancelFunc
-	closed    bool
-	disabled  bool
+	retryBase   time.Duration
+	retryMax    time.Duration
+	stableAfter time.Duration
+	warnEvery   time.Duration
+	ctx         context.Context
+	cancel      context.CancelFunc
+	closed      bool
+	disabled    bool
 }
 
 type rootKey struct {
@@ -112,27 +122,41 @@ type rootState struct {
 	newWatch  func() (Backend, error)
 	retryBase time.Duration
 	retryMax  time.Duration
-	ctx       context.Context
-	cancel    context.CancelFunc
-	mu        sync.Mutex
-	timer     *time.Timer
-	active    bool
-	available bool
-	starting  bool
-	err       string
-	closed    bool
-	timedOut  bool
+	// stableAfter and warnEvery bound a flapping root: see the defaults.
+	stableAfter time.Duration
+	warnEvery   time.Duration
+	ctx         context.Context
+	cancel      context.CancelFunc
+	mu          sync.Mutex
+	timer       *time.Timer
+	active      bool
+	available   bool
+	starting    bool
+	err         string
+	closed      bool
+	timedOut    bool
 	// watched is the set of directories this root has armed a native watch
 	// for. It dedupes Add calls (handleEvent re-walks subtrees on every Create
 	// event) and enforces maxWatch so a huge tree can't exhaust the kernel
 	// file table. capWarned ensures the cap-reached warning logs once.
-	watched           map[string]struct{}
-	capWarned         bool
-	unavailableLogged bool
-	// retry is the pending backoff restart, if any; failures counts
-	// consecutive failed (re)starts and drives the backoff exponent.
-	retry    *time.Timer
-	failures int
+	watched   map[string]struct{}
+	capWarned bool
+	// degraded is set from the first failure of an outage until the watch is
+	// re-established, so one outage is reported at most once however many
+	// restarts fail. warned records that the report was actually logged (and
+	// so a "restored" line is owed); lastWarn and suppressed rate-limit the
+	// reports across outages. lastOverflowLog does the same for overflows.
+	degraded        bool
+	warned          bool
+	lastWarn        time.Time
+	suppressed      int
+	lastOverflowLog time.Time
+	// retry is the pending backoff restart, if any. failures counts restarts
+	// scheduled since the watch last stayed up for stableAfter and drives the
+	// backoff exponent; startedAt is when the current watch came up.
+	retry     *time.Timer
+	failures  int
+	startedAt time.Time
 	// rearming is set while an overflow recovery walk is in flight.
 	rearming bool
 }
@@ -162,18 +186,20 @@ func NewService(opts Options) *Service {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Service{
-		roots:     map[rootKey]*rootState{},
-		debounce:  opts.Debounce,
-		newWatch:  opts.NewWatcher,
-		enqueue:   opts.EnqueueScan,
-		logger:    opts.Logger,
-		maxWatch:  opts.MaxWatchedDirs,
-		addWait:   opts.AddTimeout,
-		retryBase: defaultRetryBase,
-		retryMax:  defaultRetryMax,
-		disabled:  opts.Disabled,
-		ctx:       ctx,
-		cancel:    cancel,
+		roots:       map[rootKey]*rootState{},
+		debounce:    opts.Debounce,
+		newWatch:    opts.NewWatcher,
+		enqueue:     opts.EnqueueScan,
+		logger:      opts.Logger,
+		maxWatch:    opts.MaxWatchedDirs,
+		addWait:     opts.AddTimeout,
+		retryBase:   defaultRetryBase,
+		retryMax:    defaultRetryMax,
+		stableAfter: defaultStableAfter,
+		warnEvery:   defaultWarnInterval,
+		disabled:    opts.Disabled,
+		ctx:         ctx,
+		cancel:      cancel,
 	}
 }
 
@@ -205,17 +231,19 @@ func (s *Service) Observe(libraryID store.LibraryID, root string) Status {
 		return state.startOrRetry()
 	}
 	state := &rootState{
-		key:       key,
-		debounce:  s.debounce,
-		enqueue:   s.enqueue,
-		logger:    s.logger,
-		maxWatch:  s.maxWatch,
-		addWait:   s.addWait,
-		newWatch:  s.newWatch,
-		retryBase: s.retryBase,
-		retryMax:  s.retryMax,
-		ctx:       s.ctx,
-		watched:   map[string]struct{}{},
+		key:         key,
+		debounce:    s.debounce,
+		enqueue:     s.enqueue,
+		logger:      s.logger,
+		maxWatch:    s.maxWatch,
+		addWait:     s.addWait,
+		newWatch:    s.newWatch,
+		retryBase:   s.retryBase,
+		retryMax:    s.retryMax,
+		stableAfter: s.stableAfter,
+		warnEvery:   s.warnEvery,
+		ctx:         s.ctx,
+		watched:     map[string]struct{}{},
 	}
 	state.ctx, state.cancel = context.WithCancel(s.ctx)
 	s.roots[key] = state
@@ -327,10 +355,12 @@ func (s *rootState) start() error {
 	s.starting = false
 	s.err = ""
 	s.timedOut = false
-	s.failures = 0
-	recovered := s.unavailableLogged
-	// Re-arm the degrade warning so a later failure is reported again.
-	s.unavailableLogged = false
+	// failures is deliberately kept: only a watch that then stays up for
+	// stableAfter earns a fresh backoff (see fail).
+	s.startedAt = time.Now()
+	s.degraded = false
+	recovered := s.warned
+	s.warned = false
 	s.mu.Unlock()
 	if recovered {
 		s.logger.Info("live watch restored", "library", string(s.key.libraryID), "root", s.key.root)
@@ -414,6 +444,9 @@ func (s *rootState) fail(backend Backend, err error) {
 		s.backend = nil
 		s.watched = map[string]struct{}{}
 	}
+	if time.Since(s.startedAt) >= s.stableAfter {
+		s.failures = 0
+	}
 	s.mu.Unlock()
 	s.markUnavailable(err)
 	s.scheduleRestart()
@@ -429,8 +462,16 @@ func (s *rootState) recoverOverflow() {
 		return
 	}
 	s.rearming = true
+	// A long copy overflows the queue again and again; each overflow is
+	// recovered, but only one per warnEvery is worth a line.
+	now := time.Now()
+	level := slog.LevelDebug
+	if s.lastOverflowLog.IsZero() || now.Sub(s.lastOverflowLog) >= s.warnEvery {
+		s.lastOverflowLog = now
+		level = slog.LevelInfo
+	}
 	s.mu.Unlock()
-	s.logger.Info("live watch event queue overflowed; rescanning root", "library", string(s.key.libraryID), "root", s.key.root)
+	s.logger.Log(s.ctx, level, "live watch event queue overflowed; rescanning root", "library", string(s.key.libraryID), "root", s.key.root)
 	go func() {
 		defer func() {
 			s.mu.Lock()
@@ -531,12 +572,27 @@ func (s *rootState) markUnavailable(err error) Status {
 		s.err = err.Error()
 		s.timedOut = errors.Is(err, context.DeadlineExceeded)
 	}
-	shouldLog := !s.unavailableLogged
-	s.unavailableLogged = true
+	// One report per outage, and across outages at most one per warnEvery: a
+	// root that keeps coming up and dying must not write a line each time.
+	level, suppressed := slog.LevelDebug, 0
+	if !s.degraded {
+		s.degraded = true
+		now := time.Now()
+		if s.lastWarn.IsZero() || now.Sub(s.lastWarn) >= s.warnEvery {
+			level, suppressed = slog.LevelWarn, s.suppressed
+			s.lastWarn, s.suppressed, s.warned = now, 0, true
+		} else {
+			s.suppressed++
+		}
+	}
 	status := s.snapshotLocked()
 	s.mu.Unlock()
-	if shouldLog {
-		s.logger.Warn("live watch unavailable; using scheduled scans", "library", string(s.key.libraryID), "root", s.key.root, "reason", err)
+	if s.logger.Enabled(s.ctx, level) {
+		attrs := []any{"library", string(s.key.libraryID), "root", s.key.root, "reason", err}
+		if suppressed > 0 {
+			attrs = append(attrs, "failures_since_last_warning", suppressed)
+		}
+		s.logger.Log(s.ctx, level, "live watch unavailable; using scheduled scans", attrs...)
 	}
 	return status
 }

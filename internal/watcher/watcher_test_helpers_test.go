@@ -35,3 +35,12 @@ func (s *Service) setRetryBackoffForTest(base, max time.Duration) {
 	s.retryBase = base
 	s.retryMax = max
 }
+
+// setFlapLimitsForTest sets how long a watch must stay up to reset its backoff
+// and the least time between degrade warnings; call before Observe.
+func (s *Service) setFlapLimitsForTest(stableAfter, warnEvery time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.stableAfter = stableAfter
+	s.warnEvery = warnEvery
+}

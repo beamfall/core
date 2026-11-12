@@ -197,6 +197,7 @@ func TestFatalBackendErrorRestartsWatchWithBackoff(t *testing.T) {
 		Logger:      slog.New(slog.NewTextHandler(logs, nil)),
 	})
 	service.setRetryBackoffForTest(5*time.Millisecond, 20*time.Millisecond)
+	service.setFlapLimitsForTest(time.Minute, 0) // every outage is reported
 	t.Cleanup(func() { _ = service.Close() })
 
 	service.Observe("library-local", root)
@@ -326,5 +327,181 @@ func TestUnreadableRootStaysUnavailable(t *testing.T) {
 	t.Cleanup(func() { _ = service.Close() })
 	if status := service.Observe("library-local", root); status.Active || status.Available || status.Error == "" {
 		t.Fatalf("status = %#v, want unavailable for a missing root", status)
+	}
+}
+
+const (
+	degradeLine  = "live watch unavailable; using scheduled scans"
+	restoredLine = "live watch restored"
+	overflowLine = "live watch event queue overflowed"
+)
+
+func rootStateFor(t *testing.T, service *Service, libraryID store.LibraryID, root string) *rootState {
+	t.Helper()
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	state := service.roots[rootKey{libraryID: libraryID, root: filepath.Clean(root)}]
+	if state == nil {
+		t.Fatalf("no watcher state for %s", root)
+	}
+	return state
+}
+
+// flap kills the watch and returns the backend that replaces it and how long
+// the replacement took.
+func flap(t *testing.T, service *Service, factory *backendFactory, be *scriptedBackend) (*scriptedBackend, time.Duration) {
+	t.Helper()
+	killed := time.Now() // before the send, so waited can only overstate the delay
+	be.errs <- errors.New("watch descriptor lost")
+	next := waitBackend(t, factory.madeCh)
+	waited := time.Since(killed)
+	waitFor(t, "watch restored", func() bool { return service.Status("library-local").Active })
+	return next, waited
+}
+
+func TestFlappingWatchBacksOffAndWarnsOnce(t *testing.T) {
+	// feature:watcher: CORE-1170. A watch that comes up and dies again at
+	// once must climb the backoff to its cap and write one warning, not restart
+	// every retryBase with a warning each time.
+	root := t.TempDir()
+	logs := &syncBuffer{}
+	factory := newBackendFactory()
+	service := NewService(Options{NewWatcher: factory.newWatcher, Logger: slog.New(slog.NewTextHandler(logs, nil))})
+	const base, limit = 5 * time.Millisecond, 80 * time.Millisecond
+	service.setRetryBackoffForTest(base, limit)
+	service.setFlapLimitsForTest(time.Hour, time.Hour)
+	t.Cleanup(func() { _ = service.Close() })
+
+	service.Observe("library-local", root)
+	be := waitBackend(t, factory.madeCh)
+	want := base
+	for i := range 7 {
+		var waited time.Duration
+		be, waited = flap(t, service, factory, be)
+		// A timer never fires early, so the delay is a hard lower bound.
+		if waited < want {
+			t.Fatalf("restart %d came after %v, want at least %v", i+1, waited, want)
+		}
+		want = min(want*2, limit)
+	}
+	if want != limit {
+		t.Fatalf("test never reached the backoff cap: %v", want)
+	}
+	if got := logs.count(degradeLine); got != 1 {
+		t.Fatalf("degrade warnings = %d, want 1 for a flapping root", got)
+	}
+	if got := logs.count(restoredLine); got != 1 {
+		t.Fatalf("restored lines = %d, want 1", got)
+	}
+}
+
+func TestStableWatchResetsBackoff(t *testing.T) {
+	root := t.TempDir()
+	factory := newBackendFactory()
+	service := NewService(Options{NewWatcher: factory.newWatcher})
+	service.setRetryBackoffForTest(time.Millisecond, time.Hour)
+	service.setFlapLimitsForTest(time.Hour, time.Hour)
+	t.Cleanup(func() { _ = service.Close() })
+
+	service.Observe("library-local", root)
+	be := waitBackend(t, factory.madeCh)
+	state := rootStateFor(t, service, "library-local", root)
+	for range 3 {
+		be, _ = flap(t, service, factory, be)
+	}
+	state.mu.Lock()
+	climbed := state.failures
+	// The current watch has now been up for longer than the stability window.
+	state.startedAt = time.Now().Add(-2 * time.Hour)
+	state.mu.Unlock()
+	if climbed != 3 {
+		t.Fatalf("failures after three flaps = %d, want 3", climbed)
+	}
+
+	flap(t, service, factory, be)
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.failures != 1 {
+		t.Fatalf("failures after a stable watch failed = %d, want 1 (backoff restarted)", state.failures)
+	}
+}
+
+func TestDegradeWarningCarriesSuppressedCountAfterInterval(t *testing.T) {
+	root := t.TempDir()
+	logs := &syncBuffer{}
+	factory := newBackendFactory()
+	service := NewService(Options{NewWatcher: factory.newWatcher, Logger: slog.New(slog.NewTextHandler(logs, nil))})
+	service.setRetryBackoffForTest(time.Millisecond, 2*time.Millisecond)
+	service.setFlapLimitsForTest(time.Hour, time.Hour)
+	t.Cleanup(func() { _ = service.Close() })
+
+	service.Observe("library-local", root)
+	be := waitBackend(t, factory.madeCh)
+	for range 3 { // one warning, two suppressed
+		be, _ = flap(t, service, factory, be)
+	}
+	if got := logs.count(degradeLine); got != 1 {
+		t.Fatalf("degrade warnings inside the interval = %d, want 1", got)
+	}
+
+	state := rootStateFor(t, service, "library-local", root)
+	state.mu.Lock()
+	state.lastWarn = time.Now().Add(-2 * time.Hour) // the interval has passed
+	state.mu.Unlock()
+	flap(t, service, factory, be)
+	if got := logs.count(degradeLine); got != 2 {
+		t.Fatalf("degrade warnings after the interval = %d, want 2", got)
+	}
+	if got := logs.count("failures_since_last_warning=2"); got != 1 {
+		t.Fatalf("suppressed count missing from the second warning: %d", got)
+	}
+	if got := logs.count(restoredLine); got != 2 {
+		t.Fatalf("restored lines = %d, want one per written warning", got)
+	}
+}
+
+func TestRepeatedStartFailuresWarnOncePerOutage(t *testing.T) {
+	root := t.TempDir()
+	logs := &syncBuffer{}
+	factory := newBackendFactory()
+	factory.failures = 4
+	service := NewService(Options{NewWatcher: factory.newWatcher, Logger: slog.New(slog.NewTextHandler(logs, nil))})
+	service.setRetryBackoffForTest(time.Millisecond, 2*time.Millisecond)
+	service.setFlapLimitsForTest(time.Hour, 0) // even with no rate limit
+	t.Cleanup(func() { _ = service.Close() })
+
+	service.Observe("library-local", root)
+	waitBackend(t, factory.madeCh)
+	waitFor(t, "watch established", func() bool { return service.Status("library-local").Active })
+	if got := logs.count(degradeLine); got != 1 {
+		t.Fatalf("degrade warnings for one outage of four failed starts = %d, want 1", got)
+	}
+}
+
+func TestRepeatedOverflowLogsOncePerInterval(t *testing.T) {
+	root := t.TempDir()
+	logs := &syncBuffer{}
+	factory := newBackendFactory()
+	enqueue, scans := scanRecorder()
+	service := NewService(Options{
+		Debounce: time.Millisecond, NewWatcher: factory.newWatcher, EnqueueScan: enqueue,
+		Logger: slog.New(slog.NewTextHandler(logs, nil)),
+	})
+	t.Cleanup(func() { _ = service.Close() })
+
+	service.Observe("library-local", root)
+	be := waitBackend(t, factory.madeCh)
+	state := rootStateFor(t, service, "library-local", root)
+	for i := range 3 {
+		be.errs <- fsnotify.ErrEventOverflow
+		waitScan(t, scans, "overflow rescan") // every overflow is still recovered
+		waitFor(t, "recovery walk finished", func() bool {
+			state.mu.Lock()
+			defer state.mu.Unlock()
+			return !state.rearming
+		})
+		if got := logs.count(overflowLine); got != 1 {
+			t.Fatalf("overflow lines after %d overflows = %d, want 1", i+1, got)
+		}
 	}
 }
