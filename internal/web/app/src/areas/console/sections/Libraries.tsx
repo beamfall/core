@@ -281,7 +281,12 @@ export function Libraries() {
     await createLibrary(title.trim(), pluginID === NO_PLUGIN ? null : pluginID);
     setTitle("");
     setPluginID(NO_PLUGIN);
-    await libs.refresh();
+    await refreshLibraries();
+  }
+
+  // Watcher state follows roots, so it reloads with the library list.
+  async function refreshLibraries() {
+    await Promise.all([libs.refresh(), watchers.refresh()]);
   }
 
   const pluginList = plugins.data ?? [];
@@ -295,7 +300,7 @@ export function Libraries() {
       actions={
         <>
           <RescanAllButton libraries={libs.data ?? []} />
-          <Button variant="outline" size="sm" onClick={() => void libs.refresh()}>
+          <Button variant="outline" size="sm" onClick={() => void refreshLibraries()}>
             <RefreshCw className="console-nav-icon" aria-hidden />
             {t("refresh")}
           </Button>
@@ -352,7 +357,7 @@ export function Libraries() {
               skipDetectionEnabled={skipDetectionByLibrary.get(library.id) ?? false}
               watcher={watchers.data?.find((w) => w.libraryID === library.id)}
               onChanged={() => {
-                void libs.refresh();
+                void refreshLibraries();
                 void skipDetection.refresh();
               }}
             />
