@@ -8,7 +8,19 @@
    "fields": [
      {
        "field": "acceptpendingaitag",
-@@ -541,6 +541,11 @@
+@@ -475,6 +475,11 @@
+     {
+       "field": "invitetowatchparty",
+       "effect": "write",
++      "tier": "session"
++    },
++    {
++      "field": "itemstate",
++      "effect": "read",
+       "tier": "session"
+     },
+     {
+@@ -541,6 +546,11 @@
        "field": "libraryindexstatus",
        "effect": "read",
        "tier": "admin"
@@ -20,7 +32,36 @@
      },
      {
        "field": "linkmediarelation",
-@@ -1570,6 +1575,23 @@
+@@ -1161,6 +1171,11 @@
+       "field": "setqualitypolicy",
+       "effect": "write",
+       "tier": "admin"
++    },
++    {
++      "field": "setrating",
++      "effect": "write",
++      "tier": "session"
+     },
+     {
+       "field": "setretentioncandidatehold",
+@@ -1203,6 +1218,16 @@
+       "tier": "session"
+     },
+     {
++      "field": "setwatched",
++      "effect": "write",
++      "tier": "session"
++    },
++    {
++      "field": "setwatchlisted",
++      "effect": "write",
++      "tier": "session"
++    },
++    {
+       "field": "skipdetectionenabled",
+       "effect": "read",
+       "tier": "admin"
+@@ -1570,6 +1595,23 @@
            "name": "windows",
            "kind": "list",
            "nullable": true,
@@ -44,7 +85,7 @@
            "children": [
              {
                "name": "endMinute",
-@@ -1730,6 +1752,24 @@
+@@ -1730,6 +1772,24 @@
            "name": "members",
            "kind": "list",
            "nullable": true,
@@ -69,10 +110,11 @@
            "children": [
              {
                "name": "addedAt",
-@@ -1776,6 +1816,88 @@
+@@ -1775,6 +1835,88 @@
+       "field": "addmediaexternalid",
        "kind": "object",
        "children": [
-         {
++        {
 +          "name": "artworkSlots",
 +          "kind": "map",
 +          "optional": true,
@@ -154,11 +196,10 @@
 +            }
 +          ]
 +        },
-+        {
+         {
            "name": "favorited",
            "kind": "scalar"
-         },
-@@ -1892,7 +2014,17 @@
+@@ -1892,7 +2034,17 @@
          {
            "name": "entityFilter",
            "kind": "object",
@@ -177,7 +218,7 @@
          },
          {
            "name": "entityID",
-@@ -1906,13 +2038,60 @@
+@@ -1906,13 +2058,60 @@
          },
          {
            "name": "fieldFilters",
@@ -241,12 +282,10 @@
          },
          {
            "name": "kind",
-@@ -1928,6 +2107,17 @@
-           "name": "limit",
-           "kind": "int",
+@@ -1930,11 +2129,27 @@
            "optional": true
-+        },
-+        {
+         },
+         {
 +          "name": "mode",
 +          "kind": "string",
 +          "optional": true,
@@ -256,10 +295,10 @@
 +            "recommend",
 +            "semantic"
 +          ]
-         },
-         {
++        },
++        {
            "name": "offset",
-@@ -1935,6 +2125,11 @@
+           "kind": "int",
            "optional": true
          },
          {
@@ -271,7 +310,7 @@
            "name": "seed",
            "kind": "string",
            "optional": true
-@@ -1960,9 +2155,12 @@
+@@ -1960,9 +2175,12 @@
          },
          {
            "name": "artworkSlots",
@@ -286,7 +325,7 @@
          },
          {
            "name": "id",
-@@ -2031,7 +2229,10 @@
+@@ -2031,7 +2249,10 @@
          {
            "name": "scopes",
            "kind": "list",
@@ -298,7 +337,7 @@
          }
        ]
      },
-@@ -2075,6 +2276,32 @@
+@@ -2075,6 +2296,32 @@
            "name": "grants",
            "kind": "list",
            "nullable": true,
@@ -331,7 +370,7 @@
            "children": [
              {
                "name": "allLibraries",
-@@ -2111,7 +2338,10 @@
+@@ -2111,7 +2358,10 @@
          {
            "name": "lifecycleActions",
            "kind": "list",
@@ -343,7 +382,7 @@
          },
          {
            "name": "pluginID",
-@@ -2197,6 +2427,41 @@
+@@ -2197,6 +2447,41 @@
            "name": "tags",
            "kind": "list",
            "nullable": true,
@@ -385,7 +424,7 @@
            "children": [
              {
                "name": "assignmentCount",
-@@ -2329,7 +2594,11 @@
+@@ -2329,7 +2614,11 @@
            "name": "children",
            "kind": "list",
            "optional": true,
@@ -398,7 +437,7 @@
          },
          {
            "name": "kind",
-@@ -2365,6 +2634,41 @@
+@@ -2365,6 +2654,41 @@
            "name": "tags",
            "kind": "list",
            "nullable": true,
@@ -440,7 +479,7 @@
            "children": [
              {
                "name": "assignmentCount",
-@@ -2434,6 +2738,23 @@
+@@ -2434,6 +2758,23 @@
            "name": "new",
            "kind": "list",
            "nullable": true,
@@ -464,7 +503,7 @@
            "children": [
              {
                "name": "name",
-@@ -2453,6 +2774,23 @@
+@@ -2453,6 +2794,23 @@
            "name": "old",
            "kind": "list",
            "nullable": true,
@@ -488,7 +527,7 @@
            "children": [
              {
                "name": "name",
-@@ -2577,6 +2915,32 @@
+@@ -2577,6 +2935,32 @@
      {
        "field": "capabilitystates",
        "kind": "list",
@@ -521,7 +560,7 @@
        "children": [
          {
            "name": "enabled",
-@@ -2715,6 +3079,24 @@
+@@ -2715,6 +3099,24 @@
            "name": "members",
            "kind": "list",
            "nullable": true,
@@ -546,7 +585,7 @@
            "children": [
              {
                "name": "addedAt",
-@@ -2764,6 +3146,19 @@
+@@ -2764,6 +3166,19 @@
            "name": "endpoints",
            "kind": "list",
            "nullable": true,
@@ -566,7 +605,7 @@
            "children": [
              {
                "name": "kind",
-@@ -2801,32 +3196,419 @@
+@@ -2801,32 +3216,419 @@
            "name": "plugins",
            "kind": "list",
            "nullable": true,
@@ -1011,7 +1050,7 @@
                    "children": [
                      {
                        "name": "configured",
-@@ -2839,8 +3621,11 @@
+@@ -2839,8 +3641,11 @@
                      },
                      {
                        "name": "label",
@@ -1025,7 +1064,7 @@
                      },
                      {
                        "name": "name",
-@@ -2851,11 +3636,31 @@
+@@ -2851,11 +3656,31 @@
                        "kind": "list",
                        "optional": true,
                        "nullable": true,
@@ -1059,7 +1098,7 @@
                          },
                          {
                            "name": "value",
-@@ -2878,65 +3683,867 @@
+@@ -2878,123 +3703,964 @@
                      }
                    ]
                  },
@@ -1076,6 +1115,50 @@
 -                },
 -                {
 -                  "name": "risk",
+-                  "kind": "scalar"
+-                }
+-              ]
+-            },
+-            {
+-              "name": "active",
+-              "kind": "scalar"
+-            },
+-            {
+-              "name": "config",
+-              "kind": "list",
+-              "nullable": true,
+-              "children": [
+-                {
+-                  "name": "configured",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "default",
+-                  "kind": "scalar",
+-                  "optional": true
+-                },
+-                {
+-                  "name": "label",
+-                  "kind": "scalar",
+-                  "nullable": true
+-                },
+-                {
+-                  "name": "name",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "options",
+-                  "kind": "list",
+-                  "optional": true,
+-                  "nullable": true,
+-                  "children": [
+-                    {
+-                      "name": "label",
+-                      "kind": "scalar",
+-                      "nullable": true
+-                    },
+-                    {
+-                      "name": "value",
 +                "children": [
 +                  {
 +                    "name": "configured",
@@ -1091,8 +1174,58 @@
 +                    "kind": "map",
 +                    "nullable": true,
 +                    "elem": {
-+                      "kind": "scalar"
-+                    }
+                       "kind": "scalar"
+                     }
+-                  ]
+-                },
+-                {
+-                  "name": "required",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "type",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "value",
+-                  "kind": "scalar",
+-                  "optional": true
+-                }
+-              ]
+-            },
+-            {
+-              "name": "controlPolicy",
+-              "kind": "scalar",
+-              "optional": true
+-            },
+-            {
+-              "name": "displayName",
+-              "kind": "scalar",
+-              "nullable": true
+-            },
+-            {
+-              "name": "id",
+-              "kind": "scalar"
+-            },
+-            {
+-              "name": "permissions",
+-              "kind": "list",
+-              "nullable": true,
+-              "children": [
+-                {
+-                  "name": "description",
+-                  "kind": "scalar",
+-                  "optional": true,
+-                  "nullable": true
+-                },
+-                {
+-                  "name": "highRisk",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "kind",
+-                  "kind": "scalar"
+-                },
 +                  },
 +                  {
 +                    "name": "name",
@@ -1160,42 +1293,8 @@
 +                "kind": "map",
 +                "nullable": true,
 +                "elem": {
-                   "kind": "scalar"
-                 }
--              ]
--            },
--            {
--              "name": "active",
--              "kind": "scalar"
--            },
--            {
--              "name": "config",
--              "kind": "list",
--              "nullable": true,
--              "children": [
--                {
--                  "name": "configured",
--                  "kind": "scalar"
--                },
--                {
--                  "name": "default",
--                  "kind": "scalar",
--                  "optional": true
--                },
--                {
--                  "name": "label",
--                  "kind": "scalar",
--                  "nullable": true
--                },
--                {
--                  "name": "name",
--                  "kind": "scalar"
--                },
--                {
--                  "name": "options",
--                  "kind": "list",
--                  "optional": true,
--                  "nullable": true,
++                  "kind": "scalar"
++                }
 +              },
 +              {
 +                "name": "id",
@@ -1207,8 +1306,8 @@
 +                "nullable": true,
 +                "elem": {
 +                  "kind": "object",
-                   "children": [
-                     {
++                  "children": [
++                    {
 +                      "name": "description",
 +                      "kind": "map",
 +                      "optional": true,
@@ -1226,7 +1325,7 @@
 +                      "kind": "scalar"
 +                    },
 +                    {
-                       "name": "label",
++                      "name": "label",
 +                      "kind": "map",
 +                      "nullable": true,
 +                      "elem": {
@@ -1288,11 +1387,10 @@
 +                    },
 +                    {
 +                      "name": "credentialError",
-                       "kind": "scalar",
--                      "nullable": true
++                      "kind": "scalar",
 +                      "optional": true
-                     },
-                     {
++                    },
++                    {
 +                      "name": "credentialRequired",
 +                      "kind": "scalar"
 +                    },
@@ -1635,7 +1733,7 @@
 +                ]
 +              },
 +              "children": [
-+                {
+                 {
 +                  "name": "confirmation",
 +                  "kind": "map",
 +                  "optional": true,
@@ -1802,7 +1900,7 @@
 +                      "kind": "scalar"
 +                    },
 +                    {
-                       "name": "value",
++                      "name": "value",
 +                      "kind": "scalar",
 +                      "optional": true
 +                    }
@@ -1856,8 +1954,8 @@
 +                    "kind": "map",
 +                    "nullable": true,
 +                    "elem": {
-                       "kind": "scalar"
-                     }
++                      "kind": "scalar"
++                    }
 +                  },
 +                  {
 +                    "name": "name",
@@ -1926,7 +2024,7 @@
 +                  "optional": true
 +                },
 +                {
-+                  "name": "label",
+                   "name": "label",
 +                  "kind": "map",
 +                  "nullable": true,
 +                  "elem": {
@@ -1972,27 +2070,45 @@
 +                      "name": "value",
 +                      "kind": "scalar"
 +                    }
-                   ]
-                 },
-                 {
-@@ -2961,8 +4568,11 @@
++                  ]
++                },
++                {
++                  "name": "required",
++                  "kind": "scalar"
++                },
++                {
++                  "name": "type",
++                  "kind": "scalar"
++                },
++                {
++                  "name": "value",
+                   "kind": "scalar",
+-                  "nullable": true
++                  "optional": true
+                 }
+               ]
              },
              {
-               "name": "displayName",
--              "kind": "scalar",
--              "nullable": true
++              "name": "controlPolicy",
++              "kind": "scalar",
++              "optional": true
++            },
++            {
++              "name": "displayName",
 +              "kind": "map",
 +              "nullable": true,
 +              "elem": {
 +                "kind": "scalar"
 +              }
-             },
-             {
-               "name": "id",
-@@ -2972,12 +4582,45 @@
-               "name": "permissions",
-               "kind": "list",
-               "nullable": true,
++            },
++            {
++              "name": "id",
++              "kind": "scalar"
++            },
++            {
++              "name": "permissions",
++              "kind": "list",
++              "nullable": true,
 +              "elem": {
 +                "kind": "object",
 +                "children": [
@@ -2023,35 +2139,39 @@
 +                  }
 +                ]
 +              },
-               "children": [
-                 {
-                   "name": "description",
--                  "kind": "scalar",
++              "children": [
++                {
++                  "name": "description",
 +                  "kind": "map",
-                   "optional": true,
--                  "nullable": true
++                  "optional": true,
 +                  "nullable": true,
 +                  "elem": {
 +                    "kind": "scalar"
 +                  }
-                 },
-                 {
-                   "name": "highRisk",
-@@ -2989,8 +4632,11 @@
-                 },
-                 {
-                   "name": "label",
--                  "kind": "scalar",
--                  "nullable": true
++                },
++                {
++                  "name": "highRisk",
++                  "kind": "scalar"
++                },
++                {
++                  "name": "kind",
++                  "kind": "scalar"
++                },
++                {
++                  "name": "label",
 +                  "kind": "map",
 +                  "nullable": true,
 +                  "elem": {
 +                    "kind": "scalar"
 +                  }
-                 }
-               ]
++                }
++              ]
++            },
++            {
+               "name": "provenance",
+               "kind": "scalar"
              },
-@@ -3002,6 +4648,56 @@
+@@ -3002,6 +4668,56 @@
                "name": "scrapers",
                "kind": "list",
                "nullable": true,
@@ -2108,7 +2228,7 @@
                "children": [
                  {
                    "name": "authRef",
-@@ -3054,6 +4750,32 @@
+@@ -3054,6 +4770,32 @@
                "name": "status",
                "kind": "list",
                "nullable": true,
@@ -2141,7 +2261,7 @@
                "children": [
                  {
                    "name": "detail",
-@@ -3066,8 +4788,11 @@
+@@ -3066,8 +4808,11 @@
                  },
                  {
                    "name": "label",
@@ -2155,7 +2275,7 @@
                  },
                  {
                    "name": "state",
-@@ -3146,7 +4871,10 @@
+@@ -3146,7 +4891,10 @@
              {
                "name": "scopes",
                "kind": "list",
@@ -2167,10 +2287,12 @@
              }
            ]
          },
-@@ -3257,6 +4985,24 @@
+@@ -3257,8 +5005,26 @@
            "name": "members",
            "kind": "list",
            "nullable": true,
+-          "children": [
+-            {
 +          "elem": {
 +            "kind": "object",
 +            "children": [
@@ -2189,10 +2311,12 @@
 +              }
 +            ]
 +          },
-           "children": [
-             {
++          "children": [
++            {
                "name": "addedAt",
-@@ -3336,7 +5082,10 @@
+               "kind": "scalar",
+               "optional": true
+@@ -3336,7 +5102,10 @@
            "name": "roots",
            "kind": "list",
            "optional": true,
@@ -2204,7 +2328,7 @@
          },
          {
            "name": "title",
-@@ -3388,7 +5137,10 @@
+@@ -3388,7 +5157,10 @@
          {
            "name": "tags",
            "kind": "list",
@@ -2216,11 +2340,10 @@
          },
          {
            "name": "title",
-@@ -3406,6 +5158,88 @@
-       "field": "createmediafromunmatched",
+@@ -3407,6 +5179,88 @@
        "kind": "object",
        "children": [
-+        {
+         {
 +          "name": "artworkSlots",
 +          "kind": "map",
 +          "optional": true,
@@ -2302,10 +2425,11 @@
 +            }
 +          ]
 +        },
-         {
++        {
            "name": "favorited",
            "kind": "scalar"
-@@ -3493,27 +5327,47 @@
+         },
+@@ -3493,12 +5347,32 @@
          {
            "name": "audioLanguages",
            "kind": "list",
@@ -2319,21 +2443,6 @@
            "name": "certificationCeilings",
            "kind": "list",
            "nullable": true,
--          "children": [
--            {
--              "name": "allowUnrated",
--              "kind": "scalar"
--            },
--            {
--              "name": "ceiling",
--              "kind": "scalar"
--            },
--            {
--              "name": "pluginID",
--              "kind": "scalar"
--            }
--          ]
--        },
 +          "elem": {
 +            "kind": "object",
 +            "children": [
@@ -2351,25 +2460,10 @@
 +              }
 +            ]
 +          },
-+          "children": [
-+            {
-+              "name": "allowUnrated",
-+              "kind": "scalar"
-+            },
-+            {
-+              "name": "ceiling",
-+              "kind": "scalar"
-+            },
-+            {
-+              "name": "pluginID",
-+              "kind": "scalar"
-+            }
-+          ]
-+        },
-         {
-           "name": "disabled",
-           "kind": "scalar"
-@@ -3529,7 +5383,10 @@
+           "children": [
+             {
+               "name": "allowUnrated",
+@@ -3529,7 +5403,10 @@
          {
            "name": "libraryIDs",
            "kind": "list",
@@ -2381,7 +2475,7 @@
          },
          {
            "name": "maxConcurrentStreams",
-@@ -3547,7 +5404,10 @@
+@@ -3547,7 +5424,10 @@
          {
            "name": "subtitleLanguages",
            "kind": "list",
@@ -2393,7 +2487,7 @@
          },
          {
            "name": "subtitleMode",
-@@ -3724,12 +5584,28 @@
+@@ -3724,12 +5604,28 @@
          {
            "name": "invitees",
            "kind": "list",
@@ -2423,7 +2517,7 @@
            "children": [
              {
                "name": "displayName",
-@@ -3759,7 +5635,10 @@
+@@ -3759,7 +5655,10 @@
            "name": "audioLanguages",
            "kind": "list",
            "optional": true,
@@ -2435,7 +2529,7 @@
          },
          {
            "name": "deviceRole",
-@@ -3795,7 +5674,10 @@
+@@ -3795,7 +5694,10 @@
            "name": "subtitleLanguages",
            "kind": "list",
            "optional": true,
@@ -2447,7 +2541,7 @@
          },
          {
            "name": "subtitleMode",
-@@ -3868,6 +5750,24 @@
+@@ -3868,6 +5770,24 @@
            "name": "members",
            "kind": "list",
            "nullable": true,
@@ -2472,7 +2566,7 @@
            "children": [
              {
                "name": "addedAt",
-@@ -3961,7 +5861,10 @@
+@@ -3961,7 +5881,10 @@
          {
            "name": "tags",
            "kind": "list",
@@ -2484,7 +2578,7 @@
          },
          {
            "name": "title",
-@@ -3987,6 +5890,19 @@
+@@ -3987,6 +5910,19 @@
            "name": "excludedLibraries",
            "kind": "list",
            "nullable": true,
@@ -2504,7 +2598,7 @@
            "children": [
              {
                "name": "libraryID",
-@@ -4217,7 +6133,10 @@
+@@ -4217,7 +6153,10 @@
          {
            "name": "scraperIDs",
            "kind": "list",
@@ -2516,7 +2610,7 @@
          }
        ]
      },
-@@ -4314,6 +6233,19 @@
+@@ -4314,6 +6253,19 @@
            "name": "history",
            "kind": "list",
            "nullable": true,
@@ -2536,7 +2630,7 @@
            "children": [
              {
                "name": "occurredAt",
-@@ -4343,19 +6275,51 @@
+@@ -4343,19 +6295,51 @@
        "children": [
          {
            "name": "attributes",
@@ -2592,7 +2686,7 @@
              },
              {
                "name": "name",
-@@ -4381,9 +6345,12 @@
+@@ -4381,9 +6365,12 @@
          },
          {
            "name": "kindDisplayName",
@@ -2607,7 +2701,7 @@
          },
          {
            "name": "title",
-@@ -4405,12 +6372,41 @@
+@@ -4405,12 +6392,41 @@
            "name": "fields",
            "kind": "list",
            "nullable": true,
@@ -2651,7 +2745,7 @@
              },
              {
                "name": "name",
-@@ -4436,9 +6432,12 @@
+@@ -4436,9 +6452,12 @@
          },
          {
            "name": "kindDisplayName",
@@ -2666,7 +2760,7 @@
          },
          {
            "name": "title",
-@@ -4463,8 +6462,11 @@
+@@ -4463,8 +6482,11 @@
        "children": [
          {
            "name": "attributes",
@@ -2680,7 +2774,7 @@
          },
          {
            "name": "entity",
-@@ -4476,12 +6478,41 @@
+@@ -4476,12 +6498,41 @@
                "name": "fields",
                "kind": "list",
                "nullable": true,
@@ -2724,7 +2818,7 @@
                  },
                  {
                    "name": "name",
-@@ -4507,9 +6538,12 @@
+@@ -4507,9 +6558,12 @@
              },
              {
                "name": "kindDisplayName",
@@ -2739,7 +2833,7 @@
              },
              {
                "name": "title",
-@@ -4524,6 +6558,88 @@
+@@ -4524,6 +6578,88 @@
            "nullable": true,
            "children": [
              {
@@ -2828,11 +2922,10 @@
                "name": "favorited",
                "kind": "scalar"
              },
-@@ -4646,6 +6762,88 @@
-         }
+@@ -4647,6 +6783,88 @@
        ],
        "children": [
-+        {
+         {
 +          "name": "artworkSlots",
 +          "kind": "map",
 +          "optional": true,
@@ -2914,10 +3007,11 @@
 +            }
 +          ]
 +        },
-         {
++        {
            "name": "favorited",
            "kind": "scalar"
-@@ -4676,9 +6874,12 @@
+         },
+@@ -4676,9 +6894,12 @@
        "children": [
          {
            "name": "artwork",
@@ -2932,7 +3026,7 @@
          },
          {
            "name": "confidence",
-@@ -4755,7 +6956,11 @@
+@@ -4755,7 +6976,11 @@
            "name": "children",
            "kind": "list",
            "optional": true,
@@ -2945,7 +3039,7 @@
          },
          {
            "name": "kind",
-@@ -4791,6 +6996,27 @@
+@@ -4791,6 +7016,27 @@
            "name": "members",
            "kind": "list",
            "nullable": true,
@@ -2973,7 +3067,7 @@
            "children": [
              {
                "name": "clockOffsetMS",
-@@ -4817,6 +7043,88 @@
+@@ -4817,6 +7063,88 @@
        "kind": "object",
        "children": [
          {
@@ -3062,7 +3156,7 @@
            "name": "favorited",
            "kind": "scalar"
          },
-@@ -4846,9 +7154,12 @@
+@@ -4846,9 +7174,12 @@
        "children": [
          {
            "name": "artwork",
@@ -3077,7 +3171,7 @@
          },
          {
            "name": "id",
-@@ -4876,9 +7187,12 @@
+@@ -4876,9 +7207,12 @@
        "children": [
          {
            "name": "artwork",
@@ -3092,7 +3186,7 @@
          },
          {
            "name": "id",
-@@ -4907,7 +7221,10 @@
+@@ -4907,7 +7241,10 @@
          {
            "name": "categories",
            "kind": "list",
@@ -3104,7 +3198,7 @@
          },
          {
            "name": "conflict",
-@@ -4931,8 +7248,11 @@
+@@ -4931,8 +7268,11 @@
          },
          {
            "name": "displayName",
@@ -3118,7 +3212,7 @@
          },
          {
            "name": "id",
-@@ -5039,6 +7359,44 @@
+@@ -5039,6 +7379,44 @@
            "name": "unmatchedRecords",
            "kind": "list",
            "nullable": true,
@@ -3163,7 +3257,7 @@
            "children": [
              {
                "name": "candidateID",
-@@ -5097,12 +7455,28 @@
+@@ -5097,12 +7475,28 @@
          {
            "name": "invitees",
            "kind": "list",
@@ -3193,7 +3287,52 @@
            "children": [
              {
                "name": "displayName",
-@@ -5459,6 +7833,27 @@
+@@ -5120,6 +7514,44 @@
+         },
+         {
+           "name": "relaxed",
++          "kind": "scalar"
++        }
++      ]
++    },
++    {
++      "field": "itemstate",
++      "kind": "object",
++      "arguments": [
++        {
++          "name": "entityID",
++          "kind": "string",
++          "optional": true
++        },
++        {
++          "name": "mediaID",
++          "kind": "string",
++          "optional": true
++        }
++      ],
++      "children": [
++        {
++          "name": "id",
++          "kind": "scalar"
++        },
++        {
++          "name": "kind",
++          "kind": "scalar"
++        },
++        {
++          "name": "rating",
++          "kind": "scalar"
++        },
++        {
++          "name": "watched",
++          "kind": "scalar"
++        },
++        {
++          "name": "watchlisted",
+           "kind": "scalar"
+         }
+       ]
+@@ -5459,6 +7891,27 @@
            "name": "members",
            "kind": "list",
            "nullable": true,
@@ -3221,7 +3360,7 @@
            "children": [
              {
                "name": "clockOffsetMS",
-@@ -5538,7 +7933,10 @@
+@@ -5538,7 +7991,10 @@
            "name": "roots",
            "kind": "list",
            "optional": true,
@@ -3233,7 +3372,7 @@
          },
          {
            "name": "title",
-@@ -5554,6 +7952,23 @@
+@@ -5554,6 +8010,23 @@
            "name": "items",
            "kind": "list",
            "nullable": true,
@@ -3257,7 +3396,7 @@
            "children": [
              {
                "name": "libraryID",
-@@ -5577,8 +7992,11 @@
+@@ -5577,8 +8050,11 @@
        "children": [
          {
            "name": "counts",
@@ -3271,22 +3410,18 @@
          },
          {
            "name": "libraryID",
-@@ -5635,8 +8053,294 @@
-         {
-           "name": "title",
-           "kind": "scalar"
-+        },
-+        {
-+          "name": "total",
-+          "kind": "scalar"
-+        }
-+      ]
-+    },
-+    {
+@@ -5643,166 +8119,897 @@
+       ]
+     },
+     {
+-      "field": "linkmediarelation",
 +      "field": "libraryitems",
-+      "kind": "object",
+       "kind": "object",
+-      "children": [
 +      "arguments": [
-+        {
+         {
+-          "name": "relation",
+-          "kind": "scalar"
 +          "name": "direction",
 +          "kind": "string",
 +          "optional": true,
@@ -3294,30 +3429,92 @@
 +            "asc",
 +            "desc"
 +          ]
-+        },
-+        {
+         },
+         {
+-          "name": "sourceID",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "targetID",
+-          "kind": "scalar"
+-        }
+-      ]
+-    },
+-    {
+-      "field": "linkscrobble",
+-      "kind": "object",
+-      "children": [
+-        {
+-          "name": "accountLabel",
+-          "kind": "scalar",
+-          "optional": true
 +          "name": "groupFilters",
 +          "kind": "map",
 +          "optional": true,
 +          "elem": {
 +            "kind": "string"
 +          }
-+        },
-+        {
+         },
+         {
+-          "name": "linked",
+-          "kind": "scalar"
 +          "name": "libraryID",
 +          "kind": "string"
-+        },
-+        {
+         },
+         {
+-          "name": "linkedAt",
+-          "kind": "scalar",
 +          "name": "limit",
 +          "kind": "int",
-+          "optional": true
-+        },
-+        {
-+          "name": "offset",
+           "optional": true
+         },
+         {
+-          "name": "service",
+-          "kind": "scalar"
+-        }
+-      ]
+-    },
+-    {
+-      "field": "livesessions",
+-      "kind": "object",
+-      "children": [
+-        {
+-          "name": "deviceID",
+-          "kind": "scalar"
++          "name": "minRating",
 +          "kind": "int",
 +          "optional": true
-+        },
-+        {
+         },
+         {
+-          "name": "deviceName",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "deviceRole",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "durationSeconds",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "expiresAt",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "libraryID",
+-          "kind": "scalar",
++          "name": "offset",
++          "kind": "int",
+           "optional": true
+         },
+         {
+-          "name": "mediaID",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "positionSeconds",
+-          "kind": "scalar"
 +          "name": "quality",
 +          "kind": "string",
 +          "optional": true,
@@ -3327,13 +3524,17 @@
 +            "sd",
 +            "uhd"
 +          ]
-+        },
-+        {
+         },
+         {
+-          "name": "profileID",
+-          "kind": "scalar"
 +          "name": "seed",
 +          "kind": "string",
 +          "optional": true
-+        },
-+        {
+         },
+         {
+-          "name": "profileName",
+-          "kind": "scalar"
 +          "name": "sort",
 +          "kind": "string",
 +          "optional": true,
@@ -3342,11 +3543,14 @@
 +            "duration",
 +            "last-watched",
 +            "random",
++            "rating",
 +            "title",
 +            "year"
 +          ]
-+        },
-+        {
+         },
+         {
+-          "name": "sessionID",
+-          "kind": "scalar"
 +          "name": "watch",
 +          "kind": "string",
 +          "optional": true,
@@ -3355,35 +3559,64 @@
 +            "unwatched",
 +            "watched"
 +          ]
-+        },
-+        {
+         },
+         {
+-          "name": "title",
+-          "kind": "scalar",
 +          "name": "yearFrom",
 +          "kind": "int",
-+          "optional": true
-+        },
-+        {
+           "optional": true
+         },
+         {
+-          "name": "transcoding",
+-          "kind": "scalar"
 +          "name": "yearTo",
 +          "kind": "int",
 +          "optional": true
-+        }
+         }
+-      ]
+-    },
+-    {
+-      "field": "manifest",
+-      "kind": "object",
 +      ],
-+      "children": [
-+        {
+       "children": [
+         {
+-          "name": "generatedAt",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "layouts",
+-          "kind": "list",
+-          "nullable": true,
 +          "name": "facets",
 +          "kind": "object",
-+          "children": [
-+            {
+           "children": [
+             {
+-              "name": "entityKind",
+-              "kind": "scalar",
+-              "optional": true
 +              "name": "decades",
 +              "kind": "list",
 +              "nullable": true,
 +              "elem": {
 +                "kind": "scalar"
 +              }
-+            },
-+            {
+             },
+             {
+-              "name": "id",
+-              "kind": "scalar"
+-            },
+-            {
+-              "name": "role",
+-              "kind": "scalar",
+-              "optional": true
+-            },
+-            {
+-              "name": "sections",
 +              "name": "groupings",
-+              "kind": "list",
-+              "nullable": true,
+               "kind": "list",
+               "nullable": true,
 +              "elem": {
 +                "kind": "object",
 +                "children": [
@@ -3410,21 +3643,40 @@
 +                  }
 +                ]
 +              },
-+              "children": [
-+                {
+               "children": [
+                 {
+-                  "name": "artworkSlot",
 +                  "name": "kind",
-+                  "kind": "scalar"
-+                },
-+                {
+                   "kind": "scalar"
+                 },
+                 {
+-                  "name": "filters",
+-                  "kind": "list",
 +                  "name": "title",
 +                  "kind": "map",
-+                  "optional": true,
-+                  "nullable": true,
+                   "optional": true,
+                   "nullable": true,
+-                  "children": [
+-                    {
+-                      "name": "field",
+-                      "kind": "scalar"
+-                    },
+-                    {
+-                      "name": "label",
+-                      "kind": "scalar",
+-                      "optional": true,
+-                      "nullable": true
+-                    },
+-                    {
+-                      "name": "value",
+-                      "kind": "scalar"
+-                    }
+-                  ]
 +                  "elem": {
 +                    "kind": "scalar"
 +                  }
-+                },
-+                {
+                 },
+                 {
 +                  "name": "values",
 +                  "kind": "list",
 +                  "nullable": true,
@@ -3443,8 +3695,8 @@
 +              }
 +            }
 +          ]
-         },
-         {
++        },
++        {
 +          "name": "items",
 +          "kind": "list",
 +          "nullable": true,
@@ -3563,42 +3815,125 @@
 +          ]
 +        },
 +        {
-           "name": "total",
-           "kind": "scalar"
-         }
-@@ -5756,57 +8460,496 @@
-           "name": "layouts",
-           "kind": "list",
-           "nullable": true,
--          "children": [
--            {
--              "name": "entityKind",
--              "kind": "scalar",
--              "optional": true
--            },
--            {
--              "name": "id",
--              "kind": "scalar"
--            },
--            {
--              "name": "role",
--              "kind": "scalar",
--              "optional": true
--            },
--            {
--              "name": "sections",
--              "kind": "list",
--              "nullable": true,
--              "children": [
--                {
--                  "name": "artworkSlot",
--                  "kind": "scalar"
--                },
--                {
--                  "name": "filters",
--                  "kind": "list",
--                  "optional": true,
--                  "nullable": true,
++          "name": "total",
++          "kind": "scalar"
++        }
++      ]
++    },
++    {
++      "field": "linkmediarelation",
++      "kind": "object",
++      "children": [
++        {
++          "name": "relation",
++          "kind": "scalar"
++        },
++        {
++          "name": "sourceID",
++          "kind": "scalar"
++        },
++        {
++          "name": "targetID",
++          "kind": "scalar"
++        }
++      ]
++    },
++    {
++      "field": "linkscrobble",
++      "kind": "object",
++      "children": [
++        {
++          "name": "accountLabel",
++          "kind": "scalar",
++          "optional": true
++        },
++        {
++          "name": "linked",
++          "kind": "scalar"
++        },
++        {
++          "name": "linkedAt",
++          "kind": "scalar",
++          "optional": true
++        },
++        {
++          "name": "service",
++          "kind": "scalar"
++        }
++      ]
++    },
++    {
++      "field": "livesessions",
++      "kind": "object",
++      "children": [
++        {
++          "name": "deviceID",
++          "kind": "scalar"
++        },
++        {
++          "name": "deviceName",
++          "kind": "scalar"
++        },
++        {
++          "name": "deviceRole",
++          "kind": "scalar"
++        },
++        {
++          "name": "durationSeconds",
++          "kind": "scalar"
++        },
++        {
++          "name": "expiresAt",
++          "kind": "scalar"
++        },
++        {
++          "name": "libraryID",
++          "kind": "scalar",
++          "optional": true
++        },
++        {
++          "name": "mediaID",
++          "kind": "scalar"
++        },
++        {
++          "name": "positionSeconds",
++          "kind": "scalar"
++        },
++        {
++          "name": "profileID",
++          "kind": "scalar"
++        },
++        {
++          "name": "profileName",
++          "kind": "scalar"
++        },
++        {
++          "name": "sessionID",
++          "kind": "scalar"
++        },
++        {
++          "name": "title",
++          "kind": "scalar",
++          "optional": true
++        },
++        {
++          "name": "transcoding",
++          "kind": "scalar"
++        }
++      ]
++    },
++    {
++      "field": "manifest",
++      "kind": "object",
++      "children": [
++        {
++          "name": "generatedAt",
++          "kind": "scalar"
++        },
++        {
++          "name": "layouts",
++          "kind": "list",
++          "nullable": true,
 +          "elem": {
 +            "kind": "object",
 +            "children": [
@@ -3622,29 +3957,15 @@
 +                "nullable": true,
 +                "elem": {
 +                  "kind": "object",
-                   "children": [
-                     {
--                      "name": "field",
++                  "children": [
++                    {
 +                      "name": "artworkSlot",
-                       "kind": "scalar"
-                     },
-                     {
--                      "name": "label",
--                      "kind": "scalar",
++                      "kind": "scalar"
++                    },
++                    {
 +                      "name": "filters",
 +                      "kind": "list",
-                       "optional": true,
--                      "nullable": true
--                    },
--                    {
--                      "name": "value",
--                      "kind": "scalar"
--                    }
--                  ]
--                },
--                {
--                  "name": "id",
--                  "kind": "scalar"
++                      "optional": true,
 +                      "nullable": true,
 +                      "elem": {
 +                        "kind": "object",
@@ -4050,8 +4371,8 @@
 +                {
 +                  "name": "artworkSlot",
 +                  "kind": "scalar"
-                 },
-                 {
++                },
++                {
 +                  "name": "filters",
 +                  "kind": "list",
 +                  "optional": true,
@@ -4099,14 +4420,10 @@
 +                  ]
 +                },
 +                {
-+                  "name": "id",
-+                  "kind": "scalar"
-+                },
-+                {
-                   "name": "kind",
+                   "name": "id",
                    "kind": "scalar"
                  },
-@@ -5814,7 +8957,10 @@
+@@ -5814,7 +9021,10 @@
                    "name": "playbackAffordances",
                    "kind": "list",
                    "optional": true,
@@ -4118,7 +4435,7 @@
                  },
                  {
                    "name": "source",
-@@ -5843,9 +8989,12 @@
+@@ -5843,9 +9053,12 @@
                      },
                      {
                        "name": "fieldFilters",
@@ -4133,7 +4450,7 @@
                      },
                      {
                        "name": "kind",
-@@ -5865,8 +9014,11 @@
+@@ -5865,8 +9078,11 @@
                  },
                  {
                    "name": "title",
@@ -4147,7 +4464,7 @@
                  }
                ]
              }
-@@ -5876,6 +9028,33 @@
+@@ -5876,6 +9092,33 @@
            "name": "libraries",
            "kind": "list",
            "nullable": true,
@@ -4181,7 +4498,7 @@
            "children": [
              {
                "name": "accent",
-@@ -5905,6 +9084,36 @@
+@@ -5905,6 +9148,36 @@
            "name": "navigation",
            "kind": "list",
            "nullable": true,
@@ -4218,7 +4535,7 @@
            "children": [
              {
                "name": "id",
-@@ -5921,8 +9130,11 @@
+@@ -5921,8 +9194,11 @@
              },
              {
                "name": "title",
@@ -4232,7 +4549,7 @@
              },
              {
                "name": "view",
-@@ -5994,7 +9206,10 @@
+@@ -5994,7 +9270,10 @@
          {
            "name": "tags",
            "kind": "list",
@@ -4244,7 +4561,7 @@
          },
          {
            "name": "title",
-@@ -6032,6 +9247,88 @@
+@@ -6032,6 +9311,88 @@
          }
        ],
        "children": [
@@ -4333,7 +4650,7 @@
          {
            "name": "favorited",
            "kind": "scalar"
-@@ -6082,9 +9379,12 @@
+@@ -6082,9 +9443,12 @@
        "children": [
          {
            "name": "label",
@@ -4348,7 +4665,7 @@
          },
          {
            "name": "name",
-@@ -6166,9 +9466,12 @@
+@@ -6166,9 +9530,12 @@
          },
          {
            "name": "artworkSlots",
@@ -4363,11 +4680,10 @@
          },
          {
            "name": "id",
-@@ -6222,7 +9525,89 @@
-           "name": "media",
+@@ -6223,6 +9590,88 @@
            "kind": "object",
            "children": [
-+            {
+             {
 +              "name": "artworkSlots",
 +              "kind": "map",
 +              "optional": true,
@@ -4376,7 +4692,7 @@
 +                "kind": "scalar"
 +              }
 +            },
-             {
++            {
 +              "name": "credits",
 +              "kind": "list",
 +              "optional": true,
@@ -4453,10 +4769,23 @@
                "name": "favorited",
                "kind": "scalar"
              },
-@@ -6296,6 +9681,31 @@
+@@ -6296,20 +9745,45 @@
            "name": "collections",
            "kind": "list",
            "nullable": true,
+-          "children": [
+-            {
+-              "name": "createdAt",
+-              "kind": "scalar"
+-            },
+-            {
+-              "name": "id",
+-              "kind": "scalar"
+-            },
+-            {
+-              "name": "libraryID",
+-              "kind": "scalar"
+-            },
 +          "elem": {
 +            "kind": "object",
 +            "children": [
@@ -4482,10 +4811,24 @@
 +              }
 +            ]
 +          },
-           "children": [
++          "children": [
              {
-               "name": "createdAt",
-@@ -6323,17 +9733,121 @@
++              "name": "createdAt",
++              "kind": "scalar"
++            },
++            {
++              "name": "id",
++              "kind": "scalar"
++            },
++            {
++              "name": "libraryID",
++              "kind": "scalar"
++            },
++            {
+               "name": "name",
+               "kind": "scalar"
+             },
+@@ -6323,17 +9797,121 @@
            "name": "entities",
            "kind": "list",
            "nullable": true,
@@ -4609,7 +4952,7 @@
                  },
                  {
                    "name": "name",
-@@ -6375,6 +9889,28 @@
+@@ -6375,6 +9953,28 @@
            "name": "libraries",
            "kind": "list",
            "nullable": true,
@@ -4638,20 +4981,10 @@
            "children": [
              {
                "name": "id",
-@@ -6399,61 +9935,342 @@
+@@ -6399,11 +9999,263 @@
            "name": "media",
            "kind": "list",
            "nullable": true,
--          "children": [
--            {
--              "name": "artworkPins",
--              "kind": "list",
--              "nullable": true,
--              "children": [
--                {
--                  "name": "pluginID",
--                  "kind": "scalar",
--                  "optional": true
 +          "elem": {
 +            "kind": "object",
 +            "children": [
@@ -4682,11 +5015,7 @@
 +                      "optional": true
 +                    }
 +                  ]
-                 },
--                {
--                  "name": "scraperID",
--                  "kind": "scalar",
--                  "optional": true
++                },
 +                "children": [
 +                  {
 +                    "name": "pluginID",
@@ -4756,43 +5085,7 @@
 +                      "kind": "scalar"
 +                    }
 +                  ]
-                 },
--                {
--                  "name": "slot",
--                  "kind": "scalar"
--                },
--                {
--                  "name": "sourceURL",
--                  "kind": "scalar",
--                  "optional": true
--                }
--              ]
--            },
--            {
--              "name": "class",
--              "kind": "scalar"
--            },
--            {
--              "name": "codec",
--              "kind": "scalar",
--              "optional": true
--            },
--            {
--              "name": "container",
--              "kind": "scalar",
--              "optional": true
--            },
--            {
--              "name": "durationSeconds",
--              "kind": "scalar"
--            },
--            {
--              "name": "fields",
--              "kind": "list",
--              "nullable": true,
--              "children": [
--                {
--                  "name": "label",
++                },
 +                "children": [
 +                  {
 +                    "name": "label",
@@ -4920,11 +5213,11 @@
 +              }
 +            ]
 +          },
-+          "children": [
-+            {
-+              "name": "artworkPins",
-+              "kind": "list",
-+              "nullable": true,
+           "children": [
+             {
+               "name": "artworkPins",
+               "kind": "list",
+               "nullable": true,
 +              "elem": {
 +                "kind": "object",
 +                "children": [
@@ -4949,50 +5242,13 @@
 +                  }
 +                ]
 +              },
-+              "children": [
-+                {
-+                  "name": "pluginID",
-                   "kind": "scalar",
-+                  "optional": true
-+                },
-+                {
-+                  "name": "scraperID",
-+                  "kind": "scalar",
-+                  "optional": true
-+                },
-+                {
-+                  "name": "slot",
-+                  "kind": "scalar"
-+                },
-+                {
-+                  "name": "sourceURL",
-+                  "kind": "scalar",
-+                  "optional": true
-+                }
-+              ]
-+            },
-+            {
-+              "name": "class",
-+              "kind": "scalar"
-+            },
-+            {
-+              "name": "codec",
-+              "kind": "scalar",
-+              "optional": true
-+            },
-+            {
-+              "name": "container",
-+              "kind": "scalar",
-+              "optional": true
-+            },
-+            {
-+              "name": "durationSeconds",
-+              "kind": "scalar"
-+            },
-+            {
-+              "name": "fields",
-+              "kind": "list",
-+              "nullable": true,
+               "children": [
+                 {
+                   "name": "pluginID",
+@@ -6448,12 +10300,41 @@
+               "name": "fields",
+               "kind": "list",
+               "nullable": true,
 +              "elem": {
 +                "kind": "object",
 +                "children": [
@@ -5019,9 +5275,10 @@
 +                  }
 +                ]
 +              },
-+              "children": [
-+                {
-+                  "name": "label",
+               "children": [
+                 {
+                   "name": "label",
+-                  "kind": "scalar",
 +                  "kind": "map",
                    "optional": true,
 -                  "nullable": true
@@ -5032,7 +5289,7 @@
                  },
                  {
                    "name": "name",
-@@ -6481,6 +10298,42 @@
+@@ -6481,6 +10362,42 @@
                "name": "markers",
                "kind": "list",
                "nullable": true,
@@ -5075,7 +5332,7 @@
                "children": [
                  {
                    "name": "endSeconds",
-@@ -6504,7 +10357,10 @@
+@@ -6504,7 +10421,10 @@
                  {
                    "name": "tags",
                    "kind": "list",
@@ -5087,7 +5344,7 @@
                  },
                  {
                    "name": "title",
-@@ -6537,12 +10393,41 @@
+@@ -6537,12 +10457,41 @@
            "name": "mediaLinks",
            "kind": "list",
            "nullable": true,
@@ -5131,7 +5388,7 @@
              },
              {
                "name": "fromMediaID",
-@@ -6562,12 +10447,47 @@
+@@ -6562,12 +10511,47 @@
            "name": "relations",
            "kind": "list",
            "nullable": true,
@@ -5181,7 +5438,7 @@
              },
              {
                "name": "fromEntityID",
-@@ -6653,6 +10573,19 @@
+@@ -6653,6 +10637,19 @@
            "name": "libraryBreakdown",
            "kind": "list",
            "nullable": true,
@@ -5201,7 +5458,7 @@
            "children": [
              {
                "name": "libraryID",
-@@ -6690,6 +10623,27 @@
+@@ -6690,6 +10687,27 @@
            "name": "collections",
            "kind": "list",
            "nullable": true,
@@ -5229,7 +5486,7 @@
            "children": [
              {
                "name": "createdAt",
-@@ -6717,6 +10671,24 @@
+@@ -6717,6 +10735,24 @@
            "name": "connections",
            "kind": "list",
            "nullable": true,
@@ -5254,7 +5511,7 @@
            "children": [
              {
                "name": "accountLabel",
-@@ -6737,6 +10709,38 @@
+@@ -6737,6 +10773,38 @@
            "name": "engagementEvents",
            "kind": "list",
            "nullable": true,
@@ -5293,7 +5550,7 @@
            "children": [
              {
                "name": "entityID",
-@@ -6771,6 +10775,19 @@
+@@ -6771,6 +10839,19 @@
            "name": "excludedLibraries",
            "kind": "list",
            "nullable": true,
@@ -5313,7 +5570,7 @@
            "children": [
              {
                "name": "libraryID",
-@@ -6795,6 +10812,19 @@
+@@ -6795,6 +10876,19 @@
            "name": "favorites",
            "kind": "list",
            "nullable": true,
@@ -5333,7 +5590,7 @@
            "children": [
              {
                "name": "favoritedAt",
-@@ -6810,6 +10840,42 @@
+@@ -6810,6 +10904,42 @@
            "name": "markers",
            "kind": "list",
            "nullable": true,
@@ -5376,7 +5633,7 @@
            "children": [
              {
                "name": "endSeconds",
-@@ -6833,7 +10899,10 @@
+@@ -6833,7 +10963,10 @@
              {
                "name": "tags",
                "kind": "list",
@@ -5388,7 +5645,7 @@
              },
              {
                "name": "title",
-@@ -6845,6 +10914,27 @@
+@@ -6845,6 +10978,27 @@
            "name": "mutes",
            "kind": "list",
            "nullable": true,
@@ -5416,7 +5673,7 @@
            "children": [
              {
                "name": "includeDescendants",
-@@ -6868,6 +10958,35 @@
+@@ -6868,6 +11022,35 @@
            "name": "playbackProgress",
            "kind": "list",
            "nullable": true,
@@ -5452,7 +5709,7 @@
            "children": [
              {
                "name": "durationSeconds",
-@@ -6922,6 +11041,19 @@
+@@ -6922,6 +11105,19 @@
            "name": "queue",
            "kind": "list",
            "nullable": true,
@@ -5472,7 +5729,54 @@
            "children": [
              {
                "name": "addedAt",
-@@ -6937,6 +11069,27 @@
+@@ -6934,9 +11130,74 @@
+           ]
+         },
+         {
++          "name": "ratings",
++          "kind": "list",
++          "nullable": true,
++          "elem": {
++            "kind": "object",
++            "children": [
++              {
++                "name": "ratedAt",
++                "kind": "scalar"
++              },
++              {
++                "name": "rating",
++                "kind": "scalar"
++              },
++              {
++                "name": "targetID",
++                "kind": "scalar"
++              },
++              {
++                "name": "targetKind",
++                "kind": "scalar"
++              }
++            ]
++          },
++          "children": [
++            {
++              "name": "ratedAt",
++              "kind": "scalar"
++            },
++            {
++              "name": "rating",
++              "kind": "scalar"
++            },
++            {
++              "name": "targetID",
++              "kind": "scalar"
++            },
++            {
++              "name": "targetKind",
++              "kind": "scalar"
++            }
++          ]
++        },
++        {
            "name": "savedFilters",
            "kind": "list",
            "nullable": true,
@@ -5500,7 +5804,50 @@
            "children": [
              {
                "name": "createdAt",
-@@ -6974,6 +11127,27 @@
+@@ -6963,6 +11224,42 @@
+         {
+           "name": "sealedLibrariesExcluded",
+           "kind": "scalar"
++        },
++        {
++          "name": "watchlist",
++          "kind": "list",
++          "nullable": true,
++          "elem": {
++            "kind": "object",
++            "children": [
++              {
++                "name": "addedAt",
++                "kind": "scalar"
++              },
++              {
++                "name": "targetID",
++                "kind": "scalar"
++              },
++              {
++                "name": "targetKind",
++                "kind": "scalar"
++              }
++            ]
++          },
++          "children": [
++            {
++              "name": "addedAt",
++              "kind": "scalar"
++            },
++            {
++              "name": "targetID",
++              "kind": "scalar"
++            },
++            {
++              "name": "targetKind",
++              "kind": "scalar"
++            }
++          ]
+         }
+       ]
+     },
+@@ -6974,6 +11271,27 @@
            "name": "events",
            "kind": "list",
            "nullable": true,
@@ -5528,7 +5875,7 @@
            "children": [
              {
                "name": "kind",
-@@ -7007,6 +11181,19 @@
+@@ -7007,6 +11325,19 @@
            "name": "packTokens",
            "kind": "list",
            "nullable": true,
@@ -5548,7 +5895,7 @@
            "children": [
              {
                "name": "expiresAt",
-@@ -7022,6 +11209,36 @@
+@@ -7022,6 +11353,36 @@
            "name": "sessions",
            "kind": "list",
            "nullable": true,
@@ -5585,7 +5932,7 @@
            "children": [
              {
                "name": "current",
-@@ -7054,6 +11271,19 @@
+@@ -7054,6 +11415,19 @@
            "name": "streamTokens",
            "kind": "list",
            "nullable": true,
@@ -5605,7 +5952,7 @@
            "children": [
              {
                "name": "expiresAt",
-@@ -7079,129 +11309,292 @@
+@@ -7079,53 +11453,492 @@
            "name": "layouts",
            "kind": "list",
            "nullable": true,
@@ -5682,28 +6029,7 @@
 -                  ]
 -                },
 -                {
--                  "name": "id",
--                  "kind": "scalar"
--                },
--                {
--                  "name": "kind",
--                  "kind": "scalar"
--                },
--                {
--                  "name": "playbackAffordances",
--                  "kind": "list",
--                  "optional": true,
--                  "nullable": true
--                },
--                {
--                  "name": "source",
--                  "kind": "object",
--                  "children": [
--                    {
--                      "name": "entityFilter",
--                      "kind": "object",
--                      "optional": true,
-                       "nullable": true,
++                      "nullable": true,
 +                      "elem": {
 +                        "kind": "object",
 +                        "children": [
@@ -5726,14 +6052,12 @@
 +                          }
 +                        ]
 +                      },
-                       "children": [
-                         {
--                          "name": "kind",
++                      "children": [
++                        {
 +                          "name": "field",
-                           "kind": "scalar"
-                         },
-                         {
--                          "name": "name",
++                          "kind": "scalar"
++                        },
++                        {
 +                          "name": "label",
 +                          "kind": "map",
 +                          "optional": true,
@@ -5744,31 +6068,19 @@
 +                        },
 +                        {
 +                          "name": "value",
-                           "kind": "scalar"
-                         }
-                       ]
-                     },
-                     {
--                      "name": "entityKind",
--                      "kind": "scalar",
--                      "optional": true
++                          "kind": "scalar"
++                        }
++                      ]
++                    },
++                    {
 +                      "name": "id",
 +                      "kind": "scalar"
-                     },
-                     {
--                      "name": "fieldFilters",
--                      "kind": "scalar",
--                      "optional": true,
--                      "nullable": true
--                    },
--                    {
-                       "name": "kind",
-                       "kind": "scalar"
-                     },
-                     {
--                      "name": "seed",
--                      "kind": "scalar",
--                      "optional": true
++                    },
++                    {
++                      "name": "kind",
++                      "kind": "scalar"
++                    },
++                    {
 +                      "name": "playbackAffordances",
 +                      "kind": "list",
 +                      "optional": true,
@@ -5776,11 +6088,8 @@
 +                      "elem": {
 +                        "kind": "scalar"
 +                      }
-                     },
-                     {
--                      "name": "value",
--                      "kind": "scalar",
--                      "optional": true
++                    },
++                    {
 +                      "name": "source",
 +                      "kind": "object",
 +                      "children": [
@@ -5837,22 +6146,9 @@
 +                      "elem": {
 +                        "kind": "scalar"
 +                      }
-                     }
-                   ]
-                 },
--                {
--                  "name": "title",
--                  "kind": "scalar",
--                  "nullable": true
--                }
--              ]
--            }
--          ]
--        },
--        {
--          "name": "libraries",
--          "kind": "list",
--          "nullable": true,
++                    }
++                  ]
++                },
 +                "children": [
 +                  {
 +                    "name": "artworkSlot",
@@ -5984,36 +6280,22 @@
 +              }
 +            ]
 +          },
-           "children": [
-             {
--              "name": "accent",
++          "children": [
++            {
 +              "name": "entityKind",
-               "kind": "scalar",
-               "optional": true
-             },
-@@ -7210,30 +11603,372 @@
-               "kind": "scalar"
-             },
-             {
--              "name": "pluginID",
-+              "name": "role",
-               "kind": "scalar",
--              "nullable": true
++              "kind": "scalar",
 +              "optional": true
-             },
-             {
--              "name": "previewClips",
--              "kind": "scalar"
--            },
--            {
--              "name": "title",
--              "kind": "scalar"
--            }
--          ]
--        },
--        {
--          "name": "navigation",
--          "kind": "list",
++            },
++            {
++              "name": "id",
++              "kind": "scalar"
++            },
++            {
++              "name": "role",
++              "kind": "scalar",
++              "optional": true
++            },
++            {
 +              "name": "sections",
 +              "kind": "list",
 +              "nullable": true,
@@ -6201,87 +6483,53 @@
 +                  ]
 +                },
 +                {
-+                  "name": "id",
-+                  "kind": "scalar"
-+                },
-+                {
-+                  "name": "kind",
-+                  "kind": "scalar"
-+                },
-+                {
-+                  "name": "playbackAffordances",
-+                  "kind": "list",
-+                  "optional": true,
+                   "name": "id",
+                   "kind": "scalar"
+                 },
+@@ -7137,7 +11950,10 @@
+                   "name": "playbackAffordances",
+                   "kind": "list",
+                   "optional": true,
+-                  "nullable": true
 +                  "nullable": true,
 +                  "elem": {
 +                    "kind": "scalar"
 +                  }
-+                },
-+                {
-+                  "name": "source",
-+                  "kind": "object",
-+                  "children": [
-+                    {
-+                      "name": "entityFilter",
-+                      "kind": "object",
-+                      "optional": true,
-+                      "nullable": true,
-+                      "children": [
-+                        {
-+                          "name": "kind",
-+                          "kind": "scalar"
-+                        },
-+                        {
-+                          "name": "name",
-+                          "kind": "scalar"
-+                        }
-+                      ]
-+                    },
-+                    {
-+                      "name": "entityKind",
-+                      "kind": "scalar",
-+                      "optional": true
-+                    },
-+                    {
-+                      "name": "fieldFilters",
+                 },
+                 {
+                   "name": "source",
+@@ -7166,9 +11982,12 @@
+                     },
+                     {
+                       "name": "fieldFilters",
+-                      "kind": "scalar",
 +                      "kind": "map",
-+                      "optional": true,
+                       "optional": true,
+-                      "nullable": true
 +                      "nullable": true,
 +                      "elem": {
 +                        "kind": "scalar"
 +                      }
-+                    },
-+                    {
-+                      "name": "kind",
-+                      "kind": "scalar"
-+                    },
-+                    {
-+                      "name": "seed",
-+                      "kind": "scalar",
-+                      "optional": true
-+                    },
-+                    {
-+                      "name": "value",
-+                      "kind": "scalar",
-+                      "optional": true
-+                    }
-+                  ]
-+                },
-+                {
-+                  "name": "title",
+                     },
+                     {
+                       "name": "kind",
+@@ -7188,8 +12007,11 @@
+                 },
+                 {
+                   "name": "title",
+-                  "kind": "scalar",
+-                  "nullable": true
 +                  "kind": "map",
 +                  "nullable": true,
 +                  "elem": {
 +                    "kind": "scalar"
 +                  }
-+                }
-+              ]
-+            }
-+          ]
-+        },
-+        {
-+          "name": "libraries",
-+          "kind": "list",
+                 }
+               ]
+             }
+@@ -7199,6 +12021,33 @@
+           "name": "libraries",
+           "kind": "list",
            "nullable": true,
 +          "elem": {
 +            "kind": "object",
@@ -6312,33 +6560,11 @@
 +          },
            "children": [
              {
-+              "name": "accent",
-+              "kind": "scalar",
-+              "optional": true
-+            },
-+            {
-               "name": "id",
-               "kind": "scalar"
-             },
-             {
-+              "name": "pluginID",
-+              "kind": "scalar",
-+              "nullable": true
-+            },
-+            {
-+              "name": "previewClips",
-+              "kind": "scalar"
-+            },
-+            {
-+              "name": "title",
-+              "kind": "scalar"
-+            }
-+          ]
-+        },
-+        {
-+          "name": "navigation",
-+          "kind": "list",
-+          "nullable": true,
+               "name": "accent",
+@@ -7228,6 +12077,36 @@
+           "name": "navigation",
+           "kind": "list",
+           "nullable": true,
 +          "elem": {
 +            "kind": "object",
 +            "children": [
@@ -6369,16 +6595,10 @@
 +              }
 +            ]
 +          },
-+          "children": [
-+            {
-+              "name": "id",
-+              "kind": "scalar"
-+            },
-+            {
-               "name": "layoutID",
-               "kind": "scalar"
-             },
-@@ -7244,8 +11979,11 @@
+           "children": [
+             {
+               "name": "id",
+@@ -7244,8 +12123,11 @@
              },
              {
                "name": "title",
@@ -6392,7 +6612,7 @@
              },
              {
                "name": "view",
-@@ -7294,22 +12032,55 @@
+@@ -7294,22 +12176,55 @@
          {
            "name": "hiddenNodeIDs",
            "kind": "list",
@@ -6454,7 +6674,7 @@
          },
          {
            "name": "themeAccentColor",
-@@ -7332,22 +12103,55 @@
+@@ -7332,22 +12247,55 @@
              {
                "name": "hiddenNodeIDs",
                "kind": "list",
@@ -6516,7 +6736,7 @@
              },
              {
                "name": "themeAccentColor",
-@@ -7402,6 +12206,61 @@
+@@ -7402,6 +12350,61 @@
      {
        "field": "offlinepacks",
        "kind": "list",
@@ -6578,7 +6798,7 @@
        "children": [
          {
            "name": "bytesReady",
-@@ -7551,6 +12410,75 @@
+@@ -7551,6 +12554,75 @@
            "name": "entries",
            "kind": "list",
            "nullable": true,
@@ -6654,7 +6874,7 @@
            "children": [
              {
                "name": "accessError",
-@@ -7560,7 +12488,11 @@
+@@ -7560,7 +12632,11 @@
                "name": "children",
                "kind": "list",
                "optional": true,
@@ -6667,7 +6887,7 @@
              },
              {
                "name": "entryClass",
-@@ -7599,7 +12531,10 @@
+@@ -7599,7 +12675,10 @@
                "name": "sampleNames",
                "kind": "list",
                "optional": true,
@@ -6679,7 +6899,7 @@
              },
              {
                "name": "selectable",
-@@ -7630,12 +12565,32 @@
+@@ -7630,12 +12709,32 @@
          {
            "name": "roles",
            "kind": "list",
@@ -6713,7 +6933,7 @@
            "children": [
              {
                "name": "entryClass",
-@@ -7804,12 +12759,18 @@
+@@ -7804,12 +12903,18 @@
            "name": "certificationScale",
            "kind": "list",
            "optional": true,
@@ -6735,7 +6955,7 @@
          },
          {
            "name": "id",
-@@ -7817,14 +12778,23 @@
+@@ -7817,14 +12922,23 @@
          },
          {
            "name": "mediaClassLabels",
@@ -6763,7 +6983,7 @@
          }
        ]
      },
-@@ -7841,6 +12811,32 @@
+@@ -7841,6 +12955,32 @@
            "name": "grants",
            "kind": "list",
            "nullable": true,
@@ -6796,7 +7016,7 @@
            "children": [
              {
                "name": "allLibraries",
-@@ -7877,7 +12873,10 @@
+@@ -7877,7 +13017,10 @@
          {
            "name": "lifecycleActions",
            "kind": "list",
@@ -6808,7 +7028,7 @@
          },
          {
            "name": "pluginID",
-@@ -7936,6 +12935,23 @@
+@@ -7936,6 +13079,23 @@
            "name": "certificationCeilings",
            "kind": "list",
            "nullable": true,
@@ -6832,7 +7052,7 @@
            "children": [
              {
                "name": "allowUnrated",
-@@ -8031,6 +13047,28 @@
+@@ -8031,6 +13191,28 @@
            "kind": "list",
            "optional": true,
            "nullable": true,
@@ -6861,7 +7081,7 @@
            "children": [
              {
                "name": "action",
-@@ -8121,6 +13159,19 @@
+@@ -8121,6 +13303,19 @@
                "name": "routes",
                "kind": "list",
                "nullable": true,
@@ -6881,7 +7101,7 @@
                "children": [
                  {
                    "name": "category",
-@@ -8138,6 +13189,38 @@
+@@ -8138,6 +13333,38 @@
            "name": "status",
            "kind": "list",
            "nullable": true,
@@ -6920,7 +7140,7 @@
            "children": [
              {
                "name": "at",
-@@ -8185,7 +13268,10 @@
+@@ -8185,7 +13412,10 @@
          {
            "name": "order",
            "kind": "list",
@@ -6932,7 +7152,7 @@
          }
        ]
      },
-@@ -8207,9 +13293,12 @@
+@@ -8207,9 +13437,12 @@
          },
          {
            "name": "artworkSlots",
@@ -6947,7 +7167,7 @@
          },
          {
            "name": "id",
-@@ -8263,9 +13352,12 @@
+@@ -8263,9 +13496,12 @@
          },
          {
            "name": "artworkSlots",
@@ -6962,7 +7182,7 @@
          },
          {
            "name": "id",
-@@ -8319,9 +13411,12 @@
+@@ -8319,9 +13555,12 @@
          },
          {
            "name": "artworkSlots",
@@ -6977,7 +7197,7 @@
          },
          {
            "name": "id",
-@@ -8375,9 +13470,12 @@
+@@ -8375,9 +13614,12 @@
          },
          {
            "name": "artworkSlots",
@@ -6992,7 +7212,7 @@
          },
          {
            "name": "id",
-@@ -8536,6 +13634,19 @@
+@@ -8536,6 +13778,19 @@
            "name": "endpoints",
            "kind": "list",
            "nullable": true,
@@ -7012,7 +7232,7 @@
            "children": [
              {
                "name": "kind",
-@@ -8607,6 +13718,24 @@
+@@ -8607,6 +13862,24 @@
            "name": "members",
            "kind": "list",
            "nullable": true,
@@ -7037,7 +7257,7 @@
            "children": [
              {
                "name": "addedAt",
-@@ -8773,6 +13902,24 @@
+@@ -8773,6 +14046,24 @@
            "name": "members",
            "kind": "list",
            "nullable": true,
@@ -7062,7 +7282,7 @@
            "children": [
              {
                "name": "addedAt",
-@@ -8948,22 +14095,55 @@
+@@ -8948,22 +14239,55 @@
          {
            "name": "hiddenNodeIDs",
            "kind": "list",
@@ -7076,6 +7296,14 @@
            "name": "layoutSectionOverrides",
 -          "kind": "scalar",
 -          "nullable": true
+-        },
+-        {
+-          "name": "nodeLabelOverrides",
+-          "kind": "scalar",
+-          "nullable": true
+-        },
+-        {
+-          "name": "nodeOrder",
 +          "kind": "map",
 +          "nullable": true,
 +          "elem": {
@@ -7099,11 +7327,9 @@
 +              }
 +            ]
 +          }
-         },
-         {
-           "name": "nodeLabelOverrides",
--          "kind": "scalar",
--          "nullable": true
++        },
++        {
++          "name": "nodeLabelOverrides",
 +          "kind": "map",
 +          "nullable": true,
 +          "elem": {
@@ -7112,9 +7338,9 @@
 +              "kind": "scalar"
 +            }
 +          }
-         },
-         {
-           "name": "nodeOrder",
++        },
++        {
++          "name": "nodeOrder",
            "kind": "list",
 -          "nullable": true
 +          "nullable": true,
@@ -7124,7 +7350,7 @@
          },
          {
            "name": "themeAccentColor",
-@@ -9076,6 +14256,24 @@
+@@ -9076,6 +14400,24 @@
            "name": "members",
            "kind": "list",
            "nullable": true,
@@ -7149,7 +7375,7 @@
            "children": [
              {
                "name": "addedAt",
-@@ -9161,7 +14359,10 @@
+@@ -9161,7 +14503,10 @@
          {
            "name": "tags",
            "kind": "list",
@@ -7161,7 +7387,7 @@
          },
          {
            "name": "title",
-@@ -9204,22 +14405,55 @@
+@@ -9204,22 +14549,55 @@
          {
            "name": "hiddenNodeIDs",
            "kind": "list",
@@ -7223,7 +7449,7 @@
          },
          {
            "name": "themeAccentColor",
-@@ -9266,6 +14500,53 @@
+@@ -9266,6 +14644,53 @@
      {
        "field": "retentionrules",
        "kind": "list",
@@ -7277,7 +7503,7 @@
        "children": [
          {
            "name": "createdAt",
-@@ -9398,7 +14679,10 @@
+@@ -9398,7 +14823,10 @@
          {
            "name": "scopes",
            "kind": "list",
@@ -7289,7 +7515,7 @@
          }
        ]
      },
-@@ -9512,6 +14796,28 @@
+@@ -9512,6 +14940,28 @@
            "kind": "list",
            "optional": true,
            "nullable": true,
@@ -7318,14 +7544,10 @@
            "children": [
              {
                "name": "action",
-@@ -9811,10 +15117,36 @@
+@@ -9811,6 +15261,32 @@
            "name": "grants",
            "kind": "list",
            "nullable": true,
--          "children": [
--            {
--              "name": "allLibraries",
--              "kind": "scalar"
 +          "elem": {
 +            "kind": "object",
 +            "children": [
@@ -7352,14 +7574,10 @@
 +              }
 +            ]
 +          },
-+          "children": [
-+            {
-+              "name": "allLibraries",
-+              "kind": "scalar"
-             },
+           "children": [
              {
-               "name": "approved",
-@@ -9847,7 +15179,10 @@
+               "name": "allLibraries",
+@@ -9847,7 +15323,10 @@
          {
            "name": "lifecycleActions",
            "kind": "list",
@@ -7371,7 +7589,7 @@
          },
          {
            "name": "pluginID",
-@@ -9931,6 +15266,23 @@
+@@ -9931,6 +15410,23 @@
            "name": "deferrableWork",
            "kind": "list",
            "nullable": true,
@@ -7395,7 +7613,7 @@
            "children": [
              {
                "name": "estimatedCount",
-@@ -10148,11 +15500,35 @@
+@@ -10148,11 +15644,35 @@
            "name": "adapters",
            "kind": "list",
            "nullable": true,
@@ -7432,7 +7650,7 @@
              },
              {
                "name": "mediaClass",
-@@ -10168,6 +15544,35 @@
+@@ -10168,6 +15688,35 @@
            "name": "deadLetters",
            "kind": "list",
            "nullable": true,
@@ -7468,7 +7686,7 @@
            "children": [
              {
                "name": "at",
-@@ -10199,6 +15604,32 @@
+@@ -10199,6 +15748,32 @@
            "name": "skips",
            "kind": "list",
            "nullable": true,
@@ -7501,7 +7719,7 @@
            "children": [
              {
                "name": "at",
-@@ -10283,9 +15714,12 @@
+@@ -10283,9 +15858,12 @@
          },
          {
            "name": "artworkSlots",
@@ -7516,7 +7734,7 @@
          },
          {
            "name": "id",
-@@ -10346,9 +15780,12 @@
+@@ -10346,9 +15924,12 @@
          },
          {
            "name": "artworkSlots",
@@ -7531,7 +7749,7 @@
          },
          {
            "name": "id",
-@@ -10419,7 +15856,13 @@
+@@ -10419,7 +16000,13 @@
          {
            "name": "mode",
            "kind": "string",
@@ -7546,7 +7764,7 @@
          },
          {
            "name": "query",
-@@ -10432,6 +15875,72 @@
+@@ -10432,6 +16019,72 @@
            "name": "items",
            "kind": "list",
            "nullable": true,
@@ -7619,7 +7837,7 @@
            "children": [
              {
                "name": "artwork",
-@@ -10447,9 +15956,12 @@
+@@ -10447,9 +16100,12 @@
              },
              {
                "name": "artworkSlots",
@@ -7634,7 +7852,7 @@
              },
              {
                "name": "id",
-@@ -10559,6 +16071,23 @@
+@@ -10559,6 +16215,23 @@
            "name": "windows",
            "kind": "list",
            "nullable": true,
@@ -7658,7 +7876,7 @@
            "children": [
              {
                "name": "endMinute",
-@@ -10579,6 +16108,32 @@
+@@ -10579,6 +16252,32 @@
      {
        "field": "setcapabilityenabled",
        "kind": "list",
@@ -7691,7 +7909,7 @@
        "children": [
          {
            "name": "enabled",
-@@ -10610,12 +16165,32 @@
+@@ -10610,12 +16309,32 @@
          {
            "name": "audioLanguages",
            "kind": "list",
@@ -7725,7 +7943,7 @@
            "children": [
              {
                "name": "allowUnrated",
-@@ -10646,7 +16221,10 @@
+@@ -10646,7 +16365,10 @@
          {
            "name": "libraryIDs",
            "kind": "list",
@@ -7737,7 +7955,7 @@
          },
          {
            "name": "maxConcurrentStreams",
-@@ -10664,7 +16242,10 @@
+@@ -10664,7 +16386,10 @@
          {
            "name": "subtitleLanguages",
            "kind": "list",
@@ -7749,7 +7967,7 @@
          },
          {
            "name": "subtitleMode",
-@@ -10714,32 +16295,419 @@
+@@ -10714,32 +16439,419 @@
            "name": "plugins",
            "kind": "list",
            "nullable": true,
@@ -8194,7 +8412,7 @@
                    "children": [
                      {
                        "name": "configured",
-@@ -10752,8 +16720,11 @@
+@@ -10752,8 +16864,11 @@
                      },
                      {
                        "name": "label",
@@ -8208,7 +8426,7 @@
                      },
                      {
                        "name": "name",
-@@ -10764,11 +16735,31 @@
+@@ -10764,11 +16879,31 @@
                        "kind": "list",
                        "optional": true,
                        "nullable": true,
@@ -8242,7 +8460,7 @@
                          },
                          {
                            "name": "value",
-@@ -10791,76 +16782,878 @@
+@@ -10791,68 +16926,870 @@
                      }
                    ]
                  },
@@ -8259,6 +8477,50 @@
 -                },
 -                {
 -                  "name": "risk",
+-                  "kind": "scalar"
+-                }
+-              ]
+-            },
+-            {
+-              "name": "active",
+-              "kind": "scalar"
+-            },
+-            {
+-              "name": "config",
+-              "kind": "list",
+-              "nullable": true,
+-              "children": [
+-                {
+-                  "name": "configured",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "default",
+-                  "kind": "scalar",
+-                  "optional": true
+-                },
+-                {
+-                  "name": "label",
+-                  "kind": "scalar",
+-                  "nullable": true
+-                },
+-                {
+-                  "name": "name",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "options",
+-                  "kind": "list",
+-                  "optional": true,
+-                  "nullable": true,
+-                  "children": [
+-                    {
+-                      "name": "label",
+-                      "kind": "scalar",
+-                      "nullable": true
+-                    },
+-                    {
+-                      "name": "value",
 +                "children": [
 +                  {
 +                    "name": "configured",
@@ -8274,8 +8536,10 @@
 +                    "kind": "map",
 +                    "nullable": true,
 +                    "elem": {
-+                      "kind": "scalar"
-+                    }
+                       "kind": "scalar"
+                     }
+-                  ]
+-                },
 +                  },
 +                  {
 +                    "name": "name",
@@ -8343,42 +8607,8 @@
 +                "kind": "map",
 +                "nullable": true,
 +                "elem": {
-                   "kind": "scalar"
-                 }
--              ]
--            },
--            {
--              "name": "active",
--              "kind": "scalar"
--            },
--            {
--              "name": "config",
--              "kind": "list",
--              "nullable": true,
--              "children": [
--                {
--                  "name": "configured",
--                  "kind": "scalar"
--                },
--                {
--                  "name": "default",
--                  "kind": "scalar",
--                  "optional": true
--                },
--                {
--                  "name": "label",
--                  "kind": "scalar",
--                  "nullable": true
--                },
--                {
--                  "name": "name",
--                  "kind": "scalar"
--                },
--                {
--                  "name": "options",
--                  "kind": "list",
--                  "optional": true,
--                  "nullable": true,
++                  "kind": "scalar"
++                }
 +              },
 +              {
 +                "name": "id",
@@ -8390,8 +8620,8 @@
 +                "nullable": true,
 +                "elem": {
 +                  "kind": "object",
-                   "children": [
-                     {
++                  "children": [
++                    {
 +                      "name": "description",
 +                      "kind": "map",
 +                      "optional": true,
@@ -8409,7 +8639,7 @@
 +                      "kind": "scalar"
 +                    },
 +                    {
-                       "name": "label",
++                      "name": "label",
 +                      "kind": "map",
 +                      "nullable": true,
 +                      "elem": {
@@ -8471,14 +8701,12 @@
 +                    },
 +                    {
 +                      "name": "credentialError",
-                       "kind": "scalar",
--                      "nullable": true
++                      "kind": "scalar",
 +                      "optional": true
-                     },
-                     {
--                      "name": "value",
++                    },
++                    {
 +                      "name": "credentialRequired",
-                       "kind": "scalar"
++                      "kind": "scalar"
 +                    },
 +                    {
 +                      "name": "credentialStatus",
@@ -8503,15 +8731,9 @@
 +                    {
 +                      "name": "scraperID",
 +                      "kind": "scalar"
-                     }
-                   ]
-                 },
--                {
--                  "name": "required",
--                  "kind": "scalar"
--                },
--                {
--                  "name": "type",
++                    }
++                  ]
++                },
 +                "children": [
 +                  {
 +                    "name": "authRef",
@@ -8825,7 +9047,7 @@
 +                ]
 +              },
 +              "children": [
-+                {
+                 {
 +                  "name": "confirmation",
 +                  "kind": "map",
 +                  "optional": true,
@@ -8841,9 +9063,9 @@
 +                },
 +                {
 +                  "name": "id",
-                   "kind": "scalar"
-                 },
-                 {
++                  "kind": "scalar"
++                },
++                {
 +                  "name": "inputFields",
 +                  "kind": "list",
 +                  "optional": true,
@@ -9165,18 +9387,10 @@
 +                  ]
 +                },
 +                {
-+                  "name": "required",
-+                  "kind": "scalar"
-+                },
-+                {
-+                  "name": "type",
-+                  "kind": "scalar"
-+                },
-+                {
-                   "name": "value",
-                   "kind": "scalar",
-                   "optional": true
-@@ -10874,8 +17667,11 @@
+                   "name": "required",
+                   "kind": "scalar"
+                 },
+@@ -10874,8 +17811,11 @@
              },
              {
                "name": "displayName",
@@ -9190,7 +9404,7 @@
              },
              {
                "name": "id",
-@@ -10885,12 +17681,45 @@
+@@ -10885,12 +17825,45 @@
                "name": "permissions",
                "kind": "list",
                "nullable": true,
@@ -9238,7 +9452,7 @@
                  },
                  {
                    "name": "highRisk",
-@@ -10902,8 +17731,11 @@
+@@ -10902,8 +17875,11 @@
                  },
                  {
                    "name": "label",
@@ -9252,7 +9466,7 @@
                  }
                ]
              },
-@@ -10915,6 +17747,56 @@
+@@ -10915,6 +17891,56 @@
                "name": "scrapers",
                "kind": "list",
                "nullable": true,
@@ -9309,7 +9523,7 @@
                "children": [
                  {
                    "name": "authRef",
-@@ -10967,6 +17849,32 @@
+@@ -10967,6 +17993,32 @@
                "name": "status",
                "kind": "list",
                "nullable": true,
@@ -9342,7 +9556,7 @@
                "children": [
                  {
                    "name": "detail",
-@@ -10979,8 +17887,11 @@
+@@ -10979,8 +18031,11 @@
                  },
                  {
                    "name": "label",
@@ -9356,10 +9570,12 @@
                  },
                  {
                    "name": "state",
-@@ -11053,6 +17964,88 @@
+@@ -11053,48 +18108,130 @@
        "kind": "object",
        "children": [
          {
+-          "name": "favorited",
+-          "kind": "scalar"
 +          "name": "artworkSlots",
 +          "kind": "map",
 +          "optional": true,
@@ -9367,8 +9583,44 @@
 +          "elem": {
 +            "kind": "scalar"
 +          }
-+        },
-+        {
+         },
+         {
+-          "name": "id",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "summary",
+-          "kind": "scalar",
+-          "optional": true
+-        },
+-        {
+-          "name": "title",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "year",
+-          "kind": "scalar",
+-          "optional": true
+-        }
+-      ]
+-    },
+-    {
+-      "field": "setfollow",
+-      "kind": "object",
+-      "children": [
+-        {
+-          "name": "followed",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "id",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "title",
+-          "kind": "scalar"
+-        }
+-      ]
 +          "name": "credits",
 +          "kind": "list",
 +          "optional": true,
@@ -9442,10 +9694,52 @@
 +          ]
 +        },
 +        {
-           "name": "favorited",
-           "kind": "scalar"
-         },
-@@ -11166,7 +18159,10 @@
++          "name": "favorited",
++          "kind": "scalar"
++        },
++        {
++          "name": "id",
++          "kind": "scalar"
++        },
++        {
++          "name": "summary",
++          "kind": "scalar",
++          "optional": true
++        },
++        {
++          "name": "title",
++          "kind": "scalar"
++        },
++        {
++          "name": "year",
++          "kind": "scalar",
++          "optional": true
++        }
++      ]
+     },
+     {
++      "field": "setfollow",
++      "kind": "object",
++      "children": [
++        {
++          "name": "followed",
++          "kind": "scalar"
++        },
++        {
++          "name": "id",
++          "kind": "scalar"
++        },
++        {
++          "name": "title",
++          "kind": "scalar"
++        }
++      ]
++    },
++    {
+       "field": "setlibraryaiindexing",
+       "kind": "object",
+       "children": [
+@@ -11166,7 +18303,10 @@
            "name": "roots",
            "kind": "list",
            "optional": true,
@@ -9457,7 +9751,7 @@
          },
          {
            "name": "title",
-@@ -11212,7 +18208,10 @@
+@@ -11212,7 +18352,10 @@
            "name": "roots",
            "kind": "list",
            "optional": true,
@@ -9469,7 +9763,7 @@
          },
          {
            "name": "title",
-@@ -11258,7 +18257,10 @@
+@@ -11258,7 +18401,10 @@
            "name": "roots",
            "kind": "list",
            "optional": true,
@@ -9481,7 +9775,7 @@
          },
          {
            "name": "title",
-@@ -11304,7 +18306,10 @@
+@@ -11304,7 +18450,10 @@
            "name": "roots",
            "kind": "list",
            "optional": true,
@@ -9493,7 +9787,7 @@
          },
          {
            "name": "title",
-@@ -11355,22 +18360,55 @@
+@@ -11355,22 +18504,55 @@
          {
            "name": "hiddenNodeIDs",
            "kind": "list",
@@ -9555,7 +9849,7 @@
          },
          {
            "name": "themeAccentColor",
-@@ -11398,346 +18436,2760 @@
+@@ -11398,346 +18580,419 @@
            "name": "plugins",
            "kind": "list",
            "nullable": true,
@@ -9628,37 +9922,6 @@
                        "kind": "list",
                        "optional": true,
                        "nullable": true,
--                      "children": [
--                        {
--                          "name": "label",
--                          "kind": "scalar",
--                          "nullable": true
--                        },
--                        {
--                          "name": "value",
--                          "kind": "scalar"
--                        }
--                      ]
--                    },
--                    {
--                      "name": "required",
--                      "kind": "scalar"
--                    },
--                    {
--                      "name": "type",
--                      "kind": "scalar"
--                    },
--                    {
--                      "name": "value",
--                      "kind": "scalar",
--                      "optional": true
--                    }
--                  ]
--                },
--                {
--                  "name": "label",
--                  "kind": "scalar",
--                  "nullable": true
 +                      "elem": {
 +                        "kind": "object",
 +                        "children": [
@@ -9735,17 +9998,20 @@
 +                          }
 +                        ]
 +                      },
-+                      "children": [
-+                        {
+                       "children": [
+                         {
+-                          "name": "label",
 +                          "name": "configured",
 +                          "kind": "scalar"
 +                        },
 +                        {
 +                          "name": "default",
-+                          "kind": "scalar",
+                           "kind": "scalar",
+-                          "nullable": true
 +                          "optional": true
-+                        },
-+                        {
+                         },
+                         {
+-                          "name": "value",
 +                          "name": "label",
 +                          "kind": "map",
 +                          "nullable": true,
@@ -9755,7 +10021,7 @@
 +                        },
 +                        {
 +                          "name": "name",
-+                          "kind": "scalar"
+                           "kind": "scalar"
 +                        },
 +                        {
 +                          "name": "options",
@@ -9806,18 +10072,22 @@
 +                          "name": "value",
 +                          "kind": "scalar",
 +                          "optional": true
-+                        }
-+                      ]
-+                    },
-+                    {
+                         }
+                       ]
+                     },
+                     {
+-                      "name": "required",
+-                      "kind": "scalar"
 +                      "name": "label",
 +                      "kind": "map",
 +                      "nullable": true,
 +                      "elem": {
 +                        "kind": "scalar"
 +                      }
-+                    },
-+                    {
+                     },
+                     {
+-                      "name": "type",
+-                      "kind": "scalar"
 +                      "name": "requiredPermissions",
 +                      "kind": "list",
 +                      "optional": true,
@@ -9825,13 +10095,70 @@
 +                      "elem": {
 +                        "kind": "scalar"
 +                      }
-+                    },
-+                    {
+                     },
+                     {
+-                      "name": "value",
+-                      "kind": "scalar",
+-                      "optional": true
 +                      "name": "risk",
 +                      "kind": "scalar"
-+                    }
-+                  ]
-+                },
+                     }
+                   ]
+                 },
+-                {
+-                  "name": "label",
+-                  "kind": "scalar",
+-                  "nullable": true
+-                },
+-                {
+-                  "name": "requiredPermissions",
+-                  "kind": "list",
+-                  "optional": true,
+-                  "nullable": true
+-                },
+-                {
+-                  "name": "risk",
+-                  "kind": "scalar"
+-                }
+-              ]
+-            },
+-            {
+-              "name": "active",
+-              "kind": "scalar"
+-            },
+-            {
+-              "name": "config",
+-              "kind": "list",
+-              "nullable": true,
+-              "children": [
+-                {
+-                  "name": "configured",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "default",
+-                  "kind": "scalar",
+-                  "optional": true
+-                },
+-                {
+-                  "name": "label",
+-                  "kind": "scalar",
+-                  "nullable": true
+-                },
+-                {
+-                  "name": "name",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "options",
+-                  "kind": "list",
+-                  "optional": true,
+-                  "nullable": true,
+-                  "children": [
+-                    {
+-                      "name": "label",
+-                      "kind": "scalar",
+-                      "nullable": true
 +                "children": [
 +                  {
 +                    "name": "confirmation",
@@ -9931,7 +10258,9 @@
 +                          "optional": true
 +                        }
 +                      ]
-+                    },
+                     },
+-                    {
+-                      "name": "value",
 +                    "children": [
 +                      {
 +                        "name": "configured",
@@ -10011,8 +10340,212 @@
 +                    "kind": "map",
 +                    "nullable": true,
 +                    "elem": {
-+                      "kind": "scalar"
-+                    }
+                       "kind": "scalar"
+                     }
+-                  ]
+-                },
+-                {
+-                  "name": "required",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "type",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "value",
+-                  "kind": "scalar",
+-                  "optional": true
+-                }
+-              ]
+-            },
+-            {
+-              "name": "controlPolicy",
+-              "kind": "scalar",
+-              "optional": true
+-            },
+-            {
+-              "name": "displayName",
+-              "kind": "scalar",
+-              "nullable": true
+-            },
+-            {
+-              "name": "id",
+-              "kind": "scalar"
+-            },
+-            {
+-              "name": "permissions",
+-              "kind": "list",
+-              "nullable": true,
+-              "children": [
+-                {
+-                  "name": "description",
+-                  "kind": "scalar",
+-                  "optional": true,
+-                  "nullable": true
+-                },
+-                {
+-                  "name": "highRisk",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "kind",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "label",
+-                  "kind": "scalar",
+-                  "nullable": true
+-                }
+-              ]
+-            },
+-            {
+-              "name": "provenance",
+-              "kind": "scalar"
+-            },
+-            {
+-              "name": "scrapers",
+-              "kind": "list",
+-              "nullable": true,
+-              "children": [
+-                {
+-                  "name": "authRef",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "authStyle",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "credentialConfigured",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "credentialError",
+-                  "kind": "scalar",
+-                  "optional": true
+-                },
+-                {
+-                  "name": "credentialRequired",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "credentialStatus",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "displayName",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "endpoint",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "kind",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "pluginID",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "scraperID",
+-                  "kind": "scalar"
+-                }
+-              ]
+-            },
+-            {
+-              "name": "status",
+-              "kind": "list",
+-              "nullable": true,
+-              "children": [
+-                {
+-                  "name": "detail",
+-                  "kind": "scalar",
+-                  "optional": true
+-                },
+-                {
+-                  "name": "id",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "label",
+-                  "kind": "scalar",
+-                  "nullable": true
+-                },
+-                {
+-                  "name": "state",
+-                  "kind": "scalar"
+-                }
+-              ]
+-            },
+-            {
+-              "name": "trustState",
+-              "kind": "scalar"
+-            }
+-          ]
+-        },
+-        {
+-          "name": "remoteEnrollmentEnabled",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "updateCheckChannel",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "updateCheckEnabled",
+-          "kind": "scalar"
+-        }
+-      ]
+-    },
+-    {
+-      "field": "setpluginconfig",
+-      "kind": "object",
+-      "children": [
+-        {
+-          "name": "backgroundWorkers",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "eventsRetentionDays",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "observabilityEnabled",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "plugins",
+-          "kind": "list",
+-          "nullable": true,
+-          "children": [
+-            {
+-              "name": "actions",
+-              "kind": "list",
+-              "nullable": true,
+-              "children": [
+-                {
+-                  "name": "confirmation",
+-                  "kind": "scalar",
+-                  "optional": true,
+-                  "nullable": true
+-                },
+-                {
+-                  "name": "icon",
+-                  "kind": "scalar",
+-                  "optional": true
+-                },
+-                {
+-                  "name": "id",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "inputFields",
+-                  "kind": "list",
+-                  "optional": true,
+-                  "nullable": true,
 +                  },
 +                  {
 +                    "name": "requiredPermissions",
@@ -10039,33 +10572,27 @@
 +                "nullable": true,
 +                "elem": {
 +                  "kind": "object",
-+                  "children": [
-+                    {
-+                      "name": "configured",
-+                      "kind": "scalar"
-+                    },
-+                    {
-+                      "name": "default",
-+                      "kind": "scalar",
-+                      "optional": true
-+                    },
-+                    {
-+                      "name": "label",
+                   "children": [
+                     {
+                       "name": "configured",
+@@ -11750,8 +19005,11 @@
+                     },
+                     {
+                       "name": "label",
+-                      "kind": "scalar",
+-                      "nullable": true
 +                      "kind": "map",
 +                      "nullable": true,
 +                      "elem": {
 +                        "kind": "scalar"
 +                      }
-+                    },
-+                    {
-+                      "name": "name",
-+                      "kind": "scalar"
-+                    },
-+                    {
-+                      "name": "options",
-+                      "kind": "list",
-+                      "optional": true,
-+                      "nullable": true,
+                     },
+                     {
+                       "name": "name",
+@@ -11762,11 +19020,31 @@
+                       "kind": "list",
+                       "optional": true,
+                       "nullable": true,
 +                      "elem": {
 +                        "kind": "object",
 +                        "children": [
@@ -10083,36 +10610,80 @@
 +                          }
 +                        ]
 +                      },
-+                      "children": [
-+                        {
-+                          "name": "label",
+                       "children": [
+                         {
+                           "name": "label",
+-                          "kind": "scalar",
+-                          "nullable": true
 +                          "kind": "map",
 +                          "nullable": true,
 +                          "elem": {
 +                            "kind": "scalar"
 +                          }
-+                        },
-+                        {
-+                          "name": "value",
-+                          "kind": "scalar"
-+                        }
-+                      ]
-+                    },
-+                    {
-+                      "name": "required",
-+                      "kind": "scalar"
-+                    },
-+                    {
-+                      "name": "type",
-+                      "kind": "scalar"
-+                    },
-+                    {
-+                      "name": "value",
-+                      "kind": "scalar",
-+                      "optional": true
-+                    }
-+                  ]
-+                },
+                         },
+                         {
+                           "name": "value",
+@@ -11789,130 +19067,1021 @@
+                     }
+                   ]
+                 },
+-                {
+-                  "name": "label",
+-                  "kind": "scalar",
+-                  "nullable": true
+-                },
+-                {
+-                  "name": "requiredPermissions",
+-                  "kind": "list",
+-                  "optional": true,
+-                  "nullable": true
+-                },
+-                {
+-                  "name": "risk",
+-                  "kind": "scalar"
+-                }
+-              ]
+-            },
+-            {
+-              "name": "active",
+-              "kind": "scalar"
+-            },
+-            {
+-              "name": "config",
+-              "kind": "list",
+-              "nullable": true,
+-              "children": [
+-                {
+-                  "name": "configured",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "default",
+-                  "kind": "scalar",
+-                  "optional": true
+-                },
+-                {
+-                  "name": "label",
+-                  "kind": "scalar",
+-                  "nullable": true
+-                },
+-                {
+-                  "name": "name",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "options",
+-                  "kind": "list",
+-                  "optional": true,
+-                  "nullable": true,
+-                  "children": [
+-                    {
+-                      "name": "label",
+-                      "kind": "scalar",
+-                      "nullable": true
+-                    },
+-                    {
+-                      "name": "value",
 +                "children": [
 +                  {
 +                    "name": "configured",
@@ -10128,8 +10699,67 @@
 +                    "kind": "map",
 +                    "nullable": true,
 +                    "elem": {
-+                      "kind": "scalar"
-+                    }
+                       "kind": "scalar"
+                     }
+-                  ]
+-                },
+-                {
+-                  "name": "required",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "type",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "value",
+-                  "kind": "scalar",
+-                  "optional": true
+-                }
+-              ]
+-            },
+-            {
+-              "name": "controlPolicy",
+-              "kind": "scalar",
+-              "optional": true
+-            },
+-            {
+-              "name": "displayName",
+-              "kind": "scalar",
+-              "nullable": true
+-            },
+-            {
+-              "name": "id",
+-              "kind": "scalar"
+-            },
+-            {
+-              "name": "permissions",
+-              "kind": "list",
+-              "nullable": true,
+-              "children": [
+-                {
+-                  "name": "description",
+-                  "kind": "scalar",
+-                  "optional": true,
+-                  "nullable": true
+-                },
+-                {
+-                  "name": "highRisk",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "kind",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "label",
+-                  "kind": "scalar",
+-                  "nullable": true
+-                }
+-              ]
+-            },
+-            {
+-              "name": "provenance",
 +                  },
 +                  {
 +                    "name": "name",
@@ -10237,7 +10867,7 @@
 +                      }
 +                    }
 +                  ]
-                 },
++                },
 +                "children": [
 +                  {
 +                    "name": "description",
@@ -10637,7 +11267,7 @@
 +                ]
 +              },
 +              "children": [
-                 {
++                {
 +                  "name": "confirmation",
 +                  "kind": "map",
 +                  "optional": true,
@@ -10819,49 +11449,9 @@
 +                  }
 +                },
 +                {
-                   "name": "requiredPermissions",
-                   "kind": "list",
-                   "optional": true,
--                  "nullable": true
--                },
--                {
--                  "name": "risk",
--                  "kind": "scalar"
--                }
--              ]
--            },
--            {
--              "name": "active",
--              "kind": "scalar"
--            },
--            {
--              "name": "config",
--              "kind": "list",
--              "nullable": true,
--              "children": [
--                {
--                  "name": "configured",
--                  "kind": "scalar"
--                },
--                {
--                  "name": "default",
--                  "kind": "scalar",
--                  "optional": true
--                },
--                {
--                  "name": "label",
--                  "kind": "scalar",
--                  "nullable": true
--                },
--                {
--                  "name": "name",
--                  "kind": "scalar"
--                },
--                {
--                  "name": "options",
--                  "kind": "list",
--                  "optional": true,
--                  "nullable": true,
++                  "name": "requiredPermissions",
++                  "kind": "list",
++                  "optional": true,
 +                  "nullable": true,
 +                  "elem": {
 +                    "kind": "scalar"
@@ -11046,9 +11636,9 @@
 +            },
 +            {
 +              "name": "id",
-+              "kind": "scalar"
-+            },
-+            {
+               "kind": "scalar"
+             },
+             {
 +              "name": "permissions",
 +              "kind": "list",
 +              "nullable": true,
@@ -11115,9 +11705,9 @@
 +              "kind": "scalar"
 +            },
 +            {
-+              "name": "scrapers",
-+              "kind": "list",
-+              "nullable": true,
+               "name": "scrapers",
+               "kind": "list",
+               "nullable": true,
 +              "elem": {
 +                "kind": "object",
 +                "children": [
@@ -11168,58 +11758,13 @@
 +                  }
 +                ]
 +              },
-+              "children": [
-+                {
-+                  "name": "authRef",
-+                  "kind": "scalar"
-+                },
-+                {
-+                  "name": "authStyle",
-+                  "kind": "scalar"
-+                },
-+                {
-+                  "name": "credentialConfigured",
-+                  "kind": "scalar"
-+                },
-+                {
-+                  "name": "credentialError",
-+                  "kind": "scalar",
-+                  "optional": true
-+                },
-+                {
-+                  "name": "credentialRequired",
-+                  "kind": "scalar"
-+                },
-+                {
-+                  "name": "credentialStatus",
-+                  "kind": "scalar"
-+                },
-+                {
-+                  "name": "displayName",
-+                  "kind": "scalar"
-+                },
-+                {
-+                  "name": "endpoint",
-+                  "kind": "scalar"
-+                },
-+                {
-+                  "name": "kind",
-+                  "kind": "scalar"
-+                },
-+                {
-+                  "name": "pluginID",
-+                  "kind": "scalar"
-+                },
-+                {
-+                  "name": "scraperID",
-+                  "kind": "scalar"
-+                }
-+              ]
-+            },
-+            {
-+              "name": "status",
-+              "kind": "list",
-+              "nullable": true,
+               "children": [
+                 {
+                   "name": "authRef",
+@@ -11965,6 +20134,32 @@
+               "name": "status",
+               "kind": "list",
+               "nullable": true,
 +              "elem": {
 +                "kind": "object",
 +                "children": [
@@ -11246,51 +11791,816 @@
 +                  }
 +                ]
 +              },
-+              "children": [
-+                {
-+                  "name": "detail",
-+                  "kind": "scalar",
-+                  "optional": true
-+                },
-+                {
-+                  "name": "id",
-+                  "kind": "scalar"
-+                },
-+                {
-+                  "name": "label",
+               "children": [
+                 {
+                   "name": "detail",
+@@ -11977,8 +20172,11 @@
+                 },
+                 {
+                   "name": "label",
+-                  "kind": "scalar",
+-                  "nullable": true
 +                  "kind": "map",
 +                  "nullable": true,
 +                  "elem": {
 +                    "kind": "scalar"
 +                  }
-+                },
-+                {
-+                  "name": "state",
-+                  "kind": "scalar"
-+                }
-+              ]
-+            },
-+            {
-+              "name": "trustState",
-+              "kind": "scalar"
-+            }
-+          ]
-+        },
-+        {
-+          "name": "remoteEnrollmentEnabled",
-+          "kind": "scalar"
-+        },
-+        {
-+          "name": "updateCheckChannel",
-+          "kind": "scalar"
-+        },
-+        {
-+          "name": "updateCheckEnabled",
-+          "kind": "scalar"
-+        }
-+      ]
-+    },
-+    {
+                 },
+                 {
+                   "name": "state",
+@@ -12007,1356 +20205,4394 @@
+       ]
+     },
+     {
+-      "field": "setpluginupdatesource",
+-      "kind": "object",
+-      "children": [
+-        {
+-          "name": "artifactSHA256",
+-          "kind": "scalar",
+-          "optional": true
+-        },
+-        {
+-          "name": "grants",
+-          "kind": "list",
+-          "nullable": true,
+-          "children": [
+-            {
+-              "name": "allLibraries",
+-              "kind": "scalar"
+-            },
+-            {
+-              "name": "approved",
+-              "kind": "scalar"
+-            },
+-            {
+-              "name": "boundProfileID",
+-              "kind": "scalar",
+-              "optional": true
+-            },
+-            {
+-              "name": "highRisk",
+-              "kind": "scalar"
+-            },
+-            {
+-              "name": "kind",
+-              "kind": "scalar"
+-            }
+-          ]
+-        },
+-        {
+-          "name": "installed",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "lastError",
+-          "kind": "scalar",
+-          "optional": true
+-        },
+-        {
+-          "name": "lifecycleActions",
+-          "kind": "list",
+-          "nullable": true
+-        },
+-        {
+-          "name": "pluginID",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "state",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "updateSource",
+-          "kind": "object",
+-          "optional": true,
+-          "nullable": true,
+-          "children": [
+-            {
+-              "name": "kind",
+-              "kind": "scalar"
+-            },
+-            {
+-              "name": "location",
+-              "kind": "scalar"
+-            },
+-            {
+-              "name": "pin",
+-              "kind": "scalar"
+-            },
+-            {
+-              "name": "pinKind",
+-              "kind": "scalar"
+-            }
+-          ]
+-        },
+-        {
+-          "name": "version",
+-          "kind": "scalar",
+-          "optional": true
+-        }
+-      ]
+-    },
+-    {
+-      "field": "setprofilelibraries",
+-      "kind": "object",
+-      "children": [
+-        {
+-          "name": "audioLanguages",
+-          "kind": "list",
+-          "nullable": true
+-        },
+-        {
+-          "name": "certificationCeilings",
+-          "kind": "list",
+-          "nullable": true,
+-          "children": [
+-            {
+-              "name": "allowUnrated",
+-              "kind": "scalar"
+-            },
+-            {
+-              "name": "ceiling",
+-              "kind": "scalar"
+-            },
+-            {
+-              "name": "pluginID",
+-              "kind": "scalar"
+-            }
+-          ]
+-        },
+-        {
+-          "name": "disabled",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "id",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "kind",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "libraryIDs",
+-          "kind": "list",
+-          "nullable": true
+-        },
+-        {
+-          "name": "maxConcurrentStreams",
+-          "kind": "scalar",
+-          "nullable": true
+-        },
+-        {
+-          "name": "name",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "preferSDH",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "subtitleLanguages",
+-          "kind": "list",
+-          "nullable": true
+-        },
+-        {
+-          "name": "subtitleMode",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "transcodeAllowed",
+-          "kind": "scalar"
+-        }
+-      ]
+-    },
+-    {
+-      "field": "setqbittorrentingest",
+-      "kind": "object",
+-      "children": [
+-        {
+-          "name": "config",
+-          "kind": "object",
+-          "children": [
+-            {
+-              "name": "enabled",
+-              "kind": "scalar"
+-            },
+-            {
+-              "name": "routes",
+-              "kind": "list",
+-              "nullable": true,
+-              "children": [
+-                {
+-                  "name": "category",
+-                  "kind": "scalar"
+-                },
+-                {
+-                  "name": "libraryID",
+-                  "kind": "scalar"
+-                }
+-              ]
+-            }
+-          ]
+-        },
+-        {
+-          "name": "status",
+-          "kind": "list",
+-          "nullable": true,
+-          "children": [
+-            {
+-              "name": "at",
+-              "kind": "scalar",
+-              "optional": true
+-            },
+-            {
+-              "name": "category",
+-              "kind": "scalar"
+-            },
+-            {
+-              "name": "detail",
+-              "kind": "scalar",
+-              "optional": true
+-            },
+-            {
+-              "name": "libraryID",
+-              "kind": "scalar",
+-              "optional": true
+-            },
+-            {
+-              "name": "outcome",
+-              "kind": "scalar"
+-            },
+-            {
+-              "name": "releaseName",
+-              "kind": "scalar"
+-            }
+-          ]
+-        }
+-      ]
+-    },
+-    {
+-      "field": "setqualitypolicy",
+-      "kind": "object",
+-      "children": [
+-        {
+-          "name": "cutoff",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "libraryID",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "order",
+-          "kind": "list",
+-          "nullable": true
+-        }
+-      ]
+-    },
+-    {
+-      "field": "setretentioncandidatehold",
+-      "kind": "object",
+-      "children": [
+-        {
+-          "name": "hold",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "mediaID",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "ruleID",
+-          "kind": "scalar"
+-        }
+-      ]
+-    },
+-    {
+-      "field": "setrevealpin",
+-      "kind": "object",
+-      "children": [
+-        {
+-          "name": "revealed",
+-          "kind": "scalar"
+-        }
+-      ]
+-    },
+-    {
+-      "field": "setscrapercredential",
+-      "kind": "object",
+-      "children": [
+-        {
+-          "name": "authRef",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "credentialConfigured",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "credentialError",
+-          "kind": "scalar",
+-          "optional": true
+-        },
+-        {
+-          "name": "credentialStatus",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "scraperIDs",
+-          "kind": "list",
+-          "nullable": true
+-        }
+-      ]
+-    },
+-    {
+-      "field": "setscrobbleeligibility",
+-      "kind": "object",
+-      "children": [
+-        {
+-          "name": "eligible",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "libraryID",
+-          "kind": "scalar"
+-        }
+-      ]
+-    },
+-    {
+-      "field": "setskipdetectionenabled",
+-      "kind": "object",
+-      "children": [
+-        {
+-          "name": "enabled",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "libraryID",
+-          "kind": "scalar"
+-        }
+-      ]
+-    },
+-    {
+-      "field": "setsubscriptionretention",
+-      "kind": "object",
+-      "children": [
+-        {
+-          "name": "addedAt",
+-          "kind": "scalar",
+-          "optional": true
+-        },
+-        {
+-          "name": "feedURL",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "followed",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "hasAuth",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "id",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "lastPolledAt",
+-          "kind": "scalar",
+-          "optional": true
+-        },
+-        {
+-          "name": "libraryID",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "retentionKind",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "retentionN",
+-          "kind": "scalar",
+-          "nullable": true
+-        },
+-        {
+-          "name": "root",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "title",
+-          "kind": "scalar"
+-        }
+-      ]
+-    },
+-    {
+-      "field": "settranscodeconfig",
+-      "kind": "object",
+-      "children": [
+-        {
+-          "name": "codec",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "configuredPreference",
+-          "kind": "scalar",
+-          "optional": true
+-        },
+-        {
+-          "name": "device",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "hardwareAcceleration",
+-          "kind": "list",
+-          "nullable": true,
+-          "children": [
+-            {
+-              "name": "accelerator",
+-              "kind": "scalar"
+-            },
+-            {
+-              "name": "status",
+-              "kind": "scalar"
+-            }
+-          ]
+-        },
+-        {
+-          "name": "hardwareEnabled",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "quality",
+-          "kind": "scalar"
+-        }
+-      ]
+-    },
+-    {
+-      "field": "setupstate",
+-      "kind": "object",
+-      "children": [
+-        {
+-          "name": "adminPasswordSet",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "complete",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "hasLibrary",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "hasOwnerProfile",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "pluginsActivated",
+-          "kind": "scalar"
+-        }
+-      ]
+-    },
+-    {
+-      "field": "skipdetectionenabled",
+-      "kind": "object",
+-      "children": [
+-        {
+-          "name": "enabled",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "libraryID",
+-          "kind": "scalar"
+-        }
+-      ]
+-    },
+-    {
+-      "field": "smartcollections",
+-      "kind": "object",
+-      "children": [
+-        {
+-          "name": "createdAt",
+-          "kind": "scalar",
+-          "optional": true
+-        },
+-        {
+-          "name": "id",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "libraryID",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "name",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "sortExpr",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "sourceExpr",
+-          "kind": "scalar"
+-        }
+-      ]
+-    },
+-    {
+-      "field": "sourceitems",
+-      "kind": "object",
+-      "arguments": [
+-        {
+-          "name": "entityFilter",
+-          "kind": "object",
+-          "optional": true
+-        },
+-        {
+-          "name": "entityID",
+-          "kind": "string",
+-          "optional": true
+-        },
+-        {
+-          "name": "entityKind",
+-          "kind": "string",
+-          "optional": true
+-        },
+-        {
+-          "name": "fieldFilters",
+-          "kind": "object",
+-          "optional": true
+-        },
+-        {
+-          "name": "filters",
+-          "kind": "list",
+-          "optional": true
+-        },
+-        {
+-          "name": "kind",
+-          "kind": "string",
+-          "optional": true
+-        },
+-        {
+-          "name": "libraryID",
+-          "kind": "string",
+-          "optional": true
+-        },
+-        {
+-          "name": "limit",
+-          "kind": "int",
+-          "optional": true
+-        },
+-        {
+-          "name": "offset",
+-          "kind": "int",
+-          "optional": true
+-        },
+-        {
+-          "name": "seed",
+-          "kind": "string",
+-          "optional": true
+-        },
+-        {
+-          "name": "value",
+-          "kind": "string",
+-          "optional": true
+-        }
+-      ],
+-      "children": [
+-        {
+-          "name": "artwork",
+-          "kind": "object",
+-          "optional": true,
+-          "nullable": true,
+-          "children": [
+-            {
+-              "name": "poster",
+-              "kind": "scalar"
+-            }
+-          ]
+-        },
+-        {
+-          "name": "artworkSlots",
+-          "kind": "scalar",
+-          "optional": true,
+-          "nullable": true
+-        },
+-        {
+-          "name": "id",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "kind",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "locked",
+-          "kind": "scalar",
+-          "optional": true
+-        },
+-        {
+-          "name": "muted",
+-          "kind": "scalar",
+-          "optional": true
+-        },
+-        {
+-          "name": "restricted",
+-          "kind": "scalar",
+-          "optional": true
+-        },
+-        {
+-          "name": "summary",
+-          "kind": "scalar",
+-          "optional": true
+-        },
+-        {
+-          "name": "title",
+-          "kind": "scalar"
+-        }
+-      ]
+-    },
+-    {
+-      "field": "stationdelete",
+-      "kind": "object",
+-      "children": [
+-        {
+-          "name": "createdAt",
+-          "kind": "scalar",
+-          "optional": true
+-        },
+-        {
+-          "name": "id",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "libraryID",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "name",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "profileID",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "rulesJSON",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "seedJSON",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "tuningJSON",
+-          "kind": "scalar"
+-        }
+-      ]
+-    },
+-    {
+-      "field": "stationgenerate",
+-      "kind": "object",
+-      "children": [
+-        {
+-          "name": "candidates",
+-          "kind": "list",
+-          "nullable": true,
+-          "children": [
+-            {
+-              "name": "explanation",
+-              "kind": "scalar",
+-              "optional": true
+-            },
+-            {
+-              "name": "mediaID",
+-              "kind": "scalar"
+-            },
+-            {
+-              "name": "title",
+-              "kind": "scalar"
+-            }
+-          ]
+-        },
+-        {
+-          "name": "explanation",
+-          "kind": "scalar",
+-          "optional": true
+-        }
+-      ]
+-    },
+-    {
+-      "field": "stations",
+-      "kind": "object",
+-      "children": [
+-        {
+-          "name": "createdAt",
+-          "kind": "scalar",
+-          "optional": true
+-        },
+-        {
+-          "name": "id",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "libraryID",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "name",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "profileID",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "rulesJSON",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "seedJSON",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "tuningJSON",
+-          "kind": "scalar"
+-        }
+-      ]
+-    },
+-    {
+-      "field": "stationsave",
+-      "kind": "object",
+-      "children": [
+-        {
+-          "name": "createdAt",
+-          "kind": "scalar",
+-          "optional": true
+-        },
+-        {
+-          "name": "id",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "libraryID",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "name",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "profileID",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "rulesJSON",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "seedJSON",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "tuningJSON",
+-          "kind": "scalar"
+-        }
+-      ]
+-    },
+-    {
+-      "field": "stationstart",
+-      "kind": "object",
+-      "children": [
+-        {
+-          "name": "artwork",
+-          "kind": "object",
+-          "optional": true,
+-          "nullable": true,
+-          "children": [
+-            {
+-              "name": "poster",
+-              "kind": "scalar"
+-            }
+-          ]
+-        },
+-        {
+-          "name": "artworkSlots",
+-          "kind": "scalar",
+-          "optional": true,
+-          "nullable": true
+-        },
+-        {
+-          "name": "id",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "kind",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "locked",
 +      "field": "setpluginconfig",
 +      "kind": "object",
 +      "children": [
@@ -11723,20 +13033,17 @@
 +                "nullable": true,
 +                "elem": {
 +                  "kind": "object",
-                   "children": [
-                     {
--                      "name": "label",
++                  "children": [
++                    {
 +                      "name": "configured",
 +                      "kind": "scalar"
 +                    },
 +                    {
 +                      "name": "default",
-                       "kind": "scalar",
--                      "nullable": true
++                      "kind": "scalar",
 +                      "optional": true
-                     },
-                     {
--                      "name": "value",
++                    },
++                    {
 +                      "name": "label",
 +                      "kind": "map",
 +                      "nullable": true,
@@ -11746,7 +13053,7 @@
 +                    },
 +                    {
 +                      "name": "name",
-                       "kind": "scalar"
++                      "kind": "scalar"
 +                    },
 +                    {
 +                      "name": "options",
@@ -11797,11 +13104,9 @@
 +                      "name": "value",
 +                      "kind": "scalar",
 +                      "optional": true
-                     }
-                   ]
-                 },
--                {
--                  "name": "required",
++                    }
++                  ]
++                },
 +                "children": [
 +                  {
 +                    "name": "configured",
@@ -11886,7 +13191,7 @@
 +                "kind": "map",
 +                "nullable": true,
 +                "elem": {
-                   "kind": "scalar"
++                  "kind": "scalar"
 +                }
 +              },
 +              {
@@ -11926,10 +13231,7 @@
 +                      }
 +                    }
 +                  ]
-                 },
--                {
--                  "name": "type",
--                  "kind": "scalar"
++                },
 +                "children": [
 +                  {
 +                    "name": "description",
@@ -12015,38 +13317,7 @@
 +                      "kind": "scalar"
 +                    }
 +                  ]
-                 },
--                {
--                  "name": "value",
--                  "kind": "scalar",
--                  "optional": true
--                }
--              ]
--            },
--            {
--              "name": "controlPolicy",
--              "kind": "scalar",
--              "optional": true
--            },
--            {
--              "name": "displayName",
--              "kind": "scalar",
--              "nullable": true
--            },
--            {
--              "name": "id",
--              "kind": "scalar"
--            },
--            {
--              "name": "permissions",
--              "kind": "list",
--              "nullable": true,
--              "children": [
--                {
--                  "name": "description",
--                  "kind": "scalar",
--                  "optional": true,
--                  "nullable": true
++                },
 +                "children": [
 +                  {
 +                    "name": "authRef",
@@ -12124,22 +13395,7 @@
 +                      "kind": "scalar"
 +                    }
 +                  ]
-                 },
--                {
--                  "name": "highRisk",
--                  "kind": "scalar"
--                },
--                {
--                  "name": "kind",
--                  "kind": "scalar"
--                },
--                {
--                  "name": "label",
--                  "kind": "scalar",
--                  "nullable": true
--                }
--              ]
--            },
++                },
 +                "children": [
 +                  {
 +                    "name": "detail",
@@ -12171,15 +13427,10 @@
 +            ]
 +          },
 +          "children": [
-             {
--              "name": "provenance",
--              "kind": "scalar"
--            },
--            {
--              "name": "scrapers",
++            {
 +              "name": "actions",
-               "kind": "list",
-               "nullable": true,
++              "kind": "list",
++              "nullable": true,
 +              "elem": {
 +                "kind": "object",
 +                "children": [
@@ -12379,10 +13630,8 @@
 +                  }
 +                ]
 +              },
-               "children": [
-                 {
--                  "name": "authRef",
--                  "kind": "scalar"
++              "children": [
++                {
 +                  "name": "confirmation",
 +                  "kind": "map",
 +                  "optional": true,
@@ -12390,142 +13639,17 @@
 +                  "elem": {
 +                    "kind": "scalar"
 +                  }
-                 },
-                 {
--                  "name": "authStyle",
--                  "kind": "scalar"
--                },
--                {
--                  "name": "credentialConfigured",
--                  "kind": "scalar"
--                },
--                {
--                  "name": "credentialError",
++                },
++                {
 +                  "name": "icon",
-                   "kind": "scalar",
-                   "optional": true
-                 },
-                 {
--                  "name": "credentialRequired",
--                  "kind": "scalar"
--                },
--                {
--                  "name": "credentialStatus",
--                  "kind": "scalar"
--                },
--                {
--                  "name": "displayName",
--                  "kind": "scalar"
--                },
--                {
--                  "name": "endpoint",
--                  "kind": "scalar"
--                },
--                {
--                  "name": "kind",
--                  "kind": "scalar"
--                },
--                {
--                  "name": "pluginID",
--                  "kind": "scalar"
--                },
--                {
--                  "name": "scraperID",
--                  "kind": "scalar"
--                }
--              ]
--            },
--            {
--              "name": "status",
--              "kind": "list",
--              "nullable": true,
--              "children": [
--                {
--                  "name": "detail",
--                  "kind": "scalar",
--                  "optional": true
--                },
--                {
-                   "name": "id",
-                   "kind": "scalar"
-                 },
-                 {
--                  "name": "label",
--                  "kind": "scalar",
--                  "nullable": true
--                },
--                {
--                  "name": "state",
--                  "kind": "scalar"
--                }
--              ]
--            },
--            {
--              "name": "trustState",
--              "kind": "scalar"
--            }
--          ]
--        },
--        {
--          "name": "remoteEnrollmentEnabled",
--          "kind": "scalar"
--        },
--        {
--          "name": "updateCheckChannel",
--          "kind": "scalar"
--        },
--        {
--          "name": "updateCheckEnabled",
--          "kind": "scalar"
--        }
--      ]
--    },
--    {
--      "field": "setpluginconfig",
--      "kind": "object",
--      "children": [
--        {
--          "name": "backgroundWorkers",
--          "kind": "scalar"
--        },
--        {
--          "name": "eventsRetentionDays",
--          "kind": "scalar"
--        },
--        {
--          "name": "observabilityEnabled",
--          "kind": "scalar"
--        },
--        {
--          "name": "plugins",
--          "kind": "list",
--          "nullable": true,
--          "children": [
--            {
--              "name": "actions",
--              "kind": "list",
--              "nullable": true,
--              "children": [
--                {
--                  "name": "confirmation",
--                  "kind": "scalar",
--                  "optional": true,
--                  "nullable": true
--                },
--                {
--                  "name": "icon",
--                  "kind": "scalar",
--                  "optional": true
--                },
--                {
--                  "name": "id",
--                  "kind": "scalar"
--                },
--                {
--                  "name": "inputFields",
--                  "kind": "list",
--                  "optional": true,
--                  "nullable": true,
++                  "kind": "scalar",
++                  "optional": true
++                },
++                {
++                  "name": "id",
++                  "kind": "scalar"
++                },
++                {
 +                  "name": "inputFields",
 +                  "kind": "list",
 +                  "optional": true,
@@ -12606,27 +13730,33 @@
 +                      }
 +                    ]
 +                  },
-                   "children": [
-                     {
-                       "name": "configured",
-@@ -11750,8 +21202,11 @@
-                     },
-                     {
-                       "name": "label",
--                      "kind": "scalar",
--                      "nullable": true
++                  "children": [
++                    {
++                      "name": "configured",
++                      "kind": "scalar"
++                    },
++                    {
++                      "name": "default",
++                      "kind": "scalar",
++                      "optional": true
++                    },
++                    {
++                      "name": "label",
 +                      "kind": "map",
 +                      "nullable": true,
 +                      "elem": {
 +                        "kind": "scalar"
 +                      }
-                     },
-                     {
-                       "name": "name",
-@@ -11762,11 +21217,31 @@
-                       "kind": "list",
-                       "optional": true,
-                       "nullable": true,
++                    },
++                    {
++                      "name": "name",
++                      "kind": "scalar"
++                    },
++                    {
++                      "name": "options",
++                      "kind": "list",
++                      "optional": true,
++                      "nullable": true,
 +                      "elem": {
 +                        "kind": "object",
 +                        "children": [
@@ -12644,47 +13774,67 @@
 +                          }
 +                        ]
 +                      },
-                       "children": [
-                         {
-                           "name": "label",
--                          "kind": "scalar",
--                          "nullable": true
++                      "children": [
++                        {
++                          "name": "label",
 +                          "kind": "map",
 +                          "nullable": true,
 +                          "elem": {
 +                            "kind": "scalar"
 +                          }
-                         },
-                         {
-                           "name": "value",
-@@ -11791,14 +21266,20 @@
-                 },
-                 {
-                   "name": "label",
--                  "kind": "scalar",
--                  "nullable": true
++                        },
++                        {
++                          "name": "value",
++                          "kind": "scalar"
++                        }
++                      ]
++                    },
++                    {
++                      "name": "required",
++                      "kind": "scalar"
++                    },
++                    {
++                      "name": "type",
++                      "kind": "scalar"
++                    },
++                    {
++                      "name": "value",
++                      "kind": "scalar",
++                      "optional": true
++                    }
++                  ]
++                },
++                {
++                  "name": "label",
 +                  "kind": "map",
 +                  "nullable": true,
 +                  "elem": {
 +                    "kind": "scalar"
 +                  }
-                 },
-                 {
-                   "name": "requiredPermissions",
-                   "kind": "list",
-                   "optional": true,
--                  "nullable": true
++                },
++                {
++                  "name": "requiredPermissions",
++                  "kind": "list",
++                  "optional": true,
 +                  "nullable": true,
 +                  "elem": {
 +                    "kind": "scalar"
 +                  }
-                 },
-                 {
-                   "name": "risk",
-@@ -11814,6 +21295,82 @@
-               "name": "config",
-               "kind": "list",
-               "nullable": true,
++                },
++                {
++                  "name": "risk",
++                  "kind": "scalar"
++                }
++              ]
++            },
++            {
++              "name": "active",
++              "kind": "scalar"
++            },
++            {
++              "name": "config",
++              "kind": "list",
++              "nullable": true,
 +              "elem": {
 +                "kind": "object",
 +                "children": [
@@ -12761,27 +13911,33 @@
 +                  }
 +                ]
 +              },
-               "children": [
-                 {
-                   "name": "configured",
-@@ -11826,8 +21383,11 @@
-                 },
-                 {
-                   "name": "label",
--                  "kind": "scalar",
--                  "nullable": true
++              "children": [
++                {
++                  "name": "configured",
++                  "kind": "scalar"
++                },
++                {
++                  "name": "default",
++                  "kind": "scalar",
++                  "optional": true
++                },
++                {
++                  "name": "label",
 +                  "kind": "map",
 +                  "nullable": true,
 +                  "elem": {
 +                    "kind": "scalar"
 +                  }
-                 },
-                 {
-                   "name": "name",
-@@ -11838,11 +21398,31 @@
-                   "kind": "list",
-                   "optional": true,
-                   "nullable": true,
++                },
++                {
++                  "name": "name",
++                  "kind": "scalar"
++                },
++                {
++                  "name": "options",
++                  "kind": "list",
++                  "optional": true,
++                  "nullable": true,
 +                  "elem": {
 +                    "kind": "object",
 +                    "children": [
@@ -12799,37 +13955,57 @@
 +                      }
 +                    ]
 +                  },
-                   "children": [
-                     {
-                       "name": "label",
--                      "kind": "scalar",
--                      "nullable": true
++                  "children": [
++                    {
++                      "name": "label",
 +                      "kind": "map",
 +                      "nullable": true,
 +                      "elem": {
 +                        "kind": "scalar"
 +                      }
-                     },
-                     {
-                       "name": "value",
-@@ -11872,8 +21452,11 @@
-             },
-             {
-               "name": "displayName",
--              "kind": "scalar",
--              "nullable": true
++                    },
++                    {
++                      "name": "value",
++                      "kind": "scalar"
++                    }
++                  ]
++                },
++                {
++                  "name": "required",
++                  "kind": "scalar"
++                },
++                {
++                  "name": "type",
++                  "kind": "scalar"
++                },
++                {
++                  "name": "value",
++                  "kind": "scalar",
++                  "optional": true
++                }
++              ]
++            },
++            {
++              "name": "controlPolicy",
++              "kind": "scalar",
++              "optional": true
++            },
++            {
++              "name": "displayName",
 +              "kind": "map",
 +              "nullable": true,
 +              "elem": {
 +                "kind": "scalar"
 +              }
-             },
-             {
-               "name": "id",
-@@ -11883,12 +21466,45 @@
-               "name": "permissions",
-               "kind": "list",
-               "nullable": true,
++            },
++            {
++              "name": "id",
++              "kind": "scalar"
++            },
++            {
++              "name": "permissions",
++              "kind": "list",
++              "nullable": true,
 +              "elem": {
 +                "kind": "object",
 +                "children": [
@@ -12860,38 +14036,42 @@
 +                  }
 +                ]
 +              },
-               "children": [
-                 {
-                   "name": "description",
--                  "kind": "scalar",
++              "children": [
++                {
++                  "name": "description",
 +                  "kind": "map",
-                   "optional": true,
--                  "nullable": true
++                  "optional": true,
 +                  "nullable": true,
 +                  "elem": {
 +                    "kind": "scalar"
 +                  }
-                 },
-                 {
-                   "name": "highRisk",
-@@ -11900,8 +21516,11 @@
-                 },
-                 {
-                   "name": "label",
--                  "kind": "scalar",
--                  "nullable": true
++                },
++                {
++                  "name": "highRisk",
++                  "kind": "scalar"
++                },
++                {
++                  "name": "kind",
++                  "kind": "scalar"
++                },
++                {
++                  "name": "label",
 +                  "kind": "map",
 +                  "nullable": true,
 +                  "elem": {
 +                    "kind": "scalar"
 +                  }
-                 }
-               ]
-             },
-@@ -11913,6 +21532,56 @@
-               "name": "scrapers",
-               "kind": "list",
-               "nullable": true,
++                }
++              ]
++            },
++            {
++              "name": "provenance",
++              "kind": "scalar"
++            },
++            {
++              "name": "scrapers",
++              "kind": "list",
++              "nullable": true,
 +              "elem": {
 +                "kind": "object",
 +                "children": [
@@ -12942,13 +14122,58 @@
 +                  }
 +                ]
 +              },
-               "children": [
-                 {
-                   "name": "authRef",
-@@ -11965,6 +21634,32 @@
-               "name": "status",
-               "kind": "list",
-               "nullable": true,
++              "children": [
++                {
++                  "name": "authRef",
++                  "kind": "scalar"
++                },
++                {
++                  "name": "authStyle",
++                  "kind": "scalar"
++                },
++                {
++                  "name": "credentialConfigured",
++                  "kind": "scalar"
++                },
++                {
++                  "name": "credentialError",
++                  "kind": "scalar",
++                  "optional": true
++                },
++                {
++                  "name": "credentialRequired",
++                  "kind": "scalar"
++                },
++                {
++                  "name": "credentialStatus",
++                  "kind": "scalar"
++                },
++                {
++                  "name": "displayName",
++                  "kind": "scalar"
++                },
++                {
++                  "name": "endpoint",
++                  "kind": "scalar"
++                },
++                {
++                  "name": "kind",
++                  "kind": "scalar"
++                },
++                {
++                  "name": "pluginID",
++                  "kind": "scalar"
++                },
++                {
++                  "name": "scraperID",
++                  "kind": "scalar"
++                }
++              ]
++            },
++            {
++              "name": "status",
++              "kind": "list",
++              "nullable": true,
 +              "elem": {
 +                "kind": "object",
 +                "children": [
@@ -12975,27 +14200,63 @@
 +                  }
 +                ]
 +              },
-               "children": [
-                 {
-                   "name": "detail",
-@@ -11977,8 +21672,11 @@
-                 },
-                 {
-                   "name": "label",
--                  "kind": "scalar",
--                  "nullable": true
++              "children": [
++                {
++                  "name": "detail",
++                  "kind": "scalar",
++                  "optional": true
++                },
++                {
++                  "name": "id",
++                  "kind": "scalar"
++                },
++                {
++                  "name": "label",
 +                  "kind": "map",
 +                  "nullable": true,
 +                  "elem": {
 +                    "kind": "scalar"
 +                  }
-                 },
-                 {
-                   "name": "state",
-@@ -12019,6 +21717,32 @@
-           "name": "grants",
-           "kind": "list",
-           "nullable": true,
++                },
++                {
++                  "name": "state",
++                  "kind": "scalar"
++                }
++              ]
++            },
++            {
++              "name": "trustState",
++              "kind": "scalar"
++            }
++          ]
++        },
++        {
++          "name": "remoteEnrollmentEnabled",
++          "kind": "scalar"
++        },
++        {
++          "name": "updateCheckChannel",
++          "kind": "scalar"
++        },
++        {
++          "name": "updateCheckEnabled",
++          "kind": "scalar"
++        }
++      ]
++    },
++    {
++      "field": "setpluginupdatesource",
++      "kind": "object",
++      "children": [
++        {
++          "name": "artifactSHA256",
++          "kind": "scalar",
++          "optional": true
++        },
++        {
++          "name": "grants",
++          "kind": "list",
++          "nullable": true,
 +          "elem": {
 +            "kind": "object",
 +            "children": [
@@ -13022,35 +14283,102 @@
 +              }
 +            ]
 +          },
-           "children": [
-             {
-               "name": "allLibraries",
-@@ -12055,7 +21779,10 @@
-         {
-           "name": "lifecycleActions",
-           "kind": "list",
--          "nullable": true
++          "children": [
++            {
++              "name": "allLibraries",
++              "kind": "scalar"
++            },
++            {
++              "name": "approved",
++              "kind": "scalar"
++            },
++            {
++              "name": "boundProfileID",
++              "kind": "scalar",
++              "optional": true
++            },
++            {
++              "name": "highRisk",
++              "kind": "scalar"
++            },
++            {
++              "name": "kind",
++              "kind": "scalar"
++            }
++          ]
++        },
++        {
++          "name": "installed",
++          "kind": "scalar"
++        },
++        {
++          "name": "lastError",
++          "kind": "scalar",
++          "optional": true
++        },
++        {
++          "name": "lifecycleActions",
++          "kind": "list",
 +          "nullable": true,
 +          "elem": {
 +            "kind": "scalar"
 +          }
-         },
-         {
-           "name": "pluginID",
-@@ -12103,12 +21830,32 @@
-         {
-           "name": "audioLanguages",
-           "kind": "list",
--          "nullable": true
++        },
++        {
++          "name": "pluginID",
++          "kind": "scalar"
++        },
++        {
++          "name": "state",
++          "kind": "scalar"
++        },
++        {
++          "name": "updateSource",
++          "kind": "object",
++          "optional": true,
++          "nullable": true,
++          "children": [
++            {
++              "name": "kind",
++              "kind": "scalar"
++            },
++            {
++              "name": "location",
++              "kind": "scalar"
++            },
++            {
++              "name": "pin",
++              "kind": "scalar"
++            },
++            {
++              "name": "pinKind",
++              "kind": "scalar"
++            }
++          ]
++        },
++        {
++          "name": "version",
++          "kind": "scalar",
++          "optional": true
++        }
++      ]
++    },
++    {
++      "field": "setprofilelibraries",
++      "kind": "object",
++      "children": [
++        {
++          "name": "audioLanguages",
++          "kind": "list",
 +          "nullable": true,
 +          "elem": {
 +            "kind": "scalar"
 +          }
-         },
-         {
-           "name": "certificationCeilings",
-           "kind": "list",
-           "nullable": true,
++        },
++        {
++          "name": "certificationCeilings",
++          "kind": "list",
++          "nullable": true,
 +          "elem": {
 +            "kind": "object",
 +            "children": [
@@ -13068,37 +14396,88 @@
 +              }
 +            ]
 +          },
-           "children": [
-             {
-               "name": "allowUnrated",
-@@ -12139,7 +21886,10 @@
-         {
-           "name": "libraryIDs",
-           "kind": "list",
--          "nullable": true
++          "children": [
++            {
++              "name": "allowUnrated",
++              "kind": "scalar"
++            },
++            {
++              "name": "ceiling",
++              "kind": "scalar"
++            },
++            {
++              "name": "pluginID",
++              "kind": "scalar"
++            }
++          ]
++        },
++        {
++          "name": "disabled",
++          "kind": "scalar"
++        },
++        {
++          "name": "id",
++          "kind": "scalar"
++        },
++        {
++          "name": "kind",
++          "kind": "scalar"
++        },
++        {
++          "name": "libraryIDs",
++          "kind": "list",
 +          "nullable": true,
 +          "elem": {
 +            "kind": "scalar"
 +          }
-         },
-         {
-           "name": "maxConcurrentStreams",
-@@ -12157,7 +21907,10 @@
-         {
-           "name": "subtitleLanguages",
-           "kind": "list",
--          "nullable": true
++        },
++        {
++          "name": "maxConcurrentStreams",
++          "kind": "scalar",
++          "nullable": true
++        },
++        {
++          "name": "name",
++          "kind": "scalar"
++        },
++        {
++          "name": "preferSDH",
++          "kind": "scalar"
++        },
++        {
++          "name": "subtitleLanguages",
++          "kind": "list",
 +          "nullable": true,
 +          "elem": {
 +            "kind": "scalar"
 +          }
-         },
-         {
-           "name": "subtitleMode",
-@@ -12185,6 +21938,19 @@
-               "name": "routes",
-               "kind": "list",
-               "nullable": true,
++        },
++        {
++          "name": "subtitleMode",
++          "kind": "scalar"
++        },
++        {
++          "name": "transcodeAllowed",
++          "kind": "scalar"
++        }
++      ]
++    },
++    {
++      "field": "setqbittorrentingest",
++      "kind": "object",
++      "children": [
++        {
++          "name": "config",
++          "kind": "object",
++          "children": [
++            {
++              "name": "enabled",
++              "kind": "scalar"
++            },
++            {
++              "name": "routes",
++              "kind": "list",
++              "nullable": true,
 +              "elem": {
 +                "kind": "object",
 +                "children": [
@@ -13112,13 +14491,23 @@
 +                  }
 +                ]
 +              },
-               "children": [
-                 {
-                   "name": "category",
-@@ -12202,6 +21968,38 @@
-           "name": "status",
-           "kind": "list",
-           "nullable": true,
++              "children": [
++                {
++                  "name": "category",
++                  "kind": "scalar"
++                },
++                {
++                  "name": "libraryID",
++                  "kind": "scalar"
++                }
++              ]
++            }
++          ]
++        },
++        {
++          "name": "status",
++          "kind": "list",
++          "nullable": true,
 +          "elem": {
 +            "kind": "object",
 +            "children": [
@@ -13151,37 +14540,247 @@
 +              }
 +            ]
 +          },
-           "children": [
-             {
-               "name": "at",
-@@ -12249,7 +22047,10 @@
-         {
-           "name": "order",
-           "kind": "list",
--          "nullable": true
++          "children": [
++            {
++              "name": "at",
++              "kind": "scalar",
++              "optional": true
++            },
++            {
++              "name": "category",
++              "kind": "scalar"
++            },
++            {
++              "name": "detail",
++              "kind": "scalar",
++              "optional": true
++            },
++            {
++              "name": "libraryID",
++              "kind": "scalar",
++              "optional": true
++            },
++            {
++              "name": "outcome",
++              "kind": "scalar"
++            },
++            {
++              "name": "releaseName",
++              "kind": "scalar"
++            }
++          ]
++        }
++      ]
++    },
++    {
++      "field": "setqualitypolicy",
++      "kind": "object",
++      "children": [
++        {
++          "name": "cutoff",
++          "kind": "scalar"
++        },
++        {
++          "name": "libraryID",
++          "kind": "scalar"
++        },
++        {
++          "name": "order",
++          "kind": "list",
 +          "nullable": true,
 +          "elem": {
 +            "kind": "scalar"
 +          }
-         }
-       ]
-     },
-@@ -12305,7 +22106,10 @@
-         {
-           "name": "scraperIDs",
-           "kind": "list",
--          "nullable": true
++        }
++      ]
++    },
++    {
++      "field": "setrating",
++      "kind": "object",
++      "children": [
++        {
++          "name": "id",
++          "kind": "scalar"
++        },
++        {
++          "name": "kind",
++          "kind": "scalar"
++        },
++        {
++          "name": "rating",
++          "kind": "scalar"
++        },
++        {
++          "name": "watched",
++          "kind": "scalar"
++        },
++        {
++          "name": "watchlisted",
++          "kind": "scalar"
++        }
++      ]
++    },
++    {
++      "field": "setretentioncandidatehold",
++      "kind": "object",
++      "children": [
++        {
++          "name": "hold",
++          "kind": "scalar"
++        },
++        {
++          "name": "mediaID",
++          "kind": "scalar"
++        },
++        {
++          "name": "ruleID",
++          "kind": "scalar"
++        }
++      ]
++    },
++    {
++      "field": "setrevealpin",
++      "kind": "object",
++      "children": [
++        {
++          "name": "revealed",
++          "kind": "scalar"
++        }
++      ]
++    },
++    {
++      "field": "setscrapercredential",
++      "kind": "object",
++      "children": [
++        {
++          "name": "authRef",
++          "kind": "scalar"
++        },
++        {
++          "name": "credentialConfigured",
++          "kind": "scalar"
++        },
++        {
++          "name": "credentialError",
++          "kind": "scalar",
++          "optional": true
++        },
++        {
++          "name": "credentialStatus",
++          "kind": "scalar"
++        },
++        {
++          "name": "scraperIDs",
++          "kind": "list",
 +          "nullable": true,
 +          "elem": {
 +            "kind": "scalar"
 +          }
-         }
-       ]
-     },
-@@ -12411,6 +22215,19 @@
-           "name": "hardwareAcceleration",
-           "kind": "list",
-           "nullable": true,
++        }
++      ]
++    },
++    {
++      "field": "setscrobbleeligibility",
++      "kind": "object",
++      "children": [
++        {
++          "name": "eligible",
++          "kind": "scalar"
++        },
++        {
++          "name": "libraryID",
++          "kind": "scalar"
++        }
++      ]
++    },
++    {
++      "field": "setskipdetectionenabled",
++      "kind": "object",
++      "children": [
++        {
++          "name": "enabled",
++          "kind": "scalar"
++        },
++        {
++          "name": "libraryID",
++          "kind": "scalar"
++        }
++      ]
++    },
++    {
++      "field": "setsubscriptionretention",
++      "kind": "object",
++      "children": [
++        {
++          "name": "addedAt",
++          "kind": "scalar",
++          "optional": true
++        },
++        {
++          "name": "feedURL",
++          "kind": "scalar"
++        },
++        {
++          "name": "followed",
++          "kind": "scalar"
++        },
++        {
++          "name": "hasAuth",
++          "kind": "scalar"
++        },
++        {
++          "name": "id",
++          "kind": "scalar"
++        },
++        {
++          "name": "lastPolledAt",
++          "kind": "scalar",
++          "optional": true
++        },
++        {
++          "name": "libraryID",
++          "kind": "scalar"
++        },
++        {
++          "name": "retentionKind",
++          "kind": "scalar"
++        },
++        {
++          "name": "retentionN",
++          "kind": "scalar",
++          "nullable": true
++        },
++        {
++          "name": "root",
++          "kind": "scalar"
++        },
++        {
++          "name": "title",
++          "kind": "scalar"
++        }
++      ]
++    },
++    {
++      "field": "settranscodeconfig",
++      "kind": "object",
++      "children": [
++        {
++          "name": "codec",
++          "kind": "scalar"
++        },
++        {
++          "name": "configuredPreference",
++          "kind": "scalar",
++          "optional": true
++        },
++        {
++          "name": "device",
++          "kind": "scalar"
++        },
++        {
++          "name": "hardwareAcceleration",
++          "kind": "list",
++          "nullable": true,
 +          "elem": {
 +            "kind": "object",
 +            "children": [
@@ -13195,14 +14794,157 @@
 +              }
 +            ]
 +          },
-           "children": [
-             {
-               "name": "accelerator",
-@@ -12510,7 +22327,17 @@
-         {
-           "name": "entityFilter",
-           "kind": "object",
--          "optional": true
++          "children": [
++            {
++              "name": "accelerator",
++              "kind": "scalar"
++            },
++            {
++              "name": "status",
++              "kind": "scalar"
++            }
++          ]
++        },
++        {
++          "name": "hardwareEnabled",
++          "kind": "scalar"
++        },
++        {
++          "name": "quality",
++          "kind": "scalar"
++        }
++      ]
++    },
++    {
++      "field": "setupstate",
++      "kind": "object",
++      "children": [
++        {
++          "name": "adminPasswordSet",
++          "kind": "scalar"
++        },
++        {
++          "name": "complete",
++          "kind": "scalar"
++        },
++        {
++          "name": "hasLibrary",
++          "kind": "scalar"
++        },
++        {
++          "name": "hasOwnerProfile",
++          "kind": "scalar"
++        },
++        {
++          "name": "pluginsActivated",
++          "kind": "scalar"
++        }
++      ]
++    },
++    {
++      "field": "setwatched",
++      "kind": "object",
++      "children": [
++        {
++          "name": "id",
++          "kind": "scalar"
++        },
++        {
++          "name": "kind",
++          "kind": "scalar"
++        },
++        {
++          "name": "rating",
++          "kind": "scalar"
++        },
++        {
++          "name": "watched",
++          "kind": "scalar"
++        },
++        {
++          "name": "watchlisted",
++          "kind": "scalar"
++        }
++      ]
++    },
++    {
++      "field": "setwatchlisted",
++      "kind": "object",
++      "children": [
++        {
++          "name": "id",
++          "kind": "scalar"
++        },
++        {
++          "name": "kind",
++          "kind": "scalar"
++        },
++        {
++          "name": "rating",
++          "kind": "scalar"
++        },
++        {
++          "name": "watched",
++          "kind": "scalar"
++        },
++        {
++          "name": "watchlisted",
++          "kind": "scalar"
++        }
++      ]
++    },
++    {
++      "field": "skipdetectionenabled",
++      "kind": "object",
++      "children": [
++        {
++          "name": "enabled",
++          "kind": "scalar"
++        },
++        {
++          "name": "libraryID",
++          "kind": "scalar"
++        }
++      ]
++    },
++    {
++      "field": "smartcollections",
++      "kind": "object",
++      "children": [
++        {
++          "name": "createdAt",
++          "kind": "scalar",
++          "optional": true
++        },
++        {
++          "name": "id",
++          "kind": "scalar"
++        },
++        {
++          "name": "libraryID",
++          "kind": "scalar"
++        },
++        {
++          "name": "name",
++          "kind": "scalar"
++        },
++        {
++          "name": "sortExpr",
++          "kind": "scalar"
++        },
++        {
++          "name": "sourceExpr",
++          "kind": "scalar"
++        }
++      ]
++    },
++    {
++      "field": "sourceitems",
++      "kind": "object",
++      "arguments": [
++        {
++          "name": "entityFilter",
++          "kind": "object",
 +          "optional": true,
 +          "fields": [
 +            {
@@ -13214,15 +14956,19 @@
 +              "kind": "string"
 +            }
 +          ]
-         },
-         {
-           "name": "entityID",
-@@ -12524,13 +22351,60 @@
-         },
-         {
-           "name": "fieldFilters",
--          "kind": "object",
--          "optional": true
++        },
++        {
++          "name": "entityID",
++          "kind": "string",
++          "optional": true
++        },
++        {
++          "name": "entityKind",
++          "kind": "string",
++          "optional": true
++        },
++        {
++          "name": "fieldFilters",
 +          "kind": "map",
 +          "optional": true,
 +          "elem": {
@@ -13248,11 +14994,10 @@
 +              }
 +            ]
 +          }
-         },
-         {
-           "name": "filters",
-           "kind": "list",
--          "optional": true
++        },
++        {
++          "name": "filters",
++          "kind": "list",
 +          "optional": true,
 +          "elem": {
 +            "kind": "object",
@@ -13278,13 +15023,23 @@
 +              }
 +            ]
 +          }
-         },
-         {
-           "name": "kind",
-@@ -12548,11 +22422,27 @@
-           "optional": true
-         },
-         {
++        },
++        {
++          "name": "kind",
++          "kind": "string",
++          "optional": true
++        },
++        {
++          "name": "libraryID",
++          "kind": "string",
++          "optional": true
++        },
++        {
++          "name": "limit",
++          "kind": "int",
++          "optional": true
++        },
++        {
 +          "name": "mode",
 +          "kind": "string",
 +          "optional": true,
@@ -13296,38 +15051,129 @@
 +          ]
 +        },
 +        {
-           "name": "offset",
-           "kind": "int",
-           "optional": true
-         },
-         {
++          "name": "offset",
++          "kind": "int",
++          "optional": true
++        },
++        {
 +          "name": "query",
 +          "kind": "string",
 +          "optional": true
 +        },
 +        {
-           "name": "seed",
-           "kind": "string",
-           "optional": true
-@@ -12578,9 +22468,12 @@
-         },
-         {
-           "name": "artworkSlots",
--          "kind": "scalar",
++          "name": "seed",
++          "kind": "string",
++          "optional": true
++        },
++        {
++          "name": "value",
++          "kind": "string",
++          "optional": true
++        }
++      ],
++      "children": [
++        {
++          "name": "artwork",
++          "kind": "object",
++          "optional": true,
++          "nullable": true,
++          "children": [
++            {
++              "name": "poster",
++              "kind": "scalar"
++            }
++          ]
++        },
++        {
++          "name": "artworkSlots",
 +          "kind": "map",
-           "optional": true,
--          "nullable": true
++          "optional": true,
 +          "nullable": true,
 +          "elem": {
 +            "kind": "scalar"
 +          }
-         },
-         {
-           "name": "id",
-@@ -12663,6 +22556,24 @@
-           "name": "candidates",
-           "kind": "list",
-           "nullable": true,
++        },
++        {
++          "name": "id",
++          "kind": "scalar"
++        },
++        {
++          "name": "kind",
++          "kind": "scalar"
++        },
++        {
++          "name": "locked",
++          "kind": "scalar",
++          "optional": true
++        },
++        {
++          "name": "muted",
++          "kind": "scalar",
++          "optional": true
++        },
++        {
++          "name": "restricted",
++          "kind": "scalar",
++          "optional": true
++        },
++        {
++          "name": "summary",
++          "kind": "scalar",
++          "optional": true
++        },
++        {
++          "name": "title",
++          "kind": "scalar"
++        }
++      ]
++    },
++    {
++      "field": "stationdelete",
++      "kind": "object",
++      "children": [
++        {
++          "name": "createdAt",
++          "kind": "scalar",
++          "optional": true
++        },
++        {
++          "name": "id",
++          "kind": "scalar"
++        },
++        {
++          "name": "libraryID",
++          "kind": "scalar"
++        },
++        {
++          "name": "name",
++          "kind": "scalar"
++        },
++        {
++          "name": "profileID",
++          "kind": "scalar"
++        },
++        {
++          "name": "rulesJSON",
++          "kind": "scalar"
++        },
++        {
++          "name": "seedJSON",
++          "kind": "scalar"
++        },
++        {
++          "name": "tuningJSON",
++          "kind": "scalar"
++        }
++      ]
++    },
++    {
++      "field": "stationgenerate",
++      "kind": "object",
++      "children": [
++        {
++          "name": "candidates",
++          "kind": "list",
++          "nullable": true,
 +          "elem": {
 +            "kind": "object",
 +            "children": [
@@ -13346,28 +15192,142 @@
 +              }
 +            ]
 +          },
-           "children": [
-             {
-               "name": "explanation",
-@@ -12782,9 +22693,12 @@
-         },
-         {
-           "name": "artworkSlots",
--          "kind": "scalar",
++          "children": [
++            {
++              "name": "explanation",
++              "kind": "scalar",
++              "optional": true
++            },
++            {
++              "name": "mediaID",
++              "kind": "scalar"
++            },
++            {
++              "name": "title",
++              "kind": "scalar"
++            }
++          ]
++        },
++        {
++          "name": "explanation",
++          "kind": "scalar",
++          "optional": true
++        }
++      ]
++    },
++    {
++      "field": "stations",
++      "kind": "object",
++      "children": [
++        {
++          "name": "createdAt",
++          "kind": "scalar",
++          "optional": true
++        },
++        {
++          "name": "id",
++          "kind": "scalar"
++        },
++        {
++          "name": "libraryID",
++          "kind": "scalar"
++        },
++        {
++          "name": "name",
++          "kind": "scalar"
++        },
++        {
++          "name": "profileID",
++          "kind": "scalar"
++        },
++        {
++          "name": "rulesJSON",
++          "kind": "scalar"
++        },
++        {
++          "name": "seedJSON",
++          "kind": "scalar"
++        },
++        {
++          "name": "tuningJSON",
++          "kind": "scalar"
++        }
++      ]
++    },
++    {
++      "field": "stationsave",
++      "kind": "object",
++      "children": [
++        {
++          "name": "createdAt",
++          "kind": "scalar",
++          "optional": true
++        },
++        {
++          "name": "id",
++          "kind": "scalar"
++        },
++        {
++          "name": "libraryID",
++          "kind": "scalar"
++        },
++        {
++          "name": "name",
++          "kind": "scalar"
++        },
++        {
++          "name": "profileID",
++          "kind": "scalar"
++        },
++        {
++          "name": "rulesJSON",
++          "kind": "scalar"
++        },
++        {
++          "name": "seedJSON",
++          "kind": "scalar"
++        },
++        {
++          "name": "tuningJSON",
++          "kind": "scalar"
++        }
++      ]
++    },
++    {
++      "field": "stationstart",
++      "kind": "object",
++      "children": [
++        {
++          "name": "artwork",
++          "kind": "object",
++          "optional": true,
++          "nullable": true,
++          "children": [
++            {
++              "name": "poster",
++              "kind": "scalar"
++            }
++          ]
++        },
++        {
++          "name": "artworkSlots",
 +          "kind": "map",
-           "optional": true,
--          "nullable": true
++          "optional": true,
 +          "nullable": true,
 +          "elem": {
 +            "kind": "scalar"
 +          }
-         },
-         {
-           "name": "id",
-@@ -12796,567 +22710,1667 @@
-         },
-         {
-           "name": "locked",
++        },
++        {
++          "name": "id",
++          "kind": "scalar"
++        },
++        {
++          "name": "kind",
++          "kind": "scalar"
++        },
++        {
++          "name": "locked",
 +          "kind": "scalar",
 +          "optional": true
 +        },
@@ -15503,7 +17463,7 @@
                  },
                  {
                    "name": "icon",
-@@ -13372,6 +24386,82 @@
+@@ -13372,6 +24608,82 @@
                    "kind": "list",
                    "optional": true,
                    "nullable": true,
@@ -15586,7 +17546,7 @@
                    "children": [
                      {
                        "name": "configured",
-@@ -13384,8 +24474,11 @@
+@@ -13384,8 +24696,11 @@
                      },
                      {
                        "name": "label",
@@ -15600,7 +17560,7 @@
                      },
                      {
                        "name": "name",
-@@ -13396,11 +24489,31 @@
+@@ -13396,11 +24711,31 @@
                        "kind": "list",
                        "optional": true,
                        "nullable": true,
@@ -15634,7 +17594,7 @@
                          },
                          {
                            "name": "value",
-@@ -13425,14 +24538,20 @@
+@@ -13425,14 +24760,20 @@
                  },
                  {
                    "name": "label",
@@ -15658,7 +17618,7 @@
                  },
                  {
                    "name": "risk",
-@@ -13448,6 +24567,82 @@
+@@ -13448,6 +24789,82 @@
                "name": "config",
                "kind": "list",
                "nullable": true,
@@ -15741,7 +17701,7 @@
                "children": [
                  {
                    "name": "configured",
-@@ -13460,8 +24655,11 @@
+@@ -13460,8 +24877,11 @@
                  },
                  {
                    "name": "label",
@@ -15755,7 +17715,7 @@
                  },
                  {
                    "name": "name",
-@@ -13472,11 +24670,31 @@
+@@ -13472,11 +24892,31 @@
                    "kind": "list",
                    "optional": true,
                    "nullable": true,
@@ -15789,7 +17749,7 @@
                      },
                      {
                        "name": "value",
-@@ -13506,8 +24724,11 @@
+@@ -13506,8 +24946,11 @@
              },
              {
                "name": "displayName",
@@ -15803,7 +17763,7 @@
              },
              {
                "name": "id",
-@@ -13517,12 +24738,45 @@
+@@ -13517,12 +24960,45 @@
                "name": "permissions",
                "kind": "list",
                "nullable": true,
@@ -15851,7 +17811,7 @@
                  },
                  {
                    "name": "highRisk",
-@@ -13534,8 +24788,11 @@
+@@ -13534,8 +25010,11 @@
                  },
                  {
                    "name": "label",
@@ -15865,7 +17825,7 @@
                  }
                ]
              },
-@@ -13547,6 +24804,56 @@
+@@ -13547,6 +25026,56 @@
                "name": "scrapers",
                "kind": "list",
                "nullable": true,
@@ -15922,7 +17882,7 @@
                "children": [
                  {
                    "name": "authRef",
-@@ -13599,6 +24906,32 @@
+@@ -13599,6 +25128,32 @@
                "name": "status",
                "kind": "list",
                "nullable": true,
@@ -15955,7 +17915,7 @@
                "children": [
                  {
                    "name": "detail",
-@@ -13611,8 +24944,11 @@
+@@ -13611,8 +25166,11 @@
                  },
                  {
                    "name": "label",
@@ -15969,7 +17929,7 @@
                  },
                  {
                    "name": "state",
-@@ -13913,6 +25249,24 @@
+@@ -13913,6 +25471,24 @@
            "name": "members",
            "kind": "list",
            "nullable": true,
@@ -15994,7 +17954,7 @@
            "children": [
              {
                "name": "addedAt",
-@@ -13984,7 +25338,10 @@
+@@ -13984,7 +25560,10 @@
          {
            "name": "tags",
            "kind": "list",
@@ -16006,7 +17966,7 @@
          },
          {
            "name": "title",
-@@ -14005,12 +25362,32 @@
+@@ -14005,12 +25584,32 @@
          {
            "name": "audioLanguages",
            "kind": "list",
@@ -16040,7 +18000,7 @@
            "children": [
              {
                "name": "allowUnrated",
-@@ -14041,7 +25418,10 @@
+@@ -14041,7 +25640,10 @@
          {
            "name": "libraryIDs",
            "kind": "list",
@@ -16052,7 +18012,7 @@
          },
          {
            "name": "maxConcurrentStreams",
-@@ -14059,7 +25439,10 @@
+@@ -14059,7 +25661,10 @@
          {
            "name": "subtitleLanguages",
            "kind": "list",
@@ -16064,7 +18024,7 @@
          },
          {
            "name": "subtitleMode",
-@@ -14318,7 +25701,10 @@
+@@ -14318,7 +25923,10 @@
          {
            "name": "scraperIDs",
            "kind": "list",
@@ -16076,7 +18036,7 @@
          }
        ]
      },
-@@ -17083,6 +28469,13 @@
+@@ -17083,6 +28691,13 @@
            }
          },
          {
@@ -16090,7 +18050,7 @@
            "name": "burnSubtitleIndex",
            "shape": {
              "type": "integer",
-@@ -17090,6 +28483,20 @@
+@@ -17090,6 +28705,20 @@
            }
          },
          {
