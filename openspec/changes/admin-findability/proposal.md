@@ -31,7 +31,12 @@ what an owner comes to do, so common jobs are buried, duplicated or unlabelled.
 - **Console home is the owner's task list**: Overview shows task tiles for jobs 1-6 with live
   status (scans running, keys needed, libraries count) and links, replacing the hard-coded "Ready"
   tiles. "Rescan all libraries" runs from there.
-- **Header**: an admin-eligible session sees a "Console" link next to "Manage".
+- **Header**: an admin-eligible session sees a "Console" link next to "Manage", plus an activity
+  link to Console > Operations showing the running-job count.
+- **Auto-scan status**: library cards and the Rescan tile say whether new files are picked up
+  automatically (existing watcher status, ADR-0032). Add library and Rescan all sit in the
+  Libraries header. These follow organisation patterns seen in Plex (verbs on the thing, page verbs
+  in the header, one global activity indicator), not its design.
 - **Add a library**: the create form gets a heading and adds the new library to the list without
   Refresh.
 - **Unmatched**: each library card and the Console home link to Manage > Unmatched.

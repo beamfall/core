@@ -38,3 +38,23 @@ Console.
 
 - **WHEN** a manager's browser shows the Viewer
 - **THEN** the header has both "Manage" and "Console" links
+
+### Requirement: Server activity visible from the header
+
+The app header SHALL show managers an activity link to Console > Operations that shows how many
+jobs are running.
+
+#### Scenario: A scan is running
+
+- **WHEN** a manager is on any page while a scan job runs
+- **THEN** the header activity link reads "1 job running" and opens Console > Operations
+
+### Requirement: Auto-scan status shown where owners rescan
+
+Console > Libraries cards and the Console home Rescan tile SHALL show whether new files are picked
+up automatically, from the existing watcher status.
+
+#### Scenario: Library folder is watched
+
+- **WHEN** a library's watcher state is "watching"
+- **THEN** its card says "Picks up new files automatically" next to Rescan library
