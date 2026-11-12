@@ -211,7 +211,10 @@ export function PathPickerField({
       });
       if (seq !== request.current) return;
       refocus.current = true;
-      setView({ path, info });
+      // Follow the folder the server resolved rather than the spelling that
+      // was typed ("/mnt/../data/sub"), so Up and the breadcrumbs start from
+      // where the browser really is. Locations has no folder of its own.
+      setView({ path: path && (info.entries[0]?.path || path), info });
       setCurrent(0);
     } catch (err) {
       if (seq !== request.current) return;

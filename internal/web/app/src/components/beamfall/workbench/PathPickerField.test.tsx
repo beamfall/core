@@ -259,6 +259,25 @@ describe("PathPickerField", () => {
     expect(browser()).toBeInTheDocument();
   });
 
+  it("goes Up from the folder the server resolved, not the spelling that was typed", async () => {
+    const user = userEvent.setup();
+    // The server answers a path with its resolved folder: /media/../mnt/user is /mnt/user.
+    vi.mocked(fetchPathPicker).mockImplementation(({ role, path }) =>
+      Promise.resolve(
+        answer(role, path === "/media/../mnt/user" ? "/mnt/user" : (path ?? undefined)),
+      ),
+    );
+    renderField();
+    await user.type(screen.getByLabelText("libraryRoot path"), "/media/../mnt/user");
+    await user.click(screen.getByRole("button", { name: "Browse" }));
+    await row(/movies/);
+
+    await user.click(within(browser()).getByRole("button", { name: "Up one level" }));
+
+    await row("user");
+    expect(fetchPathPicker).toHaveBeenLastCalledWith(expect.objectContaining({ path: "/mnt" }));
+  });
+
   it("moves with the keyboard and closes on Escape", async () => {
     const user = userEvent.setup();
     renderField();
