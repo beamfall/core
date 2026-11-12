@@ -25,12 +25,10 @@ store nothing. An empty value SHALL clear the choice. Core SHALL NOT interpret t
 
 ### Requirement: The web picker shows avatars and asks for a PIN in place
 
-The web profile picker SHALL show every available Profile as an avatar tile with its name. A
-Profile without a recognised avatar token SHALL show a generated avatar that is the same for that
-Profile on every visit. Choosing an adult Profile other than the current one SHALL ask for its PIN
-on the picker itself and switch only when the server accepts it. A refused PIN and a throttled
-attempt SHALL each show their own message and keep the prompt open. Choosing a managed Profile
-SHALL switch without a prompt.
+The web profile picker SHALL show every available Profile as an avatar tile with its name, using a
+generated avatar when no recognised token is stored. Choosing an adult Profile other than the
+current one SHALL ask for its PIN on the picker itself and switch only when the server accepts it.
+Choosing a managed Profile SHALL switch without a prompt.
 
 #### Scenario: Switching to an adult Profile
 
@@ -41,6 +39,16 @@ SHALL switch without a prompt.
 
 - **WHEN** a person enters a PIN the server refuses
 - **THEN** the picker says the PIN was not accepted, clears the field and stays on the prompt
+
+#### Scenario: Throttled attempts
+
+- **WHEN** the server reports that PIN attempts are throttled
+- **THEN** the picker says to wait and try again, and stays on the prompt
+
+#### Scenario: Generated avatar
+
+- **WHEN** a Profile has no recognised avatar token
+- **THEN** it shows the same generated avatar on every visit
 
 #### Scenario: Switching to a managed Profile
 
