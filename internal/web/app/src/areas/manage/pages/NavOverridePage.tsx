@@ -48,7 +48,10 @@ import { formatDateTime } from "../lib/schedule";
 // against the live manifest; the manifest itself supplies the node/Layout
 // catalog. Labels are domain-agnostic (HARD invariant #1).
 
-const DEFAULT_ACCENT = "#2F7DFF";
+// The accent core serves when no override is set: the design-system brand
+// accent (Cinema --accent = --beam-500 in styles/tokens.css). Mirrors
+// manifest.DefaultAccentColor; a Go conformance test pins all three together.
+const DEFAULT_ACCENT = "#9fd8e5";
 const EMPTY_OVERRIDE: NavOverrideInfo = {
   hiddenNodeIDs: [],
   nodeOrder: [],
