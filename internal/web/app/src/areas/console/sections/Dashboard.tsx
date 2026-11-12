@@ -190,7 +190,7 @@ export function LiveSessions() {
         </Button>
       }
     >
-      {loading ? (
+      {loading && !data ? (
         <Skeleton className="h-32 w-full" />
       ) : failed && sessions.length === 0 ? (
         <ErrorState message="liveSessionsUnavailable" />
@@ -544,7 +544,9 @@ export function HostGraphs() {
   const newest = samples[samples.length - 1];
 
   let body: ReactNode;
-  if (loading) {
+  // Polls keep the last readings mounted: only the first load shows a
+  // skeleton, so an open table or hover survives a refresh.
+  if (loading && !data) {
     body = <Skeleton className="h-48 w-full" />;
   } else if (failed && samples.length === 0) {
     body = <ErrorState message="hostMetricsUnavailable" />;
@@ -555,7 +557,10 @@ export function HostGraphs() {
     const cpuKnown = cpu.some((v) => v !== null);
     const sent = samples.map((s) => s.sentBytesPerSecond * 8);
     const received = samples.map((s) => s.receivedBytesPerSecond * 8);
-    const memoryTotal = newest.memoryTotalBytes;
+    // A zero total is a reading the host could not take, not free memory.
+    const memory = samples.map((s) => (s.memoryTotalBytes > 0 ? s.memoryUsedBytes : null));
+    const memoryKnown = memory.some((v) => v !== null);
+    const memoryTotal = Math.max(0, ...samples.map((s) => s.memoryTotalBytes));
     body = (
       <div className="console-chart-grid-wrap">
         {cpuKnown ? (
@@ -575,23 +580,30 @@ export function HostGraphs() {
             <p className="console-chart-missing">{t("hostMetricsCpuUnavailable")}</p>
           </figure>
         )}
-        <LineChart
-          title={t("hostMetricsMemory")}
-          headline={t("hostMetricsOf", {
-            used: formatBytes(newest.memoryUsedBytes),
-            total: formatBytes(memoryTotal),
-          })}
-          times={times}
-          series={[
-            {
-              label: t("hostMetricsMemory"),
-              color: "var(--accent)",
-              values: samples.map((s) => s.memoryUsedBytes),
-            },
-          ]}
-          max={memoryTotal > 0 ? memoryTotal : niceMax([newest.memoryUsedBytes], 1024 ** 3)}
-          format={formatBytes}
-        />
+        {memoryKnown ? (
+          <LineChart
+            title={t("hostMetricsMemory")}
+            headline={
+              newest.memoryTotalBytes > 0
+                ? t("hostMetricsOf", {
+                    used: formatBytes(newest.memoryUsedBytes),
+                    total: formatBytes(newest.memoryTotalBytes),
+                  })
+                : "—"
+            }
+            times={times}
+            series={[{ label: t("hostMetricsMemory"), color: "var(--accent)", values: memory }]}
+            max={memoryTotal}
+            format={formatBytes}
+          />
+        ) : (
+          <figure className="console-chart console-card console-card-pad">
+            <figcaption className="console-chart-head">
+              <span className="console-chart-title">{t("hostMetricsMemory")}</span>
+            </figcaption>
+            <p className="console-chart-missing">{t("hostMetricsMemoryUnavailable")}</p>
+          </figure>
+        )}
         <LineChart
           title={t("hostMetricsNetwork")}
           headline={`↑ ${formatBitrate(newest.sentBytesPerSecond * 8)} · ↓ ${formatBitrate(newest.receivedBytesPerSecond * 8)}`}

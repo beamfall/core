@@ -45,6 +45,7 @@ export const sessionUpdateStrings = {
     hostMetricsSent: "Sent",
     hostMetricsReceived: "Received",
     hostMetricsCpuUnavailable: "CPU use is not available on this system.",
+    hostMetricsMemoryUnavailable: "Memory use is not available on this system.",
     hostMetricsUnavailable: "Could not load server resources.",
     hostMetricsCollecting: "Collecting the first samples.",
     hostMetricsShowTable: "Show as table",
