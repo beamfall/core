@@ -7,6 +7,11 @@ import { AppShell } from "./AppShell";
 
 vi.mock("@/lib/graphql", () => ({
   fetchNotifications: vi.fn().mockResolvedValue([]),
+  fetchJobs: vi
+    .fn()
+    .mockResolvedValue([
+      { id: "j1", kind: "scan", status: "running", progress: { current: 0, total: 0, unit: "" } },
+    ]),
 }));
 
 vi.mock("@/lib/register", () => ({
@@ -62,6 +67,15 @@ describe("AppShell host chrome suppression", () => {
     renderShell();
     expect(screen.getByRole("link", { name: "Console" })).toHaveAttribute("href", "/console");
     expect(screen.getByRole("link", { name: "Manage" })).toHaveAttribute("href", "/manage");
+  });
+
+  it("shows running jobs in the header activity link for managers", async () => {
+    sessionState.isManager = true;
+    renderShell();
+    expect(await screen.findByRole("link", { name: "1 job running" })).toHaveAttribute(
+      "href",
+      "/console/operations",
+    );
   });
 
   it("suppresses app chrome inside the Apple Manager host", () => {

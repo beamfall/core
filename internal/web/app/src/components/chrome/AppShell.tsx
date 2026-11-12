@@ -2,6 +2,7 @@ import { Bell } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { SignOutButton } from "@/areas/enroll";
+import { ServerActivity } from "@/components/beamfall/ServerActivity";
 import { Badge } from "@/components/ui/badge";
 import { getBeamfallHost } from "@/lib/beamfallHost";
 import { displayString } from "@/lib/display";
@@ -119,6 +120,7 @@ export function AppShell({
               {t("managerRole")}
             </Badge>
           )}
+          {isManager && <ServerActivity />}
           {isManager && (
             <Link to="/console" className="bf-action-link">
               {t("consoleHeading")}

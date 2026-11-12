@@ -1,7 +1,7 @@
 import { Boxes, Plus, RefreshCw, Save, ScanLine, SearchCheck } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
-import { RescanButton, RescanStatus } from "@/components/beamfall/LibraryRescan";
+import { RescanAllButton, RescanButton, RescanStatus } from "@/components/beamfall/LibraryRescan";
 import {
   EmptyState,
   ErrorLine,
@@ -28,12 +28,18 @@ import {
   fetchLibraries,
   fetchPlugins,
   fetchSkipDetectionEnabled,
+  fetchWatcherStatus,
   scanLibrary,
   setLibraryPreviewClips,
   setLibraryRoots,
   setSkipDetectionEnabled,
 } from "@/lib/graphql";
-import type { FolderEntryInfo, LibraryInfo, PluginSummary } from "@/lib/graphql/types";
+import type {
+  FolderEntryInfo,
+  LibraryInfo,
+  PluginSummary,
+  WatcherStatusInfo,
+} from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { Section } from "../Section";
 import { useAsync } from "../useAsync";
@@ -49,11 +55,13 @@ function LibraryCard({
   library,
   plugins,
   skipDetectionEnabled,
+  watcher,
   onChanged,
 }: {
   library: LibraryInfo;
   plugins: PluginSummary[];
   skipDetectionEnabled: boolean;
+  watcher?: WatcherStatusInfo;
   onChanged: () => void;
 }) {
   const t = useT();
@@ -164,6 +172,13 @@ function LibraryCard({
       <div className="console-fieldset-body space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <RescanButton libraryID={library.id} roots={library.roots ?? []} />
+          {watcher && (
+            <span title={watcher.reason || undefined}>
+              <StatusChip tone={watcher.state === "watching" ? "green" : "neutral"}>
+                {watcher.state === "watching" ? t("autoScanOn") : t("autoScanOff")}
+              </StatusChip>
+            </span>
+          )}
           <Button asChild size="sm" variant="outline">
             <Link to="/manage/unmatched">
               <SearchCheck className="console-nav-icon" aria-hidden />
@@ -256,6 +271,7 @@ export function Libraries() {
   const libs = useAsync(fetchLibraries);
   const plugins = useAsync(fetchPlugins);
   const skipDetection = useAsync(fetchSkipDetectionEnabled);
+  const watchers = useAsync(fetchWatcherStatus);
   const [title, setTitle] = useState("");
   const [pluginID, setPluginID] = useState(NO_PLUGIN);
 
@@ -277,16 +293,23 @@ export function Libraries() {
     <Section
       heading="libraries"
       actions={
-        <Button variant="outline" size="sm" onClick={() => void libs.refresh()}>
-          <RefreshCw className="console-nav-icon" aria-hidden />
-          {t("refresh")}
-        </Button>
+        <>
+          <RescanAllButton libraries={libs.data ?? []} />
+          <Button variant="outline" size="sm" onClick={() => void libs.refresh()}>
+            <RefreshCw className="console-nav-icon" aria-hidden />
+            {t("refresh")}
+          </Button>
+        </>
       }
     >
       <form
         onSubmit={onCreate}
+        aria-labelledby="add-library-heading"
         className="console-card console-card-pad flex flex-wrap items-end gap-3"
       >
+        <h3 id="add-library-heading" className="m-0 w-full text-sm font-semibold">
+          {t("taskAddLibrary")}
+        </h3>
         <div className="space-y-1.5">
           <Label htmlFor="new-lib-title">{t("title")}</Label>
           <Input id="new-lib-title" value={title} onChange={(e) => setTitle(e.target.value)} />
@@ -327,6 +350,7 @@ export function Libraries() {
               library={library}
               plugins={pluginList}
               skipDetectionEnabled={skipDetectionByLibrary.get(library.id) ?? false}
+              watcher={watchers.data?.find((w) => w.libraryID === library.id)}
               onChanged={() => {
                 void libs.refresh();
                 void skipDetection.refresh();

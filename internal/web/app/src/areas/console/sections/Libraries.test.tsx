@@ -29,6 +29,9 @@ vi.mock("@/lib/graphql", () => ({
   fetchLibraries: vi.fn(),
   fetchPlugins: vi.fn(),
   fetchSkipDetectionEnabled: vi.fn(),
+  fetchWatcherStatus: vi
+    .fn()
+    .mockResolvedValue([{ libraryID: "library-1", title: "Library", state: "watching" }]),
   scanLibrary: vi.fn(),
   setLibraryPreviewClips: vi.fn(),
   setLibraryRoots: vi.fn(),

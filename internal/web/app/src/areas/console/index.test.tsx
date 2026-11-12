@@ -21,6 +21,7 @@ vi.mock("@/lib/graphql", () => ({
   fetchLibraries: vi.fn().mockResolvedValue([]),
   fetchUnmatchedQueue: vi.fn().mockResolvedValue([]),
   fetchConsoleConfig: vi.fn().mockResolvedValue({ plugins: [] }),
+  fetchWatcherStatus: vi.fn().mockResolvedValue([]),
 }));
 vi.mock("./AdminGate", () => ({
   AdminGate: ({ children }: { children: ReactNode }) => <>{children}</>,

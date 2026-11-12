@@ -11,7 +11,12 @@ import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { RescanAllButton, useAnyRescanActive } from "@/components/beamfall/LibraryRescan";
 import { StatusChip } from "@/components/beamfall/workbench";
-import { fetchConsoleConfig, fetchLibraries, fetchUnmatchedQueue } from "@/lib/graphql";
+import {
+  fetchConsoleConfig,
+  fetchLibraries,
+  fetchUnmatchedQueue,
+  fetchWatcherStatus,
+} from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
 import { groupProviderKeys, keyNeeded } from "@/lib/providerKeys";
 import { cn } from "@/lib/utils";
@@ -75,6 +80,10 @@ export function OwnerTasks() {
   const libraries = useAsync(fetchLibraries);
   const unmatched = useAsync(fetchUnmatchedQueue);
   const config = useAsync(fetchConsoleConfig);
+  const watchers = useAsync(fetchWatcherStatus);
+  const allWatched =
+    (watchers.data ?? []).length > 0 &&
+    (watchers.data ?? []).every((watcher) => watcher.state === "watching");
 
   const neededKeys = config.data
     ? config.data.plugins
@@ -101,7 +110,7 @@ export function OwnerTasks() {
             }
           />
           <p className="m-0 text-[12.5px] leading-snug text-muted-foreground">
-            {t("taskRescanLead")}
+            {allWatched ? t("autoScanAll") : t("taskRescanLead")}
           </p>
           <div>
             <RescanAllButton libraries={libraries.data ?? []} variant="default" />
