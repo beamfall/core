@@ -207,4 +207,31 @@ func TestLibraryBrowseReadsAnOpenEncryptedLibrary(t *testing.T) {
 	if open.Total != 1 || len(open.Items) != 1 || open.Items[0].ID != imported.ID {
 		t.Fatalf("open encrypted library browse = %+v, want the one imported item", open)
 	}
+
+	// A hide-mode certification ceiling is applied on the Encrypted Library's
+	// own plane, which has no library table to join.
+	if _, err := st.catalogW.ExecContext(ctx, `UPDATE library SET plugin_id = 'photos' WHERE id = ?`, library); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := st.encryptedDBs[library].writer.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := insertMediaFields(ctx, tx, imported.ID, []MediaField{{Name: certificationField, Type: EntityFieldText, Text: "high"}}); err != nil {
+		_ = tx.Rollback()
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	for allowed, want := range map[string]int{"low": 0, "high": 1} {
+		filter := LibraryFilter{AllLibraries: true, Certification: []CertificationConstraint{{PluginID: "photos", Allowed: []string{allowed}}}}
+		result, err := st.LibraryBrowse(ctx, filter, LibraryBrowseQuery{LibraryID: library})
+		if err != nil {
+			t.Fatalf("browse under a %q ceiling: %v", allowed, err)
+		}
+		if result.Total != want {
+			t.Fatalf("browse under a %q ceiling = %d items, want %d", allowed, result.Total, want)
+		}
+	}
 }

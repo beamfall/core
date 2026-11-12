@@ -150,6 +150,11 @@ func (s *Store) LibraryBrowse(ctx context.Context, filter LibraryFilter, query L
 	// catalog plane holds every row this read needs.
 	var visible []LibraryID
 	reader := s.catalogR
+	// certify renders the certification clause for the plane being read: an
+	// Encrypted Library's own catalog has no library table to join.
+	certify := func() (string, []any) {
+		return certificationFilterSQL(filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
+	}
 	for _, library := range libraries {
 		if !libraryVisible(library, filter) {
 			continue
@@ -161,6 +166,13 @@ func (s *Store) LibraryBrowse(ctx context.Context, filter LibraryFilter, query L
 				continue
 			}
 			reader = db.reader
+			pluginID := ""
+			if library.PluginID != nil {
+				pluginID = *library.PluginID
+			}
+			certify = func() (string, []any) {
+				return planeCertificationFilterSQL(pluginID, filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
+			}
 		}
 		visible = append(visible, library.ID)
 	}
@@ -168,7 +180,7 @@ func (s *Store) LibraryBrowse(ctx context.Context, filter LibraryFilter, query L
 		return empty, nil
 	}
 
-	candidates, err := libraryBrowseCandidates(ctx, reader, filter, visible, nil)
+	candidates, err := libraryBrowseCandidates(ctx, reader, certify, visible, nil)
 	if err != nil {
 		return empty, err
 	}
@@ -188,7 +200,7 @@ func (s *Store) LibraryBrowse(ctx context.Context, filter LibraryFilter, query L
 	}
 
 	if query.EntityFilter != nil {
-		related, err := libraryBrowseCandidates(ctx, reader, filter, visible, query.EntityFilter)
+		related, err := libraryBrowseCandidates(ctx, reader, certify, visible, query.EntityFilter)
 		if err != nil {
 			return empty, err
 		}
@@ -227,7 +239,7 @@ func (s *Store) LibraryBrowse(ctx context.Context, filter LibraryFilter, query L
 	return result, nil
 }
 
-func libraryBrowseCandidates(ctx context.Context, reader *sql.DB, filter LibraryFilter, visible []LibraryID, entityFilter *EntityFilter) ([]libraryBrowseCandidate, error) {
+func libraryBrowseCandidates(ctx context.Context, reader *sql.DB, certify func() (string, []any), visible []LibraryID, entityFilter *EntityFilter) ([]libraryBrowseCandidate, error) {
 	placeholders := make([]string, len(visible))
 	args := make([]any, 0, len(visible))
 	for i, id := range visible {
@@ -236,7 +248,7 @@ func libraryBrowseCandidates(ctx context.Context, reader *sql.DB, filter Library
 	}
 	entityClause, entityArgs := entityRelationFilterSQL(entityFilter, visible)
 	args = append(args, entityArgs...)
-	certClause, certArgs := certificationFilterSQL(filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
+	certClause, certArgs := certify()
 	args = append(args, certArgs...)
 	// #nosec G202 -- interpolated fragments are internally generated placeholders and closed filter SQL.
 	rows, err := reader.QueryContext(ctx, `
