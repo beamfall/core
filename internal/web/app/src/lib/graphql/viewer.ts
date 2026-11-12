@@ -204,19 +204,25 @@ export async function search(term: string): Promise<SourceItem[]> {
 }
 
 const SEARCH_RESULT_QUERY =
-  "query SearchResult($query: String!, $mode: SearchMode) { searchResult(query: $query, mode: $mode) { mode restrictedResultsPresent items { id kind title summary score artwork { poster } artworkSlots engagement { positionSeconds durationSeconds completed totalCount remainingCount } } } }";
+  "query SearchResult($query: String!, $mode: SearchMode) { searchResult(query: $query, mode: $mode) { mode restrictedResultsPresent items { id kind title summary score artwork { poster } artworkSlots libraryID libraryTitle year mediaClass entityKind entityKindDisplayName engagement { positionSeconds durationSeconds completed totalCount remainingCount } } } }";
 
 /**
  * searchResult — the explainable, mode-aware search (ADR-0041 #106). `mode`
  * requests keyword/semantic/auto/recommend; the response echoes the mode
  * actually served (auto/semantic degrade to keyword when unavailable) and the
- * leak-safe restrictedResultsPresent flag (no hidden title/id/count).
+ * leak-safe restrictedResultsPresent flag (no hidden title/id/count). Pass a
+ * `signal` to cancel a request the user has already typed past.
  */
-export async function searchResult(term: string, mode: SearchMode): Promise<SearchResultResponse> {
-  const data = await graphql<{ searchResult: SearchResultResponse | null }>(SEARCH_RESULT_QUERY, {
-    query: term,
-    mode,
-  });
+export async function searchResult(
+  term: string,
+  mode: SearchMode,
+  signal?: AbortSignal,
+): Promise<SearchResultResponse> {
+  const data = await graphql<{ searchResult: SearchResultResponse | null }>(
+    SEARCH_RESULT_QUERY,
+    { query: term, mode },
+    signal,
+  );
   return (
     data.searchResult ?? {
       mode: "keyword",

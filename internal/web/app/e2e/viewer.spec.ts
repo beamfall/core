@@ -115,18 +115,21 @@ test.describe("viewer", () => {
   test("search runs against the real FTS path and returns a result set", async ({ page }) => {
     const errors = collectFatalErrors(page);
     await page.goto("/web/search");
-    await expect(page.getByRole("heading", { name: "Search results" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Search", exact: true })).toBeVisible();
+    // No results heading until there is a query.
+    await expect(page.getByRole("heading", { name: "Search results" })).toHaveCount(0);
 
     // "Sample" matches the seeded media-alpha "Sample Media" in library-local.
+    // Results arrive as the user types; the query is mirrored into the URL.
     const input = page.getByRole("searchbox");
     await input.fill("Sample");
-    await page.getByRole("button", { name: "Search", exact: true }).click();
+    await expect(page).toHaveURL(/\/search\?q=Sample$/);
 
     // Either results render or the empty-state shows — both are valid, neither
     // is a crash. Assert the search resolved (no fatal error) and the UI settled
     // into one of those two terminal states.
     const results = page.getByRole("listitem");
-    const empty = page.getByText("No matches", { exact: false });
+    const empty = page.getByText("No results for", { exact: false });
     await expect(results.first().or(empty)).toBeVisible();
     expect(errors, errors.join("\n")).toEqual([]);
   });

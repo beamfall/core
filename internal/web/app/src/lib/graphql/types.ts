@@ -447,6 +447,15 @@ export type SearchMode = "keyword" | "semantic" | "auto" | "recommend";
 export interface SearchResultItem extends SourceItem {
   mode: SearchMode;
   score: number;
+  /** Row detail, present only when the item's Library is visible to the caller. */
+  libraryID?: string;
+  libraryTitle?: string;
+  year?: number;
+  /** Core media class of a Media row ("video", "audio", "image"). */
+  mediaClass?: string;
+  /** Plugin-declared kind of an Entity row, with its localized display name. */
+  entityKind?: string;
+  entityKindDisplayName?: Record<string, string>;
 }
 
 /**

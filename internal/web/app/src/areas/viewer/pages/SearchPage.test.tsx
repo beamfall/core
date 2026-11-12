@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import "@testing-library/jest-dom/vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -52,10 +52,10 @@ beforeEach(() => {
   });
 });
 
-function renderPage() {
+function renderPage(entry = "/search") {
   return render(
     <I18nProvider>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[entry]}>
         <SearchPage />
       </MemoryRouter>
     </I18nProvider>,
@@ -77,31 +77,26 @@ describe("SearchPage mode exposure", () => {
     expect(await screen.findByLabelText("Search mode")).toBeInTheDocument();
   });
 
-  it("runs a keyword search through searchResult and renders results", async () => {
+  it("searches as the user types and renders results with a count", async () => {
     const user = userEvent.setup();
     renderPage();
+    expect(screen.queryByRole("heading", { name: "Search results" })).toBeNull();
     await user.type(screen.getByLabelText("Search"), "hello");
-    await user.click(screen.getByRole("button", { name: "Search" }));
-    expect(searchResult).toHaveBeenCalledWith("hello", "keyword");
     expect(await screen.findByText("Hit")).toBeInTheDocument();
+    expect(searchResult).toHaveBeenLastCalledWith("hello", "keyword", expect.any(AbortSignal));
+    expect(screen.getByRole("heading", { name: "Search results" })).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("1 result for “hello”");
   });
 
-  it("hands the playable results to each card as the player's queue (CORE-1143)", async () => {
-    vi.mocked(searchResult).mockResolvedValue({
-      mode: "keyword",
-      items: [
-        { id: "m1", kind: "media", title: "One", mode: "keyword", score: 0 },
-        { id: "e1", kind: "entity", title: "Album", mode: "keyword", score: 0 },
-        { id: "m2", kind: "media", title: "Two", mode: "keyword", score: 0 },
-      ],
-      restrictedResultsPresent: false,
-    });
+  it("runs the search named in the URL and clears it", async () => {
     const user = userEvent.setup();
-    renderPage();
-    await user.type(screen.getByLabelText("Search"), "hello");
-    await user.click(screen.getByRole("button", { name: "Search" }));
-    expect(await screen.findByText("One")).toHaveAttribute("data-queue", "m1,m2");
-    expect(screen.getByText("Album")).toHaveAttribute("data-queue", "m1,m2");
+    renderPage("/search?q=Hit");
+    expect(screen.getByLabelText("Search")).toHaveValue("Hit");
+    expect(await screen.findByText("Hit")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(screen.getByLabelText("Search")).toHaveValue("");
+    expect(screen.getByText("Search across your libraries")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Search results" })).toBeNull();
   });
 
   it("renders restricted-result empties exactly like normal no-match empties", async () => {
@@ -113,10 +108,9 @@ describe("SearchPage mode exposure", () => {
     const user = userEvent.setup();
     renderPage();
     await user.type(screen.getByLabelText("Search"), "x");
-    await user.click(screen.getByRole("button", { name: "Search" }));
-    expect(await screen.findByText("No matches.")).toBeInTheDocument();
+    expect(await screen.findByText("No results for “x”")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent(
-      "No matches.Try a different title or keyword.",
+      "No results for “x”Check the spelling or try fewer words.Clear search",
     );
     expect(screen.queryByText(/hidden by your access settings/i)).toBeNull();
   });
@@ -137,16 +131,17 @@ describe("SearchPage mode exposure", () => {
     await user.click(screen.getByLabelText("Search mode"));
     await user.click(await screen.findByRole("option", { name: "Semantic" }));
     await user.type(screen.getByLabelText("Search"), "x");
-    await user.click(screen.getByRole("button", { name: "Search" }));
-    expect(searchResult).toHaveBeenCalledWith("x", "semantic");
     expect(await screen.findByText(/showing keyword results/i)).toBeInTheDocument();
+    expect(searchResult).toHaveBeenLastCalledWith("x", "semantic", expect.any(AbortSignal));
   });
 
-  it("ignores stale results from a slower previous search", async () => {
+  it("cancels a slower previous search and ignores its results", async () => {
     const user = userEvent.setup();
     let resolveSlow: (value: Awaited<ReturnType<typeof searchResult>>) => void = () => {};
-    vi.mocked(searchResult).mockImplementation((query) => {
+    let slowSignal: AbortSignal | undefined;
+    vi.mocked(searchResult).mockImplementation((query, _mode, signal) => {
       if (query === "slow") {
+        slowSignal = signal;
         return new Promise((resolve) => {
           resolveSlow = resolve;
         });
@@ -160,15 +155,12 @@ describe("SearchPage mode exposure", () => {
 
     renderPage();
     const input = screen.getByLabelText("Search");
-    const form = screen.getByRole("button", { name: "Search" }).closest("form");
-    if (!form) throw new Error("search form missing");
-
     await user.type(input, "slow");
-    fireEvent.submit(form);
+    await waitFor(() => expect(slowSignal).toBeDefined());
     await user.clear(input);
     await user.type(input, "fast");
-    fireEvent.submit(form);
     expect(await screen.findByText("Fast")).toBeInTheDocument();
+    expect(slowSignal?.aborted).toBe(true);
 
     resolveSlow({
       mode: "keyword",
@@ -179,6 +171,23 @@ describe("SearchPage mode exposure", () => {
     expect(screen.getByText("Fast")).toBeInTheDocument();
   });
 
+  it("hands the playable results to each card as the player's queue (CORE-1143)", async () => {
+    vi.mocked(searchResult).mockResolvedValue({
+      mode: "keyword",
+      items: [
+        { id: "m1", kind: "media", title: "One", mode: "keyword", score: 0 },
+        { id: "e1", kind: "entity", title: "Album", mode: "keyword", score: 0 },
+        { id: "m2", kind: "media", title: "Two", mode: "keyword", score: 0 },
+      ],
+      restrictedResultsPresent: false,
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await user.type(screen.getByLabelText("Search"), "hello");
+    expect(await screen.findByText("One")).toHaveAttribute("data-queue", "m1,m2");
+    expect(screen.getByText("Album")).toHaveAttribute("data-queue", "m1,m2");
+  });
+
   it("refreshes the shown results in place when engagement changes", async () => {
     const user = userEvent.setup();
     renderPage();
@@ -186,7 +195,6 @@ describe("SearchPage mode exposure", () => {
     expect(searchResult).not.toHaveBeenCalled();
 
     await user.type(screen.getByLabelText("Search"), "hello");
-    await user.click(screen.getByRole("button", { name: "Search" }));
     expect(await screen.findByText("Hit")).toBeInTheDocument();
 
     vi.mocked(searchResult).mockResolvedValue({
