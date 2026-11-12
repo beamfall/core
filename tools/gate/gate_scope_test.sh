@@ -266,7 +266,16 @@ EOF
 cat >"$RACE_REPO/internal/graph/graph_test.go" <<'EOF'
 package graph
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
+
+func TestGraphFixtureFailsOnRequest(t *testing.T) {
+	if os.Getenv("GRAPH_FIXTURE_FAIL") == "1" {
+		t.Fatal("requested failure")
+	}
+}
 
 func TestGraphFixtureRuns(t *testing.T) {
 	if Value() != 3 {
@@ -301,6 +310,37 @@ if [ "\${1:-}" = test ]; then
   if [ "\${RACE_TEST_EXECUTE:-0}" != 1 ]; then
     exit 0
   fi
+  if [ "\${2:-}\${4:-}" = "-race-list" ] && [ -n "\${RACE_TEST_PHANTOM:-}" ]; then
+    "$REAL_GO" "\$@" || exit \$?
+    printf '%s\n' "\$RACE_TEST_PHANTOM"
+    exit 0
+  fi
+  # A promoted shard can be killed before go test reports its package, and
+  # can be counted against its siblings to observe the worker limit.
+  case "\$*" in
+    *" -json -run "*)
+      if [ -n "\${RACE_TEST_KILL_SHARD:-}" ]; then
+        case "\$*" in *"\$RACE_TEST_KILL_SHARD"*) exit 137 ;; esac
+      fi
+      if [ -n "\${RACE_TEST_ACTIVE_DIR:-}" ]; then
+        : >"\$RACE_TEST_ACTIVE_DIR/active.\$\$"
+        waited=0
+        while :; do
+          active="\$(find "\$RACE_TEST_ACTIVE_DIR" -name 'active.*' | wc -l | tr -d ' ')"
+          printf '%s\n' "\$active" >>"\$RACE_TEST_ACTIVE_DIR/seen"
+          if [ "\$active" -ge "\${RACE_TEST_AWAIT_ACTIVE:-1}" ] || [ "\$waited" -ge 300 ]; then
+            break
+          fi
+          sleep 0.1
+          waited=\$((waited + 1))
+        done
+        "$REAL_GO" "\$@"
+        status=\$?
+        rm -f "\$RACE_TEST_ACTIVE_DIR/active.\$\$"
+        exit "\$status"
+      fi
+      ;;
+  esac
 fi
 exec "$REAL_GO" "\$@"
 EOF
@@ -356,22 +396,112 @@ git -C "$RACE_REPO" -c user.name=t -c user.email=t@e.com commit -qm change-graph
 : >"$RACE_TEST_LOG"
 ( cd "$RACE_REPO" && PATH="$RACE_SHIM:$PATH" AGENT_EVIDENCE_DIR="$RACE_EVIDENCE" \
     GATE_DIFF_BASE="$RACE_GRAPH_BASE" GATE_DIFF_HEAD=HEAD RACE_TEST_EXECUTE=1 \
+    RACE_SHORT_PROMOTED_SHARDS=4 RACE_SHORT_PROMOTED_JOBS=2 \
     script/race-test.sh short ) \
   >"$TMP/race-graph.out" 2>&1 || fail "race-short graph fixture failed"
 PROMOTED_GRAPH_COMMAND='resolved promoted: go test -race -short -count=1 -p 1 -parallel 2 -test.timeout=3600s github.com/beamfall/core/internal/graph'
 PROMOTED_GRAPH_ARGS='test -race -short -count=1 -p 1 -parallel 2 -test.timeout=3600s -json github.com/beamfall/core/internal/graph'
 grep -Fqx "$PROMOTED_GRAPH_COMMAND" "$TMP/race-graph.out" \
   || fail "race-short did not isolate changed graph package under the promoted policy"
-if [ "$(wc -l <"$RACE_TEST_LOG" | tr -d ' ')" -ne 1 ] \
-  || ! grep -Fqx "$PROMOTED_GRAPH_ARGS" "$RACE_TEST_LOG"; then
-  fail "race-short did not execute graph with the exact promoted arguments"
+# The promoted suite is listed once and dealt into one go test process per
+# shard; together the shards name every listed test exactly once.
+PROMOTED_GRAPH_LIST='test -race -short -list .* github.com/beamfall/core/internal/graph'
+PROMOTED_GRAPH_SHARD_PREFIX='test -race -short -count=1 -p 1 -parallel 2 -test.timeout=3600s -json -run '
+if [ "$(wc -l <"$RACE_TEST_LOG" | tr -d ' ')" -ne 3 ] \
+  || ! grep -Fqx "$PROMOTED_GRAPH_LIST" "$RACE_TEST_LOG" \
+  || ! grep -Fqx "$PROMOTED_GRAPH_SHARD_PREFIX"'^(TestGraphFixtureFailsOnRequest)$ github.com/beamfall/core/internal/graph' "$RACE_TEST_LOG" \
+  || ! grep -Fqx "$PROMOTED_GRAPH_SHARD_PREFIX"'^(TestGraphFixtureRuns)$ github.com/beamfall/core/internal/graph' "$RACE_TEST_LOG"; then
+  cat "$RACE_TEST_LOG" >&2
+  fail "race-short did not split the promoted graph suite into complete shards"
 fi
+grep -F '=== RUN   TestGraphFixtureFailsOnRequest' "$TMP/race-graph.out" \
+  || fail "race-short did not execute every promoted graph test"
+grep -Fq '"package": "github.com/beamfall/core/internal/graph", "status": "pass"' \
+  "$RACE_EVIDENCE/race-short-packages.jsonl" \
+  || fail "race-short did not record the sharded graph package as passed"
 grep -F "$PROMOTED_GRAPH_COMMAND" "$TMP/race-graph.out"
 grep -F '=== RUN   TestGraphFixtureRuns' "$TMP/race-graph.out" \
   || fail "race-short did not execute the graph fixture test"
 if grep -Eq -- 'resolved (ordinary|focused):.*internal/graph|resolved promoted:.* -run ' \
   "$TMP/race-graph.out"; then
   fail "race-short weakened the changed graph package's full promoted suite"
+fi
+
+# A failed shard fails the phase and stays failed in the evidence even though
+# a later shard of the same package passes.
+: >"$RACE_TEST_LOG"
+if ( cd "$RACE_REPO" && PATH="$RACE_SHIM:$PATH" AGENT_EVIDENCE_DIR="$RACE_EVIDENCE" \
+    GATE_DIFF_BASE="$RACE_GRAPH_BASE" GATE_DIFF_HEAD=HEAD RACE_TEST_EXECUTE=1 \
+    RACE_SHORT_PROMOTED_SHARDS=4 RACE_SHORT_PROMOTED_JOBS=2 \
+    GRAPH_FIXTURE_FAIL=1 script/race-test.sh short ) >"$TMP/race-graph-fail.out" 2>&1; then
+  fail "race-short passed although a promoted shard failed"
+fi
+grep -Fq -- '--- PASS: TestGraphFixtureRuns' "$TMP/race-graph-fail.out" \
+  || fail "race-short did not run the passing shard after the failing one"
+grep -Fq '"package": "github.com/beamfall/core/internal/graph", "status": "fail"' \
+  "$RACE_EVIDENCE/race-short-packages.jsonl" \
+  || fail "a passing shard overwrote the failed graph package evidence"
+
+# A shard killed before it reports its package still records the package as
+# failed, although its sibling shard passes.
+: >"$RACE_TEST_LOG"
+if ( cd "$RACE_REPO" && PATH="$RACE_SHIM:$PATH" AGENT_EVIDENCE_DIR="$RACE_EVIDENCE" \
+    GATE_DIFF_BASE="$RACE_GRAPH_BASE" GATE_DIFF_HEAD=HEAD RACE_TEST_EXECUTE=1 \
+    RACE_SHORT_PROMOTED_SHARDS=4 RACE_SHORT_PROMOTED_JOBS=2 \
+    RACE_TEST_KILL_SHARD=TestGraphFixtureFailsOnRequest script/race-test.sh short ) \
+    >"$TMP/race-graph-killed.out" 2>&1; then
+  fail "race-short passed although a promoted shard was killed"
+fi
+grep -Fq -- '--- PASS: TestGraphFixtureRuns' "$TMP/race-graph-killed.out" \
+  || fail "race-short did not run the sibling of the killed shard"
+grep -Fq '"package": "github.com/beamfall/core/internal/graph", "status": "fail"' \
+  "$RACE_EVIDENCE/race-short-packages.jsonl" \
+  || fail "a passing shard hid a killed shard in the graph package evidence"
+
+# The worker limit bounds how many shards run at once: two workers run the two
+# shards together, one worker never overlaps them.
+promoted_peak() {
+  local jobs="$1" await="$2" dir="$TMP/race-active-$1"
+  mkdir -p "$dir"
+  : >"$RACE_TEST_LOG"
+  ( cd "$RACE_REPO" && PATH="$RACE_SHIM:$PATH" AGENT_EVIDENCE_DIR="$RACE_EVIDENCE" \
+      GATE_DIFF_BASE="$RACE_GRAPH_BASE" GATE_DIFF_HEAD=HEAD RACE_TEST_EXECUTE=1 \
+      RACE_SHORT_PROMOTED_SHARDS=4 RACE_SHORT_PROMOTED_JOBS="$jobs" \
+      RACE_TEST_ACTIVE_DIR="$dir" RACE_TEST_AWAIT_ACTIVE="$await" \
+      script/race-test.sh short ) >"$TMP/race-graph-jobs-$jobs.out" 2>&1 \
+    || fail "race-short graph fixture failed with $jobs promoted workers"
+  sort -n "$dir/seen" | tail -1
+}
+[ "$(promoted_peak 2 2)" = 2 ] \
+  || fail "race-short did not run two promoted shards together with two workers"
+[ "$(promoted_peak 1 1)" = 1 ] \
+  || fail "race-short ran promoted shards together past a one-worker limit"
+
+# A listed test that no shard reports fails the phase by name, even though
+# every go test process exits zero.
+: >"$RACE_TEST_LOG"
+if ( cd "$RACE_REPO" && PATH="$RACE_SHIM:$PATH" AGENT_EVIDENCE_DIR="$RACE_EVIDENCE" \
+    GATE_DIFF_BASE="$RACE_GRAPH_BASE" GATE_DIFF_HEAD=HEAD RACE_TEST_EXECUTE=1 \
+    RACE_SHORT_PROMOTED_SHARDS=4 RACE_SHORT_PROMOTED_JOBS=2 \
+    RACE_TEST_PHANTOM=TestGraphFixtureNeverRuns script/race-test.sh short ) \
+    >"$TMP/race-graph-missing.out" 2>&1; then
+  fail "race-short passed although a listed promoted test reported no result"
+fi
+grep -Eq 'reported no result for: .*TestGraphFixtureNeverRuns' "$TMP/race-graph-missing.out" \
+  || fail "race-short did not name the promoted test that reported no result"
+grep -Fq '"package": "github.com/beamfall/core/internal/graph", "status": "fail"' \
+  "$RACE_EVIDENCE/race-short-packages.jsonl" \
+  || fail "race-short recorded a package with an unreported test as passed"
+
+# One shard keeps the single unsharded command.
+: >"$RACE_TEST_LOG"
+( cd "$RACE_REPO" && PATH="$RACE_SHIM:$PATH" AGENT_EVIDENCE_DIR="$RACE_EVIDENCE" \
+    GATE_DIFF_BASE="$RACE_GRAPH_BASE" GATE_DIFF_HEAD=HEAD RACE_TEST_EXECUTE=1 \
+    RACE_SHORT_PROMOTED_SHARDS=1 script/race-test.sh short ) \
+  >"$TMP/race-graph-one.out" 2>&1 || fail "race-short unsharded graph fixture failed"
+if [ "$(wc -l <"$RACE_TEST_LOG" | tr -d ' ')" -ne 1 ] \
+  || ! grep -Fqx "$PROMOTED_GRAPH_ARGS" "$RACE_TEST_LOG"; then
+  fail "race-short did not execute graph with the exact unsharded promoted arguments"
 fi
 
 # A changed non-Go file consumed through go:embed also invalidates diff scope.
