@@ -1165,8 +1165,66 @@ export interface LiveSessionInfo {
   mediaID: string;
   title: string;
   transcoding: boolean;
+  /** How the item reaches the device: "direct", "remux" or "transcode". */
+  playMethod: string;
+  /** Why it is not direct play (a stable reason code); empty when direct or unknown. */
+  playReason: string;
+  /** Delivered bitrate in bits per second; 0 when unknown. */
+  bitrate: number;
   positionSeconds: number;
   durationSeconds: number;
+}
+
+/** One host resource sample (graph.HostMetricSample). */
+export interface HostMetricSample {
+  at: string;
+  cpuPercent: number;
+  cpuKnown: boolean;
+  memoryUsedBytes: number;
+  memoryTotalBytes: number;
+  sentBytesPerSecond: number;
+  receivedBytesPerSecond: number;
+}
+
+/** The server's recent resource use (graph.HostMetricsInfo). */
+export interface HostMetricsInfo {
+  intervalSeconds: number;
+  samples: HostMetricSample[];
+}
+
+/** One past play (graph.PlayInfo). */
+export interface PlayInfo {
+  profileID: string;
+  profileName: string;
+  mediaID: string;
+  title: string;
+  libraryID: string;
+  libraryTitle: string;
+  startedAt: string;
+  watchedSeconds: number;
+  finished: boolean;
+}
+
+/** Filters for the play history read. */
+export interface PlayHistoryFilter {
+  profileID?: string;
+  libraryID?: string;
+  since?: string;
+  until?: string;
+  limit?: number;
+}
+
+/** Rankings over a 7, 30 or 90 day window (graph.PlayStatsInfo). */
+export interface PlayStatsInfo {
+  windowDays: number;
+  profiles: { profileID: string; profileName: string; plays: number; watchedSeconds: number }[];
+  items: {
+    mediaID: string;
+    title: string;
+    libraryID: string;
+    plays: number;
+    watchedSeconds: number;
+  }[];
 }
 
 /** The terminateSession result. */
