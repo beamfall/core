@@ -1559,3 +1559,350 @@
     inset 0 0 0 1px color-mix(in oklab, var(--accent) 30%, transparent),
     0 6px 18px -10px var(--accent);
 }
+
+/* ============================================================ *
+ *  My Data & Privacy (viewer) in the house style (CORE-1131)
+ *  Glass panels with icon tiles, stat tiles, glowing accents.
+ * ============================================================ */
+
+.mydata {
+  --glass-border: color-mix(in oklab, var(--text-primary) 10%, transparent);
+  --glass-fill: color-mix(in oklab, var(--text-primary) 3.5%, transparent);
+  --glass-fill-raised: color-mix(in oklab, var(--text-primary) 5.5%, transparent);
+  --glass-divider: color-mix(in oklab, var(--text-primary) 7%, transparent);
+  --glass-highlight: inset 0 1px 0 color-mix(in oklab, var(--text-primary) 6%, transparent);
+  --mydata-tint: var(--brand-cyan-500, var(--accent));
+  --mydata-ink: var(--brand-cyan-300, var(--accent));
+  padding-block: 8px 24px;
+}
+
+.mydata .house-icon-tile {
+  color: var(--mydata-ink);
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--mydata-tint) 38%, transparent),
+    color-mix(in oklab, rgb(139 92 246) 22%, transparent)
+  );
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--mydata-tint) 45%, transparent),
+    0 8px 22px -10px var(--mydata-tint);
+}
+
+.mydata-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 12px;
+}
+
+.mydata-hero {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 8px 0 4px;
+}
+
+.mydata-hero::before {
+  content: "";
+  position: absolute;
+  inset: -60px 0 auto 0;
+  height: 220px;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      40% 60% at 12% 40%,
+      color-mix(in oklab, var(--mydata-tint) 18%, transparent),
+      transparent 70%
+    ), radial-gradient(35% 55% at 70% 20%, rgb(139 92 246 / 0.1), transparent 70%);
+}
+
+.mydata-hero-tile {
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+}
+
+.mydata-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 20px 22px 22px;
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  background: var(--glass-fill);
+  box-shadow:
+    var(--glass-highlight),
+    0 20px 40px -32px rgb(0 0 0 / 0.6);
+  backdrop-filter: blur(10px);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.mydata-panel:hover {
+  border-color: color-mix(in oklab, var(--mydata-tint) 22%, var(--glass-border));
+  box-shadow:
+    var(--glass-highlight),
+    0 20px 44px -30px color-mix(in oklab, var(--mydata-tint) 45%, transparent);
+}
+
+.mydata-panel[data-tone="danger"] {
+  border-color: color-mix(in oklab, var(--red-500) 26%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--red-500) 6%, transparent),
+    var(--glass-fill) 60%
+  );
+}
+
+.mydata-panel[data-tone="danger"] .house-icon-tile {
+  color: var(--red-500);
+  background: color-mix(in oklab, var(--red-500) 16%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--red-500) 30%, transparent),
+    0 6px 18px -10px var(--red-500);
+}
+
+.mydata-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.mydata-panel-title {
+  font-size: 17px;
+  line-height: 22px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.mydata-panel-lead,
+.mydata-muted {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--text-muted);
+}
+
+.mydata-stat {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 14px 12px;
+  border: 1px solid var(--glass-divider);
+  border-radius: 12px;
+  background: var(--glass-fill-raised);
+  overflow: hidden;
+}
+
+.mydata-stat::after {
+  content: "";
+  position: absolute;
+  inset: auto -20% -60% auto;
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in oklab, var(--mydata-tint) 16%, transparent),
+    transparent 70%
+  );
+  pointer-events: none;
+}
+
+.mydata-stat-icon {
+  width: 16px;
+  height: 16px;
+  margin-bottom: 6px;
+  color: var(--mydata-ink);
+}
+
+.mydata-stat-value {
+  font-size: 28px;
+  line-height: 32px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.mydata-stat-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.mydata-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.mydata-range svg {
+  color: var(--mydata-ink);
+}
+
+.mydata-subsection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--glass-divider);
+}
+
+.mydata-subheading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.mydata-bar {
+  height: 6px;
+  margin-top: 6px;
+  border-radius: 999px;
+  background: var(--glass-divider);
+  overflow: hidden;
+}
+
+.mydata-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--mydata-tint), rgb(139 92 246));
+}
+
+.mydata-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--glass-divider);
+  border-radius: 12px;
+  background: var(--glass-fill-raised);
+}
+
+@media (max-width: 639px) {
+  .mydata-filters > * {
+    flex: 1 1 100%;
+  }
+}
+
+.mydata-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mydata-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--glass-divider);
+  border-radius: 12px;
+  background: var(--glass-fill-raised);
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
+}
+
+.mydata-row:hover {
+  background: color-mix(in oklab, var(--mydata-tint) 6%, transparent);
+}
+
+.mydata-row[data-current] {
+  border-color: color-mix(in oklab, var(--mydata-tint) 45%, transparent);
+  background: color-mix(in oklab, var(--mydata-tint) 8%, transparent);
+}
+
+.mydata-row-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  color: var(--mydata-ink);
+  background: color-mix(in oklab, var(--mydata-tint) 13%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--mydata-tint) 22%, transparent);
+}
+
+.mydata-pill {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mydata-ink);
+  background: color-mix(in oklab, var(--mydata-tint) 15%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--mydata-tint) 35%, transparent);
+}
+
+.mydata-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+  border: 1px dashed var(--glass-border);
+  border-radius: 12px;
+}
+
+.mydata-empty-icon {
+  display: inline-flex;
+  padding: 11px;
+  border-radius: 12px;
+  color: var(--mydata-ink);
+  background: color-mix(in oklab, var(--mydata-tint) 15%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--mydata-tint) 25%, transparent);
+}
+
+.mydata-pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.mydata-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.mydata-notice[data-tone="ok"] {
+  color: var(--green-500);
+  background: color-mix(in oklab, var(--green-500) 10%, transparent);
+}
+
+.mydata-notice[data-tone="error"] {
+  color: var(--red-500);
+  background: color-mix(in oklab, var(--red-500) 10%, transparent);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .mydata-panel {
+    backdrop-filter: none;
+    background: var(--bg-surface);
+  }
+}

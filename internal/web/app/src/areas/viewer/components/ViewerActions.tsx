@@ -15,7 +15,7 @@ export function ViewerActions() {
     ? t("profileActionLabel", { name: currentProfile.name })
     : t("profile");
   return (
-    <nav aria-label={t("navLabel")} className="flex items-center gap-3">
+    <nav aria-label={t("navLabel")} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
       <Link to="/search" className="bf-action-link">
         {t("search")}
       </Link>

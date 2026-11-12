@@ -1,8 +1,29 @@
+import type { LucideProps } from "lucide-react";
+import {
+  AlertCircle,
+  BarChart3,
+  CalendarRange,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Eye,
+  Filter,
+  Heart,
+  History,
+  KeyRound,
+  LibraryBig,
+  ListPlus,
+  MonitorSmartphone,
+  Play,
+  RefreshCw,
+  ShieldCheck,
+  Trash2,
+} from "lucide-react";
+import type { ComponentType, ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/chrome/AppShell";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -184,10 +205,15 @@ export function MyDataPage() {
 
   return (
     <AppShell actions={<ViewerActions />}>
-      <div className="mx-auto flex max-w-3xl flex-col gap-6">
-        <header className="flex flex-col gap-2">
-          <h1 className="bf-page-title">{t("myDataTitle")}</h1>
-          <p className="bf-lead">{t("myDataLead")}</p>
+      <div className="mydata mx-auto flex max-w-4xl flex-col gap-6">
+        <header className="mydata-hero">
+          <span className="house-icon-tile mydata-hero-tile" aria-hidden>
+            <ShieldCheck className="size-6" />
+          </span>
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <h1 className="bf-page-title">{t("myDataTitle")}</h1>
+            <p className="bf-lead max-w-2xl">{t("myDataLead")}</p>
+          </div>
         </header>
 
         <SummarySection summary={summary} error={summaryError} />
@@ -210,74 +236,121 @@ export function MyDataPage() {
           onNext={() => setOffset((o) => o + MY_DATA_LOG_PAGE_SIZE)}
         />
 
-        <Card>
-          <CardHeader>
-            <CardTitle>{t("myDataExportHeading")}</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            <p className="text-sm text-[var(--text-muted)]">{t("myDataExportLead")}</p>
-            <div>
-              <Button onClick={onExport}>{t("myDataExport")}</Button>
-            </div>
-            {exportMsg && <p className="text-sm text-[var(--green-500)]">{exportMsg}</p>}
-            {exportError && <p className="text-sm text-[var(--red-500)]">{exportError}</p>}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>{t("myDataSessionsHeading")}</CardTitle>
+        <Panel
+          icon={MonitorSmartphone}
+          heading={t("myDataSessionsHeading")}
+          actions={
             <Button variant="outline" size="sm" onClick={refresh}>
+              <RefreshCw className="size-3.5" aria-hidden />
               {t("refresh")}
             </Button>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            {sessionsError && <p className="text-sm text-[var(--red-500)]">{sessionsError}</p>}
-            <section className="flex flex-col gap-2">
-              {sessions.length === 0 ? (
-                <p className="text-sm text-[var(--text-muted)]">{t("myDataSessionsEmpty")}</p>
-              ) : (
-                <ul className="flex flex-col gap-2">
-                  {sessions.map((s) => (
-                    <SessionRow key={s.id} session={s} />
-                  ))}
-                </ul>
-              )}
-            </section>
-            <section className="flex flex-col gap-2">
-              <h3 className="text-sm font-medium text-[var(--text-secondary)]">
-                {t("myDataTokensHeading")}
-              </h3>
-              {tokens.length === 0 ? (
-                <p className="text-sm text-[var(--text-muted)]">{t("myDataTokensEmpty")}</p>
-              ) : (
-                <ul className="flex flex-col gap-2">
-                  {tokens.map((token, i) => (
-                    <TokenRow key={i} token={token} />
-                  ))}
-                </ul>
-              )}
-            </section>
-          </CardContent>
-        </Card>
+          }
+        >
+          {sessionsError && <Notice tone="error">{sessionsError}</Notice>}
+          {sessions.length === 0 ? (
+            <p className="mydata-muted">{t("myDataSessionsEmpty")}</p>
+          ) : (
+            <ul className="mydata-list">
+              {sessions.map((s) => (
+                <SessionRow key={s.id} session={s} />
+              ))}
+            </ul>
+          )}
+          <div className="mydata-subsection">
+            <h3 className="mydata-subheading">
+              <KeyRound className="size-3.5" aria-hidden />
+              {t("myDataTokensHeading")}
+            </h3>
+            {tokens.length === 0 ? (
+              <p className="mydata-muted">{t("myDataTokensEmpty")}</p>
+            ) : (
+              <ul className="mydata-list">
+                {tokens.map((token, i) => (
+                  <TokenRow key={i} token={token} />
+                ))}
+              </ul>
+            )}
+          </div>
+        </Panel>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>{t("myDataDeleteHeading")}</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            <p className="text-sm text-[var(--text-muted)]">{t("myDataDeleteLead")}</p>
-            <div>
-              <Button variant="destructive" onClick={onDeleteAll}>
-                {t("myDataDeleteAll")}
-              </Button>
+        <div className="grid gap-6 md:grid-cols-2">
+          <Panel icon={Download} heading={t("myDataExportHeading")} lead={t("myDataExportLead")}>
+            <div className="mt-auto flex flex-col gap-3">
+              <div>
+                <Button onClick={onExport}>
+                  <Download className="size-4" aria-hidden />
+                  {t("myDataExport")}
+                </Button>
+              </div>
+              {exportMsg && <Notice tone="ok">{exportMsg}</Notice>}
+              {exportError && <Notice tone="error">{exportError}</Notice>}
             </div>
-            {deleteMsg && <p className="text-sm text-[var(--green-500)]">{deleteMsg}</p>}
-            {deleteError && <p className="text-sm text-[var(--red-500)]">{deleteError}</p>}
-          </CardContent>
-        </Card>
+          </Panel>
+
+          <Panel
+            icon={Trash2}
+            tone="danger"
+            heading={t("myDataDeleteHeading")}
+            lead={t("myDataDeleteLead")}
+          >
+            <div className="mt-auto flex flex-col gap-3">
+              <div>
+                <Button variant="destructive" onClick={onDeleteAll}>
+                  <Trash2 className="size-4" aria-hidden />
+                  {t("myDataDeleteAll")}
+                </Button>
+              </div>
+              {deleteMsg && <Notice tone="ok">{deleteMsg}</Notice>}
+              {deleteError && <Notice tone="error">{deleteError}</Notice>}
+            </div>
+          </Panel>
+        </div>
       </div>
     </AppShell>
+  );
+}
+
+// Panel is one glass card in the setup house style: an icon tile, a heading
+// with an optional lead, an optional action cluster, and the body.
+function Panel({
+  icon: Icon,
+  heading,
+  lead,
+  actions,
+  tone,
+  children,
+}: {
+  icon: ComponentType<LucideProps>;
+  heading: string;
+  lead?: string;
+  actions?: ReactNode;
+  tone?: "danger";
+  children: ReactNode;
+}) {
+  return (
+    <section className="mydata-panel" data-tone={tone}>
+      <div className="mydata-panel-head">
+        <span className="house-icon-tile mydata-tile" aria-hidden>
+          <Icon className="size-[18px]" />
+        </span>
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <h2 className="mydata-panel-title">{heading}</h2>
+          {lead && <p className="mydata-panel-lead">{lead}</p>}
+        </div>
+        {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Notice({ tone, children }: { tone: "ok" | "error"; children: ReactNode }) {
+  const Icon = tone === "ok" ? CheckCircle2 : AlertCircle;
+  return (
+    <p className="mydata-notice" data-tone={tone} role={tone === "error" ? "alert" : "status"}>
+      <Icon className="size-4 shrink-0" aria-hidden />
+      <span>{children}</span>
+    </p>
   );
 }
 
@@ -291,65 +364,62 @@ function SummarySection({
   error: string | null;
 }) {
   const t = useT();
-  const stats: { label: string; value: number }[] = summary
+  const stats: { label: string; value: number; icon: ComponentType<LucideProps> }[] = summary
     ? [
-        { label: t("myDataSummaryPlays"), value: summary.plays },
-        { label: t("myDataSummaryWatched"), value: summary.watched },
-        { label: t("myDataSummaryFavorites"), value: summary.favorites },
-        { label: t("myDataSummaryQueue"), value: summary.queueEntries },
-        { label: t("myDataSummaryLibraries"), value: summary.libraryCount },
+        { label: t("myDataSummaryPlays"), value: summary.plays, icon: Play },
+        { label: t("myDataSummaryWatched"), value: summary.watched, icon: Eye },
+        { label: t("myDataSummaryFavorites"), value: summary.favorites, icon: Heart },
+        { label: t("myDataSummaryQueue"), value: summary.queueEntries, icon: ListPlus },
+        { label: t("myDataSummaryLibraries"), value: summary.libraryCount, icon: LibraryBig },
       ]
     : [];
+  const maxPlays = Math.max(1, ...(summary?.libraryBreakdown.map((b) => b.plays) ?? []));
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t("myDataSummaryHeading")}</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <p className="text-sm text-[var(--text-muted)]">{t("myDataSummaryLead")}</p>
-        {error && <p className="text-sm text-[var(--red-500)]">{error}</p>}
-        {summary && (
-          <>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-              {stats.map((s) => (
-                <div
-                  key={s.label}
-                  className="flex flex-col rounded-[var(--radius-control)] border border-[var(--border-subtle)] px-3 py-2"
-                >
-                  <span className="text-2xl font-semibold text-[var(--text-primary)]">
-                    {s.value}
-                  </span>
-                  <span className="text-xs text-[var(--text-muted)]">{s.label}</span>
-                </div>
-              ))}
+    <Panel icon={BarChart3} heading={t("myDataSummaryHeading")} lead={t("myDataSummaryLead")}>
+      {error && <Notice tone="error">{error}</Notice>}
+      {summary && (
+        <>
+          <div className="mydata-stats">
+            {stats.map((s) => (
+              <div key={s.label} className="mydata-stat">
+                <s.icon className="mydata-stat-icon" aria-hidden />
+                <span className="mydata-stat-value">{s.value.toLocaleString()}</span>
+                <span className="mydata-stat-label">{s.label}</span>
+              </div>
+            ))}
+          </div>
+          <p className="mydata-range">
+            <CalendarRange className="size-4 shrink-0" aria-hidden />
+            {summary.firstActivity && summary.lastActivity
+              ? t("myDataSummaryRange", {
+                  first: formatDate(summary.firstActivity),
+                  last: formatDate(summary.lastActivity),
+                })
+              : t("myDataSummaryRangeEmpty")}
+          </p>
+          {summary.libraryBreakdown.length > 0 && (
+            <div className="mydata-subsection">
+              <h3 className="mydata-subheading">{t("myDataSummaryByLibrary")}</h3>
+              <ul className="flex flex-col gap-2.5">
+                {summary.libraryBreakdown.map((b) => (
+                  <li key={b.libraryID} className="mydata-bar-row">
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                      <span className="min-w-0 break-words text-[var(--text-primary)]">
+                        {b.libraryID}
+                      </span>
+                      <span className="tabular-nums text-[var(--text-secondary)]">{b.plays}</span>
+                    </div>
+                    <div className="mydata-bar" aria-hidden>
+                      <span style={{ width: `${(b.plays / maxPlays) * 100}%` }} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
             </div>
-            <p className="text-sm text-[var(--text-secondary)]">
-              {summary.firstActivity && summary.lastActivity
-                ? t("myDataSummaryRange", {
-                    first: formatDate(summary.firstActivity),
-                    last: formatDate(summary.lastActivity),
-                  })
-                : t("myDataSummaryRangeEmpty")}
-            </p>
-            {summary.libraryBreakdown.length > 0 && (
-              <section className="flex flex-col gap-2">
-                <h3 className="text-sm font-medium text-[var(--text-secondary)]">
-                  {t("myDataSummaryByLibrary")}
-                </h3>
-                <ul className="flex flex-col gap-1">
-                  {summary.libraryBreakdown.map((b) => (
-                    <li key={b.libraryID} className="flex items-center justify-between text-sm">
-                      <span className="text-[var(--text-primary)]">{b.libraryID}</span>
-                      <Badge variant="outline">{b.plays}</Badge>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
-          </>
-        )}
-      </CardContent>
-    </Card>
+          )}
+        </>
+      )}
+    </Panel>
   );
 }
 
@@ -396,111 +466,117 @@ function LogSection({
   const hasPrev = offset > 0;
   const hasNext = offset + pageSize < total;
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t("myDataLogHeading")}</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <p className="text-sm text-[var(--text-muted)]">{t("myDataLogLead")}</p>
-
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="flex flex-col gap-1">
-            <Label htmlFor="mydata-log-library">{t("myDataLogFilterLibrary")}</Label>
-            <Select value={draftLibrary} onValueChange={onLibraryChange}>
-              <SelectTrigger id="mydata-log-library" className="w-48">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_LIBRARIES}>{t("myDataLogFilterAllLibraries")}</SelectItem>
-                {libraries.map((id) => (
-                  <SelectItem key={id} value={id}>
-                    {id}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-1">
-            <Label htmlFor="mydata-log-from">{t("myDataLogFilterFrom")}</Label>
-            <Input
-              id="mydata-log-from"
-              type="date"
-              value={draftFrom}
-              onChange={(e) => onFromChange(e.target.value)}
-              className="w-40"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <Label htmlFor="mydata-log-to">{t("myDataLogFilterTo")}</Label>
-            <Input
-              id="mydata-log-to"
-              type="date"
-              value={draftTo}
-              onChange={(e) => onToChange(e.target.value)}
-              className="w-40"
-            />
-          </div>
-          <div className="flex gap-2">
-            <Button size="sm" onClick={onApply}>
-              {t("myDataLogApply")}
-            </Button>
-            <Button variant="outline" size="sm" onClick={onClear}>
-              {t("myDataLogClear")}
-            </Button>
-          </div>
+    <Panel icon={History} heading={t("myDataLogHeading")} lead={t("myDataLogLead")}>
+      <div className="mydata-filters">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <Label htmlFor="mydata-log-library">{t("myDataLogFilterLibrary")}</Label>
+          <Select value={draftLibrary} onValueChange={onLibraryChange}>
+            <SelectTrigger id="mydata-log-library" className="w-full sm:w-48">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_LIBRARIES}>{t("myDataLogFilterAllLibraries")}</SelectItem>
+              {libraries.map((id) => (
+                <SelectItem key={id} value={id}>
+                  {id}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <Label htmlFor="mydata-log-from">{t("myDataLogFilterFrom")}</Label>
+          <Input
+            id="mydata-log-from"
+            type="date"
+            value={draftFrom}
+            onChange={(e) => onFromChange(e.target.value)}
+            className="w-full sm:w-40"
+          />
+        </div>
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <Label htmlFor="mydata-log-to">{t("myDataLogFilterTo")}</Label>
+          <Input
+            id="mydata-log-to"
+            type="date"
+            value={draftTo}
+            onChange={(e) => onToChange(e.target.value)}
+            className="w-full sm:w-40"
+          />
+        </div>
+        <div className="flex gap-2 sm:ml-auto">
+          <Button size="sm" onClick={onApply}>
+            <Filter className="size-3.5" aria-hidden />
+            {t("myDataLogApply")}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onClear}>
+            {t("myDataLogClear")}
+          </Button>
+        </div>
+      </div>
 
-        {error && <p className="text-sm text-[var(--red-500)]">{error}</p>}
+      {error && <Notice tone="error">{error}</Notice>}
 
-        {events.length === 0 ? (
-          <p className="text-sm text-[var(--text-muted)]">{t("myDataLogEmpty")}</p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {events.map((ev, i) => (
-              <EventRow key={`${ev.kind}-${ev.mediaID}-${i}`} event={ev} />
-            ))}
-          </ul>
-        )}
-
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-[var(--text-muted)]">
-            {t("myDataLogPage", {
-              from: rangeStart,
-              to: rangeEnd,
-              total,
-            })}
+      {events.length === 0 ? (
+        <div className="mydata-empty">
+          <span className="mydata-empty-icon" aria-hidden>
+            <History className="size-[18px]" />
           </span>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={onPrev} disabled={!hasPrev}>
-              {t("myDataLogPrev")}
-            </Button>
-            <Button variant="outline" size="sm" onClick={onNext} disabled={!hasNext}>
-              {t("myDataLogNext")}
-            </Button>
-          </div>
+          <p>{t("myDataLogEmpty")}</p>
         </div>
-      </CardContent>
-    </Card>
+      ) : (
+        <ul className="mydata-list">
+          {events.map((ev, i) => (
+            <EventRow key={`${ev.kind}-${ev.mediaID}-${i}`} event={ev} />
+          ))}
+        </ul>
+      )}
+
+      <div className="mydata-pager">
+        <span className="tabular-nums">
+          {t("myDataLogPage", {
+            from: rangeStart,
+            to: rangeEnd,
+            total,
+          })}
+        </span>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={onPrev} disabled={!hasPrev}>
+            <ChevronLeft className="size-4" aria-hidden />
+            {t("myDataLogPrev")}
+          </Button>
+          <Button variant="outline" size="sm" onClick={onNext} disabled={!hasNext}>
+            {t("myDataLogNext")}
+            <ChevronRight className="size-4" aria-hidden />
+          </Button>
+        </div>
+      </div>
+    </Panel>
   );
 }
 
 function EventRow({ event }: { event: MyEngagementEvent }) {
   const t = useT();
-  const kindLabel =
+  const [kindLabel, Icon] =
     event.kind === "play"
-      ? t("myDataLogKindPlay")
+      ? [t("myDataLogKindPlay"), Play]
       : event.kind === "favorite"
-        ? t("myDataLogKindFavorite")
-        : t("myDataLogKindQueue");
+        ? [t("myDataLogKindFavorite"), Heart]
+        : [t("myDataLogKindQueue"), ListPlus];
   return (
-    <li className="flex items-center justify-between rounded-[var(--radius-control)] border border-[var(--border-subtle)] px-3 py-2">
-      <div className="flex flex-col">
-        <span className="text-sm text-[var(--text-primary)]">
+    <li className="mydata-row">
+      <span className="mydata-row-icon" aria-hidden>
+        <Icon className="size-4" />
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span className="break-words text-sm text-[var(--text-primary)]">
           {kindLabel} · {event.mediaID}
         </span>
-        <span className="text-xs text-[var(--text-muted)]">{event.libraryID}</span>
+        <span className="break-words text-xs text-[var(--text-muted)]">{event.libraryID}</span>
       </div>
-      <span className="text-xs text-[var(--text-muted)]">{formatDateTime(event.occurredAt)}</span>
+      <span className="shrink-0 text-xs tabular-nums text-[var(--text-muted)]">
+        {formatDateTime(event.occurredAt)}
+      </span>
     </li>
   );
 }
@@ -512,21 +588,19 @@ function SessionRow({ session }: { session: MySessionInfo }) {
   const expires = formatDateTime(session.expiresAt);
   if (expires) parts.push(`${t("expires")} ${expires}`);
   return (
-    <li
-      className={
-        "flex items-center justify-between rounded-[var(--radius-control)] border px-3 py-2 " +
-        (session.current ? "border-[var(--accent)]" : "border-[var(--border-subtle)]")
-      }
-    >
-      <div className="flex flex-col">
-        <span className="text-sm text-[var(--text-primary)]">
+    <li className="mydata-row" data-current={session.current || undefined}>
+      <span className="mydata-row-icon" aria-hidden>
+        <MonitorSmartphone className="size-4" />
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span className="break-words text-sm font-medium text-[var(--text-primary)]">
           {session.deviceName || session.deviceID || session.id}
         </span>
         {parts.length > 0 && (
-          <span className="text-xs text-[var(--text-muted)]">{parts.join(" · ")}</span>
+          <span className="break-words text-xs text-[var(--text-muted)]">{parts.join(" · ")}</span>
         )}
       </div>
-      {session.current && <Badge variant="outline">{t("myDataCurrent")}</Badge>}
+      {session.current && <span className="mydata-pill">{t("myDataCurrent")}</span>}
     </li>
   );
 }
@@ -535,10 +609,15 @@ function TokenRow({ token }: { token: MyStreamTokenInfo }) {
   const t = useT();
   const expires = formatDateTime(token.expiresAt);
   return (
-    <li className="flex items-center justify-between rounded-[var(--radius-control)] border border-[var(--border-subtle)] px-3 py-2">
-      <span className="text-sm text-[var(--text-primary)]">{token.targetKind || ""}</span>
+    <li className="mydata-row">
+      <span className="mydata-row-icon" aria-hidden>
+        <KeyRound className="size-4" />
+      </span>
+      <span className="min-w-0 flex-1 break-words text-sm text-[var(--text-primary)]">
+        {token.targetKind || ""}
+      </span>
       {expires && (
-        <span className="text-xs text-[var(--text-muted)]">
+        <span className="shrink-0 text-xs text-[var(--text-muted)]">
           {t("expires")} {expires}
         </span>
       )}
