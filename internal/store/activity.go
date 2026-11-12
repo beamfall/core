@@ -61,6 +61,11 @@ const (
 	ActivityLibraryPreviewClips = "library.preview_clips"
 	ActivityLibraryRestriction  = "library.restriction"
 	ActivityLibraryIcon         = "library.icon"
+	// ActivityLibraryRestore audits bringing a soft-deleted Library back;
+	// ActivityLibraryPurge audits removing one for good, by an admin or by the
+	// retention sweep. Both carry the Library id in TargetID.
+	ActivityLibraryRestore = "library.restore"
+	ActivityLibraryPurge   = "library.purge"
 	// ActivityAccessSchedule audits a managed Profile's access-schedule write.
 	// It carries the Profile id in TargetID only —
 	// never the window contents.

@@ -278,6 +278,30 @@ func (s *Service) Status(libraryID store.LibraryID) Status {
 	return aggregate
 }
 
+// Forget stops watching every root of a Library and drops their state, so a
+// deleted Library's folders raise no further scan jobs. A later Observe of the
+// same root starts a fresh watch.
+func (s *Service) Forget(libraryID store.LibraryID) error {
+	s.mu.Lock()
+	var states []*rootState
+	for key, state := range s.roots {
+		if key.libraryID == libraryID {
+			states = append(states, state)
+			delete(s.roots, key)
+		}
+	}
+	s.mu.Unlock()
+	// Closed outside the service lock: closing a native watch on a stalled
+	// filesystem must not block Observe or Status for other Libraries.
+	var errs []error
+	for _, state := range states {
+		if err := state.close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
 // Close stops every tracked watcher.
 func (s *Service) Close() error {
 	s.mu.Lock()

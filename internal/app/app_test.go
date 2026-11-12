@@ -717,8 +717,8 @@ func TestRetentionSweepSkipsWhenTrashDisabled(t *testing.T) {
 			t.Fatalf("media %s was trashed by skipped sweep: %v", id, err)
 		}
 	}
-	if got := st.TrashDisabledSweepSkips(); got != 3 {
-		t.Fatalf("TrashDisabledSweepSkips = %d, want 3", got)
+	if got := st.TrashDisabledSweepSkips(); got != 4 {
+		t.Fatalf("TrashDisabledSweepSkips = %d, want 4", got)
 	}
 	if got := strings.Count(logBuf.String(), "subscription retention skipped"); got != 1 {
 		t.Fatalf("skip log lines = %d, want exactly 1 per sweep; log:\n%s", got, logBuf.String())
@@ -729,10 +729,13 @@ func TestRetentionSweepSkipsWhenTrashDisabled(t *testing.T) {
 	if got := strings.Count(logBuf.String(), "managed file trash purge skipped"); got != 1 {
 		t.Fatalf("managed-file trash purge skip log lines = %d, want exactly 1 per sweep; log:\n%s", got, logBuf.String())
 	}
-	if got := strings.Count(logBuf.String(), "confirmation required"); got != 3 {
+	if got := strings.Count(logBuf.String(), "deleted library purge skipped"); got != 1 {
+		t.Fatalf("deleted-library purge skip log lines = %d, want exactly 1 per sweep; log:\n%s", got, logBuf.String())
+	}
+	if got := strings.Count(logBuf.String(), "confirmation required"); got != 4 {
 		t.Fatalf("confirmation-required log lines = %d, want one for each refused sweep; log:\n%s", got, logBuf.String())
 	}
-	if strings.Contains(logBuf.String(), "retention failed") || strings.Contains(logBuf.String(), `msg="trash purge failed"`) || strings.Contains(logBuf.String(), "managed file trash purge failed") {
+	if strings.Contains(logBuf.String(), "retention failed") || strings.Contains(logBuf.String(), `msg="trash purge failed"`) || strings.Contains(logBuf.String(), "managed file trash purge failed") || strings.Contains(logBuf.String(), "deleted library purge failed") {
 		t.Fatalf("confirm-required outcome logged as failure:\n%s", logBuf.String())
 	}
 }

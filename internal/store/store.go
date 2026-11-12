@@ -3565,7 +3565,8 @@ func (s *Store) CreateLibraryWithRoots(ctx context.Context, title string, restri
 
 // DeleteLibrary soft-deletes a Library by stamping trashed_at_ms (master #42).
 // The Library is hidden from all loadLibraries queries immediately; its media
-// rows, scan schedules, and profile grants are preserved for a future purge.
+// rows, scan schedule and profile grants are kept, so RestoreLibrary undoes it
+// until PurgeLibrary or the retention sweep removes it for good.
 // Returns an error when the library does not exist or is already trashed.
 func (s *Store) DeleteLibrary(ctx context.Context, id LibraryID) error {
 	if id == "" {

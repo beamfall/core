@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"log/slog"
 	"strconv"
@@ -199,40 +200,7 @@ func (s *Store) PurgeTrashedBefore(ctx context.Context, cutoff time.Time) (int, 
 		return 0, err
 	}
 	defer tx.Rollback()
-	// media_embedding is keyed by content fingerprint, not media_id, and that
-	// fingerprint deterministically regenerates the same Media id on re-import.
-	// Delete it here — before media_file is dropped, while the fingerprint is
-	// still resolvable — so a purge does not leave a semantic-search vector of
-	// the deleted (possibly restricted) content that resurrects on rescan.
-	if _, err := tx.ExecContext(ctx, `
-		DELETE FROM media_embedding WHERE media_fingerprint IN (
-			SELECT content_fingerprint FROM media_file WHERE media_id IN (`+purgeableTrashedMediaSelect+`)
-		)
-	`, timeToMillis(cutoff)); err != nil {
-		return 0, err
-	}
-	if _, err := tx.ExecContext(ctx, `
-		DELETE FROM media_file WHERE media_id IN (`+purgeableTrashedMediaSelect+`)
-	`, timeToMillis(cutoff)); err != nil {
-		return 0, err
-	}
-	if _, err := tx.ExecContext(ctx, `
-		DELETE FROM media_external_id WHERE media_id IN (`+purgeableTrashedMediaSelect+`)
-	`, timeToMillis(cutoff)); err != nil {
-		return 0, err
-	}
-	if _, err := tx.ExecContext(ctx, `
-		DELETE FROM artwork_candidate WHERE media_id IN (`+purgeableTrashedMediaSelect+`)
-	`, timeToMillis(cutoff)); err != nil {
-		return 0, err
-	}
-	result, err := tx.ExecContext(ctx, `
-		DELETE FROM media WHERE id IN (`+purgeableTrashedMediaSelect+`)
-	`, timeToMillis(cutoff))
-	if err != nil {
-		return 0, err
-	}
-	affected, err := result.RowsAffected()
+	affected, err := purgeMediaRowsTx(ctx, tx, purgeableTrashedMediaSelect, timeToMillis(cutoff))
 	if err != nil {
 		return 0, err
 	}
@@ -253,6 +221,38 @@ func (s *Store) PurgeTrashedBefore(ctx context.Context, cutoff time.Time) (int, 
 		}
 	}
 	return int(affected), nil
+}
+
+// purgeMediaRowsTx removes the catalog rows of every Media named by selection,
+// a SELECT returning Media ids, and reports how many Media rows went. Rows that
+// hang off media by a cascading foreign key go with the media row; the tables
+// deleted explicitly here either have no foreign key or must go first.
+func purgeMediaRowsTx(ctx context.Context, tx *sql.Tx, selection string, args ...any) (int64, error) {
+	// media_embedding is keyed by content fingerprint, not media_id, and that
+	// fingerprint deterministically regenerates the same Media id on re-import.
+	// Delete it here — before media_file is dropped, while the fingerprint is
+	// still resolvable — so a purge does not leave a semantic-search vector of
+	// the deleted (possibly restricted) content that resurrects on rescan.
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM media_embedding WHERE media_fingerprint IN (
+			SELECT content_fingerprint FROM media_file WHERE media_id IN (`+selection+`)
+		)
+	`, args...); err != nil {
+		return 0, err
+	}
+	// artwork_candidate and media_field_provenance carry no foreign key, and a
+	// re-import regenerates the same Media id, so a row left behind would attach
+	// itself to the re-imported Media.
+	for _, table := range []string{"media_file", "media_external_id", "artwork_candidate", "media_field_provenance"} {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE media_id IN (`+selection+`)`, args...); err != nil {
+			return 0, err
+		}
+	}
+	result, err := tx.ExecContext(ctx, `DELETE FROM media WHERE id IN (`+selection+`)`, args...)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 // SweepPurgeTrashedBefore runs the autonomous retained-trash purge. Human

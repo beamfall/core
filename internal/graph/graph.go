@@ -243,6 +243,15 @@ type OutboundMetadataResolver interface {
 type LibraryMutationObserver interface {
 	LibraryCreated(context.Context, store.LibraryID, []string)
 	LibraryRootsChanged(context.Context, store.LibraryID, []string)
+	// LibraryDeleted follows a soft delete: the Library's folders must stop
+	// being watched and its scan schedule must stop firing.
+	LibraryDeleted(context.Context, store.LibraryID)
+	// LibraryRestored follows a restore: watching and the scan schedule resume
+	// and the Library is rescanned.
+	LibraryRestored(context.Context, store.LibraryID)
+	// LibraryPurged follows a permanent removal, so state kept outside the
+	// catalog for the removed Media and entities can go too.
+	LibraryPurged(context.Context, store.LibraryPurge)
 }
 
 type ScheduleUpdater interface {
@@ -2165,7 +2174,8 @@ func (h *Handler) createLibrary(ctx context.Context, scope auth.Scope, req reque
 
 // deleteLibrary soft-deletes a Library (master #42). The Library is
 // immediately hidden from all store queries; its scan schedule, profile grants,
-// and media rows are preserved until a future purge. Manager role required.
+// and media rows are preserved, so restoreLibrary brings it back whole until
+// purgeLibrary or the retention sweep removes it. Manager role required.
 func (h *Handler) deleteLibrary(ctx context.Context, scope auth.Scope, req request) error {
 	libraryID := trimmedVariable(req, "libraryID")
 	if libraryID == "" {
@@ -2183,6 +2193,9 @@ func (h *Handler) deleteLibrary(ctx context.Context, scope auth.Scope, req reque
 	}
 	if err := h.logActivity(ctx, scope, store.ActivityLibraryDelete, "library", libraryID, store.LibraryID(libraryID)); err != nil {
 		return err
+	}
+	if h.libraryObserver != nil {
+		h.libraryObserver.LibraryDeleted(ctx, store.LibraryID(libraryID))
 	}
 	return nil
 }
