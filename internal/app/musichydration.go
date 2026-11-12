@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/url"
 	"sort"
@@ -13,6 +15,7 @@ import (
 	"github.com/beamfall/core/internal/identify"
 	"github.com/beamfall/core/internal/plugin"
 	scanpkg "github.com/beamfall/core/internal/scan"
+	"github.com/beamfall/core/internal/serverrole"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -22,6 +25,7 @@ type hydrationStore interface {
 	UpsertEntity(ctx context.Context, entity store.Entity) error
 	UpsertEntityRelation(ctx context.Context, relation store.EntityRelation) error
 	AddMediaExternalID(ctx context.Context, mediaID store.MediaID, scheme string, value string) error
+	EntityRelationTargets(ctx context.Context, libraryID store.LibraryID, id store.EntityID, relation string) ([]store.EntityID, bool, error)
 }
 
 // hydrationAdapter validates a plugin-supplied write plan against the active
@@ -35,6 +39,8 @@ type hydrationAdapter struct {
 	declaredEntityFields  map[string]map[string]string
 	declaredRelationSpecs map[string]plugin.RelationSpec
 	declaredExternalIDs   map[string]bool
+	// entityScopes maps a scoped entity kind to the relation recording its scope.
+	entityScopes map[string]string
 }
 
 func newHydrationAdapters(registry *plugin.Registry, st hydrationStore, mappers map[string]HydrationMapper) map[string]scanpkg.MetadataHydrator {
@@ -61,6 +67,7 @@ func newHydrationAdapters(registry *plugin.Registry, st hydrationStore, mappers 
 			declaredEntityFields:  declaredEntityFieldTypes(bundle),
 			declaredRelationSpecs: declaredRelationSpecs(bundle),
 			declaredExternalIDs:   declaredExternalIDSet(mapper.ExternalIDSchemes()),
+			entityScopes:          declaredEntityScopes(mapper),
 		}
 	}
 	if len(out) == 0 {
@@ -96,6 +103,20 @@ func declaredExternalIDSet(schemes []string) map[string]bool {
 		}
 	}
 	return set
+}
+
+func declaredEntityScopes(mapper HydrationMapper) map[string]string {
+	scoped, ok := mapper.(HydrationScopeMapper)
+	if !ok {
+		return nil
+	}
+	scopes := map[string]string{}
+	for _, scope := range scoped.EntityScopes() {
+		if scope.Kind != "" && scope.Relation != "" {
+			scopes[scope.Kind] = scope.Relation
+		}
+	}
+	return scopes
 }
 
 func declaredRelationSpecs(bundle plugin.Bundle) map[string]plugin.RelationSpec {
@@ -320,6 +341,16 @@ func (a *hydrationAdapter) validateEntity(entity HydrationEntity) error {
 	if !ok {
 		return fmt.Errorf("hydration entity kind %q is not declared", entity.Kind)
 	}
+	if entity.Scope != "" {
+		relation, ok := a.entityScopes[entity.Kind]
+		if !ok {
+			return fmt.Errorf("hydration entity kind %q carries a scope but the mapper declares no scope relation for it", entity.Kind)
+		}
+		spec, ok := a.declaredRelationSpecs[entity.Kind+"\x00"+relation]
+		if !ok || spec.ToKind == plugin.MediaKindName {
+			return fmt.Errorf("hydration scope relation %q from entity kind %q is not a declared entity relation", relation, entity.Kind)
+		}
+	}
 	for _, field := range entity.Fields {
 		declaredType, ok := declared[field.Name]
 		if !ok {
@@ -385,8 +416,11 @@ func (a *hydrationAdapter) writeRelation(ctx context.Context, mediaID store.Medi
 }
 
 func (a *hydrationAdapter) upsertEntity(ctx context.Context, libraryID store.LibraryID, mapped HydrationEntity) (store.EntityID, error) {
-	id := identify.EntityIDForName(libraryID, mapped.Kind, mapped.Title)
-	err := a.store.UpsertEntity(ctx, store.Entity{
+	id, err := a.entityID(ctx, libraryID, mapped)
+	if err != nil {
+		return "", err
+	}
+	err = a.store.UpsertEntity(ctx, store.Entity{
 		ID:        id,
 		LibraryID: libraryID,
 		Kind:      mapped.Kind,
@@ -394,6 +428,66 @@ func (a *hydrationAdapter) upsertEntity(ctx context.Context, libraryID store.Lib
 		Fields:    mapped.Fields,
 	})
 	return id, err
+}
+
+// entityID resolves the id a mapped Entity is written under. A scoped Entity
+// uses its scoped id once that Entity exists. Until then a title-only Entity
+// of the same kind and title (written before the kind was scoped) is kept when
+// its scope relation points at nothing or only at this scope, so a rescan
+// neither orphans nor duplicates it; one that records another scope is left
+// alone and the scoped Entity is created beside it.
+func (a *hydrationAdapter) entityID(ctx context.Context, libraryID store.LibraryID, mapped HydrationEntity) (store.EntityID, error) {
+	unscoped := identify.EntityIDForName(libraryID, mapped.Kind, mapped.Title)
+	if mapped.Scope == "" {
+		return unscoped, nil
+	}
+	relation := a.entityScopes[mapped.Kind]
+	scoped := identify.EntityIDForScopedName(libraryID, mapped.Kind, mapped.Scope, mapped.Title)
+	if _, exists, err := a.store.EntityRelationTargets(ctx, libraryID, scoped, relation); err != nil || exists {
+		return scoped, err
+	}
+	targets, exists, err := a.store.EntityRelationTargets(ctx, libraryID, unscoped, relation)
+	if err != nil || !exists {
+		return scoped, err
+	}
+	scope := identify.EntityIDForName(libraryID, a.declaredRelationSpecs[mapped.Kind+"\x00"+relation].ToKind, mapped.Scope)
+	for _, target := range targets {
+		if target != scope {
+			return scoped, nil
+		}
+	}
+	return unscoped, nil
+}
+
+// entityScopeSplitter is the store write behind the one-time scope repair.
+type entityScopeSplitter interface {
+	SplitAmbiguousEntityScopes(ctx context.Context, pluginID, kind, relation, markerField string, now time.Time) (int, error)
+}
+
+// splitAmbiguousHydrationScopes runs the one-time repair for every scoped kind
+// an active mapper declares: Entities written by title alone before the kind
+// was scoped are reopened so the next scan separates them (the store records
+// the run, so this is a single cheap insert on every later start). A failure
+// only delays the repair to the next start; an Attached node never authors
+// catalog rows and skips it.
+func splitAmbiguousHydrationScopes(ctx context.Context, st entityScopeSplitter, hydrators map[string]scanpkg.MetadataHydrator, mappers map[string]HydrationMapper, logger *slog.Logger) {
+	for pluginID := range hydrators {
+		mapper := mappers[pluginID]
+		scoped, ok := mapper.(HydrationScopeMapper)
+		if !ok || mapper.MarkerField() == "" {
+			continue
+		}
+		for _, scope := range scoped.EntityScopes() {
+			reopened, err := st.SplitAmbiguousEntityScopes(ctx, pluginID, scope.Kind, scope.Relation, mapper.MarkerField(), time.Now().UTC())
+			switch {
+			case errors.Is(err, serverrole.ErrAttachedAuthorityRefused):
+			case err != nil:
+				logger.Warn("entity scope repair failed; retrying next start", "plugin", pluginID, "kind", scope.Kind, "error", err)
+			case reopened > 0:
+				logger.Info("entity scope repair reopened entities for the next scan", "plugin", pluginID, "kind", scope.Kind, "entities", reopened)
+			}
+		}
+	}
 }
 
 var _ scanpkg.MetadataHydrator = (*hydrationAdapter)(nil)

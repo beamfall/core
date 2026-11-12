@@ -98,9 +98,29 @@ func (h HydrationPlan) Empty() bool {
 }
 
 type HydrationEntity struct {
-	Kind   string
-	Title  string
+	Kind  string
+	Title string
+	// Scope makes Title unique only within it: the same Kind and Title under
+	// two scopes are two Entities. Empty keeps the title-only identity. A
+	// mapper that sets it must declare the kind through HydrationScopeMapper.
+	Scope  string
 	Fields []store.EntityField
+}
+
+// HydrationEntityScope declares that Entities of Kind are scoped, and that the
+// entity→entity Relation from them records the scope: its target is the
+// unscoped Entity whose title is HydrationEntity.Scope. The adapter reads that
+// relation to keep using a title-only Entity written before the kind was
+// scoped instead of creating a twin.
+type HydrationEntityScope struct {
+	Kind     string
+	Relation string
+}
+
+// HydrationScopeMapper is implemented by a HydrationMapper whose plans carry
+// scoped Entities.
+type HydrationScopeMapper interface {
+	EntityScopes() []HydrationEntityScope
 }
 
 // HydrationRelation targets the current Media when ToEntity is nil.

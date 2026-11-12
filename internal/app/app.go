@@ -533,6 +533,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// Plugin-owned local metadata mappers are validated against each activated
 	// bundle and adapted into scan's shape-neutral hook, keyed by plugin ID.
 	metadataHydrators := newHydrationAdapters(executablePlugins, st, hooks.HydrationMappers)
+	splitAmbiguousHydrationScopes(ctx, st, metadataHydrators, hooks.HydrationMappers, logger)
 	scanHandler := scanHandlerWithWorkerGovernor(st, observingProber{inner: ffmpegRunner, observability: observabilityController}, ffmpegRunner, parsers, interactiveSidecarExts, autoIdentifier, localExtractors, metadataHydrators, resourceGovernor, artworkService)
 	// First-party EmbeddingProvider seam. The flag records
 	// operator intent and is read at process start. The bundled provider contains

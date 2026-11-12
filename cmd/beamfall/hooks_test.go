@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -173,5 +174,46 @@ func TestProductionHookAdaptersPreservePluginOutputs(t *testing.T) {
 	factory := hooks.MigrationSourceFactories[app.MigrationSourceKey{PluginID: filmtv.PluginID, ImporterID: "nfo"}]
 	if factory == nil || factory(nil, t.TempDir()) == nil {
 		t.Fatal("Film/TV NFO migration source factory missing")
+	}
+}
+
+// musicAlbumIdentity renders everything the hydration adapter derives an album
+// Entity's identity from, for one tagged file.
+func musicAlbumIdentity(t *testing.T, tags map[string]string, path string) string {
+	t.Helper()
+	plan := firstPartyHooks().HydrationMappers[music.PluginID].MapHydration(tags, path)
+	for _, relation := range plan.Relations {
+		if relation.Name == "album-track" {
+			album := relation.From
+			album.Fields = nil
+			return fmt.Sprintf("%#v", album)
+		}
+	}
+	t.Fatalf("no album-track relation for %v", tags)
+	return ""
+}
+
+func TestMusicAlbumIdentityIsAlbumArtistAndTitle(t *testing.T) {
+	queen := musicAlbumIdentity(t, map[string]string{"TITLE": "Bohemian Rhapsody", "ALBUM": "Greatest Hits", "ARTIST": "Queen", "ALBUMARTIST": "Queen"}, "/flat/a.flac")
+	abba := musicAlbumIdentity(t, map[string]string{"TITLE": "Waterloo", "ALBUM": "Greatest Hits", "ARTIST": "ABBA", "ALBUMARTIST": "ABBA"}, "/flat/b.flac")
+	if queen == abba {
+		t.Fatalf("two albums titled Greatest Hits by different album artists share one identity: %s", queen)
+	}
+
+	// No album-artist tag and no artist folder: the track artist stands in.
+	untaggedQueen := musicAlbumIdentity(t, map[string]string{"TITLE": "Killer Queen", "ALBUM": "Greatest Hits", "ARTIST": "Queen"}, "/flat/c.flac")
+	if untaggedQueen != queen {
+		t.Fatalf("album without an album-artist tag = %s, want the artist's album %s", untaggedQueen, queen)
+	}
+
+	// A compilation with one album artist stays one album whatever each track's artist is.
+	first := musicAlbumIdentity(t, map[string]string{"TITLE": "One", "ALBUM": "Now 1", "ARTIST": "Artist A", "ALBUMARTIST": "Various Artists"}, "/flat/d.flac")
+	second := musicAlbumIdentity(t, map[string]string{"TITLE": "Two", "ALBUM": "Now 1", "ARTIST": "Artist B", "ALBUMARTIST": "Various Artists"}, "/flat/e.flac")
+	if first != second {
+		t.Fatalf("compilation split by track artist: %s vs %s", first, second)
+	}
+	flagged := musicAlbumIdentity(t, map[string]string{"TITLE": "Three", "ALBUM": "Now 1", "ARTIST": "Artist C", "COMPILATION": "1"}, "/flat/f.flac")
+	if flagged != first {
+		t.Fatalf("compilation-flagged track = %s, want %s", flagged, first)
 	}
 }

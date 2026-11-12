@@ -610,6 +610,20 @@ func EntityIDForName(library store.LibraryID, kind, name string) store.EntityID 
 	return store.EntityID("entity-" + hex.EncodeToString(sum[:16]))
 }
 
+// EntityIDForScopedName derives the Entity ID for a hydrated Entity whose title
+// is only unique within a scope (the same title under two scopes is two
+// Entities). An empty scope is the plain EntityIDForName id, so unscoped kinds
+// and Entities written before scopes existed keep their ids. The scope follows
+// the name in the hashed key, which no unscoped (kind, name) can produce
+// without a NUL in the name. Persisted like EntityIDForName: do not change it.
+func EntityIDForScopedName(library store.LibraryID, kind, scope, name string) store.EntityID {
+	if scope == "" {
+		return EntityIDForName(library, kind, name)
+	}
+	sum := sha256.Sum256([]byte(string(library) + "\x00" + kind + "\x00" + name + "\x00" + scope))
+	return store.EntityID("entity-" + hex.EncodeToString(sum[:16]))
+}
+
 // entityIDForName is the internal alias kept so existing call sites read
 // unchanged; it delegates to the exported canonical derivation.
 func entityIDForName(library store.LibraryID, kind, name string) store.EntityID {
