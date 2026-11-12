@@ -3013,7 +3013,7 @@ func (s *Store) SourceItems(ctx context.Context, filter LibraryFilter, query Sou
 	// (§2.2). A profile-less rail (e.g. an unauthenticated all-items scan) has no
 	// mute list to apply, so it passes through unchanged.
 	if query.ProfileID != "" && strings.TrimSpace(query.Query) == "" {
-		items, err = s.applyMuteFilterLocked(ctx, query.ProfileID, filter, items)
+		items, err = s.applyMuteFilterLocked(ctx, s.catalogR, query.ProfileID, filter, items)
 		if err != nil {
 			return nil, err
 		}

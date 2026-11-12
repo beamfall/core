@@ -210,6 +210,31 @@ func TestLibraryBrowseReadsAnOpenEncryptedLibrary(t *testing.T) {
 		t.Fatalf("open encrypted library browse = %+v, want the one imported item", open)
 	}
 
+	// A Mute reaches the item through the Encrypted Library's own relations.
+	entity := Entity{ID: "entity-browse-encrypted", LibraryID: library, Kind: "category", Title: "Sealed"}
+	if err := st.UpsertEntity(ctx, entity); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.encryptedDBs[library].writer.ExecContext(ctx, `
+		INSERT INTO entity_relation(from_entity_id, relation, to_media_id)
+		VALUES (?, 'linked', ?)
+	`, entity.ID, imported.ID); err != nil {
+		t.Fatal(err)
+	}
+	profile := ProfileID("profile-browse-encrypted")
+	for muted, want := range map[bool]int{true: 0, false: 1} {
+		if err := st.SetMute(ctx, profile, MuteKindEntity, string(entity.ID), false, muted); err != nil {
+			t.Fatal(err)
+		}
+		result, err := st.LibraryBrowse(ctx, LibraryFilter{AllLibraries: true}, LibraryBrowseQuery{LibraryID: library, ProfileID: profile})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.Total != want {
+			t.Fatalf("browse with the entity muted=%v = %d items, want %d", muted, result.Total, want)
+		}
+	}
+
 	// A hide-mode certification ceiling is applied on the Encrypted Library's
 	// own plane, which has no library table to join.
 	if _, err := st.catalogW.ExecContext(ctx, `UPDATE library SET plugin_id = 'photos' WHERE id = ?`, library); err != nil {

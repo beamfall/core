@@ -192,7 +192,7 @@ func (s *Store) LibraryBrowse(ctx context.Context, filter LibraryFilter, query L
 		return empty, err
 	}
 	if query.ProfileID != "" {
-		candidates, err = s.libraryBrowseUnmutedLocked(ctx, query.ProfileID, filter, candidates)
+		candidates, err = s.libraryBrowseUnmutedLocked(ctx, reader, query.ProfileID, filter, candidates)
 		if err != nil {
 			return empty, err
 		}
@@ -286,12 +286,14 @@ func libraryBrowseCandidates(ctx context.Context, reader *sql.DB, certify func()
 
 // libraryBrowseUnmutedLocked applies the per-Profile Mute predicate to the
 // whole candidate set, before counting, so the total never counts a hidden item.
-func (s *Store) libraryBrowseUnmutedLocked(ctx context.Context, profileID ProfileID, filter LibraryFilter, candidates []libraryBrowseCandidate) ([]libraryBrowseCandidate, error) {
+// relations is the plane the candidates were read from: an Encrypted Library
+// keeps its relations in its own catalog.
+func (s *Store) libraryBrowseUnmutedLocked(ctx context.Context, relations *sql.DB, profileID ProfileID, filter LibraryFilter, candidates []libraryBrowseCandidate) ([]libraryBrowseCandidate, error) {
 	items := make([]SourceItem, len(candidates))
 	for i, c := range candidates {
 		items[i] = c.item
 	}
-	kept, err := s.applyMuteFilterLocked(ctx, profileID, filter, items)
+	kept, err := s.applyMuteFilterLocked(ctx, relations, profileID, filter, items)
 	if err != nil {
 		return nil, err
 	}
