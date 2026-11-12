@@ -16,8 +16,8 @@ import { useT } from "@/lib/i18n";
 
 // Delete a Library from Console > Libraries or Manage > Libraries (CORE-1171).
 // The server mutation is an audited soft delete: the Library leaves every store
-// query while media rows, history and files on disk stay. There is no restore
-// mutation yet, so the copy says so instead of promising a trash. A failure
+// query while media rows, history and files on disk stay. The copy names where
+// to restore it: Recently deleted in Console > Libraries (CORE-1201). A failure
 // keeps the dialog open with the error so the owner can retry. After a delete
 // the trigger leaves the page with its card, so focus moves to the heading of
 // the surrounding section instead of falling back to the document body.

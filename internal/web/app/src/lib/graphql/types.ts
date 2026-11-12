@@ -520,6 +520,28 @@ export interface LibraryInfo {
   defaultIcon?: string;
 }
 
+/**
+ * A deleted Library waiting in "Recently deleted" (graph.TrashedLibraryInfo).
+ * trashedAt and purgeAfter are RFC 3339 times. A Library that is not purgeable
+ * (a Custodial one) has no purgeAfter: the server keeps it until it is restored.
+ */
+export interface TrashedLibraryInfo {
+  id: string;
+  title: string;
+  trashedAt: string;
+  mediaCount: number;
+  purgeable: boolean;
+  purgeAfter?: string | null;
+}
+
+/** What a permanent Library delete removed (graph.LibraryPurgeResult). */
+export interface LibraryPurgeResult {
+  libraryID: string;
+  title: string;
+  mediaRemoved: number;
+  entitiesRemoved: number;
+}
+
 /** The setLibraryPreviewClips result. */
 export interface LibraryPreviewClipsResult {
   id: string;

@@ -8,6 +8,7 @@ import { customizationStrings } from "./customization";
 import { itemActionStrings } from "./item-actions";
 import { libraryHealthStrings } from "./library-health";
 import { libraryOperationsStrings } from "./library-operations";
+import { libraryTrashStrings } from "./library-trash";
 import { managedFileStrings } from "./managed-files";
 import { metadataManagementStrings } from "./metadata-management";
 import { migrationStrings } from "./migration";
@@ -54,6 +55,7 @@ export const en = {
   ...powerToolStrings.en,
   ...itemActionStrings.en,
   ...playerRecoveryStrings.en,
+  ...libraryTrashStrings.en,
 } as const;
 
 export const fr = {
@@ -84,6 +86,7 @@ export const fr = {
   ...powerToolStrings.fr,
   ...itemActionStrings.fr,
   ...playerRecoveryStrings.fr,
+  ...libraryTrashStrings.fr,
 } as const;
 
 export const de = {
@@ -114,6 +117,7 @@ export const de = {
   ...powerToolStrings.de,
   ...itemActionStrings.de,
   ...playerRecoveryStrings.de,
+  ...libraryTrashStrings.de,
 } as const;
 
 export const es = {
@@ -144,6 +148,7 @@ export const es = {
   ...powerToolStrings.es,
   ...itemActionStrings.es,
   ...playerRecoveryStrings.es,
+  ...libraryTrashStrings.es,
 } as const;
 
 export const pt = {
@@ -174,4 +179,5 @@ export const pt = {
   ...powerToolStrings.pt,
   ...itemActionStrings.pt,
   ...playerRecoveryStrings.pt,
+  ...libraryTrashStrings.pt,
 } as const;

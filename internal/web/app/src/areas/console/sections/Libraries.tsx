@@ -1,5 +1,16 @@
-import { Folder, FolderPlus, Plus, RefreshCw, ScanLine, SearchCheck, X } from "lucide-react";
-import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import {
+  Check,
+  Folder,
+  FolderPlus,
+  Loader2,
+  Plus,
+  RefreshCw,
+  ScanLine,
+  SearchCheck,
+  Undo2,
+  X,
+} from "lucide-react";
+import { type FormEvent, useCallback, useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router";
 import { DeleteLibraryButton } from "@/components/beamfall/LibraryDelete";
 import { LibraryIconPicker, useLibraryIconSymbol } from "@/components/beamfall/LibraryIconPicker";
@@ -30,7 +41,9 @@ import {
   fetchLibraries,
   fetchPlugins,
   fetchSkipDetectionEnabled,
+  fetchTrashedLibraries,
   fetchWatcherStatus,
+  restoreLibrary,
   scanLibrary,
   setLibraryPreviewClips,
   setLibraryRoots,
@@ -39,6 +52,7 @@ import {
 import type {
   FolderEntryInfo,
   LibraryInfo,
+  LibraryPurgeResult,
   PluginSummary,
   WatcherStatusInfo,
 } from "@/lib/graphql/types";
@@ -47,6 +61,7 @@ import { cn } from "@/lib/utils";
 import { ConfirmButton } from "../ConfirmButton";
 import { Section } from "../Section";
 import { useAsync } from "../useAsync";
+import { DeletedLibraries, MutationFailure } from "./DeletedLibraries";
 
 const NO_PLUGIN = "__none__";
 
@@ -92,12 +107,14 @@ function LibraryCard({
   skipDetectionEnabled,
   watcher,
   onChanged,
+  onDeleted,
 }: {
   library: LibraryInfo;
   plugins: PluginSummary[];
   skipDetectionEnabled: boolean;
   watcher?: WatcherStatusInfo;
   onChanged: () => void;
+  onDeleted: () => void;
 }) {
   const t = useT();
   const displayLocale = useDisplayLocale();
@@ -386,7 +403,7 @@ function LibraryCard({
         </Advanced>
       </div>
       <footer className="flex justify-end border-t border-white/[0.07] px-4 py-3">
-        <DeleteLibraryButton library={library} onDeleted={onChanged} />
+        <DeleteLibraryButton library={library} onDeleted={onDeleted} />
       </footer>
     </article>
   );
@@ -465,20 +482,100 @@ function AddLibrary({
   );
 }
 
+// What the section last did to a library. The control that did it (a card's
+// delete button, a deleted library's Restore) is gone by the time the server
+// answers, so this line says what happened and takes focus.
+type LibraryNotice =
+  | { kind: "deleted" | "restored"; id: string; title: string }
+  | { kind: "purged"; id: string; title: string; mediaRemoved: number };
+
 // Libraries (ADR-0003): the manageable Library list with create + per-Library
-// folders / options / scan controls, and the plugin binding at creation.
+// folders / options / scan controls, the plugin binding at creation, and the
+// deleted libraries that can still be restored (CORE-1201).
 export function Libraries() {
   const t = useT();
   const libs = useAsync(fetchLibraries);
   const plugins = useAsync(fetchPlugins);
   const skipDetection = useAsync(fetchSkipDetectionEnabled);
   const watchers = useAsync(fetchWatcherStatus);
+  const trashed = useAsync(fetchTrashedLibraries);
   const [adding, setAdding] = useState(false);
+  const [notice, setNotice] = useState<LibraryNotice | null>(null);
+  const noticeRef = useRef<HTMLParagraphElement>(null);
+  const noticeID = useId();
+  const [undoing, setUndoing] = useState(false);
+  // null: Undo has not failed. Otherwise the server's reason, which may be empty.
+  const [undoError, setUndoError] = useState<string | null>(null);
+  const undoInFlight = useRef(false);
 
-  // Watcher state follows roots, so it reloads with the library list.
-  async function refreshLibraries() {
-    await Promise.all([libs.refresh(), watchers.refresh()]);
+  useEffect(() => {
+    if (!notice) return;
+    // One microtask late: the closing dialog hands focus back to its trigger in
+    // a microtask of its own, and this has to land after it.
+    queueMicrotask(() => noticeRef.current?.focus());
+  }, [notice]);
+
+  function announce(next: LibraryNotice) {
+    setUndoError(null);
+    setNotice(next);
   }
+
+  // Watcher state and the deleted list both follow the library list.
+  async function refreshLibraries() {
+    await Promise.all([libs.refresh(), watchers.refresh(), trashed.refresh()]);
+  }
+
+  // The server has confirmed, so the card goes at once; the reload behind it
+  // picks up anything else that changed.
+  async function onLibraryDeleted(library: Pick<LibraryInfo, "id" | "title">) {
+    libs.setData((libs.data ?? []).filter((item) => item.id !== library.id));
+    announce({ kind: "deleted", id: library.id, title: library.title });
+    await Promise.all([refreshLibraries(), skipDetection.refresh()]);
+  }
+
+  async function onLibraryRestored(library: Pick<LibraryInfo, "id" | "title">) {
+    trashed.setData((trashed.data ?? []).filter((item) => item.id !== library.id));
+    announce({ kind: "restored", id: library.id, title: library.title });
+    await Promise.all([refreshLibraries(), skipDetection.refresh()]);
+  }
+
+  async function onLibraryPurged(result: LibraryPurgeResult) {
+    trashed.setData((trashed.data ?? []).filter((item) => item.id !== result.libraryID));
+    announce({
+      kind: "purged",
+      id: result.libraryID,
+      title: result.title,
+      mediaRemoved: result.mediaRemoved,
+    });
+    await trashed.refresh();
+  }
+
+  // Undo the delete just announced: the same restore "Recently deleted" offers,
+  // one click away from the confirmation.
+  async function undoDelete(library: Pick<LibraryInfo, "id" | "title">) {
+    if (undoInFlight.current) return;
+    undoInFlight.current = true;
+    setUndoing(true);
+    setUndoError(null);
+    try {
+      await restoreLibrary(library.id);
+    } catch (err) {
+      setUndoError(err instanceof Error ? err.message : "");
+      return;
+    } finally {
+      undoInFlight.current = false;
+      setUndoing(false);
+    }
+    await onLibraryRestored(library);
+  }
+
+  const noticeText = !notice
+    ? ""
+    : notice.kind === "purged"
+      ? t("libraryPurged", { library: notice.title, count: notice.mediaRemoved })
+      : notice.kind === "restored"
+        ? t("libraryRestored", { library: notice.title })
+        : t("libraryDeleted", { library: notice.title });
 
   const pluginList = plugins.data ?? [];
   const libraryList = libs.data ?? [];
@@ -527,6 +624,37 @@ export function Libraries() {
         />
       )}
 
+      {notice && (
+        <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <p
+              ref={noticeRef}
+              id={noticeID}
+              role="status"
+              tabIndex={-1}
+              className="m-0 flex min-w-0 items-start gap-2.5 rounded-sm text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Check aria-hidden className="mt-0.5 size-4 shrink-0 text-emerald-400" />
+              {noticeText}
+            </p>
+            {notice.kind === "deleted" && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                aria-describedby={noticeID}
+                aria-disabled={undoing || undefined}
+                onClick={() => void undoDelete(notice)}
+              >
+                {undoing ? <Loader2 aria-hidden className="animate-spin" /> : <Undo2 aria-hidden />}
+                {undoing ? t("restoreLibraryBusy") : t("undoDeleteLibrary")}
+              </Button>
+            )}
+          </div>
+          <MutationFailure title={t("restoreLibraryFailed")} reason={undoError} />
+        </div>
+      )}
+
       {firstLoad ? (
         <Skeleton className="h-40 w-full" />
       ) : libs.failed ? (
@@ -546,10 +674,20 @@ export function Libraries() {
                 void refreshLibraries();
                 void skipDetection.refresh();
               }}
+              onDeleted={() => void onLibraryDeleted(library)}
             />
           ))}
         </div>
       )}
+
+      {/* Shown only once the list has loaded with something in it: a failed or
+          empty load leaves the section as it was before libraries could be
+          restored. */}
+      <DeletedLibraries
+        libraries={trashed.data ?? []}
+        onRestored={onLibraryRestored}
+        onPurged={onLibraryPurged}
+      />
     </Section>
   );
 }

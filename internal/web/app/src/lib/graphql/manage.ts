@@ -33,6 +33,7 @@ import type {
   LibraryHealthInfo,
   LibraryInfo,
   LibraryPreviewClipsResult,
+  LibraryPurgeResult,
   LibraryRootsResult,
   ManagedPathInfo,
   ManagedTrashInfo,
@@ -65,6 +66,7 @@ import type {
   TagInfo,
   TagTargetType,
   TrashEntry,
+  TrashedLibraryInfo,
   UnmatchedItemInfo,
   UnmatchedRecordInfo,
   UnmatchedSuppressionInfo,
@@ -169,6 +171,55 @@ export async function createLibrary(
     familyScope,
   });
   return data.createLibrary;
+}
+
+const TRASHED_LIBRARIES_QUERY =
+  "query TrashedLibraries { trashedLibraries { id title trashedAt mediaCount purgeable purgeAfter } }";
+
+/**
+ * TrashedLibraries — the deleted Libraries that can still be restored (admin),
+ * newest deletion first. purgeAfter is when the retention sweep removes one for
+ * good; a Library that is not purgeable has none.
+ */
+export async function fetchTrashedLibraries(signal?: AbortSignal): Promise<TrashedLibraryInfo[]> {
+  const data = await graphql<{ trashedLibraries: TrashedLibraryInfo[] }>(
+    TRASHED_LIBRARIES_QUERY,
+    {},
+    signal,
+  );
+  return data.trashedLibraries;
+}
+
+const RESTORE_LIBRARY_MUTATION =
+  "mutation RestoreLibrary($libraryID: String!) { restoreLibrary(libraryID: $libraryID) }";
+
+/**
+ * RestoreLibrary — bring a deleted Library back (admin, audited). Its media,
+ * watch history, grants, folders and scan schedule return as they were, and
+ * the server queues a scan of its folders.
+ */
+export async function restoreLibrary(libraryID: string): Promise<boolean> {
+  const data = await graphql<{ restoreLibrary: boolean }>(RESTORE_LIBRARY_MUTATION, { libraryID });
+  return data.restoreLibrary;
+}
+
+const PURGE_LIBRARY_MUTATION =
+  "mutation PurgeLibrary($libraryID: String!, $confirm: Boolean!) { purgeLibrary(libraryID: $libraryID, confirm: $confirm) { libraryID title mediaRemoved entitiesRemoved } }";
+
+/**
+ * PurgeLibrary — permanently remove an already deleted Library (admin,
+ * audited). The server refuses without confirm: true. Catalog records, watch
+ * history and generated artwork go; the files on disk are never touched.
+ */
+export async function purgeLibrary(
+  libraryID: string,
+  confirm: boolean,
+): Promise<LibraryPurgeResult> {
+  const data = await graphql<{ purgeLibrary: LibraryPurgeResult }>(PURGE_LIBRARY_MUTATION, {
+    libraryID,
+    confirm,
+  });
+  return data.purgeLibrary;
 }
 
 const SKIP_DETECTION_ENABLED_QUERY =

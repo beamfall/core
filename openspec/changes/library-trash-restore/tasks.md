@@ -10,9 +10,9 @@
 - [x] 5. Go tests: store, graph, watcher, schedule, and the delete-stops / restore-resumes proof
 - [ ] 6. Dispatcher registration, admin-field guard and nested schema entries; conformance and
   wire-contract goldens regenerated with `make regen-wire-goldens`
-- [ ] 7. Web: named `TrashedLibraries`, `RestoreLibrary`, `PurgeLibrary` operations
-- [ ] 8. Web: "Recently deleted" group, Restore, confirmed "Delete permanently", Undo after delete,
+- [x] 7. Web: named `TrashedLibraries`, `RestoreLibrary`, `PurgeLibrary` operations
+- [x] 8. Web: "Recently deleted" group, Restore, confirmed "Delete permanently", Undo after delete,
   delete dialog copy names the restore path
-- [ ] 9. Strings in en, fr, de, es and pt; `strings.test.ts` baselines
-- [ ] 10. Focused vitest: list, restore, purge confirm and cancel, undo, errors
+- [x] 9. Strings in en, fr, de, es and pt; `strings.test.ts` baselines
+- [x] 10. Focused vitest: list, restore, purge confirm and cancel, undo, errors
 - [ ] 11. Owner review in the running UI; `make gate` at landing; `openspec archive library-trash-restore`

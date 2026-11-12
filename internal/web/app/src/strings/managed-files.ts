@@ -23,7 +23,7 @@ export const managedFileStrings = {
     deleteLibrary: "Delete library",
     deleteLibraryTitle: "Delete {library}?",
     deleteLibraryBody:
-      "The library will disappear from Beamfall on every device. Files on disk are not touched. Watch history stays on the server, and past plays stay in Play History without their titles. Deleted libraries cannot be restored yet.",
+      "The library will disappear from Beamfall on every device. Files on disk are not touched. Watch history stays on the server, and past plays stay in Play History without their titles. You can restore it from Recently deleted in Console > Libraries for 30 days.",
     deleteLibraryDeleting: "Deleting…",
     deleteLibraryFailed: "Could not delete the library.",
     ownerTasksHeading: "Common tasks",
@@ -143,7 +143,7 @@ export const managedFileStrings = {
     deleteLibrary: "Supprimer la bibliothèque",
     deleteLibraryTitle: "Supprimer {library} ?",
     deleteLibraryBody:
-      "La bibliothèque disparaîtra de Beamfall sur tous les appareils. Les fichiers sur le disque ne sont pas modifiés. L’historique de visionnage reste sur le serveur, et les lectures passées restent dans l’historique sans leur titre. Une bibliothèque supprimée ne peut pas encore être restaurée.",
+      "La bibliothèque disparaîtra de Beamfall sur tous les appareils. Les fichiers sur le disque ne sont pas modifiés. L’historique de visionnage reste sur le serveur, et les lectures passées restent dans l’historique sans leur titre. Vous pouvez la restaurer depuis « Supprimées récemment » dans Console > Bibliothèques pendant 30 jours.",
     deleteLibraryDeleting: "Suppression…",
     deleteLibraryFailed: "Impossible de supprimer la bibliothèque.",
     trashUnavailable: "La corbeille est indisponible pour le moment.",
@@ -196,7 +196,7 @@ export const managedFileStrings = {
     deleteLibrary: "Bibliothek löschen",
     deleteLibraryTitle: "{library} löschen?",
     deleteLibraryBody:
-      "Die Bibliothek verschwindet auf allen Geräten aus Beamfall. Dateien auf dem Datenträger bleiben unberührt. Der Wiedergabeverlauf bleibt auf dem Server, und frühere Wiedergaben bleiben ohne Titel im Verlauf. Gelöschte Bibliotheken lassen sich noch nicht wiederherstellen.",
+      "Die Bibliothek verschwindet auf allen Geräten aus Beamfall. Dateien auf dem Datenträger bleiben unberührt. Der Wiedergabeverlauf bleibt auf dem Server, und frühere Wiedergaben bleiben ohne Titel im Verlauf. Sie lässt sich 30 Tage lang unter „Zuletzt gelöscht“ in Console > Bibliotheken wiederherstellen.",
     deleteLibraryDeleting: "Wird gelöscht…",
     deleteLibraryFailed: "Die Bibliothek konnte nicht gelöscht werden.",
     trashUnavailable: "Der Papierkorb ist derzeit nicht verfügbar.",
@@ -249,7 +249,7 @@ export const managedFileStrings = {
     deleteLibrary: "Eliminar biblioteca",
     deleteLibraryTitle: "¿Eliminar {library}?",
     deleteLibraryBody:
-      "La biblioteca desaparecerá de Beamfall en todos los dispositivos. Los archivos del disco no se tocan. El historial de reproducción se queda en el servidor y las reproducciones anteriores siguen en el historial sin sus títulos. Las bibliotecas eliminadas aún no se pueden restaurar.",
+      "La biblioteca desaparecerá de Beamfall en todos los dispositivos. Los archivos del disco no se tocan. El historial de reproducción se queda en el servidor y las reproducciones anteriores siguen en el historial sin sus títulos. Puedes restaurarla desde «Eliminadas recientemente» en Console > Bibliotecas durante 30 días.",
     deleteLibraryDeleting: "Eliminando…",
     deleteLibraryFailed: "No se pudo eliminar la biblioteca.",
     trashUnavailable: "La papelera no está disponible en este momento.",
@@ -302,7 +302,7 @@ export const managedFileStrings = {
     deleteLibrary: "Excluir biblioteca",
     deleteLibraryTitle: "Excluir {library}?",
     deleteLibraryBody:
-      "A biblioteca vai desaparecer do Beamfall em todos os dispositivos. Os arquivos no disco não são alterados. O histórico de reprodução fica no servidor, e as reproduções anteriores continuam no histórico sem os títulos. Bibliotecas excluídas ainda não podem ser restauradas.",
+      "A biblioteca vai desaparecer do Beamfall em todos os dispositivos. Os arquivos no disco não são alterados. O histórico de reprodução fica no servidor, e as reproduções anteriores continuam no histórico sem os títulos. Você pode restaurá-la em “Excluídas recentemente”, em Console > Bibliotecas, por 30 dias.",
     deleteLibraryDeleting: "Excluindo…",
     deleteLibraryFailed: "Não foi possível excluir a biblioteca.",
     trashUnavailable: "A lixeira não está disponível no momento.",
