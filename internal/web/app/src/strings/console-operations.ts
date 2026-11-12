@@ -134,6 +134,8 @@ export const consoleOperationsStrings = {
     never: "Never",
     active: "Active",
     revoked: "Revoked",
+    libraryControlName: "{control}: {library}",
+    setupChecklistOptional: "Optional",
   },
   fr: {
     ...updateSafetyStrings,
@@ -142,6 +144,8 @@ export const consoleOperationsStrings = {
     never: "Jamais",
     active: "Actif",
     revoked: "Révoqué",
+    libraryControlName: "{control} : {library}",
+    setupChecklistOptional: "Facultatif",
   },
   de: {
     ...updateSafetyStrings,
@@ -150,6 +154,8 @@ export const consoleOperationsStrings = {
     never: "Nie",
     active: "Aktiv",
     revoked: "Widerrufen",
+    libraryControlName: "{control}: {library}",
+    setupChecklistOptional: "Optional",
   },
   es: {
     ...updateSafetyStrings,
@@ -158,6 +164,8 @@ export const consoleOperationsStrings = {
     never: "Nunca",
     active: "Activo",
     revoked: "Revocado",
+    libraryControlName: "{control}: {library}",
+    setupChecklistOptional: "Opcional",
   },
   pt: {
     ...updateSafetyStrings,
@@ -166,5 +174,7 @@ export const consoleOperationsStrings = {
     never: "Nunca",
     active: "Ativo",
     revoked: "Revogado",
+    libraryControlName: "{control}: {library}",
+    setupChecklistOptional: "Opcional",
   },
 } as const;

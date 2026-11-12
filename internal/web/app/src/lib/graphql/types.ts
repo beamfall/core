@@ -42,6 +42,8 @@ export interface LibrarySummary {
   previewClips: boolean;
   /** "#RRGGBB" plugin Library accent; omitted when none. */
   accent?: string;
+  /** Library icon name from the fixed vocabulary (see lib/libraryIcons). */
+  icon?: string;
 }
 
 /** An allowlisted navigation entry (manifest.NavigationNode). */
@@ -510,6 +512,12 @@ export interface LibraryInfo {
   previewClips: boolean;
   restricted: boolean;
   roots?: string[];
+  /** The icon clients draw: the owner's choice, else the default. */
+  icon?: string;
+  /** The owner's own choice; absent while the Library uses its default. */
+  iconChoice?: string;
+  /** The icon the Library gets when the owner has not chosen one. */
+  defaultIcon?: string;
 }
 
 /** The setLibraryPreviewClips result. */

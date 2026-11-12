@@ -18,7 +18,13 @@ export function prepareRenderFocusRestore() {
   pendingRestore = rememberedAnchor;
 }
 
-export function applyRenderFocus(root: HTMLElement, navigation: string): HTMLElement | null {
+// preventScroll keeps a Back/Forward (POP) restore from yanking the page to the
+// focused card before the saved scroll position is reapplied.
+export function applyRenderFocus(
+  root: HTMLElement,
+  navigation: string,
+  { preventScroll = false }: { preventScroll?: boolean } = {},
+): HTMLElement | null {
   let target: HTMLElement | null = null;
   if (pendingRestore?.navigation === navigation) {
     target = root.querySelector<HTMLElement>(
@@ -31,7 +37,7 @@ export function applyRenderFocus(root: HTMLElement, navigation: string): HTMLEle
   // A removed anchor (or first render) falls back to the contract's guaranteed
   // first focusable item of the first non-empty Section.
   target ??= root.querySelector<HTMLElement>("[data-focus-item]");
-  target?.focus();
+  target?.focus({ preventScroll });
   if (target) {
     pendingRestore = null;
   }

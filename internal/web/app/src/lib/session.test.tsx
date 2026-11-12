@@ -21,6 +21,7 @@ import {
   switchProfile as switchProfileMutation,
 } from "@/lib/graphql";
 import type { NavigationManifest, ProfileSummary, SessionInfo } from "@/lib/graphql/types";
+import { requestManifestRefresh } from "./manifestRefresh";
 import { SessionProvider, useSession } from "./session";
 
 const postUnmountWrites = vi.hoisted(() => ({ armed: false, values: [] as unknown[] }));
@@ -1161,5 +1162,54 @@ describe("SessionProvider identity-epoch fetch lifecycle", () => {
     expect(screen.getByTestId("profile")).toHaveTextContent("p2");
     expect(screen.getByTestId("manifest")).toHaveTextContent("p2-current-epoch-home");
     expect(screen.getByTestId("roster")).toHaveTextContent("p2-current-epoch");
+  });
+
+  it("re-reads the manifest inside the epoch on request without clearing session state", async () => {
+    vi.mocked(fetchCurrentSession).mockResolvedValue(p1Session);
+    const user = userEvent.setup();
+    render(
+      <SessionProvider>
+        <Probe />
+      </SessionProvider>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("manifest")).toHaveTextContent("p1-revealed-epoch-home"),
+    );
+
+    const refreshed = deferred<NavigationManifest>();
+    vi.mocked(fetchManifest).mockReturnValueOnce(refreshed.promise);
+    act(() => requestManifestRefresh());
+    // Nothing is cleared while the re-read is in flight.
+    expect(screen.getByTestId("loading")).toHaveTextContent("false");
+    expect(screen.getByTestId("profile")).toHaveTextContent("p1");
+    expect(screen.getByTestId("manifest")).toHaveTextContent("p1-revealed-epoch-home");
+    await act(async () => {
+      refreshed.resolve(manifestFixture("p1-refreshed", p1Session, "2026-06-24T00:05:00Z"));
+      await refreshed.promise;
+    });
+    expect(screen.getByTestId("manifest")).toHaveTextContent("p1-refreshed-home");
+    expect(vi.mocked(fetchCurrentSession)).toHaveBeenCalledTimes(1);
+
+    // A failed re-read keeps the manifest already on screen.
+    vi.mocked(fetchManifest).mockRejectedValueOnce(new Error("manifest fetch failed"));
+    await act(async () => requestManifestRefresh());
+    expect(screen.getByTestId("manifest")).toHaveTextContent("p1-refreshed-home");
+
+    // A re-read that outlives its epoch is aborted and its payload dropped.
+    const late = deferred<NavigationManifest>();
+    vi.mocked(fetchManifest).mockReturnValueOnce(late.promise).mockResolvedValue(p2Manifest);
+    vi.mocked(fetchCurrentSession).mockResolvedValue(p2Session);
+    act(() => requestManifestRefresh());
+    const lateSignal = vi.mocked(fetchManifest).mock.lastCall?.[0] as AbortSignal;
+    await user.click(screen.getByRole("button", { name: "Switch" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("manifest")).toHaveTextContent("p2-current-epoch-home"),
+    );
+    expect(lateSignal.aborted).toBe(true);
+    await act(async () => {
+      late.resolve(manifestFixture("p1-late", p1Session, "2026-06-24T00:06:00Z"));
+      await late.promise;
+    });
+    expect(screen.getByTestId("manifest")).toHaveTextContent("p2-current-epoch-home");
   });
 });

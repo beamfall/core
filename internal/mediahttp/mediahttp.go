@@ -1195,13 +1195,15 @@ func (h *Handler) Artwork(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown artwork", http.StatusNotFound)
 		return
 	}
+	// A revalidation is answered before any derivative work, which may spawn
+	// the scaler.
+	version, versionOK := h.artwork.ArtworkVersion(store.MediaID(mediaID), served)
+	if artworkNotModified(w, r, version, versionOK) {
+		return
+	}
 	path, err := h.artwork.ArtworkDerivative(r.Context(), store.MediaID(mediaID), served, bucket)
 	if err != nil {
 		http.Error(w, "unknown artwork", http.StatusNotFound)
-		return
-	}
-	version, versionOK := h.artwork.ArtworkVersion(store.MediaID(mediaID), served)
-	if artworkNotModified(w, r, version, versionOK) {
 		return
 	}
 	library, err := h.mediaLibrary(r.Context(), artMedia.LibraryID, scope.PlaybackFilter())
@@ -1243,13 +1245,13 @@ func (h *Handler) EntityArtwork(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown artwork", http.StatusNotFound)
 		return
 	}
+	version, versionOK := h.artwork.EntityArtworkVersion(store.EntityID(entityID), served)
+	if artworkNotModified(w, r, version, versionOK) {
+		return
+	}
 	path, err := h.artwork.EntityArtworkDerivative(r.Context(), store.EntityID(entityID), served, bucket)
 	if err != nil {
 		http.Error(w, "unknown artwork", http.StatusNotFound)
-		return
-	}
-	version, versionOK := h.artwork.EntityArtworkVersion(store.EntityID(entityID), served)
-	if artworkNotModified(w, r, version, versionOK) {
 		return
 	}
 	library, err := h.mediaLibrary(r.Context(), entity.LibraryID, scope.PlaybackFilter())
@@ -1423,6 +1425,7 @@ func (h *Handler) Direct(w http.ResponseWriter, r *http.Request) {
 	grant, scope, err := h.verifyMediaGrant(r.Context(), token, streamtoken.TargetMediaDirect)
 	mediaID := grant.MediaID
 	filter := scope.PlaybackFilter()
+	leased := false
 	if err != nil {
 		if h.tokens == nil {
 			http.Error(w, "invalid stream token", http.StatusUnauthorized)
@@ -1436,6 +1439,7 @@ func (h *Handler) Direct(w http.ResponseWriter, r *http.Request) {
 		defer cancel(context.Canceled)
 		r = r.WithContext(leaseContext)
 		defer interruptResponseWritesOnContextDone(r.Context(), w)()
+		leased = true
 		mediaID = circleGrant.MediaID
 		// CircleService already applied the shadow principal's full owner-side
 		// policy before signing this exact Media subject. The live lease guard,
@@ -1514,7 +1518,15 @@ func (h *Handler) Direct(w http.ResponseWriter, r *http.Request) {
 	}
 	defer f.Close()
 
-	http.ServeContent(w, r, info.Name(), info.ModTime(), requestContextReadSeeker{ctx: r.Context(), ReadSeeker: f})
+	// The bare *os.File lets net/http send it with sendfile. A client that goes
+	// away fails the next write, which ends ServeContent, so nothing else is
+	// needed to stop the copy. A Circle lease can end while the client is still
+	// reading, so that path keeps the per-read context check as well.
+	var body io.ReadSeeker = f
+	if leased {
+		body = requestContextReadSeeker{ctx: r.Context(), ReadSeeker: f}
+	}
+	http.ServeContent(w, r, info.Name(), info.ModTime(), body)
 }
 
 type requestContextReadSeeker struct {

@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 // Lightweight viewport windowing for large browse grids, ported in spirit from
 // the vanilla VIRTUAL_GRID_* windowing (internal/web/static/app.js). NO
 // dependency: the hook measures the live grid's real geometry (its width, the
-// CSS gap, and a sample card's height) and renders only the rows intersecting
+// CSS gap, and the tallest card's height) and renders only the rows intersecting
 // the viewport, padded above and below with spacer rows so the scroll height and
 // scrollbar stay correct. Small grids skip windowing entirely (the caller gates
 // on VIRTUAL_GRID_MIN_ITEMS) and keep their plain CSS grid.
@@ -45,13 +45,16 @@ function readColumns(grid: HTMLElement, gap: number): number {
   return Math.max(1, Math.floor((width + gap) / (VIRTUAL_GRID_COLUMN_MIN + gap)));
 }
 
-// The on-screen row height: a measured card's height plus the row gap, falling
-// back to a constant before any card has laid out.
-function readRowHeight(grid: HTMLElement, gap: number): number {
-  const card = grid.querySelector<HTMLElement>(":scope > li:not(.bf-grid-spacer)");
-  const cardHeight = card ? card.getBoundingClientRect().height : 0;
-  const base = cardHeight > 0 ? cardHeight : VIRTUAL_GRID_FALLBACK_ROW_HEIGHT;
-  return base + gap;
+// The tallest rendered card's height (0 before any card has laid out). Card
+// copy varies (one- or two-line titles, an optional subtitle) and grid items
+// stretch to their row, so a single sample card under-reads taller rows; the
+// tallest one is the safest uniform row estimate.
+function readCardHeight(grid: HTMLElement): number {
+  let tallest = 0;
+  for (const card of grid.querySelectorAll<HTMLElement>(":scope > li:not(.bf-grid-spacer)")) {
+    tallest = Math.max(tallest, card.getBoundingClientRect().height);
+  }
+  return tallest;
 }
 
 export function useVirtualGrid({
@@ -69,13 +72,17 @@ export function useVirtualGrid({
   /** The rendered-item cap; raise it where a wide viewport shows more cards. */
   maxItems?: number;
 }): VirtualGridWindow | null {
+  // Tallest card seen while windowing. It only grows, so the spacer geometry
+  // does not oscillate as rows of different heights scroll in and out.
+  const cardHeightRef = useRef(0);
   const compute = useCallback((): VirtualGridWindow | null => {
     const grid = gridRef.current;
     if (!grid || !enabled || itemCount <= 0) return null;
 
     const gap = readGap(grid);
     const columns = fixedColumns ?? readColumns(grid, gap);
-    const rowHeight = readRowHeight(grid, gap);
+    cardHeightRef.current = Math.max(cardHeightRef.current, readCardHeight(grid));
+    const rowHeight = (cardHeightRef.current || VIRTUAL_GRID_FALLBACK_ROW_HEIGHT) + gap;
     const totalRows = Math.ceil(itemCount / columns);
 
     const rect = grid.getBoundingClientRect();
@@ -108,6 +115,7 @@ export function useVirtualGrid({
 
   useEffect(() => {
     if (!enabled) {
+      cardHeightRef.current = 0;
       setWindowState(null);
       return;
     }

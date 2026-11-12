@@ -6,7 +6,7 @@ import type { SourceItem } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
 import { itemTargetFor } from "../actions";
-import { artworkBucketURL, artworkSlotURL } from "../lib/artwork";
+import { artworkBucketURL, artworkSlotURL, artworkSrcSet } from "../lib/artwork";
 import { cardAccessibleName, cardState } from "../lib/cardState";
 import { entityLinkState } from "../lib/entityPreview";
 import { fetchPreviewInfo } from "../lib/playback";
@@ -18,6 +18,10 @@ import { MediaItemCardMenu } from "./MediaItemCardMenu";
 export const PREVIEW_DWELL_MS = 400;
 const POINTER_PREVIEW_QUERY = "(hover: hover) and (pointer: fine)";
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+// Shelf cards are 150px and grid cells (minmax(150px, 1fr)) reach ~300px, so a
+// 300px slot picks w320 at 1x and w640 on 2x screens instead of upscaling w320.
+const CARD_BUCKETS = ["w320", "w640"] as const;
+const CARD_SIZES = "300px";
 
 // One catalog card, ported from the vanilla renderItem (app.js). Generic by
 // invariant #1: the wire entity is Media and `kind` is a plugin display
@@ -209,7 +213,10 @@ export function MediaItemCard({
             <img
               alt=""
               loading="lazy"
+              decoding="async"
               src={artworkBucketURL(poster, "w320")}
+              srcSet={artworkSrcSet(poster, CARD_BUCKETS)}
+              sizes={CARD_SIZES}
               onError={() => setImageFailed(true)}
             />
           ) : (

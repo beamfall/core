@@ -1253,7 +1253,10 @@ func seedMediaClass(class MediaClass) MediaClass {
 }
 
 func loadLibraries(ctx context.Context, db *sql.DB) ([]Library, error) {
-	rows, err := db.QueryContext(ctx, "SELECT id, title, plugin_id, is_restricted, preview_clips_enabled, ai_indexing_enabled, family_scope, custodial, encrypted FROM library WHERE trashed_at_ms IS NULL ORDER BY rowid")
+	rows, err := db.QueryContext(ctx, `
+		SELECT id, title, plugin_id, is_restricted, preview_clips_enabled, ai_indexing_enabled, family_scope, custodial, encrypted,
+			COALESCE((SELECT value FROM server_config WHERE key = ? || library.id), '')
+		FROM library WHERE trashed_at_ms IS NULL ORDER BY rowid`, libraryIconConfigPrefix)
 	if err != nil {
 		return nil, err
 	}
@@ -1263,7 +1266,7 @@ func loadLibraries(ctx context.Context, db *sql.DB) ([]Library, error) {
 		var library Library
 		var plugin sql.NullString
 		var restricted, previewClips, aiIndexing, custodial, encrypted int
-		if err := rows.Scan(&library.ID, &library.Title, &plugin, &restricted, &previewClips, &aiIndexing, &library.FamilyScope, &custodial, &encrypted); err != nil {
+		if err := rows.Scan(&library.ID, &library.Title, &plugin, &restricted, &previewClips, &aiIndexing, &library.FamilyScope, &custodial, &encrypted, &library.Icon); err != nil {
 			return nil, err
 		}
 		if plugin.Valid {

@@ -2,6 +2,7 @@ import { Folder, FolderPlus, Plus, RefreshCw, ScanLine, SearchCheck, X } from "l
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { DeleteLibraryButton } from "@/components/beamfall/LibraryDelete";
+import { LibraryIconPicker, useLibraryIconSymbol } from "@/components/beamfall/LibraryIconPicker";
 import { RescanAllButton, RescanButton, RescanStatus } from "@/components/beamfall/LibraryRescan";
 import {
   EmptyState,
@@ -116,6 +117,7 @@ function LibraryCard({
   const [scanFolders, setScanFolders] = useState<FolderEntryInfo[]>([]);
   const [scanError, setScanError] = useState("");
   const plugin = plugins.find((p) => p.id === library.pluginID);
+  const HeaderIcon = useLibraryIconSymbol(library);
 
   const loadScanFolders = useCallback(async () => {
     if ((library.roots ?? []).length === 0) {
@@ -206,6 +208,7 @@ function LibraryCard({
   return (
     <article aria-labelledby={`library-${library.id}`} className={CARD}>
       <header className="flex flex-wrap items-start gap-3 border-b border-[var(--border-subtle)] p-4">
+        <HeaderIcon aria-hidden className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1 space-y-1">
           <h3 id={`library-${library.id}`} className="m-0 text-base font-semibold leading-tight">
             {library.title}
@@ -346,6 +349,8 @@ function LibraryCard({
             </div>
           </section>
         </div>
+
+        <LibraryIconPicker library={library} onChanged={onChanged} />
 
         <Advanced>
           <section aria-labelledby={`scan-heading-${library.id}`} className="space-y-2">

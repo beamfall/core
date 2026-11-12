@@ -30,6 +30,12 @@ type EnqueueScan func(context.Context, store.LibraryID, string)
 const (
 	defaultMaxWatchedDirs = 50_000
 	defaultAddTimeout     = time.Second
+	// defaultRetryBase and defaultRetryMax bound the capped exponential backoff
+	// used to re-establish a root's live watch after the native watcher fails
+	// (fatal backend error, timed-out registration, unreadable root). Live
+	// watching recovers on its own instead of staying degraded until restart.
+	defaultRetryBase = time.Second
+	defaultRetryMax  = 5 * time.Minute
 )
 
 // Status reports the current watcher state for a Library or root.
@@ -81,10 +87,13 @@ type Service struct {
 	logger   *slog.Logger
 	maxWatch int
 	addWait  time.Duration
-	ctx      context.Context
-	cancel   context.CancelFunc
-	closed   bool
-	disabled bool
+	// retryBase/retryMax are the restart backoff bounds; tests shrink them.
+	retryBase time.Duration
+	retryMax  time.Duration
+	ctx       context.Context
+	cancel    context.CancelFunc
+	closed    bool
+	disabled  bool
 }
 
 type rootKey struct {
@@ -100,6 +109,9 @@ type rootState struct {
 	logger    *slog.Logger
 	maxWatch  int
 	addWait   time.Duration
+	newWatch  func() (Backend, error)
+	retryBase time.Duration
+	retryMax  time.Duration
 	ctx       context.Context
 	cancel    context.CancelFunc
 	mu        sync.Mutex
@@ -117,6 +129,12 @@ type rootState struct {
 	watched           map[string]struct{}
 	capWarned         bool
 	unavailableLogged bool
+	// retry is the pending backoff restart, if any; failures counts
+	// consecutive failed (re)starts and drives the backoff exponent.
+	retry    *time.Timer
+	failures int
+	// rearming is set while an overflow recovery walk is in flight.
+	rearming bool
 }
 
 // NewService creates a watcher service. A nil logger defaults to slog.Default().
@@ -144,16 +162,18 @@ func NewService(opts Options) *Service {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Service{
-		roots:    map[rootKey]*rootState{},
-		debounce: opts.Debounce,
-		newWatch: opts.NewWatcher,
-		enqueue:  opts.EnqueueScan,
-		logger:   opts.Logger,
-		maxWatch: opts.MaxWatchedDirs,
-		addWait:  opts.AddTimeout,
-		disabled: opts.Disabled,
-		ctx:      ctx,
-		cancel:   cancel,
+		roots:     map[rootKey]*rootState{},
+		debounce:  opts.Debounce,
+		newWatch:  opts.NewWatcher,
+		enqueue:   opts.EnqueueScan,
+		logger:    opts.Logger,
+		maxWatch:  opts.MaxWatchedDirs,
+		addWait:   opts.AddTimeout,
+		retryBase: defaultRetryBase,
+		retryMax:  defaultRetryMax,
+		disabled:  opts.Disabled,
+		ctx:       ctx,
+		cancel:    cancel,
 	}
 }
 
@@ -178,31 +198,30 @@ func (s *Service) Observe(libraryID store.LibraryID, root string) Status {
 			return status
 		}
 		if state.addTimedOut() {
+			// A timed-out registration is retried in the background with
+			// backoff; never block Observe on the same stalled filesystem.
 			return status
 		}
-		if err := state.start(s.newWatch); err != nil {
-			return state.markUnavailable(err)
-		}
-		return state.status()
+		return state.startOrRetry()
 	}
 	state := &rootState{
-		key:      key,
-		debounce: s.debounce,
-		enqueue:  s.enqueue,
-		logger:   s.logger,
-		maxWatch: s.maxWatch,
-		addWait:  s.addWait,
-		ctx:      s.ctx,
-		watched:  map[string]struct{}{},
+		key:       key,
+		debounce:  s.debounce,
+		enqueue:   s.enqueue,
+		logger:    s.logger,
+		maxWatch:  s.maxWatch,
+		addWait:   s.addWait,
+		newWatch:  s.newWatch,
+		retryBase: s.retryBase,
+		retryMax:  s.retryMax,
+		ctx:       s.ctx,
+		watched:   map[string]struct{}{},
 	}
 	state.ctx, state.cancel = context.WithCancel(s.ctx)
 	s.roots[key] = state
 	s.mu.Unlock()
 
-	if err := state.start(s.newWatch); err != nil {
-		return state.markUnavailable(err)
-	}
-	return state.status()
+	return state.startOrRetry()
 }
 
 // Status reports the aggregate watcher state for a Library.
@@ -250,7 +269,18 @@ func (s *Service) Close() error {
 	return errors.Join(errs...)
 }
 
-func (s *rootState) start(newWatch func() (Backend, error)) error {
+// startOrRetry starts the root's watch now and, on failure, marks it
+// unavailable and schedules a background restart with backoff.
+func (s *rootState) startOrRetry() Status {
+	if err := s.start(); err != nil {
+		status := s.markUnavailable(err)
+		s.scheduleRestart()
+		return status
+	}
+	return s.status()
+}
+
+func (s *rootState) start() error {
 	s.mu.Lock()
 	if s.closed || s.active || s.starting {
 		s.mu.Unlock()
@@ -259,7 +289,7 @@ func (s *rootState) start(newWatch func() (Backend, error)) error {
 	s.starting = true
 	s.mu.Unlock()
 
-	backend, err := newWatch()
+	backend, err := s.newWatch()
 	if err != nil {
 		s.mu.Lock()
 		s.starting = false
@@ -296,9 +326,47 @@ func (s *rootState) start(newWatch func() (Backend, error)) error {
 	s.available = true
 	s.starting = false
 	s.err = ""
+	s.timedOut = false
+	s.failures = 0
+	recovered := s.unavailableLogged
+	// Re-arm the degrade warning so a later failure is reported again.
+	s.unavailableLogged = false
 	s.mu.Unlock()
+	if recovered {
+		s.logger.Info("live watch restored", "library", string(s.key.libraryID), "root", s.key.root)
+	}
 	go s.run(backend)
 	return nil
+}
+
+// scheduleRestart arms one backoff timer that re-establishes the watch. The
+// delay doubles per consecutive failure from retryBase up to retryMax.
+func (s *rootState) scheduleRestart() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.active || s.retry != nil || s.ctx.Err() != nil {
+		return
+	}
+	delay := s.retryBase
+	for i := 0; i < s.failures && delay < s.retryMax; i++ {
+		delay *= 2
+	}
+	if delay > s.retryMax {
+		delay = s.retryMax
+	}
+	s.failures++
+	s.retry = time.AfterFunc(delay, s.retryStart)
+}
+
+func (s *rootState) retryStart() {
+	s.mu.Lock()
+	s.retry = nil
+	if s.closed || s.ctx.Err() != nil {
+		s.mu.Unlock()
+		return
+	}
+	s.mu.Unlock()
+	s.startOrRetry()
 }
 
 func (s *rootState) run(backend Backend) {
@@ -313,19 +381,67 @@ func (s *rootState) run(backend Backend) {
 			return
 		case event, ok := <-backend.Events():
 			if !ok {
-				s.markUnavailable(errors.New("watcher closed"))
+				s.fail(backend, errors.New("watcher closed"))
 				return
 			}
 			s.handleEvent(event)
 		case err, ok := <-backend.Errors():
 			if !ok {
-				s.markUnavailable(errors.New("watcher error channel closed"))
+				s.fail(backend, errors.New("watcher error channel closed"))
 				return
 			}
-			s.markUnavailable(err)
+			if errors.Is(err, fsnotify.ErrEventOverflow) {
+				// The kernel dropped events (e.g. a large copy) but the
+				// watches are intact: keep running and recover what was lost.
+				s.recoverOverflow()
+				continue
+			}
+			s.fail(backend, err)
 			return
 		}
 	}
+}
+
+// fail degrades a running root after its backend died and schedules a
+// backoff restart so live watching comes back without operator action.
+func (s *rootState) fail(backend Backend, err error) {
+	s.mu.Lock()
+	if s.closed || s.ctx.Err() != nil {
+		s.mu.Unlock()
+		return
+	}
+	if s.backend == backend {
+		s.backend = nil
+		s.watched = map[string]struct{}{}
+	}
+	s.mu.Unlock()
+	s.markUnavailable(err)
+	s.scheduleRestart()
+}
+
+// recoverOverflow re-arms directories whose Create events were lost and then
+// asks for a scan of the root, since any media event may have been dropped.
+// At most one recovery walk runs at a time so the event loop keeps draining.
+func (s *rootState) recoverOverflow() {
+	s.mu.Lock()
+	if s.closed || s.rearming {
+		s.mu.Unlock()
+		return
+	}
+	s.rearming = true
+	s.mu.Unlock()
+	s.logger.Info("live watch event queue overflowed; rescanning root", "library", string(s.key.libraryID), "root", s.key.root)
+	go func() {
+		defer func() {
+			s.mu.Lock()
+			s.rearming = false
+			s.mu.Unlock()
+		}()
+		if err := s.addTree(s.key.root); err != nil {
+			s.logger.Debug("overflow re-arm walk failed", "library", string(s.key.libraryID), "root", s.key.root, "reason", err)
+		}
+		s.trigger()
+	}()
 }
 
 func (s *rootState) handleEvent(event fsnotify.Event) {
@@ -333,10 +449,15 @@ func (s *rootState) handleEvent(event fsnotify.Event) {
 		return
 	}
 	if event.Op&fsnotify.Create != 0 {
-		if info, err := filepath.EvalSymlinks(event.Name); err == nil {
-			_ = s.addTree(info)
-		} else {
-			_ = s.addTree(event.Name)
+		path := event.Name
+		if resolved, err := filepath.EvalSymlinks(event.Name); err == nil {
+			path = resolved
+		}
+		// A subtree that vanished or cannot be read must not affect the
+		// root; a timed-out registration closes the backend and run's
+		// restart path takes over.
+		if err := s.addTree(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			s.logger.Debug("watch for new directory failed", "library", string(s.key.libraryID), "root", s.key.root, "path", path, "reason", err)
 		}
 	}
 	if event.Op&(fsnotify.Remove|fsnotify.Rename) != 0 {
@@ -454,6 +575,10 @@ func (s *rootState) close() error {
 	if s.timer != nil {
 		s.timer.Stop()
 	}
+	if s.retry != nil {
+		s.retry.Stop()
+		s.retry = nil
+	}
 	backend := s.backend
 	s.backend = nil
 	s.watched = map[string]struct{}{}
@@ -471,9 +596,27 @@ func (s *rootState) close() error {
 // s.maxWatch directories are armed, logging a single warning, so a
 // Downloads-scale tree cannot exhaust the kernel file table. Directories
 // beyond the cap fall back to the Schedule scan (ADR-0032 backstop).
+//
+// A subdirectory that cannot be read or watched because it is unreadable or
+// already gone (lost+found, a NAS #recycle folder) is skipped so the rest of
+// the tree stays live; only a failure on root itself is returned.
 func (s *rootState) addTree(root string) error {
+	root = filepath.Clean(root)
+	skippable := func(path string, err error) bool {
+		if filepath.Clean(path) == root || !(errors.Is(err, fs.ErrPermission) || errors.Is(err, fs.ErrNotExist)) {
+			return false
+		}
+		s.logger.Debug("skipping unwatchable directory", "library", string(s.key.libraryID), "root", s.key.root, "path", path, "reason", err)
+		return true
+	}
 	return filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
+			if skippable(path, err) {
+				if entry != nil && !entry.IsDir() {
+					return nil
+				}
+				return fs.SkipDir
+			}
 			return err
 		}
 		if !entry.IsDir() {
@@ -503,6 +646,9 @@ func (s *rootState) addTree(root string) error {
 		s.mu.Unlock()
 
 		if err := addWithTimeout(s.ctx, backend, path, s.addWait); err != nil {
+			if skippable(path, err) {
+				return fs.SkipDir
+			}
 			return err
 		}
 		s.mu.Lock()

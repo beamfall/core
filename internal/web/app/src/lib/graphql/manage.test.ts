@@ -26,6 +26,7 @@ import {
   restoreMedia,
   restoreTag,
   runBackup,
+  setLibraryIcon,
   unassignTag,
   updateCollection,
   updateMarker,
@@ -191,6 +192,20 @@ describe("manage GraphQL requests", () => {
 // because every function below simply returns `data.<field>` without
 // dereferencing nested properties of an absent payload.
 describe("manage mutation request recording", () => {
+  it("setLibraryIcon sends the choice through setConsoleConfig(libraryID, libraryIcon)", async () => {
+    await setLibraryIcon("library-1", "headphones");
+    expect(recorded[0].query).toContain("mutation SetLibraryIcon(");
+    expect(recorded[0].query).toContain(
+      "setConsoleConfig(libraryID: $libraryID, libraryIcon: $libraryIcon)",
+    );
+    expect(recorded[0].variables).toEqual({ libraryID: "library-1", libraryIcon: "headphones" });
+
+    // Clearing the choice sends the empty name, not an omitted variable: the
+    // server reads an absent libraryIcon as "not an icon write".
+    await setLibraryIcon("library-1", "");
+    expect(recorded[1].variables).toEqual({ libraryID: "library-1", libraryIcon: "" });
+  });
+
   it("createTag sends CreateTag(name, parentTagID)", async () => {
     // feature:tags
     await createTag("Action", "parent-1");

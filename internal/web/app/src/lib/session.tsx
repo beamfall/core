@@ -35,6 +35,7 @@ import {
   switchProfile as switchProfileMutation,
 } from "@/lib/graphql";
 import type { NavigationManifest, ProfileSummary, SessionInfo } from "@/lib/graphql/types";
+import { setManifestRefresher } from "@/lib/manifestRefresh";
 
 // A lapsed session renews once from the device-secret cookies before the
 // browser is shown the enroll screen (CORE-1106). Any other failure, or a
@@ -250,6 +251,24 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setIdentityEpochReset();
     };
   }, [load]);
+
+  // A manifest re-read inside the current identity epoch (see
+  // lib/manifestRefresh): no scoped state is cleared, a failure keeps the
+  // manifest already on screen, and a result that arrives after the epoch
+  // ended, or while a load has the manifest cleared, is dropped.
+  useEffect(() => {
+    setManifestRefresher(() => {
+      const signal = controllerRef.current?.signal;
+      if (!signal || signal.aborted) return;
+      fetchManifest(signal).then(
+        (next) => {
+          if (!signal.aborted) setManifest((current) => (current ? next : current));
+        },
+        () => {},
+      );
+    });
+    return () => setManifestRefresher();
+  }, []);
 
   const reveal = useCallback(
     async (pin: string) => {

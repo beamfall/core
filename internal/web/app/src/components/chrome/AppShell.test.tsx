@@ -190,12 +190,13 @@ describe("AppShell library sidebar", () => {
     };
   });
 
-  it("lists home, ambient and each library in the sidebar, outside the header", () => {
+  it("lists home and each library in the sidebar, outside the header", () => {
     renderShell();
     const nav = screen.getByRole("navigation", { name: "Navigation" });
     expect(nav.closest("header")).toBeNull();
     expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("link", { name: "Ambient" })).toHaveAttribute("href", "/n/ambient");
+    // The web client renders only layout views; an Ambient link would land on Home.
+    expect(screen.queryByRole("link", { name: "Ambient" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Space Archive" })).toHaveAttribute("href", "/n/space");
     expect(screen.getByRole("heading", { name: "Libraries" })).toBeInTheDocument();
   });
@@ -223,7 +224,7 @@ describe("AppShell library sidebar", () => {
       const toggle = screen.getByRole("button", { name: "Navigation" });
       await user.click(toggle);
       expect(toggle).toHaveAttribute("aria-expanded", "true");
-      const link = screen.getByRole("link", { name: "Ambient" });
+      const link = screen.getByRole("link", { name: "Space Archive" });
       link.focus();
       expect(link).toHaveFocus();
 

@@ -124,6 +124,8 @@ type Service struct {
 	// poster so the Entity's own artwork is never overwritten by a copy.
 	entityRules    []EntityPosterRule
 	entityPosterMu sync.Mutex
+	versions  versionCache
+	failed    scaleFailures
 }
 
 type derivativeLock struct {
@@ -271,7 +273,7 @@ func (s *Service) ArtworkVersion(id store.MediaID, slot string) (string, bool) {
 	if !ValidSlot(slot) {
 		return "", false
 	}
-	return versionAt(s.ArtworkPath(id, slot))
+	return s.versions.version(s.ArtworkPath(id, slot))
 }
 
 // EntityArtworkVersion is ArtworkVersion for an Entity artwork slot.
@@ -279,7 +281,7 @@ func (s *Service) EntityArtworkVersion(id store.EntityID, slot string) (string, 
 	if !ValidSlot(slot) {
 		return "", false
 	}
-	return versionAt(s.EntityArtworkPath(id, slot))
+	return s.versions.version(s.EntityArtworkPath(id, slot))
 }
 
 // slotFallback names the slot served in place of a requested slot whose own
@@ -328,22 +330,6 @@ func (s *Service) ResolveEntitySlot(id store.EntityID, slot string) (string, boo
 	return "", false
 }
 
-// versionAt returns the content-hash version token for the artwork file at
-// path, or ("", false) when the file is missing or not a regular file. The
-// token keys the canonical content-addressed URL, so it must depend only on the
-// bytes — never on mtime — to stay stable across a re-scrape of identical bytes.
-func versionAt(path string) (string, bool) {
-	info, err := os.Stat(path)
-	if err != nil || !info.Mode().IsRegular() {
-		return "", false
-	}
-	token, err := contentVersion(path)
-	if err != nil {
-		return "", false
-	}
-	return token, true
-}
-
 // contentVersion hashes the file's bytes into a compact, URL-safe version
 // token (base-36 of the leading sha256 bytes). Identical bytes always hash to
 // the same token; any change to the bytes changes it — the cache-busting
@@ -368,7 +354,7 @@ func contentVersion(path string) (string, error) {
 // cached derivatives — after the store purged the Entity (orphan GC). Missing
 // directories are fine: most Entities never had artwork.
 func (s *Service) RemoveEntityArtwork(id store.EntityID) error {
-	return os.RemoveAll(filepath.Dir(s.EntityPosterPath(id)))
+	return s.removeArtworkDir(filepath.Dir(s.EntityPosterPath(id)))
 }
 
 // PurgeMediaArtwork removes a Media item's entire artwork directory — every slot
@@ -382,7 +368,15 @@ func (s *Service) RemoveEntityArtwork(id store.EntityID) error {
 // exactly what invariant #5 forbids at rest, and it is losslessly regenerable
 // from the sealed original, so recoverability (invariant #6) does not apply to it.
 func (s *Service) PurgeMediaArtwork(id store.MediaID) error {
-	return os.RemoveAll(filepath.Join(s.dir, filepath.Base(string(id))))
+	return s.removeArtworkDir(filepath.Join(s.dir, filepath.Base(string(id))))
+}
+
+// removeArtworkDir deletes one owner's artwork directory and forgets its
+// memoised version tokens.
+func (s *Service) removeArtworkDir(dir string) error {
+	err := os.RemoveAll(dir)
+	s.versions.forgetDir(dir)
+	return err
 }
 
 // candidatePrefix namespaces fetched-candidate-preview cache directories under
@@ -428,7 +422,7 @@ func (s *Service) SweepCandidatePreviewCache(liveIDs []string) (int, error) {
 		if _, ok := live[id]; ok {
 			continue
 		}
-		if err := os.RemoveAll(filepath.Join(s.dir, name)); err != nil {
+		if err := s.removeArtworkDir(filepath.Join(s.dir, name)); err != nil {
 			return removed, err
 		}
 		removed++
@@ -511,7 +505,8 @@ func (s *Service) derivative(ctx context.Context, original, owner, slot, bucket 
 	if derivativeFresh(dst, origInfo.ModTime()) {
 		return dst, nil
 	}
-	if s.scaler == nil {
+	failureKey := newScaleFailureKey(original, origInfo)
+	if s.scaler == nil || s.failed.failed(failureKey) {
 		return original, nil
 	}
 	unlock, err := s.lockDerivative(ctx, filepath.Dir(original))
@@ -522,9 +517,17 @@ func (s *Service) derivative(ctx context.Context, original, owner, slot, bucket 
 	if derivativeFresh(dst, origInfo.ModTime()) {
 		return dst, nil
 	}
+	if s.failed.failed(failureKey) {
+		return original, nil
+	}
 	if err := s.scaleImageAtomic(ctx, original, width, dst, nil); err != nil {
-		slog.Debug("artwork derivative generation failed; serving original",
-			"owner", owner, "bucket", bucket, "error", err.Error())
+		// A cancelled request says nothing about the original; anything else
+		// is remembered for this exact file version so the scaler is not
+		// respawned on every request for an undecodable original.
+		if ctx.Err() == nil && s.failed.record(failureKey) {
+			slog.Warn("artwork derivative generation failed; serving original until it changes",
+				"owner", owner, "slot", slot, "bucket", bucket, "error", err.Error())
+		}
 		return original, nil
 	}
 	return dst, nil
@@ -576,7 +579,9 @@ func (s *Service) DeriveImage(ctx context.Context, id store.MediaID, path, finge
 		}
 		return nil
 	}
-	if err := s.scaleImageAtomic(ctx, path, posterWidth, poster, guard); err != nil {
+	err = s.scaleImageAtomic(ctx, path, posterWidth, poster, guard)
+	s.versions.forget(poster)
+	if err != nil {
 		if errors.Is(err, errProtectedArtwork) {
 			return s.PurgeMediaArtwork(id)
 		}
@@ -785,6 +790,7 @@ func (s *Service) GeneratePoster(ctx context.Context, id store.MediaID) error {
 	}
 	generated := false
 	defer func() {
+		s.versions.forget(dst)
 		if !generated {
 			_ = os.Remove(marker)
 		}
@@ -852,6 +858,7 @@ func (s *Service) importEmbeddedPoster(ctx context.Context, id store.MediaID, sr
 		return false, err
 	}
 	found, err := s.embedded.ExtractEmbeddedArtwork(ctx, src, posterWidth, dst)
+	s.versions.forget(dst)
 	if err != nil || !found {
 		return false, err
 	}
@@ -1122,6 +1129,7 @@ func (s *Service) importArtwork(ctx context.Context, dst, owner, slot string, da
 		return err
 	}
 	defer os.Remove(tmp)
+	defer s.versions.forget(dst)
 	if s.scaler != nil {
 		if err := s.scaler.ScaleImage(ctx, tmp, posterWidth, dst); err != nil {
 			return fmt.Errorf("normalizing imported artwork for %s: %w", owner, err)

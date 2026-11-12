@@ -5063,11 +5063,26 @@
           "kind": "scalar"
         },
         {
+          "name": "defaultIcon",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "encrypted",
           "kind": "scalar"
         },
         {
           "name": "familyScope",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "icon",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "iconChoice",
           "kind": "scalar",
           "optional": true
         },
@@ -8553,11 +8568,26 @@
           "kind": "scalar"
         },
         {
+          "name": "defaultIcon",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "encrypted",
           "kind": "scalar"
         },
         {
           "name": "familyScope",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "icon",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "iconChoice",
           "kind": "scalar",
           "optional": true
         },
@@ -9770,6 +9800,11 @@
                 "optional": true
               },
               {
+                "name": "icon",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "id",
                 "kind": "scalar"
               },
@@ -9791,6 +9826,11 @@
           "children": [
             {
               "name": "accent",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "icon",
               "kind": "scalar",
               "optional": true
             },
@@ -12843,6 +12883,11 @@
                 "optional": true
               },
               {
+                "name": "icon",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "id",
                 "kind": "scalar"
               },
@@ -12864,6 +12909,11 @@
           "children": [
             {
               "name": "accent",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "icon",
               "kind": "scalar",
               "optional": true
             },
@@ -19322,11 +19372,26 @@
           "kind": "scalar"
         },
         {
+          "name": "defaultIcon",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "encrypted",
           "kind": "scalar"
         },
         {
           "name": "familyScope",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "icon",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "iconChoice",
           "kind": "scalar",
           "optional": true
         },
@@ -19371,11 +19436,26 @@
           "kind": "scalar"
         },
         {
+          "name": "defaultIcon",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "encrypted",
           "kind": "scalar"
         },
         {
           "name": "familyScope",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "icon",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "iconChoice",
           "kind": "scalar",
           "optional": true
         },
@@ -19420,11 +19500,26 @@
           "kind": "scalar"
         },
         {
+          "name": "defaultIcon",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "encrypted",
           "kind": "scalar"
         },
         {
           "name": "familyScope",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "icon",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "iconChoice",
           "kind": "scalar",
           "optional": true
         },
@@ -19469,11 +19564,26 @@
           "kind": "scalar"
         },
         {
+          "name": "defaultIcon",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "encrypted",
           "kind": "scalar"
         },
         {
           "name": "familyScope",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "icon",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "iconChoice",
           "kind": "scalar",
           "optional": true
         },
@@ -28519,6 +28629,13 @@
                 },
                 {
                   "name": "accent",
+                  "shape": {
+                    "type": "string",
+                    "optional": true
+                  }
+                },
+                {
+                  "name": "icon",
                   "shape": {
                     "type": "string",
                     "optional": true

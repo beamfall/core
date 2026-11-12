@@ -871,43 +871,34 @@ func (h *Handler) sourceItem(item store.SourceItem, revealed bool) SourceItem {
 		return resp
 	}
 	if item.Kind == "entity" {
-		base := "/api/entity/artwork/" + string(item.ID)
-		if v, ok := h.artwork.EntityArtworkVersion(store.EntityID(item.ID), artwork.SlotPoster); ok {
-			resp.Artwork = &SourceItemArtwork{Poster: base + "/poster?v=" + v}
-		}
-		resp.ArtworkSlots = h.entityArtworkSlots(store.EntityID(item.ID), base)
+		id := store.EntityID(item.ID)
+		resp.ArtworkSlots = artworkSlots("/api/entity/artwork/"+string(item.ID), func(slot string) (string, bool) {
+			return h.artwork.EntityArtworkVersion(id, slot)
+		})
 	} else {
-		base := "/api/media/artwork/" + string(item.ID)
-		if v, ok := h.artwork.ArtworkVersion(item.ID, artwork.SlotPoster); ok {
-			resp.Artwork = &SourceItemArtwork{Poster: base + "/poster?v=" + v}
-		}
-		resp.ArtworkSlots = h.mediaArtworkSlots(item.ID, base)
+		resp.ArtworkSlots = artworkSlots("/api/media/artwork/"+string(item.ID), func(slot string) (string, bool) {
+			return h.artwork.ArtworkVersion(item.ID, slot)
+		})
+	}
+	// The poster URL is the poster slot's URL; reuse it rather than resolve
+	// the poster's version a second time.
+	if poster, ok := resp.ArtworkSlots[artwork.SlotPoster]; ok {
+		resp.Artwork = &SourceItemArtwork{Poster: poster}
 	}
 	return resp
 }
 
-func (h *Handler) mediaArtworkSlots(id store.MediaID, base string) map[string]string {
-	slots := map[string]string{}
+// artworkSlots maps every known slot that has artwork to its versioned URL
+// under base, or nil when none does.
+func artworkSlots(base string, version func(slot string) (string, bool)) map[string]string {
+	var slots map[string]string
 	for _, slot := range artwork.KnownSlots {
-		if v, ok := h.artwork.ArtworkVersion(id, slot); ok {
+		if v, ok := version(slot); ok {
+			if slots == nil {
+				slots = make(map[string]string, len(artwork.KnownSlots))
+			}
 			slots[slot] = base + "/" + slot + "?v=" + v
 		}
-	}
-	if len(slots) == 0 {
-		return nil
-	}
-	return slots
-}
-
-func (h *Handler) entityArtworkSlots(id store.EntityID, base string) map[string]string {
-	slots := map[string]string{}
-	for _, slot := range artwork.KnownSlots {
-		if v, ok := h.artwork.EntityArtworkVersion(id, slot); ok {
-			slots[slot] = base + "/" + slot + "?v=" + v
-		}
-	}
-	if len(slots) == 0 {
-		return nil
 	}
 	return slots
 }
@@ -1015,7 +1006,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	resp := h.execute(r.Context(), scope, req, plan)
-	if auditErr := h.recordPrivilegedResults(r.Context(), plan, privilegedActor, resp); auditErr != nil {
+	// Dispatch has run: the outcome records must land even if the client has
+	// since gone away, or the trail keeps an attempt with no finish.
+	auditCtx, cancelAudit := postDispatchAuditContext(r.Context())
+	defer cancelAudit()
+	if auditErr := h.recordPrivilegedResults(auditCtx, plan, privilegedActor, resp); auditErr != nil {
 		slog.Error("privileged operation audit failed", "error", auditErr)
 		// Reads can still fail closed because no durable state changed. Once a
 		// mutation resolver returns, replacing its response would falsely imply
@@ -1034,11 +1029,22 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			outcome = "error"
 		}
 		entry := mutationAuditEntry(scope, operationID+":finished", store.ActivityMutationFinished, "graphql:"+outcome, operationID)
-		if err := h.appendMutationAudit(r.Context(), entry); err != nil {
+		if err := h.appendMutationAudit(auditCtx, entry); err != nil {
 			slog.Error("mutation finish audit append failed", "operation", operationID, "error", err)
 		}
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// postDispatchAuditTimeout bounds the outcome records written after dispatch,
+// which no longer follow the request's cancellation.
+const postDispatchAuditTimeout = 5 * time.Second
+
+// postDispatchAuditContext detaches the post-dispatch audit records from the
+// request's cancellation (keeping its values) under a short bound: side
+// effects have already run, so a client disconnect must not drop the finish.
+func postDispatchAuditContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), postDispatchAuditTimeout)
 }
 
 func (h *Handler) appendMutationAudit(ctx context.Context, entry store.ActivityEntry) error {
@@ -1084,6 +1090,8 @@ func (h *Handler) FinishAuditedCommand(
 	operation, operationID string,
 	outcome observability.AuditOutcome,
 ) error {
+	ctx, cancel := postDispatchAuditContext(ctx)
+	defer cancel()
 	actor := privilegedAuditActor(scope)
 	recorderErr := h.recordAuditOperation(ctx, operation, actor, outcome)
 	entry := mutationAuditEntry(
@@ -1316,8 +1324,9 @@ func (e clientError) Error() string { return string(e) }
 // graphFailMessage resolves the wire-safe message for one failed top-level
 // field: client-caused errors (graph clientError, store ValidationError) carry
 // their stable message verbatim; anything else is an internal failure — logged
-// here, never leaked to the client.
-func graphFailMessage(field string, err error) string {
+// here, never leaked to the client. A field cut short because the client
+// abandoned the request (ctx is the request context) logs at debug only.
+func graphFailMessage(ctx context.Context, field string, err error) string {
 	message := field + " unavailable"
 	var ce clientError
 	var ve store.ValidationError
@@ -1326,10 +1335,19 @@ func graphFailMessage(field string, err error) string {
 		message = string(ce)
 	case errors.As(err, &ve):
 		message = string(ve)
+	case clientCanceled(ctx, err):
+		slog.DebugContext(ctx, "graph field ended by client", "field", field, "error", err)
 	default:
-		slog.Error("graph field failed", "field", field, "error", err)
+		slog.ErrorContext(ctx, "graph field failed", "field", field, "error", err)
 	}
 	return message
+}
+
+// clientCanceled reports whether err is the request's own context ending —
+// the client disconnected or aborted (the web UI cancels superseded requests
+// on purpose) — rather than a server failure.
+func clientCanceled(ctx context.Context, err error) bool {
+	return ctx.Err() != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded))
 }
 
 // graphFail resolves the abort-the-batch wire response for one failed top-level
@@ -1337,8 +1355,8 @@ func graphFailMessage(field string, err error) string {
 // none, so the first mutation error discards the whole response (M2). READ
 // fields instead accumulate a per-field error via readField and resolve the
 // rest of the batch.
-func graphFail(field string, err error) response {
-	return response{Errors: []graphError{{Message: graphFailMessage(field, err)}}}
+func graphFail(ctx context.Context, field string, err error) response {
+	return response{Errors: []graphError{{Message: graphFailMessage(ctx, field, err)}}}
 }
 
 // readField records one READ field's outcome under M2 partial-success: on
@@ -1348,10 +1366,10 @@ func graphFail(field string, err error) response {
 // "manifest" → "navigationManifest", "clientprefs" → "clientPrefs"). field is
 // the wire-safe error attribution. Unlike graphFail it never aborts — a flaky
 // or forbidden read no longer blanks an entire batched screen.
-func readField[T any](data map[string]any, errs *[]graphError, dataKey, errorField, errorPath string, result T, err error) {
+func readField[T any](ctx context.Context, data map[string]any, errs *[]graphError, dataKey, errorField, errorPath string, result T, err error) {
 	if err != nil {
 		data[dataKey] = nil
-		*errs = append(*errs, graphError{Message: graphFailMessage(errorField, err), Path: []string{errorPath}})
+		*errs = append(*errs, graphError{Message: graphFailMessage(ctx, errorField, err), Path: []string{errorPath}})
 		return
 	}
 	data[dataKey] = result
@@ -2076,6 +2094,13 @@ type LibraryInfo struct {
 	// are ENC-2/ENC-3.
 	Custodial bool `json:"custodial"`
 	Encrypted bool `json:"encrypted"`
+	// Icon is the Library's effective icon from the fixed Library icon
+	// vocabulary; IconChoice is the owner's stored choice ("" and omitted when
+	// the Library follows its default); DefaultIcon is what the Library gets
+	// with no choice. All three are optional on the wire.
+	Icon        string `json:"icon,omitempty"`
+	IconChoice  string `json:"iconChoice,omitempty"`
+	DefaultIcon string `json:"defaultIcon,omitempty"`
 }
 
 // createLibrary inserts a Library granted to the manager's Profile.
@@ -2167,6 +2192,13 @@ func (h *Handler) libraryInfo(ctx context.Context, library store.Library) (Libra
 	if err != nil {
 		return LibraryInfo{}, err
 	}
+	mediaClasses := h.libraryMediaClasses(library)
+	// A stored name this build no longer knows is reported as no choice, so
+	// the three icon fields always agree.
+	iconChoice := library.Icon
+	if !store.IsLibraryIcon(iconChoice) {
+		iconChoice = ""
+	}
 	return LibraryInfo{
 		ID:           string(library.ID),
 		Title:        library.Title,
@@ -2177,6 +2209,9 @@ func (h *Handler) libraryInfo(ctx context.Context, library store.Library) (Libra
 		FamilyScope:  library.FamilyScope,
 		Custodial:    library.Custodial,
 		Encrypted:    library.Encrypted,
+		Icon:         library.EffectiveIcon(mediaClasses),
+		IconChoice:   iconChoice,
+		DefaultIcon:  store.DefaultLibraryIcon(mediaClasses),
 	}, nil
 }
 
@@ -3751,7 +3786,9 @@ func (h *Handler) media(ctx context.Context, scope auth.Scope, req request) (Med
 		return MediaInfo{}, err
 	}
 	if h.artwork != nil {
-		info.ArtworkSlots = h.mediaArtworkSlots(media.ID, "/api/media/artwork/"+string(media.ID))
+		info.ArtworkSlots = artworkSlots("/api/media/artwork/"+string(media.ID), func(slot string) (string, bool) {
+			return h.artwork.ArtworkVersion(media.ID, slot)
+		})
 	}
 	info.Credits = h.mediaCredits(ctx, scope, media.ID)
 	info.MetadataAttribution = h.mediaMetadataAttribution(ctx, media.ID)

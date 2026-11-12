@@ -11,6 +11,7 @@ import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
 import { useEngagementEvents } from "./actions";
 import { SectionSkeleton } from "./components/HydratedSection";
+import { useScrollRestoration } from "./lib/useScrollRestoration";
 import { BrowsePage } from "./pages/BrowsePage";
 import { EntityPage } from "./pages/EntityPage";
 import { LibraryBrowsePage } from "./pages/LibraryBrowsePage";
@@ -72,6 +73,7 @@ export function ViewerArea() {
   // hand-off. A failed probe resolves to `false` (fetchSetupRequired), so a
   // normal enrolled server never gets stuck routed at /setup.
   const [setupRequired, setSetupRequired] = useState<boolean | null>(null);
+  useScrollRestoration();
 
   useEffect(() => setRegister("viewer"), [setRegister]);
 

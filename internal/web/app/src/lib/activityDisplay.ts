@@ -160,6 +160,7 @@ export const ACTIVITY_LABELS: Record<string, ActivityLabel> = {
     "a library",
     "library",
   ),
+  "library.icon": label("library", "{actor} changed the icon of {target}", "a library", "library"),
   "library.preview_clips": label(
     "library",
     "{actor} changed preview clips for {target}",

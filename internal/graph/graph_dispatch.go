@@ -84,11 +84,11 @@ func resolveField[T any](dispatch *fieldDispatchContext, field string, result T,
 	}
 	recordPrivilegedOutcome(dispatch, field, outcome)
 	if handler.kind == fieldRead {
-		readField(dispatch.data, &dispatch.errs, dataKey, handler.errField, errorPath, result, err)
+		readField(dispatch.ctx, dispatch.data, &dispatch.errs, dataKey, handler.errField, errorPath, result, err)
 		return response{}
 	}
 	if err != nil {
-		return graphFail(handler.errField, err)
+		return graphFail(dispatch.ctx, handler.errField, err)
 	}
 	dispatch.data[dataKey] = result
 	return response{}

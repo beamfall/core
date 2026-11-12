@@ -97,6 +97,10 @@ type Library struct {
 	// false leaves every existing Library not-encrypted. Orthogonal to
 	// Custodial; the two compose (Photo Backup = Custodial + Encrypted).
 	Encrypted bool
+	// Icon is the owner's choice from the Library icon vocabulary. Empty means
+	// no choice: the Library follows the default for its media classes (see
+	// EffectiveIcon).
+	Icon string
 }
 
 // Profile is the user-facing Profile selected by a client session.

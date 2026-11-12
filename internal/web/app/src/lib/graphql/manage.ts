@@ -75,7 +75,7 @@ import type {
 // --- Libraries ------------------------------------------------------------
 
 const LIBRARIES_QUERY =
-  "query Libraries { libraries { id title pluginID previewClips restricted roots } }";
+  "query Libraries { libraries { id title pluginID previewClips restricted roots icon iconChoice defaultIcon } }";
 
 /** Libraries — the manageable Library list with roots + preview-clip toggle. */
 export async function fetchLibraries(signal?: AbortSignal): Promise<LibraryInfo[]> {
@@ -95,6 +95,20 @@ export async function setLibraryPreviewClips(
     setLibraryPreviewClips: LibraryPreviewClipsResult;
   }>(SET_LIBRARY_PREVIEW_CLIPS_MUTATION, { libraryID, enabled });
   return data.setLibraryPreviewClips;
+}
+
+// The icon write rides the console-config mutation: the published management
+// contract is frozen until its next major version, so a Library icon cannot
+// have an operation of its own yet (CORE-1200).
+const SET_LIBRARY_ICON_MUTATION =
+  "mutation SetLibraryIcon($libraryID: String!, $libraryIcon: String!) { setConsoleConfig(libraryID: $libraryID, libraryIcon: $libraryIcon) { backgroundWorkers } }";
+
+/** SetLibraryIcon — choose a Library's icon; "" returns it to its default. */
+export async function setLibraryIcon(libraryID: string, icon: string): Promise<void> {
+  await graphql<{ setConsoleConfig: unknown }>(SET_LIBRARY_ICON_MUTATION, {
+    libraryID,
+    libraryIcon: icon,
+  });
 }
 
 const SCAN_LIBRARY_MUTATION =

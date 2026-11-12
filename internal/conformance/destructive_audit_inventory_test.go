@@ -202,6 +202,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"SetIntegrationWorker":                    {},
 	"SetLibraryAIIndexing":                    {},
 	"SetLibraryBacking":                       {},
+	"SetLibraryIcon":                          {},
 	"SetLibraryPreviewClips":                  {},
 	"SetLibraryRoots":                         {},
 	"SetMatchPinned":                          {},

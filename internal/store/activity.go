@@ -60,6 +60,7 @@ const (
 	ActivityPathPickerRootAdded = "path_picker.root_added"
 	ActivityLibraryPreviewClips = "library.preview_clips"
 	ActivityLibraryRestriction  = "library.restriction"
+	ActivityLibraryIcon         = "library.icon"
 	// ActivityAccessSchedule audits a managed Profile's access-schedule write.
 	// It carries the Profile id in TargetID only —
 	// never the window contents.
