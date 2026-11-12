@@ -12,6 +12,7 @@ import {
   readViewerCache,
   writeViewerCache,
 } from "@/lib/viewerCache";
+import { ItemActions } from "../actions";
 import { findCachedSectionItem } from "../components/HydratedSection";
 import { LayoutView } from "../components/LayoutView";
 import { MediaItemCard } from "../components/MediaItemCard";
@@ -160,6 +161,7 @@ export function EntityPage() {
             {kindHint && <span className="bf-entity-kind">{kindHint}</span>}
             <h1 className="bf-page-title">{entity?.title ?? previewTitle}</h1>
             {!entity && <Skeleton aria-hidden className="h-4 w-40" />}
+            {entity && <ItemActions target={{ entityID: entityId }} />}
             {entity && entity.fields.length > 0 && (
               <dl className="bf-metadata mt-2">
                 {entity.fields.map((field, i) => (

@@ -8,6 +8,7 @@ import { fetchSetupRequired } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
+import { useEngagementEvents } from "./actions";
 import { SectionSkeleton } from "./components/HydratedSection";
 import { BrowsePage } from "./pages/BrowsePage";
 import { EntityPage } from "./pages/EntityPage";
@@ -109,8 +110,15 @@ export function ViewerArea() {
     return <ViewerSessionError onRetry={refresh} />;
   }
 
+  return <ViewerRoutes profileID={session.profileID} />;
+}
+
+// The bound viewer: its routes, plus the one event subscription that keeps
+// engagement-derived views current with changes made on other clients.
+function ViewerRoutes({ profileID }: { profileID: string }) {
+  useEngagementEvents();
   return (
-    <Routes key={session.profileID}>
+    <Routes key={profileID}>
       <Route path="/" element={<BrowsePage home />} />
       <Route path="/n/:nodeId" element={<BrowsePage />} />
       <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />

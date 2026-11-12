@@ -27,6 +27,7 @@ vi.mock("@/components/chrome/AppShell", () => ({
   AppShell: ({ children }: { children: ReactNode }) => <main>{children}</main>,
 }));
 vi.mock("../components/ViewerActions", () => ({ ViewerActions: () => null }));
+vi.mock("../actions", () => ({ ItemActions: () => null }));
 vi.mock("../components/NotAvailable", () => ({ NotAvailable: () => <p>not available</p> }));
 vi.mock("../components/MediaItemCard", () => ({
   MediaItemCard: ({ item }: { item: SourceItem }) => <li>{item.title}</li>,

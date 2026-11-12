@@ -139,6 +139,20 @@ export interface SourceItem {
   locked?: boolean;
 }
 
+/** What an item action targets: exactly one of a Media or an Entity. */
+export type ItemTarget = { mediaID: string } | { entityID: string };
+
+/** The calling Profile's state for one item (graph.ItemStateInfo). */
+export interface ItemStateInfo {
+  id: string;
+  /** "media" or "entity". */
+  kind: string;
+  watched: boolean;
+  watchlisted: boolean;
+  /** 1–10, or 0 when the Profile has not rated the item. */
+  rating: number;
+}
+
 /** The current server-side session scope (graph.SessionInfo, currentSession). */
 export interface SessionInfo {
   deviceRole: string;

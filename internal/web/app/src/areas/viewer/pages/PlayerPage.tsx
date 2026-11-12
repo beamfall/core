@@ -314,6 +314,7 @@ export function PlayerPage() {
               hlsRef={hlsRef}
               state={state}
               mediaTitle={navTitle}
+              mediaID={mediaId || ""}
               stageRef={stageRef}
               skipInterval={Number(resolvedPrefs.skipInterval)}
               showSkipInterval={showSkipInterval}

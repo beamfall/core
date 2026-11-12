@@ -1670,3 +1670,97 @@ main:has(> .bf-player-stage.is-chrome-hidden) > .bf-player-bar > * {
     transition: none;
   }
 }
+
+/* ============================================================ *
+ *  Item actions (Viewer) — watched, watchlist and rating controls.
+ * ============================================================ */
+
+.bf-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.bf-item-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.bf-item-action svg,
+.bf-item-star svg {
+  width: 16px;
+  height: 16px;
+}
+
+.bf-item-action:hover:not(:disabled),
+.bf-item-action[aria-pressed="true"] {
+  color: var(--text-primary);
+  border-color: currentColor;
+}
+
+.bf-item-action[aria-pressed="true"] {
+  background: rgb(255 255 255 / 0.08);
+}
+
+.bf-item-rating {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  margin: 0;
+  padding: 0 4px;
+  border: 0;
+}
+
+.bf-item-star {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 36px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+
+.bf-item-star:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.bf-item-star[aria-pressed="true"] {
+  color: var(--accent);
+}
+
+.bf-item-action:disabled,
+.bf-item-rating:disabled .bf-item-star {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.bf-item-action:focus-visible,
+.bf-item-star:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.bf-item-actions-error {
+  color: var(--text-secondary);
+  font-size: 13px;
+}

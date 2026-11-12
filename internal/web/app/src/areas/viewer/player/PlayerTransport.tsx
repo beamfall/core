@@ -73,6 +73,7 @@ export function PlayerTransport({
   hlsRef,
   state,
   mediaTitle = "",
+  mediaID = "",
   stageRef,
   skipInterval = 10,
   showSkipInterval = "",
@@ -90,6 +91,8 @@ export function PlayerTransport({
   state: PlayerState;
   /** The current Media's title (from nav state) — names the info overlay. */
   mediaTitle?: string;
+  /** The current Media's id, for the info overlay's item actions. */
+  mediaID?: string;
   /** The player stage element — subtitle styling rides a CSS var/class on it. */
   stageRef: React.RefObject<HTMLElement | null>;
   /** Seconds used by the transport's back/forward skip controls. */
@@ -958,6 +961,7 @@ export function PlayerTransport({
                 )}
                 <InfoOverlay
                   mediaTitle={mediaTitle}
+                  mediaID={mediaID}
                   info={state.info}
                   stream={state.stream}
                   manualRenditionID={manualRenditionID}

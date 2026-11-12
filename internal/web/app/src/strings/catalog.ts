@@ -5,6 +5,7 @@ import { collectionMarkerStrings } from "./collections-markers";
 import { consoleAccessStrings } from "./console-access";
 import { consoleOperationsStrings } from "./console-operations";
 import { customizationStrings } from "./customization";
+import { itemActionStrings } from "./item-actions";
 import { libraryHealthStrings } from "./library-health";
 import { libraryOperationsStrings } from "./library-operations";
 import { managedFileStrings } from "./managed-files";
@@ -46,6 +47,7 @@ export const en = {
   ...collectionMarkerStrings.en,
   ...profileSearchStrings.en,
   ...powerToolStrings.en,
+  ...itemActionStrings.en,
 } as const;
 
 export const fr = {
@@ -72,6 +74,7 @@ export const fr = {
   ...collectionMarkerStrings.fr,
   ...profileSearchStrings.fr,
   ...powerToolStrings.fr,
+  ...itemActionStrings.fr,
 } as const;
 
 export const de = {
@@ -98,6 +101,7 @@ export const de = {
   ...collectionMarkerStrings.de,
   ...profileSearchStrings.de,
   ...powerToolStrings.de,
+  ...itemActionStrings.de,
 } as const;
 
 export const es = {
@@ -124,6 +128,7 @@ export const es = {
   ...collectionMarkerStrings.es,
   ...profileSearchStrings.es,
   ...powerToolStrings.es,
+  ...itemActionStrings.es,
 } as const;
 
 export const pt = {
@@ -150,4 +155,5 @@ export const pt = {
   ...collectionMarkerStrings.pt,
   ...profileSearchStrings.pt,
   ...powerToolStrings.pt,
+  ...itemActionStrings.pt,
 } as const;

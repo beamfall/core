@@ -14,6 +14,8 @@ import type {
   EntityInfo,
   FieldFilters,
   GenericMediaInfo,
+  ItemStateInfo,
+  ItemTarget,
   MyDataDeleteResult,
   MyDataSummary,
   MyEngagementExport,
@@ -364,4 +366,55 @@ export async function setClientPref(key: string, value: string): Promise<{ key: 
     value,
   });
   return data.setClientPref;
+}
+
+// --- Item actions: watched, watchlist, rating -----------------------------
+
+const ITEM_STATE_FIELDS = "id kind watched watchlisted rating";
+
+const ITEM_STATE_QUERY = `query ItemState($mediaID: ID, $entityID: ID) { itemState(mediaID: $mediaID, entityID: $entityID) { ${ITEM_STATE_FIELDS} } }`;
+
+/** ItemState — the calling Profile's watched, watchlist and rating state for one item. */
+export async function fetchItemState(
+  target: ItemTarget,
+  signal?: AbortSignal,
+): Promise<ItemStateInfo> {
+  const data = await graphql<{ itemState: ItemStateInfo }>(ITEM_STATE_QUERY, { ...target }, signal);
+  return data.itemState;
+}
+
+const SET_WATCHED_MUTATION = `mutation SetWatched($mediaID: ID, $entityID: ID, $watched: Boolean!) { setWatched(mediaID: $mediaID, entityID: $entityID, watched: $watched) { ${ITEM_STATE_FIELDS} } }`;
+
+/** SetWatched — mark one Media, or every Media under an Entity, watched or unwatched. */
+export async function setWatched(target: ItemTarget, watched: boolean): Promise<ItemStateInfo> {
+  const data = await graphql<{ setWatched: ItemStateInfo }>(SET_WATCHED_MUTATION, {
+    ...target,
+    watched,
+  });
+  return data.setWatched;
+}
+
+const SET_WATCHLISTED_MUTATION = `mutation SetWatchlisted($mediaID: ID, $entityID: ID, $watchlisted: Boolean!) { setWatchlisted(mediaID: $mediaID, entityID: $entityID, watchlisted: $watchlisted) { ${ITEM_STATE_FIELDS} } }`;
+
+/** SetWatchlisted — add an item to, or remove it from, the calling Profile's watchlist. */
+export async function setWatchlisted(
+  target: ItemTarget,
+  watchlisted: boolean,
+): Promise<ItemStateInfo> {
+  const data = await graphql<{ setWatchlisted: ItemStateInfo }>(SET_WATCHLISTED_MUTATION, {
+    ...target,
+    watchlisted,
+  });
+  return data.setWatchlisted;
+}
+
+const SET_RATING_MUTATION = `mutation SetRating($mediaID: ID, $entityID: ID, $rating: Int!) { setRating(mediaID: $mediaID, entityID: $entityID, rating: $rating) { ${ITEM_STATE_FIELDS} } }`;
+
+/** SetRating — set the calling Profile's rating (1–10); 0 clears it. */
+export async function setRating(target: ItemTarget, rating: number): Promise<ItemStateInfo> {
+  const data = await graphql<{ setRating: ItemStateInfo }>(SET_RATING_MUTATION, {
+    ...target,
+    rating,
+  });
+  return data.setRating;
 }
