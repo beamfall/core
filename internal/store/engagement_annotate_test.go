@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 func openDemoSeeded(t *testing.T) *Store {
@@ -134,5 +135,92 @@ func TestAnnotateEngagementCountsAnEncryptedLibrarysChildren(t *testing.T) {
 	}
 	if sealed[0].Engagement != nil {
 		t.Fatalf("sealed container engagement = %+v, want nil", sealed[0].Engagement)
+	}
+}
+
+// A sub-container that is trashed, or sits in a Library the scope cannot see,
+// contributes none of its children to the parent's counts.
+func TestAnnotateEngagementSkipsHiddenAndTrashedSubContainers(t *testing.T) {
+	ctx := context.Background()
+	st := openDemoSeeded(t)
+	for _, entity := range []Entity{
+		{ID: "entity-annotate-parent", LibraryID: "library-demo-open", Kind: "container", Title: "Parent"},
+		{ID: "entity-annotate-sub", LibraryID: "library-demo-open", Kind: "container", Title: "Open part"},
+		{ID: "entity-annotate-guarded", LibraryID: "library-demo-guarded", Kind: "container", Title: "Guarded part"},
+	} {
+		if err := st.UpsertEntity(ctx, entity); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, row := range []struct {
+		from, toEntity, toMedia string
+		order                   int
+	}{
+		{"entity-annotate-parent", "entity-annotate-sub", "", 1},
+		{"entity-annotate-parent", "entity-annotate-guarded", "", 2},
+		{"entity-annotate-sub", "", "media-demo-sintel", 1},
+		{"entity-annotate-sub", "", "media-demo-bunny", 2},
+		{"entity-annotate-guarded", "", "media-demo-series-1", 1},
+	} {
+		if _, err := st.catalogW.ExecContext(ctx, `
+			INSERT INTO entity_relation(from_entity_id, relation, to_entity_id, to_media_id, sort_order)
+			VALUES (?, 'contains', NULLIF(?, ''), NULLIF(?, ''), ?)
+		`, row.from, row.toEntity, row.toMedia, row.order); err != nil {
+			t.Fatal(err)
+		}
+	}
+	counts := func(filter LibraryFilter) *SourceEngagement {
+		t.Helper()
+		items := []SourceItem{{ID: "entity-annotate-parent", Kind: "entity"}}
+		if err := st.AnnotateEngagement(ctx, "profile-demo-default", filter, items); err != nil {
+			t.Fatalf("AnnotateEngagement: %v", err)
+		}
+		return items[0].Engagement
+	}
+	everything := LibraryFilter{AllLibraries: true, Revealed: true}
+	if got := counts(everything); got == nil || got.TotalCount != 3 {
+		t.Fatalf("full scope engagement = %+v, want 3 children", got)
+	}
+	openOnly := LibraryFilter{AllowedIDs: []LibraryID{"library-demo-open"}}
+	if got := counts(openOnly); got == nil || got.TotalCount != 2 || got.RemainingCount != 1 {
+		t.Fatalf("open-only engagement = %+v, want 1 remaining of 2 without the guarded part", got)
+	}
+	if err := st.TrashEntity(ctx, "entity-annotate-sub", everything, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if got := counts(everything); got == nil || got.TotalCount != 1 {
+		t.Fatalf("engagement after trashing a part = %+v, want only the other part's 1 child", got)
+	}
+	if got := counts(openOnly); got != nil {
+		t.Fatalf("open-only engagement after trashing its part = %+v, want nil", got)
+	}
+}
+
+// A partial play made through a Library Channel is not resumable (resume reads
+// exclude it), so its card shows no progress; a direct partial play does.
+func TestAnnotateEngagementIgnoresPartialChannelPlays(t *testing.T) {
+	ctx := context.Background()
+	st := openSeeded(t)
+	media := importChannelMedia(t, st, 2)
+	for i, id := range media {
+		if err := st.UpsertPlaybackProgress(ctx, PlaybackProgress{
+			ProfileID:       "profile-default",
+			MediaID:         id,
+			PositionSeconds: 45,
+			DurationSeconds: 120,
+			ChannelContext:  i == 0,
+		}, false, ResumePolicy{Class: MediaClassVideo}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	items := []SourceItem{{ID: media[0], Kind: "media"}, {ID: media[1], Kind: "media"}}
+	if err := st.AnnotateEngagement(ctx, "profile-default", LibraryFilter{AllLibraries: true, Revealed: true}, items); err != nil {
+		t.Fatalf("AnnotateEngagement: %v", err)
+	}
+	if items[0].Engagement != nil {
+		t.Fatalf("channel play engagement = %+v, want nil", items[0].Engagement)
+	}
+	if got := items[1].Engagement; got == nil || got.PositionSeconds != 45 || got.DurationSeconds != 120 {
+		t.Fatalf("direct play engagement = %+v, want position 45 of 120", got)
 	}
 }
