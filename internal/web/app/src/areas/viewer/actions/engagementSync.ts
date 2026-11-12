@@ -1,4 +1,5 @@
 import { useEffect, useSyncExternalStore } from "react";
+import { subscribeEvents } from "@/lib/api";
 
 // One counter that moves whenever the bound Profile's watched, watchlist or
 // rating state changes — in this tab (an item action just succeeded) or on
@@ -43,25 +44,13 @@ export function isEngagementInvalidation(data: unknown): boolean {
   }
 }
 
-/**
- * Subscribe to one named kind on the SSE event stream. The server frames every
- * outbox event with an `event: <kind>` line, which the browser delivers only to
- * a listener registered for that kind — never to `onmessage`. Returns an
- * unsubscribe function; a runtime without EventSource gets a no-op.
- */
-function subscribeEventKind(kind: string, onEvent: (event: MessageEvent) => void): () => void {
-  if (typeof EventSource === "undefined") return () => {};
-  const source = new EventSource("/api/events", { withCredentials: true });
-  source.addEventListener(kind, onEvent as EventListener);
-  return () => source.close();
-}
-
 /** Mount once per viewer session: turns the server's invalidation events into epoch changes. */
 export function useEngagementEvents(): void {
   useEffect(
     () =>
-      subscribeEventKind(INVALIDATE_KIND, (event) => {
-        if (isEngagementInvalidation(event.data)) notifyEngagementChanged();
+      subscribeEvents((event) => {
+        if (event.type === INVALIDATE_KIND && isEngagementInvalidation(event.data))
+          notifyEngagementChanged();
       }),
     [],
   );
