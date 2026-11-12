@@ -61,8 +61,6 @@ export const setupStrings = {
     setupTypeFilms: "Films",
     setupTypeTVShows: "TV Shows",
     setupTypeMixed: "Mixed",
-    setupTypeMusic: "Music",
-    setupTypePodcasts: "Podcasts",
     setupProfileTitle: "Name the owner profile",
     setupProfileLead: "This is you. Everyone else can get their own Profile later.",
     setupProfileName: "Owner profile name",

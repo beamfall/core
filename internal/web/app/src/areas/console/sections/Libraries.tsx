@@ -14,7 +14,12 @@ import { type FormEvent, useCallback, useEffect, useId, useRef, useState } from 
 import { Link } from "react-router";
 import { DeleteLibraryButton } from "@/components/beamfall/LibraryDelete";
 import { LibraryIconPicker, useLibraryIconSymbol } from "@/components/beamfall/LibraryIconPicker";
-import { RescanAllButton, RescanButton, RescanStatus } from "@/components/beamfall/LibraryRescan";
+import {
+  RescanAllButton,
+  RescanButton,
+  RescanStatus,
+  startRescan,
+} from "@/components/beamfall/LibraryRescan";
 import {
   EmptyState,
   ErrorLine,
@@ -22,7 +27,6 @@ import {
   PathPickerField,
 } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -36,7 +40,6 @@ import { Switch } from "@/components/ui/switch";
 import { Advanced } from "@/lib/advancedSettings";
 import { displayString } from "@/lib/display";
 import {
-  createLibrary,
   fetchFolderTree,
   fetchLibraries,
   fetchPlugins,
@@ -61,14 +64,9 @@ import { cn } from "@/lib/utils";
 import { ConfirmButton } from "../ConfirmButton";
 import { Section } from "../Section";
 import { useAsync } from "../useAsync";
+import { AddLibrary } from "./AddLibrary";
 import { DeletedLibraries, MutationFailure } from "./DeletedLibraries";
-
-const NO_PLUGIN = "__none__";
-
-// Libraries screen styling: one full-width card per library so long folder
-// paths stay readable. Solid surfaces, divided lists, no icon tiles.
-const CARD =
-  "rounded-[var(--radius-surface)] border border-[var(--border-subtle)] bg-[var(--bg-surface)]";
+import { CARD } from "./libraryStyles";
 
 function lastSegment(path: string): string {
   const parts = path.split(/[\\/]+/).filter(Boolean);
@@ -409,84 +407,11 @@ function LibraryCard({
   );
 }
 
-// Add-library panel: shown on demand (or when there are no libraries yet).
-function AddLibrary({
-  plugins,
-  onCreated,
-  onCancel,
-}: {
-  plugins: PluginSummary[];
-  onCreated: () => Promise<void>;
-  onCancel?: () => void;
-}) {
-  const t = useT();
-  const displayLocale = useDisplayLocale();
-  const [title, setTitle] = useState("");
-  const [pluginID, setPluginID] = useState(NO_PLUGIN);
-
-  async function onCreate(e: FormEvent) {
-    e.preventDefault();
-    if (!title.trim()) return;
-    await createLibrary(title.trim(), pluginID === NO_PLUGIN ? null : pluginID);
-    setTitle("");
-    setPluginID(NO_PLUGIN);
-    await onCreated();
-  }
-
-  return (
-    <form
-      onSubmit={onCreate}
-      aria-labelledby="add-library-heading"
-      className={cn(CARD, "flex flex-wrap items-end gap-4 p-4")}
-    >
-      <div className="flex w-full items-center gap-3">
-        <div>
-          <h3 id="add-library-heading" className="m-0 text-base font-semibold">
-            {t("taskAddLibrary")}
-          </h3>
-          <p className="m-0 text-xs text-muted-foreground">{t("taskAddLibraryLead")}</p>
-        </div>
-      </div>
-      <div className="min-w-48 flex-1 space-y-1.5">
-        <Label htmlFor="new-lib-title">{t("libraryName")}</Label>
-        <Input id="new-lib-title" value={title} onChange={(e) => setTitle(e.target.value)} />
-      </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="new-lib-plugin">{t("libraryKind")}</Label>
-        <Select value={pluginID} onValueChange={setPluginID}>
-          <SelectTrigger id="new-lib-plugin" className="w-52">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={NO_PLUGIN}>{t("libraryNoKind")}</SelectItem>
-            {plugins.map((p) => (
-              <SelectItem key={p.id} value={p.id}>
-                {displayString(p.displayName, displayLocale)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="flex gap-2">
-        {onCancel && (
-          <Button type="button" variant="ghost" onClick={onCancel}>
-            {t("cancel")}
-          </Button>
-        )}
-        <Button type="submit" disabled={!title.trim()}>
-          <Plus className="console-nav-icon" aria-hidden />
-          {t("createLibrary")}
-        </Button>
-      </div>
-    </form>
-  );
-}
-
 // What the section last did to a library. The control that did it (a card's
 // delete button, a deleted library's Restore) is gone by the time the server
 // answers, so this line says what happened and takes focus.
 type LibraryNotice =
-  | { kind: "deleted" | "restored"; id: string; title: string }
+  | { kind: "created" | "deleted" | "restored"; id: string; title: string }
   | { kind: "purged"; id: string; title: string; mediaRemoved: number };
 
 // Libraries (ADR-0003): the manageable Library list with create + per-Library
@@ -575,7 +500,9 @@ export function Libraries() {
       ? t("libraryPurged", { library: notice.title, count: notice.mediaRemoved })
       : notice.kind === "restored"
         ? t("libraryRestored", { library: notice.title })
-        : t("libraryDeleted", { library: notice.title });
+        : notice.kind === "created"
+          ? t("libraryCreated", { library: notice.title })
+          : t("libraryDeleted", { library: notice.title });
 
   const pluginList = plugins.data ?? [];
   const libraryList = libs.data ?? [];
@@ -616,10 +543,17 @@ export function Libraries() {
       {(adding || empty) && (
         <AddLibrary
           plugins={pluginList}
+          pluginsState={
+            plugins.failed ? "failed" : plugins.loading && !plugins.data ? "loading" : "ready"
+          }
           onCancel={empty ? undefined : () => setAdding(false)}
-          onCreated={async () => {
+          onCreated={async (library) => {
             setAdding(false);
-            await refreshLibraries();
+            announce({ kind: "created", id: library.id, title: library.title });
+            // Like the first library in setup, a new library starts scanning
+            // its folders at once; its card shows the scan's progress.
+            void startRescan(library.id, library.roots);
+            await Promise.all([refreshLibraries(), skipDetection.refresh()]);
           }}
         />
       )}

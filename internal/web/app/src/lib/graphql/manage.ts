@@ -152,23 +152,27 @@ export async function setLibraryRoots(
 }
 
 const CREATE_LIBRARY_MUTATION =
-  "mutation CreateLibrary($title: String!, $pluginID: String, $familyScope: String) { createLibrary(title: $title, pluginID: $pluginID, familyScope: $familyScope) { id title pluginID } }";
+  "mutation CreateLibrary($title: String!, $pluginID: String, $familyScope: String, $roots: [String!]) { createLibrary(title: $title, pluginID: $pluginID, familyScope: $familyScope, roots: $roots) { id title pluginID } }";
 
 /**
  * CreateLibrary — create a Library, optionally bound to a plugin and a
  * familyScope (ADR-0028 §1: the Film & TV plugin's films/tvshows/mixed scope,
  * read by the hand-rolled resolver via trimmedVariable). familyScope is
- * ignored for plugins without scopes (Music/Podcast).
+ * ignored for plugins without scopes (Music/Podcast). `roots` gives the new
+ * Library its folders in the same call: the server creates the Library and
+ * its folders together, so a refused folder leaves nothing behind.
  */
 export async function createLibrary(
   title: string,
   pluginID: string | null,
   familyScope?: string,
+  roots?: string[],
 ): Promise<CreateLibraryResult> {
   const data = await graphql<{ createLibrary: CreateLibraryResult }>(CREATE_LIBRARY_MUTATION, {
     title,
     pluginID,
     familyScope,
+    roots,
   });
   return data.createLibrary;
 }

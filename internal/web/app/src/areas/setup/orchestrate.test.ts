@@ -135,7 +135,8 @@ describe("createFirstLibrary", () => {
 
     const result = await createFirstLibrary({
       title: "TV Shows",
-      type: "tvshows",
+      pluginID: "filmtv",
+      familyScope: "tvshows",
       rootPath: "/media/tv",
     });
     expect(result).toEqual({
@@ -190,7 +191,12 @@ describe("createFirstLibrary", () => {
       };
     };
 
-    await createFirstLibrary({ title: "Tunes", type: "music", rootPath: "/media/music" });
+    await createFirstLibrary({
+      title: "Tunes",
+      pluginID: "music",
+      familyScope: null,
+      rootPath: "/media/music",
+    });
     const vars = recorded[0].body.variables as Record<string, unknown>;
     expect(vars.pluginID).toBe("music");
     expect(vars.familyScope).toBeUndefined();
@@ -217,7 +223,13 @@ describe("createFirstLibrary", () => {
 
     let progress = { rootsSet: false };
     try {
-      await createFirstLibrary({ title: "Films", type: "films", rootPath: "/films", progress });
+      await createFirstLibrary({
+        title: "Films",
+        pluginID: "filmtv",
+        familyScope: "films",
+        rootPath: "/films",
+        progress,
+      });
       expect.unreachable("roots failure should reject");
     } catch (err) {
       expect(err).toBeInstanceOf(FirstLibraryError);
@@ -225,7 +237,13 @@ describe("createFirstLibrary", () => {
       progress = (err as FirstLibraryError).progress;
     }
 
-    await createFirstLibrary({ title: "Films", type: "films", rootPath: "/films", progress });
+    await createFirstLibrary({
+      title: "Films",
+      pluginID: "filmtv",
+      familyScope: "films",
+      rootPath: "/films",
+      progress,
+    });
     expect(recorded.filter((rec) => String(rec.body.query).includes("CreateLibrary"))).toHaveLength(
       1,
     );
@@ -255,11 +273,23 @@ describe("createFirstLibrary", () => {
 
     let progress = { rootsSet: false };
     try {
-      await createFirstLibrary({ title: "Films", type: "films", rootPath: "/films", progress });
+      await createFirstLibrary({
+        title: "Films",
+        pluginID: "filmtv",
+        familyScope: "films",
+        rootPath: "/films",
+        progress,
+      });
     } catch (err) {
       progress = (err as FirstLibraryError).progress;
     }
-    await createFirstLibrary({ title: "Films", type: "films", rootPath: "/films", progress });
+    await createFirstLibrary({
+      title: "Films",
+      pluginID: "filmtv",
+      familyScope: "films",
+      rootPath: "/films",
+      progress,
+    });
 
     expect(recorded.filter((rec) => String(rec.body.query).includes("CreateLibrary"))).toHaveLength(
       1,
