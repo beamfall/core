@@ -417,9 +417,9 @@ function JobsQueue() {
 export function Operations() {
   return (
     <div className="space-y-8">
-      <UpdateAwareness />
-      <JobsQueue />
       <LiveSessions />
+      <JobsQueue />
+      <UpdateAwareness />
     </div>
   );
 }

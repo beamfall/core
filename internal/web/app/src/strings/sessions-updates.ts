@@ -54,7 +54,7 @@ export const sessionUpdateStrings = {
     hostMetricsOf: "{used} of {total}",
     playHistoryHeading: "Play history",
     playHistoryLead:
-      "What was played on this server, newest first. A restricted Library you have not revealed is left out.",
+      "What was played on this server, newest first. A play from a restricted Library you have not revealed is listed without its title.",
     playHistoryAllProfiles: "All profiles",
     playHistoryAllLibraries: "All libraries",
     playHistoryFrom: "From",
@@ -70,7 +70,7 @@ export const sessionUpdateStrings = {
     playStatsWindow: "{days} days",
     playStatsTopUsers: "Top users",
     playStatsMostPlayed: "Most played",
-    playStatsPlays: "{count} plays",
+    playStatsPlays: "{count, plural, one {# play} other {# plays}}",
     playStatsEmpty: "Nothing was played in this period.",
     playStatsUnavailable: "Could not load rankings.",
     updateAwarenessHeading: "Update awareness",

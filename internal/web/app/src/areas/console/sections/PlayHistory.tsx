@@ -157,7 +157,13 @@ function HistoryTable() {
                 })}
               </TableCell>
               <TableCell>{p.profileName}</TableCell>
-              <TableCell className="font-medium">{p.title}</TableCell>
+              <TableCell className="font-medium">
+                {p.title ? (
+                  p.title
+                ) : (
+                  <StatusChip tone="iris">{t("liveSessionRestricted")}</StatusChip>
+                )}
+              </TableCell>
               <TableCell>{p.libraryTitle}</TableCell>
               <TableCell className="console-mono">{watched(p.watchedSeconds)}</TableCell>
               <TableCell className="text-right">
