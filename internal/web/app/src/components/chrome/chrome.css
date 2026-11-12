@@ -1670,4 +1670,3 @@ main:has(> .bf-player-stage.is-chrome-hidden) > .bf-player-bar > * {
     transition: none;
   }
 }
-
