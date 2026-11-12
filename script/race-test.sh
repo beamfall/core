@@ -341,7 +341,7 @@ import re
 import subprocess
 import sys
 
-shards = max(1, int(sys.argv[1]))
+shards = max(2, int(sys.argv[1]))
 jobs = max(1, int(sys.argv[2]))
 work_dir = sys.argv[3]
 packages = sys.argv[4:]
@@ -352,13 +352,12 @@ name_re = re.compile(r"(Test|Example|Fuzz)\w*")
 plan = []  # (package, names or None)
 for pkg in packages:
     names = []
-    if shards > 1:
-        listed = subprocess.run(
-            ["go", "test", "-race", "-short", "-list", ".*", pkg],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        if listed.returncode == 0:
-            names = [line for line in listed.stdout.splitlines()
-                     if name_re.fullmatch(line)]
+    listed = subprocess.run(
+        ["go", "test", "-race", "-short", "-list", ".*", pkg],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if listed.returncode == 0:
+        names = [line for line in listed.stdout.splitlines()
+                 if name_re.fullmatch(line)]
     count = min(shards, len(names))
     if count < 2:
         plan.append((pkg, None))
@@ -533,6 +532,9 @@ PY
     hot_pkg_count="${#hot_pkgs[@]}"
     promoted_pkg_count="${#promoted_pkgs[@]}"
     promoted_shards="${RACE_SHORT_PROMOTED_SHARDS:-4}"
+    case "$promoted_shards" in
+      ''|*[!0-9]*) echo "ERROR: RACE_SHORT_PROMOTED_SHARDS must be a whole number" >&2; exit 2 ;;
+    esac
     promoted_jobs="${RACE_SHORT_PROMOTED_JOBS:-}"
     if [ -z "$promoted_jobs" ]; then
       host_cpus="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
@@ -540,6 +542,9 @@ PY
       [ "$promoted_jobs" -ge 2 ] || promoted_jobs=2
       [ "$promoted_jobs" -le 8 ] || promoted_jobs=8
     fi
+    case "$promoted_jobs" in
+      ''|*[!0-9]*) echo "ERROR: RACE_SHORT_PROMOTED_JOBS must be a whole number" >&2; exit 2 ;;
+    esac
     if [ "$pkg_count" -gt 0 ]; then
       printf '%s\n' "${pkgs[@]}" >>"$runnable_log"
     fi
@@ -590,8 +595,13 @@ PY
     fi
     promoted_status=0
     if [ "$promoted_pkg_count" -gt 0 ]; then
-      run_race_command append python3 "$shard_runner" "$promoted_shards" \
-        "$promoted_jobs" "$work_dir" "${promoted_pkgs[@]}"
+      if [ "$promoted_shards" -gt 1 ]; then
+        run_race_command append python3 "$shard_runner" "$promoted_shards" \
+          "$promoted_jobs" "$work_dir" "${promoted_pkgs[@]}"
+      else
+        run_race_phase append -race -short -count=1 -p 1 -parallel 2 \
+          -test.timeout=3600s -json "${promoted_pkgs[@]}"
+      fi
       promoted_status=$?
     fi
     focused_status=0

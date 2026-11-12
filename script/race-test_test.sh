@@ -589,6 +589,7 @@ EOF
     PARSER_EXIT_CODE="$parser_exit" \
     PARSER_MARKER="$parser_marker" \
     AGENT_EVIDENCE_DIR="$evidence" \
+    RACE_SHORT_PROMOTED_SHARDS=1 \
     GATE_DIFF_BASE="$base" GATE_DIFF_HEAD=HEAD \
     script/race-test.sh short >"$case_dir/output.txt" 2>"$case_dir/error.txt" ); then
     status=0

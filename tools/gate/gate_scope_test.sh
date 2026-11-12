@@ -310,6 +310,11 @@ if [ "\${1:-}" = test ]; then
   if [ "\${RACE_TEST_EXECUTE:-0}" != 1 ]; then
     exit 0
   fi
+  if [ "\${2:-}\${4:-}" = "-race-list" ] && [ -n "\${RACE_TEST_PHANTOM:-}" ]; then
+    "$REAL_GO" "\$@" || exit \$?
+    printf '%s\n' "\$RACE_TEST_PHANTOM"
+    exit 0
+  fi
 fi
 exec "$REAL_GO" "\$@"
 EOF
@@ -365,6 +370,7 @@ git -C "$RACE_REPO" -c user.name=t -c user.email=t@e.com commit -qm change-graph
 : >"$RACE_TEST_LOG"
 ( cd "$RACE_REPO" && PATH="$RACE_SHIM:$PATH" AGENT_EVIDENCE_DIR="$RACE_EVIDENCE" \
     GATE_DIFF_BASE="$RACE_GRAPH_BASE" GATE_DIFF_HEAD=HEAD RACE_TEST_EXECUTE=1 \
+    RACE_SHORT_PROMOTED_SHARDS=4 RACE_SHORT_PROMOTED_JOBS=2 \
     script/race-test.sh short ) \
   >"$TMP/race-graph.out" 2>&1 || fail "race-short graph fixture failed"
 PROMOTED_GRAPH_COMMAND='resolved promoted: go test -race -short -count=1 -p 1 -parallel 2 -test.timeout=3600s github.com/beamfall/core/internal/graph'
@@ -400,6 +406,7 @@ fi
 : >"$RACE_TEST_LOG"
 if ( cd "$RACE_REPO" && PATH="$RACE_SHIM:$PATH" AGENT_EVIDENCE_DIR="$RACE_EVIDENCE" \
     GATE_DIFF_BASE="$RACE_GRAPH_BASE" GATE_DIFF_HEAD=HEAD RACE_TEST_EXECUTE=1 \
+    RACE_SHORT_PROMOTED_SHARDS=4 RACE_SHORT_PROMOTED_JOBS=2 \
     GRAPH_FIXTURE_FAIL=1 script/race-test.sh short ) >"$TMP/race-graph-fail.out" 2>&1; then
   fail "race-short passed although a promoted shard failed"
 fi
@@ -408,6 +415,19 @@ grep -Fq -- '--- PASS: TestGraphFixtureRuns' "$TMP/race-graph-fail.out" \
 grep -Fq '"package": "github.com/beamfall/core/internal/graph", "status": "fail"' \
   "$RACE_EVIDENCE/race-short-packages.jsonl" \
   || fail "a passing shard overwrote the failed graph package evidence"
+
+# A listed test that no shard reports fails the phase by name, even though
+# every go test process exits zero.
+: >"$RACE_TEST_LOG"
+if ( cd "$RACE_REPO" && PATH="$RACE_SHIM:$PATH" AGENT_EVIDENCE_DIR="$RACE_EVIDENCE" \
+    GATE_DIFF_BASE="$RACE_GRAPH_BASE" GATE_DIFF_HEAD=HEAD RACE_TEST_EXECUTE=1 \
+    RACE_SHORT_PROMOTED_SHARDS=4 RACE_SHORT_PROMOTED_JOBS=2 \
+    RACE_TEST_PHANTOM=TestGraphFixtureNeverRuns script/race-test.sh short ) \
+    >"$TMP/race-graph-missing.out" 2>&1; then
+  fail "race-short passed although a listed promoted test reported no result"
+fi
+grep -Eq 'reported no result for: .*TestGraphFixtureNeverRuns' "$TMP/race-graph-missing.out" \
+  || fail "race-short did not name the promoted test that reported no result"
 
 # One shard keeps the single unsharded command.
 : >"$RACE_TEST_LOG"
