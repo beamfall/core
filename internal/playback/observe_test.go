@@ -79,10 +79,24 @@ func TestPlayObservationKeepsTheChosenQualityAfterTheEncoderFinishes(t *testing.
 
 	// The encoder starts, then finishes and is reaped.
 	session.started, session.currentRung, session.deliveredRung = true, rung.ID, rung.ID
+	session.lastAccess = service.now().Add(time.Second)
 	session.currentRung = ""
 	obs, ok := service.PlayObservation(scope.SessionID, "media-alpha")
 	if !ok || obs.Method != PlayMethodTranscode || obs.Reason != PlayReasonQualityChoice || obs.Bitrate != rung.Bandwidth {
 		t.Fatalf("observation after the encoder finished = %#v, want a quality-choice transcode at the chosen rendition", obs)
+	}
+
+	// A reloaded player decides afresh; the idle transcode no longer counts.
+	service.now = func() time.Time { return session.lastAccess.Add(time.Second) }
+	if _, err := service.Info(context.Background(), scope, InfoRequest{MediaID: "media-alpha", CapabilityProfile: direct}); err != nil {
+		t.Fatalf("Info returned error: %v", err)
+	}
+	if obs, _ := service.PlayObservation(scope.SessionID, "media-alpha"); obs.Method != PlayMethodDirect {
+		t.Fatalf("method after the player reloaded onto direct play = %q, want direct", obs.Method)
+	}
+	session.lastAccess = service.now().Add(time.Second)
+	if obs, _ := service.PlayObservation(scope.SessionID, "media-alpha"); obs.Method != PlayMethodTranscode {
+		t.Fatalf("method once the transcode is read again = %q, want transcode", obs.Method)
 	}
 
 	// Ending the session returns the reading to the recorded decision.

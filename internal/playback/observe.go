@@ -80,26 +80,29 @@ func (o *observations) record(key observationKey, obs PlayObservation, now time.
 	o.m[key] = observedPlay{PlayObservation: obs, at: now}
 }
 
-func (o *observations) lookup(key observationKey) (PlayObservation, bool) {
+func (o *observations) lookup(key observationKey) (observedPlay, bool) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	v, ok := o.m[key]
-	return v.PlayObservation, ok
+	return v, ok
 }
 
 // PlayObservation returns the last decision made for a session and item,
 // corrected by what the session is being served: a session that was offered
-// direct play but holds a transcode chose a lower quality itself.
+// direct play but holds a transcode chose a lower quality itself. Only a
+// transcode read after the decision counts: a player that reloads makes a new
+// decision and leaves its old transcode idle until cleanup.
 func (s *Service) PlayObservation(sessionID store.SessionID, mediaID store.MediaID) (PlayObservation, bool) {
-	obs, ok := s.observed.lookup(observationKey{session: sessionID, media: mediaID})
+	observed, ok := s.observed.lookup(observationKey{session: sessionID, media: mediaID})
 	if !ok {
 		return PlayObservation{}, false
 	}
+	obs := observed.PlayObservation
 	if s.sessions == nil {
 		return obs, true
 	}
-	bandwidth, transcoded := s.sessions.deliveredBandwidth(sessionID, mediaID)
-	if !transcoded {
+	bandwidth, read, transcoded := s.sessions.deliveredBandwidth(sessionID, mediaID)
+	if !transcoded || read.Before(observed.at) {
 		return obs, true
 	}
 	if obs.Method == PlayMethodDirect {
@@ -118,8 +121,8 @@ func (s *Service) PlayObservation(sessionID store.SessionID, mediaID store.Media
 // encoder that has finished the item leaves the viewer on the same rendition.
 // A route change (cast, AirPlay) keeps one transcode per capability profile
 // for the same session and item; the one read most recently is the route the
-// viewer is on.
-func (s *Sessions) deliveredBandwidth(sessionID store.SessionID, mediaID store.MediaID) (int, bool) {
+// viewer is on. read is when that transcode was last read.
+func (s *Sessions) deliveredBandwidth(sessionID store.SessionID, mediaID store.MediaID) (bandwidth int, read time.Time, transcoded bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var current *hlsSession
@@ -132,14 +135,14 @@ func (s *Sessions) deliveredBandwidth(sessionID store.SessionID, mediaID store.M
 		}
 	}
 	if current == nil {
-		return 0, false
+		return 0, time.Time{}, false
 	}
 	for _, rung := range current.rungs {
 		if rung.ID == current.deliveredRung {
-			return rung.Bandwidth, true
+			return rung.Bandwidth, current.lastAccess, true
 		}
 	}
-	return 0, true
+	return 0, current.lastAccess, true
 }
 
 // observe records the dashboard reading of one main-item decision.
