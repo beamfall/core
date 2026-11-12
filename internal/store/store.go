@@ -2967,7 +2967,7 @@ func (s *Store) UpdateMediaMetadata(ctx context.Context, id MediaID, metadata Me
 // SourceItems returns visible Media rows for a bounded manifest Source.
 func (s *Store) SourceItems(ctx context.Context, filter LibraryFilter, query SourceQuery) ([]SourceItem, error) {
 	switch query.Kind {
-	case "", "recently-added", "all-items", "on-this-day", "continue-watching", "next-up", "recently-played", "most-played", "top-tracks", "top-artists", "top-albums", "listening-summary", "queue", "entity-items", "entity-media", "random", "resume-progress", "availability", "watched-by-any-profile", "directory", "smart-collection":
+	case "", "recently-added", "all-items", "on-this-day", "continue-watching", "next-up", "recently-played", "most-played", "top-tracks", "top-artists", "top-albums", "listening-summary", "queue", "entity-items", "entity-media", "random", "resume-progress", "availability", "watched-by-any-profile", "directory", "smart-collection", "watchlist", "rated":
 	default:
 		return []SourceItem{}, nil
 	}
@@ -3056,6 +3056,16 @@ func (s *Store) sourceItemsForKind(ctx context.Context, filter LibraryFilter, qu
 			return []SourceItem{}, nil
 		}
 		return s.playedItemsSQL(ctx, query.ProfileID, filter, "play_count DESC, last_played_at_ms DESC, media_id", limit, offset)
+	case "watchlist":
+		if query.ProfileID == "" {
+			return []SourceItem{}, nil
+		}
+		return s.watchlistItemsSQL(ctx, query.ProfileID, filter, limit, offset)
+	case "rated":
+		if query.ProfileID == "" {
+			return []SourceItem{}, nil
+		}
+		return s.ratedItemsSQL(ctx, query.ProfileID, filter, limit, offset)
 	case "top-tracks", "top-artists", "top-albums", "listening-summary":
 		if query.ProfileID == "" {
 			return []SourceItem{}, nil

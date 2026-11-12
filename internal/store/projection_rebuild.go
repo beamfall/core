@@ -13,6 +13,7 @@ const (
 
 	playbackProjectionOperationProgress = "progress"
 	playbackProjectionOperationImport   = "import"
+	playbackProjectionOperationMark     = "mark"
 )
 
 type playbackProjectionEvent struct {
@@ -71,6 +72,8 @@ func applyPlaybackProjectionEvent(ctx context.Context, tx *sql.Tx, event playbac
 		return applyProgressProjectionEvent(ctx, tx, event)
 	case playbackProjectionOperationImport:
 		return applyImportedPlayProjectionEvent(ctx, tx, event)
+	case playbackProjectionOperationMark:
+		return applyMarkProjectionEvent(ctx, tx, event)
 	default:
 		return fmt.Errorf("unknown playback projection operation %q", event.Operation)
 	}

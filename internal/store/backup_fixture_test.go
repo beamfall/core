@@ -559,6 +559,9 @@ func fixtureSemanticValue(ctx context.Context, db *sql.DB, table, column string)
 		"detection_run_lifecycle.model_id":      "fixture-model",
 		"detection_run_lifecycle.model_version": "fixture-version",
 		"detection_run_lifecycle.model_hash":    "fixture-hash",
+		"watchlist_item.target_kind":            "media",
+		"item_rating.target_kind":               "media",
+		"item_rating.rating":                    5,
 	}[table+"."+column]; ok {
 		return value, true, nil
 	}

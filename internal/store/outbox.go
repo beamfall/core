@@ -588,11 +588,16 @@ const (
 	// names the Library or which way it moved, so it is not a reveal/existence
 	// oracle (invariant #5).
 	InvalidationReasonLibraryRestrictionChanged = "library-restriction-changed"
+	// InvalidationReasonEngagementChanged fires when a Profile changed its own
+	// watched, watchlist or rating state by an explicit action, so its other
+	// sessions refresh shelves that show that state. It never names the item.
+	InvalidationReasonEngagementChanged = "engagement-changed"
 )
 
 var invalidationReasons = map[string]bool{
 	InvalidationReasonAccessChanged:             true,
 	InvalidationReasonLibraryRestrictionChanged: true,
+	InvalidationReasonEngagementChanged:         true,
 }
 
 // InvalidationReasonValid reports whether reason is a member of the closed

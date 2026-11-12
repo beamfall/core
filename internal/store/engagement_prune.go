@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"strings"
 )
 
@@ -15,6 +17,9 @@ type EngagementPruneCounts struct {
 	// Media existence; Entity-only events carry no Media reference and are never
 	// orphaned by a Media purge — they clear only via the My-Data hard-delete.
 	EventRows int
+	// ItemActionRows is watchlist_item and item_rating rows erased because
+	// their Media or Entity target no longer exists.
+	ItemActionRows int
 }
 
 // PruneOrphanedEngagementRows reconciles events rows against raw catalog Media
@@ -38,7 +43,11 @@ func (s *Store) pruneOrphanedEngagementRowsLocked(ctx context.Context) (Engageme
 	if err != nil {
 		return EngagementPruneCounts{}, err
 	}
-	if len(ids) == 0 {
+	orphanEntities, err := s.orphanedItemActionEntities(ctx)
+	if err != nil {
+		return EngagementPruneCounts{}, err
+	}
+	if len(ids) == 0 && len(orphanEntities) == 0 {
 		return EngagementPruneCounts{}, nil
 	}
 	existing, err := s.existingMediaIDs(ctx, ids)
@@ -99,11 +108,76 @@ func (s *Store) pruneOrphanedEngagementRowsLocked(ctx context.Context) (Engageme
 			return EngagementPruneCounts{}, err
 		}
 		counts.EventRows += int(affected)
+		for _, table := range []string{"watchlist_item", "item_rating"} {
+			// #nosec G202 -- table is drawn from the closed literal list above.
+			result, err = tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE target_kind = 'media' AND target_id IN (`+placeholders+`)`, args...)
+			if err != nil {
+				return EngagementPruneCounts{}, err
+			}
+			affected, err = result.RowsAffected()
+			if err != nil {
+				return EngagementPruneCounts{}, err
+			}
+			counts.ItemActionRows += int(affected)
+		}
+	}
+	for _, id := range orphanEntities {
+		for _, table := range []string{"watchlist_item", "item_rating"} {
+			// #nosec G202 -- table is drawn from the closed literal list above.
+			result, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE target_kind = 'entity' AND target_id = ?`, id)
+			if err != nil {
+				return EngagementPruneCounts{}, err
+			}
+			affected, err := result.RowsAffected()
+			if err != nil {
+				return EngagementPruneCounts{}, err
+			}
+			counts.ItemActionRows += int(affected)
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return EngagementPruneCounts{}, err
 	}
 	return counts, nil
+}
+
+// orphanedItemActionEntities returns the Entity targets of watchlist and rating
+// rows that no longer exist in the catalog. Like the Media sweep it tests raw
+// existence, so a hidden or trashed Entity keeps its rows.
+func (s *Store) orphanedItemActionEntities(ctx context.Context) ([]string, error) {
+	rows, err := s.eventsR.QueryContext(ctx, `
+		SELECT target_id FROM watchlist_item WHERE target_kind = 'entity'
+		UNION
+		SELECT target_id FROM item_rating WHERE target_kind = 'entity'
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	var orphans []string
+	for _, id := range ids {
+		var one int
+		err := s.catalogR.QueryRowContext(ctx, `SELECT 1 FROM entity WHERE id = ?`, id).Scan(&one)
+		if errors.Is(err, sql.ErrNoRows) {
+			orphans = append(orphans, id)
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	return orphans, nil
 }
 
 func (s *Store) engagementMediaIDs(ctx context.Context) ([]MediaID, error) {
@@ -115,6 +189,10 @@ func (s *Store) engagementMediaIDs(ctx context.Context) ([]MediaID, error) {
 		SELECT media_id FROM playback_progress
 		UNION
 		SELECT media_id FROM engagement_event WHERE media_id IS NOT NULL
+		UNION
+		SELECT target_id FROM watchlist_item WHERE target_kind = 'media'
+		UNION
+		SELECT target_id FROM item_rating WHERE target_kind = 'media'
 	`)
 	if err != nil {
 		return nil, err
