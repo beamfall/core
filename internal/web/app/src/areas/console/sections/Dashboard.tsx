@@ -50,6 +50,45 @@ function usePolling(refresh: () => Promise<void>, everyMs: number) {
   }, [refresh, everyMs]);
 }
 
+const EVENT_SETTLE_MS = 500;
+
+/** Refreshes on server events, at most one read at a time. A new subscription
+ * replays retained events and an import emits them in bursts, so events are
+ * gathered for a moment and a read in flight finishes before the next one. */
+export function useEventRefresh(refresh: () => Promise<void>) {
+  useEffect(() => {
+    let timer: number | undefined;
+    let reading = false;
+    let again = false;
+    let closed = false;
+    const read = async () => {
+      timer = undefined;
+      if (reading) {
+        again = true;
+        return;
+      }
+      reading = true;
+      try {
+        await refresh();
+      } finally {
+        reading = false;
+        if (again && !closed) {
+          again = false;
+          timer = window.setTimeout(read, EVENT_SETTLE_MS);
+        }
+      }
+    };
+    const unsubscribe = subscribeEvents(() => {
+      if (timer === undefined) timer = window.setTimeout(read, EVENT_SETTLE_MS);
+    });
+    return () => {
+      closed = true;
+      window.clearTimeout(timer);
+      unsubscribe();
+    };
+  }, [refresh]);
+}
+
 export function clock(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));
   const h = Math.floor(s / 3600);
@@ -132,7 +171,7 @@ export function LiveSessions() {
   const { data, loading, failed, refresh } = useAsync(fetchLiveSessions);
   const sessions = data ?? [];
 
-  useEffect(() => subscribeEvents(() => void refresh()), [refresh]);
+  useEventRefresh(refresh);
   usePolling(refresh, SESSIONS_POLL_MS);
 
   async function terminate(sessionID: string) {
@@ -215,7 +254,7 @@ export function LiveSessions() {
 /** The Overview tile's live figure: how many sessions are playing right now. */
 export function LiveSessionCount() {
   const { data, refresh } = useAsync(fetchLiveSessions);
-  useEffect(() => subscribeEvents(() => void refresh()), [refresh]);
+  useEventRefresh(refresh);
   usePolling(refresh, SESSIONS_POLL_MS);
   const count = data?.length;
   return (

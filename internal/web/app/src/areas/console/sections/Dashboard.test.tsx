@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, renderHook, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -11,7 +11,7 @@ import {
   fetchProfilesAdmin,
 } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
-import { formatBitrate, HostGraphs, LiveSessions } from "./Dashboard";
+import { formatBitrate, HostGraphs, LiveSessions, useEventRefresh } from "./Dashboard";
 import { dayStart, PlayHistory, watched } from "./PlayHistory";
 
 // feature:live-sessions feature:host-metrics feature:play-history
@@ -25,7 +25,15 @@ vi.mock("@/lib/graphql", () => ({
   fetchProfilesAdmin: vi.fn(),
   terminateSession: vi.fn(),
 }));
-vi.mock("@/lib/api", () => ({ subscribeEvents: () => () => {} }));
+const events = vi.hoisted(() => ({ emit: (_event: unknown) => {} }));
+vi.mock("@/lib/api", () => ({
+  subscribeEvents: (onEvent: (event: unknown) => void) => {
+    events.emit = onEvent;
+    return () => {
+      events.emit = () => {};
+    };
+  },
+}));
 
 function session(over: Record<string, unknown>) {
   return {
@@ -85,6 +93,43 @@ describe("LiveSessions", () => {
     expect(within(transcode).getByText("Transcoding")).toBeInTheDocument();
     expect(within(transcode).getByText(/video format/i)).toBeInTheDocument();
     expect(within(transcode).getByText("640 kbps")).toBeInTheDocument();
+  });
+});
+
+describe("useEventRefresh", () => {
+  it("gathers a burst of events into one read and never overlaps reads", async () => {
+    vi.useFakeTimers();
+    try {
+      let finish = () => {};
+      const refresh = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      const { unmount } = renderHook(() => useEventRefresh(refresh));
+
+      for (let i = 0; i < 50; i++) events.emit({});
+      await act(() => vi.advanceTimersByTimeAsync(500));
+      expect(refresh).toHaveBeenCalledTimes(1);
+
+      // Events while that read is in flight wait for it, then read once more.
+      for (let i = 0; i < 50; i++) {
+        events.emit({});
+        await act(() => vi.advanceTimersByTimeAsync(500));
+      }
+      expect(refresh).toHaveBeenCalledTimes(1);
+      await act(async () => finish());
+      await act(() => vi.advanceTimersByTimeAsync(500));
+      expect(refresh).toHaveBeenCalledTimes(2);
+
+      unmount();
+      events.emit({});
+      await act(() => vi.advanceTimersByTimeAsync(500));
+      expect(refresh).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
