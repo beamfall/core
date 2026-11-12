@@ -19,6 +19,8 @@ export interface RescanState {
   phase: RescanPhase;
   jobs: JobInfo[];
   error: string;
+  /** Why a folder failed to queue; it outlives polling so the rescan can't end as a clean success. */
+  queueError?: string;
 }
 
 const IDLE: RescanState = { phase: "idle", jobs: [], error: "" };
@@ -50,6 +52,17 @@ export function phaseFor(jobs: JobInfo[]): { phase: RescanPhase; error: string }
   return { phase: "done", error: "" };
 }
 
+/** Like phaseFor, but a folder that never queued turns a finished rescan into a failure. */
+function foldRescan(jobs: JobInfo[], queueError: string): RescanState {
+  const folded = phaseFor(jobs);
+  const state: RescanState = { jobs, ...folded, queueError: queueError || undefined };
+  if (queueError && folded.phase !== "failed") {
+    state.error = queueError;
+    if (folded.phase === "done") state.phase = "failed";
+  }
+  return state;
+}
+
 async function poll() {
   const watching = [...states.entries()].filter(([, s]) => s.phase === "scanning");
   if (watching.length === 0) {
@@ -70,7 +83,7 @@ async function poll() {
       (job) =>
         byID.get(job.id) ?? { ...job, status: ACTIVE.has(job.status) ? "completed" : job.status },
     );
-    setState(libraryID, { jobs: next, ...phaseFor(next) });
+    setState(libraryID, foldRescan(next, state.queueError ?? ""));
   }
 }
 
@@ -101,8 +114,7 @@ export async function startRescan(libraryID: string, roots: string[]): Promise<v
     setState(libraryID, { phase: "failed", jobs, error });
     return;
   }
-  const folded = phaseFor(jobs);
-  setState(libraryID, { jobs, phase: folded.phase, error: error || folded.error });
+  setState(libraryID, foldRescan(jobs, error));
   ensurePolling();
 }
 

@@ -138,6 +138,39 @@ describe("Console Libraries scan", () => {
     });
   });
 
+  it("reports a rescan with a folder that failed to queue as failed, not finished", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchLibraries).mockResolvedValue([
+      {
+        id: "library-1",
+        title: "Library",
+        pluginID: null,
+        roots: ["/Volumes/library", "/Volumes/gone"],
+        previewClips: true,
+        restricted: false,
+      },
+    ]);
+    vi.mocked(scanLibrary)
+      .mockResolvedValueOnce({ id: "job-a", status: "queued" })
+      .mockRejectedValueOnce(new Error("folder is missing"));
+    vi.mocked(fetchJobs).mockResolvedValue([
+      {
+        id: "job-a",
+        kind: "scan",
+        status: "completed",
+        progress: { current: 4, total: 4, unit: "files" },
+      },
+    ]);
+    renderLibraries();
+
+    await user.click(await screen.findByRole("button", { name: "Rescan library" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Scanning");
+    await waitFor(() => expect(fetchJobs).toHaveBeenCalled(), { timeout: 4000 });
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("folder is missing"));
+    expect(screen.getByRole("status")).not.toHaveTextContent("Scan finished");
+  });
+
   it("offers only the Library roots and descendants", async () => {
     const user = userEvent.setup();
     renderLibraries();
@@ -195,6 +228,38 @@ describe("Console Libraries scan", () => {
         "/Volumes/more",
       ]),
     );
+  });
+
+  it("serializes folder saves so a quick second edit keeps the first", async () => {
+    const user = userEvent.setup();
+    let finishSave: () => void = () => {};
+    vi.mocked(setLibraryRoots).mockImplementationOnce(
+      () => new Promise<void>((resolve) => (finishSave = resolve)) as never,
+    );
+    renderLibraries();
+
+    const field = await screen.findByLabelText("Add a folder");
+    await user.type(field, "/Volumes/a");
+    await user.click(screen.getByRole("button", { name: "Add folder" }));
+    // The first save is still in flight, so the folder controls wait for it.
+    await user.type(field, "x");
+    expect(screen.getByRole("button", { name: "Add folder" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Remove /Volumes/library" })).toBeDisabled();
+
+    finishSave();
+    await waitFor(() => expect(screen.getByLabelText("Add a folder")).toHaveValue(""));
+    // The library refresh still reports the old roots; the next save builds on the saved list.
+    await user.type(field, "/Volumes/b");
+    await user.click(screen.getByRole("button", { name: "Add folder" }));
+
+    await waitFor(() =>
+      expect(setLibraryRoots).toHaveBeenLastCalledWith("library-1", [
+        "/Volumes/library",
+        "/Volumes/a",
+        "/Volumes/b",
+      ]),
+    );
+    expect(setLibraryRoots).toHaveBeenCalledTimes(2);
   });
 
   it("removes a folder only after the confirm", async () => {

@@ -9,7 +9,7 @@ import {
   SearchCheck,
   X,
 } from "lucide-react";
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { RescanAllButton, RescanButton, RescanStatus } from "@/components/beamfall/LibraryRescan";
 import {
@@ -111,7 +111,16 @@ function LibraryCard({
 }) {
   const t = useT();
   const displayLocale = useDisplayLocale();
-  const roots = library.roots ?? [];
+  // A save replaces the whole folder list, so edits run one at a time and each
+  // builds on the last saved list, not a library prop the refresh hasn't
+  // updated yet; otherwise a quick second edit would drop the first.
+  const [savedRoots, setSavedRoots] = useState<string[] | null>(null);
+  const [savingRoots, setSavingRoots] = useState(false);
+  const savingRootsRef = useRef(false);
+  const roots = savedRoots ?? library.roots ?? [];
+  useEffect(() => {
+    setSavedRoots(null);
+  }, [library.roots]);
   const [newRoot, setNewRoot] = useState("");
   const [rootsError, setRootsError] = useState("");
   const [scanRoot, setScanRoot] = useState("");
@@ -149,13 +158,22 @@ function LibraryCard({
     void loadScanFolders();
   }, [loadScanFolders]);
 
-  async function saveRoots(next: string[]) {
+  async function saveRoots(next: string[]): Promise<boolean> {
+    if (savingRootsRef.current) return false;
+    savingRootsRef.current = true;
+    setSavingRoots(true);
     setRootsError("");
     try {
       await setLibraryRoots(library.id, next);
+      setSavedRoots(next);
       onChanged();
+      return true;
     } catch (err) {
       setRootsError(err instanceof Error ? err.message : t("consoleConfigUnavailable"));
+      return false;
+    } finally {
+      savingRootsRef.current = false;
+      setSavingRoots(false);
     }
   }
 
@@ -163,8 +181,7 @@ function LibraryCard({
     e.preventDefault();
     const root = newRoot.trim();
     if (!root || roots.includes(root)) return;
-    await saveRoots([...roots, root]);
-    setNewRoot("");
+    if (await saveRoots([...roots, root])) setNewRoot("");
   }
 
   async function togglePreview(enabled: boolean) {
@@ -266,7 +283,10 @@ function LibraryCard({
                       size="sm"
                       confirm="confirmRemoveFolder"
                       actionLabel={t("remove")}
-                      onConfirm={() => saveRoots(roots.filter((item) => item !== root))}
+                      disabled={savingRoots}
+                      onConfirm={async () => {
+                        await saveRoots(roots.filter((item) => item !== root));
+                      }}
                       label={
                         <>
                           <X aria-hidden className="size-4" />
@@ -292,7 +312,12 @@ function LibraryCard({
                 className="min-w-0 flex-1"
                 inputClassName="min-w-0 flex-1"
               />
-              <Button type="submit" size="sm" variant="outline" disabled={!newRoot.trim()}>
+              <Button
+                type="submit"
+                size="sm"
+                variant="outline"
+                disabled={savingRoots || !newRoot.trim()}
+              >
                 <FolderPlus className="console-nav-icon" aria-hidden />
                 {t("addFolder")}
               </Button>
