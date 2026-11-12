@@ -158,6 +158,8 @@ func TestAnnotateEngagementSkipsHiddenAndTrashedSubContainers(t *testing.T) {
 	}{
 		{"entity-annotate-parent", "entity-annotate-sub", "", 1},
 		{"entity-annotate-parent", "entity-annotate-guarded", "", 2},
+		// Also a direct child: reached twice, counted once.
+		{"entity-annotate-parent", "", "media-demo-sintel", 3},
 		{"entity-annotate-sub", "", "media-demo-sintel", 1},
 		{"entity-annotate-sub", "", "media-demo-bunny", 2},
 		{"entity-annotate-guarded", "", "media-demo-series-1", 1},
@@ -188,11 +190,11 @@ func TestAnnotateEngagementSkipsHiddenAndTrashedSubContainers(t *testing.T) {
 	if err := st.TrashEntity(ctx, "entity-annotate-sub", everything, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if got := counts(everything); got == nil || got.TotalCount != 1 {
-		t.Fatalf("engagement after trashing a part = %+v, want only the other part's 1 child", got)
+	if got := counts(everything); got == nil || got.TotalCount != 2 {
+		t.Fatalf("engagement after trashing a part = %+v, want the direct child and the other part's child", got)
 	}
-	if got := counts(openOnly); got != nil {
-		t.Fatalf("open-only engagement after trashing its part = %+v, want nil", got)
+	if got := counts(openOnly); got == nil || got.TotalCount != 1 {
+		t.Fatalf("open-only engagement after trashing its part = %+v, want only the direct child", got)
 	}
 }
 

@@ -99,6 +99,7 @@ func (s *Store) AnnotateEngagement(ctx context.Context, profileID ProfileID, fil
 // keeps its relations in its own database, so every open plane is read.
 func (s *Store) orderedChildrenLocked(ctx context.Context, containerIDs []string, filter LibraryFilter) (map[string][]MediaID, error) {
 	raw := map[string][]MediaID{}
+	seen := map[[2]string]struct{}{}
 	var all []MediaID
 	planes := s.openCatalogReadersLocked()
 	// Whether a sub-container's Library is in scope, loaded on first need.
@@ -160,6 +161,12 @@ func (s *Store) orderedChildrenLocked(ctx context.Context, containerIDs []string
 						continue
 					}
 				}
+				// One Media can be reached directly and through a sub-container.
+				key := [2]string{row.containerID, string(row.mediaID)}
+				if _, dup := seen[key]; dup {
+					continue
+				}
+				seen[key] = struct{}{}
 				raw[row.containerID] = append(raw[row.containerID], row.mediaID)
 				all = append(all, row.mediaID)
 			}
