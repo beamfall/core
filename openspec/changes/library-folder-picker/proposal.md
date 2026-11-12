@@ -31,7 +31,7 @@ buggy and hard to use:
 - The browser panel opens below the whole input row, so neighbouring buttons stay in place.
 - In Console > Libraries, "Add this folder" in the browser adds the shown folder to the library in
   one step. Typing a path and pressing "Add folder" still works.
-- Keyboard: arrow keys move through the folder list, Enter opens, Backspace or Left goes up, Escape
+- Keyboard: arrow keys move through the folder list, Enter opens, Backspace goes up, Escape
   closes. The list is labelled and location changes are announced to screen readers.
 
 No server change. The `pathPicker` query, the `addPathPickerRoot` mutation and their audit records

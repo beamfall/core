@@ -177,11 +177,15 @@ function LibraryCard({
     }
   }
 
-  async function addRoot(e: FormEvent) {
-    e.preventDefault();
-    const root = newRoot.trim();
+  async function addRootPath(path: string) {
+    const root = path.trim();
     if (!root || roots.includes(root)) return;
     if (await saveRoots([...roots, root])) setNewRoot("");
+  }
+
+  async function addRoot(e: FormEvent) {
+    e.preventDefault();
+    await addRootPath(newRoot);
   }
 
   async function togglePreview(enabled: boolean) {
@@ -300,7 +304,7 @@ function LibraryCard({
                 ))}
               </ul>
             )}
-            <form onSubmit={addRoot} className="flex flex-wrap items-end gap-2">
+            <form onSubmit={addRoot}>
               <PathPickerField
                 id={`roots-${library.id}`}
                 label={<span className="sr-only">{t("addFolderPath")}</span>}
@@ -309,18 +313,21 @@ function LibraryCard({
                 libraryID={library.id}
                 placeholder={t("addFolderPath")}
                 onChange={setNewRoot}
-                className="min-w-0 flex-1"
-                inputClassName="min-w-0 flex-1"
+                inputClassName="min-w-0 flex-1 basis-48"
+                selectLabel={t("pathPickerAddThis")}
+                onSelect={addRootPath}
+                actions={
+                  <Button
+                    type="submit"
+                    size="sm"
+                    variant="outline"
+                    disabled={savingRoots || !newRoot.trim()}
+                  >
+                    <FolderPlus className="console-nav-icon" aria-hidden />
+                    {t("addFolder")}
+                  </Button>
+                }
               />
-              <Button
-                type="submit"
-                size="sm"
-                variant="outline"
-                disabled={savingRoots || !newRoot.trim()}
-              >
-                <FolderPlus className="console-nav-icon" aria-hidden />
-                {t("addFolder")}
-              </Button>
             </form>
             <ErrorLine message={rootsError} />
           </section>

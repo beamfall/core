@@ -11,6 +11,7 @@ import { managedFileStrings } from "./managed-files";
 import { metadataManagementStrings } from "./metadata-management";
 import { migrationStrings } from "./migration";
 import { onboardingStrings } from "./onboarding";
+import { pathPickerStrings } from "./path-picker";
 import { playbackStrings } from "./playback";
 import { pluginStrings } from "./plugins";
 import { powerToolStrings } from "./power-tools";
@@ -25,6 +26,7 @@ import { viewerAccountStrings } from "./viewer-account";
 export const en = {
   ...appShellStrings.en,
   ...libraryOperationsStrings.en,
+  ...pathPickerStrings.en,
   ...consoleAccessStrings.en,
   ...libraryHealthStrings.en,
   ...consoleOperationsStrings.en,
@@ -51,6 +53,7 @@ export const en = {
 export const fr = {
   ...appShellStrings.fr,
   ...libraryOperationsStrings.fr,
+  ...pathPickerStrings.fr,
   ...consoleAccessStrings.fr,
   ...libraryHealthStrings.fr,
   ...consoleOperationsStrings.fr,
@@ -77,6 +80,7 @@ export const fr = {
 export const de = {
   ...appShellStrings.de,
   ...libraryOperationsStrings.de,
+  ...pathPickerStrings.de,
   ...consoleAccessStrings.de,
   ...libraryHealthStrings.de,
   ...consoleOperationsStrings.de,
@@ -103,6 +107,7 @@ export const de = {
 export const es = {
   ...appShellStrings.es,
   ...libraryOperationsStrings.es,
+  ...pathPickerStrings.es,
   ...consoleAccessStrings.es,
   ...libraryHealthStrings.es,
   ...consoleOperationsStrings.es,
@@ -129,6 +134,7 @@ export const es = {
 export const pt = {
   ...appShellStrings.pt,
   ...libraryOperationsStrings.pt,
+  ...pathPickerStrings.pt,
   ...consoleAccessStrings.pt,
   ...libraryHealthStrings.pt,
   ...consoleOperationsStrings.pt,

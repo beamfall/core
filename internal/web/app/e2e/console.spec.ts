@@ -123,6 +123,27 @@ test.describe("console", () => {
     await expect(page.getByRole("navigation", { name: "Console" })).toBeVisible();
   }
 
+  test("the library folder browser opens, shows where it is and closes on Escape", async ({
+    page,
+  }) => {
+    const errors = collectFatalErrors(page);
+    await gotoConsole(page, "libraries");
+    const browse = page.getByRole("button", { name: "Browse" }).first();
+    await browse.click();
+
+    const browser = page.getByRole("group", { name: "Folder browser" });
+    await expect(browser).toBeVisible();
+    await expect(browser.getByRole("navigation", { name: "Current location" })).toContainText(
+      "Locations",
+    );
+    await expect(browser.getByRole("button", { name: "Add this folder" })).toBeDisabled();
+    await page.keyboard.press("Escape");
+
+    await expect(browser).toHaveCount(0);
+    await expect(browse).toBeFocused();
+    expect(errors, errors.join("\n")).toEqual([]);
+  });
+
   test("admin gate is unlocked and the section nav renders", async ({ page }) => {
     const errors = collectFatalErrors(page);
     await gotoConsole(page, "");

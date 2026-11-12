@@ -1,12 +1,13 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { addPathPickerRoot, fetchPathPicker } from "@/lib/graphql";
-import type { PathPickerRole } from "@/lib/graphql/types";
+import type { PathPickerEntryInfo, PathPickerInfo, PathPickerRole } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { PathPickerField } from "./index";
+import { pathPickerCrumbs, pathPickerParent, pathPickerRootFor } from "./PathPickerField";
 
 vi.mock("@/lib/graphql", () => ({
   addPathPickerRoot: vi.fn(),
@@ -20,33 +21,71 @@ const roles: PathPickerRole[] = [
   "backupDestination",
 ];
 
-function picker(role: PathPickerRole) {
+const roots = [
+  { name: "media", path: "/media", entryClass: "mount-point" as const },
+  { name: "mnt", path: "/mnt", entryClass: "mount-point" as const },
+];
+
+function entry(path: string, extra: Partial<PathPickerEntryInfo> = {}): PathPickerEntryInfo {
   return {
+    name: path.slice(path.lastIndexOf("/") + 1),
+    path,
+    kind: "folder",
+    accessError: "none",
+    entryClass: "ordinary",
+    selectable: true,
+    mediaCount: 0,
+    previewTimeoutMs: 1000,
+    maxPreviewEntries: 50,
+    truncated: false,
+    ...extra,
+  };
+}
+
+// A small fake server tree shaped like the real pathPicker answer: the browsed
+// folder is entries[0] and its contents are entries[0].children.
+const tree: Record<string, PathPickerEntryInfo[]> = {
+  "/mnt": [entry("/mnt/user")],
+  "/mnt/user": [
+    entry("/mnt/user/movies", { mediaCount: 12 }),
+    entry("/mnt/user/tv", { mediaCount: 1 }),
+    entry("/mnt/user/private", { accessError: "permission-denied", selectable: false }),
+    entry("/mnt/user/notes.txt", { kind: "file" }),
+  ],
+  "/mnt/user/movies": [],
+  "/mnt/user/tv": [],
+};
+
+function answer(role: PathPickerRole, path?: string): PathPickerInfo {
+  const base = {
     runtime: "bare" as const,
     roles,
     role,
     purposeKey: `pathPicker.${role}`,
     previewTimeoutMs: 1000,
     maxPreviewEntries: 50,
-    roots: [{ name: "Media", path: "/srv/media", entryClass: "ordinary" as const }],
-    entries: [
-      {
-        name: "Picked",
-        path: `/srv/${role}`,
-        kind: "folder" as const,
-        accessError: "none" as const,
-        entryClass: "ordinary" as const,
-        selectable: true,
-        mediaCount: 0,
-        previewTimeoutMs: 1000,
-        maxPreviewEntries: 50,
-        truncated: false,
-      },
-    ],
+    roots,
   };
+  if (!path) return { ...base, entries: roots.map((root) => entry(root.path)) };
+  if (path === "/elsewhere") {
+    return {
+      ...base,
+      entries: [entry(path, { selectable: false, reasonCode: "outside-roots" })],
+    };
+  }
+  if (!(path in tree)) {
+    return {
+      ...base,
+      entries: [entry(path, { selectable: false, reasonCode: "server-cannot-see-path" })],
+    };
+  }
+  return { ...base, entries: [entry(path, { children: tree[path] })] };
 }
 
-function renderField(role: PathPickerRole, suppressAppStoreDownload = false) {
+function renderField(
+  role: PathPickerRole = "libraryRoot",
+  props: Partial<Parameters<typeof PathPickerField>[0]> = {},
+) {
   function Controlled() {
     const [value, setValue] = useState("");
     return (
@@ -57,7 +96,7 @@ function renderField(role: PathPickerRole, suppressAppStoreDownload = false) {
           role={role}
           value={value}
           onChange={setValue}
-          suppressAppStoreDownload={suppressAppStoreDownload}
+          {...props}
         />
       </I18nProvider>
     );
@@ -65,44 +104,157 @@ function renderField(role: PathPickerRole, suppressAppStoreDownload = false) {
   return render(<Controlled />);
 }
 
+const browser = () => screen.getByRole("group", { name: "Folder browser" });
+const row = (name: RegExp | string) => within(browser()).findByRole("button", { name });
+
+describe("path helpers", () => {
+  it("finds the location, parent and breadcrumb of a path", () => {
+    expect(pathPickerRootFor("/mnt/user/tv", roots)?.path).toBe("/mnt");
+    expect(pathPickerRootFor("/mntx", roots)).toBeUndefined();
+    expect(pathPickerParent("/mnt/user/tv", roots)).toBe("/mnt/user");
+    expect(pathPickerParent("/mnt/user", roots)).toBe("/mnt");
+    expect(pathPickerParent("/mnt", roots)).toBe("");
+    expect(pathPickerCrumbs("/mnt/user/tv", roots)).toEqual([
+      { label: "/mnt", path: "/mnt" },
+      { label: "user", path: "/mnt/user" },
+      { label: "tv", path: "/mnt/user/tv" },
+    ]);
+  });
+});
+
 describe("PathPickerField", () => {
   beforeEach(() => {
     vi.mocked(fetchPathPicker)
       .mockReset()
-      .mockImplementation(({ role }) => Promise.resolve(picker(role)));
+      .mockImplementation(({ role, path }) => Promise.resolve(answer(role, path ?? undefined)));
     vi.mocked(addPathPickerRoot)
       .mockReset()
-      .mockImplementation((path) =>
-        Promise.resolve({ name: "Typed", path, entryClass: "ordinary" }),
-      );
+      .mockImplementation((path) => Promise.resolve({ name: "x", path, entryClass: "ordinary" }));
     delete window.beamfallHost;
   });
 
-  it.each(roles)("keeps typed %s paths and audits Add as Root", async (role) => {
+  it("lists locations first, then a folder's subfolders, never the folder itself", async () => {
     const user = userEvent.setup();
-    renderField(role);
+    renderField();
 
-    await user.type(screen.getByLabelText(`${role} path`), `/typed/${role}`);
     await user.click(screen.getByRole("button", { name: "Browse" }));
-    await user.click(screen.getByRole("button", { name: "Add as Root" }));
+    await user.click(await row("/mnt"));
+    await user.click(await row("user"));
 
-    expect(addPathPickerRoot).toHaveBeenCalledWith(`/typed/${role}`);
-    expect(screen.getByLabelText(`${role} path`)).toHaveValue(`/typed/${role}`);
+    const list = await within(browser()).findByRole("list", { name: "Folders in /mnt/user" });
+    const names = within(list)
+      .getAllByRole("button")
+      .map((b) => b.textContent);
+    expect(names).toEqual(["movies12 media files", "tv1 media file", "privateNo access"]);
+    expect(within(list).getByRole("button", { name: /private/ })).toBeDisabled();
+    expect(within(browser()).getByRole("status")).toHaveTextContent("3 folders in /mnt/user");
   });
 
-  it.each(roles)("fills %s from a browsed server path", async (role) => {
+  it("shows where you are and goes up with the breadcrumb and the Up button", async () => {
+    const user = userEvent.setup();
+    renderField();
+    await user.type(screen.getByLabelText("libraryRoot path"), "/mnt/user/tv");
+    await user.click(screen.getByRole("button", { name: "Browse" }));
+
+    const crumbs = await within(browser()).findByRole("navigation", { name: "Current location" });
+    await waitFor(() => expect(within(crumbs).getByText("tv")).toHaveAttribute("aria-current"));
+    expect(await within(browser()).findByText("No folders inside this one.")).toBeInTheDocument();
+
+    await user.click(within(browser()).getByRole("button", { name: "Up one level" }));
+    await row(/movies/);
+    await user.click(within(crumbs).getByRole("button", { name: "Locations" }));
+    await row("/media");
+    expect(within(browser()).getByRole("button", { name: "Up one level" })).toBeDisabled();
+    expect(within(browser()).getByRole("button", { name: "Use this folder" })).toBeDisabled();
+  });
+
+  it.each(roles)("fills %s with the folder being shown and closes", async (role) => {
     const user = userEvent.setup();
     renderField(role);
 
     await user.click(screen.getByRole("button", { name: "Browse" }));
-    await user.click(await screen.findByRole("button", { name: /Picked/ }));
+    await user.click(await row("/mnt"));
+    await user.click(await row("user"));
+    await user.click(await row(/movies/));
+    await within(browser()).findByText("No folders inside this one.");
+    await user.click(within(browser()).getByRole("button", { name: "Use this folder" }));
 
-    await waitFor(() => {
-      expect(screen.getByLabelText(`${role} path`)).toHaveValue(`/srv/${role}`);
-    });
-    expect(fetchPathPicker).toHaveBeenCalledWith(
-      expect.objectContaining({ role, path: `/srv/${role}` }),
+    expect(screen.getByLabelText(`${role} path`)).toHaveValue("/mnt/user/movies");
+    expect(screen.queryByRole("group", { name: "Folder browser" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Browse" })).toHaveFocus();
+    expect(fetchPathPicker).toHaveBeenLastCalledWith(
+      expect.objectContaining({ role, path: "/mnt/user/movies" }),
     );
+  });
+
+  it("hands the folder to onSelect under a custom action label", async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    renderField("libraryRoot", { selectLabel: "Add this folder", onSelect });
+
+    await user.click(screen.getByRole("button", { name: "Browse" }));
+    await user.click(await row("/mnt"));
+    await row("user");
+    await user.click(within(browser()).getByRole("button", { name: "Add this folder" }));
+
+    expect(onSelect).toHaveBeenCalledWith("/mnt");
+    expect(screen.getByLabelText("libraryRoot path")).toHaveValue("");
+  });
+
+  it("moves with the keyboard and closes on Escape", async () => {
+    const user = userEvent.setup();
+    renderField();
+    await user.type(screen.getByLabelText("libraryRoot path"), "/mnt/user");
+    await user.click(screen.getByRole("button", { name: "Browse" }));
+
+    await waitFor(async () => expect(await row(/movies/)).toHaveFocus());
+    await user.keyboard("{ArrowDown}");
+    await waitFor(async () => expect(await row(/^tv/)).toHaveFocus());
+    await user.keyboard("{Backspace}");
+    await waitFor(async () => expect(await row("user")).toHaveFocus());
+    await user.keyboard("{Enter}");
+    await waitFor(async () => expect(await row(/movies/)).toHaveFocus());
+    await user.keyboard("{Escape}");
+
+    expect(screen.queryByRole("group", { name: "Folder browser" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Browse" })).toHaveFocus();
+  });
+
+  it("offers to allow browsing a typed folder outside the locations", async () => {
+    const user = userEvent.setup();
+    renderField();
+    await user.type(screen.getByLabelText("libraryRoot path"), "/elsewhere");
+    await user.click(screen.getByRole("button", { name: "Browse" }));
+
+    expect(await within(browser()).findByText(/doesn't browse this folder yet/)).toBeVisible();
+    expect(within(browser()).getByRole("button", { name: "Use this folder" })).toBeDisabled();
+    await user.click(within(browser()).getByRole("button", { name: "Allow browsing here" }));
+
+    expect(addPathPickerRoot).toHaveBeenCalledWith("/elsewhere");
+    expect(screen.getByLabelText("libraryRoot path")).toHaveValue("/elsewhere");
+  });
+
+  it("explains a folder the server cannot find", async () => {
+    const user = userEvent.setup();
+    renderField();
+    await user.type(screen.getByLabelText("libraryRoot path"), "/mnt/typo");
+    await user.click(screen.getByRole("button", { name: "Browse" }));
+
+    expect(await within(browser()).findByText(/can't find this folder/)).toBeVisible();
+    expect(within(browser()).getByRole("button", { name: "Use this folder" })).toBeDisabled();
+  });
+
+  it("reports a failed load and retries it", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchPathPicker).mockRejectedValueOnce(new Error("network down"));
+    renderField();
+
+    await user.click(screen.getByRole("button", { name: "Browse" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("network down");
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+
+    await row("/mnt");
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("suppresses download destinations in an App Store host before querying", () => {
@@ -112,7 +264,7 @@ describe("PathPickerField", () => {
       clientClass: "ipad-manager-app-store",
     };
 
-    renderField("downloadDestination", true);
+    renderField("downloadDestination", { suppressAppStoreDownload: true });
 
     expect(screen.queryByLabelText("downloadDestination path")).toBeNull();
     expect(fetchPathPicker).not.toHaveBeenCalled();
