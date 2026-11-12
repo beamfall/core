@@ -71,7 +71,9 @@ export function PlayerPage() {
       mediaNotAvailable: t("playbackMediaNotAvailable"),
     },
     startAtSeconds,
-    nextInQueue?.id,
+    // "" when a card queue drives playback but has nothing after this item, so
+    // an earlier Play all queue is left rather than resumed.
+    queue ? (nextInQueue?.id ?? "") : undefined,
   );
 
   const playing = state.phase === "playing";

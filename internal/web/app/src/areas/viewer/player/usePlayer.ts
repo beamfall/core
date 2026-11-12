@@ -307,7 +307,7 @@ export function usePlayer(
     mediaNotAvailable?: string;
   },
   startAtSeconds = 0,
-  /** The queue's next item, declared to playback-info for a pre-minted handoff. */
+  /** A card queue's next item, declared to playback-info for a pre-minted handoff; "" when that queue has none. */
   nextMediaID?: string,
 ) {
   const videoRef = useRef<HTMLVideoElement | null>(null);

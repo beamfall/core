@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setIdentityEpochSignal } from "@/lib/api";
 import { DEFAULT_BROWSE_STATE, type LibraryItemsRequest } from "./libraryBrowse";
-import { nextInPlayQueue, playQueueHandle, playQueueTitle, startPlayQueue } from "./playQueue";
+import {
+  leavePlayQueue,
+  nextInPlayQueue,
+  playQueueHandle,
+  playQueueTitle,
+  startPlayQueue,
+} from "./playQueue";
 
 const fetchLibraryItems = vi.hoisted(() => vi.fn());
 vi.mock("./libraryBrowse", async (original) => ({
@@ -128,6 +134,19 @@ describe("play queue", () => {
 
     expect(await nextInPlayQueue("elsewhere", issuedFor)).toBe("");
     expect(await nextInPlayQueue("a")).toBe("b");
+  });
+
+  it("ends when a card queue drives playback, but a newer queue survives (CORE-1143)", async () => {
+    const stale = playQueueHandle();
+    fetchLibraryItems.mockResolvedValue(page(["a", "b", "c"], 3));
+    await startPlayQueue(request);
+
+    leavePlayQueue(stale);
+    expect(await nextInPlayQueue("a")).toBe("b");
+
+    leavePlayQueue(playQueueHandle());
+    expect(playQueueHandle()).toBeNull();
+    expect(await nextInPlayQueue("b")).toBe("");
   });
 
   it("clears the queue when the filtered set is empty", async () => {

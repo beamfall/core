@@ -11,9 +11,11 @@ vi.mock("@/lib/api", async (original) => ({
 vi.mock("./capabilityProfile", () => ({ probeCapabilityProfile: async () => ({}) }));
 const queue = vi.hoisted(() => ({ next: "", title: "" }));
 const nextInPlayQueue = vi.hoisted(() => vi.fn(async () => queue.next));
+const leavePlayQueue = vi.hoisted(() => vi.fn());
 vi.mock("./playQueue", () => ({
   playQueueHandle: () => "queue",
   nextInPlayQueue,
+  leavePlayQueue,
   playQueueTitle: () => queue.title,
 }));
 
@@ -22,6 +24,7 @@ describe("fetchPlaybackInfo", () => {
     postJSON.mockReset();
     postJSON.mockResolvedValue({});
     nextInPlayQueue.mockClear();
+    leavePlayQueue.mockClear();
     queue.next = "";
     queue.title = "";
   });
@@ -50,20 +53,31 @@ describe("fetchPlaybackInfo", () => {
     expect((await fetchPlaybackInfo("a")).next).toEqual({ mediaID: "z" });
   });
 
-  it("declares a card queue's next item over the Play all queue, which is still asked (CORE-1143)", async () => {
+  it("declares a card queue's next item and leaves the Play all queue (CORE-1143)", async () => {
     queue.next = "play-all-next";
     queue.title = "Play all title";
     postJSON.mockResolvedValue({ next: { mediaID: "card-next" } });
 
     const info = await fetchPlaybackInfo("media-a", "card-next");
 
-    expect(nextInPlayQueue).toHaveBeenCalledWith("media-a", "queue");
+    expect(leavePlayQueue).toHaveBeenCalledWith("queue");
+    expect(nextInPlayQueue).not.toHaveBeenCalled();
     expect(postJSON).toHaveBeenCalledWith(
       "/api/playback-info",
       expect.objectContaining({ mediaID: "media-a", nextMediaID: "card-next" }),
     );
     // The Play all queue's title is not borrowed for the card queue's item.
     expect(info.next).toEqual({ mediaID: "card-next" });
+  });
+
+  it("does not fall back to the Play all queue after a card queue's last item (CORE-1143)", async () => {
+    queue.next = "play-all-next";
+
+    await fetchPlaybackInfo("media-last", "");
+
+    expect(leavePlayQueue).toHaveBeenCalledWith("queue");
+    expect(nextInPlayQueue).not.toHaveBeenCalled();
+    expect(postJSON.mock.calls[0][1]).not.toHaveProperty("nextMediaID");
   });
 
   it("omits the next item when neither queue has one (CORE-1143)", async () => {

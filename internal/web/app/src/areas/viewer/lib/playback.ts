@@ -1,6 +1,6 @@
 import { ApiError, postJSON } from "@/lib/api";
 import { probeCapabilityProfile } from "./capabilityProfile";
-import { nextInPlayQueue, playQueueHandle, playQueueTitle } from "./playQueue";
+import { leavePlayQueue, nextInPlayQueue, playQueueHandle, playQueueTitle } from "./playQueue";
 
 // Playback-info request + its wire shape (ADR-0010 playbackInfo contract).
 //
@@ -95,8 +95,10 @@ export function isRevealTerminalStatus(status: number): boolean {
  * an {@link ApiError} carrying the HTTP status so the caller can distinguish a
  * reveal-terminal response (a relocked/hidden/expired Media) from a generic
  * failure — exactly the branch the vanilla play() takes on a non-ok response.
- * `nextMediaID` declares the queue's next item so the server pre-mints its
- * stream (info.next); an unservable next item is silently omitted.
+ * `nextMediaID` declares a catalog card queue's next item so the server
+ * pre-mints its stream (info.next); an unservable next item is silently
+ * omitted. "" means a card queue drives playback and has no next item;
+ * undefined means no card queue, so a Play all queue may name the next item.
  */
 export async function fetchPlaybackInfo(
   mediaID: string,
@@ -107,10 +109,12 @@ export async function fetchPlaybackInfo(
   const queue = playQueueHandle();
   const capabilityProfile = await probeCapabilityProfile();
   // A Play all / Shuffle queue names its next item so the server pre-mints
-  // Up Next for it (ADR-0029: the queue is client-owned). A catalog card's
-  // queue (CORE-1143) names its own next item, which wins; the Play all queue
-  // is still asked, so playback started outside it ends that queue.
-  const queuedNext = await nextInPlayQueue(mediaID, queue);
+  // Up Next for it (ADR-0029: the queue is client-owned). Playback a catalog
+  // card's queue drives (CORE-1143) has left the Play all queue, which ends
+  // here even when the card queue has nothing after this item.
+  let queuedNext = "";
+  if (nextMediaID === undefined) queuedNext = await nextInPlayQueue(mediaID, queue);
+  else leavePlayQueue(queue);
   const next = nextMediaID || queuedNext;
   const info = await postJSON<PlaybackInfo>("/api/playback-info", {
     mediaID,
@@ -120,7 +124,7 @@ export async function fetchPlaybackInfo(
   // The server issues a declared next item without a title; the Play all
   // queue kept the one its listing gave, so Up Next and the next heading can
   // name it. A card queue's next item is named by the player from that queue.
-  if (info.next && !info.next.title && next === queuedNext && info.next.mediaID === queuedNext) {
+  if (info.next && !info.next.title && queuedNext && info.next.mediaID === queuedNext) {
     const title = playQueueTitle(queuedNext);
     if (title) info.next.title = title;
   }

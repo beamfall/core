@@ -157,6 +157,14 @@ describe("PlayerPage audio items (CORE-1143)", () => {
     });
   });
 
+  it("declares an empty next item on a card queue's last item, so Play all is not resumed", () => {
+    renderPlayer(
+      playerState({ phase: "playing", info: { mediaClass: "audio" } as PlayerState["info"] }),
+      { title: "Alpha", queue: queue.slice(0, 2), queueIdentity: "viewer-1" },
+    );
+    expect(vi.mocked(usePlayer).mock.calls.at(-1)?.[3]).toBe("");
+  });
+
   it("drops a queue listed for another viewer identity (relock or profile switch)", () => {
     renderPlayer(
       playerState({ phase: "playing", info: { mediaClass: "audio" } as PlayerState["info"] }),

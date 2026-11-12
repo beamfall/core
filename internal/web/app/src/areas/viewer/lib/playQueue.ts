@@ -134,6 +134,14 @@ export function playQueueTitle(mediaID: string): string {
 }
 
 /**
+ * Ends the queue the handle names, if it is still the active one: playback
+ * that another queue drives has left it. A newer queue is left alone.
+ */
+export function leavePlayQueue(issuedFor: unknown): void {
+  if (issuedFor && activeQueue() === issuedFor) current = null;
+}
+
+/**
  * The queue item that follows mediaID, or "" when the queue is finished or
  * mediaID is not its current or next item. Playback started elsewhere ends
  * the queue, so a later visit to one of its items does not resume it.
