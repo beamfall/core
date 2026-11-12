@@ -19,6 +19,8 @@ export interface ItemActions {
   pending: boolean;
   /** True when the last load or action failed; cleared by the next success. */
   failed: boolean;
+  /** Loads the state again, for when the first load failed and left the actions disabled. */
+  retry: () => void;
   setWatched: (watched: boolean) => Promise<void>;
   setWatchlisted: (watchlisted: boolean) => Promise<void>;
   /** 1–10 sets the rating; 0 clears it. */
@@ -36,11 +38,13 @@ export function useItemActions(target: ItemTarget, { enabled = true } = {}): Ite
   const [state, setState] = useState<ItemStateInfo | null>(null);
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const targetRef = useRef(target);
   targetRef.current = target;
   const keyRef = useRef(key);
 
-  // The epoch is a dependency by intent: a change made elsewhere reloads the state.
+  // The epoch and the attempt are dependencies by intent: a change made elsewhere
+  // or a retry reloads the state.
   useEffect(() => {
     if (keyRef.current !== key) {
       keyRef.current = key;
@@ -57,7 +61,7 @@ export function useItemActions(target: ItemTarget, { enabled = true } = {}): Ite
         if (!controller.signal.aborted) setFailed(true);
       });
     return () => controller.abort();
-  }, [key, enabled, epoch]);
+  }, [key, enabled, epoch, attempt]);
 
   const run = useCallback(async (action: (target: ItemTarget) => Promise<ItemStateInfo>) => {
     const startedFor = keyRef.current;
@@ -78,6 +82,7 @@ export function useItemActions(target: ItemTarget, { enabled = true } = {}): Ite
     state,
     pending,
     failed,
+    retry: useCallback(() => setAttempt((n) => n + 1), []),
     setWatched: useCallback((watched: boolean) => run((t) => setWatched(t, watched)), [run]),
     setWatchlisted: useCallback(
       (watchlisted: boolean) => run((t) => setWatchlisted(t, watchlisted)),

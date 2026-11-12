@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { displayString } from "@/lib/display";
 import type { SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
+import { useEngagementEpoch } from "../actions";
 import { MediaItemCard } from "../components/MediaItemCard";
 import { useVirtualGrid, VIRTUAL_GRID_MIN_ITEMS } from "../components/useVirtualGrid";
 import { ViewerActions } from "../components/ViewerActions";
@@ -30,6 +31,10 @@ export function SeeAllPage() {
   const [hasMore, setHasMore] = useState(true);
   const [busy, setBusy] = useState(false);
   const offsetRef = useRef(0);
+  // Bumped by every reset or reload, so a response from before it is dropped.
+  const generationRef = useRef(0);
+  const engagementEpoch = useEngagementEpoch();
+  const seenEpochRef = useRef(engagementEpoch);
   const gridRef = useRef<HTMLUListElement | null>(null);
   const gridWindow = useVirtualGrid({
     gridRef,
@@ -43,6 +48,7 @@ export function SeeAllPage() {
 
   const loadPage = useCallback(async () => {
     if (!ctx) return;
+    const generation = generationRef.current;
     setBusy(true);
     try {
       const page = await fetchSectionItems(ctx.section, {
@@ -50,24 +56,63 @@ export function SeeAllPage() {
         entityID: ctx.entityID,
         paging: { limit: SEEALL_PAGE, offset: offsetRef.current },
       });
+      if (generationRef.current !== generation) return;
       setItems((prev) => [...prev, ...page]);
       offsetRef.current += page.length;
       setHasMore(page.length >= SEEALL_PAGE);
     } catch {
-      setHasMore(false);
+      if (generationRef.current === generation) setHasMore(false);
     } finally {
-      setBusy(false);
+      if (generationRef.current === generation) setBusy(false);
+    }
+  }, [ctx]);
+
+  // Reads the span already shown again and swaps it in whole, so a list that
+  // changed underneath (an item left the watchlist) neither keeps the old rows
+  // nor pages on from a stale offset.
+  const reloadShown = useCallback(async () => {
+    if (!ctx) return;
+    const generation = ++generationRef.current;
+    const want = Math.max(offsetRef.current, SEEALL_PAGE);
+    const next: SourceItem[] = [];
+    let more = true;
+    setBusy(true);
+    try {
+      while (more && next.length < want) {
+        const page = await fetchSectionItems(ctx.section, {
+          libraryID: ctx.libraryID,
+          entityID: ctx.entityID,
+          paging: { limit: SEEALL_PAGE, offset: next.length },
+        });
+        if (generationRef.current !== generation) return;
+        next.push(...page);
+        more = page.length >= SEEALL_PAGE;
+      }
+      setItems(next);
+      offsetRef.current = next.length;
+      setHasMore(more);
+    } catch {
+      // Keep what is shown; the next change or Load More tries again.
+    } finally {
+      if (generationRef.current === generation) setBusy(false);
     }
   }, [ctx]);
 
   useEffect(() => {
     // Reset and load the first page when the context changes.
+    generationRef.current += 1;
     offsetRef.current = 0;
     setItems([]);
     setHasMore(true);
     void loadPage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctx?.section.id, ctx?.libraryID, ctx?.entityID]);
+
+  useEffect(() => {
+    if (seenEpochRef.current === engagementEpoch) return;
+    seenEpochRef.current = engagementEpoch;
+    void reloadShown();
+  }, [engagementEpoch, reloadShown]);
 
   function goBack() {
     navigate(ctx?.returnTo || "/");

@@ -19,7 +19,8 @@ export function ItemActions({
   className?: string;
 }) {
   const t = useT();
-  const { state, pending, failed, setWatched, setWatchlisted, setRating } = useItemActions(target);
+  const { state, pending, failed, retry, setWatched, setWatchlisted, setRating } =
+    useItemActions(target);
   const disabled = pending || !state;
   const watched = state?.watched ?? false;
   const watchlisted = state?.watchlisted ?? false;
@@ -69,6 +70,11 @@ export function ItemActions({
         <span role="status" className="bf-item-actions-error">
           {t("itemActionFailed")}
         </span>
+      )}
+      {failed && !state && (
+        <button type="button" className="bf-item-action" onClick={retry}>
+          {t("tryAgain")}
+        </button>
       )}
     </div>
   );

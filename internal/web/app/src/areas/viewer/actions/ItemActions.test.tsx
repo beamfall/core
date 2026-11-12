@@ -74,6 +74,17 @@ describe("ItemActions", () => {
     act(() => notifyEngagementChanged());
     await screen.findByRole("button", { name: "Mark unwatched", pressed: true });
   });
+
+  it("offers a retry when the first load fails, and recovers", async () => {
+    const { fetchItemState } = await import("@/lib/graphql");
+    vi.mocked(fetchItemState).mockRejectedValueOnce(new Error("offline"));
+    renderActions();
+    const retry = await screen.findByRole("button", { name: "Try again" });
+    expect(screen.getByRole("button", { name: "Mark watched" })).toBeDisabled();
+    fireEvent.click(retry);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Mark watched" })).toBeEnabled());
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  });
 });
 
 describe("item action helpers", () => {
