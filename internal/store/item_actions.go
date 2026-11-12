@@ -284,26 +284,30 @@ func (s *Store) SetItemWatched(ctx context.Context, profileID ProfileID, target 
 // the same rule a finished playback follows. Unwatched clears the watched
 // bit, the resume position and the play count; it only ever updates an
 // existing row, so it cannot create progress for a Media never touched.
+//
+// The mark's own time becomes the row's event time, so a playback report
+// observed before the mark and delivered after it cannot undo the mark.
 func applyMarkProjectionEvent(ctx context.Context, tx *sql.Tx, event playbackProjectionEvent) error {
 	if !event.Watched {
 		_, err := tx.ExecContext(ctx, `
 			UPDATE playback_progress
 			SET watched = 0, position_seconds = 0, play_count = 0,
-			    last_played_at_ms = NULL, updated_at_ms = ?
+			    last_played_at_ms = NULL, updated_at_ms = ?, event_time_ms = ?
 			WHERE profile_id = ? AND media_id = ?
-		`, event.UpdatedAtMS, event.ProfileID, event.MediaID)
+		`, event.UpdatedAtMS, event.UpdatedAtMS, event.ProfileID, event.MediaID)
 		return err
 	}
 	_, err := tx.ExecContext(ctx, `
-		INSERT INTO playback_progress(profile_id, media_id, position_seconds, duration_seconds, watched, updated_at_ms, play_count, last_played_at_ms)
-		VALUES (?, ?, 0, ?, 1, ?, 1, ?)
+		INSERT INTO playback_progress(profile_id, media_id, position_seconds, duration_seconds, watched, updated_at_ms, play_count, last_played_at_ms, event_time_ms)
+		VALUES (?, ?, 0, ?, 1, ?, 1, ?, ?)
 		ON CONFLICT(profile_id, media_id) DO UPDATE SET
 		  position_seconds = 0,
 		  play_count = play_count + (CASE WHEN playback_progress.watched = 0 THEN 1 ELSE 0 END),
 		  last_played_at_ms = CASE WHEN playback_progress.watched = 0 THEN excluded.updated_at_ms ELSE last_played_at_ms END,
 		  watched = 1,
-		  updated_at_ms = excluded.updated_at_ms
-	`, event.ProfileID, event.MediaID, event.DurationSeconds, event.UpdatedAtMS, event.UpdatedAtMS)
+		  updated_at_ms = excluded.updated_at_ms,
+		  event_time_ms = excluded.event_time_ms
+	`, event.ProfileID, event.MediaID, event.DurationSeconds, event.UpdatedAtMS, event.UpdatedAtMS, event.UpdatedAtMS)
 	return err
 }
 

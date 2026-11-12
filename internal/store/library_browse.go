@@ -350,6 +350,10 @@ func (s *Store) libraryBrowseProgressLocked(ctx context.Context, profileID Profi
 		if err := rows.Scan(&id, &watched, &position, &channelContext, &last); err != nil {
 			return err
 		}
+		if watched == 0 && position == 0 {
+			// A cleared mark leaves a row with nothing watched on it.
+			last = 0
+		}
 		byMedia[id] = progress{
 			watched:     watched != 0,
 			inProgress:  watched == 0 && position >= resumeFloorSeconds && channelContext == 0,

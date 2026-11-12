@@ -129,6 +129,18 @@ func TestLibraryBrowseFiltersAndFacets(t *testing.T) {
 	if sintel < 0 || bunny < 0 || sintel > bunny || recent.Total != all.Total {
 		t.Fatalf("last-watched order = %v (total %d of %d)", order, recent.Total, all.Total)
 	}
+	// Clearing a watched mark is not a play: the item joins the never-watched.
+	if _, err := st.SetItemWatched(context.Background(), profile, ItemTarget{MediaID: "media-demo-bunny"}, false, LibraryFilter{AllLibraries: true}); err != nil {
+		t.Fatal(err)
+	}
+	recent = mustLibraryBrowse(t, st, LibraryBrowseQuery{ProfileID: profile, Sort: LibraryBrowseSortLastWatched, Descending: true})
+	order = order[:0]
+	for _, item := range recent.Items {
+		order = append(order, item.ID)
+	}
+	if sintel, bunny := slices.Index(order, "media-demo-sintel"), slices.Index(order, "media-demo-bunny"); sintel < 0 || bunny < sintel || order[0] == "media-demo-bunny" {
+		t.Fatalf("after clearing a mark, last-watched order = %v, want media-demo-bunny among the never-watched", order)
+	}
 
 	// A Library outside the caller's allow-list yields nothing, not an error.
 	other, err := st.LibraryBrowse(context.Background(), LibraryFilter{AllowedIDs: []LibraryID{"library-demo-archive"}}, LibraryBrowseQuery{LibraryID: "library-demo-open"})

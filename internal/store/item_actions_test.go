@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 var itemOpenFilter = LibraryFilter{AllowedIDs: []LibraryID{"library-local"}}
@@ -479,5 +480,45 @@ func TestItemActionsReachAnEncryptedLibrary(t *testing.T) {
 	}
 	if counts != (EngagementPruneCounts{}) || rowCount() != 4 {
 		t.Fatalf("sealed-plane prune removed %+v and left %d rows, want nothing removed", counts, rowCount())
+	}
+}
+
+// A playback report observed before a manual mark and delivered after it must
+// not undo the mark; a report observed after it still moves the row.
+func TestManualMarkOutranksAnOlderPlaybackReport(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	target := ItemTarget{MediaID: "media-alpha"}
+	report := func(position int, eventTime int64) {
+		t.Helper()
+		if err := st.UpsertPlaybackProgress(ctx, PlaybackProgress{
+			ProfileID: "profile-default", MediaID: "media-alpha", PositionSeconds: position, DurationSeconds: 120, EventTimeMS: eventTime,
+		}, false, ResumePolicy{Class: MediaClassVideo}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := timeToMillis(time.Now().UTC())
+	report(30, before-2000)
+	if _, err := st.SetItemWatched(ctx, "profile-default", target, true, itemOpenFilter); err != nil {
+		t.Fatal(err)
+	}
+	report(45, before-1000)
+	if state := itemState(t, st, "profile-default", target); !state.Watched {
+		t.Fatal("a report older than the watched mark undid it")
+	}
+	if _, err := st.SetItemWatched(ctx, "profile-default", target, false, itemOpenFilter); err != nil {
+		t.Fatal(err)
+	}
+	report(45, before-1000)
+	progress, _, err := st.PlaybackProgressFor(ctx, "profile-default", "media-alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if progress.PositionSeconds != 0 {
+		t.Fatalf("a report older than the unwatched mark restored position %v", progress.PositionSeconds)
+	}
+	report(50, timeToMillis(time.Now().UTC())+60000)
+	if progress, _, err = st.PlaybackProgressFor(ctx, "profile-default", "media-alpha"); err != nil || progress.PositionSeconds != 50 {
+		t.Fatalf("a report newer than the mark = %+v, %v; want position 50", progress, err)
 	}
 }

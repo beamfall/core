@@ -83,8 +83,14 @@ export function useVirtualGrid({
     // Pixels of the grid scrolled above the viewport top (0 until it scrolls up).
     const scrolledPast = Math.max(0, -rect.top);
 
-    const startRow = Math.max(0, Math.floor(scrolledPast / rowHeight) - VIRTUAL_GRID_OVERSCAN_ROWS);
     const visibleRows = Math.ceil(viewportHeight / rowHeight) + VIRTUAL_GRID_OVERSCAN_ROWS * 2;
+    // Clamped to the last rows: when the list shrinks under a deep scroll the
+    // window must still hold items, and the smaller top spacer lets the
+    // browser pull the scroll position back.
+    const startRow = Math.min(
+      Math.max(0, totalRows - visibleRows),
+      Math.max(0, Math.floor(scrolledPast / rowHeight) - VIRTUAL_GRID_OVERSCAN_ROWS),
+    );
 
     const startIndex = Math.min(itemCount, startRow * columns);
     const count = Math.min(itemCount - startIndex, visibleRows * columns, maxItems);
