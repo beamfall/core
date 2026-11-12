@@ -1,6 +1,5 @@
 import { graphql } from "@/lib/api";
-import type { DisplayString } from "@/lib/display";
-import type { SourceItem } from "@/lib/graphql/types";
+import type { DisplayString, SourceItem } from "@/lib/graphql/types";
 
 // Library browse (CORE-1190): the whole-library grid behind /n/:nodeId/all.
 // The server owns visibility, counting, sorting and filtering (graph
