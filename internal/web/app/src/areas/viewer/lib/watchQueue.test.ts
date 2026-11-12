@@ -14,6 +14,14 @@ describe("watchQueue (CORE-1143)", () => {
     ]);
   });
 
+  it("steps over locked items, as the Play all queue does", () => {
+    const locked = { ...item("l", "media"), locked: true } as unknown as SourceItem;
+    expect(playQueueOf([item("a", "media"), locked, item("b", "media")])).toEqual([
+      { id: "a", title: "T-a" },
+      { id: "b", title: "T-b" },
+    ]);
+  });
+
   it("windows a huge queue around the selected item so history state stays small", () => {
     const queue = playQueueOf(Array.from({ length: 900 }, (_, i) => item(`m${i}`, "media")));
     expect(queue).toHaveLength(900);

@@ -29,11 +29,15 @@ export interface PlayerNavState {
 // centred on the item being played.
 export const MAX_QUEUE = 500;
 
-/** The playable (kind "media") items of a list, in order, as a queue. */
+/**
+ * The playable items of a list, in order, as a queue: kind "media" and not
+ * locked. A locked item (a certification ceiling blocks it) stays on the page
+ * but Next and auto-advance step over it, as the Play all queue does.
+ */
 export function playQueueOf(items: readonly SourceItem[]): PlayQueueItem[] {
   const queue: PlayQueueItem[] = [];
   for (const item of items) {
-    if (item.kind === "media") queue.push({ id: item.id, title: item.title });
+    if (item.kind === "media" && !item.locked) queue.push({ id: item.id, title: item.title });
   }
   return queue;
 }
