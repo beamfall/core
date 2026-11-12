@@ -202,9 +202,13 @@ test.describe("viewer locale", () => {
     await expect(page.getByRole("button", { name: "Retour" })).toBeVisible();
 
     await page.goto("/web/search");
-    await expect(page.getByRole("heading", { name: "Résultats de recherche" })).toBeVisible();
+    // Search answers as you type (CORE-1191): with no term the page shows its
+    // prompt, and the results heading appears only once results arrive.
+    await expect(page.getByRole("heading", { level: 1, name: "Rechercher" })).toBeVisible();
     await expect(page.getByRole("searchbox", { name: "Rechercher" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Rechercher" })).toBeVisible();
+    await expect(
+      page.getByText("Rechercher dans vos bibliothèques", { exact: true }),
+    ).toBeVisible();
 
     await page.goto("/web/notifications");
     await expect(page.getByText("Boîte de réception", { exact: true })).toBeVisible();
