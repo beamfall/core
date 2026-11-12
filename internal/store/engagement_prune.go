@@ -44,7 +44,7 @@ func (s *Store) pruneOrphanedEngagementRowsLocked(ctx context.Context) (Engageme
 		return EngagementPruneCounts{}, err
 	}
 	if !allReadable {
-		// A sealed Encrypted Library cannot show which of its targets still
+		// A sealed Encrypted Library cannot reveal which of its targets still
 		// exist, so nothing is provably orphaned until it is open again.
 		return EngagementPruneCounts{}, nil
 	}
