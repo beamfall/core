@@ -26,6 +26,8 @@ interface PlayQueue {
   /** Size of the set, and how far into it the server was read, at the last page. */
   total: number;
   fetched: number;
+  /** How many items had been played when the server was last read. */
+  playedAtRead: number;
   done: boolean;
 }
 
@@ -63,6 +65,7 @@ export async function startPlayQueue(
     cursor: 0,
     total: 0,
     fetched: 0,
+    playedAtRead: 0,
     done: false,
   };
   // Reads on until a page holds something playable, so a set that opens on
@@ -79,13 +82,16 @@ export async function startPlayQueue(
  * Appends the next unseen IDs. Playing the queue changes the set it walks: a
  * watch filter drops each finished item and a last-watched order moves it, so
  * the items not yet queued sit at a lower offset than the count already read.
- * The read steps back by that drift, again for each read that finds the set
+ * Only items played since the last read can have moved, so the read steps
+ * back by that many, again for each read that finds the set
  * smaller still, then scans forward past IDs it already holds, so nothing is
  * skipped and nothing repeats.
  */
 async function loadMore(queue: PlayQueue, played: number): Promise<void> {
   const reorders = !queue.request.shuffleSeed && queue.request.state.sort === "last-watched";
-  let offset = reorders ? Math.max(0, queue.fetched - played) : queue.fetched;
+  const moved = played - queue.playedAtRead;
+  queue.playedAtRead = played;
+  let offset = reorders ? Math.max(0, queue.fetched - moved) : queue.fetched;
   // Progress writes land independently of these reads, so the set can shrink
   // again between a read and its retry: step back every time it does. The
   // bound only stops a set that keeps changing from holding the player.

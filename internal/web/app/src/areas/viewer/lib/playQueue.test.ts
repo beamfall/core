@@ -88,6 +88,22 @@ describe("play queue", () => {
     expect(playQueueTitle("elsewhere")).toBe("");
   });
 
+  it("steps back only by the items played since the last read", async () => {
+    // Last-watched ascending over an unwatched set: playing leaves the order
+    // as it was, so a later read must not start over from the first page.
+    const all = ["a", "b", "c", "d", "e", "f"];
+    fetchLibraryItems.mockImplementation(async ({ offset }: LibraryItemsRequest) =>
+      page(all.slice(offset, offset + 2), all.length),
+    );
+    await startPlayQueue({ ...request, state: { ...DEFAULT_BROWSE_STATE, sort: "last-watched" } });
+
+    const played: string[] = [];
+    for (let id = "a"; id; id = await nextInPlayQueue(id)) played.push(id);
+    expect(played).toEqual(all);
+    const offsets = fetchLibraryItems.mock.calls.map(([call]) => call.offset);
+    expect(offsets).toEqual([0, 0, 2, 2, 4, 4]);
+  });
+
   it("ends the queue when playback starts outside it", async () => {
     fetchLibraryItems.mockResolvedValue(page(["a", "b", "c"], 3));
     await startPlayQueue(request);
