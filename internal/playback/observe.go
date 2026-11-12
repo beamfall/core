@@ -116,21 +116,30 @@ func (s *Service) PlayObservation(sessionID store.SessionID, mediaID store.Media
 // of the item and, when its rendition is known, that rendition's bandwidth. It
 // holds for as long as the session does, not only while the encoder runs: an
 // encoder that has finished the item leaves the viewer on the same rendition.
+// A route change (cast, AirPlay) keeps one transcode per capability profile
+// for the same session and item; the one read most recently is the route the
+// viewer is on.
 func (s *Sessions) deliveredBandwidth(sessionID store.SessionID, mediaID store.MediaID) (int, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	var current *hlsSession
 	for key, session := range s.sessions {
 		if key.SessionID != sessionID || key.MediaID != mediaID || !session.started {
 			continue
 		}
-		for _, rung := range session.rungs {
-			if rung.ID == session.deliveredRung {
-				return rung.Bandwidth, true
-			}
+		if current == nil || session.lastAccess.After(current.lastAccess) {
+			current = session
 		}
-		return 0, true
 	}
-	return 0, false
+	if current == nil {
+		return 0, false
+	}
+	for _, rung := range current.rungs {
+		if rung.ID == current.deliveredRung {
+			return rung.Bandwidth, true
+		}
+	}
+	return 0, true
 }
 
 // observe records the dashboard reading of one main-item decision.

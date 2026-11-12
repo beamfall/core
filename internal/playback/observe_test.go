@@ -91,3 +91,29 @@ func TestPlayObservationKeepsTheChosenQualityAfterTheEncoderFinishes(t *testing.
 		t.Fatalf("observation after the session ended = %#v, want the direct source reading", obs)
 	}
 }
+
+func TestPlayObservationFollowsTheRouteReadMostRecently(t *testing.T) {
+	service, scope := newTestServiceWithMediaFile(t, "session-default", "media-alpha")
+	direct := CapabilityProfile{Containers: []string{"mp4"}, DirectCodecs: []string{"h264"}}
+	if _, err := service.Info(context.Background(), scope, InfoRequest{MediaID: "media-alpha", CapabilityProfile: direct}); err != nil {
+		t.Fatalf("Info returned error: %v", err)
+	}
+	start := time.Date(2026, 11, 12, 20, 0, 0, 0, time.UTC)
+	rungs := []Rung{{ID: "high", Bandwidth: 8_000_000}, {ID: "low", Bandwidth: 1_500_000}}
+	sender := &hlsSession{rungs: rungs, started: true, deliveredRung: "high", lastAccess: start}
+	receiver := &hlsSession{rungs: rungs, started: true, deliveredRung: "low", lastAccess: start.Add(time.Minute)}
+	service.sessions = NewSessionsInDir(nil, t.TempDir(), time.Now)
+	service.sessions.sessions[SessionKey{SessionID: scope.SessionID, MediaID: "media-alpha", ProfileCapability: "sender"}] = sender
+	service.sessions.sessions[SessionKey{SessionID: scope.SessionID, MediaID: "media-alpha", ProfileCapability: "receiver"}] = receiver
+
+	// Map order must not decide: read often enough to meet both orders.
+	for range 64 {
+		if obs, _ := service.PlayObservation(scope.SessionID, "media-alpha"); obs.Bitrate != 1_500_000 {
+			t.Fatalf("bitrate on the receiver route = %d, want the receiver's 1500000", obs.Bitrate)
+		}
+	}
+	sender.lastAccess = start.Add(2 * time.Minute)
+	if obs, _ := service.PlayObservation(scope.SessionID, "media-alpha"); obs.Bitrate != 8_000_000 {
+		t.Fatalf("bitrate back on the sender route = %d, want 8000000", obs.Bitrate)
+	}
+}
