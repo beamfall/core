@@ -6229,24 +6229,12 @@
         ]
       },
       {
-        "name": "entityFilter",
-        "kind": "object",
+        "name": "groupFilters",
+        "kind": "map",
         "optional": true,
-        "fields": [
-          {
-            "name": "kind",
-            "kind": "string"
-          },
-          {
-            "name": "name",
-            "kind": "string"
-          }
-        ]
-      },
-      {
-        "name": "facetEntityKind",
-        "kind": "string",
-        "optional": true
+        "elem": {
+          "kind": "string"
+        }
       },
       {
         "name": "libraryID",
@@ -6326,12 +6314,58 @@
             }
           },
           {
-            "name": "entities",
+            "name": "groupings",
             "kind": "list",
             "nullable": true,
             "elem": {
-              "kind": "scalar"
-            }
+              "kind": "object",
+              "children": [
+                {
+                  "name": "kind",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "title",
+                  "kind": "map",
+                  "optional": true,
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "values",
+                  "kind": "list",
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                }
+              ]
+            },
+            "children": [
+              {
+                "name": "kind",
+                "kind": "scalar"
+              },
+              {
+                "name": "title",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "values",
+                "kind": "list",
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              }
+            ]
           },
           {
             "name": "qualities",

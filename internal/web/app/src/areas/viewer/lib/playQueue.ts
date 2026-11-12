@@ -30,16 +30,25 @@ function activeQueue(): PlayQueue | null {
   return current;
 }
 
+/** The item a new queue opens on; the title is the player's heading for it. */
+export interface PlayQueueStart {
+  id: string;
+  title: string;
+}
+
 /**
- * Starts a queue over one library query and resolves its first Media ID
- * ("" when the filtered set is empty).
+ * Starts a queue over one library query and resolves its first Media (null
+ * when the filtered set is empty).
  */
-export async function startPlayQueue(request: PlayQueue["request"]): Promise<string> {
+export async function startPlayQueue(
+  request: PlayQueue["request"],
+): Promise<PlayQueueStart | null> {
   current = null;
   const epoch = getIdentityEpochSignal();
   const page = await fetchLibraryItems({ ...request, limit: QUEUE_PAGE, offset: 0 });
-  const ids = page.items.filter((item) => item.kind === "media").map((item) => item.id);
-  if (!ids.length || epoch !== getIdentityEpochSignal()) return "";
+  const media = page.items.filter((item) => item.kind === "media");
+  const ids = media.map((item) => item.id);
+  if (!ids.length || epoch !== getIdentityEpochSignal()) return null;
   current = {
     request,
     epoch,
@@ -49,7 +58,7 @@ export async function startPlayQueue(request: PlayQueue["request"]): Promise<str
     fetched: page.items.length,
     done: page.items.length >= page.total,
   };
-  return ids[0];
+  return { id: ids[0], title: media[0].title || "" };
 }
 
 /**

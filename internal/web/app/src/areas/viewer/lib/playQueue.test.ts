@@ -9,13 +9,13 @@ vi.mock("./libraryBrowse", async (original) => ({
   fetchLibraryItems,
 }));
 
-const request = { libraryID: "library-1", state: DEFAULT_BROWSE_STATE, genreKind: "genre" };
+const request = { libraryID: "library-1", state: DEFAULT_BROWSE_STATE };
 
 function page(ids: string[], total: number) {
   return {
     total,
-    items: ids.map((id) => ({ id, kind: "media", title: id })),
-    facets: { entities: [], decades: [], qualities: [] },
+    items: ids.map((id) => ({ id, kind: "media", title: `Title ${id}` })),
+    facets: { groupings: [], decades: [], qualities: [] },
   };
 }
 
@@ -30,7 +30,7 @@ describe("play queue", () => {
       offset === 0 ? page(["a", "b"], 3) : page(["c"], 3),
     );
 
-    expect(await startPlayQueue(request)).toBe("a");
+    expect(await startPlayQueue(request)).toEqual({ id: "a", title: "Title a" });
     expect(await nextInPlayQueue("a")).toBe("b");
     expect(await nextInPlayQueue("b")).toBe("c");
     expect(fetchLibraryItems).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 2 }));
@@ -47,7 +47,7 @@ describe("play queue", () => {
   it("clears the queue when the filtered set is empty", async () => {
     fetchLibraryItems.mockResolvedValue(page([], 0));
 
-    expect(await startPlayQueue(request)).toBe("");
+    expect(await startPlayQueue(request)).toBeNull();
     expect(await nextInPlayQueue("a")).toBe("");
   });
 
@@ -58,7 +58,7 @@ describe("play queue", () => {
       page(remaining.slice(offset, offset + 2), remaining.length),
     );
 
-    expect(await startPlayQueue(request)).toBe("a");
+    expect((await startPlayQueue(request))?.id).toBe("a");
     expect(await nextInPlayQueue("a")).toBe("b");
     remaining = ["c", "d", "e"]; // a and b were watched
     expect(await nextInPlayQueue("b")).toBe("c");
@@ -79,7 +79,7 @@ describe("play queue", () => {
       state: { ...DEFAULT_BROWSE_STATE, sort: "last-watched" as const },
     };
 
-    expect(await startPlayQueue(lastWatched)).toBe("a");
+    expect((await startPlayQueue(lastWatched))?.id).toBe("a");
     expect(await nextInPlayQueue("a")).toBe("b");
     order = ["c", "d", "a", "b"];
     expect(await nextInPlayQueue("b")).toBe("c");

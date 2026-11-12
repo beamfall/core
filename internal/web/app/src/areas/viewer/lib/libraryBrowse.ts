@@ -1,4 +1,5 @@
 import { graphql } from "@/lib/api";
+import type { DisplayString } from "@/lib/display";
 import type { SourceItem } from "@/lib/graphql/types";
 
 // Library browse (CORE-1190): the whole-library grid behind /n/:nodeId/all.
@@ -17,16 +18,17 @@ export type LibraryQuality = (typeof LIBRARY_QUALITIES)[number];
 export type LibraryDirection = "asc" | "desc";
 export type LibraryViewMode = "grid" | "list";
 
-// The entity kinds a plugin may use for genre-like grouping, tried in order
-// until one reports facet values (kinds are plugin display vocabulary).
-export const GENRE_ENTITY_KINDS = ["genre", "category"] as const;
+// A grouping selection travels in the URL as `group.<kind>=<value>`. The kinds
+// and their labels are the Library plugin's, reported by the server.
+const GROUP_PARAM = "group.";
 
 /** The browse state the URL carries (defaults are omitted from the URL). */
 export interface LibraryBrowseState {
   sort: LibrarySort;
   direction: LibraryDirection;
   watch: LibraryWatch | "";
-  genre: string;
+  /** The value selected for each plugin-declared grouping, keyed by its kind. */
+  groups: Record<string, string>;
   /** A decade start year (1990 = the 1990s), or 0 for none. */
   decade: number;
   quality: LibraryQuality | "";
@@ -36,7 +38,7 @@ export const DEFAULT_BROWSE_STATE: LibraryBrowseState = {
   sort: "title",
   direction: "asc",
   watch: "",
-  genre: "",
+  groups: {},
   decade: 0,
   quality: "",
 };
@@ -48,11 +50,17 @@ function oneOf<T extends string>(values: readonly T[], value: string | null): T 
 /** Reads browse state from the URL; unknown values fall back to defaults. */
 export function parseBrowseState(params: URLSearchParams): LibraryBrowseState {
   const decade = Number.parseInt(params.get("decade") ?? "", 10);
+  const groups: Record<string, string> = {};
+  for (const [name, raw] of params) {
+    const kind = name.startsWith(GROUP_PARAM) ? name.slice(GROUP_PARAM.length).trim() : "";
+    const value = raw.trim();
+    if (kind && value) groups[kind] = value;
+  }
   return {
     sort: oneOf(LIBRARY_SORTS, params.get("sort")) || DEFAULT_BROWSE_STATE.sort,
     direction: params.get("dir") === "desc" ? "desc" : "asc",
     watch: oneOf(LIBRARY_WATCH_STATES, params.get("watch")),
-    genre: (params.get("genre") ?? "").trim(),
+    groups,
     decade: Number.isFinite(decade) && decade > 0 ? Math.floor(decade / 10) * 10 : 0,
     quality: oneOf(LIBRARY_QUALITIES, params.get("quality")),
   };
@@ -64,14 +72,23 @@ export function browseStateParams(state: LibraryBrowseState): URLSearchParams {
   if (state.sort !== DEFAULT_BROWSE_STATE.sort) params.set("sort", state.sort);
   if (state.direction !== DEFAULT_BROWSE_STATE.direction) params.set("dir", state.direction);
   if (state.watch) params.set("watch", state.watch);
-  if (state.genre) params.set("genre", state.genre);
+  for (const kind of Object.keys(state.groups).sort()) {
+    params.set(GROUP_PARAM + kind, state.groups[kind]);
+  }
   if (state.decade) params.set("decade", String(state.decade));
   if (state.quality) params.set("quality", state.quality);
   return params;
 }
 
+/** One way the Library's plugin groups its items, with the values in reach. */
+export interface LibraryItemsGrouping {
+  kind: string;
+  title?: DisplayString;
+  values: string[];
+}
+
 export interface LibraryItemsFacets {
-  entities: string[];
+  groupings: LibraryItemsGrouping[];
   decades: number[];
   qualities: string[];
 }
@@ -86,7 +103,6 @@ export interface LibraryItemsPage {
 export interface LibraryItemsRequest {
   libraryID: string;
   state: LibraryBrowseState;
-  genreKind: string;
   /** "random" replaces the state's sort for Shuffle; seed keeps paging stable. */
   shuffleSeed?: string;
   limit: number;
@@ -94,7 +110,7 @@ export interface LibraryItemsRequest {
 }
 
 const LIBRARY_ITEMS_QUERY =
-  "query LibraryItems($libraryID: String!, $sort: String, $direction: String, $seed: String, $watch: String, $quality: String, $yearFrom: Int, $yearTo: Int, $entityFilter: EntityFilter, $facetEntityKind: String, $limit: Int, $offset: Int) { libraryItems(libraryID: $libraryID, sort: $sort, direction: $direction, seed: $seed, watch: $watch, quality: $quality, yearFrom: $yearFrom, yearTo: $yearTo, entityFilter: $entityFilter, facetEntityKind: $facetEntityKind, limit: $limit, offset: $offset) { total items { id kind title summary artwork { poster } artworkSlots } facets { entities decades qualities } } }";
+  "query LibraryItems($libraryID: String!, $sort: String, $direction: String, $seed: String, $watch: String, $quality: String, $yearFrom: Int, $yearTo: Int, $groupFilters: Map, $limit: Int, $offset: Int) { libraryItems(libraryID: $libraryID, sort: $sort, direction: $direction, seed: $seed, watch: $watch, quality: $quality, yearFrom: $yearFrom, yearTo: $yearTo, groupFilters: $groupFilters, limit: $limit, offset: $offset) { total items { id kind title summary artwork { poster } artworkSlots } facets { groupings { kind title values } decades qualities } } }";
 
 export function libraryItemsVariables(request: LibraryItemsRequest): Record<string, unknown> {
   const { state } = request;
@@ -102,7 +118,6 @@ export function libraryItemsVariables(request: LibraryItemsRequest): Record<stri
     libraryID: request.libraryID,
     sort: request.shuffleSeed ? "random" : state.sort,
     direction: request.shuffleSeed ? "asc" : state.direction,
-    facetEntityKind: request.genreKind,
     limit: request.limit,
     offset: request.offset,
   };
@@ -113,7 +128,7 @@ export function libraryItemsVariables(request: LibraryItemsRequest): Record<stri
     vars.yearFrom = state.decade;
     vars.yearTo = state.decade + 9;
   }
-  if (state.genre) vars.entityFilter = { kind: request.genreKind, name: state.genre };
+  if (Object.keys(state.groups).length) vars.groupFilters = state.groups;
   return vars;
 }
 
@@ -131,7 +146,7 @@ export async function fetchLibraryItems(
     total: page?.total ?? 0,
     items: page?.items ?? [],
     facets: {
-      entities: page?.facets?.entities ?? [],
+      groupings: page?.facets?.groupings ?? [],
       decades: page?.facets?.decades ?? [],
       qualities: page?.facets?.qualities ?? [],
     },

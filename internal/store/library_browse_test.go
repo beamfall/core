@@ -76,9 +76,11 @@ func TestLibraryBrowseFiltersAndFacets(t *testing.T) {
 		slices.Sort(out)
 		return out
 	}
-	all := mustLibraryBrowse(t, st, LibraryBrowseQuery{FacetEntityKind: "category"})
-	if !slices.Equal(all.Facets.Entities, []string{"Comedy", "Science"}) {
-		t.Fatalf("entity facets = %v, want [Comedy Science]", all.Facets.Entities)
+	all := mustLibraryBrowse(t, st, LibraryBrowseQuery{FacetEntityKinds: []string{"category", "absent"}})
+	if len(all.Facets.Entities) != 2 || all.Facets.Entities[0].Kind != "category" ||
+		!slices.Equal(all.Facets.Entities[0].Titles, []string{"Comedy", "Science"}) ||
+		all.Facets.Entities[1].Kind != "absent" || len(all.Facets.Entities[1].Titles) != 0 {
+		t.Fatalf("entity facets = %+v, want category [Comedy Science] then an empty absent kind", all.Facets.Entities)
 	}
 	if !slices.Contains(all.Facets.Decades, 2010) || !slices.Contains(all.Facets.Decades, 2020) || !slices.IsSortedFunc(all.Facets.Decades, func(a, b int) int { return b - a }) {
 		t.Fatalf("decade facets = %v, want newest-first incl. 2010 and 2020", all.Facets.Decades)
@@ -87,7 +89,7 @@ func TestLibraryBrowseFiltersAndFacets(t *testing.T) {
 		t.Fatalf("quality facets = %v", all.Facets.Qualities)
 	}
 
-	comedy := mustLibraryBrowse(t, st, LibraryBrowseQuery{EntityFilter: &EntityFilter{Kind: "category", Name: "Comedy"}})
+	comedy := mustLibraryBrowse(t, st, LibraryBrowseQuery{EntityFilters: []EntityFilter{{Kind: "category", Name: "Comedy"}}})
 	if got := ids(comedy); !slices.Equal(got, []MediaID{"media-demo-bunny", "media-demo-caminandes"}) || comedy.Total != 2 {
 		t.Fatalf("comedy = %v (total %d)", got, comedy.Total)
 	}
@@ -148,12 +150,12 @@ func TestLibraryBrowseEntityFacetsOnlyNameVisibleItems(t *testing.T) {
 	if err := st.SetMute(ctx, profile, MuteKindEntity, comedy, false, true); err != nil {
 		t.Fatal(err)
 	}
-	muted := mustLibraryBrowse(t, st, LibraryBrowseQuery{ProfileID: profile, FacetEntityKind: "category"})
+	muted := mustLibraryBrowse(t, st, LibraryBrowseQuery{ProfileID: profile, FacetEntityKinds: []string{"category"}})
 	if slices.ContainsFunc(muted.Items, func(i SourceItem) bool { return i.ID == "media-demo-bunny" }) {
 		t.Fatal("a muted category's item is still browsable")
 	}
-	if !slices.Equal(muted.Facets.Entities, []string{"Science"}) {
-		t.Fatalf("entity facets with Comedy muted = %v, want [Science]", muted.Facets.Entities)
+	if len(muted.Facets.Entities) != 1 || !slices.Equal(muted.Facets.Entities[0].Titles, []string{"Science"}) {
+		t.Fatalf("entity facets with Comedy muted = %+v, want [Science]", muted.Facets.Entities)
 	}
 }
 

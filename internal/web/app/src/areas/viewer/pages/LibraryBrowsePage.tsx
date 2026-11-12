@@ -21,7 +21,6 @@ import { ViewerActions } from "../components/ViewerActions";
 import {
   browseStateParams,
   fetchLibraryItems,
-  GENRE_ENTITY_KINDS,
   LIBRARY_BROWSE_PAGE,
   LIBRARY_SORTS,
   LIBRARY_WATCH_STATES,
@@ -58,7 +57,7 @@ const QUALITY_LABELS: Record<string, StringKey> = {
   sd: "libraryBrowseQualitySd",
 };
 
-const EMPTY_FACETS: LibraryItemsFacets = { entities: [], decades: [], qualities: [] };
+const EMPTY_FACETS: LibraryItemsFacets = { groupings: [], decades: [], qualities: [] };
 
 // Library browse (/n/:nodeId/all, CORE-1190): every item of one Library the
 // profile may see, counted, sorted and filtered by the server (libraryItems)
@@ -110,8 +109,6 @@ function LibraryBrowse({
   const heading = displayString(title, displayLocale);
 
   const [viewMode, setViewMode] = useState<LibraryViewMode>(() => readLibraryViewMode(libraryID));
-  const [genreKindIndex, setGenreKindIndex] = useState(0);
-  const genreKind = GENRE_ENTITY_KINDS[genreKindIndex];
 
   const [total, setTotal] = useState<number | null>(null);
   const [facets, setFacets] = useState<LibraryItemsFacets>(EMPTY_FACETS);
@@ -133,22 +130,12 @@ function LibraryBrowse({
       fetchLibraryItems({
         libraryID,
         state,
-        genreKind,
         limit: LIBRARY_BROWSE_PAGE,
         offset: pageIndex * LIBRARY_BROWSE_PAGE,
       })
         .then((page) => {
           if (generation !== generationRef.current) return;
           pendingRef.current.delete(pageIndex);
-          // No genre values under this kind: the library may group by another.
-          if (
-            pageIndex === 0 &&
-            page.facets.entities.length === 0 &&
-            genreKindIndex + 1 < GENRE_ENTITY_KINDS.length
-          ) {
-            setGenreKindIndex(genreKindIndex + 1);
-            return;
-          }
           pagesRef.current.set(pageIndex, page.items);
           setTotal(page.total);
           if (pageIndex === 0) setFacets(page.facets);
@@ -163,7 +150,7 @@ function LibraryBrowse({
     // `state` is derived from stateKey; keying on the string keeps loadPage
     // stable across unrelated renders.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [libraryID, stateKey, genreKind, genreKindIndex],
+    [libraryID, stateKey],
   );
 
   // A new query (or a retry) drops every cached page and starts again.
@@ -210,10 +197,12 @@ function LibraryBrowse({
       const first = await startPlayQueue({
         libraryID,
         state,
-        genreKind,
         shuffleSeed: shuffle ? newSeed() : undefined,
       });
-      if (first) navigate(`/watch/${encodeURIComponent(first)}`);
+      // The player reads its heading from navigation state.
+      if (first) {
+        navigate(`/watch/${encodeURIComponent(first.id)}`, { state: { title: first.title } });
+      }
     } catch {
       setFailed(true);
     } finally {
@@ -225,7 +214,24 @@ function LibraryBrowse({
   const qualityLabel = (quality: string) =>
     QUALITY_LABELS[quality] ? t(QUALITY_LABELS[quality]) : quality;
   // The selected values stay offered even when the current result has none.
-  const genres = withSelected(facets.entities, state.genre);
+  // A grouping selected in the URL is offered even before (or without) the
+  // server naming it, so the choice can always be seen and cleared.
+  const groupings = [
+    ...facets.groupings,
+    ...Object.keys(state.groups)
+      .filter((kind) => !facets.groupings.some((grouping) => grouping.kind === kind))
+      .map((kind) => ({ kind, title: undefined, values: [] })),
+  ].map((grouping) => ({
+    kind: grouping.kind,
+    label: displayString(grouping.title, displayLocale) || grouping.kind,
+    values: withSelected(grouping.values, state.groups[grouping.kind]),
+  }));
+  const withGroup = (kind: string, value: string) => {
+    const groups = { ...state.groups };
+    if (value) groups[kind] = value;
+    else delete groups[kind];
+    return groups;
+  };
   const decades = withSelected(facets.decades, state.decade || undefined);
   const qualities = withSelected(facets.qualities, state.quality);
 
@@ -233,12 +239,20 @@ function LibraryBrowse({
   if (state.watch) {
     activeFilters.push({ label: t(WATCH_LABELS[state.watch]), clear: { watch: "" } });
   }
-  if (state.genre) activeFilters.push({ label: state.genre, clear: { genre: "" } });
+  for (const grouping of groupings) {
+    const selected = state.groups[grouping.kind];
+    if (selected) {
+      activeFilters.push({
+        label: `${grouping.label}: ${selected}`,
+        clear: { groups: withGroup(grouping.kind, "") },
+      });
+    }
+  }
   if (state.decade) activeFilters.push({ label: decadeLabel(state.decade), clear: { decade: 0 } });
   if (state.quality) {
     activeFilters.push({ label: qualityLabel(state.quality), clear: { quality: "" } });
   }
-  const clearAll = { watch: "", genre: "", decade: 0, quality: "" } as const;
+  const clearAll = { watch: "", groups: {}, decade: 0, quality: "" } as const;
 
   const cells = [];
   for (let index = start; index < end; index += 1) {
@@ -326,18 +340,21 @@ function LibraryBrowse({
               })),
             ]}
           />
-          {genres.length > 0 && (
+          {groupings.map((grouping) => (
             <BrowseSelect
-              id="library-browse-genre"
-              label={t("libraryBrowseGenreLabel")}
-              value={state.genre || ALL}
-              onChange={(value) => update({ genre: value === ALL ? "" : value })}
+              key={grouping.kind}
+              id={`library-browse-group-${grouping.kind}`}
+              label={grouping.label}
+              value={state.groups[grouping.kind] || ALL}
+              onChange={(value) =>
+                update({ groups: withGroup(grouping.kind, value === ALL ? "" : value) })
+              }
               options={[
                 { value: ALL, label: t("libraryBrowseAny") },
-                ...genres.map((genre) => ({ value: genre, label: genre })),
+                ...grouping.values.map((value) => ({ value, label: value })),
               ]}
             />
-          )}
+          ))}
           {decades.length > 0 && (
             <BrowseSelect
               id="library-browse-decade"

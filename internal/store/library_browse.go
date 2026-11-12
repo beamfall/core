@@ -44,26 +44,33 @@ type LibraryBrowseQuery struct {
 	Seed string
 	// Watch is "", or one of the LibraryBrowseWatch* predicates.
 	Watch string
-	// EntityFilter keeps only Media related to the named entity (e.g. a genre).
-	EntityFilter *EntityFilter
+	// EntityFilters keeps only Media related to every named Entity.
+	EntityFilters []EntityFilter
 	// YearFrom / YearTo bound the release year inclusively; 0 leaves a side open.
 	YearFrom int
 	YearTo   int
 	// Quality is "" or one QualityTier* resolution bucket.
 	Quality string
-	// FacetEntityKind names the entity kind whose titles are reported as facet
-	// values (the genres a Library actually has). Empty reports none.
-	FacetEntityKind string
-	Limit           int
-	Offset          int
+	// FacetEntityKinds names the Entity Kinds whose titles are reported as
+	// facet values, in this order. Empty reports none.
+	FacetEntityKinds []string
+	Limit            int
+	Offset           int
 }
 
 // LibraryBrowseFacets are the filter values present in the Library's visible
 // set, before any filter is applied, so a client offers only choices that exist.
 type LibraryBrowseFacets struct {
-	Entities  []string
+	Entities  []LibraryBrowseEntityFacet
 	Decades   []int
 	Qualities []string
+}
+
+// LibraryBrowseEntityFacet is the titles of one Entity Kind that the visible
+// set actually reaches.
+type LibraryBrowseEntityFacet struct {
+	Kind   string
+	Titles []string
 }
 
 // LibraryBrowseResult is one page of a Library browse plus the size of the
@@ -192,15 +199,16 @@ func (s *Store) LibraryBrowse(ctx context.Context, filter LibraryFilter, query L
 	}
 	result := LibraryBrowseResult{Items: []SourceItem{}}
 	result.Facets = libraryBrowseFacets(candidates)
-	if query.FacetEntityKind != "" {
-		result.Facets.Entities, err = libraryBrowseEntityTitles(ctx, reader, query.FacetEntityKind, visible, candidates)
+	for _, kind := range query.FacetEntityKinds {
+		titles, err := libraryBrowseEntityTitles(ctx, reader, kind, visible, candidates)
 		if err != nil {
 			return empty, err
 		}
+		result.Facets.Entities = append(result.Facets.Entities, LibraryBrowseEntityFacet{Kind: kind, Titles: titles})
 	}
 
-	if query.EntityFilter != nil {
-		related, err := libraryBrowseCandidates(ctx, reader, certify, visible, query.EntityFilter)
+	for i := range query.EntityFilters {
+		related, err := libraryBrowseCandidates(ctx, reader, certify, visible, &query.EntityFilters[i])
 		if err != nil {
 			return empty, err
 		}
@@ -404,7 +412,7 @@ func libraryBrowseFacets(candidates []libraryBrowseCandidate) LibraryBrowseFacet
 			tiers[QualityTierForHeight(c.height)] = true
 		}
 	}
-	facets := LibraryBrowseFacets{Entities: []string{}, Decades: make([]int, 0, len(decades)), Qualities: []string{}}
+	facets := LibraryBrowseFacets{Entities: []LibraryBrowseEntityFacet{}, Decades: make([]int, 0, len(decades)), Qualities: []string{}}
 	for decade := range decades {
 		facets.Decades = append(facets.Decades, decade)
 	}

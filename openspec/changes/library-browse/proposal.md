@@ -15,11 +15,13 @@ count a library it has only partly loaded, so these must be answered by the serv
 
 ## What Changes
 
-- New Graph read `libraryItems(libraryID, sort, direction, watch, entityFilter, yearFrom, yearTo,
-  quality, facetEntityKind, seed, limit, offset)` returning `{ total, items, facets }`. `items` are
+- New Graph read `libraryItems(libraryID, sort, direction, watch, groupFilters, yearFrom, yearTo,
+  quality, seed, limit, offset)` returning `{ total, items, facets }`. `items` are
   the same `SourceItem` cards `sourceItems` returns. `total` counts the whole filtered set.
-  `facets` lists the entity titles, decades and quality tiers present in the library, so a client
-  offers only filters that can match.
+  `facets` lists the groupings, decades and quality tiers present in the library, so a client
+  offers only filters that can match. A grouping is a category-archetype entity kind the Library's
+  plugin declares; the server reports its kind, the plugin's display name and its values, so no
+  client names a kind itself. `groupFilters` maps a grouping kind to the chosen value.
 - Visibility is the all-items Source's: reveal state, library allow-list, certification ceiling,
   trash, extras and per-Profile Mute. A library outside the session's scope answers an empty result
   with empty facets.
@@ -35,7 +37,7 @@ count a library it has only partly loaded, so these must be answered by the serv
 
 - The A–Z jump rail (CORE-1071) and browse tiles (CORE-1074).
 - Saved filters or smart collections.
-- Multi-select of filter values (one genre, one decade, one quality at a time).
+- Multi-select of filter values (one value per grouping, one decade, one quality at a time).
 - Native clients. They can adopt `libraryItems` later; nothing they use changes.
 
 ## Failure modes

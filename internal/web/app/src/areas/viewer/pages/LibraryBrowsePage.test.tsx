@@ -42,7 +42,11 @@ function pageFor(request: LibraryItemsRequest) {
   return {
     total,
     items,
-    facets: { entities: ["Comedy"], decades: [1990], qualities: ["hd1080"] },
+    facets: {
+      groupings: [{ kind: "sector", title: { en: "Sector" }, values: ["Inner", "Outer"] }],
+      decades: [1990],
+      qualities: ["hd1080"],
+    },
   };
 }
 
@@ -111,6 +115,32 @@ describe("Library browse", () => {
     await user.click(screen.getByRole("button", { name: "Remove filter: Unwatched" }));
     await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/n/films/all"));
     expect(await screen.findByText("1,200 items")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Remove filter/ })).toBeNull();
+  });
+
+  it("offers the plugin's groupings by their own names and keeps the choice in the URL", async () => {
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
+    const user = userEvent.setup();
+
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/n/films/all?group.sector=Outer"]}>
+          <Routes>
+            <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
+          </Routes>
+          <Where />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    expect(await screen.findByText("1,200 items")).toBeInTheDocument();
+    expect(vi.mocked(fetchLibraryItems).mock.calls[0][0]).toMatchObject({
+      state: { groups: { sector: "Outer" } },
+    });
+    expect(screen.getByRole("combobox", { name: "Sector" })).toHaveTextContent("Outer");
+
+    await user.click(screen.getByRole("button", { name: "Remove filter: Sector: Outer" }));
+    await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent(/\/n\/films\/all$/));
     expect(screen.queryByRole("button", { name: /Remove filter/ })).toBeNull();
   });
 });

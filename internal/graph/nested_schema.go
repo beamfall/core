@@ -372,8 +372,7 @@ func searchModeArgument() NestedArgument {
 func libraryItemsArguments() []NestedArgument {
 	return []NestedArgument{
 		{Name: "direction", Kind: "string", Optional: true, Enum: []string{"asc", "desc"}},
-		entityFilterArgument(),
-		{Name: "facetEntityKind", Kind: "string", Optional: true},
+		{Name: "groupFilters", Kind: "map", Optional: true, Elem: &NestedArgument{Kind: "string"}},
 		{Name: "libraryID", Kind: "string"},
 		{Name: "limit", Kind: "int", Optional: true},
 		{Name: "offset", Kind: "int", Optional: true},

@@ -34,13 +34,12 @@ key SHALL come last in both directions. `random` SHALL return the same order for
 - **WHEN** a client requests a `sort` the server does not support
 - **THEN** the read answers a client error and returns no items
 
-### Requirement: Library browse filters by watch state, entity, year and quality
+### Requirement: Library browse filters by watch state, grouping, year and quality
 
 `libraryItems` SHALL keep only items matching every supplied filter: `watch` (`unwatched`,
-`in-progress`, `watched`, evaluated for the calling Profile), `entityFilter` (items related to the
-named entity), `yearFrom`/`yearTo` (inclusive bounds) and `quality` (a resolution tier). `facets`
-SHALL list the entity titles of `facetEntityKind`, the decades and the quality tiers present in the
-library's visible set before filtering.
+`in-progress`, `watched`, evaluated for the calling Profile), `groupFilters` (a map of grouping kind to
+value: items related to each named entity), `yearFrom`/`yearTo` (inclusive bounds) and `quality` (a
+resolution tier).
 
 #### Scenario: In-progress filter
 
@@ -51,6 +50,20 @@ library's visible set before filtering.
 
 - **WHEN** a client supplies a `watch` or `quality` value the server does not support
 - **THEN** the read answers a client error
+
+### Requirement: Library browse reports the plugin's groupings
+
+`facets` SHALL list the groupings, the decades and the quality tiers present in the library's
+visible set before filtering. A grouping SHALL be a category-archetype entity kind declared by the
+Library's plugin, reported with its kind, the plugin's display name and its values, in declaration
+order. A kind with no value in reach, and a Library without a plugin, SHALL report none.
+
+#### Scenario: Groupings come from the plugin
+
+- **WHEN** a Library's plugin declares two category kinds and its visible items relate to entities
+  of both
+- **THEN** `facets.groupings` lists both kinds with the plugin's display names and their values
+- **AND** a `groupFilters` entry for each kind returns only the items related to both entities
 
 ### Requirement: Web library page offers a full browse view
 
