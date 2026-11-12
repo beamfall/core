@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SourceItem } from "@/lib/graphql/types";
 import { readEntityPreview } from "../lib/entityPreview";
 import { fetchPreviewInfo } from "../lib/playback";
+import { readPlayerNavState } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import { MediaItemCard, PREVIEW_DWELL_MS } from "./MediaItemCard";
 
@@ -257,6 +258,28 @@ describe("MediaItemCard entity navigation", () => {
     const state = JSON.parse(screen.getByTestId("state").textContent || "null");
     expect(readEntityPreview(state, "viewer-1", "e1")).toEqual({ title: "Show", kind: "series" });
     expect(readEntityPreview(state, "other", "e1")).toBeNull();
+  });
+});
+
+describe("MediaItemCard play queue", () => {
+  it("binds the queue it hands the player to the viewer identity (CORE-1143)", () => {
+    const queue = [
+      { id: "media-alpha", title: "Alpha" },
+      { id: "media-beta", title: "Beta" },
+    ];
+    render(
+      <MemoryRouter>
+        <MediaItemCard item={baseItem()} queue={queue} />
+        <LocationState />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Alpha/ }));
+
+    expect(screen.getByTestId("path")).toHaveTextContent("/watch/media-alpha");
+    const state = JSON.parse(screen.getByTestId("state").textContent || "null");
+    expect(readPlayerNavState(state, "viewer-1").queue).toEqual(queue);
+    expect(readPlayerNavState(state, "other").queue).toBeUndefined();
   });
 });
 

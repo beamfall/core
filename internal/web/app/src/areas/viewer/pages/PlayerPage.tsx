@@ -5,7 +5,7 @@ import { displayString } from "@/lib/display";
 import { fetchClientPrefs, fetchMedia, setClientPref } from "@/lib/graphql";
 import type { ClientPref, GenericMediaInfo } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
-import { useSession } from "@/lib/session";
+import { useSession, useViewerIdentity } from "@/lib/session";
 import type { PlaybackNext } from "../lib/playback";
 import {
   resolvePreferences,
@@ -42,6 +42,7 @@ export function PlayerPage() {
   const location = useLocation();
   const { mediaId } = useParams();
   const { revealed } = useSession();
+  const identity = useViewerIdentity();
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [clientPrefs, setClientPrefs] = useState<ClientPref[]>([]);
@@ -50,8 +51,9 @@ export function PlayerPage() {
   // The catalog card / hero (and Up Next) carry the Media title forward in nav
   // state, with the siblings it was shown with as the play queue. The media(id)
   // read below fills in the title for a deep link, plus artwork and credits.
-  const navState = readPlayerNavState(location.state);
+  const navState = readPlayerNavState(location.state, identity);
   const queue = navState.queue;
+  const queueIdentity = navState.queueIdentity;
   const navTitle = navState.title || media?.title || "";
   const startAtSeconds = parseTimestampParam(new URLSearchParams(location.search).get("t"));
   const { previous: previousInQueue, next: nextInQueue } = queueNeighbours(queue, mediaId || "");
@@ -110,10 +112,10 @@ export function PlayerPage() {
     (id: string, title: string) => {
       navigate(`/watch/${encodeURIComponent(id)}`, {
         replace: true,
-        state: { title, ...(queue ? { queue } : {}) },
+        state: { title, ...(queue ? { queue, queueIdentity } : {}) },
       });
     },
-    [navigate, queue],
+    [navigate, queue, queueIdentity],
   );
 
   // Up Next auto-advance: the server-issued next Media (a queue's next item

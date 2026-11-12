@@ -42,12 +42,24 @@ describe("watchQueue (CORE-1143)", () => {
   });
 
   it("reads untyped history state defensively", () => {
-    expect(readPlayerNavState(null)).toEqual({});
-    expect(readPlayerNavState("x")).toEqual({});
+    expect(readPlayerNavState(null, "v")).toEqual({});
+    expect(readPlayerNavState("x", "v")).toEqual({});
     expect(
-      readPlayerNavState({ title: 4, queue: [{ id: "a", title: "A" }, { id: 1 }, null, "b"] }),
-    ).toEqual({ title: undefined, queue: [{ id: "a", title: "A" }] });
-    expect(readPlayerNavState({ title: "Song" })).toEqual({ title: "Song", queue: undefined });
+      readPlayerNavState(
+        { title: 4, queue: [{ id: "a", title: "A" }, { id: 1 }, null, "b"], queueIdentity: "v" },
+        "v",
+      ),
+    ).toEqual({ title: undefined, queue: [{ id: "a", title: "A" }], queueIdentity: "v" });
+    expect(readPlayerNavState({ title: "Song" }, "v")).toEqual({ title: "Song", queue: undefined });
+  });
+
+  it("drops a queue listed for another viewer identity, or with none", () => {
+    const queue = [{ id: "a", title: "A" }];
+    expect(
+      readPlayerNavState({ queue, queueIdentity: "revealed" }, "locked").queue,
+    ).toBeUndefined();
+    expect(readPlayerNavState({ queue }, "v").queue).toBeUndefined();
+    expect(readPlayerNavState({ queue, queueIdentity: "v" }, null).queue).toBeUndefined();
   });
 });
 

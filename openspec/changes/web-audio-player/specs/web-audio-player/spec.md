@@ -44,12 +44,18 @@ the accent fallback), its title and its credits, and SHALL NOT show an empty vid
 
 A Media played from a list SHALL carry the list's playable siblings as a queue. The player SHALL
 offer previous and next controls when there is a previous or next item, SHALL declare the next
-item to the server, and SHALL keep the queue when it advances.
+item to the server, and SHALL keep the queue when it advances. The queue SHALL be bound to the
+viewer identity that listed it and SHALL be dropped once that identity changes.
 
 #### Scenario: Next track
 
 - **WHEN** a viewer plays the second of five tracks and presses Next
 - **THEN** the third track plays and Previous returns to the second
+
+#### Scenario: Relock after a revealed list
+
+- **WHEN** a viewer plays from a list shown while Revealed, then relocks and returns to that watch entry
+- **THEN** the player offers no queue and shows none of the listed siblings' titles
 
 ### Requirement: Honest route and unavailable labels
 

@@ -107,7 +107,10 @@ export function MediaItemCard({
       // (the playback-info wire does not report it), plus the siblings as the
       // player's queue (previous/next and the pre-minted next stream).
       const state: PlayerNavState = { title: item.title };
-      if (queue && queue.length > 1) state.queue = queueWindow(queue, item.id);
+      if (identity && queue && queue.length > 1) {
+        state.queue = queueWindow(queue, item.id);
+        state.queueIdentity = identity;
+      }
       navigate(`/watch/${encodeURIComponent(item.id)}`, { state });
     } else {
       navigate(`/entity/${encodeURIComponent(item.id)}`, {

@@ -9,7 +9,10 @@ import type { PlayerState } from "../player/usePlayer";
 import { usePlayer } from "../player/usePlayer";
 import { buildTimestampedLink, PlayerPage } from "./PlayerPage";
 
-vi.mock("@/lib/session", () => ({ useSession: () => ({ revealed: true }) }));
+vi.mock("@/lib/session", () => ({
+  useSession: () => ({ revealed: true }),
+  useViewerIdentity: () => "viewer-1",
+}));
 vi.mock("@/lib/graphql", () => ({
   fetchClientPrefs: vi.fn().mockResolvedValue([]),
   setClientPref: vi.fn().mockResolvedValue(undefined),
@@ -134,7 +137,7 @@ describe("PlayerPage audio items (CORE-1143)", () => {
     } as never);
     renderPlayer(
       playerState({ phase: "playing", info: { mediaClass: "audio" } as PlayerState["info"] }),
-      { title: "Alpha", queue },
+      { title: "Alpha", queue, queueIdentity: "viewer-1" },
     );
 
     expect(await screen.findByText("Ann")).toBeInTheDocument();
@@ -152,6 +155,18 @@ describe("PlayerPage audio items (CORE-1143)", () => {
       expect(props?.onNextInQueue).toBeTypeOf("function");
       expect(props?.showSkipIntervalCollection).toBe("Record");
     });
+  });
+
+  it("drops a queue listed for another viewer identity (relock or profile switch)", () => {
+    renderPlayer(
+      playerState({ phase: "playing", info: { mediaClass: "audio" } as PlayerState["info"] }),
+      { title: "Alpha", queue, queueIdentity: "viewer-revealed" },
+    );
+    expect(screen.queryByText("2 of 3")).toBeNull();
+    expect(vi.mocked(usePlayer).mock.calls.at(-1)?.[3]).toBeUndefined();
+    const props = vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0];
+    expect(props?.onPreviousInQueue).toBeUndefined();
+    expect(props?.onNextInQueue).toBeUndefined();
   });
 
   it("keeps the video stage, and no queue controls, for a video item without a queue", () => {

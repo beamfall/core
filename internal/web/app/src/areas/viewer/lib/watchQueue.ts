@@ -5,7 +5,10 @@ import type { SourceItem } from "@/lib/graphql/types";
 // tracks, a section's items — in the watch route's nav state, so the player can
 // offer previous/next and declare the next item to playback-info (which then
 // pre-mints its stream for a gapless handoff). The queue is a convenience the
-// client owns: a deep link to /watch/:id simply has none.
+// client owns: a deep link to /watch/:id simply has none. History keeps the
+// queue's titles, so it is bound to the viewer identity (profile and Reveal
+// state) that listed them and dropped once that identity changes, as entity
+// previews are.
 
 /** One playable entry in the queue. */
 export interface PlayQueueItem {
@@ -17,6 +20,8 @@ export interface PlayQueueItem {
 export interface PlayerNavState {
   title?: string;
   queue?: PlayQueueItem[];
+  /** The viewer identity the queue was listed for; a queue without it is ignored. */
+  queueIdentity?: string;
 }
 
 // Nav state is serialised into history; a huge section must not bloat it, so
@@ -63,19 +68,24 @@ export function queueNeighbours(
   return { previous: queue[index - 1], next: queue[index + 1] };
 }
 
-/** Reads the watch route's nav state defensively (history state is untyped). */
-export function readPlayerNavState(state: unknown): PlayerNavState {
+/**
+ * Reads the watch route's nav state defensively (history state is untyped).
+ * The queue is kept only when it was listed for the current viewer identity.
+ */
+export function readPlayerNavState(state: unknown, identity: string | null): PlayerNavState {
   if (!state || typeof state !== "object") return {};
-  const raw = state as { title?: unknown; queue?: unknown };
+  const raw = state as { title?: unknown; queue?: unknown; queueIdentity?: unknown };
   const title = typeof raw.title === "string" ? raw.title : undefined;
-  const queue = Array.isArray(raw.queue)
-    ? raw.queue.filter(
-        (item): item is PlayQueueItem =>
-          !!item &&
-          typeof item === "object" &&
-          typeof (item as PlayQueueItem).id === "string" &&
-          typeof (item as PlayQueueItem).title === "string",
-      )
-    : undefined;
-  return { title, queue };
+  const sameViewer = !!identity && raw.queueIdentity === identity;
+  const queue =
+    sameViewer && Array.isArray(raw.queue)
+      ? raw.queue.filter(
+          (item): item is PlayQueueItem =>
+            !!item &&
+            typeof item === "object" &&
+            typeof (item as PlayQueueItem).id === "string" &&
+            typeof (item as PlayQueueItem).title === "string",
+        )
+      : undefined;
+  return { title, queue, ...(queue ? { queueIdentity: identity as string } : {}) };
 }
