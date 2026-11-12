@@ -102,6 +102,7 @@ const CONTAINER_CANDIDATES: ContainerCandidate[] = [
   { container: "m4a", contentType: 'audio/mp4; codecs="mp4a.40.2"' },
   { container: "flac", contentType: "audio/flac" },
   { container: "ogg", contentType: "audio/ogg" },
+  { container: "wav", contentType: "audio/wav" },
 ];
 
 const PROBE_HEIGHT_1080 = 1080;

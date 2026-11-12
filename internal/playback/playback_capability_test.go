@@ -730,3 +730,101 @@ func TestAudioOnlyLegacyProfileJudgedByDirectCodecs(t *testing.T) {
 		t.Fatal("audio envelope declaring flac cannot direct-play a flac track")
 	}
 }
+
+// browserProfile mirrors what the web client probes: mp4/webm containers, H.264 and AAC, no
+// mkv. Pinned here because the over-transcode it exposed (CORE-1145) lives in the server's
+// reading of exactly this shape.
+var browserProfile = CapabilityProfile{
+	Client:          "beamfall-web",
+	Containers:      []string{"mp4", "webm", "mp3"},
+	DirectCodecs:    []string{"h264"},
+	VideoCodecs:     []VideoCodecCap{{Codec: "h264", Profiles: []string{"High", "Main"}, MaxHeight: 1080}},
+	AudioCodecs:     []AudioCodecCap{{Codec: "aac", MaxChannels: 2}, {Codec: "mp3", MaxChannels: 2}},
+	SubtitleFormats: []string{"srt", "webvtt"},
+	DownstreamAudio: "stereo",
+}
+
+// TestUndeclaredContainerWithPlayableStreamsRemuxes: an mkv whose H.264 and AAC the browser
+// decodes is a container-only mismatch. ADR-0010 §2 makes that a direct-stream remux, not a
+// re-encode.
+func TestUndeclaredContainerWithPlayableStreamsRemuxes(t *testing.T) {
+	service, st, scope := capabilityTestService(t)
+	mediaID := importProbedMedia(t, st, "fp-mkv-remux", "matroska", "h264", 1920, 1080, []store.MediaFileStream{
+		videoStream("h264", "High", 0, ""),
+		audioStream(1, "aac", 2),
+	})
+	resp, err := service.Info(context.Background(), scope, InfoRequest{MediaID: string(mediaID), CapabilityProfile: browserProfile})
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	if resp.Decision != "direct-stream" || resp.Reason != "container-remux" {
+		t.Fatalf("Decision/Reason = %q/%q, want direct-stream/container-remux", resp.Decision, resp.Reason)
+	}
+	if len(resp.Streams) != 1 || len(resp.Streams[0].Renditions) != 1 || resp.Streams[0].Renditions[0].ID != audioCopyRungID {
+		t.Fatalf("streams = %+v, want the single video-copy rung", resp.Streams)
+	}
+}
+
+// TestUndeclaredContainerStillTranscodesWhenRemuxIsNotHonest pins the cases the remux must
+// not take: an undecodable video codec, a source with no recorded video stream, and HDR10+
+// metadata a container swap would drop.
+func TestUndeclaredContainerStillTranscodesWhenRemuxIsNotHonest(t *testing.T) {
+	cases := []struct {
+		name    string
+		codec   string
+		streams []store.MediaFileStream
+	}{
+		{"video codec the client cannot decode", "hevc", []store.MediaFileStream{videoStream("hevc", "Main", 0, ""), audioStream(1, "aac", 2)}},
+		{"no recorded streams", "h264", nil},
+		{"hdr10plus source", "h264", []store.MediaFileStream{hdr10PlusVideoStream("h264", "High"), audioStream(1, "aac", 2)}},
+	}
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			service, st, scope := capabilityTestService(t)
+			mediaID := importProbedMedia(t, st, "fp-mkv-no-remux-"+string(rune('a'+i)), "matroska", tc.codec, 1920, 1080, tc.streams)
+			resp, err := service.Info(context.Background(), scope, InfoRequest{MediaID: string(mediaID), CapabilityProfile: browserProfile})
+			if err != nil {
+				t.Fatalf("Info: %v", err)
+			}
+			if resp.Decision != "transcode" {
+				t.Fatalf("Decision = %q (%q), want transcode", resp.Decision, resp.Reason)
+			}
+		})
+	}
+}
+
+// TestAudioItemIsJudgedByItsAudioNotVideoCodecs: an mp3 against a profile that declares video
+// codecs and mp3 audio direct-plays; the media's audio codec is not a video codec.
+func TestAudioItemIsJudgedByItsAudioNotVideoCodecs(t *testing.T) {
+	service, st, scope := capabilityTestService(t)
+	path := filepath.Join(t.TempDir(), "song.mp3")
+	if err := os.WriteFile(path, []byte("beamfall audio"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	audio, _, err := st.ImportMediaFile(context.Background(), store.ImportMediaFile{
+		LibraryID: "library-local", Path: path, Title: "Song", Container: "mp3", Codec: "mp3",
+		Class: store.MediaClassAudio, ContentFingerprint: "fp-audio-direct",
+		Streams: []store.MediaFileStream{audioStream(0, "mp3", 2)},
+	})
+	if err != nil {
+		t.Fatalf("ImportMediaFile: %v", err)
+	}
+	resp, err := service.Info(context.Background(), scope, InfoRequest{MediaID: string(audio.ID), CapabilityProfile: browserProfile})
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	if resp.Decision != "direct-play" {
+		t.Fatalf("Decision = %q (%q), want direct-play", resp.Decision, resp.Reason)
+	}
+
+	// An audio codec the profile omits still transcodes.
+	noMP3 := browserProfile
+	noMP3.AudioCodecs = []AudioCodecCap{{Codec: "aac", MaxChannels: 2}}
+	resp, err = service.Info(context.Background(), scope, InfoRequest{MediaID: string(audio.ID), CapabilityProfile: noMP3})
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	if resp.Decision == "direct-play" {
+		t.Fatalf("Decision = direct-play for an undeclared audio codec")
+	}
+}
