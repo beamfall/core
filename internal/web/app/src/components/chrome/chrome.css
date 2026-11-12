@@ -232,19 +232,13 @@
   position: fixed;
   inset: 0;
   z-index: 44;
-  border: 0;
   background: oklch(0% 0 0 / 55%);
-  cursor: default;
-  animation: bf-scrim-in var(--duration-fast) var(--ease-standard);
+  transition: opacity var(--duration-fast) var(--ease-standard);
 }
 
-@keyframes bf-scrim-in {
-  from {
-    opacity: 0;
-  }
-}
-
-/* Phone: the sidebar is an overlay drawer that slides in from the left. */
+/* Phone: the sidebar is a modal drawer that slides in from the inline start.
+ * The dialog primitive mounts it only while open and marks the first and last
+ * frames, so the slide and the fade are plain transitions from those states. */
 .bf-sidebar.is-drawer {
   position: fixed;
   top: 0;
@@ -257,17 +251,18 @@
   border-right-color: var(--border-strong);
   background: var(--bg-surface);
   box-shadow: 20px 0 60px -20px oklch(0% 0 0 / 70%);
-  transform: translateX(-104%);
-  visibility: hidden;
-  transition:
-    transform var(--duration-normal) var(--ease-standard),
-    visibility 0s linear var(--duration-normal);
+  outline: 2px solid transparent;
+  transition: transform var(--duration-normal) var(--ease-standard);
 }
 
-.bf-sidebar.is-drawer.is-open {
-  transform: none;
-  visibility: visible;
-  transition: transform var(--duration-normal) var(--ease-standard);
+.bf-sidebar.is-drawer[data-starting-style],
+.bf-sidebar.is-drawer[data-ending-style] {
+  transform: translateX(-104%);
+}
+
+.bf-sidebar-scrim[data-starting-style],
+.bf-sidebar-scrim[data-ending-style] {
+  opacity: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {

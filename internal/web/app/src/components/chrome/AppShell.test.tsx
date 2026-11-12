@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -212,28 +212,69 @@ describe("AppShell library sidebar", () => {
     );
   });
 
-  it("returns focus to the menu button when Escape closes the phone drawer", async () => {
-    const user = userEvent.setup();
-    // jsdom has no matchMedia; answer every query as a phone-width layout.
-    Object.defineProperty(window, "matchMedia", {
-      configurable: true,
-      value: () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }),
+  describe("phone drawer (CORE-1166)", () => {
+    const originalMatchMedia = window.matchMedia;
+
+    beforeEach(() => {
+      window.matchMedia = ((query: string) => ({
+        matches: query === "(max-width: 760px)",
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      })) as unknown as typeof window.matchMedia;
     });
-    try {
+
+    afterEach(() => {
+      window.matchMedia = originalMatchMedia;
+    });
+
+    it("keeps the drawer out of the page until the menu button opens it", () => {
+      renderShell();
+      const toggle = screen.getByRole("button", { name: "Navigation" });
+      expect(toggle).toHaveAttribute("aria-expanded", "false");
+      expect(toggle).toHaveAttribute("aria-haspopup", "dialog");
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: "Space Archive" })).not.toBeInTheDocument();
+    });
+
+    it("moves focus into the drawer on open and traps it there", async () => {
+      const user = userEvent.setup();
+      renderShell();
+      await user.click(screen.getByRole("button", { name: "Navigation" }));
+
+      const drawer = await screen.findByRole("dialog", { name: "Navigation" });
+      expect(drawer).toHaveClass("bf-sidebar", "is-drawer");
+      await waitFor(() => expect(drawer).toContainElement(document.activeElement as HTMLElement));
+
+      for (let i = 0; i < 6; i++) {
+        await user.tab();
+        await waitFor(() => expect(drawer).toContainElement(document.activeElement as HTMLElement));
+      }
+    });
+
+    it("closes on Escape and returns focus to the menu button", async () => {
+      const user = userEvent.setup();
       renderShell();
       const toggle = screen.getByRole("button", { name: "Navigation" });
       await user.click(toggle);
-      expect(toggle).toHaveAttribute("aria-expanded", "true");
-      const link = screen.getByRole("link", { name: "Space Archive" });
-      link.focus();
-      expect(link).toHaveFocus();
+      await screen.findByRole("dialog", { name: "Navigation" });
 
       await user.keyboard("{Escape}");
 
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      await waitFor(() => expect(toggle).toHaveFocus());
       expect(toggle).toHaveAttribute("aria-expanded", "false");
-      expect(toggle).toHaveFocus();
-    } finally {
-      Reflect.deleteProperty(window, "matchMedia");
-    }
+    });
+
+    it("closes when a destination is chosen", async () => {
+      const user = userEvent.setup();
+      renderShell();
+      await user.click(screen.getByRole("button", { name: "Navigation" }));
+      await screen.findByRole("dialog", { name: "Navigation" });
+
+      await user.click(screen.getByRole("link", { name: "Space Archive" }));
+
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    });
   });
 });

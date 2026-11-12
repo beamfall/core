@@ -50,7 +50,6 @@ describe("LibrarySidebar library tiles", () => {
             activeNodeId="home"
             collapsed={false}
             drawer={false}
-            open={false}
             onNavigate={() => {}}
           />
         </MemoryRouter>
@@ -84,7 +83,6 @@ describe("LibrarySidebar library tiles", () => {
             activeNodeId=""
             collapsed={false}
             drawer={false}
-            open={false}
             onNavigate={() => {}}
           />
         </MemoryRouter>

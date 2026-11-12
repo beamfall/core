@@ -1,5 +1,5 @@
 import { House, LayoutGrid } from "lucide-react";
-import type { CSSProperties } from "react";
+import type { ComponentProps, CSSProperties } from "react";
 import { Link } from "react-router";
 import { displayString } from "@/lib/display";
 import type { LibrarySummary, NavigationNode } from "@/lib/graphql/types";
@@ -13,7 +13,9 @@ import { libraryIcon } from "@/lib/libraryIcons";
 // by the library's own accent and carrying its icon (CORE-1200), or a monogram
 // when the server names no icon this client knows. Desktop collapses it to an
 // icon rail; phones open it as a drawer. The shell owns that state and passes
-// it in.
+// it in. As a drawer the shell renders it as a modal dialog's popup, so the
+// remaining <aside> props (the dialog's role, ref and state attributes) land on
+// the element itself.
 //
 // Only views this client renders get an entry: BrowsePage draws "layout" nodes
 // and sends anything else to Home, so an Ambient entry would be a link that
@@ -25,17 +27,17 @@ export function LibrarySidebar({
   activeNodeId,
   collapsed,
   drawer,
-  open,
   onNavigate,
-}: {
+  className,
+  ...aside
+}: Omit<ComponentProps<"aside">, "id" | "children"> & {
   id: string;
   navigation: NavigationNode[];
   libraries: LibrarySummary[];
   activeNodeId: string;
   collapsed: boolean;
-  /** Phone layout: the sidebar is an overlay drawer, hidden unless open. */
+  /** Phone layout: the sidebar is an overlay drawer, mounted only while open. */
   drawer: boolean;
-  open: boolean;
   onNavigate: () => void;
 }) {
   const t = useT();
@@ -45,7 +47,6 @@ export function LibrarySidebar({
   const rendered = navigation.filter((node) => node.view === "layout");
   const aggregates = rendered.filter((node) => !node.libraryID);
   const libraryNodes = rendered.filter((node) => node.libraryID);
-  const hidden = drawer && !open;
   const homeId = rendered[0]?.id;
   // Only tiles without an icon carry a monogram, so only those can collide.
   const lettered = libraryNodes.filter((node) => !icons.get(node.libraryID ?? ""));
@@ -93,15 +94,14 @@ export function LibrarySidebar({
 
   return (
     <aside
+      {...aside}
       id={id}
       className={
         "bf-sidebar" +
         (collapsed && !drawer ? " is-collapsed" : "") +
         (drawer ? " is-drawer" : "") +
-        (open ? " is-open" : "")
+        (className ? ` ${className}` : "")
       }
-      inert={hidden}
-      aria-hidden={hidden || undefined}
     >
       <nav aria-label={t("navLabel")}>
         <ul className="bf-side-list">{aggregates.map(item)}</ul>
