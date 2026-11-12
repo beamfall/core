@@ -7,4 +7,4 @@
 - [x] 5. Web queue: cards carry siblings; previous/next; `nextMediaID`
 - [x] 6. Route label, unavailable reason, per-container skip-interval row
 - [ ] 7. Tests and goldens; owner review in the running UI
-- [ ] 8. Visualizer from the pinned Oscillux web renderer (blocked: no pinned release)
+- [ ] 8. Visualizer from the pinned Oscillux web renderer (blocked: no pinned release; moved to CORE-1309)

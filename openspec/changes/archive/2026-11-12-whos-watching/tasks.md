@@ -17,4 +17,4 @@
 
 - [x] 3.1 Browser check on the demo seed at phone and desktop widths
 - [x] 3.2 `openspec validate --all --strict`
-- [ ] 3.3 `make gate`
+- [x] 3.3 `make gate`

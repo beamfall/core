@@ -13,5 +13,5 @@
 
 ## 3. Close
 
-- [ ] 3.1 `make gate` on the landing head
+- [x] 3.1 `make gate` on the landing head
 - [ ] 3.2 `openspec archive card-watch-state` after landing

@@ -13,5 +13,5 @@
 ## 3. Verify and close
 
 - [x] 3.1 Verify in the running web app on the demo seed, including the live-region announcement
-- [ ] 3.2 Run `make gate`
+- [x] 3.2 Run `make gate`
 - [ ] 3.3 Run `openspec archive web-header-search` after landing, before completing CORE-1191
