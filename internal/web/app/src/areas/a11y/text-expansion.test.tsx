@@ -189,7 +189,10 @@ const CLIP_UTILITY =
 // on the picker container (no text slot) and 2 `truncate` on filesystem-derived
 // slots (folder name + footer path). Both truncate gracefully: CSS ellipsis only,
 // so the full value stays in the DOM text node and is reachable by AT.
-const CLIP_BASELINE = 24;
+// 2026-11-11 (CORE-1131): +2 → 26 for Console Libraries folder rows — 2 `truncate`
+// on the folder name and full path. CSS ellipsis only; the full path stays in the
+// DOM text node and a `title`, and the row's remove button names it for AT.
+const CLIP_BASELINE = 26;
 
 function tsSources(dir: string, acc: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {

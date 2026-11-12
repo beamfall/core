@@ -11,6 +11,7 @@ import {
   fetchPlugins,
   fetchSkipDetectionEnabled,
   scanLibrary,
+  setLibraryRoots,
 } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { Libraries } from "./Libraries";
@@ -179,6 +180,32 @@ describe("Console Libraries scan", () => {
 
     await waitFor(() => expect(scanLibrary).toHaveBeenCalledWith("library-1", "/Volumes/library"));
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("saves an added folder at once", async () => {
+    const user = userEvent.setup();
+    renderLibraries();
+
+    await user.type(await screen.findByLabelText("Add a folder"), "/Volumes/more");
+    await user.click(screen.getByRole("button", { name: "Add folder" }));
+
+    await waitFor(() =>
+      expect(setLibraryRoots).toHaveBeenCalledWith("library-1", [
+        "/Volumes/library",
+        "/Volumes/more",
+      ]),
+    );
+  });
+
+  it("removes a folder only after the confirm", async () => {
+    const user = userEvent.setup();
+    renderLibraries();
+
+    await user.click(await screen.findByRole("button", { name: "Remove /Volumes/library" }));
+    expect(setLibraryRoots).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Remove" }));
+
+    await waitFor(() => expect(setLibraryRoots).toHaveBeenCalledWith("library-1", []));
   });
 });
 

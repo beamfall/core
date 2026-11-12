@@ -6,4 +6,5 @@
 - [x] 4. Console home task tiles with live status (scans, keys needed, libraries) and Rescan all
 - [x] 5. Add-library form heading; new library shows without Refresh; Unmatched links
 - [x] 6. Header Activity link (running-job count, to Operations); auto-scan status on library cards and the Rescan tile; Add library + Rescan all in the Libraries header
-- [ ] 7. Owner review in the running UI; `npm run test`; `make gate` at landing
+- [x] 7. Console Libraries redesign: one glass card per library (status, Rescan, Fix unmatched), folder rows that save on add/remove, option switches with help text, Add library panel on demand
+- [ ] 8. Owner review in the running UI; `npm run test`; `make gate` at landing

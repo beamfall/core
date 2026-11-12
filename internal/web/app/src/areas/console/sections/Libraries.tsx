@@ -1,4 +1,14 @@
-import { Boxes, Plus, RefreshCw, Save, ScanLine, SearchCheck } from "lucide-react";
+import {
+  Boxes,
+  Folder,
+  FolderPlus,
+  LibraryBig,
+  Plus,
+  RefreshCw,
+  ScanLine,
+  SearchCheck,
+  X,
+} from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 import { RescanAllButton, RescanButton, RescanStatus } from "@/components/beamfall/LibraryRescan";
@@ -7,7 +17,6 @@ import {
   ErrorLine,
   ErrorState,
   PathPickerField,
-  StatusChip,
 } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,16 +50,52 @@ import type {
   WatcherStatusInfo,
 } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
+import { ConfirmButton } from "../ConfirmButton";
 import { Section } from "../Section";
 import { useAsync } from "../useAsync";
 
 const NO_PLUGIN = "__none__";
 
-// One editable Library card: roots (one folder per line), the preview-clips
-// toggle, the skip-segment detection toggle (ENR-7, ADR-0048 Decision 3/6, off
-// by default), an ad-hoc scan trigger, and the plugin binding (display-only —
-// the binding is set at creation). Each control writes through its own
-// mutation.
+// Libraries screen styling (CORE-1131): the setup wizard's glass tiles and
+// icon tiles (CORE-1114), one full-width card per library so long folder
+// paths stay readable.
+const CARD = "rounded-xl border border-white/10 bg-white/[0.03] backdrop-blur-sm";
+const ICON_TILE =
+  "flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary ring-1 ring-primary/25";
+const PANEL = "rounded-lg border border-white/[0.07] bg-black/20 p-3";
+
+function lastSegment(path: string): string {
+  const parts = path.split(/[\\/]+/).filter(Boolean);
+  return parts[parts.length - 1] ?? path;
+}
+
+function SettingRow({
+  label,
+  help,
+  checked,
+  onChange,
+}: {
+  label: string;
+  help: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="flex cursor-pointer items-start justify-between gap-4 py-2">
+      <span className="min-w-0">
+        <span className="block text-sm font-medium">{label}</span>
+        <span className="block text-xs leading-snug text-muted-foreground">{help}</span>
+      </span>
+      <Switch checked={checked} onCheckedChange={onChange} className="mt-0.5" />
+    </label>
+  );
+}
+
+// One library card: a header with the library's status and its Rescan action,
+// its folders (each add or remove saves at once), its options, and the
+// single-folder scan tucked under Advanced. Each control writes through its
+// own mutation.
 function LibraryCard({
   library,
   plugins,
@@ -66,16 +111,13 @@ function LibraryCard({
 }) {
   const t = useT();
   const displayLocale = useDisplayLocale();
-  const [roots, setRoots] = useState((library.roots ?? []).join("\n"));
+  const roots = library.roots ?? [];
   const [newRoot, setNewRoot] = useState("");
+  const [rootsError, setRootsError] = useState("");
   const [scanRoot, setScanRoot] = useState("");
   const [scanFolders, setScanFolders] = useState<FolderEntryInfo[]>([]);
   const [scanError, setScanError] = useState("");
   const plugin = plugins.find((p) => p.id === library.pluginID);
-  const rootsList = roots
-    .split(/\n+/)
-    .map((r) => r.trim())
-    .filter(Boolean);
 
   const loadScanFolders = useCallback(async () => {
     if ((library.roots ?? []).length === 0) {
@@ -107,15 +149,21 @@ function LibraryCard({
     void loadScanFolders();
   }, [loadScanFolders]);
 
-  async function saveRoots() {
-    await setLibraryRoots(library.id, rootsList);
-    onChanged();
+  async function saveRoots(next: string[]) {
+    setRootsError("");
+    try {
+      await setLibraryRoots(library.id, next);
+      onChanged();
+    } catch (err) {
+      setRootsError(err instanceof Error ? err.message : t("consoleConfigUnavailable"));
+    }
   }
 
-  function addRoot() {
+  async function addRoot(e: FormEvent) {
+    e.preventDefault();
     const root = newRoot.trim();
-    if (!root || rootsList.includes(root)) return;
-    setRoots([...rootsList, root].join("\n"));
+    if (!root || roots.includes(root)) return;
+    await saveRoots([...roots, root]);
     setNewRoot("");
   }
 
@@ -140,97 +188,140 @@ function LibraryCard({
     }
   }
 
+  const watching = watcher?.state === "watching";
   return (
-    <fieldset className="console-fieldset">
-      <div className="console-fieldset-head flex items-center justify-between gap-4">
-        <div className="min-w-0">
-          <legend className="console-fieldset-title">{library.title}</legend>
-          <p className="console-fieldset-help">
-            {plugin ? (
-              <StatusChip tone="cyan" dot={false}>
-                {displayString(plugin.displayName, displayLocale)}
-              </StatusChip>
-            ) : (
-              t("none")
+    <article aria-labelledby={`library-${library.id}`} className={CARD}>
+      <header className="flex flex-wrap items-start gap-3 border-b border-white/[0.07] p-4">
+        <span className={ICON_TILE}>
+          <LibraryBig aria-hidden className="size-5" />
+        </span>
+        <div className="min-w-0 flex-1 space-y-1">
+          <h3 id={`library-${library.id}`} className="m-0 text-base font-semibold leading-tight">
+            {library.title}
+          </h3>
+          <p className="m-0 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+            <span>
+              {plugin ? displayString(plugin.displayName, displayLocale) : t("libraryNoKind")}
+            </span>
+            <span aria-hidden>·</span>
+            <span>{t("libraryFolderCount", { count: roots.length })}</span>
+            {watcher && (
+              <>
+                <span aria-hidden>·</span>
+                <span
+                  title={watcher.reason || undefined}
+                  className={cn("inline-flex items-center gap-1.5", watching && "text-emerald-300")}
+                >
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "size-1.5 rounded-full",
+                      watching
+                        ? "bg-emerald-400 shadow-[0_0_6px_var(--color-emerald-400)]"
+                        : "bg-muted-foreground",
+                    )}
+                  />
+                  {watching ? t("autoScanOn") : t("autoScanOff")}
+                </span>
+              </>
             )}
           </p>
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          <label className="flex items-center gap-2 text-sm">
-            {t("previewClips")}
-            <Switch checked={library.previewClips} onCheckedChange={(c) => void togglePreview(c)} />
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            {t("skipDetection")}
-            <Switch
-              checked={skipDetectionEnabled}
-              onCheckedChange={(c) => void toggleSkipDetection(c)}
-            />
-          </label>
-        </div>
-      </div>
-      <div className="console-fieldset-body space-y-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <RescanButton libraryID={library.id} roots={library.roots ?? []} />
-          {watcher && (
-            <span title={watcher.reason || undefined}>
-              <StatusChip tone={watcher.state === "watching" ? "green" : "neutral"}>
-                {watcher.state === "watching" ? t("autoScanOn") : t("autoScanOff")}
-              </StatusChip>
-            </span>
-          )}
-          <Button asChild size="sm" variant="outline">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <Button asChild size="sm" variant="ghost">
             <Link to="/manage/unmatched">
               <SearchCheck className="console-nav-icon" aria-hidden />
               {t("fixUnmatched")}
             </Link>
           </Button>
+          <RescanButton libraryID={library.id} roots={roots} />
         </div>
-        <RescanStatus libraryID={library.id} hasRoots={(library.roots ?? []).length > 0} />
-        <div className="space-y-2">
-          <PathPickerField
-            id={`roots-${library.id}`}
-            label={t("libraryRoots")}
-            role="libraryRoot"
-            value={newRoot}
-            libraryID={library.id}
-            placeholder={t("rootsPlaceholder")}
-            onChange={setNewRoot}
-          />
-          {rootsList.length > 0 ? (
-            <div className="grid gap-1">
-              {rootsList.map((root) => (
-                <div key={root} className="flex items-center gap-2 rounded border px-2 py-1">
-                  <span className="min-w-0 flex-1 break-all text-xs">{root}</span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setRoots(rootsList.filter((item) => item !== root).join("\n"))}
-                  >
-                    {t("remove")}
-                  </Button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-muted-foreground">{t("rootsPlaceholder")}</p>
-          )}
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={!newRoot.trim()}
-              onClick={addRoot}
+      </header>
+
+      <div className="space-y-4 p-4">
+        <RescanStatus libraryID={library.id} hasRoots={roots.length > 0} />
+        <div className="grid gap-4 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+          <section aria-labelledby={`folders-${library.id}`} className="space-y-2">
+            <h4
+              id={`folders-${library.id}`}
+              className="m-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
             >
-              {t("stagePathPickerRoot")}
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => void saveRoots()}>
-              <Save className="console-nav-icon" aria-hidden />
-              {t("save")}
-            </Button>
-          </div>
+              {t("libraryFolders")}
+            </h4>
+            {roots.length > 0 && (
+              <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+                {roots.map((root) => (
+                  <li key={root} className={cn(PANEL, "flex min-w-0 items-center gap-3 py-2")}>
+                    <Folder aria-hidden className="size-4 shrink-0 text-primary" />
+                    <span className="min-w-0 flex-1" title={root}>
+                      <span className="block truncate text-sm font-medium">
+                        {lastSegment(root)}
+                      </span>
+                      <span className="block truncate font-mono text-[11px] text-muted-foreground">
+                        {root}
+                      </span>
+                    </span>
+                    <ConfirmButton
+                      variant="ghost"
+                      size="sm"
+                      confirm="confirmRemoveFolder"
+                      actionLabel={t("remove")}
+                      onConfirm={() => saveRoots(roots.filter((item) => item !== root))}
+                      label={
+                        <>
+                          <X aria-hidden className="size-4" />
+                          <span className="sr-only">{t("removeFolder", { path: root })}</span>
+                        </>
+                      }
+                    >
+                      <span className="block break-all font-mono text-xs">{root}</span>
+                    </ConfirmButton>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <form onSubmit={addRoot} className="flex flex-wrap items-end gap-2">
+              <PathPickerField
+                id={`roots-${library.id}`}
+                label={<span className="sr-only">{t("addFolderPath")}</span>}
+                role="libraryRoot"
+                value={newRoot}
+                libraryID={library.id}
+                placeholder={t("addFolderPath")}
+                onChange={setNewRoot}
+                className="min-w-0 flex-1"
+                inputClassName="min-w-0 flex-1"
+              />
+              <Button type="submit" size="sm" variant="outline" disabled={!newRoot.trim()}>
+                <FolderPlus className="console-nav-icon" aria-hidden />
+                {t("addFolder")}
+              </Button>
+            </form>
+            <ErrorLine message={rootsError} />
+          </section>
+
+          <section aria-labelledby={`options-${library.id}`} className="space-y-1">
+            <h4
+              id={`options-${library.id}`}
+              className="m-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+            >
+              {t("libraryOptions")}
+            </h4>
+            <div className={cn(PANEL, "divide-y divide-white/[0.06] py-1")}>
+              <SettingRow
+                label={t("previewClips")}
+                help={t("previewClipsHelp")}
+                checked={library.previewClips}
+                onChange={(c) => void togglePreview(c)}
+              />
+              <SettingRow
+                label={t("skipDetection")}
+                help={t("skipDetectionHelp")}
+                checked={skipDetectionEnabled}
+                onChange={(c) => void toggleSkipDetection(c)}
+              />
+            </div>
+          </section>
         </div>
 
         <details className="console-disclosure">
@@ -259,19 +350,22 @@ function LibraryCard({
           <ErrorLine message={scanError} />
         </details>
       </div>
-    </fieldset>
+    </article>
   );
 }
 
-// Libraries (ADR-0003): the manageable Library list with create + per-Library
-// roots / preview-clips / scan controls, and the plugin binding at creation.
-export function Libraries() {
+// Add-library panel: shown on demand (or when there are no libraries yet).
+function AddLibrary({
+  plugins,
+  onCreated,
+  onCancel,
+}: {
+  plugins: PluginSummary[];
+  onCreated: () => Promise<void>;
+  onCancel?: () => void;
+}) {
   const t = useT();
   const displayLocale = useDisplayLocale();
-  const libs = useAsync(fetchLibraries);
-  const plugins = useAsync(fetchPlugins);
-  const skipDetection = useAsync(fetchSkipDetectionEnabled);
-  const watchers = useAsync(fetchWatcherStatus);
   const [title, setTitle] = useState("");
   const [pluginID, setPluginID] = useState(NO_PLUGIN);
 
@@ -281,8 +375,70 @@ export function Libraries() {
     await createLibrary(title.trim(), pluginID === NO_PLUGIN ? null : pluginID);
     setTitle("");
     setPluginID(NO_PLUGIN);
-    await refreshLibraries();
+    await onCreated();
   }
+
+  return (
+    <form
+      onSubmit={onCreate}
+      aria-labelledby="add-library-heading"
+      className={cn(CARD, "flex flex-wrap items-end gap-4 p-4 ring-1 ring-primary/20")}
+    >
+      <div className="flex w-full items-center gap-3">
+        <span className={ICON_TILE}>
+          <FolderPlus aria-hidden className="size-5" />
+        </span>
+        <div>
+          <h3 id="add-library-heading" className="m-0 text-base font-semibold">
+            {t("taskAddLibrary")}
+          </h3>
+          <p className="m-0 text-xs text-muted-foreground">{t("taskAddLibraryLead")}</p>
+        </div>
+      </div>
+      <div className="min-w-48 flex-1 space-y-1.5">
+        <Label htmlFor="new-lib-title">{t("libraryName")}</Label>
+        <Input id="new-lib-title" value={title} onChange={(e) => setTitle(e.target.value)} />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="new-lib-plugin">{t("libraryKind")}</Label>
+        <Select value={pluginID} onValueChange={setPluginID}>
+          <SelectTrigger id="new-lib-plugin" className="w-52">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NO_PLUGIN}>{t("libraryNoKind")}</SelectItem>
+            {plugins.map((p) => (
+              <SelectItem key={p.id} value={p.id}>
+                {displayString(p.displayName, displayLocale)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="flex gap-2">
+        {onCancel && (
+          <Button type="button" variant="ghost" onClick={onCancel}>
+            {t("cancel")}
+          </Button>
+        )}
+        <Button type="submit" disabled={!title.trim()}>
+          <Plus className="console-nav-icon" aria-hidden />
+          {t("createLibrary")}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+// Libraries (ADR-0003): the manageable Library list with create + per-Library
+// folders / options / scan controls, and the plugin binding at creation.
+export function Libraries() {
+  const t = useT();
+  const libs = useAsync(fetchLibraries);
+  const plugins = useAsync(fetchPlugins);
+  const skipDetection = useAsync(fetchSkipDetectionEnabled);
+  const watchers = useAsync(fetchWatcherStatus);
+  const [adding, setAdding] = useState(false);
 
   // Watcher state follows roots, so it reloads with the library list.
   async function refreshLibraries() {
@@ -290,6 +446,8 @@ export function Libraries() {
   }
 
   const pluginList = plugins.data ?? [];
+  const libraryList = libs.data ?? [];
+  const empty = !libs.loading && !libs.failed && libraryList.length === 0;
   const skipDetectionByLibrary = new Map(
     (skipDetection.data ?? []).map((info) => [info.libraryID, info.enabled]),
   );
@@ -297,59 +455,48 @@ export function Libraries() {
   return (
     <Section
       heading="libraries"
+      lead="librariesLead"
       actions={
         <>
-          <RescanAllButton libraries={libs.data ?? []} />
-          <Button variant="outline" size="sm" onClick={() => void refreshLibraries()}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void refreshLibraries()}
+            aria-label={t("refresh")}
+            title={t("refresh")}
+          >
             <RefreshCw className="console-nav-icon" aria-hidden />
-            {t("refresh")}
           </Button>
+          <RescanAllButton libraries={libraryList} />
+          {!adding && !empty && (
+            <Button size="sm" onClick={() => setAdding(true)}>
+              <Plus className="console-nav-icon" aria-hidden />
+              {t("taskAddLibrary")}
+            </Button>
+          )}
         </>
       }
     >
-      <form
-        onSubmit={onCreate}
-        aria-labelledby="add-library-heading"
-        className="console-card console-card-pad flex flex-wrap items-end gap-3"
-      >
-        <h3 id="add-library-heading" className="m-0 w-full text-sm font-semibold">
-          {t("taskAddLibrary")}
-        </h3>
-        <div className="space-y-1.5">
-          <Label htmlFor="new-lib-title">{t("title")}</Label>
-          <Input id="new-lib-title" value={title} onChange={(e) => setTitle(e.target.value)} />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="new-lib-plugin">{t("plugin")}</Label>
-          <Select value={pluginID} onValueChange={setPluginID}>
-            <SelectTrigger id="new-lib-plugin" className="w-48">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NO_PLUGIN}>{t("none")}</SelectItem>
-              {pluginList.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {displayString(p.displayName, displayLocale)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <Button type="submit" disabled={!title.trim()}>
-          <Plus className="console-nav-icon" aria-hidden />
-          {t("createLibrary")}
-        </Button>
-      </form>
+      {(adding || empty) && (
+        <AddLibrary
+          plugins={pluginList}
+          onCancel={empty ? undefined : () => setAdding(false)}
+          onCreated={async () => {
+            setAdding(false);
+            await refreshLibraries();
+          }}
+        />
+      )}
 
       {libs.loading ? (
         <Skeleton className="h-40 w-full" />
       ) : libs.failed ? (
         <ErrorState message="consoleConfigUnavailable" />
-      ) : (libs.data ?? []).length === 0 ? (
-        <EmptyState message="none" icon={Boxes} />
+      ) : empty ? (
+        <EmptyState message="libraryEmptyLead" icon={Boxes} />
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {(libs.data ?? []).map((library) => (
+        <div className="grid gap-4">
+          {libraryList.map((library) => (
             <LibraryCard
               key={library.id}
               library={library}

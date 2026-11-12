@@ -19,6 +19,7 @@ import type { StringKey } from "@/strings";
 // constraint). The label IS the action; `confirm` is the localized prompt.
 export function ConfirmButton({
   label,
+  actionLabel,
   confirm,
   onConfirm,
   variant = "destructive",
@@ -27,9 +28,11 @@ export function ConfirmButton({
   children,
 }: {
   label: ReactNode;
+  /** Confirm-dialog action text when `label` is icon-only; defaults to `label`. */
+  actionLabel?: ReactNode;
   confirm: StringKey;
   onConfirm: () => void | Promise<void>;
-  variant?: "destructive" | "outline" | "secondary" | "default";
+  variant?: "destructive" | "outline" | "secondary" | "default" | "ghost";
   size?: "sm" | "default";
   disabled?: boolean;
   /** Optional confirm-dialog body beyond the prompt (e.g. a name preview). */
@@ -72,7 +75,7 @@ export function ConfirmButton({
               void run();
             }}
           >
-            {label}
+            {actionLabel ?? label}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
