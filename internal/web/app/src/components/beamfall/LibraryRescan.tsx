@@ -78,6 +78,8 @@ async function poll() {
   }
   const byID = new Map(jobs.map((job) => [job.id, job]));
   for (const [libraryID, state] of watching) {
+    // A slower, older poll must not overwrite a rescan started since it was sent.
+    if (states.get(libraryID) !== state) continue;
     // A job missing from the list has aged out; treat it as finished.
     const next = state.jobs.map(
       (job) =>
