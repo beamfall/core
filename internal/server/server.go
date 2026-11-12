@@ -520,8 +520,14 @@ func webAppHandlerFS(assets fs.FS, base *url.URL) http.HandlerFunc {
 		// base path: that content depends on runtime config, and a later
 		// restart under another base would reuse the same URL.
 		immutable := !rewritten && hashedWebAsset(rel)
-		if immutable {
+		switch {
+		case immutable:
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		case rewritten:
+			// Rewritten once at startup and served with a strong validator
+			// below: the browser keeps the file and revalidates it, so a
+			// repeat load costs a 304 instead of the whole bundle.
+			w.Header().Set("Cache-Control", "no-cache")
 		}
 		asset := cache[rel]
 		if asset == nil { // not compressible: images and fonts
