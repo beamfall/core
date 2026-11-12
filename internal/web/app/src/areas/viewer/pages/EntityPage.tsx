@@ -13,6 +13,7 @@ import {
   writeViewerCache,
 } from "@/lib/viewerCache";
 import { ItemActions } from "../actions";
+import { useEngagementEpoch } from "../actions/engagementSync";
 import { findCachedSectionItem } from "../components/HydratedSection";
 import { LayoutView } from "../components/LayoutView";
 import { MediaItemCard } from "../components/MediaItemCard";
@@ -107,7 +108,9 @@ export function EntityPage() {
     };
   }, [identity, entityId]);
 
-  // No detail Layout for this Kind: load the hand-rolled related-Media list.
+  // No detail Layout for this Kind: load the hand-rolled related-Media list,
+  // again whenever watched, watchlist or rating state changes under it.
+  const engagementEpoch = useEngagementEpoch();
   useEffect(() => {
     if (!entityId || !needsFallback) return;
     let alive = true;
@@ -131,7 +134,7 @@ export function EntityPage() {
       alive = false;
       controller.abort();
     };
-  }, [identity, entityId, needsFallback]);
+  }, [identity, entityId, needsFallback, engagementEpoch]);
 
   function buildSeeAll(section: Section): SeeAllTarget {
     return seeAllTargetFor({

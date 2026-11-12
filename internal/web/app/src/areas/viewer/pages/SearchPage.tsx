@@ -22,6 +22,7 @@ import type {
 } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import type { StringKey } from "@/strings";
+import { useEngagementEpoch } from "../actions/engagementSync";
 import { MediaItemCard } from "../components/MediaItemCard";
 import { ViewerActions } from "../components/ViewerActions";
 import { availableModes } from "../lib/searchModes";
@@ -56,6 +57,8 @@ export function SearchPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const searchSeq = useRef(0);
+  // The search whose results are on screen, for refreshing them in place.
+  const shownSearch = useRef<{ text: string; mode: SearchMode } | null>(null);
 
   // Probe availability once. Either probe failing simply leaves that mode out of
   // the toggle (keyword stays available), so the surface degrades gracefully.
@@ -86,6 +89,7 @@ export function SearchPage() {
     setError(null);
     setNotice(null);
     if (!text) {
+      shownSearch.current = null;
       setResults(null);
       return;
     }
@@ -93,6 +97,7 @@ export function SearchPage() {
     try {
       const res = await searchResultQuery(text, mode);
       if (seq !== searchSeq.current) return;
+      shownSearch.current = { text, mode };
       setResults(res.items);
       // 4-state honesty: requested non-keyword but keyword was served → the
       // plugin is absent or the index is empty; say so without failing.
@@ -108,8 +113,29 @@ export function SearchPage() {
     }
   }
 
+  // A watched, watchlist or rating change leaves the shown cards stale. Run the
+  // shown search again and swap each result in place, keeping the order on screen.
+  const engagementEpoch = useEngagementEpoch();
+  const seenEpochRef = useRef(engagementEpoch);
+  useEffect(() => {
+    if (seenEpochRef.current === engagementEpoch) return;
+    seenEpochRef.current = engagementEpoch;
+    const shown = shownSearch.current;
+    if (!shown) return;
+    const seq = searchSeq.current;
+    void searchResultQuery(shown.text, shown.mode)
+      .then((res) => {
+        if (seq !== searchSeq.current) return;
+        const fresh = new Map(res.items.map((item) => [item.id, item]));
+        setResults((prev) => prev && prev.map((item) => fresh.get(item.id) ?? item));
+      })
+      // The cards keep what they showed; the next change tries again.
+      .catch(() => {});
+  }, [engagementEpoch]);
+
   function clear() {
     searchSeq.current += 1;
+    shownSearch.current = null;
     setQuery("");
     setResults(null);
     setError(null);

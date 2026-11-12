@@ -1,11 +1,12 @@
 import type { ReactNode } from "react";
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchClientPrefs, fetchSemanticCapability, searchResult } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
+import { notifyEngagementChanged } from "../actions/engagementSync";
 import { SearchPage } from "./SearchPage";
 
 vi.mock("@/components/chrome/AppShell", () => ({
@@ -176,5 +177,26 @@ describe("SearchPage mode exposure", () => {
     });
     await waitFor(() => expect(screen.queryByText("Slow")).toBeNull());
     expect(screen.getByText("Fast")).toBeInTheDocument();
+  });
+
+  it("refreshes the shown results in place when engagement changes", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    act(() => notifyEngagementChanged());
+    expect(searchResult).not.toHaveBeenCalled();
+
+    await user.type(screen.getByLabelText("Search"), "hello");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    expect(await screen.findByText("Hit")).toBeInTheDocument();
+
+    vi.mocked(searchResult).mockResolvedValue({
+      mode: "keyword",
+      items: [{ id: "m1", kind: "media", title: "Hit, Finished", mode: "keyword", score: 0 }],
+      restrictedResultsPresent: false,
+    });
+    act(() => notifyEngagementChanged());
+
+    expect(await screen.findByText("Hit, Finished")).toBeInTheDocument();
+    expect(vi.mocked(searchResult).mock.calls.at(-1)?.slice(0, 2)).toEqual(["hello", "keyword"]);
   });
 });

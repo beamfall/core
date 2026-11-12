@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchEntity, fetchMediaForEntity } from "@/lib/graphql";
 import type { EntityInfo, Layout, SourceItem } from "@/lib/graphql/types";
 import { clearViewerCache, readViewerCache, writeViewerCache } from "@/lib/viewerCache";
+import { notifyEngagementChanged } from "../actions/engagementSync";
 import { sectionCacheKey } from "../components/HydratedSection";
 import { entityLinkState } from "../lib/entityPreview";
 import { EntityPage } from "./EntityPage";
@@ -182,5 +183,20 @@ describe("EntityPage instant paint", () => {
 
     expect(entitySignal?.aborted).toBe(true);
     expect(mediaSignal?.aborted).toBe(true);
+  });
+
+  it("reloads the related list when engagement changes", async () => {
+    vi.mocked(fetchEntity).mockReturnValue(new Promise(() => {}));
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([related]);
+    renderEntity(entityLinkState({ id: "e1", title: "Card title" }, identity));
+    expect(await screen.findByText("Related item")).toBeInTheDocument();
+
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([
+      { ...related, title: "Related item, Finished" },
+    ]);
+    act(() => notifyEngagementChanged());
+
+    expect(await screen.findByText("Related item, Finished")).toBeInTheDocument();
+    expect(fetchMediaForEntity).toHaveBeenCalledTimes(2);
   });
 });

@@ -184,7 +184,27 @@ function LibraryBrowse({
   useEffect(() => {
     if (seenEpochRef.current === engagementEpoch) return;
     seenEpochRef.current = engagementEpoch;
-    if (!followsEngagement) return;
+    if (!followsEngagement) {
+      // Order and membership hold, but the cards' watched marks are stale:
+      // re-read the pages already loaded and swap them in place.
+      const generation = generationRef.current;
+      for (const pageIndex of pagesRef.current.keys()) {
+        fetchLibraryItems({
+          libraryID,
+          state,
+          limit: LIBRARY_BROWSE_PAGE,
+          offset: pageIndex * LIBRARY_BROWSE_PAGE,
+        })
+          .then((page) => {
+            if (generation !== generationRef.current) return;
+            pagesRef.current.set(pageIndex, page.items);
+            setLoadedTick((tick) => tick + 1);
+          })
+          // The cards keep what they showed; the next change tries again.
+          .catch(() => {});
+      }
+      return;
+    }
     generationRef.current += 1;
     pagesRef.current = new Map();
     pendingRef.current = new Set();

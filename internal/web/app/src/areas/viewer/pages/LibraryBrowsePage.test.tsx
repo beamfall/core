@@ -199,7 +199,7 @@ describe("Library browse", () => {
     expect(screen.getByTestId("where")).not.toHaveTextContent("rated=");
   });
 
-  it("reloads when engagement changes under a query that depends on it, and only then", async () => {
+  it("reloads when engagement changes under a query that depends on it, and refreshes cards in place otherwise", async () => {
     vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
     const mount = (url: string) =>
       render(
@@ -238,13 +238,21 @@ describe("Library browse", () => {
     expect(await screen.findByRole("button", { name: "Item 0" })).toBeInTheDocument();
     vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
 
+    // A query that does not depend on engagement keeps its pages and count, and
+    // re-reads the loaded ones so each card's watched mark follows the change.
     cleanup();
     mount("/n/films/all?sort=year");
     expect(await screen.findByText("1,200 items")).toBeInTheDocument();
     await screen.findByRole("button", { name: "Item 0" });
-    const settled = vi.mocked(fetchLibraryItems).mock.calls.length;
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) => {
+      const page = pageFor(request);
+      return {
+        ...page,
+        items: page.items.map((item) => ({ ...item, engagement: { completed: true } })),
+      };
+    });
     act(() => notifyEngagementChanged());
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(vi.mocked(fetchLibraryItems).mock.calls.length).toBe(settled);
+    expect(await screen.findByRole("button", { name: "Item 0, Finished" })).toBeInTheDocument();
+    expect(screen.getByText("1,200 items")).toBeInTheDocument();
   });
 });
