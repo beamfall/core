@@ -5,7 +5,8 @@
 For an Entity kind with a declared inheritance rule, the artwork sweep SHALL give an Entity that
 has no poster a copy of the first poster found among the rule's sources, in declared order: member
 Media through the named relation in relation order, or Entities of the named kind that point at it
-through the named relation. An Entity kind without a rule SHALL NOT inherit a poster.
+through the named relation. A server-generated fallback poster SHALL NOT be inherited. An Entity
+kind without a rule SHALL NOT inherit a poster.
 
 #### Scenario: Album takes its cover from a member track
 
@@ -16,6 +17,11 @@ through the named relation. An Entity kind without a rule SHALL NOT inherit a po
 
 - **WHEN** an artist Entity has no poster and an album that names it as album artist has one
 - **THEN** after the sweep the artist serves that album's poster
+
+#### Scenario: Only a frame grab is available
+
+- **WHEN** the only poster among an Entity's sources is a server-generated fallback
+- **THEN** the sweep writes no poster for the Entity
 
 #### Scenario: Kind without a rule
 
@@ -35,9 +41,10 @@ the sweep SHALL NOT replace a poster that is not marked inherited.
 
 ### Requirement: Inheritance is idempotent and cheap across sweeps
 
-A sweep over an Entity whose inherited poster's recorded source is unchanged SHALL NOT rewrite the
-poster. The sweep SHALL replace an inherited poster only when its source poster changed or no
-longer exists.
+A sweep over an Entity whose inherited poster's recorded source is unchanged and still one of its
+sources SHALL NOT rewrite the poster. The sweep SHALL replace an inherited poster only when its
+recorded source poster changed or is no longer one of the Entity's sources, and SHALL remove it
+when no source has a poster.
 
 #### Scenario: Second sweep
 
@@ -48,3 +55,8 @@ longer exists.
 
 - **WHEN** the Media poster an Entity inherited from is replaced and the sweep runs
 - **THEN** the Entity serves the new poster
+
+#### Scenario: Source leaves the Entity
+
+- **WHEN** the Media an Entity inherited from no longer belongs to it and no other source has a poster
+- **THEN** after the sweep the Entity has no poster

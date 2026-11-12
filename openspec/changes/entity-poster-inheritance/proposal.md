@@ -16,14 +16,17 @@ without artwork, although each track already has a poster extracted from its emb
   get a film poster).
 - The artwork sweep (already queued after every scan and at startup) gains an Entity pass after the
   Media pass. For each Entity of a declared kind without a poster it copies the first source poster
-  found and marks the copy as inherited.
+  found and marks the copy as inherited. A server-generated fallback poster (a frame grab) is not a
+  cover and is never inherited.
 - Music declares: an album inherits from its tracks in track order; an artist inherits from an
   album that names it as album artist, else from a track it appears on.
 - Provider artwork still wins: identification treats an inherited poster as absent, and importing
   an Entity poster removes the inherited mark, after which the sweep never touches it.
-- Steady state is file stats only: an Entity with its own poster costs one stat; an inherited
-  poster costs a stat of its recorded source. Nothing is re-hashed or re-copied per scan. An
-  inherited poster is replaced only when its source poster changed or disappeared.
+- Steady state writes nothing: an Entity with its own poster costs one stat; an inherited poster
+  costs one relation read and a stat of its recorded source. Nothing is re-hashed or re-copied per
+  scan. An inherited poster is replaced only when its recorded source poster changed or is no
+  longer one of the Entity's sources (a track re-filed under another album), and is removed when
+  no source has a poster any more.
 
 ## Non-goals
 
@@ -45,7 +48,8 @@ without artwork, although each track already has a poster extracted from its emb
 - `internal/artwork/inherit_test.go`: `TestSweepInheritsEntityPosterFromMemberMedia`,
   `TestSweepInheritsEntityPosterFromRelatedEntity`, `TestInheritedEntityPosterYieldsToImportedPoster`,
   `TestSweepKeepsImportedEntityPoster`, `TestSweepInheritanceIsIdempotent`,
-  `TestSweepRefreshesInheritedPosterWhenSourceChanges`, `TestSweepSkipsUndeclaredKinds`.
+  `TestSweepRefreshesInheritedPosterWhenSourceChanges`, `TestSweepDropsInheritedPosterWhenSourceLeaves`,
+  `TestSweepNeverInheritsGeneratedPoster`, `TestSweepSkipsUndeclaredKinds`.
 - `internal/identify`: `TestEntityPosterReplacesInheritedPoster`.
 - `cmd/beamfall/hooks_test.go`: `TestMusicDeclaresEntityPosterInheritance`.
 
