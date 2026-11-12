@@ -197,7 +197,13 @@ func directPlayRefusalCause(media store.Media, file store.MediaFile, streams []s
 		ov.vetoesSourceContainer() {
 		return PlayReasonDeviceQuirk
 	}
-	if cause := videoRefusalCause(media, file, streams, profile); cause != "" {
+	if audioOnlyMedia(media, streams) {
+		// A track has no picture to blame: its Media.Codec is the audio codec,
+		// so a refusal there is an audio cause, as canDirectPlay judges it.
+		if !audioOnlyCodecDeclared(media, streams, profile) {
+			return PlayReasonAudio
+		}
+	} else if cause := videoRefusalCause(media, file, streams, profile); cause != "" {
 		return cause
 	}
 	if !audioDirectPlayable(streams, profile) {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/beamfall/core/internal/store"
 )
 
 func TestInfoRecordsPlayObservationForLiveSessions(t *testing.T) {
@@ -157,5 +159,25 @@ func TestPlayObservationTellsAudioConversionFromRemux(t *testing.T) {
 				t.Fatalf("observation = %#v, want %s because of a device quirk", obs, tc.wantMethod)
 			}
 		})
+	}
+}
+
+// TestDirectPlayRefusalNamesAudioForTracks keeps a track with no video stream
+// from being refused for its video codec: its codec is the audio codec.
+func TestDirectPlayRefusalNamesAudioForTracks(t *testing.T) {
+	media := store.Media{Class: store.MediaClassAudio, Container: "flac", Codec: "flac"}
+	streams := []store.MediaFileStream{{Type: "audio", Codec: "flac", Channels: 2}}
+	profiles := map[string]CapabilityProfile{
+		"legacy": {Containers: []string{"flac"}, DirectCodecs: []string{"aac"}},
+		"enveloped": {
+			Containers:  []string{"flac"},
+			VideoCodecs: []VideoCodecCap{{Codec: "h264"}},
+			AudioCodecs: []AudioCodecCap{{Codec: "aac"}},
+		},
+	}
+	for name, profile := range profiles {
+		if got := directPlayRefusalCause(media, store.MediaFile{}, streams, profile, nil, quirkOverlay{}); got != PlayReasonAudio {
+			t.Errorf("%s profile: refusal cause = %q, want %q", name, got, PlayReasonAudio)
+		}
 	}
 }
