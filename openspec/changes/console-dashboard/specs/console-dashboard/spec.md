@@ -38,8 +38,8 @@ recent playback decision the server made for that session and item.
 
 ### Requirement: Host load is sampled for at least one hour
 
-The server SHALL sample host CPU utilisation, memory in use and total, and network bytes sent and
-received per second at a fixed interval, and SHALL retain at least the last hour of samples in
+The server SHALL sample host CPU utilisation, host memory in use and total, and the server's own
+network bytes sent and received per second at a fixed interval, and SHALL retain at least the last hour of samples in
 memory. The admin field `hostMetrics` SHALL return the retained samples oldest first with the
 sampling interval. Samples SHALL NOT be persisted or sent off the server.
 

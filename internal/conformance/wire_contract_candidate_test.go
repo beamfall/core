@@ -64,7 +64,7 @@ func TestWireContractCandidateRequiresMajorBumpAndIsUnpublished(t *testing.T) {
 	}
 	assertCandidateSchemaDiff(t)
 	minor := candidate
-	minor.ContractVersion = "1.14.0"
+	minor.ContractVersion = "1.15.0"
 	if err := contract.ValidateVersionTransition(previous, minor); err == nil {
 		t.Fatal("metadata corrections rode a minor bump")
 	} else if !strings.Contains(err.Error(), "bump the major version") {

@@ -143,6 +143,7 @@ resolver over `store` typed methods. No `internal/util`, no `internal/model`, no
 | `graph` | Hand-written GraphQL contract: query/mutation dispatch, auth-tier checks, generic Media/Entity fields, My Data, and surface registrations | 0001, 0011 §8 |
 | `graphquery` | Pure GraphQL operation selection and top-level field parsing for the hand-written graph dispatcher | 0001, 0011 §8 |
 | `graphshape` | Generic JSON-shape reflection walker used by graph's nested schema artifact | 0011 §8 |
+| `hostmetrics` | In-memory one-hour ring of host CPU, memory and this server's own network traffic for the console graphs; never persisted or sent off the server | — |
 | `identify` | Identify/apply pipeline, confidence thresholds, Unmatched queue, match pinning, and per-field source precedence | 0003 §4, 0009 §8 |
 | `ingest` | Subscription feed poller and enclosure ingest through the hardened scrape/scan path | 0030 §7, 0020 |
 | `integrationhost` | Third-party integration worker runtime and Host API permission gate | 0058 |
@@ -205,6 +206,7 @@ arch test ever disagree, **the test wins** — the test is the law, this table i
 | `nodehost` | — (leaf; the ADR-0123 §5 Origin-Node enrollment lifecycle + the ADR-0063 origin-node Compatibility Handshake gate + per-node revoke/rotate — NODE-3; operates on real x509 mTLS leaves, stdlib only, no internal deps) |
 | `nodehostd` | `nodehost` (node-facing mTLS SESSION transport, ADR-0129 §5: the node dials the main; main-side listener + node-side dialer pin SPKI in both directions. The `app` composition root prepares the cloned self-signed mTLS config + compatibility policy and passes them in, so no `remoteaccess`/`config` edge.) |
 | `capabilities` | — (leaf; compile/runtime capability self-report for clients and CI manifest checks) |
+| `hostmetrics` | — (leaf; host CPU, memory and own-traffic sampler behind the console graphs, CORE-1195; stdlib only, no internal deps) |
 | `causation` | — (leaf; ADR-0125 Integration Worker global-chain budget, per-worker action rate, authenticated causation tokens, and bounded/coalesced abort feed; stdlib only) |
 | `apptest` | app, config, plugin, store (in-process E2E test harness, mirrors `store/storetest` but top-level next to `app`: boots the composition root over `httptest` for the I/O E2E track. Test-support only, never imported by production code) |
 | `ioe2e` | — (I/O E2E journey package: `io_e2e`-tagged `*_test.go` journeys only — real ffmpeg ops + harness lifecycle happy-paths — plus an empty untagged `doc.go`. Test imports are arch-walk-invisible; no production imports) |

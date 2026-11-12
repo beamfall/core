@@ -133,6 +133,8 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"PathPicker":                              {},
 	"PendingAITagQueue":                       {},
 	"PendingAccessRequestsForProfile":         {},
+	"PlayHistory":                             {},
+	"PlayStats":                               {},
 	"PlaybackProgressFor":                     {},
 	"PlaybackRenditionCacheHealth":            {},
 	"PluginActivations":                       {},

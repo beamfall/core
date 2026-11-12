@@ -443,6 +443,11 @@
       "tier": "session"
     },
     {
+      "field": "hostmetrics",
+      "effect": "read",
+      "tier": "admin"
+    },
+    {
       "field": "identifyapply",
       "effect": "write",
       "tier": "session"
@@ -724,6 +729,16 @@
     },
     {
       "field": "playbackrenditioncache",
+      "effect": "read",
+      "tier": "admin"
+    },
+    {
+      "field": "playhistory",
+      "effect": "read",
+      "tier": "admin"
+    },
+    {
+      "field": "playstats",
       "effect": "read",
       "tier": "admin"
     },
@@ -7092,6 +7107,84 @@
       ]
     },
     {
+      "field": "hostmetrics",
+      "kind": "object",
+      "children": [
+        {
+          "name": "intervalSeconds",
+          "kind": "scalar"
+        },
+        {
+          "name": "samples",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "at",
+                "kind": "scalar"
+              },
+              {
+                "name": "cpuKnown",
+                "kind": "scalar"
+              },
+              {
+                "name": "cpuPercent",
+                "kind": "scalar"
+              },
+              {
+                "name": "memoryTotalBytes",
+                "kind": "scalar"
+              },
+              {
+                "name": "memoryUsedBytes",
+                "kind": "scalar"
+              },
+              {
+                "name": "receivedBytesPerSecond",
+                "kind": "scalar"
+              },
+              {
+                "name": "sentBytesPerSecond",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "at",
+              "kind": "scalar"
+            },
+            {
+              "name": "cpuKnown",
+              "kind": "scalar"
+            },
+            {
+              "name": "cpuPercent",
+              "kind": "scalar"
+            },
+            {
+              "name": "memoryTotalBytes",
+              "kind": "scalar"
+            },
+            {
+              "name": "memoryUsedBytes",
+              "kind": "scalar"
+            },
+            {
+              "name": "receivedBytesPerSecond",
+              "kind": "scalar"
+            },
+            {
+              "name": "sentBytesPerSecond",
+              "kind": "scalar"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "field": "identifyapply",
       "kind": "object",
       "children": [
@@ -8556,6 +8649,10 @@
       "kind": "object",
       "children": [
         {
+          "name": "bitrate",
+          "kind": "scalar"
+        },
+        {
           "name": "deviceID",
           "kind": "scalar"
         },
@@ -8582,6 +8679,14 @@
         },
         {
           "name": "mediaID",
+          "kind": "scalar"
+        },
+        {
+          "name": "playMethod",
+          "kind": "scalar"
+        },
+        {
+          "name": "playReason",
           "kind": "scalar"
         },
         {
@@ -13023,6 +13128,157 @@
         },
         {
           "name": "readyBytes",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "playhistory",
+      "kind": "object",
+      "children": [
+        {
+          "name": "finished",
+          "kind": "scalar"
+        },
+        {
+          "name": "libraryID",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "libraryTitle",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "mediaID",
+          "kind": "scalar"
+        },
+        {
+          "name": "profileID",
+          "kind": "scalar"
+        },
+        {
+          "name": "profileName",
+          "kind": "scalar"
+        },
+        {
+          "name": "startedAt",
+          "kind": "scalar"
+        },
+        {
+          "name": "title",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "watchedSeconds",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "playstats",
+      "kind": "object",
+      "children": [
+        {
+          "name": "items",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "libraryID",
+                "kind": "scalar"
+              },
+              {
+                "name": "mediaID",
+                "kind": "scalar"
+              },
+              {
+                "name": "plays",
+                "kind": "scalar"
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              },
+              {
+                "name": "watchedSeconds",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "libraryID",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            },
+            {
+              "name": "plays",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            },
+            {
+              "name": "watchedSeconds",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "profiles",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "plays",
+                "kind": "scalar"
+              },
+              {
+                "name": "profileID",
+                "kind": "scalar"
+              },
+              {
+                "name": "profileName",
+                "kind": "scalar"
+              },
+              {
+                "name": "watchedSeconds",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "plays",
+              "kind": "scalar"
+            },
+            {
+              "name": "profileID",
+              "kind": "scalar"
+            },
+            {
+              "name": "profileName",
+              "kind": "scalar"
+            },
+            {
+              "name": "watchedSeconds",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "windowDays",
           "kind": "scalar"
         }
       ]
@@ -27202,6 +27458,10 @@
         "effect": "write"
       },
       {
+        "field": "hostmetrics",
+        "effect": "read"
+      },
+      {
         "field": "importers",
         "effect": "read"
       },
@@ -27279,6 +27539,14 @@
       },
       {
         "field": "playbackrenditioncache",
+        "effect": "read"
+      },
+      {
+        "field": "playhistory",
+        "effect": "read"
+      },
+      {
+        "field": "playstats",
         "effect": "read"
       },
       {
