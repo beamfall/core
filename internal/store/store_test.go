@@ -12,7 +12,7 @@ import (
 
 func openSeeded(t *testing.T) *Store {
 	t.Helper()
-	st, err := Open(context.Background(), t.TempDir(), Options{SeedDevelopmentData: true})
+	st, err := Open(context.Background(), migratedDataDir(t), Options{SeedDevelopmentData: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +229,7 @@ func TestDirectorySourceReturnsNoCatalogMedia(t *testing.T) {
 // shuffle from coincidence, which the two-row development seed cannot.
 func openDemo(t *testing.T) *Store {
 	t.Helper()
-	st, err := Open(context.Background(), t.TempDir(), Options{SeedProfile: SeedProfileDemo})
+	st, err := Open(context.Background(), migratedDataDir(t), Options{SeedProfile: SeedProfileDemo})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1032,7 +1032,7 @@ func TestEnrollDeviceRejectsUnknownProfile(t *testing.T) {
 }
 
 func TestClosedStoreReturnsErrClosed(t *testing.T) {
-	st, err := Open(context.Background(), t.TempDir(), Options{SeedDevelopmentData: true})
+	st, err := Open(context.Background(), migratedDataDir(t), Options{SeedDevelopmentData: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1811,7 +1811,7 @@ func TestBootstrapOwnerReusesPartialOwner(t *testing.T) {
 	open := LibraryFilter{Revealed: true, AllLibraries: true}
 	t.Run("designated owner without device", func(t *testing.T) {
 		ctx := context.Background()
-		st, err := Open(ctx, t.TempDir(), Options{})
+		st, err := Open(ctx, migratedDataDir(t), Options{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1840,7 +1840,7 @@ func TestBootstrapOwnerReusesPartialOwner(t *testing.T) {
 	})
 	t.Run("undesignated adult without device", func(t *testing.T) {
 		ctx := context.Background()
-		st, err := Open(ctx, t.TempDir(), Options{})
+		st, err := Open(ctx, migratedDataDir(t), Options{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1863,7 +1863,7 @@ func TestBootstrapOwnerReusesPartialOwner(t *testing.T) {
 	})
 	t.Run("enrolled devices create a new owner", func(t *testing.T) {
 		ctx := context.Background()
-		st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true})
+		st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -9,7 +9,7 @@ import (
 
 func TestSignInSecurityModeDefaultsToHome(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{})
+	st, err := Open(ctx, migratedDataDir(t), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +26,7 @@ func TestBootstrapOwnerStoresSignInSecurityMode(t *testing.T) {
 	}{{"", SignInSecurityHome}, {SignInSecurityHome, SignInSecurityHome}, {SignInSecurityStrict, SignInSecurityStrict}} {
 		t.Run(string(tc.want)+"/"+string(tc.in), func(t *testing.T) {
 			ctx := context.Background()
-			st, err := Open(ctx, t.TempDir(), Options{})
+			st, err := Open(ctx, migratedDataDir(t), Options{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -44,7 +44,7 @@ func TestBootstrapOwnerStoresSignInSecurityMode(t *testing.T) {
 
 func TestBootstrapOwnerRejectsUnknownSignInSecurityMode(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{})
+	st, err := Open(ctx, migratedDataDir(t), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestBootstrapOwnerRejectsUnknownSignInSecurityMode(t *testing.T) {
 
 func TestBootstrapOwnerFailureStoresNoSignInSecurityMode(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{})
+	st, err := Open(ctx, migratedDataDir(t), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestBootstrapOwnerFailureStoresNoSignInSecurityMode(t *testing.T) {
 
 func TestSetSignInSecurityModeReturnsOldMode(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{})
+	st, err := Open(ctx, migratedDataDir(t), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

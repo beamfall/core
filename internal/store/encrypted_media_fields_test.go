@@ -176,7 +176,7 @@ func assertEncryptedFieldFTSCount(t *testing.T, db *sql.DB, query string, want i
 func TestMediaLackingFieldInEncryptedLibraryUsesProtectedPlane(t *testing.T) {
 	ctx := context.Background()
 	libraryID := LibraryID("library-local")
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +223,7 @@ func TestMediaLackingFieldInEncryptedLibraryUsesProtectedPlane(t *testing.T) {
 
 func TestEncryptedLibraryUnsealCleanupFailureQuarantines(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
 	if err != nil {
 		t.Fatal(err)
 	}
