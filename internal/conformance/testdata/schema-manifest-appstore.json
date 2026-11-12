@@ -465,6 +465,11 @@
     "tier": "session"
   },
   {
+    "field": "itemstate",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "job",
     "effect": "read",
     "tier": "admin"
@@ -1125,6 +1130,11 @@
     "tier": "admin"
   },
   {
+    "field": "setrating",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "setretentioncandidatehold",
     "effect": "write",
     "tier": "session"
@@ -1162,6 +1172,16 @@
   {
     "field": "setupstate",
     "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "setwatched",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "setwatchlisted",
+    "effect": "write",
     "tier": "session"
   },
   {

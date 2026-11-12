@@ -590,7 +590,7 @@ const (
 	InvalidationReasonLibraryRestrictionChanged = "library-restriction-changed"
 	// InvalidationReasonEngagementChanged fires when a Profile changed its own
 	// watched, watchlist or rating state by an explicit action, so its other
-	// sessions refresh shelves that show that state. It never names the item.
+	// sessions refresh the lists built from that state. It never names the item.
 	InvalidationReasonEngagementChanged = "engagement-changed"
 )
 

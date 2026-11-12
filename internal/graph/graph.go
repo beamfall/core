@@ -4703,6 +4703,7 @@ var queryFields = map[string]bool{
 	"artworkcandidates":      true,
 	"markers":                true,
 	"trashedmarkers":         true,
+	"itemstate":              true,
 	"sourceitems":            true,
 	"libraryitems":           true,
 	"ambientqueue":           true,
@@ -4821,6 +4822,9 @@ var mutationFields = map[string]bool{
 	"resolveaccessrequest": true,
 	// ADR-0113 §2.3: per-title access grant mutation.
 	"revokeaccessgrant":                  true,
+	"setwatched":                         true,
+	"setwatchlisted":                     true,
+	"setrating":                          true,
 	"setfavorite":                        true,
 	"queueadd":                           true,
 	"queueremove":                        true,

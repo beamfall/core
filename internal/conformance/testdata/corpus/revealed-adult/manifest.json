@@ -18,6 +18,18 @@
         },
         {
           "artworkSlot": "poster",
+          "id": "watchlist",
+          "kind": "shelf",
+          "source": {
+            "kind": "watchlist"
+          },
+          "title": {
+            "en": "Watchlist",
+            "fr": "Ma liste"
+          }
+        },
+        {
+          "artworkSlot": "poster",
           "id": "recent",
           "kind": "shelf",
           "source": {

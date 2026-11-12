@@ -172,6 +172,10 @@ var resultTypes = map[string]any{
 	// ADR-0113 §2.3: per-title access grant mutation (adult revoke).
 	"revokeaccessgrant":                  AccessGrantInfo{},
 	"setextensionpreauthorization":       SetExtensionPreauthorizationResult{},
+	"itemstate":                          ItemStateInfo{},
+	"setwatched":                         ItemStateInfo{},
+	"setwatchlisted":                     ItemStateInfo{},
+	"setrating":                          ItemStateInfo{},
 	"setfavorite":                        MediaInfo{},
 	"queueadd":                           SourceItem{},
 	"queueremove":                        SourceItem{},
@@ -347,6 +351,7 @@ var fieldArguments = map[string][]NestedArgument{
 		{Name: "scraperID", Kind: "string", Optional: true},
 	},
 	"importstatus":   {{Name: "jobID", Kind: "string"}},
+	"itemstate":      {{Name: "entityID", Kind: "string", Optional: true}, {Name: "mediaID", Kind: "string", Optional: true}},
 	"libraryitems":   libraryItemsArguments(),
 	"media":          {{Name: "id", Kind: "string"}},
 	"mediafields":    {{Name: "mediaID", Kind: "string"}},

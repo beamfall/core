@@ -305,6 +305,7 @@ var fieldDispatchRuns = [...]fieldDispatchFunc{
 	143: dispatchFieldBlock143,
 	144: dispatchFieldBlock144,
 	145: dispatchFieldBlock145,
+	146: dispatchFieldBlock146,
 }
 
 var fieldHandlerRegistry = map[string]fieldHandler{
@@ -407,6 +408,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"jobcancel":                          newFieldHandler("jobCancel", "jobCancel", fieldMutation, roleSession|roleAdmin, 63),
 	"jobevents":                          newFieldHandler("jobEvents", "jobEvents", fieldRead, roleSession|roleAdmin, 63),
 	"jobretry":                           newFieldHandler("jobRetry", "jobRetry", fieldMutation, roleSession|roleAdmin, 63),
+	"itemstate":                          newFieldHandler("itemState", "itemState", fieldRead, roleSession, 146),
 	"jobs":                               newFieldHandler("jobs", "jobs", fieldRead, roleSession|roleAdmin, 63),
 	"joingroup":                          newFieldHandler("joinGroup", "joinGroup", fieldMutation, roleSession, 132),
 	"leavegroup":                         newFieldHandler("leaveGroup", "leaveGroup", fieldMutation, roleSession, 133),
@@ -539,6 +541,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"setprofilelibraries":                newFieldHandler("setProfileLibraries", "setProfileLibraries", fieldMutation, roleSession|roleAdmin, 39),
 	"setqbittorrentingest":               newFieldHandler("setQBittorrentIngest", "setQBittorrentIngest", fieldMutation, roleSession|roleAdmin, 106),
 	"setqualitypolicy":                   newFieldHandler("setQualityPolicy", "setQualityPolicy", fieldMutation, roleSession|roleAdmin, 50),
+	"setrating":                          newFieldHandler("setRating", "setRating", fieldMutation, roleSession, 146),
 	"setretentioncandidatehold":          newFieldHandler("setRetentionCandidateHold", "setRetentionCandidateHold", fieldMutation, roleSession|roleManager, 59),
 	"setrevealpin":                       newFieldHandler("setRevealPin", "reveal", fieldMutation, roleSession|roleManager, 25),
 	"setscrapercredential":               newFieldHandler("setScraperCredential", "setScraperCredential", fieldMutation, roleSession|roleAdmin, 66),
@@ -546,6 +549,8 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"setskipdetectionenabled":            newFieldHandler("setSkipDetectionEnabled", "setSkipDetectionEnabled", fieldMutation, roleSession|roleAdmin, 78),
 	"setsubscriptionretention":           newFieldHandler("setSubscriptionRetention", "setSubscriptionRetention", fieldMutation, roleSession|roleManager, 54),
 	"settranscodeconfig":                 newFieldHandler("setTranscodeConfig", "setTranscodeConfig", fieldMutation, roleSession|roleAdmin, 69),
+	"setwatched":                         newFieldHandler("setWatched", "setWatched", fieldMutation, roleSession, 146),
+	"setwatchlisted":                     newFieldHandler("setWatchlisted", "setWatchlisted", fieldMutation, roleSession, 146),
 	"setupstate":                         newFieldHandler("setupState", "setupState", fieldRead, roleSession, 80),
 	"skipdetectionenabled":               newFieldHandler("skipDetectionEnabled", "skipDetectionEnabled", fieldRead, roleSession|roleAdmin, 78),
 	"smartcollections":                   newFieldHandler("smartCollections", "smartCollections", fieldRead, roleSession, 57),
@@ -3850,6 +3855,41 @@ func dispatchFieldBlock145(dispatch *fieldDispatchContext) response {
 			if resp := resolveField(dispatch, "setdevicerole", result, err); len(resp.Errors) > 0 {
 				return resp
 			}
+		}
+	}
+	return response{}
+}
+
+// dispatchFieldBlock146 resolves the per-Profile item actions (CORE-1194): the
+// item-state read and the mark-watched, watchlist and rating writes.
+func dispatchFieldBlock146(dispatch *fieldDispatchContext) response {
+	h := dispatch.handler
+	ctx := dispatch.ctx
+	scope := dispatch.scope
+	req := dispatch.req
+	fields := dispatch.fields
+	if fields["itemstate"] {
+		state, err := h.itemState(ctx, scope, req)
+		if resp := resolveField(dispatch, "itemstate", state, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["setwatched"] {
+		state, err := h.setWatched(ctx, scope, req)
+		if resp := resolveField(dispatch, "setwatched", state, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["setwatchlisted"] {
+		state, err := h.setWatchlisted(ctx, scope, req)
+		if resp := resolveField(dispatch, "setwatchlisted", state, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["setrating"] {
+		state, err := h.setRating(ctx, scope, req)
+		if resp := resolveField(dispatch, "setrating", state, err); len(resp.Errors) > 0 {
+			return resp
 		}
 	}
 	return response{}

@@ -1173,6 +1173,18 @@
       ]
     },
     {
+      "field": "itemstate",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "id",
+        "kind",
+        "rating",
+        "watched",
+        "watchlisted"
+      ]
+    },
+    {
       "field": "job",
       "effect": "read",
       "tier": "admin",
@@ -2948,6 +2960,18 @@
       ]
     },
     {
+      "field": "setrating",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "id",
+        "kind",
+        "rating",
+        "watched",
+        "watchlisted"
+      ]
+    },
+    {
       "field": "setretentioncandidatehold",
       "effect": "write",
       "tier": "session",
@@ -3036,6 +3060,30 @@
         "hasLibrary",
         "hasOwnerProfile",
         "pluginsActivated"
+      ]
+    },
+    {
+      "field": "setwatched",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "id",
+        "kind",
+        "rating",
+        "watched",
+        "watchlisted"
+      ]
+    },
+    {
+      "field": "setwatchlisted",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "id",
+        "kind",
+        "rating",
+        "watched",
+        "watchlisted"
       ]
     },
     {

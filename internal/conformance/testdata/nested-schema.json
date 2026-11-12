@@ -6064,6 +6064,44 @@
     ]
   },
   {
+    "field": "itemstate",
+    "kind": "object",
+    "arguments": [
+      {
+        "name": "entityID",
+        "kind": "string",
+        "optional": true
+      },
+      {
+        "name": "mediaID",
+        "kind": "string",
+        "optional": true
+      }
+    ],
+    "children": [
+      {
+        "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "kind",
+        "kind": "scalar"
+      },
+      {
+        "name": "rating",
+        "kind": "scalar"
+      },
+      {
+        "name": "watched",
+        "kind": "scalar"
+      },
+      {
+        "name": "watchlisted",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "job",
     "kind": "object",
     "children": [
@@ -20620,6 +20658,32 @@
     ]
   },
   {
+    "field": "setrating",
+    "kind": "object",
+    "children": [
+      {
+        "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "kind",
+        "kind": "scalar"
+      },
+      {
+        "name": "rating",
+        "kind": "scalar"
+      },
+      {
+        "name": "watched",
+        "kind": "scalar"
+      },
+      {
+        "name": "watchlisted",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "setretentioncandidatehold",
     "kind": "object",
     "children": [
@@ -20836,6 +20900,58 @@
       },
       {
         "name": "pluginsActivated",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "setwatched",
+    "kind": "object",
+    "children": [
+      {
+        "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "kind",
+        "kind": "scalar"
+      },
+      {
+        "name": "rating",
+        "kind": "scalar"
+      },
+      {
+        "name": "watched",
+        "kind": "scalar"
+      },
+      {
+        "name": "watchlisted",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "setwatchlisted",
+    "kind": "object",
+    "children": [
+      {
+        "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "kind",
+        "kind": "scalar"
+      },
+      {
+        "name": "rating",
+        "kind": "scalar"
+      },
+      {
+        "name": "watched",
+        "kind": "scalar"
+      },
+      {
+        "name": "watchlisted",
         "kind": "scalar"
       }
     ]
