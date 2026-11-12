@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/beamfall/core/internal/serverrole"
 )
 
 // Item target kinds, as stored in watchlist_item.target_kind and
@@ -85,7 +87,13 @@ func (s *Store) itemTargetVisibleLocked(ctx context.Context, target ItemTarget, 
 // edges are followed, so a curated relation to an unrelated Kind never widens
 // the mark.
 func (s *Store) entityTreeMediaLocked(ctx context.Context, entityID EntityID, filter LibraryFilter) ([]itemMedia, error) {
-	if _, err := s.visibleEntitySQL(ctx, entityID, filter); err != nil {
+	// An Encrypted Library keeps its Entities, relations and Media in its own
+	// catalog plane, so the tree is read from the plane that holds the root.
+	plane, err := s.catalogPlaneForEntityLocked(ctx, entityID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.visibleEntitySQLFrom(ctx, plane.reader, entityID, filter); err != nil {
 		return nil, err
 	}
 	libraries, err := loadLibraries(ctx, s.catalogR)
@@ -93,9 +101,13 @@ func (s *Store) entityTreeMediaLocked(ctx context.Context, entityID EntityID, fi
 		return nil, err
 	}
 	var libArgs []any
+	planePluginID := ""
 	for _, library := range libraries {
 		if libraryVisible(library, filter) {
 			libArgs = append(libArgs, library.ID)
+		}
+		if library.ID == plane.libraryID && library.PluginID != nil {
+			planePluginID = *library.PluginID
 		}
 	}
 	if len(libArgs) == 0 {
@@ -103,12 +115,16 @@ func (s *Store) entityTreeMediaLocked(ctx context.Context, entityID EntityID, fi
 	}
 	libIn := strings.TrimSuffix(strings.Repeat("?, ", len(libArgs)), ", ")
 	certClause, certArgs := certificationFilterSQL(filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
+	if plane.encrypted {
+		// The plane has no library table for the shared clause to join.
+		certClause, certArgs = planeCertificationFilterSQL(planePluginID, filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
+	}
 	args := make([]any, 0, 1+len(libArgs)*2+len(certArgs))
 	args = append(args, entityID)
 	args = append(args, libArgs...)
 	args = append(args, libArgs...)
 	args = append(args, certArgs...)
-	rows, err := s.catalogR.QueryContext(ctx, `
+	rows, err := plane.reader.QueryContext(ctx, `
 		WITH RECURSIVE subtree(id, kind) AS (
 			SELECT id, kind FROM entity WHERE id = ? AND trashed_at_ms IS NULL
 			UNION
@@ -196,6 +212,11 @@ func itemProgressLocked(ctx context.Context, q interface {
 // reproduces the mark. It returns the Media that went from unwatched to
 // watched.
 func (s *Store) SetItemWatched(ctx context.Context, profileID ProfileID, target ItemTarget, watched bool, filter LibraryFilter) ([]MediaID, error) {
+	// Authority face: watched marks, the watchlist and ratings are engagement,
+	// which is main-authored. An Attached node refuses.
+	if err := s.guardAuthority(serverrole.FaceEngagement); err != nil {
+		return nil, err
+	}
 	if profileID == "" {
 		return nil, ValidationError("profile ID is required")
 	}
@@ -290,6 +311,11 @@ func applyMarkProjectionEvent(ctx context.Context, tx *sql.Tx, event playbackPro
 // watchlist, or removes it. The visibility check runs before both paths, so a
 // hidden target is indistinguishable from a missing one.
 func (s *Store) SetItemWatchlisted(ctx context.Context, profileID ProfileID, target ItemTarget, listed bool, filter LibraryFilter) error {
+	// Authority face: watched marks, the watchlist and ratings are engagement,
+	// which is main-authored. An Attached node refuses.
+	if err := s.guardAuthority(serverrole.FaceEngagement); err != nil {
+		return err
+	}
 	if profileID == "" {
 		return ValidationError("profile ID is required")
 	}
@@ -324,6 +350,11 @@ func (s *Store) SetItemWatchlisted(ctx context.Context, profileID ProfileID, tar
 // SetItemRating records profileID's rating (1..ItemRatingMax) for one visible
 // Media or Entity; 0 clears it.
 func (s *Store) SetItemRating(ctx context.Context, profileID ProfileID, target ItemTarget, rating int, filter LibraryFilter) error {
+	// Authority face: watched marks, the watchlist and ratings are engagement,
+	// which is main-authored. An Attached node refuses.
+	if err := s.guardAuthority(serverrole.FaceEngagement); err != nil {
+		return err
+	}
 	if profileID == "" {
 		return ValidationError("profile ID is required")
 	}
@@ -437,40 +468,85 @@ func (s *Store) ratedItemsSQL(ctx context.Context, profileID ProfileID, filter L
 	`, profileID, limit, offset)
 }
 
-// profileItemsSQL pages (kind, id, rating) rows from the events DB in their
-// stored order, then resolves them against the catalog under filter. Targets
-// the filter hides, and targets that left the catalog, are dropped.
+// profileItemsPageSize is how many stored rows profileItemsSQL resolves per
+// round while it looks for a page of visible items.
+const profileItemsPageSize = 200
+
+// profileItemsSQL walks (kind, id, rating) rows from the events DB in their
+// stored order and resolves them against the catalog under filter. Targets the
+// filter hides, and targets that left the catalog, are dropped before paging,
+// so offset and limit count visible items and a page is short only at the end
+// of the list. A negative limit returns every visible item past offset.
 func (s *Store) profileItemsSQL(ctx context.Context, filter LibraryFilter, query string, profileID ProfileID, limit, offset int) ([]SourceItem, error) {
-	rows, err := s.eventsR.QueryContext(ctx, query, profileID, limit, offset)
-	if err != nil {
-		return nil, err
+	items := []SourceItem{}
+	if limit == 0 {
+		return items, nil
 	}
-	defer rows.Close()
-	type candidate struct {
-		kind, id string
-		rating   int
-	}
-	var candidates []candidate
-	var mediaIDs []MediaID
-	for rows.Next() {
-		var row candidate
-		if err := rows.Scan(&row.kind, &row.id, &row.rating); err != nil {
+	skip := max(offset, 0)
+	for stored := 0; ; stored += profileItemsPageSize {
+		rows, more, err := s.profileItemRowsSQL(ctx, query, profileID, profileItemsPageSize, stored)
+		if err != nil {
 			return nil, err
 		}
-		candidates = append(candidates, row)
+		visible, err := s.visibleProfileItemsSQL(ctx, rows, filter)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range visible {
+			if skip > 0 {
+				skip--
+				continue
+			}
+			items = append(items, item)
+			if limit > 0 && len(items) == limit {
+				return items, nil
+			}
+		}
+		if !more {
+			return items, nil
+		}
+	}
+}
+
+type profileItemRow struct {
+	kind, id string
+	rating   int
+}
+
+// profileItemRowsSQL reads one stored-order window and reports whether more
+// rows may follow it.
+func (s *Store) profileItemRowsSQL(ctx context.Context, query string, profileID ProfileID, limit, offset int) ([]profileItemRow, bool, error) {
+	rows, err := s.eventsR.QueryContext(ctx, query, profileID, limit, offset)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	var out []profileItemRow
+	for rows.Next() {
+		var row profileItemRow
+		if err := rows.Scan(&row.kind, &row.id, &row.rating); err != nil {
+			return nil, false, err
+		}
+		out = append(out, row)
+	}
+	return out, len(out) == limit, rows.Err()
+}
+
+// visibleProfileItemsSQL keeps the rows whose target is visible under filter,
+// in order, as Source items.
+func (s *Store) visibleProfileItemsSQL(ctx context.Context, rows []profileItemRow, filter LibraryFilter) ([]SourceItem, error) {
+	var mediaIDs []MediaID
+	for _, row := range rows {
 		if row.kind == ItemTargetMedia {
 			mediaIDs = append(mediaIDs, MediaID(row.id))
 		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
 	}
 	visible, err := s.visibleMediaBatchSQL(ctx, mediaIDs, filter)
 	if err != nil {
 		return nil, err
 	}
-	items := make([]SourceItem, 0, len(candidates))
-	for _, row := range candidates {
+	items := make([]SourceItem, 0, len(rows))
+	for _, row := range rows {
 		item := SourceItem{ID: MediaID(row.id), Kind: row.kind}
 		if row.kind == ItemTargetMedia {
 			media, ok := visible[MediaID(row.id)]

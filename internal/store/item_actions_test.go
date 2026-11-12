@@ -324,3 +324,160 @@ func TestItemActionRowsPrunedWithTheirTargets(t *testing.T) {
 		t.Fatal("prune removed a row whose target still exists")
 	}
 }
+
+// A page of the watchlist counts visible items: a hidden target ahead of the
+// window must not shorten the page or shift the next one.
+func TestWatchlistSourcePagesVisibleItems(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	parent, child, _ := seedItemTree(t, st)
+	revealed := LibraryFilter{AllowedIDs: []LibraryID{"library-local", "library-archive"}, Revealed: true}
+	// Oldest to newest; the Source lists newest first, so the hidden Media
+	// sits between the two Entities and the open Media.
+	for i, target := range []ItemTarget{{MediaID: "media-alpha"}, {MediaID: "media-archive"}, {EntityID: child}, {EntityID: parent}} {
+		if err := st.SetItemWatchlisted(ctx, "profile-default", target, true, revealed); err != nil {
+			t.Fatal(err)
+		}
+		kind, id, _ := target.kindAndID()
+		if _, err := st.eventsW.ExecContext(ctx, `UPDATE watchlist_item SET added_at_ms = ? WHERE target_kind = ? AND target_id = ?`, i+1, kind, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	page := func(limit, offset int) []string {
+		t.Helper()
+		var ids []string
+		for _, item := range mustSourceItems(t, st, itemOpenFilter, SourceQuery{Kind: "watchlist", ProfileID: "profile-default", Limit: limit, Offset: offset}) {
+			ids = append(ids, string(item.ID))
+		}
+		return ids
+	}
+	if got := page(2, 0); len(got) != 2 || got[0] != string(parent) || got[1] != string(child) {
+		t.Fatalf("first page = %v, want the two Entities", got)
+	}
+	if got := page(2, 2); len(got) != 1 || got[0] != "media-alpha" {
+		t.Fatalf("second page = %v, want the open Media past the hidden one", got)
+	}
+	if got := page(3, 0); len(got) != 3 {
+		t.Fatalf("a page spanning the hidden target = %v, want 3 visible items", got)
+	}
+}
+
+// A row whose Entity left the catalog is dropped, not an error, by the Sources
+// and by the My Data export.
+func TestItemActionSourcesDropPurgedEntities(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	for _, stmt := range []string{
+		`INSERT INTO watchlist_item(profile_id, target_kind, target_id, added_at_ms) VALUES ('profile-default', 'entity', 'entity-gone', 9)`,
+		`INSERT INTO item_rating(profile_id, target_kind, target_id, rating, rated_at_ms) VALUES ('profile-default', 'entity', 'entity-gone', 4, 9)`,
+	} {
+		if _, err := st.eventsW.ExecContext(ctx, stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.SetItemWatchlisted(ctx, "profile-default", ItemTarget{MediaID: "media-alpha"}, true, itemOpenFilter); err != nil {
+		t.Fatal(err)
+	}
+	if got := mustSourceItems(t, st, itemOpenFilter, SourceQuery{Kind: "watchlist", ProfileID: "profile-default"}); len(got) != 1 {
+		t.Fatalf("watchlist = %+v, want only the Media that still exists", got)
+	}
+	if got := mustSourceItems(t, st, itemOpenFilter, SourceQuery{Kind: "rated", ProfileID: "profile-default"}); len(got) != 0 {
+		t.Fatalf("rated = %+v, want none", got)
+	}
+	export, err := st.ExportMyEngagement(ctx, "profile-default", itemOpenFilter)
+	if err != nil {
+		t.Fatalf("export with a purged Entity target: %v", err)
+	}
+	if len(export.Watchlist) != 1 || len(export.Ratings) != 0 {
+		t.Fatalf("export watchlist=%v ratings=%v, want the one live row", export.Watchlist, export.Ratings)
+	}
+}
+
+// An Encrypted Library keeps its catalog in its own plane: item actions read
+// the tree there, and the orphan sweep neither mistakes its targets for purged
+// ones nor runs while the plane is sealed.
+func TestItemActionsReachAnEncryptedLibrary(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	library := LibraryID("library-local")
+	if err := st.SetLibraryBacking(ctx, library, false, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UnsealEncryptedLibraryDB(ctx, library, copyEncryptedLibraryDBCipher{}); err != nil {
+		t.Fatal(err)
+	}
+	imported, _, err := st.ImportMediaFile(ctx, encryptedImport(library, "sha256:item-encrypted", "/enc/item.mkv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	entity := Entity{ID: "entity-item-encrypted", LibraryID: library, Kind: "container", Title: "Sealed Season"}
+	if err := st.UpsertEntity(ctx, entity); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.encryptedDBs[library].writer.ExecContext(ctx, `
+		INSERT INTO entity_relation(from_entity_id, relation, to_media_id)
+		VALUES (?, 'contains', ?)
+	`, entity.ID, imported.ID); err != nil {
+		t.Fatal(err)
+	}
+	filter := LibraryFilter{AllLibraries: true}
+	target := ItemTarget{EntityID: entity.ID}
+
+	changed, err := st.SetItemWatched(ctx, "profile-default", target, true, filter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(changed) != 1 || changed[0] != imported.ID {
+		t.Fatalf("marked %v watched, want the Entity's one Media", changed)
+	}
+	if err := st.SetItemWatchlisted(ctx, "profile-default", target, true, filter); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetItemRating(ctx, "profile-default", ItemTarget{MediaID: imported.ID}, 7, filter); err != nil {
+		t.Fatal(err)
+	}
+	state, err := st.ItemStateFor(ctx, "profile-default", target, filter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !state.Watched || !state.Watchlisted {
+		t.Fatalf("encrypted Entity state = %+v, want watched and watchlisted", state)
+	}
+
+	if _, err := st.eventsW.ExecContext(ctx, `INSERT INTO watchlist_item(profile_id, target_kind, target_id, added_at_ms) VALUES ('profile-default', 'media', 'media-gone', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	rowCount := func() int {
+		t.Helper()
+		var n int
+		if err := st.eventsR.QueryRowContext(ctx, `SELECT (SELECT COUNT(*) FROM watchlist_item) + (SELECT COUNT(*) FROM item_rating) + (SELECT COUNT(*) FROM playback_progress WHERE media_id = ?)`, imported.ID).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	counts, err := st.PruneOrphanedEngagementRows(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts.ItemActionRows != 1 || rowCount() != 3 {
+		t.Fatalf("open-plane prune removed %+v and left %d rows, want only the orphan gone", counts, rowCount())
+	}
+
+	if _, err := st.eventsW.ExecContext(ctx, `INSERT INTO watchlist_item(profile_id, target_kind, target_id, added_at_ms) VALUES ('profile-default', 'media', 'media-gone', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SealEncryptedLibraryDB(ctx, library, copyEncryptedLibraryDBCipher{}); err != nil {
+		t.Fatal(err)
+	}
+	counts, err = st.PruneOrphanedEngagementRows(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts != (EngagementPruneCounts{}) || rowCount() != 4 {
+		t.Fatalf("sealed-plane prune removed %+v and left %d rows, want nothing removed", counts, rowCount())
+	}
+}

@@ -1222,7 +1222,9 @@ func (s *Store) catalogPlaneForEntityLocked(ctx context.Context, id EntityID) (c
 			return catalogPlane{}, err
 		}
 	}
-	return catalogPlane{}, errors.New("entity not found")
+	// The same sentinel a hidden Entity reports, so callers that drop missing
+	// targets also drop one that was purged or whose Library is sealed.
+	return catalogPlane{}, errVisibleEntityNotFound
 }
 
 // EnrollDevice inserts an enrolled Device and its initial hidden Session atomically.
