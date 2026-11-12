@@ -3844,9 +3844,14 @@ func (s *Store) BootstrapOwner(ctx context.Context, profileName string, device D
 	if err := tx.Commit(); err != nil {
 		return Profile{}, err
 	}
-	// The setup is stored: a cancelled request must not turn it into a
-	// retryable failure that would enroll a second owner.
-	return s.profileSQL(context.WithoutCancel(ctx), profileID)
+	// The setup is stored: neither a cancelled request nor a failed read-back
+	// may turn it into a retryable failure, because a retry would find the
+	// enrolled Device, enroll a second owner and demote this one.
+	profile, err := s.profileSQL(context.WithoutCancel(ctx), profileID)
+	if err != nil {
+		return Profile{ID: profileID, Name: profileName, Kind: ProfileAdult, IsOwner: true}, nil
+	}
+	return profile, nil
 }
 
 // partialOwnerTx returns the Profile an interrupted first-run setup left
