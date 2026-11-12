@@ -1,19 +1,18 @@
 import { Bell, LayoutDashboard, Menu } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { ServerActivity } from "@/components/beamfall/ServerActivity";
 import { Dialog as DialogPrimitive } from "@/components/ui/astryx-primitives";
 import { Badge } from "@/components/ui/badge";
 import { getBeamfallHost } from "@/lib/beamfallHost";
-import { fetchNotifications } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
 import { AccountMenu } from "./AccountMenu";
 import { LibrarySidebar } from "./LibrarySidebar";
+import { NOTIFICATION_BADGE_LIMIT, useUnreadNotifications } from "./unreadNotifications";
 import "./chrome.css";
 
-const NOTIFICATION_BADGE_LIMIT = 100;
 const PHONE_QUERY = "(max-width: 760px)";
 const SIDEBAR_PREF = "beamfall.sidebarCollapsed";
 
@@ -70,7 +69,13 @@ export function AppShell({
   const location = useLocation();
   const { register } = useRegister();
   const { session, manifest, isManager, revealed, needsEnroll } = useSession();
-  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  // Cached across remounts: every route mounts its own AppShell, and the bell
+  // must not refetch the inbox on each navigation.
+  const unreadNotifications = useUnreadNotifications(
+    register === "viewer" && session && !needsEnroll
+      ? `${session.profileID}:${session.revealed ? "revealed" : "locked"}`
+      : null,
+  );
   const beamfallHost = getBeamfallHost();
   const sidebarId = useId();
   const phone = usePhoneLayout();
@@ -104,41 +109,6 @@ export function AppShell({
       return !was;
     });
   }
-
-  const refreshUnreadNotifications = useCallback(async () => {
-    if (register !== "viewer" || !session || needsEnroll) {
-      setUnreadNotifications(0);
-      return;
-    }
-    try {
-      const rows = await fetchNotifications({
-        unreadOnly: true,
-        limit: NOTIFICATION_BADGE_LIMIT,
-      });
-      setUnreadNotifications(rows.length);
-    } catch {
-      setUnreadNotifications(0);
-    }
-  }, [needsEnroll, register, session]);
-
-  useEffect(() => {
-    void refreshUnreadNotifications();
-  }, [refreshUnreadNotifications]);
-
-  useEffect(() => {
-    function refreshIfForeground() {
-      if (document.visibilityState === "hidden") return;
-      void refreshUnreadNotifications();
-    }
-    window.addEventListener("focus", refreshIfForeground);
-    window.addEventListener("beamfall:notifications-changed", refreshIfForeground);
-    document.addEventListener("visibilitychange", refreshIfForeground);
-    return () => {
-      window.removeEventListener("focus", refreshIfForeground);
-      window.removeEventListener("beamfall:notifications-changed", refreshIfForeground);
-      document.removeEventListener("visibilitychange", refreshIfForeground);
-    };
-  }, [refreshUnreadNotifications]);
 
   // The active nav tab: a manifest node whose route matches the current path.
   // Home ("/") is the aggregate first layout node; "/n/:id" binds the named one.
