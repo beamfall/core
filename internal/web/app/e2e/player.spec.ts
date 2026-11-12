@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { type CDPSession, expect, type Locator, type Page, test } from "@playwright/test";
+import { type CDPSession, expect, type Locator, type Page, test } from "./lib/test";
 import { expectVisualParity, settleFrames } from "./lib/visual-parity";
 
 const mediaPath = join(

@@ -1,4 +1,3 @@
-import { expect, type Page, test } from "@playwright/test";
 import { seedViewerFocusSections } from "./fixtures/viewer-focus-sections";
 import { expectNoAxeViolations, runAxe } from "./lib/axe";
 import {
@@ -7,6 +6,7 @@ import {
   expectLargeTextApplied,
   expectNoHorizontalDocumentOverflow,
 } from "./lib/spec";
+import { expect, type Page, test } from "./lib/test";
 import { settleFrames } from "./lib/visual-parity";
 
 /**

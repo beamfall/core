@@ -1,6 +1,6 @@
 import { join } from "node:path";
-import { expect, test } from "@playwright/test";
 import { collectFatalErrors, harnessState } from "./lib/spec";
+import { expect, test } from "./lib/test";
 import { queueUnmatchedRecord, resolvedMediaID } from "./lib/unmatched-record";
 
 // METAPARITY-ARTWORK-E2E-1: the create-Media-with-artwork chain, unmocked, in a
