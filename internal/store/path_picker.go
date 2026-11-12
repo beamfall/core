@@ -392,6 +392,16 @@ func (s *Store) pathPickerEntry(ctx context.Context, path string, depth int) (Pa
 	if info.IsDir() {
 		kind = "folder"
 	}
+	// A link to a folder is listed as a folder so it can be opened, but it is
+	// never read from here: opening it sends its path back through PathPicker,
+	// which resolves the link and applies the blocklist and the allowed roots.
+	linked := false
+	if info.Mode()&os.ModeSymlink != 0 {
+		if target, err := os.Stat(path); err == nil && target.IsDir() {
+			kind = "folder"
+			linked = true
+		}
+	}
 	entry := PathPickerEntry{
 		Name:              info.Name(),
 		Path:              filepath.Clean(path),
@@ -404,6 +414,9 @@ func (s *Store) pathPickerEntry(ctx context.Context, path string, depth int) (Pa
 	}
 	if entry.Name == "" {
 		entry.Name = entry.Path
+	}
+	if linked {
+		return entry, nil
 	}
 	if kind == "folder" {
 		entry.MediaCount, entry.SampleNames, entry.Truncated = previewPathPickerFolder(ctx, path)

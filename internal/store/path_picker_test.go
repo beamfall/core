@@ -300,3 +300,81 @@ func TestPathPickerRuntimeDetection(t *testing.T) {
 		t.Fatalf("runtime = %q, want container", got)
 	}
 }
+
+func TestPathPickerListsLinkedFoldersWithoutReadingThem(t *testing.T) {
+	ctx := context.Background()
+	// Keep the host's own volumes out of the roots: a boot volume link there
+	// resolves to "/" and would put every path inside a root.
+	oldGOOS, oldVolumesRoot := pathPickerGOOS, pathPickerVolumesRoot
+	t.Cleanup(func() {
+		pathPickerGOOS = oldGOOS
+		pathPickerVolumesRoot = oldVolumesRoot
+	})
+	pathPickerGOOS = "darwin"
+	pathPickerVolumesRoot = t.TempDir()
+	base := t.TempDir()
+	media := filepath.Join(base, "media")
+	inside := filepath.Join(base, "elsewhere")
+	outside := t.TempDir()
+	for _, dir := range []string{media, inside} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, dir := range []string{inside, outside} {
+		if err := os.WriteFile(filepath.Join(dir, "clip.mp4"), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(media, "notes.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	links := map[string]string{"linked-inside": inside, "linked-outside": outside, "linked-file": filepath.Join(media, "notes.txt")}
+	for name, target := range links {
+		if err := os.Symlink(target, filepath.Join(media, name)); err != nil {
+			t.Skipf("symlinks unavailable: %v", err)
+		}
+	}
+	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, AllowedRoots: []string{base}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	picker, err := st.PathPicker(ctx, PathPickerRequest{Role: PathRoleLibraryRoot, Path: media, Depth: 1})
+	if err != nil {
+		t.Fatalf("PathPicker: %v", err)
+	}
+	if len(picker.Entries) != 1 {
+		t.Fatalf("entries = %#v", picker.Entries)
+	}
+	kinds := map[string]PathPickerEntry{}
+	for _, child := range picker.Entries[0].Children {
+		kinds[child.Name] = child
+	}
+	for _, name := range []string{"linked-inside", "linked-outside"} {
+		child, ok := kinds[name]
+		if !ok || child.Kind != "folder" {
+			t.Fatalf("%s = %#v, want a folder", name, child)
+		}
+		if child.MediaCount != 0 || len(child.SampleNames) != 0 || len(child.Children) != 0 {
+			t.Fatalf("%s was read through the link: %#v", name, child)
+		}
+	}
+	if kinds["linked-file"].Kind != "file" {
+		t.Fatalf("linked-file = %#v, want a file", kinds["linked-file"])
+	}
+	opened, err := st.PathPicker(ctx, PathPickerRequest{Role: PathRoleLibraryRoot, Path: filepath.Join(media, "linked-inside"), Depth: 1})
+	if err != nil {
+		t.Fatalf("open linked-inside: %v", err)
+	}
+	if len(opened.Entries) != 1 || opened.Entries[0].MediaCount != 1 || opened.Entries[0].ReasonCode != "" {
+		t.Fatalf("linked-inside opened as %#v", opened.Entries)
+	}
+	refused, err := st.PathPicker(ctx, PathPickerRequest{Role: PathRoleLibraryRoot, Path: filepath.Join(media, "linked-outside"), Depth: 1})
+	if err != nil {
+		t.Fatalf("open linked-outside: %v", err)
+	}
+	if len(refused.Entries) != 1 || refused.Entries[0].Selectable || refused.Entries[0].ReasonCode != "outside-roots" || refused.Entries[0].MediaCount != 0 {
+		t.Fatalf("linked-outside opened as %#v, want outside-roots", refused.Entries)
+	}
+}
