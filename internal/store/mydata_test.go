@@ -72,6 +72,61 @@ func TestExportMyEngagementRevealFilters(t *testing.T) {
 	}
 }
 
+func TestExportMyEngagementCarriesWatchlistAndRatings(t *testing.T) {
+	// feature:my-data-panel
+	st := openSeeded(t)
+	ctx := context.Background()
+	parent, _, _ := seedItemTree(t, st)
+	open := profileDefaultFilter(true)
+	for _, target := range []ItemTarget{{MediaID: "media-alpha"}, {MediaID: "media-archive"}, {EntityID: parent}} {
+		if err := st.SetItemWatchlisted(ctx, "profile-default", target, true, open); err != nil {
+			t.Fatalf("watchlist %+v: %v", target, err)
+		}
+		if err := st.SetItemRating(ctx, "profile-default", target, 7, open); err != nil {
+			t.Fatalf("rate %+v: %v", target, err)
+		}
+	}
+
+	revealed, err := st.ExportMyEngagement(ctx, "profile-default", open)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(revealed.Watchlist) != 3 || len(revealed.Ratings) != 3 {
+		t.Fatalf("revealed export watchlist=%v ratings=%v, want 3 each", revealed.Watchlist, revealed.Ratings)
+	}
+	for _, row := range revealed.Ratings {
+		if row.Rating != 7 || row.RatedAt.IsZero() {
+			t.Fatalf("rating row = %+v, want rating 7 with a time", row)
+		}
+	}
+
+	// Relocked: the restricted-Library Media leaves both lists; the visible
+	// Media and the Entity stay.
+	relocked, err := st.ExportMyEngagement(ctx, "profile-default", profileDefaultFilter(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(relocked.Watchlist) != 2 || len(relocked.Ratings) != 2 {
+		t.Fatalf("relocked export watchlist=%v ratings=%v, want 2 each", relocked.Watchlist, relocked.Ratings)
+	}
+	for _, row := range relocked.Watchlist {
+		if row.TargetID == "media-archive" {
+			t.Fatalf("relocked export leaked a restricted watchlist row: %+v", row)
+		}
+	}
+	for _, row := range relocked.Ratings {
+		if row.TargetID == "media-archive" {
+			t.Fatalf("relocked export leaked a restricted rating row: %+v", row)
+		}
+	}
+
+	// Another profile sees none of it.
+	other, err := st.ExportMyEngagement(ctx, "profile-kids", open)
+	if err == nil && (len(other.Watchlist) != 0 || len(other.Ratings) != 0) {
+		t.Fatalf("another profile's export carries rows: %+v", other)
+	}
+}
+
 func TestExportMyEngagementDisclosesSealedLibraryExclusions(t *testing.T) {
 	// feature:my-data-panel feature:encrypted-library
 	st := openSeeded(t)

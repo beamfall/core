@@ -298,12 +298,27 @@ export interface MyQueueEntry {
 }
 
 /** The engagement export (graph.MyEngagementExportInfo). */
+export interface MyWatchlistEntry {
+  targetKind: "media" | "entity";
+  targetID: string;
+  addedAt: string;
+}
+
+export interface MyItemRating {
+  targetKind: "media" | "entity";
+  targetID: string;
+  rating: number;
+  ratedAt: string;
+}
+
 export interface MyEngagementExport {
   schema: string;
   exportedAt: string;
   playbackProgress: MyPlaybackProgress[];
   favorites: MyFavorite[];
   queue: MyQueueEntry[];
+  watchlist: MyWatchlistEntry[];
+  ratings: MyItemRating[];
 }
 
 export interface MySessionInfo {

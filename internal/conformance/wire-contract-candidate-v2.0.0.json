@@ -11124,6 +11124,50 @@
           ]
         },
         {
+          "name": "ratings",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "ratedAt",
+                "kind": "scalar"
+              },
+              {
+                "name": "rating",
+                "kind": "scalar"
+              },
+              {
+                "name": "targetID",
+                "kind": "scalar"
+              },
+              {
+                "name": "targetKind",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "ratedAt",
+              "kind": "scalar"
+            },
+            {
+              "name": "rating",
+              "kind": "scalar"
+            },
+            {
+              "name": "targetID",
+              "kind": "scalar"
+            },
+            {
+              "name": "targetKind",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
           "name": "savedFilters",
           "kind": "list",
           "nullable": true,
@@ -11174,6 +11218,42 @@
         {
           "name": "sealedLibrariesExcluded",
           "kind": "scalar"
+        },
+        {
+          "name": "watchlist",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "addedAt",
+                "kind": "scalar"
+              },
+              {
+                "name": "targetID",
+                "kind": "scalar"
+              },
+              {
+                "name": "targetKind",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "addedAt",
+              "kind": "scalar"
+            },
+            {
+              "name": "targetID",
+              "kind": "scalar"
+            },
+            {
+              "name": "targetKind",
+              "kind": "scalar"
+            }
+          ]
         }
       ]
     },

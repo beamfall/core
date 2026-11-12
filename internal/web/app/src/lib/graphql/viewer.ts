@@ -303,7 +303,7 @@ export async function markNotificationRead(id: string): Promise<NotificationRead
 }
 
 const MY_ENGAGEMENT_QUERY =
-  "query MyEngagement { myEngagement { schema exportedAt playbackProgress { mediaID positionSeconds durationSeconds watched playCount updatedAt } favorites { mediaID favoritedAt } queue { mediaID addedAt } } }";
+  "query MyEngagement { myEngagement { schema exportedAt playbackProgress { mediaID positionSeconds durationSeconds watched playCount updatedAt } favorites { mediaID favoritedAt } queue { mediaID addedAt } watchlist { targetKind targetID addedAt } ratings { targetKind targetID rating ratedAt } } }";
 
 /** MyEngagement — the download-as-JSON engagement export. */
 export async function fetchMyEngagement(): Promise<MyEngagementExport> {

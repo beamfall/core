@@ -33,6 +33,8 @@ type MyEngagementExportInfo struct {
 	PlaybackProgress        []MyPlaybackProgressInfo     `json:"playbackProgress"`
 	Favorites               []MyFavoriteInfo             `json:"favorites"`
 	Queue                   []MyQueueEntryInfo           `json:"queue"`
+	Watchlist               []MyWatchlistEntryInfo       `json:"watchlist"`
+	Ratings                 []MyItemRatingInfo           `json:"ratings"`
 	SavedFilters            []MySavedFilterInfo          `json:"savedFilters"`
 	Collections             []MyCollectionInfo           `json:"collections"`
 	Markers                 []MyMarkerInfo               `json:"markers"`
@@ -175,6 +177,22 @@ type MyFavoriteInfo struct {
 	FavoritedAt string `json:"favoritedAt"`
 }
 
+// MyWatchlistEntryInfo is one exported watchlist row; targetKind is "media" or
+// "entity".
+type MyWatchlistEntryInfo struct {
+	TargetKind string `json:"targetKind"`
+	TargetID   string `json:"targetID"`
+	AddedAt    string `json:"addedAt"`
+}
+
+// MyItemRatingInfo is one exported personal rating row (1-10).
+type MyItemRatingInfo struct {
+	TargetKind string `json:"targetKind"`
+	TargetID   string `json:"targetID"`
+	Rating     int    `json:"rating"`
+	RatedAt    string `json:"ratedAt"`
+}
+
 // MyQueueEntryInfo is one exported play-queue row, in queue order.
 type MyQueueEntryInfo struct {
 	MediaID string `json:"mediaID"`
@@ -256,6 +274,8 @@ func (h *Handler) myEngagement(ctx context.Context, scope auth.Scope, req reques
 		PlaybackProgress: make([]MyPlaybackProgressInfo, 0, len(export.PlaybackProgress)),
 		Favorites:        make([]MyFavoriteInfo, 0, len(export.Favorites)),
 		Queue:            make([]MyQueueEntryInfo, 0, len(export.Queue)),
+		Watchlist:        make([]MyWatchlistEntryInfo, 0, len(export.Watchlist)),
+		Ratings:          make([]MyItemRatingInfo, 0, len(export.Ratings)),
 		SavedFilters:     make([]MySavedFilterInfo, 0, len(export.SavedFilters)),
 		Collections:      make([]MyCollectionInfo, 0, len(export.Collections)),
 		Markers:          make([]MyMarkerInfo, 0, len(export.Markers)),
@@ -283,6 +303,21 @@ func (h *Handler) myEngagement(ctx context.Context, scope auth.Scope, req reques
 		info.Favorites = append(info.Favorites, MyFavoriteInfo{
 			MediaID:     string(row.MediaID),
 			FavoritedAt: row.FavoritedAt.UTC().Format(time.RFC3339),
+		})
+	}
+	for _, row := range export.Watchlist {
+		info.Watchlist = append(info.Watchlist, MyWatchlistEntryInfo{
+			TargetKind: row.TargetKind,
+			TargetID:   row.TargetID,
+			AddedAt:    row.AddedAt.UTC().Format(time.RFC3339),
+		})
+	}
+	for _, row := range export.Ratings {
+		info.Ratings = append(info.Ratings, MyItemRatingInfo{
+			TargetKind: row.TargetKind,
+			TargetID:   row.TargetID,
+			Rating:     row.Rating,
+			RatedAt:    row.RatedAt.UTC().Format(time.RFC3339),
 		})
 	}
 	for _, row := range export.Queue {

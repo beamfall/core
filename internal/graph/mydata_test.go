@@ -47,6 +47,12 @@ func mydataSeedEngagement(t *testing.T, handler *Handler, authorize func(*http.R
 		authorize); len(errs) != 0 {
 		t.Fatalf("seed queueAdd errors = %#v", errs)
 	}
+	if _, errs := itemActionCall(t, handler, authorize, "mutation", "setWatchlisted", map[string]any{"mediaID": "media-alpha", "watchlisted": true}); len(errs) != 0 {
+		t.Fatalf("seed setWatchlisted errors = %#v", errs)
+	}
+	if _, errs := itemActionCall(t, handler, authorize, "mutation", "setRating", map[string]any{"mediaID": "media-alpha", "rating": 8}); len(errs) != 0 {
+		t.Fatalf("seed setRating errors = %#v", errs)
+	}
 }
 
 // mydataReadEngagement returns the caller's reveal-filtered engagement export.
@@ -54,7 +60,7 @@ func mydataSeedEngagement(t *testing.T, handler *Handler, authorize func(*http.R
 func mydataReadEngagement(t *testing.T, handler *Handler, authorize func(*http.Request)) MyEngagementExportInfo {
 	t.Helper()
 	data, errs := post(t, handler,
-		`{"query":"query Q($pin: String){ myEngagement(pin: $pin){ schema playbackProgress { mediaID } favorites { mediaID } queue { mediaID } } }","variables":{"pin":"1234"}}`,
+		`{"query":"query Q($pin: String){ myEngagement(pin: $pin){ schema playbackProgress { mediaID } favorites { mediaID } queue { mediaID } watchlist { targetKind targetID addedAt } ratings { targetKind targetID rating ratedAt } } }","variables":{"pin":"1234"}}`,
 		authorize)
 	if len(errs) != 0 {
 		t.Fatalf("myEngagement errors = %#v", errs)
@@ -202,6 +208,12 @@ func TestDeleteMyEngagementAllRemovesOwnData(t *testing.T) {
 	if len(before.PlaybackProgress) != 1 || len(before.Favorites) != 1 || len(before.Queue) != 1 {
 		t.Fatalf("pre-delete export = %#v, want one row in each table", before)
 	}
+	if len(before.Watchlist) != 1 || before.Watchlist[0].TargetKind != "media" || before.Watchlist[0].TargetID != "media-alpha" || before.Watchlist[0].AddedAt == "" {
+		t.Fatalf("pre-delete watchlist = %#v, want media-alpha", before.Watchlist)
+	}
+	if len(before.Ratings) != 1 || before.Ratings[0].Rating != 8 || before.Ratings[0].RatedAt == "" {
+		t.Fatalf("pre-delete ratings = %#v, want one rating of 8", before.Ratings)
+	}
 
 	// Delete everything; the result echoes the scope KIND only ("all").
 	data, errs := post(t, handler,
@@ -220,6 +232,9 @@ func TestDeleteMyEngagementAllRemovesOwnData(t *testing.T) {
 	after := mydataReadEngagement(t, handler, authorizeViewer)
 	if len(after.PlaybackProgress) != 0 || len(after.Favorites) != 0 || len(after.Queue) != 0 {
 		t.Fatalf("post-delete export = %#v, want all tables empty", after)
+	}
+	if len(after.Watchlist) != 0 || len(after.Ratings) != 0 {
+		t.Fatalf("post-delete export keeps watchlist=%#v ratings=%#v", after.Watchlist, after.Ratings)
 	}
 
 	// Idempotency: a second delete succeeds with no error and is a no-op.
