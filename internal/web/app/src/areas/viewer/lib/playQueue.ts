@@ -19,18 +19,37 @@ export interface PlayerNavState {
   queue?: PlayQueueItem[];
 }
 
-// Nav state is serialised into history; a huge section must not bloat it.
-const MAX_QUEUE = 500;
+// Nav state is serialised into history; a huge section must not bloat it, so
+// the queue handed to the player is a window of at most this many entries
+// centred on the item being played.
+export const MAX_QUEUE = 500;
 
 /** The playable (kind "media") items of a list, in order, as a queue. */
 export function playQueueOf(items: readonly SourceItem[]): PlayQueueItem[] {
   const queue: PlayQueueItem[] = [];
   for (const item of items) {
-    if (item.kind !== "media") continue;
-    queue.push({ id: item.id, title: item.title });
-    if (queue.length >= MAX_QUEUE) break;
+    if (item.kind === "media") queue.push({ id: item.id, title: item.title });
   }
   return queue;
+}
+
+/**
+ * At most `max` queue entries around `id`, so an item deep in a long list
+ * still gets its real neighbours. A queue without `id` is returned from its
+ * start.
+ */
+export function queueWindow(
+  queue: readonly PlayQueueItem[],
+  id: string,
+  max = MAX_QUEUE,
+): PlayQueueItem[] {
+  if (queue.length <= max) return [...queue];
+  const index = Math.max(
+    0,
+    queue.findIndex((item) => item.id === id),
+  );
+  const start = Math.min(Math.max(0, index - Math.floor(max / 2)), queue.length - max);
+  return queue.slice(start, start + max);
 }
 
 /** The queue entries either side of `id`, when it is in the queue. */

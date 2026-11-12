@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +24,7 @@ import { useT } from "@/lib/i18n";
 import type { StringKey } from "@/strings";
 import { MediaItemCard } from "../components/MediaItemCard";
 import { ViewerActions } from "../components/ViewerActions";
+import { playQueueOf } from "../lib/playQueue";
 import { availableModes } from "../lib/searchModes";
 
 const MODE_LABEL: Record<SearchMode, StringKey> = {
@@ -49,6 +50,8 @@ export function SearchPage() {
   const [caps, setCaps] = useState<SemanticCapabilityInfo[]>([]);
   const [prefs, setPrefs] = useState<ClientPref[]>([]);
   const [results, setResults] = useState<SearchResultItem[] | null>(null);
+  // Playable results are the player's queue, like any catalog surface (CORE-1143).
+  const queue = useMemo(() => (results ? playQueueOf(results) : undefined), [results]);
   const [notice, setNotice] = useState<StringKey | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -172,6 +175,7 @@ export function SearchPage() {
                 item={item}
                 posInSet={index + 1}
                 setSize={results.length}
+                queue={queue}
               />
             ))}
           </ul>

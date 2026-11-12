@@ -6,7 +6,7 @@ import { useViewerIdentity } from "@/lib/session";
 import { artworkBucketURL, artworkSlotURL } from "../lib/artwork";
 import { entityLinkState } from "../lib/entityPreview";
 import { fetchPreviewInfo } from "../lib/playback";
-import type { PlayerNavState, PlayQueueItem } from "../lib/playQueue";
+import { type PlayerNavState, type PlayQueueItem, queueWindow } from "../lib/playQueue";
 import { type RenderFocusAnchor, rememberRenderFocus } from "../lib/renderFocus";
 import { preloadPlayer } from "../player/preload";
 
@@ -107,7 +107,7 @@ export function MediaItemCard({
       // (the playback-info wire does not report it), plus the siblings as the
       // player's queue (previous/next and the pre-minted next stream).
       const state: PlayerNavState = { title: item.title };
-      if (queue && queue.length > 1) state.queue = queue;
+      if (queue && queue.length > 1) state.queue = queueWindow(queue, item.id);
       navigate(`/watch/${encodeURIComponent(item.id)}`, { state });
     } else {
       navigate(`/entity/${encodeURIComponent(item.id)}`, {

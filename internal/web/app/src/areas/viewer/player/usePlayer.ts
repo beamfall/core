@@ -63,18 +63,33 @@ let lastPlaybackEventTimeMS = 0;
 interface ProgressQueue {
   active: boolean;
   finalQueued: boolean;
+  // Set when the player moved on (track change, unmount) with a finish report
+  // still owed: no new reports are accepted, but the queued final one is sent.
+  retiring: boolean;
+  onDrained: (() => void) | null;
   inFlight: { controller: AbortController; progress: ReportPlaybackVars } | null;
   pending: ReportPlaybackVars | null;
 }
 
 function createProgressQueue(): ProgressQueue {
-  return { active: true, finalQueued: false, inFlight: null, pending: null };
+  return {
+    active: true,
+    finalQueued: false,
+    retiring: false,
+    onDrained: null,
+    inFlight: null,
+    pending: null,
+  };
 }
 
 function enqueueProgress(queue: ProgressQueue, progress: ReportPlaybackVars): void {
-  if (!queue.active) return;
+  if (!queue.active || queue.retiring) return;
   if (queue.finalQueued && !progress.finished) return;
   if (progress.finished) queue.finalQueued = true;
+  sendProgress(queue, progress);
+}
+
+function sendProgress(queue: ProgressQueue, progress: ReportPlaybackVars): void {
   if (queue.inFlight) {
     if (!queue.inFlight.progress.finished) queue.pending = progress;
     return;
@@ -97,7 +112,11 @@ function completeProgress(queue: ProgressQueue, controller: AbortController): vo
   if (!queue.active) return;
   const pending = queue.pending;
   queue.pending = null;
-  if (pending) enqueueProgress(queue, pending);
+  if (pending) {
+    sendProgress(queue, pending);
+    return;
+  }
+  if (queue.retiring) stopProgressQueue(queue);
 }
 
 function stopProgressQueue(queue: ProgressQueue): void {
@@ -105,6 +124,34 @@ function stopProgressQueue(queue: ProgressQueue): void {
   queue.pending = null;
   queue.inFlight?.controller.abort();
   queue.inFlight = null;
+  const onDrained = queue.onDrained;
+  queue.onDrained = null;
+  onDrained?.();
+}
+
+// retireProgressQueue ends a queue when playback moves to another item. A
+// finish report already queued (an auto-advance at `ended`) is still delivered,
+// so a fully played track counts as finished; anything else is cancelled. An
+// identity change still stops the queue outright (CORE-1143).
+function retireProgressQueue(queue: ProgressQueue, onDrained: () => void): void {
+  queue.onDrained = onDrained;
+  const finalOwed =
+    queue.active &&
+    queue.finalQueued &&
+    (queue.inFlight?.progress.finished === true || queue.pending?.finished === true);
+  if (!finalOwed) {
+    stopProgressQueue(queue);
+    return;
+  }
+  queue.retiring = true;
+  // Drop the in-flight periodic report so the final one goes out now.
+  if (queue.inFlight && !queue.inFlight.progress.finished) {
+    const final = queue.pending;
+    queue.pending = null;
+    queue.inFlight.controller.abort();
+    queue.inFlight = null;
+    if (final) sendProgress(queue, final);
+  }
 }
 
 function nextPlaybackEventTimeMS(): number {
@@ -782,8 +829,9 @@ export function usePlayer(
         clearInterval(progressTimerRef.current);
         progressTimerRef.current = null;
       }
-      identitySignal?.removeEventListener("abort", stopForIdentityChange);
-      stopProgressQueue(progressQueue);
+      retireProgressQueue(progressQueue, () =>
+        identitySignal?.removeEventListener("abort", stopForIdentityChange),
+      );
       if (progressQueueRef.current === progressQueue) progressQueueRef.current = null;
       destroyHls();
       const video = boundVideo ?? videoRef.current;

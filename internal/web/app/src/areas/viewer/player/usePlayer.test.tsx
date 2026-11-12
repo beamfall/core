@@ -452,6 +452,60 @@ describe("usePlayer", () => {
     expect(pending.requests).toHaveLength(1);
   });
 
+  it.each(["media change", "unmount"])(
+    "delivers the finish report queued at ended across a %s (CORE-1143)",
+    async (teardown) => {
+      const pending = capturePendingProgress();
+      const view = render(<Harness mediaID="media-alpha" />);
+      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+
+      const video = screen.getByTestId("player") as HTMLVideoElement;
+      Object.defineProperty(video, "duration", { configurable: true, value: 120 });
+      Object.defineProperty(video, "currentTime", { configurable: true, value: 100 });
+      fireEvent.pause(video);
+      Object.defineProperty(video, "currentTime", { configurable: true, value: 120 });
+      fireEvent.ended(video);
+      expect(pending.requests).toHaveLength(1);
+
+      // Auto-advance navigates while the periodic report is still in flight.
+      if (teardown === "media change") view.rerender(<Harness mediaID="media-beta" />);
+      if (teardown === "unmount") view.unmount();
+
+      await waitFor(() => expect(pending.requests).toHaveLength(2));
+      expect(pending.requests[0].signal.aborted).toBe(true);
+      expect(pending.requests[1].variables).toMatchObject({
+        mediaID: "media-alpha",
+        positionSeconds: 120,
+        finished: true,
+      });
+      expect(pending.requests[1].signal.aborted).toBe(false);
+      expect(pending.maxActive()).toBe(1);
+      pending.requests[1].resolve();
+      await waitFor(() => expect(pending.active()).toBe(0));
+      expect(pending.requests).toHaveLength(2);
+    },
+  );
+
+  it("still aborts a retiring finish report when the identity epoch ends", async () => {
+    const identity = new AbortController();
+    setIdentityEpochSignal(identity.signal);
+    const pending = capturePendingProgress();
+    const view = render(<Harness mediaID="media-alpha" />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+
+    const video = screen.getByTestId("player") as HTMLVideoElement;
+    Object.defineProperty(video, "duration", { configurable: true, value: 120 });
+    Object.defineProperty(video, "currentTime", { configurable: true, value: 120 });
+    fireEvent.ended(video);
+    view.unmount();
+    expect(pending.requests).toHaveLength(1);
+    expect(pending.requests[0].signal.aborted).toBe(false);
+
+    identity.abort();
+    await waitFor(() => expect(pending.requests[0].signal.aborted).toBe(true));
+    expect(pending.active()).toBe(0);
+  });
+
   it("aborts Profile-scoped progress when the identity epoch ends", async () => {
     const identity = new AbortController();
     setIdentityEpochSignal(identity.signal);
