@@ -210,4 +210,29 @@ describe("AppShell library sidebar", () => {
       expanded === "true" ? "is-collapsed" : "bf-sidebar",
     );
   });
+
+  it("returns focus to the menu button when Escape closes the phone drawer", async () => {
+    const user = userEvent.setup();
+    // jsdom has no matchMedia; answer every query as a phone-width layout.
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }),
+    });
+    try {
+      renderShell();
+      const toggle = screen.getByRole("button", { name: "Navigation" });
+      await user.click(toggle);
+      expect(toggle).toHaveAttribute("aria-expanded", "true");
+      const link = screen.getByRole("link", { name: "Ambient" });
+      link.focus();
+      expect(link).toHaveFocus();
+
+      await user.keyboard("{Escape}");
+
+      expect(toggle).toHaveAttribute("aria-expanded", "false");
+      expect(toggle).toHaveFocus();
+    } finally {
+      Reflect.deleteProperty(window, "matchMedia");
+    }
+  });
 });

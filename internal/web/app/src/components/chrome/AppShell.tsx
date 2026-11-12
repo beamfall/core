@@ -1,5 +1,5 @@
 import { Bell, LayoutDashboard, Menu } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useId, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { ServerActivity } from "@/components/beamfall/ServerActivity";
 import { Badge } from "@/components/ui/badge";
@@ -72,6 +72,7 @@ export function AppShell({
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const beamfallHost = getBeamfallHost();
   const sidebarId = useId();
+  const menuButton = useRef<HTMLButtonElement>(null);
   const phone = usePhoneLayout();
   const [collapsed, setCollapsed] = useState(readCollapsedPref);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -83,7 +84,9 @@ export function AppShell({
   const canOpenConsole = session?.profile === "adult";
 
   // The phone drawer closes on navigation, on Escape, and when the layout
-  // grows past phone width.
+  // grows past phone width. Escape pressed inside the drawer hands focus back
+  // to the menu button: the link it was pressed on is about to be hidden and
+  // inert.
   useEffect(() => {
     setDrawerOpen(false);
   }, [location.pathname]);
@@ -93,11 +96,15 @@ export function AppShell({
   useEffect(() => {
     if (!drawerOpen) return;
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") setDrawerOpen(false);
+      if (event.key !== "Escape") return;
+      setDrawerOpen(false);
+      if (document.getElementById(sidebarId)?.contains(document.activeElement)) {
+        menuButton.current?.focus();
+      }
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [drawerOpen]);
+  }, [drawerOpen, sidebarId]);
 
   function toggleSidebar() {
     if (phone) {
@@ -171,6 +178,7 @@ export function AppShell({
       <header className={"bf-header" + (revealed ? " is-revealed" : "")}>
         {hasSidebar && (
           <button
+            ref={menuButton}
             type="button"
             className="bf-icon-button bf-menu-button"
             aria-label={t("navLabel")}
