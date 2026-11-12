@@ -142,6 +142,7 @@ var originalScopedFields = []string{
 	"libraryhealth",
 	"libraryhealthitems",
 	"libraryindexstatus",
+	"libraryitems", // CORE-1190: full library browse read
 	"livesessions",
 	"devices",
 	"manifest",
