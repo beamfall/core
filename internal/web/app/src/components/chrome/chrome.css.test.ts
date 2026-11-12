@@ -24,10 +24,7 @@ describe("chrome focus styles in forced-colors mode", () => {
     expect(css).not.toMatch(/outline:\s*(none|0)\b/);
   });
 
-  it.each([".bf-search-input:focus", ".bf-account-item:focus-visible"])(
-    "keeps an outline on %s",
-    (selector) => {
-      expect(rules(selector).join("\n")).toMatch(/outline:\s*2px solid transparent;/);
-    },
-  );
+  it.each([".bf-account-item:focus-visible"])("keeps an outline on %s", (selector) => {
+    expect(rules(selector).join("\n")).toMatch(/outline:\s*2px solid transparent;/);
+  });
 });

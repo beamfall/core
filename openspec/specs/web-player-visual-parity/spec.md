@@ -1,19 +1,9 @@
 # web-player-visual-parity Specification
 
 ## Purpose
-Keep the web player's transport as a floating card with icon controls that match the approved design, while every control keeps an accessible name and meets the touch-target floor.
+Keep every web player transport control accessible: icon-only controls carry an accessible name and every button meets the touch-target floor. The transport's layout (controls on a bottom gradient scrim) is specified in `web-player-overlay`, which replaced the floating card this capability first described (CORE-1141).
 
 ## Requirements
-
-### Requirement: Floating transport card
-
-The web player transport SHALL render as one floating card inset from the stage edges, with no scrim
-gradient, and SHALL use an opaque surface when the user prefers reduced transparency.
-
-#### Scenario: Default presentation
-
-- **WHEN** the player chrome is visible
-- **THEN** the transport is a rounded card with a hairline border inset from the stage edges
 
 ### Requirement: Icon controls keep accessible names
 

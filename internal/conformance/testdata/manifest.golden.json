@@ -18,6 +18,18 @@
         },
         {
           "artworkSlot": "poster",
+          "id": "watchlist",
+          "kind": "shelf",
+          "source": {
+            "kind": "watchlist"
+          },
+          "title": {
+            "en": "Watchlist",
+            "fr": "Ma liste"
+          }
+        },
+        {
+          "artworkSlot": "poster",
           "id": "recent",
           "kind": "shelf",
           "source": {
@@ -113,6 +125,6 @@
     "snapshotVersion": "1"
   },
   "theme": {
-    "accentColor": "#2F7DFF"
+    "accentColor": "#9fd8e5"
   }
 }

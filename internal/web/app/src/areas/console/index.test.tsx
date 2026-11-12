@@ -45,6 +45,12 @@ vi.mock("./sections/Operations", () => ({
 vi.mock("./sections/OperationsControls", () => ({
   OperationsControls: () => <div>operations-controls-panel</div>,
 }));
+vi.mock("./sections/Dashboard", () => ({
+  HostGraphs: () => <div>host-graphs-panel</div>,
+  LiveSessionCount: () => <span>live-count</span>,
+  LiveSessions: () => <div>live-sessions-panel</div>,
+}));
+vi.mock("./sections/PlayHistory", () => ({ PlayHistory: () => <div>play-history-panel</div> }));
 vi.mock("./sections/Health", () => ({ Health: () => <div>health-panel</div> }));
 vi.mock("./sections/PlaybackCache", () => ({
   PlaybackCache: () => <div>playback-cache-panel</div>,

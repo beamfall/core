@@ -10,6 +10,7 @@ import {
   type PlaybackInfo,
   type PlaybackRendition,
   type PlaybackStream,
+  unavailableReasonMessage,
 } from "../lib/playback";
 import {
   hlsLevelIndex,
@@ -62,18 +63,33 @@ let lastPlaybackEventTimeMS = 0;
 interface ProgressQueue {
   active: boolean;
   finalQueued: boolean;
+  // Set when the player moved on (track change, unmount) with a finish report
+  // still owed: no new reports are accepted, but the queued final one is sent.
+  retiring: boolean;
+  onDrained: (() => void) | null;
   inFlight: { controller: AbortController; progress: ReportPlaybackVars } | null;
   pending: ReportPlaybackVars | null;
 }
 
 function createProgressQueue(): ProgressQueue {
-  return { active: true, finalQueued: false, inFlight: null, pending: null };
+  return {
+    active: true,
+    finalQueued: false,
+    retiring: false,
+    onDrained: null,
+    inFlight: null,
+    pending: null,
+  };
 }
 
 function enqueueProgress(queue: ProgressQueue, progress: ReportPlaybackVars): void {
-  if (!queue.active) return;
+  if (!queue.active || queue.retiring) return;
   if (queue.finalQueued && !progress.finished) return;
   if (progress.finished) queue.finalQueued = true;
+  sendProgress(queue, progress);
+}
+
+function sendProgress(queue: ProgressQueue, progress: ReportPlaybackVars): void {
   if (queue.inFlight) {
     if (!queue.inFlight.progress.finished) queue.pending = progress;
     return;
@@ -96,7 +112,11 @@ function completeProgress(queue: ProgressQueue, controller: AbortController): vo
   if (!queue.active) return;
   const pending = queue.pending;
   queue.pending = null;
-  if (pending) enqueueProgress(queue, pending);
+  if (pending) {
+    sendProgress(queue, pending);
+    return;
+  }
+  if (queue.retiring) stopProgressQueue(queue);
 }
 
 function stopProgressQueue(queue: ProgressQueue): void {
@@ -104,6 +124,34 @@ function stopProgressQueue(queue: ProgressQueue): void {
   queue.pending = null;
   queue.inFlight?.controller.abort();
   queue.inFlight = null;
+  const onDrained = queue.onDrained;
+  queue.onDrained = null;
+  onDrained?.();
+}
+
+// retireProgressQueue ends a queue when playback moves to another item. A
+// finish report already queued (an auto-advance at `ended`) is still delivered,
+// so a fully played track counts as finished; anything else is cancelled. An
+// identity change still stops the queue outright (CORE-1143).
+function retireProgressQueue(queue: ProgressQueue, onDrained: () => void): void {
+  queue.onDrained = onDrained;
+  const finalOwed =
+    queue.active &&
+    queue.finalQueued &&
+    (queue.inFlight?.progress.finished === true || queue.pending?.finished === true);
+  if (!finalOwed) {
+    stopProgressQueue(queue);
+    return;
+  }
+  queue.retiring = true;
+  // Drop the in-flight periodic report so the final one goes out now.
+  if (queue.inFlight && !queue.inFlight.progress.finished) {
+    const final = queue.pending;
+    queue.pending = null;
+    queue.inFlight.controller.abort();
+    queue.inFlight = null;
+    if (final) sendProgress(queue, final);
+  }
 }
 
 function nextPlaybackEventTimeMS(): number {
@@ -253,8 +301,14 @@ export function usePlayer(
     playbackUnsupportedCodec: string;
     playbackFailed: string;
     terminalUnavailable: string;
+    /** The item's file is missing on the server (reason media-file-unavailable). */
+    mediaFileMissing?: string;
+    /** The item is gone or outside this Profile (reason media-unavailable / 404). */
+    mediaNotAvailable?: string;
   },
   startAtSeconds = 0,
+  /** A card queue's next item, declared to playback-info for a pre-minted handoff; "" when that queue has none. */
+  nextMediaID?: string,
 ) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -266,6 +320,10 @@ export function usePlayer(
   const [retryKey, setRetryKey] = useState(0);
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
+  // A ref, not an effect dependency: the next item rides along with the load
+  // for this mediaID and never restarts playback on its own.
+  const nextMediaIDRef = useRef(nextMediaID);
+  nextMediaIDRef.current = nextMediaID;
   // Bound by the load effect once a stream is attached.
   const switchRef = useRef<((renditionKey?: string) => SwitchResult) | null>(null);
   const switchToHls = useCallback(
@@ -361,7 +419,7 @@ export function usePlayer(
       const markersRequest = fetchPlaybackMarkers(mediaID).catch((): PlaybackMarker[] => []);
       let info: PlaybackInfo;
       try {
-        info = await fetchPlaybackInfo(mediaID);
+        info = await fetchPlaybackInfo(mediaID, nextMediaIDRef.current);
       } catch (err) {
         if (!alive) return;
         if (err instanceof ApiError && isRevealTerminalStatus(err.status)) {
@@ -370,7 +428,7 @@ export function usePlayer(
           setState((s) => ({
             ...s,
             phase: "message",
-            message: msg.playbackUnavailable,
+            message: (err.status === 404 && msg.mediaNotAvailable) || msg.playbackUnavailable,
           }));
         } else {
           setState((s) => ({
@@ -393,7 +451,7 @@ export function usePlayer(
         setState((s) => ({
           ...s,
           phase: "message",
-          message: msg.playbackUnavailable,
+          message: unavailableReasonMessage(info.reason, msg) || msg.playbackUnavailable,
         }));
         return;
       }
@@ -514,7 +572,9 @@ export function usePlayer(
           let streamTokenRefreshed = false;
           const refreshStreamToken = () => {
             const resumePosition = video.currentTime;
-            void fetchPlaybackInfo(mediaID)
+            // The refresh replaces info, so it declares the same next item: Up Next
+            // and auto-advance survive a renewed token.
+            void fetchPlaybackInfo(mediaID, nextMediaIDRef.current)
               .then((refreshedInfo) => {
                 if (!alive) return;
                 const refreshedStream = streamOfKind(refreshedInfo, target.kind);
@@ -771,8 +831,9 @@ export function usePlayer(
         clearInterval(progressTimerRef.current);
         progressTimerRef.current = null;
       }
-      identitySignal?.removeEventListener("abort", stopForIdentityChange);
-      stopProgressQueue(progressQueue);
+      retireProgressQueue(progressQueue, () =>
+        identitySignal?.removeEventListener("abort", stopForIdentityChange),
+      );
       if (progressQueueRef.current === progressQueue) progressQueueRef.current = null;
       destroyHls();
       const video = boundVideo ?? videoRef.current;

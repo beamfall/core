@@ -47,6 +47,18 @@ async function submit(code: string) {
 }
 
 describe("EnrollPage", () => {
+  it("says in plain words where a pairing code comes from", () => {
+    render(
+      <I18nProvider>
+        <EnrollPage />
+      </I18nProvider>,
+    );
+
+    const help = screen.getByRole("region", { name: "Where do I get a pairing code?" });
+    expect(help).toHaveTextContent("go to Profiles & access and choose Add a device.");
+    expect(help).toHaveTextContent("Ask the person who runs it");
+  });
+
   it("redirects to the app root and reports the connection when the rebind succeeds", async () => {
     vi.mocked(enroll).mockResolvedValue("bound");
 

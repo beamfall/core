@@ -1,5 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
 import { collectFatalErrors, harnessState } from "./lib/spec";
+import { expect, type Page, test } from "./lib/test";
 
 // AUTH / enrollment (ADR-0012 §5), all from an UNENROLLED browser (the "unauth"
 // project ships no storageState). Covers the enroll surface, a real invalid-code
@@ -14,7 +14,7 @@ test.describe("enrollment", () => {
     // The session spine 401s without cookies and routes to /enroll.
     await expect(page).toHaveURL(/\/enroll$/);
     await expect(page.getByRole("heading", { name: "Connect this browser" })).toBeVisible();
-    await expect(page.getByLabel("Pairing code")).toBeVisible();
+    await expect(page.getByLabel("Pairing code", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Connect" })).toBeVisible();
     expect(errors, errors.join("\n")).toEqual([]);
   });
@@ -22,7 +22,7 @@ test.describe("enrollment", () => {
   test("an invalid pairing code is rejected with the generic message", async ({ page }) => {
     const errors = collectFatalErrors(page);
     await page.goto("/web/enroll");
-    await page.getByLabel("Pairing code").fill("NOTACODE");
+    await page.getByLabel("Pairing code", { exact: true }).fill("NOTACODE");
     await page.getByRole("button", { name: "Connect" }).click();
     // The server returns 401 for an invalid code; the app surfaces the single
     // generic credential-safe message (never echoing why).
@@ -40,7 +40,7 @@ test.describe("enrollment", () => {
     const code = await mintViewerCode(baseURL);
 
     await page.goto("/web/enroll");
-    await page.getByLabel("Pairing code").fill(code);
+    await page.getByLabel("Pairing code", { exact: true }).fill(code);
     await page.getByRole("button", { name: "Connect" }).click();
 
     // On success the app reloads to BASE_URL and the session spine re-bootstraps

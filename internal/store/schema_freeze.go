@@ -47,6 +47,9 @@ package store
 //     partial-enqueue progress survives restart and recovers exactly once; it
 //     lives beside the job table (member publication commits atomically with
 //     the job insert) and sits entirely off the entity-query hot path.
+//   - events 0022 (CORE-1194) added the per-Profile watchlist_item and
+//     item_rating tables; both are keyed by Profile and read only by their own
+//     Sources, off the entity-query hot path.
 //   - encrypted-library 0001-0005 (ENC-1/ENC-4/ENC-ENTITY-RELATION-UPSERT-1,
 //     ADR-0045) mirror the typed Media-field, provenance, and entity-relation
 //     upsert surface into the encrypted library.
@@ -58,6 +61,6 @@ package store
 // their exact narrow exceptions:
 //   - mute/retention/podcast predicates
 const (
-	schemaFreezeEventsMigrations           = 21
+	schemaFreezeEventsMigrations           = 22
 	schemaFreezeEncryptedLibraryMigrations = 5
 )

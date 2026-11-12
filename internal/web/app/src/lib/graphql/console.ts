@@ -20,12 +20,16 @@ import type {
   DeviceInfo,
   EnforcedFilterPlugin,
   EnforcedFilterProfile,
+  HostMetricsInfo,
   JobEventInfo,
   JobInfo,
   LiveSessionInfo,
   OperationsGovernorInfo,
   PlaybackCacheInfo,
   PlaybackCacheOpResult,
+  PlayHistoryFilter,
+  PlayInfo,
+  PlayStatsInfo,
   ProfileAdminInfo,
   QBittorrentIngestInfo,
   RemoteAccessInfo,
@@ -308,7 +312,7 @@ export async function setTranscodeConfig(
 // --- Live sessions (ADR-0007) ---------------------------------------------
 
 const LIVE_SESSIONS_QUERY =
-  "query LiveSessions { liveSessions { sessionID deviceID deviceName profileID profileName mediaID title transcoding positionSeconds durationSeconds } }";
+  "query LiveSessions { liveSessions { sessionID deviceID deviceName profileID profileName mediaID title transcoding playMethod playReason bitrate positionSeconds durationSeconds } }";
 
 /** LiveSessions — the active playback sessions across all devices. */
 export async function fetchLiveSessions(signal?: AbortSignal): Promise<LiveSessionInfo[]> {
@@ -318,6 +322,61 @@ export async function fetchLiveSessions(signal?: AbortSignal): Promise<LiveSessi
     signal,
   );
   return data.liveSessions ?? [];
+}
+
+// --- Dashboard: host metrics, play history, rankings ------------------------
+
+const HOST_METRICS_QUERY =
+  "query HostMetrics { hostMetrics { intervalSeconds samples { at cpuPercent cpuKnown memoryUsedBytes memoryTotalBytes sentBytesPerSecond receivedBytesPerSecond } } }";
+
+/** HostMetrics — the server's CPU, memory and network use over the last hour. */
+export async function fetchHostMetrics(signal?: AbortSignal): Promise<HostMetricsInfo> {
+  const data = await graphql<{ hostMetrics: HostMetricsInfo | null }>(
+    HOST_METRICS_QUERY,
+    {},
+    signal,
+  );
+  const info = data.hostMetrics;
+  return { intervalSeconds: info?.intervalSeconds ?? 0, samples: info?.samples ?? [] };
+}
+
+const PLAY_HISTORY_QUERY =
+  "query PlayHistory($profileID: String, $libraryID: String, $since: String, $until: String, $limit: Int) { playHistory(profileID: $profileID, libraryID: $libraryID, since: $since, until: $until, limit: $limit) { profileID profileName mediaID title libraryID libraryTitle startedAt watchedSeconds finished } }";
+
+/** PlayHistory — past plays, newest first, optionally filtered. */
+export async function fetchPlayHistory(
+  filter: PlayHistoryFilter = {},
+  signal?: AbortSignal,
+): Promise<PlayInfo[]> {
+  const variables: Record<string, unknown> = {};
+  if (filter.profileID) variables.profileID = filter.profileID;
+  if (filter.libraryID) variables.libraryID = filter.libraryID;
+  if (filter.since) variables.since = filter.since;
+  if (filter.until) variables.until = filter.until;
+  if (filter.limit) variables.limit = filter.limit;
+  const data = await graphql<{ playHistory: PlayInfo[] | null }>(
+    PLAY_HISTORY_QUERY,
+    variables,
+    signal,
+  );
+  return data.playHistory ?? [];
+}
+
+const PLAY_STATS_QUERY =
+  "query PlayStats($windowDays: Int!) { playStats(windowDays: $windowDays) { windowDays profiles { profileID profileName plays watchedSeconds } items { mediaID title libraryID plays watchedSeconds } } }";
+
+/** PlayStats — top users and most-played items over 7, 30 or 90 days. */
+export async function fetchPlayStats(
+  windowDays: 7 | 30 | 90,
+  signal?: AbortSignal,
+): Promise<PlayStatsInfo> {
+  const data = await graphql<{ playStats: PlayStatsInfo | null }>(
+    PLAY_STATS_QUERY,
+    { windowDays },
+    signal,
+  );
+  const stats = data.playStats;
+  return { windowDays, profiles: stats?.profiles ?? [], items: stats?.items ?? [] };
 }
 
 const TERMINATE_SESSION_MUTATION =

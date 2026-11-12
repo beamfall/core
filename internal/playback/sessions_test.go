@@ -1917,3 +1917,53 @@ func TestNewSessionsInDirPurgeNeverRemovesLiveSessions(t *testing.T) {
 		t.Fatalf("live session dir removed by purge: %v", err)
 	}
 }
+
+func TestDeliveredRungFollowsCachedRenditionSwitch(t *testing.T) {
+	t.Parallel()
+	transcoder := &fakeTranscoder{segmentsToLay: 2}
+	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	defer sessions.Close()
+	key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
+	bandwidth := func(rungID string) int {
+		t.Helper()
+		sessions.mu.Lock()
+		defer sessions.mu.Unlock()
+		for _, rung := range sessions.sessions[key].rungs {
+			if rung.ID == rungID {
+				return rung.Bandwidth
+			}
+		}
+		t.Fatalf("no rung %q", rungID)
+		return 0
+	}
+	delivered := func(step string, want string) {
+		t.Helper()
+		got, _, transcoded := sessions.deliveredBandwidth(key.SessionID, key.MediaID)
+		if !transcoded || got != bandwidth(want) {
+			t.Fatalf("%s: delivered bandwidth = %d (transcoded %v), want %s's %d", step, got, transcoded, want, bandwidth(want))
+		}
+	}
+
+	if _, err := filePath720(sessions, key, "720p/seg00000.m4s"); err != nil {
+		t.Fatalf("720p seg0: %v", err)
+	}
+	delivered("first start", "720p")
+	if _, err := filePath720(sessions, key, "480p/seg00010.m4s"); err != nil {
+		t.Fatalf("480p seg10: %v", err)
+	}
+	delivered("switch down", "480p")
+	// Back to a 720p segment already on disk: no encoder starts, but the
+	// viewer is on 720p again.
+	if _, err := filePath720(sessions, key, "720p/seg00001.m4s"); err != nil {
+		t.Fatalf("720p cached seg1: %v", err)
+	}
+	if len(transcoder.renditions) != 2 {
+		t.Fatalf("cached segment restarted the encoder: %d starts", len(transcoder.renditions))
+	}
+	delivered("cached switch back", "720p")
+	// Reading a variant playlist while choosing does not move it.
+	if _, err := filePath720(sessions, key, "480p/index.m3u8"); err != nil {
+		t.Fatalf("480p playlist: %v", err)
+	}
+	delivered("playlist read", "720p")
+}

@@ -2,6 +2,7 @@ import { Database, LayoutDashboard, Settings, Users, Wrench } from "lucide-react
 import { useEffect, useId, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { SignOutButton } from "@/areas/enroll";
+import { ProfileAvatar } from "@/components/beamfall/profile";
 import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
 
@@ -20,7 +21,8 @@ export function AccountMenu() {
 
   const currentProfile = profiles.find((p) => p.id === session?.profileID);
   const name = currentProfile?.name ?? t("profile");
-  const initial = (currentProfile?.name.trim()[0] ?? "?").toUpperCase();
+  // The Profile's chosen avatar (CORE-1196), so the header shows who is watching.
+  const avatarProfile = currentProfile ?? { id: "", name };
   // Same rule as the header link: an adult Profile can unlock the Console on
   // any Device Role. Manage stays a Manager-Device surface.
   const canOpenConsole = session?.profile === "adult";
@@ -61,16 +63,12 @@ export function AccountMenu() {
         aria-label={t("accountMenu", { name })}
         onClick={() => setOpen((value) => !value)}
       >
-        <span aria-hidden className="bf-avatar">
-          {initial}
-        </span>
+        <ProfileAvatar profile={avatarProfile} size="sm" />
       </button>
       {open && (
         <div id={panelId} className="bf-account-panel">
           <div className="bf-account-head">
-            <span aria-hidden className="bf-avatar bf-avatar-lg">
-              {initial}
-            </span>
+            <ProfileAvatar profile={avatarProfile} />
             <div className="min-w-0">
               <div className="bf-account-name">{name}</div>
               {isManager && <div className="bf-account-role">{t("managerRole")}</div>}

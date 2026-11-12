@@ -9,39 +9,42 @@ const LOCALES = ["en", "fr", "de", "es", "pt"] as const satisfies readonly Local
 const PARTIAL_CATALOGS: Record<Locale, Partial<StringTable>> = { en, fr, de, es, pt };
 
 // Captured after WEB-HLS-RECOVERY-1 added localized playback-recovery keys atop
-// WEBUI-SHELL-RESILIENCE-UPGRADE-BLANK-1 (2026-08-30); updated for CORE-1106
-// admin-password sign-in keys, CORE-1110 sign-in security keys, CORE-1114
-// setup wizard copy, CORE-1115 provider-key copy, CORE-1131 rescan and account-menu copy
-// and CORE-1142 folder-picker copy.
-const BASE_SERIALIZED_LENGTH = 402_538;
-const BASE_REGISTRY_SHA256 = "7708a600c7f96ea1bcce83133a691404b0354ebb8ee5a9e747fbd27cf93b1788";
-const BASE_KEY_ORDER_SHA256 = "849acb871efe2241d6524338d980e454c3cc5b10d808da2ff745269356d80fe2";
-const BASE_PLACEHOLDER_SHA256 = "02d3f1a80787d112d5d81885cb0b7071f284d10fbe029aca968bedbef3760402";
+// WEBUI-SHELL-RESILIENCE-UPGRADE-BLANK-1 (2026-08-30); updated for CORE-1141 player settings copy,
+// the CORE-1197 Manage unlock copy, the CORE-1190 library browse copy, the CORE-1143 audio
+// player and queue copy, the CORE-1194 item action copy, the CORE-1192 card state copy, the
+// CORE-1195 console dashboard copy (with its memory-unavailable fix), the CORE-1191 header search copy and the CORE-1196
+// who's-watching copy; merged with CORE-1106 admin-password sign-in keys, CORE-1110 sign-in
+// security keys, CORE-1114 setup wizard copy, CORE-1115 provider-key copy, CORE-1131 rescan and
+// account-menu copy and CORE-1142 folder-picker copy.
+const BASE_SERIALIZED_LENGTH = 443_036;
+const BASE_REGISTRY_SHA256 = "4d22bb8bca128efa4d3000efe7fd62dd64a77399f77da7bc325f5ab819fcc9dc";
+const BASE_KEY_ORDER_SHA256 = "27fe8462982219cd0a25ee53ad5bafdc23d51156dbd6d2d05e24bcc393ec9a74";
+const BASE_PLACEHOLDER_SHA256 = "1ca208be165736edc99f89aa5756930e9d5ea1c4a0370d9a05b8c7c35ef9cd9d";
 const BASE_CATALOGS = {
   en: {
-    partialCount: 1_526,
-    partialSha256: "9cd838b4ed84429733c2c524cacaaaff1946b00109dbff88b0f1651e49da94fc",
-    resolvedSha256: "6f18fab24e93cea78f410c83fc14892a1ebf86902b7f5823ac05483c3b9c9268",
+    partialCount: 1_704,
+    partialSha256: "846497773c7c5a490108c1f19fe3913247e52e0969b9ea9310216a60bfe5aa35",
+    resolvedSha256: "e1a8857667a37e635649b43b01217c2950f6eee1f808d0abf3f18c39b045fb4d",
   },
   fr: {
-    partialCount: 660,
-    partialSha256: "5f224b439c544b556eeb775985b39de050d15479f5f5ef524964cec1316b1d6f",
-    resolvedSha256: "8391453bd5a2c16b2ec834d3eaefe257a4d94ba264c85f9ad56b94694546a4ff",
+    partialCount: 780,
+    partialSha256: "a0036fe9ea884c26b9cf7b9437cd1fc3dbd779ce6ee9f9ccd199cec02848b512",
+    resolvedSha256: "94b373dc2728c8ef9bf5f44eae35db6c89f8e8c9dcc8a421cf58d94b7a9c4d73",
   },
   de: {
-    partialCount: 595,
-    partialSha256: "7a146864b062f9780b572de136c2fd2f62d589038ef1144af161e0a0f2cf8665",
-    resolvedSha256: "ec679619d0a37f3a4267973321d57cb5fd2f024442c325f311c6a37a185857c8",
+    partialCount: 681,
+    partialSha256: "f78937ed6d53501bbfdb6c2eed7478a8bbb27dd3550fffd8933137b8e24cfbba",
+    resolvedSha256: "52a2aa55adbfbdb3ffa125b6ad8859eadcd7c2de855babc0e5f122879cd279fd",
   },
   es: {
-    partialCount: 595,
-    partialSha256: "4d7c1b2a6a7ff50aad8c739932e0fab761b603878df4899701b4ec9a32726eb5",
-    resolvedSha256: "137b2944bcd12f5974cb6f88a6d5c20bc7df9ac752334f20feba8767fe1c7b5e",
+    partialCount: 681,
+    partialSha256: "4559aa6dadc3f19f2d4044d5a8971b549af868b3d2a398f28263419dbd298f60",
+    resolvedSha256: "b574f66fccf4cfcd6fa847377c12a268f3a7c684b0b130bf33f0161db1524ca3",
   },
   pt: {
-    partialCount: 595,
-    partialSha256: "8126c8df4f74c00eecc62d5194e91d499ef00a070ef0d7cd747cfba850b9f1f9",
-    resolvedSha256: "5668a53e33fef99ba8cba3a2f40c20b112894f6a7f64d4d66aa04ebb30c60bd9",
+    partialCount: 681,
+    partialSha256: "827e09a455aa06ec7590a310f49fb2851a5378d01371ce345eb0b0fece74a33a",
+    resolvedSha256: "0568458375cb976add0c6ede62771ed10c45986c535f7e43a2d27e0b31f36fac",
   },
 } as const satisfies Record<
   Locale,
@@ -65,7 +68,10 @@ function withEnglishFallback(partial: Partial<StringTable>): StringTable {
 function placeholderInventory(table: StringTable): Record<string, string[]> {
   const inventory: Record<string, string[]> = {};
   for (const [key, value] of Object.entries(table)) {
-    const placeholders = [...value.matchAll(/\{([^{}]+)\}/g)].map((match) => match[1]);
+    // Argument names only: an ICU plural contributes its argument, not its translated branches.
+    const placeholders = [...value.matchAll(/\{\s*([A-Za-z_]\w*)\s*[,}]/g)].map(
+      (match) => match[1],
+    );
     if (placeholders.length > 0) inventory[key] = placeholders;
   }
   return inventory;

@@ -152,6 +152,12 @@ func (s *Store) deleteProfileMediaAuditedLocked(ctx context.Context, profileID P
 			return err
 		}
 	}
+	for _, table := range []string{"watchlist_item", "item_rating"} {
+		// #nosec G202 -- table is drawn from the closed literal list above.
+		if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE profile_id = ? AND target_kind = 'media' AND target_id = ?`, profileID, mediaID); err != nil {
+			return err
+		}
+	}
 	if err := deleteMyQueueMedia(ctx, tx, profileID, mediaID); err != nil {
 		return err
 	}
@@ -280,7 +286,7 @@ func (s *Store) deleteProfileEventsLocked(ctx context.Context, profileID Profile
 		return err
 	}
 	defer tx.Rollback()
-	for _, table := range []string{"playback_progress", "media_favorite", "engagement_event"} {
+	for _, table := range []string{"playback_progress", "media_favorite", "engagement_event", "watchlist_item", "item_rating"} {
 		// #nosec G202 -- table is drawn from the closed literal list above.
 		if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE profile_id = ?`, profileID); err != nil {
 			return err

@@ -1,7 +1,8 @@
-import { Info } from "lucide-react";
+import { ChevronLeft, ChevronRight, Info } from "lucide-react";
 import { Fragment, useRef } from "react";
 import { Dialog } from "@/components/ui/astryx-primitives";
 import { useT } from "@/lib/i18n";
+import { ItemActions } from "../actions/ItemActions";
 import type { PlaybackInfo, PlaybackStream } from "../lib/playback";
 import { buildRouteDetailModel } from "../lib/transport";
 
@@ -13,6 +14,7 @@ import { buildRouteDetailModel } from "../lib/transport";
 // focus to the trigger (the a11y gate, matching the vanilla dialog pattern).
 export function InfoOverlay({
   mediaTitle = "",
+  mediaID = "",
   info,
   stream,
   manualRenditionID,
@@ -22,6 +24,8 @@ export function InfoOverlay({
 }: {
   /** The current Media's title; when present it heads the overlay. */
   mediaTitle?: string;
+  /** The current Media's id; when present the overlay offers its item actions. */
+  mediaID?: string;
   info: PlaybackInfo | null;
   stream: PlaybackStream | null;
   manualRenditionID: string;
@@ -52,13 +56,23 @@ export function InfoOverlay({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange} modal={false}>
       <div ref={anchorRef} className="bf-menu-anchor">
-        <Dialog.Trigger className="bf-control is-icon" aria-label={t("playbackDetails")}>
-          <Info aria-hidden="true" />
-          <span className="sr-only">{t("info")}</span>
+        <Dialog.Trigger className="bf-settings-row" aria-label={t("playbackDetails")}>
+          <span aria-hidden="true" className="bf-settings-tile">
+            <Info />
+          </span>
+          <span className="bf-settings-label">{t("playbackDetails")}</span>
+          <span className="bf-settings-value" />
+          <ChevronRight aria-hidden="true" className="bf-settings-chevron" />
         </Dialog.Trigger>
         <Dialog.Portal container={anchorRef}>
           <Dialog.Popup className="bf-player-dialog">
-            <Dialog.Title render={<h3 />}>{mediaTitle || t("playbackDetails")}</Dialog.Title>
+            <div className="bf-player-dialog-head">
+              <Dialog.Close className="bf-player-dialog-back" aria-label={t("back")}>
+                <ChevronLeft aria-hidden="true" />
+              </Dialog.Close>
+              <Dialog.Title render={<h3 />}>{mediaTitle || t("playbackDetails")}</Dialog.Title>
+            </div>
+            {mediaID && open && <ItemActions target={{ mediaID }} />}
             {mediaTitle && <p className="bf-up-next-title">{t("playbackDetails")}</p>}
             <dl className="bf-info-rows">
               {rows.map((row) => (

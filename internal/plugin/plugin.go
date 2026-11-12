@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	sdk "github.com/beamfall/plugin-sdk"
@@ -309,6 +310,28 @@ func (r *Registry) HasEngagementEventKind(kind string) bool {
 		}
 	}
 	return false
+}
+
+// EntityParentRelations returns the relation names activated bundles declare
+// for linking a child Entity to its same-Kind parent (EntityMap.ParentRelation),
+// sorted and without repeats. Core walks an Entity hierarchy only along these,
+// so the relation vocabulary stays plugin-owned (invariant #1).
+func (r *Registry) EntityParentRelations() []string {
+	if r == nil {
+		return nil
+	}
+	var relations []string
+	for _, id := range r.order {
+		for _, scraper := range r.bundles[id].Scrapers {
+			for _, entityMap := range scraper.EntityMaps {
+				if entityMap.ParentRelation != "" && !contains(relations, entityMap.ParentRelation) {
+					relations = append(relations, entityMap.ParentRelation)
+				}
+			}
+		}
+	}
+	slices.Sort(relations)
+	return relations
 }
 
 func contains(values []string, value string) bool {

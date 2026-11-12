@@ -17,6 +17,7 @@ import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
 import type { StringKey } from "@/strings";
 import { setAdminEpochSignal } from "./adminEpoch";
+import "./AdminGate.css";
 import { LOCK_REASON_LEAD, LOCK_REASON_TITLE, type LockReason, lockReason } from "./lib/lockReason";
 
 // The Console is gated by an ADMIN SESSION (ADR-0007 §4 / ADR-0085), never by a
@@ -29,11 +30,23 @@ import { LOCK_REASON_LEAD, LOCK_REASON_TITLE, type LockReason, lockReason } from
 // Admin Session is orthogonal to Reveal (ADR-0085 §32): being admin does not
 // reveal restricted content and Reveal does not grant admin. The locked card
 // states this so the two locks are not conflated.
+/** Wording for a surface other than the Console that reuses this gate. */
+export interface AdminGateCopy {
+  /** Headline and lead of the plain "no Admin Session yet" state. */
+  title: StringKey;
+  lead: StringKey;
+  /** The unlock button, for every state that offers the password form. */
+  submit: StringKey;
+}
+
 export function AdminGate({
   children,
   sessionBar,
+  copy,
 }: {
   children: ReactNode;
+  /** Replaces the Console wording; the unlock flow itself is unchanged. */
+  copy?: AdminGateCopy;
   /** Slot for the active-session bar, rendered by the area shell when active. */
   sessionBar?: (lock: () => void) => ReactNode;
 }) {
@@ -53,6 +66,10 @@ export function AdminGate({
   const [, setExpiryTick] = useState(0);
   const requestRef = useRef<AbortController | null>(null);
   const requestGeneration = useRef(0);
+  // Only the Console's gate publishes the Admin-Session epoch. A surface that
+  // reuses the gate keeps its page, and the requests that page is waiting on,
+  // across a prompt; ending them with the session would strand that page.
+  const ownsEpoch = copy === undefined;
 
   // Every call site below is an Admin-Session epoch boundary — the mount/Profile
   // read, an unlock, an explicit lock, the expiry timer, and unmount — so the
@@ -62,15 +79,15 @@ export function AdminGate({
     requestGeneration.current++;
     requestRef.current?.abort();
     requestRef.current = null;
-    setAdminEpochSignal();
-  }, []);
+    if (ownsEpoch) setAdminEpochSignal();
+  }, [ownsEpoch]);
 
   const beginRequest = useCallback(() => {
     invalidateRequest();
     const controller = new AbortController();
     const generation = requestGeneration.current;
     requestRef.current = controller;
-    setAdminEpochSignal(controller.signal);
+    if (ownsEpoch) setAdminEpochSignal(controller.signal);
     return {
       controller,
       isCurrent: () =>
@@ -78,7 +95,7 @@ export function AdminGate({
         requestRef.current === controller &&
         !controller.signal.aborted,
     };
-  }, [invalidateRequest]);
+  }, [invalidateRequest, ownsEpoch]);
 
   // Resolve the current Admin Session once on mount. An aborted or failed
   // read is treated as "locked" — the password is the only way in. The query
@@ -185,6 +202,7 @@ export function AdminGate({
     return (
       <LockedCard
         reason={reason}
+        copy={copy}
         onUnlock={onUnlock}
         password={password}
         setPassword={setPassword}
@@ -207,6 +225,7 @@ export function AdminGate({
 // re-auth form. Both carry the explicit Admin≠Reveal distinction line.
 function LockedCard({
   reason,
+  copy,
   onUnlock,
   password,
   setPassword,
@@ -214,6 +233,7 @@ function LockedCard({
   rejected,
 }: {
   reason: LockReason;
+  copy?: AdminGateCopy;
   onUnlock: (e: FormEvent) => void;
   password: string;
   setPassword: (v: string) => void;
@@ -221,8 +241,9 @@ function LockedCard({
   rejected: boolean;
 }) {
   const t = useT();
-  const titleKey: StringKey = LOCK_REASON_TITLE[reason];
-  const leadKey: StringKey = LOCK_REASON_LEAD[reason];
+  const ownCopy = reason === "no-session" ? copy : undefined;
+  const titleKey: StringKey = ownCopy?.title ?? LOCK_REASON_TITLE[reason];
+  const leadKey: StringKey = ownCopy?.lead ?? LOCK_REASON_LEAD[reason];
   const canReauth = reason !== "not-adult";
 
   return (
@@ -255,7 +276,7 @@ function LockedCard({
                 </p>
               )}
               <Button type="submit" disabled={busy || !password}>
-                {t("adminUnlockSubmit")}
+                {t(copy?.submit ?? "adminUnlockSubmit")}
               </Button>
             </form>
           )}

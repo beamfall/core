@@ -369,8 +369,8 @@ func TestOpenCreatesJobTablesAndEventsVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 21 {
-		t.Fatalf("events user_version = %d, want 21", version)
+	if version != 22 {
+		t.Fatalf("events user_version = %d, want 22", version)
 	}
 	for _, name := range []string{"job", "job_checkpoint", "job_event", "event_outbox", "schedule_occurrence", "schedule_occurrence_member"} {
 		if !tableExists(t, store.eventsW, name) {

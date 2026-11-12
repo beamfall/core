@@ -21,7 +21,10 @@ const approvedVisualDeltas: Readonly<Record<string, ApprovedDelta>> = {};
 // PNG SHA-pinned in the manifest but no longer compare the live render to it; the live
 // goldens under e2e/goldens/ are the regression baseline for them. CORE-1131 moved library
 // navigation into a left sidebar and redesigned the Manage and Console shells, so every Manage,
-// Console and desktop shared-dialog state joins them.
+// Console and desktop shared-dialog state joins them. CORE-1141 (controls over a bottom gradient,
+// one settings sheet) re-recorded all 22 of the player live PNGs from the new layout; CORE-1191
+// replaced the viewer header Search link with a search field, which also redesigns the shared
+// dialog state.
 const redesignedSinceMigration: ReadonlySet<string> = new Set([
   "console/console-alert-dialog-open-focused.png",
   "console/console-kind-select-open-focused-selected.png",

@@ -38,7 +38,9 @@ export function ServerActivity() {
       reading = true;
       let count: number | null = null;
       try {
-        const jobs = await fetchJobs();
+        // A refusal here is expected while the Console is locked; it must not
+        // open the Manage area's in-place unlock over the page (CORE-1197).
+        const jobs = await fetchJobs(undefined, { adminUnlock: false });
         count = jobs.filter((job) => job.status === "running").length;
       } catch {
         // unknown: the read was refused or failed

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -12,6 +12,8 @@ import {
   readViewerCache,
   writeViewerCache,
 } from "@/lib/viewerCache";
+import { ItemActions } from "../actions";
+import { useEngagementEpoch } from "../actions/engagementSync";
 import { findCachedSectionItem } from "../components/HydratedSection";
 import { LayoutView } from "../components/LayoutView";
 import { MediaItemCard } from "../components/MediaItemCard";
@@ -20,6 +22,7 @@ import type { SeeAllTarget } from "../components/SectionView";
 import { ViewerActions } from "../components/ViewerActions";
 import { readEntityPreview } from "../lib/entityPreview";
 import { seeAllTargetFor } from "../lib/seeall";
+import { playQueueOf } from "../lib/watchQueue";
 
 const entityCacheKey = (id: string) => `entity:${id}`;
 const entityMediaCacheKey = (id: string) => `entity-media:${id}`;
@@ -52,6 +55,8 @@ export function EntityPage() {
   const [fallback, setFallback] = useState<SourceItem[] | null>(
     () => readViewerCache<SourceItem[]>(identity, entityMediaCacheKey(entityId)) ?? null,
   );
+
+  const fallbackQueue = useMemo(() => (fallback ? playQueueOf(fallback) : undefined), [fallback]);
 
   const navPreview = readEntityPreview(location.state, identity, entityId);
   const previewTitle = navPreview?.title ?? findCachedSectionItem(identity, entityId)?.title ?? "";
@@ -103,7 +108,9 @@ export function EntityPage() {
     };
   }, [identity, entityId]);
 
-  // No detail Layout for this Kind: load the hand-rolled related-Media list.
+  // No detail Layout for this Kind: load the hand-rolled related-Media list,
+  // again whenever watched, watchlist or rating state changes under it.
+  const engagementEpoch = useEngagementEpoch();
   useEffect(() => {
     if (!entityId || !needsFallback) return;
     let alive = true;
@@ -127,7 +134,7 @@ export function EntityPage() {
       alive = false;
       controller.abort();
     };
-  }, [identity, entityId, needsFallback]);
+  }, [identity, entityId, needsFallback, engagementEpoch]);
 
   function buildSeeAll(section: Section): SeeAllTarget {
     return seeAllTargetFor({
@@ -157,6 +164,7 @@ export function EntityPage() {
             {kindHint && <span className="bf-entity-kind">{kindHint}</span>}
             <h1 className="bf-page-title">{entity?.title ?? previewTitle}</h1>
             {!entity && <Skeleton aria-hidden className="h-4 w-40" />}
+            {entity && <ItemActions target={{ entityID: entityId }} />}
             {entity && entity.fields.length > 0 && (
               <dl className="bf-metadata mt-2">
                 {entity.fields.map((field, i) => (
@@ -187,6 +195,7 @@ export function EntityPage() {
                     item={item}
                     posInSet={index + 1}
                     setSize={fallback.length}
+                    queue={fallbackQueue}
                   />
                 ))}
               </ul>

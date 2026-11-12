@@ -9,6 +9,12 @@ interface AudioCodecCandidate {
   codec: string;
   contentType: string;
   maxChannels: number;
+  /**
+   * How the codec reaches the decoder: "media-source" (inside an MSE-fed
+   * video stream) by default, or "file" for codecs the browser plays only as a
+   * direct audio file (a bare mp3 track).
+   */
+  source?: "file";
 }
 
 interface ContainerCandidate {
@@ -82,11 +88,20 @@ const AUDIO_CANDIDATES: AudioCodecCandidate[] = [
   { codec: "eac3", contentType: 'audio/mp4; codecs="ec-3"', maxChannels: 6 },
   { codec: "opus", contentType: 'audio/webm; codecs="opus"', maxChannels: 2 },
   { codec: "flac", contentType: 'audio/mp4; codecs="flac"', maxChannels: 2 },
+  { codec: "mp3", contentType: "audio/mpeg", maxChannels: 2, source: "file" },
+  { codec: "vorbis", contentType: 'audio/ogg; codecs="vorbis"', maxChannels: 2, source: "file" },
 ];
 
 const CONTAINER_CANDIDATES: ContainerCandidate[] = [
   { container: "mp4", contentType: 'video/mp4; codecs="avc1.640028"' },
   { container: "webm", contentType: 'video/webm; codecs="vp9"' },
+  // Audio-only containers: a music track direct-plays as a file when the
+  // browser can open it (CORE-1143). The server matches the file's container
+  // name exactly, so each extension is its own entry.
+  { container: "mp3", contentType: "audio/mpeg" },
+  { container: "m4a", contentType: 'audio/mp4; codecs="mp4a.40.2"' },
+  { container: "flac", contentType: "audio/flac" },
+  { container: "ogg", contentType: "audio/ogg" },
 ];
 
 const PROBE_HEIGHT_1080 = 1080;
@@ -167,7 +182,7 @@ async function probeAudioCodec(
   mediaCapabilities: MediaCapabilities | null,
 ): Promise<AudioCodecCap | null> {
   const supported = await mediaCapabilitiesSupports(mediaCapabilities, {
-    type: "media-source",
+    type: candidate.source ?? "media-source",
     audio: { contentType: candidate.contentType, channels: String(candidate.maxChannels) },
   });
   if (

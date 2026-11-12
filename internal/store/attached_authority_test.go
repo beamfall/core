@@ -79,6 +79,17 @@ func TestAttachedRefusesEngagementAuthoring(t *testing.T) {
 		err := st.ApplyImportedPlays(ctx, "profile-default", "media-x", 1, time.Unix(100, 0), EngagementProvenance{})
 		requireAuthorityRefusal(t, err)
 	})
+	target := ItemTarget{MediaID: "media-x"}
+	t.Run("SetItemWatched", func(t *testing.T) {
+		_, err := st.SetItemWatched(ctx, "profile-default", target, true, LibraryFilter{AllLibraries: true})
+		requireAuthorityRefusal(t, err)
+	})
+	t.Run("SetItemWatchlisted", func(t *testing.T) {
+		requireAuthorityRefusal(t, st.SetItemWatchlisted(ctx, "profile-default", target, true, LibraryFilter{AllLibraries: true}))
+	})
+	t.Run("SetItemRating", func(t *testing.T) {
+		requireAuthorityRefusal(t, st.SetItemRating(ctx, "profile-default", target, 5, LibraryFilter{AllLibraries: true}))
+	})
 }
 
 // TestAttachedAllowsByteLocalWrites asserts the byte-local face stays OPEN on an

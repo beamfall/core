@@ -1,39 +1,12 @@
-import { Search } from "lucide-react";
-import { type FormEvent, useState } from "react";
-import { Link, useNavigate } from "react-router";
-import { useT } from "@/lib/i18n";
+import { useLocation } from "react-router";
+import { HeaderSearch } from "./HeaderSearch";
 
-// The viewer's header actions (CORE-1131): a search field that opens Search with
-// the typed text, and on phones a search icon in its place. Profile, My Data and
-// Profile settings live in the AppShell's account menu.
+// The viewer's header actions (right side of the AppShell): the search field
+// (the search page has its own, so it is left out there). The current Profile's
+// avatar, the way back to "Who's watching?" (ADR-0004, CORE-1196), My Data and
+// Profile settings live in the AppShell's account menu (CORE-1131); the Reveal
+// "Revealed" chip and Manager links are owned by the AppShell itself.
 export function ViewerActions() {
-  const t = useT();
-  const navigate = useNavigate();
-  const [text, setText] = useState("");
-
-  function onSubmit(event: FormEvent) {
-    event.preventDefault();
-    const query = text.trim();
-    navigate(query ? `/search?q=${encodeURIComponent(query)}` : "/search");
-    setText("");
-  }
-
-  return (
-    <>
-      <form role="search" className="bf-search" onSubmit={onSubmit}>
-        <Search aria-hidden className="bf-search-icon" />
-        <input
-          type="search"
-          className="bf-search-input"
-          aria-label={t("search")}
-          placeholder={t("searchPlaceholder")}
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-        />
-      </form>
-      <Link to="/search" className="bf-icon-button bf-search-icon-link" aria-label={t("search")}>
-        <Search aria-hidden className="size-[18px]" />
-      </Link>
-    </>
-  );
+  const { pathname } = useLocation();
+  return pathname !== "/search" ? <HeaderSearch /> : null;
 }

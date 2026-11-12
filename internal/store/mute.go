@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"strings"
 	"time"
 )
@@ -157,7 +158,7 @@ type muteReach struct {
 // Media ids. It runs under the read lock the caller already holds. An empty mute
 // list (or empty items) yields an all-empty reach — the callers treat that as
 // "nothing muted" and short-circuit.
-func (s *Store) mutedReachLocked(ctx context.Context, profileID ProfileID, items []SourceItem) (muteReach, error) {
+func (s *Store) mutedReachLocked(ctx context.Context, relations *sql.DB, profileID ProfileID, items []SourceItem) (muteReach, error) {
 	reach := muteReach{
 		directlyMuted:  map[MediaID]bool{},
 		broadlyMuted:   map[MediaID]bool{},
@@ -202,7 +203,7 @@ func (s *Store) mutedReachLocked(ctx context.Context, profileID ProfileID, items
 	// depth-capped.
 	broadTargets := map[string]struct{}{}
 	if len(broadSeeds) > 0 {
-		expanded, err := s.entityDescendantsLocked(ctx, broadSeeds)
+		expanded, err := entityDescendants(ctx, relations, broadSeeds)
 		if err != nil {
 			return reach, err
 		}
@@ -214,7 +215,7 @@ func (s *Store) mutedReachLocked(ctx context.Context, profileID ProfileID, items
 		if _, ok := reach.broadEntities[seed]; !ok {
 			continue
 		}
-		descendants, err := s.entityDescendantsLocked(ctx, []string{seed})
+		descendants, err := entityDescendants(ctx, relations, []string{seed})
 		if err != nil {
 			return reach, err
 		}
@@ -240,7 +241,7 @@ func (s *Store) mutedReachLocked(ctx context.Context, profileID ProfileID, items
 	if len(allTargets) == 0 {
 		return reach, nil
 	}
-	relatedByMedia, err := s.entitiesRelatingMediaLocked(ctx, candidates, allTargets)
+	relatedByMedia, err := entitiesRelatingMedia(ctx, relations, candidates, allTargets)
 	if err != nil {
 		return reach, err
 	}
@@ -258,11 +259,11 @@ func (s *Store) mutedReachLocked(ctx context.Context, profileID ProfileID, items
 	return reach, nil
 }
 
-func (s *Store) applyMuteFilterLocked(ctx context.Context, profileID ProfileID, filter LibraryFilter, items []SourceItem) ([]SourceItem, error) {
+func (s *Store) applyMuteFilterLocked(ctx context.Context, relations *sql.DB, profileID ProfileID, filter LibraryFilter, items []SourceItem) ([]SourceItem, error) {
 	if len(items) == 0 {
 		return items, nil
 	}
-	reach, err := s.mutedReachLocked(ctx, profileID, items)
+	reach, err := s.mutedReachLocked(ctx, relations, profileID, items)
 	if err != nil {
 		return nil, err
 	}
@@ -324,15 +325,17 @@ func (s *Store) AnnotateMuted(ctx context.Context, profileID ProfileID, filter L
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	return s.annotateMutedLocked(ctx, profileID, items)
+	return s.annotateMutedLocked(ctx, s.catalogR, profileID, items)
 }
 
 // annotateMutedLocked is AnnotateMuted's in-lock body. Kind-aware: an entity-kind
 // item badges when its entity id is a direct or broad ENTITY mute target; a
 // media-kind item badges when any mute target (entity or tag) reaches its Media,
-// mirroring the id-pooled suppression reach exactly.
-func (s *Store) annotateMutedLocked(ctx context.Context, profileID ProfileID, items []SourceItem) error {
-	reach, err := s.mutedReachLocked(ctx, profileID, items)
+// mirroring the id-pooled suppression reach exactly. relations is the catalog
+// plane holding the items' relations: the shared catalog, or an open Encrypted
+// Library's own database.
+func (s *Store) annotateMutedLocked(ctx context.Context, relations *sql.DB, profileID ProfileID, items []SourceItem) error {
+	reach, err := s.mutedReachLocked(ctx, relations, profileID, items)
 	if err != nil {
 		return err
 	}
@@ -387,13 +390,13 @@ func (s *Store) mutedTargetsLocked(ctx context.Context, profileID ProfileID) ([]
 	return out, rows.Err()
 }
 
-// entityDescendantsLocked returns the seed entity ids plus every entity reachable
+// entityDescendants returns the seed entity ids plus every entity reachable
 // from them by following entity_relation.from_entity_id -> to_entity_id edges
 // (the generic hierarchy walk for include-descendants, ADR-0054 §2.3). It is
 // cycle-safe (visited set) and depth-capped (muteDescendantDepthCap). The walk is
 // domain-blind: it follows the generic entity graph regardless of relation name,
 // so no plugin domain vocabulary leaks into Core.
-func (s *Store) entityDescendantsLocked(ctx context.Context, seeds []string) (map[string]struct{}, error) {
+func entityDescendants(ctx context.Context, relations *sql.DB, seeds []string) (map[string]struct{}, error) {
 	visited := map[string]struct{}{}
 	frontier := make([]string, 0, len(seeds))
 	for _, id := range seeds {
@@ -412,7 +415,8 @@ func (s *Store) entityDescendantsLocked(ctx context.Context, seeds []string) (ma
 			placeholders[i] = "?"
 			args[i] = id
 		}
-		rows, err := s.catalogR.QueryContext(ctx, `
+		// #nosec G202 -- only generated placeholders are interpolated.
+		rows, err := relations.QueryContext(ctx, `
 			SELECT DISTINCT to_entity_id
 			FROM entity_relation
 			WHERE to_entity_id IS NOT NULL
@@ -443,11 +447,11 @@ func (s *Store) entityDescendantsLocked(ctx context.Context, seeds []string) (ma
 	return visited, nil
 }
 
-// entitiesRelatingMediaLocked maps each candidate Media to the subset of target
+// entitiesRelatingMedia maps each candidate Media to the subset of target
 // entity ids that relate to it via entity_relation.to_media_id. Only the given
 // target ids are considered, so the result is exactly "which muted entities
 // reach this Media." Media with no muted relation are absent from the map.
-func (s *Store) entitiesRelatingMediaLocked(ctx context.Context, media []MediaID, targets map[string]struct{}) (map[MediaID]map[string]struct{}, error) {
+func entitiesRelatingMedia(ctx context.Context, relations *sql.DB, media []MediaID, targets map[string]struct{}) (map[MediaID]map[string]struct{}, error) {
 	out := map[MediaID]map[string]struct{}{}
 	if len(media) == 0 || len(targets) == 0 {
 		return out, nil
@@ -470,7 +474,8 @@ func (s *Store) entitiesRelatingMediaLocked(ctx context.Context, media []MediaID
 			targetPlaceholders[i] = "?"
 			args = append(args, id)
 		}
-		rows, err := s.catalogR.QueryContext(ctx, `
+		// #nosec G202 -- only generated placeholders are interpolated.
+		rows, err := relations.QueryContext(ctx, `
 			SELECT DISTINCT to_media_id, from_entity_id
 			FROM entity_relation
 			WHERE to_media_id IN (`+joinComma(mediaPlaceholders)+`)

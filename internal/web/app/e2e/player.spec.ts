@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { type CDPSession, expect, type Locator, type Page, test } from "@playwright/test";
+import { type CDPSession, expect, type Locator, type Page, test } from "./lib/test";
 import { expectVisualParity, settleFrames } from "./lib/visual-parity";
 
 const mediaPath = join(
@@ -52,6 +52,32 @@ async function openPlayer(page: Page): Promise<{ stage: Locator; video: Locator 
     }).observe(document, { childList: true, subtree: true });
   });
 
+  // The now-playing read names the item's container Entity, which is what the
+  // per-collection skip-interval row is keyed to and labelled with (CORE-1143).
+  await page.route("**/api/graphql", async (route) => {
+    const body = route.request().postDataJSON() as { query?: string } | null;
+    if (!body?.query?.startsWith("query Media(")) return route.fallback();
+    await route.fulfill({
+      json: {
+        data: {
+          media: {
+            id: "media-alpha",
+            title: "Acceptance review demo",
+            artworkSlots: {},
+            credits: [
+              {
+                entityID: "entity-demo-show",
+                title: "Demo Show",
+                kind: "series",
+                archetype: "container",
+                relation: "part-of",
+              },
+            ],
+          },
+        },
+      },
+    });
+  });
   await page.route("**/api/playback-info", async (route) => {
     expect(route.request().method()).toBe("POST");
     await route.fulfill({
@@ -84,7 +110,9 @@ async function openPlayer(page: Page): Promise<{ stage: Locator; video: Locator 
   const video = page.locator("video");
   const scrubber = page.getByRole("slider", { name: "Playback position" });
   await expect(video).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Playback details" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Acceptance review demo", level: 2 }),
+  ).toBeVisible();
   await expect(scrubber).toBeVisible();
   await expect.poll(() => video.evaluate((element) => element.duration)).toBe(2);
   await video.evaluate(
@@ -185,6 +213,26 @@ async function openSharedSelectState(
   await expect(option).toHaveAttribute("data-highlighted", "");
 }
 
+// CORE-1141: secondary playback options live in the transport's settings sheet.
+async function setSettingsOpen(page: Page, open: boolean): Promise<void> {
+  const button = page.getByRole("button", { name: "Settings", exact: true });
+  if ((await button.getAttribute("aria-expanded")) !== String(open)) {
+    // On phones the open sheet covers the gear, so close it the way a viewer
+    // would from inside it: Escape.
+    if (open) await button.click();
+    else await page.keyboard.press("Escape");
+  }
+  await expect(button).toHaveAttribute("aria-expanded", String(open));
+  if (open) {
+    // Let the panel's scale-in finish naturally: a screenshot that fast-forwards
+    // it can keep text rasterized at the mid-animation scale.
+    await page
+      .locator(".bf-settings")
+      .evaluate((panel) => Promise.all(panel.getAnimations().map((a) => a.finished)));
+    await settleFrames(page);
+  }
+}
+
 async function closeSharedSelectPopup(page: Page): Promise<void> {
   const listbox = page.getByRole("listbox");
   if ((await listbox.count()) > 0 && (await listbox.first().isVisible())) {
@@ -217,11 +265,14 @@ test("visual parity covers every migrated player widget state", async ({
 }, testInfo) => {
   await openPlayer(page);
 
-  const skipInterval = page.getByRole("combobox", { name: "This show" });
+  await setSettingsOpen(page, true);
+  const skipInterval = page.getByRole("combobox", { name: "Skip buttons for Demo Show" });
   await openSharedSelectState(page, skipInterval, "30s");
   await expectVisualParity(page, testInfo, "player-skip-interval-select-open-focused-selected");
   await page.keyboard.press("Escape");
+  await setSettingsOpen(page, true);
   await skipInterval.selectOption({ label: "Skip buttons" });
+  await setSettingsOpen(page, false);
 
   const scrubber = page.getByRole("slider", { name: "Playback position" });
   await scrubber.focus();
@@ -243,15 +294,17 @@ test("visual parity covers every migrated player widget state", async ({
   await expect(volume).toHaveAttribute("aria-valuetext", /40%/);
   await expectVisualParity(page, testInfo, "player-volume-slider-focused-selected");
 
+  await setSettingsOpen(page, true);
   await selectTransportState(page, "Audio", "Spanish");
   const audioListbox = page.getByRole("listbox", { name: "Audio" });
-  const visualAudioRows = page.locator(".bf-menu-visual .bf-menu-option");
-  await expect(visualAudioRows.filter({ hasText: "Spanish" })).toHaveClass(/is-focused/);
+  await expect(audioListbox.getByRole("option", { name: "Spanish", exact: true })).toHaveAttribute(
+    "data-highlighted",
+    "",
+  );
   await expectVisualParity(page, testInfo, "player-audio-listbox-open-focused-selected");
   const englishAudio = audioListbox.getByRole("option", { name: "English", exact: true });
   await englishAudio.hover();
   await expect(englishAudio).toHaveAttribute("data-highlighted", "");
-  await expect(visualAudioRows.filter({ hasText: "English" })).toHaveClass(/is-focused/);
   await page.keyboard.press("Escape");
 
   await selectTransportState(page, "Subtitles", "Spanish");
@@ -267,6 +320,7 @@ test("visual parity covers every migrated player widget state", async ({
   await expectVisualParity(page, testInfo, "player-speed-select-open-focused-selected");
   await page.keyboard.press("Escape");
 
+  await setSettingsOpen(page, true);
   const subtitleStyling = page.getByRole("button", { name: "Subtitle styling" });
   await expect(subtitleStyling).toBeVisible();
   await subtitleStyling.click();
@@ -288,8 +342,9 @@ test("visual parity covers every migrated player widget state", async ({
   await closeSharedSelectPopup(page);
   await page.keyboard.press("Escape");
 
+  await setSettingsOpen(page, true);
   await page.getByRole("button", { name: "Playback details" }).click();
-  const detailsDialog = page.getByRole("dialog", { name: "Playback details" });
+  const detailsDialog = page.getByRole("dialog", { name: "Acceptance review demo" });
   await expect(detailsDialog).toBeVisible();
   await detailsDialog.focus();
   await expect(detailsDialog).toBeFocused();

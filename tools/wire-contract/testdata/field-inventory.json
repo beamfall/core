@@ -124,6 +124,8 @@
       "effect": "write",
       "tier": "session",
       "children": [
+        "artworkSlots",
+        "credits",
         "favorited",
         "id",
         "summary",
@@ -175,6 +177,7 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "engagement",
         "id",
         "kind",
         "locked",
@@ -616,6 +619,8 @@
       "effect": "write",
       "tier": "session",
       "children": [
+        "artworkSlots",
+        "credits",
         "favorited",
         "id",
         "summary",
@@ -1012,6 +1017,8 @@
       "effect": "write",
       "tier": "session",
       "children": [
+        "artworkSlots",
+        "credits",
         "favorited",
         "id",
         "summary",
@@ -1071,10 +1078,21 @@
       ]
     },
     {
+      "field": "hostmetrics",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "intervalSeconds",
+        "samples"
+      ]
+    },
+    {
       "field": "identifyapply",
       "effect": "write",
       "tier": "session",
       "children": [
+        "artworkSlots",
+        "credits",
         "favorited",
         "id",
         "summary",
@@ -1162,6 +1180,18 @@
         "members",
         "partyID",
         "relaxed"
+      ]
+    },
+    {
+      "field": "itemstate",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "id",
+        "kind",
+        "rating",
+        "watched",
+        "watchlisted"
       ]
     },
     {
@@ -1332,6 +1362,16 @@
       ]
     },
     {
+      "field": "libraryitems",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "facets",
+        "items",
+        "total"
+      ]
+    },
+    {
       "field": "linkmediarelation",
       "effect": "write",
       "tier": "session",
@@ -1357,6 +1397,7 @@
       "effect": "read",
       "tier": "admin",
       "children": [
+        "bitrate",
         "deviceID",
         "deviceName",
         "deviceRole",
@@ -1364,6 +1405,8 @@
         "expiresAt",
         "libraryID",
         "mediaID",
+        "playMethod",
+        "playReason",
         "positionSeconds",
         "profileID",
         "profileName",
@@ -1416,6 +1459,8 @@
       "effect": "read",
       "tier": "session",
       "children": [
+        "artworkSlots",
+        "credits",
         "favorited",
         "id",
         "summary",
@@ -1464,6 +1509,7 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "engagement",
         "id",
         "kind",
         "locked",
@@ -1570,9 +1616,11 @@
         "playbackProgress",
         "profile",
         "queue",
+        "ratings",
         "savedFilters",
         "schema",
-        "sealedLibrariesExcluded"
+        "sealedLibrariesExcluded",
+        "watchlist"
       ]
     },
     {
@@ -1781,6 +1829,32 @@
       ]
     },
     {
+      "field": "playhistory",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "finished",
+        "libraryID",
+        "libraryTitle",
+        "mediaID",
+        "profileID",
+        "profileName",
+        "startedAt",
+        "title",
+        "watchedSeconds"
+      ]
+    },
+    {
+      "field": "playstats",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "items",
+        "profiles",
+        "windowDays"
+      ]
+    },
+    {
       "field": "plugins",
       "effect": "read",
       "tier": "session",
@@ -1821,6 +1895,7 @@
       "effect": "read",
       "tier": "session",
       "children": [
+        "avatar",
         "certificationCeilings",
         "id",
         "kind",
@@ -1891,6 +1966,7 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "engagement",
         "id",
         "kind",
         "locked",
@@ -1907,6 +1983,7 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "engagement",
         "id",
         "kind",
         "locked",
@@ -1923,6 +2000,7 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "engagement",
         "id",
         "kind",
         "locked",
@@ -1939,6 +2017,7 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "engagement",
         "id",
         "kind",
         "locked",
@@ -2558,6 +2637,7 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "engagement",
         "id",
         "kind",
         "locked",
@@ -2574,6 +2654,7 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "engagement",
         "id",
         "kind",
         "locked",
@@ -2716,6 +2797,8 @@
       "effect": "write",
       "tier": "session",
       "children": [
+        "artworkSlots",
+        "credits",
         "favorited",
         "id",
         "summary",
@@ -2926,6 +3009,18 @@
       ]
     },
     {
+      "field": "setrating",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "id",
+        "kind",
+        "rating",
+        "watched",
+        "watchlisted"
+      ]
+    },
+    {
       "field": "setretentioncandidatehold",
       "effect": "write",
       "tier": "session",
@@ -3017,6 +3112,30 @@
       ]
     },
     {
+      "field": "setwatched",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "id",
+        "kind",
+        "rating",
+        "watched",
+        "watchlisted"
+      ]
+    },
+    {
+      "field": "setwatchlisted",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "id",
+        "kind",
+        "rating",
+        "watched",
+        "watchlisted"
+      ]
+    },
+    {
       "field": "skipdetectionenabled",
       "effect": "read",
       "tier": "admin",
@@ -3045,6 +3164,7 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "engagement",
         "id",
         "kind",
         "locked",
@@ -3115,6 +3235,7 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "engagement",
         "id",
         "kind",
         "locked",

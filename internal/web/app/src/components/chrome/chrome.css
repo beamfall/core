@@ -294,63 +294,7 @@
   margin-left: auto;
 }
 
-/* Header search: a rounded glass field; submitting opens Search with the text. */
-.bf-search {
-  position: relative;
-  display: flex;
-  align-items: center;
-  width: clamp(180px, 22vw, 300px);
-  margin-right: 6px;
-}
-
-.bf-search-icon {
-  position: absolute;
-  left: 12px;
-  width: 16px;
-  height: 16px;
-  color: var(--text-muted);
-  pointer-events: none;
-}
-
-.bf-search-input {
-  width: 100%;
-  height: 38px;
-  padding: 0 14px 0 36px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 999px;
-  background: color-mix(in oklch, var(--night-850) 70%, transparent);
-  color: var(--text-primary);
-  font-size: 14px;
-  transition:
-    border-color var(--duration-fast) var(--ease-standard),
-    background-color var(--duration-fast) var(--ease-standard),
-    box-shadow var(--duration-fast) var(--ease-standard);
-}
-
-.bf-search-input::placeholder {
-  color: var(--text-muted);
-}
-
-.bf-search-input:hover {
-  border-color: var(--border-strong);
-}
-
-/* The ring is a box-shadow, which forced-colors mode drops; the transparent
-   outline is what shows there. */
-.bf-search-input:focus {
-  outline: 2px solid transparent;
-  outline-offset: 2px;
-  border-color: color-mix(in oklch, var(--beam-500) 70%, transparent);
-  background: var(--night-850);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--beam-500) 22%, transparent);
-}
-
-/* The phone's search icon stands in for the field. */
-.bf-icon-button.bf-search-icon-link {
-  display: none;
-}
-
-/* Round icon buttons: Search (phone), Activity, Console, notifications, avatar. */
+/* Round icon buttons: Activity, Console, notifications, avatar. */
 .bf-icon-button {
   position: relative;
   display: inline-flex;
@@ -445,36 +389,12 @@
   outline-offset: 2px;
 }
 
-.bf-avatar {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 999px;
-  background: linear-gradient(135deg, var(--beam-500), oklch(55% 0.16 290));
-  color: var(--night-950);
-  font-size: 14px;
-  font-weight: 800;
-  box-shadow:
-    0 0 0 2px var(--bg-surface),
-    0 0 0 3px color-mix(in oklch, var(--beam-500) 40%, transparent);
-  transition: box-shadow var(--duration-fast) var(--ease-standard);
-}
-
 .bf-avatar-button:hover .bf-avatar,
 .bf-avatar-button[aria-expanded="true"] .bf-avatar {
   box-shadow:
     0 0 0 2px var(--bg-surface),
     0 0 0 4px var(--beam-500),
     0 0 18px color-mix(in oklch, var(--beam-500) 45%, transparent);
-}
-
-.bf-avatar-lg {
-  width: 40px;
-  height: 40px;
-  font-size: 16px;
 }
 
 .bf-account-panel {
@@ -635,12 +555,6 @@
   .bf-avatar-button {
     width: 38px;
     height: 38px;
-  }
-  .bf-search {
-    display: none;
-  }
-  .bf-icon-button.bf-search-icon-link {
-    display: inline-flex;
   }
   .bf-account-panel {
     position: fixed;
@@ -973,6 +887,193 @@
   text-overflow: ellipsis;
 }
 
+/* Card state and actions. The shell positions the More trigger over the
+ * poster as a sibling of the card button. State sits on a scrim so it reads on
+ * any artwork; the play affordance and the trigger appear on hover or focus
+ * and stay visible where there is no hover (touch). */
+[data-register="viewer"] .bf-card-shell {
+  position: relative;
+}
+
+[data-register="viewer"] .bf-card-progress {
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 2;
+  height: 5px;
+  background: oklch(7% 0.02 255 / 72%);
+}
+
+[data-register="viewer"] .bf-card-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+[data-register="viewer"] .bf-card-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 2px 8px oklch(7% 0.02 255 / 45%);
+}
+
+[data-register="viewer"] .bf-card-badge-finished {
+  padding: 0;
+  background: oklch(14% 0.014 250 / 82%);
+  color: var(--text);
+  border: 1px solid oklch(86% 0.02 250 / 28%);
+}
+
+[data-register="viewer"] .bf-card-play {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: oklch(7% 0.02 255 / 46%);
+  color: oklch(98% 0.004 250);
+  font-size: 13px;
+  font-weight: 650;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+  pointer-events: none;
+}
+
+[data-register="viewer"] .bf-card:hover .bf-card-play,
+[data-register="viewer"] .bf-card:focus-visible .bf-card-play {
+  opacity: 1;
+}
+
+[data-register="viewer"] .bf-card-more {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid oklch(86% 0.02 250 / 28%);
+  border-radius: 999px;
+  background: oklch(14% 0.014 250 / 82%);
+  color: oklch(98% 0.004 250);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+
+/* Enlarge the hit area to 44px without growing the visual. */
+[data-register="viewer"] .bf-card-more::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+
+[data-register="viewer"] .bf-card-shell:hover .bf-card-more,
+[data-register="viewer"] .bf-card-shell:focus-within .bf-card-more,
+[data-register="viewer"] .bf-card-more[data-popup-open] {
+  opacity: 1;
+}
+
+[data-register="viewer"] .bf-card-more:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (hover: none) {
+  [data-register="viewer"] .bf-card-more {
+    opacity: 1;
+  }
+}
+
+.bf-card-menu-layer {
+  z-index: 40;
+}
+
+.bf-card-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 176px;
+  padding: 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-raised);
+  color: var(--text);
+  box-shadow: 0 18px 44px oklch(0% 0 0 / 45%);
+  /* Transparent rather than none: forced-colors mode shows it in a system color. */
+  outline: 2px solid transparent;
+}
+
+.bf-card-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 10px;
+  border-radius: var(--radius-control);
+  font-size: 13px;
+  line-height: 18px;
+  cursor: pointer;
+  /* The highlight is a fill, which forced-colors mode drops; this outline shows there. */
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+}
+
+/* After the base rule, so a touch device keeps the 44px target. */
+@media (hover: none) {
+  .bf-card-menu-item {
+    min-height: 44px;
+  }
+}
+
+/* A failed card action, shown over the artwork once the menu has closed. */
+[data-register="viewer"] .bf-card-action-error {
+  position: absolute;
+  top: 40px;
+  right: 6px;
+  left: 6px;
+  z-index: 3;
+  padding: 6px 8px;
+  border-radius: var(--radius-control);
+  background: oklch(14% 0.014 250 / 92%);
+  color: oklch(98% 0.004 250);
+  font-size: 12px;
+  line-height: 16px;
+  pointer-events: none;
+}
+
+.bf-card-menu-item[data-disabled] {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.bf-card-menu-item[data-highlighted] {
+  background: color-mix(in oklab, var(--accent) 18%, transparent);
+}
+
+.bf-card-menu-item:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
 /* Row geometry for list/info Sections. */
 [data-register="viewer"] .bf-stack .bf-card {
   flex-direction: row;
@@ -990,6 +1091,31 @@
 
 [data-register="viewer"] .bf-stack .bf-card-copy {
   padding: 0;
+}
+
+/* Rows: the poster is a 48px thumb, so the play scrim is dropped, the badge
+ * shrinks onto it and the More trigger sits at the row's trailing edge. */
+[data-register="viewer"] .bf-stack .bf-card {
+  padding-right: 48px;
+}
+
+[data-register="viewer"] .bf-stack .bf-card-play {
+  display: none;
+}
+
+[data-register="viewer"] .bf-stack .bf-card-badge {
+  top: 2px;
+  left: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 10px;
+}
+
+[data-register="viewer"] .bf-stack .bf-card-more {
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
 }
 
 [data-register="viewer"] .bf-stack .bf-card:hover {
@@ -1187,6 +1313,10 @@
   [data-register="viewer"] .bf-card:hover .bf-poster img {
     transform: none;
   }
+  [data-register="viewer"] .bf-card-play,
+  [data-register="viewer"] .bf-card-more {
+    transition: none;
+  }
 }
 
 /* ============================================================ *
@@ -1333,53 +1463,74 @@
   touch-action: pan-x;
 }
 
+/* The picture fills the whole stage (letterboxed only by its own aspect
+ * ratio), and the stage fills the window: the Back bar floats over it. */
 .bf-player-stage video {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
-  max-height: 80vh;
+  height: 100%;
+  object-fit: contain;
   background: oklch(8% 0.012 255);
 }
 
-/* Transport chrome appears fast and exits slowly enough to preserve
- * orientation (design system Player chrome rule). It is one floating glass
- * card inset from the stage edges (approved v-player mockup, CORE-0045). The
- * glass layer is a pseudo-element so the card itself never becomes the
- * containing block of the fixed gesture feedback. */
+/* Transport chrome (CORE-1141): the video is the hero. Controls sit on a
+ * gradient scrim rising from the bottom of the stage — no card. Chrome
+ * appears fast and exits slowly enough to preserve orientation (design
+ * system Player chrome rule). The overlay itself never takes pointer events;
+ * only its controls do, so taps on the picture reach the stage gestures. */
 .bf-transport {
   position: absolute;
-  inset: auto clamp(12px, 3vw, 32px) clamp(12px, 3vw, 32px);
+  inset: 0;
+  z-index: 2;
   isolation: isolate;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas:
-    "meta primary"
-    "scrub scrub"
-    "aux aux";
-  align-items: center;
-  gap: 4px 16px;
-  padding: 12px 16px;
-  color: oklch(96% 0.006 250);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  color: oklch(97% 0.005 250);
+  pointer-events: none;
 }
 
-.bf-transport::before {
-  content: "";
+.bf-transport > :not(.bf-transport-scrim, .bf-transport-layer, .bf-gesture-feedback),
+.bf-transport-layer > * {
+  pointer-events: auto;
+}
+
+.bf-transport-scrim {
+  position: absolute;
+  inset: auto 0 0;
+  z-index: -1;
+  height: min(62%, 360px);
+  background: linear-gradient(
+    to top,
+    oklch(6% 0.012 255 / 92%) 0%,
+    oklch(6% 0.012 255 / 70%) 34%,
+    oklch(6% 0.012 255 / 28%) 70%,
+    transparent 100%
+  );
+  pointer-events: none;
+}
+
+.bf-transport-layer {
   position: absolute;
   inset: 0;
-  z-index: -1;
-  border: 1px solid oklch(86% 0.02 250 / 16%);
-  border-radius: var(--radius-card);
-  background: oklch(12% 0.014 250 / 88%);
-  -webkit-backdrop-filter: blur(18px);
-  backdrop-filter: blur(18px);
+  z-index: 8;
   pointer-events: none;
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  .bf-transport::before {
-    background: oklch(12% 0.014 250);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
+  .bf-transport-scrim {
+    height: auto;
+    min-height: 168px;
+    background: oklch(8% 0.012 255);
   }
+}
+
+.bf-transport-bottom {
+  display: grid;
+  gap: 4px;
+  padding: 0 clamp(16px, 3vw, 40px) clamp(10px, 2vw, 22px);
 }
 
 .bf-route-summary {
@@ -1388,22 +1539,27 @@
   line-height: 16px;
   font-weight: 600;
   letter-spacing: 0.02em;
-  color: oklch(88% 0.025 250);
+  color: oklch(86% 0.02 250 / 86%);
 }
 
 .bf-player-meta {
-  grid-area: meta;
   display: grid;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
+  padding-bottom: 2px;
+  text-shadow: 0 1px 12px oklch(0% 0 0 / 55%);
 }
 
 .bf-player-meta h2 {
   margin: 0;
-  font-size: 20px;
-  line-height: 24px;
-  font-weight: 700;
-  color: oklch(98% 0.004 250);
+  overflow: hidden;
+  font-size: clamp(18px, 1.6vw + 8px, 26px);
+  line-height: 1.2;
+  font-weight: 650;
+  letter-spacing: -0.012em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: oklch(99% 0.003 250);
 }
 
 .bf-route-summary.is-direct {
@@ -1414,27 +1570,29 @@
   color: var(--cyan-500);
 }
 
+/* Slim scrubber: a 3px hairline that thickens on hover and keyboard focus. */
 .bf-scrub-row {
-  grid-area: scrub;
   display: grid;
-  grid-template-columns: minmax(48px, auto) minmax(0, 1fr) minmax(48px, auto);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
 }
 
 .bf-time {
+  min-width: 44px;
   font-size: 12px;
   line-height: 16px;
+  font-weight: 550;
   font-variant-numeric: tabular-nums;
-  color: oklch(90% 0.02 250);
-}
-
-.bf-time.is-end {
-  text-align: left;
+  color: oklch(92% 0.012 250 / 90%);
 }
 
 .bf-time.is-start {
   text-align: right;
+}
+
+.bf-time.is-end {
+  text-align: left;
 }
 
 .bf-scrub-wrap {
@@ -1446,9 +1604,8 @@
   position: relative;
   z-index: 2;
   width: 100%;
-  min-height: 44px;
-  cursor: pointer;
-  accent-color: var(--beam-500);
+  min-height: 36px;
+  margin: 0;
   pointer-events: none;
 }
 
@@ -1460,9 +1617,10 @@
   position: absolute;
   z-index: 3;
   display: flex;
-  min-height: 44px;
   align-items: center;
-  opacity: 0;
+  min-height: 36px;
+  touch-action: none;
+  cursor: pointer;
 }
 
 .bf-scrub-wrap .bf-slider-control {
@@ -1470,66 +1628,98 @@
   width: 100%;
 }
 
-.bf-slider-track {
-  width: 100%;
-  height: 4px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: oklch(72% 0.02 250 / 45%);
-  transition: height var(--duration-fast) var(--ease-standard);
-}
-
-.bf-scrub-wrap:hover .bf-slider-track,
-.bf-scrub-wrap:has(.bf-slider-control:focus-within) .bf-slider-track {
-  height: 6px;
-}
-
-.bf-slider-indicator {
-  height: 100%;
-  background: var(--beam-500);
-}
-
-.bf-slider-thumb {
-  width: 16px;
-  height: 16px;
-  border: 2px solid var(--beam-500);
-  border-radius: 50%;
-  background: white;
-}
-
-/* The scrubber is drawn by the Base UI slider (thin track, round beam thumb);
- * the native range input only reserves the 44px row and stays hidden. */
-.bf-scrub-wrap .bf-slider-control {
-  opacity: 1;
-}
-
-.bf-scrub-wrap .bf-scrubber-visual {
+.bf-scrub-wrap .bf-scrubber-visual,
+.bf-volume-slider {
   visibility: hidden;
 }
 
-.bf-scrub-wrap .bf-slider-thumb {
-  width: 14px;
-  height: 14px;
-  background: var(--beam-500);
-  border-color: oklch(98% 0.004 250);
+.bf-slider-track {
+  position: relative;
+  width: 100%;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: oklch(92% 0.01 250 / 22%);
+  transition: height 160ms var(--ease-standard);
 }
 
-.bf-scrub-wrap:has(.bf-slider-control :focus-visible) .bf-slider-thumb {
+.bf-scrub-wrap:hover .bf-slider-track,
+.bf-scrub-wrap:has(:focus-visible) .bf-slider-track,
+.bf-scrub-wrap:has([data-dragging]) .bf-slider-track {
+  height: 6px;
+}
+
+.bf-slider-buffered,
+.bf-slider-hover {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.bf-slider-buffered {
+  background: oklch(92% 0.01 250 / 28%);
+}
+
+.bf-slider-hover {
+  background: oklch(98% 0.004 250 / 22%);
+}
+
+.bf-slider-indicator {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--beam-600), var(--beam-500));
+  box-shadow: 0 0 12px color-mix(in oklab, var(--beam-500) 60%, transparent);
+}
+
+.bf-slider-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--beam-500);
+  box-shadow:
+    0 0 0 3px oklch(99% 0.003 250 / 92%),
+    0 0 18px color-mix(in oklab, var(--beam-500) 70%, transparent);
+}
+
+/* The scrubber thumb keeps its box (so the slider stays visible to
+ * assistive tech and tests); the dot it paints grows in on hover/focus. */
+.bf-scrub-wrap .bf-slider-thumb {
+  background: transparent;
+  box-shadow: none;
+}
+
+.bf-scrub-wrap .bf-slider-thumb::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--beam-500);
+  box-shadow:
+    0 0 0 3px oklch(99% 0.003 250 / 92%),
+    0 0 18px color-mix(in oklab, var(--beam-500) 70%, transparent);
+  scale: 0;
+  transition: scale 160ms var(--ease-standard);
+}
+
+.bf-scrub-wrap:hover .bf-slider-thumb::after,
+.bf-scrub-wrap:has(:focus-visible) .bf-slider-thumb::after,
+.bf-scrub-wrap:has([data-dragging]) .bf-slider-thumb::after {
+  scale: 1;
+}
+
+.bf-slider-thumb:has(:focus-visible) {
   outline: 2px solid var(--focus-ring);
-  outline-offset: 3px;
+  outline-offset: 4px;
 }
 
 .bf-marker-strip {
   position: absolute;
-  inset: 50% 0 auto;
-  height: 4px;
-  transform: translateY(-50%);
+  inset: 0;
+  z-index: 2;
   pointer-events: none;
-  z-index: 4;
-}
-
-.bf-scrub-wrap:hover .bf-marker-strip {
-  height: 6px;
 }
 
 .bf-marker-tick {
@@ -1537,64 +1727,88 @@
   top: 0;
   width: 3px;
   height: 100%;
-  border-radius: 999px;
-  background: oklch(91% 0.12 95 / 85%);
+  background: oklch(8% 0.012 255 / 85%);
 }
 
 .bf-marker-range {
   position: absolute;
   top: 0;
   height: 100%;
-  border-radius: 999px;
-  background: oklch(76% 0.14 35 / 45%);
+  background: oklch(80% 0.13 60 / 55%);
 }
 
+.bf-scrub-tooltip,
 .bf-trickplay {
   position: absolute;
-  bottom: 26px;
+  bottom: 30px;
   z-index: 4;
   transform: translateX(-50%);
-  padding: 6px;
-  border-radius: var(--radius-control);
-  background: oklch(12% 0.014 250 / 94%);
-  box-shadow: 0 16px 40px oklch(0% 0 0 / 50%);
-  text-align: center;
+  border: 1px solid oklch(98% 0.004 250 / 14%);
+  background: oklch(12% 0.014 250 / 82%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  backdrop-filter: blur(16px) saturate(140%);
+  box-shadow: 0 18px 40px -12px oklch(0% 0 0 / 70%);
   pointer-events: none;
 }
 
+.bf-scrub-tooltip {
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bf-trickplay {
+  padding: 4px;
+  border-radius: 12px;
+  text-align: center;
+}
+
 .bf-trickplay-frame {
-  width: 168px;
+  width: 176px;
   aspect-ratio: 16 / 9;
-  border-radius: 6px;
+  border-radius: 8px;
   background-color: oklch(16% 0.012 250);
   background-repeat: no-repeat;
 }
 
 .bf-trickplay-time {
   display: block;
-  margin-top: 4px;
+  padding: 4px 0 2px;
   font-size: 12px;
   line-height: 16px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: oklch(90% 0.02 250);
 }
 
+@media (prefers-reduced-transparency: reduce) {
+  .bf-scrub-tooltip,
+  .bf-trickplay {
+    background: oklch(12% 0.014 250);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* One transport row: playback on the left, utilities on the right. */
 .bf-controls {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 2px;
 }
 
 .bf-primary-controls {
-  grid-area: primary;
-  justify-content: flex-end;
-  gap: 4px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 4px;
 }
 
-.bf-aux-controls {
-  grid-area: aux;
-  align-items: center;
+.bf-transport-spacer {
+  flex: 1;
 }
 
 .bf-control {
@@ -1642,32 +1856,54 @@
   outline-offset: 3px;
 }
 
-.bf-control select,
-.bf-volume-slider {
-  min-height: 44px;
-}
-
-.bf-control select:focus-visible,
-.bf-volume-control:has(.bf-slider-control:focus-within) .bf-volume-slider {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
+/* Volume: an icon button whose slider slides out on hover or focus. */
+.bf-volume {
+  display: flex;
+  align-items: center;
 }
 
 .bf-volume-control {
   position: relative;
-  gap: 8px;
+  display: flex;
+  align-items: center;
+  width: 0;
+  height: 44px;
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    width 200ms var(--ease-standard),
+    opacity 160ms var(--ease-standard);
+}
+
+.bf-volume:hover .bf-volume-control,
+.bf-volume:focus-within .bf-volume-control {
+  width: 96px;
+  opacity: 1;
 }
 
 .bf-volume-slider {
-  width: 112px;
-  accent-color: var(--beam-500);
-  pointer-events: none;
+  position: absolute;
+  width: 1px;
 }
 
 .bf-volume-control .bf-slider-control {
-  top: 0;
-  right: 14px;
-  width: 112px;
+  inset: 0 10px 0 6px;
+}
+
+.bf-volume-control .bf-slider-track {
+  height: 4px;
+}
+
+.bf-volume-control .bf-slider-indicator {
+  background: oklch(98% 0.004 250);
+  box-shadow: none;
+}
+
+.bf-volume-control .bf-slider-thumb {
+  width: 12px;
+  height: 12px;
+  background: oklch(99% 0.003 250);
+  box-shadow: 0 1px 6px oklch(0% 0 0 / 45%);
 }
 
 .bf-player-control-status:empty {
@@ -1675,38 +1911,8 @@
 }
 
 .bf-player-control-status {
-  flex-basis: 100%;
   font-size: 12px;
   color: oklch(90% 0.02 250);
-}
-
-@media (max-width: 760px) {
-  .bf-transport {
-    gap: 2px 8px;
-    padding: 10px 12px;
-  }
-
-  .bf-player-meta h2 {
-    font-size: 16px;
-    line-height: 20px;
-  }
-
-  .bf-scrub-row {
-    grid-template-columns: 40px minmax(0, 1fr) 40px;
-    gap: 8px;
-  }
-
-  .bf-aux-controls {
-    gap: 6px;
-  }
-
-  .bf-volume-slider {
-    width: 88px;
-  }
-
-  .bf-volume-control .bf-slider-control {
-    width: 88px;
-  }
 }
 
 .bf-gesture-feedback {
@@ -1772,49 +1978,79 @@
   background: var(--beam-600);
 }
 
-/* Transport controls (CORE-0045): every button keeps a 44px box (touch floor)
- * while the visible surface is a pill chip or a 40px circular disc painted by
- * ::before. Scoped to .bf-transport so the Up Next / skipped-overlay buttons
- * keep their own look. */
+/* Transport buttons (CORE-1141): a 44px touch box with no resting chrome;
+ * a glass disc and soft glow appear on hover and focus (house CORE-1114
+ * style). Scoped to .bf-transport so Up Next / skipped-overlay buttons keep
+ * their own look. */
 .bf-transport .bf-control {
   position: relative;
   isolation: isolate;
   gap: 6px;
+  min-width: 44px;
+  min-height: 44px;
   padding: 0 14px;
   border: 0;
+  border-radius: 999px;
   background: transparent;
-  font-size: 12px;
+  color: oklch(97% 0.005 250 / 92%);
+  font-size: 13px;
   line-height: 16px;
+  font-weight: 600;
+  transition: color 140ms var(--ease-standard);
 }
 
 .bf-transport .bf-control::before {
   content: "";
   position: absolute;
-  inset: 6px 0;
+  inset: 2px;
   z-index: -1;
-  border: 1px solid oklch(86% 0.02 250 / 24%);
-  border-radius: 999px;
-  background: oklch(24% 0.014 250 / 60%);
-  transition: background-color var(--duration-fast) var(--ease-standard);
+  border-radius: inherit;
+  background: oklch(98% 0.004 250 / 0%);
+  box-shadow: inset 0 0 0 1px oklch(98% 0.004 250 / 0%);
+  transition:
+    background-color 160ms var(--ease-standard),
+    box-shadow 160ms var(--ease-standard),
+    scale 160ms var(--ease-standard);
+  scale: 0.86;
 }
 
-.bf-transport .bf-control:hover:not(:disabled) {
+.bf-transport .bf-control:hover:not(:disabled),
+.bf-transport .bf-control:focus-visible,
+.bf-transport .bf-control.is-open {
   background: transparent;
+  color: oklch(99% 0.003 250);
 }
 
-.bf-transport .bf-control:hover:not(:disabled)::before {
-  background: oklch(32% 0.028 250 / 80%);
+.bf-transport .bf-control:hover:not(:disabled)::before,
+.bf-transport .bf-control:focus-visible::before,
+.bf-transport .bf-control.is-open::before {
+  background: oklch(98% 0.004 250 / 12%);
+  box-shadow:
+    inset 0 1px 0 oklch(99% 0.003 250 / 18%),
+    inset 0 0 0 1px oklch(98% 0.004 250 / 10%),
+    0 0 22px -6px color-mix(in oklab, var(--accent) 70%, transparent);
+  scale: 1;
+}
+
+.bf-transport .bf-control:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 0;
+}
+
+.bf-transport .bf-control:active:not(:disabled)::before {
+  scale: 0.92;
 }
 
 .bf-transport .bf-control:disabled {
   cursor: default;
-  opacity: 0.5;
+  opacity: 0.38;
 }
 
 .bf-transport .bf-control svg {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   flex: none;
+  stroke-width: 1.75;
 }
 
 .bf-transport .bf-control.is-icon {
@@ -1823,39 +2059,197 @@
 }
 
 .bf-transport .bf-control.is-icon::before {
-  inset: 2px;
   border-radius: 50%;
 }
 
+.bf-transport .bf-settings-button svg {
+  transition: rotate 320ms var(--ease-standard);
+}
+
+.bf-transport .bf-settings-button.is-open svg {
+  rotate: 60deg;
+}
+
+/* Seek ±N: the rotate arrow with the step count set inside it. */
+.bf-transport .bf-control.is-seek svg {
+  width: 26px;
+  height: 26px;
+  stroke-width: 1.6;
+}
+
+.bf-seek-amount {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding-top: 1px;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+/* Play/pause is the one lit control: a beam disc with a soft glow. */
 .bf-transport .bf-control.is-primary {
-  width: 48px;
-  min-width: 48px;
-  min-height: 48px;
+  width: 52px;
+  min-width: 52px;
+  min-height: 52px;
   color: var(--night-950);
 }
 
-.bf-transport .bf-control.is-primary::before {
-  inset: 0;
-  border-color: transparent;
+.bf-transport .bf-control.is-primary::before,
+.bf-transport .bf-control.is-primary:hover:not(:disabled)::before,
+.bf-transport .bf-control.is-primary:focus-visible::before {
+  inset: 2px;
   background: var(--beam-500);
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 45%),
+    0 8px 28px -8px color-mix(in oklab, var(--beam-500) 85%, transparent);
+  scale: 1;
+}
+
+.bf-transport .bf-control.is-primary:hover:not(:disabled) {
+  color: var(--night-950);
 }
 
 .bf-transport .bf-control.is-primary:hover:not(:disabled)::before {
-  background: var(--beam-600);
+  background: color-mix(in oklab, var(--beam-500) 88%, white);
 }
 
-.bf-transport .bf-control select {
-  padding: 0 4px;
-  border: 0;
-  color: inherit;
-  background: transparent;
-  color-scheme: dark;
-  font: inherit;
+.bf-transport .bf-control.is-primary svg {
+  width: 22px;
+  height: 22px;
+  fill: currentColor;
+  stroke-width: 1.5;
 }
 
-.bf-transport .bf-control select option {
-  color: oklch(96% 0.006 250);
-  background: oklch(20% 0.014 250);
+/* Skip intro / credits floats above the controls as a glass pill. */
+.bf-transport .bf-control.is-skip-segment {
+  align-self: flex-end;
+  margin: 0 clamp(16px, 3vw, 40px) 10px;
+  padding: 0 14px 0 18px;
+}
+
+.bf-transport .bf-control.is-skip-segment::before {
+  background: oklch(14% 0.014 250 / 72%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  backdrop-filter: blur(16px) saturate(140%);
+  box-shadow:
+    inset 0 1px 0 oklch(99% 0.003 250 / 16%),
+    inset 0 0 0 1px oklch(98% 0.004 250 / 18%);
+  scale: 1;
+}
+
+.bf-transport .bf-control.is-skip-segment svg {
+  width: 18px;
+  height: 18px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bf-slider-track,
+  .bf-scrub-wrap .bf-slider-thumb::after,
+  .bf-volume-control,
+  .bf-transport .bf-control,
+  .bf-transport .bf-control::before,
+  .bf-transport .bf-settings-button svg {
+    transition: none;
+  }
+}
+
+/* Phones: the play/seek cluster moves to the centre of the picture and
+ * grows. */
+@media (max-width: 640px) {
+  .bf-transport-scrim {
+    inset: 0;
+    height: auto;
+    background:
+      radial-gradient(ellipse 60% 40% at 50% 50%, oklch(6% 0.012 255 / 38%), transparent 70%),
+      linear-gradient(
+        to top,
+        oklch(6% 0.012 255 / 90%) 0%,
+        oklch(6% 0.012 255 / 30%) 40%,
+        oklch(6% 0.012 255 / 10%) 70%,
+        oklch(6% 0.012 255 / 40%) 100%
+      );
+  }
+
+  .bf-transport-bottom {
+    padding: 0 12px 8px;
+  }
+
+  /* A phone row cannot always fit every 44px utility (320px screens, or the
+   * volume slider sliding out): it scrolls sideways instead of clipping or
+   * reflowing, padded so focus rings are not cut off. */
+  .bf-controls {
+    margin: -4px -12px;
+    padding: 4px 12px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .bf-player-meta h2 {
+    font-size: 16px;
+  }
+
+  .bf-scrub-row {
+    gap: 8px;
+  }
+
+  .bf-time {
+    min-width: 38px;
+    font-size: 11px;
+  }
+
+  .bf-primary-controls {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    gap: clamp(16px, 8vw, 40px);
+    margin: 0;
+    transform: translate(-50%, -50%);
+  }
+
+  .bf-transport .bf-control.is-seek {
+    width: 56px;
+    min-height: 56px;
+  }
+
+  .bf-transport .bf-control.is-seek::before {
+    background: oklch(10% 0.012 255 / 36%);
+    scale: 1;
+  }
+
+  .bf-transport .bf-control.is-seek svg {
+    width: 30px;
+    height: 30px;
+  }
+
+  .bf-transport .bf-control.is-primary {
+    width: 68px;
+    min-width: 68px;
+    min-height: 68px;
+  }
+
+  .bf-transport .bf-control.is-primary svg {
+    width: 28px;
+    height: 28px;
+  }
+
+  .bf-transport .bf-control.is-skip-segment {
+    margin: 0 12px 6px;
+  }
+}
+
+/* Reduced transparency keeps a solid band behind the phone controls rather
+ * than the see-through full-picture scrim. */
+@media (max-width: 640px) and (prefers-reduced-transparency: reduce) {
+  .bf-transport-scrim {
+    inset: auto 0 0;
+    height: auto;
+    min-height: 168px;
+    background: oklch(8% 0.012 255);
+  }
 }
 
 /* The player top bar: a back affordance over the dark stage. */
@@ -2396,4 +2790,129 @@
     backdrop-filter: none;
     background: var(--bg-surface);
   }
+}
+
+/* Over a playing stage the bar floats on a top scrim and hides with the
+ * transport when idle (CORE-1141); message/terminal states keep it in flow. */
+main:has(> .bf-player-stage) > .bf-player-bar {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 10;
+  padding-bottom: 32px;
+  background: linear-gradient(to bottom, oklch(8% 0.012 255 / 70%), transparent);
+  pointer-events: none;
+  transition: opacity 140ms var(--ease-standard);
+}
+
+main:has(> .bf-player-stage) > .bf-player-bar > * {
+  pointer-events: auto;
+}
+
+main:has(> .bf-player-stage.is-chrome-hidden) > .bf-player-bar {
+  opacity: 0;
+  transition: opacity 320ms var(--ease-standard);
+}
+
+main:has(> .bf-player-stage.is-chrome-hidden) > .bf-player-bar > * {
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  main:has(> .bf-player-stage) > .bf-player-bar {
+    transition: none;
+  }
+}
+
+/* ============================================================ *
+ *  Item actions (Viewer) — watched, watchlist and rating controls.
+ * ============================================================ */
+
+.bf-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.bf-item-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.bf-item-action svg,
+.bf-item-star svg {
+  width: 16px;
+  height: 16px;
+}
+
+.bf-item-action:hover:not(:disabled),
+.bf-item-action[aria-pressed="true"] {
+  color: var(--text-primary);
+  border-color: currentColor;
+}
+
+.bf-item-action[aria-pressed="true"] {
+  background: rgb(255 255 255 / 0.08);
+}
+
+.bf-item-rating {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  margin: 0;
+  padding: 0 4px;
+  border: 0;
+}
+
+.bf-item-star {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 36px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+
+.bf-item-star:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.bf-item-star[aria-pressed="true"] {
+  color: var(--accent);
+}
+
+.bf-item-action:disabled,
+.bf-item-rating:disabled .bf-item-star {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.bf-item-action:focus-visible,
+.bf-item-star:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.bf-item-actions-error {
+  color: var(--text-secondary);
+  font-size: 13px;
 }

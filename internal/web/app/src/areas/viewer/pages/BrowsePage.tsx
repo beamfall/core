@@ -1,4 +1,4 @@
-import { useParams } from "react-router";
+import { Link, useParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { displayString } from "@/lib/display";
 import type { NavigationNode, Section } from "@/lib/graphql/types";
@@ -56,7 +56,18 @@ export function BrowsePage({ home = false }: { home?: boolean }) {
         </>
       }
     >
-      <h1 className="sr-only">{node ? displayString(node.title, displayLocale) : t("brand")}</h1>
+      {node && libraryID ? (
+        // A Library node leads with its name and the way into the full,
+        // sortable library (CORE-1190); the hubs below stay as they were.
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-4">
+          <h1 className="bf-page-title">{displayString(node.title, displayLocale)}</h1>
+          <Link className="bf-chip" to={`/n/${encodeURIComponent(node.id)}/all`}>
+            {t("libraryBrowseAll")}
+          </Link>
+        </div>
+      ) : (
+        <h1 className="sr-only">{node ? displayString(node.title, displayLocale) : t("brand")}</h1>
+      )}
       <LayoutView
         layout={layout}
         libraryID={libraryID}

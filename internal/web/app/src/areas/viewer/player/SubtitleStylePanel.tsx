@@ -1,3 +1,4 @@
+import { ChevronLeft, ChevronRight, Type } from "lucide-react";
 import { useRef } from "react";
 import { Dialog } from "@/components/ui/astryx-primitives";
 import { NativeSelect } from "@/components/ui/select";
@@ -54,10 +55,22 @@ export function SubtitleStylePanel({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange} modal={false}>
       <div ref={anchorRef} className="bf-menu-anchor">
-        <Dialog.Trigger className="bf-control">{t("subtitleStyling")}</Dialog.Trigger>
+        <Dialog.Trigger className="bf-settings-row">
+          <span aria-hidden="true" className="bf-settings-tile">
+            <Type />
+          </span>
+          <span className="bf-settings-label">{t("subtitleStyling")}</span>
+          <span className="bf-settings-value" />
+          <ChevronRight aria-hidden="true" className="bf-settings-chevron" />
+        </Dialog.Trigger>
         <Dialog.Portal container={anchorRef}>
           <Dialog.Popup className="bf-player-dialog">
-            <Dialog.Title render={<h3 />}>{t("subtitleStyling")}</Dialog.Title>
+            <div className="bf-player-dialog-head">
+              <Dialog.Close className="bf-player-dialog-back" aria-label={t("back")}>
+                <ChevronLeft aria-hidden="true" />
+              </Dialog.Close>
+              <Dialog.Title render={<h3 />}>{t("subtitleStyling")}</Dialog.Title>
+            </div>
 
             <div className="bf-subtitle-row">
               <label id="bf-subtitle-size-label" htmlFor="bf-subtitle-size">

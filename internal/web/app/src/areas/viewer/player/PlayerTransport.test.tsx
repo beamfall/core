@@ -37,25 +37,25 @@ afterEach(() => {
 });
 
 describe("PlayerTransport", () => {
-  it("keeps the approved meta, primary, seek, and auxiliary hierarchy", () => {
+  it("keeps the meta, seek, and single transport row hierarchy (CORE-1141)", () => {
     render(<Harness />);
 
     const title = screen.getByRole("heading", { name: "Long Weekend" });
     expect(screen.getByText("Direct play")).toHaveClass("bf-route-summary");
-    const primary = screen.getByRole("button", { name: "Back 10s" }).closest(".bf-controls");
     const seek = screen.getByRole("slider", { name: "Playback position" }).closest(".bf-scrub-row");
-    const auxiliary = screen.getByRole("slider", { name: "Volume" }).closest(".bf-controls");
+    const row = screen.getByRole("button", { name: "Back 10s" }).closest(".bf-transport-row");
+    const primary = screen
+      .getByRole("button", { name: "Back 10s" })
+      .closest<HTMLElement>(".bf-primary-controls");
 
-    if (!primary || !seek || !auxiliary) throw new Error("player hierarchy groups are missing");
-    expect(primary).toHaveClass("bf-primary-controls");
-    expect(auxiliary).toHaveClass("bf-aux-controls");
-    expect(title.compareDocumentPosition(primary) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+    if (!seek || !row || !primary) throw new Error("player hierarchy groups are missing");
+    expect(row).toContainElement(primary);
+    expect(row).toContainElement(screen.getByRole("slider", { name: "Volume" }));
+    expect(row).toContainElement(screen.getByRole("button", { name: "Settings" }));
+    expect(title.compareDocumentPosition(seek) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
-    expect(primary.compareDocumentPosition(seek) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    );
-    expect(seek.compareDocumentPosition(auxiliary) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+    expect(seek.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
   });
@@ -188,6 +188,7 @@ describe("PlayerTransport", () => {
     const { video } = renderHarnessVideo({ volume: 0.4, playbackRate: 1 });
     const user = userEvent.setup();
     const volume = screen.getByRole("slider", { name: "Volume" });
+    await user.click(screen.getByRole("button", { name: "Settings" }));
     const speed = screen.getByRole("combobox", { name: "Playback speed" });
 
     expect(volume).toHaveAttribute("aria-valuetext", "40% volume");
@@ -392,7 +393,7 @@ describe("PlayerTransport", () => {
     const { container } = render(<Harness onShare={vi.fn()} />);
 
     const icons = [...container.querySelectorAll<HTMLButtonElement>("button.is-icon")];
-    // back, play/pause, forward, previous/next chapter, fullscreen, mute, PiP, share, info
+    // back, play/pause, forward, previous/next chapter, mute, share, settings, PiP, fullscreen
     expect(icons).toHaveLength(10);
     for (const button of icons) {
       expect(button.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
@@ -404,16 +405,25 @@ describe("PlayerTransport", () => {
     }
   });
 
+  const settingsLabel = {
+    en: "Settings",
+    fr: "Réglages",
+    de: "Einstellungen",
+    es: "Ajustes",
+    pt: "Configurações",
+  } as const;
+
   it.each([
     ["en", "Volume", "Playback speed", "Picture in Picture"],
     ["fr", "Volume", "Vitesse de lecture", "Image dans l’image"],
     ["de", "Lautstärke", "Wiedergabegeschwindigkeit", "Bild-in-Bild"],
     ["es", "Volumen", "Velocidad de reproducción", "Imagen en imagen"],
     ["pt", "Volume", "Velocidade de reprodução", "Imagem em imagem"],
-  ] as const)("localizes accessible player controls for %s", (locale, volume, speed, pip) => {
+  ] as const)("localizes accessible player controls for %s", async (locale, volume, speed, pip) => {
     render(<Harness locale={locale} />);
 
     expect(screen.getByRole("slider", { name: volume })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: settingsLabel[locale] }));
     expect(screen.getByRole("combobox", { name: speed })).toBeVisible();
     expect(screen.getByRole("button", { name: pip })).toBeVisible();
   });
@@ -433,7 +443,7 @@ describe("PlayerTransport", () => {
   it("reports the menu closed when the transport unmounts", async () => {
     const onMenuOpenChange = vi.fn();
     const view = render(<Harness onMenuOpenChange={onMenuOpenChange} />);
-    await userEvent.click(screen.getByRole("button", { name: "Playback details" }));
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
     await waitFor(() => expect(onMenuOpenChange).toHaveBeenLastCalledWith(true));
 
     view.unmount();

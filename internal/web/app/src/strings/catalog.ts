@@ -5,6 +5,7 @@ import { collectionMarkerStrings } from "./collections-markers";
 import { consoleAccessStrings } from "./console-access";
 import { consoleOperationsStrings } from "./console-operations";
 import { customizationStrings } from "./customization";
+import { itemActionStrings } from "./item-actions";
 import { libraryHealthStrings } from "./library-health";
 import { libraryOperationsStrings } from "./library-operations";
 import { managedFileStrings } from "./managed-files";
@@ -22,6 +23,7 @@ import { sessionUpdateStrings } from "./sessions-updates";
 import { setupStrings } from "./setup";
 import { sharedStateStrings } from "./shared-states";
 import { viewerAccountStrings } from "./viewer-account";
+import { whosWatchingStrings } from "./whos-watching";
 
 export const en = {
   ...appShellStrings.en,
@@ -35,6 +37,7 @@ export const en = {
   ...backupRetentionStrings.en,
   ...sharedStateStrings.en,
   ...viewerAccountStrings.en,
+  ...whosWatchingStrings.en,
   ...remoteAccessStrings.en,
   ...pluginStrings.en,
   ...sessionUpdateStrings.en,
@@ -48,6 +51,7 @@ export const en = {
   ...collectionMarkerStrings.en,
   ...profileSearchStrings.en,
   ...powerToolStrings.en,
+  ...itemActionStrings.en,
 } as const;
 
 export const fr = {
@@ -62,6 +66,7 @@ export const fr = {
   ...backupRetentionStrings.fr,
   ...sharedStateStrings.fr,
   ...viewerAccountStrings.fr,
+  ...whosWatchingStrings.fr,
   ...remoteAccessStrings.fr,
   ...pluginStrings.fr,
   ...sessionUpdateStrings.fr,
@@ -75,6 +80,7 @@ export const fr = {
   ...collectionMarkerStrings.fr,
   ...profileSearchStrings.fr,
   ...powerToolStrings.fr,
+  ...itemActionStrings.fr,
 } as const;
 
 export const de = {
@@ -89,6 +95,7 @@ export const de = {
   ...backupRetentionStrings.de,
   ...sharedStateStrings.de,
   ...viewerAccountStrings.de,
+  ...whosWatchingStrings.de,
   ...remoteAccessStrings.de,
   ...pluginStrings.de,
   ...sessionUpdateStrings.de,
@@ -102,6 +109,7 @@ export const de = {
   ...collectionMarkerStrings.de,
   ...profileSearchStrings.de,
   ...powerToolStrings.de,
+  ...itemActionStrings.de,
 } as const;
 
 export const es = {
@@ -116,6 +124,7 @@ export const es = {
   ...backupRetentionStrings.es,
   ...sharedStateStrings.es,
   ...viewerAccountStrings.es,
+  ...whosWatchingStrings.es,
   ...remoteAccessStrings.es,
   ...pluginStrings.es,
   ...sessionUpdateStrings.es,
@@ -129,6 +138,7 @@ export const es = {
   ...collectionMarkerStrings.es,
   ...profileSearchStrings.es,
   ...powerToolStrings.es,
+  ...itemActionStrings.es,
 } as const;
 
 export const pt = {
@@ -143,6 +153,7 @@ export const pt = {
   ...backupRetentionStrings.pt,
   ...sharedStateStrings.pt,
   ...viewerAccountStrings.pt,
+  ...whosWatchingStrings.pt,
   ...remoteAccessStrings.pt,
   ...pluginStrings.pt,
   ...sessionUpdateStrings.pt,
@@ -156,4 +167,5 @@ export const pt = {
   ...collectionMarkerStrings.pt,
   ...profileSearchStrings.pt,
   ...powerToolStrings.pt,
+  ...itemActionStrings.pt,
 } as const;

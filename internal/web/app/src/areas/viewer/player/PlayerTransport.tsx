@@ -1,15 +1,25 @@
 import type Hls from "hls.js";
 import {
+  AudioLines,
+  Captions,
+  ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Gauge,
   Maximize,
   Minimize,
+  MonitorPlay,
   Pause,
   PictureInPicture2,
   Play,
+  RotateCcw,
+  RotateCw,
+  Settings,
   Share2,
   SkipBack,
   SkipForward,
+  Timer,
+  Volume1,
   Volume2,
   VolumeX,
 } from "lucide-react";
@@ -41,16 +51,15 @@ import { useLiveTracks } from "./useLiveTracks";
 import type { PlayerState, SwitchResult } from "./usePlayer";
 import { useSubtitleStyling } from "./useSubtitleStyling";
 
-// The custom transport chrome, ported from the vanilla renderTransportStatic /
-// updateTransportTime / renderMarkerStrip / updateTrickplayPreview and the
-// deferred track-menu / info-overlay / subtitle-styling wiring (app.js). The
-// core transport (route summary, scrubber + marker strip + trickplay, ±10 seek,
-// play/pause, skip-segment) is unchanged; this adds the deferred secondary
-// controls: audio / subtitle / quality menus, an info drill-in overlay, and a
-// subtitle styling/sync panel. Exactly one menu/overlay is open at a time
-// (openKey), and the open state is reported up so the player stage can suppress
-// idle auto-hide while a menu is up. Every control is keyboard-operable and
-// labelled (the a11y gate).
+// The player's control overlay (CORE-1141): a gradient scrim with the title,
+// route summary, slim scrubber (buffered range, marker strip, hover tooltip or
+// trickplay) and one transport row. Speed, audio, subtitles, subtitle styling,
+// quality, skip interval and playback details live in one settings sheet
+// behind the gear; its listboxes portal into the transport layer so they stay
+// inside the stage in fullscreen. Exactly one menu/overlay is open at a time
+// (openKey), and the open state is reported up so the player stage can
+// suppress idle auto-hide while settings or a menu is up. Every control is
+// keyboard-operable and labelled (the a11y gate).
 type OpenKey = "audio" | "subtitle" | "quality" | "info" | "subtitleStyle" | null;
 type GestureFeedback =
   | { kind: "seek"; side: "left" | "right"; amount: number }
@@ -64,11 +73,16 @@ export function PlayerTransport({
   hlsRef,
   state,
   mediaTitle = "",
+  mediaID = "",
   stageRef,
   skipInterval = 10,
   showSkipInterval = "",
+  showSkipIntervalLabel = "",
+  showSkipIntervalCollection = "",
   onShowSkipIntervalChange,
   onShare,
+  onPreviousInQueue,
+  onNextInQueue,
   switchToHls,
   onMenuOpenChange,
 }: {
@@ -77,14 +91,24 @@ export function PlayerTransport({
   state: PlayerState;
   /** The current Media's title (from nav state) — names the info overlay. */
   mediaTitle?: string;
+  /** The current Media's id, for the info overlay's item actions. */
+  mediaID?: string;
   /** The player stage element — subtitle styling rides a CSS var/class on it. */
   stageRef: React.RefObject<HTMLElement | null>;
   /** Seconds used by the transport's back/forward skip controls. */
   skipInterval?: number;
   /** Optional per-show override value; empty means use the Profile default. */
   showSkipInterval?: SkipInterval | "";
+  /** The per-collection skip-interval row's label; the row is hidden without one. */
+  showSkipIntervalLabel?: string;
+  /** The collection the row belongs to, shown under the row's title. */
+  showSkipIntervalCollection?: string;
   onShowSkipIntervalChange?: (value: SkipInterval | "") => void;
   onShare?: (seconds: number) => void;
+  /** Play the queue's previous item; the control is hidden when absent. */
+  onPreviousInQueue?: () => void;
+  /** Play the queue's next item; the control is hidden when absent. */
+  onNextInQueue?: () => void;
   /** Switches direct play to its HLS rendition stream at the current position. */
   switchToHls?: (renditionKey?: string) => SwitchResult;
   /** Reports whether any menu/overlay is open (drives auto-hide suppression). */
@@ -103,8 +127,16 @@ export function PlayerTransport({
   const [pipFailure, setPipFailure] = useState<"request" | "exit" | null>(null);
   const [gestureFeedback, setGestureFeedback] = useState<GestureFeedback | null>(null);
   const [openKey, setOpenKey] = useState<OpenKey>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [buffered, setBuffered] = useState(0);
+  const [hover, setHover] = useState<{ left: number; time: number } | null>(null);
+  const narrow = useNarrowViewport();
+  const settingsAnchorRef = useRef<HTMLDivElement | null>(null);
+  const settingsButtonRef = useRef<HTMLButtonElement | null>(null);
+  const settingsPanelRef = useRef<HTMLDivElement | null>(null);
+  const layerRef = useRef<HTMLDivElement | null>(null);
+  const settingsId = useId();
   const [manualRenditionID, setManualRenditionID] = useState("");
-  const scrubberRef = useRef<HTMLInputElement | null>(null);
   const gestureTimerRef = useRef<number | null>(null);
   const pipStatusId = useId();
   const [trickplay, setTrickplay] = useState<{
@@ -119,8 +151,31 @@ export function PlayerTransport({
 
   // Report open/closed up so the stage can keep chrome visible while a menu is up.
   useEffect(() => {
-    onMenuOpenChange?.(openKey !== null);
-  }, [openKey, onMenuOpenChange]);
+    onMenuOpenChange?.(settingsOpen || openKey !== null);
+  }, [openKey, settingsOpen, onMenuOpenChange]);
+
+  const closeSettings = useCallback((restoreFocus: boolean) => {
+    setSettingsOpen(false);
+    setOpenKey(null);
+    if (restoreFocus) settingsButtonRef.current?.focus();
+  }, []);
+
+  // Opening settings moves focus to its first row; a press outside the sheet
+  // (and outside its portalled listboxes) closes it.
+  useEffect(() => {
+    if (!settingsOpen) return;
+    settingsPanelRef.current?.querySelector<HTMLElement>("button, select")?.focus();
+    const down = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (settingsAnchorRef.current?.contains(target) || layerRef.current?.contains(target)) {
+        return;
+      }
+      closeSettings(false);
+    };
+    document.addEventListener("pointerdown", down);
+    return () => document.removeEventListener("pointerdown", down);
+  }, [settingsOpen, closeSettings]);
   // Unmounting with a menu open must release the auto-hide suppression.
   const onMenuOpenChangeRef = useRef(onMenuOpenChange);
   onMenuOpenChangeRef.current = onMenuOpenChange;
@@ -159,6 +214,7 @@ export function PlayerTransport({
       setVolumeState(video.volume);
       setMuted(video.muted);
       setPlaybackRate(video.playbackRate);
+      setBuffered(bufferedEnd(video));
     };
     sync();
     video.addEventListener("timeupdate", sync);
@@ -168,6 +224,7 @@ export function PlayerTransport({
     video.addEventListener("loadedmetadata", sync);
     video.addEventListener("volumechange", sync);
     video.addEventListener("ratechange", sync);
+    video.addEventListener("progress", sync);
     return () => {
       video.removeEventListener("timeupdate", sync);
       video.removeEventListener("durationchange", sync);
@@ -176,6 +233,7 @@ export function PlayerTransport({
       video.removeEventListener("loadedmetadata", sync);
       video.removeEventListener("volumechange", sync);
       video.removeEventListener("ratechange", sync);
+      video.removeEventListener("progress", sync);
     };
   }, [videoRef]);
 
@@ -427,15 +485,14 @@ export function PlayerTransport({
 
   // Trickplay preview on scrubber hover, ported from updateTrickplayPreview.
   function onScrubberPointerMove(e: ReactPointerEvent<HTMLElement>) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / Math.max(rect.width, 1)));
+    const time = ratio * duration;
+    setHover(duration > 0 ? { left: ratio * 100, time } : null);
     if (!state.trickplay) {
       setTrickplay(null);
       return;
     }
-    const scrubber = scrubberRef.current;
-    if (!scrubber) return;
-    const rect = scrubber.getBoundingClientRect();
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const time = ratio * duration;
     const tile = resolveTrickplayTile(state.trickplay, time);
     if (!tile) {
       setTrickplay(null);
@@ -473,8 +530,15 @@ export function PlayerTransport({
     video.currentTime = Math.max(0, Math.min(duration || Infinity, seconds));
   }
 
+  const volumeLevel = muted ? 0 : volume;
+  const VolumeIcon = volumeLevel === 0 ? VolumeX : volumeLevel < 0.5 ? Volume1 : Volume2;
+  const menuSide = narrow ? "top" : "left";
+  const progressPercent = duration > 0 ? (current / duration) * 100 : 0;
+  const bufferedPercent = duration > 0 ? Math.min(100, (buffered / duration) * 100) : 0;
+
   return (
     <div className="bf-transport">
+      <div aria-hidden="true" className="bf-transport-scrim" />
       {gestureFeedback && (
         <div
           className={`bf-gesture-feedback is-${gestureFeedback.kind} ${
@@ -490,341 +554,500 @@ export function PlayerTransport({
             : t("gestureVolume", { volume: Math.round(gestureFeedback.value * 100) })}
         </div>
       )}
-      <div className="bf-player-meta">
-        <h2>{mediaTitle || t("playbackDetails")}</h2>
-        {state.stream && (
-          <div className={"bf-route-summary " + routeStateClass(state.decision)}>
-            {routeSummary(t, state, manualRenditionID)}
-          </div>
-        )}
-      </div>
 
-      <div className="bf-controls bf-primary-controls">
+      {markerModel.skip && (
         <button
           type="button"
-          onClick={() => seekBy(-skipInterval)}
-          aria-label={skipBackLabel}
-          className="bf-control is-icon"
+          onClick={() => {
+            const video = videoRef.current;
+            if (video && markerModel.skip) {
+              video.currentTime = markerModel.skip.endSeconds;
+            }
+          }}
+          className="bf-control is-skip-segment"
         >
-          <SkipBack aria-hidden="true" />
-          <span className="sr-only">{skipBackLabel}</span>
+          {t("skipSegmentPrefix")}
+          {markerModel.skip.title || t("segment")}
+          <ChevronRight aria-hidden="true" />
         </button>
-        <button
-          type="button"
-          onClick={togglePlay}
-          aria-label={paused ? t("play") : t("pause")}
-          className="bf-control is-icon is-primary"
-        >
-          {paused ? <Play aria-hidden="true" /> : <Pause aria-hidden="true" />}
-          <span className="sr-only">{paused ? t("play") : t("pause")}</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => seekBy(skipInterval)}
-          aria-label={skipForwardLabel}
-          className="bf-control is-icon"
-        >
-          <SkipForward aria-hidden="true" />
-          <span className="sr-only">{skipForwardLabel}</span>
-        </button>
-      </div>
-
-      <div className="bf-scrub-row">
-        <span className="bf-time is-start">{formatClockTime(current)}</span>
-        <div className="bf-scrub-wrap">
-          {/* Marker strip overlaid on the scrubber track (aria-hidden). */}
-          <div aria-hidden className="bf-marker-strip">
-            {markerModel.ticks.map((tick, i) => (
-              <span
-                key={`tick-${i}`}
-                title={tick.title}
-                className="bf-marker-tick"
-                style={{ left: `${tick.leftPercent}%` }}
-              />
-            ))}
-            {markerModel.ranges.map((range, i) => (
-              <span
-                key={`range-${i}`}
-                title={range.title}
-                className="bf-marker-range"
-                style={{
-                  left: `${range.leftPercent}%`,
-                  width: `${range.widthPercent}%`,
-                }}
-              />
-            ))}
-          </div>
-          <Slider.Root
-            min={0}
-            max={Math.max(duration, 0.1)}
-            step={0.1}
-            value={current}
-            onValueChange={setPlaybackPosition}
-            className="bf-slider-root bf-scrubber"
-          >
-            <input
-              aria-hidden="true"
-              tabIndex={-1}
-              type="range"
-              min={0}
-              max={duration || 0}
-              step={0.1}
-              value={current}
-              onChange={() => undefined}
-              className="bf-scrubber-visual"
-            />
-            <Slider.Control
-              className="bf-slider-control"
-              onPointerMove={onScrubberPointerMove}
-              onPointerLeave={() => setTrickplay(null)}
-            >
-              <Slider.Track className="bf-slider-track">
-                <Slider.Indicator className="bf-slider-indicator" />
-              </Slider.Track>
-              <Slider.Thumb
-                className="bf-slider-thumb"
-                inputRef={scrubberRef}
-                onKeyDown={onScrubberKeyDown}
-                getAriaLabel={() => t("playbackPosition")}
-                aria-valuetext={formatAriaTime(current, duration)}
-              />
-            </Slider.Control>
-          </Slider.Root>
-          {trickplay && (
-            <div className="bf-trickplay" style={{ left: `${trickplay.left}%` }}>
-              <div
-                className="bf-trickplay-frame"
-                style={{
-                  backgroundImage: `url("${trickplay.sheetURL}")`,
-                  backgroundSize: `${trickplay.spriteW}px ${trickplay.spriteH}px`,
-                  backgroundPosition: `-${trickplay.x}px -${trickplay.y}px`,
-                }}
-              />
-              <span className="bf-trickplay-time">{formatClockTime(trickplay.time)}</span>
+      )}
+      <div className="bf-transport-bottom">
+        <div className="bf-player-meta">
+          <h2>{mediaTitle || t("playbackDetails")}</h2>
+          {state.stream && (
+            <div className={"bf-route-summary " + routeStateClass(state.decision)}>
+              {routeSummary(t, state, manualRenditionID)}
             </div>
           )}
         </div>
-        <span className="bf-time is-end">{formatRemainingTime(current, duration)}</span>
-      </div>
 
-      <div className="bf-controls bf-aux-controls">
-        <button
-          type="button"
-          onClick={() => seekTo(previousChapter)}
-          disabled={previousChapter === null}
-          aria-label={t("previousChapter")}
-          className="bf-control is-icon"
-        >
-          <ChevronsLeft aria-hidden="true" />
-          <span className="sr-only">{t("previousChapter")}</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => seekTo(nextChapter)}
-          disabled={nextChapter === null}
-          aria-label={t("nextChapter")}
-          className="bf-control is-icon"
-        >
-          <ChevronsRight aria-hidden="true" />
-          <span className="sr-only">{t("nextChapter")}</span>
-        </button>
-        <button
-          type="button"
-          onClick={toggleFullscreen}
-          aria-label={fullscreen ? t("exitFullscreen") : t("enterFullscreen")}
-          className="bf-control is-icon"
-        >
-          {fullscreen ? <Minimize aria-hidden="true" /> : <Maximize aria-hidden="true" />}
-          <span className="sr-only">{fullscreen ? t("exitFullscreen") : t("enterFullscreen")}</span>
-        </button>
-        <button
-          type="button"
-          onClick={toggleMute}
-          aria-label={muted ? t("unmute") : t("mute")}
-          className="bf-control is-icon"
-        >
-          {muted ? <VolumeX aria-hidden="true" /> : <Volume2 aria-hidden="true" />}
-          <span className="sr-only">{muted ? t("unmute") : t("mute")}</span>
-        </button>
-        <label className="bf-control bf-volume-control">
-          <span className="sr-only">{t("volume")}</span>
-          <Slider.Root
-            min={0}
-            max={1}
-            step={0.05}
-            value={muted ? 0 : volume}
-            onValueChange={setVolume}
-            className="bf-slider-root"
-          >
-            <input
-              aria-hidden="true"
-              tabIndex={-1}
-              type="range"
+        <div className="bf-scrub-row">
+          <span className="bf-time is-start">{formatClockTime(current)}</span>
+          <div className="bf-scrub-wrap">
+            <Slider.Root
               min={0}
-              max={1}
-              step={0.05}
-              value={muted ? 0 : volume}
-              onChange={() => undefined}
-              className="bf-volume-slider"
-            />
-            <Slider.Control className="bf-slider-control">
-              <Slider.Track className="bf-slider-track">
-                <Slider.Indicator className="bf-slider-indicator" />
-              </Slider.Track>
-              <Slider.Thumb
-                className="bf-slider-thumb"
-                getAriaLabel={() => t("volume")}
-                aria-valuetext={t("volumePercent", {
-                  volume: Math.round((muted ? 0 : volume) * 100),
-                })}
+              max={Math.max(duration, 0.1)}
+              step={0.1}
+              value={current}
+              onValueChange={setPlaybackPosition}
+              className="bf-slider-root bf-scrubber"
+            >
+              <input
+                aria-hidden="true"
+                tabIndex={-1}
+                type="range"
+                min={0}
+                max={duration || 0}
+                step={0.1}
+                value={current}
+                onChange={() => undefined}
+                className="bf-scrubber-visual"
               />
-            </Slider.Control>
-          </Slider.Root>
-        </label>
-        <label className="bf-control">
-          {t("playbackSpeed")}
-          <NativeSelect
-            aria-label={t("playbackSpeed")}
-            value={String(playbackRate)}
-            onValueChange={(value) => {
-              const next = Number(value);
-              if (videoRef.current) videoRef.current.playbackRate = next;
-              setPlaybackRate(next);
-            }}
-          >
-            {SPEEDS.map((speed) => (
-              <option key={speed} value={speed}>
-                {speed}×
-              </option>
-            ))}
-          </NativeSelect>
-        </label>
-        <button
-          type="button"
-          onClick={() => void togglePictureInPicture()}
-          disabled={!pipSupported}
-          aria-label={pipActive ? t("exitPictureInPicture") : t("pictureInPicture")}
-          aria-describedby={pipStatusId}
-          className="bf-control is-icon"
-          title={!pipSupported ? t("pictureInPictureUnavailable") : undefined}
-        >
-          <PictureInPicture2 aria-hidden="true" />
-          <span className="sr-only">
-            {pipActive ? t("exitPictureInPicture") : t("pictureInPicture")}
-          </span>
-        </button>
-        <span
-          id={pipStatusId}
-          className="bf-player-control-status"
-          role={pipFailure ? "alert" : "status"}
-        >
-          {!pipSupported
-            ? t("pictureInPictureUnavailable")
-            : pipFailure
-              ? t(pipFailure === "exit" ? "pictureInPictureExitFailed" : "pictureInPictureFailed")
-              : ""}
-        </span>
-        {onShare && (
+              <Slider.Control
+                className="bf-slider-control"
+                onPointerMove={onScrubberPointerMove}
+                onPointerLeave={() => {
+                  setTrickplay(null);
+                  setHover(null);
+                }}
+              >
+                <Slider.Track className="bf-slider-track">
+                  <span
+                    aria-hidden="true"
+                    className="bf-slider-buffered"
+                    style={{ width: `${bufferedPercent}%` }}
+                  />
+                  {hover && (
+                    <span
+                      aria-hidden="true"
+                      className="bf-slider-hover"
+                      style={{
+                        left: `${Math.min(progressPercent, hover.left)}%`,
+                        width: `${Math.abs(hover.left - progressPercent)}%`,
+                      }}
+                    />
+                  )}
+                  <Slider.Indicator className="bf-slider-indicator" />
+                  {/* Marker strip overlaid on the scrubber track (aria-hidden). */}
+                  <span aria-hidden="true" className="bf-marker-strip">
+                    {markerModel.ranges.map((range, i) => (
+                      <span
+                        key={`range-${i}`}
+                        title={range.title}
+                        className="bf-marker-range"
+                        style={{
+                          left: `${range.leftPercent}%`,
+                          width: `${range.widthPercent}%`,
+                        }}
+                      />
+                    ))}
+                    {markerModel.ticks.map((tick, i) => (
+                      <span
+                        key={`tick-${i}`}
+                        title={tick.title}
+                        className="bf-marker-tick"
+                        style={{ left: `${tick.leftPercent}%` }}
+                      />
+                    ))}
+                  </span>
+                </Slider.Track>
+                <Slider.Thumb
+                  className="bf-slider-thumb"
+                  onKeyDown={onScrubberKeyDown}
+                  getAriaLabel={() => t("playbackPosition")}
+                  aria-valuetext={formatAriaTime(current, duration)}
+                />
+              </Slider.Control>
+            </Slider.Root>
+            {trickplay ? (
+              <div className="bf-trickplay" style={{ left: `${trickplay.left}%` }}>
+                <div
+                  className="bf-trickplay-frame"
+                  style={{
+                    backgroundImage: `url("${trickplay.sheetURL}")`,
+                    backgroundSize: `${trickplay.spriteW}px ${trickplay.spriteH}px`,
+                    backgroundPosition: `-${trickplay.x}px -${trickplay.y}px`,
+                  }}
+                />
+                <span className="bf-trickplay-time">{formatClockTime(trickplay.time)}</span>
+              </div>
+            ) : (
+              hover && (
+                <span
+                  aria-hidden="true"
+                  className="bf-scrub-tooltip"
+                  style={{ left: `${hover.left}%` }}
+                >
+                  {formatClockTime(hover.time)}
+                </span>
+              )
+            )}
+          </div>
+          <span className="bf-time is-end">{formatRemainingTime(current, duration)}</span>
+        </div>
+
+        <div className="bf-controls bf-transport-row">
+          <div className="bf-primary-controls">
+            {onPreviousInQueue && (
+              <button
+                type="button"
+                onClick={onPreviousInQueue}
+                aria-label={t("previousInQueue")}
+                className="bf-control is-icon"
+              >
+                <SkipBack aria-hidden="true" />
+                <span className="sr-only">{t("previousInQueue")}</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => seekBy(-skipInterval)}
+              aria-label={skipBackLabel}
+              className="bf-control is-icon is-seek"
+            >
+              <RotateCcw aria-hidden="true" />
+              <span aria-hidden="true" className="bf-seek-amount">
+                {skipInterval}
+              </span>
+              <span className="sr-only">{skipBackLabel}</span>
+            </button>
+            <button
+              type="button"
+              onClick={togglePlay}
+              aria-label={paused ? t("play") : t("pause")}
+              className="bf-control is-icon is-primary"
+            >
+              {paused ? <Play aria-hidden="true" /> : <Pause aria-hidden="true" />}
+              <span className="sr-only">{paused ? t("play") : t("pause")}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => seekBy(skipInterval)}
+              aria-label={skipForwardLabel}
+              className="bf-control is-icon is-seek"
+            >
+              <RotateCw aria-hidden="true" />
+              <span aria-hidden="true" className="bf-seek-amount">
+                {skipInterval}
+              </span>
+              <span className="sr-only">{skipForwardLabel}</span>
+            </button>
+            {onNextInQueue && (
+              <button
+                type="button"
+                onClick={onNextInQueue}
+                aria-label={t("nextInQueue")}
+                className="bf-control is-icon"
+              >
+                <SkipForward aria-hidden="true" />
+                <span className="sr-only">{t("nextInQueue")}</span>
+              </button>
+            )}
+          </div>
+
           <button
             type="button"
-            onClick={() => onShare(Math.floor(current))}
-            aria-label={t("shareCurrentTime")}
+            onClick={() => seekTo(previousChapter)}
+            disabled={previousChapter === null}
+            aria-label={t("previousChapter")}
+            className="bf-control is-icon is-chapter"
+          >
+            <ChevronsLeft aria-hidden="true" />
+            <span className="sr-only">{t("previousChapter")}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => seekTo(nextChapter)}
+            disabled={nextChapter === null}
+            aria-label={t("nextChapter")}
+            className="bf-control is-icon is-chapter"
+          >
+            <ChevronsRight aria-hidden="true" />
+            <span className="sr-only">{t("nextChapter")}</span>
+          </button>
+
+          <div className="bf-volume">
+            <button
+              type="button"
+              onClick={toggleMute}
+              aria-label={muted ? t("unmute") : t("mute")}
+              className="bf-control is-icon"
+            >
+              <VolumeIcon aria-hidden="true" />
+              <span className="sr-only">{muted ? t("unmute") : t("mute")}</span>
+            </button>
+            <label className="bf-volume-control">
+              <span className="sr-only">{t("volume")}</span>
+              <Slider.Root
+                min={0}
+                max={1}
+                step={0.05}
+                value={volumeLevel}
+                onValueChange={setVolume}
+                className="bf-slider-root"
+              >
+                <input
+                  aria-hidden="true"
+                  tabIndex={-1}
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={volumeLevel}
+                  onChange={() => undefined}
+                  className="bf-volume-slider"
+                />
+                <Slider.Control className="bf-slider-control">
+                  <Slider.Track className="bf-slider-track">
+                    <Slider.Indicator className="bf-slider-indicator" />
+                  </Slider.Track>
+                  <Slider.Thumb
+                    className="bf-slider-thumb"
+                    getAriaLabel={() => t("volume")}
+                    aria-valuetext={t("volumePercent", {
+                      volume: Math.round(volumeLevel * 100),
+                    })}
+                  />
+                </Slider.Control>
+              </Slider.Root>
+            </label>
+          </div>
+
+          <span aria-hidden="true" className="bf-transport-spacer" />
+
+          {onShare && (
+            <button
+              type="button"
+              onClick={() => onShare(Math.floor(current))}
+              aria-label={t("shareCurrentTime")}
+              className="bf-control is-icon"
+            >
+              <Share2 aria-hidden="true" />
+              <span className="sr-only">{t("share")}</span>
+            </button>
+          )}
+
+          {/* One settings sheet holds the secondary controls: speed, tracks,
+              subtitle styling, the per-show skip interval and details. */}
+          <div ref={settingsAnchorRef} className="bf-settings-anchor">
+            <button
+              ref={settingsButtonRef}
+              type="button"
+              onClick={() => (settingsOpen ? closeSettings(false) : setSettingsOpen(true))}
+              aria-label={t("playbackSettings")}
+              aria-haspopup="dialog"
+              aria-expanded={settingsOpen}
+              aria-controls={settingsOpen ? settingsId : undefined}
+              className={`bf-control is-icon bf-settings-button${settingsOpen ? " is-open" : ""}`}
+            >
+              <Settings aria-hidden="true" />
+              <span className="sr-only">{t("playbackSettings")}</span>
+            </button>
+            {settingsOpen && (
+              <div
+                ref={settingsPanelRef}
+                id={settingsId}
+                role="dialog"
+                aria-label={t("playbackSettings")}
+                className="bf-settings"
+                onKeyDown={(event) => {
+                  if (event.key !== "Escape" || openKey !== null) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  closeSettings(true);
+                }}
+              >
+                <p aria-hidden="true" className="bf-settings-title">
+                  {t("playbackSettings")}
+                </p>
+                <label className="bf-settings-row">
+                  <span aria-hidden="true" className="bf-settings-tile">
+                    <Gauge />
+                  </span>
+                  <span className="bf-settings-label">{t("playbackSpeed")}</span>
+                  <NativeSelect
+                    aria-label={t("playbackSpeed")}
+                    className="bf-settings-select"
+                    value={String(playbackRate)}
+                    onValueChange={(value) => {
+                      const next = Number(value);
+                      if (videoRef.current) videoRef.current.playbackRate = next;
+                      setPlaybackRate(next);
+                    }}
+                  >
+                    {SPEEDS.map((speed) => (
+                      <option key={speed} value={speed}>
+                        {speed}×
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </label>
+                <TransportMenu
+                  label={t("audio")}
+                  ariaLabel={t("audio")}
+                  icon={<AudioLines />}
+                  container={layerRef}
+                  side={menuSide}
+                  options={tracks.audioOptions}
+                  open={openKey === "audio"}
+                  onOpenChange={(open) => setOpen("audio", open)}
+                  onSelect={tracks.selectAudio}
+                />
+                <TransportMenu
+                  label={t("subtitles")}
+                  ariaLabel={t("subtitles")}
+                  icon={<Captions />}
+                  container={layerRef}
+                  side={menuSide}
+                  options={tracks.subtitleOptions}
+                  open={openKey === "subtitle"}
+                  onOpenChange={(open) => setOpen("subtitle", open)}
+                  onSelect={tracks.selectSubtitle}
+                />
+                {subtitle.stylingAvailable && (
+                  <SubtitleStylePanel
+                    open={openKey === "subtitleStyle"}
+                    onOpenChange={(open) => setOpen("subtitleStyle", open)}
+                    sizeScale={subtitle.sizeScale}
+                    setSizeScale={subtitle.setSizeScale}
+                    background={subtitle.background}
+                    setBackground={subtitle.setBackground}
+                    syncOffset={subtitle.syncOffset}
+                    nudgeSync={subtitle.nudgeSync}
+                    reset={subtitle.reset}
+                    syncSupported={subtitle.syncSupported}
+                  />
+                )}
+                <TransportMenu
+                  label={t("quality")}
+                  ariaLabel={t("quality")}
+                  icon={<MonitorPlay />}
+                  container={layerRef}
+                  side={menuSide}
+                  options={tracks.qualityOptions}
+                  open={openKey === "quality"}
+                  onOpenChange={(open) => setOpen("quality", open)}
+                  onSelect={tracks.selectQuality}
+                />
+                {onShowSkipIntervalChange && showSkipIntervalLabel && (
+                  <label className="bf-settings-row">
+                    <span aria-hidden="true" className="bf-settings-tile">
+                      <Timer />
+                    </span>
+                    <span className="bf-settings-label is-stacked">
+                      <span>{t("settingsSkipIntervalLabel")}</span>
+                      {showSkipIntervalCollection && (
+                        <span className="bf-settings-sublabel">{showSkipIntervalCollection}</span>
+                      )}
+                    </span>
+                    <NativeSelect
+                      aria-label={showSkipIntervalLabel}
+                      className="bf-settings-select"
+                      value={showSkipInterval || "__profile_default__"}
+                      onValueChange={(value) =>
+                        onShowSkipIntervalChange(
+                          value === "__profile_default__" ? "" : (value as SkipInterval),
+                        )
+                      }
+                    >
+                      <option value="__profile_default__">{t("settingsSkipIntervalLabel")}</option>
+                      {SKIP_INTERVALS.map((seconds) => (
+                        <option key={seconds} value={seconds}>
+                          {t("secondsShort", { seconds })}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </label>
+                )}
+                <InfoOverlay
+                  mediaTitle={mediaTitle}
+                  mediaID={mediaID}
+                  info={state.info}
+                  stream={state.stream}
+                  manualRenditionID={manualRenditionID}
+                  hlsActive={state.hlsActive}
+                  open={openKey === "info"}
+                  onOpenChange={(open) => setOpen("info", open)}
+                />
+              </div>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => void togglePictureInPicture()}
+            disabled={!pipSupported}
+            aria-label={pipActive ? t("exitPictureInPicture") : t("pictureInPicture")}
+            aria-describedby={pipStatusId}
+            className="bf-control is-icon"
+            title={!pipSupported ? t("pictureInPictureUnavailable") : undefined}
+          >
+            <PictureInPicture2 aria-hidden="true" />
+            <span className="sr-only">
+              {pipActive ? t("exitPictureInPicture") : t("pictureInPicture")}
+            </span>
+          </button>
+          <span
+            id={pipStatusId}
+            className="bf-player-control-status"
+            role={pipFailure ? "alert" : "status"}
+          >
+            {!pipSupported
+              ? t("pictureInPictureUnavailable")
+              : pipFailure
+                ? t(pipFailure === "exit" ? "pictureInPictureExitFailed" : "pictureInPictureFailed")
+                : ""}
+          </span>
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            aria-label={fullscreen ? t("exitFullscreen") : t("enterFullscreen")}
             className="bf-control is-icon"
           >
-            <Share2 aria-hidden="true" />
-            <span className="sr-only">{t("share")}</span>
+            {fullscreen ? <Minimize aria-hidden="true" /> : <Maximize aria-hidden="true" />}
+            <span className="sr-only">
+              {fullscreen ? t("exitFullscreen") : t("enterFullscreen")}
+            </span>
           </button>
-        )}
-        {markerModel.skip && (
-          <button
-            type="button"
-            onClick={() => {
-              const video = videoRef.current;
-              if (video && markerModel.skip) {
-                video.currentTime = markerModel.skip.endSeconds;
-              }
-            }}
-            className="bf-control"
-          >
-            {t("skipSegmentPrefix")}
-            {markerModel.skip.title || t("segment")}
-          </button>
-        )}
-
-        {/* Deferred secondary controls: track menus + info + subtitle styling. */}
-        <div className="bf-transport-secondary">
-          {onShowSkipIntervalChange && (
-            <label className="bf-control">
-              {t("showSkipIntervalLabel")}
-              <NativeSelect
-                aria-label={t("showSkipIntervalLabel")}
-                value={showSkipInterval || "__profile_default__"}
-                onValueChange={(value) =>
-                  onShowSkipIntervalChange(
-                    value === "__profile_default__" ? "" : (value as SkipInterval),
-                  )
-                }
-              >
-                <option value="__profile_default__">{t("settingsSkipIntervalLabel")}</option>
-                {SKIP_INTERVALS.map((seconds) => (
-                  <option key={seconds} value={seconds}>
-                    {t("secondsShort", { seconds })}
-                  </option>
-                ))}
-              </NativeSelect>
-            </label>
-          )}
-          <TransportMenu
-            label={t("audio")}
-            ariaLabel={t("audio")}
-            options={tracks.audioOptions}
-            open={openKey === "audio"}
-            onOpenChange={(open) => setOpen("audio", open)}
-            onSelect={tracks.selectAudio}
-          />
-          <TransportMenu
-            label={t("subtitles")}
-            ariaLabel={t("subtitles")}
-            options={tracks.subtitleOptions}
-            open={openKey === "subtitle"}
-            onOpenChange={(open) => setOpen("subtitle", open)}
-            onSelect={tracks.selectSubtitle}
-          />
-          <TransportMenu
-            label={t("quality")}
-            ariaLabel={t("quality")}
-            options={tracks.qualityOptions}
-            open={openKey === "quality"}
-            onOpenChange={(open) => setOpen("quality", open)}
-            onSelect={tracks.selectQuality}
-          />
-          {subtitle.stylingAvailable && (
-            <SubtitleStylePanel
-              open={openKey === "subtitleStyle"}
-              onOpenChange={(open) => setOpen("subtitleStyle", open)}
-              sizeScale={subtitle.sizeScale}
-              setSizeScale={subtitle.setSizeScale}
-              background={subtitle.background}
-              setBackground={subtitle.setBackground}
-              syncOffset={subtitle.syncOffset}
-              nudgeSync={subtitle.nudgeSync}
-              reset={subtitle.reset}
-              syncSupported={subtitle.syncSupported}
-            />
-          )}
-          <InfoOverlay
-            mediaTitle={mediaTitle}
-            info={state.info}
-            stream={state.stream}
-            manualRenditionID={manualRenditionID}
-            hlsActive={state.hlsActive}
-            open={openKey === "info"}
-            onOpenChange={(open) => setOpen("info", open)}
-          />
         </div>
       </div>
+      {/* Listboxes portal here: inside the stage (so stage fullscreen shows
+          them) but outside the glass sheet (a backdrop-filter ancestor would
+          break their fixed positioning). */}
+      <div ref={layerRef} className="bf-transport-layer" />
     </div>
   );
+}
+
+// The furthest buffered point at or after the playhead, for the scrubber.
+function bufferedEnd(video: HTMLVideoElement): number {
+  const ranges = video.buffered;
+  if (!ranges) return 0;
+  for (let i = 0; i < ranges.length; i += 1) {
+    if (ranges.start(i) <= video.currentTime + 0.5 && ranges.end(i) >= video.currentTime) {
+      return ranges.end(i);
+    }
+  }
+  return 0;
+}
+
+const NARROW_QUERY = "(max-width: 640px)";
+
+// Phone width turns the settings sheet into a bottom sheet with listboxes above
+// their rows rather than beside them.
+function useNarrowViewport(): boolean {
+  const [narrow, setNarrow] = useState(
+    () => typeof window !== "undefined" && window.matchMedia?.(NARROW_QUERY).matches === true,
+  );
+  useEffect(() => {
+    const query = window.matchMedia?.(NARROW_QUERY);
+    if (!query) return;
+    const sync = () => setNarrow(query.matches);
+    sync();
+    query.addEventListener?.("change", sync);
+    return () => query.removeEventListener?.("change", sync);
+  }, []);
+  return narrow;
 }
 
 // The route summary borrows the player's honest state coloring: green for

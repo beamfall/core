@@ -94,7 +94,10 @@ export interface SessionState {
   promote: (code: string) => Promise<void>;
   reveal: (pin: string) => Promise<boolean>;
   relock: () => Promise<void>;
-  switchProfile: (profileID: string) => Promise<void>;
+  /** Rebinds the session; `pin` is the target adult Profile's entry PIN. */
+  switchProfile: (profileID: string, pin?: string) => Promise<void>;
+  /** Re-reads the roster in place (a renamed Profile, a new avatar). */
+  refreshProfiles: () => Promise<void>;
 }
 
 const SessionContext = createContext<SessionState | null>(null);
@@ -282,16 +285,22 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [beginEpoch, loadEpoch]);
 
   const switchProfile = useCallback(
-    async (profileID: string) => {
+    async (profileID: string, pin?: string) => {
       const signal = beginEpoch();
       try {
-        await switchProfileMutation(profileID, signal);
+        await switchProfileMutation(profileID, signal, pin);
       } finally {
         if (!signal.aborted) await loadEpoch(signal);
       }
     },
     [beginEpoch, loadEpoch],
   );
+
+  const refreshProfiles = useCallback(async () => {
+    const signal = controllerRef.current?.signal;
+    const next = await fetchProfiles(signal);
+    if (!signal?.aborted) setProfiles(next);
+  }, []);
 
   const value = useMemo<SessionState>(
     () => ({
@@ -311,6 +320,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       reveal,
       relock,
       switchProfile,
+      refreshProfiles,
     }),
     [
       session,
@@ -324,6 +334,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       reveal,
       relock,
       switchProfile,
+      refreshProfiles,
     ],
   );
 

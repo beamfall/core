@@ -8,6 +8,8 @@ import {
   FolderOpen,
   Gauge,
   HardDrive,
+  HeartPulse,
+  History,
   Home,
   KeyRound,
   Layers,
@@ -42,10 +44,12 @@ import { ActivityLog } from "./sections/ActivityLog";
 import { ApiCredentials } from "./sections/ApiCredentials";
 import { Capabilities } from "./sections/Capabilities";
 import { Config } from "./sections/Config";
+import { HostGraphs, LiveSessionCount } from "./sections/Dashboard";
 import { Health } from "./sections/Health";
 import { Libraries } from "./sections/Libraries";
 import { Operations } from "./sections/Operations";
 import { OperationsControls } from "./sections/OperationsControls";
+import { PlayHistory } from "./sections/PlayHistory";
 import { Plugins } from "./sections/Plugins";
 import { RemoteAccess } from "./sections/RemoteAccess";
 import { Retention } from "./sections/Retention";
@@ -78,6 +82,7 @@ export const CONSOLE_IA_PLACEMENTS = [
   "0070:Library/Plugins",
   "0071:Library/Layout & Navigation",
   "0074:Monitor/Live Sessions",
+  "0007:Monitor/Play History",
   "0075:Monitor/Operations",
   "0076:Monitor/Operations",
   "0073:Monitor/Activity & Logs",
@@ -118,6 +123,33 @@ function Overview() {
   return (
     <div className="space-y-8">
       <OwnerTasks />
+
+      <Section heading="consoleOverviewHeading" lead="consoleOverviewLead">
+        <div className="console-overview-tiles">
+          {(
+            [
+              ["consoleOverviewServer", "consoleOverviewReady", HeartPulse],
+              ["libraries", needsLibrary ? "setupChecklistNext" : "consoleOverviewReady", Boxes],
+              ["jobs", "consoleOverviewReady", Gauge],
+            ] as const
+          ).map(([label, state, Icon]) => (
+            <div className="console-overview-tile" key={label}>
+              <Icon className="console-nav-icon" aria-hidden />
+              <span>{t(label)}</span>
+              <StatusChip tone={state === "setupChecklistNext" ? "amber" : "green"}>
+                {t(state)}
+              </StatusChip>
+            </div>
+          ))}
+          <Link className="console-overview-tile" to="/console/sessions">
+            <Users className="console-nav-icon" aria-hidden />
+            <span>{t("liveSessionsHeading")}</span>
+            <LiveSessionCount />
+          </Link>
+        </div>
+      </Section>
+
+      <HostGraphs />
 
       <Section
         heading="consoleNeedsAttentionHeading"
@@ -173,6 +205,13 @@ const GROUPS: NavGroup[] = [
         icon: Users,
         element: <Operations />,
         placement: "Monitor/Live Sessions",
+      },
+      {
+        path: "history",
+        label: "playHistoryHeading",
+        icon: History,
+        element: <PlayHistory />,
+        placement: "Monitor/Play History",
       },
       {
         path: "health",

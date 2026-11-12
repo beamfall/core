@@ -1,7 +1,6 @@
 import { mkdtempSync, rmSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, type Page, test } from "@playwright/test";
 import { graphqlWithSeedManager } from "./lib/harness";
 import {
   collectFatalErrors,
@@ -9,6 +8,7 @@ import {
   expectForcedColorsActive,
   harnessState,
 } from "./lib/spec";
+import { expect, type Page, test } from "./lib/test";
 import {
   expectLocatorVisualParity,
   expectVisualParity,

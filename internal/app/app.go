@@ -34,6 +34,7 @@ import (
 	"github.com/beamfall/core/internal/genassets"
 	"github.com/beamfall/core/internal/governor"
 	"github.com/beamfall/core/internal/graph"
+	"github.com/beamfall/core/internal/hostmetrics"
 	"github.com/beamfall/core/internal/identify"
 	"github.com/beamfall/core/internal/ingest"
 	"github.com/beamfall/core/internal/integrationhost"
@@ -81,6 +82,7 @@ type App struct {
 	compat          http.Handler
 	jobs            *jobs.Registry
 	hls             *playback.Sessions
+	hostMetrics     *hostmetrics.Sampler
 	governor        *governor.Governor
 	surfaces        *reveal.Registry
 	watcher         *watcher.Service
@@ -679,6 +681,8 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// ledger never authorizes bytes — that stays the signed grant's job.
 	tokenService.SetRecorder(st)
 	playbackInfo := playback.NewService(st, tokenService, readClock)
+	// Console resource graphs: an in-memory ring of host samples, never persisted.
+	hostSampler := hostmetrics.New(hostmetrics.DefaultInterval, hostmetrics.DefaultWindow)
 	hlsSessions := playback.NewSessionsInDir(ffmpegRunner, cfg.TranscodeScratchDir, time.Now)
 	hlsSessions.SetGovernor(resourceGovernor)
 	hlsSessions.SetTranscodeCap(cfg.TranscodeCap)
@@ -1083,6 +1087,8 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		Conductor:                    conductorRegistry,
 		QueryEmbedder:                graphQueryEmbedder,
 		TranscodeTerminator:          hlsSessions,
+		PlaybackObserver:             playbackObserverAdapter{service: playbackInfo},
+		HostMetrics:                  hostSampler,
 		TranscodeAdmission:           hlsSessions,
 		UpdateChecker:                graphUpdateChecker,
 		WatcherStatus:                watcherStatusAdapter{service: watcherService},
@@ -1312,6 +1318,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		compat:                 compatHandler,
 		jobs:                   jobRegistry,
 		hls:                    hlsSessions,
+		hostMetrics:            hostSampler,
 		governor:               resourceGovernor,
 		surfaces:               surfaces,
 		watcher:                watcherService,
@@ -1725,6 +1732,11 @@ func (a *App) Run(ctx context.Context) error {
 		defer jobsDone.Done()
 		a.hls.Run(jobsCtx)
 	}()
+	jobsDone.Add(1)
+	go func() {
+		defer jobsDone.Done()
+		a.hostMetrics.Run(jobsCtx)
+	}()
 	// Webhook Emitter: a long-lived consumer of the event
 	// outbox, started only when the operator configured at least one endpoint
 	// (a.webhook is nil and this goroutine is skipped otherwise). It shares the
@@ -1867,7 +1879,9 @@ func (a *App) Run(ctx context.Context) error {
 	// actually handshakes instead of dead-ending on a plain-HTTP listener. The
 	// ACME HTTP-01 challenge handler is already wired onto `handler`, and autocert's
 	// TLS-ALPN challenge rides carrierTLS, so ACME issuance still completes here.
-	serveListener := remoteaccess.NewTLSMuxListener(listener, carrierTLS)
+	// Count this server's own traffic for the Console network graph, below TLS
+	// so the figure is bytes on the wire.
+	serveListener := remoteaccess.NewTLSMuxListener(a.hostMetrics.Listener(listener), carrierTLS)
 	if directTLSActive {
 		a.directTLSActive.Store(true)
 		defer a.directTLSActive.Store(false)
@@ -1892,7 +1906,7 @@ func (a *App) Run(ctx context.Context) error {
 	// ADR-0118's "no cert ⇒ carrier off" premise, which assumed a LAN-only server
 	// had no identity to terminate with.
 	if a.relay != nil {
-		if backendLn, lerr := tls.Listen("tcp", "127.0.0.1:0", carrierTLS); lerr != nil {
+		if backendLn, lerr := relayBackendListener(a.hostMetrics, carrierTLS); lerr != nil {
 			a.logger.Warn("relay carrier backend listener failed", "error", lerr)
 		} else {
 			bsrv := &http.Server{
@@ -2030,6 +2044,19 @@ func (a *App) Run(ctx context.Context) error {
 // RelayConnected is only ever set while a yamux session is live
 // and carrying — a dropped carrier reverts the Console state, so the status is
 // truthful rather than reporting a connection that forwards nothing.
+// relayBackendListener opens the loopback TLS listener the relay carrier
+// splices relayed clients onto. Their traffic never crosses the bound port, so
+// it is counted here, below TLS like the direct path, or a server streaming
+// through the relay would report an idle network graph. The carrier's own dial
+// out to the relay is not counted, so relayed bytes are counted once.
+func relayBackendListener(metrics *hostmetrics.Sampler, tlsConfig *tls.Config) (net.Listener, error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, err
+	}
+	return tls.NewListener(metrics.Listener(ln), tlsConfig), nil
+}
+
 func (a *App) runRelayCarrier(ctx context.Context) {
 	runRelayCarrierLoop(ctx, a.relay, a.logger, time.After)
 }
@@ -3076,6 +3103,17 @@ func (a scanObserverAdapter) Observe(libraryID store.LibraryID, root string) {
 // watcherStatusAdapter bridges the watcher.Service into the graph handler's
 // WatcherStatusProvider seam. It exposes only the
 // non-secret aggregate Watcher state per Library to the manager Console.
+// playbackObserverAdapter exposes the playback service's held play decisions
+// to the graph's live sessions read.
+type playbackObserverAdapter struct {
+	service *playback.Service
+}
+
+func (a playbackObserverAdapter) PlayObservation(sessionID store.SessionID, mediaID store.MediaID) (graph.PlayObservation, bool) {
+	seen, ok := a.service.PlayObservation(sessionID, mediaID)
+	return graph.PlayObservation{Method: seen.Method, Reason: seen.Reason, Bitrate: seen.Bitrate}, ok
+}
+
 type watcherStatusAdapter struct {
 	service *watcher.Service
 }

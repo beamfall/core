@@ -24,19 +24,62 @@ import (
 // session is still listed so active load is never understated, mirroring the
 // stream-token ledger's hidden==shape rule.
 type LiveSessionInfo struct {
-	SessionID       string `json:"sessionID"`
-	DeviceID        string `json:"deviceID"`
-	DeviceName      string `json:"deviceName"`
-	DeviceRole      string `json:"deviceRole"`
-	ProfileID       string `json:"profileID"`
-	ProfileName     string `json:"profileName"`
-	MediaID         string `json:"mediaID"`
-	Title           string `json:"title,omitempty"`
-	LibraryID       string `json:"libraryID,omitempty"`
-	Transcoding     bool   `json:"transcoding"`
+	SessionID   string `json:"sessionID"`
+	DeviceID    string `json:"deviceID"`
+	DeviceName  string `json:"deviceName"`
+	DeviceRole  string `json:"deviceRole"`
+	ProfileID   string `json:"profileID"`
+	ProfileName string `json:"profileName"`
+	MediaID     string `json:"mediaID"`
+	Title       string `json:"title,omitempty"`
+	LibraryID   string `json:"libraryID,omitempty"`
+	Transcoding bool   `json:"transcoding"`
+	// PlayMethod is "direct", "remux" or "transcode". PlayReason names why the
+	// source was not played as-is, from the closed vocabulary in the playback
+	// service, and Bitrate is the delivered bits per second. Reason and bitrate
+	// are suppressed with the title for a Media outside the operator's view.
+	PlayMethod      string `json:"playMethod"`
+	PlayReason      string `json:"playReason"`
+	Bitrate         int    `json:"bitrate"`
 	PositionSeconds int    `json:"positionSeconds"`
 	DurationSeconds int    `json:"durationSeconds"`
 	ExpiresAt       string `json:"expiresAt"`
+}
+
+// PlayObservation is what the playback service last decided for one Session
+// and Media: the delivery method, why, and the delivered bitrate.
+type PlayObservation struct {
+	Method  string
+	Reason  string
+	Bitrate int
+}
+
+// PlaybackObserver reports the playback decision held for a live session.
+// Defined at the consumer; the app adapts the playback service to it.
+type PlaybackObserver interface {
+	PlayObservation(sessionID store.SessionID, mediaID store.MediaID) (PlayObservation, bool)
+}
+
+// playDelivery resolves the method, reason and bitrate for one active session.
+// With no held decision (a restart, or a client that never asked for playback
+// info) it falls back to the Stream Token ledger: transcode when an HLS grant
+// is outstanding, direct otherwise.
+func (h *Handler) playDelivery(s store.ActiveSession) (method, reason string, bitrate int) {
+	method = "direct"
+	if s.Transcoding {
+		method = "transcode"
+	}
+	if h.playbackObserver == nil {
+		return method, "", 0
+	}
+	seen, ok := h.playbackObserver.PlayObservation(s.SessionID, s.MediaID)
+	if !ok {
+		return method, "", 0
+	}
+	if s.LibraryID == "" {
+		return seen.Method, "", 0
+	}
+	return seen.Method, seen.Reason, seen.Bitrate
 }
 
 // liveSessions returns every currently-active playback session for the operator
@@ -50,6 +93,7 @@ func (h *Handler) liveSessions(ctx context.Context, scope auth.Scope) ([]LiveSes
 	}
 	out := make([]LiveSessionInfo, len(sessions))
 	for i, s := range sessions {
+		method, reason, bitrate := h.playDelivery(s)
 		out[i] = LiveSessionInfo{
 			SessionID:       string(s.SessionID),
 			DeviceID:        string(s.DeviceID),
@@ -61,6 +105,9 @@ func (h *Handler) liveSessions(ctx context.Context, scope auth.Scope) ([]LiveSes
 			Title:           s.Title,
 			LibraryID:       string(s.LibraryID),
 			Transcoding:     s.Transcoding,
+			PlayMethod:      method,
+			PlayReason:      reason,
+			Bitrate:         bitrate,
 			PositionSeconds: s.PositionSeconds,
 			DurationSeconds: s.DurationSeconds,
 			ExpiresAt:       s.ExpiresAt.UTC().Format(time.RFC3339),

@@ -27,6 +27,8 @@ type MyEngagementExport struct {
 	PlaybackProgress  []MyPlaybackProgress     `json:"playbackProgress"`
 	Favorites         []MyFavorite             `json:"favorites"`
 	Queue             []MyQueueEntry           `json:"queue"`
+	Watchlist         []MyWatchlistEntry       `json:"watchlist"`
+	Ratings           []MyItemRating           `json:"ratings"`
 	SavedFilters      []MySavedFilter          `json:"savedFilters"`
 	Stations          []MySavedStation         `json:"stations"`
 	Collections       []MyCollection           `json:"collections"`
@@ -161,6 +163,22 @@ type MyQueueEntry struct {
 	AddedAt time.Time `json:"addedAt"`
 }
 
+// MyWatchlistEntry is one exported watchlist row. TargetKind is ItemTargetMedia
+// or ItemTargetEntity and TargetID is that Media or Entity id.
+type MyWatchlistEntry struct {
+	TargetKind string    `json:"targetKind"`
+	TargetID   string    `json:"targetID"`
+	AddedAt    time.Time `json:"addedAt"`
+}
+
+// MyItemRating is one exported personal rating row (1-10).
+type MyItemRating struct {
+	TargetKind string    `json:"targetKind"`
+	TargetID   string    `json:"targetID"`
+	Rating     int       `json:"rating"`
+	RatedAt    time.Time `json:"ratedAt"`
+}
+
 // MyDataDeleteScope is the closed vocabulary of deleteMyEngagement targets:
 // the whole engagement log, or one Media item's rows.
 type MyDataDeleteScope string
@@ -200,6 +218,14 @@ func (s *Store) ExportMyEngagement(ctx context.Context, profileID ProfileID, fil
 		return MyEngagementExport{}, err
 	}
 	queue, err := s.myQueueRows(ctx, profileID)
+	if err != nil {
+		return MyEngagementExport{}, err
+	}
+	watchlist, err := s.myWatchlist(ctx, profileID)
+	if err != nil {
+		return MyEngagementExport{}, err
+	}
+	ratings, err := s.myItemRatings(ctx, profileID)
 	if err != nil {
 		return MyEngagementExport{}, err
 	}
@@ -268,6 +294,16 @@ func (s *Store) ExportMyEngagement(ctx context.Context, profileID ProfileID, fil
 	for _, row := range queue {
 		ids = append(ids, row.MediaID)
 	}
+	for _, row := range watchlist {
+		if row.TargetKind == ItemTargetMedia {
+			ids = append(ids, MediaID(row.TargetID))
+		}
+	}
+	for _, row := range ratings {
+		if row.TargetKind == ItemTargetMedia {
+			ids = append(ids, MediaID(row.TargetID))
+		}
+	}
 	visible, err := s.visibleMediaBatchSQL(ctx, ids, filter)
 	if err != nil {
 		return MyEngagementExport{}, err
@@ -281,6 +317,8 @@ func (s *Store) ExportMyEngagement(ctx context.Context, profileID ProfileID, fil
 		PlaybackProgress:  []MyPlaybackProgress{},
 		Favorites:         []MyFavorite{},
 		Queue:             []MyQueueEntry{},
+		Watchlist:         []MyWatchlistEntry{},
+		Ratings:           []MyItemRating{},
 		SavedFilters:      savedFilters,
 		Stations:          stations,
 		Collections:       collections,
@@ -317,7 +355,87 @@ func (s *Store) ExportMyEngagement(ctx context.Context, profileID ProfileID, fil
 			export.Queue = append(export.Queue, row)
 		}
 	}
+	// Watchlist and rating rows target a Media item or an Entity. Both kinds
+	// are reveal-filtered like the rest: a hidden target, or one that left the
+	// catalog, is dropped.
+	targetVisible := func(kind, id string) (bool, error) {
+		if kind == ItemTargetMedia {
+			_, ok := visible[MediaID(id)]
+			return ok, nil
+		}
+		_, err := s.visibleEntitySQL(ctx, EntityID(id), filter)
+		if errors.Is(err, errVisibleEntityNotFound) {
+			return false, nil
+		}
+		return err == nil, err
+	}
+	for _, row := range watchlist {
+		ok, err := targetVisible(row.TargetKind, row.TargetID)
+		if err != nil {
+			return MyEngagementExport{}, err
+		}
+		if ok {
+			export.Watchlist = append(export.Watchlist, row)
+		}
+	}
+	for _, row := range ratings {
+		ok, err := targetVisible(row.TargetKind, row.TargetID)
+		if err != nil {
+			return MyEngagementExport{}, err
+		}
+		if ok {
+			export.Ratings = append(export.Ratings, row)
+		}
+	}
 	return export, nil
+}
+
+func (s *Store) myWatchlist(ctx context.Context, profileID ProfileID) ([]MyWatchlistEntry, error) {
+	rows, err := s.eventsR.QueryContext(ctx, `
+		SELECT target_kind, target_id, added_at_ms
+		FROM watchlist_item
+		WHERE profile_id = ?
+		ORDER BY added_at_ms DESC, target_kind, target_id
+	`, profileID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []MyWatchlistEntry
+	for rows.Next() {
+		var row MyWatchlistEntry
+		var at int64
+		if err := rows.Scan(&row.TargetKind, &row.TargetID, &at); err != nil {
+			return nil, err
+		}
+		row.AddedAt = millisToTime(at)
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) myItemRatings(ctx context.Context, profileID ProfileID) ([]MyItemRating, error) {
+	rows, err := s.eventsR.QueryContext(ctx, `
+		SELECT target_kind, target_id, rating, rated_at_ms
+		FROM item_rating
+		WHERE profile_id = ?
+		ORDER BY rated_at_ms DESC, target_kind, target_id
+	`, profileID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []MyItemRating
+	for rows.Next() {
+		var row MyItemRating
+		var at int64
+		if err := rows.Scan(&row.TargetKind, &row.TargetID, &row.Rating, &at); err != nil {
+			return nil, err
+		}
+		row.RatedAt = millisToTime(at)
+		out = append(out, row)
+	}
+	return out, rows.Err()
 }
 
 func sealedLibraryExclusions(filter LibraryFilter) []MyDataExcludedLibrary {

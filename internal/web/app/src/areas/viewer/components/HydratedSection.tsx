@@ -9,6 +9,7 @@ import {
   viewerCacheEntries,
   writeViewerCache,
 } from "@/lib/viewerCache";
+import { useEngagementEpoch } from "../actions/engagementSync";
 import { fetchSectionItems } from "../lib/sections";
 import { Hero } from "./Hero";
 import { SectionView, type SeeAllTarget } from "./SectionView";
@@ -70,6 +71,9 @@ export function HydratedSection({
   navigationID?: string;
 }) {
   const identity = useViewerIdentity();
+  // Watched, watchlist and rating changes (here or on another client) revalidate
+  // the section behind the items already shown.
+  const engagementEpoch = useEngagementEpoch();
   const cacheKey = sectionCacheKey(section, libraryID, entityID, extraFilters);
   const [items, setItems] = useState<SourceItem[] | null>(
     () => readViewerCache<SourceItem[]>(identity, cacheKey) ?? null,
@@ -123,7 +127,7 @@ export function HydratedSection({
     // dependency: a reloaded Layout must re-report hydration state (LayoutView
     // tracks it per Layout object) and revalidates, served from the cache.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [identity, section, cacheKey]);
+  }, [identity, section, cacheKey, engagementEpoch]);
 
   if (items === null) {
     return <SectionSkeleton hero={section.kind === "hero"} />;

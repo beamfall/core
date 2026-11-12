@@ -1,6 +1,6 @@
 import { join } from "node:path";
-import { expect, test } from "@playwright/test";
 import { collectFatalErrors, harnessState } from "./lib/spec";
+import { expect, test } from "./lib/test";
 import { queueUnmatchedRecord, resolvedMediaID } from "./lib/unmatched-record";
 
 // METAPARITY-ARTWORK-E2E-1: the create-Media-with-artwork chain, unmocked, in a
@@ -128,8 +128,7 @@ test.describe("manage unmatched: create Media with artwork", () => {
     // Media's artwork route, decoded by the browser (naturalWidth > 0 — a
     // broken or missing image reads 0).
     await page.goto("/web/search");
-    await page.getByRole("main").getByRole("searchbox").fill(MEDIA_TITLE);
-    await page.getByRole("main").getByRole("button", { name: "Search", exact: true }).click();
+    await page.getByRole("searchbox").fill(MEDIA_TITLE);
 
     const posterImage = page.locator(`.bf-poster img[src*="/api/media/artwork/${mediaID}/poster"]`);
     await expect(posterImage).toBeVisible();

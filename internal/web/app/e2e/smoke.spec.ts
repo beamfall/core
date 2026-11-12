@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./lib/test";
 
 test("finish parity rendering contract is pinned", async ({ page }, testInfo) => {
   expect(process.env.LANG).toBe("en_US.UTF-8");

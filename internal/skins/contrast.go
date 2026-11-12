@@ -7,7 +7,7 @@
 // in beamfall-design-system/tokens/lib.mjs (srgbToLinear / luminance /
 // contrastRatio); the two MUST agree, so any change here changes there too.
 //
-// TODO(SKIN-2/3): wire Skin validation into store/graph/conformance. Until then
+// TODO(CORE-1178): wire theme validation into store/graph/conformance. Until then
 // this package is an intentional leaf: contrast math only, no persistence or
 // client-visible surface.
 package skins

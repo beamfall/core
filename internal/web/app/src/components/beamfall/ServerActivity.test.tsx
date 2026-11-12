@@ -74,6 +74,8 @@ describe("ServerActivity", () => {
     renderActivity();
     await advance(0);
     expect(fetchJobs).toHaveBeenCalledTimes(1);
+    // A background read: a refusal must not open the Manage in-place unlock.
+    expect(fetchJobs).toHaveBeenCalledWith(undefined, { adminUnlock: false });
     expect(screen.getByRole("link", { name: "Activity" })).toBeInTheDocument();
 
     await advance(25000);

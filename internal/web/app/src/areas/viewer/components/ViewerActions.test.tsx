@@ -1,42 +1,35 @@
 import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router";
-import { describe, expect, it } from "vitest";
+import { MemoryRouter } from "react-router";
+import { describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/lib/i18n";
 import { ViewerActions } from "./ViewerActions";
 
-function Where() {
-  const location = useLocation();
-  return <output aria-label="location">{location.pathname + location.search}</output>;
-}
+vi.mock("./HeaderSearch", () => ({ HeaderSearch: () => <input aria-label="Search" /> }));
 
-function renderActions() {
+function renderActions(entry = "/") {
   return render(
     <I18nProvider>
-      <MemoryRouter initialEntries={["/"]}>
+      <MemoryRouter initialEntries={[entry]}>
         <ViewerActions />
-        <Routes>
-          <Route path="*" element={<Where />} />
-        </Routes>
       </MemoryRouter>
     </I18nProvider>,
   );
 }
 
 describe("ViewerActions", () => {
-  it("opens Search with the text typed into the header field", async () => {
-    const user = userEvent.setup();
+  // Profile, My Data and Profile settings live in the AppShell account menu
+  // (CORE-1131), so the header actions are only the search field.
+  it("leaves the Profile links to the account menu", () => {
     renderActions();
-
-    await user.type(screen.getByRole("searchbox", { name: "Search" }), "blue planet{Enter}");
-
-    expect(screen.getByLabelText("location")).toHaveTextContent("/search?q=blue%20planet");
-    expect(screen.getByRole("searchbox", { name: "Search" })).toHaveValue("");
+    expect(screen.queryByRole("link")).toBeNull();
   });
 
-  it("offers a Search link for phones", () => {
-    renderActions();
-    expect(screen.getByRole("link", { name: "Search" })).toHaveAttribute("href", "/search");
+  it("offers the header search everywhere except the search page", () => {
+    const { unmount } = renderActions("/mydata");
+    expect(screen.getByLabelText("Search")).toBeInTheDocument();
+    unmount();
+    renderActions("/search");
+    expect(screen.queryByLabelText("Search")).toBeNull();
   });
 });

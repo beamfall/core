@@ -136,8 +136,8 @@ units only — `_test.go` files and tag-gated I/O packages fall outside the whit
 construction. Failure output names the offending import edge and the
 ARCHITECTURE.md section it violates.
 
-`internal/skins` is intentionally parked until SKIN-2/3: default tests cover only the
-WCAG-2.2 contrast math already ported from the design-system tokens. The future Skin
+`internal/skins` is intentionally parked until CORE-1178 (the theme store): default tests
+cover only the WCAG-2.2 contrast math already ported from the design-system tokens. The future Skin
 persistence/store/graph surface must add conformance coverage when it is wired, not before.
 
 ## 5. Conformance suite D — hand-written GraphQL wire snapshots
