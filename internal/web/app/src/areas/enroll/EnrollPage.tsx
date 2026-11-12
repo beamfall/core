@@ -1,10 +1,24 @@
-import { type FormEvent, useEffect, useId, useRef, useState } from "react";
+import {
+  AlertCircle,
+  ArrowRight,
+  KeyRound,
+  type LucideIcon,
+  MonitorSmartphone,
+} from "lucide-react";
+import { type FormEvent, type RefObject, useEffect, useId, useRef, useState } from "react";
+import beamfallLogo from "@/assets/beamfall-logo.png";
+import { CinemaBackdrop } from "@/components/beamfall/CinemaBackdrop";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, fetchSetupStatus, type SignInSecurityMode } from "@/lib/api";
 import { adminSignIn, enroll } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
+
+// The house form look (CORE-1114 setup wizard), shared by both sign-in paths.
+const FIELD = "h-11 rounded-xl border-white/10 bg-white/[0.04] text-[15px]";
+const FIELD_LABEL = "mb-2 block text-[13px] font-medium text-foreground/80";
 
 // First contact (ADR-0007 §2): a browser enrolls as a VIEWER device with a
 // pairing code minted on a manager device. Faithful to the vanilla enroll-view
@@ -82,60 +96,145 @@ export function EnrollPage() {
   }
 
   return (
-    <main className="mx-auto max-w-md px-4 py-12">
-      <h1 className="text-2xl font-semibold">{t("enrollTitle")}</h1>
-      <p className="mt-2 text-sm text-muted-foreground">{t("enrollLead")}</p>
-      <form onSubmit={onSubmit} className="mt-6 space-y-4" noValidate>
-        <div className="space-y-1.5">
-          <Label htmlFor={codeID}>{t("pairingCode")}</Label>
-          <Input
-            id={codeID}
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            // The pairing code is a credential: no autofill, no spellcheck,
-            // no autocapitalize that would mangle a case-sensitive code.
-            autoComplete="off"
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-            autoFocus
-            required
-            aria-invalid={error != null}
-            aria-describedby={error ? errorID : undefined}
+    <main className="theme-cinema relative isolate flex min-h-screen flex-col bg-background text-foreground">
+      <CinemaBackdrop />
+      <header className="flex items-center gap-2.5 px-5 py-4 sm:px-8 sm:py-6">
+        <img src={beamfallLogo} alt="" width={28} height={28} className="shrink-0" />
+        <span className="text-base font-semibold tracking-tight">{t("brand")}</span>
+      </header>
+
+      <div className="flex flex-1 items-start justify-center px-4 pb-12 pt-2 sm:items-center sm:px-8 sm:pt-0">
+        <div className="animate-in fade-in slide-in-from-bottom-2 w-full max-w-[460px] rounded-2xl border border-white/10 bg-card/70 p-6 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.7)] backdrop-blur-xl duration-300 sm:p-8">
+          <CardHeading
+            icon={MonitorSmartphone}
+            title={t("enrollTitle")}
+            lead={t("enrollLead")}
+            level={1}
           />
+          <form onSubmit={onSubmit} className="space-y-5" noValidate>
+            <div>
+              <Label htmlFor={codeID} className={FIELD_LABEL}>
+                {t("pairingCode")}
+              </Label>
+              <Input
+                id={codeID}
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                className={cn(FIELD, "h-14 text-center font-mono text-xl tracking-[0.3em]")}
+                // The pairing code is a credential: no autofill, no spellcheck,
+                // no autocapitalize that would mangle a case-sensitive code.
+                autoComplete="off"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                autoFocus
+                required
+                aria-invalid={error != null}
+                aria-describedby={error ? errorID : undefined}
+              />
+            </div>
+            <div>
+              <Label htmlFor={deviceNameID} className={FIELD_LABEL}>
+                {t("deviceName")}
+              </Label>
+              <Input
+                id={deviceNameID}
+                value={deviceName}
+                onChange={(e) => setDeviceName(e.target.value)}
+                className={FIELD}
+                placeholder={t("webBrowser")}
+                autoComplete="off"
+              />
+            </div>
+            <Button
+              type="submit"
+              disabled={busy}
+              className="h-11 w-full rounded-full text-[15px] font-semibold shadow-[0_8px_30px_-8px_var(--accent)]"
+            >
+              {t("connect")}
+              <ArrowRight aria-hidden className="size-4" />
+            </Button>
+            <FormFeedback status={status} error={error} errorID={errorID} errorRef={errorRef} />
+          </form>
+          {securityMode === "home" && <AdminSignInForm deviceName={deviceName} />}
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor={deviceNameID}>{t("deviceName")}</Label>
-          <Input
-            id={deviceNameID}
-            value={deviceName}
-            onChange={(e) => setDeviceName(e.target.value)}
-            placeholder={t("webBrowser")}
-            autoComplete="off"
-          />
-        </div>
-        <Button type="submit" disabled={busy}>
-          {t("connect")}
-        </Button>
-        {status && (
-          <p role="status" className="text-sm text-muted-foreground">
-            {status}
-          </p>
-        )}
-        {error && (
-          <p
-            ref={errorRef}
-            id={errorID}
-            role="alert"
-            tabIndex={-1}
-            className="text-sm text-destructive outline-none"
-          >
-            {error}
-          </p>
-        )}
-      </form>
-      {securityMode === "home" && <AdminSignInForm deviceName={deviceName} />}
+      </div>
     </main>
+  );
+}
+
+function CardHeading({
+  icon: Icon,
+  title,
+  lead,
+  level,
+  id,
+}: {
+  icon: LucideIcon;
+  title: string;
+  lead: string;
+  level: 1 | 2;
+  id?: string;
+}) {
+  const Heading = level === 1 ? "h1" : "h2";
+  return (
+    <div className="mb-6 flex gap-4">
+      <span
+        className={cn(
+          "flex shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary ring-1 ring-primary/25",
+          level === 1 ? "size-11 shadow-[0_0_28px_-6px_var(--accent)]" : "size-9",
+        )}
+      >
+        <Icon aria-hidden className={level === 1 ? "size-5" : "size-4"} />
+      </span>
+      <div>
+        <Heading
+          id={id}
+          className={cn(
+            "m-0 font-semibold tracking-tight",
+            level === 1 ? "text-2xl sm:text-[26px] sm:leading-tight" : "text-base",
+          )}
+        >
+          {title}
+        </Heading>
+        <p className="mb-0 mt-1.5 text-sm leading-relaxed text-muted-foreground">{lead}</p>
+      </div>
+    </div>
+  );
+}
+
+// The status line and the focusable error alert under each form.
+function FormFeedback({
+  status,
+  error,
+  errorID,
+  errorRef,
+}: {
+  status: string | null;
+  error: string | null;
+  errorID: string;
+  errorRef: RefObject<HTMLParagraphElement | null>;
+}) {
+  return (
+    <>
+      {status && (
+        <p role="status" className="m-0 text-center text-sm text-muted-foreground">
+          {status}
+        </p>
+      )}
+      {error && (
+        <p
+          ref={errorRef}
+          id={errorID}
+          role="alert"
+          tabIndex={-1}
+          className="m-0 flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3.5 py-2.5 text-sm text-destructive outline-none focus-visible:ring-2 focus-visible:ring-destructive/40"
+        >
+          <AlertCircle aria-hidden className="size-4 shrink-0" />
+          {error}
+        </p>
+      )}
+    </>
   );
 }
 
@@ -172,44 +271,40 @@ function AdminSignInForm({ deviceName }: { deviceName: string }) {
   }
 
   return (
-    <section className="mt-10 border-t pt-6" aria-labelledby={`${passwordID}-title`}>
-      <h2 id={`${passwordID}-title`} className="text-lg font-semibold">
-        {t("adminSignInTitle")}
-      </h2>
-      <p className="mt-2 text-sm text-muted-foreground">{t("adminSignInLead")}</p>
-      <form onSubmit={onSubmit} className="mt-4 space-y-4" noValidate>
-        <div className="space-y-1.5">
-          <Label htmlFor={passwordID}>{t("adminPasswordLabel")}</Label>
+    <section className="mt-8 border-t border-white/10 pt-7" aria-labelledby={`${passwordID}-title`}>
+      <CardHeading
+        icon={KeyRound}
+        title={t("adminSignInTitle")}
+        lead={t("adminSignInLead")}
+        level={2}
+        id={`${passwordID}-title`}
+      />
+      <form onSubmit={onSubmit} className="space-y-5" noValidate>
+        <div>
+          <Label htmlFor={passwordID} className={FIELD_LABEL}>
+            {t("adminPasswordLabel")}
+          </Label>
           <Input
             id={passwordID}
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            className={FIELD}
             autoComplete="current-password"
             required
             aria-invalid={error != null}
             aria-describedby={error ? errorID : undefined}
           />
         </div>
-        <Button type="submit" variant="secondary" disabled={busy || password === ""}>
+        <Button
+          type="submit"
+          variant="secondary"
+          disabled={busy || password === ""}
+          className="h-11 w-full rounded-full border border-white/10 bg-white/[0.06] text-[15px] hover:bg-white/[0.1]"
+        >
           {t("adminSignIn")}
         </Button>
-        {status && (
-          <p role="status" className="text-sm text-muted-foreground">
-            {status}
-          </p>
-        )}
-        {error && (
-          <p
-            ref={errorRef}
-            id={errorID}
-            role="alert"
-            tabIndex={-1}
-            className="text-sm text-destructive outline-none"
-          >
-            {error}
-          </p>
-        )}
+        <FormFeedback status={status} error={error} errorID={errorID} errorRef={errorRef} />
       </form>
     </section>
   );

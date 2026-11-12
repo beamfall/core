@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import beamfallLogo from "@/assets/beamfall-logo.png";
+import { CinemaBackdrop } from "@/components/beamfall/CinemaBackdrop";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -626,15 +627,7 @@ export function SetupWizard() {
 
   return (
     <main className="theme-cinema relative isolate flex min-h-screen flex-col overflow-hidden bg-background text-foreground">
-      {/* Static brand backdrop: layered accent glows over the cinema base. */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(55%_55%_at_10%_-5%,color-mix(in_oklab,var(--accent)_42%,transparent),transparent_70%),radial-gradient(50%_45%_at_100%_105%,color-mix(in_oklab,var(--accent)_30%,transparent),transparent_75%),radial-gradient(40%_35%_at_85%_5%,rgba(139,92,246,0.28),transparent_70%),radial-gradient(30%_30%_at_5%_100%,rgba(236,72,153,0.12),transparent_70%)]"
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 -z-10 opacity-[0.07] [background-image:linear-gradient(to_right,currentColor_1px,transparent_1px),linear-gradient(to_bottom,currentColor_1px,transparent_1px)] [background-size:56px_56px] [mask-image:radial-gradient(ellipse_at_center,black,transparent_75%)]"
-      />
+      <CinemaBackdrop />
 
       {/* Brand bar */}
       <header className="flex items-center justify-between px-5 py-4 sm:px-8 sm:py-6">

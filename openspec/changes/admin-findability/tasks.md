@@ -9,4 +9,5 @@
 - [x] 7. Console Libraries redesign: one glass card per library (status, Rescan, Fix unmatched), folder rows that save on add/remove, option switches with help text, Add library panel on demand
 - [x] 8. House-style design pass on every Console and Manage page: glass cards and tables, icon tiles on every section header, icons in the Manage rail, Manage Libraries as one card per library
 - [x] 9. Header redesign: header search field, round icon buttons (Restrictions, Activity, Console, Notifications), and an account menu (profile, My Data, settings, Manage, Sign out) replacing the profile links and the phone menu
-- [ ] 10. Owner review in the running UI; `npm run test`; `make gate` at landing
+- [x] 10. Library sidebar: Home, Ambient and every library move from header tabs to a collapsible left sidebar (icon rail on desktop, drawer on phones); the Connect-this-browser page gets the setup wizard's glass-card look
+- [ ] 11. Owner review in the running UI; `npm run test`; `make gate` at landing

@@ -14,10 +14,11 @@
  *  Shared app shell — header, brand mark, nav, banner
  * ============================================================ */
 
-/* The header (CORE-1131): one quiet row in the streaming-app idiom. Brand and
- * library tabs on the left, a search field, then a short icon cluster (Activity,
- * Console, notifications) and an avatar that opens the account menu. Every
- * secondary link lives in that menu, so the bar never wraps into two rows. */
+/* The header (CORE-1131): one quiet row in the streaming-app idiom. A menu
+ * button for the library sidebar and the brand on the left, a search field,
+ * then a short icon cluster (Activity, Console, notifications) and an avatar
+ * that opens the account menu. Libraries live in the sidebar and secondary
+ * links in the account menu, so the bar never runs out of room. */
 .bf-header {
   position: sticky;
   top: 0;
@@ -67,61 +68,221 @@
   mask: url("/web/beamfall-wordmark.svg") center / contain no-repeat;
 }
 
-/* Library tabs: quiet labels; the active tab is brighter with a 2px beam
- * underline (the one sanctioned global-chrome accent), never a filled pill.
- * Too many tabs scroll sideways instead of wrapping. */
-.bf-nav {
+/* The menu button that opens or collapses the library sidebar. */
+.bf-menu-button {
+  flex: none;
+  margin-left: -8px;
+}
+
+/* Below the header: the library sidebar beside the page content. */
+.bf-body {
+  display: flex;
+  align-items: flex-start;
+}
+
+.bf-content {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The library sidebar (CORE-1131): a quiet vertical list that holds any number
+ * of libraries. The active entry is brighter with a 3px beam bar on its
+ * leading edge (the one sanctioned chrome accent). Desktop can collapse it to
+ * an icon rail; phones open it as a drawer over the page. */
+.bf-sidebar {
+  position: sticky;
+  top: 60px;
+  flex: none;
+  width: 236px;
+  height: calc(100vh - 60px);
+  height: calc(100dvh - 60px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 16px 10px 24px;
+  border-right: 1px solid var(--border-subtle);
+  background: color-mix(in oklch, var(--bg-surface) 55%, transparent);
+  scrollbar-width: thin;
+  transition: width var(--duration-normal) var(--ease-standard);
+}
+
+.bf-sidebar.is-collapsed {
+  width: 72px;
+}
+
+.bf-side-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bf-side-heading {
+  margin: 20px 12px 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  line-height: 16px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.bf-side-link {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 2px;
-  min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.bf-nav::-webkit-scrollbar {
-  display: none;
-}
-
-.bf-nav-link {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  height: 36px;
-  padding: 0 12px;
-  border-radius: var(--radius-control);
-  color: var(--text-muted);
+  gap: 12px;
+  min-height: 42px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  color: var(--text-secondary);
   font-size: 14px;
   font-weight: 600;
   line-height: 18px;
   text-decoration: none;
-  white-space: nowrap;
-  cursor: pointer;
-  box-shadow: inset 0 -2px 0 transparent;
   transition:
     color var(--duration-fast) var(--ease-standard),
-    background-color var(--duration-fast) var(--ease-standard),
-    box-shadow var(--duration-fast) var(--ease-standard);
+    background-color var(--duration-fast) var(--ease-standard);
 }
 
-.bf-nav-link:hover {
+.bf-side-link:hover {
   color: var(--text-primary);
   background: var(--night-850);
 }
 
-.bf-nav-link:focus-visible {
+.bf-side-link:focus-visible {
   outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 
-.bf-nav-link.is-active {
+.bf-side-link.is-active {
   color: var(--text-primary);
-  background: transparent;
-  box-shadow: inset 0 -2px 0 var(--beam-500);
+  background: color-mix(in oklch, var(--beam-500) 10%, transparent);
 }
 
-.bf-nav-link.is-active:hover {
-  background: var(--night-850);
+.bf-side-link.is-active::before {
+  content: "";
+  position: absolute;
+  top: 9px;
+  bottom: 9px;
+  left: 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--beam-500);
+  box-shadow: 0 0 12px var(--beam-500);
+}
+
+.bf-side-glyph,
+.bf-side-tile {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+
+.bf-side-glyph {
+  color: var(--text-muted);
+}
+
+.bf-side-link:hover .bf-side-glyph,
+.bf-side-link.is-active .bf-side-glyph {
+  color: var(--beam-500);
+}
+
+/* A library tile: the library's own accent (or the beam) as a soft wash. */
+.bf-side-tile {
+  --tile: var(--beam-500);
+  background: color-mix(in oklch, var(--tile) 20%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--tile) 35%, transparent);
+  color: color-mix(in oklch, var(--tile) 70%, white);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.bf-side-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The icon rail: labels and the heading leave the layout but stay readable
+ * to assistive tech; the tooltip carries the name for pointer users. */
+.bf-sidebar.is-collapsed .bf-side-link {
+  justify-content: center;
+  padding: 6px 0;
+}
+
+.bf-sidebar.is-collapsed .bf-side-label,
+.bf-sidebar.is-collapsed .bf-side-heading {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.bf-sidebar.is-collapsed .bf-side-list + .bf-side-list,
+.bf-sidebar.is-collapsed .bf-side-heading + .bf-side-list {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.bf-sidebar-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 44;
+  border: 0;
+  background: oklch(0% 0 0 / 55%);
+  cursor: default;
+  animation: bf-scrim-in var(--duration-fast) var(--ease-standard);
+}
+
+@keyframes bf-scrim-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Phone: the sidebar is an overlay drawer that slides in from the left. */
+.bf-sidebar.is-drawer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 45;
+  width: min(300px, 84vw);
+  height: auto;
+  padding-top: 20px;
+  border-right-color: var(--border-strong);
+  background: var(--bg-surface);
+  box-shadow: 20px 0 60px -20px oklch(0% 0 0 / 70%);
+  transform: translateX(-104%);
+  visibility: hidden;
+  transition:
+    transform var(--duration-normal) var(--ease-standard),
+    visibility 0s linear var(--duration-normal);
+}
+
+.bf-sidebar.is-drawer.is-open {
+  transform: none;
+  visibility: visible;
+  transition: transform var(--duration-normal) var(--ease-standard);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bf-sidebar,
+  .bf-sidebar.is-drawer,
+  .bf-sidebar-scrim {
+    transition: none;
+    animation: none;
+  }
 }
 
 /* Right side: search plus the icon cluster, pushed to the end of the row. */
@@ -444,23 +605,16 @@
   }
 }
 
-/* Phone: brand and icons on the first row, the library tabs as a swipeable
- * strip on the second; the search field becomes an icon. */
+/* Phone: menu, brand and icons on one row; the libraries live in the drawer
+ * and the search field becomes an icon. */
 @media (max-width: 760px) {
   .bf-header {
-    flex-wrap: wrap;
-    gap: 6px 8px;
-    padding: 8px 12px 0 16px;
+    gap: 8px;
+    min-height: 56px;
+    padding: 8px 12px;
   }
   .bf-wordmark {
     width: 88px;
-  }
-  .bf-nav {
-    order: 3;
-    flex: 1 0 100%;
-    margin: 0 -12px 0 -16px;
-    padding: 0 12px 4px;
-    mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
   }
   .bf-actions {
     gap: 0;
@@ -478,9 +632,6 @@
   }
   .bf-icon-button.bf-search-icon-link {
     display: inline-flex;
-  }
-  .bf-header:not(:has(.bf-nav)) {
-    padding-bottom: 8px;
   }
   .bf-account-panel {
     position: fixed;

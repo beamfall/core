@@ -19,7 +19,11 @@ vi.mock("@/lib/register", () => ({
   useRegister: () => ({ register: "viewer" }),
 }));
 
-const sessionState = vi.hoisted(() => ({ isManager: false, signedIn: false }));
+const sessionState = vi.hoisted(() => ({
+  isManager: false,
+  signedIn: false,
+  manifest: null as unknown,
+}));
 
 vi.mock("@/lib/session", () => ({
   useSession: () => ({
@@ -27,7 +31,7 @@ vi.mock("@/lib/session", () => ({
       ? { deviceRole: "viewer", profileID: "p1", profile: "adult", revealed: false }
       : null,
     profiles: [{ id: "p1", name: "Owner", kind: "adult" }],
-    manifest: null,
+    manifest: sessionState.manifest,
     isManager: sessionState.isManager,
     revealed: false,
     needsEnroll: false,
@@ -49,6 +53,7 @@ function renderShell() {
 beforeEach(() => {
   sessionState.isManager = false;
   sessionState.signedIn = false;
+  sessionState.manifest = null;
   delete window.beamfallHost;
 });
 
@@ -128,5 +133,45 @@ describe("AppShell host chrome suppression", () => {
     renderShell();
     expect(screen.queryByLabelText("Beamfall")).toBeNull();
     expect(screen.getByText("Surface content")).toBeInTheDocument();
+  });
+});
+
+describe("AppShell library sidebar", () => {
+  beforeEach(() => {
+    sessionState.manifest = {
+      libraries: [{ id: "lib-a", title: "Space Archive", pluginID: null, previewClips: false }],
+      navigation: [
+        { id: "home", title: "Home", view: "layout", layoutID: "home" },
+        { id: "ambient", title: "Ambient", view: "ambient", layoutID: "ambient" },
+        {
+          id: "space",
+          title: "Space Archive",
+          view: "layout",
+          layoutID: "space",
+          libraryID: "lib-a",
+        },
+      ],
+    };
+  });
+
+  it("lists home, ambient and each library in the sidebar, outside the header", () => {
+    renderShell();
+    const nav = screen.getByRole("navigation", { name: "Navigation" });
+    expect(nav.closest("header")).toBeNull();
+    expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Ambient" })).toHaveAttribute("href", "/n/ambient");
+    expect(screen.getByRole("link", { name: "Space Archive" })).toHaveAttribute("href", "/n/space");
+    expect(screen.getByRole("heading", { name: "Libraries" })).toBeInTheDocument();
+  });
+
+  it("collapses the sidebar to an icon rail from the header menu button", async () => {
+    renderShell();
+    const toggle = screen.getByRole("button", { name: "Navigation" });
+    const expanded = toggle.getAttribute("aria-expanded");
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", expanded === "true" ? "false" : "true");
+    expect(document.getElementById(toggle.getAttribute("aria-controls") ?? "")).toHaveClass(
+      expanded === "true" ? "is-collapsed" : "bf-sidebar",
+    );
   });
 });
