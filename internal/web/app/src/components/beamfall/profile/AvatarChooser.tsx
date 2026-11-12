@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useT } from "@/lib/i18n";
 import {
   AVATAR_PICTURES,
@@ -11,8 +11,10 @@ import { ProfileAvatar } from "./ProfileAvatar";
 
 /**
  * Picture and colour pickers for one Profile's avatar, with a live preview.
- * Each pick is saved straight away through `onSave`; a rejected save puts the
- * previous avatar back and the caller reports the failure.
+ * Each pick is saved through `onSave`, one save at a time and always the
+ * latest pick, so a slow earlier save can never land over a newer one. A
+ * rejected save puts the last saved avatar back and the caller reports the
+ * failure.
  */
 export function AvatarChooser({
   profile,
@@ -25,15 +27,37 @@ export function AvatarChooser({
   const groupName = useId();
   const [choice, setChoice] = useState(() => resolveAvatar(profile.avatar, profile.id));
 
-  // Follow the saved avatar when it changes underneath (refresh, other tab).
+  const saved = useRef(choice);
+  const wanted = useRef<AvatarChoice | null>(null);
+  const saving = useRef(false);
+
+  // Follow the saved avatar when it changes underneath (refresh, other tab),
+  // but never over a pick that is still being saved.
   useEffect(() => {
-    setChoice(resolveAvatar(profile.avatar, profile.id));
+    saved.current = resolveAvatar(profile.avatar, profile.id);
+    if (!saving.current) setChoice(saved.current);
   }, [profile.avatar, profile.id]);
 
+  async function drain() {
+    if (saving.current) return;
+    saving.current = true;
+    while (wanted.current) {
+      const next = wanted.current;
+      wanted.current = null;
+      try {
+        await onSave(avatarToken(next));
+        saved.current = next;
+      } catch {
+        if (!wanted.current) setChoice(saved.current);
+      }
+    }
+    saving.current = false;
+  }
+
   function pick(next: AvatarChoice) {
-    const previous = choice;
     setChoice(next);
-    onSave(avatarToken(next)).catch(() => setChoice(previous));
+    wanted.current = next;
+    void drain();
   }
 
   return (

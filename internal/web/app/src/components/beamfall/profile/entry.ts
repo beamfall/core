@@ -6,7 +6,12 @@
 
 const PICKED_KEY = "beamfall.profile-picked";
 
+// Set when the choice could not be written to storage (full or read-only), so
+// the rest of this page's visit still gets through.
+let pickedInMemory = false;
+
 export function profilePickedThisTab(): boolean {
+  if (pickedInMemory) return true;
   try {
     return window.sessionStorage.getItem(PICKED_KEY) === "1";
   } catch {
@@ -19,6 +24,7 @@ export function markProfilePicked(): void {
   try {
     window.sessionStorage.setItem(PICKED_KEY, "1");
   } catch {
-    // Nothing to remember; profilePickedThisTab already lets the visit through.
+    // A read can succeed where a write fails (storage full): remember here.
+    pickedInMemory = true;
   }
 }
