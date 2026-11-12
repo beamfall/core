@@ -13,7 +13,13 @@ export function PairingCodeHelp() {
         {t("signInWhereTitle")}
       </h2>
       <ul className="mt-3 flex list-disc flex-col gap-3 pl-5 text-sm leading-relaxed text-muted-foreground">
-        <li>{t("signInWhereDevice")}</li>
+        <li>
+          {t("signInWhereDevice", {
+            // The Console's own labels, so the directions match what is on screen.
+            page: t("consoleAccessGroup"),
+            action: t("deviceAddHeading"),
+          })}
+        </li>
         <li>{t("signInWhereAsk")}</li>
       </ul>
     </section>

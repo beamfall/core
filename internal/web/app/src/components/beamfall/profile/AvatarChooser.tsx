@@ -28,8 +28,19 @@ export function AvatarChooser({
   const [choice, setChoice] = useState(() => resolveAvatar(profile.avatar, profile.id));
 
   const saved = useRef(choice);
-  const wanted = useRef<AvatarChoice | null>(null);
+  // The pending pick, with the Profile it was made for: a queued save must
+  // never run for another Profile or after the chooser has gone.
+  const wanted = useRef<{ choice: AvatarChoice; profileID: string } | null>(null);
   const saving = useRef(false);
+  const liveProfileID = useRef<string | null>(profile.id);
+
+  useEffect(() => {
+    liveProfileID.current = profile.id;
+    return () => {
+      liveProfileID.current = null;
+      wanted.current = null;
+    };
+  }, [profile.id]);
 
   // Follow the saved avatar when it changes underneath (refresh, other tab),
   // but never over a pick that is still being saved.
@@ -44,19 +55,21 @@ export function AvatarChooser({
     while (wanted.current) {
       const next = wanted.current;
       wanted.current = null;
+      if (next.profileID !== liveProfileID.current) continue;
       try {
-        await onSave(avatarToken(next));
-        saved.current = next;
+        await onSave(avatarToken(next.choice));
+        if (next.profileID === liveProfileID.current) saved.current = next.choice;
       } catch {
-        if (!wanted.current) setChoice(saved.current);
+        if (!wanted.current && next.profileID === liveProfileID.current) setChoice(saved.current);
       }
     }
     saving.current = false;
+    if (liveProfileID.current !== null) setChoice(saved.current);
   }
 
   function pick(next: AvatarChoice) {
     setChoice(next);
-    wanted.current = next;
+    wanted.current = { choice: next, profileID: profile.id };
     void drain();
   }
 

@@ -72,6 +72,46 @@ describe("AvatarChooser", () => {
     expect(tones()[b]).toBeChecked();
   });
 
+  it("drops a queued pick once the chooser has gone", async () => {
+    const user = userEvent.setup();
+    const first = deferred();
+    const onSave = vi.fn<(token: string) => Promise<void>>().mockReturnValueOnce(first.promise);
+    onSave.mockResolvedValue(undefined);
+    const view = renderChooser(onSave);
+    const start = resolveAvatar(undefined, profile.id);
+    const [a, b] = AVATAR_TONES.map((_, i) => i).filter((i) => i !== start.tone);
+
+    await user.click(tones()[a]);
+    await user.click(tones()[b]);
+    view.unmount();
+    await act(async () => first.reject(new Error("aborted")));
+
+    expect(onSave).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops a queued pick when the chooser moves to another Profile", async () => {
+    const user = userEvent.setup();
+    const first = deferred();
+    const onSave = vi.fn<(token: string) => Promise<void>>().mockReturnValueOnce(first.promise);
+    onSave.mockResolvedValue(undefined);
+    const view = renderChooser(onSave);
+    const start = resolveAvatar(undefined, profile.id);
+    const [a, b] = AVATAR_TONES.map((_, i) => i).filter((i) => i !== start.tone);
+
+    await user.click(tones()[a]);
+    await user.click(tones()[b]);
+    const other = { id: "p2", name: "Sam" };
+    view.rerender(
+      <I18nProvider>
+        <AvatarChooser profile={other} onSave={onSave} />
+      </I18nProvider>,
+    );
+    await act(async () => first.resolve());
+
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(tones()[resolveAvatar(undefined, other.id).tone]).toBeChecked();
+  });
+
   it("puts the last saved avatar back when the latest save fails", async () => {
     const user = userEvent.setup();
     const onSave = vi.fn<(token: string) => Promise<void>>().mockRejectedValue(new Error("no"));

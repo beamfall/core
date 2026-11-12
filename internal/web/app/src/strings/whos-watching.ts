@@ -52,7 +52,7 @@ export const whosWatchingStrings = {
       "Shown in the server's device list so the owner can tell this browser apart.",
     signInWhereTitle: "Where do I get a pairing code?",
     signInWhereDevice:
-      "On a device that's already signed in as the owner, open Console, go to Profiles & Devices and choose Add a device.",
+      "On a device that's already signed in as the owner, open Console, go to {page} and choose {action}.",
     signInWhereAsk: "Not your server? Ask the person who runs it to send you a code.",
   },
   fr: {
@@ -105,7 +105,7 @@ export const whosWatchingStrings = {
       "Affiché dans la liste des appareils du serveur pour que le propriétaire reconnaisse ce navigateur.",
     signInWhereTitle: "Où trouver un code de jumelage ?",
     signInWhereDevice:
-      "Sur un appareil déjà connecté en tant que propriétaire, ouvrez la Console, allez dans Profils et appareils, puis choisissez Ajouter un appareil.",
+      "Sur un appareil déjà connecté en tant que propriétaire, ouvrez la Console, allez dans {page}, puis choisissez {action}.",
     signInWhereAsk: "Ce n'est pas votre serveur ? Demandez un code à la personne qui s'en occupe.",
   },
   de: {
@@ -157,7 +157,7 @@ export const whosWatchingStrings = {
       "Erscheint in der Geräteliste des Servers, damit der Besitzer diesen Browser erkennt.",
     signInWhereTitle: "Woher bekomme ich einen Kopplungscode?",
     signInWhereDevice:
-      "Öffne auf einem Gerät, das bereits als Besitzer angemeldet ist, die Konsole, geh zu Profile & Geräte und wähle Gerät hinzufügen.",
+      "Öffne auf einem Gerät, das bereits als Besitzer angemeldet ist, die Konsole, geh zu „{page}“ und wähle „{action}“.",
     signInWhereAsk: "Nicht dein Server? Bitte die Person, die ihn betreibt, um einen Code.",
   },
   es: {
@@ -209,7 +209,7 @@ export const whosWatchingStrings = {
       "Aparece en la lista de dispositivos del servidor para que el propietario reconozca este navegador.",
     signInWhereTitle: "¿Dónde consigo un código de emparejamiento?",
     signInWhereDevice:
-      "En un dispositivo que ya tenga la sesión del propietario, abre la Consola, ve a Perfiles y dispositivos y elige Añadir un dispositivo.",
+      "En un dispositivo que ya tenga la sesión del propietario, abre la Consola, ve a {page} y elige {action}.",
     signInWhereAsk: "¿No es tu servidor? Pide un código a la persona que lo administra.",
   },
   pt: {
@@ -261,7 +261,7 @@ export const whosWatchingStrings = {
       "Aparece na lista de dispositivos do servidor para o proprietário reconhecer este navegador.",
     signInWhereTitle: "Onde consigo um código de pareamento?",
     signInWhereDevice:
-      "Em um dispositivo que já esteja conectado como proprietário, abra o Console, vá em Perfis e dispositivos e escolha Adicionar um dispositivo.",
+      "Em um dispositivo que já esteja conectado como proprietário, abra o Console, vá em {page} e escolha {action}.",
     signInWhereAsk: "O servidor não é seu? Peça um código a quem o administra.",
   },
 } as const;
