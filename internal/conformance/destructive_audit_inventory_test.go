@@ -144,6 +144,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"PrimaryMediaFile":                        {},
 	"Profile":                                 {},
 	"ProfileAccessWindows":                    {},
+	"ProfileAvatars":                          {},
 	"Profiles":                                {},
 	"ProfilesGrantedLibrary":                  {},
 	"PromotePendingAITag":                     {},

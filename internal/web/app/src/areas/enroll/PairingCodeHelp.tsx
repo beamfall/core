@@ -14,12 +14,6 @@ export function PairingCodeHelp() {
       </h2>
       <ul className="mt-3 flex list-disc flex-col gap-3 pl-5 text-sm leading-relaxed text-muted-foreground">
         <li>{t("signInWhereDevice")}</li>
-        <li>
-          {t("signInWhereServer")}{" "}
-          <code className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[13px] text-foreground">
-            beamfall pairing-code
-          </code>
-        </li>
         <li>{t("signInWhereAsk")}</li>
       </ul>
     </section>

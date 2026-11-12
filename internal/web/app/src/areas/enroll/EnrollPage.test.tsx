@@ -46,7 +46,7 @@ describe("EnrollPage", () => {
 
     const help = screen.getByRole("region", { name: "Where do I get a pairing code?" });
     expect(help).toHaveTextContent("Profiles & Devices");
-    expect(help).toHaveTextContent("beamfall pairing-code");
+    expect(help).toHaveTextContent("Add a device");
     expect(help).toHaveTextContent("Ask the person who runs it");
   });
 

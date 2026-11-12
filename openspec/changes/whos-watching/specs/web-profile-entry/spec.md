@@ -75,13 +75,12 @@ that opens the picker.
 ### Requirement: The signed-out page says how to sign in
 
 The signed-out page SHALL say in plain words where a pairing code comes from: from a device already
-signed in as the owner, from the `beamfall pairing-code` command on the server computer, or from
-the person who runs the server. It SHALL keep the pairing-code form. It SHALL show another sign-in
-route only when the server reports that route enabled.
+signed in as the owner, or from the person who runs the server. It SHALL keep the pairing-code
+form. It SHALL show another sign-in route only when the server reports that route enabled.
 
 #### Scenario: Pairing code is the only route
 
 - **WHEN** an unenrolled browser opens the signed-out page on a server with no other sign-in route
   enabled
-- **THEN** it sees the pairing-code form and the three places a pairing code comes from, and no
+- **THEN** it sees the pairing-code form and the two places a pairing code comes from, and no
   other sign-in form

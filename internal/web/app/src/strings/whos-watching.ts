@@ -53,7 +53,6 @@ export const whosWatchingStrings = {
     signInWhereTitle: "Where do I get a pairing code?",
     signInWhereDevice:
       "On a device that's already signed in as the owner, open Console, go to Profiles & Devices and choose Add a device.",
-    signInWhereServer: "On the computer that runs the server, run this command:",
     signInWhereAsk: "Not your server? Ask the person who runs it to send you a code.",
   },
   fr: {
@@ -107,7 +106,6 @@ export const whosWatchingStrings = {
     signInWhereTitle: "Où trouver un code de jumelage ?",
     signInWhereDevice:
       "Sur un appareil déjà connecté en tant que propriétaire, ouvrez la Console, allez dans Profils et appareils, puis choisissez Ajouter un appareil.",
-    signInWhereServer: "Sur l'ordinateur qui héberge le serveur, lancez cette commande :",
     signInWhereAsk: "Ce n'est pas votre serveur ? Demandez un code à la personne qui s'en occupe.",
   },
   de: {
@@ -160,7 +158,6 @@ export const whosWatchingStrings = {
     signInWhereTitle: "Woher bekomme ich einen Kopplungscode?",
     signInWhereDevice:
       "Öffne auf einem Gerät, das bereits als Besitzer angemeldet ist, die Konsole, geh zu Profile & Geräte und wähle Gerät hinzufügen.",
-    signInWhereServer: "Führe auf dem Computer, auf dem der Server läuft, diesen Befehl aus:",
     signInWhereAsk: "Nicht dein Server? Bitte die Person, die ihn betreibt, um einen Code.",
   },
   es: {
@@ -213,7 +210,6 @@ export const whosWatchingStrings = {
     signInWhereTitle: "¿Dónde consigo un código de emparejamiento?",
     signInWhereDevice:
       "En un dispositivo que ya tenga la sesión del propietario, abre la Consola, ve a Perfiles y dispositivos y elige Añadir un dispositivo.",
-    signInWhereServer: "En el ordenador donde funciona el servidor, ejecuta este comando:",
     signInWhereAsk: "¿No es tu servidor? Pide un código a la persona que lo administra.",
   },
   pt: {
@@ -266,7 +262,6 @@ export const whosWatchingStrings = {
     signInWhereTitle: "Onde consigo um código de pareamento?",
     signInWhereDevice:
       "Em um dispositivo que já esteja conectado como proprietário, abra o Console, vá em Perfis e dispositivos e escolha Adicionar um dispositivo.",
-    signInWhereServer: "No computador onde o servidor roda, execute este comando:",
     signInWhereAsk: "O servidor não é seu? Peça um código a quem o administra.",
   },
 } as const;
