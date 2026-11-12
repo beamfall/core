@@ -2039,7 +2039,7 @@ func (a *App) Run(ctx context.Context) error {
 // relayBackendListener opens the loopback TLS listener the relay carrier
 // splices relayed clients onto. Their traffic never crosses the bound port, so
 // it is counted here, below TLS like the direct path, or a server streaming
-// through the relay would show an idle network graph. The carrier's own dial
+// through the relay would report an idle network graph. The carrier's own dial
 // out to the relay is not counted, so relayed bytes are counted once.
 func relayBackendListener(metrics *hostmetrics.Sampler, tlsConfig *tls.Config) (net.Listener, error) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
