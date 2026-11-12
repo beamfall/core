@@ -231,6 +231,9 @@ func (h *Handler) searchResult(ctx context.Context, scope auth.Scope, req reques
 	if err := h.store.AnnotateMuted(ctx, scope.ProfileID, filter, results); err != nil {
 		return SearchResultResponse{}, err
 	}
+	if err := h.store.AnnotateEngagement(ctx, scope.ProfileID, filter, results); err != nil {
+		return SearchResultResponse{}, err
+	}
 	items := make([]SearchResultItem, len(results))
 	for i, item := range results {
 		items[i] = SearchResultItem{SourceItem: h.sourceItem(item, scope.Revealed), Mode: SearchModeKeyword}
@@ -334,6 +337,9 @@ func (h *Handler) semanticItems(ctx context.Context, profileID store.ProfileID, 
 	// Semantic search is a deliberately-surfaced surface (§2.2 "searchable on
 	// purpose", §2.5 "search (FTS / semantic)"): muted hits carry the badge (§2.7).
 	if err := h.store.AnnotateMuted(ctx, profileID, filter, sources); err != nil {
+		return nil, err
+	}
+	if err := h.store.AnnotateEngagement(ctx, profileID, filter, sources); err != nil {
 		return nil, err
 	}
 	items := make([]SearchResultItem, len(sources))

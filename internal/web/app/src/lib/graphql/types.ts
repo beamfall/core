@@ -137,6 +137,21 @@ export interface SourceItem {
   artwork?: SourceItemArtwork;
   /** Visible but blocked by a certification ceiling: it is listed, not playable. */
   locked?: boolean;
+  /** The acting Profile's playback state; absent when it has none. */
+  engagement?: SourceItemEngagement;
+}
+
+/**
+ * The acting Profile's playback state for a SourceItem
+ * (graph.SourceItemEngagement). Position and duration are present while the
+ * item is resumable; the counts are present on an ordered container.
+ */
+export interface SourceItemEngagement {
+  positionSeconds?: number;
+  durationSeconds?: number;
+  completed?: boolean;
+  totalCount?: number;
+  remainingCount?: number;
 }
 
 /** What an item action targets: exactly one of a Media or an Entity. */

@@ -16,6 +16,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"AddPathPickerRoot":                     {},
 	"AddSubscription":                       {},
 	"AdminPasswordSet":                      {},
+	"AnnotateEngagement":                    {},
 	"AnnotateMuted":                         {},
 	"AppendActivity":                        {},
 	"AppendEngagementEvent":                 {},

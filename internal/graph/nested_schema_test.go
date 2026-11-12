@@ -135,7 +135,8 @@ func TestNestedSchemaSourceItemsArguments(t *testing.T) {
 // scope, ADR-0004 §4), locked (ACCESS-1, ADR-0113 §2.1: the per-item
 // enforced-filter lock affordance, set on a visible-but-blocked item under a
 // locked certification ceiling), and muted (ADR-0054 §2.7: the per-item
-// Per-Profile Mute badge on deliberately-surfaced / Favorite-overridden items)
+// Per-Profile Mute badge on deliberately-surfaced / Favorite-overridden items),
+// engagement (CORE-1192: the acting Profile's playback state for the card)
 // and NOTHING else: the android-ui kit's selection
 // of `libraryID` and `mediaClass` under sourceItems are nonexistent nested fields
 // (the contract this schema exists to surface). If a future change adds those
@@ -145,7 +146,7 @@ func TestNestedSchemaSourceItemShape(t *testing.T) {
 	if si.Kind != "object" {
 		t.Fatalf("sourceItems kind = %q, want object", si.Kind)
 	}
-	want := []string{"artwork", "artworkSlots", "id", "kind", "locked", "muted", "restricted", "summary", "title"}
+	want := []string{"artwork", "artworkSlots", "engagement", "id", "kind", "locked", "muted", "restricted", "summary", "title"}
 	if got := childNames(si.Children); !slices.Equal(got, want) {
 		t.Fatalf("sourceItems fields = %v, want %v", got, want)
 	}

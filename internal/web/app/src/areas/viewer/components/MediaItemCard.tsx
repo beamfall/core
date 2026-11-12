@@ -1,14 +1,18 @@
+import { Check, Play } from "lucide-react";
 import type { PointerEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import type { SourceItem } from "@/lib/graphql/types";
+import { useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
 import { artworkBucketURL, artworkSlotURL } from "../lib/artwork";
+import { cardAccessibleName, cardState } from "../lib/cardState";
 import { entityLinkState } from "../lib/entityPreview";
 import { fetchPreviewInfo } from "../lib/playback";
 import { type RenderFocusAnchor, rememberRenderFocus } from "../lib/renderFocus";
 import { type PlayerNavState, type PlayQueueItem, queueWindow } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
+import { MediaItemCardMenu } from "./MediaItemCardMenu";
 
 export const PREVIEW_DWELL_MS = 400;
 const POINTER_PREVIEW_QUERY = "(hover: hover) and (pointer: fine)";
@@ -20,6 +24,11 @@ const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 // poster sits in a fixed 2:3 frame whose accent-tinted fallback gradient shows
 // when artwork is absent or fails to load, so layout never shifts. Titles and
 // summaries render as React text only (invariant #5 / ADR-0012 §5).
+//
+// The card button is the only control that carries the item's name: its
+// accessible name is the title plus the acting Profile's state, and the same
+// state is drawn on the artwork (progress bar, finished mark, remaining count).
+// The More menu is a sibling control, never nested inside the button.
 export function MediaItemCard({
   item,
   posInSet,
@@ -38,10 +47,16 @@ export function MediaItemCard({
 }) {
   const navigate = useNavigate();
   const identity = useViewerIdentity();
+  const t = useT();
   const location = useLocation();
   const [imageFailed, setImageFailed] = useState(false);
   const [previewClip, setPreviewClip] = useState("");
   const isMedia = item.kind === "media";
+  const state = cardState(item, t);
+  const path = `/${isMedia ? "watch" : "entity"}/${encodeURIComponent(item.id)}`;
+  const primaryLabel = isMedia
+    ? t(state.progressPercent === undefined ? "play" : "cardResume")
+    : t("cardOpen");
   const poster = artworkSlotURL(item, "poster") || artworkSlotURL(item, "thumb");
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -111,11 +126,9 @@ export function MediaItemCard({
         state.queue = queueWindow(queue, item.id);
         state.queueIdentity = identity;
       }
-      navigate(`/watch/${encodeURIComponent(item.id)}`, { state });
+      navigate(path, { state });
     } else {
-      navigate(`/entity/${encodeURIComponent(item.id)}`, {
-        state: entityLinkState(item, identity),
-      });
+      navigate(path, { state: entityLinkState(item, identity) });
     }
   }
 
@@ -173,9 +186,10 @@ export function MediaItemCard({
   }
 
   return (
-    <li className="list-none" aria-posinset={posInSet} aria-setsize={setSize}>
+    <li className="bf-card-shell list-none" aria-posinset={posInSet} aria-setsize={setSize}>
       <button
         type="button"
+        aria-label={cardAccessibleName(item, state)}
         onClick={activate}
         onBlur={stopPreview}
         onPointerCancel={stopPreview}
@@ -209,13 +223,63 @@ export function MediaItemCard({
               src={previewClip}
             />
           )}
+          <CardStateOverlay
+            finished={state.finished}
+            remainingCount={state.remainingCount}
+            progressPercent={state.progressPercent}
+          />
+          {isMedia && (
+            <span aria-hidden="true" className="bf-card-play">
+              <Play size={16} fill="currentColor" />
+              {primaryLabel}
+            </span>
+          )}
         </div>
         <div className="bf-card-copy">
           <span className="bf-card-title">{item.title}</span>
           {item.summary && <span className="bf-card-sub">{item.summary}</span>}
         </div>
       </button>
+      <MediaItemCardMenu
+        title={item.title}
+        primaryLabel={primaryLabel}
+        isMedia={isMedia}
+        href={new URL(`${import.meta.env.BASE_URL}${path.slice(1)}`, window.location.origin).href}
+        onPrimary={activate}
+      />
     </li>
+  );
+}
+
+// The state drawn on the artwork. Decorative for assistive technology: the
+// card button's accessible name already says the same thing in words.
+function CardStateOverlay({
+  finished,
+  remainingCount,
+  progressPercent,
+}: {
+  finished: boolean;
+  remainingCount?: number;
+  progressPercent?: number;
+}) {
+  return (
+    <>
+      {finished && (
+        <span aria-hidden="true" className="bf-card-badge bf-card-badge-finished">
+          <Check size={13} strokeWidth={3} />
+        </span>
+      )}
+      {remainingCount !== undefined && (
+        <span aria-hidden="true" className="bf-card-badge">
+          {remainingCount}
+        </span>
+      )}
+      {progressPercent !== undefined && (
+        <span aria-hidden="true" className="bf-card-progress">
+          <span style={{ width: `${progressPercent}%` }} />
+        </span>
+      )}
+    </>
   );
 }
 

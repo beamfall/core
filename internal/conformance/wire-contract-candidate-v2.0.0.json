@@ -2183,6 +2183,39 @@
           }
         },
         {
+          "name": "engagement",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "completed",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "durationSeconds",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "positionSeconds",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "remainingCount",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "totalCount",
+              "kind": "scalar",
+              "optional": true
+            }
+          ]
+        },
+        {
           "name": "id",
           "kind": "scalar"
         },
@@ -9538,6 +9571,39 @@
           }
         },
         {
+          "name": "engagement",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "completed",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "durationSeconds",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "positionSeconds",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "remainingCount",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "totalCount",
+              "kind": "scalar",
+              "optional": true
+            }
+          ]
+        },
+        {
           "name": "id",
           "kind": "scalar"
         },
@@ -13445,6 +13511,39 @@
           }
         },
         {
+          "name": "engagement",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "completed",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "durationSeconds",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "positionSeconds",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "remainingCount",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "totalCount",
+              "kind": "scalar",
+              "optional": true
+            }
+          ]
+        },
+        {
           "name": "id",
           "kind": "scalar"
         },
@@ -13502,6 +13601,39 @@
           "elem": {
             "kind": "scalar"
           }
+        },
+        {
+          "name": "engagement",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "completed",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "durationSeconds",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "positionSeconds",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "remainingCount",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "totalCount",
+              "kind": "scalar",
+              "optional": true
+            }
+          ]
         },
         {
           "name": "id",
@@ -13563,6 +13695,39 @@
           }
         },
         {
+          "name": "engagement",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "completed",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "durationSeconds",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "positionSeconds",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "remainingCount",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "totalCount",
+              "kind": "scalar",
+              "optional": true
+            }
+          ]
+        },
+        {
           "name": "id",
           "kind": "scalar"
         },
@@ -13620,6 +13785,39 @@
           "elem": {
             "kind": "scalar"
           }
+        },
+        {
+          "name": "engagement",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "completed",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "durationSeconds",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "positionSeconds",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "remainingCount",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "totalCount",
+              "kind": "scalar",
+              "optional": true
+            }
+          ]
         },
         {
           "name": "id",
@@ -15866,6 +16064,39 @@
           }
         },
         {
+          "name": "engagement",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "completed",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "durationSeconds",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "positionSeconds",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "remainingCount",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "totalCount",
+              "kind": "scalar",
+              "optional": true
+            }
+          ]
+        },
+        {
           "name": "id",
           "kind": "scalar"
         },
@@ -15930,6 +16161,39 @@
           "elem": {
             "kind": "scalar"
           }
+        },
+        {
+          "name": "engagement",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "completed",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "durationSeconds",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "positionSeconds",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "remainingCount",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "totalCount",
+              "kind": "scalar",
+              "optional": true
+            }
+          ]
         },
         {
           "name": "id",
@@ -16044,6 +16308,39 @@
                 }
               },
               {
+                "name": "engagement",
+                "kind": "object",
+                "optional": true,
+                "nullable": true,
+                "children": [
+                  {
+                    "name": "completed",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "durationSeconds",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "positionSeconds",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "remainingCount",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "totalCount",
+                    "kind": "scalar",
+                    "optional": true
+                  }
+                ]
+              },
+              {
                 "name": "id",
                 "kind": "scalar"
               },
@@ -16106,6 +16403,39 @@
               "elem": {
                 "kind": "scalar"
               }
+            },
+            {
+              "name": "engagement",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "completed",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "durationSeconds",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "positionSeconds",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "remainingCount",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "totalCount",
+                  "kind": "scalar",
+                  "optional": true
+                }
+              ]
             },
             {
               "name": "id",
@@ -22698,6 +23028,39 @@
           }
         },
         {
+          "name": "engagement",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "completed",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "durationSeconds",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "positionSeconds",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "remainingCount",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "totalCount",
+              "kind": "scalar",
+              "optional": true
+            }
+          ]
+        },
+        {
           "name": "id",
           "kind": "scalar"
         },
@@ -22921,6 +23284,39 @@
           "elem": {
             "kind": "scalar"
           }
+        },
+        {
+          "name": "engagement",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "completed",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "durationSeconds",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "positionSeconds",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "remainingCount",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "totalCount",
+              "kind": "scalar",
+              "optional": true
+            }
+          ]
         },
         {
           "name": "id",

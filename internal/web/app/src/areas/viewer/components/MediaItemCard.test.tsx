@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { MemoryRouter, useLocation, useNavigate } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SourceItem } from "@/lib/graphql/types";
+import { I18nProvider } from "@/lib/i18n";
 import { readEntityPreview } from "../lib/entityPreview";
 import { fetchPreviewInfo } from "../lib/playback";
 import { readPlayerNavState } from "../lib/watchQueue";
@@ -49,7 +50,7 @@ afterEach(() => {
 describe("MediaItemCard preview clip behavior", () => {
   it("starts preview playback only after the hover dwell delay", async () => {
     const { container } = renderCard();
-    const card = screen.getByRole("button", { name: /Alpha/ });
+    const card = screen.getByRole("button", { name: /^Alpha/ });
 
     fireEvent.pointerEnter(card, { pointerType: "mouse" });
     await advancePreviewTimers(PREVIEW_DWELL_MS - 1);
@@ -70,7 +71,7 @@ describe("MediaItemCard preview clip behavior", () => {
 
   it("cancels the preview when hover leaves before dwell completes", async () => {
     const { container } = renderCard();
-    const card = screen.getByRole("button", { name: /Alpha/ });
+    const card = screen.getByRole("button", { name: /^Alpha/ });
 
     fireEvent.pointerEnter(card, { pointerType: "mouse" });
     await advancePreviewTimers(PREVIEW_DWELL_MS - 1);
@@ -84,7 +85,7 @@ describe("MediaItemCard preview clip behavior", () => {
 
   it("stops playback and removes the preview on pointer leave after playback starts", async () => {
     const { container } = renderCard();
-    const card = screen.getByRole("button", { name: /Alpha/ });
+    const card = screen.getByRole("button", { name: /^Alpha/ });
 
     fireEvent.pointerEnter(card, { pointerType: "mouse" });
     await advancePreviewTimers(PREVIEW_DWELL_MS);
@@ -99,7 +100,7 @@ describe("MediaItemCard preview clip behavior", () => {
 
   it("starts preview playback on keyboard focus after the dwell delay", async () => {
     const { container } = renderCard();
-    const card = screen.getByRole("button", { name: /Alpha/ });
+    const card = screen.getByRole("button", { name: /^Alpha/ });
 
     fireEvent.focus(card);
     await advancePreviewTimers(PREVIEW_DWELL_MS - 1);
@@ -121,7 +122,7 @@ describe("MediaItemCard preview clip behavior", () => {
     installMatchMedia({ reducedMotion: true });
     const { container } = renderCard();
 
-    fireEvent.focus(screen.getByRole("button", { name: /Alpha/ }));
+    fireEvent.focus(screen.getByRole("button", { name: /^Alpha/ }));
     await advancePreviewTimers(PREVIEW_DWELL_MS);
 
     expect(previewVideo(container)).toBeNull();
@@ -130,7 +131,7 @@ describe("MediaItemCard preview clip behavior", () => {
 
   it("stops playback on card blur and browser focus loss", async () => {
     const { container } = renderCard();
-    const card = screen.getByRole("button", { name: /Alpha/ });
+    const card = screen.getByRole("button", { name: /^Alpha/ });
 
     fireEvent.pointerEnter(card, { pointerType: "mouse" });
     await advancePreviewTimers(PREVIEW_DWELL_MS);
@@ -149,11 +150,13 @@ describe("MediaItemCard preview clip behavior", () => {
 
   it("stops playback on route changes", async () => {
     const { container } = render(
-      <MemoryRouter>
-        <RouteChangeHarness />
-      </MemoryRouter>,
+      <I18nProvider initialLocale="en">
+        <MemoryRouter>
+          <RouteChangeHarness />
+        </MemoryRouter>
+      </I18nProvider>,
     );
-    const card = screen.getByRole("button", { name: /Alpha/ });
+    const card = screen.getByRole("button", { name: /^Alpha/ });
 
     fireEvent.pointerEnter(card, { pointerType: "mouse" });
     await advancePreviewTimers(PREVIEW_DWELL_MS);
@@ -172,7 +175,7 @@ describe("MediaItemCard preview clip behavior", () => {
       artwork: undefined,
       artworkSlots: { thumb: "/art/thumb-alpha.jpg" },
     });
-    const card = screen.getByRole("button", { name: /Alpha/ });
+    const card = screen.getByRole("button", { name: /^Alpha/ });
 
     expect(container.querySelector("img")).toHaveAttribute(
       "src",
@@ -191,7 +194,7 @@ describe("MediaItemCard preview clip behavior", () => {
     installMatchMedia({ reducedMotion: true });
     const { container } = renderCard();
 
-    fireEvent.pointerEnter(screen.getByRole("button", { name: /Alpha/ }), {
+    fireEvent.pointerEnter(screen.getByRole("button", { name: /^Alpha/ }), {
       pointerType: "mouse",
     });
     await advancePreviewTimers(PREVIEW_DWELL_MS);
@@ -209,7 +212,7 @@ describe("MediaItemCard preview clip behavior", () => {
     installMatchMedia({ finePointer: false });
     const { container } = renderCard();
 
-    fireEvent.pointerEnter(screen.getByRole("button", { name: /Alpha/ }), {
+    fireEvent.pointerEnter(screen.getByRole("button", { name: /^Alpha/ }), {
       pointerType: "touch",
     });
     await advancePreviewTimers(PREVIEW_DWELL_MS);
@@ -222,7 +225,7 @@ describe("MediaItemCard preview clip behavior", () => {
   it("cleans up timers and media state on unmount", async () => {
     const pending = renderCard();
 
-    fireEvent.pointerEnter(screen.getByRole("button", { name: /Alpha/ }), {
+    fireEvent.pointerEnter(screen.getByRole("button", { name: /^Alpha/ }), {
       pointerType: "mouse",
     });
     pending.unmount();
@@ -231,7 +234,7 @@ describe("MediaItemCard preview clip behavior", () => {
     expect(playSpy).not.toHaveBeenCalled();
 
     const active = renderCard();
-    fireEvent.pointerEnter(screen.getByRole("button", { name: /Alpha/ }), {
+    fireEvent.pointerEnter(screen.getByRole("button", { name: /^Alpha/ }), {
       pointerType: "mouse",
     });
     await advancePreviewTimers(PREVIEW_DWELL_MS);
@@ -246,13 +249,15 @@ describe("MediaItemCard preview clip behavior", () => {
 describe("MediaItemCard entity navigation", () => {
   it("carries the identity-bound entity preview into the entity page", () => {
     render(
-      <MemoryRouter>
-        <MediaItemCard item={baseItem({ id: "e1", kind: "series", title: "Show" })} />
-        <LocationState />
-      </MemoryRouter>,
+      <I18nProvider initialLocale="en">
+        <MemoryRouter>
+          <MediaItemCard item={baseItem({ id: "e1", kind: "series", title: "Show" })} />
+          <LocationState />
+        </MemoryRouter>
+      </I18nProvider>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /Show/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Show/ }));
 
     expect(screen.getByTestId("path")).toHaveTextContent("/entity/e1");
     const state = JSON.parse(screen.getByTestId("state").textContent || "null");
@@ -286,7 +291,7 @@ describe("MediaItemCard play queue", () => {
 describe("MediaItemCard player prefetch", () => {
   it("prefetches the player chunk on pointer enter, for any pointer type, without waiting for dwell", () => {
     renderCard();
-    const card = screen.getByRole("button", { name: /Alpha/ });
+    const card = screen.getByRole("button", { name: /^Alpha/ });
 
     fireEvent.pointerEnter(card, { pointerType: "touch" });
 
@@ -296,14 +301,14 @@ describe("MediaItemCard player prefetch", () => {
   it("prefetches the player chunk on keyboard focus", () => {
     renderCard();
 
-    fireEvent.focus(screen.getByRole("button", { name: /Alpha/ }));
+    fireEvent.focus(screen.getByRole("button", { name: /^Alpha/ }));
 
     expect(preloadPlayer).toHaveBeenCalledTimes(1);
   });
 
   it("does not prefetch the player for a non-media card", () => {
     renderCard({ kind: "collection" });
-    const card = screen.getByRole("button", { name: /Alpha/ });
+    const card = screen.getByRole("button", { name: /^Alpha/ });
 
     fireEvent.pointerEnter(card, { pointerType: "mouse" });
     fireEvent.focus(card);
@@ -314,9 +319,11 @@ describe("MediaItemCard player prefetch", () => {
 
 function renderCard(overrides: Partial<SourceItem> = {}) {
   return render(
-    <MemoryRouter>
-      <MediaItemCard item={baseItem(overrides)} />
-    </MemoryRouter>,
+    <I18nProvider initialLocale="en">
+      <MemoryRouter>
+        <MediaItemCard item={baseItem(overrides)} />
+      </MemoryRouter>
+    </I18nProvider>,
   );
 }
 
@@ -395,3 +402,78 @@ function installMatchMedia({
     }),
   });
 }
+
+// CORE-1193: every card names itself to assistive technology. These fail if
+// the card button loses its accessible name or stops announcing state.
+describe("MediaItemCard accessible name", () => {
+  it("names a card with no playback state by its title", () => {
+    renderCard();
+    expect(screen.getByRole("button", { name: "Alpha" })).toHaveClass("bf-card");
+  });
+
+  it("adds the time left to a partly played item and draws the progress bar", () => {
+    const { container } = renderCard({
+      engagement: { positionSeconds: 240, durationSeconds: 888 },
+    });
+    expect(screen.getByRole("button", { name: "Alpha, 11 minutes left" })).toBeInTheDocument();
+    const bar = container.querySelector<HTMLElement>(".bf-card-progress > span");
+    expect(bar?.style.width).toBe("27%");
+  });
+
+  it("announces a finished item and marks the artwork", () => {
+    const { container } = renderCard({ engagement: { completed: true } });
+    expect(screen.getByRole("button", { name: "Alpha, Finished" })).toBeInTheDocument();
+    expect(container.querySelector(".bf-card-badge-finished")).not.toBeNull();
+    expect(container.querySelector(".bf-card-progress")).toBeNull();
+  });
+
+  it("announces a container's remaining count and shows it on the artwork", () => {
+    const { container } = renderCard({
+      kind: "entity",
+      engagement: { totalCount: 8, remainingCount: 3 },
+    });
+    expect(screen.getByRole("button", { name: "Alpha, 3 unplayed" })).toBeInTheDocument();
+    expect(container.querySelector(".bf-card-badge")).toHaveTextContent("3");
+  });
+
+  it("never leaves a card button without an accessible name", () => {
+    renderCard({ engagement: { completed: true } });
+    for (const button of screen.getAllByRole("button")) {
+      expect(button).toHaveAccessibleName();
+    }
+  });
+});
+
+describe("MediaItemCard actions", () => {
+  it("offers Resume from the keyboard-operable More menu and plays the item", async () => {
+    vi.useRealTimers();
+    render(
+      <I18nProvider initialLocale="en">
+        <MemoryRouter initialEntries={["/"]}>
+          <MediaItemCard
+            item={baseItem({ engagement: { positionSeconds: 240, durationSeconds: 888 } })}
+          />
+          <LocationState />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    const trigger = screen.getByRole("button", { name: "More actions for Alpha" });
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "Enter" });
+    fireEvent.click(trigger);
+
+    const resume = await screen.findByRole("menuitem", { name: "Resume" });
+    expect(screen.getByRole("menuitem", { name: "Copy link" })).toBeInTheDocument();
+    fireEvent.click(resume);
+
+    expect(screen.getByTestId("path")).toHaveTextContent("/watch/media-alpha");
+  });
+
+  it("offers Open, not Play, for an item that is not playable itself", async () => {
+    vi.useRealTimers();
+    renderCard({ kind: "entity" });
+    fireEvent.click(screen.getByRole("button", { name: "More actions for Alpha" }));
+    expect(await screen.findByRole("menuitem", { name: "Open" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Play" })).toBeNull();
+  });
+});

@@ -96,6 +96,9 @@ type SourceItem struct {
 	// Domain-neutral, named by shape (invariants 1-2); mirrors the Restricted/
 	// Locked per-item flag treatment.
 	Muted bool `json:"muted,omitempty"`
+	// Engagement is the acting Profile's playback state for the item; absent
+	// means none. See SourceItemEngagement.
+	Engagement *SourceItemEngagement `json:"engagement,omitempty"`
 }
 
 // SourceItemArtwork describes an item's stored artwork. Poster is the
@@ -845,12 +848,13 @@ func (h *Handler) SetUpdateChecker(checker UpdateChecker, serverVersion string) 
 // that receives them (the byte gate is server-side, not UI-side).
 func (h *Handler) sourceItem(item store.SourceItem, revealed bool) SourceItem {
 	resp := SourceItem{
-		ID:      string(item.ID),
-		Kind:    item.Kind,
-		Title:   item.Title,
-		Summary: item.Summary,
-		Locked:  item.Locked,
-		Muted:   item.Muted,
+		ID:         string(item.ID),
+		Kind:       item.Kind,
+		Title:      item.Title,
+		Summary:    item.Summary,
+		Locked:     item.Locked,
+		Muted:      item.Muted,
+		Engagement: sourceItemEngagement(item.Engagement),
 	}
 	if revealed {
 		resp.Restricted = item.Restricted
@@ -1429,6 +1433,9 @@ func (h *Handler) sourceItems(ctx context.Context, scope auth.Scope, req request
 	// SURVIVORS still include broad-muted-but-favorited cards (§2.6 positive-signal
 	// override) that §2.7 requires badged ("a Favorite-overridden card").
 	if err := h.store.AnnotateMuted(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
+		return nil, err
+	}
+	if err := h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
 		return nil, err
 	}
 	resp := make([]SourceItem, len(items))
@@ -2738,6 +2745,9 @@ func (h *Handler) search(ctx context.Context, scope auth.Scope, req request) ([]
 	if err := h.store.AnnotateMuted(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
 		return nil, err
 	}
+	if err := h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
+		return nil, err
+	}
 	resp := make([]SourceItem, len(items))
 	for i, item := range items {
 		resp[i] = h.sourceItem(item, scope.Revealed)
@@ -2785,6 +2795,9 @@ func (h *Handler) searchEntities(ctx context.Context, scope auth.Scope, req requ
 	// Entity search results badge muted entities (kind-aware: an entity id that is
 	// a direct or broad ENTITY mute target, §2.7).
 	if err := h.store.AnnotateMuted(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
+		return nil, err
+	}
+	if err := h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
 		return nil, err
 	}
 	resp := make([]SourceItem, len(items))
@@ -3638,6 +3651,9 @@ func (h *Handler) queueItems(ctx context.Context, scope auth.Scope) ([]SourceIte
 	if err != nil {
 		return nil, err
 	}
+	if err := h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
+		return nil, err
+	}
 	resp := make([]SourceItem, len(items))
 	for i, item := range items {
 		resp[i] = h.sourceItem(item, scope.Revealed)
@@ -4399,6 +4415,9 @@ func (h *Handler) mediaForEntity(ctx context.Context, scope auth.Scope, req requ
 	}
 	// Direct navigation reaches muted Media on purpose (§2.2) and badges them (§2.7).
 	if err := h.store.AnnotateMuted(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
+		return nil, err
+	}
+	if err := h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
 		return nil, err
 	}
 	resp := make([]SourceItem, len(items))

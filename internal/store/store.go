@@ -816,6 +816,9 @@ type SourceItem struct {
 	// (applyMuteFilterLocked): a badged item still appears, marked-not-hidden so
 	// the state is legible and reversible in place (§2.7).
 	Muted bool
+	// Engagement is the acting Profile's playback state for this item, set by
+	// AnnotateEngagement; nil means no state.
+	Engagement *SourceEngagement
 }
 
 // PairingCode is a short-lived enrollment grant.
