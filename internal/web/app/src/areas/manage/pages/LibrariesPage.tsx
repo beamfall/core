@@ -552,30 +552,32 @@ function LibraryRow({
           ) : (
             <p className="text-xs text-muted-foreground">{t("rootsPlaceholder")}</p>
           )}
-          <div className="flex flex-wrap items-end gap-2">
-            <PathPickerField
-              id={`roots-${library.id}`}
-              label={t("libraryRoots")}
-              role="libraryRoot"
-              value={newRoot}
-              libraryID={library.id}
-              placeholder={t("rootsPlaceholder")}
-              onChange={setNewRoot}
-              inputClassName="min-w-0 flex-1"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={busy || !newRoot.trim()}
-              onClick={onAddRoot}
-            >
-              {t("stagePathPickerRoot")}
-            </Button>
-            <Button type="button" size="sm" disabled={busy} onClick={onSaveRoots}>
-              {t("save")}
-            </Button>
-          </div>
+          <PathPickerField
+            id={`roots-${library.id}`}
+            label={t("libraryRoots")}
+            role="libraryRoot"
+            value={newRoot}
+            libraryID={library.id}
+            placeholder={t("rootsPlaceholder")}
+            onChange={setNewRoot}
+            inputClassName="min-w-0 flex-1 basis-48"
+            actions={
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={busy || !newRoot.trim()}
+                  onClick={onAddRoot}
+                >
+                  {t("stagePathPickerRoot")}
+                </Button>
+                <Button type="button" size="sm" disabled={busy} onClick={onSaveRoots}>
+                  {t("save")}
+                </Button>
+              </>
+            }
+          />
         </div>
       </details>
     </article>
