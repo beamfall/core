@@ -134,3 +134,77 @@ func TestLibraryBrowseFiltersAndFacets(t *testing.T) {
 		t.Fatalf("out-of-scope library = %+v, %v", other, err)
 	}
 }
+
+func TestLibraryBrowseEntityFacetsOnlyNameVisibleItems(t *testing.T) {
+	st := openDemo(t)
+	ctx := context.Background()
+	profile := ProfileID("profile-demo-default")
+	// Mute the Comedy category: its items leave the browse, so the category
+	// must stop being offered as a filter.
+	var comedy string
+	if err := st.catalogR.QueryRowContext(ctx, `SELECT id FROM entity WHERE kind = 'category' AND title = 'Comedy' AND library_id = 'library-demo-open'`).Scan(&comedy); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetMute(ctx, profile, MuteKindEntity, comedy, false, true); err != nil {
+		t.Fatal(err)
+	}
+	muted := mustLibraryBrowse(t, st, LibraryBrowseQuery{ProfileID: profile, FacetEntityKind: "category"})
+	if slices.ContainsFunc(muted.Items, func(i SourceItem) bool { return i.ID == "media-demo-bunny" }) {
+		t.Fatal("a muted category's item is still browsable")
+	}
+	if !slices.Equal(muted.Facets.Entities, []string{"Science"}) {
+		t.Fatalf("entity facets with Comedy muted = %v, want [Science]", muted.Facets.Entities)
+	}
+}
+
+func TestLibraryBrowseHidesItemsWhoseFilesAreAllMissing(t *testing.T) {
+	st := openDemo(t)
+	ctx := context.Background()
+	before := mustLibraryBrowse(t, st, LibraryBrowseQuery{})
+	res, err := st.catalogW.ExecContext(ctx, `UPDATE media_file SET missing_at_ms = 1 WHERE media_id = 'media-demo-bunny'`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		t.Fatal("demo item has no file rows to mark missing")
+	}
+	after := mustLibraryBrowse(t, st, LibraryBrowseQuery{})
+	if after.Total != before.Total-1 || slices.ContainsFunc(after.Items, func(i SourceItem) bool { return i.ID == "media-demo-bunny" }) {
+		t.Fatalf("total %d -> %d; an item with no present file must leave the browse", before.Total, after.Total)
+	}
+}
+
+func TestLibraryBrowseReadsAnOpenEncryptedLibrary(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	library := LibraryID("library-local")
+	if err := st.SetLibraryBacking(ctx, library, false, true); err != nil {
+		t.Fatal(err)
+	}
+	browse := func() LibraryBrowseResult {
+		t.Helper()
+		result, err := st.LibraryBrowse(ctx, LibraryFilter{AllLibraries: true}, LibraryBrowseQuery{LibraryID: library})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	if sealed := browse(); sealed.Total != 0 {
+		t.Fatalf("sealed encrypted library browses %d items, want 0", sealed.Total)
+	}
+	if err := st.UnsealEncryptedLibraryDB(ctx, library, copyEncryptedLibraryDBCipher{}); err != nil {
+		t.Fatal(err)
+	}
+	imported, _, err := st.ImportMediaFile(ctx, encryptedImport(library, "sha256:browse-encrypted", "/enc/browse.mkv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	open := browse()
+	if open.Total != 1 || len(open.Items) != 1 || open.Items[0].ID != imported.ID {
+		t.Fatalf("open encrypted library browse = %+v, want the one imported item", open)
+	}
+}

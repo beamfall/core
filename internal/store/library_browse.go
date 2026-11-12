@@ -4,10 +4,14 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"slices"
 	"sort"
 	"strings"
 )
+
+// libraryBrowseEntityFacetCap bounds the Entity filter choices one read offers.
+const libraryBrowseEntityFacetCap = 200
 
 // Library browse sort keys. "added" orders by catalog insertion (the same
 // m.rowid order the recently-added Source uses); "random" is the seeded
@@ -142,17 +146,29 @@ func (s *Store) LibraryBrowse(ctx context.Context, filter LibraryFilter, query L
 	if err != nil {
 		return empty, err
 	}
+	// AllowedIDs is the one browsed Library, so at most one is visible and its
+	// catalog plane holds every row this read needs.
 	var visible []LibraryID
+	reader := s.catalogR
 	for _, library := range libraries {
-		if libraryVisible(library, filter) {
-			visible = append(visible, library.ID)
+		if !libraryVisible(library, filter) {
+			continue
 		}
+		if library.Encrypted {
+			// A sealed Encrypted Library has no readable plane: it browses empty.
+			db := s.encryptedDBs[library.ID]
+			if db == nil || db.state != "unsealed-registered" || db.reader == nil {
+				continue
+			}
+			reader = db.reader
+		}
+		visible = append(visible, library.ID)
 	}
 	if len(visible) == 0 {
 		return empty, nil
 	}
 
-	candidates, err := s.libraryBrowseCandidatesLocked(ctx, filter, visible, nil)
+	candidates, err := libraryBrowseCandidates(ctx, reader, filter, visible, nil)
 	if err != nil {
 		return empty, err
 	}
@@ -165,14 +181,14 @@ func (s *Store) LibraryBrowse(ctx context.Context, filter LibraryFilter, query L
 	result := LibraryBrowseResult{Items: []SourceItem{}}
 	result.Facets = libraryBrowseFacets(candidates)
 	if query.FacetEntityKind != "" {
-		result.Facets.Entities, err = s.libraryBrowseEntityTitlesLocked(ctx, query.FacetEntityKind, visible)
+		result.Facets.Entities, err = libraryBrowseEntityTitles(ctx, reader, query.FacetEntityKind, visible, candidates)
 		if err != nil {
 			return empty, err
 		}
 	}
 
 	if query.EntityFilter != nil {
-		related, err := s.libraryBrowseCandidatesLocked(ctx, filter, visible, query.EntityFilter)
+		related, err := libraryBrowseCandidates(ctx, reader, filter, visible, query.EntityFilter)
 		if err != nil {
 			return empty, err
 		}
@@ -211,7 +227,7 @@ func (s *Store) LibraryBrowse(ctx context.Context, filter LibraryFilter, query L
 	return result, nil
 }
 
-func (s *Store) libraryBrowseCandidatesLocked(ctx context.Context, filter LibraryFilter, visible []LibraryID, entityFilter *EntityFilter) ([]libraryBrowseCandidate, error) {
+func libraryBrowseCandidates(ctx context.Context, reader *sql.DB, filter LibraryFilter, visible []LibraryID, entityFilter *EntityFilter) ([]libraryBrowseCandidate, error) {
 	placeholders := make([]string, len(visible))
 	args := make([]any, 0, len(visible))
 	for i, id := range visible {
@@ -223,11 +239,13 @@ func (s *Store) libraryBrowseCandidatesLocked(ctx context.Context, filter Librar
 	certClause, certArgs := certificationFilterSQL(filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
 	args = append(args, certArgs...)
 	// #nosec G202 -- interpolated fragments are internally generated placeholders and closed filter SQL.
-	rows, err := s.catalogR.QueryContext(ctx, `
+	rows, err := reader.QueryContext(ctx, `
 		SELECT m.id, m.title, m.duration_seconds, COALESCE(m.year, 0), m.video_height, m.rowid
 		FROM media m
 		WHERE m.library_id IN (`+strings.Join(placeholders, ", ")+`)
-		  AND m.trashed_at_ms IS NULL`+mediaExcludeExtrasClause+entityClause+certClause+`
+		  AND m.trashed_at_ms IS NULL`+mediaExcludeExtrasClause+`
+		  AND (NOT EXISTS (SELECT 1 FROM media_file f WHERE f.media_id = m.id)
+		       OR EXISTS (SELECT 1 FROM media_file f WHERE f.media_id = m.id AND f.missing_at_ms IS NULL))`+entityClause+certClause+`
 	`, args...)
 	if err != nil {
 		return nil, err
@@ -310,43 +328,57 @@ func (s *Store) libraryBrowseProgressLocked(ctx context.Context, profileID Profi
 	return nil
 }
 
-func (s *Store) libraryBrowseEntityTitlesLocked(ctx context.Context, kind string, visible []LibraryID) ([]string, error) {
+// libraryBrowseEntityTitles lists the Entities of one kind that at least one
+// visible candidate belongs to. It is built from the candidates, never from the
+// Library's whole Entity table, so a title reachable only through Media the
+// caller cannot see (certification, Mute) is not offered as a filter.
+func libraryBrowseEntityTitles(ctx context.Context, reader *sql.DB, kind string, visible []LibraryID, candidates []libraryBrowseCandidate) ([]string, error) {
 	placeholders := make([]string, len(visible))
-	args := make([]any, 0, 2*len(visible)+1)
+	args := make([]any, 0, len(visible)+1)
 	args = append(args, kind)
 	for i, id := range visible {
 		placeholders[i] = "?"
 		args = append(args, id)
 	}
-	for _, id := range visible {
-		args = append(args, id)
-	}
-	in := strings.Join(placeholders, ", ")
-	// #nosec G202 -- only generated placeholders and a closed extras clause are interpolated.
-	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT DISTINCT e.title
+	// #nosec G202 -- only generated placeholders are interpolated.
+	rows, err := reader.QueryContext(ctx, `
+		SELECT e.title, r.to_media_id
 		FROM entity e
-		WHERE e.kind = ? AND e.library_id IN (`+in+`)
-		  AND EXISTS (SELECT 1 FROM entity_relation r
-		      JOIN media m ON m.id = r.to_media_id
-		      WHERE r.from_entity_id = e.id AND m.library_id IN (`+in+`)
-		        AND m.trashed_at_ms IS NULL`+mediaExcludeExtrasClause+`)
-		ORDER BY e.title COLLATE NOCASE
-		LIMIT 200
+		JOIN entity_relation r ON r.from_entity_id = e.id
+		WHERE e.kind = ? AND e.library_id IN (`+strings.Join(placeholders, ", ")+`)
+		  AND r.to_media_id IS NOT NULL
 	`, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+	shown := make(map[MediaID]bool, len(candidates))
+	for _, c := range candidates {
+		shown[c.item.ID] = true
+	}
+	seen := map[string]bool{}
 	titles := []string{}
 	for rows.Next() {
 		var title string
-		if err := rows.Scan(&title); err != nil {
+		var mediaID MediaID
+		if err := rows.Scan(&title, &mediaID); err != nil {
 			return nil, err
 		}
-		titles = append(titles, title)
+		if shown[mediaID] && !seen[title] {
+			seen[title] = true
+			titles = append(titles, title)
+		}
 	}
-	return titles, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	slices.SortFunc(titles, func(a, b string) int {
+		if c := strings.Compare(strings.ToLower(a), strings.ToLower(b)); c != 0 {
+			return c
+		}
+		return strings.Compare(a, b)
+	})
+	return titles[:min(len(titles), libraryBrowseEntityFacetCap)], nil
 }
 
 func libraryBrowseFacets(candidates []libraryBrowseCandidate) LibraryBrowseFacets {
