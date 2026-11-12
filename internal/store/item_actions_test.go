@@ -517,6 +517,19 @@ func TestManualMarkOutranksAnOlderPlaybackReport(t *testing.T) {
 	if progress.PositionSeconds != 0 {
 		t.Fatalf("a report older than the unwatched mark restored position %v", progress.PositionSeconds)
 	}
+	// A finished report that predates the unwatched mark must not bring back
+	// the play it cleared.
+	if err := st.UpsertPlaybackProgress(ctx, PlaybackProgress{
+		ProfileID: "profile-default", MediaID: "media-alpha", PositionSeconds: 120, DurationSeconds: 120, EventTimeMS: before - 500,
+	}, true, ResumePolicy{Class: MediaClassVideo}); err != nil {
+		t.Fatal(err)
+	}
+	if progress, _, err = st.PlaybackProgressFor(ctx, "profile-default", "media-alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if progress.Watched || progress.PlayCount != 0 {
+		t.Fatalf("a finished report older than the unwatched mark restored the play: %+v", progress)
+	}
 	report(50, timeToMillis(time.Now().UTC())+60000)
 	if progress, _, err = st.PlaybackProgressFor(ctx, "profile-default", "media-alpha"); err != nil || progress.PositionSeconds != 50 {
 		t.Fatalf("a report newer than the mark = %+v, %v; want position 50", progress, err)
