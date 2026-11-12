@@ -481,6 +481,18 @@ func TestItemActionsReachAnEncryptedLibrary(t *testing.T) {
 	if counts != (EngagementPruneCounts{}) || rowCount() != 4 {
 		t.Fatalf("sealed-plane prune removed %+v and left %d rows, want nothing removed", counts, rowCount())
 	}
+
+	// A trashed Library can be restored, so its sealed plane still holds the sweep.
+	if err := st.DeleteLibrary(ctx, library); err != nil {
+		t.Fatal(err)
+	}
+	counts, err = st.PruneOrphanedEngagementRows(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts != (EngagementPruneCounts{}) || rowCount() != 4 {
+		t.Fatalf("trashed-library prune removed %+v and left %d rows, want nothing removed", counts, rowCount())
+	}
 }
 
 // A playback report observed before a manual mark and delivered after it must

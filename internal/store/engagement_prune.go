@@ -151,20 +151,31 @@ func (s *Store) pruneOrphanedEngagementRowsLocked(ctx context.Context) (Engageme
 }
 
 // catalogReadersLocked returns the reader of every catalog plane that can be
-// read now: the shared catalog and each open Encrypted Library. allReadable is
-// false when an Encrypted Library is sealed or quarantined.
+// read now: the shared catalog and each open Encrypted Library, trashed ones
+// included. allReadable is false when one is sealed, quarantined or not open.
 func (s *Store) catalogReadersLocked(ctx context.Context) (readers []*sql.DB, allReadable bool, err error) {
-	libraries, err := loadLibraries(ctx, s.catalogR)
+	// A trashed Encrypted Library can still be restored, so its plane counts
+	// until the Library row itself is purged.
+	rows, err := s.catalogR.QueryContext(ctx, `SELECT id FROM library WHERE encrypted = 1`)
 	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	var encrypted []LibraryID
+	for rows.Next() {
+		var id LibraryID
+		if err := rows.Scan(&id); err != nil {
+			return nil, false, err
+		}
+		encrypted = append(encrypted, id)
+	}
+	if err := rows.Err(); err != nil {
 		return nil, false, err
 	}
 	readers = []*sql.DB{s.catalogR}
 	allReadable = true
-	for _, library := range libraries {
-		if !library.Encrypted {
-			continue
-		}
-		db := s.encryptedDBs[library.ID]
+	for _, id := range encrypted {
+		db := s.encryptedDBs[id]
 		if db == nil || db.state != "unsealed-registered" || db.reader == nil {
 			allReadable = false
 			continue
