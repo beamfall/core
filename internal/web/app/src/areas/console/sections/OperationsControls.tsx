@@ -208,7 +208,7 @@ function GovernorSettings() {
         <ErrorState message="governorSettingsUnavailable" />
       ) : (
         <form onSubmit={onSubmit} className="space-y-3">
-          <Fieldset title="governorSettingsHeading">
+          <Fieldset title="governorSettingsHeading" hideTitle>
             <ControlRow
               label="governorBackgroundWorkers"
               help="governorBackgroundWorkersHelp"

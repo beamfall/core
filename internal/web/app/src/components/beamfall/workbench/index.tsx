@@ -403,13 +403,24 @@ function PathPickerEntries({
 export function Fieldset({
   title,
   help,
+  hideTitle = false,
   children,
 }: {
   title: StringKey;
   help?: StringKey;
+  /** Keep the legend for assistive tech only, when the section heading already says it. */
+  hideTitle?: boolean;
   children: ReactNode;
 }) {
   const t = useT();
+  if (hideTitle && !help) {
+    return (
+      <fieldset className="console-fieldset">
+        <legend className="sr-only">{t(title)}</legend>
+        <div className="console-fieldset-body">{children}</div>
+      </fieldset>
+    );
+  }
   return (
     <fieldset className="console-fieldset">
       <div className="console-fieldset-head">
@@ -474,7 +485,7 @@ export function ManageSection({
         </div>
         {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
       </CardHeader>
-      <CardContent className="manage-section-body">{children}</CardContent>
+      {children ? <CardContent className="manage-section-body">{children}</CardContent> : null}
     </Card>
   );
 }

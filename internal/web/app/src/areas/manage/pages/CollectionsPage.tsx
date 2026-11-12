@@ -127,7 +127,7 @@ export function CollectionsPage() {
           </div>
         }
       >
-        <p className="manage-empty">{libraries.length === 0 ? t("noCollections") : ""}</p>
+        {libraries.length === 0 && <p className="manage-empty">{t("noCollections")}</p>}
       </ManageSection>
 
       <Tabs.Panel value="manual" className="space-y-4">
