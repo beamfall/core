@@ -68,6 +68,27 @@ describe("play queue", () => {
     expect(await nextInPlayQueue("e")).toBe("");
   });
 
+  it("keeps every item when the set shrinks again between a read and its retry", async () => {
+    // b's progress write lands after the first later read, before the retry.
+    const sets = [
+      ["a", "b", "c", "d", "e"],
+      ["b", "c", "d", "e"],
+      ["c", "d", "e"],
+    ];
+    let read = 0;
+    fetchLibraryItems.mockImplementation(async ({ offset }: LibraryItemsRequest) => {
+      const remaining = sets[Math.min(read++, sets.length - 1)];
+      return page(remaining.slice(offset, offset + 2), remaining.length);
+    });
+
+    expect((await startPlayQueue(request))?.id).toBe("a");
+    expect(await nextInPlayQueue("a")).toBe("b");
+    expect(await nextInPlayQueue("b")).toBe("c");
+    expect(await nextInPlayQueue("c")).toBe("d");
+    expect(await nextInPlayQueue("d")).toBe("e");
+    expect(await nextInPlayQueue("e")).toBe("");
+  });
+
   it("does not repeat or skip when a last-watched order moves played items", async () => {
     // Oldest-watched first: a played item moves behind the other watched ones.
     let order = ["a", "b", "c", "d"];

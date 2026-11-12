@@ -10,6 +10,7 @@ import { fetchLibraryItems, type LibraryItemsRequest } from "./libraryBrowse";
 // starts a new epoch, and the next identity never inherits the queue.
 
 const QUEUE_PAGE = 200;
+const MAX_STEPS_BACK = 8;
 
 interface PlayQueue {
   request: Omit<LibraryItemsRequest, "limit" | "offset">;
@@ -65,23 +66,25 @@ export async function startPlayQueue(
  * Appends the next unseen IDs. Playing the queue changes the set it walks: a
  * watch filter drops each finished item and a last-watched order moves it, so
  * the items not yet queued sit at a lower offset than the count already read.
- * The read steps back by that drift, then scans forward past IDs it already
- * holds, so nothing is skipped and nothing repeats.
+ * The read steps back by that drift, again for each read that finds the set
+ * smaller still, then scans forward past IDs it already holds, so nothing is
+ * skipped and nothing repeats.
  */
 async function loadMore(queue: PlayQueue, played: number): Promise<void> {
   const reorders = !queue.request.shuffleSeed && queue.request.state.sort === "last-watched";
   let offset = reorders ? Math.max(0, queue.fetched - played) : queue.fetched;
-  let probed = reorders;
+  // Progress writes land independently of these reads, so the set can shrink
+  // again between a read and its retry: step back every time it does. The
+  // bound only stops a set that keeps changing from holding the player.
+  let stepsBack = reorders ? 0 : MAX_STEPS_BACK;
   for (;;) {
     const page = await fetchLibraryItems({ ...queue.request, limit: QUEUE_PAGE, offset });
     const shrunk = queue.total - page.total;
     queue.total = page.total;
-    if (!probed) {
-      probed = true;
-      if (shrunk > 0 && offset > 0) {
-        offset = Math.max(0, offset - shrunk);
-        continue;
-      }
+    if (stepsBack > 0 && shrunk > 0 && offset > 0) {
+      stepsBack--;
+      offset = Math.max(0, offset - shrunk);
+      continue;
     }
     queue.fetched = offset + page.items.length;
     const seen = new Set(queue.ids);
