@@ -48,3 +48,21 @@ echo three >"$TMP/internal/backup/y.go"
 git -C "$TMP" add internal/backup/y.go
 git -C "$TMP" commit -q -m "touch backup on main"
 test "$(select_for main)" = "oldest-supported latest-1 latest"
+
+# CORE-1299: a local main behind origin/main must not widen the lane's scope.
+# origin/main gains a backup commit the stale local main never saw; a lane cut
+# from origin/main that touches only other code must not select the drill.
+git -C "$TMP" checkout -q -b upstream
+echo four >"$TMP/internal/backup/z.go"
+git -C "$TMP" add internal/backup/z.go
+git -C "$TMP" commit -q -m "backup change landed by PR"
+git -C "$TMP" update-ref refs/remotes/origin/main HEAD
+git -C "$TMP" checkout -q -b lane-stale-main
+mkdir -p "$TMP/internal/other"
+echo five >"$TMP/internal/other/w.go"
+git -C "$TMP" add internal/other/w.go
+git -C "$TMP" commit -q -m "touch other on top of origin/main"
+test "$(select_for lane-stale-main)" = none
+# Control: without origin/main the stale local main is the base and over-selects.
+git -C "$TMP" update-ref -d refs/remotes/origin/main
+test "$(select_for lane-stale-main)" = "oldest-supported latest-1 latest"

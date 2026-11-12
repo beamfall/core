@@ -10,11 +10,19 @@ set -euo pipefail
 # the bounded PR-scope restore drill (tools/gate/backup-restore-drill.sh)
 # must run — BKUP-CHAIN-1-RESIDUAL-1 r2 gap 3: the trigger selector already
 # existed but nothing computed a real changed-path list to feed it.
+#
+# CORE-1299: "main" means origin/main when that ref exists. Lanes land by PR,
+# so the shared checkout's local main lags origin/main and a merge-base with it
+# would attribute every change main gained since to the lane.
+main_ref=main
+if git rev-parse --verify --quiet 'refs/remotes/origin/main^{commit}' >/dev/null 2>&1; then
+  main_ref=refs/remotes/origin/main
+fi
 base=""
 if [ "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" = "main" ]; then
   base="$(git rev-parse HEAD~1 2>/dev/null || true)"
 else
-  base="$(git merge-base main HEAD 2>/dev/null || true)"
+  base="$(git merge-base "$main_ref" HEAD 2>/dev/null || true)"
 fi
 
 committed=""
