@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -65,6 +65,63 @@ describe("SearchPage header query", () => {
     await waitFor(() => expect(searchResult).toHaveBeenCalledWith("blue planet", "keyword"));
     expect(screen.getByLabelText("Search")).toHaveValue("blue planet");
     expect(await screen.findByText("Hit")).toBeInTheDocument();
+  });
+
+  // The real header field beside the page, as AppShell renders it.
+  async function renderWithHeaderSearch() {
+    const { ViewerActions: HeaderSearch } = await vi.importActual<
+      typeof import("../components/ViewerActions")
+    >("../components/ViewerActions");
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/search"]}>
+          <HeaderSearch />
+          <SearchPage />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    const pageForm = screen.getByRole("button", { name: "Clear" }).closest("form");
+    if (!pageForm) throw new Error("search form missing");
+    return {
+      headerField: within(screen.getByRole("search")).getByLabelText("Search"),
+      pageField: within(pageForm).getByLabelText("Search"),
+    };
+  }
+
+  it("runs the same header query again after Clear", async () => {
+    const user = userEvent.setup();
+    const { headerField, pageField } = await renderWithHeaderSearch();
+
+    await user.type(headerField, "blue planet{Enter}");
+    expect(await screen.findByText("Hit")).toBeInTheDocument();
+    expect(searchResult).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("button", { name: "Clear" }));
+    expect(screen.queryByText("Hit")).toBeNull();
+    expect(pageField).toHaveValue("");
+
+    await user.type(headerField, "blue planet{Enter}");
+    expect(await screen.findByText("Hit")).toBeInTheDocument();
+    expect(searchResult).toHaveBeenCalledTimes(2);
+    expect(searchResult).toHaveBeenLastCalledWith("blue planet", "keyword");
+    expect(pageField).toHaveValue("blue planet");
+  });
+
+  it("runs the same header query again after a search typed on the page", async () => {
+    const user = userEvent.setup();
+    const { headerField, pageField } = await renderWithHeaderSearch();
+
+    await user.type(headerField, "blue planet{Enter}");
+    await waitFor(() => expect(searchResult).toHaveBeenCalledTimes(1));
+
+    await user.clear(pageField);
+    await user.type(pageField, "other{Enter}");
+    await waitFor(() => expect(searchResult).toHaveBeenLastCalledWith("other", "keyword"));
+
+    await user.type(headerField, "blue planet{Enter}");
+    await waitFor(() => expect(searchResult).toHaveBeenCalledTimes(3));
+    expect(searchResult).toHaveBeenLastCalledWith("blue planet", "keyword");
+    expect(pageField).toHaveValue("blue planet");
   });
 });
 
