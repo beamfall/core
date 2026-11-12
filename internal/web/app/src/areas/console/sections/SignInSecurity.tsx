@@ -1,3 +1,4 @@
+import { ShieldCheck } from "lucide-react";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -90,7 +91,7 @@ export function SignInSecurity() {
   }
 
   return (
-    <Section heading="signinSecurityHeading" lead="signinSecurityLead">
+    <Section heading="signinSecurityHeading" icon={ShieldCheck} lead="signinSecurityLead">
       {loadFailed && (
         <div
           role="alert"

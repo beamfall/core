@@ -2,6 +2,7 @@ import {
   Activity,
   FolderPlus,
   KeyRound,
+  ListChecks,
   type LucideIcon,
   RefreshCw,
   SearchCheck,
@@ -93,7 +94,7 @@ export function OwnerTasks() {
     : null;
 
   return (
-    <Section heading="ownerTasksHeading" lead="ownerTasksLead">
+    <Section heading="ownerTasksHeading" icon={ListChecks} lead="ownerTasksLead">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <div className={TILE}>
           <TileHead

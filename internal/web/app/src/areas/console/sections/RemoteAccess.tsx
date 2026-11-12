@@ -1,4 +1,14 @@
-import { ArrowRightLeft, ChevronLeft, ExternalLink, Inbox, RefreshCw, Wifi } from "lucide-react";
+import {
+  ArrowRightLeft,
+  ChevronLeft,
+  Download,
+  ExternalLink,
+  Inbox,
+  Network,
+  RefreshCw,
+  Rocket,
+  Wifi,
+} from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import {
@@ -325,6 +335,7 @@ export function RemoteAccessStatus() {
   return (
     <Section
       heading="remoteAccessHeading"
+      icon={Network}
       lead="remoteAccessLead"
       actions={
         <Button variant="outline" size="sm" onClick={() => void refresh()}>
@@ -373,6 +384,7 @@ function QBittorrentIngest() {
   return (
     <Section
       heading="qbittorrentHeading"
+      icon={Download}
       lead="qbittorrentLead"
       actions={
         <Button variant="outline" size="sm" onClick={() => void refresh()}>
@@ -850,14 +862,14 @@ function MigrationWizard() {
 
   if (active) {
     return (
-      <Section heading="migrationWizardHeading" lead="migrationWizardLead">
+      <Section heading="migrationWizardHeading" icon={Rocket} lead="migrationWizardLead">
         <ImporterWizard importer={active} onBack={() => setActive(null)} />
       </Section>
     );
   }
 
   return (
-    <Section heading="migrationWizardHeading" lead="migrationWizardLead">
+    <Section heading="migrationWizardHeading" icon={Rocket} lead="migrationWizardLead">
       {failed ? (
         <ErrorState message="migrationWizardUnavailable" />
       ) : importers.length === 0 ? (

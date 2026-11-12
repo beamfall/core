@@ -1,4 +1,4 @@
-import { Copy, KeyRound, Plus } from "lucide-react";
+import { Copy, KeyRound, KeySquare, Plus } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { DataTable, EmptyState, ErrorState, StatusChip } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
@@ -103,7 +103,7 @@ function ApiTokens() {
   }
 
   return (
-    <Section heading="apiTokens" lead="apiTokensLead">
+    <Section heading="apiTokens" icon={KeyRound} lead="apiTokensLead">
       <div className="console-card console-card-pad">
         <form onSubmit={onCreate} className="flex items-end gap-2">
           <div className="flex-1 space-y-1.5">
@@ -205,7 +205,7 @@ function ApiKeys() {
   }
 
   return (
-    <Section heading="apiKeysHeading" lead="apiKeysLead">
+    <Section heading="apiKeysHeading" icon={KeySquare} lead="apiKeysLead">
       <div className="console-card console-card-pad">
         <form onSubmit={onCreate} className="space-y-3">
           <div className="max-w-sm space-y-1.5">

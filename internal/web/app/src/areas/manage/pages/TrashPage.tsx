@@ -1,3 +1,4 @@
+import { Flame, Trash2, Undo2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   EmptyLine,
@@ -89,6 +90,7 @@ export function TrashPage() {
     <div className="space-y-4">
       <ManageSection
         title={t("trashPolicyHeading")}
+        icon={Trash2}
         lead={t("trashPolicyLead")}
         actions={
           <div className="flex items-center gap-2">
@@ -195,6 +197,7 @@ function PurgeSection({ onPurged }: { onPurged: () => Promise<void> | void }) {
   return (
     <ManageSection
       title={t("purgeHeading")}
+      icon={Flame}
       actions={<StatusBadge state="red">{t("purgeIrreversible")}</StatusBadge>}
     >
       <div className="space-y-3">
@@ -286,6 +289,7 @@ function ActivitySection() {
   return (
     <ManageSection
       title={t("activityUndoHeading")}
+      icon={Undo2}
       lead={t("activityUndoLead")}
       actions={
         <Button type="button" variant="outline" size="sm" onClick={load}>

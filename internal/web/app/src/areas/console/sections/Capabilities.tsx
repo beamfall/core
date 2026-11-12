@@ -36,7 +36,7 @@ export function Capabilities() {
   const probe = states.filter((s) => s.kind === "probe");
 
   return (
-    <Section heading="capabilitiesHeading" lead="capabilitiesLead">
+    <Section heading="capabilitiesHeading" icon={Layers} lead="capabilitiesLead">
       {loading ? (
         <Skeleton className="h-32 w-full" />
       ) : failed ? (

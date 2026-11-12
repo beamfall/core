@@ -208,7 +208,7 @@ export function Plugins() {
   }
 
   return (
-    <Section heading="consoleConfigPlugins">
+    <Section heading="consoleConfigPlugins" icon={Plug}>
       {loading ? (
         <Skeleton className="h-32 w-full" />
       ) : failed ? (

@@ -1375,3 +1375,187 @@
   padding: 12px 20px;
   background: oklch(8% 0.012 255);
 }
+
+/* ============================================================ *
+ *  House style for the operator register (CORE-1131)
+ *  The setup redesign's look carried into Console and Manage: soft
+ *  accent glows behind the page, glass cards (translucent fill,
+ *  hairline border, backdrop blur, inset top highlight) and a gentle
+ *  accent glow on hover. Tokens mix from --text-primary so the same
+ *  rules read in light and dark themes.
+ * ============================================================ */
+
+[data-register="manage"] {
+  --glass-border: color-mix(in oklab, var(--text-primary) 10%, transparent);
+  --glass-border-strong: color-mix(in oklab, var(--text-primary) 16%, transparent);
+  --glass-fill: color-mix(in oklab, var(--text-primary) 3%, transparent);
+  --glass-fill-raised: color-mix(in oklab, var(--text-primary) 5%, transparent);
+  --glass-divider: color-mix(in oklab, var(--text-primary) 7%, transparent);
+  --glass-highlight: inset 0 1px 0 color-mix(in oklab, var(--text-primary) 6%, transparent);
+  --glass-radius: 12px;
+}
+
+[data-register="manage"] .bf-shell {
+  background:
+    radial-gradient(
+      50% 40% at 8% -6%,
+      color-mix(in oklab, var(--accent) 16%, transparent),
+      transparent 70%
+    ), radial-gradient(40% 35% at 96% -4%, rgba(139, 92, 246, 0.1), transparent 70%),
+    linear-gradient(180deg, var(--bg-root), var(--workbench-root-foot));
+  background-attachment: fixed;
+}
+
+[data-register="manage"]
+  :is(
+    .console-card,
+    .console-fieldset,
+    .console-disclosure,
+    .console-table,
+    .console-session-bar,
+    .manage-section
+  ) {
+  border: 1px solid var(--glass-border);
+  border-radius: var(--glass-radius);
+  background: var(--glass-fill);
+  box-shadow: var(--glass-highlight);
+  backdrop-filter: blur(8px);
+}
+
+[data-register="manage"] :is(.console-fieldset-head, .console-disclosure-body) {
+  border-color: var(--glass-divider);
+}
+
+[data-register="manage"] .console-disclosure > summary {
+  border-radius: var(--glass-radius);
+  transition: background 120ms ease;
+}
+
+[data-register="manage"] .console-disclosure > summary:hover {
+  background: var(--glass-fill-raised);
+}
+
+/* Tables: a quiet glass header band, hairline rows, accent-tinted hover. */
+[data-register="manage"] .console-table thead th,
+[data-register="manage"] .manage-table thead th {
+  background: var(--glass-fill-raised);
+  border-bottom-color: var(--glass-divider);
+}
+
+[data-register="manage"] .console-table tbody td,
+[data-register="manage"] .manage-table tbody td {
+  border-bottom-color: var(--glass-divider);
+}
+
+[data-register="manage"] .manage-table tbody tr:nth-child(even) td {
+  background: transparent;
+}
+
+[data-register="manage"] .console-table tbody tr:hover,
+[data-register="manage"] .manage-table tbody tr:hover td {
+  background: color-mix(in oklab, var(--accent) 6%, transparent);
+}
+
+[data-register="manage"] .console-table tbody tr.is-aggregate,
+[data-register="manage"] .console-table tbody tr.is-aggregate:hover {
+  background: var(--glass-fill-raised);
+}
+
+/* Rows inside glass cards share the divider tone. */
+[data-register="manage"]
+  :is(.console-triage-row, .console-step, .console-control-row, .console-job-row) {
+  border-color: var(--glass-divider);
+}
+
+[data-register="manage"] .console-triage-row {
+  background: transparent;
+}
+
+[data-register="manage"] .console-triage-row:hover {
+  background: color-mix(in oklab, var(--accent) 6%, transparent);
+}
+
+/* Empty states: the icon sits in an accent tile, as on setup. */
+[data-register="manage"] .console-empty {
+  gap: 10px;
+  padding: 36px 16px;
+}
+
+[data-register="manage"] .console-empty-icon {
+  box-sizing: content-box;
+  width: 18px;
+  height: 18px;
+  padding: 11px;
+  border-radius: 12px;
+  opacity: 1;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 15%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 25%, transparent);
+}
+
+[data-register="manage"] .manage-empty {
+  justify-content: center;
+  min-height: 72px;
+}
+
+/* Section headings: larger, with the lead set off beneath. */
+[data-register="manage"] .console-section > div:first-child h2 {
+  font-size: 18px;
+  line-height: 24px;
+  letter-spacing: -0.01em;
+}
+
+[data-register="manage"] .console-section {
+  gap: 14px;
+}
+
+[data-register="manage"] .manage-area .manage-section-title {
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 650;
+}
+
+[data-register="manage"] .manage-area .manage-section-lead {
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* Active rail links pick up a soft accent wash. */
+[data-register="manage"] :is(.console-nav-link.is-active, .manage-nav-link[aria-current="page"]) {
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  [data-register="manage"]
+    :is(
+      .console-card,
+      .console-fieldset,
+      .console-disclosure,
+      .console-table,
+      .console-session-bar,
+      .manage-section
+    ) {
+    backdrop-filter: none;
+    background: var(--bg-surface);
+  }
+}
+
+/* The setup redesign's icon tile, shared by Console and Manage headers. */
+.house-icon-tile {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  color: var(--accent);
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--accent) 24%, transparent),
+    color-mix(in oklab, rgb(139 92 246) 14%, transparent)
+  );
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--accent) 30%, transparent),
+    0 6px 18px -10px var(--accent);
+}

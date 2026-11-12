@@ -1,3 +1,4 @@
+import { Plus, Rss } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   EmptyLine,
@@ -159,6 +160,7 @@ export function SubscriptionsPage() {
     <div className="space-y-4">
       <ManageSection
         title={t("subscriptions")}
+        icon={Rss}
         actions={
           <div className="space-y-1">
             <Label htmlFor="subscription-library" className="sr-only">
@@ -205,7 +207,7 @@ export function SubscriptionsPage() {
         <ErrorLine message={error} />
       </ManageSection>
 
-      <ManageSection title={t("addSubscription")}>
+      <ManageSection title={t("addSubscription")} icon={Plus}>
         <ManageInlineForm>
           <ManageField id="subscription-feed" label={t("feedURL")}>
             <Input

@@ -1,3 +1,4 @@
+import { Files, Link2, Sparkles, TextCursorInput } from "lucide-react";
 import { useState } from "react";
 import {
   EmptyLine,
@@ -131,7 +132,7 @@ export function CurationPage() {
 
   return (
     <div className="space-y-4">
-      <ManageSection title={t("curationHeading")} lead={t("curationLead")}>
+      <ManageSection title={t("curationHeading")} icon={Sparkles} lead={t("curationLead")}>
         <div className="flex flex-wrap items-end gap-3">
           <div className="space-y-1">
             <Label htmlFor="curation-type">{t("curationSubjectType")}</Label>
@@ -184,6 +185,7 @@ function FieldsSection({ subject }: { subject: Subject }) {
   return (
     <ManageSection
       title={t("curationFieldsHeading")}
+      icon={TextCursorInput}
       actions={
         <StatusBadge state="cyan">
           {subject.kind ||
@@ -238,7 +240,7 @@ function RelationsSection({
 
   if (subject.type !== "entity") {
     return (
-      <ManageSection title={t("curationRelationsHeading")}>
+      <ManageSection title={t("curationRelationsHeading")} icon={Link2}>
         <EmptyLine message={t("curationRelationsEntityOnly")} />
       </ManageSection>
     );
@@ -306,6 +308,7 @@ function RelationsSection({
   return (
     <ManageSection
       title={t("curationRelationsHeading")}
+      icon={Link2}
       actions={<StatusBadge state="neutral">{subject.relations.length}</StatusBadge>}
     >
       {subject.relations.length === 0 ? (
@@ -425,7 +428,7 @@ function FilesSection({
 
   if (subject.type !== "media") {
     return (
-      <ManageSection title={t("curationFilesHeading")}>
+      <ManageSection title={t("curationFilesHeading")} icon={Files}>
         <EmptyLine message={t("curationFilesMediaOnly")} />
       </ManageSection>
     );
@@ -448,6 +451,7 @@ function FilesSection({
     <Tabs.Root value={tab} onValueChange={(value) => setTab(value as "versions" | "extras")}>
       <ManageSection
         title={t("curationFilesHeading")}
+        icon={Files}
         actions={
           <Tabs.List aria-label={t("curationFilesHeading")} className="flex gap-1">
             <Tabs.Tab

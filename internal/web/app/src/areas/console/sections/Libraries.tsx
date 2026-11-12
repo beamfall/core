@@ -455,6 +455,7 @@ export function Libraries() {
   return (
     <Section
       heading="libraries"
+      icon={LibraryBig}
       lead="librariesLead"
       actions={
         <>

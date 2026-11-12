@@ -1,3 +1,4 @@
+import { Shapes } from "lucide-react";
 import { useState } from "react";
 import {
   EmptyLine,
@@ -42,7 +43,7 @@ export function EntityPage() {
   };
 
   return (
-    <ManageSection title={t("manageTitle")}>
+    <ManageSection title={t("manageTitle")} icon={Shapes}>
       <div className="flex items-end gap-3">
         <div className="space-y-1">
           <Label htmlFor="entity-id">{t("fieldLocksMediaLabel")}</Label>

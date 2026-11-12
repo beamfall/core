@@ -1,4 +1,26 @@
-import { useEffect } from "react";
+import {
+  Archive,
+  Bookmark,
+  FileCog,
+  FileQuestion,
+  FolderTree,
+  ImageIcon,
+  LibraryBig,
+  ListChecks,
+  ListTodo,
+  Lock,
+  type LucideProps,
+  PanelsTopLeft,
+  PencilLine,
+  Rss,
+  Shapes,
+  ShieldAlert,
+  Sparkles,
+  Tags,
+  Trash2,
+  UserCog,
+} from "lucide-react";
+import { type ComponentType, useEffect } from "react";
 import { Navigate, NavLink, Route, Routes, useLocation } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { useT } from "@/lib/i18n";
@@ -37,34 +59,35 @@ import { UnmatchedPage } from "./pages/UnmatchedPage";
 // strings are introduced; the labels stay the existing localized keys.
 // A nav item labels itself either by a localized string key (`label`) or, for the
 // powertools surfaces that have no global string key yet, a literal `text`.
-type NavItem =
-  | { to: string; label: StringKey; text?: undefined }
-  | { to: string; text: string; label?: undefined };
+type NavItem = { to: string; icon: ComponentType<LucideProps> } & (
+  | { label: StringKey; text?: undefined }
+  | { text: string; label?: undefined }
+);
 const NAV_GROUPS: NavItem[][] = [
   [
-    { to: "/manage/libraries", label: "libraries" },
-    { to: "/manage/operations", label: "jobs" },
-    { to: "/manage/convert", label: "convert" },
-    { to: "/manage/rename", label: "rename" },
-    { to: "/manage/trash", label: "trashPolicyHeading" },
-    { to: "/manage/backups", label: "backupHeading" },
-    { to: "/manage/subscriptions", label: "subscriptions" },
-    { to: "/manage/unmatched", label: "unmatchedHeading" },
+    { to: "/manage/libraries", icon: LibraryBig, label: "libraries" },
+    { to: "/manage/operations", icon: ListChecks, label: "jobs" },
+    { to: "/manage/convert", icon: FileCog, label: "convert" },
+    { to: "/manage/rename", icon: PencilLine, label: "rename" },
+    { to: "/manage/trash", icon: Trash2, label: "trashPolicyHeading" },
+    { to: "/manage/backups", icon: Archive, label: "backupHeading" },
+    { to: "/manage/subscriptions", icon: Rss, label: "subscriptions" },
+    { to: "/manage/unmatched", icon: FileQuestion, label: "unmatchedHeading" },
   ],
   [
-    { to: "/manage/collections", label: "collections" },
-    { to: "/manage/bulk", label: "bulkOpsHeading" },
-    { to: "/manage/tags", label: "tagsHeading" },
-    { to: "/manage/curation", label: "curationHeading" },
-    { to: "/manage/entities", label: "manageTitle" },
-    { to: "/manage/artwork", label: "artworkCandidates" },
-    { to: "/manage/markers", label: "markersHeading" },
-    { to: "/manage/field-locks", label: "fieldLocksHeading" },
-    { to: "/manage/navigation", label: "navOverrideHeading" },
+    { to: "/manage/collections", icon: FolderTree, label: "collections" },
+    { to: "/manage/bulk", icon: ListTodo, label: "bulkOpsHeading" },
+    { to: "/manage/tags", icon: Tags, label: "tagsHeading" },
+    { to: "/manage/curation", icon: Sparkles, label: "curationHeading" },
+    { to: "/manage/entities", icon: Shapes, label: "manageTitle" },
+    { to: "/manage/artwork", icon: ImageIcon, label: "artworkCandidates" },
+    { to: "/manage/markers", icon: Bookmark, label: "markersHeading" },
+    { to: "/manage/field-locks", icon: Lock, label: "fieldLocksHeading" },
+    { to: "/manage/navigation", icon: PanelsTopLeft, label: "navOverrideHeading" },
   ],
   [
-    { to: "/manage/restrictions", label: "restrictionsTitle" },
-    { to: "/manage/profile", label: "profilesTitle" },
+    { to: "/manage/restrictions", icon: ShieldAlert, label: "restrictionsTitle" },
+    { to: "/manage/profile", icon: UserCog, label: "profilesTitle" },
   ],
 ];
 
@@ -109,6 +132,7 @@ export function ManageArea() {
                 // fill) keys off that attribute in manage.css — so the visual
                 // state and the assistive-tech state share one source of truth.
                 <NavLink key={item.to} to={item.to} className="manage-nav-link">
+                  <item.icon className="manage-nav-icon" aria-hidden />
                   {item.text ?? t(item.label)}
                 </NavLink>
               ))}

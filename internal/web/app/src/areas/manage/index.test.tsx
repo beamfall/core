@@ -179,14 +179,14 @@ describe("Manage identity boundary", () => {
     await waitFor(() => expect(fetchLibraries).toHaveBeenCalledTimes(2));
     expect(screen.queryByText("Departed library")).toBeNull();
     expect(screen.queryByText(/late create failed/i)).toBeNull();
-    expect(document.querySelectorAll('tbody tr[aria-hidden="true"]')).toHaveLength(4);
+    expect(document.querySelectorAll("[data-library-skeleton]")).toHaveLength(1);
 
     await act(async () => {
       currentLoad.reject(new Error("current load failed"));
       await currentLoad.promise.catch(() => {});
     });
     expect(await screen.findByText("current load failed")).toBeVisible();
-    expect(document.querySelectorAll('tbody tr[aria-hidden="true"]')).toHaveLength(0);
+    expect(document.querySelectorAll("[data-library-skeleton]")).toHaveLength(0);
     expect(screen.queryByText("Departed library")).toBeNull();
   });
 });

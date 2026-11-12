@@ -51,6 +51,7 @@ export function Retention() {
   return (
     <Section
       heading="retentionRulesTitle"
+      icon={Clock}
       actions={
         <Button size="sm" variant="outline" onClick={() => setCreating((v) => !v)}>
           <Plus className="mr-1 h-4 w-4" />

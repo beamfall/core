@@ -1,3 +1,4 @@
+import { UserCog } from "lucide-react";
 import { useState } from "react";
 import { EmptyLine, ErrorLine, ManageSection, StatusBadge } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
@@ -31,7 +32,7 @@ export function ProfilePage() {
   };
 
   return (
-    <ManageSection title={t("profilesTitle")} lead={t("profilesLead")}>
+    <ManageSection title={t("profilesTitle")} icon={UserCog} lead={t("profilesLead")}>
       {profiles.length === 0 ? (
         <EmptyLine message={t("profileUnavailable")} />
       ) : (

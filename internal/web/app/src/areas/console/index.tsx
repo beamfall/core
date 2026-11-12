@@ -1,6 +1,7 @@
 import {
   Activity,
   AlertTriangle,
+  BellRing,
   Boxes,
   Clock,
   Database,
@@ -118,7 +119,11 @@ function Overview() {
     <div className="space-y-8">
       <OwnerTasks />
 
-      <Section heading="consoleNeedsAttentionHeading" lead="consoleNeedsAttentionLead">
+      <Section
+        heading="consoleNeedsAttentionHeading"
+        icon={BellRing}
+        lead="consoleNeedsAttentionLead"
+      >
         {queue.length === 0 ? (
           <EmptyState message="consoleNeedsAttentionEmpty" icon={AlertTriangle} />
         ) : (

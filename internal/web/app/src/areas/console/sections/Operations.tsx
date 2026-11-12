@@ -1,4 +1,4 @@
-import { Monitor, RefreshCw } from "lucide-react";
+import { BellRing, ListChecks, Monitor, RefreshCw, Users } from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import {
   ControlRow,
@@ -213,6 +213,7 @@ function UpdateAwareness() {
   return (
     <Section
       heading="updateAwarenessHeading"
+      icon={BellRing}
       lead="updateAwarenessLead"
       actions={
         <Button variant="outline" size="sm" onClick={() => void status.refresh()}>
@@ -383,6 +384,7 @@ function JobsQueue() {
   return (
     <Section
       heading="jobs"
+      icon={ListChecks}
       actions={<LiveIndicator state={stream} onRefresh={() => void refresh()} />}
     >
       {loading ? (
@@ -443,6 +445,7 @@ function LiveSessions() {
   return (
     <Section
       heading="liveSessionsHeading"
+      icon={Users}
       lead="liveSessionsLead"
       actions={
         <Button variant="outline" size="sm" onClick={() => void refresh()}>

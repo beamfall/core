@@ -445,24 +445,34 @@ export function ControlRow({
 export function ManageSection({
   title,
   lead,
+  icon: Icon,
   actions,
   children,
 }: {
   title: string;
   lead?: string;
+  /** A generic glyph for the house-style icon tile beside the title. */
+  icon?: ComponentType<LucideProps>;
   actions?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <Card className="manage-section">
       <CardHeader className="manage-section-header flex flex-row items-start justify-between gap-2">
-        <div className="space-y-0.5">
-          <CardTitle role="heading" aria-level={2} className="manage-section-title">
-            {title}
-          </CardTitle>
-          {lead && <CardDescription className="manage-section-lead">{lead}</CardDescription>}
+        <div className="flex min-w-0 items-start gap-3">
+          {Icon && (
+            <span className="house-icon-tile" aria-hidden>
+              <Icon className="size-[18px]" />
+            </span>
+          )}
+          <div className="min-w-0 space-y-0.5">
+            <CardTitle role="heading" aria-level={2} className="manage-section-title">
+              {title}
+            </CardTitle>
+            {lead && <CardDescription className="manage-section-lead">{lead}</CardDescription>}
+          </div>
         </div>
-        {actions && <div className="flex items-center gap-2">{actions}</div>}
+        {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
       </CardHeader>
       <CardContent className="manage-section-body">{children}</CardContent>
     </Card>

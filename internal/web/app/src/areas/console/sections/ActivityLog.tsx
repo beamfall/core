@@ -1,4 +1,4 @@
-import { RefreshCw, ScrollText } from "lucide-react";
+import { Activity, RefreshCw, ScrollText } from "lucide-react";
 import { DataTable, EmptyState, ErrorState } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -18,6 +18,7 @@ export function ActivityLog() {
   return (
     <Section
       heading="activityLogHeading"
+      icon={Activity}
       actions={
         <Button variant="outline" size="sm" onClick={() => void refresh()}>
           <RefreshCw className="console-nav-icon" aria-hidden />

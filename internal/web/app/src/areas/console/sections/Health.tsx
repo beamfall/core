@@ -1,4 +1,4 @@
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { ArrowLeft, RefreshCw, Stethoscope } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
 import { DataTable, EmptyState, ErrorState, StatusChip } from "@/components/beamfall/workbench";
@@ -380,7 +380,7 @@ export function Health() {
   // When a drilldown is open, show only the drill panel.
   if (drill) {
     return (
-      <Section heading="libraryHealthHeading">
+      <Section heading="libraryHealthHeading" icon={Stethoscope}>
         <HealthDrillPanel target={drill} onBack={closeDrill} onDone={() => void drillDone()} />
       </Section>
     );
@@ -389,6 +389,7 @@ export function Health() {
   return (
     <Section
       heading="libraryHealthHeading"
+      icon={Stethoscope}
       lead="libraryHealthLead"
       actions={
         <Button variant="outline" size="sm" onClick={() => void refresh()}>

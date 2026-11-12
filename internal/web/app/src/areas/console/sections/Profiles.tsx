@@ -1,3 +1,4 @@
+import { Users } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { EmptyState, ErrorState } from "@/components/beamfall/workbench";
 import { Badge } from "@/components/ui/badge";
@@ -35,14 +36,14 @@ export function Profiles() {
 
   if (profiles.failed) {
     return (
-      <Section heading="consoleProfilesHeading" lead="consoleProfilesLead">
+      <Section heading="consoleProfilesHeading" icon={Users} lead="consoleProfilesLead">
         <ErrorState message="consoleProfilesUnavailable" />
       </Section>
     );
   }
 
   return (
-    <Section heading="consoleProfilesHeading" lead="consoleProfilesLead">
+    <Section heading="consoleProfilesHeading" icon={Users} lead="consoleProfilesLead">
       <div className="space-y-6">
         <CreateProfileForm onCreated={() => void profiles.refresh()} />
 
