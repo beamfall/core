@@ -5,9 +5,12 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,7 +21,7 @@ import (
 // Open returns a development-seeded store on a fresh temp dir, closed at test end.
 func Open(t testing.TB) *store.Store {
 	t.Helper()
-	st, err := store.Open(context.Background(), t.TempDir(), store.Options{SeedDevelopmentData: true})
+	st, err := store.Open(context.Background(), MigratedDataDir(t), store.Options{SeedDevelopmentData: true})
 	if err != nil {
 		t.Fatalf("storetest.Open: %v", err)
 	}
@@ -55,13 +58,84 @@ func OpenAt(t testing.TB, dataDir string) *store.Store {
 // separately where the byte-identical HTTP goldens are needed.
 func OpenConformance(t testing.TB) *store.Store {
 	t.Helper()
-	st, err := store.Open(context.Background(), t.TempDir(), store.Options{SeedProfile: store.SeedProfileConformance})
+	st, err := store.Open(context.Background(), MigratedDataDir(t), store.Options{SeedProfile: store.SeedProfileConformance})
 	if err != nil {
 		t.Fatalf("storetest.OpenConformance: %v", err)
 	}
 	InstallSnapshotSealer(st)
 	t.Cleanup(func() { _ = st.Close() })
 	return st
+}
+
+// Replaying the full catalog + events migration chain costs seconds per store
+// under -race. The template below is migrated once per test binary, lazily,
+// and kept in memory; MigratedDataDir hands each caller a fresh temp data dir
+// holding private byte copies of both databases, so store.Open finds the
+// schema current and only seeds. The template is unseeded because several
+// seed profiles embed the data dir's own paths in their rows.
+var (
+	templateOnce    sync.Once
+	templateCatalog []byte
+	templateEvents  []byte
+	templateErr     error
+)
+
+// MigratedDataDir returns a fresh temp data dir (removed at test end) whose
+// db/catalog.db and db/events.db are private copies of a database migrated to
+// the current schema. Pass it to store.Open in place of t.TempDir() when the
+// test does not assert migration behaviour itself.
+func MigratedDataDir(t testing.TB) string {
+	t.Helper()
+	templateOnce.Do(func() { templateCatalog, templateEvents, templateErr = buildTemplate() })
+	if templateErr != nil {
+		t.Fatalf("storetest migrated template: %v", templateErr)
+	}
+	dataDir := t.TempDir()
+	dbDir := filepath.Join(dataDir, "db")
+	if err := os.MkdirAll(dbDir, 0o700); err != nil {
+		t.Fatalf("storetest.MigratedDataDir: %v", err)
+	}
+	for name, raw := range map[string][]byte{"catalog.db": templateCatalog, "events.db": templateEvents} {
+		if err := os.WriteFile(filepath.Join(dbDir, name), raw, 0o600); err != nil {
+			t.Fatalf("storetest.MigratedDataDir: %v", err)
+		}
+	}
+	return dataDir
+}
+
+func buildTemplate() (catalog, events []byte, err error) {
+	dir, err := os.MkdirTemp("", "beamfall-storetest-template-")
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	st, err := store.Open(context.Background(), dir, store.Options{Logger: slog.New(slog.DiscardHandler)})
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := st.Close(); err != nil {
+		return nil, nil, err
+	}
+	dbDir := filepath.Join(dir, "db")
+	// Closing the last connection checkpoints the WAL; a leftover sidecar would
+	// mean the main files alone are not the whole database.
+	for _, name := range []string{"catalog.db-wal", "events.db-wal"} {
+		if fi, statErr := os.Stat(filepath.Join(dbDir, name)); statErr == nil && fi.Size() > 0 {
+			return nil, nil, fmt.Errorf("%s not checkpointed after Close (%d bytes)", name, fi.Size())
+		}
+	}
+	root, err := os.OpenRoot(dbDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = root.Close() }()
+	if catalog, err = root.ReadFile("catalog.db"); err != nil {
+		return nil, nil, err
+	}
+	if events, err = root.ReadFile("events.db"); err != nil {
+		return nil, nil, err
+	}
+	return catalog, events, nil
 }
 
 type snapshotSealer struct{}

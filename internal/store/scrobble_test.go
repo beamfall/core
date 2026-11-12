@@ -12,7 +12,7 @@ import (
 // holds the ref).
 func TestScrobbleLinkRoundTrip(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestScrobbleLinkRoundTrip(t *testing.T) {
 // eligible without an explicit row.
 func TestScrobbleEligibilityDefaultsOff(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

@@ -85,7 +85,7 @@ func TestMetadataFTSAggregatesTermsAcrossTitleAndFields(t *testing.T) {
 
 func TestEncryptedMetadataFTSAggregatesTermsAcrossTitleAndFields(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
 	if err != nil {
 		t.Fatal(err)
 	}

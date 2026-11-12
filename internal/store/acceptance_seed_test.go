@@ -16,7 +16,7 @@ var allLib = LibraryFilter{AllLibraries: true, Revealed: true}
 // documented deterministic state the Apple e2e test layers consume.
 func TestAcceptanceSeedYieldsDocumentedStates(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedProfile: SeedProfileAcceptance})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedProfile: SeedProfileAcceptance})
 	if err != nil {
 		t.Fatalf("Open(acceptance): %v", err)
 	}
@@ -214,7 +214,7 @@ func TestAcceptanceSeedYieldsDocumentedStates(t *testing.T) {
 func TestAcceptanceSeedIsDeterministic(t *testing.T) {
 	ctx := context.Background()
 	open := func() *Store {
-		st, err := Open(ctx, t.TempDir(), Options{SeedProfile: SeedProfileAcceptance})
+		st, err := Open(ctx, migratedDataDir(t), Options{SeedProfile: SeedProfileAcceptance})
 		if err != nil {
 			t.Fatalf("Open(acceptance): %v", err)
 		}

@@ -21,7 +21,7 @@ func requireValidationError(t *testing.T, what string, err error) {
 // were, while an empty document is still stored as "{}".
 func TestJobAndOutboxRejectMalformedJSON(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{})
+	st, err := Open(ctx, migratedDataDir(t), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

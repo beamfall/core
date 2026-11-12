@@ -8,7 +8,7 @@ import (
 
 func openDemoSeeded(t *testing.T) *Store {
 	t.Helper()
-	st, err := Open(context.Background(), t.TempDir(), Options{SeedProfile: SeedProfileDemo})
+	st, err := Open(context.Background(), migratedDataDir(t), Options{SeedProfile: SeedProfileDemo})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestAnnotateEngagementContainerCountsRespectVisibility(t *testing.T) {
 // containers still report counts, and stop once the Library is sealed.
 func TestAnnotateEngagementCountsAnEncryptedLibrarysChildren(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
 	if err != nil {
 		t.Fatal(err)
 	}

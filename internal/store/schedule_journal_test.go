@@ -9,7 +9,7 @@ import (
 
 func TestScheduleOccurrenceJournalPublishesEachMemberExactlyOnce(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{})
+	st, err := Open(ctx, migratedDataDir(t), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestScheduleOccurrenceJournalSurvivesReopen(t *testing.T) {
 
 func TestScheduleOccurrenceMemberAdoptsActiveDedupeJob(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{})
+	st, err := Open(ctx, migratedDataDir(t), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func TestScheduleOccurrenceMemberAdoptsActiveDedupeJob(t *testing.T) {
 
 func TestCompleteScheduleOccurrencePrunesOlderCompletedOccurrences(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{})
+	st, err := Open(ctx, migratedDataDir(t), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func TestCompleteScheduleOccurrencePrunesOlderCompletedOccurrences(t *testing.T)
 
 func TestMarkScheduleCompletedIsMonotonic(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{})
+	st, err := Open(ctx, migratedDataDir(t), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

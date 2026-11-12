@@ -27,7 +27,7 @@ type internalConvertFixture struct {
 func newInternalConvertFixture(t *testing.T) internalConvertFixture {
 	t.Helper()
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true})
 	if err != nil {
 		t.Fatal(err)
 	}
