@@ -88,20 +88,27 @@ describe("play queue", () => {
     expect(playQueueTitle("elsewhere")).toBe("");
   });
 
-  it("steps back only by the items played since the last read", async () => {
-    // Last-watched ascending over an unwatched set: playing leaves the order
-    // as it was, so a later read must not start over from the first page.
-    const all = ["a", "b", "c", "d", "e", "f"];
+  it("reads a last-watched set whole at the start and never again", async () => {
+    // Playing reorders a last-watched set, and each progress write lands on its
+    // own schedule, so the queue walks the set as it stood at Play all.
+    let order = ["a", "b", "c", "d", "e", "f"];
     fetchLibraryItems.mockImplementation(async ({ offset }: LibraryItemsRequest) =>
-      page(all.slice(offset, offset + 2), all.length),
+      page(order.slice(offset, offset + 2), order.length),
     );
     await startPlayQueue({ ...request, state: { ...DEFAULT_BROWSE_STATE, sort: "last-watched" } });
+    const reads = fetchLibraryItems.mock.calls.length;
 
-    const played: string[] = [];
-    for (let id = "a"; id; id = await nextInPlayQueue(id)) played.push(id);
-    expect(played).toEqual(all);
-    const offsets = fetchLibraryItems.mock.calls.map(([call]) => call.offset);
-    expect(offsets).toEqual([0, 0, 2, 2, 4, 4]);
+    expect(await nextInPlayQueue("a")).toBe("b");
+    // a's write has landed, b's has not.
+    order = ["b", "c", "d", "e", "f", "a"];
+    expect(await nextInPlayQueue("b")).toBe("c");
+    // b's and c's writes land together before the next read.
+    order = ["d", "e", "f", "a", "b", "c"];
+    expect(await nextInPlayQueue("c")).toBe("d");
+    expect(await nextInPlayQueue("d")).toBe("e");
+    expect(await nextInPlayQueue("e")).toBe("f");
+    expect(await nextInPlayQueue("f")).toBe("");
+    expect(fetchLibraryItems.mock.calls.length).toBe(reads);
   });
 
   it("ends the queue when playback starts outside it", async () => {
@@ -166,26 +173,6 @@ describe("play queue", () => {
     expect(await nextInPlayQueue("c")).toBe("d");
     expect(await nextInPlayQueue("d")).toBe("e");
     expect(await nextInPlayQueue("e")).toBe("");
-  });
-
-  it("does not repeat or skip when a last-watched order moves played items", async () => {
-    // Oldest-watched first: a played item moves behind the other watched ones.
-    let order = ["a", "b", "c", "d"];
-    fetchLibraryItems.mockImplementation(async ({ offset }: LibraryItemsRequest) =>
-      page(order.slice(offset, offset + 2), order.length),
-    );
-    const lastWatched = {
-      ...request,
-      state: { ...DEFAULT_BROWSE_STATE, sort: "last-watched" as const },
-    };
-
-    expect((await startPlayQueue(lastWatched))?.id).toBe("a");
-    expect(await nextInPlayQueue("a")).toBe("b");
-    order = ["c", "d", "a", "b"];
-    expect(await nextInPlayQueue("b")).toBe("c");
-    expect(await nextInPlayQueue("c")).toBe("d");
-    order = ["a", "b", "c", "d"];
-    expect(await nextInPlayQueue("d")).toBe("");
   });
 
   it("is dropped when the identity changes", async () => {

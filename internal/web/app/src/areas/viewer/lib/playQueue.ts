@@ -26,8 +26,6 @@ interface PlayQueue {
   /** Size of the set, and how far into it the server was read, at the last page. */
   total: number;
   fetched: number;
-  /** How many items had been played when the server was last read. */
-  playedAtRead: number;
   done: boolean;
 }
 
@@ -65,37 +63,38 @@ export async function startPlayQueue(
     cursor: 0,
     total: 0,
     fetched: 0,
-    playedAtRead: 0,
     done: false,
   };
   // Reads on until a page holds something playable, so a set that opens on
   // locked items still starts at its first playable one.
-  await loadMore(queue, 0);
+  await loadMore(queue);
+  // Playing a last-watched set reorders it, one progress write at a time and
+  // on no schedule the queue can see, so no later read could tell which items
+  // it had yet to queue. That order is read whole here, before anything
+  // plays, and the queue walks the set as it stood: one read per
+  // QUEUE_PAGE items, paid once at Play all.
+  const reorders = !request.shuffleSeed && request.state.sort === "last-watched";
+  while (reorders && !queue.done && epoch === getIdentityEpochSignal()) await loadMore(queue);
   const first = queue.ids[0];
   if (first === undefined || epoch !== getIdentityEpochSignal()) return null;
-  queue.done = queue.fetched >= queue.total;
   current = queue;
   return { id: first, title: queue.titles.get(first) ?? "" };
 }
 
 /**
- * Appends the next unseen IDs. Playing the queue changes the set it walks: a
- * watch filter drops each finished item and a last-watched order moves it, so
- * the items not yet queued sit at a lower offset than the count already read.
- * Only items played since the last read can have moved, so the read steps
- * back by that many, again for each read that finds the set
+ * Appends the next unseen IDs. Playing the queue can shrink the set it walks:
+ * a watch filter drops each finished item, so the items not yet queued sit at
+ * a lower offset than the count already read. A read that finds the set
+ * smaller steps back by the difference, again for each retry that finds it
  * smaller still, then scans forward past IDs it already holds, so nothing is
  * skipped and nothing repeats.
  */
-async function loadMore(queue: PlayQueue, played: number): Promise<void> {
-  const reorders = !queue.request.shuffleSeed && queue.request.state.sort === "last-watched";
-  const moved = played - queue.playedAtRead;
-  queue.playedAtRead = played;
-  let offset = reorders ? Math.max(0, queue.fetched - moved) : queue.fetched;
+async function loadMore(queue: PlayQueue): Promise<void> {
+  let offset = queue.fetched;
   // Progress writes land independently of these reads, so the set can shrink
   // again between a read and its retry: step back every time it does. The
   // bound only stops a set that keeps changing from holding the player.
-  let stepsBack = reorders ? 0 : MAX_STEPS_BACK;
+  let stepsBack = MAX_STEPS_BACK;
   for (;;) {
     const page = await fetchLibraryItems({ ...queue.request, limit: QUEUE_PAGE, offset });
     const shrunk = queue.total - page.total;
@@ -108,17 +107,12 @@ async function loadMore(queue: PlayQueue, played: number): Promise<void> {
     queue.fetched = offset + page.items.length;
     const seen = new Set(queue.ids);
     const more = page.items.filter((item) => playable(item) && !seen.has(item.id));
-    if (more.length) {
-      for (const item of more) {
-        queue.ids.push(item.id);
-        queue.titles.set(item.id, item.title || "");
-      }
-      return;
+    for (const item of more) {
+      queue.ids.push(item.id);
+      queue.titles.set(item.id, item.title || "");
     }
-    if (!page.items.length || queue.fetched >= page.total) {
-      queue.done = true;
-      return;
-    }
+    queue.done = !page.items.length || queue.fetched >= page.total;
+    if (more.length || queue.done) return;
     offset = queue.fetched;
   }
 }
@@ -159,7 +153,7 @@ export async function nextInPlayQueue(
   }
   if (index + 1 >= queue.ids.length && !queue.done) {
     try {
-      await loadMore(queue, index + 1);
+      await loadMore(queue);
     } catch {
       return "";
     }

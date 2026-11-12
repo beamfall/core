@@ -116,3 +116,9 @@ Profile, which stay listed on the page, and SHALL open each item under the title
 
 - **WHEN** Play all advances to the second item of the set
 - **THEN** the player shows that item's title
+
+#### Scenario: Play all over a last-watched order
+
+- **WHEN** Play all starts over a set sorted by `last-watched` and playing moves each item in that
+  order
+- **THEN** playback visits every playable item once, in the order the set had when Play all started
