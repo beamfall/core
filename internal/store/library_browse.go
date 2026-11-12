@@ -329,7 +329,7 @@ func (s *Store) libraryBrowseUnmutedLocked(ctx context.Context, relations *sql.D
 func (s *Store) libraryBrowseProgressLocked(ctx context.Context, profileID ProfileID, candidates []libraryBrowseCandidate) error {
 	rows, err := s.eventsR.QueryContext(ctx, `
 		SELECT media_id, watched, position_seconds, channel_context,
-		       COALESCE(last_played_at_ms, updated_at_ms)
+		       last_played_at_ms, updated_at_ms
 		FROM playback_progress
 		WHERE profile_id = ?
 	`, profileID)
@@ -346,13 +346,19 @@ func (s *Store) libraryBrowseProgressLocked(ctx context.Context, profileID Profi
 	for rows.Next() {
 		var id MediaID
 		var watched, position, channelContext int
-		var last int64
-		if err := rows.Scan(&id, &watched, &position, &channelContext, &last); err != nil {
+		var played sql.NullInt64
+		var updated int64
+		if err := rows.Scan(&id, &watched, &position, &channelContext, &played, &updated); err != nil {
 			return err
 		}
-		if watched == 0 && position == 0 {
-			// A cleared mark leaves a row with nothing watched on it.
-			last = 0
+		// A real play time always counts. Without one the row's update time
+		// stands in, unless nothing is watched on it: that is a cleared mark.
+		var last int64
+		switch {
+		case played.Valid:
+			last = played.Int64
+		case watched != 0 || position != 0:
+			last = updated
 		}
 		byMedia[id] = progress{
 			watched:     watched != 0,

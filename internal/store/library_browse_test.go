@@ -141,6 +141,14 @@ func TestLibraryBrowseFiltersAndFacets(t *testing.T) {
 	if sintel, bunny := slices.Index(order, "media-demo-sintel"), slices.Index(order, "media-demo-bunny"); sintel < 0 || bunny < sintel || order[0] == "media-demo-bunny" {
 		t.Fatalf("after clearing a mark, last-watched order = %v, want media-demo-bunny among the never-watched", order)
 	}
+	// An imported play has no resume position and no watched mark, but it is a play.
+	if err := st.ApplyImportedPlays(context.Background(), profile, "media-demo-spring", 1, now.Add(time.Hour), EngagementProvenance{Source: "import:music", OccurredAt: now.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	recent = mustLibraryBrowse(t, st, LibraryBrowseQuery{ProfileID: profile, Sort: LibraryBrowseSortLastWatched, Descending: true})
+	if len(recent.Items) == 0 || recent.Items[0].ID != "media-demo-spring" {
+		t.Fatalf("an imported play did not sort as the most recent watch: first = %v", recent.Items[0].ID)
+	}
 
 	// A Library outside the caller's allow-list yields nothing, not an error.
 	other, err := st.LibraryBrowse(context.Background(), LibraryFilter{AllowedIDs: []LibraryID{"library-demo-archive"}}, LibraryBrowseQuery{LibraryID: "library-demo-open"})
