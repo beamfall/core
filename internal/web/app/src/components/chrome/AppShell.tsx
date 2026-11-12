@@ -76,6 +76,11 @@ export function AppShell({
   const [collapsed, setCollapsed] = useState(readCollapsedPref);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const hasSidebar = register === "viewer" && !!manifest && manifest.navigation.length > 0;
+  // The Console is reached by an Admin Session, which the server grants to the
+  // adult owner Profile whatever the Device Role (auth.BeginAdminSession). The
+  // Profile kind is the eligibility the client can see, so the link follows it
+  // and an owner on a viewer-role Device still gets a way in.
+  const canOpenConsole = session?.profile === "adult";
 
   // The phone drawer closes on navigation, on Escape, and when the layout
   // grows past phone width.
@@ -189,7 +194,7 @@ export function AppShell({
             </Badge>
           )}
           {isManager && <ServerActivity />}
-          {isManager && (
+          {canOpenConsole && (
             <Link
               to="/console"
               className={

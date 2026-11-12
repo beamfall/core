@@ -21,6 +21,9 @@ export function AccountMenu() {
   const currentProfile = profiles.find((p) => p.id === session?.profileID);
   const name = currentProfile?.name ?? t("profile");
   const initial = (currentProfile?.name.trim()[0] ?? "?").toUpperCase();
+  // Same rule as the header link: an adult Profile can unlock the Console on
+  // any Device Role. Manage stays a Manager-Device surface.
+  const canOpenConsole = session?.profile === "adult";
 
   // Navigating away closes the menu.
   useEffect(() => {
@@ -88,18 +91,18 @@ export function AccountMenu() {
               <Settings aria-hidden />
               {t("settingsTitle")}
             </Link>
+            {(canOpenConsole || isManager) && <hr className="bf-account-rule" />}
+            {canOpenConsole && (
+              <Link to="/console" className="bf-account-item">
+                <LayoutDashboard aria-hidden />
+                {t("consoleHeading")}
+              </Link>
+            )}
             {isManager && (
-              <>
-                <hr className="bf-account-rule" />
-                <Link to="/console" className="bf-account-item">
-                  <LayoutDashboard aria-hidden />
-                  {t("consoleHeading")}
-                </Link>
-                <Link to="/manage" className="bf-account-item">
-                  <Wrench aria-hidden />
-                  {t("manage")}
-                </Link>
-              </>
+              <Link to="/manage" className="bf-account-item">
+                <Wrench aria-hidden />
+                {t("manage")}
+              </Link>
             )}
           </div>
           {session && (

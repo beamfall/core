@@ -22,13 +22,19 @@ vi.mock("@/lib/register", () => ({
 const sessionState = vi.hoisted(() => ({
   isManager: false,
   signedIn: false,
+  profileKind: "adult",
   manifest: null as unknown,
 }));
 
 vi.mock("@/lib/session", () => ({
   useSession: () => ({
     session: sessionState.signedIn
-      ? { deviceRole: "viewer", profileID: "p1", profile: "adult", revealed: false }
+      ? {
+          deviceRole: sessionState.isManager ? "manager" : "viewer",
+          profileID: "p1",
+          profile: sessionState.profileKind,
+          revealed: false,
+        }
       : null,
     profiles: [{ id: "p1", name: "Owner", kind: "adult" }],
     manifest: sessionState.manifest,
@@ -53,6 +59,7 @@ function renderShell() {
 beforeEach(() => {
   sessionState.isManager = false;
   sessionState.signedIn = false;
+  sessionState.profileKind = "adult";
   sessionState.manifest = null;
   delete window.beamfallHost;
 });
@@ -93,6 +100,35 @@ describe("AppShell host chrome suppression", () => {
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("link", { name: "Manage" })).toBeNull();
     expect(screen.getByRole("button", { name: "Account menu for Owner" })).toHaveFocus();
+  });
+
+  it("links the Console for an adult Profile on a viewer-role device", async () => {
+    // The server opens an Admin Session for the adult owner on any Device Role,
+    // so the way in cannot depend on the device being a Manager.
+    const user = userEvent.setup();
+    sessionState.signedIn = true;
+    renderShell();
+    expect(screen.getByRole("link", { name: "Console" })).toHaveAttribute("href", "/console");
+
+    await user.click(screen.getByRole("button", { name: "Account menu for Owner" }));
+
+    expect(screen.getAllByRole("link", { name: "Console" })).toHaveLength(2);
+    expect(screen.queryByRole("link", { name: "Manage" })).toBeNull();
+    expect(screen.queryByText("MANAGER")).toBeNull();
+  });
+
+  it("offers no Console link to a managed Profile, even on a manager device", async () => {
+    const user = userEvent.setup();
+    sessionState.signedIn = true;
+    sessionState.isManager = true;
+    sessionState.profileKind = "managed";
+    renderShell();
+    expect(screen.queryByRole("link", { name: "Console" })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Account menu for Owner" }));
+
+    expect(screen.queryByRole("link", { name: "Console" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Manage" })).toHaveAttribute("href", "/manage");
   });
 
   it("shows running jobs in the header activity link for managers", async () => {
