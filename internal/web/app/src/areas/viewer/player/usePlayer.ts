@@ -572,7 +572,9 @@ export function usePlayer(
           let streamTokenRefreshed = false;
           const refreshStreamToken = () => {
             const resumePosition = video.currentTime;
-            void fetchPlaybackInfo(mediaID)
+            // The refresh replaces info, so it declares the same next item: Up Next
+            // and auto-advance survive a renewed token.
+            void fetchPlaybackInfo(mediaID, nextMediaIDRef.current)
               .then((refreshedInfo) => {
                 if (!alive) return;
                 const refreshedStream = streamOfKind(refreshedInfo, target.kind);

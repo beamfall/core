@@ -139,11 +139,18 @@ const messages = {
 function Harness({
   mediaID = "media-alpha",
   startAtSeconds = 0,
+  nextMediaID,
 }: {
   mediaID?: string;
   startAtSeconds?: number;
+  nextMediaID?: string;
 }) {
-  const { videoRef, state, retry, switchToHls } = usePlayer(mediaID, messages, startAtSeconds);
+  const { videoRef, state, retry, switchToHls } = usePlayer(
+    mediaID,
+    messages,
+    startAtSeconds,
+    nextMediaID,
+  );
   return (
     <>
       <video data-testid="player" ref={videoRef} />
@@ -176,6 +183,7 @@ function Harness({
       <output data-testid="decision">{state.decision}</output>
       <output data-testid="info-decision">{state.info?.decision ?? ""}</output>
       <output data-testid="markers">{state.markers.length}</output>
+      <output data-testid="up-next">{state.info?.next?.mediaID ?? ""}</output>
     </>
   );
 }
@@ -847,6 +855,34 @@ describe("usePlayer", () => {
     video.currentTime = 0;
     fireEvent.loadedMetadata(video);
     expect(video.currentTime).toBe(87);
+  });
+
+  it("keeps the declared next item, so Up Next survives a stream-token refresh (CORE-1143)", async () => {
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+    let call = 0;
+    vi.mocked(fetchPlaybackInfo).mockImplementation(async (_mediaID, nextMediaID) => {
+      call += 1;
+      return {
+        decision: "transcode",
+        streams: [{ kind: "hls", url: `/api/media/hls/token${call}/master.m3u8` }],
+        // The server names a next item only when the request declares one.
+        ...(nextMediaID ? { next: { mediaID: nextMediaID } } : {}),
+      };
+    });
+
+    render(<Harness nextMediaID="media-next" />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    expect(screen.getByTestId("up-next")).toHaveTextContent("media-next");
+
+    fakeHlsInstances[0].emitError({ fatal: true, networkDetails: { status: 401 } });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("stream-url")).toHaveTextContent(
+        "/api/media/hls/token2/master.m3u8",
+      ),
+    );
+    expect(fetchPlaybackInfo).toHaveBeenLastCalledWith("media-alpha", "media-next");
+    expect(screen.getByTestId("up-next")).toHaveTextContent("media-next");
   });
 
   it("goes reveal-terminal on a second 401 after the refreshed stream token also expires", async () => {
