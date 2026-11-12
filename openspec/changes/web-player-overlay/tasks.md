@@ -6,4 +6,4 @@
 - [x] 4. Settings popover (bottom sheet on phones) holding speed, audio, subtitles, subtitle styling, quality, skip interval and playback details
 - [x] 5. Reduced motion and reduced transparency fallbacks; phone layout
 - [x] 6. Owner review in the running UI
-- [ ] 7. Player unit tests, e2e player spec and goldens; `npm run test`, lint, player e2e on the committed head
+- [x] 7. Player unit tests, e2e player spec and goldens; `npm run test`, lint, player e2e on the committed head
