@@ -1,0 +1,220 @@
+/* Media detail page (CORE-1144). The header is the setup wizard's glass panel
+ * (translucent card, hairline border, deep shadow, backdrop blur) over a
+ * blurred wash of the item's own artwork; the primary action and progress
+ * carry the accent glow. Tokens only; no new colors. */
+
+[data-register="viewer"] .bf-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+[data-register="viewer"] .bf-detail-back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px 6px 8px;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.05);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
+}
+
+[data-register="viewer"] .bf-detail-back:hover {
+  color: var(--text-primary);
+  background: rgb(255 255 255 / 0.1);
+}
+
+[data-register="viewer"] .bf-detail-back:focus-visible,
+[data-register="viewer"] .bf-detail-play:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+[data-register="viewer"] .bf-detail-back svg {
+  width: 16px;
+  height: 16px;
+}
+
+[data-register="viewer"] .bf-detail-stage {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: var(--radius-card);
+  padding: clamp(16px, 4vw, 48px);
+  background:
+    radial-gradient(
+      circle at 78% 18%,
+      color-mix(in oklab, var(--library-accent, var(--beam-500)) 22%, transparent),
+      transparent 55%
+    ), linear-gradient(150deg, oklch(24% 0.03 248), oklch(14% 0.018 256));
+}
+
+[data-register="viewer"] .bf-detail-wash {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+}
+
+[data-register="viewer"] .bf-detail-wash img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.5;
+  filter: blur(32px) saturate(1.25);
+  transform: scale(1.15);
+}
+
+[data-register="viewer"] .bf-detail-wash::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgb(0 0 0 / 0.15), rgb(0 0 0 / 0.55));
+}
+
+[data-register="viewer"] .bf-detail-panel {
+  display: grid;
+  grid-template-columns: minmax(150px, 240px) minmax(0, 1fr);
+  align-items: end;
+  gap: clamp(20px, 3vw, 36px);
+  padding: clamp(20px, 3vw, 32px);
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 16px;
+  background: color-mix(in oklab, var(--bg-surface) 70%, transparent);
+  box-shadow: 0 30px 80px -20px rgb(0 0 0 / 0.7);
+  backdrop-filter: blur(24px);
+  animation: bf-detail-in var(--duration-normal) var(--ease-standard) both;
+}
+
+[data-register="viewer"] .bf-detail-poster {
+  border-radius: var(--radius-card);
+  box-shadow: 0 18px 40px -12px rgb(0 0 0 / 0.65);
+}
+
+[data-register="viewer"] .bf-detail-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+[data-register="viewer"] .bf-detail-copy .bf-page-title {
+  overflow-wrap: anywhere;
+}
+
+[data-register="viewer"] .bf-detail-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-register="viewer"] .bf-detail-fact {
+  padding: 4px 12px;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.05);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-register="viewer"] .bf-detail-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(320px, 100%);
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+[data-register="viewer"] .bf-detail-progress-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.12);
+  overflow: hidden;
+}
+
+[data-register="viewer"] .bf-detail-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--beam-500);
+  box-shadow: 0 0 12px var(--accent);
+}
+
+[data-register="viewer"] .bf-detail-play {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+  box-shadow: 0 0 24px -6px var(--accent);
+}
+
+[data-register="viewer"] .bf-detail-play svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+[data-register="viewer"] .bf-detail-summary {
+  margin: 0;
+  max-width: 68ch;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 23px;
+  white-space: pre-line;
+}
+
+[data-register="viewer"] .bf-detail-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+@keyframes bf-detail-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-register="viewer"] .bf-detail-panel {
+    animation: none;
+  }
+}
+
+/* Phone: the poster sits above the copy at a fixed width, the panel tightens. */
+@media (max-width: 640px) {
+  [data-register="viewer"] .bf-detail-panel {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+  [data-register="viewer"] .bf-detail-poster {
+    width: min(160px, 48%);
+  }
+  [data-register="viewer"] .bf-detail-play {
+    align-self: stretch;
+    justify-content: center;
+  }
+}

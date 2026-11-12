@@ -299,7 +299,7 @@ describe("MediaItemCard play queue", () => {
     render(
       <I18nProvider initialLocale="en">
         <MemoryRouter>
-          <MediaItemCard item={baseItem()} queue={queue} />
+          <MediaItemCard item={baseItem()} queue={queue} playOnActivate />
           <LocationState />
         </MemoryRouter>
       </I18nProvider>,

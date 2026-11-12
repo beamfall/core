@@ -9,6 +9,7 @@ import { itemTargetFor } from "../actions";
 import { artworkBucketURL, artworkSlotURL, artworkSrcSet } from "../lib/artwork";
 import { cardAccessibleName, cardState } from "../lib/cardState";
 import { entityLinkState } from "../lib/entityPreview";
+import { mediaLinkState } from "../lib/mediaDetail";
 import { fetchPreviewInfo } from "../lib/playback";
 import { type RenderFocusAnchor, rememberRenderFocus } from "../lib/renderFocus";
 import { type PlayerNavState, type PlayQueueItem, queueWindow } from "../lib/watchQueue";
@@ -40,6 +41,7 @@ export function MediaItemCard({
   setSize,
   focusAnchor,
   queue,
+  playOnActivate,
 }: {
   item: SourceItem;
   /** 1-based aria-posinset for grid a11y; omit outside a grid. */
@@ -49,6 +51,8 @@ export function MediaItemCard({
   focusAnchor?: RenderFocusAnchor;
   /** The playable siblings this card is shown with, handed to the player as its queue. */
   queue?: PlayQueueItem[];
+  /** A list row plays at once; a poster opens the Media detail page (CORE-1144). */
+  playOnActivate?: boolean;
 }) {
   const navigate = useNavigate();
   const identity = useViewerIdentity();
@@ -58,7 +62,8 @@ export function MediaItemCard({
   const [previewClip, setPreviewClip] = useState("");
   const isMedia = item.kind === "media";
   const state = cardState(item, t);
-  const path = `/${isMedia ? "watch" : "entity"}/${encodeURIComponent(item.id)}`;
+  // The page the card's own activation opens (and the More menu's copied link).
+  const path = `/${isMedia ? (playOnActivate ? "watch" : "media") : "entity"}/${encodeURIComponent(item.id)}`;
   const primaryLabel = isMedia
     ? t(state.progressPercent === undefined ? "play" : "cardResume")
     : t("cardOpen");
@@ -121,18 +126,27 @@ export function MediaItemCard({
     };
   }, [previewClip]);
 
+  // The siblings as the player's queue (previous/next and the pre-minted next
+  // stream), bound to the viewer identity. A one-item queue still goes, so it
+  // ends an earlier Play all queue. The detail page forwards it to its Play.
+  function queueState(): Pick<PlayerNavState, "queue" | "queueIdentity"> {
+    if (!identity || !queue || queue.length === 0) return {};
+    return { queue: queueWindow(queue, item.id), queueIdentity: identity };
+  }
+
+  function play() {
+    // Carry the title forward so the player's info overlay can name the Media
+    // (the playback-info wire does not report it).
+    const state: PlayerNavState = { title: item.title, ...queueState() };
+    navigate(`/watch/${encodeURIComponent(item.id)}`, { state });
+  }
+
   function activate() {
-    if (isMedia) {
-      // Carry the title forward so the player's info overlay can name the Media
-      // (the playback-info wire does not report it), plus the siblings as the
-      // player's queue (previous/next and the pre-minted next stream). A
-      // one-item queue still goes, so it ends an earlier Play all queue.
-      const state: PlayerNavState = { title: item.title };
-      if (identity && queue && queue.length > 0) {
-        state.queue = queueWindow(queue, item.id);
-        state.queueIdentity = identity;
-      }
-      navigate(path, { state });
+    if (isMedia && playOnActivate) {
+      play();
+    } else if (isMedia) {
+      const link = mediaLinkState(item, identity, focusAnchor?.section);
+      navigate(path, { state: link ? { ...link, ...queueState() } : undefined });
     } else {
       navigate(path, { state: entityLinkState(item, identity) });
     }
@@ -257,7 +271,7 @@ export function MediaItemCard({
         isMedia={isMedia}
         href={new URL(`${import.meta.env.BASE_URL}${path.slice(1)}`, window.location.origin).href}
         target={itemTargetFor(item)}
-        onPrimary={activate}
+        onPrimary={isMedia ? play : activate}
       />
     </li>
   );

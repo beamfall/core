@@ -103,6 +103,7 @@ export function SectionView({
               posInSet={index + 1}
               setSize={items.length}
               queue={queue}
+              playOnActivate={section.kind === "list"}
               focusAnchor={
                 navigationID
                   ? { navigation: navigationID, section: section.id, item: item.id }

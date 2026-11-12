@@ -15,6 +15,7 @@ import { useScrollRestoration } from "./lib/useScrollRestoration";
 import { BrowsePage } from "./pages/BrowsePage";
 import { EntityPage } from "./pages/EntityPage";
 import { LibraryBrowsePage } from "./pages/LibraryBrowsePage";
+import { MediaDetailPage } from "./pages/MediaDetailPage";
 import { MyDataPage } from "./pages/MyDataPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { ProfilePickerPage } from "./pages/ProfilePickerPage";
@@ -139,6 +140,7 @@ function ViewerRoutes({ profileID }: { profileID: string }) {
       <Route path="/n/:nodeId" element={<BrowsePage />} />
       <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
       <Route path="/entity/:entityId" element={<EntityPage />} />
+      <Route path="/media/:mediaId" element={<MediaDetailPage />} />
       <Route path="/seeall/:sourceId" element={<SeeAllPage />} />
       <Route path="/search" element={<SearchPage />} />
       <Route path="/mydata" element={<MyDataPage />} />
