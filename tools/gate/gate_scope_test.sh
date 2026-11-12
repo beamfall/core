@@ -121,7 +121,6 @@ excluded = {
     "fuzz",
     "capability manifest",
     "go vet",
-    "feature-coverage ratchet",
     "go test -tags beamfall_appstore conformance capabilities graph",
     "ADR-0122 cross-repo wire conformance",
     "go test + line-coverage ratchet",
