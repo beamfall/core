@@ -26,6 +26,10 @@ inverted -- here the producer is present and a consumer may be absent):
 By default the check only enforces when the working change actually touches a
 contract source (see contractSourcePrefixes in the registry); --all forces it.
 If the changed set cannot be determined the check runs anyway -- fail closed.
+The diff base defaults to origin/main when that ref exists (CORE-1299): lanes
+land by PR, so a shared checkout's local main lags origin/main and diffing
+against it attributes every change main gained since to the lane. Without an
+origin/main ref the check falls back to local main and says so.
 
 Exit codes: 0 fresh / not triggered / advisory skip, 1 stale or error, 2 usage.
 """
@@ -127,6 +131,34 @@ def changed_paths(repo: Path, base: str) -> set[str] | None:
     paths = set(committed.splitlines())
     paths.update(line[3:].strip() for line in working.splitlines() if len(line) > 3)
     return {path for path in paths if path}
+
+
+def default_base(repo: Path) -> str | None:
+    """Diff base when none was requested: origin/main, else local main.
+
+    Local main in a shared checkout is only as fresh as the last manual
+    fast-forward, so it is a fallback, announced on stderr, never the first
+    choice. None (neither ref exists) leaves the changed set undeterminable,
+    which runs the check -- fail closed.
+    """
+    for ref, note in (
+        ("refs/remotes/origin/main", None),
+        (
+            "refs/heads/main",
+            "no origin/main ref; diffing against local main, which may lag "
+            "origin/main and over-trigger this check",
+        ),
+    ):
+        if run_git(repo, ["rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"]):
+            if note:
+                print(f"consumer-pin-freshness: {note}", file=sys.stderr)
+            return ref
+    print(
+        "consumer-pin-freshness: neither origin/main nor main exists; "
+        "cannot scope the diff, checking every obligation",
+        file=sys.stderr,
+    )
+    return None
 
 
 def run_git(repo: Path, args: list[str]) -> str | None:
@@ -403,8 +435,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "--base",
-        default=os.environ.get("BEAMFALL_PIN_FRESHNESS_BASE", "main"),
-        help="base ref for the contract-source diff guard (default: main)",
+        default=os.environ.get("BEAMFALL_PIN_FRESHNESS_BASE") or None,
+        help="base ref for the contract-source diff guard "
+        "(default: origin/main, falling back to local main)",
     )
     parser.add_argument(
         "--obligations",
@@ -426,7 +459,8 @@ def resolve_changed(args: argparse.Namespace, producer: Path) -> set[str] | None
     if args.changed_paths:
         text = Path(args.changed_paths).read_text(encoding="utf-8")
         return {line.strip() for line in text.splitlines() if line.strip()}
-    return changed_paths(producer, args.base)
+    base = args.base or default_base(producer)
+    return changed_paths(producer, base) if base else None
 
 
 def main(argv: list[str]) -> int:

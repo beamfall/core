@@ -5,6 +5,13 @@ Generic descendants must remain in the worker process group. The canonical gate
 opts into nested-session cleanup and runs this coordinator beneath an independent
 parent-loss guardian. If the lock-holding coordinator is SIGKILLed, that guardian
 retires every tagged descendant before any inherited lock can become available.
+
+The cheap preflight lane (GATE_PREFLIGHT=1, `make gate-preflight`) never waits
+on the full-gate capacity lock (CORE-1321): queued behind ~37-minute gates it
+cost a whole slot for a seconds-scale check. It takes its own repository-wide
+preflight lock and keeps its latest-wins generation apart from full gates, so a
+preflight never supersedes a full gate in the same worktree. Every lock wait is
+announced on stderr with the recorded holder, then again periodically.
 """
 
 from __future__ import annotations
@@ -23,6 +30,7 @@ import time
 
 SUPERSEDED_EXIT = 75
 POLL_SECONDS = 0.05
+WAIT_NOTICE_SECONDS = 30.0
 ROOT = Path(__file__).resolve().parents[2]
 COORDINATOR_SUPERVISED_FLAG = "GATE_LATEST_COORDINATOR_SUPERVISED"
 CAPACITY_LOCK_FD = "BEAMFALL_GATE_CAPACITY_FD"
@@ -89,15 +97,89 @@ def allocate_generation(control_lock: Path, generation_path: Path) -> int:
         return generation
 
 
-def acquire_if_latest(stream, generation: int, generation_path: Path, stopped) -> bool:
+def process_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def lock_holder(stream) -> str:
+    """Describe the holder a coordinator recorded in the lock file, if any.
+
+    Only this coordinator records itself; a holder that does not (for example
+    `script/gate-capacity.py`) or a record left by a SIGKILLed coordinator is
+    reported as unrecorded rather than named wrongly.
+    """
+    try:
+        stream.seek(0)
+        record = stream.read(512).decode("utf-8", errors="replace").strip()
+    except OSError:
+        record = ""
+    pid_field = record.split(" ", 2)[1:2] if record.startswith("pid ") else []
+    if pid_field and pid_field[0].isdecimal() and process_alive(int(pid_field[0])):
+        return record
+    return "a holder that recorded no pid (script/gate-capacity.py or an external lock)"
+
+
+def record_holder(stream, generation: int) -> None:
+    # The lock file is opened "a+b": after truncation the append lands at 0.
+    try:
+        stream.truncate(0)
+        stream.write(f"pid {os.getpid()} gate run {generation} in {ROOT}\n".encode())
+        stream.flush()
+    except OSError:
+        pass
+
+
+def clear_holder(stream) -> None:
+    try:
+        stream.truncate(0)
+    except (OSError, ValueError):
+        pass
+
+
+def acquire_if_latest(
+    stream,
+    generation: int,
+    generation_path: Path,
+    stopped,
+    label: str = "",
+) -> bool:
+    started = time.monotonic()
+    next_notice = 0.0
     while not stopped():
         if read_generation(generation_path) != generation:
             return False
         try:
             fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            return read_generation(generation_path) == generation
         except BlockingIOError:
+            waited = time.monotonic() - started
+            if label and waited >= next_notice:
+                print(
+                    f"gate: run {generation} waiting for {label} held by "
+                    f"{lock_holder(stream)} ({waited:.0f}s so far)",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                next_notice = waited + WAIT_NOTICE_SECONDS
             time.sleep(POLL_SECONDS)
+            continue
+        if read_generation(generation_path) != generation:
+            return False
+        if label:
+            record_holder(stream, generation)
+            if next_notice:
+                print(
+                    f"gate: run {generation} acquired {label} after "
+                    f"{time.monotonic() - started:.0f}s",
+                    file=sys.stderr,
+                    flush=True,
+                )
+        return True
     return False
 
 
@@ -226,9 +308,12 @@ def supervise_canonical_coordinator(command: list[str]) -> None:
 
 
 def supervise(command: list[str]) -> int:
+    preflight = os.environ.get("GATE_PREFLIGHT") == "1"
     state_dir = Path(
         os.environ.get("GATE_LATEST_STATE_DIR", ROOT / ".agent-evidence" / "gate-latest")
     )
+    if preflight:
+        state_dir = state_dir / "preflight"
     state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     generation_path = state_dir / "generation"
     grace = float(os.environ.get("GATE_CANCEL_GRACE_SECONDS", "2"))
@@ -260,8 +345,14 @@ def supervise(command: list[str]) -> int:
             if received_signal:
                 return 128 + received_signal
             raise
-        capacity_path = common_dir / "beamfall-gate.capacity.lock"
-        capacity_fd = inherited_capacity_lock(capacity_path)
+        if preflight:
+            capacity_path = common_dir / "beamfall-gate.preflight.lock"
+            capacity_label = f"the gate-preflight lock ({capacity_path})"
+            capacity_fd = None
+        else:
+            capacity_path = common_dir / "beamfall-gate.capacity.lock"
+            capacity_label = f"gate capacity ({capacity_path})"
+            capacity_fd = inherited_capacity_lock(capacity_path)
         if capacity_fd is None:
             capacity_fd = os.open(
                 capacity_path,
@@ -275,6 +366,7 @@ def supervise(command: list[str]) -> int:
                 generation,
                 generation_path,
                 lambda: bool(received_signal),
+                capacity_label,
             ):
                 if received_signal:
                     return 128 + received_signal
@@ -284,6 +376,7 @@ def supervise(command: list[str]) -> int:
                     file=sys.stderr,
                 )
                 return SUPERSEDED_EXIT
+            locks.callback(clear_holder, capacity_lock)
 
             run_lock = locks.enter_context((state_dir / "run.lock").open("a+b"))
             if not acquire_if_latest(
@@ -291,6 +384,7 @@ def supervise(command: list[str]) -> int:
                 generation,
                 generation_path,
                 lambda: bool(received_signal),
+                f"this worktree's run lock ({state_dir / 'run.lock'})",
             ):
                 if received_signal:
                     return 128 + received_signal
@@ -300,13 +394,20 @@ def supervise(command: list[str]) -> int:
                     file=sys.stderr,
                 )
                 return SUPERSEDED_EXIT
+            locks.callback(clear_holder, run_lock)
 
             environment = os.environ.copy()
             environment.pop("GATE_WORKER_REAPS_DESCENDANTS", None)
             environment.pop(COORDINATOR_SUPERVISED_FLAG, None)
             environment.pop(PROCESS_SUPERVISOR_SIGNAL_GRACE, None)
             environment["GATE_RUN_ID"] = str(generation)
-            environment[CAPACITY_LOCK_FD] = str(capacity_lock.fileno())
+            if preflight:
+                # The preflight lock is not gate capacity: never name it as
+                # such, and tell gate.sh not to re-acquire capacity itself.
+                environment.pop(CAPACITY_LOCK_FD, None)
+                environment["BEAMFALL_GATE_CAPACITY_HELD"] = "1"
+            else:
+                environment[CAPACITY_LOCK_FD] = str(capacity_lock.fileno())
             process = None
             try:
                 if "GOCACHE" not in os.environ:
