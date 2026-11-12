@@ -50,6 +50,12 @@ function pageFor(request: LibraryItemsRequest) {
   };
 }
 
+function WatchState() {
+  const location = useLocation();
+  const queue = (location.state as { queue?: { id: string }[] } | null)?.queue ?? [];
+  return <output data-testid="watch">{queue.map((entry) => entry.id).join(",")}</output>;
+}
+
 function Where() {
   const location = useLocation();
   return <output data-testid="where">{location.pathname + location.search}</output>;
@@ -142,5 +148,25 @@ describe("Library browse", () => {
     await user.click(screen.getByRole("button", { name: "Remove filter: Sector: Outer" }));
     await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent(/\/n\/films\/all$/));
     expect(screen.queryByRole("button", { name: /Remove filter/ })).toBeNull();
+  });
+
+  it("hands a played card's loaded neighbours to the player as its queue (CORE-1143)", async () => {
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
+    const user = userEvent.setup();
+
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/n/films/all"]}>
+          <Routes>
+            <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
+            <Route path="/watch/:id" element={<WatchState />} />
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Item 1" }));
+    const queue = (await screen.findByTestId("watch")).textContent?.split(",") ?? [];
+    expect(queue.slice(0, 3)).toEqual(["media-0", "media-1", "media-2"]);
   });
 });

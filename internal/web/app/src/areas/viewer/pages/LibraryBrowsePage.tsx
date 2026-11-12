@@ -33,6 +33,7 @@ import {
   writeLibraryViewMode,
 } from "../lib/libraryBrowse";
 import { startPlayQueue } from "../lib/playQueue";
+import { type PlayQueueItem, playQueueOf } from "../lib/watchQueue";
 
 const ALL = "all";
 // Grouping values are free text from the library, so their option values are
@@ -265,13 +266,39 @@ function LibraryBrowse({
   }
   const clearAll = { watch: "", groups: {}, decade: 0, quality: "" } as const;
 
+  // A card hands the player the loaded items around it as its queue
+  // (CORE-1143): the run of contiguous loaded pages, so Previous and Next
+  // never skip over a page that has not arrived yet.
+  const runQueues = new Map<number, PlayQueueItem[]>();
+  const queueForPage = (pageIndex: number): PlayQueueItem[] => {
+    const known = runQueues.get(pageIndex);
+    if (known) return known;
+    const pages = pagesRef.current;
+    let first = pageIndex;
+    while (pages.has(first - 1)) first -= 1;
+    let last = pageIndex;
+    while (pages.has(last + 1)) last += 1;
+    const items: SourceItem[] = [];
+    for (let p = first; p <= last; p += 1) items.push(...(pages.get(p) ?? []));
+    const queue = playQueueOf(items);
+    for (let p = first; p <= last; p += 1) runQueues.set(p, queue);
+    return queue;
+  };
+
   const cells = [];
   for (let index = start; index < end; index += 1) {
-    const page = pagesRef.current.get(Math.floor(index / LIBRARY_BROWSE_PAGE));
+    const pageIndex = Math.floor(index / LIBRARY_BROWSE_PAGE);
+    const page = pagesRef.current.get(pageIndex);
     const item = page?.[index % LIBRARY_BROWSE_PAGE];
     cells.push(
       item ? (
-        <MediaItemCard key={item.id} item={item} posInSet={index + 1} setSize={itemCount} />
+        <MediaItemCard
+          key={item.id}
+          item={item}
+          queue={queueForPage(pageIndex)}
+          posInSet={index + 1}
+          setSize={itemCount}
+        />
       ) : (
         <PendingCard key={`pending-${index}`} />
       ),
