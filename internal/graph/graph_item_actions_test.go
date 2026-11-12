@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/beamfall/core/internal/plugin"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 )
@@ -125,6 +126,75 @@ func TestSetWatchedEntityMarksItsMediaWithoutScrobbling(t *testing.T) {
 	}
 	if len(observer.seen) != 0 {
 		t.Fatalf("a tree mark reached the watched observer: %v", observer.seen)
+	}
+}
+
+// An Entity mark walks down only along a parent relation a plugin declares:
+// with none declared, a parent covers its own Media alone.
+func TestSetWatchedEntityFollowsDeclaredParentRelations(t *testing.T) {
+	registry, err := newTestPluginRegistry([]plugin.Bundle{{
+		ID:           "tree-test",
+		Version:      "0.0.1",
+		DisplayName:  plugin.LocaleString{"en": "Tree Test"},
+		MediaLabel:   plugin.LocaleString{"en": "Item"},
+		MediaClasses: []string{"video"},
+		EntityKinds: []plugin.EntityKind{{
+			Name: "container", Archetype: "container", Hierarchical: true,
+			Relations: []plugin.RelationSpec{
+				{Name: "contains", ToKind: plugin.MediaKindName},
+				{Name: "child-of", ToKind: "container"},
+			},
+		}},
+		Layouts: []plugin.LayoutSpec{{ID: "home", Role: "browse", Sections: []plugin.SectionSpec{
+			{ID: "all", Kind: "grid", Title: plugin.LocaleString{"en": "All"},
+				ArtworkSlot: "thumb", Source: plugin.SourceSpec{Kind: "all-items"}},
+		}}},
+		Scrapers: []plugin.ScraperSpec{{
+			ID: "tree", DisplayName: plugin.LocaleString{"en": "Tree"}, Kind: "http-json",
+			Endpoint: "https://tree.example",
+			AuthRef:  "tree-key", AuthStyle: "query:api_key",
+			SearchTemplate: "/find?q={query}", CandidatesPath: "hits", CandidateIDPath: "id",
+			LookupTemplate: "/entries/{id}",
+			FieldMap:       map[string]string{"title": "data.name"},
+			EntityMaps: []plugin.EntityMap{{Kind: "container", Relation: "contains", Path: "data.label",
+				NamePath: "name", ParentNamePath: "parent", ParentRelation: "child-of"}},
+		}},
+	}})
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	for name, tc := range map[string]struct {
+		handler func(*store.Store) *Handler
+		reached bool
+	}{
+		"declared":   {func(st *store.Store) *Handler { return newTestHandlerWithPlugins(st, registry) }, true},
+		"undeclared": {newTestHandlerWithStore, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			st := storetest.Open(t)
+			ctx := context.Background()
+			for _, id := range []store.EntityID{"entity-tree-parent", "entity-tree-child"} {
+				if err := st.UpsertEntity(ctx, store.Entity{ID: id, LibraryID: "library-local", Kind: "container", Title: string(id)}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, relation := range []store.EntityRelation{
+				{FromEntityID: "entity-tree-child", Name: "child-of", ToEntityID: "entity-tree-parent"},
+				{FromEntityID: "entity-tree-child", Name: "contains", ToMediaID: "media-alpha"},
+			} {
+				if err := st.UpsertEntityRelation(ctx, relation); err != nil {
+					t.Fatal(err)
+				}
+			}
+			handler := tc.handler(st)
+			if _, errs := itemActionCall(t, handler, authorizeViewer, "mutation", "setWatched", map[string]any{"entityID": "entity-tree-parent", "watched": true}); len(errs) != 0 {
+				t.Fatalf("setWatched(parent) errors %v", errs)
+			}
+			media, errs := itemActionCall(t, handler, authorizeViewer, "query", "itemState", map[string]any{"mediaID": "media-alpha"})
+			if len(errs) != 0 || media.Watched != tc.reached {
+				t.Fatalf("child Media watched = %v errors %v, want %v", media.Watched, errs, tc.reached)
+			}
+		})
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -26,6 +27,10 @@ const (
 type ItemTarget struct {
 	MediaID  MediaID
 	EntityID EntityID
+	// ParentRelations names the relations a child Entity links to its parent
+	// under, as the active plugins declare them. An Entity target reaches its
+	// descendants only along these; with none it covers its own Media alone.
+	ParentRelations []string
 }
 
 func (t ItemTarget) kindAndID() (string, string, error) {
@@ -66,7 +71,7 @@ func (s *Store) itemTargetMediaLocked(ctx context.Context, target ItemTarget, fi
 		}
 		return []itemMedia{{id: media.ID, durationSeconds: media.DurationSeconds}}, nil
 	}
-	return s.entityTreeMediaLocked(ctx, target.EntityID, filter)
+	return s.entityTreeMediaLocked(ctx, target.EntityID, target.ParentRelations, filter)
 }
 
 // itemTargetVisibleLocked is the visibility check for actions that store the
@@ -84,9 +89,10 @@ func (s *Store) itemTargetVisibleLocked(ctx context.Context, target ItemTarget, 
 // to, directly or through its same-Kind child Entities at any depth. A child
 // links to its parent (identify.applyEntityParent), so descendants are the
 // from_entity_id of rows whose target is already in the tree. Only same-Kind
-// edges are followed, so a curated relation to an unrelated Kind never widens
+// edges under a declared parent relation are followed, as in
+// DepthAwareMediaCount, so an ordinary link between two Entities never widens
 // the mark.
-func (s *Store) entityTreeMediaLocked(ctx context.Context, entityID EntityID, filter LibraryFilter) ([]itemMedia, error) {
+func (s *Store) entityTreeMediaLocked(ctx context.Context, entityID EntityID, parentRelations []string, filter LibraryFilter) ([]itemMedia, error) {
 	// An Encrypted Library keeps its Entities, relations and Media in its own
 	// catalog plane, so the tree is read from the plane that holds the root.
 	plane, err := s.catalogPlaneForEntityLocked(ctx, entityID)
@@ -119,8 +125,16 @@ func (s *Store) entityTreeMediaLocked(ctx context.Context, entityID EntityID, fi
 		// The plane has no library table for the shared clause to join.
 		certClause, certArgs = planeCertificationFilterSQL(planePluginID, filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
 	}
-	args := make([]any, 0, 1+len(libArgs)*2+len(certArgs))
+	// No declared relation leaves the list matching nothing: a flat tree.
+	relationIn := "NULL"
+	if len(parentRelations) > 0 {
+		relationIn = strings.TrimSuffix(strings.Repeat("?, ", len(parentRelations)), ", ")
+	}
+	args := make([]any, 0, 1+len(parentRelations)+len(libArgs)*2+len(certArgs))
 	args = append(args, entityID)
+	for _, relation := range parentRelations {
+		args = append(args, relation)
+	}
 	args = append(args, libArgs...)
 	args = append(args, libArgs...)
 	args = append(args, certArgs...)
@@ -133,6 +147,7 @@ func (s *Store) entityTreeMediaLocked(ctx context.Context, entityID EntityID, fi
 			JOIN subtree ON subtree.id = r.to_entity_id
 			JOIN entity child ON child.id = r.from_entity_id
 			WHERE child.kind = subtree.kind
+				AND r.relation IN (`+relationIn+`)
 				AND child.trashed_at_ms IS NULL
 				AND child.library_id IN (`+libIn+`)
 		)
@@ -497,11 +512,15 @@ func (s *Store) profileItemsSQL(ctx context.Context, filter LibraryFilter, query
 		if err != nil {
 			return nil, err
 		}
-		// SourceItems applies the same Mute predicate to the finished page;
-		// applying it here first keeps a muted target from taking a page slot.
-		visible, err = s.applyMuteFilterLocked(ctx, s.catalogR, profileID, filter, visible)
-		if err != nil {
-			return nil, err
+		// SourceItems applies the Mute predicate to the finished page, from the
+		// plain catalog only. Applying it here first keeps a muted target from
+		// taking a page slot, and reads each open Encrypted Library's own
+		// relations, which is where its Media's mute links live.
+		for _, relations := range s.relationReadersLocked() {
+			visible, err = s.applyMuteFilterLocked(ctx, relations, profileID, filter, visible)
+			if err != nil {
+				return nil, err
+			}
 		}
 		for _, item := range visible {
 			if skip > 0 {
@@ -517,6 +536,23 @@ func (s *Store) profileItemsSQL(ctx context.Context, filter LibraryFilter, query
 			return items, nil
 		}
 	}
+}
+
+// relationReadersLocked lists every catalog plane that can be read now: the
+// plain catalog, then each open Encrypted Library in a stable order.
+func (s *Store) relationReadersLocked() []*sql.DB {
+	readers := []*sql.DB{s.catalogR}
+	ids := make([]LibraryID, 0, len(s.encryptedDBs))
+	for id, db := range s.encryptedDBs {
+		if db != nil && db.state == "unsealed-registered" && db.reader != nil {
+			ids = append(ids, id)
+		}
+	}
+	slices.Sort(ids)
+	for _, id := range ids {
+		readers = append(readers, s.encryptedDBs[id].reader)
+	}
+	return readers
 }
 
 type profileItemRow struct {

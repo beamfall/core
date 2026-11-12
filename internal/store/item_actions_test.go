@@ -18,9 +18,11 @@ func seedItemTree(t *testing.T, st *Store) (EntityID, EntityID, []MediaID) {
 		seedHealthMedia(t, st, "library-local", "item-two", "/library/item-two.mp4", "oshash-item-two"),
 		seedHealthMedia(t, st, "library-local", "item-three", "/library/item-three.mp4", "oshash-item-three"),
 	}
+	linked := seedHealthMedia(t, st, "library-local", "item-linked", "/library/item-linked.mp4", "oshash-item-linked")
 	for _, entity := range []Entity{
 		{ID: "entity-item-parent", LibraryID: "library-local", Kind: "container", Title: "Parent"},
 		{ID: "entity-item-child", LibraryID: "library-local", Kind: "container", Title: "Child"},
+		{ID: itemLinkedEntity, LibraryID: "library-local", Kind: "container", Title: "Linked"},
 		{ID: "entity-item-other", LibraryID: "library-local", Kind: "category", Title: "Other Kind"},
 	} {
 		if err := st.UpsertEntity(ctx, entity); err != nil {
@@ -32,6 +34,9 @@ func seedItemTree(t *testing.T, st *Store) (EntityID, EntityID, []MediaID) {
 		{FromEntityID: "entity-item-parent", Name: "contains", ToMediaID: ids[1]},
 		{FromEntityID: "entity-item-child", Name: "contains", ToMediaID: ids[2]},
 		{FromEntityID: "entity-item-child", Name: "parent", ToEntityID: "entity-item-parent"},
+		// A same-Kind Entity linked under an ordinary relation is not a child.
+		{FromEntityID: itemLinkedEntity, Name: "related", ToEntityID: "entity-item-parent"},
+		{FromEntityID: itemLinkedEntity, Name: "contains", ToMediaID: linked},
 		// A different-Kind Entity pointing at the parent must not widen the tree.
 		{FromEntityID: "entity-item-other", Name: "about", ToEntityID: "entity-item-parent"},
 		{FromEntityID: "entity-item-other", Name: "tagged", ToMediaID: "media-archive"},
@@ -42,6 +47,11 @@ func seedItemTree(t *testing.T, st *Store) (EntityID, EntityID, []MediaID) {
 	}
 	return "entity-item-parent", "entity-item-child", ids
 }
+
+// itemParentRelations is the hierarchy relation seedItemTree links a child under.
+var itemParentRelations = []string{"parent"}
+
+const itemLinkedEntity = EntityID("entity-item-linked")
 
 func itemState(t *testing.T, st *Store, profile ProfileID, target ItemTarget) ItemState {
 	t.Helper()
@@ -127,11 +137,11 @@ func TestSetItemWatchedEntityTree(t *testing.T) {
 	if _, err := st.SetItemWatched(ctx, "profile-default", ItemTarget{MediaID: ids[0]}, true, itemOpenFilter); err != nil {
 		t.Fatal(err)
 	}
-	if itemState(t, st, "profile-default", ItemTarget{EntityID: parent}).Watched {
+	if itemState(t, st, "profile-default", ItemTarget{EntityID: parent, ParentRelations: itemParentRelations}).Watched {
 		t.Fatal("partly watched Entity reads as watched")
 	}
 
-	changed, err := st.SetItemWatched(ctx, "profile-default", ItemTarget{EntityID: parent}, true, itemOpenFilter)
+	changed, err := st.SetItemWatched(ctx, "profile-default", ItemTarget{EntityID: parent, ParentRelations: itemParentRelations}, true, itemOpenFilter)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,8 +153,35 @@ func TestSetItemWatchedEntityTree(t *testing.T) {
 			t.Fatalf("Media %s not watched after marking its container", id)
 		}
 	}
-	if !itemState(t, st, "profile-default", ItemTarget{EntityID: parent}).Watched {
+	if !itemState(t, st, "profile-default", ItemTarget{EntityID: parent, ParentRelations: itemParentRelations}).Watched {
 		t.Fatal("fully watched Entity reads as unwatched")
+	}
+	linked := ItemTarget{EntityID: itemLinkedEntity}
+	if itemState(t, st, "profile-default", linked).Watched {
+		t.Fatal("mark followed an ordinary same-Kind link into another Entity's Media")
+	}
+	// Clearing the parent leaves that Entity's own mark alone too.
+	if _, err := st.SetItemWatched(ctx, "profile-default", linked, true, itemOpenFilter); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.SetItemWatched(ctx, "profile-default", ItemTarget{EntityID: parent, ParentRelations: itemParentRelations}, false, itemOpenFilter); err != nil {
+		t.Fatal(err)
+	}
+	if !itemState(t, st, "profile-default", linked).Watched {
+		t.Fatal("clearing the parent cleared an Entity linked under an ordinary relation")
+	}
+	if _, err := st.SetItemWatched(ctx, "profile-default", ItemTarget{EntityID: parent, ParentRelations: itemParentRelations}, true, itemOpenFilter); err != nil {
+		t.Fatal(err)
+	}
+	// With no declared parent relation the mark stays on the Entity's own Media.
+	if _, err := st.SetItemWatched(ctx, "profile-default", ItemTarget{EntityID: parent}, false, itemOpenFilter); err != nil {
+		t.Fatal(err)
+	}
+	if !itemState(t, st, "profile-default", ItemTarget{MediaID: ids[2]}).Watched || itemState(t, st, "profile-default", ItemTarget{MediaID: ids[0]}).Watched {
+		t.Fatal("a flat mark did not stop at the Entity's own Media")
+	}
+	if _, err := st.SetItemWatched(ctx, "profile-default", ItemTarget{EntityID: parent, ParentRelations: itemParentRelations}, true, itemOpenFilter); err != nil {
+		t.Fatal(err)
 	}
 	// The restricted Media reached only through a different-Kind Entity is untouched.
 	if _, ok, _ := st.PlaybackProgressFor(ctx, "profile-default", "media-archive"); ok {
@@ -161,7 +198,7 @@ func TestSetItemWatchedEntityTree(t *testing.T) {
 	if !itemState(t, st, "profile-default", ItemTarget{MediaID: ids[0]}).Watched {
 		t.Fatal("parent Media lost its mark")
 	}
-	if itemState(t, st, "profile-default", ItemTarget{EntityID: parent}).Watched {
+	if itemState(t, st, "profile-default", ItemTarget{EntityID: parent, ParentRelations: itemParentRelations}).Watched {
 		t.Fatal("parent reads watched with an unwatched descendant")
 	}
 }
@@ -170,7 +207,7 @@ func TestSetItemWatchedSurvivesProjectionRebuild(t *testing.T) {
 	st := openSeeded(t)
 	ctx := context.Background()
 	parent, _, ids := seedItemTree(t, st)
-	if _, err := st.SetItemWatched(ctx, "profile-default", ItemTarget{EntityID: parent}, true, itemOpenFilter); err != nil {
+	if _, err := st.SetItemWatched(ctx, "profile-default", ItemTarget{EntityID: parent, ParentRelations: itemParentRelations}, true, itemOpenFilter); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.SetItemWatched(ctx, "profile-default", ItemTarget{MediaID: ids[1]}, false, itemOpenFilter); err != nil {
@@ -239,7 +276,7 @@ func TestWatchlistSource(t *testing.T) {
 	if len(items) != 2 {
 		t.Fatalf("watchlist = %+v, want the open Media and the Entity", items)
 	}
-	if !itemState(t, st, "profile-default", ItemTarget{EntityID: parent}).Watchlisted {
+	if !itemState(t, st, "profile-default", ItemTarget{EntityID: parent, ParentRelations: itemParentRelations}).Watchlisted {
 		t.Fatal("Entity does not read as watchlisted")
 	}
 	if got := mustSourceItems(t, st, itemOpenFilter, SourceQuery{Kind: "watchlist", ProfileID: "profile-managed"}); len(got) != 0 {
@@ -278,7 +315,7 @@ func TestItemRating(t *testing.T) {
 	if got := itemState(t, st, "profile-default", media).Rating; got != 6 {
 		t.Fatalf("refused rating changed the stored one to %d", got)
 	}
-	if err := st.SetItemRating(ctx, "profile-default", ItemTarget{EntityID: parent}, 9, itemOpenFilter); err != nil {
+	if err := st.SetItemRating(ctx, "profile-default", ItemTarget{EntityID: parent, ParentRelations: itemParentRelations}, 9, itemOpenFilter); err != nil {
 		t.Fatal(err)
 	}
 	items := mustSourceItems(t, st, itemOpenFilter, query)
@@ -393,6 +430,56 @@ func TestWatchlistSourcePagesPastMutedItems(t *testing.T) {
 	}
 	if got := page(2); len(got) != 0 {
 		t.Fatalf("third page = %v, want the end of the list", got)
+	}
+}
+
+// An Encrypted Library keeps its relations in its own catalog, so a mute on one
+// of its Entities must be resolved there.
+func TestWatchlistSourceDropsMutedEncryptedItems(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	library := LibraryID("library-local")
+	if err := st.SetLibraryBacking(ctx, library, false, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UnsealEncryptedLibraryDB(ctx, library, copyEncryptedLibraryDBCipher{}); err != nil {
+		t.Fatal(err)
+	}
+	filter := LibraryFilter{AllLibraries: true}
+	var ids []MediaID
+	for _, slug := range []string{"kept", "muted"} {
+		imported, _, err := st.ImportMediaFile(ctx, encryptedImport(library, "sha256:mute-"+slug, "/enc/"+slug+".mkv"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, imported.ID)
+		if err := st.SetItemWatchlisted(ctx, "profile-default", ItemTarget{MediaID: imported.ID}, true, filter); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entity := Entity{ID: "entity-mute-encrypted", LibraryID: library, Kind: "category", Title: "Sealed Category"}
+	if err := st.UpsertEntity(ctx, entity); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.encryptedDBs[library].writer.ExecContext(ctx, `
+		INSERT INTO entity_relation(from_entity_id, relation, to_media_id)
+		VALUES (?, 'tagged', ?)
+	`, entity.ID, ids[1]); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetMute(ctx, "profile-default", MuteKindEntity, string(entity.ID), false, true); err != nil {
+		t.Fatal(err)
+	}
+	got := mustSourceItems(t, st, filter, SourceQuery{Kind: "watchlist", ProfileID: "profile-default", Limit: 1})
+	if len(got) != 1 || got[0].ID != ids[0] {
+		t.Fatalf("watchlist = %+v, want only the unmuted Encrypted Media", got)
+	}
+	if got := mustSourceItems(t, st, filter, SourceQuery{Kind: "watchlist", ProfileID: "profile-default", Limit: 1, Offset: 1}); len(got) != 0 {
+		t.Fatalf("second page = %+v, want the end of the list", got)
 	}
 }
 

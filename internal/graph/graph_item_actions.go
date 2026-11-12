@@ -20,11 +20,13 @@ type ItemStateInfo struct {
 }
 
 // itemTarget reads the mediaID / entityID pair every item action takes.
-// Exactly one must be set; the store enforces that.
-func itemTarget(req request) store.ItemTarget {
+// Exactly one must be set; the store enforces that. An Entity target reaches
+// its descendants only along the parent relations the active plugins declare.
+func (h *Handler) itemTarget(req request) store.ItemTarget {
 	return store.ItemTarget{
-		MediaID:  store.MediaID(trimmedVariable(req, "mediaID")),
-		EntityID: store.EntityID(trimmedVariable(req, "entityID")),
+		MediaID:         store.MediaID(trimmedVariable(req, "mediaID")),
+		EntityID:        store.EntityID(trimmedVariable(req, "entityID")),
+		ParentRelations: h.plugins.EntityParentRelations(),
 	}
 }
 
@@ -39,7 +41,7 @@ func itemActionError(err error) error {
 }
 
 func (h *Handler) itemState(ctx context.Context, scope auth.Scope, req request) (ItemStateInfo, error) {
-	return h.itemStateFor(ctx, scope, itemTarget(req))
+	return h.itemStateFor(ctx, scope, h.itemTarget(req))
 }
 
 func (h *Handler) itemStateFor(ctx context.Context, scope auth.Scope, target store.ItemTarget) (ItemStateInfo, error) {
@@ -66,7 +68,7 @@ func (h *Handler) itemActionDone(ctx context.Context, scope auth.Scope, target s
 }
 
 func (h *Handler) setWatched(ctx context.Context, scope auth.Scope, req request) (ItemStateInfo, error) {
-	target := itemTarget(req)
+	target := h.itemTarget(req)
 	v := newVars(req)
 	watched, ok := v.Bool("watched")
 	if err := v.Err(); err != nil {
@@ -91,7 +93,7 @@ func (h *Handler) setWatched(ctx context.Context, scope auth.Scope, req request)
 }
 
 func (h *Handler) setWatchlisted(ctx context.Context, scope auth.Scope, req request) (ItemStateInfo, error) {
-	target := itemTarget(req)
+	target := h.itemTarget(req)
 	v := newVars(req)
 	listed, ok := v.Bool("watchlisted")
 	if err := v.Err(); err != nil {
@@ -107,7 +109,7 @@ func (h *Handler) setWatchlisted(ctx context.Context, scope auth.Scope, req requ
 }
 
 func (h *Handler) setRating(ctx context.Context, scope auth.Scope, req request) (ItemStateInfo, error) {
-	target := itemTarget(req)
+	target := h.itemTarget(req)
 	v := newVars(req)
 	rating, ok := v.Number("rating")
 	if err := v.Err(); err != nil {
