@@ -46,7 +46,7 @@ const manifest = {
       ],
     },
   ],
-  theme: { accentColor: "#2F7DFF" },
+  theme: { accentColor: "#9fd8e5" },
 } as unknown as NavigationManifest;
 
 const emptyOverride: NavOverrideInfo = {
@@ -138,6 +138,27 @@ describe("NavOverridePage", () => {
     await user.click(screen.getByRole("button", { name: "Apply" }));
 
     expect(setNavOverride).toHaveBeenCalledWith({ themeAccentColor: "#7A3CF0" });
+  });
+
+  it("shows the brand accent as the default when no accent is set", async () => {
+    renderPage();
+    await ready();
+
+    const accent = screen.getByLabelText("Accent color");
+    expect(accent).toHaveValue("");
+    expect(accent).toHaveAttribute("placeholder", "#9fd8e5");
+  });
+
+  it("keeps an explicitly chosen accent, even the retired default", async () => {
+    vi.mocked(fetchNavOverride).mockResolvedValue({
+      ...emptyOverride,
+      themeAccentColor: "#2F7DFF",
+    });
+    renderPage();
+    await ready();
+
+    expect(await screen.findByDisplayValue("#2F7DFF")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Use default" })).toBeEnabled();
   });
 
   it("hides a Section within the selected Layout", async () => {

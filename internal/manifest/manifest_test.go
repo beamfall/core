@@ -775,3 +775,37 @@ func TestPlaybackAffordancesSectionReachesDetailLayout(t *testing.T) {
 		t.Fatalf("non-playback section wire carries the key: %s", plain)
 	}
 }
+
+// TestThemeAccentDefaultsAtReadTimeAndKeepsExplicitChoice pins CORE-1174: a
+// server whose owner never set an accent serves the brand default, and an
+// explicit owner choice — including the retired #2F7DFF default — is kept.
+func TestThemeAccentDefaultsAtReadTimeAndKeepsExplicitChoice(t *testing.T) {
+	service, authService := newTestService(t)
+	ctx := context.Background()
+	scope, err := authService.Scope(ctx, "session-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	doc, err := service.Document(ctx, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.Theme.AccentColor != DefaultAccentColor {
+		t.Fatalf("never-set accent = %q, want %q", doc.Theme.AccentColor, DefaultAccentColor)
+	}
+
+	for _, explicit := range []string{"#2F7DFF", "#7A3CF0"} {
+		override := store.NavOverrideData{ThemeAccentColor: explicit}
+		if err := service.store.SetNavOverride(ctx, "server", nil, override, time.Unix(1, 0).UTC()); err != nil {
+			t.Fatal(err)
+		}
+		doc, err := service.Document(ctx, scope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if doc.Theme.AccentColor != explicit {
+			t.Fatalf("explicit accent = %q, want %q", doc.Theme.AccentColor, explicit)
+		}
+	}
+}
