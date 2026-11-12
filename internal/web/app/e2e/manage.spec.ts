@@ -6,6 +6,7 @@ import {
   harnessState,
 } from "./lib/spec";
 import { expect, type Locator, type Page, test } from "./lib/test";
+import { coverUiStates } from "./lib/ui-state-coverage";
 import {
   expectLocatorVisualParity,
   expectSelectedOption,
@@ -431,7 +432,7 @@ test.describe("manage locale", () => {
   test.use({ locale: "fr-FR" });
   test.afterEach(async ({ page }) => endAdminSession(page));
 
-  test("non-English browser locale renders Manage catalog strings", async ({ page }) => {
+  test("non-English browser locale renders Manage catalog strings", async ({ page }, testInfo) => {
     const errors = collectFatalErrors(page);
     await page.goto("/web/manage/libraries");
     const nav = page.getByRole("navigation", { name: "Gérer" });
@@ -443,5 +444,6 @@ test.describe("manage locale", () => {
     });
     await expect(page.getByRole("button", { name: "Créer une bibliothèque" })).toBeVisible();
     expect(errors, errors.join("\n")).toEqual([]);
+    coverUiStates(testInfo, "area:manage@locale:fr-FR");
   });
 });

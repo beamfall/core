@@ -163,6 +163,8 @@ run_tracked() {
 provenance_file="${output_dir}/visual-parity-provenance.json"
 rm -f -- "${provenance_file}"
 export BEAMFALL_WEB_E2E_SMOKE_PROVENANCE="${provenance_file}"
+# The UI state coverage reporter (CORE-1305) writes its per-row result here.
+export BEAMFALL_WEB_E2E_UI_STATE_COVERAGE="${output_dir}/ui-state-coverage.json"
 source_commit="$(git -C "$ROOT" rev-parse HEAD)"
 # RENDER_PHASE pins workers=1 so the finish-parity rendering contract test
 # (and every visual capture) sees the same deterministic scheduling here as in
@@ -177,8 +179,10 @@ run_tracked env BEAMFALL_WEB_E2E_RENDER_PHASE=1 npm run e2e -- \
   --project text-expansion \
   --project a11y-browser \
   --project auth-matrix \
+  --project ui-states \
+  --project ui-states-mobile \
   --output "${output_dir}" \
-  --reporter "list,./e2e/lib/require-visual-parity-states.mjs"
+  --reporter "list,./e2e/lib/require-visual-parity-states.mjs,./e2e/lib/require-ui-state-coverage.mjs"
 if [[ ! -s "${provenance_file}" ]]; then
   echo "FAIL web-ui-e2e-smoke missing full-inventory provenance=${provenance_file}" >&2
   exit 1
@@ -205,7 +209,7 @@ run_tracked env BEAMFALL_WEB_E2E_RENDER_PHASE=1 npm run e2e -- \
 run_tracked npm run e2e -- \
   --output "${output_dir}/functional" \
   --grep "${functional_pattern}" \
-  --grep-invert "${render_pattern}" \
+  --grep-invert "${render_pattern}|UI state inventory" \
   "$@"
 # Publish here, inside the command that just completed the unfiltered run. The
 # generic freshness recorder intentionally rejects green web-ui-e2e-smoke
