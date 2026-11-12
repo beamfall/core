@@ -7,7 +7,7 @@
 ## 2. Existing databases
 
 - [ ] 2.1 Adopt a compatible title-only Entity instead of creating a scoped twin
-- [ ] 2.2 One-time split of title-only Entities that carry two or more scopes
+- [ ] 2.2 One-time repair reopening title-only Entities that record no scope or several
 
 ## 3. Tests
 

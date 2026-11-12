@@ -48,15 +48,27 @@ scope being hydrated, and SHALL create the scoped Entity otherwise.
 - **WHEN** a file is hydrated whose scope differs from the only scope the title-only Entity records
 - **THEN** a scoped Entity is created for the file and the title-only Entity is unchanged
 
-### Requirement: Title-only Entities carrying several scopes are split once
+### Requirement: Title-only Entities without exactly one scope are reopened once
 
-At startup Core SHALL, once per scoped kind, clear the scope relation rows of every title-only-era
-Entity whose scope relation points at two or more Entities and clear the hydration marker of that
-Entity's member Media, so the next scan re-hydrates them under scoped identity. It SHALL NOT repeat
-the split after it has run.
+At startup Core SHALL, once per plugin and scoped kind, reopen every Entity of that kind in that
+plugin's Libraries whose scope relation does not point at exactly one Entity: it SHALL clear that
+Entity's scope relation rows and the hydration marker of its member Media, so the next scan
+re-hydrates them under scoped identity. It SHALL leave an Entity that records exactly one scope
+unchanged, and SHALL NOT repeat the repair after it has run.
 
 #### Scenario: Two albums merged by the old key
 
-- **WHEN** an Entity records two scopes and the one-time split runs
+- **WHEN** an Entity records two scopes and the one-time repair runs
 - **THEN** the Entity records no scope, its member Media lack the hydration marker, and a second
   run changes nothing
+
+#### Scenario: Album written without an album artist
+
+- **WHEN** an Entity records no scope and the one-time repair runs
+- **THEN** its member Media lack the hydration marker and stay related to it
+
+#### Scenario: The next scan after the repair
+
+- **WHEN** the Media of a reopened Entity that held two scopes are hydrated again
+- **THEN** the existing Entity holds one scope's Media, a new Entity holds the other's, and no Media
+  is left without its Entity

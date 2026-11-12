@@ -24,21 +24,25 @@ reproduces it before the fix.
     references) when its scope relation points at nothing or only at the scope being hydrated. A
     correctly keyed album is neither orphaned nor duplicated on rescan.
   - A title-only Entity whose scope relation points at two or more Entities is a merge made by the
-    old key. Once, at startup, Core clears those Entities' scope relation rows and the hydration
+    old key, and one that records no scope at all (tracks with no album-artist tag) may be one.
+    Once, at startup, Core reopens both: it clears their scope relation rows and the hydration
     marker of their member Media. The next scan re-reads those files' tags: the first scope seen
     adopts the old id, every other scope gets its own Entity, and each track moves with its album.
+    An Entity that records exactly one scope is left alone. The repair is limited to Libraries of
+    the plugin whose mapper declares the scope.
 
 ## Non-goals
 
 - Case or punctuation folding of album artists ("Beatles" and "The Beatles" stay distinct, as
   artist Entities already do).
-- Splitting an old title-only Entity that has no scope relation at all and mixes several artists'
-  tracks without re-reading them; it splits as its files are re-hydrated.
-- Encrypted Libraries: the one-time split covers the shared catalog plane only.
+- Encrypted Libraries: the one-time repair covers the shared catalog plane only. Their Entities are
+  adopted or scoped as their files are re-hydrated.
 - Provider (MusicBrainz) album Entities. None exist today; artists stay keyed by name.
 
 ## Failure modes
 
+- The first scan after upgrade re-reads the tags of every track on an album that recorded no album
+  artist or more than one. In a library with no album-artist tags that is every track, once.
 - Files of a formerly merged album that are offline at the next scan keep their old membership and
   lose only the hydration marker; they are re-read when they return.
 - A second scope relation added by hand to a scoped Entity is not rewritten after the one-time
@@ -49,8 +53,9 @@ reproduces it before the fix.
 
 ## Acceptance evidence
 
-- `TestHydrationSeparatesSameTitledEntitiesByScope`, `TestHydrationAdoptsUnscopedEntityForItsOnlyScope`
-  and `TestHydrationKeepsUnscopedEntityOfAnotherScope` in `internal/app/musichydration_test.go`.
+- `TestHydrationSeparatesSameTitledEntitiesByScope`, `TestHydrationAdoptsUnscopedEntityForItsOnlyScope`,
+  `TestHydrationKeepsUnscopedEntityOfAnotherScope` and, on a real Store through the repair,
+  `TestHydrationSplitsMergedEntityAfterScopeRepair` in `internal/app/musichydration_test.go`.
 - `TestSplitAmbiguousEntityScopesRequeuesMembersOnce` and `TestEntityRelationTargets` in
   `internal/store/entity_scope_test.go`.
 - `TestMusicAlbumIdentityIsAlbumArtistAndTitle` in `cmd/beamfall/hooks_test.go`: same title with
