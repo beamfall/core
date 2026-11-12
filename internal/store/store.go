@@ -3325,16 +3325,19 @@ func annotateRestrictedFromPlane(ctx context.Context, db sourceItemLibraryQuerye
 	return nil
 }
 
+// mediaDurationSummary is the card line for a Media item's running time.
+// Anything shorter than a minute is given in seconds so a 44 s clip does not
+// read as "1 min"; from a minute up it is whole minutes, rounded up.
 func mediaDurationSummary(seconds int) string {
 	if seconds <= 0 {
 		return ""
 	}
+	if seconds < 60 {
+		return strconv.Itoa(seconds) + " sec"
+	}
 	minutes := seconds / 60
 	if seconds%60 != 0 {
 		minutes++
-	}
-	if minutes <= 1 {
-		return "1 min"
 	}
 	return strconv.Itoa(minutes) + " min"
 }
