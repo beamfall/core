@@ -61,12 +61,15 @@ type Fetcher interface {
 
 // ArtworkStore stores fetched artwork; *artwork.Service satisfies it.
 // HasEntityPoster is the cheap existence probe that keeps re-applies from
-// re-downloading entity posters that already landed.
+// re-downloading entity posters that already landed; EntityPosterInherited
+// tells a poster the Entity borrowed from its own Media apart from one that
+// was supplied for it, so provider artwork still replaces the former.
 type ArtworkStore interface {
 	ImportArtwork(ctx context.Context, id store.MediaID, slot string, data []byte) error
 	HasArtwork(id store.MediaID, slot string) bool
 	IsGeneratedArtwork(id store.MediaID, slot string) bool
 	HasEntityPoster(id store.EntityID) bool
+	EntityPosterInherited(id store.EntityID) bool
 	ImportEntityPoster(ctx context.Context, id store.EntityID, data []byte) error
 }
 
@@ -576,12 +579,14 @@ func relationSortOrder(hydrated scrape.EntityResult, ordinalFields map[string]st
 // Best-effort like applyPoster: the entity write already succeeded, so
 // artwork failures only log. Entities that already carry a poster are
 // skipped — re-applying an identification must not re-download artwork
-// (the same idempotence posture as the entity writes themselves).
+// (the same idempotence posture as the entity writes themselves). A poster
+// inherited from the Entity's own Media does not count: the provider's
+// artwork replaces it.
 func (s *Service) applyEntityPoster(ctx context.Context, id store.EntityID, artworkURL string) {
 	if artworkURL == "" || s.fetcher == nil || s.artwork == nil {
 		return
 	}
-	if s.artwork.HasEntityPoster(id) {
+	if s.artwork.HasEntityPoster(id) && !s.artwork.EntityPosterInherited(id) {
 		return
 	}
 	data, err := s.fetcher.FetchResource(ctx, artworkURL)

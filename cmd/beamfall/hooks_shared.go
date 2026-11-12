@@ -87,6 +87,16 @@ func addFilmTVMigrationSources(hooks *app.Hooks) {
 
 func addMusicHooks(hooks *app.Hooks) {
 	hooks.HydrationMappers[music.PluginID] = musicHydrationMapper{}
+	// With no provider artwork an album shows the cover of its first track
+	// that has one, and an artist the cover of one of its albums, else of a
+	// track it appears on. Albums come first so artists see this sweep's covers.
+	hooks.EntityPosterRules = append(hooks.EntityPosterRules,
+		app.EntityPosterRule{PluginID: music.PluginID, Kind: "album", Sources: []app.EntityPosterSource{{Relation: "album-track"}}},
+		app.EntityPosterRule{PluginID: music.PluginID, Kind: "artist", Sources: []app.EntityPosterSource{
+			{Relation: "album-artist", FromKind: "album"},
+			{Relation: "appears-on"},
+		}},
+	)
 	hooks.MigrationSourceFactories[app.MigrationSourceKey{PluginID: music.PluginID, ImporterID: music.LastfmImporterID}] = func(_ []string, path string) migrate.Source { return music.NewLastfmSource(path) }
 	hooks.MigrationSourceFactories[app.MigrationSourceKey{PluginID: music.PluginID, ImporterID: music.ListenBrainzImporterID}] = func(_ []string, path string) migrate.Source { return music.NewListenBrainzSource(path) }
 	hooks.MigrationSourceFactories[app.MigrationSourceKey{PluginID: music.PluginID, ImporterID: music.NavidromeImporterID}] = func(categories []string, path string) migrate.Source {

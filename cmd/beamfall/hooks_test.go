@@ -217,3 +217,37 @@ func TestMusicAlbumIdentityIsAlbumArtistAndTitle(t *testing.T) {
 		t.Fatalf("compilation-flagged track = %s, want %s", flagged, first)
 	}
 }
+
+// With no provider artwork a local album must still show a cover, and an
+// artist one of its albums': the music wiring declares both inheritances,
+// album first, over relations the music bundle really declares.
+func TestMusicDeclaresEntityPosterInheritance(t *testing.T) {
+	var rules []app.EntityPosterRule
+	for _, rule := range firstPartyHooks().EntityPosterRules {
+		if rule.PluginID == music.PluginID {
+			rules = append(rules, rule)
+		}
+	}
+	want := []app.EntityPosterRule{
+		{PluginID: music.PluginID, Kind: "album", Sources: []app.EntityPosterSource{{Relation: "album-track"}}},
+		{PluginID: music.PluginID, Kind: "artist", Sources: []app.EntityPosterSource{
+			{Relation: "album-artist", FromKind: "album"},
+			{Relation: "appears-on"},
+		}},
+	}
+	if fmt.Sprint(rules) != fmt.Sprint(want) {
+		t.Fatalf("music entity poster rules = %+v, want %+v", rules, want)
+	}
+
+	declared := map[string]string{}
+	for _, kind := range music.Bundle().EntityKinds {
+		for _, relation := range kind.Relations {
+			declared[kind.Name+" "+relation.Name] = relation.ToKind
+		}
+	}
+	for from, to := range map[string]string{"album album-track": "media", "album album-artist": "artist", "artist appears-on": "media"} {
+		if got, ok := declared[from]; !ok || got != to {
+			t.Errorf("music bundle relation %q targets %q (declared %v), want %q", from, got, ok, to)
+		}
+	}
+}

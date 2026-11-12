@@ -24,6 +24,7 @@ type Hooks struct {
 	MigrationSourceFactories       map[MigrationSourceKey]MigrationSourceFactory
 	LocalExtractors                map[string][]scan.LocalExtractor
 	HydrationMappers               map[string]HydrationMapper
+	EntityPosterRules              []EntityPosterRule
 	OfflinePackResolvers           []OfflinePackResolverHook
 	OfflinePackAttestationVerifier offlinepack.DeviceKeyAttestationVerifier
 	EnrichmentProvider             EnrichmentProviderFactory

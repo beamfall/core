@@ -497,6 +497,9 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		artworkGrabber = nil
 	}
 	artworkService := artwork.NewService(st, artworkGrabber, cfg.DataDir)
+	// Plugin wirings declare which Entity kinds borrow a poster from their own
+	// Media when no provider supplied one; the artwork sweep applies them.
+	artworkService.SetEntityPosterRules(activeEntityPosterRules(executablePlugins, hooks.EntityPosterRules, logger))
 	jobRegistry := jobs.NewRegistry(st, "beamfall-server")
 	jobRegistry.SetLogger(logger)
 	// A completed scan re-arms the artwork sweep so new imports get posters
