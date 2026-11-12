@@ -16663,6 +16663,20 @@
                 ]
               },
               {
+                "name": "entityKind",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "entityKindDisplayName",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
                 "name": "id",
                 "kind": "scalar"
               },
@@ -16671,7 +16685,22 @@
                 "kind": "scalar"
               },
               {
+                "name": "libraryID",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "libraryTitle",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "locked",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "mediaClass",
                 "kind": "scalar",
                 "optional": true
               },
@@ -16701,6 +16730,11 @@
               {
                 "name": "title",
                 "kind": "scalar"
+              },
+              {
+                "name": "year",
+                "kind": "scalar",
+                "optional": true
               }
             ]
           },
@@ -16760,6 +16794,20 @@
               ]
             },
             {
+              "name": "entityKind",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "entityKindDisplayName",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
               "name": "id",
               "kind": "scalar"
             },
@@ -16768,7 +16816,22 @@
               "kind": "scalar"
             },
             {
+              "name": "libraryID",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "libraryTitle",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "locked",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "mediaClass",
               "kind": "scalar",
               "optional": true
             },
@@ -16798,6 +16861,11 @@
             {
               "name": "title",
               "kind": "scalar"
+            },
+            {
+              "name": "year",
+              "kind": "scalar",
+              "optional": true
             }
           ]
         },

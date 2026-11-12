@@ -185,6 +185,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"ScrobbleLinksFor":                        {},
 	"SearchEntities":                          {},
 	"SearchMedia":                             {},
+	"SearchRowDetails":                        {},
 	"SelectedDuplicateClusters":               {},
 	"SemanticSearch":                          {},
 	"Session":                                 {},
