@@ -1,5 +1,7 @@
-import { Boxes, Plus, RefreshCw, Save, ScanLine } from "lucide-react";
+import { Boxes, Plus, RefreshCw, Save, ScanLine, SearchCheck } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { Link } from "react-router";
+import { RescanButton, RescanStatus } from "@/components/beamfall/LibraryRescan";
 import {
   EmptyState,
   ErrorLine,
@@ -160,6 +162,16 @@ function LibraryCard({
         </div>
       </div>
       <div className="console-fieldset-body space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <RescanButton libraryID={library.id} roots={library.roots ?? []} />
+          <Button asChild size="sm" variant="outline">
+            <Link to="/manage/unmatched">
+              <SearchCheck className="console-nav-icon" aria-hidden />
+              {t("fixUnmatched")}
+            </Link>
+          </Button>
+        </div>
+        <RescanStatus libraryID={library.id} hasRoots={(library.roots ?? []).length > 0} />
         <div className="space-y-2">
           <PathPickerField
             id={`roots-${library.id}`}
@@ -206,8 +218,9 @@ function LibraryCard({
           </div>
         </div>
 
-        <div>
-          <form onSubmit={scan} className="flex items-end gap-2">
+        <details className="console-disclosure">
+          <summary>{t("scanOneFolder")}</summary>
+          <form onSubmit={scan} className="console-disclosure-body flex items-end gap-2">
             <div className="flex-1 space-y-1.5">
               <Label htmlFor={`scan-${library.id}`}>{t("folderToScan")}</Label>
               <Select value={scanRoot} onValueChange={setScanRoot}>
@@ -229,7 +242,7 @@ function LibraryCard({
             </Button>
           </form>
           <ErrorLine message={scanError} />
-        </div>
+        </details>
       </div>
     </fieldset>
   );

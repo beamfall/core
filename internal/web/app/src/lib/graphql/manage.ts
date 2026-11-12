@@ -283,7 +283,8 @@ export async function linkMediaRelation(
 
 // --- Jobs -----------------------------------------------------------------
 
-const JOBS_QUERY = "query Jobs { jobs { id kind status progress { current total unit message } } }";
+const JOBS_QUERY =
+  "query Jobs { jobs { id kind status error progress { current total unit message } } }";
 
 /** Jobs — the job substrate queue with progress detail. */
 export async function fetchJobs(signal?: AbortSignal): Promise<JobInfo[]> {

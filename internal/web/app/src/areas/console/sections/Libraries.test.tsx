@@ -1,9 +1,12 @@
 import "@testing-library/jest-dom/vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { resetRescansForTest } from "@/components/beamfall/LibraryRescan";
 import {
   fetchFolderTree,
+  fetchJobs,
   fetchLibraries,
   fetchPlugins,
   fetchSkipDetectionEnabled,
@@ -22,6 +25,7 @@ globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObse
 vi.mock("@/lib/graphql", () => ({
   createLibrary: vi.fn(),
   fetchFolderTree: vi.fn(),
+  fetchJobs: vi.fn(),
   fetchLibraries: vi.fn(),
   fetchPlugins: vi.fn(),
   fetchSkipDetectionEnabled: vi.fn(),
@@ -34,6 +38,7 @@ vi.mock("@/lib/graphql", () => ({
 describe("Console Libraries scan", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetRescansForTest();
     vi.mocked(fetchLibraries).mockResolvedValue([
       {
         id: "library-1",
@@ -76,15 +81,63 @@ describe("Console Libraries scan", () => {
 
   function renderLibraries() {
     return render(
-      <I18nProvider>
-        <Libraries />
-      </I18nProvider>,
+      <MemoryRouter>
+        <I18nProvider>
+          <Libraries />
+        </I18nProvider>
+      </MemoryRouter>,
     );
   }
+
+  async function openFolderScan(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(await screen.findByText("Scan one folder"));
+  }
+
+  it("rescans every library folder in one click and follows the jobs", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchLibraries).mockResolvedValue([
+      {
+        id: "library-1",
+        title: "Library",
+        pluginID: null,
+        roots: ["/Volumes/library", "/Volumes/more"],
+        previewClips: true,
+        restricted: false,
+      },
+    ]);
+    vi.mocked(scanLibrary)
+      .mockResolvedValueOnce({ id: "job-a", status: "queued" })
+      .mockResolvedValueOnce({ id: "job-b", status: "queued" });
+    vi.mocked(fetchJobs).mockResolvedValue([
+      {
+        id: "job-a",
+        kind: "scan",
+        status: "completed",
+        progress: { current: 4, total: 4, unit: "files" },
+      },
+      {
+        id: "job-b",
+        kind: "scan",
+        status: "completed",
+        progress: { current: 2, total: 2, unit: "files" },
+      },
+    ]);
+    renderLibraries();
+
+    await user.click(await screen.findByRole("button", { name: "Rescan library" }));
+
+    expect(scanLibrary).toHaveBeenCalledWith("library-1", "/Volumes/library");
+    expect(scanLibrary).toHaveBeenCalledWith("library-1", "/Volumes/more");
+    expect(await screen.findByRole("status")).toHaveTextContent("Scanning");
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Scan finished"), {
+      timeout: 4000,
+    });
+  });
 
   it("offers only the Library roots and descendants", async () => {
     const user = userEvent.setup();
     renderLibraries();
+    await openFolderScan(user);
 
     const picker = await screen.findByLabelText("Folder to scan");
     await waitFor(() => expect(picker).toHaveTextContent("/Volumes/library"));
@@ -103,6 +156,7 @@ describe("Console Libraries scan", () => {
     window.addEventListener("unhandledrejection", unhandled);
     vi.mocked(scanLibrary).mockRejectedValueOnce(new Error("folder is outside the library roots"));
     renderLibraries();
+    await openFolderScan(user);
 
     await user.click(await screen.findByRole("button", { name: "Scan" }));
 
@@ -116,6 +170,7 @@ describe("Console Libraries scan", () => {
   it("enqueues a valid in-root scan", async () => {
     const user = userEvent.setup();
     renderLibraries();
+    await openFolderScan(user);
 
     await user.click(await screen.findByRole("button", { name: "Scan" }));
 
