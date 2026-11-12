@@ -274,6 +274,15 @@
   }
 }
 
+/* Floating UI pins `will-change: transform` on the positioner at DPR >= 1.5
+ * (Base UI does not expose its `transform: false`). That forced layer made the
+ * blurred glass popup rasterize on one of two stable phases from run to run;
+ * without it the popup paints the same every time, still at a device-pixel
+ * aligned offset. */
+.bf-menu-positioner {
+  will-change: auto !important;
+}
+
 /* A listbox (audio / subtitle / quality) opened from a settings row. Base UI
  * positions it beside the sheet (above it on phones). */
 .bf-menu {
