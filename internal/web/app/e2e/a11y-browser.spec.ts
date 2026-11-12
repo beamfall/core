@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { seedViewerFocusSections } from "./fixtures/viewer-focus-sections";
 import { expectNoAxeViolations, runAxe } from "./lib/axe";
 import {
@@ -8,6 +8,25 @@ import {
   expectNoHorizontalDocumentOverflow,
 } from "./lib/spec";
 import { settleFrames } from "./lib/visual-parity";
+
+/**
+ * Wait for every finite animation on the page to end before axe reads colours.
+ *
+ * Viewer sections fade in from opacity 0, and axe composites that opacity into
+ * the colours it measures: sampled mid-fade under load, compliant text reported
+ * 3.73:1. Endless animations (skeleton shimmer) never finish, so they are left
+ * out, and a cancelled one counts as settled.
+ */
+async function settleAnimations(page: Page): Promise<void> {
+  await page.evaluate(() =>
+    Promise.allSettled(
+      document
+        .getAnimations()
+        .filter((animation) => Number.isFinite(animation.effect?.getComputedTiming().endTime))
+        .map((animation) => animation.finished),
+    ).then(() => null),
+  );
+}
 
 test.describe("ADR-0100 a11y real-browser parity pass", () => {
   test("detects an unlabeled control", async ({ page }) => {
@@ -97,6 +116,7 @@ test.describe("ADR-0100 a11y real-browser parity pass", () => {
           page.locator('button[data-focus-section="your-most-played"]').first(),
         ).toBeVisible();
       }
+      await settleAnimations(page);
       await settleFrames(page);
       await expectNoAxeViolations(page);
       await applyLargeText(page);

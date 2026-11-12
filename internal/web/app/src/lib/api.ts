@@ -99,6 +99,27 @@ const GRAPHQL_AUTH_STATUS: Readonly<Record<string, number>> = {
   unauthorized: 401,
 };
 
+const ADMIN_SESSION_REQUIRED = "admin session required";
+
+/**
+ * Asked when a GraphQL operation is refused for want of an Admin Session.
+ * Resolves true once the surface has opened one, false if it gave up.
+ */
+export type AdminUnlockHandler = () => Promise<boolean>;
+
+let adminUnlockHandler: AdminUnlockHandler | undefined;
+
+/**
+ * Register the one surface that offers an in-place admin unlock (the Manage
+ * area). A refused operation waits on the handler that was registered when it
+ * was SENT — so a late refusal belongs to the page that asked, not to whatever
+ * is showing by then — and is sent once more after a successful unlock. The
+ * caller sees only the final outcome. Call with no argument to unregister.
+ */
+export function setAdminUnlockHandler(handler?: AdminUnlockHandler): void {
+  adminUnlockHandler = handler;
+}
+
 function graphqlErrorStatus(messages: readonly string[]): number {
   const matched = messages.map((message) => GRAPHQL_AUTH_STATUS[message.trim().toLowerCase()]);
   return matched.find((status) => status !== undefined) ?? 200;
@@ -300,19 +321,23 @@ export interface GraphQLResult<T> {
 
 /** Issue a GraphQL operation against /api/graphql. Honors an optional
  * AbortSignal, threaded through to the underlying transport request. */
+function needsAdminSession(result: GraphQLResult<unknown>): boolean {
+  return (
+    result.errors?.some((e) => e.message.trim().toLowerCase() === ADMIN_SESSION_REQUIRED) ?? false
+  );
+}
+
 export async function graphql<T = unknown>(
   query: string,
   variables: Record<string, unknown> = {},
   signal?: AbortSignal,
 ): Promise<T> {
-  const result = await postJSON<GraphQLResult<T>>(
-    "/api/graphql",
-    {
-      query,
-      variables,
-    },
-    signal,
-  );
+  const send = () => postJSON<GraphQLResult<T>>("/api/graphql", { query, variables }, signal);
+  const unlock = adminUnlockHandler;
+  let result = await send();
+  // The refused operation did not run, so sending it again after the unlock
+  // cannot repeat it.
+  if (unlock && needsAdminSession(result) && (await unlock())) result = await send();
   if (result.errors?.length) {
     const messages = result.errors.map((e) => e.message);
     throw new ApiError(messages.join("; "), graphqlErrorStatus(messages));
