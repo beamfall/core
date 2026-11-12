@@ -116,7 +116,9 @@ func (s *Service) PlayObservation(sessionID store.SessionID, mediaID store.Media
 }
 
 // deliveredBandwidth reports whether the session is being served a transcode
-// of the item and, when its rendition is known, that rendition's bandwidth. It
+// of the item and, when its rendition is known, that rendition's bandwidth. A
+// rendition that copies the source video reports none: its ladder figure is a
+// placeholder, so the source estimate stands. It
 // holds for as long as the session does, not only while the encoder runs: an
 // encoder that has finished the item leaves the viewer on the same rendition.
 // A route change (cast, AirPlay) keeps one transcode per capability profile
@@ -138,7 +140,7 @@ func (s *Sessions) deliveredBandwidth(sessionID store.SessionID, mediaID store.M
 		return 0, time.Time{}, false
 	}
 	for _, rung := range current.rungs {
-		if rung.ID == current.deliveredRung {
+		if rung.ID == current.deliveredRung && !rung.CopyVideo {
 			return rung.Bandwidth, current.lastAccess, true
 		}
 	}

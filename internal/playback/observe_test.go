@@ -134,6 +134,26 @@ func TestPlayObservationFollowsTheRouteReadMostRecently(t *testing.T) {
 	}
 }
 
+// A rendition that copies the video carries the ladder's placeholder
+// bandwidth; the dashboard keeps the source estimate instead.
+func TestPlayObservationKeepsSourceBitrateForCopiedVideo(t *testing.T) {
+	service, scope := newTestServiceWithMediaFile(t, "session-default", "media-alpha")
+	direct := CapabilityProfile{Containers: []string{"mp4"}, DirectCodecs: []string{"h264"}}
+	if _, err := service.Info(context.Background(), scope, InfoRequest{MediaID: "media-alpha", CapabilityProfile: direct}); err != nil {
+		t.Fatalf("Info returned error: %v", err)
+	}
+	source, _ := service.PlayObservation(scope.SessionID, "media-alpha")
+	copied := audioCopyRung()
+	session := &hlsSession{rungs: []Rung{copied}, started: true, deliveredRung: copied.ID, lastAccess: service.now().Add(time.Second)}
+	service.sessions = NewSessionsInDir(nil, t.TempDir(), time.Now)
+	service.sessions.sessions[SessionKey{SessionID: scope.SessionID, MediaID: "media-alpha"}] = session
+
+	obs, _ := service.PlayObservation(scope.SessionID, "media-alpha")
+	if obs.Method != PlayMethodTranscode || obs.Bitrate != source.Bitrate || obs.Bitrate == copied.Bandwidth {
+		t.Fatalf("observation on a copied-video rendition = %#v, want a transcode at the source bitrate %d", obs, source.Bitrate)
+	}
+}
+
 // Copying the video while converting the audio is a transcode on the
 // dashboard; repackaging alone is a remux.
 func TestPlayObservationTellsAudioConversionFromRemux(t *testing.T) {
