@@ -411,14 +411,19 @@ func (s *Store) EntitiesForMedia(ctx context.Context, mediaID MediaID, relationN
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	if _, err := s.visibleMediaSQL(ctx, mediaID, filter); err != nil {
+	// The relations live beside the Media item: in the catalog, or in an
+	// unlocked encrypted library's own database (same-library only).
+	plane, err := s.catalogPlaneForMediaLocked(ctx, mediaID)
+	if err != nil {
 		return nil, err
 	}
-	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT e.id, e.library_id, e.kind, e.title, l.is_restricted, r.attributes
+	if _, err := s.visibleMediaSQLFrom(ctx, plane.reader, mediaID, filter); err != nil {
+		return nil, err
+	}
+	rows, err := plane.reader.QueryContext(ctx, `
+		SELECT e.id, e.library_id, e.kind, e.title, r.attributes
 		FROM entity_relation r
 		JOIN entity e ON e.id = r.from_entity_id
-		JOIN library l ON l.id = e.library_id
 		WHERE r.to_media_id = ? AND r.relation = ? AND e.trashed_at_ms IS NULL
 		ORDER BY e.title, e.id
 	`, mediaID, relationName)
@@ -427,14 +432,21 @@ func (s *Store) EntitiesForMedia(ctx context.Context, mediaID MediaID, relationN
 	}
 	defer rows.Close()
 	related := []RelatedEntity{}
+	libraries := map[LibraryID]Library{}
 	for rows.Next() {
 		var entity Entity
-		var restricted int
 		var attributes sql.NullString
-		if err := rows.Scan(&entity.ID, &entity.LibraryID, &entity.Kind, &entity.Title, &restricted, &attributes); err != nil {
+		if err := rows.Scan(&entity.ID, &entity.LibraryID, &entity.Kind, &entity.Title, &attributes); err != nil {
 			return nil, err
 		}
-		if !libraryVisible(Library{ID: entity.LibraryID, IsRestricted: restricted != 0}, filter) {
+		library, ok := libraries[entity.LibraryID]
+		if !ok {
+			if library, err = s.libraryByIDLocked(ctx, entity.LibraryID); err != nil {
+				return nil, err
+			}
+			libraries[entity.LibraryID] = library
+		}
+		if !libraryVisible(library, filter) {
 			continue
 		}
 		item := RelatedEntity{Entity: entity}
@@ -452,7 +464,7 @@ func (s *Store) EntitiesForMedia(ctx context.Context, mediaID MediaID, relationN
 		index[related[i].Entity.ID] = i
 		ids[i] = related[i].Entity.ID
 	}
-	if err := s.loadEntityFields(ctx, ids, func(id EntityID, field EntityField) {
+	if err := s.loadEntityFieldsFrom(ctx, plane.reader, ids, func(id EntityID, field EntityField) {
 		i := index[id]
 		related[i].Entity.Fields = append(related[i].Entity.Fields, field)
 	}); err != nil {
