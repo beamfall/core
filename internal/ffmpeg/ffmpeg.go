@@ -2052,7 +2052,9 @@ func parseProbe(data []byte, path string) (Probe, error) {
 	for _, stream := range doc.Streams {
 		switch stream.CodecType {
 		case "video":
-			if probe.VideoCodec == "" {
+			// Embedded cover art (attached_pic) is an mjpeg/png "video" stream;
+			// it never makes a track a video (CORE-1143).
+			if probe.VideoCodec == "" && stream.Disposition["attached_pic"] != 1 {
 				probe.VideoCodec = stream.CodecName
 				probe.HasVideo = true
 				probe.VideoWidth = stream.Width

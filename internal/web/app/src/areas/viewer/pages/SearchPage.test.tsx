@@ -13,7 +13,9 @@ vi.mock("@/components/chrome/AppShell", () => ({
 }));
 vi.mock("../components/ViewerActions", () => ({ ViewerActions: () => null }));
 vi.mock("../components/MediaItemCard", () => ({
-  MediaItemCard: ({ item }: { item: { title: string } }) => <li>{item.title}</li>,
+  MediaItemCard: ({ item, queue }: { item: { title: string }; queue?: { id: string }[] }) => (
+    <li data-queue={queue?.map((entry) => entry.id).join(",")}>{item.title}</li>
+  ),
 }));
 
 vi.mock("@/lib/graphql", () => ({
@@ -81,6 +83,24 @@ describe("SearchPage mode exposure", () => {
     await user.click(screen.getByRole("button", { name: "Search" }));
     expect(searchResult).toHaveBeenCalledWith("hello", "keyword");
     expect(await screen.findByText("Hit")).toBeInTheDocument();
+  });
+
+  it("hands the playable results to each card as the player's queue (CORE-1143)", async () => {
+    vi.mocked(searchResult).mockResolvedValue({
+      mode: "keyword",
+      items: [
+        { id: "m1", kind: "media", title: "One", mode: "keyword", score: 0 },
+        { id: "e1", kind: "entity", title: "Album", mode: "keyword", score: 0 },
+        { id: "m2", kind: "media", title: "Two", mode: "keyword", score: 0 },
+      ],
+      restrictedResultsPresent: false,
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await user.type(screen.getByLabelText("Search"), "hello");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    expect(await screen.findByText("One")).toHaveAttribute("data-queue", "m1,m2");
+    expect(screen.getByText("Album")).toHaveAttribute("data-queue", "m1,m2");
   });
 
   it("renders restricted-result empties exactly like normal no-match empties", async () => {

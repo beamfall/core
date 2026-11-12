@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SourceItem } from "@/lib/graphql/types";
 import { unavailableReasonMessage } from "./playback";
-import { playQueueOf, queueNeighbours, readPlayerNavState } from "./watchQueue";
+import { playQueueOf, queueNeighbours, queueWindow, readPlayerNavState } from "./watchQueue";
 
 const item = (id: string, kind: string) =>
   ({ id, title: `T-${id}`, kind }) as unknown as SourceItem;
@@ -14,9 +14,19 @@ describe("watchQueue (CORE-1143)", () => {
     ]);
   });
 
-  it("caps a huge list so history state stays small", () => {
-    const items = Array.from({ length: 900 }, (_, i) => item(`m${i}`, "media"));
-    expect(playQueueOf(items)).toHaveLength(500);
+  it("windows a huge queue around the selected item so history state stays small", () => {
+    const queue = playQueueOf(Array.from({ length: 900 }, (_, i) => item(`m${i}`, "media")));
+    expect(queue).toHaveLength(900);
+
+    const deep = queueWindow(queue, "m600");
+    expect(deep).toHaveLength(500);
+    expect(deep[0].id).toBe("m350");
+    expect(queueNeighbours(deep, "m600")).toEqual({ previous: queue[599], next: queue[601] });
+
+    expect(queueWindow(queue, "m10")[0].id).toBe("m0");
+    expect(queueWindow(queue, "m899").at(-1)?.id).toBe("m899");
+    expect(queueWindow(queue, "missing")[0].id).toBe("m0");
+    expect(queueWindow(queue.slice(0, 3), "m1")).toEqual(queue.slice(0, 3));
   });
 
   it("finds the neighbours either side, and none outside the queue", () => {
