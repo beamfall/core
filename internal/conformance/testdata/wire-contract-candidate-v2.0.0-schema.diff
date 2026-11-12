@@ -1,14 +1,14 @@
---- wire-contract-v1.13.2.json
+--- wire-contract-v1.14.0.json
 +++ wire-contract-candidate-v2.0.0.json
 @@ -1,6 +1,6 @@
  {
    "snapshotVersion": "1",
--  "contractVersion": "1.13.2",
+-  "contractVersion": "1.14.0",
 +  "contractVersion": "2.0.0",
    "fields": [
      {
        "field": "acceptpendingaitag",
-@@ -475,6 +475,11 @@
+@@ -480,6 +480,11 @@
      {
        "field": "invitetowatchparty",
        "effect": "write",
@@ -20,7 +20,7 @@
        "tier": "session"
      },
      {
-@@ -541,6 +546,11 @@
+@@ -546,6 +551,11 @@
        "field": "libraryindexstatus",
        "effect": "read",
        "tier": "admin"
@@ -32,7 +32,7 @@
      },
      {
        "field": "linkmediarelation",
-@@ -1161,6 +1171,11 @@
+@@ -1176,6 +1186,11 @@
        "field": "setqualitypolicy",
        "effect": "write",
        "tier": "admin"
@@ -44,7 +44,7 @@
      },
      {
        "field": "setretentioncandidatehold",
-@@ -1203,6 +1218,16 @@
+@@ -1218,6 +1233,16 @@
        "tier": "session"
      },
      {
@@ -61,7 +61,7 @@
        "field": "skipdetectionenabled",
        "effect": "read",
        "tier": "admin"
-@@ -1570,6 +1595,23 @@
+@@ -1585,6 +1610,23 @@
            "name": "windows",
            "kind": "list",
            "nullable": true,
@@ -85,7 +85,7 @@
            "children": [
              {
                "name": "endMinute",
-@@ -1730,6 +1772,24 @@
+@@ -1745,6 +1787,24 @@
            "name": "members",
            "kind": "list",
            "nullable": true,
@@ -110,7 +110,7 @@
            "children": [
              {
                "name": "addedAt",
-@@ -1775,6 +1835,88 @@
+@@ -1790,6 +1850,88 @@
        "field": "addmediaexternalid",
        "kind": "object",
        "children": [
@@ -199,7 +199,7 @@
          {
            "name": "favorited",
            "kind": "scalar"
-@@ -1892,7 +2034,17 @@
+@@ -1907,7 +2049,17 @@
          {
            "name": "entityFilter",
            "kind": "object",
@@ -218,7 +218,7 @@
          },
          {
            "name": "entityID",
-@@ -1906,13 +2058,60 @@
+@@ -1921,13 +2073,60 @@
          },
          {
            "name": "fieldFilters",
@@ -282,7 +282,7 @@
          },
          {
            "name": "kind",
-@@ -1930,11 +2129,27 @@
+@@ -1945,11 +2144,27 @@
            "optional": true
          },
          {
@@ -310,7 +310,7 @@
            "name": "seed",
            "kind": "string",
            "optional": true
-@@ -1960,9 +2175,45 @@
+@@ -1975,9 +2190,45 @@
          },
          {
            "name": "artworkSlots",
@@ -358,7 +358,7 @@
          },
          {
            "name": "id",
-@@ -2031,7 +2282,10 @@
+@@ -2046,7 +2297,10 @@
          {
            "name": "scopes",
            "kind": "list",
@@ -370,7 +370,7 @@
          }
        ]
      },
-@@ -2075,6 +2329,32 @@
+@@ -2090,6 +2344,32 @@
            "name": "grants",
            "kind": "list",
            "nullable": true,
@@ -403,7 +403,7 @@
            "children": [
              {
                "name": "allLibraries",
-@@ -2111,7 +2391,10 @@
+@@ -2126,7 +2406,10 @@
          {
            "name": "lifecycleActions",
            "kind": "list",
@@ -415,7 +415,7 @@
          },
          {
            "name": "pluginID",
-@@ -2197,6 +2480,41 @@
+@@ -2212,6 +2495,41 @@
            "name": "tags",
            "kind": "list",
            "nullable": true,
@@ -457,7 +457,7 @@
            "children": [
              {
                "name": "assignmentCount",
-@@ -2329,7 +2647,11 @@
+@@ -2344,7 +2662,11 @@
            "name": "children",
            "kind": "list",
            "optional": true,
@@ -470,7 +470,7 @@
          },
          {
            "name": "kind",
-@@ -2365,6 +2687,41 @@
+@@ -2380,6 +2702,41 @@
            "name": "tags",
            "kind": "list",
            "nullable": true,
@@ -512,7 +512,7 @@
            "children": [
              {
                "name": "assignmentCount",
-@@ -2434,6 +2791,23 @@
+@@ -2449,6 +2806,23 @@
            "name": "new",
            "kind": "list",
            "nullable": true,
@@ -536,7 +536,7 @@
            "children": [
              {
                "name": "name",
-@@ -2453,6 +2827,23 @@
+@@ -2468,6 +2842,23 @@
            "name": "old",
            "kind": "list",
            "nullable": true,
@@ -560,7 +560,7 @@
            "children": [
              {
                "name": "name",
-@@ -2577,6 +2968,32 @@
+@@ -2592,6 +2983,32 @@
      {
        "field": "capabilitystates",
        "kind": "list",
@@ -593,7 +593,7 @@
        "children": [
          {
            "name": "enabled",
-@@ -2715,6 +3132,24 @@
+@@ -2730,6 +3147,24 @@
            "name": "members",
            "kind": "list",
            "nullable": true,
@@ -618,7 +618,7 @@
            "children": [
              {
                "name": "addedAt",
-@@ -2764,6 +3199,19 @@
+@@ -2779,6 +3214,19 @@
            "name": "endpoints",
            "kind": "list",
            "nullable": true,
@@ -638,7 +638,7 @@
            "children": [
              {
                "name": "kind",
-@@ -2801,32 +3249,419 @@
+@@ -2816,32 +3264,419 @@
            "name": "plugins",
            "kind": "list",
            "nullable": true,
@@ -1083,7 +1083,7 @@
                    "children": [
                      {
                        "name": "configured",
-@@ -2839,8 +3674,11 @@
+@@ -2854,8 +3689,11 @@
                      },
                      {
                        "name": "label",
@@ -1097,7 +1097,7 @@
                      },
                      {
                        "name": "name",
-@@ -2851,11 +3689,31 @@
+@@ -2866,11 +3704,31 @@
                        "kind": "list",
                        "optional": true,
                        "nullable": true,
@@ -1131,7 +1131,7 @@
                          },
                          {
                            "name": "value",
-@@ -2878,91 +3736,896 @@
+@@ -2893,91 +3751,896 @@
                      }
                    ]
                  },
@@ -2104,7 +2104,7 @@
              },
              {
                "name": "id",
-@@ -2972,12 +4635,45 @@
+@@ -2987,12 +4650,45 @@
                "name": "permissions",
                "kind": "list",
                "nullable": true,
@@ -2152,7 +2152,7 @@
                  },
                  {
                    "name": "highRisk",
-@@ -2989,8 +4685,11 @@
+@@ -3004,8 +4700,11 @@
                  },
                  {
                    "name": "label",
@@ -2166,7 +2166,7 @@
                  }
                ]
              },
-@@ -3002,6 +4701,56 @@
+@@ -3017,6 +4716,56 @@
                "name": "scrapers",
                "kind": "list",
                "nullable": true,
@@ -2223,7 +2223,7 @@
                "children": [
                  {
                    "name": "authRef",
-@@ -3054,6 +4803,32 @@
+@@ -3069,6 +4818,32 @@
                "name": "status",
                "kind": "list",
                "nullable": true,
@@ -2256,7 +2256,7 @@
                "children": [
                  {
                    "name": "detail",
-@@ -3066,8 +4841,11 @@
+@@ -3081,8 +4856,11 @@
                  },
                  {
                    "name": "label",
@@ -2270,7 +2270,7 @@
                  },
                  {
                    "name": "state",
-@@ -3146,7 +4924,10 @@
+@@ -3161,7 +4939,10 @@
              {
                "name": "scopes",
                "kind": "list",
@@ -2282,7 +2282,7 @@
              }
            ]
          },
-@@ -3257,6 +5038,24 @@
+@@ -3272,6 +5053,24 @@
            "name": "members",
            "kind": "list",
            "nullable": true,
@@ -2307,7 +2307,7 @@
            "children": [
              {
                "name": "addedAt",
-@@ -3336,7 +5135,10 @@
+@@ -3351,7 +5150,10 @@
            "name": "roots",
            "kind": "list",
            "optional": true,
@@ -2319,7 +2319,7 @@
          },
          {
            "name": "title",
-@@ -3388,8 +5190,11 @@
+@@ -3403,8 +5205,11 @@
          {
            "name": "tags",
            "kind": "list",
@@ -2333,7 +2333,7 @@
          {
            "name": "title",
            "kind": "scalar",
-@@ -3406,6 +5211,88 @@
+@@ -3421,6 +5226,88 @@
        "field": "createmediafromunmatched",
        "kind": "object",
        "children": [
@@ -2422,7 +2422,7 @@
          {
            "name": "favorited",
            "kind": "scalar"
-@@ -3493,12 +5380,32 @@
+@@ -3508,12 +5395,32 @@
          {
            "name": "audioLanguages",
            "kind": "list",
@@ -2456,7 +2456,7 @@
            "children": [
              {
                "name": "allowUnrated",
-@@ -3529,7 +5436,10 @@
+@@ -3544,7 +5451,10 @@
          {
            "name": "libraryIDs",
            "kind": "list",
@@ -2468,7 +2468,7 @@
          },
          {
            "name": "maxConcurrentStreams",
-@@ -3547,7 +5457,10 @@
+@@ -3562,7 +5472,10 @@
          {
            "name": "subtitleLanguages",
            "kind": "list",
@@ -2480,7 +2480,7 @@
          },
          {
            "name": "subtitleMode",
-@@ -3724,12 +5637,28 @@
+@@ -3739,12 +5652,28 @@
          {
            "name": "invitees",
            "kind": "list",
@@ -2510,7 +2510,7 @@
            "children": [
              {
                "name": "displayName",
-@@ -3759,7 +5688,10 @@
+@@ -3774,7 +5703,10 @@
            "name": "audioLanguages",
            "kind": "list",
            "optional": true,
@@ -2522,7 +2522,7 @@
          },
          {
            "name": "deviceRole",
-@@ -3795,7 +5727,10 @@
+@@ -3810,7 +5742,10 @@
            "name": "subtitleLanguages",
            "kind": "list",
            "optional": true,
@@ -2534,7 +2534,7 @@
          },
          {
            "name": "subtitleMode",
-@@ -3868,6 +5803,24 @@
+@@ -3883,6 +5818,24 @@
            "name": "members",
            "kind": "list",
            "nullable": true,
@@ -2559,7 +2559,7 @@
            "children": [
              {
                "name": "addedAt",
-@@ -3961,7 +5914,10 @@
+@@ -3976,7 +5929,10 @@
          {
            "name": "tags",
            "kind": "list",
@@ -2571,7 +2571,7 @@
          },
          {
            "name": "title",
-@@ -3987,6 +5943,19 @@
+@@ -4002,6 +5958,19 @@
            "name": "excludedLibraries",
            "kind": "list",
            "nullable": true,
@@ -2591,7 +2591,7 @@
            "children": [
              {
                "name": "libraryID",
-@@ -4217,7 +6186,10 @@
+@@ -4232,7 +6201,10 @@
          {
            "name": "scraperIDs",
            "kind": "list",
@@ -2603,7 +2603,7 @@
          }
        ]
      },
-@@ -4314,6 +6286,19 @@
+@@ -4329,6 +6301,19 @@
            "name": "history",
            "kind": "list",
            "nullable": true,
@@ -2623,7 +2623,7 @@
            "children": [
              {
                "name": "occurredAt",
-@@ -4343,19 +6328,51 @@
+@@ -4358,19 +6343,51 @@
        "children": [
          {
            "name": "attributes",
@@ -2679,7 +2679,7 @@
              },
              {
                "name": "name",
-@@ -4381,9 +6398,12 @@
+@@ -4396,9 +6413,12 @@
          },
          {
            "name": "kindDisplayName",
@@ -2694,7 +2694,7 @@
          },
          {
            "name": "title",
-@@ -4405,12 +6425,41 @@
+@@ -4420,12 +6440,41 @@
            "name": "fields",
            "kind": "list",
            "nullable": true,
@@ -2738,7 +2738,7 @@
              },
              {
                "name": "name",
-@@ -4436,9 +6485,12 @@
+@@ -4451,9 +6500,12 @@
          },
          {
            "name": "kindDisplayName",
@@ -2753,7 +2753,7 @@
          },
          {
            "name": "title",
-@@ -4463,8 +6515,11 @@
+@@ -4478,8 +6530,11 @@
        "children": [
          {
            "name": "attributes",
@@ -2767,7 +2767,7 @@
          },
          {
            "name": "entity",
-@@ -4476,12 +6531,41 @@
+@@ -4491,12 +6546,41 @@
                "name": "fields",
                "kind": "list",
                "nullable": true,
@@ -2811,7 +2811,7 @@
                  },
                  {
                    "name": "name",
-@@ -4507,9 +6591,12 @@
+@@ -4522,9 +6606,12 @@
              },
              {
                "name": "kindDisplayName",
@@ -2826,7 +2826,7 @@
              },
              {
                "name": "title",
-@@ -4523,6 +6610,88 @@
+@@ -4538,6 +6625,88 @@
            "optional": true,
            "nullable": true,
            "children": [
@@ -2915,7 +2915,7 @@
              {
                "name": "favorited",
                "kind": "scalar"
-@@ -4647,6 +6816,88 @@
+@@ -4662,6 +6831,88 @@
        ],
        "children": [
          {
@@ -3004,7 +3004,7 @@
            "name": "favorited",
            "kind": "scalar"
          },
-@@ -4676,9 +6927,12 @@
+@@ -4691,9 +6942,12 @@
        "children": [
          {
            "name": "artwork",
@@ -3019,7 +3019,7 @@
          },
          {
            "name": "confidence",
-@@ -4755,7 +7009,11 @@
+@@ -4770,7 +7024,11 @@
            "name": "children",
            "kind": "list",
            "optional": true,
@@ -3032,7 +3032,7 @@
          },
          {
            "name": "kind",
-@@ -4791,6 +7049,27 @@
+@@ -4806,6 +7064,27 @@
            "name": "members",
            "kind": "list",
            "nullable": true,
@@ -3060,7 +3060,7 @@
            "children": [
              {
                "name": "clockOffsetMS",
-@@ -4817,6 +7096,88 @@
+@@ -4910,6 +7189,88 @@
        "kind": "object",
        "children": [
          {
@@ -3149,7 +3149,7 @@
            "name": "favorited",
            "kind": "scalar"
          },
-@@ -4846,9 +7207,12 @@
+@@ -4939,9 +7300,12 @@
        "children": [
          {
            "name": "artwork",
@@ -3164,7 +3164,7 @@
          },
          {
            "name": "id",
-@@ -4876,9 +7240,12 @@
+@@ -4969,9 +7333,12 @@
        "children": [
          {
            "name": "artwork",
@@ -3179,7 +3179,7 @@
          },
          {
            "name": "id",
-@@ -4907,7 +7274,10 @@
+@@ -5000,7 +7367,10 @@
          {
            "name": "categories",
            "kind": "list",
@@ -3191,7 +3191,7 @@
          },
          {
            "name": "conflict",
-@@ -4931,8 +7301,11 @@
+@@ -5024,8 +7394,11 @@
          },
          {
            "name": "displayName",
@@ -3205,7 +3205,7 @@
          },
          {
            "name": "id",
-@@ -5039,6 +7412,44 @@
+@@ -5132,6 +7505,44 @@
            "name": "unmatchedRecords",
            "kind": "list",
            "nullable": true,
@@ -3250,7 +3250,7 @@
            "children": [
              {
                "name": "candidateID",
-@@ -5097,12 +7508,28 @@
+@@ -5190,12 +7601,28 @@
          {
            "name": "invitees",
            "kind": "list",
@@ -3280,7 +3280,7 @@
            "children": [
              {
                "name": "displayName",
-@@ -5120,7 +7547,45 @@
+@@ -5213,7 +7640,45 @@
          },
          {
            "name": "relaxed",
@@ -3326,7 +3326,7 @@
          }
        ]
      },
-@@ -5459,6 +7924,27 @@
+@@ -5552,6 +8017,27 @@
            "name": "members",
            "kind": "list",
            "nullable": true,
@@ -3354,7 +3354,7 @@
            "children": [
              {
                "name": "clockOffsetMS",
-@@ -5538,7 +8024,10 @@
+@@ -5631,7 +8117,10 @@
            "name": "roots",
            "kind": "list",
            "optional": true,
@@ -3366,7 +3366,7 @@
          },
          {
            "name": "title",
-@@ -5554,6 +8043,23 @@
+@@ -5647,6 +8136,23 @@
            "name": "items",
            "kind": "list",
            "nullable": true,
@@ -3390,7 +3390,7 @@
            "children": [
              {
                "name": "libraryID",
-@@ -5577,8 +8083,11 @@
+@@ -5670,8 +8176,11 @@
        "children": [
          {
            "name": "counts",
@@ -3404,7 +3404,7 @@
          },
          {
            "name": "libraryID",
-@@ -5643,194 +8152,994 @@
+@@ -5736,192 +8245,992 @@
        ]
      },
      {
@@ -3479,7 +3479,7 @@
 -      "kind": "object",
 -      "children": [
 -        {
--          "name": "deviceID",
+-          "name": "bitrate",
 -          "kind": "scalar"
 +          "name": "quality",
 +          "kind": "string",
@@ -3492,6 +3492,10 @@
 +          ]
          },
          {
+-          "name": "deviceID",
+-          "kind": "scalar"
+-        },
+-        {
 -          "name": "deviceName",
 -          "kind": "scalar"
 -        },
@@ -3531,7 +3535,7 @@
 +          ]
          },
          {
--          "name": "positionSeconds",
+-          "name": "playMethod",
 -          "kind": "scalar"
 +          "name": "watch",
 +          "kind": "string",
@@ -3543,6 +3547,14 @@
 +          ]
          },
          {
+-          "name": "playReason",
+-          "kind": "scalar"
+-        },
+-        {
+-          "name": "positionSeconds",
+-          "kind": "scalar"
+-        },
+-        {
 -          "name": "profileID",
 -          "kind": "scalar"
 -        },
@@ -3683,18 +3695,6 @@
 +                  }
                  },
                  {
--                  "name": "source",
--                  "kind": "object",
--                  "children": [
--                    {
--                      "name": "entityFilter",
--                      "kind": "object",
--                      "optional": true,
--                      "nullable": true,
--                      "children": [
--                        {
--                          "name": "kind",
--                          "kind": "scalar"
 +                  "name": "values",
 +                  "kind": "list",
 +                  "nullable": true,
@@ -3951,6 +3951,10 @@
 +      "kind": "object",
 +      "children": [
 +        {
++          "name": "bitrate",
++          "kind": "scalar"
++        },
++        {
 +          "name": "deviceID",
 +          "kind": "scalar"
 +        },
@@ -3977,6 +3981,14 @@
 +        },
 +        {
 +          "name": "mediaID",
++          "kind": "scalar"
++        },
++        {
++          "name": "playMethod",
++          "kind": "scalar"
++        },
++        {
++          "name": "playReason",
 +          "kind": "scalar"
 +        },
 +        {
@@ -4077,8 +4089,8 @@
 +                        {
 +                          "name": "field",
 +                          "kind": "scalar"
-                         },
-                         {
++                        },
++                        {
 +                          "name": "label",
 +                          "kind": "map",
 +                          "optional": true,
@@ -4521,24 +4533,10 @@
 +                  }
 +                },
 +                {
-+                  "name": "source",
-+                  "kind": "object",
-+                  "children": [
-+                    {
-+                      "name": "entityFilter",
-+                      "kind": "object",
-+                      "optional": true,
-+                      "nullable": true,
-+                      "children": [
-+                        {
-+                          "name": "kind",
-+                          "kind": "scalar"
-+                        },
-+                        {
-                           "name": "name",
-                           "kind": "scalar"
-                         }
-@@ -5843,9 +9152,12 @@
+                   "name": "source",
+                   "kind": "object",
+                   "children": [
+@@ -5948,9 +9257,12 @@
                      },
                      {
                        "name": "fieldFilters",
@@ -4553,7 +4551,7 @@
                      },
                      {
                        "name": "kind",
-@@ -5865,8 +9177,11 @@
+@@ -5970,8 +9282,11 @@
                  },
                  {
                    "name": "title",
@@ -4567,7 +4565,7 @@
                  }
                ]
              }
-@@ -5876,6 +9191,33 @@
+@@ -5981,6 +9296,33 @@
            "name": "libraries",
            "kind": "list",
            "nullable": true,
@@ -4601,7 +4599,7 @@
            "children": [
              {
                "name": "accent",
-@@ -5905,6 +9247,36 @@
+@@ -6010,6 +9352,36 @@
            "name": "navigation",
            "kind": "list",
            "nullable": true,
@@ -4638,7 +4636,7 @@
            "children": [
              {
                "name": "id",
-@@ -5921,8 +9293,11 @@
+@@ -6026,8 +9398,11 @@
              },
              {
                "name": "title",
@@ -4652,7 +4650,7 @@
              },
              {
                "name": "view",
-@@ -5994,7 +9369,10 @@
+@@ -6099,7 +9474,10 @@
          {
            "name": "tags",
            "kind": "list",
@@ -4664,7 +4662,7 @@
          },
          {
            "name": "title",
-@@ -6033,6 +9411,88 @@
+@@ -6138,6 +9516,88 @@
        ],
        "children": [
          {
@@ -4753,7 +4751,7 @@
            "name": "favorited",
            "kind": "scalar"
          },
-@@ -6082,9 +9542,12 @@
+@@ -6187,9 +9647,12 @@
        "children": [
          {
            "name": "label",
@@ -4768,7 +4766,7 @@
          },
          {
            "name": "name",
-@@ -6166,19 +9629,55 @@
+@@ -6271,19 +9734,55 @@
          },
          {
            "name": "artworkSlots",
@@ -4834,7 +4832,7 @@
            "name": "locked",
            "kind": "scalar",
            "optional": true
-@@ -6223,6 +9722,88 @@
+@@ -6328,6 +9827,88 @@
            "kind": "object",
            "children": [
              {
@@ -4923,7 +4921,7 @@
                "name": "favorited",
                "kind": "scalar"
              },
-@@ -6296,6 +9877,31 @@
+@@ -6401,6 +9982,31 @@
            "name": "collections",
            "kind": "list",
            "nullable": true,
@@ -4955,7 +4953,7 @@
            "children": [
              {
                "name": "createdAt",
-@@ -6323,17 +9929,121 @@
+@@ -6428,17 +10034,121 @@
            "name": "entities",
            "kind": "list",
            "nullable": true,
@@ -5079,7 +5077,7 @@
                  },
                  {
                    "name": "name",
-@@ -6375,6 +10085,28 @@
+@@ -6480,6 +10190,28 @@
            "name": "libraries",
            "kind": "list",
            "nullable": true,
@@ -5108,7 +5106,7 @@
            "children": [
              {
                "name": "id",
-@@ -6399,11 +10131,263 @@
+@@ -6504,11 +10236,263 @@
            "name": "media",
            "kind": "list",
            "nullable": true,
@@ -5372,7 +5370,7 @@
                "children": [
                  {
                    "name": "pluginID",
-@@ -6448,12 +10432,41 @@
+@@ -6553,12 +10537,41 @@
                "name": "fields",
                "kind": "list",
                "nullable": true,
@@ -5416,7 +5414,7 @@
                  },
                  {
                    "name": "name",
-@@ -6481,6 +10494,42 @@
+@@ -6586,6 +10599,42 @@
                "name": "markers",
                "kind": "list",
                "nullable": true,
@@ -5459,7 +5457,7 @@
                "children": [
                  {
                    "name": "endSeconds",
-@@ -6504,7 +10553,10 @@
+@@ -6609,7 +10658,10 @@
                  {
                    "name": "tags",
                    "kind": "list",
@@ -5471,7 +5469,7 @@
                  },
                  {
                    "name": "title",
-@@ -6537,12 +10589,41 @@
+@@ -6642,12 +10694,41 @@
            "name": "mediaLinks",
            "kind": "list",
            "nullable": true,
@@ -5515,7 +5513,7 @@
              },
              {
                "name": "fromMediaID",
-@@ -6562,12 +10643,47 @@
+@@ -6667,12 +10748,47 @@
            "name": "relations",
            "kind": "list",
            "nullable": true,
@@ -5565,7 +5563,7 @@
              },
              {
                "name": "fromEntityID",
-@@ -6653,6 +10769,19 @@
+@@ -6758,6 +10874,19 @@
            "name": "libraryBreakdown",
            "kind": "list",
            "nullable": true,
@@ -5585,7 +5583,7 @@
            "children": [
              {
                "name": "libraryID",
-@@ -6690,6 +10819,27 @@
+@@ -6795,6 +10924,27 @@
            "name": "collections",
            "kind": "list",
            "nullable": true,
@@ -5613,7 +5611,7 @@
            "children": [
              {
                "name": "createdAt",
-@@ -6717,6 +10867,24 @@
+@@ -6822,6 +10972,24 @@
            "name": "connections",
            "kind": "list",
            "nullable": true,
@@ -5638,7 +5636,7 @@
            "children": [
              {
                "name": "accountLabel",
-@@ -6737,6 +10905,38 @@
+@@ -6842,6 +11010,38 @@
            "name": "engagementEvents",
            "kind": "list",
            "nullable": true,
@@ -5677,7 +5675,7 @@
            "children": [
              {
                "name": "entityID",
-@@ -6771,6 +10971,19 @@
+@@ -6876,6 +11076,19 @@
            "name": "excludedLibraries",
            "kind": "list",
            "nullable": true,
@@ -5697,7 +5695,7 @@
            "children": [
              {
                "name": "libraryID",
-@@ -6795,6 +11008,19 @@
+@@ -6900,6 +11113,19 @@
            "name": "favorites",
            "kind": "list",
            "nullable": true,
@@ -5717,7 +5715,7 @@
            "children": [
              {
                "name": "favoritedAt",
-@@ -6810,6 +11036,42 @@
+@@ -6915,6 +11141,42 @@
            "name": "markers",
            "kind": "list",
            "nullable": true,
@@ -5760,7 +5758,7 @@
            "children": [
              {
                "name": "endSeconds",
-@@ -6833,7 +11095,10 @@
+@@ -6938,7 +11200,10 @@
              {
                "name": "tags",
                "kind": "list",
@@ -5772,7 +5770,7 @@
              },
              {
                "name": "title",
-@@ -6845,6 +11110,27 @@
+@@ -6950,6 +11215,27 @@
            "name": "mutes",
            "kind": "list",
            "nullable": true,
@@ -5800,7 +5798,7 @@
            "children": [
              {
                "name": "includeDescendants",
-@@ -6868,6 +11154,35 @@
+@@ -6973,6 +11259,35 @@
            "name": "playbackProgress",
            "kind": "list",
            "nullable": true,
@@ -5836,7 +5834,7 @@
            "children": [
              {
                "name": "durationSeconds",
-@@ -6922,6 +11237,19 @@
+@@ -7027,6 +11342,19 @@
            "name": "queue",
            "kind": "list",
            "nullable": true,
@@ -5856,7 +5854,7 @@
            "children": [
              {
                "name": "addedAt",
-@@ -6929,7 +11257,51 @@
+@@ -7034,7 +11362,51 @@
              },
              {
                "name": "mediaID",
@@ -5908,7 +5906,7 @@
              }
            ]
          },
-@@ -6937,6 +11309,27 @@
+@@ -7042,6 +11414,27 @@
            "name": "savedFilters",
            "kind": "list",
            "nullable": true,
@@ -5936,7 +5934,7 @@
            "children": [
              {
                "name": "createdAt",
-@@ -6963,6 +11356,42 @@
+@@ -7068,6 +11461,42 @@
          {
            "name": "sealedLibrariesExcluded",
            "kind": "scalar"
@@ -5979,7 +5977,7 @@
          }
        ]
      },
-@@ -6974,6 +11403,27 @@
+@@ -7079,6 +11508,27 @@
            "name": "events",
            "kind": "list",
            "nullable": true,
@@ -6007,7 +6005,7 @@
            "children": [
              {
                "name": "kind",
-@@ -7007,6 +11457,19 @@
+@@ -7112,6 +11562,19 @@
            "name": "packTokens",
            "kind": "list",
            "nullable": true,
@@ -6027,7 +6025,7 @@
            "children": [
              {
                "name": "expiresAt",
-@@ -7022,6 +11485,36 @@
+@@ -7127,6 +11590,36 @@
            "name": "sessions",
            "kind": "list",
            "nullable": true,
@@ -6064,7 +6062,7 @@
            "children": [
              {
                "name": "current",
-@@ -7054,6 +11547,19 @@
+@@ -7159,6 +11652,19 @@
            "name": "streamTokens",
            "kind": "list",
            "nullable": true,
@@ -6084,7 +6082,7 @@
            "children": [
              {
                "name": "expiresAt",
-@@ -7079,6 +11585,289 @@
+@@ -7184,6 +11690,289 @@
            "name": "layouts",
            "kind": "list",
            "nullable": true,
@@ -6374,7 +6372,7 @@
            "children": [
              {
                "name": "entityKind",
-@@ -7098,6 +11887,137 @@
+@@ -7203,6 +11992,137 @@
                "name": "sections",
                "kind": "list",
                "nullable": true,
@@ -6512,7 +6510,7 @@
                "children": [
                  {
                    "name": "artworkSlot",
-@@ -7108,6 +12028,28 @@
+@@ -7213,6 +12133,28 @@
                    "kind": "list",
                    "optional": true,
                    "nullable": true,
@@ -6541,7 +6539,7 @@
                    "children": [
                      {
                        "name": "field",
-@@ -7115,9 +12057,12 @@
+@@ -7220,9 +12162,12 @@
                      },
                      {
                        "name": "label",
@@ -6556,7 +6554,7 @@
                      },
                      {
                        "name": "value",
-@@ -7137,7 +12082,10 @@
+@@ -7242,7 +12187,10 @@
                    "name": "playbackAffordances",
                    "kind": "list",
                    "optional": true,
@@ -6568,7 +6566,7 @@
                  },
                  {
                    "name": "source",
-@@ -7166,9 +12114,12 @@
+@@ -7271,9 +12219,12 @@
                      },
                      {
                        "name": "fieldFilters",
@@ -6583,7 +6581,7 @@
                      },
                      {
                        "name": "kind",
-@@ -7188,8 +12139,11 @@
+@@ -7293,8 +12244,11 @@
                  },
                  {
                    "name": "title",
@@ -6597,7 +6595,7 @@
                  }
                ]
              }
-@@ -7199,6 +12153,33 @@
+@@ -7304,6 +12258,33 @@
            "name": "libraries",
            "kind": "list",
            "nullable": true,
@@ -6631,7 +6629,7 @@
            "children": [
              {
                "name": "accent",
-@@ -7228,6 +12209,36 @@
+@@ -7333,6 +12314,36 @@
            "name": "navigation",
            "kind": "list",
            "nullable": true,
@@ -6668,7 +6666,7 @@
            "children": [
              {
                "name": "id",
-@@ -7244,8 +12255,11 @@
+@@ -7349,8 +12360,11 @@
              },
              {
                "name": "title",
@@ -6682,7 +6680,7 @@
              },
              {
                "name": "view",
-@@ -7294,22 +12308,55 @@
+@@ -7399,22 +12413,55 @@
          {
            "name": "hiddenNodeIDs",
            "kind": "list",
@@ -6744,7 +6742,7 @@
          },
          {
            "name": "themeAccentColor",
-@@ -7332,22 +12379,55 @@
+@@ -7437,22 +12484,55 @@
              {
                "name": "hiddenNodeIDs",
                "kind": "list",
@@ -6806,7 +6804,7 @@
              },
              {
                "name": "themeAccentColor",
-@@ -7402,6 +12482,61 @@
+@@ -7507,6 +12587,61 @@
      {
        "field": "offlinepacks",
        "kind": "list",
@@ -6868,7 +6866,7 @@
        "children": [
          {
            "name": "bytesReady",
-@@ -7551,6 +12686,75 @@
+@@ -7656,6 +12791,75 @@
            "name": "entries",
            "kind": "list",
            "nullable": true,
@@ -6944,7 +6942,7 @@
            "children": [
              {
                "name": "accessError",
-@@ -7560,7 +12764,11 @@
+@@ -7665,7 +12869,11 @@
                "name": "children",
                "kind": "list",
                "optional": true,
@@ -6957,7 +6955,7 @@
              },
              {
                "name": "entryClass",
-@@ -7599,7 +12807,10 @@
+@@ -7704,7 +12912,10 @@
                "name": "sampleNames",
                "kind": "list",
                "optional": true,
@@ -6969,7 +6967,7 @@
              },
              {
                "name": "selectable",
-@@ -7630,12 +12841,32 @@
+@@ -7735,12 +12946,32 @@
          {
            "name": "roles",
            "kind": "list",
@@ -7003,7 +7001,7 @@
            "children": [
              {
                "name": "entryClass",
-@@ -7804,12 +13035,18 @@
+@@ -8060,12 +13291,18 @@
            "name": "certificationScale",
            "kind": "list",
            "optional": true,
@@ -7025,7 +7023,7 @@
          },
          {
            "name": "id",
-@@ -7817,14 +13054,23 @@
+@@ -8073,14 +13310,23 @@
          },
          {
            "name": "mediaClassLabels",
@@ -7053,7 +7051,7 @@
          }
        ]
      },
-@@ -7841,6 +13087,32 @@
+@@ -8097,6 +13343,32 @@
            "name": "grants",
            "kind": "list",
            "nullable": true,
@@ -7086,7 +7084,7 @@
            "children": [
              {
                "name": "allLibraries",
-@@ -7877,7 +13149,10 @@
+@@ -8133,7 +13405,10 @@
          {
            "name": "lifecycleActions",
            "kind": "list",
@@ -7098,7 +7096,7 @@
          },
          {
            "name": "pluginID",
-@@ -7936,6 +13211,23 @@
+@@ -8192,6 +13467,23 @@
            "name": "certificationCeilings",
            "kind": "list",
            "nullable": true,
@@ -7122,7 +7120,7 @@
            "children": [
              {
                "name": "allowUnrated",
-@@ -8031,6 +13323,28 @@
+@@ -8287,6 +13579,28 @@
            "kind": "list",
            "optional": true,
            "nullable": true,
@@ -7151,7 +7149,7 @@
            "children": [
              {
                "name": "action",
-@@ -8121,6 +13435,19 @@
+@@ -8377,6 +13691,19 @@
                "name": "routes",
                "kind": "list",
                "nullable": true,
@@ -7171,7 +7169,7 @@
                "children": [
                  {
                    "name": "category",
-@@ -8138,6 +13465,38 @@
+@@ -8394,6 +13721,38 @@
            "name": "status",
            "kind": "list",
            "nullable": true,
@@ -7210,7 +7208,7 @@
            "children": [
              {
                "name": "at",
-@@ -8185,7 +13544,10 @@
+@@ -8441,7 +13800,10 @@
          {
            "name": "order",
            "kind": "list",
@@ -7222,7 +7220,7 @@
          }
        ]
      },
-@@ -8207,11 +13569,47 @@
+@@ -8463,11 +13825,47 @@
          },
          {
            "name": "artworkSlots",
@@ -7272,7 +7270,7 @@
            "name": "id",
            "kind": "scalar"
          },
-@@ -8263,24 +13661,60 @@
+@@ -8519,24 +13917,60 @@
          },
          {
            "name": "artworkSlots",
@@ -7348,7 +7346,7 @@
            "name": "muted",
            "kind": "scalar",
            "optional": true
-@@ -8319,9 +13753,45 @@
+@@ -8575,9 +14009,45 @@
          },
          {
            "name": "artworkSlots",
@@ -7396,7 +7394,7 @@
          },
          {
            "name": "id",
-@@ -8375,11 +13845,47 @@
+@@ -8631,11 +14101,47 @@
          },
          {
            "name": "artworkSlots",
@@ -7446,7 +7444,7 @@
            "name": "id",
            "kind": "scalar"
          },
-@@ -8536,6 +14042,19 @@
+@@ -8792,6 +14298,19 @@
            "name": "endpoints",
            "kind": "list",
            "nullable": true,
@@ -7466,7 +7464,7 @@
            "children": [
              {
                "name": "kind",
-@@ -8607,6 +14126,24 @@
+@@ -8863,6 +14382,24 @@
            "name": "members",
            "kind": "list",
            "nullable": true,
@@ -7491,7 +7489,7 @@
            "children": [
              {
                "name": "addedAt",
-@@ -8773,6 +14310,24 @@
+@@ -9029,6 +14566,24 @@
            "name": "members",
            "kind": "list",
            "nullable": true,
@@ -7516,7 +7514,7 @@
            "children": [
              {
                "name": "addedAt",
-@@ -8948,22 +14503,55 @@
+@@ -9204,22 +14759,55 @@
          {
            "name": "hiddenNodeIDs",
            "kind": "list",
@@ -7578,7 +7576,7 @@
          },
          {
            "name": "themeAccentColor",
-@@ -9076,6 +14664,24 @@
+@@ -9332,6 +14920,24 @@
            "name": "members",
            "kind": "list",
            "nullable": true,
@@ -7603,7 +7601,7 @@
            "children": [
              {
                "name": "addedAt",
-@@ -9161,7 +14767,10 @@
+@@ -9417,7 +15023,10 @@
          {
            "name": "tags",
            "kind": "list",
@@ -7615,7 +7613,7 @@
          },
          {
            "name": "title",
-@@ -9204,22 +14813,55 @@
+@@ -9460,22 +15069,55 @@
          {
            "name": "hiddenNodeIDs",
            "kind": "list",
@@ -7677,7 +7675,7 @@
          },
          {
            "name": "themeAccentColor",
-@@ -9266,6 +14908,53 @@
+@@ -9522,6 +15164,53 @@
      {
        "field": "retentionrules",
        "kind": "list",
@@ -7731,7 +7729,7 @@
        "children": [
          {
            "name": "createdAt",
-@@ -9398,7 +15087,10 @@
+@@ -9654,7 +15343,10 @@
          {
            "name": "scopes",
            "kind": "list",
@@ -7743,7 +7741,7 @@
          }
        ]
      },
-@@ -9512,6 +15204,28 @@
+@@ -9768,6 +15460,28 @@
            "kind": "list",
            "optional": true,
            "nullable": true,
@@ -7772,7 +7770,7 @@
            "children": [
              {
                "name": "action",
-@@ -9811,6 +15525,32 @@
+@@ -10067,6 +15781,32 @@
            "name": "grants",
            "kind": "list",
            "nullable": true,
@@ -7805,7 +7803,7 @@
            "children": [
              {
                "name": "allLibraries",
-@@ -9847,7 +15587,10 @@
+@@ -10103,7 +15843,10 @@
          {
            "name": "lifecycleActions",
            "kind": "list",
@@ -7817,7 +7815,7 @@
          },
          {
            "name": "pluginID",
-@@ -9931,6 +15674,23 @@
+@@ -10187,6 +15930,23 @@
            "name": "deferrableWork",
            "kind": "list",
            "nullable": true,
@@ -7841,7 +7839,7 @@
            "children": [
              {
                "name": "estimatedCount",
-@@ -10148,11 +15908,35 @@
+@@ -10404,11 +16164,35 @@
            "name": "adapters",
            "kind": "list",
            "nullable": true,
@@ -7878,7 +7876,7 @@
              },
              {
                "name": "mediaClass",
-@@ -10168,6 +15952,35 @@
+@@ -10424,6 +16208,35 @@
            "name": "deadLetters",
            "kind": "list",
            "nullable": true,
@@ -7914,7 +7912,7 @@
            "children": [
              {
                "name": "at",
-@@ -10199,6 +16012,32 @@
+@@ -10455,6 +16268,32 @@
            "name": "skips",
            "kind": "list",
            "nullable": true,
@@ -7947,7 +7945,7 @@
            "children": [
              {
                "name": "at",
-@@ -10283,11 +16122,47 @@
+@@ -10539,11 +16378,47 @@
          },
          {
            "name": "artworkSlots",
@@ -7997,7 +7995,7 @@
            "name": "id",
            "kind": "scalar"
          },
-@@ -10346,11 +16221,47 @@
+@@ -10602,11 +16477,47 @@
          },
          {
            "name": "artworkSlots",
@@ -8047,7 +8045,7 @@
            "name": "id",
            "kind": "scalar"
          },
-@@ -10419,7 +16330,13 @@
+@@ -10675,7 +16586,13 @@
          {
            "name": "mode",
            "kind": "string",
@@ -8062,7 +8060,7 @@
          },
          {
            "name": "query",
-@@ -10432,6 +16349,105 @@
+@@ -10688,6 +16605,105 @@
            "name": "items",
            "kind": "list",
            "nullable": true,
@@ -8168,7 +8166,7 @@
            "children": [
              {
                "name": "artwork",
-@@ -10447,11 +16463,47 @@
+@@ -10703,11 +16719,47 @@
              },
              {
                "name": "artworkSlots",
@@ -8218,7 +8216,7 @@
                "name": "id",
                "kind": "scalar"
              },
-@@ -10559,6 +16611,23 @@
+@@ -10815,6 +16867,23 @@
            "name": "windows",
            "kind": "list",
            "nullable": true,
@@ -8242,7 +8240,7 @@
            "children": [
              {
                "name": "endMinute",
-@@ -10579,6 +16648,32 @@
+@@ -10835,6 +16904,32 @@
      {
        "field": "setcapabilityenabled",
        "kind": "list",
@@ -8275,7 +8273,7 @@
        "children": [
          {
            "name": "enabled",
-@@ -10610,12 +16705,32 @@
+@@ -10866,12 +16961,32 @@
          {
            "name": "audioLanguages",
            "kind": "list",
@@ -8309,7 +8307,7 @@
            "children": [
              {
                "name": "allowUnrated",
-@@ -10646,7 +16761,10 @@
+@@ -10902,7 +17017,10 @@
          {
            "name": "libraryIDs",
            "kind": "list",
@@ -8321,7 +8319,7 @@
          },
          {
            "name": "maxConcurrentStreams",
-@@ -10664,7 +16782,10 @@
+@@ -10920,7 +17038,10 @@
          {
            "name": "subtitleLanguages",
            "kind": "list",
@@ -8333,7 +8331,7 @@
          },
          {
            "name": "subtitleMode",
-@@ -10714,716 +16835,4204 @@
+@@ -10970,716 +17091,4204 @@
            "name": "plugins",
            "kind": "list",
            "nullable": true,
@@ -13217,7 +13215,7 @@
                    "children": [
                      {
                        "name": "configured",
-@@ -11436,8 +21045,11 @@
+@@ -11692,8 +21301,11 @@
                      },
                      {
                        "name": "label",
@@ -13231,7 +13229,7 @@
                      },
                      {
                        "name": "name",
-@@ -11448,11 +21060,31 @@
+@@ -11704,11 +21316,31 @@
                        "kind": "list",
                        "optional": true,
                        "nullable": true,
@@ -13265,7 +13263,7 @@
                          },
                          {
                            "name": "value",
-@@ -11475,254 +21107,538 @@
+@@ -11731,254 +21363,538 @@
                      }
                    ]
                  },
@@ -14030,7 +14028,7 @@
                  },
                  {
                    "name": "icon",
-@@ -11738,6 +21654,82 @@
+@@ -11994,6 +21910,82 @@
                    "kind": "list",
                    "optional": true,
                    "nullable": true,
@@ -14113,7 +14111,7 @@
                    "children": [
                      {
                        "name": "configured",
-@@ -11750,8 +21742,11 @@
+@@ -12006,8 +21998,11 @@
                      },
                      {
                        "name": "label",
@@ -14127,7 +14125,7 @@
                      },
                      {
                        "name": "name",
-@@ -11762,11 +21757,31 @@
+@@ -12018,11 +22013,31 @@
                        "kind": "list",
                        "optional": true,
                        "nullable": true,
@@ -14161,7 +14159,7 @@
                          },
                          {
                            "name": "value",
-@@ -11789,31 +21804,113 @@
+@@ -12045,31 +22060,113 @@
                      }
                    ]
                  },
@@ -14300,7 +14298,7 @@
                "children": [
                  {
                    "name": "configured",
-@@ -11826,8 +21923,11 @@
+@@ -12082,8 +22179,11 @@
                  },
                  {
                    "name": "label",
@@ -14314,7 +14312,7 @@
                  },
                  {
                    "name": "name",
-@@ -11838,11 +21938,31 @@
+@@ -12094,11 +22194,31 @@
                    "kind": "list",
                    "optional": true,
                    "nullable": true,
@@ -14348,7 +14346,7 @@
                      },
                      {
                        "name": "value",
-@@ -11872,8 +21992,11 @@
+@@ -12128,8 +22248,11 @@
              },
              {
                "name": "displayName",
@@ -14362,7 +14360,7 @@
              },
              {
                "name": "id",
-@@ -11883,12 +22006,45 @@
+@@ -12139,12 +22262,45 @@
                "name": "permissions",
                "kind": "list",
                "nullable": true,
@@ -14410,7 +14408,7 @@
                  },
                  {
                    "name": "highRisk",
-@@ -11900,8 +22056,11 @@
+@@ -12156,8 +22312,11 @@
                  },
                  {
                    "name": "label",
@@ -14424,7 +14422,7 @@
                  }
                ]
              },
-@@ -11913,6 +22072,56 @@
+@@ -12169,6 +22328,56 @@
                "name": "scrapers",
                "kind": "list",
                "nullable": true,
@@ -14481,7 +14479,7 @@
                "children": [
                  {
                    "name": "authRef",
-@@ -11965,6 +22174,32 @@
+@@ -12221,6 +22430,32 @@
                "name": "status",
                "kind": "list",
                "nullable": true,
@@ -14514,7 +14512,7 @@
                "children": [
                  {
                    "name": "detail",
-@@ -11977,8 +22212,11 @@
+@@ -12233,8 +22468,11 @@
                  },
                  {
                    "name": "label",
@@ -14528,7 +14526,7 @@
                  },
                  {
                    "name": "state",
-@@ -12019,6 +22257,32 @@
+@@ -12275,6 +22513,32 @@
            "name": "grants",
            "kind": "list",
            "nullable": true,
@@ -14561,7 +14559,7 @@
            "children": [
              {
                "name": "allLibraries",
-@@ -12055,7 +22319,10 @@
+@@ -12311,7 +22575,10 @@
          {
            "name": "lifecycleActions",
            "kind": "list",
@@ -14573,7 +14571,7 @@
          },
          {
            "name": "pluginID",
-@@ -12103,12 +22370,32 @@
+@@ -12359,12 +22626,32 @@
          {
            "name": "audioLanguages",
            "kind": "list",
@@ -14607,7 +14605,7 @@
            "children": [
              {
                "name": "allowUnrated",
-@@ -12139,7 +22426,10 @@
+@@ -12395,7 +22682,10 @@
          {
            "name": "libraryIDs",
            "kind": "list",
@@ -14619,7 +14617,7 @@
          },
          {
            "name": "maxConcurrentStreams",
-@@ -12157,7 +22447,10 @@
+@@ -12413,7 +22703,10 @@
          {
            "name": "subtitleLanguages",
            "kind": "list",
@@ -14631,7 +14629,7 @@
          },
          {
            "name": "subtitleMode",
-@@ -12185,6 +22478,19 @@
+@@ -12441,6 +22734,19 @@
                "name": "routes",
                "kind": "list",
                "nullable": true,
@@ -14651,7 +14649,7 @@
                "children": [
                  {
                    "name": "category",
-@@ -12202,6 +22508,38 @@
+@@ -12458,6 +22764,38 @@
            "name": "status",
            "kind": "list",
            "nullable": true,
@@ -14690,7 +14688,7 @@
            "children": [
              {
                "name": "at",
-@@ -12249,7 +22587,36 @@
+@@ -12505,7 +22843,36 @@
          {
            "name": "order",
            "kind": "list",
@@ -14728,7 +14726,7 @@
          }
        ]
      },
-@@ -12305,7 +22672,10 @@
+@@ -12561,7 +22928,10 @@
          {
            "name": "scraperIDs",
            "kind": "list",
@@ -14740,7 +14738,7 @@
          }
        ]
      },
-@@ -12411,6 +22781,19 @@
+@@ -12667,6 +23037,19 @@
            "name": "hardwareAcceleration",
            "kind": "list",
            "nullable": true,
@@ -14760,7 +14758,7 @@
            "children": [
              {
                "name": "accelerator",
-@@ -12459,6 +22842,58 @@
+@@ -12715,6 +23098,58 @@
        ]
      },
      {
@@ -14819,7 +14817,7 @@
        "field": "skipdetectionenabled",
        "kind": "object",
        "children": [
-@@ -12510,7 +22945,17 @@
+@@ -12766,7 +23201,17 @@
          {
            "name": "entityFilter",
            "kind": "object",
@@ -14838,7 +14836,7 @@
          },
          {
            "name": "entityID",
-@@ -12524,13 +22969,60 @@
+@@ -12780,13 +23225,60 @@
          },
          {
            "name": "fieldFilters",
@@ -14902,7 +14900,7 @@
          },
          {
            "name": "kind",
-@@ -12548,11 +23040,27 @@
+@@ -12804,11 +23296,27 @@
            "optional": true
          },
          {
@@ -14930,7 +14928,7 @@
            "name": "seed",
            "kind": "string",
            "optional": true
-@@ -12578,11 +23086,47 @@
+@@ -12834,11 +23342,47 @@
          },
          {
            "name": "artworkSlots",
@@ -14980,7 +14978,7 @@
            "name": "id",
            "kind": "scalar"
          },
-@@ -12663,6 +23207,24 @@
+@@ -12919,6 +23463,24 @@
            "name": "candidates",
            "kind": "list",
            "nullable": true,
@@ -15005,7 +15003,7 @@
            "children": [
              {
                "name": "explanation",
-@@ -12782,11 +23344,47 @@
+@@ -13038,11 +23600,47 @@
          },
          {
            "name": "artworkSlots",
@@ -15055,7 +15053,7 @@
            "name": "id",
            "kind": "scalar"
          },
-@@ -12796,567 +23394,1667 @@
+@@ -13052,567 +23650,1667 @@
          },
          {
            "name": "locked",
@@ -17194,7 +17192,7 @@
                  },
                  {
                    "name": "icon",
-@@ -13372,6 +25070,82 @@
+@@ -13628,6 +25326,82 @@
                    "kind": "list",
                    "optional": true,
                    "nullable": true,
@@ -17277,7 +17275,7 @@
                    "children": [
                      {
                        "name": "configured",
-@@ -13384,8 +25158,11 @@
+@@ -13640,8 +25414,11 @@
                      },
                      {
                        "name": "label",
@@ -17291,7 +17289,7 @@
                      },
                      {
                        "name": "name",
-@@ -13396,11 +25173,31 @@
+@@ -13652,11 +25429,31 @@
                        "kind": "list",
                        "optional": true,
                        "nullable": true,
@@ -17325,7 +17323,7 @@
                          },
                          {
                            "name": "value",
-@@ -13425,14 +25222,20 @@
+@@ -13681,14 +25478,20 @@
                  },
                  {
                    "name": "label",
@@ -17349,7 +17347,7 @@
                  },
                  {
                    "name": "risk",
-@@ -13448,6 +25251,82 @@
+@@ -13704,6 +25507,82 @@
                "name": "config",
                "kind": "list",
                "nullable": true,
@@ -17432,7 +17430,7 @@
                "children": [
                  {
                    "name": "configured",
-@@ -13460,8 +25339,11 @@
+@@ -13716,8 +25595,11 @@
                  },
                  {
                    "name": "label",
@@ -17446,7 +17444,7 @@
                  },
                  {
                    "name": "name",
-@@ -13472,11 +25354,31 @@
+@@ -13728,11 +25610,31 @@
                    "kind": "list",
                    "optional": true,
                    "nullable": true,
@@ -17480,7 +17478,7 @@
                      },
                      {
                        "name": "value",
-@@ -13506,8 +25408,11 @@
+@@ -13762,8 +25664,11 @@
              },
              {
                "name": "displayName",
@@ -17494,7 +17492,7 @@
              },
              {
                "name": "id",
-@@ -13517,12 +25422,45 @@
+@@ -13773,12 +25678,45 @@
                "name": "permissions",
                "kind": "list",
                "nullable": true,
@@ -17542,7 +17540,7 @@
                  },
                  {
                    "name": "highRisk",
-@@ -13534,8 +25472,11 @@
+@@ -13790,8 +25728,11 @@
                  },
                  {
                    "name": "label",
@@ -17556,7 +17554,7 @@
                  }
                ]
              },
-@@ -13547,6 +25488,56 @@
+@@ -13803,6 +25744,56 @@
                "name": "scrapers",
                "kind": "list",
                "nullable": true,
@@ -17613,7 +17611,7 @@
                "children": [
                  {
                    "name": "authRef",
-@@ -13599,6 +25590,32 @@
+@@ -13855,6 +25846,32 @@
                "name": "status",
                "kind": "list",
                "nullable": true,
@@ -17646,7 +17644,7 @@
                "children": [
                  {
                    "name": "detail",
-@@ -13611,8 +25628,11 @@
+@@ -13867,8 +25884,11 @@
                  },
                  {
                    "name": "label",
@@ -17660,7 +17658,7 @@
                  },
                  {
                    "name": "state",
-@@ -13913,6 +25933,24 @@
+@@ -14169,6 +26189,24 @@
            "name": "members",
            "kind": "list",
            "nullable": true,
@@ -17685,7 +17683,7 @@
            "children": [
              {
                "name": "addedAt",
-@@ -13984,7 +26022,10 @@
+@@ -14240,7 +26278,10 @@
          {
            "name": "tags",
            "kind": "list",
@@ -17697,7 +17695,7 @@
          },
          {
            "name": "title",
-@@ -14005,12 +26046,32 @@
+@@ -14261,12 +26302,32 @@
          {
            "name": "audioLanguages",
            "kind": "list",
@@ -17731,7 +17729,7 @@
            "children": [
              {
                "name": "allowUnrated",
-@@ -14041,7 +26102,10 @@
+@@ -14297,7 +26358,10 @@
          {
            "name": "libraryIDs",
            "kind": "list",
@@ -17743,7 +17741,7 @@
          },
          {
            "name": "maxConcurrentStreams",
-@@ -14059,7 +26123,10 @@
+@@ -14315,7 +26379,10 @@
          {
            "name": "subtitleLanguages",
            "kind": "list",
@@ -17755,7 +17753,7 @@
          },
          {
            "name": "subtitleMode",
-@@ -14318,7 +26385,10 @@
+@@ -14574,7 +26641,10 @@
          {
            "name": "scraperIDs",
            "kind": "list",
@@ -17767,7 +17765,7 @@
          }
        ]
      },
-@@ -17083,6 +29153,13 @@
+@@ -17351,6 +29421,13 @@
            }
          },
          {
@@ -17781,7 +17779,7 @@
            "name": "burnSubtitleIndex",
            "shape": {
              "type": "integer",
-@@ -17090,6 +29167,20 @@
+@@ -17358,6 +29435,20 @@
            }
          },
          {
