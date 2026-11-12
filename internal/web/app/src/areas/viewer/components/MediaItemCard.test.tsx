@@ -1,7 +1,8 @@
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, useLocation, useNavigate } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fetchItemState, setWatched } from "@/lib/graphql";
 import type { SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { readEntityPreview } from "../lib/entityPreview";
@@ -9,6 +10,12 @@ import { fetchPreviewInfo } from "../lib/playback";
 import { readPlayerNavState } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import { MediaItemCard, PREVIEW_DWELL_MS } from "./MediaItemCard";
+
+vi.mock("@/lib/graphql", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/graphql")>()),
+  fetchItemState: vi.fn(),
+  setWatched: vi.fn(),
+}));
 
 vi.mock("../lib/playback", () => ({
   fetchPreviewInfo: vi.fn(),
@@ -30,6 +37,15 @@ beforeEach(() => {
   vi.useFakeTimers();
   installMatchMedia();
   vi.mocked(fetchPreviewInfo).mockReset();
+  vi.mocked(fetchItemState).mockReset();
+  vi.mocked(setWatched).mockReset();
+  vi.mocked(fetchItemState).mockResolvedValue({
+    id: "media-alpha",
+    kind: "media",
+    watched: false,
+    watchlisted: false,
+    rating: 0,
+  });
   vi.mocked(preloadPlayer).mockReset();
   vi.mocked(fetchPreviewInfo).mockResolvedValue({
     assets: { previewClip: "/api/media/assets/token/preview.mp4" },
@@ -467,6 +483,28 @@ describe("MediaItemCard actions", () => {
     fireEvent.click(resume);
 
     expect(screen.getByTestId("path")).toHaveTextContent("/watch/media-alpha");
+  });
+
+  it("marks the item watched from the More menu, loading its state only once opened", async () => {
+    vi.useRealTimers();
+    const state = {
+      id: "media-alpha",
+      kind: "media",
+      watched: false,
+      watchlisted: false,
+      rating: 0,
+    };
+    vi.mocked(fetchItemState).mockResolvedValue(state);
+    vi.mocked(setWatched).mockResolvedValue({ ...state, watched: true });
+    renderCard();
+    expect(fetchItemState).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "More actions for Alpha" }));
+    const mark = await screen.findByRole("menuitem", { name: "Mark watched" });
+    await waitFor(() => expect(mark).not.toHaveAttribute("aria-disabled", "true"));
+    fireEvent.click(mark);
+
+    await waitFor(() => expect(setWatched).toHaveBeenCalledWith({ mediaID: "media-alpha" }, true));
   });
 
   it("offers Open, not Play, for an item that is not playable itself", async () => {

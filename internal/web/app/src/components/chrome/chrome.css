@@ -633,6 +633,11 @@
   outline: none;
 }
 
+.bf-card-menu-item[data-disabled] {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .bf-card-menu-item[data-highlighted] {
   background: color-mix(in oklab, var(--accent) 18%, transparent);
 }

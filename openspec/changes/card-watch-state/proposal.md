@@ -24,8 +24,8 @@ servers on 2026-11-11 found this the largest gap on every shelf and grid.
 
 ## Non-goals
 
-- Mark played or unplayed, watchlist and rating mutations (CORE-1194). The More menu ships without
-  those entries until that API lands.
+- The played-state, watchlist and rating mutations themselves (CORE-1194). The More menu calls the
+  CORE-1194 played-state action; watchlist and rating stay on the item page.
 - Native clients. They read the same wire field in their own tickets.
 
 ## Capabilities

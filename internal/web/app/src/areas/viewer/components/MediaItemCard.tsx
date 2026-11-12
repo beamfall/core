@@ -5,6 +5,7 @@ import { useLocation, useNavigate } from "react-router";
 import type { SourceItem } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
+import { itemTargetFor } from "../actions";
 import { artworkBucketURL, artworkSlotURL } from "../lib/artwork";
 import { cardAccessibleName, cardState } from "../lib/cardState";
 import { entityLinkState } from "../lib/entityPreview";
@@ -245,6 +246,7 @@ export function MediaItemCard({
         primaryLabel={primaryLabel}
         isMedia={isMedia}
         href={new URL(`${import.meta.env.BASE_URL}${path.slice(1)}`, window.location.origin).href}
+        target={itemTargetFor(item)}
         onPrimary={activate}
       />
     </li>

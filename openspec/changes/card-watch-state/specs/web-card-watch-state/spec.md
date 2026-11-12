@@ -81,6 +81,12 @@ keyboard focus, and SHALL keep both reachable on touch devices without hover.
 - **WHEN** the user prefers reduced motion
 - **THEN** the controls appear without transition
 
+#### Scenario: Mark played from the menu
+
+- **WHEN** the user chooses the played-state entry in a card's More menu
+- **THEN** the item's played state for the acting Profile is toggled and the card's state follows
+  without a reload
+
 ### Requirement: Card state refreshes without a reload
 
 Card playback state SHALL reflect playback that happened in the session without a page reload.
