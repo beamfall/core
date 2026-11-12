@@ -10,36 +10,36 @@ const PARTIAL_CATALOGS: Record<Locale, Partial<StringTable>> = { en, fr, de, es,
 
 // Captured after WEB-HLS-RECOVERY-1 added localized playback-recovery keys atop
 // WEBUI-SHELL-RESILIENCE-UPGRADE-BLANK-1 (2026-08-30); updated for CORE-1141 player settings copy
-// and the CORE-1197 Manage unlock copy.
-const BASE_SERIALIZED_LENGTH = 377_578;
-const BASE_REGISTRY_SHA256 = "036c27500d602909306982fa297e3b5b2c4fa1578aaacf50891c220234b65011";
-const BASE_KEY_ORDER_SHA256 = "0f7b009b0eb52a128c228c4b5895ffd3c9396ffcb15aac12fc93b6180ce2587f";
-const BASE_PLACEHOLDER_SHA256 = "cfb037d0b30a58ca9303842d43e79294f3174e0d9efd08a5d21d1ff0a6510b55";
+// and the CORE-1197 Manage unlock and CORE-1190 library browse copy.
+const BASE_SERIALIZED_LENGTH = 384_269;
+const BASE_REGISTRY_SHA256 = "38e3e399083377d42cac47f7c59f9895d92cfa2304429616d0432eb5815dcb26";
+const BASE_KEY_ORDER_SHA256 = "51af1785b15557af824afe0a48c5b8ae72bc0c9107900699360287ec9a2da385";
+const BASE_PLACEHOLDER_SHA256 = "61a56f4dc9c8a630b685ab3026b703498a2a6a04f6445c3ef40bc306dfed198c";
 const BASE_CATALOGS = {
   en: {
-    partialCount: 1_439,
-    partialSha256: "63c9cbdc465c23dfe81d132367a7581a2efe3d4e9035b71405aa8be15decc338",
-    resolvedSha256: "fd298cf5e6ddbc1b286e520eed68d49e956fff304737cf3d3eedfceab84e38ef",
+    partialCount: 1_472,
+    partialSha256: "c7472cc555ffc1db2545813cbacaf693fa0103aa2caa17ba27231cac6c7b4a06",
+    resolvedSha256: "9763ac5c4bd0266969200c8286b8e8bc7b714af410bfd36708199986cc288d7e",
   },
   fr: {
-    partialCount: 665,
-    partialSha256: "bb7ef2c8200f08ed48bc87db0f2d99d5c529ec8381fb97b4855fa31a49f2c4b7",
-    resolvedSha256: "bc6259ded3082ec29578bc0c8671c80ac0e4e96c1494dfc8ad68efeaa9adf101",
+    partialCount: 694,
+    partialSha256: "249e207da40c01b40171a02f545df7e055c2d3a98cf43723e11db7a454b85473",
+    resolvedSha256: "8eaed3f271278029ebf27996453aff63d1ee20612072b04efe603a9e57500220",
   },
   de: {
     partialCount: 600,
     partialSha256: "a068b2a6cc8bdaa411d32694e695619dc3a5bb4fea5aa70bda23c663ffe1441c",
-    resolvedSha256: "5de7a8d2173772412b613900c0f73766baccc5edf8949d6e766b799b49356e7d",
+    resolvedSha256: "636fce10325679ed899327b24923400fd4657fe3c05a3c9e9a529908e54d58b8",
   },
   es: {
     partialCount: 600,
     partialSha256: "16ade231d6beb9e07948f345421aa25c9d2965f16caa92b989707dcebf9d13c6",
-    resolvedSha256: "a2becf378ca2e9891a3126fb4613d5b04443ea4ee7157b70b64b7e3c9ce04b2a",
+    resolvedSha256: "e244baac4e93851c553ae0ddb3baa87e1a8923bb84285558634491b26d79254f",
   },
   pt: {
     partialCount: 600,
     partialSha256: "8cb7ac3141e2856babb2256adab6ec3e5f1147cc86cc9da356cac19649f4ce89",
-    resolvedSha256: "058cb4e9d14d7888c1e3dbfac939d8dd0cd18eaa5083a3006427b34d39b6a516",
+    resolvedSha256: "b5e5b53215b0a7fdb495dab08a6e1b5ddc12ef4f26a24a5a2c8c443c17a00a44",
   },
 } as const satisfies Record<
   Locale,
@@ -63,7 +63,10 @@ function withEnglishFallback(partial: Partial<StringTable>): StringTable {
 function placeholderInventory(table: StringTable): Record<string, string[]> {
   const inventory: Record<string, string[]> = {};
   for (const [key, value] of Object.entries(table)) {
-    const placeholders = [...value.matchAll(/\{([^{}]+)\}/g)].map((match) => match[1]);
+    // Argument names only: an ICU plural contributes its argument, not its translated branches.
+    const placeholders = [...value.matchAll(/\{\s*([A-Za-z_]\w*)\s*[,}]/g)].map(
+      (match) => match[1],
+    );
     if (placeholders.length > 0) inventory[key] = placeholders;
   }
   return inventory;
