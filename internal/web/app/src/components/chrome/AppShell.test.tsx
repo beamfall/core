@@ -13,11 +13,13 @@ vi.mock("@/lib/register", () => ({
   useRegister: () => ({ register: "viewer" }),
 }));
 
+const sessionState = vi.hoisted(() => ({ isManager: false }));
+
 vi.mock("@/lib/session", () => ({
   useSession: () => ({
     session: null,
     manifest: null,
-    isManager: false,
+    isManager: sessionState.isManager,
     revealed: false,
     needsEnroll: false,
   }),
@@ -36,6 +38,7 @@ function renderShell() {
 }
 
 beforeEach(() => {
+  sessionState.isManager = false;
   delete window.beamfallHost;
 });
 
@@ -52,6 +55,13 @@ describe("AppShell host chrome suppression", () => {
     expect(
       screen.getByRole("link", { name: "Beamfall Core corresponding source" }),
     ).toHaveAttribute("href", "/source");
+  });
+
+  it("links the Console and Manage from the header for managers", () => {
+    sessionState.isManager = true;
+    renderShell();
+    expect(screen.getByRole("link", { name: "Console" })).toHaveAttribute("href", "/console");
+    expect(screen.getByRole("link", { name: "Manage" })).toHaveAttribute("href", "/manage");
   });
 
   it("suppresses app chrome inside the Apple Manager host", () => {

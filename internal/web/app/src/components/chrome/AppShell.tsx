@@ -120,6 +120,11 @@ export function AppShell({
             </Badge>
           )}
           {isManager && (
+            <Link to="/console" className="bf-action-link">
+              {t("consoleHeading")}
+            </Link>
+          )}
+          {isManager && (
             <Link to="/manage" className="bf-action-link">
               {t("manage")}
             </Link>
