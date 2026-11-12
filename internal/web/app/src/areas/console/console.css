@@ -707,14 +707,16 @@ a.console-step:hover {
   gap: 4px;
 }
 .console-session-reason {
+  max-width: 24ch;
   color: var(--text-muted);
   font-size: 12px;
+  white-space: normal;
 }
 .console-session-progress {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-width: 190px;
+  min-width: 150px;
 }
 a.console-overview-tile {
   color: inherit;
