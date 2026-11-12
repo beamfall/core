@@ -5465,3 +5465,104 @@ func TestAPITokenLifecycleAndBearerAuth(t *testing.T) {
 		t.Fatalf("activity missing token lifecycle entries: %+v", entries)
 	}
 }
+
+// TestMediaReadCarriesCredits pins the media(id) credits decoration
+// (CORE-1143): every Entity reached through the owning bundle's
+// Media-targeted relations, in declaration order, labeled with the kind's
+// display name and archetype, and nothing for a plugin-less item.
+func TestMediaReadCarriesCredits(t *testing.T) {
+	st := storetest.Open(t)
+	registry, err := newTestPluginRegistry([]plugin.Bundle{{
+		ID:          "tunes",
+		Version:     "1.0.0",
+		DisplayName: plugin.L("Tunes"),
+		MediaLabel:  plugin.L("Cut"),
+		EntityKinds: []plugin.EntityKind{{
+			Name:            "record",
+			DisplayName:     plugin.L("Record"),
+			Archetype:       "container",
+			OrderedChildren: true,
+			Relations:       []plugin.RelationSpec{{Name: "record-cut", ToKind: plugin.MediaKindName, Cardinality: "one"}},
+		}, {
+			Name:        "performer",
+			DisplayName: plugin.L("Performer"),
+			Archetype:   "person",
+			Relations:   []plugin.RelationSpec{{Name: "plays-on", ToKind: plugin.MediaKindName}},
+		}},
+		Layouts: []plugin.LayoutSpec{{ID: "home", Role: "browse"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewHandler(
+		manifest.NewService(st, func() time.Time { return time.Unix(0, 0).UTC() }, registry),
+		auth.NewService(st),
+		st,
+		registry,
+	)
+	ctx := context.Background()
+	library, err := st.CreateLibrary(ctx, "Tunes Library", false, "tunes", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID:          library.ID,
+		Path:               "/srv/tunes/one.mp3",
+		Title:              "Cut One",
+		Container:          "mp3",
+		Codec:              "mp3",
+		ContentFingerprint: "fp-cut-one",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range []store.Entity{
+		{ID: "entity-performer", LibraryID: library.ID, Kind: "performer", Title: "The Performer"},
+		{ID: "entity-record", LibraryID: library.ID, Kind: "record", Title: "The Record"},
+	} {
+		if err := st.UpsertEntity(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, r := range []store.EntityRelation{
+		{FromEntityID: "entity-performer", Name: "plays-on", ToMediaID: media.ID},
+		{FromEntityID: "entity-record", Name: "record-cut", ToMediaID: media.ID},
+	} {
+		if err := st.UpsertEntityRelation(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	read := func(id string) MediaInfo {
+		t.Helper()
+		body := []byte(`{"query":"query($id:String!) { media(id: $id) { id title credits } }","variables":{"id":"` + id + `"}}`)
+		req := httptest.NewRequest(http.MethodPost, "/api/graphql", bytes.NewReader(body))
+		authorizeViewer(req)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("media status = %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp struct {
+			Data map[string]MediaInfo `json:"data"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatal(err)
+		}
+		return resp.Data["media"]
+	}
+
+	got := read(string(media.ID)).Credits
+	want := []MediaCreditInfo{
+		{EntityID: "entity-record", Title: "The Record", Kind: "record", KindDisplayName: plugin.L("Record"), Archetype: "container", Relation: "record-cut"},
+		{EntityID: "entity-performer", Title: "The Performer", Kind: "performer", KindDisplayName: plugin.L("Performer"), Archetype: "person", Relation: "plays-on"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("credits = %#v, want %#v", got, want)
+	}
+
+	plain := read("media-alpha")
+	if plain.ID != "media-alpha" || plain.Credits != nil {
+		t.Fatalf("plugin-less media = %#v, want no credits", plain)
+	}
+}

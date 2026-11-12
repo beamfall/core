@@ -124,6 +124,60 @@ func TestInfoSignsForegroundVerdictIntoHLSGrant(t *testing.T) {
 	}
 }
 
+// TestInfoDirectPlaysAudioWithinAudioEnvelope pins CORE-1143: an audio-only
+// item is judged by the declared audio envelope, not the video one, so a
+// client that declares videoCodecs (every browser) still direct-plays an mp3
+// it can decode, and still falls back when it cannot.
+func TestInfoDirectPlaysAudioWithinAudioEnvelope(t *testing.T) {
+	service, scope := newTestServiceWithMediaFile(t, "session-default", "media-alpha")
+	audioPath := filepath.Join(t.TempDir(), "track.mp3")
+	if err := os.WriteFile(audioPath, []byte("beamfall audio bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	audio, _, err := service.store.ImportMediaFile(context.Background(), store.ImportMediaFile{
+		LibraryID:          "library-local",
+		Path:               audioPath,
+		Title:              "Sample Track",
+		Container:          "mp3",
+		Codec:              "mp3",
+		ContentFingerprint: "sha256:audio-envelope",
+		Class:              store.MediaClassAudio,
+	})
+	if err != nil {
+		t.Fatalf("ImportMediaFile(audio): %v", err)
+	}
+	for _, tc := range []struct {
+		name   string
+		codecs []string
+		direct bool
+	}{
+		{name: "declared", codecs: []string{"aac", "mp3"}, direct: true},
+		{name: "undeclared", codecs: []string{"aac"}, direct: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			caps := make([]AudioCodecCap, len(tc.codecs))
+			for i, codec := range tc.codecs {
+				caps[i] = AudioCodecCap{Codec: codec}
+			}
+			resp, err := service.Info(context.Background(), scope, InfoRequest{
+				MediaID: string(audio.ID),
+				CapabilityProfile: CapabilityProfile{
+					Client:      "beamfall-test",
+					Containers:  []string{"mp4", "mp3"},
+					VideoCodecs: []VideoCodecCap{{Codec: "h264"}},
+					AudioCodecs: caps,
+				},
+			})
+			if err != nil {
+				t.Fatalf("Info: %v", err)
+			}
+			if got := resp.Decision == "direct-play"; got != tc.direct {
+				t.Fatalf("decision = %q (reason %q), want direct-play=%v", resp.Decision, resp.Reason, tc.direct)
+			}
+		})
+	}
+}
+
 // TestInfoEmitsMediaClass pins the audio/video playback class onto the
 // playbackInfo wire (H2): native clients decode `mediaClass` to route
 // audio-vs-video transport (background audio, lock screen, CarPlay/Android

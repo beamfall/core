@@ -189,6 +189,21 @@ export interface GenericMediaInfo {
   summary?: string;
   year?: number;
   favorited: boolean;
+  /** Present artwork slots → URL; only the media(id) read fills it. */
+  artworkSlots?: Record<string, string>;
+  /** Linked Entities in plugin declaration order; only the media(id) read fills it. */
+  credits?: MediaCredit[];
+}
+
+/** One Entity a Media item is linked to (graph.MediaCreditInfo). */
+export interface MediaCredit {
+  entityID: string;
+  title: string;
+  kind: string;
+  kindDisplayName?: DisplayString;
+  /** The kind's fixed archetype ("container", "person", …). */
+  archetype?: string;
+  relation: string;
 }
 
 /** One backing file/Version/Part row for a Media item (graph.MediaFileInfo). */

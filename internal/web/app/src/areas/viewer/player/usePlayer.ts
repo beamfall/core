@@ -10,6 +10,7 @@ import {
   type PlaybackInfo,
   type PlaybackRendition,
   type PlaybackStream,
+  unavailableReasonMessage,
 } from "../lib/playback";
 import {
   hlsLevelIndex,
@@ -253,8 +254,14 @@ export function usePlayer(
     playbackUnsupportedCodec: string;
     playbackFailed: string;
     terminalUnavailable: string;
+    /** The item's file is missing on the server (reason media-file-unavailable). */
+    mediaFileMissing?: string;
+    /** The item is gone or outside this Profile (reason media-unavailable / 404). */
+    mediaNotAvailable?: string;
   },
   startAtSeconds = 0,
+  /** The queue's next item, declared to playback-info for a pre-minted handoff. */
+  nextMediaID?: string,
 ) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -266,6 +273,10 @@ export function usePlayer(
   const [retryKey, setRetryKey] = useState(0);
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
+  // A ref, not an effect dependency: the next item rides along with the load
+  // for this mediaID and never restarts playback on its own.
+  const nextMediaIDRef = useRef(nextMediaID);
+  nextMediaIDRef.current = nextMediaID;
   // Bound by the load effect once a stream is attached.
   const switchRef = useRef<((renditionKey?: string) => SwitchResult) | null>(null);
   const switchToHls = useCallback(
@@ -361,7 +372,7 @@ export function usePlayer(
       const markersRequest = fetchPlaybackMarkers(mediaID).catch((): PlaybackMarker[] => []);
       let info: PlaybackInfo;
       try {
-        info = await fetchPlaybackInfo(mediaID);
+        info = await fetchPlaybackInfo(mediaID, nextMediaIDRef.current);
       } catch (err) {
         if (!alive) return;
         if (err instanceof ApiError && isRevealTerminalStatus(err.status)) {
@@ -370,7 +381,7 @@ export function usePlayer(
           setState((s) => ({
             ...s,
             phase: "message",
-            message: msg.playbackUnavailable,
+            message: (err.status === 404 && msg.mediaNotAvailable) || msg.playbackUnavailable,
           }));
         } else {
           setState((s) => ({
@@ -393,7 +404,7 @@ export function usePlayer(
         setState((s) => ({
           ...s,
           phase: "message",
-          message: msg.playbackUnavailable,
+          message: unavailableReasonMessage(info.reason, msg) || msg.playbackUnavailable,
         }));
         return;
       }

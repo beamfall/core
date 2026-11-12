@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { useDisplayLocale, useT } from "@/lib/i18n";
 import { MediaItemCard } from "../components/MediaItemCard";
 import { useVirtualGrid, VIRTUAL_GRID_MIN_ITEMS } from "../components/useVirtualGrid";
 import { ViewerActions } from "../components/ViewerActions";
+import { playQueueOf } from "../lib/watchQueue";
 import { fetchSectionItems, SEEALL_PAGE } from "../lib/sections";
 import type { SeeAllContext } from "../lib/seeall";
 
@@ -38,6 +39,7 @@ export function SeeAllPage() {
   const start = gridWindow?.startIndex ?? 0;
   const end = gridWindow?.endIndex ?? items.length;
   const visibleItems = gridWindow ? items.slice(start, end) : items;
+  const queue = useMemo(() => playQueueOf(items), [items]);
 
   const loadPage = useCallback(async () => {
     if (!ctx) return;
@@ -110,6 +112,7 @@ export function SeeAllPage() {
                 item={item}
                 posInSet={index + 1}
                 setSize={items.length}
+                queue={queue}
               />
             );
           })}

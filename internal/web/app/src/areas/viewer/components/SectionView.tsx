@@ -1,8 +1,9 @@
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { useNavigate } from "react-router";
 import { displayString } from "@/lib/display";
 import type { Section, SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
+import { playQueueOf } from "../lib/watchQueue";
 import { MediaItemCard } from "./MediaItemCard";
 import { useVirtualGrid, VIRTUAL_GRID_MIN_ITEMS } from "./useVirtualGrid";
 
@@ -61,6 +62,7 @@ export function SectionView({
   const start = window ? window.startIndex : 0;
   const end = window ? window.endIndex : items.length;
   const visible = window ? items.slice(start, end) : items;
+  const queue = useMemo(() => playQueueOf(items), [items]);
 
   return (
     <section className="bf-section flex flex-col gap-3">
@@ -97,6 +99,7 @@ export function SectionView({
               item={item}
               posInSet={index + 1}
               setSize={items.length}
+              queue={queue}
               focusAnchor={
                 navigationID
                   ? { navigation: navigationID, section: section.id, item: item.id }
