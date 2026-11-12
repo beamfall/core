@@ -875,7 +875,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// whose Pattern the mux fills in place.
 	defer func() {
 		status := tracked.statusCode()
-		s.recordAccess(r, reqID, status, time.Since(started))
+		elapsed := time.Since(started)
+		s.recordAccess(r, reqID, status, tracked.firstByte(started, elapsed), elapsed)
 		s.recordAuthRefusal(r, reqID, status)
 	}()
 	r = s.resolveProxyRequest(r)

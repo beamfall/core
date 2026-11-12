@@ -12,6 +12,7 @@ import (
 	"path"
 	"runtime/debug"
 	"strings"
+	"time"
 )
 
 // recoverPanics keeps a broken handler from taking down its serving goroutine
@@ -150,6 +151,8 @@ type trackedResponseWriter struct {
 	committed bool
 	// status is the final status sent, set once the response commits.
 	status int
+	// committedAt is when the response started (its header was committed).
+	committedAt time.Time
 }
 
 func (w *trackedResponseWriter) WriteHeader(status int) {
@@ -185,8 +188,18 @@ func readFrom(w http.ResponseWriter, src io.Reader) (int64, error) {
 func (w *trackedResponseWriter) commit(status int) {
 	if !w.committed {
 		w.status = status
+		w.committedAt = time.Now()
 	}
 	w.committed = true
+}
+
+// firstByte reports how long after started the response began, or elapsed for
+// a handler that returned without writing (net/http commits it then).
+func (w *trackedResponseWriter) firstByte(started time.Time, elapsed time.Duration) time.Duration {
+	if w.committedAt.IsZero() {
+		return elapsed
+	}
+	return w.committedAt.Sub(started)
 }
 
 // statusCode reports the status the response carried: 200 when the handler

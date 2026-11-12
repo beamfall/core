@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // captureJSONLogs routes the default logger into a JSON buffer for the test.
@@ -281,5 +282,99 @@ func TestTrackedResponseWriterReportsFinalStatus(t *testing.T) {
 		if got := tracked.statusCode(); got != tc.want {
 			t.Fatalf("%s: status = %d, want %d", tc.name, got, tc.want)
 		}
+	}
+}
+
+// TestAccessLevelFollowsOutcome pins the level of the access line (CORE-1159):
+// routine requests are Debug, a 5xx is Info, and a response that was slow to
+// start is Warn whatever its status.
+func TestAccessLevelFollowsOutcome(t *testing.T) {
+	cases := []struct {
+		name      string
+		status    int
+		firstByte time.Duration
+		want      slog.Level
+	}{
+		{"ok", http.StatusOK, 5 * time.Millisecond, slog.LevelDebug},
+		{"not modified", http.StatusNotModified, 0, slog.LevelDebug},
+		{"client error", http.StatusNotFound, 0, slog.LevelDebug},
+		{"abandoned by client", statusClientClosedRequest, 900 * time.Millisecond, slog.LevelDebug},
+		{"server error", http.StatusInternalServerError, 0, slog.LevelInfo},
+		{"bad gateway", http.StatusBadGateway, 0, slog.LevelInfo},
+		{"just under slow", http.StatusOK, slowRequestThreshold - time.Millisecond, slog.LevelDebug},
+		{"slow", http.StatusOK, slowRequestThreshold, slog.LevelWarn},
+		{"slow server error", http.StatusInternalServerError, 2 * slowRequestThreshold, slog.LevelWarn},
+	}
+	for _, tc := range cases {
+		if got := accessLevel(tc.status, tc.firstByte); got != tc.want {
+			t.Errorf("%s: accessLevel(%d, %v) = %v, want %v", tc.name, tc.status, tc.firstByte, got, tc.want)
+		}
+	}
+}
+
+// TestRoutineRequestIsSilentAtInfoButCounted proves the default log level
+// carries no line for a routine request while a failed one still logs, and
+// that the request counters do not depend on the log level.
+func TestRoutineRequestIsSilentAtInfoButCounted(t *testing.T) {
+	srv := newTestServer(t)
+	handleRecoveryTestRoute(srv, "GET /fails", func(w http.ResponseWriter, r *http.Request) {
+		writeError(w, r, http.StatusInternalServerError, "boom")
+	})
+	handleRecoveryTestRoute(srv, "GET /fine", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	srv.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/fine", nil))
+	if records := logRecords(t, &logs, "http request"); len(records) != 0 {
+		t.Fatalf("routine request logged at Info level: %v", records)
+	}
+	if got := srv.requestMetrics.count.Load(); got != 1 {
+		t.Fatalf("counted requests = %d, want 1", got)
+	}
+
+	srv.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/fails", nil))
+	records := logRecords(t, &logs, "http request")
+	if len(records) != 1 || records[0]["level"] != "INFO" || records[0]["status"] != float64(http.StatusInternalServerError) {
+		t.Fatalf("access records = %v, want one INFO line for the 500", records)
+	}
+}
+
+// TestLongResponseThatStartedPromptlyIsRoutine proves slowness is measured to
+// the first byte: a response that starts at once and then streams is a Debug
+// line whose first_byte_ms is below its latency_ms.
+func TestLongResponseThatStartedPromptlyIsRoutine(t *testing.T) {
+	srv := newTestServer(t)
+	handleRecoveryTestRoute(srv, "GET /streams", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		time.Sleep(60 * time.Millisecond)
+		_, _ = w.Write([]byte("tail"))
+	})
+	logs := captureJSONLogs(t)
+
+	srv.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/streams", nil))
+
+	records := logRecords(t, logs, "http request")
+	if len(records) != 1 {
+		t.Fatalf("access records = %d, want 1: %s", len(records), logs.String())
+	}
+	record := records[0]
+	first, _ := record["first_byte_ms"].(float64)
+	total, _ := record["latency_ms"].(float64)
+	if record["level"] != "DEBUG" || total < 60 || first >= total {
+		t.Fatalf("record = %v, want DEBUG with first_byte_ms below latency_ms >= 60", record)
+	}
+}
+
+// TestFirstByteFallsBackToElapsedWithoutAWrite covers a handler that returns
+// without writing: net/http commits the response then, so the wait is the
+// whole request.
+func TestFirstByteFallsBackToElapsedWithoutAWrite(t *testing.T) {
+	tracked, _ := trackResponseWriter(httptest.NewRecorder())
+	if got := tracked.firstByte(time.Now(), 3*time.Second); got != 3*time.Second {
+		t.Fatalf("firstByte = %v, want the elapsed 3s", got)
 	}
 }

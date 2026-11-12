@@ -7,12 +7,16 @@ Where Beamfall Core logs go and how to read them during an investigation.
 2. For an incident, collect the time window around the event and correlate with `/metrics` deltas.
 3. Audited mutations (deletes route through audited server mutations, inv. 6) are the authority for
    "what changed"; prefer them over inferring from request logs.
-4. Every HTTP request produces one `http request` line at Info: `requestID`, `method`, `route`
+4. Every HTTP request produces one `http request` line: `requestID`, `method`, `route`
    (the matched route pattern, or `unmatched`), `path` (Stream Token segments shown as
-   `[redacted]`, never the query string), `status`, `latency_ms` and `principal` — the *kind* of
-   credential presented (`anonymous`, `session`, `api_token`, `scoped_key`, `stream_token`), never
-   its value. The same `requestID` is in the `X-Beamfall-Request-Id` response header, so a client
-   report or a 5xx log line leads straight to its access line.
+   `[redacted]`, never the query string), `status`, `latency_ms`, `first_byte_ms` (time to the
+   start of the response) and `principal` — the *kind* of credential presented (`anonymous`,
+   `session`, `api_token`, `scoped_key`, `stream_token`), never its value. The line is written at
+   Warn when the response took one second or longer to start, at Info when the status is 5xx, and
+   at Debug otherwise, so the default log level shows only failed and slow requests; run with
+   `--log-level debug` to see every request. A long download or an open event stream that started
+   promptly is not slow. The same `requestID` is in the `X-Beamfall-Request-Id` response header,
+   so a client report or a 5xx log line leads straight to its access line.
 5. A refused credential produces one `auth refused` record at Warn that is written whatever the
    configured log level: `operation` (`credential`, `admin_session`, `integration_sign_in`,
    `enroll`, `setup`, `promote`), `outcome=refused`, `reason`, `credential` (the class), `method`,
