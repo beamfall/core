@@ -1557,6 +1557,16 @@
     padding: 0 12px 8px;
   }
 
+  /* A phone row cannot always fit every 44px utility (320px screens, or the
+   * volume slider sliding out): it scrolls sideways instead of clipping or
+   * reflowing, padded so focus rings are not cut off. */
+  .bf-controls {
+    margin: -4px -12px;
+    padding: 4px 12px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
   .bf-player-meta h2 {
     font-size: 16px;
   }
@@ -1607,6 +1617,17 @@
 
   .bf-transport .bf-control.is-skip-segment {
     margin: 0 12px 6px;
+  }
+}
+
+/* Reduced transparency keeps a solid band behind the phone controls rather
+ * than the see-through full-picture scrim. */
+@media (max-width: 640px) and (prefers-reduced-transparency: reduce) {
+  .bf-transport-scrim {
+    inset: auto 0 0;
+    height: auto;
+    min-height: 168px;
+    background: oklch(8% 0.012 255);
   }
 }
 
