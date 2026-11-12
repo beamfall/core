@@ -1,7 +1,6 @@
-import { Bell } from "lucide-react";
+import { Bell, LayoutDashboard } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { Link, useLocation } from "react-router";
-import { SignOutButton } from "@/areas/enroll";
 import { ServerActivity } from "@/components/beamfall/ServerActivity";
 import { Badge } from "@/components/ui/badge";
 import { getBeamfallHost } from "@/lib/beamfallHost";
@@ -10,6 +9,7 @@ import { fetchNotifications } from "@/lib/graphql";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
+import { AccountMenu } from "./AccountMenu";
 import "./chrome.css";
 
 const NOTIFICATION_BADGE_LIMIT = 100;
@@ -24,7 +24,7 @@ export function AppShell({
   actions,
 }: {
   children: ReactNode;
-  /** Optional area-specific header actions (right cluster). */
+  /** Optional area-specific header actions, rendered before the icons (the Viewer search). */
   actions?: ReactNode;
 }) {
   const t = useT();
@@ -82,6 +82,11 @@ export function AppShell({
     return "";
   })();
 
+  const unreadLabel =
+    unreadNotifications >= NOTIFICATION_BADGE_LIMIT
+      ? `${NOTIFICATION_BADGE_LIMIT}+`
+      : unreadNotifications;
+
   if (beamfallHost) {
     return <main className="bf-main px-4 py-6">{children}</main>;
   }
@@ -110,54 +115,42 @@ export function AppShell({
         )}
 
         <div className="bf-actions">
+          {actions}
           {revealed && (
             <Badge variant="outline" className="bf-chip-revealed">
               {t("revealed")}
             </Badge>
           )}
-          {isManager && (
-            <Badge variant="secondary" className="bf-chip-role">
-              {t("managerRole")}
-            </Badge>
-          )}
           {isManager && <ServerActivity />}
           {isManager && (
-            <Link to="/console" className="bf-action-link">
-              {t("consoleHeading")}
-            </Link>
-          )}
-          {isManager && (
-            <Link to="/manage" className="bf-action-link">
-              {t("manage")}
+            <Link
+              to="/console"
+              className={
+                "bf-icon-button" + (location.pathname.startsWith("/console") ? " is-active" : "")
+              }
+            >
+              <LayoutDashboard aria-hidden className="size-[18px]" />
+              <span className="bf-icon-label">{t("consoleHeading")}</span>
             </Link>
           )}
           {register === "viewer" && session && !needsEnroll && (
             <Link
               to="/notifications"
               className={
-                "bf-notification-link" +
-                (location.pathname === "/notifications" ? " is-active" : "")
+                "bf-icon-button" + (location.pathname === "/notifications" ? " is-active" : "")
               }
-              aria-label={t("notificationsUnreadAria", {
-                count:
-                  unreadNotifications >= NOTIFICATION_BADGE_LIMIT
-                    ? `${NOTIFICATION_BADGE_LIMIT}+`
-                    : unreadNotifications,
-              })}
+              aria-label={t("notificationsUnreadAria", { count: unreadLabel })}
+              title={t("notifications")}
             >
-              <Bell aria-hidden className="size-4" />
-              <span className="bf-notification-label">{t("notifications")}</span>
+              <Bell aria-hidden className="size-[18px]" />
               {unreadNotifications > 0 && (
                 <span className="bf-notification-count" aria-hidden>
-                  {unreadNotifications >= NOTIFICATION_BADGE_LIMIT
-                    ? `${NOTIFICATION_BADGE_LIMIT}+`
-                    : unreadNotifications}
+                  {unreadLabel}
                 </span>
               )}
             </Link>
           )}
-          {actions}
-          {session && <SignOutButton />}
+          {session && <AccountMenu />}
         </div>
       </header>
 

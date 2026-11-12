@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,6 +54,16 @@ export function SearchPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const searchSeq = useRef(0);
+  const [params] = useSearchParams();
+  const headerQuery = params.get("q")?.trim() ?? "";
+
+  // The header search field opens this page with ?q=; run that search once per
+  // new query text.
+  useEffect(() => {
+    if (!headerQuery) return;
+    setQuery(headerQuery);
+    void runSearch(headerQuery);
+  }, [headerQuery]);
 
   // Probe availability once. Either probe failing simply leaves that mode out of
   // the toggle (keyword stays available), so the surface degrades gracefully.
@@ -77,9 +88,12 @@ export function SearchPage() {
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    await runSearch(query.trim());
+  }
+
+  async function runSearch(text: string) {
     const seq = searchSeq.current + 1;
     searchSeq.current = seq;
-    const text = query.trim();
     setError(null);
     setNotice(null);
     if (!text) {

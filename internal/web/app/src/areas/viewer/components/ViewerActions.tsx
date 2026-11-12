@@ -1,38 +1,39 @@
-import { Link } from "react-router";
+import { Search } from "lucide-react";
+import { type FormEvent, useState } from "react";
+import { Link, useNavigate } from "react-router";
 import { useT } from "@/lib/i18n";
-import { useSession } from "@/lib/session";
 
-// The viewer's header action cluster (right side of the AppShell): quick links
-// to search, the My Data / Privacy panel (ADR-0036), and the profile picker
-// when more than one Profile exists (ADR-0004). Rendered into <AppShell
-// actions={...}>; the Reveal "Revealed" chip and Manager links are owned by the
-// AppShell itself.
+// The viewer's header actions (CORE-1131): a search field that opens Search with
+// the typed text, and on phones a search icon in its place. Profile, My Data and
+// Profile settings live in the AppShell's account menu.
 export function ViewerActions() {
   const t = useT();
-  const { profiles, session } = useSession();
-  const currentProfile = profiles.find((p) => p.id === session?.profileID);
-  const profileLabel = currentProfile
-    ? t("profileActionLabel", { name: currentProfile.name })
-    : t("profile");
+  const navigate = useNavigate();
+  const [text, setText] = useState("");
+
+  function onSubmit(event: FormEvent) {
+    event.preventDefault();
+    const query = text.trim();
+    navigate(query ? `/search?q=${encodeURIComponent(query)}` : "/search");
+    setText("");
+  }
+
   return (
-    <nav aria-label={t("navLabel")} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-      <Link to="/search" className="bf-action-link">
-        {t("search")}
+    <>
+      <form role="search" className="bf-search" onSubmit={onSubmit}>
+        <Search aria-hidden className="bf-search-icon" />
+        <input
+          type="search"
+          className="bf-search-input"
+          aria-label={t("search")}
+          placeholder={t("searchPlaceholder")}
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+        />
+      </form>
+      <Link to="/search" className="bf-icon-button bf-search-icon-link" aria-label={t("search")}>
+        <Search aria-hidden className="size-[18px]" />
       </Link>
-      <Link to="/mydata" className="bf-action-link">
-        {t("myData")}
-      </Link>
-      <Link to="/settings" className="bf-action-link">
-        {t("settingsTitle")}
-      </Link>
-      {profiles.length > 1 && (
-        <Link to="/profiles" className="bf-action-link">
-          {profileLabel}
-        </Link>
-      )}
-      {profiles.length <= 1 && currentProfile && (
-        <span className="text-sm text-[var(--text-secondary)]">{profileLabel}</span>
-      )}
-    </nav>
+    </>
   );
 }

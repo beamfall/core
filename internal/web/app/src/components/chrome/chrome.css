@@ -14,19 +14,30 @@
  *  Shared app shell — header, brand mark, nav, banner
  * ============================================================ */
 
+/* The header (CORE-1131): one quiet row in the streaming-app idiom. Brand and
+ * library tabs on the left, a search field, then a short icon cluster (Activity,
+ * Console, notifications) and an avatar that opens the account menu. Every
+ * secondary link lives in that menu, so the bar never wraps into two rows. */
 .bf-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
   display: flex;
   align-items: center;
-  gap: 20px;
-  padding: 10px 20px;
-  background: var(--bg-surface);
+  gap: 18px;
+  min-height: 60px;
+  padding: 10px 24px;
+  background: color-mix(in oklch, var(--bg-surface) 82%, transparent);
   border-bottom: 1px solid var(--border-subtle);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
 }
 
 .bf-brand {
   display: inline-flex;
   align-items: center;
   gap: 10px;
+  flex: none;
   font-size: 15px;
   font-weight: 700;
   letter-spacing: 0;
@@ -35,9 +46,15 @@
   white-space: nowrap;
 }
 
+.bf-brand:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 4px;
+  border-radius: 6px;
+}
+
 .bf-mark {
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   flex: none;
   background: url("../../assets/beamfall-logo.png") center / contain no-repeat;
 }
@@ -50,30 +67,36 @@
   mask: url("/web/beamfall-wordmark.svg") center / contain no-repeat;
 }
 
-/* Nav as the tab/rail idiom: quiet labels; the active tab is marked by a
- * refined 2px beam underline + brighter text (the one sanctioned global-chrome
- * accent — "active nav"), never a filled pill. */
+/* Library tabs: quiet labels; the active tab is brighter with a 2px beam
+ * underline (the one sanctioned global-chrome accent), never a filled pill.
+ * Too many tabs scroll sideways instead of wrapping. */
 .bf-nav {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  gap: 2px;
   min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.bf-nav::-webkit-scrollbar {
+  display: none;
 }
 
 .bf-nav-link {
   display: inline-flex;
+  flex: none;
   align-items: center;
-  padding: 7px 10px;
+  height: 36px;
+  padding: 0 12px;
   border-radius: var(--radius-control);
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   line-height: 18px;
   text-decoration: none;
+  white-space: nowrap;
   cursor: pointer;
-  /* The active underline rides an inset bottom box-shadow, so it sits inside the
-   * padded tab box, never shifts layout, and animates with the rest. */
   box-shadow: inset 0 -2px 0 transparent;
   transition:
     color var(--duration-fast) var(--ease-standard),
@@ -91,7 +114,6 @@
   outline-offset: 2px;
 }
 
-/* Active tab: brighter text + a crisp 2px beam underline, no filled pill. */
 .bf-nav-link.is-active {
   color: var(--text-primary);
   background: transparent;
@@ -102,69 +124,378 @@
   background: var(--night-850);
 }
 
-/* Header action cluster: quiet links + controls, never accent. */
+/* Right side: search plus the icon cluster, pushed to the end of the row. */
 .bf-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex: none;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
   margin-left: auto;
-  min-width: 0;
 }
 
-.bf-action-link {
+/* Header search: a rounded glass field; submitting opens Search with the text. */
+.bf-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: clamp(180px, 22vw, 300px);
+  margin-right: 6px;
+}
+
+.bf-search-icon {
+  position: absolute;
+  left: 12px;
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.bf-search-input {
+  width: 100%;
+  height: 38px;
+  padding: 0 14px 0 36px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--night-850) 70%, transparent);
+  color: var(--text-primary);
+  font-size: 14px;
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.bf-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.bf-search-input:hover {
+  border-color: var(--border-strong);
+}
+
+.bf-search-input:focus {
+  outline: none;
+  border-color: color-mix(in oklch, var(--beam-500) 70%, transparent);
+  background: var(--night-850);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--beam-500) 22%, transparent);
+}
+
+/* The phone's search icon stands in for the field. */
+.bf-icon-button.bf-search-icon-link {
+  display: none;
+}
+
+/* Round icon buttons: Search (phone), Activity, Console, notifications, avatar. */
+.bf-icon-button {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 40px;
+  height: 40px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
   color: var(--text-muted);
   font-size: 13px;
   font-weight: 600;
   text-decoration: none;
   white-space: nowrap;
-  transition: color var(--duration-fast) var(--ease-standard);
-}
-
-.bf-action-link:hover {
-  color: var(--text-primary);
-}
-
-.bf-notification-link {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 32px;
-  padding: 6px 9px;
-  border-radius: var(--radius-control);
-  color: var(--text-muted);
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 18px;
-  text-decoration: none;
+  cursor: pointer;
   transition:
     color var(--duration-fast) var(--ease-standard),
     background-color var(--duration-fast) var(--ease-standard);
 }
 
-.bf-notification-link:hover,
-.bf-notification-link.is-active {
+.bf-icon-button:hover,
+.bf-icon-button.is-active {
   color: var(--text-primary);
   background: var(--night-850);
 }
 
-.bf-notification-link:focus-visible {
+.bf-icon-button:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
+.bf-icon-button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* A revealed session's relock button carries the iris Restrictions tint. */
+.bf-icon-button.bf-reveal-open {
+  color: var(--text-primary);
+  background: oklch(67% 0.13 310 / 22%);
+  box-shadow: inset 0 0 0 1px oklch(67% 0.13 310 / 55%);
+}
+
+/* Labels that collapse to icon-only on narrow screens, keeping the name. */
+.bf-icon-label {
+  white-space: nowrap;
+}
+
 .bf-notification-count {
+  position: absolute;
+  top: 3px;
+  right: 2px;
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
+  border: 2px solid var(--bg-surface);
   border-radius: 999px;
   background: var(--beam-500);
   color: var(--night-950);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 14px;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+/* Account menu: the avatar opens a glass panel of the secondary links. */
+.bf-account {
+  position: relative;
+  flex: none;
+}
+
+.bf-avatar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.bf-avatar-button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.bf-avatar {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--beam-500), oklch(55% 0.16 290));
+  color: var(--night-950);
+  font-size: 14px;
+  font-weight: 800;
+  box-shadow:
+    0 0 0 2px var(--bg-surface),
+    0 0 0 3px color-mix(in oklch, var(--beam-500) 40%, transparent);
+  transition: box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.bf-avatar-button:hover .bf-avatar,
+.bf-avatar-button[aria-expanded="true"] .bf-avatar {
+  box-shadow:
+    0 0 0 2px var(--bg-surface),
+    0 0 0 4px var(--beam-500),
+    0 0 18px color-mix(in oklch, var(--beam-500) 45%, transparent);
+}
+
+.bf-avatar-lg {
+  width: 40px;
+  height: 40px;
+  font-size: 16px;
+}
+
+.bf-account-panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 50;
+  width: 260px;
+  padding: 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  background: color-mix(in oklch, var(--bg-surface) 92%, transparent);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  box-shadow:
+    0 18px 48px oklch(0% 0 0 / 45%),
+    inset 0 1px 0 oklch(100% 0 0 / 6%);
+  animation: bf-menu-in var(--duration-fast, 150ms) var(--ease-standard, ease-out);
+}
+
+.bf-account-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px 12px;
+}
+
+.bf-account-name {
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.bf-account-role {
+  color: var(--text-muted);
   font-size: 11px;
   font-weight: 700;
-  line-height: 18px;
-  text-align: center;
+  letter-spacing: 0.06em;
+  line-height: 16px;
+}
+
+.bf-account-rule {
+  height: 1px;
+  margin: 6px 4px;
+  border: 0;
+  background: var(--border-subtle);
+}
+
+.bf-account-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
+}
+
+.bf-account-item svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  color: var(--text-muted);
+}
+
+.bf-account-item:hover,
+.bf-account-item:focus-visible {
+  outline: none;
+  color: var(--text-primary);
+  background: var(--night-850);
+}
+
+.bf-account-item:hover svg,
+.bf-account-item:focus-visible svg {
+  color: var(--beam-500);
+}
+
+.bf-account-item[aria-current="page"] {
+  color: var(--text-primary);
+}
+
+/* Sign out reuses the shared button; flatten it into a menu row. */
+.bf-account-panel .bf-account-signout {
+  justify-content: flex-start;
+  height: 42px;
+  padding: 0 10px 0 40px;
+  border-radius: 10px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+@keyframes bf-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bf-account-panel {
+    animation: none;
+  }
+}
+
+/* Mid widths: the labelled buttons go icon-only before anything wraps. */
+@media (max-width: 1100px) {
+  .bf-icon-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .bf-icon-button {
+    padding: 0;
+  }
+}
+
+/* Phone: brand and icons on the first row, the library tabs as a swipeable
+ * strip on the second; the search field becomes an icon. */
+@media (max-width: 760px) {
+  .bf-header {
+    flex-wrap: wrap;
+    gap: 6px 8px;
+    padding: 8px 12px 0 16px;
+  }
+  .bf-wordmark {
+    width: 88px;
+  }
+  .bf-nav {
+    order: 3;
+    flex: 1 0 100%;
+    margin: 0 -12px 0 -16px;
+    padding: 0 12px 4px;
+    mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+  }
+  .bf-actions {
+    gap: 0;
+  }
+  .bf-icon-button {
+    min-width: 38px;
+    height: 38px;
+  }
+  .bf-avatar-button {
+    width: 38px;
+    height: 38px;
+  }
+  .bf-search {
+    display: none;
+  }
+  .bf-icon-button.bf-search-icon-link {
+    display: inline-flex;
+  }
+  .bf-header:not(:has(.bf-nav)) {
+    padding-bottom: 8px;
+  }
+  .bf-account-panel {
+    position: fixed;
+    top: 56px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+  }
+}
+
+/* Narrow phones: the logo mark alone, so brand and icons share one row. */
+@media (max-width: 440px) {
+  .bf-wordmark {
+    display: none;
+  }
 }
 
 /* The Device Role + Reveal chips: StatusBadge idiom. Role state never borrows

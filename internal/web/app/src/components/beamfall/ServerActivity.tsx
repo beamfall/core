@@ -38,13 +38,18 @@ export function ServerActivity() {
   const busy = rescanning || running > 0;
   const label = running > 0 ? t("serverActivityRunning", { count: running }) : t("serverActivity");
   return (
-    <Link to="/console/operations" className="bf-action-link" aria-label={label} title={label}>
+    <Link
+      to="/console/operations"
+      className="bf-icon-button bf-activity-link"
+      aria-label={label}
+      title={label}
+    >
       {busy ? (
-        <RefreshCw aria-hidden className="size-4 animate-spin" />
+        <RefreshCw aria-hidden className="size-[18px] animate-spin" />
       ) : (
-        <Activity aria-hidden className="size-4" />
+        <Activity aria-hidden className="size-[18px]" />
       )}
-      {running > 0 && <span className="ml-1 tabular-nums">{running}</span>}
+      {running > 0 && <span className="tabular-nums">{running}</span>}
     </Link>
   );
 }

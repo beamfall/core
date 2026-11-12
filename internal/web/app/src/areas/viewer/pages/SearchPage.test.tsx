@@ -49,15 +49,24 @@ beforeEach(() => {
   });
 });
 
-function renderPage() {
+function renderPage(entry = "/search") {
   return render(
     <I18nProvider>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[entry]}>
         <SearchPage />
       </MemoryRouter>
     </I18nProvider>,
   );
 }
+
+describe("SearchPage header query", () => {
+  it("runs the search the header field opened the page with", async () => {
+    renderPage("/search?q=blue%20planet");
+    await waitFor(() => expect(searchResult).toHaveBeenCalledWith("blue planet", "keyword"));
+    expect(screen.getByLabelText("Search")).toHaveValue("blue planet");
+    expect(await screen.findByText("Hit")).toBeInTheDocument();
+  });
+});
 
 describe("SearchPage mode exposure", () => {
   it("hides the mode toggle when only keyword is available", async () => {

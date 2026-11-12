@@ -8,4 +8,5 @@
 - [x] 6. Header Activity link (running-job count, to Operations); auto-scan status on library cards and the Rescan tile; Add library + Rescan all in the Libraries header
 - [x] 7. Console Libraries redesign: one glass card per library (status, Rescan, Fix unmatched), folder rows that save on add/remove, option switches with help text, Add library panel on demand
 - [x] 8. House-style design pass on every Console and Manage page: glass cards and tables, icon tiles on every section header, icons in the Manage rail, Manage Libraries as one card per library
-- [ ] 9. Owner review in the running UI; `npm run test`; `make gate` at landing
+- [x] 9. Header redesign: header search field, round icon buttons (Restrictions, Activity, Console, Notifications), and an account menu (profile, My Data, settings, Manage, Sign out) replacing the profile links and the phone menu
+- [ ] 10. Owner review in the running UI; `npm run test`; `make gate` at landing

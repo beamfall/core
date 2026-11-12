@@ -1,47 +1,42 @@
 import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
-import { describe, expect, it, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
+import { describe, expect, it } from "vitest";
 import { I18nProvider } from "@/lib/i18n";
 import { ViewerActions } from "./ViewerActions";
 
-const mocks = vi.hoisted(() => ({
-  sessionState: {
-    session: {
-      deviceRole: "viewer",
-      profileID: "p2",
-      profile: "managed",
-      revealed: false,
-    },
-    profiles: [
-      { id: "p1", name: "Owner", kind: "adult" },
-      { id: "p2", name: "Kid", kind: "managed" },
-    ],
-  },
-}));
-
-vi.mock("@/lib/session", () => ({
-  useSession: () => mocks.sessionState,
-}));
+function Where() {
+  const location = useLocation();
+  return <output aria-label="location">{location.pathname + location.search}</output>;
+}
 
 function renderActions() {
   return render(
     <I18nProvider>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={["/"]}>
         <ViewerActions />
+        <Routes>
+          <Route path="*" element={<Where />} />
+        </Routes>
       </MemoryRouter>
     </I18nProvider>,
   );
 }
 
 describe("ViewerActions", () => {
-  it("shows the selected Profile and exposes Profile settings", () => {
+  it("opens Search with the text typed into the header field", async () => {
+    const user = userEvent.setup();
     renderActions();
 
-    expect(screen.getByRole("link", { name: "Profile: Kid" })).toHaveAttribute("href", "/profiles");
-    expect(screen.getByRole("link", { name: "Profile settings" })).toHaveAttribute(
-      "href",
-      "/settings",
-    );
+    await user.type(screen.getByRole("searchbox", { name: "Search" }), "blue planet{Enter}");
+
+    expect(screen.getByLabelText("location")).toHaveTextContent("/search?q=blue%20planet");
+    expect(screen.getByRole("searchbox", { name: "Search" })).toHaveValue("");
+  });
+
+  it("offers a Search link for phones", () => {
+    renderActions();
+    expect(screen.getByRole("link", { name: "Search" })).toHaveAttribute("href", "/search");
   });
 });
