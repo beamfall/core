@@ -122,6 +122,22 @@
   text-overflow: ellipsis;
 }
 
+.bf-settings-label.is-stacked {
+  display: grid;
+  line-height: 1.25;
+}
+
+.bf-settings-label.is-stacked > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bf-settings-sublabel {
+  color: oklch(98% 0.004 250 / 62%);
+  font-size: 0.8125rem;
+  font-weight: 450;
+}
+
 .bf-settings-value {
   overflow: hidden;
   max-width: 140px;
@@ -256,6 +272,15 @@
     opacity: 0;
     transform: translateY(24px);
   }
+}
+
+/* Floating UI pins `will-change: transform` on the positioner at DPR >= 1.5
+ * (Base UI does not expose its `transform: false`). That forced layer made the
+ * blurred glass popup rasterize on one of two stable phases from run to run;
+ * without it the popup paints the same every time, still at a device-pixel
+ * aligned offset. */
+.bf-menu-positioner {
+  will-change: auto !important;
 }
 
 /* A listbox (audio / subtitle / quality) opened from a settings row. Base UI
@@ -595,4 +620,102 @@
 
 .bf-player-stage.bf-subtitle-bg-solid video::cue {
   background: oklch(8% 0 0 / 92%);
+}
+
+/* --- Audio surface (CORE-1143): artwork, title and credits stand in for the
+ * picture. It sits under the transport (z-index 2) and above the empty
+ * <video>, leaves room for the bottom transport and the top bar, and takes no
+ * pointer input so the stage's own gestures still work. --- */
+.bf-audio-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 72px clamp(16px, 5vw, 64px) clamp(176px, 26vh, 240px);
+  pointer-events: none;
+}
+
+.bf-audio-backdrop {
+  position: absolute;
+  inset: -64px;
+  background-position: center;
+  background-size: cover;
+  filter: blur(64px) saturate(1.2);
+  opacity: 0.35;
+}
+
+.bf-audio-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: clamp(20px, 4vw, 48px);
+  max-width: 960px;
+  width: 100%;
+  min-height: 0;
+  height: 100%;
+}
+
+.bf-audio-artwork {
+  flex: none;
+  height: min(100%, 420px, 42vw);
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: var(--radius-card);
+  background: linear-gradient(145deg, oklch(26% 0.03 255), oklch(14% 0.02 255));
+  box-shadow: 0 24px 64px oklch(0% 0 0 / 55%);
+}
+
+.bf-audio-artwork img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.bf-audio-meta {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  color: oklch(97% 0.005 250);
+}
+
+.bf-audio-position {
+  font-size: 13px;
+  color: oklch(86% 0.01 250 / 70%);
+}
+
+.bf-audio-title {
+  font-size: clamp(24px, 3.6vw, 44px);
+  font-weight: 650;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.bf-audio-people {
+  font-size: clamp(16px, 1.8vw, 22px);
+  color: oklch(94% 0.01 250 / 90%);
+}
+
+.bf-audio-collections,
+.bf-audio-others {
+  font-size: clamp(14px, 1.4vw, 18px);
+  color: oklch(86% 0.01 250 / 72%);
+}
+
+/* Narrow windows stack the artwork above the words. */
+@media (max-width: 640px) {
+  .bf-audio-card {
+    flex-direction: column;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .bf-audio-artwork {
+    height: auto;
+    width: min(64vw, 36vh);
+  }
 }

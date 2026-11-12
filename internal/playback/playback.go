@@ -464,6 +464,7 @@ type Service struct {
 	sealed          SealedPredicate
 	quirks          QuirkDB
 	composer        PictureComposer
+	observed        observations
 }
 
 type profileSessionStore interface {
@@ -861,6 +862,14 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	file, streams, parts, err := s.negotiateVersion(ctx, media, files, profile, selectedSubtitleIndex, ov)
 	if err != nil {
 		return decision{}, err
+	}
+	// The operator's live-session dashboard reads the main item's decision.
+	if suffix == "main" {
+		defer func() {
+			if err == nil {
+				s.observe(scope.SessionID, dec, file, streams, profile, selectedSubtitleIndex, ov)
+			}
+		}()
 	}
 	loudness, loudnessOK := s.loudnessMeasurement(media, file)
 
@@ -1985,9 +1994,45 @@ func canDirectPlay(media store.Media, file store.MediaFile, streams []store.Medi
 		ov.vetoesSourceContainer() {
 		return false
 	}
-	return videoDirectPlayable(media, file, streams, profile) &&
+	videoOK := false
+	if audioOnlyMedia(media, streams) {
+		videoOK = audioOnlyCodecDeclared(media, streams, profile)
+	} else {
+		videoOK = videoDirectPlayable(media, file, streams, profile)
+	}
+	return videoOK &&
 		audioDirectPlayable(streams, profile) &&
 		subtitleFormatsCompatible(streams, profile, selectedSubtitleIndex, ov)
+}
+
+// audioOnlyMedia reports an audio-class item with no video stream. Its
+// Media.Codec is the audio codec (scan sets it from the probe), so the video
+// envelope has nothing to judge: without this exemption a client declaring
+// videoCodecs could never direct-play a track (CORE-1143).
+func audioOnlyMedia(media store.Media, streams []store.MediaFileStream) bool {
+	if media.Class != store.MediaClassAudio {
+		return false
+	}
+	_, hasVideo := primaryVideoStream(streams)
+	return !hasVideo
+}
+
+// audioOnlyCodecDeclared stands in for the video gate on audio-only items.
+// Without a declared audio envelope audioDirectPlayable gates nothing, so the
+// legacy DirectCodecs list judges Media.Codec, as the video gate did before.
+// With one, recorded audio streams are judged by audioDirectPlayable and a
+// probe-less file falls back to Media.Codec against the envelope.
+func audioOnlyCodecDeclared(media store.Media, streams []store.MediaFileStream, profile CapabilityProfile) bool {
+	if len(profile.AudioCodecs) == 0 {
+		return slices.Contains(profile.DirectCodecs, media.Codec)
+	}
+	for _, stream := range streams {
+		if stream.Type == "audio" {
+			return true
+		}
+	}
+	_, ok := audioCodecCap(profile.AudioCodecs, media.Codec)
+	return ok
 }
 
 // audioCopyEligible reports whether the audio-only-transcode mode applies:

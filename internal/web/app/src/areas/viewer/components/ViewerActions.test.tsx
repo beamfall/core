@@ -23,11 +23,12 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/session", () => ({
   useSession: () => mocks.sessionState,
 }));
+vi.mock("./HeaderSearch", () => ({ HeaderSearch: () => <input aria-label="Search" /> }));
 
-function renderActions() {
+function renderActions(entry = "/") {
   return render(
     <I18nProvider>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[entry]}>
         <ViewerActions />
       </MemoryRouter>
     </I18nProvider>,
@@ -38,10 +39,21 @@ describe("ViewerActions", () => {
   it("shows the selected Profile and exposes Profile settings", () => {
     renderActions();
 
-    expect(screen.getByRole("link", { name: "Profile: Kid" })).toHaveAttribute("href", "/profiles");
+    expect(screen.getByRole("link", { name: "Switch profile. Watching as Kid." })).toHaveAttribute(
+      "href",
+      "/profiles",
+    );
     expect(screen.getByRole("link", { name: "Profile settings" })).toHaveAttribute(
       "href",
       "/settings",
     );
+  });
+
+  it("offers the header search everywhere except the search page", () => {
+    const { unmount } = renderActions("/mydata");
+    expect(screen.getByLabelText("Search")).toBeInTheDocument();
+    unmount();
+    renderActions("/search");
+    expect(screen.queryByLabelText("Search")).toBeNull();
   });
 });

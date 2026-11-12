@@ -135,6 +135,37 @@ export interface SourceItem {
   artworkSlots?: Record<string, string>;
   /** Present only when the item really has stored artwork (ADR-0014). */
   artwork?: SourceItemArtwork;
+  /** Visible but blocked by a certification ceiling: it is listed, not playable. */
+  locked?: boolean;
+  /** The acting Profile's playback state; absent when it has none. */
+  engagement?: SourceItemEngagement;
+}
+
+/**
+ * The acting Profile's playback state for a SourceItem
+ * (graph.SourceItemEngagement). Position and duration are present while the
+ * item is resumable; the counts are present on an ordered container.
+ */
+export interface SourceItemEngagement {
+  positionSeconds?: number;
+  durationSeconds?: number;
+  completed?: boolean;
+  totalCount?: number;
+  remainingCount?: number;
+}
+
+/** What an item action targets: exactly one of a Media or an Entity. */
+export type ItemTarget = { mediaID: string } | { entityID: string };
+
+/** The calling Profile's state for one item (graph.ItemStateInfo). */
+export interface ItemStateInfo {
+  id: string;
+  /** "media" or "entity". */
+  kind: string;
+  watched: boolean;
+  watchlisted: boolean;
+  /** 1–10, or 0 when the Profile has not rated the item. */
+  rating: number;
 }
 
 /** The current server-side session scope (graph.SessionInfo, currentSession). */
@@ -151,6 +182,8 @@ export interface ProfileSummary {
   id: string;
   name: string;
   kind: string;
+  /** The chosen avatar token; empty or absent means a generated avatar. */
+  avatar?: string;
 }
 
 /** The reveal/relock/switch result (graph.RevealState). */
@@ -187,6 +220,21 @@ export interface GenericMediaInfo {
   summary?: string;
   year?: number;
   favorited: boolean;
+  /** Present artwork slots → URL; only the media(id) read fills it. */
+  artworkSlots?: Record<string, string>;
+  /** Linked Entities in plugin declaration order; only the media(id) read fills it. */
+  credits?: MediaCredit[];
+}
+
+/** One Entity a Media item is linked to (graph.MediaCreditInfo). */
+export interface MediaCredit {
+  entityID: string;
+  title: string;
+  kind: string;
+  kindDisplayName?: DisplayString;
+  /** The kind's fixed archetype ("container", "person", …). */
+  archetype?: string;
+  relation: string;
 }
 
 /** One backing file/Version/Part row for a Media item (graph.MediaFileInfo). */
@@ -267,12 +315,27 @@ export interface MyQueueEntry {
 }
 
 /** The engagement export (graph.MyEngagementExportInfo). */
+export interface MyWatchlistEntry {
+  targetKind: "media" | "entity";
+  targetID: string;
+  addedAt: string;
+}
+
+export interface MyItemRating {
+  targetKind: "media" | "entity";
+  targetID: string;
+  rating: number;
+  ratedAt: string;
+}
+
 export interface MyEngagementExport {
   schema: string;
   exportedAt: string;
   playbackProgress: MyPlaybackProgress[];
   favorites: MyFavorite[];
   queue: MyQueueEntry[];
+  watchlist: MyWatchlistEntry[];
+  ratings: MyItemRating[];
 }
 
 export interface MySessionInfo {
@@ -386,6 +449,15 @@ export type SearchMode = "keyword" | "semantic" | "auto" | "recommend";
 export interface SearchResultItem extends SourceItem {
   mode: SearchMode;
   score: number;
+  /** Row detail, present only when the item's Library is visible to the caller. */
+  libraryID?: string;
+  libraryTitle?: string;
+  year?: number;
+  /** Core media class of a Media row ("video", "audio", "image"). */
+  mediaClass?: string;
+  /** Plugin-declared kind of an Entity row, with its localized display name. */
+  entityKind?: string;
+  entityKindDisplayName?: Record<string, string>;
 }
 
 /**
@@ -1104,8 +1176,66 @@ export interface LiveSessionInfo {
   mediaID: string;
   title: string;
   transcoding: boolean;
+  /** How the item reaches the device: "direct", "remux" or "transcode". */
+  playMethod: string;
+  /** Why it is not direct play (a stable reason code); empty when direct or unknown. */
+  playReason: string;
+  /** Delivered bitrate in bits per second; 0 when unknown. */
+  bitrate: number;
   positionSeconds: number;
   durationSeconds: number;
+}
+
+/** One host resource sample (graph.HostMetricSample). */
+export interface HostMetricSample {
+  at: string;
+  cpuPercent: number;
+  cpuKnown: boolean;
+  memoryUsedBytes: number;
+  memoryTotalBytes: number;
+  sentBytesPerSecond: number;
+  receivedBytesPerSecond: number;
+}
+
+/** The server's recent resource use (graph.HostMetricsInfo). */
+export interface HostMetricsInfo {
+  intervalSeconds: number;
+  samples: HostMetricSample[];
+}
+
+/** One past play (graph.PlayInfo). */
+export interface PlayInfo {
+  profileID: string;
+  profileName: string;
+  mediaID: string;
+  title: string;
+  libraryID: string;
+  libraryTitle: string;
+  startedAt: string;
+  watchedSeconds: number;
+  finished: boolean;
+}
+
+/** Filters for the play history read. */
+export interface PlayHistoryFilter {
+  profileID?: string;
+  libraryID?: string;
+  since?: string;
+  until?: string;
+  limit?: number;
+}
+
+/** Rankings over a 7, 30 or 90 day window (graph.PlayStatsInfo). */
+export interface PlayStatsInfo {
+  windowDays: number;
+  profiles: { profileID: string; profileName: string; plays: number; watchedSeconds: number }[];
+  items: {
+    mediaID: string;
+    title: string;
+    libraryID: string;
+    plays: number;
+    watchedSeconds: number;
+  }[];
 }
 
 /** The terminateSession result. */

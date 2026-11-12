@@ -1,19 +1,25 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fetchMedia } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
+import { PlayerTransport } from "../player/PlayerTransport";
 import type { PlayerState } from "../player/usePlayer";
 import { usePlayer } from "../player/usePlayer";
 import { buildTimestampedLink, PlayerPage } from "./PlayerPage";
 
-vi.mock("@/lib/session", () => ({ useSession: () => ({ revealed: true }) }));
+vi.mock("@/lib/session", () => ({
+  useSession: () => ({ revealed: true }),
+  useViewerIdentity: () => "viewer-1",
+}));
 vi.mock("@/lib/graphql", () => ({
   fetchClientPrefs: vi.fn().mockResolvedValue([]),
   setClientPref: vi.fn().mockResolvedValue(undefined),
+  fetchMedia: vi.fn().mockResolvedValue(null),
 }));
 vi.mock("../player/usePlayer", () => ({ usePlayer: vi.fn() }));
-vi.mock("../player/PlayerTransport", () => ({ PlayerTransport: () => null }));
+vi.mock("../player/PlayerTransport", () => ({ PlayerTransport: vi.fn(() => null) }));
 
 function playerState(overrides: Partial<PlayerState>): PlayerState {
   return {
@@ -33,7 +39,7 @@ function playerState(overrides: Partial<PlayerState>): PlayerState {
   };
 }
 
-function renderPlayer(state: PlayerState) {
+function renderPlayer(state: PlayerState, navState?: unknown) {
   const retry = vi.fn();
   vi.mocked(usePlayer).mockReturnValue({
     videoRef: { current: null },
@@ -44,7 +50,7 @@ function renderPlayer(state: PlayerState) {
   });
   render(
     <I18nProvider>
-      <MemoryRouter initialEntries={["/watch/media-alpha"]}>
+      <MemoryRouter initialEntries={[{ pathname: "/watch/media-alpha", state: navState }]}>
         <Routes>
           <Route path="/watch/:mediaId" element={<PlayerPage />} />
         </Routes>
@@ -104,5 +110,81 @@ describe("PlayerPage failure and recovery states", () => {
   it("hides the reconnecting status once playback is healthy", () => {
     renderPlayer(playerState({ phase: "playing", hlsActive: true }));
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+});
+
+describe("PlayerPage audio items (CORE-1143)", () => {
+  beforeEach(() => {
+    vi.mocked(usePlayer).mockReset();
+    vi.mocked(PlayerTransport).mockClear();
+  });
+
+  const queue = [
+    { id: "media-prev", title: "Before" },
+    { id: "media-alpha", title: "Alpha" },
+    { id: "media-next", title: "After" },
+  ];
+
+  it("shows artwork, title and credits for an audio item, and declares the queue's next item", async () => {
+    vi.mocked(fetchMedia).mockResolvedValueOnce({
+      id: "media-alpha",
+      title: "Alpha",
+      artworkSlots: { poster: "/art/alpha.jpg" },
+      credits: [
+        { entityID: "p1", title: "Ann", kind: "artist", archetype: "person", relation: "by" },
+        { entityID: "c1", title: "Record", kind: "album", archetype: "container", relation: "on" },
+      ],
+    } as never);
+    renderPlayer(
+      playerState({ phase: "playing", info: { mediaClass: "audio" } as PlayerState["info"] }),
+      { title: "Alpha", queue, queueIdentity: "viewer-1" },
+    );
+
+    expect(await screen.findByText("Ann")).toBeInTheDocument();
+    expect(screen.getByText("Record")).toBeInTheDocument();
+    expect(screen.getByText("2 of 3")).toBeInTheDocument();
+    expect(document.querySelector(".bf-audio-artwork img")).toHaveAttribute(
+      "src",
+      "/art/alpha.jpg",
+    );
+    expect(vi.mocked(usePlayer).mock.calls.at(-1)?.[3]).toBe("media-next");
+
+    await waitFor(() => {
+      const props = vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0];
+      expect(props?.onPreviousInQueue).toBeTypeOf("function");
+      expect(props?.onNextInQueue).toBeTypeOf("function");
+      expect(props?.showSkipIntervalCollection).toBe("Record");
+    });
+  });
+
+  it("declares an empty next item on a card queue's last item, so Play all is not resumed", () => {
+    renderPlayer(
+      playerState({ phase: "playing", info: { mediaClass: "audio" } as PlayerState["info"] }),
+      { title: "Alpha", queue: queue.slice(0, 2), queueIdentity: "viewer-1" },
+    );
+    expect(vi.mocked(usePlayer).mock.calls.at(-1)?.[3]).toBe("");
+  });
+
+  it("drops a queue listed for another viewer identity (relock or profile switch)", () => {
+    renderPlayer(
+      playerState({ phase: "playing", info: { mediaClass: "audio" } as PlayerState["info"] }),
+      { title: "Alpha", queue, queueIdentity: "viewer-revealed" },
+    );
+    expect(screen.queryByText("2 of 3")).toBeNull();
+    expect(vi.mocked(usePlayer).mock.calls.at(-1)?.[3]).toBeUndefined();
+    const props = vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0];
+    expect(props?.onPreviousInQueue).toBeUndefined();
+    expect(props?.onNextInQueue).toBeUndefined();
+  });
+
+  it("keeps the video stage, and no queue controls, for a video item without a queue", () => {
+    renderPlayer(
+      playerState({ phase: "playing", info: { mediaClass: "video" } as PlayerState["info"] }),
+    );
+    expect(document.querySelector(".bf-audio-stage")).toBeNull();
+    const props = vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0];
+    expect(props?.onPreviousInQueue).toBeUndefined();
+    expect(props?.onNextInQueue).toBeUndefined();
+    expect(props?.showSkipIntervalLabel).toBe("");
   });
 });

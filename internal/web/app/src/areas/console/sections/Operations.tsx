@@ -1,8 +1,7 @@
-import { Monitor, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import {
   ControlRow,
-  DataTable,
   EmptyState,
   ErrorState,
   Fieldset,
@@ -12,30 +11,20 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import { TableCell, TableRow } from "@/components/ui/table";
 import { subscribeEvents } from "@/lib/api";
 import {
   fetchConsoleConfig,
   fetchJobs,
-  fetchLiveSessions,
   fetchUpdateStatus,
   setConsoleConfig,
-  terminateSession,
   type UpdateCheckState,
 } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
 import { jobKindLabel, jobProgressDetail, jobStatusLabel, jobStatusState } from "@/lib/jobDisplay";
 import type { StringKey } from "@/strings";
-import { ConfirmButton } from "../ConfirmButton";
 import { Section } from "../Section";
 import { useAsync } from "../useAsync";
-
-function clock(seconds: number): string {
-  const s = Math.max(0, Math.floor(seconds));
-  const m = Math.floor(s / 60);
-  const r = s % 60;
-  return `${m}:${String(r).padStart(2, "0")}`;
-}
+import { LiveSessions } from "./Dashboard";
 
 function statusTone(status: string): StatusTone {
   const state = jobStatusState(status);
@@ -424,95 +413,13 @@ function JobsQueue() {
   );
 }
 
-// Live Sessions dashboard (ADR-0007): active playback across devices, with a
-// server-side terminate behind a confirm. Live via SSE. A restricted session
-// the operator has not revealed shows its load without its media (the server
-// omits the title) — rendered as a "Restricted" placeholder, never hidden.
-function LiveSessions() {
-  const t = useT();
-  const { data, loading, failed, refresh } = useAsync(fetchLiveSessions);
-  const sessions = data ?? [];
-
-  useEffect(() => subscribeEvents(() => void refresh()), [refresh]);
-
-  async function terminate(sessionID: string) {
-    await terminateSession(sessionID);
-    await refresh();
-  }
-
-  return (
-    <Section
-      heading="liveSessionsHeading"
-      lead="liveSessionsLead"
-      actions={
-        <Button variant="outline" size="sm" onClick={() => void refresh()}>
-          <RefreshCw className="console-nav-icon" aria-hidden />
-          {t("liveSessionsRefresh")}
-        </Button>
-      }
-    >
-      {loading ? (
-        <Skeleton className="h-32 w-full" />
-      ) : failed ? (
-        <ErrorState message="liveSessionsUnavailable" />
-      ) : sessions.length === 0 ? (
-        <EmptyState message="liveSessionsEmpty" icon={Monitor} />
-      ) : (
-        <DataTable
-          columns={[
-            { key: "device", label: t("deviceName") },
-            { key: "profile", label: t("profile") },
-            { key: "title", label: t("title") },
-            { key: "engine", label: t("infoEngine") },
-            { key: "action", label: "" },
-          ]}
-        >
-          {sessions.map((s) => (
-            <TableRow key={s.sessionID}>
-              <TableCell className="font-medium">{s.deviceName}</TableCell>
-              <TableCell>{s.profileName}</TableCell>
-              <TableCell>
-                {s.title ? (
-                  <span className="flex items-center gap-2">
-                    <span>{s.title}</span>
-                    <span className="console-mono">
-                      {clock(s.positionSeconds)} / {clock(s.durationSeconds)}
-                    </span>
-                  </span>
-                ) : (
-                  <StatusChip tone="iris">{t("liveSessionRestricted")}</StatusChip>
-                )}
-              </TableCell>
-              <TableCell>
-                {s.transcoding ? (
-                  <StatusChip tone="amber">{t("liveSessionTranscoding")}</StatusChip>
-                ) : (
-                  <StatusChip tone="green">{t("liveSessionDirectPlay")}</StatusChip>
-                )}
-              </TableCell>
-              <TableCell className="text-right">
-                <ConfirmButton
-                  size="sm"
-                  label={t("terminateSession")}
-                  confirm="terminateSession"
-                  onConfirm={() => terminate(s.sessionID)}
-                />
-              </TableCell>
-            </TableRow>
-          ))}
-        </DataTable>
-      )}
-    </Section>
-  );
-}
-
 // Operations (ADR-0007 §4): the job queue + the live sessions dashboard.
 export function Operations() {
   return (
     <div className="space-y-8">
-      <UpdateAwareness />
-      <JobsQueue />
       <LiveSessions />
+      <JobsQueue />
+      <UpdateAwareness />
     </div>
   );
 }

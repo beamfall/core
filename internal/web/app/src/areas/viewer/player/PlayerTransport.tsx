@@ -16,6 +16,8 @@ import {
   RotateCw,
   Settings,
   Share2,
+  SkipBack,
+  SkipForward,
   Timer,
   Volume1,
   Volume2,
@@ -71,11 +73,16 @@ export function PlayerTransport({
   hlsRef,
   state,
   mediaTitle = "",
+  mediaID = "",
   stageRef,
   skipInterval = 10,
   showSkipInterval = "",
+  showSkipIntervalLabel = "",
+  showSkipIntervalCollection = "",
   onShowSkipIntervalChange,
   onShare,
+  onPreviousInQueue,
+  onNextInQueue,
   switchToHls,
   onMenuOpenChange,
 }: {
@@ -84,14 +91,24 @@ export function PlayerTransport({
   state: PlayerState;
   /** The current Media's title (from nav state) — names the info overlay. */
   mediaTitle?: string;
+  /** The current Media's id, for the info overlay's item actions. */
+  mediaID?: string;
   /** The player stage element — subtitle styling rides a CSS var/class on it. */
   stageRef: React.RefObject<HTMLElement | null>;
   /** Seconds used by the transport's back/forward skip controls. */
   skipInterval?: number;
   /** Optional per-show override value; empty means use the Profile default. */
   showSkipInterval?: SkipInterval | "";
+  /** The per-collection skip-interval row's label; the row is hidden without one. */
+  showSkipIntervalLabel?: string;
+  /** The collection the row belongs to, shown under the row's title. */
+  showSkipIntervalCollection?: string;
   onShowSkipIntervalChange?: (value: SkipInterval | "") => void;
   onShare?: (seconds: number) => void;
+  /** Play the queue's previous item; the control is hidden when absent. */
+  onPreviousInQueue?: () => void;
+  /** Play the queue's next item; the control is hidden when absent. */
+  onNextInQueue?: () => void;
   /** Switches direct play to its HLS rendition stream at the current position. */
   switchToHls?: (renditionKey?: string) => SwitchResult;
   /** Reports whether any menu/overlay is open (drives auto-hide suppression). */
@@ -671,6 +688,17 @@ export function PlayerTransport({
 
         <div className="bf-controls bf-transport-row">
           <div className="bf-primary-controls">
+            {onPreviousInQueue && (
+              <button
+                type="button"
+                onClick={onPreviousInQueue}
+                aria-label={t("previousInQueue")}
+                className="bf-control is-icon"
+              >
+                <SkipBack aria-hidden="true" />
+                <span className="sr-only">{t("previousInQueue")}</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => seekBy(-skipInterval)}
@@ -704,6 +732,17 @@ export function PlayerTransport({
               </span>
               <span className="sr-only">{skipForwardLabel}</span>
             </button>
+            {onNextInQueue && (
+              <button
+                type="button"
+                onClick={onNextInQueue}
+                aria-label={t("nextInQueue")}
+                className="bf-control is-icon"
+              >
+                <SkipForward aria-hidden="true" />
+                <span className="sr-only">{t("nextInQueue")}</span>
+              </button>
+            )}
           </div>
 
           <button
@@ -890,14 +929,19 @@ export function PlayerTransport({
                   onOpenChange={(open) => setOpen("quality", open)}
                   onSelect={tracks.selectQuality}
                 />
-                {onShowSkipIntervalChange && (
+                {onShowSkipIntervalChange && showSkipIntervalLabel && (
                   <label className="bf-settings-row">
                     <span aria-hidden="true" className="bf-settings-tile">
                       <Timer />
                     </span>
-                    <span className="bf-settings-label">{t("showSkipIntervalLabel")}</span>
+                    <span className="bf-settings-label is-stacked">
+                      <span>{t("settingsSkipIntervalLabel")}</span>
+                      {showSkipIntervalCollection && (
+                        <span className="bf-settings-sublabel">{showSkipIntervalCollection}</span>
+                      )}
+                    </span>
                     <NativeSelect
-                      aria-label={t("showSkipIntervalLabel")}
+                      aria-label={showSkipIntervalLabel}
                       className="bf-settings-select"
                       value={showSkipInterval || "__profile_default__"}
                       onValueChange={(value) =>
@@ -917,6 +961,7 @@ export function PlayerTransport({
                 )}
                 <InfoOverlay
                   mediaTitle={mediaTitle}
+                  mediaID={mediaID}
                   info={state.info}
                   stream={state.stream}
                   manualRenditionID={manualRenditionID}

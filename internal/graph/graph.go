@@ -96,6 +96,9 @@ type SourceItem struct {
 	// Domain-neutral, named by shape (invariants 1-2); mirrors the Restricted/
 	// Locked per-item flag treatment.
 	Muted bool `json:"muted,omitempty"`
+	// Engagement is the acting Profile's playback state for the item; absent
+	// means none. See SourceItemEngagement.
+	Engagement *SourceItemEngagement `json:"engagement,omitempty"`
 }
 
 // SourceItemArtwork describes an item's stored artwork. Poster is the
@@ -289,6 +292,8 @@ type Options struct {
 	Conductor                    *conductor.Registry
 	QueryEmbedder                QueryEmbedder
 	TranscodeTerminator          TranscodeTerminator
+	PlaybackObserver             PlaybackObserver
+	HostMetrics                  HostMetricsSource
 	TranscodeAdmission           TranscodeCapacityProbe
 	UpdateChecker                UpdateChecker
 	ServerVersion                string
@@ -386,6 +391,10 @@ type Handler struct {
 	// and ends the device's event streams (those self-terminate on the next
 	// per-event scope re-evaluation), it just has no in-flight transcode to abort.
 	transcodeTerminator TranscodeTerminator
+	// playbackObserver and hostMetrics feed the Console dashboard: the held
+	// playback decision per live session, and the in-memory host sample ring.
+	playbackObserver PlaybackObserver
+	hostMetrics      HostMetricsSource
 	// transcodeAdmission is the join-time capacity probe:
 	// acceptWatchParty consults it to tell a joining member whether a transcode-
 	// needing client will be degraded to the lowest rung under current server
@@ -619,6 +628,8 @@ func NewHandler(manifests *manifest.Service, authService *auth.Service, st *stor
 	h.conductor = o.Conductor
 	h.queryEmbedder = o.QueryEmbedder
 	h.transcodeTerminator = o.TranscodeTerminator
+	h.playbackObserver = o.PlaybackObserver
+	h.hostMetrics = o.HostMetrics
 	h.transcodeAdmission = o.TranscodeAdmission
 	h.updateChecker = o.UpdateChecker
 	h.serverVersion = o.ServerVersion
@@ -845,12 +856,13 @@ func (h *Handler) SetUpdateChecker(checker UpdateChecker, serverVersion string) 
 // that receives them (the byte gate is server-side, not UI-side).
 func (h *Handler) sourceItem(item store.SourceItem, revealed bool) SourceItem {
 	resp := SourceItem{
-		ID:      string(item.ID),
-		Kind:    item.Kind,
-		Title:   item.Title,
-		Summary: item.Summary,
-		Locked:  item.Locked,
-		Muted:   item.Muted,
+		ID:         string(item.ID),
+		Kind:       item.Kind,
+		Title:      item.Title,
+		Summary:    item.Summary,
+		Locked:     item.Locked,
+		Muted:      item.Muted,
+		Engagement: sourceItemEngagement(item.Engagement),
 	}
 	if revealed {
 		resp.Restricted = item.Restricted
@@ -1431,6 +1443,9 @@ func (h *Handler) sourceItems(ctx context.Context, scope auth.Scope, req request
 	if err := h.store.AnnotateMuted(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
 		return nil, err
 	}
+	if err := h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
+		return nil, err
+	}
 	resp := make([]SourceItem, len(items))
 	for i, item := range items {
 		resp[i] = h.sourceItem(item, scope.Revealed)
@@ -1703,11 +1718,14 @@ func libraryIDs(ids []store.LibraryID) []string {
 // just enough to choose — policy detail stays on the manager shapes. The
 // per-plugin certification ceilings ride along so the Console's Enforced
 // Filters picker can render and edit them without a second round trip
-// (ADR-0028 §5; matches setCertificationCeiling's return shape).
+// (ADR-0028 §5; matches setCertificationCeiling's return shape). Avatar is the
+// Profile's chosen avatar token, empty when it has none; it is opaque to core
+// and clients fall back to a generated avatar (CORE-1196).
 type ProfileSummary struct {
 	ID                    string                     `json:"id"`
 	Name                  string                     `json:"name"`
 	Kind                  string                     `json:"kind"`
+	Avatar                string                     `json:"avatar"`
 	CertificationCeilings []CertificationCeilingInfo `json:"certificationCeilings"`
 }
 
@@ -1716,6 +1734,10 @@ type ProfileSummary struct {
 // Profiles are hidden — they refuse new sessions and profile switches alike.
 func (h *Handler) profiles(ctx context.Context) ([]ProfileSummary, error) {
 	all, err := h.store.Profiles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	avatars, err := h.store.ProfileAvatars(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1736,6 +1758,7 @@ func (h *Handler) profiles(ctx context.Context) ([]ProfileSummary, error) {
 			ID:                    string(profile.ID),
 			Name:                  profile.Name,
 			Kind:                  string(profile.Kind),
+			Avatar:                avatars[profile.ID],
 			CertificationCeilings: ceilings,
 		})
 	}
@@ -2738,6 +2761,9 @@ func (h *Handler) search(ctx context.Context, scope auth.Scope, req request) ([]
 	if err := h.store.AnnotateMuted(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
 		return nil, err
 	}
+	if err := h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
+		return nil, err
+	}
 	resp := make([]SourceItem, len(items))
 	for i, item := range items {
 		resp[i] = h.sourceItem(item, scope.Revealed)
@@ -2785,6 +2811,9 @@ func (h *Handler) searchEntities(ctx context.Context, scope auth.Scope, req requ
 	// Entity search results badge muted entities (kind-aware: an entity id that is
 	// a direct or broad ENTITY mute target, §2.7).
 	if err := h.store.AnnotateMuted(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
+		return nil, err
+	}
+	if err := h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
 		return nil, err
 	}
 	resp := make([]SourceItem, len(items))
@@ -3638,6 +3667,9 @@ func (h *Handler) queueItems(ctx context.Context, scope auth.Scope) ([]SourceIte
 	if err != nil {
 		return nil, err
 	}
+	if err := h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
+		return nil, err
+	}
 	resp := make([]SourceItem, len(items))
 	for i, item := range items {
 		resp[i] = h.sourceItem(item, scope.Revealed)
@@ -3664,6 +3696,24 @@ type MediaInfo struct {
 	Summary   string `json:"summary,omitempty"`
 	Year      int    `json:"year,omitempty"`
 	Favorited bool   `json:"favorited"`
+	// ArtworkSlots maps each present artwork slot to its URL; filled only by
+	// the media(id) read, omitted when the item carries no artwork.
+	ArtworkSlots map[string]string `json:"artworkSlots,omitempty"`
+	// Credits lists the Entities linked to this Media item through the owning
+	// plugin's Media-targeted relations, in declaration order; filled only by
+	// the media(id) read.
+	Credits []MediaCreditInfo `json:"credits,omitempty"`
+}
+
+// MediaCreditInfo is one Entity a Media item is linked to, with the declared
+// kind's display strings so clients can label it without domain knowledge.
+type MediaCreditInfo struct {
+	EntityID        string              `json:"entityID"`
+	Title           string              `json:"title"`
+	Kind            string              `json:"kind"`
+	KindDisplayName plugin.LocaleString `json:"kindDisplayName,omitempty"`
+	Archetype       string              `json:"archetype,omitempty"`
+	Relation        string              `json:"relation"`
 }
 
 func (h *Handler) mediaInfo(ctx context.Context, scope auth.Scope, media store.Media) (MediaInfo, error) {
@@ -3689,7 +3739,70 @@ func (h *Handler) media(ctx context.Context, scope auth.Scope, req request) (Med
 	if err != nil {
 		return MediaInfo{}, clientError("unknown media")
 	}
-	return h.mediaInfo(ctx, scope, media)
+	info, err := h.mediaInfo(ctx, scope, media)
+	if err != nil {
+		return MediaInfo{}, err
+	}
+	if h.artwork != nil {
+		info.ArtworkSlots = h.mediaArtworkSlots(media.ID, "/api/media/artwork/"+string(media.ID))
+	}
+	info.Credits = h.mediaCredits(ctx, scope, media.ID)
+	return info, nil
+}
+
+// mediaCredits walks the owning bundle's Media-targeted relations in
+// declaration order and returns each linked Entity once. A plugin-less item,
+// or a relation that fails to resolve, yields no credits rather than an error:
+// credits decorate the read, they never gate it.
+func (h *Handler) mediaCredits(ctx context.Context, scope auth.Scope, mediaID store.MediaID) []MediaCreditInfo {
+	libraryID, err := h.store.MediaLibrary(ctx, mediaID)
+	if err != nil {
+		return nil
+	}
+	pluginID, err := h.store.LibraryPluginID(ctx, libraryID)
+	if err != nil || pluginID == "" {
+		return nil
+	}
+	bundle, ok := h.plugins.Bundle(plugin.ID(pluginID))
+	if !ok {
+		return nil
+	}
+	kinds := map[string]plugin.EntityKind{}
+	for _, kind := range bundle.EntityKinds {
+		kinds[kind.Name] = kind
+	}
+	var credits []MediaCreditInfo
+	seenRelation := map[string]bool{}
+	seenEntity := map[string]bool{}
+	for _, kind := range bundle.EntityKinds {
+		for _, relation := range kind.Relations {
+			if relation.ToKind != plugin.MediaKindName || seenRelation[relation.Name] {
+				continue
+			}
+			seenRelation[relation.Name] = true
+			related, err := h.store.EntitiesForMedia(ctx, mediaID, relation.Name, scope.LibraryFilter())
+			if err != nil {
+				continue
+			}
+			for _, item := range related {
+				id := string(item.Entity.ID)
+				if seenEntity[id] {
+					continue
+				}
+				seenEntity[id] = true
+				spec := kinds[item.Entity.Kind]
+				credits = append(credits, MediaCreditInfo{
+					EntityID:        id,
+					Title:           item.Entity.Title,
+					Kind:            item.Entity.Kind,
+					KindDisplayName: spec.DisplayName,
+					Archetype:       spec.Archetype,
+					Relation:        relation.Name,
+				})
+			}
+		}
+	}
+	return credits
 }
 
 func (h *Handler) setFavorite(ctx context.Context, scope auth.Scope, req request) (MediaInfo, error) {
@@ -4320,6 +4433,9 @@ func (h *Handler) mediaForEntity(ctx context.Context, scope auth.Scope, req requ
 	if err := h.store.AnnotateMuted(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
 		return nil, err
 	}
+	if err := h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
+		return nil, err
+	}
 	resp := make([]SourceItem, len(items))
 	for i, item := range items {
 		resp[i] = h.sourceItem(item, scope.Revealed)
@@ -4622,7 +4738,9 @@ var queryFields = map[string]bool{
 	"artworkcandidates":      true,
 	"markers":                true,
 	"trashedmarkers":         true,
+	"itemstate":              true,
 	"sourceitems":            true,
+	"libraryitems":           true,
 	"ambientqueue":           true,
 	"currentsession":         true,
 	"profiles":               true,
@@ -4696,6 +4814,9 @@ var queryFields = map[string]bool{
 	"updatestatus":           true,
 	"transcodeconfig":        true,
 	"livesessions":           true,
+	"hostmetrics":            true,
+	"playhistory":            true,
+	"playstats":              true,
 	"devices":                true,
 	"setupstate":             true,
 	"importers":              true,
@@ -4739,6 +4860,9 @@ var mutationFields = map[string]bool{
 	"resolveaccessrequest": true,
 	// ADR-0113 §2.3: per-title access grant mutation.
 	"revokeaccessgrant":                  true,
+	"setwatched":                         true,
+	"setwatchlisted":                     true,
+	"setrating":                          true,
 	"setfavorite":                        true,
 	"queueadd":                           true,
 	"queueremove":                        true,
@@ -5043,6 +5167,9 @@ var adminFields = map[string]bool{
 	"deleteretentionrule": true,
 	// Operations — live sessions dashboard + kill (§4)
 	"livesessions":     true,
+	"hostmetrics":      true,
+	"playhistory":      true,
+	"playstats":        true,
 	"terminatesession": true,
 	// Operations — device-key revocation propagation
 	"revokedevice": true,

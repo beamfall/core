@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AvatarChooser, PROFILE_AVATAR_PREF_KEY } from "@/components/beamfall/profile";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Label } from "@/components/ui/label";
 import {
@@ -38,13 +39,15 @@ import {
 // and policy are intentionally absent for every Profile on this surface.
 export function ProfileSettingsPage() {
   const t = useT();
-  const { session } = useSession();
+  const { session, profiles, refreshProfiles } = useSession();
   const profileID = session?.profileID || "";
+  const profile = profiles.find((p) => p.id === profileID);
   const managed = session?.profile === "managed";
 
   const [prefs, setPrefs] = useState<ViewerPreferences | null>(null);
   const [failed, setFailed] = useState(false);
   const [saveError, setSaveError] = useState(false);
+  const [avatarError, setAvatarError] = useState(false);
   const loadToken = useRef(0);
 
   const load = useCallback(async () => {
@@ -81,6 +84,24 @@ export function ProfileSettingsPage() {
     [load],
   );
 
+  // The avatar is a per-Profile pref like the rest, but it is shown from the
+  // Profile list (picker, header), so a save refreshes that list. Only the
+  // write decides whether the save worked: a refresh that fails afterwards
+  // leaves the choice saved, and the list catches up on its next load.
+  const saveAvatar = useCallback(
+    async (token: string) => {
+      setAvatarError(false);
+      try {
+        await setClientPref(PROFILE_AVATAR_PREF_KEY, token);
+      } catch (err) {
+        setAvatarError(true);
+        throw err;
+      }
+      await refreshProfiles().catch(() => undefined);
+    },
+    [refreshProfiles],
+  );
+
   if (failed) {
     return (
       <AppShell>
@@ -108,6 +129,23 @@ export function ProfileSettingsPage() {
           <p className="text-sm text-[var(--red-500)]" role="alert">
             {t("settingsSaveFailed")}
           </p>
+        )}
+
+        {profile && (
+          <section className="flex flex-col gap-4" aria-labelledby="settings-avatar">
+            <h2 id="settings-avatar" className="bf-section-title">
+              {t("avatarHeading")}
+            </h2>
+            <div className="flex flex-col gap-4 rounded-lg border border-[var(--border)] p-4">
+              <p className="m-0 text-sm text-[var(--text-muted)]">{t("avatarLead")}</p>
+              {avatarError && (
+                <p className="m-0 text-sm text-[var(--red-500)]" role="alert">
+                  {t("avatarSaveFailed")}
+                </p>
+              )}
+              <AvatarChooser profile={profile} onSave={saveAvatar} />
+            </div>
+          </section>
         )}
 
         <section className="flex flex-col gap-4" aria-labelledby="settings-playback">

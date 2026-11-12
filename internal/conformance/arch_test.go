@@ -32,6 +32,7 @@ var archWhitelist = map[string][]string{
 	"conductor":         {"store"},                            // Ambient Group Conductor (ADR-0035 §8, AV-4): in-memory ephemeral group registry + NTP/drift math; imports store only for its id/time types
 	"decodeverify":      {"store", "jobs"},                    // decode-verify sampling job (FEAT-8 / ADR-0009 §9): flags corrupt/truncated files broken; the ffmpeg DecodeVerify seam is a consumer-side interface, so no ffmpeg edge (same shape as genassets)
 	"discovery":         {},
+	"hostmetrics":       {},             // leaf; in-memory one-hour ring of host CPU, memory and this server's own network traffic for the console (CORE-1195), stdlib only, never persisted or sent off the server
 	"graphquery":        {},             // leaf; pure GraphQL operation selection and top-level field parsing for the hand-written graph dispatcher
 	"graphshape":        {},             // leaf; generic JSON-shape reflection walker used by graph's nested schema artifact
 	"jsonstate":         {},             // leaf; atomic JSON file load/save helper for private state stores

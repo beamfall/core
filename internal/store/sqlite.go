@@ -2030,8 +2030,9 @@ func parseFilterTime(value any) (time.Time, bool) {
 // exactly like one that does not exist. Composes onto the existing feed SQL
 // like mediaFieldFilterSQL, so trash, certification, and reveal filtering on
 // the Media side stay untouched. visible must be non-empty (callers already
-// return early on an empty visible set).
-func entityRelationFilterSQL(filter *EntityFilter, visible []LibraryID) (string, []any) {
+// return early on an empty visible set). liveOnly also treats a trashed
+// entity as missing: trashing keeps its relation rows for a restore.
+func entityRelationFilterSQL(filter *EntityFilter, visible []LibraryID, liveOnly bool) (string, []any) {
 	if filter == nil {
 		return "", nil
 	}
@@ -2046,8 +2047,11 @@ func entityRelationFilterSQL(filter *EntityFilter, visible []LibraryID) (string,
 		  AND EXISTS (SELECT 1 FROM entity_relation r
 		      JOIN entity e ON e.id = r.from_entity_id
 		      WHERE r.to_media_id = m.id AND e.kind = ? AND e.title = ?
-		        AND e.library_id IN (` + strings.Join(placeholders, ", ") + `))`
-	return clause, args
+		        AND e.library_id IN (` + strings.Join(placeholders, ", ") + `)`
+	if liveOnly {
+		clause += ` AND e.trashed_at_ms IS NULL`
+	}
+	return clause + `)`, args
 }
 
 func (s *Store) sourceItemsSQL(ctx context.Context, filter LibraryFilter, fieldFilters map[string]any, entityFilter *EntityFilter, limit, offset int) ([]SourceItem, error) {
@@ -2075,7 +2079,7 @@ func (s *Store) sourceItemsSQL(ctx context.Context, filter LibraryFilter, fieldF
 		return nil, err
 	}
 	args = append(args, filterArgs...)
-	entityClause, entityArgs := entityRelationFilterSQL(entityFilter, visible)
+	entityClause, entityArgs := entityRelationFilterSQL(entityFilter, visible, false)
 	args = append(args, entityArgs...)
 	certClause, certArgs := certificationFilterSQL(filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
 	args = append(args, certArgs...)
@@ -3129,7 +3133,7 @@ func (s *Store) allItemsSQL(ctx context.Context, filter LibraryFilter, fieldFilt
 		return nil, err
 	}
 	args = append(args, filterArgs...)
-	entityClause, entityArgs := entityRelationFilterSQL(entityFilter, visible)
+	entityClause, entityArgs := entityRelationFilterSQL(entityFilter, visible, false)
 	args = append(args, entityArgs...)
 	certClause, certArgs := certificationFilterSQL(filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
 	args = append(args, certArgs...)

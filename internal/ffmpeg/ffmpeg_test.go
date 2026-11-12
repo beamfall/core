@@ -96,6 +96,10 @@ func TestParseProbeAttachedPicture(t *testing.T) {
 	if !probe.Streams[1].AttachedPicture || probe.embeddedArtworkStream != 7 {
 		t.Fatalf("attached picture = %v, selected stream = %d", probe.Streams[1].AttachedPicture, probe.embeddedArtworkStream)
 	}
+	// Cover art never makes a track a video (CORE-1143).
+	if probe.HasVideo || probe.VideoCodec != "" {
+		t.Fatalf("HasVideo = %v, VideoCodec = %q, want an audio-only probe", probe.HasVideo, probe.VideoCodec)
+	}
 }
 
 // io:ffmpeg-extract-embedded-artwork

@@ -1,6 +1,6 @@
 import { join } from "node:path";
-import { type Browser, expect, type Page, test } from "@playwright/test";
 import { collectFatalErrors, harnessAuthDir, harnessState } from "./lib/spec";
+import { type Browser, expect, markProfilePicked, type Page, test } from "./lib/test";
 
 const authDir = harnessAuthDir();
 const MANAGED_VIEWER_STATE = join(authDir, "managed-viewer.json");
@@ -12,6 +12,7 @@ async function rolePage(
   storageState: string,
 ): Promise<{ page: Page; close: () => Promise<void> }> {
   const context = await browser.newContext({ storageState });
+  await markProfilePicked(context);
   const page = await context.newPage();
   return { page, close: () => context.close() };
 }

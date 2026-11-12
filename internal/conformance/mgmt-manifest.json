@@ -130,6 +130,10 @@
       "effect": "write"
     },
     {
+      "field": "hostmetrics",
+      "effect": "read"
+    },
+    {
       "field": "importers",
       "effect": "read"
     },
@@ -207,6 +211,14 @@
     },
     {
       "field": "playbackrenditioncache",
+      "effect": "read"
+    },
+    {
+      "field": "playhistory",
+      "effect": "read"
+    },
+    {
+      "field": "playstats",
       "effect": "read"
     },
     {

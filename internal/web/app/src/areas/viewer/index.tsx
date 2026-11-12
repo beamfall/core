@@ -1,5 +1,6 @@
 import { Suspense, useEffect, useState } from "react";
-import { Navigate, Route, Routes } from "react-router";
+import { Navigate, Route, Routes, useLocation } from "react-router";
+import { profilePickedThisTab } from "@/components/beamfall/profile";
 import { ErrorState } from "@/components/beamfall/workbench";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
@@ -8,9 +9,11 @@ import { fetchSetupRequired } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
+import { useEngagementEvents } from "./actions";
 import { SectionSkeleton } from "./components/HydratedSection";
 import { BrowsePage } from "./pages/BrowsePage";
 import { EntityPage } from "./pages/EntityPage";
+import { LibraryBrowsePage } from "./pages/LibraryBrowsePage";
 import { MyDataPage } from "./pages/MyDataPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { ProfilePickerPage } from "./pages/ProfilePickerPage";
@@ -60,7 +63,8 @@ function ViewerSessionPending() {
 // session spine, so this area assumes a bound session.
 export function ViewerArea() {
   const { setRegister } = useRegister();
-  const { error, needsEnroll, refresh, session } = useSession();
+  const { error, needsEnroll, profiles, refresh, session } = useSession();
+  const location = useLocation();
   // When the browser is unenrolled (the 401 state), a FRESH server with setup
   // pending must reach the wizard, not the enroll gate (ADR-0007 §2). We probe
   // the unauthenticated GET /api/setup once needsEnroll flips, leaving the
@@ -108,10 +112,30 @@ export function ViewerArea() {
     return <ViewerSessionError onRetry={refresh} />;
   }
 
+  // "Who's watching?" (CORE-1196): a server with more than one Profile opens on
+  // the picker once per tab, then carries on to where the visitor was heading.
+  // Playback links are exempt so a shared or cast-handoff watch URL still plays.
+  if (
+    profiles.length > 1 &&
+    location.pathname !== "/profiles" &&
+    !location.pathname.startsWith("/watch/") &&
+    !profilePickedThisTab()
+  ) {
+    return <Navigate to="/profiles" state={{ from: location }} replace />;
+  }
+
+  return <ViewerRoutes profileID={session.profileID} />;
+}
+
+// The bound viewer: its routes, plus the one event subscription that keeps
+// engagement-derived views current with changes made on other clients.
+function ViewerRoutes({ profileID }: { profileID: string }) {
+  useEngagementEvents();
   return (
-    <Routes key={session.profileID}>
+    <Routes key={profileID}>
       <Route path="/" element={<BrowsePage home />} />
       <Route path="/n/:nodeId" element={<BrowsePage />} />
+      <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
       <Route path="/entity/:entityId" element={<EntityPage />} />
       <Route path="/seeall/:sourceId" element={<SeeAllPage />} />
       <Route path="/search" element={<SearchPage />} />

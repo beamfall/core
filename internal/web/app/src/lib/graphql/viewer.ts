@@ -13,6 +13,9 @@ import type {
   EntityFilter,
   EntityInfo,
   FieldFilters,
+  GenericMediaInfo,
+  ItemStateInfo,
+  ItemTarget,
   MyDataDeleteResult,
   MyDataSummary,
   MyEngagementExport,
@@ -64,7 +67,7 @@ export async function fetchCurrentSession(signal?: AbortSignal): Promise<Session
   );
 }
 
-const PROFILES_QUERY = "query Profiles { profiles { id name kind } }";
+const PROFILES_QUERY = "query Profiles { profiles { id name kind avatar } }";
 
 /** Profiles — the profile-picker roster. */
 export async function fetchProfiles(signal?: AbortSignal): Promise<ProfileSummary[]> {
@@ -73,17 +76,22 @@ export async function fetchProfiles(signal?: AbortSignal): Promise<ProfileSummar
 }
 
 const SWITCH_PROFILE_MUTATION =
-  "mutation SwitchProfile($profileID: String!) { switchProfile(profileID: $profileID) { profileID revealed } }";
+  "mutation SwitchProfile($profileID: String!, $pin: String) { switchProfile(profileID: $profileID, pin: $pin) { profileID revealed } }";
 
-/** SwitchProfile — rebind the session to another Profile (always relocks). */
+/**
+ * SwitchProfile — rebind the session to another Profile (always relocks).
+ * An adult Profile needs its entry PIN; the PIN goes into this call and
+ * nowhere else.
+ */
 export async function switchProfile(
   profileID: string,
   signalOrCommitted?: AbortSignal | (() => void),
+  pin?: string,
 ): Promise<SwitchProfileResult> {
   const signal = typeof signalOrCommitted === "function" ? undefined : signalOrCommitted;
   const data = await graphql<{ switchProfile: SwitchProfileResult }>(
     SWITCH_PROFILE_MUTATION,
-    { profileID },
+    pin ? { profileID, pin } : { profileID },
     signal,
   );
   if (typeof signalOrCommitted === "function") signalOrCommitted();
@@ -114,7 +122,7 @@ export async function relock(signalOrCommitted?: AbortSignal | (() => void)): Pr
 // --- Catalog: Section feeds (sourceItems) ---------------------------------
 
 const SOURCE_ITEMS_QUERY =
-  "query SourceItems($kind: String, $entityKind: String, $libraryID: String, $entityID: String, $fieldFilters: FieldFilters, $entityFilter: EntityFilter, $limit: Int, $offset: Int) { sourceItems(kind: $kind, entityKind: $entityKind, libraryID: $libraryID, entityID: $entityID, fieldFilters: $fieldFilters, entityFilter: $entityFilter, limit: $limit, offset: $offset) { id kind title summary artwork { poster } artworkSlots } }";
+  "query SourceItems($kind: String, $entityKind: String, $libraryID: String, $entityID: String, $fieldFilters: FieldFilters, $entityFilter: EntityFilter, $limit: Int, $offset: Int) { sourceItems(kind: $kind, entityKind: $entityKind, libraryID: $libraryID, entityID: $entityID, fieldFilters: $fieldFilters, entityFilter: $entityFilter, limit: $limit, offset: $offset) { id kind title summary artwork { poster } artworkSlots engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
 
 /** Variables for one Section feed query (the Source context + paging cursor). */
 export interface SourceItemsVars {
@@ -159,8 +167,20 @@ export async function fetchEntity(id: string, signal?: AbortSignal): Promise<Ent
   return data.entity ?? null;
 }
 
+const MEDIA_QUERY =
+  "query Media($id: String!) { media(id: $id) { id title artworkSlots credits { entityID title kind kindDisplayName archetype relation } } }";
+
+/** Media — the player's now-playing read: title, artwork and linked credits. */
+export async function fetchMedia(
+  id: string,
+  signal?: AbortSignal,
+): Promise<GenericMediaInfo | null> {
+  const data = await graphql<{ media: GenericMediaInfo | null }>(MEDIA_QUERY, { id }, signal);
+  return data.media ?? null;
+}
+
 const MEDIA_FOR_ENTITY_QUERY =
-  "query MediaForEntity($entityID: String!) { mediaForEntity(entityID: $entityID) { id kind title summary artwork { poster } artworkSlots } }";
+  "query MediaForEntity($entityID: String!) { mediaForEntity(entityID: $entityID) { id kind title summary artwork { poster } artworkSlots engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
 
 /** MediaForEntity — the hand-rolled related-Media fallback list for a detail view. */
 export async function fetchMediaForEntity(
@@ -178,7 +198,7 @@ export async function fetchMediaForEntity(
 // --- Search ---------------------------------------------------------------
 
 const SEARCH_QUERY =
-  "query Search($query: String!) { search(query: $query) { id kind title summary artwork { poster } artworkSlots } }";
+  "query Search($query: String!) { search(query: $query) { id kind title summary artwork { poster } artworkSlots engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
 
 /** Search — keyword catalog search (reveal-filtered server-side). */
 export async function search(term: string): Promise<SourceItem[]> {
@@ -189,19 +209,25 @@ export async function search(term: string): Promise<SourceItem[]> {
 }
 
 const SEARCH_RESULT_QUERY =
-  "query SearchResult($query: String!, $mode: SearchMode) { searchResult(query: $query, mode: $mode) { mode restrictedResultsPresent items { id kind title summary score artwork { poster } artworkSlots } } }";
+  "query SearchResult($query: String!, $mode: SearchMode) { searchResult(query: $query, mode: $mode) { mode restrictedResultsPresent items { id kind title summary score artwork { poster } artworkSlots libraryID libraryTitle year mediaClass entityKind entityKindDisplayName engagement { positionSeconds durationSeconds completed totalCount remainingCount } } } }";
 
 /**
  * searchResult — the explainable, mode-aware search (ADR-0041 #106). `mode`
  * requests keyword/semantic/auto/recommend; the response echoes the mode
  * actually served (auto/semantic degrade to keyword when unavailable) and the
- * leak-safe restrictedResultsPresent flag (no hidden title/id/count).
+ * leak-safe restrictedResultsPresent flag (no hidden title/id/count). Pass a
+ * `signal` to cancel a request the user has already typed past.
  */
-export async function searchResult(term: string, mode: SearchMode): Promise<SearchResultResponse> {
-  const data = await graphql<{ searchResult: SearchResultResponse | null }>(SEARCH_RESULT_QUERY, {
-    query: term,
-    mode,
-  });
+export async function searchResult(
+  term: string,
+  mode: SearchMode,
+  signal?: AbortSignal,
+): Promise<SearchResultResponse> {
+  const data = await graphql<{ searchResult: SearchResultResponse | null }>(
+    SEARCH_RESULT_QUERY,
+    { query: term, mode },
+    signal,
+  );
   return (
     data.searchResult ?? {
       mode: "keyword",
@@ -288,7 +314,7 @@ export async function markNotificationRead(id: string): Promise<NotificationRead
 }
 
 const MY_ENGAGEMENT_QUERY =
-  "query MyEngagement { myEngagement { schema exportedAt playbackProgress { mediaID positionSeconds durationSeconds watched playCount updatedAt } favorites { mediaID favoritedAt } queue { mediaID addedAt } } }";
+  "query MyEngagement { myEngagement { schema exportedAt playbackProgress { mediaID positionSeconds durationSeconds watched playCount updatedAt } favorites { mediaID favoritedAt } queue { mediaID addedAt } watchlist { targetKind targetID addedAt } ratings { targetKind targetID rating ratedAt } } }";
 
 /** MyEngagement — the download-as-JSON engagement export. */
 export async function fetchMyEngagement(): Promise<MyEngagementExport> {
@@ -351,4 +377,55 @@ export async function setClientPref(key: string, value: string): Promise<{ key: 
     value,
   });
   return data.setClientPref;
+}
+
+// --- Item actions: watched, watchlist, rating -----------------------------
+
+const ITEM_STATE_FIELDS = "id kind watched watchlisted rating";
+
+const ITEM_STATE_QUERY = `query ItemState($mediaID: ID, $entityID: ID) { itemState(mediaID: $mediaID, entityID: $entityID) { ${ITEM_STATE_FIELDS} } }`;
+
+/** ItemState — the calling Profile's watched, watchlist and rating state for one item. */
+export async function fetchItemState(
+  target: ItemTarget,
+  signal?: AbortSignal,
+): Promise<ItemStateInfo> {
+  const data = await graphql<{ itemState: ItemStateInfo }>(ITEM_STATE_QUERY, { ...target }, signal);
+  return data.itemState;
+}
+
+const SET_WATCHED_MUTATION = `mutation SetWatched($mediaID: ID, $entityID: ID, $watched: Boolean!) { setWatched(mediaID: $mediaID, entityID: $entityID, watched: $watched) { ${ITEM_STATE_FIELDS} } }`;
+
+/** SetWatched — mark one Media, or every Media under an Entity, watched or unwatched. */
+export async function setWatched(target: ItemTarget, watched: boolean): Promise<ItemStateInfo> {
+  const data = await graphql<{ setWatched: ItemStateInfo }>(SET_WATCHED_MUTATION, {
+    ...target,
+    watched,
+  });
+  return data.setWatched;
+}
+
+const SET_WATCHLISTED_MUTATION = `mutation SetWatchlisted($mediaID: ID, $entityID: ID, $watchlisted: Boolean!) { setWatchlisted(mediaID: $mediaID, entityID: $entityID, watchlisted: $watchlisted) { ${ITEM_STATE_FIELDS} } }`;
+
+/** SetWatchlisted — add an item to, or remove it from, the calling Profile's watchlist. */
+export async function setWatchlisted(
+  target: ItemTarget,
+  watchlisted: boolean,
+): Promise<ItemStateInfo> {
+  const data = await graphql<{ setWatchlisted: ItemStateInfo }>(SET_WATCHLISTED_MUTATION, {
+    ...target,
+    watchlisted,
+  });
+  return data.setWatchlisted;
+}
+
+const SET_RATING_MUTATION = `mutation SetRating($mediaID: ID, $entityID: ID, $rating: Int!) { setRating(mediaID: $mediaID, entityID: $entityID, rating: $rating) { ${ITEM_STATE_FIELDS} } }`;
+
+/** SetRating — set the calling Profile's rating (1–10); 0 clears it. */
+export async function setRating(target: ItemTarget, rating: number): Promise<ItemStateInfo> {
+  const data = await graphql<{ setRating: ItemStateInfo }>(SET_RATING_MUTATION, {
+    ...target,
+    rating,
+  });
+  return data.setRating;
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -1144,5 +1145,43 @@ func TestDepthAwareMediaCountRespectsReveal(t *testing.T) {
 	// A hidden context Entity is indistinguishable from a missing one.
 	if _, err := st.DepthAwareMediaCount(ctx, "rev-child", parentRel, LibraryFilter{AllLibraries: true}); err == nil {
 		t.Fatal("expected hidden context entity to error like a missing one")
+	}
+}
+
+// Concurrent credit reads must not hold two catalog reader connections each:
+// with more readers than the pool allows, a nested library read inside the
+// relation cursor waits forever for a connection (CORE-1143).
+func TestEntitiesForMediaConcurrentReadsDoNotExhaustThePool(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	for i := range 4 {
+		id := EntityID(fmt.Sprintf("entity-concurrent-%d", i))
+		if err := st.UpsertEntity(ctx, widgetEntity(id, "library-local")); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.UpsertEntityRelation(ctx, EntityRelation{FromEntityID: id, Name: "linked", ToMediaID: "media-alpha"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	var wg sync.WaitGroup
+	errs := make(chan error, 32)
+	for range 32 {
+		wg.Go(func() {
+			related, err := st.EntitiesForMedia(ctx, "media-alpha", "linked", LibraryFilter{AllLibraries: true})
+			if err == nil && len(related) != 4 {
+				err = fmt.Errorf("related = %d, want 4", len(related))
+			}
+			errs <- err
+		})
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent EntitiesForMedia: %v", err)
+		}
 	}
 }

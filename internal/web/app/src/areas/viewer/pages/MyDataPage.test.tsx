@@ -36,6 +36,8 @@ beforeEach(() => {
     playbackProgress: [],
     favorites: [],
     queue: [],
+    watchlist: [],
+    ratings: [],
   });
   vi.mocked(fetchMyDataSummary).mockReset().mockResolvedValue({
     plays: 0,

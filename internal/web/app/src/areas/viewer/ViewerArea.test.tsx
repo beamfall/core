@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
     error: null as string | null,
     loading: false,
     needsEnroll: false,
+    profiles: [],
     refresh: vi.fn(),
     session: {
       deviceRole: "viewer",
@@ -79,6 +80,7 @@ describe("ViewerArea Profile scope", () => {
       error: null,
       loading: false,
       needsEnroll: false,
+      profiles: [],
       refresh: vi.fn(),
       session: {
         deviceRole: "viewer",

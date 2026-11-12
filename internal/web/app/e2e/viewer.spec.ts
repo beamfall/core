@@ -1,10 +1,10 @@
-import { expect, test } from "@playwright/test";
 import {
   applyLargeText,
   collectFatalErrors,
   expectLargeTextApplied,
   expectNoHorizontalDocumentOverflow,
 } from "./lib/spec";
+import { expect, test } from "./lib/test";
 
 // VIEWER area (ADR-0007): an enrolled browser bound to the adult Default profile.
 // These specs exercise the real Navigation Manifest + Layout rendering, search,
@@ -115,18 +115,21 @@ test.describe("viewer", () => {
   test("search runs against the real FTS path and returns a result set", async ({ page }) => {
     const errors = collectFatalErrors(page);
     await page.goto("/web/search");
-    await expect(page.getByRole("heading", { name: "Search results" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Search", exact: true })).toBeVisible();
+    // No results heading until there is a query.
+    await expect(page.getByRole("heading", { name: "Search results" })).toHaveCount(0);
 
     // "Sample" matches the seeded media-alpha "Sample Media" in library-local.
+    // Results arrive as the user types; the query is mirrored into the URL.
     const input = page.getByRole("searchbox");
     await input.fill("Sample");
-    await page.getByRole("button", { name: "Search", exact: true }).click();
+    await expect(page).toHaveURL(/\/search\?q=Sample$/);
 
     // Either results render or the empty-state shows — both are valid, neither
     // is a crash. Assert the search resolved (no fatal error) and the UI settled
     // into one of those two terminal states.
     const results = page.getByRole("listitem");
-    const empty = page.getByText("No matches", { exact: false });
+    const empty = page.getByText("No results for", { exact: false });
     await expect(results.first().or(empty)).toBeVisible();
     expect(errors, errors.join("\n")).toEqual([]);
   });
@@ -199,13 +202,44 @@ test.describe("viewer locale", () => {
     await expect(page.getByRole("button", { name: "Retour" })).toBeVisible();
 
     await page.goto("/web/search");
-    await expect(page.getByRole("heading", { name: "Résultats de recherche" })).toBeVisible();
+    // Search answers as you type (CORE-1191): with no term the page shows its
+    // prompt, and the results heading appears only once results arrive.
+    await expect(page.getByRole("heading", { level: 1, name: "Rechercher" })).toBeVisible();
     await expect(page.getByRole("searchbox", { name: "Rechercher" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Rechercher" })).toBeVisible();
+    await expect(
+      page.getByText("Rechercher dans vos bibliothèques", { exact: true }),
+    ).toBeVisible();
 
     await page.goto("/web/notifications");
     await expect(page.getByText("Boîte de réception", { exact: true })).toBeVisible();
     await expect(page.getByText("0 non lues")).toBeVisible();
+    expect(errors, errors.join("\n")).toEqual([]);
+  });
+});
+
+// The rest of this file starts each tab past "Who's watching?" (e2e/lib/test.ts);
+// this spec starts a fresh tab the way a person does (CORE-1196).
+test.describe("viewer who's watching", () => {
+  test.use({ profilePicked: false });
+
+  test("a fresh tab opens on the picker and the current Profile continues home", async ({
+    page,
+  }) => {
+    const errors = collectFatalErrors(page);
+    await page.goto("/web/");
+
+    await expect(page).toHaveURL(/\/web\/profiles$/);
+    await expect(page.getByRole("heading", { level: 1, name: "Who's watching?" })).toBeVisible();
+    await page.getByRole("button").filter({ hasText: "Watching now" }).click();
+
+    await expect(page).toHaveURL(/\/web\/?$/);
+    await expect(page.getByRole("link", { name: "Home", exact: true })).toBeVisible();
+
+    // The answer holds for the rest of the tab's visit.
+    await page.reload();
+    await expect(page.getByRole("link", { name: "Home", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Who's watching?" })).toHaveCount(0);
+
     expect(errors, errors.join("\n")).toEqual([]);
   });
 });

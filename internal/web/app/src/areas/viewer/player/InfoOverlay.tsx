@@ -2,6 +2,7 @@ import { ChevronLeft, ChevronRight, Info } from "lucide-react";
 import { Fragment, useRef } from "react";
 import { Dialog } from "@/components/ui/astryx-primitives";
 import { useT } from "@/lib/i18n";
+import { ItemActions } from "../actions/ItemActions";
 import type { PlaybackInfo, PlaybackStream } from "../lib/playback";
 import { buildRouteDetailModel } from "../lib/transport";
 
@@ -13,6 +14,7 @@ import { buildRouteDetailModel } from "../lib/transport";
 // focus to the trigger (the a11y gate, matching the vanilla dialog pattern).
 export function InfoOverlay({
   mediaTitle = "",
+  mediaID = "",
   info,
   stream,
   manualRenditionID,
@@ -22,6 +24,8 @@ export function InfoOverlay({
 }: {
   /** The current Media's title; when present it heads the overlay. */
   mediaTitle?: string;
+  /** The current Media's id; when present the overlay offers its item actions. */
+  mediaID?: string;
   info: PlaybackInfo | null;
   stream: PlaybackStream | null;
   manualRenditionID: string;
@@ -68,6 +72,7 @@ export function InfoOverlay({
               </Dialog.Close>
               <Dialog.Title render={<h3 />}>{mediaTitle || t("playbackDetails")}</Dialog.Title>
             </div>
+            {mediaID && open && <ItemActions target={{ mediaID }} />}
             {mediaTitle && <p className="bf-up-next-title">{t("playbackDetails")}</p>}
             <dl className="bf-info-rows">
               {rows.map((row) => (

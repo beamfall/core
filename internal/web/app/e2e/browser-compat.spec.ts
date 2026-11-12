@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { expect, type Page, test } from "@playwright/test";
 import { expectNoAxeViolations } from "./lib/axe";
+import { expect, type Page, test } from "./lib/test";
 
 // A real single-segment fMP4 HLS VOD (H.264/AAC, 2s, 160x90) generated from
 // internal/store/seedmedia/acceptance-review-demo.mp4. Two properties matter:

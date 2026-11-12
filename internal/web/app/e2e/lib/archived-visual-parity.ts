@@ -16,11 +16,6 @@ type ApprovedDelta = {
 // Exact approved focus and Cut Beam header deltas; archived PNGs remain immutable.
 // Signatures re-recorded for the macOS 27.2.1 system-ui (SF Pro) rasterization (CORE-1109).
 const approvedVisualDeltas: Readonly<Record<string, ApprovedDelta>> = {
-  "player-desktop/shared-dialog-open-focused.png": {
-    differentPixels: 1190,
-    coordinateSHA256: "7ddf7e1e702e9de27f160df9570d7280dbfcb7cf25c52aeb8594ec2c6ea88ad6",
-    normalizedSHA256: "79510c0bbf81311a7c7556caf57d49e74f029fe0323935d81a53ee7e676b0556",
-  },
   "manage/manage-collections-tab-focused-selected.png": {
     differentPixels: 1032,
     coordinateSHA256: "353d3f37dd5a048999149beea4ac963ce65e906132b6d2d40acf8dede71f3168",
@@ -57,6 +52,8 @@ const approvedVisualDeltas: Readonly<Record<string, ApprovedDelta>> = {
 // PNG SHA-pinned in the manifest but no longer compare the live render to it; the live
 // goldens under e2e/goldens/ are the regression baseline for them. CORE-1141 (controls over a
 // bottom gradient, one settings sheet) re-recorded all 22 of those live PNGs from the new layout.
+// CORE-1191 replaced the viewer header Search link with a search field, so the shared dialog
+// state joins them.
 const redesignedSinceMigration: ReadonlySet<string> = new Set([
   "player-desktop/player-audio-listbox-open-focused-selected.png",
   "player-desktop/player-details-dialog-open-focused.png",
@@ -69,6 +66,7 @@ const redesignedSinceMigration: ReadonlySet<string> = new Set([
   "player-desktop/player-subtitle-size-open-focused-selected.png",
   "player-desktop/player-subtitles-listbox-open-focused-selected.png",
   "player-desktop/player-volume-slider-focused-selected.png",
+  "player-desktop/shared-dialog-open-focused.png",
   "player-mobile/player-audio-listbox-open-focused-selected.png",
   "player-mobile/player-details-dialog-open-focused.png",
   "player-mobile/player-playback-slider-focused-selected.png",

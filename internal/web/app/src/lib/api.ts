@@ -369,31 +369,25 @@ export function getManifest<T = unknown>(signal?: AbortSignal): Promise<T> {
   return getJSON<T>("/api/manifest", signal);
 }
 
-/** The live state of an SSE subscription, surfaced to a connection indicator. */
-export type EventStreamState = "live" | "reconnecting";
+import { type EventStreamState, openEventStream } from "./eventStream";
+
+export type { EventStreamState };
 
 /**
  * Subscribe to the Reveal-filtered SSE event stream (/api/events, ADR-0040).
- * Returns an unsubscribe function. The wire format, route, and event payload
- * are unchanged; `onState` is an additive, optional observer of the browser's
- * own EventSource lifecycle: "live" on open, "reconnecting" on a transport
- * error (EventSource auto-retries with backoff until the returned unsubscribe
- * closes it). When both `onError` and `onState` are supplied both run on error
- * — they are composed, never overwritten.
+ * Returns an unsubscribe function. Every event is delivered, whatever its kind:
+ * core frames each one with an `event: <kind>` line, which the browser's own
+ * EventSource never hands to `onmessage`, so the stream is read directly. The
+ * kind is the delivered event's `type`. `onState` is an optional observer of
+ * the connection: "live" once the stream opens, "reconnecting" after a
+ * transport error (the stream retries with backoff, resuming from the last
+ * event id, until the returned unsubscribe closes it). `onError` and `onState`
+ * both run on an error.
  */
 export function subscribeEvents(
   onEvent: (event: MessageEvent) => void,
   onError?: (err: Event) => void,
   onState?: (state: EventStreamState) => void,
 ): () => void {
-  const source = new EventSource("/api/events", { withCredentials: true });
-  source.onmessage = onEvent;
-  if (onState) source.onopen = () => onState("live");
-  if (onError || onState) {
-    source.onerror = (err) => {
-      onError?.(err);
-      onState?.("reconnecting");
-    };
-  }
-  return () => source.close();
+  return openEventStream("/api/events", { onEvent, onError, onState });
 }

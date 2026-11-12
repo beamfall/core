@@ -221,6 +221,17 @@ func TestValidateAcceptsEntityMapFieldsAndHierarchy(t *testing.T) {
 	if err := Validate(bundle); err != nil {
 		t.Fatalf("Validate returned error: %v", err)
 	}
+	registry, err := NewRegistry([]Bundle{bundle})
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	if got := registry.EntityParentRelations(); len(got) != 1 || got[0] != "child-of" {
+		t.Fatalf("EntityParentRelations = %v, want the one declared parent relation", got)
+	}
+	var none *Registry
+	if got := none.EntityParentRelations(); got != nil {
+		t.Fatalf("nil registry EntityParentRelations = %v, want none", got)
+	}
 }
 
 func TestValidateRejectsInvalidLabelMapsAtLoad(t *testing.T) {

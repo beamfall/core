@@ -430,6 +430,11 @@
     "tier": "session"
   },
   {
+    "field": "hostmetrics",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
     "field": "identifyapply",
     "effect": "write",
     "tier": "session"
@@ -462,6 +467,11 @@
   {
     "field": "invitetowatchparty",
     "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "itemstate",
+    "effect": "read",
     "tier": "session"
   },
   {
@@ -528,6 +538,11 @@
     "field": "libraryindexstatus",
     "effect": "read",
     "tier": "admin"
+  },
+  {
+    "field": "libraryitems",
+    "effect": "read",
+    "tier": "session"
   },
   {
     "field": "linkmediarelation",
@@ -701,6 +716,16 @@
   },
   {
     "field": "playbackrenditioncache",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "playhistory",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "playstats",
     "effect": "read",
     "tier": "admin"
   },
@@ -1120,6 +1145,11 @@
     "tier": "admin"
   },
   {
+    "field": "setrating",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "setretentioncandidatehold",
     "effect": "write",
     "tier": "session"
@@ -1157,6 +1187,16 @@
   {
     "field": "setupstate",
     "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "setwatched",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "setwatchlisted",
+    "effect": "write",
     "tier": "session"
   },
   {

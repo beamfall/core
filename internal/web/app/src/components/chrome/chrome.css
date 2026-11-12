@@ -482,6 +482,190 @@
   text-overflow: ellipsis;
 }
 
+/* Card state and actions. The shell positions the More trigger over the
+ * poster as a sibling of the card button. State sits on a scrim so it reads on
+ * any artwork; the play affordance and the trigger appear on hover or focus
+ * and stay visible where there is no hover (touch). */
+[data-register="viewer"] .bf-card-shell {
+  position: relative;
+}
+
+[data-register="viewer"] .bf-card-progress {
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 2;
+  height: 5px;
+  background: oklch(7% 0.02 255 / 72%);
+}
+
+[data-register="viewer"] .bf-card-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+[data-register="viewer"] .bf-card-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 2px 8px oklch(7% 0.02 255 / 45%);
+}
+
+[data-register="viewer"] .bf-card-badge-finished {
+  padding: 0;
+  background: oklch(14% 0.014 250 / 82%);
+  color: var(--text);
+  border: 1px solid oklch(86% 0.02 250 / 28%);
+}
+
+[data-register="viewer"] .bf-card-play {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: oklch(7% 0.02 255 / 46%);
+  color: oklch(98% 0.004 250);
+  font-size: 13px;
+  font-weight: 650;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+  pointer-events: none;
+}
+
+[data-register="viewer"] .bf-card:hover .bf-card-play,
+[data-register="viewer"] .bf-card:focus-visible .bf-card-play {
+  opacity: 1;
+}
+
+[data-register="viewer"] .bf-card-more {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid oklch(86% 0.02 250 / 28%);
+  border-radius: 999px;
+  background: oklch(14% 0.014 250 / 82%);
+  color: oklch(98% 0.004 250);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+
+/* Enlarge the hit area to 44px without growing the visual. */
+[data-register="viewer"] .bf-card-more::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+
+[data-register="viewer"] .bf-card-shell:hover .bf-card-more,
+[data-register="viewer"] .bf-card-shell:focus-within .bf-card-more,
+[data-register="viewer"] .bf-card-more[data-popup-open] {
+  opacity: 1;
+}
+
+[data-register="viewer"] .bf-card-more:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (hover: none) {
+  [data-register="viewer"] .bf-card-more {
+    opacity: 1;
+  }
+}
+
+.bf-card-menu-layer {
+  z-index: 40;
+}
+
+.bf-card-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 176px;
+  padding: 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-raised);
+  color: var(--text);
+  box-shadow: 0 18px 44px oklch(0% 0 0 / 45%);
+  outline: none;
+}
+
+.bf-card-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 10px;
+  border-radius: var(--radius-control);
+  font-size: 13px;
+  line-height: 18px;
+  cursor: pointer;
+  outline: none;
+}
+
+/* After the base rule, so a touch device keeps the 44px target. */
+@media (hover: none) {
+  .bf-card-menu-item {
+    min-height: 44px;
+  }
+}
+
+/* A failed card action, shown over the artwork once the menu has closed. */
+[data-register="viewer"] .bf-card-action-error {
+  position: absolute;
+  top: 40px;
+  right: 6px;
+  left: 6px;
+  z-index: 3;
+  padding: 6px 8px;
+  border-radius: var(--radius-control);
+  background: oklch(14% 0.014 250 / 92%);
+  color: oklch(98% 0.004 250);
+  font-size: 12px;
+  line-height: 16px;
+  pointer-events: none;
+}
+
+.bf-card-menu-item[data-disabled] {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.bf-card-menu-item[data-highlighted] {
+  background: color-mix(in oklab, var(--accent) 18%, transparent);
+}
+
+.bf-card-menu-item:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
 /* Row geometry for list/info Sections. */
 [data-register="viewer"] .bf-stack .bf-card {
   flex-direction: row;
@@ -499,6 +683,31 @@
 
 [data-register="viewer"] .bf-stack .bf-card-copy {
   padding: 0;
+}
+
+/* Rows: the poster is a 48px thumb, so the play scrim is dropped, the badge
+ * shrinks onto it and the More trigger sits at the row's trailing edge. */
+[data-register="viewer"] .bf-stack .bf-card {
+  padding-right: 48px;
+}
+
+[data-register="viewer"] .bf-stack .bf-card-play {
+  display: none;
+}
+
+[data-register="viewer"] .bf-stack .bf-card-badge {
+  top: 2px;
+  left: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 10px;
+}
+
+[data-register="viewer"] .bf-stack .bf-card-more {
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
 }
 
 [data-register="viewer"] .bf-stack .bf-card:hover {
@@ -695,6 +904,10 @@
   }
   [data-register="viewer"] .bf-card:hover .bf-poster img {
     transform: none;
+  }
+  [data-register="viewer"] .bf-card-play,
+  [data-register="viewer"] .bf-card-more {
+    transition: none;
   }
 }
 
@@ -1669,4 +1882,98 @@ main:has(> .bf-player-stage.is-chrome-hidden) > .bf-player-bar > * {
   main:has(> .bf-player-stage) > .bf-player-bar {
     transition: none;
   }
+}
+
+/* ============================================================ *
+ *  Item actions (Viewer) — watched, watchlist and rating controls.
+ * ============================================================ */
+
+.bf-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.bf-item-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.bf-item-action svg,
+.bf-item-star svg {
+  width: 16px;
+  height: 16px;
+}
+
+.bf-item-action:hover:not(:disabled),
+.bf-item-action[aria-pressed="true"] {
+  color: var(--text-primary);
+  border-color: currentColor;
+}
+
+.bf-item-action[aria-pressed="true"] {
+  background: rgb(255 255 255 / 0.08);
+}
+
+.bf-item-rating {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  margin: 0;
+  padding: 0 4px;
+  border: 0;
+}
+
+.bf-item-star {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 36px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+
+.bf-item-star:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.bf-item-star[aria-pressed="true"] {
+  color: var(--accent);
+}
+
+.bf-item-action:disabled,
+.bf-item-rating:disabled .bf-item-star {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.bf-item-action:focus-visible,
+.bf-item-star:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.bf-item-actions-error {
+  color: var(--text-secondary);
+  font-size: 13px;
 }

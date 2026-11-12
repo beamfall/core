@@ -139,11 +139,18 @@ const messages = {
 function Harness({
   mediaID = "media-alpha",
   startAtSeconds = 0,
+  nextMediaID,
 }: {
   mediaID?: string;
   startAtSeconds?: number;
+  nextMediaID?: string;
 }) {
-  const { videoRef, state, retry, switchToHls } = usePlayer(mediaID, messages, startAtSeconds);
+  const { videoRef, state, retry, switchToHls } = usePlayer(
+    mediaID,
+    messages,
+    startAtSeconds,
+    nextMediaID,
+  );
   return (
     <>
       <video data-testid="player" ref={videoRef} />
@@ -176,6 +183,7 @@ function Harness({
       <output data-testid="decision">{state.decision}</output>
       <output data-testid="info-decision">{state.info?.decision ?? ""}</output>
       <output data-testid="markers">{state.markers.length}</output>
+      <output data-testid="up-next">{state.info?.next?.mediaID ?? ""}</output>
     </>
   );
 }
@@ -452,6 +460,60 @@ describe("usePlayer", () => {
     expect(pending.requests).toHaveLength(1);
   });
 
+  it.each(["media change", "unmount"])(
+    "delivers the finish report queued at ended across a %s (CORE-1143)",
+    async (teardown) => {
+      const pending = capturePendingProgress();
+      const view = render(<Harness mediaID="media-alpha" />);
+      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+
+      const video = screen.getByTestId("player") as HTMLVideoElement;
+      Object.defineProperty(video, "duration", { configurable: true, value: 120 });
+      Object.defineProperty(video, "currentTime", { configurable: true, value: 100 });
+      fireEvent.pause(video);
+      Object.defineProperty(video, "currentTime", { configurable: true, value: 120 });
+      fireEvent.ended(video);
+      expect(pending.requests).toHaveLength(1);
+
+      // Auto-advance navigates while the periodic report is still in flight.
+      if (teardown === "media change") view.rerender(<Harness mediaID="media-beta" />);
+      if (teardown === "unmount") view.unmount();
+
+      await waitFor(() => expect(pending.requests).toHaveLength(2));
+      expect(pending.requests[0].signal.aborted).toBe(true);
+      expect(pending.requests[1].variables).toMatchObject({
+        mediaID: "media-alpha",
+        positionSeconds: 120,
+        finished: true,
+      });
+      expect(pending.requests[1].signal.aborted).toBe(false);
+      expect(pending.maxActive()).toBe(1);
+      pending.requests[1].resolve();
+      await waitFor(() => expect(pending.active()).toBe(0));
+      expect(pending.requests).toHaveLength(2);
+    },
+  );
+
+  it("still aborts a retiring finish report when the identity epoch ends", async () => {
+    const identity = new AbortController();
+    setIdentityEpochSignal(identity.signal);
+    const pending = capturePendingProgress();
+    const view = render(<Harness mediaID="media-alpha" />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+
+    const video = screen.getByTestId("player") as HTMLVideoElement;
+    Object.defineProperty(video, "duration", { configurable: true, value: 120 });
+    Object.defineProperty(video, "currentTime", { configurable: true, value: 120 });
+    fireEvent.ended(video);
+    view.unmount();
+    expect(pending.requests).toHaveLength(1);
+    expect(pending.requests[0].signal.aborted).toBe(false);
+
+    identity.abort();
+    await waitFor(() => expect(pending.requests[0].signal.aborted).toBe(true));
+    expect(pending.active()).toBe(0);
+  });
+
   it("aborts Profile-scoped progress when the identity epoch ends", async () => {
     const identity = new AbortController();
     setIdentityEpochSignal(identity.signal);
@@ -510,7 +572,7 @@ describe("usePlayer", () => {
 
     await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
 
-    expect(fetchPlaybackInfo).toHaveBeenCalledWith("media-alpha");
+    expect(fetchPlaybackInfo).toHaveBeenCalledWith("media-alpha", undefined);
     const video = screen.getByTestId("player");
     expect(video).toHaveAttribute("src", "/api/media/direct/token");
     fireEvent.canPlay(video);
@@ -793,6 +855,34 @@ describe("usePlayer", () => {
     video.currentTime = 0;
     fireEvent.loadedMetadata(video);
     expect(video.currentTime).toBe(87);
+  });
+
+  it("keeps the declared next item, so Up Next survives a stream-token refresh (CORE-1143)", async () => {
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+    let call = 0;
+    vi.mocked(fetchPlaybackInfo).mockImplementation(async (_mediaID, nextMediaID) => {
+      call += 1;
+      return {
+        decision: "transcode",
+        streams: [{ kind: "hls", url: `/api/media/hls/token${call}/master.m3u8` }],
+        // The server names a next item only when the request declares one.
+        ...(nextMediaID ? { next: { mediaID: nextMediaID } } : {}),
+      };
+    });
+
+    render(<Harness nextMediaID="media-next" />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    expect(screen.getByTestId("up-next")).toHaveTextContent("media-next");
+
+    fakeHlsInstances[0].emitError({ fatal: true, networkDetails: { status: 401 } });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("stream-url")).toHaveTextContent(
+        "/api/media/hls/token2/master.m3u8",
+      ),
+    );
+    expect(fetchPlaybackInfo).toHaveBeenLastCalledWith("media-alpha", "media-next");
+    expect(screen.getByTestId("up-next")).toHaveTextContent("media-next");
   });
 
   it("goes reveal-terminal on a second 401 after the refreshed stream token also expires", async () => {

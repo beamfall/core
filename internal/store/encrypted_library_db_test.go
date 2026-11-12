@@ -641,6 +641,47 @@ func TestEncryptedLibraryEntityRelationUpsertReadAndSealBoundary(t *testing.T) {
 	}
 }
 
+// EntitiesForMedia reads an encrypted library's credits from its own database,
+// not the catalog (CORE-1143: the audio player's credits).
+func TestEncryptedLibraryEntitiesForMediaReadsTheLibraryPlane(t *testing.T) {
+	ctx := context.Background()
+	st, media := seededEncryptedMedia(t, "entities-for-media-target")
+	defer st.Close()
+
+	artist := Entity{
+		ID: "entities-for-media-artist", LibraryID: media.LibraryID, Kind: "widget", Title: "Artist",
+		Fields: []EntityField{{Name: "origin", Type: EntityFieldText, Text: "Somewhere"}},
+	}
+	if err := st.UpsertEntity(ctx, artist); err != nil {
+		t.Fatalf("UpsertEntity: %v", err)
+	}
+	relation := EntityRelation{
+		FromEntityID: artist.ID, Name: "performs", ToMediaID: media.ID,
+		Attributes: map[string]string{"role": "lead"},
+	}
+	if err := st.UpsertEntityRelation(ctx, relation); err != nil {
+		t.Fatalf("UpsertEntityRelation: %v", err)
+	}
+
+	related, err := st.EntitiesForMedia(ctx, media.ID, "performs", LibraryFilter{AllLibraries: true})
+	if err != nil {
+		t.Fatalf("EntitiesForMedia: %v", err)
+	}
+	if len(related) != 1 || related[0].Entity.ID != artist.ID || related[0].Attributes["role"] != "lead" {
+		t.Fatalf("EntitiesForMedia = %+v, want the encrypted artist with its attributes", related)
+	}
+	if len(related[0].Entity.Fields) != 1 || related[0].Entity.Fields[0].Text != "Somewhere" {
+		t.Fatalf("encrypted artist fields = %+v, want the plane's field", related[0].Entity.Fields)
+	}
+
+	if err := st.SealEncryptedLibraryDB(ctx, media.LibraryID, copyEncryptedLibraryDBCipher{}); err != nil {
+		t.Fatalf("SealEncryptedLibraryDB: %v", err)
+	}
+	if _, err := st.EntitiesForMedia(ctx, media.ID, "performs", LibraryFilter{AllLibraries: true}); err == nil {
+		t.Fatal("sealed encrypted EntitiesForMedia succeeded")
+	}
+}
+
 func TestEncryptedLibraryEntityRelationIndexesUpgradeFromV4(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "encrypted.db")

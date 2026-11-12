@@ -74,6 +74,7 @@ export function TransportMenu({
       </Select.Trigger>
       <Select.Portal container={container}>
         <Select.Positioner
+          className="bf-menu-positioner"
           side={side}
           align={side === "top" ? "end" : "center"}
           alignItemWithTrigger={false}

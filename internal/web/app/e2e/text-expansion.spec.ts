@@ -1,5 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
 import { collectFatalErrors, expectNoHorizontalDocumentOverflow } from "./lib/spec";
+import { expect, type Page, test } from "./lib/test";
 
 const CLIP_UTILITY_SELECTOR = [
   '[class*="truncate"]',

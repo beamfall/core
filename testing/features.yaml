@@ -336,6 +336,18 @@ features:
     adr: ["0007"]
     applies: [server, web, ipad, macos, windows]
     status: partial
+  - id: host-metrics
+    area: console
+    summary: CPU, memory and network graphs for the last hour.
+    adr: ["0007"]
+    applies: [server, web]
+    status: partial
+  - id: play-history
+    area: console
+    summary: Play history with filters, top users and most-played items.
+    adr: ["0007"]
+    applies: [server, web]
+    status: partial
   - id: transcode-config
     area: console
     summary: Hardware transcoding configuration.

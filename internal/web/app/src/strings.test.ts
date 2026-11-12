@@ -9,37 +9,40 @@ const LOCALES = ["en", "fr", "de", "es", "pt"] as const satisfies readonly Local
 const PARTIAL_CATALOGS: Record<Locale, Partial<StringTable>> = { en, fr, de, es, pt };
 
 // Captured after WEB-HLS-RECOVERY-1 added localized playback-recovery keys atop
-// WEBUI-SHELL-RESILIENCE-UPGRADE-BLANK-1 (2026-08-30); updated for CORE-1141 player settings copy
-// and the CORE-1197 Manage unlock copy.
-const BASE_SERIALIZED_LENGTH = 377_578;
-const BASE_REGISTRY_SHA256 = "036c27500d602909306982fa297e3b5b2c4fa1578aaacf50891c220234b65011";
-const BASE_KEY_ORDER_SHA256 = "0f7b009b0eb52a128c228c4b5895ffd3c9396ffcb15aac12fc93b6180ce2587f";
-const BASE_PLACEHOLDER_SHA256 = "cfb037d0b30a58ca9303842d43e79294f3174e0d9efd08a5d21d1ff0a6510b55";
+// WEBUI-SHELL-RESILIENCE-UPGRADE-BLANK-1 (2026-08-30); updated for CORE-1141 player settings copy,
+// the CORE-1197 Manage unlock copy, the CORE-1190 library browse copy, the CORE-1143 audio
+// player and queue copy, the CORE-1194 item action copy, the CORE-1192 card state copy, the
+// CORE-1195 console dashboard copy (with its memory-unavailable fix), the CORE-1191 header search copy and the CORE-1196
+// who's-watching copy.
+const BASE_SERIALIZED_LENGTH = 417_203;
+const BASE_REGISTRY_SHA256 = "d50bafc65b32f997767ceb3b1d7389df2a4ba90fa931eba078f87bdae8241d47";
+const BASE_KEY_ORDER_SHA256 = "4d96f756cca8a78e19e3c069e23aa055c446858b98de880bee16c74bba6219fe";
+const BASE_PLACEHOLDER_SHA256 = "a8b6751a9255a6fd0e228b7e36b0aeb40166ed9fefdd5a104722e497b055cac5";
 const BASE_CATALOGS = {
   en: {
-    partialCount: 1_439,
-    partialSha256: "63c9cbdc465c23dfe81d132367a7581a2efe3d4e9035b71405aa8be15decc338",
-    resolvedSha256: "fd298cf5e6ddbc1b286e520eed68d49e956fff304737cf3d3eedfceab84e38ef",
+    partialCount: 1_614,
+    partialSha256: "3dc818bd807b2539caee81aa215b75f49576a9113eabeec0017d156fc87c6fd4",
+    resolvedSha256: "53cd9584c9323aa8a8aef0182805c5168f66d30e7b7205cf626ed3fa8ea982fa",
   },
   fr: {
-    partialCount: 665,
-    partialSha256: "bb7ef2c8200f08ed48bc87db0f2d99d5c529ec8381fb97b4855fa31a49f2c4b7",
-    resolvedSha256: "bc6259ded3082ec29578bc0c8671c80ac0e4e96c1494dfc8ad68efeaa9adf101",
+    partialCount: 782,
+    partialSha256: "575016c550b066669903b8a3ac5b9867c79a28ba75bdd3d5fbcdcbe6b9afa52d",
+    resolvedSha256: "6aa15f113658189120bc207a906ea27d8ec0189e343bd4129ba9ec7bbe58ae3e",
   },
   de: {
-    partialCount: 600,
-    partialSha256: "a068b2a6cc8bdaa411d32694e695619dc3a5bb4fea5aa70bda23c663ffe1441c",
-    resolvedSha256: "5de7a8d2173772412b613900c0f73766baccc5edf8949d6e766b799b49356e7d",
+    partialCount: 683,
+    partialSha256: "1c3739d978e8a1170e879b20b1b59dfdacbfe420b2e5c4897e7986c80772adfd",
+    resolvedSha256: "702c1e2383d075f247bd63744dc7ed46044d3437de5d6c679a200b969934ae44",
   },
   es: {
-    partialCount: 600,
-    partialSha256: "16ade231d6beb9e07948f345421aa25c9d2965f16caa92b989707dcebf9d13c6",
-    resolvedSha256: "a2becf378ca2e9891a3126fb4613d5b04443ea4ee7157b70b64b7e3c9ce04b2a",
+    partialCount: 683,
+    partialSha256: "e6504de9319992c5796252bc09120e0149f06e245fa98b353737e290ad22d7f6",
+    resolvedSha256: "520dad1db4a8b978b10576ba9ef7888f39715e76c242dda85c5a299e7523da80",
   },
   pt: {
-    partialCount: 600,
-    partialSha256: "8cb7ac3141e2856babb2256adab6ec3e5f1147cc86cc9da356cac19649f4ce89",
-    resolvedSha256: "058cb4e9d14d7888c1e3dbfac939d8dd0cd18eaa5083a3006427b34d39b6a516",
+    partialCount: 683,
+    partialSha256: "6ef06d1dbce3d1d007a6efafeb0f12b0ce9e8d0f3151affd5b0e16e9aea59a63",
+    resolvedSha256: "0ec91d09c07ab91eedc7e5d23e9b695869c35187558f340eb98710a90050e1cd",
   },
 } as const satisfies Record<
   Locale,
@@ -63,7 +66,10 @@ function withEnglishFallback(partial: Partial<StringTable>): StringTable {
 function placeholderInventory(table: StringTable): Record<string, string[]> {
   const inventory: Record<string, string[]> = {};
   for (const [key, value] of Object.entries(table)) {
-    const placeholders = [...value.matchAll(/\{([^{}]+)\}/g)].map((match) => match[1]);
+    // Argument names only: an ICU plural contributes its argument, not its translated branches.
+    const placeholders = [...value.matchAll(/\{\s*([A-Za-z_]\w*)\s*[,}]/g)].map(
+      (match) => match[1],
+    );
     if (placeholders.length > 0) inventory[key] = placeholders;
   }
   return inventory;

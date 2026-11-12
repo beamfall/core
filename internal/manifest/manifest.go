@@ -376,6 +376,13 @@ func homeLayout() Layout {
 				Source:      SourceSpec{Kind: "continue-watching"},
 			},
 			{
+				ID:          "watchlist",
+				Kind:        "shelf",
+				Title:       plugin.LocaleString{"en": "Watchlist", "fr": "Ma liste"},
+				ArtworkSlot: "poster",
+				Source:      SourceSpec{Kind: "watchlist"},
+			},
+			{
 				ID:          "recent",
 				Kind:        "shelf",
 				Title:       plugin.LocaleString{"en": "Recently Added", "fr": "Ajouts récents"},

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/beamfall/core/internal/graphshape"
+	"github.com/beamfall/core/internal/store"
 )
 
 // H23-B: nested-field schema source-of-truth.
@@ -56,6 +57,7 @@ var resultTypes = map[string]any{
 	"markers":                MarkerInfo{},
 	"trashedmarkers":         MarkerInfo{},
 	"sourceitems":            SourceItem{},
+	"libraryitems":           LibraryItemsResponse{},
 	"ambientqueue":           SourceItem{},
 	"currentsession":         SessionInfo{},
 	"profiles":               ProfileSummary{},
@@ -123,6 +125,9 @@ var resultTypes = map[string]any{
 	"updatestatus":           UpdateStatusInfo{},
 	"transcodeconfig":        TranscodeConfigInfo{},
 	"livesessions":           LiveSessionInfo{},
+	"hostmetrics":            HostMetricsInfo{},
+	"playhistory":            PlayInfo{},
+	"playstats":              PlayStatsInfo{},
 	"devices":                DeviceInfo{},
 	"setdevicerole":          DeviceInfo{},
 	"setupstate":             SetupState{},
@@ -170,6 +175,10 @@ var resultTypes = map[string]any{
 	// ADR-0113 §2.3: per-title access grant mutation (adult revoke).
 	"revokeaccessgrant":                  AccessGrantInfo{},
 	"setextensionpreauthorization":       SetExtensionPreauthorizationResult{},
+	"itemstate":                          ItemStateInfo{},
+	"setwatched":                         ItemStateInfo{},
+	"setwatchlisted":                     ItemStateInfo{},
+	"setrating":                          ItemStateInfo{},
 	"setfavorite":                        MediaInfo{},
 	"queueadd":                           SourceItem{},
 	"queueremove":                        SourceItem{},
@@ -345,6 +354,8 @@ var fieldArguments = map[string][]NestedArgument{
 		{Name: "scraperID", Kind: "string", Optional: true},
 	},
 	"importstatus":   {{Name: "jobID", Kind: "string"}},
+	"itemstate":      {{Name: "entityID", Kind: "string", Optional: true}, {Name: "mediaID", Kind: "string", Optional: true}},
+	"libraryitems":   libraryItemsArguments(),
 	"media":          {{Name: "id", Kind: "string"}},
 	"mediafields":    {{Name: "mediaID", Kind: "string"}},
 	"mediafiles":     {{Name: "mediaID", Kind: "string"}},
@@ -364,6 +375,40 @@ func searchModeArgument() NestedArgument {
 		string(SearchModeRecommend),
 		string(SearchModeSemantic),
 	}}
+}
+
+func libraryItemsArguments() []NestedArgument {
+	return []NestedArgument{
+		{Name: "direction", Kind: "string", Optional: true, Enum: []string{"asc", "desc"}},
+		{Name: "groupFilters", Kind: "map", Optional: true, Elem: &NestedArgument{Kind: "string"}},
+		{Name: "libraryID", Kind: "string"},
+		{Name: "limit", Kind: "int", Optional: true},
+		{Name: "minRating", Kind: "int", Optional: true},
+		{Name: "offset", Kind: "int", Optional: true},
+		{Name: "quality", Kind: "string", Optional: true, Enum: []string{
+			store.QualityTierHD1080,
+			store.QualityTierHD720,
+			store.QualityTierSD,
+			store.QualityTierUHD,
+		}},
+		{Name: "seed", Kind: "string", Optional: true},
+		{Name: "sort", Kind: "string", Optional: true, Enum: []string{
+			store.LibraryBrowseSortAdded,
+			store.LibraryBrowseSortDuration,
+			store.LibraryBrowseSortLastWatched,
+			store.LibraryBrowseSortRandom,
+			store.LibraryBrowseSortRating,
+			store.LibraryBrowseSortTitle,
+			store.LibraryBrowseSortYear,
+		}},
+		{Name: "watch", Kind: "string", Optional: true, Enum: []string{
+			store.LibraryBrowseWatchInProgress,
+			store.LibraryBrowseWatchUnwatched,
+			store.LibraryBrowseWatchWatched,
+		}},
+		{Name: "yearFrom", Kind: "int", Optional: true},
+		{Name: "yearTo", Kind: "int", Optional: true},
+	}
 }
 
 func entityFilterArgument() NestedArgument {

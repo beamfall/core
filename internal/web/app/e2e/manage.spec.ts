@@ -1,4 +1,3 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
 import { ADMIN_PASSWORD } from "./lib/harness";
 import {
   collectFatalErrors,
@@ -6,6 +5,7 @@ import {
   expectReducedMotionDurations,
   harnessState,
 } from "./lib/spec";
+import { expect, type Locator, type Page, test } from "./lib/test";
 import {
   expectLocatorVisualParity,
   expectSelectedOption,

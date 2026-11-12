@@ -1,5 +1,6 @@
 import { ApiError, postJSON } from "@/lib/api";
 import { probeCapabilityProfile } from "./capabilityProfile";
+import { leavePlayQueue, nextInPlayQueue, playQueueHandle, playQueueTitle } from "./playQueue";
 
 // Playback-info request + its wire shape (ADR-0010 playbackInfo contract).
 //
@@ -46,6 +47,7 @@ export interface PlaybackAssets {
 /** The "Up Next" issuance the server pre-mints for the player (ADR-0010 next-item). */
 export interface PlaybackNext {
   mediaID: string;
+  mediaClass?: string;
   title?: string;
   streams?: PlaybackStream[];
   timeline?: PlaybackTimeline;
@@ -56,12 +58,17 @@ export interface PlaybackNext {
 
 /** The /api/playback-info response (ADR-0010 playbackInfo), narrowed to what the player reads. */
 export interface PlaybackInfo {
+  /** "audio" | "video": the item's playback class; absent when unavailable. */
+  mediaClass?: string;
   /** The route the server chose; falls back to streams[0].kind when absent. */
   decision?: string;
   streams?: PlaybackStream[];
   timeline?: PlaybackTimeline;
   assets?: PlaybackAssets;
-  /** A machine token ("requires-transcode", …) explaining a transcode route. */
+  /**
+   * A machine token explaining the route: why it transcodes ("requires-transcode",
+   * …) or why there is none ("media-file-unavailable", "media-unavailable").
+   */
   reason?: string;
   next?: PlaybackNext | null;
   trackPreferences?: unknown;
@@ -88,13 +95,55 @@ export function isRevealTerminalStatus(status: number): boolean {
  * an {@link ApiError} carrying the HTTP status so the caller can distinguish a
  * reveal-terminal response (a relocked/hidden/expired Media) from a generic
  * failure — exactly the branch the vanilla play() takes on a non-ok response.
+ * `nextMediaID` declares a catalog card queue's next item so the server
+ * pre-mints its stream (info.next); an unservable next item is silently
+ * omitted. "" means a card queue drives playback and has no next item;
+ * undefined means no card queue, so a Play all queue may name the next item.
  */
-export async function fetchPlaybackInfo(mediaID: string): Promise<PlaybackInfo> {
+export async function fetchPlaybackInfo(
+  mediaID: string,
+  nextMediaID?: string,
+): Promise<PlaybackInfo> {
+  // Taken before the probe: a request that resumes after a newer Play all
+  // started must not be read as leaving that queue.
+  const queue = playQueueHandle();
   const capabilityProfile = await probeCapabilityProfile();
-  return postJSON<PlaybackInfo>("/api/playback-info", {
+  // A Play all / Shuffle queue names its next item so the server pre-mints
+  // Up Next for it (ADR-0029: the queue is client-owned). Playback a catalog
+  // card's queue drives (CORE-1143) has left the Play all queue, which ends
+  // here even when the card queue has nothing after this item.
+  let queuedNext = "";
+  if (nextMediaID === undefined) queuedNext = await nextInPlayQueue(mediaID, queue);
+  else leavePlayQueue(queue);
+  const next = nextMediaID || queuedNext;
+  const info = await postJSON<PlaybackInfo>("/api/playback-info", {
     mediaID,
     capabilityProfile,
+    ...(next ? { nextMediaID: next } : {}),
   });
+  // The server issues a declared next item without a title; the Play all
+  // queue kept the one its listing gave, so Up Next and the next heading can
+  // name it. A card queue's next item is named by the player from that queue.
+  if (info.next && !info.next.title && queuedNext && info.next.mediaID === queuedNext) {
+    const title = playQueueTitle(queuedNext);
+    if (title) info.next.title = title;
+  }
+  return info;
+}
+
+/** The words for a playback-info `reason` that leaves nothing to play. */
+export function unavailableReasonMessage(
+  reason: string | undefined,
+  messages: { mediaFileMissing?: string; mediaNotAvailable?: string },
+): string | undefined {
+  switch (reason) {
+    case "media-file-unavailable":
+      return messages.mediaFileMissing;
+    case "media-unavailable":
+      return messages.mediaNotAvailable;
+    default:
+      return undefined;
+  }
 }
 
 /**
