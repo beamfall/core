@@ -22,6 +22,7 @@ import {
   browseStateParams,
   fetchLibraryItems,
   LIBRARY_BROWSE_PAGE,
+  LIBRARY_MIN_RATINGS,
   LIBRARY_SORTS,
   LIBRARY_WATCH_STATES,
   type LibraryBrowseState,
@@ -48,6 +49,7 @@ const SORT_LABELS: Record<LibrarySort, StringKey> = {
   added: "libraryBrowseSortAdded",
   duration: "libraryBrowseSortDuration",
   "last-watched": "libraryBrowseSortLastWatched",
+  rating: "libraryBrowseSortRating",
 };
 const WATCH_LABELS: Record<string, StringKey> = {
   unwatched: "libraryBrowseWatchUnwatched",
@@ -225,6 +227,11 @@ function LibraryBrowse({
   const decadeLabel = (decade: number) => t("libraryBrowseDecade", { decade: String(decade) });
   const qualityLabel = (quality: string) =>
     QUALITY_LABELS[quality] ? t(QUALITY_LABELS[quality]) : quality;
+  const ratingLabel = (minRating: number) => {
+    if (minRating <= 1) return t("libraryBrowseRatingAny");
+    const key = minRating >= 10 ? "libraryBrowseRatingTop" : "libraryBrowseRatingAtLeast";
+    return t(key, { stars: String(minRating / 2) });
+  };
   // The selected values stay offered even when the current result has none.
   // A grouping selected in the URL is offered even before (or without) the
   // server naming it, so the choice can always be seen and cleared.
@@ -264,7 +271,10 @@ function LibraryBrowse({
   if (state.quality) {
     activeFilters.push({ label: qualityLabel(state.quality), clear: { quality: "" } });
   }
-  const clearAll = { watch: "", groups: {}, decade: 0, quality: "" } as const;
+  if (state.minRating) {
+    activeFilters.push({ label: ratingLabel(state.minRating), clear: { minRating: 0 } });
+  }
+  const clearAll = { watch: "", groups: {}, decade: 0, quality: "", minRating: 0 } as const;
 
   // A card hands the player the loaded items around it as its queue
   // (CORE-1143): the run of contiguous loaded pages, so Previous and Next
@@ -375,6 +385,19 @@ function LibraryBrowse({
               ...LIBRARY_WATCH_STATES.map((watch) => ({
                 value: watch,
                 label: t(WATCH_LABELS[watch]),
+              })),
+            ]}
+          />
+          <BrowseSelect
+            id="library-browse-rating"
+            label={t("libraryBrowseRatingLabel")}
+            value={state.minRating ? String(state.minRating) : ALL}
+            onChange={(value) => update({ minRating: value === ALL ? 0 : Number(value) })}
+            options={[
+              { value: ALL, label: t("libraryBrowseAny") },
+              ...LIBRARY_MIN_RATINGS.map((minRating) => ({
+                value: String(minRating),
+                label: ratingLabel(minRating),
               })),
             ]}
           />

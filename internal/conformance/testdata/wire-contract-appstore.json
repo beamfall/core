@@ -7937,6 +7937,11 @@
           "optional": true
         },
         {
+          "name": "minRating",
+          "kind": "int",
+          "optional": true
+        },
+        {
           "name": "offset",
           "kind": "int",
           "optional": true
@@ -7966,6 +7971,7 @@
             "duration",
             "last-watched",
             "random",
+            "rating",
             "title",
             "year"
           ]

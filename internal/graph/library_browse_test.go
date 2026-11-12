@@ -93,7 +93,9 @@ func TestLibraryItemsRejectsUnknownSortAndFilters(t *testing.T) {
 	handler := newTestHandler(t)
 	for name, variables := range map[string]map[string]any{
 		"missing library": {"libraryID": " "},
-		"unknown sort":    {"libraryID": "library-local", "sort": "rating"},
+		"unknown sort":    {"libraryID": "library-local", "sort": "popularity"},
+		"rating too high": {"libraryID": "library-local", "minRating": 11},
+		"negative rating": {"libraryID": "library-local", "minRating": -1},
 		"bad direction":   {"libraryID": "library-local", "direction": "sideways"},
 		"unknown watch":   {"libraryID": "library-local", "watch": "abandoned"},
 		"unknown quality": {"libraryID": "library-local", "quality": "8k"},

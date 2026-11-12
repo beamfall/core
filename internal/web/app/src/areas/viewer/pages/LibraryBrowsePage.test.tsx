@@ -169,4 +169,32 @@ describe("Library browse", () => {
     const queue = (await screen.findByTestId("watch")).textContent?.split(",") ?? [];
     expect(queue.slice(0, 3)).toEqual(["media-0", "media-1", "media-2"]);
   });
+
+  it("sorts and filters by the profile's own rating from the URL", async () => {
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
+    const user = userEvent.setup();
+
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/n/films/all?sort=rating&dir=desc&rated=8"]}>
+          <Routes>
+            <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
+          </Routes>
+          <Where />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    expect(await screen.findByText("1,200 items")).toBeInTheDocument();
+    expect(vi.mocked(fetchLibraryItems).mock.calls[0][0]).toMatchObject({
+      state: { sort: "rating", direction: "desc", minRating: 8 },
+    });
+    await user.click(screen.getByRole("button", { name: "Remove filter: 4 stars or more" }));
+    await waitFor(() =>
+      expect(vi.mocked(fetchLibraryItems).mock.calls.at(-1)?.[0]).toMatchObject({
+        state: { sort: "rating", minRating: 0 },
+      }),
+    );
+    expect(screen.getByTestId("where")).not.toHaveTextContent("rated=");
+  });
 });

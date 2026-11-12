@@ -308,3 +308,48 @@ func TestLibraryBrowseReadsAnOpenEncryptedLibrary(t *testing.T) {
 		}
 	}
 }
+
+func TestLibraryBrowseSortsAndFiltersByOwnRating(t *testing.T) {
+	st := openDemo(t)
+	ctx := context.Background()
+	profile := ProfileID("profile-demo-default")
+	open := LibraryFilter{AllowedIDs: []LibraryID{"library-demo-open"}}
+	all := mustLibraryBrowse(t, st, LibraryBrowseQuery{ProfileID: profile})
+	for id, rating := range map[MediaID]int{"media-demo-bunny": 9, "media-demo-sintel": 4} {
+		if err := st.SetItemRating(ctx, profile, ItemTarget{MediaID: id}, rating, open); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ids := func(result LibraryBrowseResult) []MediaID {
+		out := make([]MediaID, len(result.Items))
+		for i, item := range result.Items {
+			out[i] = item.ID
+		}
+		return out
+	}
+
+	// Sorting keeps the whole set; unrated items trail in both directions.
+	best := mustLibraryBrowse(t, st, LibraryBrowseQuery{ProfileID: profile, Sort: LibraryBrowseSortRating, Descending: true})
+	if got := ids(best); best.Total != all.Total || len(got) < 2 || got[0] != "media-demo-bunny" || got[1] != "media-demo-sintel" {
+		t.Fatalf("rating desc = %v (total %d of %d)", got, best.Total, all.Total)
+	}
+	worst := mustLibraryBrowse(t, st, LibraryBrowseQuery{ProfileID: profile, Sort: LibraryBrowseSortRating})
+	if got := ids(worst); len(got) < 2 || got[0] != "media-demo-sintel" || got[1] != "media-demo-bunny" {
+		t.Fatalf("rating asc = %v", got)
+	}
+
+	rated := mustLibraryBrowse(t, st, LibraryBrowseQuery{ProfileID: profile, MinRating: 1})
+	if rated.Total != 2 {
+		t.Fatalf("rated total = %d (%v), want 2", rated.Total, ids(rated))
+	}
+	high := mustLibraryBrowse(t, st, LibraryBrowseQuery{ProfileID: profile, MinRating: 8})
+	if got := ids(high); high.Total != 1 || got[0] != "media-demo-bunny" {
+		t.Fatalf("min rating 8 = %v", got)
+	}
+
+	// Ratings are per Profile: another Profile's browse sees none of them.
+	other := mustLibraryBrowse(t, st, LibraryBrowseQuery{ProfileID: "profile-demo-other", MinRating: 1})
+	if other.Total != 0 {
+		t.Fatalf("another profile's rated total = %d, want 0", other.Total)
+	}
+}

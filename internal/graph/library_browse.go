@@ -147,6 +147,10 @@ func libraryItemsQuery(scope auth.Scope, req request) (store.LibraryBrowseQuery,
 	if yearFrom < 0 || yearTo < 0 || (yearTo > 0 && yearFrom > yearTo) {
 		return store.LibraryBrowseQuery{}, clientError("yearFrom and yearTo must form a valid range")
 	}
+	minRating := intVar(req, "minRating")
+	if minRating < 0 || minRating > store.ItemRatingMax {
+		return store.LibraryBrowseQuery{}, clientError("minRating must be between 0 and 10")
+	}
 	// groupFilters maps an Entity Kind to the one value selected for it. The
 	// kinds are applied in name order so the same request always reads the
 	// same way.
@@ -177,6 +181,7 @@ func libraryItemsQuery(scope auth.Scope, req request) (store.LibraryBrowseQuery,
 		YearFrom:      yearFrom,
 		YearTo:        yearTo,
 		Quality:       quality,
+		MinRating:     minRating,
 		Limit:         boundedIntVar(req, "limit", 50, 200),
 		Offset:        nonNegativeIntVar(req, "offset"),
 	}, nil

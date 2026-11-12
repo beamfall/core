@@ -8,12 +8,22 @@ import type { DisplayString, SourceItem } from "@/lib/graphql/types";
 
 export const LIBRARY_BROWSE_PAGE = 100;
 
-export const LIBRARY_SORTS = ["title", "year", "added", "duration", "last-watched"] as const;
+export const LIBRARY_SORTS = [
+  "title",
+  "year",
+  "added",
+  "duration",
+  "last-watched",
+  "rating",
+] as const;
 export type LibrarySort = (typeof LIBRARY_SORTS)[number];
 export const LIBRARY_WATCH_STATES = ["unwatched", "in-progress", "watched"] as const;
 export type LibraryWatch = (typeof LIBRARY_WATCH_STATES)[number];
 export const LIBRARY_QUALITIES = ["uhd", "hd1080", "hd720", "sd"] as const;
 export type LibraryQuality = (typeof LIBRARY_QUALITIES)[number];
+// "My rating" filter steps, as the minimum personal rating on the 1-10 wire
+// scale: any rating, then 3, 4 and 5 stars.
+export const LIBRARY_MIN_RATINGS = [1, 6, 8, 10] as const;
 export type LibraryDirection = "asc" | "desc";
 export type LibraryViewMode = "grid" | "list";
 
@@ -31,6 +41,8 @@ export interface LibraryBrowseState {
   /** A decade start year (1990 = the 1990s), or 0 for none. */
   decade: number;
   quality: LibraryQuality | "";
+  /** The lowest personal rating to keep (1-10), or 0 for none. */
+  minRating: number;
 }
 
 export const DEFAULT_BROWSE_STATE: LibraryBrowseState = {
@@ -40,6 +52,7 @@ export const DEFAULT_BROWSE_STATE: LibraryBrowseState = {
   groups: {},
   decade: 0,
   quality: "",
+  minRating: 0,
 };
 
 function oneOf<T extends string>(values: readonly T[], value: string | null): T | "" {
@@ -55,6 +68,7 @@ export function parseBrowseState(params: URLSearchParams): LibraryBrowseState {
     const value = raw.trim();
     if (kind && value) groups[kind] = value;
   }
+  const rated = Number.parseInt(params.get("rated") ?? "", 10);
   return {
     sort: oneOf(LIBRARY_SORTS, params.get("sort")) || DEFAULT_BROWSE_STATE.sort,
     direction: params.get("dir") === "desc" ? "desc" : "asc",
@@ -62,6 +76,7 @@ export function parseBrowseState(params: URLSearchParams): LibraryBrowseState {
     groups,
     decade: Number.isFinite(decade) && decade > 0 ? Math.floor(decade / 10) * 10 : 0,
     quality: oneOf(LIBRARY_QUALITIES, params.get("quality")),
+    minRating: (LIBRARY_MIN_RATINGS as readonly number[]).includes(rated) ? rated : 0,
   };
 }
 
@@ -76,6 +91,7 @@ export function browseStateParams(state: LibraryBrowseState): URLSearchParams {
   }
   if (state.decade) params.set("decade", String(state.decade));
   if (state.quality) params.set("quality", state.quality);
+  if (state.minRating) params.set("rated", String(state.minRating));
   return params;
 }
 
@@ -109,7 +125,7 @@ export interface LibraryItemsRequest {
 }
 
 const LIBRARY_ITEMS_QUERY =
-  "query LibraryItems($libraryID: String!, $sort: String, $direction: String, $seed: String, $watch: String, $quality: String, $yearFrom: Int, $yearTo: Int, $groupFilters: Map, $limit: Int, $offset: Int) { libraryItems(libraryID: $libraryID, sort: $sort, direction: $direction, seed: $seed, watch: $watch, quality: $quality, yearFrom: $yearFrom, yearTo: $yearTo, groupFilters: $groupFilters, limit: $limit, offset: $offset) { total items { id kind title summary artwork { poster } artworkSlots locked } facets { groupings { kind title values } decades qualities } } }";
+  "query LibraryItems($libraryID: String!, $sort: String, $direction: String, $seed: String, $watch: String, $quality: String, $minRating: Int, $yearFrom: Int, $yearTo: Int, $groupFilters: Map, $limit: Int, $offset: Int) { libraryItems(libraryID: $libraryID, sort: $sort, direction: $direction, seed: $seed, watch: $watch, quality: $quality, minRating: $minRating, yearFrom: $yearFrom, yearTo: $yearTo, groupFilters: $groupFilters, limit: $limit, offset: $offset) { total items { id kind title summary artwork { poster } artworkSlots locked } facets { groupings { kind title values } decades qualities } } }";
 
 export function libraryItemsVariables(request: LibraryItemsRequest): Record<string, unknown> {
   const { state } = request;
@@ -123,6 +139,7 @@ export function libraryItemsVariables(request: LibraryItemsRequest): Record<stri
   if (request.shuffleSeed) vars.seed = request.shuffleSeed;
   if (state.watch) vars.watch = state.watch;
   if (state.quality) vars.quality = state.quality;
+  if (state.minRating) vars.minRating = state.minRating;
   if (state.decade) {
     vars.yearFrom = state.decade;
     vars.yearTo = state.decade + 9;

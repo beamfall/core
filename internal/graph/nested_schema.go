@@ -380,6 +380,7 @@ func libraryItemsArguments() []NestedArgument {
 		{Name: "groupFilters", Kind: "map", Optional: true, Elem: &NestedArgument{Kind: "string"}},
 		{Name: "libraryID", Kind: "string"},
 		{Name: "limit", Kind: "int", Optional: true},
+		{Name: "minRating", Kind: "int", Optional: true},
 		{Name: "offset", Kind: "int", Optional: true},
 		{Name: "quality", Kind: "string", Optional: true, Enum: []string{
 			store.QualityTierHD1080,
@@ -393,6 +394,7 @@ func libraryItemsArguments() []NestedArgument {
 			store.LibraryBrowseSortDuration,
 			store.LibraryBrowseSortLastWatched,
 			store.LibraryBrowseSortRandom,
+			store.LibraryBrowseSortRating,
 			store.LibraryBrowseSortTitle,
 			store.LibraryBrowseSortYear,
 		}},

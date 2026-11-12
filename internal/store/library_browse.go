@@ -23,6 +23,8 @@ const (
 	LibraryBrowseSortDuration    = "duration"
 	LibraryBrowseSortLastWatched = "last-watched"
 	LibraryBrowseSortRandom      = "random"
+	// LibraryBrowseSortRating orders by the requesting Profile's own rating.
+	LibraryBrowseSortRating = "rating"
 )
 
 // Library browse watch-state predicates, evaluated against the requesting
@@ -51,6 +53,9 @@ type LibraryBrowseQuery struct {
 	YearTo   int
 	// Quality is "" or one QualityTier* resolution bucket.
 	Quality string
+	// MinRating keeps only Media the requesting Profile rated at least this
+	// high (1..ItemRatingMax); 0 applies no rating filter.
+	MinRating int
 	// FacetEntityKinds names the Entity Kinds whose titles are reported as
 	// facet values, in this order. Empty reports none.
 	FacetEntityKinds []string
@@ -90,13 +95,15 @@ type libraryBrowseCandidate struct {
 	watched     bool
 	inProgress  bool
 	lastWatched int64
+	rating      int
 }
 
 // ValidLibraryBrowseSort reports whether sortKey is a known sort ("" is title).
 func ValidLibraryBrowseSort(sortKey string) bool {
 	switch sortKey {
 	case "", LibraryBrowseSortTitle, LibraryBrowseSortYear, LibraryBrowseSortAdded,
-		LibraryBrowseSortDuration, LibraryBrowseSortLastWatched, LibraryBrowseSortRandom:
+		LibraryBrowseSortDuration, LibraryBrowseSortLastWatched, LibraryBrowseSortRandom,
+		LibraryBrowseSortRating:
 		return true
 	}
 	return false
@@ -220,6 +227,11 @@ func (s *Store) LibraryBrowse(ctx context.Context, filter LibraryFilter, query L
 	}
 	if query.ProfileID != "" && (query.Watch != "" || query.Sort == LibraryBrowseSortLastWatched) {
 		if err := s.libraryBrowseProgressLocked(ctx, query.ProfileID, candidates); err != nil {
+			return empty, err
+		}
+	}
+	if query.ProfileID != "" && (query.MinRating > 0 || query.Sort == LibraryBrowseSortRating) {
+		if err := s.libraryBrowseRatingsLocked(ctx, query.ProfileID, candidates); err != nil {
 			return empty, err
 		}
 	}
@@ -357,6 +369,35 @@ func (s *Store) libraryBrowseProgressLocked(ctx context.Context, profileID Profi
 	return nil
 }
 
+// libraryBrowseRatingsLocked attaches the Profile's own Media ratings.
+func (s *Store) libraryBrowseRatingsLocked(ctx context.Context, profileID ProfileID, candidates []libraryBrowseCandidate) error {
+	rows, err := s.eventsR.QueryContext(ctx, `
+		SELECT target_id, rating
+		FROM item_rating
+		WHERE profile_id = ? AND target_kind = ?
+	`, profileID, ItemTargetMedia)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	byMedia := map[MediaID]int{}
+	for rows.Next() {
+		var id MediaID
+		var rating int
+		if err := rows.Scan(&id, &rating); err != nil {
+			return err
+		}
+		byMedia[id] = rating
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for i := range candidates {
+		candidates[i].rating = byMedia[candidates[i].item.ID]
+	}
+	return nil
+}
+
 // libraryBrowseEntityTitles lists the Entities of one kind that at least one
 // visible candidate belongs to. It is built from the candidates, never from the
 // Library's whole Entity table, so a title reachable only through Media the
@@ -459,11 +500,15 @@ func libraryBrowseMatches(c libraryBrowseCandidate, query LibraryBrowseQuery) bo
 	if query.Quality != "" && (c.height <= 0 || QualityTierForHeight(c.height) != query.Quality) {
 		return false
 	}
+	// An unrated item (rating 0) matches no minimum.
+	if query.MinRating > 0 && c.rating < query.MinRating {
+		return false
+	}
 	return true
 }
 
 // sortLibraryBrowse orders candidates by the query's key. Items missing the key
-// (no year, no duration, never watched) sort last in BOTH directions so a
+// (no year, no duration, never watched, unrated) sort last in BOTH directions so a
 // descending sort does not open on a wall of blanks; every order is made total
 // by a title-then-id tie-break.
 func sortLibraryBrowse(candidates []libraryBrowseCandidate, query LibraryBrowseQuery) {
@@ -501,6 +546,8 @@ func sortLibraryBrowse(candidates []libraryBrowseCandidate, query LibraryBrowseQ
 		key = func(c libraryBrowseCandidate) int64 { return int64(c.duration) }
 	case LibraryBrowseSortLastWatched:
 		key = func(c libraryBrowseCandidate) int64 { return c.lastWatched }
+	case LibraryBrowseSortRating:
+		key = func(c libraryBrowseCandidate) int64 { return int64(c.rating) }
 	}
 	slices.SortFunc(candidates, func(a, b libraryBrowseCandidate) int {
 		if key == nil {
