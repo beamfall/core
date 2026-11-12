@@ -77,6 +77,7 @@ func (s *Store) AnnotateEngagement(ctx context.Context, profileID ProfileID, fil
 					remaining++
 				}
 			}
+			// #nosec G602 -- i ranges over items.
 			items[i].Engagement = &SourceEngagement{
 				Completed:      remaining == 0,
 				TotalCount:     len(ids),
@@ -128,6 +129,7 @@ func (s *Store) orderedChildrenLocked(ctx context.Context, containerIDs []string
 			}
 		}
 		for _, db := range planes {
+			// #nosec G202 -- only generated placeholders are interpolated; IDs are bound args.
 			rows, err := db.QueryContext(ctx, `
 				SELECT r.from_entity_id, r.to_media_id, ''
 				FROM entity_relation r
@@ -237,6 +239,7 @@ func (s *Store) progressByMediaLocked(ctx context.Context, profileID ProfileID, 
 		for _, id := range chunk {
 			args = append(args, id)
 		}
+		// #nosec G202 -- only generated placeholders are interpolated; IDs are bound args.
 		rows, err := s.eventsR.QueryContext(ctx, `
 			SELECT media_id, position_seconds, duration_seconds, watched, channel_context
 			FROM playback_progress
