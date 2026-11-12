@@ -1,8 +1,10 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import { ADMIN_PASSWORD } from "./lib/harness";
 import {
   collectFatalErrors,
   expectReducedMotionActive,
   expectReducedMotionDurations,
+  harnessState,
 } from "./lib/spec";
 import {
   expectLocatorVisualParity,
@@ -26,6 +28,35 @@ async function gotoManage(page: Page, route: string): Promise<void> {
   await page.goto(`/web/manage/${route}`);
   // The shared manage nav is always present once the area mounts.
   await expect(page.getByRole("navigation", { name: "Manage" })).toBeVisible();
+}
+
+// CORE-1197: a Manage page that needs an Admin Session asks for the admin
+// password in place. This browser has none, so the page must show the prompt
+// and neither the raw refusal nor an empty state for data it could not load;
+// unlocking then loads the page without navigating. Skips after the locked
+// assertions on a server whose admin password is not the harness one.
+async function unlockManageInPlace(
+  page: Page,
+  copy: { title: string; submit: string } = { title: "Admin password needed", submit: "Unlock" },
+): Promise<void> {
+  const url = page.url();
+  await expect(page.getByText(copy.title)).toBeVisible();
+  await expect(page.getByText(/admin session required/i)).toHaveCount(0);
+  test.skip(!harnessState().adminAvailable, "unlocking needs the harness admin password");
+  await page.locator("#admin-password").fill(ADMIN_PASSWORD);
+  await page.getByRole("button", { name: copy.submit, exact: true }).click();
+  await expect(page.getByText(copy.title)).toHaveCount(0);
+  expect(page.url()).toBe(url);
+}
+
+// The Admin Session lives server-side on this browser's session row, so a spec
+// that unlocked would leave every later spec in the project unlocked. End it so
+// each spec starts as a manager without an Admin Session.
+async function endAdminSession(page: Page): Promise<void> {
+  await page.request.post("/api/graphql", {
+    headers: { "X-Beamfall-Csrf": "1" },
+    data: { query: "mutation { endAdminSession { active } }" },
+  });
 }
 
 async function selectAndReopen(page: Page, trigger: Locator, selectedName: string): Promise<void> {
@@ -145,6 +176,8 @@ async function mockCuration(page: Page): Promise<void> {
 }
 
 test.describe("manage", () => {
+  test.afterEach(async ({ page }) => endAdminSession(page));
+
   test("the area mounts with the manager role and section nav", async ({ page }) => {
     const errors = collectFatalErrors(page);
     await page.goto("/web/manage");
@@ -296,6 +329,8 @@ test.describe("manage", () => {
     const errors = collectFatalErrors(page);
     await gotoManage(page, "libraries");
     await expect(page.getByText("Libraries").first()).toBeVisible();
+    await expect(page.getByText("Nothing to show in this library yet.")).toHaveCount(0);
+    await unlockManageInPlace(page);
     const localLibrary = page.getByRole("cell", { name: "Local Library" });
     const emptyState = page.getByText("Nothing to show in this library yet.");
     await expect(localLibrary.or(emptyState)).toBeVisible();
@@ -342,6 +377,7 @@ test.describe("manage", () => {
     const errors = collectFatalErrors(page);
     await gotoManage(page, "operations");
     await expect(page.locator("#root")).not.toBeEmpty();
+    await unlockManageInPlace(page);
     // WEB-5 evidence: the Manage operations route exposes the launch Scheduler
     // and Watcher surfaces, not just a generic page shell.
     for (const label of ["Jobs", "Schedules", "Folder watcher"]) {
@@ -354,6 +390,8 @@ test.describe("manage", () => {
     const errors = collectFatalErrors(page);
     await gotoManage(page, "unmatched");
     await expect(page.getByText("Unmatched records").first()).toBeVisible();
+    await expect(page.getByText("No unmatched records.")).toHaveCount(0);
+    await unlockManageInPlace(page);
     await expect(
       page
         .getByText("No unmatched records.")
@@ -389,6 +427,7 @@ test.describe("manage", () => {
 
 test.describe("manage locale", () => {
   test.use({ locale: "fr-FR" });
+  test.afterEach(async ({ page }) => endAdminSession(page));
 
   test("non-English browser locale renders Manage catalog strings", async ({ page }) => {
     const errors = collectFatalErrors(page);
@@ -396,6 +435,10 @@ test.describe("manage locale", () => {
     const nav = page.getByRole("navigation", { name: "Gérer" });
     await expect(nav).toBeVisible();
     await expect(nav.getByRole("link", { name: "Bibliothèques" })).toBeVisible();
+    await unlockManageInPlace(page, {
+      title: "Mot de passe administrateur requis",
+      submit: "Déverrouiller",
+    });
     await expect(page.getByRole("button", { name: "Créer une bibliothèque" })).toBeVisible();
     expect(errors, errors.join("\n")).toEqual([]);
   });

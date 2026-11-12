@@ -212,25 +212,6 @@ summary.console-nav-group-label:focus-visible {
   box-shadow: 0 0 0 3px oklch(70% 0.14 150 / 22%);
 }
 
-/* --- Admin gate: a calm, centered unlock surface --- */
-
-.console-gate {
-  max-width: 26rem;
-  margin: 40px auto 0;
-}
-
-.console-gate-mark {
-  display: grid;
-  place-items: center;
-  width: 38px;
-  height: 38px;
-  margin-bottom: 4px;
-  border-radius: var(--radius-card);
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-raised);
-  color: var(--accent);
-}
-
 /* --- Section cards: dense, hairline-separated, restrained --- */
 
 .console-section + .console-section {
