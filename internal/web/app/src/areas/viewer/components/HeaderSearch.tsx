@@ -157,12 +157,12 @@ export function HeaderSearch() {
           spellCheck={false}
           placeholder={t("searchPlaceholder")}
           onKeyDown={onKeyDown}
-          className="h-8 w-28 rounded-[var(--radius-control)] border border-[var(--border-subtle)] bg-[var(--bg-raised)] pr-8 pl-8 text-sm text-[var(--text-primary)] outline-none transition-[width,border-color] placeholder:text-[var(--text-muted)] focus-visible:border-[var(--beam-500)] focus-visible:ring-2 focus-visible:ring-[var(--beam-500)]/40 sm:w-56 sm:focus:w-72"
+          className="h-8 w-28 rounded-[var(--radius-control)] border border-[var(--border-subtle)] bg-[var(--bg-raised)] pr-2 pl-7 text-sm text-[var(--text-primary)] outline-none transition-[width,border-color] placeholder:text-[var(--text-muted)] focus-visible:border-[var(--beam-500)] focus-visible:ring-2 focus-visible:ring-[var(--beam-500)]/40 sm:w-48 2xl:w-56 2xl:pr-7 2xl:focus:w-72"
         />
         {!query && (
           <kbd
             aria-hidden="true"
-            className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded border border-[var(--border-subtle)] px-1.5 text-xs text-[var(--text-muted)]"
+            className="pointer-events-none absolute top-1/2 right-2 hidden -translate-y-1/2 rounded border border-[var(--border-subtle)] px-1.5 text-xs text-[var(--text-muted)] 2xl:block"
           >
             /
           </kbd>
