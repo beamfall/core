@@ -139,7 +139,8 @@ type hlsSession struct {
 	// the first segment request starts one (one rendition per live session,
 	// ADR-0010 §8 — switching rungs replaces the process).
 	currentRung string
-	// deliveredRung is the rendition last started for this session. Unlike
+	// deliveredRung is the rendition whose media the viewer was last served,
+	// from a running encoder or from segments already on disk. Unlike
 	// currentRung it outlives the encoder: a finished encode is still what the
 	// viewer is being served until the session ends.
 	deliveredRung string
@@ -605,7 +606,22 @@ func (s *Sessions) FilePathPriorityWithBurnSubtitleAudioLadderMap(ctx context.Co
 	if err := waitForFile(waitCtx, path); err != nil {
 		return "", err
 	}
+	if file != "index.m3u8" {
+		s.markDelivered(key, session, rung.ID)
+	}
 	return path, nil
+}
+
+// markDelivered records the rendition a media request was just served from. A
+// player switching back to a rendition already on disk starts no encoder, so
+// the encoder start alone would keep reporting the previous rendition.
+// Variant playlists do not count: a player may read several while choosing.
+func (s *Sessions) markDelivered(key SessionKey, session *hlsSession, rungID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.liveLocked(key, session) {
+		session.deliveredRung = rungID
+	}
 }
 
 // transcodeLatencyBudget classifies a missing artifact before ensureRung
