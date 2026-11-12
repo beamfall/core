@@ -335,8 +335,11 @@
   border-color: var(--border-strong);
 }
 
+/* The ring is a box-shadow, which forced-colors mode drops; the transparent
+   outline is what shows there. */
 .bf-search-input:focus {
-  outline: none;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
   border-color: color-mix(in oklch, var(--beam-500) 70%, transparent);
   background: var(--night-850);
   box-shadow: 0 0 0 3px color-mix(in oklch, var(--beam-500) 22%, transparent);
@@ -552,9 +555,15 @@
 
 .bf-account-item:hover,
 .bf-account-item:focus-visible {
-  outline: none;
   color: var(--text-primary);
   background: var(--night-850);
+}
+
+/* Focus is shown by the fill, which forced-colors mode drops; the transparent
+   outline is what shows there. */
+.bf-account-item:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: -2px;
 }
 
 .bf-account-item:hover svg,
