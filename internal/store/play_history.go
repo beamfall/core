@@ -227,34 +227,64 @@ func (s *Store) PlayHistory(ctx context.Context, filter LibraryFilter, q PlayHis
 	return s.playHistoryLocked(ctx, filter, q, q.Since, limit)
 }
 
+// playHistoryChunk is how many plays a Library-filtered read resolves against
+// the catalog at a time.
+const playHistoryChunk = PlayHistoryMaxLimit
+
 // playHistoryLocked resolves up to limit plays no older than since.
 func (s *Store) playHistoryLocked(ctx context.Context, filter LibraryFilter, q PlayHistoryQuery, since time.Time, limit int) ([]Play, error) {
 	// Visibility lives in the catalog database and plays in the events
-	// database, so plays are read in pages and resolved until the page fills.
-	// Without a Library filter the first page is always enough.
-	const scanCap = 20 * PlayHistoryMaxLimit
-	var raw []derivedPlay
-	err := s.derivedPlaysLocked(ctx, q.ProfileID, since, q.Until, func(p derivedPlay) bool {
-		raw = append(raw, p)
-		if q.LibraryID == "" {
-			return len(raw) < limit
+	// database. Without a Library filter the newest limit plays are the page.
+	// With one, plays are resolved a chunk at a time and kept only when their
+	// Media is in that Library, until the page fills or the window runs out,
+	// so a quiet Library is never crowded out by a busy one.
+	var raw, pending []derivedPlay
+	visible := map[MediaID]Media{}
+	var resolveErr error
+	resolve := func() bool {
+		ids := make([]MediaID, 0, len(pending))
+		for _, p := range pending {
+			if _, done := visible[p.mediaID]; !done {
+				ids = append(ids, p.mediaID)
+			}
 		}
-		return len(raw) < scanCap
+		found, err := s.visibleMediaBatchSQL(ctx, ids, filter)
+		if err != nil {
+			resolveErr = err
+			return false
+		}
+		for _, id := range ids {
+			visible[id] = found[id] // a zero Media marks one the caller cannot see
+		}
+		for _, p := range pending {
+			if len(raw) == limit {
+				break
+			}
+			if q.LibraryID == "" || visible[p.mediaID].LibraryID == q.LibraryID {
+				raw = append(raw, p)
+			}
+		}
+		pending = pending[:0]
+		return len(raw) < limit
+	}
+	err := s.derivedPlaysLocked(ctx, q.ProfileID, since, q.Until, func(p derivedPlay) bool {
+		pending = append(pending, p)
+		if q.LibraryID == "" {
+			return len(pending) < limit
+		}
+		if len(pending) < playHistoryChunk {
+			return true
+		}
+		return resolve()
 	})
 	if err != nil {
 		return nil, err
 	}
-	ids := make([]MediaID, 0, len(raw))
-	seen := map[MediaID]bool{}
-	for _, p := range raw {
-		if !seen[p.mediaID] {
-			seen[p.mediaID] = true
-			ids = append(ids, p.mediaID)
-		}
+	if resolveErr == nil && len(pending) > 0 {
+		resolve()
 	}
-	visible, err := s.visibleMediaBatchSQL(ctx, ids, filter)
-	if err != nil {
-		return nil, err
+	if resolveErr != nil {
+		return nil, resolveErr
 	}
 	libraries, err := loadLibraries(ctx, s.catalogR)
 	if err != nil {
@@ -268,15 +298,9 @@ func (s *Store) playHistoryLocked(ctx context.Context, filter LibraryFilter, q P
 	if err != nil {
 		return nil, err
 	}
-	plays := make([]Play, 0, min(len(raw), limit))
+	plays := make([]Play, 0, len(raw))
 	for _, p := range raw {
-		if len(plays) == limit {
-			break
-		}
-		media, ok := visible[p.mediaID]
-		if q.LibraryID != "" && (!ok || media.LibraryID != q.LibraryID) {
-			continue
-		}
+		media := visible[p.mediaID]
 		play := Play{
 			ProfileID:      p.profileID,
 			ProfileName:    names[p.profileID],
@@ -285,7 +309,7 @@ func (s *Store) playHistoryLocked(ctx context.Context, filter LibraryFilter, q P
 			WatchedSeconds: p.watchedSeconds(),
 			Finished:       p.finished,
 		}
-		if ok {
+		if media.ID != "" {
 			play.Title = media.Title
 			play.LibraryID = media.LibraryID
 			play.LibraryTitle = libraryTitles[media.LibraryID]

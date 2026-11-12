@@ -267,3 +267,54 @@ func TestPlayHistoryWindowKeepsPlaysWhole(t *testing.T) {
 		t.Errorf("stats since = %d plays, want 2 (the straddling play started earlier)", plays)
 	}
 }
+
+// feature:play-history
+func TestPlayHistoryLibraryFilterIsNotCrowdedOut(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	revealed := LibraryFilter{AllLibraries: true, Revealed: true}
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// One old play in the quiet archive Library, then more plays in the busy
+	// local Library than the 10,000-play scan the read once capped itself at.
+	progressAt(t, st, "profile-default", "media-archive", start, false)
+	tx, err := st.eventsW.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	busy := 20*PlayHistoryMaxLimit + 7
+	for i := range busy {
+		at := start.Add(time.Duration(i+1) * time.Hour)
+		payload, err := json.Marshal(playbackProjectionEvent{
+			Operation: playbackProjectionOperationProgress, ProfileID: "profile-default", MediaID: "media-alpha",
+			DurationSeconds: 3600, UpdatedAtMS: timeToMillis(at),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.Exec(`
+			INSERT INTO engagement_event(id, profile_id, media_id, kind, payload, occurred_at_ms, created_at_ms)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			fmt.Sprintf("busy-%d", i), "profile-default", "media-alpha", playbackProjectionEventKind, string(payload), timeToMillis(at), timeToMillis(at)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := st.PlayHistory(ctx, revealed, PlayHistoryQuery{LibraryID: "library-archive", Since: start.Add(-time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].MediaID != "media-archive" {
+		t.Fatalf("archive history = %#v, want its one play behind %d busy local plays", got, busy)
+	}
+	local, err := st.PlayHistory(ctx, revealed, PlayHistoryQuery{LibraryID: "library-local", Since: start.Add(-time.Hour), Limit: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(local) != 3 || !local[0].StartedAt.Equal(start.Add(time.Duration(busy)*time.Hour)) {
+		t.Fatalf("local history = %#v, want the newest 3 local plays", local)
+	}
+}
