@@ -76,7 +76,7 @@
   font-size: 14px;
   text-align: left;
   cursor: pointer;
-  transition: background-color 120ms var(--ease-standard);
+  transition: none;
 }
 
 .bf-settings-row:hover,

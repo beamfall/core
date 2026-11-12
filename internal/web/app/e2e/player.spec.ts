@@ -195,6 +195,14 @@ async function setSettingsOpen(page: Page, open: boolean): Promise<void> {
     else await page.keyboard.press("Escape");
   }
   await expect(button).toHaveAttribute("aria-expanded", String(open));
+  if (open) {
+    // Let the panel's scale-in finish naturally: a screenshot that fast-forwards
+    // it can keep text rasterized at the mid-animation scale.
+    await page
+      .locator(".bf-settings")
+      .evaluate((panel) => Promise.all(panel.getAnimations().map((a) => a.finished)));
+    await settleFrames(page);
+  }
 }
 
 async function closeSharedSelectPopup(page: Page): Promise<void> {
