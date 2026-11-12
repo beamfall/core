@@ -530,6 +530,11 @@
     "tier": "admin"
   },
   {
+    "field": "libraryitems",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "linkmediarelation",
     "effect": "write",
     "tier": "session"

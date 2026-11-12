@@ -4623,6 +4623,7 @@ var queryFields = map[string]bool{
 	"markers":                true,
 	"trashedmarkers":         true,
 	"sourceitems":            true,
+	"libraryitems":           true,
 	"ambientqueue":           true,
 	"currentsession":         true,
 	"profiles":               true,

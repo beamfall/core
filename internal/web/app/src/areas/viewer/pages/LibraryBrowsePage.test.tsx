@@ -1,0 +1,116 @@
+import "@testing-library/jest-dom/vitest";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { SourceItem } from "@/lib/graphql/types";
+import { I18nProvider } from "@/lib/i18n";
+import { fetchLibraryItems, type LibraryItemsRequest } from "../lib/libraryBrowse";
+import { LibraryBrowsePage } from "./LibraryBrowsePage";
+
+vi.mock("../lib/libraryBrowse", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/libraryBrowse")>();
+  return { ...actual, fetchLibraryItems: vi.fn() };
+});
+vi.mock("@/lib/session", () => ({
+  useSession: () => ({
+    loading: false,
+    manifest: {
+      navigation: [
+        { id: "films", view: "layout", layoutID: "l", libraryID: "lib", title: { en: "Films" } },
+      ],
+    },
+  }),
+  useViewerIdentity: () => ({ profileID: "p", revealed: false }),
+}));
+vi.mock("@/components/chrome/AppShell", () => ({
+  AppShell: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+vi.mock("../components/ViewerActions", () => ({ ViewerActions: () => null }));
+vi.mock("../components/RevealControls", () => ({ RevealControls: () => null }));
+
+const TOTAL = 1200;
+
+function pageFor(request: LibraryItemsRequest) {
+  const total = request.state.watch ? 3 : TOTAL;
+  const count = Math.max(0, Math.min(request.limit, total - request.offset));
+  const items = Array.from<unknown, SourceItem>({ length: count }, (_, i) => ({
+    id: `media-${request.offset + i}`,
+    kind: "media",
+    title: `Item ${request.offset + i}`,
+  }));
+  return {
+    total,
+    items,
+    facets: { entities: ["Comedy"], decades: [1990], qualities: ["hd1080"] },
+  };
+}
+
+function Where() {
+  const location = useLocation();
+  return <output data-testid="where">{location.pathname + location.search}</output>;
+}
+
+afterEach(() => {
+  cleanup();
+  vi.mocked(fetchLibraryItems).mockReset();
+  window.localStorage.clear();
+});
+
+describe("Library browse", () => {
+  it("counts the whole library, windows it, and keeps sort, filters and view in the URL and storage", async () => {
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
+    const user = userEvent.setup();
+
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/n/films/all?sort=year&dir=desc"]}>
+          <Routes>
+            <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
+          </Routes>
+          <Where />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    expect(await screen.findByText("1,200 items")).toBeInTheDocument();
+    expect(vi.mocked(fetchLibraryItems).mock.calls[0][0]).toMatchObject({
+      libraryID: "lib",
+      state: { sort: "year", direction: "desc" },
+    });
+    const first = await screen.findByRole("button", { name: "Item 0" });
+    expect(first.closest("li")).toHaveAttribute("aria-setsize", "1200");
+    expect(document.querySelectorAll(".bf-card").length).toBeLessThan(TOTAL);
+    expect(screen.getByRole("button", { name: "Play all" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Shuffle" })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: "Sort direction: Descending" }));
+    expect(screen.getByTestId("where")).toHaveTextContent("/n/films/all?sort=year");
+
+    await user.click(screen.getByRole("button", { name: "List" }));
+    expect(screen.getByRole("list", { name: "Films" })).toHaveClass("bf-stack");
+    expect(window.localStorage.getItem("beamfall.libraryView.lib")).toBe("list");
+  });
+
+  it("shows an active filter from the URL as a removable chip", async () => {
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
+    const user = userEvent.setup();
+
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/n/films/all?watch=unwatched"]}>
+          <Routes>
+            <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
+          </Routes>
+          <Where />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    expect(await screen.findByText("3 items")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Remove filter: Unwatched" }));
+    await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/n/films/all"));
+    expect(await screen.findByText("1,200 items")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Remove filter/ })).toBeNull();
+  });
+});

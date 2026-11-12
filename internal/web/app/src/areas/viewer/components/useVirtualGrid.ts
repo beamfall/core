@@ -58,17 +58,23 @@ export function useVirtualGrid({
   gridRef,
   itemCount,
   enabled,
+  columns: fixedColumns,
+  maxItems = VIRTUAL_GRID_MAX_ITEMS,
 }: {
   gridRef: React.RefObject<HTMLUListElement | null>;
   itemCount: number;
   enabled: boolean;
+  /** A fixed column count (1 for a stacked list) instead of the measured grid. */
+  columns?: number;
+  /** The rendered-item cap; raise it where a wide viewport shows more cards. */
+  maxItems?: number;
 }): VirtualGridWindow | null {
   const compute = useCallback((): VirtualGridWindow | null => {
     const grid = gridRef.current;
     if (!grid || !enabled || itemCount <= 0) return null;
 
     const gap = readGap(grid);
-    const columns = readColumns(grid, gap);
+    const columns = fixedColumns ?? readColumns(grid, gap);
     const rowHeight = readRowHeight(grid, gap);
     const totalRows = Math.ceil(itemCount / columns);
 
@@ -81,7 +87,7 @@ export function useVirtualGrid({
     const visibleRows = Math.ceil(viewportHeight / rowHeight) + VIRTUAL_GRID_OVERSCAN_ROWS * 2;
 
     const startIndex = Math.min(itemCount, startRow * columns);
-    const count = Math.min(itemCount - startIndex, visibleRows * columns, VIRTUAL_GRID_MAX_ITEMS);
+    const count = Math.min(itemCount - startIndex, visibleRows * columns, maxItems);
     const renderedRows = Math.ceil(count / columns);
 
     return {
@@ -90,7 +96,7 @@ export function useVirtualGrid({
       topPad: startRow * rowHeight,
       bottomPad: Math.max(0, totalRows - startRow - renderedRows) * rowHeight,
     };
-  }, [gridRef, itemCount, enabled]);
+  }, [gridRef, itemCount, enabled, fixedColumns, maxItems]);
 
   const [windowState, setWindowState] = useState<VirtualGridWindow | null>(() => compute());
 

@@ -533,6 +533,11 @@
       "tier": "admin"
     },
     {
+      "field": "libraryitems",
+      "effect": "read",
+      "tier": "session"
+    },
+    {
       "field": "linkmediarelation",
       "effect": "write",
       "tier": "session"
@@ -7426,6 +7431,258 @@
         {
           "name": "title",
           "kind": "scalar"
+        },
+        {
+          "name": "total",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "libraryitems",
+      "kind": "object",
+      "arguments": [
+        {
+          "name": "direction",
+          "kind": "string",
+          "optional": true,
+          "enum": [
+            "asc",
+            "desc"
+          ]
+        },
+        {
+          "name": "entityFilter",
+          "kind": "object",
+          "optional": true,
+          "fields": [
+            {
+              "name": "kind",
+              "kind": "string"
+            },
+            {
+              "name": "name",
+              "kind": "string"
+            }
+          ]
+        },
+        {
+          "name": "facetEntityKind",
+          "kind": "string",
+          "optional": true
+        },
+        {
+          "name": "libraryID",
+          "kind": "string"
+        },
+        {
+          "name": "limit",
+          "kind": "int",
+          "optional": true
+        },
+        {
+          "name": "offset",
+          "kind": "int",
+          "optional": true
+        },
+        {
+          "name": "quality",
+          "kind": "string",
+          "optional": true,
+          "enum": [
+            "hd1080",
+            "hd720",
+            "sd",
+            "uhd"
+          ]
+        },
+        {
+          "name": "seed",
+          "kind": "string",
+          "optional": true
+        },
+        {
+          "name": "sort",
+          "kind": "string",
+          "optional": true,
+          "enum": [
+            "added",
+            "duration",
+            "last-watched",
+            "random",
+            "title",
+            "year"
+          ]
+        },
+        {
+          "name": "watch",
+          "kind": "string",
+          "optional": true,
+          "enum": [
+            "in-progress",
+            "unwatched",
+            "watched"
+          ]
+        },
+        {
+          "name": "yearFrom",
+          "kind": "int",
+          "optional": true
+        },
+        {
+          "name": "yearTo",
+          "kind": "int",
+          "optional": true
+        }
+      ],
+      "children": [
+        {
+          "name": "facets",
+          "kind": "object",
+          "children": [
+            {
+              "name": "decades",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "entities",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "qualities",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        },
+        {
+          "name": "items",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "artwork",
+                "kind": "object",
+                "optional": true,
+                "nullable": true,
+                "children": [
+                  {
+                    "name": "poster",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              {
+                "name": "artworkSlots",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "kind",
+                "kind": "scalar"
+              },
+              {
+                "name": "locked",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "muted",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "restricted",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "summary",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "artwork",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "poster",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "artworkSlots",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "kind",
+              "kind": "scalar"
+            },
+            {
+              "name": "locked",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "muted",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "restricted",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "summary",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
         },
         {
           "name": "total",

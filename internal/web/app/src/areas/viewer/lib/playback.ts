@@ -1,5 +1,6 @@
 import { ApiError, postJSON } from "@/lib/api";
 import { probeCapabilityProfile } from "./capabilityProfile";
+import { nextInPlayQueue } from "./playQueue";
 
 // Playback-info request + its wire shape (ADR-0010 playbackInfo contract).
 //
@@ -91,9 +92,13 @@ export function isRevealTerminalStatus(status: number): boolean {
  */
 export async function fetchPlaybackInfo(mediaID: string): Promise<PlaybackInfo> {
   const capabilityProfile = await probeCapabilityProfile();
+  // A Play all / Shuffle queue names its next item so the server pre-mints
+  // Up Next for it (ADR-0029: the queue is client-owned).
+  const nextMediaID = await nextInPlayQueue(mediaID);
   return postJSON<PlaybackInfo>("/api/playback-info", {
     mediaID,
     capabilityProfile,
+    ...(nextMediaID ? { nextMediaID } : {}),
   });
 }
 

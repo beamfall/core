@@ -1332,6 +1332,16 @@
       ]
     },
     {
+      "field": "libraryitems",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "facets",
+        "items",
+        "total"
+      ]
+    },
+    {
       "field": "linkmediarelation",
       "effect": "write",
       "tier": "session",

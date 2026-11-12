@@ -550,6 +550,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"skipdetectionenabled":               newFieldHandler("skipDetectionEnabled", "skipDetectionEnabled", fieldRead, roleSession|roleAdmin, 78),
 	"smartcollections":                   newFieldHandler("smartCollections", "smartCollections", fieldRead, roleSession, 57),
 	"sourceitems":                        newFieldHandler("sourceItems", "sourceItems", fieldRead, roleSession, 17),
+	"libraryitems":                       newFieldHandler("libraryItems", "libraryItems", fieldRead, roleSession, 17),
 	"stationdelete":                      newFieldHandler("stationDelete", "stationDelete", fieldMutation, roleSession, 33),
 	"stationgenerate":                    newFieldHandler("stationGenerate", "stationGenerate", fieldRead, roleSession, 56),
 	"stations":                           newFieldHandler("stations", "stations", fieldRead, roleSession, 56),
@@ -890,6 +891,12 @@ func dispatchFieldBlock017(dispatch *fieldDispatchContext) response {
 	if fields["sourceitems"] {
 		items, err := h.sourceItems(ctx, scope, req)
 		if resp := resolveField(dispatch, "sourceitems", items, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["libraryitems"] {
+		result, err := h.libraryItems(ctx, scope, req)
+		if resp := resolveField(dispatch, "libraryitems", result, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

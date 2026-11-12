@@ -11,6 +11,7 @@ import { useSession } from "@/lib/session";
 import { SectionSkeleton } from "./components/HydratedSection";
 import { BrowsePage } from "./pages/BrowsePage";
 import { EntityPage } from "./pages/EntityPage";
+import { LibraryBrowsePage } from "./pages/LibraryBrowsePage";
 import { MyDataPage } from "./pages/MyDataPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { ProfilePickerPage } from "./pages/ProfilePickerPage";
@@ -112,6 +113,7 @@ export function ViewerArea() {
     <Routes key={session.profileID}>
       <Route path="/" element={<BrowsePage home />} />
       <Route path="/n/:nodeId" element={<BrowsePage />} />
+      <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
       <Route path="/entity/:entityId" element={<EntityPage />} />
       <Route path="/seeall/:sourceId" element={<SeeAllPage />} />
       <Route path="/search" element={<SearchPage />} />
