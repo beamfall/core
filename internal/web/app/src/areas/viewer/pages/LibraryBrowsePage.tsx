@@ -35,6 +35,9 @@ import {
 import { startPlayQueue } from "../lib/playQueue";
 
 const ALL = "all";
+// Grouping values are free text from the library, so their option values are
+// prefixed to stay distinct from the "Any" option.
+const GROUP_VALUE = "value:";
 // A wide viewport shows more cards than the See All cap allows for.
 const BROWSE_MAX_RENDERED = 240;
 
@@ -345,13 +348,18 @@ function LibraryBrowse({
               key={grouping.kind}
               id={`library-browse-group-${grouping.kind}`}
               label={grouping.label}
-              value={state.groups[grouping.kind] || ALL}
+              value={state.groups[grouping.kind] ? GROUP_VALUE + state.groups[grouping.kind] : ALL}
               onChange={(value) =>
-                update({ groups: withGroup(grouping.kind, value === ALL ? "" : value) })
+                update({
+                  groups: withGroup(
+                    grouping.kind,
+                    value === ALL ? "" : value.slice(GROUP_VALUE.length),
+                  ),
+                })
               }
               options={[
                 { value: ALL, label: t("libraryBrowseAny") },
-                ...grouping.values.map((value) => ({ value, label: value })),
+                ...grouping.values.map((value) => ({ value: GROUP_VALUE + value, label: value })),
               ]}
             />
           ))}
