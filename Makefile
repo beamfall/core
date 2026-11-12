@@ -108,6 +108,7 @@ web-e2e-full:
 
 web-ui-e2e-runner-test:
 	@script/web-ui-e2e-runner_test.sh
+	@node script/web-ui-state-coverage_test.mjs
 
 web-build:
 	@npm --prefix internal/web/app run verify:build
