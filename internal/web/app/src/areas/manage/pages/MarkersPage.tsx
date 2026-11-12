@@ -1,3 +1,4 @@
+import { Bookmark, ListTodo, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   EmptyLine,
@@ -141,6 +142,7 @@ export function MarkersPage() {
     <div className="space-y-4">
       <ManageSection
         title={t("markersHeading")}
+        icon={Bookmark}
         lead={t("markersLead")}
         actions={
           loaded ? (
@@ -511,6 +513,7 @@ function BulkSection({
   return (
     <ManageSection
       title={t("markersBulkHeading")}
+      icon={ListTodo}
       lead={t("markersBulkLead")}
       actions={
         <StatusBadge state={count > 0 ? "green" : "neutral"}>
@@ -665,6 +668,7 @@ function TrashedSection({
   return (
     <ManageSection
       title={t("markersTrashedHeading")}
+      icon={Trash2}
       actions={
         <StatusBadge state="neutral">
           {t("markersTrashedCount", { count: markers.length })}

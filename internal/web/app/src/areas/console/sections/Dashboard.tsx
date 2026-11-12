@@ -1,4 +1,4 @@
-import { Monitor, RefreshCw } from "lucide-react";
+import { Monitor, RefreshCw, Users } from "lucide-react";
 import {
   type PointerEvent,
   type ReactNode,
@@ -182,6 +182,7 @@ export function LiveSessions() {
   return (
     <Section
       heading="liveSessionsHeading"
+      icon={Users}
       lead="liveSessionsLead"
       actions={
         <Button variant="outline" size="sm" onClick={() => void refresh()}>

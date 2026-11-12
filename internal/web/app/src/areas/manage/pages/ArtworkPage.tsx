@@ -1,3 +1,4 @@
+import { ImageIcon } from "lucide-react";
 import { useState } from "react";
 import { EmptyLine, ErrorLine, ManageSection, StatusBadge } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
@@ -70,7 +71,7 @@ export function ArtworkPage() {
   };
 
   return (
-    <ManageSection title={t("artworkCandidates")}>
+    <ManageSection title={t("artworkCandidates")} icon={ImageIcon}>
       <div className="flex items-end gap-3">
         <div className="space-y-1">
           <Label htmlFor="artwork-media">{t("fieldLocksMediaLabel")}</Label>

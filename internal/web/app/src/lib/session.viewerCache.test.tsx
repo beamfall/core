@@ -33,6 +33,7 @@ vi.mock("@/lib/graphql", () => ({
   fetchProfiles: vi.fn(),
   reveal: vi.fn(),
   relock: vi.fn(),
+  renewSession: vi.fn(),
   switchProfile: vi.fn(),
 }));
 vi.mock("@/lib/compat", () => ({

@@ -50,7 +50,9 @@
 
 .manage-nav-link {
   position: relative;
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 9px;
   padding: 6px 10px 6px 12px;
   border-radius: var(--radius-control);
   font-size: 13px;
@@ -61,6 +63,13 @@
   transition:
     color var(--duration-fast) var(--ease-standard),
     background-color var(--duration-fast) var(--ease-standard);
+}
+
+.manage-nav-icon {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  opacity: 0.85;
 }
 
 .manage-nav-link:hover {

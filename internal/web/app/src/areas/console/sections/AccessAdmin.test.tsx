@@ -15,6 +15,10 @@ vi.mock("./ProfilesAccess", () => ({
   ProfilesAccess: () => <section aria-label="Policy access lane" />,
 }));
 
+vi.mock("./SignInSecurity", () => ({
+  SignInSecurity: () => <section aria-label="Sign-in security lane" />,
+}));
+
 describe("AccessAdmin", () => {
   it("keeps profile, device role, and policy access administration as separate lanes", () => {
     render(<AccessAdmin />);
@@ -22,5 +26,6 @@ describe("AccessAdmin", () => {
     expect(screen.getByLabelText("Profiles lane")).toBeInTheDocument();
     expect(screen.getByLabelText("Devices lane")).toBeInTheDocument();
     expect(screen.getByLabelText("Policy access lane")).toBeInTheDocument();
+    expect(screen.getByLabelText("Sign-in security lane")).toBeInTheDocument();
   });
 });

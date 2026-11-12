@@ -327,13 +327,23 @@ function needsAdminSession(result: GraphQLResult<unknown>): boolean {
   );
 }
 
+export interface GraphQLOptions {
+  /**
+   * False for a background read the page did not ask for (a header poll, say):
+   * a refusal for want of an Admin Session then fails the read quietly instead
+   * of putting the page's in-place unlock in front of the user.
+   */
+  adminUnlock?: boolean;
+}
+
 export async function graphql<T = unknown>(
   query: string,
   variables: Record<string, unknown> = {},
   signal?: AbortSignal,
+  options: GraphQLOptions = {},
 ): Promise<T> {
   const send = () => postJSON<GraphQLResult<T>>("/api/graphql", { query, variables }, signal);
-  const unlock = adminUnlockHandler;
+  const unlock = options.adminUnlock === false ? undefined : adminUnlockHandler;
   let result = await send();
   // The refused operation did not run, so sending it again after the unlock
   // cannot repeat it.
@@ -361,6 +371,37 @@ export async function fetchSetupRequired(): Promise<boolean> {
     return data.required === true;
   } catch {
     return false;
+  }
+}
+
+/** The owner's sign-in security choice (CORE-1110): Home keeps admin-password sign-in, Strict turns it off. */
+export type SignInSecurityMode = "home" | "strict";
+
+/**
+ * GET /api/setup in full: whether setup is pending, whether this browser
+ * would need the one-time setup token (false on the local network while setup
+ * is pending, CORE-1105) and the sign-in security mode (CORE-1110). Errors
+ * resolve to `{required:false, tokenRequired:true, securityMode:null}`: a failed
+ * read leaves the mode unknown, never Home.
+ */
+export async function fetchSetupStatus(): Promise<{
+  required: boolean;
+  tokenRequired: boolean;
+  securityMode: SignInSecurityMode | null;
+}> {
+  try {
+    const data = await getJSON<{
+      required?: boolean;
+      tokenRequired?: boolean;
+      securityMode?: string;
+    }>("/api/setup");
+    return {
+      required: data.required === true,
+      tokenRequired: data.tokenRequired !== false,
+      securityMode: data.securityMode === "strict" ? "strict" : "home",
+    };
+  } catch {
+    return { required: false, tokenRequired: true, securityMode: null };
   }
 }
 

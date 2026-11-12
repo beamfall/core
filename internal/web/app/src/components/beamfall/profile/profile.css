@@ -132,51 +132,6 @@
   }
 }
 
-/* Header shortcut back to the picker. */
-.bf-profile-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 11rem;
-  padding: 3px 10px 3px 3px;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  color: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  text-decoration: none;
-}
-
-.bf-profile-link:hover,
-.bf-profile-link.is-active {
-  border-color: var(--border-subtle, rgb(255 255 255 / 12%));
-  background: var(--bg-raised, rgb(255 255 255 / 6%));
-}
-
-.bf-profile-link:focus-visible {
-  outline: 2px solid var(--focus-ring, currentColor);
-  outline-offset: 2px;
-}
-
-.bf-profile-link-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-@media (max-width: 640px) {
-  .bf-profile-link {
-    padding: 3px;
-  }
-  .bf-profile-link-name {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-  }
-}
-
 /* Avatar chooser options (Profile Settings): a hidden radio inside a label. */
 .bf-avatar-option {
   position: relative;

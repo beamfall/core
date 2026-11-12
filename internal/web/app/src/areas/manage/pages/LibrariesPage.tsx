@@ -1,14 +1,14 @@
+import { FolderPlus, LibraryBig } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { RescanAllButton, RescanButton, RescanStatus } from "@/components/beamfall/LibraryRescan";
 import {
   EmptyLine,
   ErrorLine,
   ManageField,
   ManageInlineForm,
   ManageSection,
-  ManageTable,
   PathPickerField,
   StatusChip,
-  TableSkeletonRows,
 } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,8 +19,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tree } from "@/components/ui/tree";
 import { displayString } from "@/lib/display";
 import {
@@ -102,6 +102,12 @@ export function LibrariesPage() {
     }
   };
 
+  // The rescan controls read saved roots from this list, so a save has to land
+  // here: otherwise a library's first folder stays unscannable until reload.
+  const onRootsSaved = useCallback((libraryID: string, roots: string[]) => {
+    setLibraries((prev) => prev.map((l) => (l.id === libraryID ? { ...l, roots } : l)));
+  }, []);
+
   const onCreate = async () => {
     const title = newTitle.trim();
     if (!title) return;
@@ -118,39 +124,34 @@ export function LibrariesPage() {
 
   return (
     <div className="space-y-4">
-      <ManageSection title={t("libraries")}>
+      <ManageSection
+        title={t("libraries")}
+        icon={LibraryBig}
+        actions={<RescanAllButton libraries={libraries} />}
+      >
         {!loading && libraries.length === 0 ? (
           <EmptyLine message={t("libraryEmptyTitle")} />
         ) : (
-          <ManageTable>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t("title")}</TableHead>
-                <TableHead>{t("previewClips")}</TableHead>
-                <TableHead>{t("libraryRoots")}</TableHead>
-                <TableHead>{t("scan")}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                <TableSkeletonRows columns={4} />
-              ) : (
-                libraries.map((lib) => (
-                  <LibraryRow
-                    key={lib.id}
-                    library={lib}
-                    onTogglePreview={onTogglePreview}
-                    onError={setError}
-                  />
-                ))
-              )}
-            </TableBody>
-          </ManageTable>
+          <div className="flex flex-col gap-4">
+            {loading ? (
+              <Skeleton aria-hidden="true" data-library-skeleton className="h-48 rounded-xl" />
+            ) : (
+              libraries.map((lib) => (
+                <LibraryRow
+                  key={lib.id}
+                  library={lib}
+                  onTogglePreview={onTogglePreview}
+                  onRootsSaved={onRootsSaved}
+                  onError={setError}
+                />
+              ))
+            )}
+          </div>
         )}
         <ErrorLine message={error} />
       </ManageSection>
 
-      <ManageSection title={t("createLibrary")}>
+      <ManageSection title={t("createLibrary")} icon={FolderPlus}>
         <ManageInlineForm>
           <ManageField id="library-title" label={t("title")}>
             <Input
@@ -188,10 +189,12 @@ export function LibrariesPage() {
 function LibraryRow({
   library,
   onTogglePreview,
+  onRootsSaved,
   onError,
 }: {
   library: LibraryInfo;
   onTogglePreview: (lib: LibraryInfo, enabled: boolean) => Promise<void>;
+  onRootsSaved: (libraryID: string, roots: string[]) => void;
   onError: (message: string) => void;
 }) {
   const t = useT();
@@ -260,6 +263,7 @@ function LibraryRow({
     try {
       const updated = await setLibraryRoots(library.id, nextRoots);
       setRootsText(updated.roots.join("\n"));
+      onRootsSaved(library.id, updated.roots);
       await loadTree();
     } catch (err) {
       onError(err instanceof Error ? err.message : t("couldNotUpdateRoots"));
@@ -375,18 +379,189 @@ function LibraryRow({
     }
   };
 
+  const savedRoots = library.roots ?? [];
+  const actionRow = "flex min-w-0 gap-2";
   return (
-    <TableRow>
-      <TableCell className="manage-cell-primary">{library.title}</TableCell>
-      <TableCell>
-        <Switch
-          aria-label={t("previewClips")}
-          checked={library.previewClips !== false}
-          onCheckedChange={(checked) => onTogglePreview(library, checked)}
-        />
-      </TableCell>
-      <TableCell className="whitespace-normal">
-        <div className="w-72 space-y-2">
+    <article className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+      <header className="flex flex-wrap items-center gap-3">
+        <span className="house-icon-tile" aria-hidden>
+          <LibraryBig className="size-[18px]" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h3 className="break-words text-[15px] font-semibold">{library.title}</h3>
+          <p className="text-xs text-muted-foreground">
+            {t("libraryFolderCount", { count: savedRoots.length })}
+          </p>
+        </div>
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Switch
+            aria-label={t("previewClips")}
+            checked={library.previewClips !== false}
+            onCheckedChange={(checked) => onTogglePreview(library, checked)}
+          />
+          {t("previewClips")}
+        </label>
+        <RescanButton libraryID={library.id} roots={savedRoots} />
+      </header>
+      <div className="mt-2">
+        <RescanStatus libraryID={library.id} hasRoots={savedRoots.length > 0} />
+      </div>
+
+      <div className="manage-folder-tools mt-4">
+        {tree ? (
+          <Tree.Root className="manage-folder-tree" aria-label={t("folderTree")}>
+            <FolderTree
+              entry={tree}
+              depth={0}
+              selectedPath={selectedPath}
+              onSelect={(entry) => {
+                setSelectedPath(entry.path);
+                setSelectedKind(entry.kind);
+                if (entry.kind === "folder") setMoveDestination(entry.path);
+              }}
+            />
+          </Tree.Root>
+        ) : (
+          <div className="manage-folder-tree" role="status" aria-label={t("folderTree")}>
+            <p className="text-xs text-[var(--text-muted)]">{t("folderTreeEmpty")}</p>
+          </div>
+        )}
+        <div className="manage-folder-controls">
+          <div className="manage-folder-selected">
+            <span className="manage-folder-selected-label">{t("selected")}</span>
+            <span className="manage-folder-selected-path">
+              {selectedPath || t("noFolderSelected")}
+            </span>
+            {selectedPath && (
+              <StatusChip tone={selectedKind === "folder" ? "green" : "neutral"}>
+                {t(selectedKind === "folder" ? "folderKindFolder" : "folderKindFile")}
+              </StatusChip>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="ml-auto shrink-0"
+              disabled={busy || selectedKind !== "folder" || !selectedPath}
+              onClick={onScan}
+            >
+              {t("scanOneFolder")}
+            </Button>
+          </div>
+          <div className={actionRow}>
+            <Input
+              aria-label={t("newFolderName")}
+              placeholder={t("newFolderName")}
+              autoComplete="off"
+              spellCheck={false}
+              value={folderName}
+              onChange={(e) => setFolderName(e.target.value)}
+              className="min-w-0 flex-1"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-28 shrink-0"
+              disabled={busy || !parentForCreate || !folderName.trim()}
+              onClick={onCreateFolder}
+            >
+              {t("createFolder")}
+            </Button>
+          </div>
+          <div className={actionRow}>
+            <Input
+              aria-label={t("renameTo")}
+              placeholder={t("renameTo")}
+              autoComplete="off"
+              spellCheck={false}
+              value={renameTo}
+              onChange={(e) => setRenameTo(e.target.value)}
+              className="min-w-0 flex-1"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-28 shrink-0"
+              disabled={busy || !selectedPath || !renameTo.trim()}
+              onClick={onRename}
+            >
+              {t("rename")}
+            </Button>
+          </div>
+          <div className={actionRow}>
+            <Input
+              aria-label={t("destinationFolder")}
+              placeholder={t("destinationFolder")}
+              autoComplete="off"
+              spellCheck={false}
+              value={moveDestination}
+              onChange={(e) => setMoveDestination(e.target.value)}
+              className="min-w-0 flex-1"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-28 shrink-0"
+              disabled={busy || !selectedPath || !moveDestination.trim()}
+              onClick={onMove}
+            >
+              {t("move")}
+            </Button>
+          </div>
+          <div className="flex flex-wrap justify-end gap-2 border-t border-white/[0.07] pt-3">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={busy || !lastTrash}
+              onClick={onRestore}
+            >
+              {t("restore")}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              disabled={busy || !selectedPath}
+              onClick={onDelete}
+            >
+              {t("delete")}
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <details className="group mt-4 rounded-lg border border-white/[0.07] bg-black/20">
+        <summary className="cursor-pointer px-3 py-2 text-[13px] font-semibold">
+          {t("libraryRoots")}
+        </summary>
+        <div className="space-y-2 border-t border-white/[0.07] p-3">
+          {rootsList.length > 0 ? (
+            <ul className="flex flex-col gap-1">
+              {rootsList.map((root) => (
+                <li
+                  key={root}
+                  className="flex min-w-0 items-center gap-2 rounded-md border border-white/[0.07] px-2 py-1"
+                >
+                  <span className="min-w-0 flex-1 break-all font-mono text-xs">{root}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => onRemoveRoot(root)}
+                  >
+                    {t("remove")}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-muted-foreground">{t("rootsPlaceholder")}</p>
+          )}
           <PathPickerField
             id={`roots-${library.id}`}
             label={t("libraryRoots")}
@@ -395,169 +570,27 @@ function LibraryRow({
             libraryID={library.id}
             placeholder={t("rootsPlaceholder")}
             onChange={setNewRoot}
-            inputClassName="w-64"
+            inputClassName="min-w-0 flex-1 basis-48"
+            actions={
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={busy || !newRoot.trim()}
+                  onClick={onAddRoot}
+                >
+                  {t("stagePathPickerRoot")}
+                </Button>
+                <Button type="button" size="sm" disabled={busy} onClick={onSaveRoots}>
+                  {t("save")}
+                </Button>
+              </>
+            }
           />
-          {rootsList.length > 0 ? (
-            <div className="grid gap-1">
-              {rootsList.map((root) => (
-                <div key={root} className="flex items-center gap-2 rounded border px-2 py-1">
-                  <span className="min-w-0 flex-1 break-all text-xs">{root}</span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={busy}
-                    onClick={() => onRemoveRoot(root)}
-                  >
-                    {t("remove")}
-                  </Button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-muted-foreground">{t("rootsPlaceholder")}</p>
-          )}
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={busy || !newRoot.trim()}
-              onClick={onAddRoot}
-            >
-              {t("stagePathPickerRoot")}
-            </Button>
-            <Button type="button" variant="outline" size="sm" disabled={busy} onClick={onSaveRoots}>
-              {t("save")}
-            </Button>
-          </div>
         </div>
-      </TableCell>
-      <TableCell>
-        <div className="manage-folder-tools">
-          {tree ? (
-            <Tree.Root className="manage-folder-tree" aria-label={t("folderTree")}>
-              <FolderTree
-                entry={tree}
-                depth={0}
-                selectedPath={selectedPath}
-                onSelect={(entry) => {
-                  setSelectedPath(entry.path);
-                  setSelectedKind(entry.kind);
-                  if (entry.kind === "folder") setMoveDestination(entry.path);
-                }}
-              />
-            </Tree.Root>
-          ) : (
-            <div className="manage-folder-tree" role="status" aria-label={t("folderTree")}>
-              <p className="text-xs text-[var(--text-muted)]">{t("folderTreeEmpty")}</p>
-            </div>
-          )}
-          <div className="manage-folder-controls">
-            <div className="manage-folder-selected">
-              <span className="manage-folder-selected-label">{t("selected")}</span>
-              <span className="manage-folder-selected-path">
-                {selectedPath || t("noFolderSelected")}
-              </span>
-              {selectedPath && (
-                <StatusChip tone={selectedKind === "folder" ? "green" : "neutral"}>
-                  {t(selectedKind === "folder" ? "folderKindFolder" : "folderKindFile")}
-                </StatusChip>
-              )}
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={busy || selectedKind !== "folder" || !selectedPath}
-              onClick={onScan}
-            >
-              {t("scan")}
-            </Button>
-            <div className="flex flex-wrap gap-2">
-              <Input
-                aria-label={t("newFolderName")}
-                placeholder={t("newFolderName")}
-                autoComplete="off"
-                spellCheck={false}
-                value={folderName}
-                onChange={(e) => setFolderName(e.target.value)}
-                className="w-40"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={busy || !parentForCreate || !folderName.trim()}
-                onClick={onCreateFolder}
-              >
-                {t("createFolder")}
-              </Button>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Input
-                aria-label={t("renameTo")}
-                placeholder={t("renameTo")}
-                autoComplete="off"
-                spellCheck={false}
-                value={renameTo}
-                onChange={(e) => setRenameTo(e.target.value)}
-                className="w-40"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={busy || !selectedPath || !renameTo.trim()}
-                onClick={onRename}
-              >
-                {t("rename")}
-              </Button>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Input
-                aria-label={t("destinationFolder")}
-                placeholder={t("destinationFolder")}
-                autoComplete="off"
-                spellCheck={false}
-                value={moveDestination}
-                onChange={(e) => setMoveDestination(e.target.value)}
-                className="w-48"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={busy || !selectedPath || !moveDestination.trim()}
-                onClick={onMove}
-              >
-                {t("move")}
-              </Button>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                disabled={busy || !selectedPath}
-                onClick={onDelete}
-              >
-                {t("delete")}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={busy || !lastTrash}
-                onClick={onRestore}
-              >
-                {t("restore")}
-              </Button>
-            </div>
-          </div>
-        </div>
-      </TableCell>
-    </TableRow>
+      </details>
+    </article>
   );
 }
 

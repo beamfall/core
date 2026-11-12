@@ -1,6 +1,7 @@
 import {
   Activity,
   AlertTriangle,
+  BellRing,
   Boxes,
   Clock,
   Database,
@@ -36,6 +37,7 @@ import { cn } from "@/lib/utils";
 import type { StringKey } from "@/strings";
 import { BackupExportPage } from "../manage/pages/BackupExportPage";
 import { AdminGate } from "./AdminGate";
+import { OwnerTasks } from "./OwnerTasks";
 import { Section } from "./Section";
 import { AccessAdmin } from "./sections/AccessAdmin";
 import { ActivityLog } from "./sections/ActivityLog";
@@ -120,6 +122,8 @@ function Overview() {
 
   return (
     <div className="space-y-8">
+      <OwnerTasks />
+
       <Section heading="consoleOverviewHeading" lead="consoleOverviewLead">
         <div className="console-overview-tiles">
           {(
@@ -147,7 +151,11 @@ function Overview() {
 
       <HostGraphs />
 
-      <Section heading="consoleNeedsAttentionHeading" lead="consoleNeedsAttentionLead">
+      <Section
+        heading="consoleNeedsAttentionHeading"
+        icon={BellRing}
+        lead="consoleNeedsAttentionLead"
+      >
         {queue.length === 0 ? (
           <EmptyState message="consoleNeedsAttentionEmpty" icon={AlertTriangle} />
         ) : (

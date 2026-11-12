@@ -1,3 +1,4 @@
+import { CalendarClock, ListChecks, Radar } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import {
   EmptyLine,
@@ -85,6 +86,7 @@ function JobsSection() {
   return (
     <ManageSection
       title={t("jobs")}
+      icon={ListChecks}
       actions={
         <Button type="button" variant="outline" size="sm" onClick={load}>
           {t("refresh")}
@@ -175,6 +177,7 @@ function SchedulesSection() {
   return (
     <ManageSection
       title={t("schedules")}
+      icon={CalendarClock}
       actions={
         <Button type="button" variant="outline" size="sm" onClick={load}>
           {t("refresh")}
@@ -373,6 +376,7 @@ function WatcherSection() {
   return (
     <ManageSection
       title={t("watcherStatusHeading")}
+      icon={Radar}
       lead={t("watcherStatusLead")}
       actions={
         <Button type="button" variant="outline" size="sm" onClick={load}>

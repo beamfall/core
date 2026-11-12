@@ -1749,7 +1749,7 @@ func TestBootstrapOwnerRollsBackInjectedEnrollFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	device, session := bootstrapEnrollment("first")
-	if _, err := st.BootstrapOwner(ctx, "Owner", device, session); err == nil {
+	if _, err := st.BootstrapOwner(ctx, "Owner", device, session, ""); err == nil {
 		t.Fatal("BootstrapOwner succeeded through an injected session failure")
 	}
 	for _, table := range []string{"profile", "device", "auth_session"} {
@@ -1776,7 +1776,7 @@ func TestBootstrapOwnerRollsBackInjectedEnrollFailure(t *testing.T) {
 		t.Fatalf("FirstRunSetupComplete after restart = (%v, %v), want (false, nil)", complete, err)
 	}
 	device, session = bootstrapEnrollment("retry")
-	profile, err := st.BootstrapOwner(ctx, "Owner", device, session)
+	profile, err := st.BootstrapOwner(ctx, "Owner", device, session, "")
 	if err != nil {
 		t.Fatalf("BootstrapOwner after restart: %v", err)
 	}
@@ -1827,7 +1827,7 @@ func TestBootstrapOwnerReusesPartialOwner(t *testing.T) {
 			t.Fatalf("FirstRunSetupComplete with partial owner = (%v, %v), want (false, nil)", complete, err)
 		}
 		device, session := bootstrapEnrollment("one")
-		profile, err := st.BootstrapOwner(ctx, "Alice", device, session)
+		profile, err := st.BootstrapOwner(ctx, "Alice", device, session, "")
 		if err != nil {
 			t.Fatalf("BootstrapOwner: %v", err)
 		}
@@ -1850,7 +1850,7 @@ func TestBootstrapOwnerReusesPartialOwner(t *testing.T) {
 			t.Fatal(err)
 		}
 		device, session := bootstrapEnrollment("one")
-		profile, err := st.BootstrapOwner(ctx, "Owner", device, session)
+		profile, err := st.BootstrapOwner(ctx, "Owner", device, session, "")
 		if err != nil {
 			t.Fatalf("BootstrapOwner: %v", err)
 		}
@@ -1870,7 +1870,7 @@ func TestBootstrapOwnerReusesPartialOwner(t *testing.T) {
 		t.Cleanup(func() { _ = st.Close() })
 		before := countRows(t, st, "profile")
 		device, session := bootstrapEnrollment("one")
-		profile, err := st.BootstrapOwner(ctx, "Fresh Owner", device, session)
+		profile, err := st.BootstrapOwner(ctx, "Fresh Owner", device, session, "")
 		if err != nil {
 			t.Fatalf("BootstrapOwner: %v", err)
 		}

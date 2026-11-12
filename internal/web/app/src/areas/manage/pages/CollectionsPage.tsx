@@ -1,3 +1,4 @@
+import { FolderTree, Trash2, WandSparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EmptyLine, ErrorLine, ManageSection, ManageTable } from "@/components/beamfall/workbench";
 import {
@@ -79,6 +80,7 @@ export function CollectionsPage() {
     <Tabs.Root value={tab} onValueChange={(value) => setTab(value as Tab)} className="space-y-4">
       <ManageSection
         title={t("collections")}
+        icon={FolderTree}
         actions={
           <div className="flex items-center gap-2">
             <Tabs.List className="manage-tabs" aria-label={t("collections")}>
@@ -125,7 +127,7 @@ export function CollectionsPage() {
           </div>
         }
       >
-        <p className="manage-empty">{libraries.length === 0 ? t("noCollections") : ""}</p>
+        {libraries.length === 0 && <p className="manage-empty">{t("noCollections")}</p>}
       </ManageSection>
 
       <Tabs.Panel value="manual" className="space-y-4">
@@ -270,6 +272,7 @@ function ManualCollections({ libraryID }: { libraryID: string }) {
     <>
       <ManageSection
         title={t("collections")}
+        icon={FolderTree}
         actions={
           <label className="flex items-center gap-2 text-sm">
             <input
@@ -355,7 +358,7 @@ function ManualCollections({ libraryID }: { libraryID: string }) {
       )}
 
       {includeTrashed && trashed.length > 0 && (
-        <ManageSection title={t("trashedCollections")}>
+        <ManageSection title={t("trashedCollections")} icon={Trash2}>
           <ManageTable>
             <TableHeader>
               <TableRow>
@@ -702,7 +705,7 @@ function SmartCollections({ libraryID }: { libraryID: string }) {
 
   return (
     <>
-      <ManageSection title={t("smartCollections")}>
+      <ManageSection title={t("smartCollections")} icon={WandSparkles}>
         {smart.length === 0 ? (
           <EmptyLine message={t("noSmartCollections")} />
         ) : (

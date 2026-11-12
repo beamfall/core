@@ -1,4 +1,4 @@
-import { Check, RefreshCw } from "lucide-react";
+import { Check, ClipboardCheck, RefreshCw } from "lucide-react";
 import { Link } from "react-router";
 import { ErrorState, StatusChip } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
@@ -118,6 +118,7 @@ export function SetupChecklist() {
   return (
     <Section
       heading="setupChecklistHeading"
+      icon={ClipboardCheck}
       lead="setupChecklistLead"
       actions={
         <Button

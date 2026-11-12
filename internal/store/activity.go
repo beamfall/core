@@ -134,6 +134,10 @@ const (
 	// signal surfaced in the Console. Neither entry ever carries the password.
 	ActivityAdminLogin       = "admin.login"
 	ActivityAdminLoginDenied = "admin.login.denied"
+	// ActivitySignInSecurityMode records a Home/Strict sign-in security change
+	// (CORE-1110). TargetID is "<old>-><new>"; the entry never carries the
+	// admin password that authorised it.
+	ActivitySignInSecurityMode = "signin_security.mode"
 	// ActivityMyDataDelete records a My Data engagement deletion.
 	// The entry carries the SCOPE KIND only (in TargetType: "all" or "media")
 	// and NEVER the deleted media id — the activity log must not memorialize

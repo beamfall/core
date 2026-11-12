@@ -1,3 +1,4 @@
+import { CalendarClock, Filter } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { EmptyState, ErrorState } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
@@ -69,7 +70,7 @@ export function ProfilesAccess() {
 
   if (filters.failed) {
     return (
-      <Section heading="enforcedFiltersHeading" lead="enforcedFiltersLead">
+      <Section heading="enforcedFiltersHeading" icon={Filter} lead="enforcedFiltersLead">
         <ErrorState message="enforcedFiltersUnavailable" />
       </Section>
     );
@@ -77,7 +78,7 @@ export function ProfilesAccess() {
 
   return (
     <div className="space-y-8">
-      <Section heading="accessSchedulesHeading" lead="accessSchedulesLead">
+      <Section heading="accessSchedulesHeading" icon={CalendarClock} lead="accessSchedulesLead">
         <div className="console-card console-card-pad space-y-4">
           {/* Supervisor-authored policy, distinct from the managed Profile's own
               Mute (ADR-0087 §29). */}
@@ -119,7 +120,7 @@ export function ProfilesAccess() {
 
       <Separator />
 
-      <Section heading="enforcedFiltersHeading" lead="enforcedFiltersLead">
+      <Section heading="enforcedFiltersHeading" icon={Filter} lead="enforcedFiltersLead">
         {plugins.length === 0 ? (
           <EmptyState message="enforcedFiltersEmpty" />
         ) : !selectedProfile ? (

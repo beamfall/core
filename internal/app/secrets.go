@@ -131,6 +131,30 @@ func setupURLHost(listenAddr string) string {
 	return net.JoinHostPort(host, port)
 }
 
+// lanSetupURLs lists the token-free /web/ address a browser on the local
+// network can open to finish first-run setup (CORE-1105, CORE-1097). It returns
+// nothing unless the server listens on every interface; addrs are the machine's
+// interface addresses, and only non-loopback, non-link-local IPv4 ones are used.
+func lanSetupURLs(scheme, listenAddr string, addrs []net.Addr) []string {
+	host, port, err := net.SplitHostPort(listenAddr)
+	if err != nil || (host != "" && host != "0.0.0.0" && host != "::") {
+		return nil
+	}
+	var urls []string
+	for _, addr := range addrs {
+		ipNet, ok := addr.(*net.IPNet)
+		if !ok {
+			continue
+		}
+		ip := ipNet.IP.To4()
+		if ip == nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
+			continue
+		}
+		urls = append(urls, fmt.Sprintf("%s://%s/web/", scheme, net.JoinHostPort(ip.String(), port)))
+	}
+	return urls
+}
+
 func configureReviewDemoEnrollment(cfgProfileID string, dataDir string, svc *pairing.Service, logger *slog.Logger) error {
 	key, err := (secretFiles{dir: filepath.Join(dataDir, "secrets")}).Secret(reviewDemoEnrollmentSecretRef)
 	if err != nil {

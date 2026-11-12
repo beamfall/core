@@ -5,24 +5,6 @@ import { describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/lib/i18n";
 import { ViewerActions } from "./ViewerActions";
 
-const mocks = vi.hoisted(() => ({
-  sessionState: {
-    session: {
-      deviceRole: "viewer",
-      profileID: "p2",
-      profile: "managed",
-      revealed: false,
-    },
-    profiles: [
-      { id: "p1", name: "Owner", kind: "adult" },
-      { id: "p2", name: "Kid", kind: "managed" },
-    ],
-  },
-}));
-
-vi.mock("@/lib/session", () => ({
-  useSession: () => mocks.sessionState,
-}));
 vi.mock("./HeaderSearch", () => ({ HeaderSearch: () => <input aria-label="Search" /> }));
 
 function renderActions(entry = "/") {
@@ -36,17 +18,11 @@ function renderActions(entry = "/") {
 }
 
 describe("ViewerActions", () => {
-  it("shows the selected Profile and exposes Profile settings", () => {
+  // Profile, My Data and Profile settings live in the AppShell account menu
+  // (CORE-1131), so the header actions are only the search field.
+  it("leaves the Profile links to the account menu", () => {
     renderActions();
-
-    expect(screen.getByRole("link", { name: "Switch profile. Watching as Kid." })).toHaveAttribute(
-      "href",
-      "/profiles",
-    );
-    expect(screen.getByRole("link", { name: "Profile settings" })).toHaveAttribute(
-      "href",
-      "/settings",
-    );
+    expect(screen.queryByRole("link")).toBeNull();
   });
 
   it("offers the header search everywhere except the search page", () => {

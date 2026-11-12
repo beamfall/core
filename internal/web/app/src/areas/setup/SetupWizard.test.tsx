@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/lib/i18n";
+import { groupProviderKeys } from "@/lib/providerKeys";
 import { FirstLibraryError } from "./orchestrate";
 import { SetupWizard } from "./SetupWizard";
 
@@ -24,6 +25,8 @@ const mocks = vi.hoisted(() => ({
   createFirstLibrary: vi.fn(),
   fetchJobs: vi.fn(),
   fetchPlugins: vi.fn(),
+  loadProviderKeys: vi.fn(),
+  setScraperCredential: vi.fn(),
 }));
 
 vi.mock("@/lib/graphql", async () => {
@@ -33,6 +36,7 @@ vi.mock("@/lib/graphql", async () => {
     browseServerFolders: mocks.browseServerFolders,
     fetchJobs: mocks.fetchJobs,
     fetchPlugins: mocks.fetchPlugins,
+    setScraperCredential: mocks.setScraperCredential,
   };
 });
 
@@ -45,7 +49,12 @@ vi.mock("./orchestrate", async () => {
     bootstrapSetup: mocks.bootstrapSetup,
     configureUpdateCheck: mocks.configureUpdateCheck,
     createFirstLibrary: mocks.createFirstLibrary,
+    loadProviderKeys: mocks.loadProviderKeys,
   };
+});
+
+beforeEach(() => {
+  mocks.loadProviderKeys.mockResolvedValue([]);
 });
 
 function renderSetupWizard() {
@@ -132,7 +141,7 @@ describe("SetupWizard first scan", () => {
     await user.type(screen.getByLabelText("Root folder"), "/media/films");
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
-    await screen.findByRole("heading", { name: "First scan is running" });
+    await screen.findByRole("heading", { name: "Your library is filling up" });
     expect(mocks.createFirstLibrary).toHaveBeenCalledWith({
       title: "Films",
       type: "films",
@@ -172,7 +181,7 @@ describe("SetupWizard first scan", () => {
       expect.objectContaining({ progress: { libraryID: "lib1", rootsSet: false } }),
     );
     expect(
-      await screen.findByRole("heading", { name: "First scan is running" }),
+      await screen.findByRole("heading", { name: "Your library is filling up" }),
     ).toBeInTheDocument();
   });
 
@@ -265,7 +274,7 @@ describe("SetupWizard first scan", () => {
     await screen.findByRole("heading", { name: "Create your first Library" });
     await user.type(screen.getByLabelText("Root folder"), "/media/films");
     await user.click(screen.getByRole("button", { name: "Continue" }));
-    await screen.findByRole("heading", { name: "First scan is running" });
+    await screen.findByRole("heading", { name: "Your library is filling up" });
     await waitFor(() => expect(mocks.fetchJobs).toHaveBeenCalledTimes(1));
 
     await new Promise((resolve) => window.setTimeout(resolve, 2_100));
@@ -335,6 +344,7 @@ describe("SetupWizard setup URL", () => {
     await user.type(screen.getByLabelText("Confirm password"), "correct horse battery staple");
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Something went wrong. Please try again.",
@@ -351,6 +361,7 @@ describe("SetupWizard setup URL", () => {
         .join(" "),
     ).not.toContain(canary);
 
+    await user.click(screen.getByRole("button", { name: "Back" }));
     await user.click(screen.getByRole("button", { name: "Back" }));
     await user.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.getByLabelText("Setup token")).toHaveValue("");
@@ -370,8 +381,11 @@ describe("SetupWizard setup URL", () => {
     await user.type(screen.getByLabelText("Confirm password"), "correct horse battery staple");
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
 
-    expect(await screen.findByRole("heading", { name: "Activate plugins" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Choose what Beamfall understands" }),
+    ).toBeInTheDocument();
     expect(mocks.bootstrapSetup).toHaveBeenCalledWith(
       expect.objectContaining({
         token: canary,
@@ -398,5 +412,173 @@ describe("SetupWizard setup URL", () => {
     renderSetupWizard();
     expect(await screen.findByLabelText("Setup token")).toHaveValue("");
     expect(window.location.href).not.toContain(canary);
+  });
+});
+
+describe("SetupWizard LAN claim (CORE-1105)", () => {
+  beforeEach(() => {
+    window.history.replaceState(null, "", "/web/setup");
+    mocks.fetchPlugins.mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it("starts at the admin step and bootstraps without a token on the local network", async () => {
+    const user = userEvent.setup();
+    mocks.bootstrapResume.mockResolvedValue({
+      alreadyBootstrapped: false,
+      state: null,
+      tokenRequired: false,
+    });
+    mocks.bootstrapSetup.mockResolvedValue(undefined);
+    renderSetupWizard();
+
+    expect(
+      await screen.findByRole("heading", { name: "Set the admin password" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Setup token")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Back" })).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Admin password"), "correct horse battery staple");
+    await user.type(screen.getByLabelText("Confirm password"), "correct horse battery staple");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Choose what Beamfall understands" }),
+    ).toBeInTheDocument();
+    expect(mocks.bootstrapSetup).toHaveBeenCalledWith(
+      expect.objectContaining({ token: "", securityMode: "home" }),
+    );
+  });
+
+  it("offers Home and Strict sign-in security and sends the choice with setup (CORE-1110)", async () => {
+    const user = userEvent.setup();
+    mocks.bootstrapResume.mockResolvedValue({
+      alreadyBootstrapped: false,
+      state: null,
+      tokenRequired: false,
+    });
+    mocks.bootstrapSetup.mockResolvedValue(undefined);
+    renderSetupWizard();
+
+    await user.type(await screen.findByLabelText("Admin password"), "correct horse battery staple");
+    await user.type(screen.getByLabelText("Confirm password"), "correct horse battery staple");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(
+      await screen.findByRole("group", { name: "Choose how the owner signs in" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Step 2 of 6")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /Home/ })).toBeChecked();
+    expect(screen.getByText("Recommended")).toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: /Strict/ }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Choose what Beamfall understands" }),
+    ).toBeInTheDocument();
+    expect(mocks.bootstrapSetup).toHaveBeenCalledWith(
+      expect.objectContaining({ securityMode: "strict" }),
+    );
+  });
+
+  it("keeps the token step when the server requires the token", async () => {
+    mocks.bootstrapResume.mockResolvedValue({
+      alreadyBootstrapped: false,
+      state: null,
+      tokenRequired: true,
+    });
+    renderSetupWizard();
+
+    expect(
+      await screen.findByRole("heading", { name: "Unlock with the setup token" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Setup token")).toHaveValue("");
+  });
+});
+
+describe("SetupWizard provider keys (CORE-1115)", () => {
+  const scraper = (scraperID: string, displayName: string) => ({
+    pluginID: "catalog",
+    scraperID,
+    displayName,
+    kind: "metadata",
+    endpoint: "https://api.example.org/3",
+    authRef: "example-api-key",
+    authStyle: "query",
+    credentialRequired: true,
+    credentialConfigured: false,
+    credentialStatus: "missing",
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.bootstrapResume.mockResolvedValue({
+      alreadyBootstrapped: false,
+      state: null,
+      tokenRequired: false,
+    });
+    mocks.bootstrapSetup.mockResolvedValue(undefined);
+    mocks.configureUpdateCheck.mockResolvedValue(undefined);
+    mocks.activatePlugins.mockResolvedValue(undefined);
+    mocks.fetchPlugins.mockResolvedValue([{ id: "catalog", displayName: "Catalog" }]);
+    mocks.loadProviderKeys.mockResolvedValue(
+      groupProviderKeys([scraper("movies", "Example (Movies)"), scraper("tv", "Example (TV)")]),
+    );
+    mocks.setScraperCredential.mockResolvedValue({
+      authRef: "example-api-key",
+      credentialConfigured: true,
+      credentialStatus: "configured",
+      scraperIDs: ["movies", "tv"],
+    });
+  });
+
+  async function reachPluginsStep(user: ReturnType<typeof userEvent.setup>) {
+    renderSetupWizard();
+    await user.type(await screen.findByLabelText("Admin password"), "correct horse battery staple");
+    await user.type(screen.getByLabelText("Confirm password"), "correct horse battery staple");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByRole("heading", { name: "Choose what Beamfall understands" });
+    await user.click(screen.getByRole("switch", { name: "Catalog" }));
+  }
+
+  it("saves a key typed on the Plugins step after activating plugins", async () => {
+    const user = userEvent.setup();
+    await reachPluginsStep(user);
+
+    const field = await screen.findByLabelText("Example API key");
+    expect(screen.getAllByLabelText(/API key/)).toHaveLength(1);
+    await user.type(field, "test-key-value");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() =>
+      expect(mocks.setScraperCredential).toHaveBeenCalledWith("example-api-key", "test-key-value"),
+    );
+    expect(mocks.loadProviderKeys).toHaveBeenCalledWith("correct horse battery staple");
+    expect(mocks.activatePlugins.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.setScraperCredential.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("skips saving when the key is left blank and hides it when the plugin is off", async () => {
+    const user = userEvent.setup();
+    await reachPluginsStep(user);
+
+    expect(await screen.findByLabelText("Example API key")).toBeInTheDocument();
+    await user.click(screen.getByRole("switch", { name: "Catalog" }));
+    expect(screen.queryByLabelText("Example API key")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("switch", { name: "Catalog" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => expect(mocks.activatePlugins).toHaveBeenCalled());
+    expect(mocks.setScraperCredential).not.toHaveBeenCalled();
   });
 });

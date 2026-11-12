@@ -1,3 +1,4 @@
+import { ArchiveRestore, Download, FileText, History } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { withAdminEpoch } from "@/areas/console/adminEpoch";
 import {
@@ -211,6 +212,7 @@ function BackupHistorySection({
   return (
     <ManageSection
       title={t("backupHistoryHeading")}
+      icon={History}
       lead={t("backupHistoryLead")}
       actions={
         loaded ? (
@@ -356,6 +358,7 @@ function ManifestSection({ selected }: { selected: BackupHistoryEntry | null }) 
   return (
     <ManageSection
       title={t("backupManifestHeading")}
+      icon={FileText}
       lead={t("backupManifestLead")}
       actions={
         selected ? (
@@ -405,7 +408,11 @@ function RestoreSection() {
   const t = useT();
 
   return (
-    <ManageSection title={t("backupRestoreHeading")} lead={t("backupRestoreLead")}>
+    <ManageSection
+      title={t("backupRestoreHeading")}
+      icon={ArchiveRestore}
+      lead={t("backupRestoreLead")}
+    >
       <div id="restore" className="space-y-3" tabIndex={-1}>
         <ol className="list-decimal space-y-2 pl-5 text-sm text-muted-foreground">
           <li>{t("backupRestoreStepStop")}</li>
@@ -476,6 +483,7 @@ function ExportSection() {
   return (
     <ManageSection
       title={t("exportHeading")}
+      icon={Download}
       lead={t("exportLead")}
       actions={
         exportData ? (

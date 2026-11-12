@@ -1,3 +1,4 @@
+import { FileQuestion } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { EmptyLine, ErrorLine, ManageSection } from "@/components/beamfall/workbench";
 import {
@@ -115,6 +116,7 @@ export function UnmatchedPage() {
     <div className="space-y-4">
       <ManageSection
         title={t("unmatchedHeading")}
+        icon={FileQuestion}
         lead={t("unmatchedLead")}
         actions={
           <div className="flex items-center gap-2">

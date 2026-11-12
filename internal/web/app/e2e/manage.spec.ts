@@ -184,8 +184,9 @@ test.describe("manage", () => {
     // /manage redirects to /manage/libraries.
     await expect(page).toHaveURL(/\/manage\/libraries$/);
     await expect(page.getByRole("navigation", { name: "Manage" })).toBeVisible();
-    // The MANAGER badge proves this browser resolved to the manager role.
-    await expect(page.getByText("MANAGER").first()).toBeVisible();
+    // Non-managers are redirected to "/", so staying here with the route's
+    // heading proves this browser resolved to the manager role.
+    await expect(page.getByRole("heading", { level: 1, name: "Libraries" })).toBeVisible();
     expect(errors, errors.join("\n")).toEqual([]);
   });
 
@@ -197,7 +198,7 @@ test.describe("manage", () => {
     await expectReducedMotionActive(page);
     await expect(page).toHaveURL(/\/manage\/libraries$/);
     await expect(page.getByRole("navigation", { name: "Manage" })).toBeVisible();
-    await expect(page.getByText("MANAGER").first()).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Libraries" })).toBeVisible();
     await expectReducedMotionDurations(page);
     expect(errors, errors.join("\n")).toEqual([]);
   });
@@ -331,7 +332,8 @@ test.describe("manage", () => {
     await expect(page.getByText("Libraries").first()).toBeVisible();
     await expect(page.getByText("Nothing to show in this library yet.")).toHaveCount(0);
     await unlockManageInPlace(page);
-    const localLibrary = page.getByRole("cell", { name: "Local Library" });
+    // CORE-1131 shows each library as a card headed by its title.
+    const localLibrary = page.getByRole("heading", { level: 3, name: "Local Library" });
     const emptyState = page.getByText("Nothing to show in this library yet.");
     await expect(localLibrary.or(emptyState)).toBeVisible();
     // The Create Library affordance is reachable.

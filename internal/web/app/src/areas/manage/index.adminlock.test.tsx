@@ -3,6 +3,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { fetchJobs } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { ManageArea } from ".";
 
@@ -143,6 +144,17 @@ describe("Manage without an Admin Session", () => {
     renderManage("/manage/tags");
 
     await waitFor(() => expect(requests).toContain("Tags"));
+    expect(screen.queryByLabelText("Admin password")).not.toBeInTheDocument();
+    expect(requests).not.toContain("AdminSession");
+  });
+
+  it("does not gate the page when a background read opts out of the unlock", async () => {
+    const { requests } = installServer("correct horse");
+    renderManage("/manage/tags");
+    await waitFor(() => expect(requests).toContain("Tags"));
+
+    // The header's job count (CORE-1131) polls a read that needs an Admin Session.
+    await expect(fetchJobs(undefined, { adminUnlock: false })).rejects.toThrow(RAW_REFUSAL);
     expect(screen.queryByLabelText("Admin password")).not.toBeInTheDocument();
     expect(requests).not.toContain("AdminSession");
   });

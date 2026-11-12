@@ -1,4 +1,4 @@
-import { Database, RefreshCw } from "lucide-react";
+import { Database, HardDrive, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { EmptyState, ErrorState, StatusChip } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
@@ -71,6 +71,7 @@ export function PlaybackCache() {
   return (
     <Section
       heading="playbackCacheHeading"
+      icon={HardDrive}
       lead="playbackCacheLead"
       actions={
         <Button variant="outline" size="sm" onClick={() => void refresh()}>

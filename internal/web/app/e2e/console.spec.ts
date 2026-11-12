@@ -123,13 +123,34 @@ test.describe("console", () => {
     await expect(page.getByRole("navigation", { name: "Console" })).toBeVisible();
   }
 
+  test("the library folder browser opens, shows where it is and closes on Escape", async ({
+    page,
+  }) => {
+    const errors = collectFatalErrors(page);
+    await gotoConsole(page, "libraries");
+    const browse = page.getByRole("button", { name: "Browse" }).first();
+    await browse.click();
+
+    const browser = page.getByRole("group", { name: "Folder browser" });
+    await expect(browser).toBeVisible();
+    await expect(browser.getByRole("navigation", { name: "Current location" })).toContainText(
+      "Locations",
+    );
+    await expect(browser.getByRole("button", { name: "Add this folder" })).toBeDisabled();
+    await page.keyboard.press("Escape");
+
+    await expect(browser).toHaveCount(0);
+    await expect(browse).toBeFocused();
+    expect(errors, errors.join("\n")).toEqual([]);
+  });
+
   test("admin gate is unlocked and the section nav renders", async ({ page }) => {
     const errors = collectFatalErrors(page);
     await gotoConsole(page, "");
     // The unlock form must NOT be present (we are past the gate).
     await expect(page.getByRole("button", { name: "Unlock Console" })).toHaveCount(0);
-    // The index section renders the current Console overview.
-    await expect(page.getByRole("heading", { level: 2, name: "Overview" })).toBeVisible();
+    // The index route titles itself Overview (its sr-only h1).
+    await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible();
     expect(errors, errors.join("\n")).toEqual([]);
   });
 
@@ -139,7 +160,7 @@ test.describe("console", () => {
     await gotoConsole(page, "");
 
     await expectForcedColorsActive(page);
-    await expect(page.getByRole("heading", { level: 2, name: "Overview" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible();
     await expectBodyTextContrastsBackground(page);
     expect(errors, errors.join("\n")).toEqual([]);
   });

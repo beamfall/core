@@ -6,7 +6,7 @@
 // Every query/mutation string is copied VERBATIM from internal/web/static/app.js
 // (contract-tested server-side).
 
-import { graphql } from "@/lib/api";
+import { type GraphQLOptions, graphql } from "@/lib/api";
 import type {
   ArtworkCandidate,
   BackupHistoryEntry,
@@ -283,11 +283,15 @@ export async function linkMediaRelation(
 
 // --- Jobs -----------------------------------------------------------------
 
-const JOBS_QUERY = "query Jobs { jobs { id kind status progress { current total unit message } } }";
+const JOBS_QUERY =
+  "query Jobs { jobs { id kind status error progress { current total unit message } } }";
 
 /** Jobs — the job substrate queue with progress detail. */
-export async function fetchJobs(signal?: AbortSignal): Promise<JobInfo[]> {
-  const data = await graphql<{ jobs: JobInfo[] | null }>(JOBS_QUERY, {}, signal);
+export async function fetchJobs(
+  signal?: AbortSignal,
+  options?: GraphQLOptions,
+): Promise<JobInfo[]> {
+  const data = await graphql<{ jobs: JobInfo[] | null }>(JOBS_QUERY, {}, signal, options);
   return data.jobs ?? [];
 }
 

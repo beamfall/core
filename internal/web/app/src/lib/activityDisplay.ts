@@ -94,6 +94,7 @@ export const ACTIVITY_LABELS: Record<string, ActivityLabel> = {
   relock: label("security", "{actor} locked restricted libraries again"),
   "admin.login": label("security", "{actor} unlocked the Console"),
   "admin.login.denied": label("security", "An attempt by {actor} to unlock the Console failed"),
+  "signin_security.mode": label("security", "{actor} changed the sign-in security mode"),
   "token.create": label("security", "{actor} created an API token"),
   "token.revoke": label("security", "{actor} revoked an API token"),
   "key.create": label("security", "{actor} created an API key"),

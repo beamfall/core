@@ -33,6 +33,8 @@ var (
 	// ErrSetupTokenInvalid means the presented setup token is wrong, already
 	// consumed, or setup is already complete.
 	ErrSetupTokenInvalid = errors.New("setup token invalid")
+	// ErrNoOwner means the server has no owner Profile to mint a code for.
+	ErrNoOwner = errors.New("no owner profile")
 )
 
 const (
@@ -114,12 +116,21 @@ type SetupRequest struct {
 	ProfileName       string `json:"profileName"`
 	DistributionClass string `json:"distributionClass,omitempty"`
 	// AdminPassword, when non-empty, sets the server admin password in-browser
-	// during first-run setup. The setup token gates this: it is
-	// proof of server/log access, so setting the password here does not weaken
-	// the posture versus the CLI reset-admin-password path. Empty leaves the
+	// during first-run setup. The setup token or a LAN claim gates this, and
+	// only while setup is pending (no owner yet), so it never overrides a
+	// password an owner already set. Empty leaves the
 	// existing flow unchanged (backward compatible). Never logged or echoed.
 	AdminPassword string `json:"adminPassword"`
-	RemoteAddr    string `json:"-"`
+	// SecurityMode is the owner's sign-in security choice, "home" (the
+	// default when empty) or "strict" (ADR-0007, CORE-1110). It is stored in
+	// the same transaction as the owner.
+	SecurityMode string `json:"securityMode,omitempty"`
+	RemoteAddr   string `json:"-"`
+	// LANClaim is set by the server, never decoded from the body, when the
+	// request passed the server's LAN test. While setup is pending it lets the
+	// request complete setup without a token (ADR-0007 §2, CORE-1105). A token
+	// that is presented is still checked.
+	LANClaim bool `json:"-"`
 }
 
 // SetupResponse gives the browser its first MANAGER session. The shape is
@@ -161,6 +172,11 @@ type Service struct {
 	bootstrapToken      string
 	bootstrapInProgress bool
 	demo                DemoEnrollment
+
+	// afterAdminPasswordCheck, when set, runs after AdminSignIn's password
+	// check passes and before it enrolls. A test seam for races with that
+	// slow check.
+	afterAdminPasswordCheck func()
 }
 
 // NewService creates a pairing service.
@@ -241,10 +257,14 @@ func (s *Service) Bootstrap(ctx context.Context, req SetupRequest) (SetupRespons
 		profileName = "Owner"
 	}
 	token := strings.TrimSpace(req.Token)
-	if token == "" || name == "" {
+	if (token == "" && !req.LANClaim) || name == "" {
 		return SetupResponse{}, ErrInvalidRequest
 	}
 	distributionClass, err := store.NormalizeDeviceDistributionClass(store.DeviceDistributionClass(req.DistributionClass))
+	if err != nil {
+		return SetupResponse{}, ErrInvalidRequest
+	}
+	securityMode, err := store.ParseSignInSecurityMode(strings.TrimSpace(req.SecurityMode))
 	if err != nil {
 		return SetupResponse{}, ErrInvalidRequest
 	}
@@ -264,8 +284,9 @@ func (s *Service) Bootstrap(ctx context.Context, req SetupRequest) (SetupRespons
 		_ = s.recordAttemptFor(ctx, setupAttemptAction, attemptKey, "", now, false)
 		return SetupResponse{}, ErrSetupTokenInvalid
 	}
-	// Constant-time comparison to resist timing attacks on the token.
-	if subtle.ConstantTimeCompare([]byte(token), []byte(stored)) != 1 {
+	// Constant-time comparison to resist timing attacks on the token. A LAN
+	// claim with no token skips the comparison; a presented token is checked.
+	if (token != "" || !req.LANClaim) && subtle.ConstantTimeCompare([]byte(token), []byte(stored)) != 1 {
 		s.mu.Unlock()
 		_ = s.recordAttemptFor(ctx, setupAttemptAction, attemptKey, "", now, false)
 		return SetupResponse{}, ErrSetupTokenInvalid
@@ -323,7 +344,7 @@ func (s *Service) Bootstrap(ctx context.Context, req SetupRequest) (SetupRespons
 	// and its session commit together, so a failure or crash leaves no partial
 	// owner that would suppress the setup token on restart. A Profile left by
 	// such a partial write before this was atomic is reused, not duplicated.
-	profile, err := s.store.BootstrapOwner(ctx, profileName, device, session)
+	profile, err := s.store.BootstrapOwner(ctx, profileName, device, session, securityMode)
 	if err != nil {
 		return SetupResponse{}, err
 	}
@@ -367,8 +388,61 @@ func (s *Service) CreateCode(ctx context.Context, scope auth.Scope, req CodeRequ
 	if err != nil {
 		return CodeResponse{}, err
 	}
-	expiresAt := s.now().Add(10 * time.Minute).UTC()
+	resp, err := s.mintCode(ctx, profileID, role)
+	if err != nil {
+		return CodeResponse{}, err
+	}
+	// ADR-0012 §11: log that a code was minted and for which Profile — never
+	// the code itself (it is a credential until consumed or expired).
+	_ = s.store.AppendActivity(ctx, store.ActivityEntry{
+		OccurredAt: s.now().UTC(),
+		Action:     store.ActivityPairingCode,
+		SessionID:  scope.SessionID,
+		DeviceID:   scope.DeviceID,
+		ProfileID:  scope.ProfileID,
+		TargetType: "profile",
+		TargetID:   string(profileID),
+	})
+	return resp, nil
+}
 
+// CreateOwnerCode mints a one-time code for the owner Profile without a
+// session. Only the host recovery command calls it, with the server stopped:
+// whoever can run it already controls the data directory (CORE-1106). An
+// empty role grants manager.
+func (s *Service) CreateOwnerCode(ctx context.Context, deviceRole string) (CodeResponse, error) {
+	role := store.DeviceRoleManager
+	if strings.TrimSpace(deviceRole) != "" {
+		parsed, err := parseRole(deviceRole)
+		if err != nil {
+			return CodeResponse{}, err
+		}
+		role = parsed
+	}
+	owner, err := s.store.OwnerProfile(ctx)
+	if errors.Is(err, store.ErrNoOwnerProfile) {
+		return CodeResponse{}, ErrNoOwner
+	}
+	if err != nil {
+		return CodeResponse{}, err
+	}
+	resp, err := s.mintCode(ctx, owner.ID, role)
+	if err != nil {
+		return CodeResponse{}, err
+	}
+	_ = s.store.AppendActivity(ctx, store.ActivityEntry{
+		OccurredAt: s.now().UTC(),
+		Action:     store.ActivityPairingCode,
+		TargetType: "profile",
+		TargetID:   string(owner.ID),
+	})
+	return resp, nil
+}
+
+// mintCode stores a fresh one-time code for profileID that expires in ten
+// minutes, retrying on the rare collision.
+func (s *Service) mintCode(ctx context.Context, profileID store.ProfileID, role store.DeviceRole) (CodeResponse, error) {
+	expiresAt := s.now().Add(10 * time.Minute).UTC()
 	for range 4 {
 		code, err := s.generateCode()
 		if err != nil {
@@ -378,7 +452,6 @@ func (s *Service) CreateCode(ctx context.Context, scope auth.Scope, req CodeRequ
 		if code == "" {
 			return CodeResponse{}, ErrInvalidRequest
 		}
-
 		err = s.store.CreatePairingCode(ctx, store.PairingCode{
 			Code:       code,
 			ProfileID:  profileID,
@@ -386,18 +459,6 @@ func (s *Service) CreateCode(ctx context.Context, scope auth.Scope, req CodeRequ
 			ExpiresAt:  expiresAt,
 		})
 		if err == nil {
-			// ADR-0012 §11: log that a code was minted and for which
-			// Profile — never the code itself (it is a credential until
-			// consumed or expired).
-			_ = s.store.AppendActivity(ctx, store.ActivityEntry{
-				OccurredAt: s.now().UTC(),
-				Action:     store.ActivityPairingCode,
-				SessionID:  scope.SessionID,
-				DeviceID:   scope.DeviceID,
-				ProfileID:  scope.ProfileID,
-				TargetType: "profile",
-				TargetID:   string(profileID),
-			})
 			return CodeResponse{
 				Code:       code,
 				ExpiresAt:  expiresAt.Format(time.RFC3339),

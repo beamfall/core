@@ -13,48 +13,30 @@ type ApprovedDelta = {
   normalizedSHA256: string;
 };
 
-// Exact approved focus and Cut Beam header deltas; archived PNGs remain immutable.
-// Signatures re-recorded for the macOS 27.2.1 system-ui (SF Pro) rasterization (CORE-1109).
-const approvedVisualDeltas: Readonly<Record<string, ApprovedDelta>> = {
-  "manage/manage-collections-tab-focused-selected.png": {
-    differentPixels: 1032,
-    coordinateSHA256: "353d3f37dd5a048999149beea4ac963ce65e906132b6d2d40acf8dede71f3168",
-    normalizedSHA256: "65f4d038d22b67309c8c073e02ed12261b3fd08e0f9445dfe6334da23e92e419",
-  },
-  "manage/manage-smart-tab-focused-selected.png": {
-    differentPixels: 1032,
-    coordinateSHA256: "353d3f37dd5a048999149beea4ac963ce65e906132b6d2d40acf8dede71f3168",
-    normalizedSHA256: "65f4d038d22b67309c8c073e02ed12261b3fd08e0f9445dfe6334da23e92e419",
-  },
-  "manage/manage-curation-subject-select-open-focused-selected.png": {
-    differentPixels: 939,
-    coordinateSHA256: "777aad9b8856d3c160872e18c2df3203d672b656e8b622be6e5b50bfa3da1b7e",
-    normalizedSHA256: "4bafa14f20e9b0a6bc39253b755b716c80185ab5ff11a64c62341cbd2075d30c",
-  },
-  "manage/manage-curation-versions-tab-focused-selected.png": {
-    differentPixels: 939,
-    coordinateSHA256: "777aad9b8856d3c160872e18c2df3203d672b656e8b622be6e5b50bfa3da1b7e",
-    normalizedSHA256: "4bafa14f20e9b0a6bc39253b755b716c80185ab5ff11a64c62341cbd2075d30c",
-  },
-  "manage/manage-curation-extras-tab-focused-selected.png": {
-    differentPixels: 939,
-    coordinateSHA256: "777aad9b8856d3c160872e18c2df3203d672b656e8b622be6e5b50bfa3da1b7e",
-    normalizedSHA256: "4bafa14f20e9b0a6bc39253b755b716c80185ab5ff11a64c62341cbd2075d30c",
-  },
-  "manage/manage-curation-relation-select-open-focused-selected.png": {
-    differentPixels: 1390,
-    coordinateSHA256: "4467ce0b53c47b225b66b72cea611eb09fe991064a0981c172956de243453465",
-    normalizedSHA256: "207bee3a1556d8f29bd38c64686b376c51cc9acd26f250346e316b364c9dcbd6",
-  },
-};
+// Exact approved deltas against the archive; archived PNGs remain immutable. None remain:
+// every state that carried one is now in redesignedSinceMigration (CORE-1131).
+const approvedVisualDeltas: Readonly<Record<string, ApprovedDelta>> = {};
 
 // CORE-0045 redesigned the player transport after the migration. These states keep their archived
 // PNG SHA-pinned in the manifest but no longer compare the live render to it; the live
-// goldens under e2e/goldens/ are the regression baseline for them. CORE-1141 (controls over a
-// bottom gradient, one settings sheet) re-recorded all 22 of those live PNGs from the new layout.
-// CORE-1191 replaced the viewer header Search link with a search field, so the shared dialog
-// state joins them.
+// goldens under e2e/goldens/ are the regression baseline for them. CORE-1131 moved library
+// navigation into a left sidebar and redesigned the Manage and Console shells, so every Manage,
+// Console and desktop shared-dialog state joins them. CORE-1141 (controls over a bottom gradient,
+// one settings sheet) re-recorded all 22 of the player live PNGs from the new layout; CORE-1191
+// replaced the viewer header Search link with a search field, which also redesigns the shared
+// dialog state.
 const redesignedSinceMigration: ReadonlySet<string> = new Set([
+  "console/console-alert-dialog-open-focused.png",
+  "console/console-kind-select-open-focused-selected.png",
+  "manage/manage-alert-dialog-open-focused.png",
+  "manage/manage-collections-tab-focused-selected.png",
+  "manage/manage-curation-extras-tab-focused-selected.png",
+  "manage/manage-curation-relation-select-open-focused-selected.png",
+  "manage/manage-curation-subject-select-open-focused-selected.png",
+  "manage/manage-curation-versions-tab-focused-selected.png",
+  "manage/manage-library-select-open-focused-selected.png",
+  "manage/manage-smart-tab-focused-selected.png",
+  "player-desktop/shared-dialog-open-focused.png",
   "player-desktop/player-audio-listbox-open-focused-selected.png",
   "player-desktop/player-details-dialog-open-focused.png",
   "player-desktop/player-playback-slider-focused-selected.png",
@@ -66,7 +48,6 @@ const redesignedSinceMigration: ReadonlySet<string> = new Set([
   "player-desktop/player-subtitle-size-open-focused-selected.png",
   "player-desktop/player-subtitles-listbox-open-focused-selected.png",
   "player-desktop/player-volume-slider-focused-selected.png",
-  "player-desktop/shared-dialog-open-focused.png",
   "player-mobile/player-audio-listbox-open-focused-selected.png",
   "player-mobile/player-details-dialog-open-focused.png",
   "player-mobile/player-playback-slider-focused-selected.png",

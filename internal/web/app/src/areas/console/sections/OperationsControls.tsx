@@ -1,4 +1,4 @@
-import { Cpu, RefreshCw } from "lucide-react";
+import { Cpu, Gauge, ListOrdered, RefreshCw, SlidersHorizontal } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import {
   ControlRow,
@@ -91,6 +91,7 @@ function GovernorStatus() {
   return (
     <Section
       heading="governorHeading"
+      icon={Gauge}
       actions={
         <Button variant="outline" size="sm" onClick={() => void refresh()}>
           <RefreshCw className="console-nav-icon" aria-hidden />
@@ -200,14 +201,14 @@ function GovernorSettings() {
   }
 
   return (
-    <Section heading="governorSettingsHeading">
+    <Section heading="governorSettingsHeading" icon={SlidersHorizontal}>
       {config.loading ? (
         <Skeleton className="h-32 w-full" />
       ) : config.failed ? (
         <ErrorState message="governorSettingsUnavailable" />
       ) : (
         <form onSubmit={onSubmit} className="space-y-3">
-          <Fieldset title="governorSettingsHeading">
+          <Fieldset title="governorSettingsHeading" hideTitle>
             <ControlRow
               label="governorBackgroundWorkers"
               help="governorBackgroundWorkersHelp"
@@ -342,6 +343,7 @@ function JobQueue() {
   return (
     <Section
       heading="jobQueueHeading"
+      icon={ListOrdered}
       actions={
         <Button variant="outline" size="sm" onClick={() => void refresh()}>
           <RefreshCw className="console-nav-icon" aria-hidden />

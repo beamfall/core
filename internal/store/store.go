@@ -1709,7 +1709,12 @@ func (s *Store) ProfileByName(ctx context.Context, name string) (Profile, error)
 	return s.profileSQL(ctx, id)
 }
 
-// OwnerProfile returns the single designated owner Profile.
+// ErrNoOwnerProfile means no Profile is designated owner yet. It wraps
+// sql.ErrNoRows so existing callers keep matching it.
+var ErrNoOwnerProfile = fmt.Errorf("no owner profile: %w", sql.ErrNoRows)
+
+// OwnerProfile returns the single designated owner Profile, or
+// ErrNoOwnerProfile.
 func (s *Store) OwnerProfile(ctx context.Context) (Profile, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -1717,7 +1722,11 @@ func (s *Store) OwnerProfile(ctx context.Context) (Profile, error) {
 		return Profile{}, err
 	}
 	var id ProfileID
-	if err := s.catalogR.QueryRowContext(ctx, `SELECT id FROM profile WHERE is_owner = 1 LIMIT 1`).Scan(&id); err != nil {
+	err := s.catalogR.QueryRowContext(ctx, `SELECT id FROM profile WHERE is_owner = 1 LIMIT 1`).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Profile{}, ErrNoOwnerProfile
+	}
+	if err != nil {
 		return Profile{}, err
 	}
 	return s.profileSQL(ctx, id)
@@ -3780,10 +3789,15 @@ func (s *Store) FirstRunSetupComplete(ctx context.Context) (bool, error) {
 // by an earlier setup that stopped after its Profile write. That Profile is
 // reused as the owner (the designated owner first, else the oldest adult
 // Profile) and renamed to profileName, so a retry never adds a second owner.
-func (s *Store) BootstrapOwner(ctx context.Context, profileName string, device Device, session Session) (Profile, error) {
+// mode is the owner's sign-in security choice (CORE-1110); empty means Home.
+func (s *Store) BootstrapOwner(ctx context.Context, profileName string, device Device, session Session, mode SignInSecurityMode) (Profile, error) {
 	profileName = strings.TrimSpace(profileName)
 	if profileName == "" {
 		return Profile{}, ValidationError("profile name is required")
+	}
+	mode, err := ParseSignInSecurityMode(string(mode))
+	if err != nil {
+		return Profile{}, err
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -3839,12 +3853,20 @@ func (s *Store) BootstrapOwner(ctx context.Context, profileName string, device D
 	); err != nil {
 		return Profile{}, err
 	}
+	if err := upsertSignInSecurityModeTx(ctx, tx, mode, s.serverNow()); err != nil {
+		return Profile{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return Profile{}, err
 	}
-	// The setup is stored: a cancelled request must not turn it into a
-	// retryable failure that would enroll a second owner.
-	return s.profileSQL(context.WithoutCancel(ctx), profileID)
+	// The setup is stored: neither a cancelled request nor a failed read-back
+	// may turn it into a retryable failure, because a retry would find the
+	// enrolled Device, enroll a second owner and demote this one.
+	profile, err := s.profileSQL(context.WithoutCancel(ctx), profileID)
+	if err != nil {
+		return Profile{ID: profileID, Name: profileName, Kind: ProfileAdult, IsOwner: true}, nil
+	}
+	return profile, nil
 }
 
 // partialOwnerTx returns the Profile an interrupted first-run setup left

@@ -39,6 +39,8 @@ var compatExemptRoutes = map[string]string{
 	"POST /api/enroll":            "pre-subject enrollment",
 	"POST /api/web/enroll":        "pre-subject web enrollment",
 	"POST /api/web/logout":        "credential recovery",
+	"POST /api/web/session/renew": "credential recovery",
+	"POST /api/web/admin-signin":  "pre-subject web sign-in",
 	"GET /api/moderation/contact": "public moderation contact",
 	"POST /api/compat/handshake":  "compatibility handshake",
 	"POST /api/test/faults":       "test-only fault control",

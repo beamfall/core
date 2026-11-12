@@ -1851,9 +1851,17 @@ func (a *App) Run(ctx context.Context) error {
 		// and must never land in a structured/persisted log. The tokened URL goes to
 		// the operator's console (stdout) only; the slog line carries a REDACTED URL.
 		fmt.Fprintf(os.Stdout, "Beamfall first-run setup: %s\n", firstRunSetupURL(scheme, listener.Addr().String(), a.setupToken))
+		// A browser on the local network needs no token (CORE-1105), so name the
+		// addresses it can open; the loopback URL above does not work remotely.
+		interfaceAddrs, _ := net.InterfaceAddrs()
+		lanURLs := lanSetupURLs(scheme, listener.Addr().String(), interfaceAddrs)
+		for _, lanURL := range lanURLs {
+			fmt.Fprintf(os.Stdout, "Beamfall first-run setup from this network (no token needed): %s\n", lanURL)
+		}
 		a.logger.Info(
 			"=== Beamfall first-run setup ===",
 			"setupURL", firstRunSetupURLRedacted(scheme, listener.Addr().String()),
+			"lanSetupURLs", lanURLs,
 			"headless", "BEAMFALL_ADMIN_PASSWORD",
 		)
 	}

@@ -292,7 +292,9 @@ func (s *Store) playbackPosition(ctx context.Context, profileID ProfileID, media
 // it immediately. Deleting a session is additive — no existing call path does a
 // plain session delete, so this introduces no behavioral change for any other
 // surface. An unknown id is a ValidationError, not a silent no-op, so the
-// operator learns the session was already gone.
+// operator learns the session was already gone. The device is left with no
+// session row, so RenewDeviceSession refuses it and the browser must enroll
+// again (CORE-1106).
 func (s *Store) TerminateSession(ctx context.Context, id SessionID) error {
 	if id == "" {
 		return ValidationError("session ID is required")

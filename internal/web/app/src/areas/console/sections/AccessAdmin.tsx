@@ -1,6 +1,7 @@
 import { Devices } from "./Devices";
 import { Profiles } from "./Profiles";
 import { ProfilesAccess } from "./ProfilesAccess";
+import { SignInSecurity } from "./SignInSecurity";
 
 export function AccessAdmin() {
   return (
@@ -8,6 +9,7 @@ export function AccessAdmin() {
       <Profiles />
       <Devices />
       <ProfilesAccess />
+      <SignInSecurity />
     </div>
   );
 }

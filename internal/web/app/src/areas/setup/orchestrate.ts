@@ -1,6 +1,7 @@
-import { ApiError, fetchSetupRequired, postJSON } from "@/lib/api";
+import { ApiError, fetchSetupStatus, postJSON, type SignInSecurityMode } from "@/lib/api";
 import {
   createLibrary,
+  fetchConsoleConfig,
   fetchLibraries,
   fetchSetupState,
   scanLibrary,
@@ -10,6 +11,7 @@ import {
   verifyAdminSession,
 } from "@/lib/graphql";
 import type { SetupState } from "@/lib/graphql/types";
+import { groupProviderKeys, type ProviderKey } from "@/lib/providerKeys";
 import type { StringKey } from "@/strings";
 
 // First-run setup orchestration (WEB-1, ADR-0007 §2). The wizard's visual step
@@ -107,6 +109,7 @@ export async function bootstrapSetup(input: {
   deviceName: string;
   profileName: string;
   adminPassword: string;
+  securityMode: SignInSecurityMode;
 }): Promise<SetupBootstrapResult> {
   try {
     return await postJSON<SetupBootstrapResult>("/api/setup", {
@@ -114,6 +117,7 @@ export async function bootstrapSetup(input: {
       deviceName: input.deviceName,
       profileName: input.profileName,
       adminPassword: input.adminPassword,
+      securityMode: input.securityMode,
     });
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) {
@@ -159,6 +163,17 @@ export async function activatePlugins(pluginIDs: string[]): Promise<void> {
 }
 
 /**
+ * List the provider keys the installed plugins' scrapers declare (CORE-1115).
+ * Console config is Admin-Session-gated, so first-run setup verifies that gate
+ * with the password the operator just created, as `configureUpdateCheck` does.
+ */
+export async function loadProviderKeys(adminPassword: string): Promise<ProviderKey[]> {
+  await verifyAdminSession(adminPassword);
+  const config = await fetchConsoleConfig();
+  return groupProviderKeys(config.plugins.flatMap((p) => p.scrapers ?? []));
+}
+
+/**
  * Persist the setup wizard's update-awareness choice. `setConsoleConfig` is an
  * Admin-Session-gated Console operation, so first-run setup verifies that gate
  * with the password the operator just created.
@@ -186,6 +201,8 @@ export async function configureUpdateCheck(input: {
 export interface SetupResume {
   /** True once the one-time token has been consumed (a session exists). */
   alreadyBootstrapped: boolean;
+  /** False when this browser may finish setup without the token (LAN, CORE-1105). */
+  tokenRequired?: boolean;
   /** Server-derived per-step completion, or null when not yet bootstrapped. */
   state: SetupState | null;
   /** Partially-created first Library state that must survive a reload. */
@@ -206,8 +223,8 @@ export interface SetupResume {
  * rather than surfacing an unhandled error (Gate-A LOW).
  */
 export async function bootstrapResume(): Promise<SetupResume> {
-  const required = await fetchSetupRequired();
-  if (required) return { alreadyBootstrapped: false, state: null };
+  const { required, tokenRequired } = await fetchSetupStatus();
+  if (required) return { alreadyBootstrapped: false, state: null, tokenRequired };
   try {
     const state = await fetchSetupState();
     if (state.hasLibrary) {

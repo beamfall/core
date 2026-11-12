@@ -62,6 +62,13 @@ export const profileDeviceStrings = {
     remoteEnrollToggle: "Allow remote enrollment",
     remoteEnrollToggleHint:
       "When off, only devices on your local network can redeem a pairing code. Remote enrollment over a relay is refused.",
+    signinSecurityHeading: "Sign-in security",
+    signinSecurityLead:
+      "Choose whether the owner can sign a browser in with the admin password. Changing it needs the admin password.",
+    signinSecuritySave: "Change sign-in security",
+    signinSecuritySaved: "Sign-in security changed.",
+    signinSecurityNotManager: "Only a Manager device can change sign-in security.",
+    signinSecurityFailed: "Could not change sign-in security.",
   },
   fr: {
     consoleAccessGroup: "Profils et accès",
