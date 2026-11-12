@@ -46,7 +46,7 @@ describe("PlayerTransport", () => {
     const row = screen.getByRole("button", { name: "Back 10s" }).closest(".bf-transport-row");
     const primary = screen
       .getByRole("button", { name: "Back 10s" })
-      .closest(".bf-primary-controls");
+      .closest<HTMLElement>(".bf-primary-controls");
 
     if (!seek || !row || !primary) throw new Error("player hierarchy groups are missing");
     expect(row).toContainElement(primary);
