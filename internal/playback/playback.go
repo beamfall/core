@@ -2009,20 +2009,21 @@ func audioOnlyMedia(media store.Media, streams []store.MediaFileStream) bool {
 }
 
 // audioOnlyCodecDeclared stands in for the video gate on audio-only items.
-// Recorded audio streams are judged by audioDirectPlayable; a probe-less file
-// falls back to Media.Codec against the declared audio envelope, or the legacy
-// DirectCodecs list when no envelope is declared.
+// Without a declared audio envelope audioDirectPlayable gates nothing, so the
+// legacy DirectCodecs list judges Media.Codec, as the video gate did before.
+// With one, recorded audio streams are judged by audioDirectPlayable and a
+// probe-less file falls back to Media.Codec against the envelope.
 func audioOnlyCodecDeclared(media store.Media, streams []store.MediaFileStream, profile CapabilityProfile) bool {
+	if len(profile.AudioCodecs) == 0 {
+		return slices.Contains(profile.DirectCodecs, media.Codec)
+	}
 	for _, stream := range streams {
 		if stream.Type == "audio" {
 			return true
 		}
 	}
-	if len(profile.AudioCodecs) > 0 {
-		_, ok := audioCodecCap(profile.AudioCodecs, media.Codec)
-		return ok
-	}
-	return slices.Contains(profile.DirectCodecs, media.Codec)
+	_, ok := audioCodecCap(profile.AudioCodecs, media.Codec)
+	return ok
 }
 
 // audioCopyEligible reports whether the audio-only-transcode mode applies:
