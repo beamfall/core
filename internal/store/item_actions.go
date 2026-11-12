@@ -138,6 +138,7 @@ func (s *Store) entityTreeMediaLocked(ctx context.Context, entityID EntityID, pa
 	args = append(args, libArgs...)
 	args = append(args, libArgs...)
 	args = append(args, certArgs...)
+	// #nosec G202 -- interpolated fragments are generated placeholders and closed certification SQL.
 	rows, err := plane.reader.QueryContext(ctx, `
 		WITH RECURSIVE subtree(id, kind) AS (
 			SELECT id, kind FROM entity WHERE id = ? AND trashed_at_ms IS NULL
@@ -206,16 +207,16 @@ func itemProgressLocked(ctx context.Context, q interface {
 			var id MediaID
 			var watched, position, plays int
 			if err := rows.Scan(&id, &watched, &position, &plays); err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return nil, err
 			}
 			state[id] = itemProgress{watched: watched != 0, hasState: watched != 0 || position > 0 || plays > 0}
 		}
 		if err := rows.Err(); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
-		rows.Close()
+		_ = rows.Close()
 	}
 	return state, nil
 }
