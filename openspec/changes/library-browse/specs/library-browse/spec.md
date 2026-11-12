@@ -18,6 +18,12 @@ per-Profile Mute.
 - **WHEN** a session that has not revealed a restricted library requests its `libraryItems`
 - **THEN** `total` is 0, `items` is empty and every facet list is empty
 
+#### Scenario: Muted item kept by a Favorite in an Encrypted Library
+
+- **WHEN** an open Encrypted Library holds an item the Profile has favorited and reaches through a
+  Mute that includes descendants
+- **THEN** the item is in the response with `muted: true`, read from that library's own relations
+
 ### Requirement: Library browse sorts server-side
 
 `libraryItems` SHALL order the filtered set by `sort` (`title`, `year`, `added`, `duration`,

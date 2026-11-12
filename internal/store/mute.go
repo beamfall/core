@@ -325,15 +325,17 @@ func (s *Store) AnnotateMuted(ctx context.Context, profileID ProfileID, filter L
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	return s.annotateMutedLocked(ctx, profileID, items)
+	return s.annotateMutedLocked(ctx, s.catalogR, profileID, items)
 }
 
 // annotateMutedLocked is AnnotateMuted's in-lock body. Kind-aware: an entity-kind
 // item badges when its entity id is a direct or broad ENTITY mute target; a
 // media-kind item badges when any mute target (entity or tag) reaches its Media,
-// mirroring the id-pooled suppression reach exactly.
-func (s *Store) annotateMutedLocked(ctx context.Context, profileID ProfileID, items []SourceItem) error {
-	reach, err := s.mutedReachLocked(ctx, s.catalogR, profileID, items)
+// mirroring the id-pooled suppression reach exactly. relations is the catalog
+// plane holding the items' relations: the shared catalog, or an open Encrypted
+// Library's own database.
+func (s *Store) annotateMutedLocked(ctx context.Context, relations *sql.DB, profileID ProfileID, items []SourceItem) error {
+	reach, err := s.mutedReachLocked(ctx, relations, profileID, items)
 	if err != nil {
 		return err
 	}

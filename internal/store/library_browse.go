@@ -239,6 +239,13 @@ func (s *Store) LibraryBrowse(ctx context.Context, filter LibraryFilter, query L
 	if err := s.annotateRestrictedLocked(ctx, nil, result.Items); err != nil {
 		return empty, err
 	}
+	// The Mute badge is read from the browsed Library's own plane, the same one
+	// the Mute filter above read, so an Encrypted Library's items are badged too.
+	if query.ProfileID != "" {
+		if err := s.annotateMutedLocked(ctx, reader, query.ProfileID, result.Items); err != nil {
+			return empty, err
+		}
+	}
 	if !filter.PlaybackGate {
 		if err := s.annotateLockedLocked(ctx, filter.Certification, result.Items, filter.GrantedMediaIDs); err != nil {
 			return empty, err

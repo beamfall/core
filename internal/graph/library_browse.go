@@ -72,9 +72,6 @@ func (h *Handler) libraryItems(ctx context.Context, scope auth.Scope, req reques
 	if err != nil {
 		return LibraryItemsResponse{}, err
 	}
-	if err := h.store.AnnotateMuted(ctx, scope.ProfileID, scope.LibraryFilter(), result.Items); err != nil {
-		return LibraryItemsResponse{}, err
-	}
 	resp := emptyLibraryItems()
 	resp.Total = result.Total
 	resp.Items = make([]SourceItem, len(result.Items))

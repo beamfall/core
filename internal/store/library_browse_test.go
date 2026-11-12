@@ -262,6 +262,25 @@ func TestLibraryBrowseReadsAnOpenEncryptedLibrary(t *testing.T) {
 		}
 	}
 
+	// A Favorite keeps a broadly muted item in the browse, and the item still
+	// carries the Mute badge read from the Encrypted Library's own relations.
+	if err := st.SetMute(ctx, profile, MuteKindEntity, string(entity.ID), true, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.insertImportedFavorite(ctx, profile, imported.ID); err != nil {
+		t.Fatal(err)
+	}
+	kept, err := st.LibraryBrowse(ctx, LibraryFilter{AllLibraries: true}, LibraryBrowseQuery{LibraryID: library, ProfileID: profile})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(kept.Items) != 1 || !kept.Items[0].Muted {
+		t.Fatalf("favorited, broadly muted item = %+v, want it kept and badged muted", kept.Items)
+	}
+	if err := st.SetMute(ctx, profile, MuteKindEntity, string(entity.ID), true, false); err != nil {
+		t.Fatal(err)
+	}
+
 	// A hide-mode certification ceiling is applied on the Encrypted Library's
 	// own plane, which has no library table to join.
 	if _, err := st.catalogW.ExecContext(ctx, `UPDATE library SET plugin_id = 'photos' WHERE id = ?`, library); err != nil {
