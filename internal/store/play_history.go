@@ -87,15 +87,24 @@ func (p derivedPlay) watchedSeconds() int {
 	return seconds
 }
 
+// playedAtMS is when a progress report was observed: the client's own
+// epoch-millisecond event time when it sent one, so a report held back while a
+// device was offline stays in the play it belongs to, and the server arrival
+// time otherwise. A client clock ahead of the server is not believed, so no
+// play is ever dated in the future.
+const playedAtMS = `CASE
+		WHEN COALESCE(json_extract(payload, '$.eventTimeMs'), 0) BETWEEN 1 AND occurred_at_ms
+		THEN json_extract(payload, '$.eventTimeMs')
+		ELSE occurred_at_ms END`
+
 // derivedPlaysLocked sessionizes progress events in [since, until) newest
 // first. A zero bound is open; an empty profileID covers every Profile.
 func (s *Store) derivedPlaysLocked(ctx context.Context, profileID ProfileID, since, until time.Time, visit func(derivedPlay) bool) error {
 	query := `
-		WITH ev AS (
-			SELECT profile_id, media_id, occurred_at_ms,
+		WITH raw AS (
+			SELECT profile_id, media_id, ` + playedAtMS + ` AS at_ms,
 			       COALESCE(json_extract(payload, '$.durationSeconds'), 0) AS duration,
-			       COALESCE(json_extract(payload, '$.watched'), 0) AS watched,
-			       LAG(occurred_at_ms) OVER (PARTITION BY profile_id, media_id ORDER BY occurred_at_ms) AS prev_ms
+			       COALESCE(json_extract(payload, '$.watched'), 0) AS watched
 			FROM engagement_event
 			WHERE kind = ? AND media_id IS NOT NULL
 			  AND json_extract(payload, '$.operation') = ?`
@@ -105,23 +114,34 @@ func (s *Store) derivedPlaysLocked(ctx context.Context, profileID ProfileID, sin
 		args = append(args, profileID)
 	}
 	if !since.IsZero() {
+		// A report is never dated after it arrived, so the arrival index can
+		// still bound the scan.
 		query += ` AND occurred_at_ms >= ?`
 		args = append(args, timeToMillis(since.UTC()))
 	}
+	query += `
+		), ev AS (
+			SELECT *, LAG(at_ms) OVER (PARTITION BY profile_id, media_id ORDER BY at_ms) AS prev_ms
+			FROM raw
+			WHERE 1 = 1`
+	if !since.IsZero() {
+		query += ` AND at_ms >= ?`
+		args = append(args, timeToMillis(since.UTC()))
+	}
 	if !until.IsZero() {
-		query += ` AND occurred_at_ms < ?`
+		query += ` AND at_ms < ?`
 		args = append(args, timeToMillis(until.UTC()))
 	}
 	query += `
 		), run AS (
-			SELECT *, SUM(CASE WHEN prev_ms IS NULL OR occurred_at_ms - prev_ms > ? THEN 1 ELSE 0 END)
-			            OVER (PARTITION BY profile_id, media_id ORDER BY occurred_at_ms) AS run_no
+			SELECT *, SUM(CASE WHEN prev_ms IS NULL OR at_ms - prev_ms > ? THEN 1 ELSE 0 END)
+			            OVER (PARTITION BY profile_id, media_id ORDER BY at_ms) AS run_no
 			FROM ev
 		)
-		SELECT profile_id, media_id, MIN(occurred_at_ms), MAX(occurred_at_ms), MAX(duration), MAX(watched)
+		SELECT profile_id, media_id, MIN(at_ms), MAX(at_ms), MAX(duration), MAX(watched)
 		FROM run
 		GROUP BY profile_id, media_id, run_no
-		ORDER BY MIN(occurred_at_ms) DESC, profile_id, media_id`
+		ORDER BY MIN(at_ms) DESC, profile_id, media_id`
 	args = append(args, playGap.Milliseconds())
 	rows, err := s.eventsR.QueryContext(ctx, query, args...)
 	if err != nil {

@@ -12,9 +12,22 @@ import (
 // the progress upsert writes it.
 func progressAt(t *testing.T, st *Store, profile ProfileID, media MediaID, at time.Time, watched bool) {
 	t.Helper()
+	progressReported(t, st, profile, media, at, time.Time{}, watched)
+}
+
+// progressReported appends a progress event that arrived at the server at one
+// instant and carries the client's own event time; a zero observed time is a
+// client that sent none.
+func progressReported(t *testing.T, st *Store, profile ProfileID, media MediaID, at, observed time.Time, watched bool) {
+	t.Helper()
+	var eventTime *int64
+	if !observed.IsZero() {
+		ms := timeToMillis(observed)
+		eventTime = &ms
+	}
 	payload, err := json.Marshal(playbackProjectionEvent{
 		Operation: playbackProjectionOperationProgress, ProfileID: string(profile), MediaID: string(media),
-		DurationSeconds: 3600, Watched: watched, UpdatedAtMS: timeToMillis(at),
+		DurationSeconds: 3600, Watched: watched, UpdatedAtMS: timeToMillis(at), EventTimeMS: eventTime,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -112,5 +125,50 @@ func TestPlayHistoryDerivesPlaysAndFilters(t *testing.T) {
 	recent, err := st.PlayStats(ctx, all, day.Add(12*time.Hour))
 	if err != nil || len(recent.Profiles) != 1 || recent.Profiles[0].ProfileID != "profile-managed" {
 		t.Errorf("windowed ranking = %#v (err %v), want only managed", recent.Profiles, err)
+	}
+}
+
+// feature:play-history
+func TestPlayHistoryDatesDelayedReportsByWhenTheyWerePlayed(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	all := LibraryFilter{AllLibraries: true}
+	played := time.Date(2026, 11, 10, 20, 0, 0, 0, time.UTC)
+	flushed := played.Add(26 * time.Hour)
+
+	// The first report arrives live. The device then goes offline and sends
+	// the rest of the same play the next day.
+	progressReported(t, st, "profile-default", "media-alpha", played, played, false)
+	progressReported(t, st, "profile-default", "media-alpha", flushed, played.Add(10*time.Minute), false)
+	progressReported(t, st, "profile-default", "media-alpha", flushed.Add(time.Second), played.Add(20*time.Minute), true)
+	// A client whose clock runs a day ahead is dated by arrival instead.
+	progressReported(t, st, "profile-managed", "media-alpha", played.Add(time.Hour), played.Add(25*time.Hour), false)
+
+	plays, err := st.PlayHistory(ctx, all, PlayHistoryQuery{})
+	if err != nil {
+		t.Fatalf("PlayHistory: %v", err)
+	}
+	if len(plays) != 2 {
+		t.Fatalf("plays = %d, want 2: %#v", len(plays), plays)
+	}
+	if plays[0].ProfileID != "profile-managed" || !plays[0].StartedAt.Equal(played.Add(time.Hour)) {
+		t.Errorf("fast-clock play = %#v, want it dated by arrival an hour in", plays[0])
+	}
+	if !plays[1].StartedAt.Equal(played) || plays[1].WatchedSeconds != 1200 || !plays[1].Finished {
+		t.Errorf("delayed play = %#v, want one finished 1200s play starting when it was played", plays[1])
+	}
+
+	// The date filter and the rankings follow the play, not the upload.
+	thatDay, err := st.PlayHistory(ctx, all, PlayHistoryQuery{ProfileID: "profile-default", Until: played.Add(4 * time.Hour)})
+	if err != nil || len(thatDay) != 1 {
+		t.Fatalf("day-of filter = %#v (err %v), want the delayed play", thatDay, err)
+	}
+	nextDay, err := st.PlayHistory(ctx, all, PlayHistoryQuery{Since: played.Add(4 * time.Hour)})
+	if err != nil || len(nextDay) != 0 {
+		t.Fatalf("next-day filter = %#v (err %v), want nothing", nextDay, err)
+	}
+	stats, err := st.PlayStats(ctx, all, played.Add(4*time.Hour))
+	if err != nil || len(stats.Profiles) != 0 || len(stats.Items) != 0 {
+		t.Fatalf("next-day ranking = %#v (err %v), want empty", stats, err)
 	}
 }

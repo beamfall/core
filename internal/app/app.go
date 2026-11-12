@@ -1898,7 +1898,7 @@ func (a *App) Run(ctx context.Context) error {
 	// ADR-0118's "no cert ⇒ carrier off" premise, which assumed a LAN-only server
 	// had no identity to terminate with.
 	if a.relay != nil {
-		if backendLn, lerr := tls.Listen("tcp", "127.0.0.1:0", carrierTLS); lerr != nil {
+		if backendLn, lerr := relayBackendListener(a.hostMetrics, carrierTLS); lerr != nil {
 			a.logger.Warn("relay carrier backend listener failed", "error", lerr)
 		} else {
 			bsrv := &http.Server{
@@ -2036,6 +2036,19 @@ func (a *App) Run(ctx context.Context) error {
 // RelayConnected is only ever set while a yamux session is live
 // and carrying — a dropped carrier reverts the Console state, so the status is
 // truthful rather than reporting a connection that forwards nothing.
+// relayBackendListener opens the loopback TLS listener the relay carrier
+// splices relayed clients onto. Their traffic never crosses the bound port, so
+// it is counted here, below TLS like the direct path, or a server streaming
+// through the relay would show an idle network graph. The carrier's own dial
+// out to the relay is not counted, so relayed bytes are counted once.
+func relayBackendListener(metrics *hostmetrics.Sampler, tlsConfig *tls.Config) (net.Listener, error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, err
+	}
+	return tls.NewListener(metrics.Listener(ln), tlsConfig), nil
+}
+
 func (a *App) runRelayCarrier(ctx context.Context) {
 	runRelayCarrierLoop(ctx, a.relay, a.logger, time.After)
 }
