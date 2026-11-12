@@ -48,10 +48,12 @@ export interface PlayQueueStart {
 
 /**
  * Starts a queue over one library query and resolves its first Media (null
- * when the filtered set is empty).
+ * when the filtered set is empty). A caller that goes away while the set is
+ * being read aborts leaving: nothing starts and no queue is left behind.
  */
 export async function startPlayQueue(
   request: PlayQueue["request"],
+  leaving?: AbortSignal,
 ): Promise<PlayQueueStart | null> {
   current = null;
   const epoch = getIdentityEpochSignal();
@@ -74,9 +76,10 @@ export async function startPlayQueue(
   // plays, and the queue walks the set as it stood: one read per
   // QUEUE_PAGE items, paid once at Play all.
   const reorders = !request.shuffleSeed && request.state.sort === "last-watched";
-  while (reorders && !queue.done && epoch === getIdentityEpochSignal()) await loadMore(queue);
+  const live = () => epoch === getIdentityEpochSignal() && !leaving?.aborted;
+  while (reorders && !queue.done && live()) await loadMore(queue);
   const first = queue.ids[0];
-  if (first === undefined || epoch !== getIdentityEpochSignal()) return null;
+  if (first === undefined || !live()) return null;
   current = queue;
   return { id: first, title: queue.titles.get(first) ?? "" };
 }

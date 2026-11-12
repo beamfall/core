@@ -175,6 +175,18 @@ describe("play queue", () => {
     expect(await nextInPlayQueue("e")).toBe("");
   });
 
+  it("starts nothing once its caller has gone", async () => {
+    // The viewer left the browse page while the first read was in flight.
+    const left = new AbortController();
+    fetchLibraryItems.mockImplementation(async () => {
+      left.abort();
+      return page(["a", "b"], 2);
+    });
+
+    expect(await startPlayQueue(request, left.signal)).toBeNull();
+    expect(playQueueHandle()).toBeNull();
+  });
+
   it("is dropped when the identity changes", async () => {
     const first = new AbortController();
     setIdentityEpochSignal(first.signal);

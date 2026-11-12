@@ -194,14 +194,22 @@ function LibraryBrowse({
     writeLibraryViewMode(libraryID, mode);
   }
 
+  // Leaving the page, or changing library, drops a Play all still loading:
+  // a slow start must not pull the viewer into the player from elsewhere.
+  const leavingRef = useRef(new AbortController());
+  useEffect(() => {
+    const leaving = new AbortController();
+    leavingRef.current = leaving;
+    return () => leaving.abort();
+  }, [libraryID]);
+
   async function play(shuffle: boolean) {
     setStarting(true);
     try {
-      const first = await startPlayQueue({
-        libraryID,
-        state,
-        shuffleSeed: shuffle ? newSeed() : undefined,
-      });
+      const first = await startPlayQueue(
+        { libraryID, state, shuffleSeed: shuffle ? newSeed() : undefined },
+        leavingRef.current.signal,
+      );
       // The player reads its heading from navigation state.
       if (first) {
         navigate(`/watch/${encodeURIComponent(first.id)}`, { state: { title: first.title } });
