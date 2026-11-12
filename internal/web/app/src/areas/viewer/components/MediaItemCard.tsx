@@ -6,8 +6,8 @@ import { useViewerIdentity } from "@/lib/session";
 import { artworkBucketURL, artworkSlotURL } from "../lib/artwork";
 import { entityLinkState } from "../lib/entityPreview";
 import { fetchPreviewInfo } from "../lib/playback";
-import { type PlayerNavState, type PlayQueueItem, queueWindow } from "../lib/watchQueue";
 import { type RenderFocusAnchor, rememberRenderFocus } from "../lib/renderFocus";
+import { type PlayerNavState, type PlayQueueItem, queueWindow } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 
 export const PREVIEW_DWELL_MS = 400;

@@ -8,9 +8,9 @@ import { useDisplayLocale, useT } from "@/lib/i18n";
 import { MediaItemCard } from "../components/MediaItemCard";
 import { useVirtualGrid, VIRTUAL_GRID_MIN_ITEMS } from "../components/useVirtualGrid";
 import { ViewerActions } from "../components/ViewerActions";
-import { playQueueOf } from "../lib/watchQueue";
 import { fetchSectionItems, SEEALL_PAGE } from "../lib/sections";
 import type { SeeAllContext } from "../lib/seeall";
+import { playQueueOf } from "../lib/watchQueue";
 
 // See All (/seeall/:sourceId), ported from the vanilla openSeeAll /
 // loadSeeAllPage (app.js). Renders one Source as a full grid, paged 60 at a

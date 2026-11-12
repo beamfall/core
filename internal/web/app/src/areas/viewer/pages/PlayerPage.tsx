@@ -7,13 +7,13 @@ import type { ClientPref, GenericMediaInfo } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
 import type { PlaybackNext } from "../lib/playback";
-import { type PlayQueueItem, queueNeighbours, readPlayerNavState } from "../lib/watchQueue";
 import {
   resolvePreferences,
   type SkipInterval,
   skipIntervalOverrideKey,
   skipIntervalOverrideValue,
 } from "../lib/preferences";
+import { type PlayQueueItem, queueNeighbours, readPlayerNavState } from "../lib/watchQueue";
 import { AudioStage } from "../player/AudioStage";
 import { PlayerTransport } from "../player/PlayerTransport";
 import { SkippedOverlay } from "../player/SkippedOverlay";

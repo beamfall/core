@@ -24,8 +24,8 @@ import { useT } from "@/lib/i18n";
 import type { StringKey } from "@/strings";
 import { MediaItemCard } from "../components/MediaItemCard";
 import { ViewerActions } from "../components/ViewerActions";
-import { playQueueOf } from "../lib/watchQueue";
 import { availableModes } from "../lib/searchModes";
+import { playQueueOf } from "../lib/watchQueue";
 
 const MODE_LABEL: Record<SearchMode, StringKey> = {
   keyword: "searchModeKeyword",
