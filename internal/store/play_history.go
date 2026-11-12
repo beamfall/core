@@ -180,6 +180,11 @@ func (s *Store) profileNamesLocked(ctx context.Context) (map[ProfileID]string, e
 	return names, rows.Err()
 }
 
+// playHistoryReach is how far back an open-ended history read looks before it
+// widens. Progress events are kept indefinitely, so reading the newest plays
+// must not sessionize the whole log when recent activity already fills a page.
+var playHistoryReach = []time.Duration{30 * 24 * time.Hour, 365 * 24 * time.Hour}
+
 // PlayHistory lists plays newest first. Media titles resolve through filter,
 // the caller's own visibility; filtering by Library keeps only plays whose
 // Media the caller can see in that Library.
@@ -193,12 +198,36 @@ func (s *Store) PlayHistory(ctx context.Context, filter LibraryFilter, q PlayHis
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
+	if q.Since.IsZero() {
+		end := q.Until
+		if end.IsZero() {
+			end = s.serverNow()
+		}
+		for _, reach := range playHistoryReach {
+			bound := end.Add(-reach)
+			plays, err := s.playHistoryLocked(ctx, filter, q, bound, limit)
+			if err != nil {
+				return nil, err
+			}
+			// A play cut short by the bound starts within one gap of it, so a
+			// full page whose oldest play starts later is exactly the page an
+			// unbounded read returns.
+			if len(plays) == limit && plays[limit-1].StartedAt.After(bound.Add(playGap)) {
+				return plays, nil
+			}
+		}
+	}
+	return s.playHistoryLocked(ctx, filter, q, q.Since, limit)
+}
+
+// playHistoryLocked resolves up to limit plays no older than since.
+func (s *Store) playHistoryLocked(ctx context.Context, filter LibraryFilter, q PlayHistoryQuery, since time.Time, limit int) ([]Play, error) {
 	// Visibility lives in the catalog database and plays in the events
 	// database, so plays are read in pages and resolved until the page fills.
 	// Without a Library filter the first page is always enough.
 	const scanCap = 20 * PlayHistoryMaxLimit
 	var raw []derivedPlay
-	err := s.derivedPlaysLocked(ctx, q.ProfileID, q.Since, q.Until, func(p derivedPlay) bool {
+	err := s.derivedPlaysLocked(ctx, q.ProfileID, since, q.Until, func(p derivedPlay) bool {
 		raw = append(raw, p)
 		if q.LibraryID == "" {
 			return len(raw) < limit

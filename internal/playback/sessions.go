@@ -139,8 +139,12 @@ type hlsSession struct {
 	// the first segment request starts one (one rendition per live session,
 	// ADR-0010 §8 — switching rungs replaces the process).
 	currentRung string
-	proc        *ffmpeg.HLSProcess
-	baseSegment int
+	// deliveredRung is the rendition last started for this session. Unlike
+	// currentRung it outlives the encoder: a finished encode is still what the
+	// viewer is being served until the session ends.
+	deliveredRung string
+	proc          *ffmpeg.HLSProcess
+	baseSegment   int
 	// frontier caches the highest produced segment for the current
 	// (proc, baseSegment) generation so the common seek-lookahead check needs no
 	// syscall under the lock. It only ever advances forward within a generation
@@ -822,6 +826,7 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	}
 	session.proc = proc
 	session.currentRung = rung.ID
+	session.deliveredRung = rung.ID
 	session.baseSegment = segment
 	session.frontier = segment - 1 // new generation: nothing produced past base yet
 	session.lastAccess = s.now()

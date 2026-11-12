@@ -172,3 +172,46 @@ func TestPlayHistoryDatesDelayedReportsByWhenTheyWerePlayed(t *testing.T) {
 		t.Fatalf("next-day ranking = %#v (err %v), want empty", stats, err)
 	}
 }
+
+// feature:play-history
+func TestPlayHistoryOpenEndedReadMatchesTheWholeLog(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	all := LibraryFilter{AllLibraries: true}
+	until := time.Date(2026, 11, 10, 0, 0, 0, 0, time.UTC)
+	bound := until.Add(-playHistoryReach[0])
+
+	// Two recent plays, one play that straddles the first bound of an
+	// open-ended read, and one long before it.
+	progressAt(t, st, "profile-default", "media-alpha", until.Add(-2*time.Hour), false)
+	progressAt(t, st, "profile-default", "media-alpha", until.Add(-2*time.Hour+10*time.Minute), false)
+	progressAt(t, st, "profile-managed", "media-alpha", until.Add(-26*time.Hour), false)
+	progressAt(t, st, "profile-managed", "media-alpha", until.Add(-26*time.Hour+5*time.Minute), false)
+	progressAt(t, st, "profile-default", "media-alpha", bound.Add(-10*time.Minute), false)
+	progressAt(t, st, "profile-default", "media-alpha", bound.Add(10*time.Minute), false)
+	progressAt(t, st, "profile-managed", "media-alpha", bound.Add(-200*24*time.Hour), false)
+	progressAt(t, st, "profile-managed", "media-alpha", bound.Add(-200*24*time.Hour+15*time.Minute), false)
+
+	whole, err := st.PlayHistory(ctx, all, PlayHistoryQuery{Since: bound.Add(-400 * 24 * time.Hour), Until: until})
+	if err != nil || len(whole) != 4 {
+		t.Fatalf("whole log = %d plays (err %v), want 4", len(whole), err)
+	}
+	for limit := 1; limit <= 5; limit++ {
+		got, err := st.PlayHistory(ctx, all, PlayHistoryQuery{Until: until, Limit: limit})
+		if err != nil {
+			t.Fatalf("limit %d: %v", limit, err)
+		}
+		want := whole[:min(limit, len(whole))]
+		if len(got) != len(want) {
+			t.Fatalf("limit %d = %d plays, want %d", limit, len(got), len(want))
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("limit %d play %d = %#v, want %#v", limit, i, got[i], want[i])
+			}
+		}
+	}
+	if whole[2].WatchedSeconds != 1200 {
+		t.Errorf("straddling play = %ds, want the whole 1200s", whole[2].WatchedSeconds)
+	}
+}

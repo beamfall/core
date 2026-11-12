@@ -88,8 +88,8 @@ func (o *observations) lookup(key observationKey) (PlayObservation, bool) {
 }
 
 // PlayObservation returns the last decision made for a session and item,
-// corrected by what is running now: a session that was offered direct play but
-// holds a live transcode chose a lower quality itself.
+// corrected by what the session is being served: a session that was offered
+// direct play but holds a transcode chose a lower quality itself.
 func (s *Service) PlayObservation(sessionID store.SessionID, mediaID store.MediaID) (PlayObservation, bool) {
 	obs, ok := s.observed.lookup(observationKey{session: sessionID, media: mediaID})
 	if !ok {
@@ -98,8 +98,8 @@ func (s *Service) PlayObservation(sessionID store.SessionID, mediaID store.Media
 	if s.sessions == nil {
 		return obs, true
 	}
-	bandwidth, live := s.sessions.liveBandwidth(sessionID, mediaID)
-	if !live {
+	bandwidth, transcoded := s.sessions.deliveredBandwidth(sessionID, mediaID)
+	if !transcoded {
 		return obs, true
 	}
 	if obs.Method == PlayMethodDirect {
@@ -112,17 +112,19 @@ func (s *Service) PlayObservation(sessionID store.SessionID, mediaID store.Media
 	return obs, true
 }
 
-// liveBandwidth reports whether the session holds a live transcode of the
-// item and, when its rendition is known, that rendition's bandwidth.
-func (s *Sessions) liveBandwidth(sessionID store.SessionID, mediaID store.MediaID) (int, bool) {
+// deliveredBandwidth reports whether the session is being served a transcode
+// of the item and, when its rendition is known, that rendition's bandwidth. It
+// holds for as long as the session does, not only while the encoder runs: an
+// encoder that has finished the item leaves the viewer on the same rendition.
+func (s *Sessions) deliveredBandwidth(sessionID store.SessionID, mediaID store.MediaID) (int, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for key, session := range s.sessions {
-		if key.SessionID != sessionID || key.MediaID != mediaID || session.proc == nil {
+		if key.SessionID != sessionID || key.MediaID != mediaID || !session.started {
 			continue
 		}
 		for _, rung := range session.rungs {
-			if rung.ID == session.currentRung {
+			if rung.ID == session.deliveredRung {
 				return rung.Bandwidth, true
 			}
 		}
