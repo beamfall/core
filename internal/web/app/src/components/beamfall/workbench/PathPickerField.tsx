@@ -141,6 +141,7 @@ export function PathPickerField({
   suppressAppStoreDownload = false,
   actions,
   selectLabel,
+  selectDisabled = false,
   onSelect,
 }: {
   id: string;
@@ -158,8 +159,13 @@ export function PathPickerField({
   actions?: ReactNode;
   /** Label for the action that commits the shown folder. Defaults to "Use this folder". */
   selectLabel?: string;
-  /** Commit handler. Defaults to writing the folder into the field. */
-  onSelect?: (path: string) => void | Promise<void>;
+  /** Holds the commit action back, e.g. while an earlier commit is still saving. */
+  selectDisabled?: boolean;
+  /**
+   * Commit handler. Defaults to writing the folder into the field. Returning
+   * false means the folder was not taken, and the browser stays open.
+   */
+  onSelect?: (path: string) => void | boolean | Promise<void | boolean>;
 }) {
   const t = useT();
   const panelID = useId();
@@ -244,9 +250,12 @@ export function PathPickerField({
   }
 
   async function commit(path: string) {
-    if (onSelect) await onSelect(path);
-    else onChange(path);
-    close();
+    // A commit can take a moment (it may save). If the user moved to another
+    // folder or closed the browser meanwhile, leave it as they have it.
+    const seq = request.current;
+    if (!onSelect) onChange(path);
+    else if ((await onSelect(path)) === false) return;
+    if (seq === request.current) close();
   }
 
   const roots = view?.info.roots ?? [];
@@ -542,7 +551,7 @@ export function PathPickerField({
             <Button
               type="button"
               size="sm"
-              disabled={!canUse}
+              disabled={!canUse || selectDisabled}
               onClick={() => view && void commit(view.path)}
             >
               {selectLabel ?? t("pathPickerUse")}

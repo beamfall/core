@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,11 +8,13 @@ import {
   fetchFolderTree,
   fetchJobs,
   fetchLibraries,
+  fetchPathPicker,
   fetchPlugins,
   fetchSkipDetectionEnabled,
   scanLibrary,
   setLibraryRoots,
 } from "@/lib/graphql";
+import type { LibraryInfo, PathPickerEntryInfo, PathPickerInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { Libraries } from "./Libraries";
 
@@ -24,10 +26,12 @@ class ResizeObserverStub {
 globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObserver;
 
 vi.mock("@/lib/graphql", () => ({
+  addPathPickerRoot: vi.fn(),
   createLibrary: vi.fn(),
   fetchFolderTree: vi.fn(),
   fetchJobs: vi.fn(),
   fetchLibraries: vi.fn(),
+  fetchPathPicker: vi.fn(),
   fetchPlugins: vi.fn(),
   fetchSkipDetectionEnabled: vi.fn(),
   fetchWatcherStatus: vi
@@ -38,6 +42,40 @@ vi.mock("@/lib/graphql", () => ({
   setLibraryRoots: vi.fn(),
   setSkipDetectionEnabled: vi.fn(),
 }));
+
+function pickerEntry(path: string, children?: PathPickerEntryInfo[]): PathPickerEntryInfo {
+  return {
+    name: path.slice(path.lastIndexOf("/") + 1),
+    path,
+    kind: "folder",
+    accessError: "none",
+    entryClass: "ordinary",
+    selectable: true,
+    mediaCount: 0,
+    previewTimeoutMs: 1000,
+    maxPreviewEntries: 50,
+    truncated: false,
+    children,
+  };
+}
+
+// The folder browser's server answer: /mnt is the one location and holds /mnt/tv.
+function pickerAnswer(path?: string): PathPickerInfo {
+  const children: Record<string, PathPickerEntryInfo[]> = {
+    "/mnt": [pickerEntry("/mnt/tv")],
+    "/mnt/tv": [],
+  };
+  return {
+    runtime: "bare",
+    roles: ["libraryRoot"],
+    role: "libraryRoot",
+    purposeKey: "pathPicker.libraryRoot",
+    previewTimeoutMs: 1000,
+    maxPreviewEntries: 50,
+    roots: [{ name: "mnt", path: "/mnt", entryClass: "mount-point" }],
+    entries: path ? [pickerEntry(path, children[path])] : [pickerEntry("/mnt")],
+  };
+}
 
 describe("Console Libraries scan", () => {
   beforeEach(() => {
@@ -260,6 +298,102 @@ describe("Console Libraries scan", () => {
       ]),
     );
     expect(setLibraryRoots).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a path typed in another card and its folder browser through a folder save", async () => {
+    const user = userEvent.setup();
+    const second: LibraryInfo = {
+      id: "library-2",
+      title: "Second",
+      pluginID: null,
+      roots: ["/Volumes/second"],
+      previewClips: true,
+      restricted: false,
+    };
+    const first = (await fetchLibraries())[0];
+    vi.mocked(fetchLibraries).mockClear().mockResolvedValue([first, second]);
+    renderLibraries();
+
+    const [firstField, secondField] = await screen.findAllByLabelText("Add a folder");
+    await user.type(secondField, "/Volumes/unfinished");
+    // The save starts a library refresh; hold it so its loading state is observable.
+    let finishRefresh: (libraries: LibraryInfo[]) => void = () => {};
+    vi.mocked(fetchLibraries).mockReturnValueOnce(
+      new Promise<LibraryInfo[]>((resolve) => {
+        finishRefresh = resolve;
+      }),
+    );
+    await user.type(firstField, "/Volumes/more");
+    await user.click(screen.getAllByRole("button", { name: "Add folder" })[0]);
+
+    await waitFor(() => expect(fetchLibraries).toHaveBeenCalledTimes(2));
+    expect(secondField).toBeInTheDocument();
+    expect(secondField).toHaveValue("/Volumes/unfinished");
+
+    finishRefresh([{ ...first, roots: ["/Volumes/library", "/Volumes/more"] }, second]);
+    expect(await screen.findByText("/Volumes/more")).toBeInTheDocument();
+    expect(screen.getAllByLabelText("Add a folder")[1]).toBe(secondField);
+    expect(secondField).toHaveValue("/Volumes/unfinished");
+  });
+
+  it("holds the folder browser's Add while a save runs, so a second folder is not dropped", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchPathPicker).mockImplementation(({ path }) =>
+      Promise.resolve(pickerAnswer(path ?? undefined)),
+    );
+    let finishSave: () => void = () => {};
+    vi.mocked(setLibraryRoots).mockImplementationOnce(
+      () => new Promise<void>((resolve) => (finishSave = resolve)) as never,
+    );
+    renderLibraries();
+
+    await user.click(await screen.findByRole("button", { name: "Browse" }));
+    const browser = screen.getByRole("group", { name: "Folder browser" });
+    await user.click(await within(browser).findByRole("button", { name: "/mnt" }));
+    const add = within(browser).getByRole("button", { name: "Add this folder" });
+    await waitFor(() => expect(add).toBeEnabled());
+    await user.click(add);
+    // The first save is in flight: open the next folder and try to add it too.
+    await user.click(await within(browser).findByRole("button", { name: "tv" }));
+    await within(browser).findByText("No folders inside this one.");
+    expect(add).toBeDisabled();
+    await user.click(add);
+    expect(setLibraryRoots).toHaveBeenCalledTimes(1);
+
+    finishSave();
+    // The browser is still on the second folder, and it can now be added.
+    await waitFor(() => expect(add).toBeEnabled());
+    expect(browser).toBeInTheDocument();
+    await user.click(add);
+
+    await waitFor(() =>
+      expect(setLibraryRoots).toHaveBeenLastCalledWith("library-1", [
+        "/Volumes/library",
+        "/mnt",
+        "/mnt/tv",
+      ]),
+    );
+    await waitFor(() => expect(browser).not.toBeInTheDocument());
+  });
+
+  it("keeps the folder browser open when its folder could not be saved", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchPathPicker).mockImplementation(({ path }) =>
+      Promise.resolve(pickerAnswer(path ?? undefined)),
+    );
+    vi.mocked(setLibraryRoots).mockRejectedValueOnce(new Error("folder overlaps another library"));
+    renderLibraries();
+
+    await user.click(await screen.findByRole("button", { name: "Browse" }));
+    const browser = screen.getByRole("group", { name: "Folder browser" });
+    await user.click(await within(browser).findByRole("button", { name: "/mnt" }));
+    const add = within(browser).getByRole("button", { name: "Add this folder" });
+    await waitFor(() => expect(add).toBeEnabled());
+    await user.click(add);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("folder overlaps another library");
+    expect(browser).toBeInTheDocument();
+    expect(add).toBeEnabled();
   });
 
   it("removes a folder only after the confirm", async () => {

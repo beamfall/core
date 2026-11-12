@@ -177,10 +177,14 @@ function LibraryCard({
     }
   }
 
-  async function addRootPath(path: string) {
+  // Reports false when the folder was not saved, so the folder browser stays
+  // open with the selection instead of closing as if it had been added.
+  async function addRootPath(path: string): Promise<boolean> {
     const root = path.trim();
-    if (!root || roots.includes(root)) return;
-    if (await saveRoots([...roots, root])) setNewRoot("");
+    if (!root || roots.includes(root)) return true;
+    const saved = await saveRoots([...roots, root]);
+    if (saved) setNewRoot("");
+    return saved;
   }
 
   async function addRoot(e: FormEvent) {
@@ -315,6 +319,7 @@ function LibraryCard({
                 onChange={setNewRoot}
                 inputClassName="min-w-0 flex-1 basis-48"
                 selectLabel={t("pathPickerAddThis")}
+                selectDisabled={savingRoots}
                 onSelect={addRootPath}
                 actions={
                   <Button
@@ -479,7 +484,11 @@ export function Libraries() {
 
   const pluginList = plugins.data ?? [];
   const libraryList = libs.data ?? [];
-  const empty = !libs.loading && !libs.failed && libraryList.length === 0;
+  // Only the first load shows a skeleton. A later refresh (every folder save
+  // starts one) keeps the cards mounted, so it cannot discard a path typed in
+  // another card or a library name typed in the add panel.
+  const firstLoad = libs.loading && !libs.data;
+  const empty = !firstLoad && !libs.failed && libraryList.length === 0;
   const skipDetectionByLibrary = new Map(
     (skipDetection.data ?? []).map((info) => [info.libraryID, info.enabled]),
   );
@@ -521,7 +530,7 @@ export function Libraries() {
         />
       )}
 
-      {libs.loading ? (
+      {firstLoad ? (
         <Skeleton className="h-40 w-full" />
       ) : libs.failed ? (
         <ErrorState message="consoleConfigUnavailable" />

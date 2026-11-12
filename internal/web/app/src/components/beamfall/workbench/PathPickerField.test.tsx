@@ -201,6 +201,64 @@ describe("PathPickerField", () => {
     expect(screen.getByLabelText("libraryRoot path")).toHaveValue("");
   });
 
+  it("stays open on the folder when onSelect reports it was not taken", async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
+    renderField("libraryRoot", { selectLabel: "Add this folder", onSelect });
+
+    await user.click(screen.getByRole("button", { name: "Browse" }));
+    await user.click(await row("/mnt"));
+    await row("user");
+    const add = within(browser()).getByRole("button", { name: "Add this folder" });
+    await user.click(add);
+
+    await waitFor(() => expect(onSelect).toHaveBeenCalledTimes(1));
+    expect(browser()).toBeInTheDocument();
+    expect(add).toBeEnabled();
+
+    await user.click(add);
+    await waitFor(() => expect(screen.queryByRole("group", { name: "Folder browser" })).toBeNull());
+    expect(onSelect).toHaveBeenCalledTimes(2);
+  });
+
+  it("holds the commit action back while selectDisabled is set", async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    renderField("libraryRoot", { selectLabel: "Add this folder", onSelect, selectDisabled: true });
+
+    await user.click(screen.getByRole("button", { name: "Browse" }));
+    await user.click(await row("/mnt"));
+    await row("user");
+    const add = within(browser()).getByRole("button", { name: "Add this folder" });
+
+    expect(add).toBeDisabled();
+    await user.click(add);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("stays on the folder opened while an earlier commit was still saving", async () => {
+    const user = userEvent.setup();
+    let finishCommit: (taken: boolean) => void = () => {};
+    const onSelect = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishCommit = resolve;
+        }),
+    );
+    renderField("libraryRoot", { selectLabel: "Add this folder", onSelect });
+
+    await user.click(screen.getByRole("button", { name: "Browse" }));
+    await user.click(await row("/mnt"));
+    await user.click(within(browser()).getByRole("button", { name: "Add this folder" }));
+    await user.click(await row("user"));
+    await row(/movies/);
+    finishCommit(true);
+
+    await waitFor(() => expect(onSelect).toHaveBeenCalledWith("/mnt"));
+    expect(await row(/movies/)).toBeInTheDocument();
+    expect(browser()).toBeInTheDocument();
+  });
+
   it("moves with the keyboard and closes on Escape", async () => {
     const user = userEvent.setup();
     renderField();
