@@ -292,13 +292,15 @@ describe("MediaItemCard play queue", () => {
       { id: "media-beta", title: "Beta" },
     ];
     render(
-      <MemoryRouter>
-        <MediaItemCard item={baseItem()} queue={queue} />
-        <LocationState />
-      </MemoryRouter>,
+      <I18nProvider initialLocale="en">
+        <MemoryRouter>
+          <MediaItemCard item={baseItem()} queue={queue} />
+          <LocationState />
+        </MemoryRouter>
+      </I18nProvider>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /Alpha/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Alpha/ }));
 
     expect(screen.getByTestId("path")).toHaveTextContent("/watch/media-alpha");
     const state = JSON.parse(screen.getByTestId("state").textContent || "null");
