@@ -924,6 +924,7 @@ type Store struct {
 	catalogR       *sql.DB // read pool, WAL readers
 	eventsW        *sql.DB
 	eventsR        *sql.DB
+	outbox         outboxNotifier // wakes event-outbox readers on commit
 	now            func() time.Time
 	dataDir        string
 	catalogPath    string

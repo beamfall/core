@@ -224,7 +224,7 @@ func (s *Store) EnqueueScheduleOccurrenceMember(ctx context.Context, id Schedule
 	if err := jobMutationResult(result, err, ValidationError("schedule occurrence member already published")); err != nil {
 		return Job{}, err
 	}
-	return job, tx.Commit()
+	return job, s.commitOutboxTx(tx)
 }
 
 // CompleteScheduleOccurrence journals the occurrence's completion instant.
