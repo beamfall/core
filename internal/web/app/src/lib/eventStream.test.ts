@@ -77,6 +77,25 @@ describe("openEventStream", () => {
     expect(fetchMock.mock.calls.length).toBe(calls);
   });
 
+  it("drops a cursor the server refused, and keeps one across an id-less frame", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn<(url: string, init: RequestInit) => Promise<Response>>()
+      .mockResolvedValueOnce(streamResponse(["id: 9\nevent: a\ndata: 1\n\n"]))
+      .mockResolvedValueOnce(streamResponse(["event: note\ndata: 2\n\n"]))
+      .mockResolvedValueOnce(streamResponse(["event: client.fullRefresh\ndata: {}\n\n"]))
+      .mockResolvedValue(streamResponse([]));
+    vi.stubGlobal("fetch", fetchMock);
+    const close = openEventStream("/api/events", { onEvent: () => {} });
+    await vi.advanceTimersByTimeAsync(8000);
+    close();
+    const cursor = (call: number) =>
+      (fetchMock.mock.calls[call]?.[1].headers as Record<string, string>)["Last-Event-ID"];
+    expect(cursor(1)).toBe("9");
+    expect(cursor(2)).toBe("9");
+    expect(cursor(3)).toBeUndefined();
+  });
+
   it("leaves no abort listener behind after each retry wait", async () => {
     vi.useFakeTimers();
     vi.stubGlobal(

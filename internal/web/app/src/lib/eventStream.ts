@@ -85,7 +85,10 @@ export function openEventStream(url: string, handlers: EventStreamHandlers): () 
     handlers.onState?.("live");
     retryMs = FIRST_RETRY_MS;
     const feed = createEventStreamParser((frame) => {
-      lastEventId = frame.lastEventId;
+      // The server answers a cursor it no longer retains with this id-less
+      // frame and closes; resending that cursor would only repeat the refusal.
+      if (frame.type === "client.fullRefresh") lastEventId = "";
+      else if (frame.lastEventId) lastEventId = frame.lastEventId;
       handlers.onEvent(
         new MessageEvent(frame.type, { data: frame.data, lastEventId: frame.lastEventId }),
       );
