@@ -14,4 +14,4 @@
 
 - [x] 3.1 Running web app against a library of 1,000+ items, keyboard and accessible names
 - [x] 3.2 Refresh the unpublished v2.0.0 wire contract candidate (main carries it under determination, so no minor publish) and note the consumer re-vendor
-- [ ] 3.3 `make gate`
+- [x] 3.3 `make gate`

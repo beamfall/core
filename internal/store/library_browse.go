@@ -222,6 +222,7 @@ func (s *Store) libraryBrowseCandidatesLocked(ctx context.Context, filter Librar
 	args = append(args, entityArgs...)
 	certClause, certArgs := certificationFilterSQL(filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
 	args = append(args, certArgs...)
+	// #nosec G202 -- interpolated fragments are internally generated placeholders and closed filter SQL.
 	rows, err := s.catalogR.QueryContext(ctx, `
 		SELECT m.id, m.title, m.duration_seconds, COALESCE(m.year, 0), m.video_height, m.rowid
 		FROM media m
@@ -321,6 +322,7 @@ func (s *Store) libraryBrowseEntityTitlesLocked(ctx context.Context, kind string
 		args = append(args, id)
 	}
 	in := strings.Join(placeholders, ", ")
+	// #nosec G202 -- only generated placeholders and a closed extras clause are interpolated.
 	rows, err := s.catalogR.QueryContext(ctx, `
 		SELECT DISTINCT e.title
 		FROM entity e
