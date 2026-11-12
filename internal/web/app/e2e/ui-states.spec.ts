@@ -276,7 +276,7 @@ test.describe("UI state inventory enroll locale", () => {
       page.getByRole("heading", { level: 1, name: "Connecter ce navigateur" }),
     ).toBeVisible();
     await expect(page.getByRole("textbox", { name: "Code de jumelage" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Connecter" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Connecter", exact: true })).toBeVisible();
     coverUiStates(testInfo, "area:enroll@locale:fr-FR");
   });
 });
