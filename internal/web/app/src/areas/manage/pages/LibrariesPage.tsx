@@ -102,6 +102,12 @@ export function LibrariesPage() {
     }
   };
 
+  // The rescan controls read saved roots from this list, so a save has to land
+  // here: otherwise a library's first folder stays unscannable until reload.
+  const onRootsSaved = useCallback((libraryID: string, roots: string[]) => {
+    setLibraries((prev) => prev.map((l) => (l.id === libraryID ? { ...l, roots } : l)));
+  }, []);
+
   const onCreate = async () => {
     const title = newTitle.trim();
     if (!title) return;
@@ -135,6 +141,7 @@ export function LibrariesPage() {
                   key={lib.id}
                   library={lib}
                   onTogglePreview={onTogglePreview}
+                  onRootsSaved={onRootsSaved}
                   onError={setError}
                 />
               ))
@@ -182,10 +189,12 @@ export function LibrariesPage() {
 function LibraryRow({
   library,
   onTogglePreview,
+  onRootsSaved,
   onError,
 }: {
   library: LibraryInfo;
   onTogglePreview: (lib: LibraryInfo, enabled: boolean) => Promise<void>;
+  onRootsSaved: (libraryID: string, roots: string[]) => void;
   onError: (message: string) => void;
 }) {
   const t = useT();
@@ -254,6 +263,7 @@ function LibraryRow({
     try {
       const updated = await setLibraryRoots(library.id, nextRoots);
       setRootsText(updated.roots.join("\n"));
+      onRootsSaved(library.id, updated.roots);
       await loadTree();
     } catch (err) {
       onError(err instanceof Error ? err.message : t("couldNotUpdateRoots"));
