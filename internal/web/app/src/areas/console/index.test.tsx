@@ -16,7 +16,12 @@ vi.mock("@/components/chrome/AppShell", () => ({
 }));
 vi.mock("@/lib/register", () => ({ useRegister: vi.fn() }));
 vi.mock("@/lib/session", () => ({ useSession: vi.fn() }));
-vi.mock("@/lib/graphql", () => ({ fetchSetupState: vi.fn() }));
+vi.mock("@/lib/graphql", () => ({
+  fetchSetupState: vi.fn(),
+  fetchLibraries: vi.fn().mockResolvedValue([]),
+  fetchUnmatchedQueue: vi.fn().mockResolvedValue([]),
+  fetchConsoleConfig: vi.fn().mockResolvedValue({ plugins: [] }),
+}));
 vi.mock("./AdminGate", () => ({
   AdminGate: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
@@ -152,7 +157,7 @@ describe("ConsoleArea App Store host firewall", () => {
 
     const { container } = renderConsole("/console/capabilities");
 
-    await screen.findByText("Server");
+    await screen.findByRole("heading", { name: "Common tasks" });
     expect(screen.queryByText("capabilities-panel")).toBeNull();
     expect(container.textContent).not.toMatch(/qBittorrent|Capabilities/i);
   });
@@ -177,7 +182,7 @@ describe("Console IA conformance", () => {
   it("renders the fixed grouped rail with Maintain collapsed by default", async () => {
     renderConsole("/console");
 
-    await screen.findByText("Server");
+    await screen.findByRole("heading", { name: "Common tasks" });
     const nav = screen.getByRole("navigation", { name: "Console" });
     expect(
       Array.from(nav.querySelectorAll(".console-nav-group-label")).map((n) => n.textContent),
@@ -190,7 +195,16 @@ describe("Console IA conformance", () => {
   it("renders Overview status, triage, and first-run regions with queue deep links", async () => {
     renderConsole("/console");
 
-    expect(await screen.findByText("Server")).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Common tasks" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Rescan all libraries" })).toBeVisible();
+    expect(screen.getByRole("link", { name: /Fix unmatched items/ })).toHaveAttribute(
+      "href",
+      "/manage/unmatched",
+    );
+    expect(screen.getByRole("link", { name: /Provider keys/ })).toHaveAttribute(
+      "href",
+      "/console/plugins",
+    );
     expect(screen.getByRole("heading", { name: "Needs attention" })).toBeVisible();
     expect(screen.getByRole("link", { name: /Create or connect a Library/i })).toHaveAttribute(
       "href",

@@ -7,7 +7,6 @@ import {
   FolderOpen,
   Gauge,
   HardDrive,
-  HeartPulse,
   Home,
   KeyRound,
   Layers,
@@ -35,6 +34,7 @@ import { cn } from "@/lib/utils";
 import type { StringKey } from "@/strings";
 import { BackupExportPage } from "../manage/pages/BackupExportPage";
 import { AdminGate } from "./AdminGate";
+import { OwnerTasks } from "./OwnerTasks";
 import { Section } from "./Section";
 import { AccessAdmin } from "./sections/AccessAdmin";
 import { ActivityLog } from "./sections/ActivityLog";
@@ -116,24 +116,7 @@ function Overview() {
 
   return (
     <div className="space-y-8">
-      <Section heading="consoleOverviewHeading" lead="consoleOverviewLead">
-        <div className="console-overview-tiles">
-          {[
-            ["consoleOverviewServer", "consoleOverviewReady", HeartPulse],
-            ["libraries", needsLibrary ? "setupChecklistNext" : "consoleOverviewReady", Boxes],
-            ["jobs", "consoleOverviewReady", Gauge],
-            ["liveSessionsHeading", "none", Users],
-          ].map(([label, state, Icon]) => (
-            <div className="console-overview-tile" key={label as string}>
-              <Icon className="console-nav-icon" aria-hidden />
-              <span>{t(label as StringKey)}</span>
-              <StatusChip tone={state === "setupChecklistNext" ? "amber" : "green"}>
-                {t(state as StringKey)}
-              </StatusChip>
-            </div>
-          ))}
-        </div>
-      </Section>
+      <OwnerTasks />
 
       <Section heading="consoleNeedsAttentionHeading" lead="consoleNeedsAttentionLead">
         {queue.length === 0 ? (
