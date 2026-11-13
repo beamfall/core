@@ -1,0 +1,42 @@
+## ADDED Requirements
+
+### Requirement: Library cards offer an audited delete
+
+Each library card in Console > Libraries and Manage > Libraries SHALL offer a danger-styled
+"Delete library" control, separate from Rescan and Fix unmatched, rendered by one shared component.
+Confirming the delete SHALL call the `DeleteLibrary` operation (`deleteLibrary(libraryID)`), the
+server's audited soft delete.
+
+#### Scenario: Owner deletes a library
+
+- **WHEN** an owner with an open Admin Session confirms the delete
+- **THEN** the client sends `DeleteLibrary` with the library's id, the dialog closes and the library
+  list reloads without that library
+
+#### Scenario: Cancel keeps the library
+
+- **WHEN** the owner presses Cancel or Escape in the dialog
+- **THEN** no mutation is sent, the dialog closes and focus returns to the "Delete library" control
+
+### Requirement: The delete dialog states what deletion does
+
+The "Delete library" control SHALL open an alert dialog titled with the library name. Its copy SHALL
+state that the library disappears on every device, that files on disk are not touched, that watch
+history is kept but hidden, and that the library cannot be restored yet.
+
+#### Scenario: Owner opens the dialog
+
+- **WHEN** the owner activates "Delete library" on a library named "Films"
+- **THEN** an alert dialog titled with "Films" opens, focus moves into it, and its description
+  covers devices, files on disk, watch history and the missing restore
+
+### Requirement: Delete failures stay recoverable in the dialog
+
+While the delete runs the dialog's buttons SHALL be disabled. If the mutation fails the dialog SHALL
+stay open, show the error and allow the owner to retry.
+
+#### Scenario: Server refuses the delete
+
+- **WHEN** the `DeleteLibrary` mutation returns an error
+- **THEN** the dialog stays open showing the error message, the buttons are enabled again and the
+  library list is not reloaded
