@@ -3972,6 +3972,25 @@ type EntityInfo struct {
 	Fields          []EntityFieldInfo   `json:"fields"`
 }
 
+// EntityDetailInfo is the entity(id) wire shape: the Entity plus the Entities
+// related to it through Entity-to-Entity relations in both directions,
+// grouped by kind (CORE-1210). RelatedEntities is omitted when there are none.
+// Reads that embed EntityInfo elsewhere do not carry the groups.
+type EntityDetailInfo struct {
+	EntityInfo
+	RelatedEntities []RelatedEntityGroupInfo `json:"relatedEntities,omitempty"`
+}
+
+// RelatedEntityGroupInfo is one Entity kind's share of an Entity's related
+// Entities: the kind, its plugin-declared display name (omitted when the
+// declaration carries none; clients fall back to Kind) and the Entities as
+// Source items of kind "entity".
+type RelatedEntityGroupInfo struct {
+	Kind            string              `json:"kind"`
+	KindDisplayName plugin.LocaleString `json:"kindDisplayName,omitempty"`
+	Items           []SourceItem        `json:"items"`
+}
+
 // RelatedEntityInfo pairs an Entity with the relation attributes that
 // reached it (credit-style links, ADR-0003 §2).
 type RelatedEntityInfo struct {
@@ -3980,16 +3999,32 @@ type RelatedEntityInfo struct {
 }
 
 // entityQuery resolves entity(id) — reveal-filtered like every read.
-func (h *Handler) entityQuery(ctx context.Context, scope auth.Scope, req request) (EntityInfo, error) {
+func (h *Handler) entityQuery(ctx context.Context, scope auth.Scope, req request) (EntityDetailInfo, error) {
 	id := trimmedVariable(req, "id")
 	if id == "" {
-		return EntityInfo{}, clientError("id is required")
+		return EntityDetailInfo{}, clientError("id is required")
 	}
 	entity, err := h.store.Entity(ctx, store.EntityID(id), scope.LibraryFilter())
 	if err != nil {
-		return EntityInfo{}, clientError("unknown entity")
+		return EntityDetailInfo{}, clientError("unknown entity")
 	}
-	return entityInfo(entity, h.entityKindSpec(ctx, entity.LibraryID, entity.Kind)), nil
+	info := EntityDetailInfo{EntityInfo: entityInfo(entity, h.entityKindSpec(ctx, entity.LibraryID, entity.Kind))}
+	groups, err := h.store.RelatedEntityGroups(ctx, entity.ID, scope.LibraryFilter())
+	if err != nil {
+		return EntityDetailInfo{}, err
+	}
+	for _, group := range groups {
+		items := make([]SourceItem, len(group.Items))
+		for i, item := range group.Items {
+			items[i] = h.sourceItem(item, scope.Revealed)
+		}
+		info.RelatedEntities = append(info.RelatedEntities, RelatedEntityGroupInfo{
+			Kind:            group.Kind,
+			KindDisplayName: h.entityKindSpec(ctx, group.LibraryID, group.Kind).DisplayName,
+			Items:           items,
+		})
+	}
+	return info, nil
 }
 
 // entitiesForMedia resolves the Media item's credit-style relations.

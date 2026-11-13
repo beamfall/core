@@ -211,6 +211,15 @@ export interface EntityInfo {
   kind: string;
   title: string;
   fields: EntityFieldInfo[];
+  /** Entities related in either direction, grouped by kind; only entity(id) fills it. */
+  relatedEntities?: RelatedEntityGroup[];
+}
+
+/** One kind's share of an Entity's related Entities (graph.RelatedEntityGroupInfo). */
+export interface RelatedEntityGroup {
+  kind: string;
+  kindDisplayName?: DisplayString;
+  items: SourceItem[];
 }
 
 /** A generic Media detail row (graph.MediaInfo), intentionally domain-neutral. */

@@ -46,7 +46,7 @@ var resultTypes = map[string]any{
 	"navigationmanifest":     NavigationManifestResponse{},
 	"manifest":               NavigationManifestResponse{},
 	"plugins":                PluginInfo{},
-	"entity":                 EntityInfo{},
+	"entity":                 EntityDetailInfo{},
 	"entitiesformedia":       RelatedEntityInfo{},
 	"entityrelations":        EntityRelationInfo{},
 	"mediaforentity":         SourceItem{},

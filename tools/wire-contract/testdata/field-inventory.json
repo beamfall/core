@@ -976,6 +976,7 @@
         "id",
         "kind",
         "kindDisplayName",
+        "relatedEntities",
         "title"
       ]
     },

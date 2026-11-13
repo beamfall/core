@@ -159,6 +159,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"RecordAuthAttempt":                       {},
 	"RefreshLibraryHealthCache":               {},
 	"RegisterImportSource":                    {},
+	"RelatedEntityGroups":                     {},
 	"RemoveCollectionMedia":                   {},
 	"RemoveSubscription":                      {},
 	"ReorderCollectionMedia":                  {},

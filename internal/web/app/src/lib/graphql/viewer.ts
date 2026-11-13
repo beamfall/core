@@ -160,9 +160,9 @@ export async function fetchSourceItems(
 // --- Entity detail --------------------------------------------------------
 
 const ENTITY_QUERY =
-  "query Entity($id: String!) { entity(id: $id) { id kind title fields { name type value } } }";
+  "query Entity($id: String!) { entity(id: $id) { id kind title fields { name type value } relatedEntities { kind kindDisplayName items { id kind title summary artwork { poster } artworkSlots } } } }";
 
-/** Entity — the detail header: declared fields with server-stringified values. */
+/** Entity — the detail header (declared fields, server-stringified) and its related Entities. */
 export async function fetchEntity(id: string, signal?: AbortSignal): Promise<EntityInfo | null> {
   const data = await graphql<{ entity: EntityInfo | null }>(ENTITY_QUERY, { id }, signal);
   return data.entity ?? null;
