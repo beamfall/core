@@ -138,6 +138,10 @@ The CLI covers day-to-day operation:
 | `beamfall pairing-code` | Mint a one-time owner pairing code while the server is stopped, to sign a browser back in. |
 | `beamfall capabilities` / `version` | Print runtime capabilities or build metadata. |
 
+`scan`, `backup`, `token list` and `token revoke` talk to the running server with `--token`: mint one
+with `beamfall token create` while the server is stopped. The token passes the Admin Session gate for
+exactly those operations; every other Console operation still needs a browser Admin Session.
+
 ### Docker Compose (after the first release)
 
 The reference deployment lives in [`packaging/compose`](packaging/compose/README.md), with overlays

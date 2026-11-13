@@ -146,13 +146,43 @@ func authorizeDispatchOrder(dispatch *fieldDispatchContext, order fieldDispatchO
 			authorizationRefused: true,
 		}
 	}
-	if gate&roleAdmin != 0 && !dispatch.scope.Admin {
+	if gate&roleAdmin != 0 && !dispatch.scope.Admin && !adminTokenMayRun(dispatch) {
 		return response{
 			Errors:               []graphError{{Message: "admin session required"}},
 			authorizationRefused: true,
 		}
 	}
 	return response{}
+}
+
+// adminTokenOps are the Console operations the operator CLI performs against a
+// running server (`beamfall scan`, `backup`, `token list`, `token revoke`). An
+// admin API token is minted only with data-directory access while the server is
+// stopped, so holding one is already host-operator authority; it may run exactly
+// these fields without an Admin Session. Everything else in adminFields —
+// including createApiToken, so a token can never mint another credential —
+// still requires the interactive browser Admin Session (ADR-0007 §2).
+var adminTokenOps = map[string]bool{
+	"scanlibrary":    true,
+	"runjob":         true,
+	"backup":         true,
+	"apitokens":      true,
+	"revokeapitoken": true,
+}
+
+// adminTokenMayRun reports whether the request authenticated with an admin API
+// token and every field it selects is an allowlisted CLI operation. Scoped keys
+// and sessions never qualify.
+func adminTokenMayRun(dispatch *fieldDispatchContext) bool {
+	if dispatch.scope.APITokenID == "" {
+		return false
+	}
+	for field, requested := range dispatch.fields {
+		if requested && adminFields[field] && !adminTokenOps[field] {
+			return false
+		}
+	}
+	return true
 }
 
 // fieldDispatchRuns is the single order-to-function authority. Field handlers
