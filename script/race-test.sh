@@ -260,10 +260,49 @@ case "$mode" in
       run_race_command "$write_mode" go test "$@"
     }
 
+    # The ordinary closure can overlap the promoted phase: the two cover
+    # disjoint packages and together left most of the host idle (CORE-1319).
+    # It runs in its own process group, writes its own log, and is retired
+    # with the active group on every exit path.
+    side_pid=""
+    side_pgid=""
+    start_side_phase() { # <log> <go test arguments...>
+      local log="$1"
+      shift
+      set -m
+      CGO_ENABLED=1 go test "$@" >"$log" &
+      side_pid=$!
+      side_pgid=$side_pid
+      set +m
+    }
+
+    retire_side_process_group() {
+      local saved_pid="$active_pid" saved_pgid="$active_pgid" status=0
+      active_pid="$side_pid"
+      active_pgid="$side_pgid"
+      retire_active_process_group || status=$?
+      side_pid=""
+      side_pgid=""
+      active_pid="$saved_pid"
+      active_pgid="$saved_pgid"
+      return "$status"
+    }
+
+    wait_side_phase() {
+      local phase_status=0
+      [ -n "$side_pid" ] || return 0
+      wait "$side_pid" || phase_status=$?
+      if ! retire_side_process_group; then
+        exit 70
+      fi
+      return "$phase_status"
+    }
+
     cleanup() {
       local status=$?
       trap - EXIT
       trap '' INT TERM
+      retire_side_process_group || true
       retire_active_process_group || true
       rm -rf "$work_dir"
       exit "$status"
@@ -276,6 +315,7 @@ case "$mode" in
     evidence_dir="${AGENT_EVIDENCE_DIR:-.agent-evidence}"
     evidence_file="$evidence_dir/race-short-packages.jsonl"
     discovery_evidence_file="$evidence_dir/race-short-discovery.json"
+    slowest_evidence_file="$evidence_dir/race-short-slowest-tests.jsonl"
     mkdir -p "$evidence_dir"
     parser="$work_dir/parser.py"
     cat > "$parser" <<'PY'
@@ -284,6 +324,7 @@ import sys
 
 package_order = []
 records = {}
+tests = []
 rank = {"skip": 0, "pass": 1, "fail": 2}
 for raw in sys.stdin:
     try:
@@ -298,7 +339,13 @@ for raw in sys.stdin:
     action = event.get("Action")
     if not pkg or action not in {"pass", "fail", "skip"}:
         continue
-    if event.get("Test") or event.get("Example"):
+    test = event.get("Test") or event.get("Example")
+    if test:
+        # Keep top-level test times so a slow gate names its slowest tests
+        # after the per-test stream is deleted with the work dir.
+        if "/" not in test:
+            tests.append({"package": pkg, "test": test, "status": action,
+                          "elapsed_seconds": event.get("Elapsed", 0)})
         continue
     elapsed = event.get("Elapsed", 0)
     cached = bool(event.get("Cached", False))
@@ -325,6 +372,13 @@ with open(sys.argv[1], "w", encoding="utf-8") as f:
         rec = records[pkg]
         f.write(json.dumps(rec, sort_keys=True))
         f.write("\n")
+
+if len(sys.argv) > 2:
+    tests.sort(key=lambda t: -t["elapsed_seconds"])
+    with open(sys.argv[2], "w", encoding="utf-8") as f:
+        for rec in tests[:50]:
+            f.write(json.dumps(rec, sort_keys=True))
+            f.write("\n")
 PY
 
     # The promoted full suites are mostly serial tests, so one go test process
@@ -595,9 +649,17 @@ PY
     fi
     set +e
     json_log="$work_dir/go-test.jsonl"
+    ordinary_log="$work_dir/ordinary.jsonl"
     : >"$json_log"
+    : >"$ordinary_log"
     ordinary_status=0
-    if [ "$pkg_count" -gt 0 ]; then
+    overlap=0
+    if [ "$pkg_count" -gt 0 ] && [ "$promoted_pkg_count" -gt 0 ] &&
+      [ "${RACE_SHORT_OVERLAP:-1}" = 1 ]; then
+      overlap=1
+      start_side_phase "$ordinary_log" -race -short -count=1 -p 4 -parallel 2 \
+        -test.timeout=600s -json "${pkgs[@]}"
+    elif [ "$pkg_count" -gt 0 ]; then
       run_race_phase truncate -race -short -count=1 -p 4 -parallel 2 \
         -test.timeout=600s -json "${pkgs[@]}"
       ordinary_status=$?
@@ -613,13 +675,18 @@ PY
       fi
       promoted_status=$?
     fi
+    if [ "$overlap" -eq 1 ]; then
+      wait_side_phase
+      ordinary_status=$?
+    fi
     focused_status=0
     if [ "$hot_pkg_count" -gt 0 ]; then
       run_race_phase append -race -short -count=1 -p 4 -parallel 2 \
         -test.timeout=600s -run "$RACE_SHORT_HOT_TESTS" -json "${hot_pkgs[@]}"
       focused_status=$?
     fi
-    python3 "$parser" "$evidence_file" <"$json_log"
+    cat "$ordinary_log" "$json_log" | python3 "$parser" "$evidence_file" \
+      "$slowest_evidence_file"
     parser_status=$?
     set -e
     # Every phase executes so the evidence stream remains complete. The final

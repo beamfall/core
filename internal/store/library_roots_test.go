@@ -8,7 +8,7 @@ import (
 
 func TestLibraryRootsReplaceSetNormalizesAndSorts(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true})
 	if err != nil {
 		t.Fatalf("Open returned error: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestLibraryRootsReplaceSetNormalizesAndSorts(t *testing.T) {
 
 func TestAllLibraryRootsIncludesEveryLibrary(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true})
 	if err != nil {
 		t.Fatalf("Open returned error: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestAllLibraryRootsIncludesEveryLibrary(t *testing.T) {
 // CreateLibrary without a scope leaves it unset.
 func TestCreateLibraryRecordsFamilyScope(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true})
 	if err != nil {
 		t.Fatalf("Open returned error: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestCreateLibraryRecordsFamilyScope(t *testing.T) {
 
 func TestCreateLibrarySeedsScanSchedule(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true})
 	if err != nil {
 		t.Fatalf("Open returned error: %v", err)
 	}

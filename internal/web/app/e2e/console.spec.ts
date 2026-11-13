@@ -9,6 +9,7 @@ import {
   harnessState,
 } from "./lib/spec";
 import { expect, type Page, test } from "./lib/test";
+import { coverUiStates } from "./lib/ui-state-coverage";
 import {
   expectLocatorVisualParity,
   expectVisualParity,
@@ -463,7 +464,7 @@ test.describe("console locale", () => {
   );
   test.use({ locale: "fr-FR" });
 
-  test("non-English browser locale renders Console catalog strings", async ({ page }) => {
+  test("non-English browser locale renders Console catalog strings", async ({ page }, testInfo) => {
     const errors = collectFatalErrors(page);
     await page.goto("/web/console");
     const nav = page.getByRole("navigation", { name: "Console" });
@@ -479,5 +480,6 @@ test.describe("console locale", () => {
     await expect(page.getByText("Lire le catalogue", { exact: true })).toBeVisible();
     await expect(page.getByText("Contrôler la lecture", { exact: true })).toBeVisible();
     expect(errors, errors.join("\n")).toEqual([]);
+    coverUiStates(testInfo, "area:console@locale:fr-FR");
   });
 });

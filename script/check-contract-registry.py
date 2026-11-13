@@ -137,6 +137,20 @@ def _git(repo, *args):
     return completed.stdout
 
 
+def _consumer_main(repo_dir):
+    """Resolve the consumer's landed main: origin/main when fetched, else local main.
+
+    A shared sibling checkout's local main can lag origin or carry unpushed commits,
+    so it is not what the consumer has landed (CORE-1339). Fetch before gating.
+    """
+    for ref in ("refs/remotes/origin/main^{commit}", "refs/heads/main^{commit}"):
+        try:
+            return _git(repo_dir, "rev-parse", "--verify", "--quiet", ref).decode().strip()
+        except ValueError as exc:
+            last = exc
+    raise last
+
+
 def _wire_consumer_truth_failures(boundary, workspace):
     """Cross-check recorded pins against consumer descriptors committed on main."""
     name = boundary.get("boundary", "")
@@ -184,9 +198,7 @@ def _wire_consumer_truth_failures(boundary, workspace):
 
         repo_dir = workspace / repo
         try:
-            revision = _git(
-                repo_dir, "rev-parse", "--verify", "refs/heads/main^{commit}"
-            ).decode().strip()
+            revision = _consumer_main(repo_dir)
         except ValueError as exc:
             failures.append(f"{name}: consumer {repo} has no readable local main: {exc}")
             continue

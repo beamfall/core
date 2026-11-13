@@ -10,6 +10,8 @@ if [ "${GATE_PREFLIGHT:-0}" != 1 ]; then
   make seeded-red-canary-controls
   make relay-vector-freshness-prove relay-vector-freshness
   python3 script/consumer_pin_freshness_test.py
-  python3 script/consumer-pin-freshness.py
 fi
+# CORE-1318: cheap, so preflight runs it too instead of finding a stale pin only
+# after a full gate.
+python3 script/consumer-pin-freshness.py
 exec python3 tools/gate/gate_latest.py -- tools/gate/gate.sh "$@"

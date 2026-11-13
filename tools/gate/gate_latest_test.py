@@ -6,6 +6,7 @@ import fcntl
 import importlib.util
 import os
 from pathlib import Path
+import re
 import signal
 import shutil
 import subprocess
@@ -795,7 +796,9 @@ class GateLatestTest(unittest.TestCase):
         first = subprocess.Popen(first_command, env=first_environment)
         self.addCleanup(self.cleanup_invocation, first)
         self.wait_for(lambda: self.event_seen("start primary"), "primary gate did not start")
-        second = subprocess.Popen(second_command, env=second_environment)
+        second_stderr = self.directory / "linked.stderr"
+        with second_stderr.open("wb") as stream:
+            second = subprocess.Popen(second_command, env=second_environment, stderr=stream)
         self.addCleanup(self.cleanup_invocation, second)
         self.wait_for(
             lambda: (linked_state / "generation").exists(),
@@ -804,6 +807,15 @@ class GateLatestTest(unittest.TestCase):
         time.sleep(0.15)
         self.assertIsNone(second.poll(), "linked gate did not queue")
         self.assertFalse(self.event_seen("start linked"))
+        # CORE-1321: a queued gate says what it waits for and who holds it.
+        self.wait_for(
+            lambda: "waiting for gate capacity" in second_stderr.read_text(encoding="utf-8"),
+            "queued gate never announced its capacity wait",
+        )
+        self.assertRegex(
+            second_stderr.read_text(encoding="utf-8"),
+            rf"held by pid {first.pid} gate run 1 in {re.escape(str(self.repository.resolve()))}",
+        )
         release.touch()
         self.assertEqual(first.wait(timeout=5), 0)
         self.assertEqual(second.wait(timeout=5), 0)
@@ -1205,6 +1217,7 @@ CANONICAL_ROUTING_ENV = (
     "BEAMFALL_GATE_FIXTURE_GUARDED",
     "GATE_LATEST_COORDINATOR_SUPERVISED",
     "GATE_LATEST_STATE_DIR",
+    "GATE_PREFLIGHT",
     "GATE_PROCESS_SUPERVISED",
     "GATE_PROCESS_SUPERVISOR",
     "GATE_RUN_ID",
@@ -1231,15 +1244,15 @@ class EvidenceWrappedCanonicalGateTest(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.init_fixture_repository()
 
-    def canonical_gate_recipe(self) -> str:
+    def canonical_recipe(self, target: str) -> str:
         lines = (ROOT / "Makefile").read_text(encoding="utf-8").splitlines()
         for index, line in enumerate(lines):
-            if line.startswith("gate:"):
+            if line.startswith(f"{target}:"):
                 recipe = lines[index + 1]
                 self.assertTrue(recipe.startswith("\t"), recipe)
                 self.assertIn("tools/gate/gate-entry.sh", recipe)
                 return recipe
-        self.fail("Makefile has no gate target")
+        self.fail(f"Makefile has no {target} target")
 
     def init_fixture_repository(self) -> None:
         repository = self.repository
@@ -1257,10 +1270,25 @@ class EvidenceWrappedCanonicalGateTest(unittest.TestCase):
         body = repository / "tools/gate/gate.sh"
         body.write_text(FAKE_GATE_BODY, encoding="utf-8")
         body.chmod(0o755)
-        # The canonical recipe byte-for-byte, minus prerequisites that need
+        # gate-entry's repository-wide prerequisites, stubbed green so the
+        # full-gate routing runs as it does for real (CORE-1321: preflight no
+        # longer shares that routing, so it cannot stand in for it).
+        for relative in (
+            "script/consumer_pin_freshness_test.py",
+            "script/consumer-pin-freshness.py",
+        ):
+            (repository / relative).write_text("", encoding="utf-8")
+        prerequisites = (
+            "seeded-red-canary-controls relay-vector-freshness-prove "
+            "relay-vector-freshness"
+        )
+        # The canonical recipes byte-for-byte, minus prerequisites that need
         # the full repository.
         (repository / "Makefile").write_text(
-            f"gate:\n{self.canonical_gate_recipe()}\n", encoding="utf-8"
+            f"gate:\n{self.canonical_recipe('gate')}\n"
+            f"gate-preflight:\n{self.canonical_recipe('gate-preflight')}\n"
+            f"{prerequisites}:\n\t@:\n",
+            encoding="utf-8",
         )
         (repository / ".gitignore").write_text(".agent-evidence/\n", encoding="utf-8")
         for args in (
@@ -1280,9 +1308,6 @@ class EvidenceWrappedCanonicalGateTest(unittest.TestCase):
         environment = os.environ.copy()
         for name in CANONICAL_ROUTING_ENV:
             environment.pop(name, None)
-        # GATE_PREFLIGHT skips gate-entry's repository-wide prerequisites; the
-        # fixture guard and coordinator still run.
-        environment["GATE_PREFLIGHT"] = "1"
         environment["GATE_CANCEL_GRACE_SECONDS"] = "0.15"
         environment["GATE_LATEST_GOCACHE_DIR"] = str(self.directory / "gocache")
         environment["AGENT_EVIDENCE_DIR"] = str(self.directory / "evidence")
@@ -1466,6 +1491,71 @@ class EvidenceWrappedCanonicalGateTest(unittest.TestCase):
         holder_release.touch()
         self.assertEqual(self.wait_exit(holder, "capacity holder did not finish"), 0)
         self.assertFalse(self.capacity_held())
+
+    def test_preflight_does_not_queue_behind_gate_capacity(self) -> None:
+        """CORE-1321: a full gate holding capacity must not delay preflight."""
+        holder, holder_release = self.start_capacity_holder()
+        started = time.monotonic()
+        process = self.start(["make", "gate-preflight"], self.environment())
+        returncode = self.wait_exit(process, "preflight queued behind gate capacity")
+        stderr = process.stderr.read().decode(errors="replace")
+        self.assertEqual(returncode, 0, stderr)
+        # A readiness bound, not a speed assertion: the gate it must not wait
+        # behind runs for ~37 minutes and this holder never releases on its own.
+        self.assertLess(time.monotonic() - started, 60, stderr)
+        # The body ran while the external holder still owned capacity.
+        self.assertEqual(self.event_lines(), ["start", "capacity held", "end"])
+        self.assertNotIn("gate capacity", stderr)
+        self.assertIsNone(holder.poll(), "capacity holder was disturbed")
+        self.assertTrue(self.capacity_held(), "preflight took or released capacity")
+        holder_release.touch()
+        self.assertEqual(self.wait_exit(holder, "capacity holder did not finish"), 0)
+        self.assert_no_body_survives()
+
+    def test_preflight_announces_wait_for_another_worktrees_preflight(self) -> None:
+        linked = self.directory / "linked"
+        subprocess.run(
+            ["git", "-C", str(self.repository), "worktree", "add", "-q", "-b",
+             "fixture-linked", str(linked), "main"],
+            check=True,
+            capture_output=True,
+        )
+        first = self.start(["make", "gate-preflight"], self.environment(release=True))
+        self.wait_for(
+            lambda: Path(f"{self.release}.ready").exists(), "first preflight never started"
+        )
+        second_stderr = self.directory / "second-preflight.stderr"
+        with second_stderr.open("wb") as stream:
+            second = subprocess.Popen(
+                ["make", "gate-preflight"],
+                cwd=linked,
+                env=self.environment(),
+                stdout=subprocess.DEVNULL,
+                stderr=stream,
+            )
+        self.addCleanup(self.cleanup_process, second)
+
+        def notice() -> str:
+            return second_stderr.read_text(encoding="utf-8", errors="replace")
+
+        # The acceptance bound is 5 s after the coordinator starts; allow for
+        # make, gate-entry and the fixture guard starting on a loaded host.
+        self.wait_for(
+            lambda: "waiting for the gate-preflight lock" in notice(),
+            "queued preflight never announced its wait",
+        )
+        text = notice()
+        self.assertIn(f"in {self.repository.resolve()}", text)
+        self.assertRegex(text, r"held by pid \d+ gate run \d+")
+        self.assertEqual(self.event_lines(), ["start", "capacity free"])
+        self.release.touch()
+        self.assertEqual(self.wait_exit(first, "first preflight did not finish"), 0)
+        self.assertEqual(self.wait_exit(second, "queued preflight never ran"), 0)
+        self.assertEqual(
+            self.event_lines(),
+            ["start", "capacity free", "end", "start", "capacity free", "end"],
+        )
+        self.assert_no_body_survives()
 
 
 if __name__ == "__main__":

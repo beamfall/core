@@ -5,6 +5,7 @@ import {
   expectNoHorizontalDocumentOverflow,
 } from "./lib/spec";
 import { expect, test } from "./lib/test";
+import { coverUiStates } from "./lib/ui-state-coverage";
 
 // VIEWER area (ADR-0007): an enrolled browser bound to the adult Default profile.
 // These specs exercise the real Navigation Manifest + Layout rendering, search,
@@ -189,7 +190,7 @@ test.describe("viewer", () => {
 test.describe("viewer locale", () => {
   test.use({ locale: "fr-FR" });
 
-  test("non-English browser locale renders Viewer catalog strings", async ({ page }) => {
+  test("non-English browser locale renders Viewer catalog strings", async ({ page }, testInfo) => {
     const errors = collectFatalErrors(page);
     await page.goto("/web/");
 
@@ -214,6 +215,7 @@ test.describe("viewer locale", () => {
     await expect(page.getByText("Boîte de réception", { exact: true })).toBeVisible();
     await expect(page.getByText("0 non lues")).toBeVisible();
     expect(errors, errors.join("\n")).toEqual([]);
+    coverUiStates(testInfo, "area:viewer@locale:fr-FR");
   });
 });
 

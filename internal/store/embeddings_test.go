@@ -14,7 +14,7 @@ import (
 
 func openConformanceSeed(t *testing.T) *Store {
 	t.Helper()
-	st, err := Open(context.Background(), t.TempDir(), Options{SeedProfile: SeedProfileConformance})
+	st, err := Open(context.Background(), migratedDataDir(t), Options{SeedProfile: SeedProfileConformance})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +237,7 @@ func TestSemanticRevealContract(t *testing.T) {
 
 func TestSemanticSearchHidesSealedEncryptedLibrary(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

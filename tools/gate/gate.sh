@@ -1365,6 +1365,9 @@ run_gate_preflight_steps() {
   preflight_step "gofmt" bash -c 'unformatted=$(gofmt -l cmd internal tools 2>/dev/null || true); if [[ -n "$unformatted" ]]; then echo "gofmt needed:" >&2; echo "$unformatted" >&2; exit 1; fi'
   preflight_step "golangci-lint (staticcheck + gosec)" make lint
   preflight_step "client DRM/EME invariant" script/client-drm-eme-check.sh
+  # CORE-1318: a cheap check that used to surface only after a ~25 min gate.
+  # Consumer-pin freshness also runs in preflight now, from gate-entry.sh.
+  preflight_step "feature-coverage ratchet" go run ./cmd/featurecheck -ratchet testing/feature-coverage-ratchet.json -strict-areas api,ingest,legal,onboarding
   preflight_step "scenario ledger" go run ./cmd/scenariocheck -strict
   preflight_step "E2E smoke (io-ops ledger)" go run ./cmd/ioe2e check
   preflight_step "egress silent-gap linter" go run ./cmd/ioe2e egress-lint

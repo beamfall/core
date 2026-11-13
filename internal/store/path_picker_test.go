@@ -10,7 +10,7 @@ import (
 )
 
 func TestPathPickerAllowedRootsRejectBlocklistOnOpen(t *testing.T) {
-	_, err := Open(context.Background(), t.TempDir(), Options{AllowedRoots: []string{"/etc"}})
+	_, err := Open(context.Background(), migratedDataDir(t), Options{AllowedRoots: []string{"/etc"}})
 	if !errors.Is(err, ValidationError("path is blocklisted")) {
 		t.Fatalf("Open err = %v, want blocklisted validation", err)
 	}
@@ -171,7 +171,7 @@ func TestPathPickerRoleEligibilityAndPreview(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, AllowedRoots: []string{base}})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, AllowedRoots: []string{base}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +232,7 @@ func TestPathPickerAppStoreSuppressesDownloadNamedRoots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st, err := Open(ctx, t.TempDir(), Options{})
+	st, err := Open(ctx, migratedDataDir(t), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -335,7 +335,7 @@ func TestPathPickerListsLinkedFoldersWithoutReadingThem(t *testing.T) {
 			t.Skipf("symlinks unavailable: %v", err)
 		}
 	}
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, AllowedRoots: []string{base}})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, AllowedRoots: []string{base}})
 	if err != nil {
 		t.Fatal(err)
 	}
