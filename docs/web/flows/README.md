@@ -10,23 +10,22 @@ intent or runtime proof.
 |---|---|
 | [`inventory.json`](inventory.json) | Declared flows (`corvint-flow-inventory/1`): symbol-level members and entry points. Hand-curated; edit it to add or move a flow. |
 | [`appmap.json`](appmap.json) | Application-map manifest (`application-map-manifest/0`): the React routers and the Playwright spec root. |
-| [`generation.json`](generation.json) | `corvint docs flows generate` record: which members resolved, which flows generated, and the page hashes. |
 | [`map.json`](map.json) | `corvint flows appmap build` output (`application-map/0`): screens, spec joins and unknowns. |
-| [`generated/`](generated/) | Eight Markdown pages per generated flow, plus `provider.json`. Linked from the table below. |
+| [`generated/`](generated/) | `corvint docs flows generate` output: eight Markdown pages per generated flow (linked from the table below), `provider.json`, and [`generation.json`](generated/generation.json), the record of which members resolved and which flows generated. |
 
 ## Regenerate and check
 
 Corvint reads the inventory and manifest from Git, so commit edits to either before regenerating.
 
 ```sh
-make flow-docs        # regenerate generated/, generation.json and map.json at HEAD
+make flow-docs        # regenerate generated/ and map.json at HEAD
 make flow-docs-check  # read-only: exit 1 when the source drifted from the committed record
 ```
 
 Both run [`script/flow-docs.sh`](../../../script/flow-docs.sh) and need `corvint` (with
 `corvint-docs`) on `PATH`. Neither is part of `make gate`: a drifted record is a documentation
-follow-up, not a merge blocker. The record was generated at the revision in `generation.json`
-(`source.revision`) with Corvint 1.0.0-rc.3.dev (build 176).
+follow-up, not a merge blocker. The record was generated at the revision recorded in
+`generated/generation.json` (`source.revision`) with Corvint 1.0.0-rc.3.dev (build 176).
 
 Summary at that revision: 88 flows, 85 generated; 2,387 declared members, 750 resolved and
 1,637 unresolved; 214 in-scope declarations unassigned (unit tests, e2e helpers and the Vite

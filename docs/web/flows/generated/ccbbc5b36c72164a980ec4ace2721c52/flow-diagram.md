@@ -1,6 +1,6 @@
 # Console area shell: route table, section nav, host firewall, session bar — flow-diagram
 
-Source revision: d442b4a6a38de86be0670669b3a3f6aa47e80b22. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:fad205a35a982626c5b6b92999240d7d -->
 Static source inventory only; sequence and runtime ordering are unresolved\.

@@ -1,6 +1,6 @@
 # Console API tokens and keys: scopes, create, revoke, one\-time secret — flow-diagram
 
-Source revision: d442b4a6a38de86be0670669b3a3f6aa47e80b22. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a91ca23b52b97df28174abf09ddef556 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.

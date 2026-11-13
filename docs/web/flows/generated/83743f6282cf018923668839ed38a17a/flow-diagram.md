@@ -1,6 +1,6 @@
 # Viewer who&\#39;s\-watching Profile picker with PIN prompt — flow-diagram
 
-Source revision: d442b4a6a38de86be0670669b3a3f6aa47e80b22. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:8dbf2b040d7e71d2cd950e4eb4ed6fe8 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.

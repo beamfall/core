@@ -1,6 +1,6 @@
 # Viewer notifications inbox — technical-deep-dive
 
-Source revision: d442b4a6a38de86be0670669b3a3f6aa47e80b22. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:af7e8ef8cbdd2d7d70725d699071fb46 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.

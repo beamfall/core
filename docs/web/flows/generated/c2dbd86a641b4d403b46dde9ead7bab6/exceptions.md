@@ -1,6 +1,6 @@
 # Shared workbench widgets: status chips, tables, forms, server path picker — exceptions
 
-Source revision: d442b4a6a38de86be0670669b3a3f6aa47e80b22. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:2d8a7ccca8faa5f723012f78f5aca6e6 -->
 Error reachability, rescue behavior and completeness are unresolved\.

@@ -1,6 +1,6 @@
 # Console plugins: standing, lifecycle, config editor, provider keys — entities
 
-Source revision: d442b4a6a38de86be0670669b3a3f6aa47e80b22. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:755109128478912860b2e3c18da7d647 -->
 Runtime entities and persistence effects are unresolved; lexical calls are listed separately\.

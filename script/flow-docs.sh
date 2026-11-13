@@ -5,11 +5,12 @@
 #   script/flow-docs.sh generate   # `make flow-docs`: regenerate at HEAD
 #   script/flow-docs.sh check      # `make flow-docs-check`: drift vs the record
 #
-# generate rewrites docs/web/flows/{generated/,generation.json,map.json} from the
+# generate rewrites docs/web/flows/{generated/,map.json} from the
 # COMMITTED inventory.json and appmap.json at HEAD (Corvint reads its inputs
 # from Git, so commit inventory or manifest edits first). check is read-only:
 # `corvint docs flows check` compares HEAD against the committed
-# generation.json (exit 1 = drift, 2 = invalid input), then the application map
+# generated/generation.json and the pages beside it (exit 1 = drift, 2 = invalid
+# input), then the application map
 # is rebuilt at HEAD and compared with map.json ignoring only its revision and
 # digest. Neither mode is wired into `make gate`.
 set -euo pipefail
@@ -38,16 +39,15 @@ build_map() {
 
 case "$mode" in
   generate)
+    # The output directory holds the pages, provider.json and generation.json;
+    # check compares against that whole directory, so it is kept as written.
     corvint docs flows generate --revision "$rev" --scope "$SCOPE" \
-      --flows "$DIR/inventory.json" --output-dir "$tmp/out" >"$tmp/generation.json"
-    # The output directory carries its own copy of generation.json; keep one.
-    rm -f "$tmp/out/generation.json"
+      --flows "$DIR/inventory.json" --output-dir "$tmp/out" >/dev/null
     build_map >"$tmp/map.json"
     rm -rf "$DIR/generated"
     mv "$tmp/out" "$DIR/generated"
-    mv "$tmp/generation.json" "$DIR/generation.json"
     mv "$tmp/map.json" "$DIR/map.json"
-    python3 -I - "$DIR/generation.json" "$DIR/map.json" <<'PY'
+    python3 -I - "$DIR/generated/generation.json" "$DIR/map.json" <<'PY'
 import json, sys
 g = json.load(open(sys.argv[1]))
 m = json.load(open(sys.argv[2]))
@@ -66,8 +66,8 @@ PY
     ;;
   check)
     status=0
-    corvint docs flows check --revision "$rev" --previous "$DIR/generation.json" \
-      --output-dir "$tmp/check" >"$tmp/check.json" || status=$?
+    corvint docs flows check --revision "$rev" --previous "$DIR/generated/generation.json" \
+      --output-dir "$DIR/generated" >"$tmp/check.json" || status=$?
     if [ "$status" -ne 0 ]; then
       echo "flow-docs-check: docs flows check exited $status (1 = drift, 2 = invalid); report: " >&2
       head -c 2000 "$tmp/check.json" >&2

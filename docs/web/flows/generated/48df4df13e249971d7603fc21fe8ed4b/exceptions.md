@@ -1,6 +1,6 @@
 # Manage navigation overrides: nodes, theme, sections, history — exceptions
 
-Source revision: d442b4a6a38de86be0670669b3a3f6aa47e80b22. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1f853f6f981b9748eb7b1bcba1901b34 -->
 Error reachability, rescue behavior and completeness are unresolved\.
