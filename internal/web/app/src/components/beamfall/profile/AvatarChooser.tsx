@@ -103,7 +103,8 @@ export function AvatarChooser({
         </fieldset>
         <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
           <legend className="mb-2 p-0 text-sm font-medium">{t("avatarToneGroup")}</legend>
-          <div className="flex flex-wrap gap-1">
+          {/* Two even rows of four on phones instead of seven and an orphan. */}
+          <div className="grid w-max grid-cols-4 gap-1 sm:flex sm:w-auto sm:flex-wrap">
             {AVATAR_TONES.map((tone, index) => (
               <label key={tone.label} className="bf-avatar-option" title={t(tone.label)}>
                 <input
