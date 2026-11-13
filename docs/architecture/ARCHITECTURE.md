@@ -737,8 +737,9 @@ Errors: every entry in `errors` is `{"message", "path"?, "extensions": {"code"}}
 `extensions.code ∈ {NOT_FOUND, FORBIDDEN, UNAUTHENTICATED, THROTTLED, INVALID, CONFLICT, INTERNAL}`
 (`path` names the failed top-level field on a partial-success read). Clients branch on the code,
 never the message. `internal/graph/error_codes.go` owns the one mapping: client errors by their
-stable message, store validation errors to INVALID, any other failure to INTERNAL with the generic
-`"<field> unavailable"` message. The ErrNotFound denial-of-existence rule of §6 applies: content
+stable message, parse and operation-selection failures to INVALID, store validation errors to
+INVALID unless their exact message is pinned (a hidden or missing Library is NOT_FOUND), any other
+failure to INTERNAL with the generic `"<field> unavailable"` message. The ErrNotFound denial-of-existence rule of §6 applies: content
 outside the caller's scope answers NOT_FOUND, exactly as missing content; FORBIDDEN is reserved for
 role, tier, session-kind and Reveal gates and never confirms that hidden content exists. The
 vocabulary and shape ship in the wire contract (`graphqlErrors`, since 2.1.0), and
