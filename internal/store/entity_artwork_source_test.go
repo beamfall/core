@@ -10,7 +10,8 @@ import (
 // TestEntityArtworkSourceReads pins the three reads the artwork sweep's
 // Entity pass walks with: Entities of one plugin's kind by id cursor, an
 // Entity's member Media in the order it shows them, and the Entities of a
-// kind pointing at an Entity by title. Trashed rows are never offered.
+// kind pointing at an Entity by title. Trashed rows and rows from another
+// Library are never offered.
 func TestEntityArtworkSourceReads(t *testing.T) {
 	st := openSeeded(t)
 	ctx := context.Background()
@@ -29,10 +30,10 @@ func TestEntityArtworkSourceReads(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	member := func(name string) MediaID {
+	memberIn := func(library LibraryID, name string) MediaID {
 		t.Helper()
 		media, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
-			LibraryID: lib.ID, Path: "/shelf/" + name + ".flac", Title: name, Container: "flac", Codec: "flac",
+			LibraryID: library, Path: "/" + string(library) + "/" + name + ".flac", Title: name, Container: "flac", Codec: "flac",
 			Class: MediaClassAudio, ContentFingerprint: "fp-" + name,
 		})
 		if err != nil {
@@ -40,6 +41,7 @@ func TestEntityArtworkSourceReads(t *testing.T) {
 		}
 		return media.ID
 	}
+	member := func(name string) MediaID { return memberIn(lib.ID, name) }
 	entity("entity-box-a", lib.ID, "box", "Zeta")
 	entity("entity-box-b", lib.ID, "box", "Alpha")
 	entity("entity-box-c", lib.ID, "box", "Gone")
@@ -65,7 +67,8 @@ func TestEntityArtworkSourceReads(t *testing.T) {
 	}
 
 	late, early, unordered, trashed := member("late"), member("early"), member("unordered"), member("trashed")
-	two, one, three := 2, 1, 3
+	foreign := memberIn(other.ID, "foreign")
+	two, one, three, zero := 2, 1, 3, 0
 	for _, relation := range []EntityRelation{
 		{FromEntityID: "entity-box-a", Name: "holds", ToMediaID: unordered},
 		{FromEntityID: "entity-box-a", Name: "holds", ToMediaID: late, SortOrder: &two},
@@ -76,6 +79,8 @@ func TestEntityArtworkSourceReads(t *testing.T) {
 		{FromEntityID: "entity-box-b", Name: "made-by", ToEntityID: "entity-maker"},
 		{FromEntityID: "entity-box-c", Name: "made-by", ToEntityID: "entity-maker"},
 		{FromEntityID: "entity-box-b", Name: "sold-by", ToEntityID: "entity-maker"},
+		{FromEntityID: "entity-box-a", Name: "holds", ToMediaID: foreign, SortOrder: &zero},
+		{FromEntityID: "entity-foreign", Name: "made-by", ToEntityID: "entity-maker"},
 	} {
 		if err := st.UpsertEntityRelation(ctx, relation); err != nil {
 			t.Fatal(err)
