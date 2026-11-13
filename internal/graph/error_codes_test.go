@@ -88,6 +88,22 @@ func TestGraphQLErrorsCarryExtensionsCode(t *testing.T) {
 			code:      ErrorCodeInvalid,
 		},
 		{
+			// Parser failures are malformed requests even when the message
+			// reads like another family ("unknown operationName").
+			name:      "operation name not in document",
+			body:      `{"query":"query A { serverInfo { name } }","operationName":"B"}`,
+			authorize: authorizeViewer,
+			status:    http.StatusOK,
+			code:      ErrorCodeInvalid,
+		},
+		{
+			name:      "unsupported directive",
+			body:      `{"query":"query { serverInfo @unavailable { name } }"}`,
+			authorize: authorizeViewer,
+			status:    http.StatusOK,
+			code:      ErrorCodeInvalid,
+		},
+		{
 			// media-archive is in a restricted Library the un-revealed viewer
 			// cannot see: §6 answers exactly as for a missing Media.
 			name:      "hidden content",
@@ -136,6 +152,9 @@ func TestGraphFailCodesByErrorKind(t *testing.T) {
 		{err: clientError("unknown media"), code: ErrorCodeNotFound, message: "unknown media"},
 		{err: fmt.Errorf("wrapped: %w", clientError("reveal PIN attempts throttled")), code: ErrorCodeThrottled},
 		{err: store.ValidationError("title is required"), code: ErrorCodeInvalid},
+		// A store lookup that hides or misses a Library is NOT_FOUND (§6).
+		{err: store.ValidationError("unknown library"), code: ErrorCodeNotFound, message: "unknown library"},
+		{err: store.ValidationError("unknown segment kind intro"), code: ErrorCodeInvalid},
 		{err: errors.New("disk on fire"), code: ErrorCodeInternal, message: "mediaFields unavailable"},
 	} {
 		got := newGraphError(errorCode(tc.err), graphFailMessage("mediaFields", tc.err))

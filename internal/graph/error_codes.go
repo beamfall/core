@@ -70,6 +70,11 @@ func errorCode(err error) ErrorCode {
 		code, _ := ClientErrorCode(string(ce))
 		return code
 	case errors.As(err, &ve):
+		// Store validation is a bad argument unless its exact message is
+		// pinned below, e.g. "unknown library" answering NOT_FOUND (§6).
+		if code, ok := clientErrorCodes[string(ve)]; ok {
+			return code
+		}
 		return ErrorCodeInvalid
 	default:
 		return ErrorCodeInternal
@@ -84,6 +89,10 @@ var clientErrorCodes = map[string]ErrorCode{
 	"cannot host a party for content you cannot see":                   ErrorCodeNotFound,
 	"cannot join: this party's content is not visible to your profile": ErrorCodeNotFound,
 	"no profile with that display name":                                ErrorCodeNotFound,
+	// Also returned by the store as a ValidationError for a Library the
+	// caller's filter hides or that does not exist.
+	"unknown library": ErrorCodeNotFound,
+	"unknown profile": ErrorCodeNotFound,
 
 	// "unknown <value>" for a closed vocabulary is a bad argument, not a
 	// missing record.
@@ -113,6 +122,7 @@ var clientErrorCodes = map[string]ErrorCode{
 	"only an adult profile can respond to an extension request":  ErrorCodeForbidden,
 	"only an adult profile can revoke an access grant":           ErrorCodeForbidden,
 	"profile PIN required":                                       ErrorCodeForbidden,
+	"profile has no reveal path":                                 ErrorCodeForbidden,
 	"profile is disabled":                                        ErrorCodeForbidden,
 	"reveal PIN mismatch":                                        ErrorCodeForbidden,
 	"reveal PIN must be set before exporting your data":          ErrorCodeForbidden,
@@ -122,6 +132,8 @@ var clientErrorCodes = map[string]ErrorCode{
 
 	"access request already resolved":                    ErrorCodeConflict,
 	"encrypted library is already provisioned":           ErrorCodeConflict,
+	"job is not terminal":                                ErrorCodeConflict,
+	"job is terminal":                                    ErrorCodeConflict,
 	"extension request already resolved":                 ErrorCodeConflict,
 	"library is already provisioned":                     ErrorCodeConflict,
 	"library is not provisioned":                         ErrorCodeConflict,

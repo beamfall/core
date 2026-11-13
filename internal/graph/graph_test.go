@@ -5161,8 +5161,20 @@ func TestSetProfileLibrariesMutationEndToEnd(t *testing.T) {
 		"profileID":  "profile-default",
 		"libraryIDs": []string{"library-archive"},
 	})
-	if len(resp.Errors) == 0 || !strings.Contains(resp.Errors[0].Message, "reveal required") {
-		t.Fatalf("restricted grant without reveal errors = %+v", resp.Errors)
+	// §6: a restricted Library the unrevealed session cannot see answers
+	// exactly as a missing one, message and code alike.
+	hidden := postGraphJSON(t, handler, authorizeManager, mutation, map[string]any{
+		"profileID":  "profile-default",
+		"libraryIDs": []string{"library-archive"},
+	})
+	missing := postGraphJSON(t, handler, authorizeManager, mutation, map[string]any{
+		"profileID":  "profile-default",
+		"libraryIDs": []string{"library-nope"},
+	})
+	for name, resp := range map[string]graphTestResponse{"hidden": hidden, "missing": missing} {
+		if len(resp.Errors) == 0 || resp.Errors[0].Message != "unknown library" || resp.Errors[0].Extensions.Code != ErrorCodeNotFound {
+			t.Fatalf("%s library grant without reveal errors = %+v, want unknown library NOT_FOUND", name, resp.Errors)
+		}
 	}
 }
 

@@ -17,10 +17,16 @@ import (
 	"github.com/beamfall/core/internal/store"
 )
 
-// graphqlErrorSentinels resolves the clientError(<sentinel>.Error()) sites:
-// their message is a store sentinel's text, so the gate classifies that text.
+// graphqlErrorSentinels resolves the store sentinels whose text reaches the
+// client: clientError(<sentinel>.Error()) sites, and clientError(err.Error())
+// re-wraps guarded by errors.Is(err, <sentinel>). The gate classifies that text.
 var graphqlErrorSentinels = map[string]error{
-	"store.ErrJobNotFound": store.ErrJobNotFound,
+	"store.ErrJobNotFound":     store.ErrJobNotFound,
+	"store.ErrJobNotTerminal":  store.ErrJobNotTerminal,
+	"store.ErrJobTerminal":     store.ErrJobTerminal,
+	"store.ErrMarkerNotFound":  store.ErrMarkerNotFound,
+	"store.ErrNoRevealPath":    store.ErrNoRevealPath,
+	"store.ErrProfileDisabled": store.ErrProfileDisabled,
 }
 
 // TestGraphQLErrorSitesCarryCodes enumerates every place internal/graph builds
@@ -32,8 +38,10 @@ var graphqlErrorSentinels = map[string]error{
 //     the code through errorCode;
 //   - every clientError message visible in source (a literal, a concatenation,
 //     a fmt.Sprintf format, or a known store sentinel) must be mapped by
-//     graph.ClientErrorCode. Only re-wrapped error text (x.Error(), string(x))
-//     is dynamic; it is mapped at runtime, INVALID when no rule matches.
+//     graph.ClientErrorCode. Re-wrapped error text (x.Error(), string(x))
+//     guarded by errors.Is(x, <sentinel>) must name a sentinel registered in
+//     graphqlErrorSentinels whose text is mapped; only unguarded re-wraps are
+//     dynamic, mapped at runtime and INVALID when no rule matches.
 func TestGraphQLErrorSitesCarryCodes(t *testing.T) {
 	dir := requireRoot(t, "internal/graph")
 	entries, err := os.ReadDir(dir)
@@ -58,6 +66,7 @@ func TestGraphQLErrorSitesCarryCodes(t *testing.T) {
 			t.Fatal(err)
 		}
 		rel := vocabRelPath(t, path)
+		guards := errorsIsGuards(file)
 		fail := func(node ast.Node, format string, args ...any) {
 			failures = append(failures, fmt.Sprintf("%s:%d: %s", rel, fset.Position(node.Pos()).Line, fmt.Sprintf(format, args...)))
 		}
@@ -94,7 +103,21 @@ func TestGraphQLErrorSitesCarryCodes(t *testing.T) {
 					message, ok := clientErrorMessage(node.Args[0])
 					if !ok {
 						if isRewrappedErrorText(node.Args[0]) {
-							dynamic++
+							names := guards[node]
+							if len(names) == 0 {
+								dynamic++
+								return true
+							}
+							for _, name := range names {
+								sentinel, ok := graphqlErrorSentinels[name]
+								if !ok {
+									fail(node, "clientError re-wraps sentinel %s; register it in graphqlErrorSentinels", name)
+									continue
+								}
+								if code, mapped := graph.ClientErrorCode(sentinel.Error()); !mapped {
+									fail(node, "clientError re-wraps %s (%q) with no code mapping; fallback would be %s", name, sentinel.Error(), code)
+								}
+							}
 							return true
 						}
 						fail(node, "clientError message is neither visible in source nor re-wrapped error text")
@@ -133,6 +156,7 @@ func TestGraphQLErrorCodesKeepDenialOfExistence(t *testing.T) {
 		"not found",
 		"cannot host a party for content you cannot see",
 		"cannot join: this party's content is not visible to your profile",
+		"library not found",
 	} {
 		if code, mapped := graph.ClientErrorCode(message); !mapped || code != graph.ErrorCodeNotFound {
 			t.Errorf("ClientErrorCode(%q) = %s, mapped=%v; want NOT_FOUND", message, code, mapped)
@@ -156,6 +180,9 @@ func TestGraphQLErrorCodesClassifyRepresentativeMessages(t *testing.T) {
 		"mediaID is required":                                graph.ErrorCodeInvalid,
 		"x must be an integer":                               graph.ErrorCodeInvalid,
 		"queue has items; pass confirmReplace to replace it": graph.ErrorCodeConflict,
+		"profile has no reveal path":                         graph.ErrorCodeForbidden,
+		"job is terminal":                                    graph.ErrorCodeConflict,
+		"job is not terminal":                                graph.ErrorCodeConflict,
 	} {
 		if code, mapped := graph.ClientErrorCode(message); !mapped || code != want {
 			t.Errorf("ClientErrorCode(%q) = %s, mapped=%v; want %s", message, code, mapped, want)
@@ -254,6 +281,51 @@ func clientErrorMessage(expr ast.Expr) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// errorsIsGuards maps each clientError call inside the body of an if statement
+// to the pkg.Sentinel names that statement's condition tests with errors.Is.
+func errorsIsGuards(file *ast.File) map[*ast.CallExpr][]string {
+	guards := map[*ast.CallExpr][]string{}
+	ast.Inspect(file, func(n ast.Node) bool {
+		stmt, ok := n.(*ast.IfStmt)
+		if !ok {
+			return true
+		}
+		var names []string
+		ast.Inspect(stmt.Cond, func(c ast.Node) bool {
+			call, ok := c.(*ast.CallExpr)
+			if !ok || len(call.Args) != 2 {
+				return true
+			}
+			fn, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || fn.Sel.Name != "Is" {
+				return true
+			}
+			if pkg, ok := fn.X.(*ast.Ident); !ok || pkg.Name != "errors" {
+				return true
+			}
+			if target, ok := call.Args[1].(*ast.SelectorExpr); ok {
+				if pkg, ok := target.X.(*ast.Ident); ok {
+					names = append(names, pkg.Name+"."+target.Sel.Name)
+				}
+			}
+			return true
+		})
+		if len(names) == 0 {
+			return true
+		}
+		ast.Inspect(stmt.Body, func(b ast.Node) bool {
+			if call, ok := b.(*ast.CallExpr); ok {
+				if ident, ok := call.Fun.(*ast.Ident); ok && ident.Name == "clientError" {
+					guards[call] = append(guards[call], names...)
+				}
+			}
+			return true
+		})
+		return true
+	})
+	return guards
 }
 
 // isRewrappedErrorText reports err.Error() or string(verr): text of an error

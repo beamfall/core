@@ -955,7 +955,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	plan, err := prepareOperation(req)
 	if err != nil {
-		writeJSON(w, http.StatusOK, response{Errors: []graphError{newGraphError(errorCode(err), err.Error())}})
+		// Every parse, validation and operation-selection failure is a
+		// malformed request, whatever words its message happens to contain.
+		writeJSON(w, http.StatusOK, response{Errors: []graphError{newGraphError(ErrorCodeInvalid, err.Error())}})
 		return
 	}
 	fields := plan.fields()
@@ -1931,11 +1933,14 @@ func (h *Handler) setProfileLibraries(ctx context.Context, scope auth.Scope, req
 			return ProfileInfo{}, clientError("library IDs cannot be empty")
 		}
 		restricted, err := h.store.LibraryRestricted(ctx, id)
+		// §6: a restricted Library an unrevealed session cannot see answers
+		// exactly as a missing one. The store reports a missing Library with
+		// this plain error text, not a sentinel.
+		if (err != nil && err.Error() == "library not found") || (err == nil && restricted && !scope.Revealed) {
+			return ProfileInfo{}, clientError("unknown library")
+		}
 		if err != nil {
 			return ProfileInfo{}, err
-		}
-		if restricted && !scope.Revealed {
-			return ProfileInfo{}, clientError("reveal required to grant restricted libraries")
 		}
 		ids[i] = id
 	}
