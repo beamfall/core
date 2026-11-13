@@ -2663,14 +2663,6 @@
         },
         {
           "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
-          "symbol": "TILE"
-        },
-        {
-          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
-          "symbol": "TILE_SELECTED"
-        },
-        {
-          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
           "symbol": "consumeSetupToken"
         },
         {
@@ -2844,10 +2836,6 @@
         {
           "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
           "symbol": "PLUGIN_ICON"
-        },
-        {
-          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
-          "symbol": "PLUGIN_LABEL"
         },
         {
           "path": "internal/web/app/src/areas/setup/orchestrate.ts",
@@ -3059,10 +3047,6 @@
       "members": [
         {
           "path": "internal/web/app/src/areas/enroll/EnrollPage.tsx",
-          "symbol": "CardHeading"
-        },
-        {
-          "path": "internal/web/app/src/areas/enroll/EnrollPage.tsx",
           "symbol": "EnrollPage"
         },
         {
@@ -3256,10 +3240,6 @@
         {
           "path": "internal/web/app/src/areas/console/ConfirmButton.tsx",
           "symbol": "ConfirmButton"
-        },
-        {
-          "path": "internal/web/app/src/areas/console/Section.tsx",
-          "symbol": "AdvancedDisclosure"
         },
         {
           "path": "internal/web/app/src/areas/console/Section.tsx",
@@ -4459,10 +4439,6 @@
         },
         {
           "path": "internal/web/app/src/areas/console/sections/Plugins.tsx",
-          "symbol": "deactivate"
-        },
-        {
-          "path": "internal/web/app/src/areas/console/sections/Plugins.tsx",
           "symbol": "initial"
         },
         {
@@ -5452,10 +5428,6 @@
         {
           "path": "internal/web/app/src/areas/console/sections/Config.tsx",
           "symbol": "Config"
-        },
-        {
-          "path": "internal/web/app/src/areas/console/sections/Config.tsx",
-          "symbol": "ServerConfig"
         },
         {
           "path": "internal/web/app/src/areas/console/sections/Config.tsx",
