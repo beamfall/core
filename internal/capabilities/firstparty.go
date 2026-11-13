@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 )
 
@@ -84,7 +85,9 @@ func ParseFirstPartyBuildManifest(data []byte) (BuildCatalog, error) {
 	if err := decoder.Decode(&manifest); err != nil {
 		return BuildCatalog{}, fmt.Errorf("first-party build manifest: %w", err)
 	}
-	if decoder.More() {
+	// Only whitespace may follow the manifest. More reports false for a stray
+	// closing bracket, so require the decoder to reach EOF instead.
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
 		return BuildCatalog{}, errors.New("first-party build manifest: trailing data")
 	}
 	if manifest.Schema != FirstPartyBuildManifestSchema {

@@ -49,6 +49,8 @@ func TestParseFirstPartyBuildManifestRefusesWhatItCannotVouchFor(t *testing.T) {
 		"unknown field":        build(`{` + valid + `,"enrollmentID":"session:x"}`),
 		"top-level bindings":   `{"schema":"beamfall.first-party-builds/v1","builds":[],"enrollmentBindings":[]}`,
 		"trailing data":        build(`{`+valid+`}`) + `{}`,
+		"trailing bracket":     build(`{`+valid+`}`) + `]`,
+		"trailing brace":       build(`{`+valid+`}`) + ` }`,
 		"empty build id":       build(`{` + strings.Replace(valid, `"buildID":"b"`, `"buildID":""`, 1) + `}`),
 		"padded build id":      build(`{` + strings.Replace(valid, `"buildID":"b"`, `"buildID":" b"`, 1) + `}`),
 		"overlong build id":    build(`{` + strings.Replace(valid, `"buildID":"b"`, `"buildID":"`+strings.Repeat("b", 257)+`"`, 1) + `}`),
