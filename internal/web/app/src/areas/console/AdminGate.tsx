@@ -167,6 +167,23 @@ export function AdminGate({
     return () => window.clearTimeout(timer);
   }, [active, expiresAt, invalidateRequest]);
 
+  // The mount-time setup-state read can fail transiently on a passwordless
+  // server, leaving the ordinary unlock form that can never succeed. After a
+  // rejected unlock, read it again so the set-password step appears once the
+  // read works; a failed read changes nothing.
+  async function recheckFirstPassword(request: {
+    controller: AbortController;
+    isCurrent: () => boolean;
+  }) {
+    if (!isManager || profileKind !== "adult") return;
+    try {
+      const state = await fetchSetupState(request.controller.signal);
+      if (request.isCurrent() && state.adminPasswordSet === false) setNeedsFirstPassword(true);
+    } catch {
+      // Keep the ordinary form.
+    }
+  }
+
   async function onUnlock(e: FormEvent) {
     e.preventDefault();
     if (!password) return;
@@ -191,6 +208,7 @@ export function AdminGate({
         setExpiresAt(s.expiresAt);
       } else {
         setRejected(true);
+        if (!creating) await recheckFirstPassword(request);
       }
     } catch {
       if (!request.isCurrent()) return;
@@ -200,6 +218,7 @@ export function AdminGate({
       setRejected(true);
       setPassword("");
       setConfirmPassword("");
+      if (!creating) await recheckFirstPassword(request);
     } finally {
       if (request.isCurrent()) setBusy(false);
     }

@@ -170,7 +170,7 @@ case "${BEAMFALL_RUNNER_TEST_MODE:?}" in
     fi
     exit 0
     ;;
-  failure|leftover) exit 23 ;;
+  failure|leftover|livesibling) exit 23 ;;
   hang) while :; do sleep 1; done ;;
   *) exit 2 ;;
 esac
@@ -194,10 +194,19 @@ run_case() {
   mkdir -p "${case_dir}/metadata" "${case_dir}/output"
 
   local leftover_pid=""
+  local sibling_pid=""
+  if [[ "${mode}" == livesibling ]]; then
+    # A live sibling gate on the same pinned port: its server keeps a live parent and is not ours.
+    bash -c 'exec -a /tmp/beamfall-e2e-49124 sleep 120' &
+    sibling_pid=$!
+    register_pid "${sibling_pid}"
+  fi
   if [[ "${mode}" == leftover ]]; then
     # CORE-0941: a server binary orphaned by an earlier killed run holds the port; the runner reaps it.
-    bash -c 'exec -a /tmp/beamfall-e2e-49124 sleep 120' &
-    leftover_pid=$!
+    # Started from a subshell so it is re-parented to launchd, like a killed run's server.
+    ( bash -c 'exec -a /tmp/beamfall-e2e-49124 sleep 120' & echo $! >"${case_dir}/leftover.pid" )
+    sleep 1
+    leftover_pid="$(cat "${case_dir}/leftover.pid")"
     register_pid "${leftover_pid}"
   fi
 
@@ -289,6 +298,16 @@ except ProcessLookupError:
     wait "${leftover_pid}" 2>/dev/null || true
     forget_pid "${leftover_pid}"
   fi
+  if [[ -n "${sibling_pid}" ]]; then
+    if kill -0 "${sibling_pid}" 2>/dev/null; then
+      ok "${runner_name} ${mode} leaves a live sibling server on the pinned port"
+    else
+      bad "${runner_name} ${mode} killed a live sibling server on the pinned port"
+    fi
+    kill -KILL "${sibling_pid}" 2>/dev/null || true
+    wait "${sibling_pid}" 2>/dev/null || true
+    forget_pid "${sibling_pid}"
+  fi
   kill -KILL -- "-${runner_pid}" 2>/dev/null || true
   forget_group "${runner_pid}"
 }
@@ -298,6 +317,7 @@ except ProcessLookupError:
 # closed with 124, so progress is what the runner trusts, not elapsed time.
 run_case smoke slow "" 0
 run_case smoke leftover "" 23
+run_case smoke livesibling "" 23
 
 for runner_name in smoke full; do
   run_case "${runner_name}" success "" 0

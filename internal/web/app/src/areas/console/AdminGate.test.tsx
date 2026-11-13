@@ -145,6 +145,19 @@ describe("AdminGate first admin password (CORE-1132)", () => {
     expect(await screen.findByText("Console locked")).toBeInTheDocument();
     expect(screen.queryByLabelText("Confirm password")).toBeNull();
   });
+
+  it("offers the set-password step after a rejected unlock once the setup state reads", async () => {
+    vi.mocked(fetchSetupState).mockRejectedValueOnce(new Error("down"));
+    vi.mocked(fetchSetupState).mockResolvedValue({ adminPasswordSet: false } as never);
+    vi.mocked(verifyAdminSession).mockResolvedValue({ active: false });
+    const user = userEvent.setup();
+    renderGate();
+    await user.type(await screen.findByLabelText("Admin password"), "pw");
+    expect(screen.queryByLabelText("Confirm password")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Unlock Console" }));
+    expect(await screen.findByLabelText("Confirm password")).toBeInTheDocument();
+    expect(verifyAdminSession).toHaveBeenCalledWith("pw", expect.anything(), false);
+  });
 });
 
 describe("AdminGate reason-coded locks", () => {

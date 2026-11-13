@@ -13,7 +13,9 @@ output_dir="${BEAMFALL_WEB_E2E_OUTPUT_DIR:-}"
 pending_receipt=""
 watchdog_reason_file=""
 heartbeat_file=""
+watchdog_dir=""
 server_binary=""
+preexisting_server_pids=""
 receipt_file=""
 publisher_file=""
 build_reuse_dir=""
@@ -70,12 +72,25 @@ stop_watchdog() {
 
 # A timeout kills Playwright before its global teardown runs, and an e2e server that outlives its
 # supervisor is re-parented to launchd (CORE-0941). The binary path embeds this run's port, so
-# match it exactly: a sibling gate on another port is never touched.
+# match it exactly: a sibling gate on another port is never touched. A process already running that
+# binary when this run began and still has a live parent (a pinned BEAMFALL_E2E_PORT shared with
+# another running gate) is not ours; only a launchd-orphaned one (ppid 1) is a dead run's leftover.
+server_binary_pids() {
+  ps -axo pid=,ppid=,command= 2>/dev/null \
+    | awk -v bin="${server_binary}" -v only_live="${1:-}" \
+      '$3 == bin && (only_live != "live" || $2 != 1) { print $1 }' || true
+}
+
 reap_server_binary() {
   [[ -n "${server_binary}" ]] || return 0
-  local leftover
-  leftover="$(ps -axo pid=,command= 2>/dev/null \
-    | awk -v bin="${server_binary}" '$2 == bin { print $1 }')" || true
+  local leftover pid
+  leftover=""
+  for pid in $(server_binary_pids); do
+    case " ${preexisting_server_pids} " in
+      *" ${pid} "*) ;;
+      *) leftover="${leftover:+${leftover} }${pid}" ;;
+    esac
+  done
   [[ -n "${leftover}" ]] || return 0
   # shellcheck disable=SC2086
   kill -TERM ${leftover} 2>/dev/null || true
@@ -110,6 +125,9 @@ cleanup() {
   fi
   if [[ -n "${build_reuse_dir}" ]]; then
     rm -rf "${build_reuse_dir}"
+  fi
+  if [[ -n "${watchdog_dir}" ]]; then
+    rm -rf "${watchdog_dir}"
   fi
   if [[ ${cleanup_output} -eq 1 && ${status} -eq 0 ]]; then
     rm -rf "${output_dir}"
@@ -165,6 +183,7 @@ export BEAMFALL_E2E_PORT
 echo "[e2e] isolation: port=${BEAMFALL_E2E_PORT} auth=${ROOT}/internal/web/app/e2e/.auth/${BEAMFALL_E2E_PORT} binary=/tmp/beamfall-e2e-${BEAMFALL_E2E_PORT}"
 if [[ -z "${BEAMFALL_E2E_URL:-}" ]]; then
   server_binary="/tmp/beamfall-e2e-${BEAMFALL_E2E_PORT}"
+  preexisting_server_pids="$(server_binary_pids live | tr '\n' ' ')"
 fi
 # One web + server build per smoke: the first Playwright invocation stamps its
 # build here and later ones reuse the binary only while global-setup's
@@ -179,8 +198,12 @@ if [[ -z "${output_dir}" ]]; then
 fi
 mkdir -p "${output_dir}"
 
-watchdog_reason_file="${output_dir}/watchdog-reason.txt"
-heartbeat_file="${output_dir}/progress-heartbeat"
+# Playwright empties its output directory before global setup, so the watchdog's files live in a
+# directory of their own: a build that hangs before the output directory is recreated must still
+# be caught.
+watchdog_dir="$(mktemp -d "${TMPDIR:-/tmp}/beamfall-web-e2e-watchdog.XXXXXX")"
+watchdog_reason_file="${watchdog_dir}/watchdog-reason.txt"
+heartbeat_file="${watchdog_dir}/progress-heartbeat"
 rm -f -- "${watchdog_reason_file}"
 : >"${heartbeat_file}"
 export BEAMFALL_WEB_E2E_HEARTBEAT="${heartbeat_file}"
@@ -209,8 +232,11 @@ while True:
         message = f"still running after {ceiling:.0f}s (ceiling)"
     else:
         continue
-    with open(reason, "w", encoding="utf-8") as handle:
-        handle.write(message + "\n")
+    try:
+        with open(reason, "w", encoding="utf-8") as handle:
+            handle.write(message + "\n")
+    except OSError:
+        pass  # the signal matters more than naming its reason
     os.kill(runner, signal.SIGALRM)
     break
 ' "${runner_timeout_seconds}" "${runner_ceiling_seconds}" "$$" \
