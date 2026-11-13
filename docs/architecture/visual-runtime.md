@@ -83,7 +83,7 @@ The producer-side conformance pack lives under
 ## visual-uniforms.v1
 
 How an `AudioFrame` becomes shader uniforms is owned by Oscillux (ADR-0228, ADR-0232), not by
-core or any client. Oscillux's `docs/visual-uniforms.md` defines `visual-uniforms.v1`: every
+core or any client. Oscillux's visual-uniforms document defines `visual-uniforms.v1`: every
 uniform's formula, smoothing and clamp, the 24→64 spectrum interpolation, reset events, the
 neutral values under `live-analysis-unavailable`, and the Reduce Motion ceilings. Its
 `conformance/uniforms/` goldens are derived from this pack's `sine-440` and `gap-stall-latency`
