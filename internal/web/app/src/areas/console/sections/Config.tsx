@@ -22,7 +22,8 @@ const TEXT_FIELDS: { field: TextField; label: StringKey }[] = [
 // Hardware transcoding policy (ADR-0007 §6 / ADR-0010). Empty string values
 // fall back to the server default server-side. The on/off switch is the Normal
 // control; codec, quality, device and the probe list are Advanced, and a field
-// the server has a value for stays visible in Normal (CORE-1117).
+// that holds a value, saved or being edited, stays visible in Normal so Save
+// never submits a setting out of sight (CORE-1117).
 function TranscodeConfig() {
   const t = useT();
   const { data, failed, setData } = useAsync(fetchTranscodeConfig);
@@ -61,7 +62,7 @@ function TranscodeConfig() {
           }
         />
         {TEXT_FIELDS.map(({ field, label }) => (
-          <Advanced key={field} keep={Boolean(data?.[field])}>
+          <Advanced key={field} keep={Boolean(form[field])}>
             <ControlRow
               label={label}
               control={

@@ -32,6 +32,7 @@ export function SeeAllPage() {
   const [items, setItems] = useState<SourceItem[]>([]);
   const [hasMore, setHasMore] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
   const offsetRef = useRef(0);
   // Bumped by every reset or reload, so a response from before it is dropped.
   const generationRef = useRef(0);
@@ -62,8 +63,9 @@ export function SeeAllPage() {
       setItems((prev) => [...prev, ...page]);
       offsetRef.current += page.length;
       setHasMore(page.length >= SEEALL_PAGE);
+      setFailed(false);
     } catch {
-      if (generationRef.current === generation) setHasMore(false);
+      if (generationRef.current === generation) setFailed(true);
     } finally {
       if (generationRef.current === generation) setBusy(false);
     }
@@ -106,6 +108,7 @@ export function SeeAllPage() {
     offsetRef.current = 0;
     setItems([]);
     setHasMore(true);
+    setFailed(false);
     void loadPage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctx?.section.id, ctx?.libraryID, ctx?.entityID]);
@@ -117,7 +120,8 @@ export function SeeAllPage() {
   }, [engagementEpoch, reloadShown]);
 
   const firstPageLoading = busy && items.length === 0;
-  const empty = !busy && !hasMore && items.length === 0;
+  const loadFailed = !busy && failed && items.length === 0;
+  const empty = !busy && !failed && !hasMore && items.length === 0;
 
   function goBack() {
     navigate(ctx?.returnTo || "/");
@@ -160,6 +164,14 @@ export function SeeAllPage() {
             {Array.from({ length: 12 }).map((_, i) => (
               <Skeleton key={i} aria-hidden className="bf-shimmer aspect-[2/3] w-full" />
             ))}
+          </div>
+        )}
+        {loadFailed && (
+          <div role="alert" className="bf-empty flex flex-col gap-3">
+            <p className="text-sm text-[var(--text-secondary)]">{t("seeAllLoadFailed")}</p>
+            <Button variant="outline" className="self-start" onClick={loadPage}>
+              {t("jobRetryAction")}
+            </Button>
           </div>
         )}
         {empty && (

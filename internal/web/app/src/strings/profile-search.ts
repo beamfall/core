@@ -78,6 +78,7 @@ export const profileSearchStrings = {
     libraryBrowseClearFilters: "Clear filters",
     libraryBrowseNoMatches: "Nothing in this library matches these filters.",
     libraryBrowseLoadFailed: "Could not load this library.",
+    seeAllLoadFailed: "Could not load these items.",
   },
   fr: {
     settingsTitle: "Paramètres du profil",
@@ -144,6 +145,7 @@ export const profileSearchStrings = {
     libraryBrowseClearFilters: "Effacer les filtres",
     libraryBrowseNoMatches: "Rien dans cette bibliothèque ne correspond à ces filtres.",
     libraryBrowseLoadFailed: "Impossible de charger cette bibliothèque.",
+    seeAllLoadFailed: "Impossible de charger ces éléments.",
   },
   de: {},
   es: {},
