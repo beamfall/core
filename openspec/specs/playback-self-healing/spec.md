@@ -1,0 +1,82 @@
+# playback-self-healing Specification
+
+## Purpose
+How live playback recovers on its own and explains itself when it cannot: the live HLS session restarts an exited encoder within the waiting request, a truncated source never yields playable empty segments, the web player retries transient faults and ends only on revocation, shows progress and a reason with an action, and seeks once per scrub gesture.
+
+## Requirements
+
+### Requirement: A waiting segment request heals an exited encoder
+
+The live HLS session manager SHALL detect that a session's encoder has exited while a segment
+request waits for a segment the encoder has not produced. It SHALL restart the encoder at the
+requested segment within that request, up to a bounded number of restarts. Once the bound is
+used up, it SHALL fail the request without waiting out the latency budget. It SHALL log each
+unexpected exit once, with its exit status and a bounded tail of the encoder's diagnostics.
+
+#### Scenario: Encoder killed mid-play
+
+- **WHEN** the encoder exits before writing the segment a request is waiting for
+- **THEN** the request restarts the encoder at that segment and returns the segment without
+  waiting out the latency budget
+
+#### Scenario: Encoder keeps failing
+
+- **WHEN** the encoder exits again after the restart bound is used up
+- **THEN** the request fails promptly, and the exit status is logged
+
+### Requirement: Truncated sources never yield playable empty segments
+
+The server SHALL NOT serve a segment as playable when the segment contains no media or lies past
+the point where the source ended. It SHALL fail such a request promptly, and SHALL log the
+position at which the source ended.
+
+#### Scenario: Source shorter than its header duration
+
+- **WHEN** a client requests a segment past the point where a truncated source ended
+- **THEN** the request fails promptly, and no empty segment is returned with a success status
+
+### Requirement: The web player retries transient faults and ends only on revocation
+
+The web player SHALL enter its session-ended state only on an explicit revocation signal. It
+SHALL treat these as transient faults: a failed token refresh, a reaped or preempted session,
+and a network error on any route. For a transient fault it SHALL recover, or offer a retry that
+resumes at the last presented position. While the browser is offline, it SHALL wait without
+spending its retry budget, and SHALL resume when the browser comes back online.
+
+#### Scenario: Token refresh fails on the network
+
+- **WHEN** the stream-token refresh fails with a network or server error
+- **THEN** the player shows a retryable message instead of ending the session
+
+#### Scenario: Connectivity drops for 20 seconds
+
+- **WHEN** the browser goes offline during playback and comes back online 20 seconds later
+- **THEN** the player resumes playback without reaching a failed state
+
+### Requirement: The web player shows progress and reasons
+
+The web player SHALL show a progress indicator from attach until the first frame, and whenever
+playback waits for data for longer than a short delay while not paused. When the server reports
+that playback is unavailable, the player SHALL show copy and an action specific to the server's
+reason, falling back to generic copy for an unknown reason.
+
+#### Scenario: Cold transcode start
+
+- **WHEN** the stream is attached and no frame has been presented yet
+- **THEN** the player shows a progress indicator
+
+#### Scenario: Capacity reached
+
+- **WHEN** playback info reports that playback is unavailable with the reason
+  `transcode-capacity-reached`
+- **THEN** the player explains that the server is busy and offers to try again
+
+### Requirement: Scrubbing seeks once per gesture
+
+The web player SHALL preview the position locally while the scrubber is being dragged. It SHALL
+seek the media once, when the drag is released. Keyboard steps SHALL seek immediately.
+
+#### Scenario: Drag across the timeline
+
+- **WHEN** the viewer drags the scrubber across many positions and releases
+- **THEN** the media element receives exactly one seek, to the release position
