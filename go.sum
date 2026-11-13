@@ -4,8 +4,8 @@ github.com/beamfall/plugin-enrichment v0.1.0 h1:3OTQGqQFauFhjTJefpPCX7C4UNZheCLi
 github.com/beamfall/plugin-enrichment v0.1.0/go.mod h1:ZqxoNHMHG0mzZHyP7q3oVjqI/ct6QkMaYnDzq++YlIc=
 github.com/beamfall/plugin-familyarchive v0.1.4 h1:8j+oWtGQA+wKV8ySZ03Y52po29doSmVXk5As5mV4wlo=
 github.com/beamfall/plugin-familyarchive v0.1.4/go.mod h1:hcdjQczj6EQPYeagqgAsOW4IrFE2tEe1aJijTwm4E7U=
-github.com/beamfall/plugin-filmtv v0.1.4 h1:YSGEZ/EhQ9DWMxyPslKBsuFQfkm9KNRXaTlvrgd7P4M=
-github.com/beamfall/plugin-filmtv v0.1.4/go.mod h1:0GgIxjmTrF6jqPyHzjnNRCnjzE0iI7RWPdkb3rPDQPM=
+github.com/beamfall/plugin-filmtv v0.1.6 h1:G0+W8FYVOMPrSq7ZOF+5vGK3kIu2KdzCvpS730Q9czA=
+github.com/beamfall/plugin-filmtv v0.1.6/go.mod h1:TCnydRSc4wjs/gtRLuMSD9lwDLH6K0WtAs2Nq1vw5Rk=
 github.com/beamfall/plugin-karaoke v0.1.0 h1:GEWFUfqy6N3KCg9i5YOsN4PpTEtzAHeANwnt8B3l9Rk=
 github.com/beamfall/plugin-karaoke v0.1.0/go.mod h1:QquKFf/kUcAU/YXGgHS2zs3A/oKxlslZzJd9Nef2W+o=
 github.com/beamfall/plugin-music v0.1.5 h1:v0bG9nv8xGmwsuqPjQEoFJ/0zYhqI6jvmubL+cO4JAA=
@@ -14,8 +14,8 @@ github.com/beamfall/plugin-photos v0.1.4 h1:aL+4T37zGycjbcCR66eYXeIKEWfMnG9yX2fr
 github.com/beamfall/plugin-photos v0.1.4/go.mod h1:JxULz6sbeRBDLZF4ImTJZaKUHsAow6VXEYtpKVUs6uk=
 github.com/beamfall/plugin-podcasts v0.1.4 h1:BlL06iV3t0S1eGUm63C9bcICV9jV4ncZXK3A1/WasQs=
 github.com/beamfall/plugin-podcasts v0.1.4/go.mod h1:zJwPUEsU+mXBDIiTZRykvHFFVUlCkwiL4U/7xXUp6xI=
-github.com/beamfall/plugin-sdk v0.3.2 h1:8+2Dq7CXYHbNANhtWHWA1FrLPh0hfklVms0hxgr4mA4=
-github.com/beamfall/plugin-sdk v0.3.2/go.mod h1:wfIk4WVwnXbxHfu323kwUp76re+/owV9lYaGZPn7kVQ=
+github.com/beamfall/plugin-sdk v0.3.4 h1:7vR7DeZZSAs4hYXOeeTEvFBcO4pCGqNVU+R3FTJtXqs=
+github.com/beamfall/plugin-sdk v0.3.4/go.mod h1:CFm3zZHYmW1KlV82+yNAJnnMLopqh1P9S0B61OalQXQ=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/brutella/dnssd v1.2.14 h1:qLpTnRTm5peo2jA30hqMIbCuWn8x3sFg3e9o9ODOobw=
