@@ -195,7 +195,10 @@ const CLIP_UTILITY =
 // 2026-11-12 (merge of CORE-1131 with CORE-1191): +2 → 28 for the header search result rows — `truncate`
 // on the title and on the detail line. Both are CSS ellipsis only; the full
 // text stays in the DOM and the row is a labelled gridcell.
-const CLIP_BASELINE = 28;
+// 2026-11-13 (CORE-1117): +2 → 30 for the setup redesign — `truncate` on the
+// FolderPicker's current breadcrumb (CSS ellipsis; full name in the DOM and a
+// `title`) and `overflow-hidden` on the aria-hidden setup progress bar (no text).
+const CLIP_BASELINE = 30;
 
 function tsSources(dir: string, acc: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {

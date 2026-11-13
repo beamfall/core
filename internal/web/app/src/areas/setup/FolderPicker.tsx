@@ -63,7 +63,9 @@ export function FolderPicker({
               <Fragment key={crumb.path}>
                 {i > 0 && <ChevronRight aria-hidden className="size-3.5 shrink-0 opacity-50" />}
                 {isCurrent ? (
-                  <span className="truncate px-1 font-medium text-foreground">{crumb.label}</span>
+                  <span className="truncate px-1 font-medium text-foreground" title={crumb.label}>
+                    {crumb.label}
+                  </span>
                 ) : (
                   <Button
                     type="button"
@@ -130,7 +132,10 @@ export function FolderPicker({
 
       {/* Footer: current path + commit */}
       <div className="flex items-center gap-3 border-t border-white/10 py-2 pl-3 pr-2">
-        <span className="min-w-0 truncate font-mono text-dense text-muted-foreground">
+        <span
+          className="min-w-0 truncate font-mono text-dense text-muted-foreground"
+          title={node.path}
+        >
           {node.path}
         </span>
         <Button
