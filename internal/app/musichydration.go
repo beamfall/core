@@ -198,7 +198,7 @@ func (a *hydrationAdapter) HydrateMetadata(ctx context.Context, input scanpkg.Me
 	if validated.Empty() {
 		return nil
 	}
-	if err := a.writeMediaFields(ctx, input.MediaID, validated, marker, write, input.ContentFingerprint); err != nil {
+	if err := a.writeMediaFields(ctx, input.MediaID, validated, marker, write); err != nil {
 		return err
 	}
 	if err := a.writeRelations(ctx, input.MediaID, input.LibraryID, validated.Relations); err != nil {
@@ -209,7 +209,21 @@ func (a *hydrationAdapter) HydrateMetadata(ctx context.Context, input scanpkg.Me
 			return err
 		}
 	}
-	return nil
+	return a.recordFingerprint(ctx, input.MediaID, write, input.ContentFingerprint)
+}
+
+// recordFingerprint records the hydrated content fingerprint after every other
+// hydration write has landed, so a failed write leaves the old fingerprint and
+// the next scan retries instead of skipping.
+func (a *hydrationAdapter) recordFingerprint(ctx context.Context, mediaID store.MediaID, write HydrationWrite, fingerprint string) error {
+	if a.fingerprintField == "" || fingerprint == "" {
+		return nil
+	}
+	field := []store.MediaField{{Name: a.fingerprintField, Type: store.EntityFieldText, Text: fingerprint}}
+	if write != HydrationWriteReplace {
+		return a.store.InsertMediaFieldsIfAbsent(ctx, mediaID, field)
+	}
+	return a.store.UpsertMediaFieldsWithSource(ctx, mediaID, field, store.MutationSourceScan)
 }
 
 // decideWrite asks an opted-in mapper how to land this hydration, from the
@@ -439,14 +453,11 @@ func (a *hydrationAdapter) validateEntity(entity HydrationEntity) error {
 // Replace upserts at the scan tier — the tier the absent-only path and the
 // import record — so tag values replace earlier tag or filename values while
 // operator and manual values keep winning in canWriteFieldTx, and fields the
-// operator locked (ADR-0072) are left out. Both record the fingerprint.
-func (a *hydrationAdapter) writeMediaFields(ctx context.Context, mediaID store.MediaID, validated HydrationPlan, marker string, write HydrationWrite, fingerprint string) error {
+// operator locked (ADR-0072) are left out.
+func (a *hydrationAdapter) writeMediaFields(ctx context.Context, mediaID store.MediaID, validated HydrationPlan, marker string, write HydrationWrite) error {
 	fields := append([]store.MediaField(nil), validated.MediaFields...)
 	if validated.MarkComplete {
 		fields = append(fields, store.MediaField{Name: marker, Type: store.EntityFieldFlag, Flag: true})
-	}
-	if a.fingerprintField != "" && fingerprint != "" {
-		fields = append(fields, store.MediaField{Name: a.fingerprintField, Type: store.EntityFieldText, Text: fingerprint})
 	}
 	if len(fields) == 0 {
 		return nil
