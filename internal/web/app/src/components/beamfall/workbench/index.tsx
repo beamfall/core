@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -48,7 +47,18 @@ export function StatusChip({
 
 export type BadgeState = "neutral" | "green" | "amber" | "red" | "cyan" | "restricted" | "revealed";
 
-// Manage status badge: data-state selects the tone in manage.css.
+const BADGE_TONE: Record<BadgeState, StatusTone> = {
+  neutral: "neutral",
+  green: "green",
+  amber: "amber",
+  red: "red",
+  cyan: "cyan",
+  restricted: "iris",
+  revealed: "iris",
+};
+
+// Manage status: the same dot-and-text idiom as StatusChip, so Console and
+// Manage read status one way. data-state stays as the stable hook.
 export function StatusBadge({
   state = "neutral",
   className,
@@ -59,9 +69,14 @@ export function StatusBadge({
   children: ReactNode;
 }) {
   return (
-    <Badge variant="secondary" data-state={state} className={cn("manage-badge", className)}>
+    <span
+      data-slot="status-badge"
+      data-state={state}
+      className={cn("status-chip", TONE_CLASS[BADGE_TONE[state]], className)}
+    >
+      <span className="status-chip-dot" aria-hidden />
       {children}
-    </Badge>
+    </span>
   );
 }
 
@@ -120,11 +135,9 @@ export function EmptyState({ message }: { message: StringKey }) {
 export function ErrorState({ message }: { message: StringKey }) {
   const t = useT();
   return (
-    <div className="console-card">
-      <p role="alert" className="console-empty console-empty-line text-[var(--red-500)]">
-        {t(message)}
-      </p>
-    </div>
+    <p role="alert" className="console-empty console-empty-line text-[var(--state-danger)]">
+      {t(message)}
+    </p>
   );
 }
 

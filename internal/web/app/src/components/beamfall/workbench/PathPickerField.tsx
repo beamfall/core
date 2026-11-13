@@ -330,7 +330,6 @@ export function PathPickerField({
         <Button
           ref={browseButton}
           type="button"
-          size="sm"
           variant="outline"
           disabled={disabled}
           aria-expanded={open}
