@@ -771,43 +771,65 @@ func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *
 }
 
 // waitWhileEncoderProgresses runs waitForEncoder in budget-long windows. When
-// a window expires on a segment, the session's encoder for rung is still the
-// same run, and that run wrote at least one new segment during the window, the
-// session is healthy but behind the playhead: the request keeps waiting for the
-// bytes instead of failing into a retryable 503 (CORE-0044). A window with no
-// new segment, or a run that another request replaced, fails as before. The
-// requested segment is at most seekLookaheadSegments past the frontier when the
-// wait starts, so each extra window needs one more produced segment and the
-// number of windows stays bounded.
+// a window expires on a segment and the session is healthy but behind the
+// playhead, the request keeps waiting for the bytes instead of failing into a
+// retryable 503 (CORE-0044). Healthy means the session's encoder for rung was
+// this request's run for the whole window, that run started at or before the
+// requested segment, and it wrote a segment during the window. Anything else,
+// such as a stalled run, a run another request replaced or restarted, or a run
+// started past the segment, fails as before. A run writes its segments in
+// order from its base, and the request is at most seekLookaheadSegments past
+// the frontier when the wait starts, so the number of extra windows is bounded.
 func (s *Sessions) waitWhileEncoderProgresses(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int, isSegment bool, path string, run *encoderRun, budget time.Duration) error {
 	for {
-		current, before, tracked := s.encoderProgress(key, session, rung)
+		windowStart := time.Now()
+		current, _, tracked := s.rungEncoder(key, session, rung)
 		waitCtx, cancel := context.WithTimeout(ctx, budget)
 		err := s.waitForEncoder(waitCtx, key, session, rung, segment, isSegment, path, run)
 		cancel()
-		if err == nil || !isSegment || !tracked || ctx.Err() != nil || !errors.Is(err, context.DeadlineExceeded) {
+		if err == nil || !isSegment || ctx.Err() != nil || !errors.Is(err, context.DeadlineExceeded) {
 			return err
 		}
-		after, frontier, stillTracked := s.encoderProgress(key, session, rung)
-		if !stillTracked || after != current || frontier <= before {
+		after, base, stillTracked := s.rungEncoder(key, session, rung)
+		if !tracked || !stillTracked || current != run || after != run || base > segment ||
+			!segmentWrittenSince(filepath.Join(session.dir, rung.ID), base, windowStart) {
 			return err
 		}
-		run = after
 	}
 }
 
-// encoderProgress returns the session's running encoder for rung and the
-// highest segment it has produced so far. tracked is false when the session is
-// gone or is not encoding rung.
-func (s *Sessions) encoderProgress(key SessionKey, session *hlsSession, rung Rung) (run *encoderRun, frontier int, tracked bool) {
+// rungEncoder returns the session's running encoder for rung and the segment it
+// started at. tracked is false when the session is gone or is not encoding rung.
+func (s *Sessions) rungEncoder(key SessionKey, session *hlsSession, rung Rung) (run *encoderRun, base int, tracked bool) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	if !s.liveLocked(key, session) || session.proc == nil || session.currentRung != rung.ID {
-		s.mu.Unlock()
 		return nil, 0, false
 	}
-	run, base := session.run, session.baseSegment
-	s.mu.Unlock()
-	return run, scanFrontier(filepath.Join(session.dir, rung.ID), base), true
+	return session.run, session.baseSegment, true
+}
+
+// segmentWrittenSince reports whether rungDir holds a segment at or past base
+// modified at or after since. Segments cached by earlier runs keep their older
+// times, so only this run's writes count.
+func segmentWrittenSince(rungDir string, base int, since time.Time) bool {
+	entries, err := os.ReadDir(rungDir)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		match := segmentName.FindStringSubmatch(entry.Name())
+		if match == nil {
+			continue
+		}
+		if segment, _ := strconv.Atoi(match[1]); segment < base {
+			continue
+		}
+		if info, err := entry.Info(); err == nil && !info.ModTime().Before(since) {
+			return true
+		}
+	}
+	return false
 }
 
 // beyondSourceEnd reports whether segment starts past the session's known

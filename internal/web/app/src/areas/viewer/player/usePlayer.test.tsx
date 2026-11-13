@@ -259,6 +259,11 @@ describe("usePlayer", () => {
     });
     vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
     vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
+    // jsdom never loads media, so readyState stays HAVE_NOTHING; progress only
+    // counts presented frames, so default to a loaded element.
+    vi.spyOn(HTMLMediaElement.prototype, "readyState", "get").mockReturnValue(
+      HTMLMediaElement.HAVE_ENOUGH_DATA,
+    );
   });
 
   afterEach(() => {
@@ -401,7 +406,20 @@ describe("usePlayer", () => {
     Object.defineProperty(video, "currentTime", { configurable: true, value: 1800 });
     fireEvent.pause(video);
 
+    // The seek settled but no frame is decoded yet: still nothing presented.
     Object.defineProperty(video, "seeking", { configurable: true, value: false });
+    Object.defineProperty(video, "readyState", {
+      configurable: true,
+      value: HTMLMediaElement.HAVE_METADATA,
+    });
+    fireEvent.timeUpdate(video);
+    fireEvent.pause(video);
+    expect(graphql).not.toHaveBeenCalled();
+
+    Object.defineProperty(video, "readyState", {
+      configurable: true,
+      value: HTMLMediaElement.HAVE_ENOUGH_DATA,
+    });
     Object.defineProperty(video, "currentTime", { configurable: true, value: 30.2 });
     fireEvent.pause(video);
     await waitFor(() => expect(graphql).toHaveBeenCalled());

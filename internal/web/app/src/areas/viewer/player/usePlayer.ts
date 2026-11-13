@@ -400,12 +400,17 @@ export function usePlayer(
   // present, so progress reports this instead and is never ahead of what the
   // viewer saw (CORE-0044). Null until a frame is presented in this load.
   const presentedPositionRef = useRef<number | null>(null);
+  const notePresentedPosition = useCallback((video: HTMLVideoElement) => {
+    if (!video.seeking && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+      presentedPositionRef.current = video.currentTime;
+    }
+  }, []);
 
   const reportProgress = useCallback(
     (finished: boolean) => {
       const video = videoRef.current;
       if (!video || !mediaID || !video.duration) return;
-      if (!video.seeking) presentedPositionRef.current = video.currentTime;
+      notePresentedPosition(video);
       const position = presentedPositionRef.current;
       if (position === null) return;
       const eventTimeMS = nextPlaybackEventTimeMS();
@@ -419,7 +424,7 @@ export function usePlayer(
         eventTimeMS,
       });
     },
-    [mediaID],
+    [mediaID, notePresentedPosition],
   );
 
   const stopProgressReporting = useCallback(
@@ -1119,9 +1124,7 @@ export function usePlayer(
     const onPause = () => reportProgress(false);
     const onSeeked = () => reportProgress(false);
     const onEnded = () => stopProgressReporting(true);
-    const onTimeUpdate = () => {
-      if (!video.seeking) presentedPositionRef.current = video.currentTime;
-    };
+    const onTimeUpdate = () => notePresentedPosition(video);
     video.addEventListener("pause", onPause);
     video.addEventListener("seeked", onSeeked);
     video.addEventListener("ended", onEnded);

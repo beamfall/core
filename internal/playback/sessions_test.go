@@ -567,8 +567,11 @@ func TestSlowEncoderBehindPlayheadBlocksInsteadOfFailing(t *testing.T) {
 	}
 	dir := filepath.Dir(first)
 	done := make(chan struct{})
-	defer close(done)
+	var writer sync.WaitGroup
+	writer.Add(1)
+	defer func() { close(done); writer.Wait() }() // before Close removes dir
 	go func() {
+		defer writer.Done()
 		for segment := 1; segment <= 3; segment++ {
 			select {
 			case <-done:
@@ -614,6 +617,119 @@ func TestStalledEncoderFailsAfterOneWindow(t *testing.T) {
 	}
 	if elapsed := time.Since(started); elapsed > 20*window {
 		t.Fatalf("stalled encoder held the request %s, want about one %s window", elapsed, window)
+	}
+}
+
+// TestBehindPlayheadProgressIgnoresCachedSegments keeps the health test honest
+// when segments from an earlier run already sit past the encoder: a run writing
+// below them is still progressing, so the request waits for it.
+func TestBehindPlayheadProgressIgnoresCachedSegments(t *testing.T) {
+	t.Parallel()
+	transcoder := &fakeTranscoder{segmentsToLay: 1}
+	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions.waitWindow = 100 * time.Millisecond
+	defer sessions.Close()
+	key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
+
+	first, err := filePath720(sessions, key, "720p/seg00000.m4s")
+	if err != nil {
+		t.Fatalf("seg0: %v", err)
+	}
+	dir := filepath.Dir(first)
+	earlier := time.Now().Add(-time.Hour)
+	for segment := 10; segment <= 12; segment++ {
+		cached := filepath.Join(dir, fmt.Sprintf("seg%05d.m4s", segment))
+		if err := os.WriteFile(cached, []byte("m4s"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(cached, earlier, earlier); err != nil {
+			t.Fatal(err)
+		}
+	}
+	done := make(chan struct{})
+	var writer sync.WaitGroup
+	writer.Add(1)
+	defer func() { close(done); writer.Wait() }() // before Close removes dir
+	go func() {
+		defer writer.Done()
+		for segment := 1; segment <= 3; segment++ {
+			select {
+			case <-done:
+				return
+			case <-time.After(60 * time.Millisecond):
+			}
+			if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("seg%05d.m4s", segment)), []byte("m4s"), 0o600); err != nil {
+				t.Errorf("write seg%d: %v", segment, err)
+				return
+			}
+		}
+	}()
+
+	if _, err := filePath720(sessions, key, "720p/seg00003.m4s"); err != nil {
+		t.Fatalf("seg3 below cached segments failed: %v", err)
+	}
+	if starts := transcoder.segmentStartsSnapshot(); len(starts) != 1 || starts[0] != 0 {
+		t.Fatalf("segmentStarts = %v, want [0]", starts)
+	}
+}
+
+// TestReplacedEncoderDoesNotExtendTheWait covers a request whose run another
+// request replaced with one started past the requested segment: the new run
+// writes segments, but never this one, so its progress must not keep the
+// request waiting past one window.
+func TestReplacedEncoderDoesNotExtendTheWait(t *testing.T) {
+	t.Parallel()
+	const window = 100 * time.Millisecond
+	transcoder := &fakeTranscoder{segmentsToLay: 1}
+	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions.waitWindow = window
+	defer sessions.Close()
+	key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
+
+	first, err := filePath720(sessions, key, "720p/seg00000.m4s")
+	if err != nil {
+		t.Fatalf("seg0: %v", err)
+	}
+	sessions.mu.Lock()
+	session := sessions.sessions[key]
+	replaced := session.run
+	sessions.mu.Unlock()
+	rung, ok := session.rung("720p")
+	if !ok {
+		t.Fatal("no 720p rung")
+	}
+	if _, err := filePath720(sessions, key, "720p/seg00020.m4s"); err != nil {
+		t.Fatalf("seg20: %v", err)
+	}
+	dir := filepath.Dir(first)
+	done := make(chan struct{})
+	var writer sync.WaitGroup
+	writer.Add(1)
+	defer func() { close(done); writer.Wait() }() // before Close removes dir
+	go func() {
+		defer writer.Done()
+		for segment := 21; ; segment++ {
+			select {
+			case <-done:
+				return
+			case <-time.After(30 * time.Millisecond):
+			}
+			if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("seg%05d.m4s", segment)), []byte("m4s"), 0o600); err != nil {
+				t.Errorf("write seg%d: %v", segment, err)
+				return
+			}
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*window)
+	defer cancel()
+	started := time.Now()
+	err = sessions.waitWhileEncoderProgresses(ctx, key, session, rung, 3, true, filepath.Join(dir, "seg00003.m4s"), replaced, window)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want context.DeadlineExceeded", err)
+	}
+	if elapsed := time.Since(started); elapsed > 10*window {
+		t.Fatalf("a replaced run held the request %s, want about one %s window", elapsed, window)
 	}
 }
 
@@ -1730,6 +1846,12 @@ func TestTranscodeLeaseHeldAcrossRenditionReplacement(t *testing.T) {
 
 // startCount reports how many transcode launches the fake has been asked for.
 // Concurrent tests read it while other goroutines are still starting sessions.
+func (f *fakeTranscoder) segmentStartsSnapshot() []int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]int(nil), f.segmentStarts...)
+}
+
 func (f *fakeTranscoder) startCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
