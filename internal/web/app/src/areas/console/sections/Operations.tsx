@@ -19,6 +19,7 @@ import {
 import { useT } from "@/lib/i18n";
 import type { StringKey } from "@/strings";
 import { Section } from "../Section";
+import { Segmented } from "../Segmented";
 import { useAsync } from "../useAsync";
 
 /**
@@ -58,7 +59,7 @@ function UpdateAvailableGuidance({
       role="status"
       aria-label={t("updateMigrationCautionAria")}
       data-backup-freshness="unknown"
-      className="space-y-3 rounded-md border border-[var(--amber-500)]/45 bg-[var(--amber-500)]/10 px-3 py-3 text-sm"
+      className="space-y-3 rounded-md border border-[var(--state-warning)]/45 bg-[var(--state-warning)]/10 px-3 py-3 text-sm"
     >
       <div>
         <p className="m-0 font-semibold">{t("updateMigrationCautionLabel")}</p>
@@ -85,7 +86,7 @@ function UpdateAvailableGuidance({
         </div>
       </dl>
 
-      <div className="space-y-1 rounded-[var(--radius-field)] bg-[color-mix(in_oklab,var(--amber-500)_10%,transparent)] px-4 py-3">
+      <div className="space-y-1 rounded-[var(--radius-field)] bg-[color-mix(in_oklab,var(--state-warning)_10%,transparent)] px-4 py-3">
         <p className="m-0">{t("updateMigrationPossible")}</p>
         <p className="m-0 font-semibold">{t("updateBackupRequired")}</p>
         <p className="m-0">{t("updateExportNotBackup")}</p>
@@ -224,31 +225,23 @@ export function UpdateAwareness() {
               label="updateCheckChannel"
               help="updateCheckChannelHelp"
               control={
-                <div
-                  className="console-segmented"
-                  role="group"
-                  aria-label={t("updateCheckChannel")}
-                >
-                  {(["stable", "beta"] as const).map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      aria-pressed={channel === c}
-                      disabled={!enabled}
-                      className={channel === c ? "sel" : undefined}
-                      onClick={() => setChannel(c)}
-                    >
-                      {c === "stable" ? t("updateChannelStable") : t("updateChannelBeta")}
-                    </button>
-                  ))}
-                </div>
+                <Segmented
+                  label={t("updateCheckChannel")}
+                  value={channel}
+                  disabled={!enabled}
+                  onChange={setChannel}
+                  options={[
+                    { value: "stable", label: t("updateChannelStable") },
+                    { value: "beta", label: t("updateChannelBeta") },
+                  ]}
+                />
               }
             />
           </Fieldset>
           <div className="console-card console-card-pad space-y-3">
             {availableUpdate && (
               <>
-                <div className="rounded-md border border-[var(--amber-500)]/45 bg-[var(--amber-500)]/10 px-3 py-2 text-sm">
+                <div className="rounded-md border border-[var(--state-warning)]/45 bg-[var(--state-warning)]/10 px-3 py-2 text-sm">
                   {t("updateAvailableBanner", {
                     version: availableUpdate.latestVersion,
                     channel: availableUpdate.channel,
@@ -263,7 +256,7 @@ export function UpdateAwareness() {
             {checkFailed && (
               <div
                 role="status"
-                className="rounded-md border border-[var(--red-500)]/45 bg-[var(--red-500)]/10 px-3 py-2 text-sm"
+                className="rounded-md border border-[var(--state-danger)]/45 bg-[var(--state-danger)]/10 px-3 py-2 text-sm"
               >
                 {t("updateStatusUnavailableNotice")}
               </div>

@@ -32,6 +32,7 @@ import {
 import { Navigate, NavLink, Route, Routes, useLocation } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { SectionMenu } from "@/components/chrome/SectionMenu";
+import { AdvancedSettingsSwitch, useAdvancedSettings } from "@/lib/advancedSettings";
 import { setAdminUnlockHandler } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { useRegister } from "@/lib/register";
@@ -70,7 +71,9 @@ import { UnmatchedPage } from "./pages/UnmatchedPage";
 // strings are introduced; the labels stay the existing localized keys.
 // A nav item labels itself either by a localized string key (`label`) or, for the
 // powertools surfaces that have no global string key yet, a literal `text`.
-type NavItem = { to: string; icon: ComponentType<LucideProps> } & (
+// `advanced` items are expert destinations the Normal view leaves out of the nav
+// (CORE-1117); their routes stay registered, so a link or bookmark still works.
+type NavItem = { to: string; icon: ComponentType<LucideProps>; advanced?: true } & (
   | { label: StringKey; text?: undefined }
   | { text: string; label?: undefined }
 );
@@ -78,8 +81,8 @@ const NAV_GROUPS: NavItem[][] = [
   [
     { to: "/manage/libraries", icon: LibraryBig, label: "libraries" },
     { to: "/manage/operations", icon: ListChecks, label: "jobs" },
-    { to: "/manage/convert", icon: FileCog, label: "convert" },
-    { to: "/manage/rename", icon: PencilLine, label: "rename" },
+    { to: "/manage/convert", icon: FileCog, label: "convert", advanced: true },
+    { to: "/manage/rename", icon: PencilLine, label: "rename", advanced: true },
     { to: "/manage/trash", icon: Trash2, label: "trashPolicyHeading" },
     { to: "/manage/backups", icon: Archive, label: "backupHeading" },
     { to: "/manage/subscriptions", icon: Rss, label: "subscriptions" },
@@ -87,14 +90,14 @@ const NAV_GROUPS: NavItem[][] = [
   ],
   [
     { to: "/manage/collections", icon: FolderTree, label: "collections" },
-    { to: "/manage/bulk", icon: ListTodo, label: "bulkOpsHeading" },
+    { to: "/manage/bulk", icon: ListTodo, label: "bulkOpsHeading", advanced: true },
     { to: "/manage/tags", icon: Tags, label: "tagsHeading" },
-    { to: "/manage/curation", icon: Sparkles, label: "curationHeading" },
+    { to: "/manage/curation", icon: Sparkles, label: "curationHeading", advanced: true },
     { to: "/manage/entities", icon: Shapes, label: "manageTitle" },
     { to: "/manage/artwork", icon: ImageIcon, label: "artworkCandidates" },
-    { to: "/manage/markers", icon: Bookmark, label: "markersHeading" },
-    { to: "/manage/field-locks", icon: Lock, label: "fieldLocksHeading" },
-    { to: "/manage/navigation", icon: PanelsTopLeft, label: "navOverrideHeading" },
+    { to: "/manage/markers", icon: Bookmark, label: "markersHeading", advanced: true },
+    { to: "/manage/field-locks", icon: Lock, label: "fieldLocksHeading", advanced: true },
+    { to: "/manage/navigation", icon: PanelsTopLeft, label: "navOverrideHeading", advanced: true },
   ],
   [
     { to: "/manage/restrictions", icon: ShieldAlert, label: "restrictionsTitle" },
@@ -109,6 +112,18 @@ function currentRouteLabel(pathname: string): { label?: StringKey; text?: string
     (entry) => pathname === entry.to || pathname.startsWith(`${entry.to}/`),
   );
   return item ?? { label: "manageTitle" };
+}
+
+// The Normal nav drops Advanced items, except the page being viewed, so a deep
+// link never lands on a page missing from its own nav, and drops any group left
+// empty. Advanced shows every group whole.
+function visibleNavGroups(advanced: boolean, pathname: string): NavItem[][] {
+  if (advanced) return NAV_GROUPS;
+  return NAV_GROUPS.map((group) =>
+    group.filter(
+      (item) => !item.advanced || pathname === item.to || pathname.startsWith(`${item.to}/`),
+    ),
+  ).filter((group) => group.length > 0);
 }
 
 const MANAGE_LOCK_COPY: AdminGateCopy = {
@@ -201,6 +216,7 @@ export function ManageArea() {
   const location = useLocation();
   const { isManager, loading, needsEnroll, session } = useSession();
   const t = useT();
+  const [advanced] = useAdvancedSettings();
   useEffect(() => setRegister("manage"), [setRegister]);
   const routeTitle = currentRouteLabel(location.pathname);
 
@@ -223,9 +239,10 @@ export function ManageArea() {
           label={t("manageTitle")}
           className="md:w-52 md:shrink-0"
           current={routeTitle.text ?? t(routeTitle.label ?? "manageTitle")}
+          footer={<AdvancedSettingsSwitch className="manage-advanced-switch" />}
         >
           <div className="manage-nav">
-            {NAV_GROUPS.map((group, i) => (
+            {visibleNavGroups(advanced, location.pathname).map((group, i) => (
               <div key={i} className="manage-nav-group">
                 {group.map((item) => (
                   // NavLink sets aria-current="page" on the active <a>; the

@@ -303,13 +303,20 @@ test.describe("manage", () => {
       "Trash",
       "Subscriptions",
       "Unmatched records",
-      "Bulk edit & file operations",
       "Manage",
       "Artwork candidates",
-      "Field locks",
       "Restrictions",
       "Profiles",
     ]) {
+      await expect(nav.getByRole("link", { name: label })).toBeVisible();
+    }
+    // Expert tools sit behind the one "Show advanced settings" switch (CORE-1117).
+    const expert = ["Bulk edit & file operations", "Field locks"];
+    for (const label of expert) {
+      await expect(nav.getByRole("link", { name: label })).toHaveCount(0);
+    }
+    await page.getByRole("switch", { name: "Show advanced settings" }).click();
+    for (const label of expert) {
       await expect(nav.getByRole("link", { name: label })).toBeVisible();
     }
     await expect(page.getByText("beamfall-web")).toHaveCount(0);

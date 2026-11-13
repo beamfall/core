@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { Advanced } from "@/lib/advancedSettings";
 import { subscribeEvents } from "@/lib/api";
 import {
   cancelJob,
@@ -28,7 +29,7 @@ import { useT } from "@/lib/i18n";
 import { jobKindLabel, jobProgressDetail, jobStatusLabel, jobStatusState } from "@/lib/jobDisplay";
 import type { StringKey } from "@/strings";
 import { ConfirmButton } from "../ConfirmButton";
-import { AdvancedDisclosure, Section } from "../Section";
+import { Section } from "../Section";
 import { useAsync } from "../useAsync";
 
 function statusTone(status: string): StatusTone {
@@ -68,9 +69,7 @@ function StatTile({ label, value, unit }: { label: StringKey; value: number; uni
       <div className="console-control-label">{t(label)}</div>
       <div className="mt-1 text-[18px] font-semibold leading-none console-num">
         {value}
-        {unit && (
-          <span className="ml-1 text-[12px] font-normal text-muted-foreground">{t(unit)}</span>
-        )}
+        {unit && <span className="ml-1 text-xs font-normal text-muted-foreground">{t(unit)}</span>}
       </div>
     </div>
   );
@@ -105,7 +104,7 @@ function GovernorStatus() {
       ) : !data?.available ? (
         <div className="space-y-1">
           <EmptyState message="governorUnwiredLine" />
-          <p className="px-1 text-[12px] leading-snug text-muted-foreground">
+          <p className="px-1 text-xs leading-snug text-muted-foreground">
             {t("governorUnwiredHelp")}
           </p>
         </div>
@@ -164,6 +163,10 @@ function GovernorSettings() {
   // transient edit value — so editing the worker field never flips the toggle
   // or disables Save mid-keystroke. While low-power is on, the field locks to 1.
   const lowPower = (config.data?.backgroundWorkers ?? 2) <= 1;
+  // Low-power on or off covers one and two workers; any other count, or a
+  // retention other than the default, keeps its field in the Normal view.
+  const customWorkers = (config.data?.backgroundWorkers ?? 2) > 2;
+  const customRetention = (config.data?.eventsRetentionDays ?? 180) !== 180;
 
   async function save(next: number) {
     const clamped = Math.max(1, Math.floor(next));
@@ -209,26 +212,6 @@ function GovernorSettings() {
         <form onSubmit={onSubmit} className="space-y-3">
           <Fieldset title="governorSettingsHeading" hideTitle>
             <ControlRow
-              label="governorBackgroundWorkers"
-              help="governorBackgroundWorkersHelp"
-              control={
-                <>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={workers}
-                    disabled={lowPower}
-                    onChange={(e) => setWorkers(Math.max(1, Number(e.target.value) || 1))}
-                    aria-label={t("governorBackgroundWorkers")}
-                    className="w-20"
-                  />
-                  <Button type="submit" size="sm" disabled={lowPower}>
-                    {t("governorBackgroundWorkersSave")}
-                  </Button>
-                </>
-              }
-            />
-            <ControlRow
               label="governorLowPower"
               help="governorLowPowerHelp"
               control={
@@ -239,42 +222,68 @@ function GovernorSettings() {
                 />
               }
             />
-            <ControlRow
-              label="eventsRetentionDays"
-              help="eventsRetentionDaysHelp"
-              control={
-                <>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={retentionDays}
-                    onChange={(e) => setRetentionDays(Math.max(1, Number(e.target.value) || 1))}
-                    aria-label={t("eventsRetentionDays")}
-                    className="w-24"
-                  />
-                  <Button type="button" size="sm" onClick={() => void saveRetentionDays()}>
-                    {t("eventsRetentionDaysSave")}
-                  </Button>
-                </>
-              }
-            />
-            <ControlRow
-              label="jobKindEventsCompaction"
-              help="eventsRetentionDaysHelp"
-              control={
-                <>
-                  <Button type="button" size="sm" onClick={() => void onRunCompaction()}>
-                    {t("eventsCompactionRun")}
-                  </Button>
-                  {compactionQueued && (
-                    <StatusChip tone="green">{t("eventsCompactionQueued")}</StatusChip>
-                  )}
-                  {compactionFailed && (
-                    <StatusChip tone="red">{t("eventsCompactionFailed")}</StatusChip>
-                  )}
-                </>
-              }
-            />
+            <Advanced keep={customWorkers}>
+              <ControlRow
+                label="governorBackgroundWorkers"
+                help="governorBackgroundWorkersHelp"
+                control={
+                  <>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={workers}
+                      disabled={lowPower}
+                      onChange={(e) => setWorkers(Math.max(1, Number(e.target.value) || 1))}
+                      aria-label={t("governorBackgroundWorkers")}
+                      className="w-20"
+                    />
+                    <Button type="submit" size="sm" disabled={lowPower}>
+                      {t("governorBackgroundWorkersSave")}
+                    </Button>
+                  </>
+                }
+              />
+            </Advanced>
+            <Advanced keep={customRetention}>
+              <ControlRow
+                label="eventsRetentionDays"
+                help="eventsRetentionDaysHelp"
+                control={
+                  <>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={retentionDays}
+                      onChange={(e) => setRetentionDays(Math.max(1, Number(e.target.value) || 1))}
+                      aria-label={t("eventsRetentionDays")}
+                      className="w-24"
+                    />
+                    <Button type="button" size="sm" onClick={() => void saveRetentionDays()}>
+                      {t("eventsRetentionDaysSave")}
+                    </Button>
+                  </>
+                }
+              />
+            </Advanced>
+            <Advanced>
+              <ControlRow
+                label="jobKindEventsCompaction"
+                help="eventsRetentionDaysHelp"
+                control={
+                  <>
+                    <Button type="button" size="sm" onClick={() => void onRunCompaction()}>
+                      {t("eventsCompactionRun")}
+                    </Button>
+                    {compactionQueued && (
+                      <StatusChip tone="green">{t("eventsCompactionQueued")}</StatusChip>
+                    )}
+                    {compactionFailed && (
+                      <StatusChip tone="red">{t("eventsCompactionFailed")}</StatusChip>
+                    )}
+                  </>
+                }
+              />
+            </Advanced>
           </Fieldset>
         </form>
       )}
@@ -297,7 +306,7 @@ function JobLog({ jobID }: { jobID: string }) {
   return (
     <div className="console-card space-y-1 px-3 py-2">
       {events.map((ev) => (
-        <div key={ev.id} className="grid grid-cols-[10rem_8rem_1fr] gap-3 text-[12px] leading-snug">
+        <div key={ev.id} className="grid grid-cols-[10rem_8rem_1fr] gap-3 text-xs leading-snug">
           <span className="console-mono text-muted-foreground">{ev.occurredAt}</span>
           <span className="font-medium">{ev.type}</span>
           <span className="console-mono truncate">
@@ -419,17 +428,18 @@ function JobQueue() {
 // Operations controls (WEB-5K, ADR-0013 §4-§5 / ADR-0061): the operator surface
 // over the job-queue substrate and the resource governor — the job queue with
 // per-job cancel/retry and an inline durable logs view, the live governor
-// posture, and (behind Advanced, IA §5) the background-worker write settings
-// with low-power mode. Admin-session
-// gated by the Console graph dispatch (the jobs/governor fields require admin).
+// posture and the background-worker settings. Normal shows the queue and the
+// low-power switch; the governor posture and tuning are Advanced (CORE-1117).
+// Admin-session gated by the Console graph dispatch (the jobs/governor fields
+// require admin).
 export function OperationsControls() {
   return (
     <div className="space-y-8">
       <JobQueue />
-      <GovernorStatus />
-      <AdvancedDisclosure>
-        <GovernorSettings />
-      </AdvancedDisclosure>
+      <GovernorSettings />
+      <Advanced>
+        <GovernorStatus />
+      </Advanced>
     </div>
   );
 }

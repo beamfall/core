@@ -191,7 +191,7 @@ function FieldsSection({ subject }: { subject: Subject }) {
         </StatusBadge>
       }
     >
-      <div className="mb-2 text-sm font-bold text-[var(--text-primary)]">{subject.title}</div>
+      <div className="mb-2 text-sm font-semibold text-[var(--text-primary)]">{subject.title}</div>
       {subject.fields.length === 0 ? (
         <EmptyLine message={t("curationNoFields")} />
       ) : (
@@ -449,29 +449,11 @@ function FilesSection({
       <ManageSection
         title={t("curationFilesHeading")}
         actions={
-          <Tabs.List aria-label={t("curationFilesHeading")} className="flex gap-1">
-            <Tabs.Tab
-              value="versions"
-              render={
-                <Button
-                  type="button"
-                  variant={tab === "versions" ? "default" : "outline"}
-                  size="sm"
-                />
-              }
-            >
+          <Tabs.List aria-label={t("curationFilesHeading")} className="manage-tabs">
+            <Tabs.Tab value="versions" className="manage-tab">
               {t("curationTabVersions")}
             </Tabs.Tab>
-            <Tabs.Tab
-              value="extras"
-              render={
-                <Button
-                  type="button"
-                  variant={tab === "extras" ? "default" : "outline"}
-                  size="sm"
-                />
-              }
-            >
+            <Tabs.Tab value="extras" className="manage-tab">
               {t("curationTabExtras")}
             </Tabs.Tab>
           </Tabs.List>

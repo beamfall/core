@@ -116,7 +116,7 @@ function ApiTokens() {
           </Button>
         </form>
         {secret && <SecretBanner secret={secret} />}
-        {error && <p className="mt-2 text-sm text-[var(--red-500)]">{t(error)}</p>}
+        {error && <p className="mt-2 text-sm text-[var(--state-danger)]">{t(error)}</p>}
       </div>
 
       {loading ? (
@@ -234,7 +234,7 @@ function ApiKeys() {
           </Button>
         </form>
         {secret && <SecretBanner secret={secret} />}
-        {error && <p className="mt-2 text-sm text-[var(--red-500)]">{t(error)}</p>}
+        {error && <p className="mt-2 text-sm text-[var(--state-danger)]">{t(error)}</p>}
       </div>
 
       {loading ? (

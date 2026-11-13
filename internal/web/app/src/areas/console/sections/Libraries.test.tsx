@@ -2,8 +2,9 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetRescansForTest } from "@/components/beamfall/LibraryRescan";
+import { setAdvancedSettings } from "@/lib/advancedSettings";
 import {
   fetchFolderTree,
   fetchJobs,
@@ -78,7 +79,14 @@ function pickerAnswer(path?: string): PathPickerInfo {
 }
 
 describe("Console Libraries scan", () => {
+  afterEach(() => {
+    localStorage.clear();
+    setAdvancedSettings(false);
+  });
+
   beforeEach(() => {
+    // The one-folder scan is an Advanced control (CORE-1117).
+    setAdvancedSettings(true);
     vi.clearAllMocks();
     resetRescansForTest();
     vi.mocked(fetchLibraries).mockResolvedValue([
@@ -131,8 +139,8 @@ describe("Console Libraries scan", () => {
     );
   }
 
-  async function openFolderScan(user: ReturnType<typeof userEvent.setup>) {
-    await user.click(await screen.findByText("Scan one folder"));
+  async function openFolderScan() {
+    await screen.findByText("Scan one folder");
   }
 
   it("rescans every library folder in one click and follows the jobs", async () => {
@@ -212,7 +220,7 @@ describe("Console Libraries scan", () => {
   it("offers only the Library roots and descendants", async () => {
     const user = userEvent.setup();
     renderLibraries();
-    await openFolderScan(user);
+    await openFolderScan();
 
     const picker = await screen.findByLabelText("Folder to scan");
     await waitFor(() => expect(picker).toHaveTextContent("/Volumes/library"));
@@ -231,7 +239,7 @@ describe("Console Libraries scan", () => {
     window.addEventListener("unhandledrejection", unhandled);
     vi.mocked(scanLibrary).mockRejectedValueOnce(new Error("folder is outside the library roots"));
     renderLibraries();
-    await openFolderScan(user);
+    await openFolderScan();
 
     await user.click(await screen.findByRole("button", { name: "Scan" }));
 
@@ -245,7 +253,7 @@ describe("Console Libraries scan", () => {
   it("enqueues a valid in-root scan", async () => {
     const user = userEvent.setup();
     renderLibraries();
-    await openFolderScan(user);
+    await openFolderScan();
 
     await user.click(await screen.findByRole("button", { name: "Scan" }));
 

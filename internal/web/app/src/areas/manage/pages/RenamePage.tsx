@@ -157,7 +157,7 @@ export function RenamePage() {
           <div className="grid gap-1">
             <Label htmlFor="rename-library">{t("library")}</Label>
             <Select value={libraryID} onValueChange={setLibraryID}>
-              <SelectTrigger id="rename-library" size="sm" className="w-64">
+              <SelectTrigger id="rename-library" className="w-64">
                 <SelectValue placeholder={t("library")} />
               </SelectTrigger>
               <SelectContent>

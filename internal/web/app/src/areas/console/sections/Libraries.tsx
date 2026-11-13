@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { Advanced } from "@/lib/advancedSettings";
 import { displayString } from "@/lib/display";
 import {
   createLibrary,
@@ -219,14 +220,17 @@ function LibraryCard({
                 <span aria-hidden>·</span>
                 <span
                   title={watcher.reason || undefined}
-                  className={cn("inline-flex items-center gap-1.5", watching && "text-emerald-300")}
+                  className={cn(
+                    "inline-flex items-center gap-1.5",
+                    watching && "text-[var(--state-success,var(--state-direct))]",
+                  )}
                 >
                   <span
                     aria-hidden
                     className={cn(
                       "size-1.5 rounded-full",
                       watching
-                        ? "bg-emerald-400 shadow-[0_0_6px_var(--color-emerald-400)]"
+                        ? "bg-[var(--state-success,var(--state-direct))]"
                         : "bg-muted-foreground",
                     )}
                   />
@@ -342,31 +346,38 @@ function LibraryCard({
           </section>
         </div>
 
-        <details className="console-disclosure">
-          <summary>{t("scanOneFolder")}</summary>
-          <form onSubmit={scan} className="console-disclosure-body flex items-end gap-2">
-            <div className="flex-1 space-y-1.5">
-              <Label htmlFor={`scan-${library.id}`}>{t("folderToScan")}</Label>
-              <Select value={scanRoot} onValueChange={setScanRoot}>
-                <SelectTrigger id={`scan-${library.id}`}>
-                  <SelectValue placeholder={t("selectFolderToScan")} />
-                </SelectTrigger>
-                <SelectContent>
-                  {scanFolders.map((folder) => (
-                    <SelectItem key={folder.path} value={folder.path}>
-                      {folder.path}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Button type="submit" size="sm" disabled={!scanRoot.trim()}>
-              <ScanLine className="console-nav-icon" aria-hidden />
-              {t("scan")}
-            </Button>
-          </form>
-          <ErrorLine message={scanError} />
-        </details>
+        <Advanced>
+          <section aria-labelledby={`scan-heading-${library.id}`} className="space-y-2">
+            <h4
+              id={`scan-heading-${library.id}`}
+              className="m-0 text-sm font-semibold text-foreground"
+            >
+              {t("scanOneFolder")}
+            </h4>
+            <form onSubmit={scan} className="flex items-end gap-2">
+              <div className="flex-1 space-y-1.5">
+                <Label htmlFor={`scan-${library.id}`}>{t("folderToScan")}</Label>
+                <Select value={scanRoot} onValueChange={setScanRoot}>
+                  <SelectTrigger id={`scan-${library.id}`}>
+                    <SelectValue placeholder={t("selectFolderToScan")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {scanFolders.map((folder) => (
+                      <SelectItem key={folder.path} value={folder.path}>
+                        {folder.path}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button type="submit" size="sm" disabled={!scanRoot.trim()}>
+                <ScanLine className="console-nav-icon" aria-hidden />
+                {t("scan")}
+              </Button>
+            </form>
+            <ErrorLine message={scanError} />
+          </section>
+        </Advanced>
       </div>
     </article>
   );

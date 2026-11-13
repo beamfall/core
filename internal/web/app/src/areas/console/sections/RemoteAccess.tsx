@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { TableCell, TableRow } from "@/components/ui/table";
+import { Advanced } from "@/lib/advancedSettings";
 import { displayString } from "@/lib/display";
 import type {
   ImporterInfo,
@@ -53,7 +54,7 @@ import {
 } from "@/lib/migrationReport";
 import type { StringKey } from "@/strings";
 import { getAdminEpochSignal } from "../adminEpoch";
-import { AdvancedDisclosure, Section } from "../Section";
+import { Section } from "../Section";
 import { useAsync } from "../useAsync";
 
 const CERT_STATE: Record<string, StringKey> = {
@@ -233,7 +234,7 @@ function WatchAwayFlow({
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-base font-semibold">{t("watchAwayHeading")}</h2>
+        <h3 className="text-base font-semibold">{t("watchAwayHeading")}</h3>
         <p className="text-sm text-muted-foreground">{t("watchAwayLead")}</p>
       </div>
       <GuideStep
@@ -286,29 +287,29 @@ function WatchAwayFlow({
           )}
         </div>
       </GuideStep>
-      <details className="console-card console-card-pad">
-        <summary className="cursor-pointer text-sm font-semibold">
-          {t("watchAwayAdvancedRelay")}
-        </summary>
-        <div className="mt-3 space-y-3 text-sm text-muted-foreground">
-          <p>{t("watchAwayRelayDetail")}</p>
-          {relay?.enabled ? (
-            <>
-              <Field label="remoteAccessEndpoint" value={relay.endpoint} />
-              <Field label="remoteAccessPublicHost" value={relay.publicHost} />
-              <div className="flex items-center justify-between gap-4">
-                <span>{t("remoteAccessConnection")}</span>
-                <StatusChip tone={RELAY_TONE[relay.connectionState] ?? "neutral"}>
-                  {t(RELAY_STATE[relay.connectionState] ?? "relayStateDisabled")}
-                </StatusChip>
-              </div>
-              {relay.lastError && <Field label="remoteAccessLastError" value={relay.lastError} />}
-            </>
-          ) : (
-            <p>{t("remoteAccessOff")}</p>
-          )}
+      <Advanced keep={Boolean(relay?.enabled)}>
+        <div className="console-card console-card-pad space-y-3">
+          <h3 className="text-sm font-semibold">{t("watchAwayAdvancedRelay")}</h3>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>{t("watchAwayRelayDetail")}</p>
+            {relay?.enabled ? (
+              <>
+                <Field label="remoteAccessEndpoint" value={relay.endpoint} />
+                <Field label="remoteAccessPublicHost" value={relay.publicHost} />
+                <div className="flex items-center justify-between gap-4">
+                  <span>{t("remoteAccessConnection")}</span>
+                  <StatusChip tone={RELAY_TONE[relay.connectionState] ?? "neutral"}>
+                    {t(RELAY_STATE[relay.connectionState] ?? "relayStateDisabled")}
+                  </StatusChip>
+                </div>
+                {relay.lastError && <Field label="remoteAccessLastError" value={relay.lastError} />}
+              </>
+            ) : (
+              <p>{t("remoteAccessOff")}</p>
+            )}
+          </div>
         </div>
-      </details>
+      </Advanced>
     </div>
   );
 }
@@ -318,6 +319,7 @@ function WatchAwayFlow({
 export function RemoteAccessStatus() {
   const t = useT();
   const { data, failed, refresh } = useAsync(fetchRemoteAccess);
+  const displayLocale = useDisplayLocale();
   const connectionClasses = connectionClassLabels(data?.endpoints);
 
   return (
@@ -337,16 +339,17 @@ export function RemoteAccessStatus() {
         <div className="space-y-4">
           <WatchAwayFlow data={data ?? undefined} refresh={refresh} />
           {connectionClasses.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {connectionClasses.map((label) => (
-                <StatusChip key={label} tone="cyan">
-                  {t(label)}
-                </StatusChip>
-              ))}
-            </div>
+            <p className="text-sm text-muted-foreground">
+              {t("remoteAccessReachableVia")}{" "}
+              <span className="text-foreground">
+                {new Intl.ListFormat(displayLocale, { type: "conjunction" }).format(
+                  connectionClasses.map((label) => t(label)),
+                )}
+              </span>
+            </p>
           )}
           {data?.plainHTTPPublicWarning && (
-            <div className="rounded-md border border-amber-400/60 bg-amber-500/10 px-3 py-2 text-sm text-amber-700">
+            <div className="rounded-md border border-[var(--state-warning)]/45 bg-[var(--state-warning)]/10 px-3 py-2 text-sm">
               {t("remoteAccessPlainHTTPPublicWarning")}
             </div>
           )}
@@ -902,8 +905,8 @@ function importerInputLabel(imp: ImporterInfo, t: ReturnType<typeof useT>): stri
 }
 
 // The Access › Remote Access destination: how the server is reachable. The
-// qBittorrent ingest seam is rarely touched, so it sits behind Advanced (IA
-// §5); App Store hosts get the status alone.
+// qBittorrent ingest seam is rarely touched, so it is an Advanced setting
+// (CORE-1117); App Store hosts get the status alone.
 export function RemoteAccess({
   suppressDispatchSurfaces = false,
 }: {
@@ -913,9 +916,9 @@ export function RemoteAccess({
     <div className="space-y-8">
       <RemoteAccessStatus />
       {!suppressDispatchSurfaces && (
-        <AdvancedDisclosure>
+        <Advanced>
           <QBittorrentIngest />
-        </AdvancedDisclosure>
+        </Advanced>
       )}
     </div>
   );
