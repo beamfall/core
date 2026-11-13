@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { resetRescansForTest } from "@/components/beamfall/LibraryRescan";
 import {
+  deleteLibrary,
   fetchFolderTree,
   fetchJobs,
   fetchLibraries,
@@ -28,6 +29,7 @@ globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObse
 vi.mock("@/lib/graphql", () => ({
   addPathPickerRoot: vi.fn(),
   createLibrary: vi.fn(),
+  deleteLibrary: vi.fn(),
   fetchFolderTree: vi.fn(),
   fetchJobs: vi.fn(),
   fetchLibraries: vi.fn(),
@@ -405,6 +407,24 @@ describe("Console Libraries scan", () => {
     await user.click(screen.getByRole("button", { name: "Remove" }));
 
     await waitFor(() => expect(setLibraryRoots).toHaveBeenCalledWith("library-1", []));
+  });
+
+  it("deletes a library through the confirm dialog and reloads the list (CORE-1171)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(deleteLibrary).mockResolvedValue(undefined);
+    renderLibraries();
+
+    const card = await screen.findByRole("article", { name: "Library" });
+    vi.mocked(fetchLibraries).mockResolvedValue([]);
+    await user.click(within(card).getByRole("button", { name: "Delete library" }));
+    const dialog = screen.getByRole("alertdialog", { name: "Delete Library?" });
+    expect(deleteLibrary).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: "Delete library" }));
+
+    await waitFor(() => expect(deleteLibrary).toHaveBeenCalledWith("library-1"));
+    await waitFor(() =>
+      expect(screen.queryByRole("article", { name: "Library" })).not.toBeInTheDocument(),
+    );
   });
 });
 

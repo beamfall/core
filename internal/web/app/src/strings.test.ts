@@ -17,7 +17,8 @@ const PARTIAL_CATALOGS: Record<Locale, Partial<StringTable>> = { en, fr, de, es,
 // security keys, CORE-1114 setup wizard copy, CORE-1115 provider-key copy, CORE-1131 rescan and
 // account-menu copy and CORE-1142 folder-picker copy; updated for the CORE-1146, CORE-1362 and
 // CORE-1363 player recovery copy, the CORE-1342 source-ends-early copy and the CORE-1132
-// first admin password copy and the CORE-0393 Viewer pairing-code switch copy.
+// first admin password copy, the CORE-0393 Viewer pairing-code switch copy and the CORE-1171
+// delete-library copy.
 const BASE_SERIALIZED_LENGTH = 450_881;
 const BASE_REGISTRY_SHA256 = "a8d24ef8ec959c3687f829b6a38deb6eb0d238ccd4b7395bb4ff355dda5a5f16";
 const BASE_KEY_ORDER_SHA256 = "6780cad704ea42d845fd949f41ad33d3f31ca162569d83f13df6c72ae8993f8f";

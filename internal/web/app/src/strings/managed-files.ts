@@ -20,6 +20,12 @@ export const managedFileStrings = {
     rescanNeedsFolder: "Add a folder to this library before scanning.",
     scanOneFolder: "Scan one folder",
     fixUnmatched: "Fix unmatched items",
+    deleteLibrary: "Delete library",
+    deleteLibraryTitle: "Delete {library}?",
+    deleteLibraryBody:
+      "The library will disappear from Beamfall on every device. Files on disk are not touched, and watch history is kept but hidden. Deleted libraries cannot be restored yet.",
+    deleteLibraryDeleting: "Deleting…",
+    deleteLibraryFailed: "Could not delete the library.",
     ownerTasksHeading: "Common tasks",
     ownerTasksLead: "The things you do most, one click away.",
     taskRescan: "Rescan libraries",
@@ -119,6 +125,12 @@ export const managedFileStrings = {
     couldNotUpdateRoots: "Impossible de mettre à jour les racines de la bibliothèque.",
     restore: "Restaurer",
     restoreFailed: "La restauration a échoué.",
+    deleteLibrary: "Supprimer la bibliothèque",
+    deleteLibraryTitle: "Supprimer {library} ?",
+    deleteLibraryBody:
+      "La bibliothèque disparaîtra de Beamfall sur tous les appareils. Les fichiers sur le disque ne sont pas modifiés, et l’historique de visionnage est conservé mais masqué. Une bibliothèque supprimée ne peut pas encore être restaurée.",
+    deleteLibraryDeleting: "Suppression…",
+    deleteLibraryFailed: "Impossible de supprimer la bibliothèque.",
     trashUnavailable: "La corbeille est indisponible pour le moment.",
   },
   de: {
@@ -146,6 +158,12 @@ export const managedFileStrings = {
     couldNotUpdateRoots: "Die Bibliotheksstammordner konnten nicht aktualisiert werden.",
     restore: "Wiederherstellen",
     restoreFailed: "Wiederherstellung fehlgeschlagen.",
+    deleteLibrary: "Bibliothek löschen",
+    deleteLibraryTitle: "{library} löschen?",
+    deleteLibraryBody:
+      "Die Bibliothek verschwindet auf allen Geräten aus Beamfall. Dateien auf dem Datenträger bleiben unberührt, und der Wiedergabeverlauf bleibt erhalten, wird aber ausgeblendet. Gelöschte Bibliotheken lassen sich noch nicht wiederherstellen.",
+    deleteLibraryDeleting: "Wird gelöscht…",
+    deleteLibraryFailed: "Die Bibliothek konnte nicht gelöscht werden.",
     trashUnavailable: "Der Papierkorb ist derzeit nicht verfügbar.",
   },
   es: {
@@ -173,6 +191,12 @@ export const managedFileStrings = {
     couldNotUpdateRoots: "No se pudieron actualizar las raíces de la biblioteca.",
     restore: "Restaurar",
     restoreFailed: "Error al restaurar.",
+    deleteLibrary: "Eliminar biblioteca",
+    deleteLibraryTitle: "¿Eliminar {library}?",
+    deleteLibraryBody:
+      "La biblioteca desaparecerá de Beamfall en todos los dispositivos. Los archivos del disco no se tocan y el historial de reproducción se conserva, pero oculto. Las bibliotecas eliminadas aún no se pueden restaurar.",
+    deleteLibraryDeleting: "Eliminando…",
+    deleteLibraryFailed: "No se pudo eliminar la biblioteca.",
     trashUnavailable: "La papelera no está disponible en este momento.",
   },
   pt: {
@@ -200,6 +224,12 @@ export const managedFileStrings = {
     couldNotUpdateRoots: "Não foi possível atualizar as raízes da biblioteca.",
     restore: "Restaurar",
     restoreFailed: "Falha ao restaurar.",
+    deleteLibrary: "Excluir biblioteca",
+    deleteLibraryTitle: "Excluir {library}?",
+    deleteLibraryBody:
+      "A biblioteca vai desaparecer do Beamfall em todos os dispositivos. Os arquivos no disco não são alterados, e o histórico de reprodução é mantido, mas oculto. Bibliotecas excluídas ainda não podem ser restauradas.",
+    deleteLibraryDeleting: "Excluindo…",
+    deleteLibraryFailed: "Não foi possível excluir a biblioteca.",
     trashUnavailable: "A lixeira não está disponível no momento.",
   },
 } as const;
