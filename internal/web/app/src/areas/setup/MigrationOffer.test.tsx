@@ -42,6 +42,21 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("MigrationOffer (Seam A)", () => {
+  it("embeds under another step without its own skip when the host finishes setup", async () => {
+    vi.mocked(fetchImporters).mockResolvedValue([importer("filmtv", "plex", "Plex")]);
+    render(
+      <I18nProvider>
+        <MigrationOffer embedded />
+      </I18nProvider>,
+    );
+
+    expect(
+      await screen.findByRole("heading", { level: 2, name: "Bring your library with you" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /skip for now/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /choose a source/i })).toBeInTheDocument();
+  });
+
   it("lists plugin-declared sources (never hardcoded) and shows additive-only trust copy", async () => {
     vi.mocked(fetchImporters).mockResolvedValue([
       importer("filmtv", "plex", "Plex"),

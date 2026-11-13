@@ -20,6 +20,20 @@ export const onboardingStrings = {
     setupChecklistResume: "Resume",
     setupChecklistRerun: "Re-run from start",
     setupChecklistDiscard: "Discard & finish later",
+    // Pairing-code entry on the enroll and promote pages (CORE-1117).
+    pairingCodeRequired: "Enter the pairing code to continue.",
+    pairingCodeRejectedHint:
+      "Each code works once and expires 10 minutes after it's made. Ask for a new one if this one is old.",
+    pairingCodeOffline:
+      "Can't reach the server. Check your connection and that the server is running, then try again.",
+    enrollRetry:
+      "The server couldn't connect this browser. Try again; if it keeps failing, check the server log.",
+    promoteRetry:
+      "The server couldn't promote this browser. Try again; if it keeps failing, check the server log.",
+    promoteCodeHint:
+      "Manager codes come from a manager device: Console › {page} › {action} › {kind}.",
+    promoteNeedsManagerCode:
+      "That's a viewer code, so it can't make this browser a manager. Ask for a manager code instead.",
   },
   fr: {
     setupChecklistHeading: "Configuration initiale",
