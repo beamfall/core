@@ -11,15 +11,30 @@ exit_reason="exit"
 cleanup_output=0
 output_dir="${BEAMFALL_WEB_E2E_OUTPUT_DIR:-}"
 pending_receipt=""
+watchdog_reason_file=""
+heartbeat_file=""
+server_binary=""
 receipt_file=""
 publisher_file=""
 build_reuse_dir=""
 global_timeout_seconds=600
+# CORE-0941: the runner fails a run that makes no progress, not one that is slow. The stall budget
+# is the longest silence (no Playwright test or output event, see
+# e2e/lib/progress-heartbeat-reporter.mjs) the run tolerates, builds included; the ceiling is the
+# absolute backstop for a run that keeps emitting events but never finishes. A fixed wall clock
+# false-redded passing runs at host load above 120.
 runner_timeout_seconds="${BEAMFALL_WEB_E2E_RUNNER_TIMEOUT_SECONDS:-630}"
+runner_ceiling_seconds="${BEAMFALL_WEB_E2E_RUNNER_CEILING_SECONDS:-2100}"
 
 case "${runner_timeout_seconds}" in
   ''|*[!0-9]*|0)
     echo "BEAMFALL_WEB_E2E_RUNNER_TIMEOUT_SECONDS must be a positive integer" >&2
+    exit 2
+    ;;
+esac
+case "${runner_ceiling_seconds}" in
+  ''|*[!0-9]*|0)
+    echo "BEAMFALL_WEB_E2E_RUNNER_CEILING_SECONDS must be a positive integer" >&2
     exit 2
     ;;
 esac
@@ -32,6 +47,11 @@ record_diagnostics() {
     printf 'reason=%s\n' "${exit_reason}"
     printf 'global_timeout_seconds=%s\n' "${global_timeout_seconds}"
     printf 'runner_timeout_seconds=%s\n' "${runner_timeout_seconds}"
+    printf 'runner_ceiling_seconds=%s\n' "${runner_ceiling_seconds}"
+    if [[ -r "${watchdog_reason_file}" ]]; then
+      printf 'watchdog_reason=%s\n' "$(<"${watchdog_reason_file}")"
+    fi
+    printf 'server_binary=%s\n' "${server_binary}"
     printf 'active_supervisor_pid=%s\n' "${active_supervisor_pid}"
     printf 'process_inventory:\n'
     if [[ -n "${active_supervisor_pid}" ]]; then
@@ -48,6 +68,26 @@ stop_watchdog() {
   watchdog_pid=""
 }
 
+# A timeout kills Playwright before its global teardown runs, and an e2e server that outlives its
+# supervisor is re-parented to launchd (CORE-0941). The binary path embeds this run's port, so
+# match it exactly: a sibling gate on another port is never touched.
+reap_server_binary() {
+  [[ -n "${server_binary}" ]] || return 0
+  local leftover
+  leftover="$(ps -axo pid=,command= 2>/dev/null \
+    | awk -v bin="${server_binary}" '$2 == bin { print $1 }')" || true
+  [[ -n "${leftover}" ]] || return 0
+  # shellcheck disable=SC2086
+  kill -TERM ${leftover} 2>/dev/null || true
+  sleep 1
+  # shellcheck disable=SC2086
+  kill -KILL ${leftover} 2>/dev/null || true
+  if [[ -n "${output_dir}" && -d "${output_dir}" ]]; then
+    printf 'reaped_leftover_server_pids=%s\n' "${leftover//$'\n'/ }" \
+      >>"${output_dir}/runner-diagnostics.txt"
+  fi
+}
+
 cleanup() {
   local status=$?
   trap - EXIT INT TERM ALRM
@@ -61,6 +101,7 @@ cleanup() {
     kill -TERM "${active_supervisor_pid}" 2>/dev/null || true
     wait "${active_supervisor_pid}" 2>/dev/null || true
   fi
+  reap_server_binary
   if [[ -n "${pending_receipt}" ]]; then
     rm -f "${pending_receipt}"
   fi
@@ -91,7 +132,7 @@ on_signal() {
 
 trap 'on_signal 130 INT' INT
 trap 'on_signal 143 TERM' TERM
-trap 'echo "Playwright smoke runner exceeded ${runner_timeout_seconds}s; artifacts and process diagnostics will be retained" >&2; on_signal 124 timeout' ALRM
+trap 'echo "Playwright smoke runner watchdog: $(cat "${watchdog_reason_file}" 2>/dev/null || echo "no progress for ${runner_timeout_seconds}s"); artifacts and process diagnostics will be retained" >&2; on_signal 124 timeout' ALRM
 
 if [[ $# -ne 0 ]]; then
   echo "FAIL web-ui-e2e-smoke caller arguments are not supported expected=0 actual=$#" >&2
@@ -122,6 +163,9 @@ if [[ -z "${BEAMFALL_E2E_PORT:-}" ]]; then
 fi
 export BEAMFALL_E2E_PORT
 echo "[e2e] isolation: port=${BEAMFALL_E2E_PORT} auth=${ROOT}/internal/web/app/e2e/.auth/${BEAMFALL_E2E_PORT} binary=/tmp/beamfall-e2e-${BEAMFALL_E2E_PORT}"
+if [[ -z "${BEAMFALL_E2E_URL:-}" ]]; then
+  server_binary="/tmp/beamfall-e2e-${BEAMFALL_E2E_PORT}"
+fi
 # One web + server build per smoke: the first Playwright invocation stamps its
 # build here and later ones reuse the binary only while global-setup's
 # source-tree key and binary digest still match (any mismatch rebuilds). Always
@@ -135,15 +179,42 @@ if [[ -z "${output_dir}" ]]; then
 fi
 mkdir -p "${output_dir}"
 
+watchdog_reason_file="${output_dir}/watchdog-reason.txt"
+heartbeat_file="${output_dir}/progress-heartbeat"
+rm -f -- "${watchdog_reason_file}"
+: >"${heartbeat_file}"
+export BEAMFALL_WEB_E2E_HEARTBEAT="${heartbeat_file}"
+
+# Fires SIGALRM at the runner when the heartbeat file has not changed for the stall budget, or the
+# ceiling passes. The reason lands in a file first so the trap and the diagnostics can name it.
 python3 -c '
 import os
 import signal
 import sys
 import time
 
-time.sleep(int(sys.argv[1]))
-os.kill(int(sys.argv[2]), signal.SIGALRM)
-' "${runner_timeout_seconds}" "$$" &
+stall, ceiling, runner, heartbeat, reason = sys.argv[1:]
+stall, ceiling, runner = float(stall), float(ceiling), int(runner)
+started = time.time()
+while True:
+    time.sleep(0.25)
+    now = time.time()
+    try:
+        last = max(started, os.stat(heartbeat).st_mtime)
+    except OSError:
+        last = started
+    if now - last >= stall:
+        message = f"no progress for {stall:.0f}s (stall budget)"
+    elif now - started >= ceiling:
+        message = f"still running after {ceiling:.0f}s (ceiling)"
+    else:
+        continue
+    with open(reason, "w", encoding="utf-8") as handle:
+        handle.write(message + "\n")
+    os.kill(runner, signal.SIGALRM)
+    break
+' "${runner_timeout_seconds}" "${runner_ceiling_seconds}" "$$" \
+  "${heartbeat_file}" "${watchdog_reason_file}" &
 watchdog_pid=$!
 
 run_tracked() {
@@ -182,7 +253,7 @@ run_tracked env BEAMFALL_WEB_E2E_RENDER_PHASE=1 npm run e2e -- \
   --project ui-states \
   --project ui-states-mobile \
   --output "${output_dir}" \
-  --reporter "list,./e2e/lib/require-visual-parity-states.mjs,./e2e/lib/require-ui-state-coverage.mjs"
+  --reporter "list,./e2e/lib/require-visual-parity-states.mjs,./e2e/lib/require-ui-state-coverage.mjs,./e2e/lib/progress-heartbeat-reporter.mjs"
 if [[ ! -s "${provenance_file}" ]]; then
   echo "FAIL web-ui-e2e-smoke missing full-inventory provenance=${provenance_file}" >&2
   exit 1
