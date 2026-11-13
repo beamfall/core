@@ -568,3 +568,35 @@ func (s *Store) MediaLackingFieldInLibrary(ctx context.Context, libraryID Librar
 	}
 	return out, rows.Err()
 }
+
+// MediaHasCuratedFields reports whether any of a Media item's fields was written
+// by an identification (operator) or a manual edit. Scan uses it to retry
+// auto-identify on an unchanged file that was never identified, for example
+// because the provider credential was missing on the first scan, without
+// re-identifying items that are already matched or hand-edited.
+func (s *Store) MediaHasCuratedFields(ctx context.Context, id MediaID) (bool, error) {
+	if id == "" {
+		return false, errors.New("media ID is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return false, err
+	}
+	plane, err := s.catalogPlaneForMediaLocked(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	var one int
+	err = plane.reader.QueryRowContext(ctx,
+		"SELECT 1 FROM media_field_provenance WHERE media_id = ? AND source IN (?, ?) LIMIT 1",
+		id, MutationSourceOperator, MutationSourceManual,
+	).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}

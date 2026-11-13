@@ -5391,17 +5391,25 @@ func TestAPITokenLifecycleAndBearerAuth(t *testing.T) {
 		t.Fatalf("createApiToken = %#v", created.Data.CreateApiToken)
 	}
 
-	// A standing Bearer token can never hold an Admin Session (admin is an
-	// interactive per-session re-auth, ADR-0007 §2), so it cannot reach the
-	// Console apiTokens surface — a token managing other tokens would be the
-	// privilege escalation the Admin Session tier exists to prevent.
+	// A standing Bearer token never holds an Admin Session (admin is an
+	// interactive per-session re-auth, ADR-0007 §2). It may run only the
+	// allowlisted operator-CLI ops (adminTokenOps): listing tokens is one, but a
+	// token minting another credential is the privilege escalation the Admin
+	// Session tier exists to prevent, so createApiToken stays refused.
 	list := []byte(`{"query":"query { apiTokens { id name revoked } }"}`)
 	bearerReq := httptest.NewRequest(http.MethodPost, "/api/graphql", bytes.NewReader(list))
 	bearerReq.Header.Set("Authorization", "Bearer "+token)
 	bearerRec := httptest.NewRecorder()
 	handler.ServeHTTP(bearerRec, bearerReq)
-	if !bytes.Contains(bearerRec.Body.Bytes(), []byte("admin session required")) {
-		t.Fatalf("bearer apiTokens reached the Console surface = %s", bearerRec.Body.String())
+	if bytes.Contains(bearerRec.Body.Bytes(), []byte("admin session required")) || !bytes.Contains(bearerRec.Body.Bytes(), []byte(`"name":"ci"`)) {
+		t.Fatalf("bearer apiTokens (CLI op) = %s", bearerRec.Body.String())
+	}
+	mintReq := httptest.NewRequest(http.MethodPost, "/api/graphql", bytes.NewReader(create))
+	mintReq.Header.Set("Authorization", "Bearer "+token)
+	mintRec := httptest.NewRecorder()
+	handler.ServeHTTP(mintRec, mintReq)
+	if !bytes.Contains(mintRec.Body.Bytes(), []byte("admin session required")) {
+		t.Fatalf("bearer createApiToken reached the Console surface = %s", mintRec.Body.String())
 	}
 
 	// Under the operator's Admin Session the list reads back and never carries
