@@ -55,7 +55,7 @@ export function FolderPicker({
   return (
     <div className="mt-2 overflow-hidden rounded-[10px] border border-white/10 bg-white/[0.03]">
       {/* Breadcrumb */}
-      <div className="flex items-center gap-1 border-b border-white/10 py-1.5 pl-3 pr-1.5 text-[13px] text-muted-foreground">
+      <div className="flex items-center gap-1 border-b border-white/10 py-1.5 pl-3 pr-1.5 text-dense text-muted-foreground">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-0.5">
           {crumbs.map((crumb, i) => {
             const isCurrent = i === crumbs.length - 1;
@@ -82,10 +82,10 @@ export function FolderPicker({
         <Button
           type="button"
           variant="ghost"
-          size="icon"
+          size="icon-sm"
           onClick={onClose}
           aria-label={labels.close}
-          className="size-8 text-muted-foreground hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground"
         >
           <X aria-hidden />
         </Button>
@@ -94,11 +94,11 @@ export function FolderPicker({
       {/* Directory list */}
       <div className="max-h-56 overflow-y-auto py-1" aria-busy={busy}>
         {busy ? (
-          <p className="m-0 px-3 py-2.5 text-[13px] text-muted-foreground">{labels.loading}</p>
+          <p className="m-0 px-3 py-2.5 text-dense text-muted-foreground">{labels.loading}</p>
         ) : folders.length === 0 ? (
           <p
             className={cn(
-              "m-0 px-3 py-2.5 text-[13px]",
+              "m-0 px-3 py-2.5 text-dense",
               error ? "text-(--state-danger)" : "text-muted-foreground",
             )}
           >
@@ -124,13 +124,13 @@ export function FolderPicker({
           ))
         )}
         {error && !busy && folders.length > 0 && (
-          <p className="m-0 px-3 py-2 text-[13px] text-(--state-danger)">{error}</p>
+          <p className="m-0 px-3 py-2 text-dense text-(--state-danger)">{error}</p>
         )}
       </div>
 
       {/* Footer: current path + commit */}
       <div className="flex items-center gap-3 border-t border-white/10 py-2 pl-3 pr-2">
-        <span className="min-w-0 truncate font-mono text-[13px] text-muted-foreground">
+        <span className="min-w-0 truncate font-mono text-dense text-muted-foreground">
           {node.path}
         </span>
         <Button

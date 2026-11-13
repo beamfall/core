@@ -121,7 +121,7 @@ export function EnrollPage() {
             aria-invalid={error != null}
             aria-describedby={error ? `${codeHintID} ${errorID}` : codeHintID}
           />
-          <p id={codeHintID} className="mb-0 mt-2 text-[13px] text-muted-foreground">
+          <p id={codeHintID} className="mb-0 mt-2 text-dense text-muted-foreground">
             {t("signInCodeHint")}
           </p>
         </div>
@@ -138,7 +138,7 @@ export function EnrollPage() {
             autoComplete="off"
             aria-describedby={deviceNameHintID}
           />
-          <p id={deviceNameHintID} className="mb-0 mt-2 text-[13px] text-muted-foreground">
+          <p id={deviceNameHintID} className="mb-0 mt-2 text-dense text-muted-foreground">
             {t("signInDeviceNameHint")}
           </p>
         </div>

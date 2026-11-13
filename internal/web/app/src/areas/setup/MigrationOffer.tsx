@@ -64,7 +64,7 @@ export function MigrationOffer({
   return (
     <section>
       <h1 className="m-0 text-xl font-semibold">{t("setupMigrateTitle")}</h1>
-      <p className="mb-4 mt-0.5 text-[13px] text-muted-foreground">{t("setupMigrateLead")}</p>
+      <p className="mb-4 mt-0.5 text-dense text-muted-foreground">{t("setupMigrateLead")}</p>
 
       {/* Additive-only trust copy (funnel §3.3) — communicates the ADR-0037
           data-layer guarantees so a mid-evaluation refugee believes them. */}
@@ -82,7 +82,7 @@ export function MigrationOffer({
         // The offer still renders; only the source list is unavailable, so the
         // operator can still skip or open the importer.
         <div className="flex flex-col items-start gap-2">
-          <p className="m-0 text-[13px] text-muted-foreground">
+          <p className="m-0 text-dense text-muted-foreground">
             {t("setupMigrateSourcesUnavailable")}
           </p>
           <Button type="button" variant="outline" size="sm" onClick={() => setRetry((n) => n + 1)}>
@@ -96,7 +96,7 @@ export function MigrationOffer({
             {importers.map((imp) => (
               <li
                 key={`${imp.pluginID}:${imp.id}`}
-                className="rounded-lg border px-3 py-2.5 text-[13px]"
+                className="rounded-lg border px-3 py-2.5 text-dense"
               >
                 {displayString(imp.displayName, locale)}
               </li>
@@ -104,7 +104,7 @@ export function MigrationOffer({
           </ul>
         </div>
       ) : (
-        <p className="text-[13px] text-muted-foreground">{t("setupMigrateNoSources")}</p>
+        <p className="text-dense text-muted-foreground">{t("setupMigrateNoSources")}</p>
       )}
 
       <div className="mt-[18px] flex items-center gap-2">

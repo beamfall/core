@@ -651,14 +651,14 @@ export function SetupWizard() {
                 </li>
               ))}
             </ol>
-            <span className="shrink-0 text-[13px] tabular-nums text-muted-foreground">
+            <span className="shrink-0 text-dense tabular-nums text-muted-foreground">
               {t("setupStepCount", { n: visibleIndex + 1, total: visibleSteps.length })}
             </span>
           </div>
 
           {/* Unlocked banner — shown once the bootstrap POST succeeds */}
           {bootstrapped && (
-            <div className="mb-4 flex items-center gap-2 text-[13px] text-primary">
+            <div className="mb-4 flex items-center gap-2 text-dense text-primary">
               <Check aria-hidden className="size-3.5 shrink-0" />
               {t("setupUnlockedBanner")}
             </div>
@@ -769,12 +769,12 @@ export function SetupWizard() {
                           <span className="flex items-center gap-2 text-[15px] font-semibold text-foreground">
                             {t(label)}
                             {mode === "home" && (
-                              <span className="text-[13px] font-normal text-primary">
+                              <span className="text-dense font-normal text-primary">
                                 {t("setupSecurityRecommended")}
                               </span>
                             )}
                           </span>
-                          <span className="text-[13px] leading-snug text-muted-foreground">
+                          <span className="text-dense leading-snug text-muted-foreground">
                             {t(detail)}
                           </span>
                         </span>
@@ -810,9 +810,7 @@ export function SetupWizard() {
                           aria-hidden
                           className={cn("size-6", sel ? "text-primary" : "text-muted-foreground")}
                         />
-                        <span className="text-[13px] font-semibold">
-                          {t(TYPE_LABEL[spec.type])}
-                        </span>
+                        <span className="text-dense font-semibold">{t(TYPE_LABEL[spec.type])}</span>
                       </Button>
                     );
                   })}
@@ -932,7 +930,7 @@ export function SetupWizard() {
                 {neededKeys.length > 0 && (
                   <div className="mt-6 border-t border-white/10 pt-5">
                     <h2 className="m-0 text-[15px] font-semibold">{t("setupKeysTitle")}</h2>
-                    <p className="m-0 mt-1 text-[13px] leading-snug text-muted-foreground">
+                    <p className="m-0 mt-1 text-dense leading-snug text-muted-foreground">
                       {t("setupKeysLead")}
                     </p>
                     <div className="mt-4 grid gap-4">
@@ -957,7 +955,7 @@ export function SetupWizard() {
                                 }))
                               }
                             />
-                            <p className="mb-0 mt-1.5 text-[13px] leading-snug text-muted-foreground">
+                            <p className="mb-0 mt-1.5 text-dense leading-snug text-muted-foreground">
                               {t("pluginKeySentTo", { hosts: key.hosts.join(", ") })}
                             </p>
                           </div>
@@ -970,7 +968,7 @@ export function SetupWizard() {
                   <div className="flex items-start justify-between gap-4">
                     <div>
                       <h2 className="m-0 text-[15px] font-semibold">{t("setupUpdateTitle")}</h2>
-                      <p className="m-0 mt-1 text-[13px] leading-snug text-muted-foreground">
+                      <p className="m-0 mt-1 text-dense leading-snug text-muted-foreground">
                         {t("setupUpdateLead")}
                       </p>
                     </div>
@@ -1002,7 +1000,7 @@ export function SetupWizard() {
                       ))}
                     </div>
                   )}
-                  <p className="mb-0 mt-3 text-[13px] leading-snug text-muted-foreground">
+                  <p className="mb-0 mt-3 text-dense leading-snug text-muted-foreground">
                     {t("setupUpdateDisclosure")}
                   </p>
                 </div>
@@ -1023,7 +1021,7 @@ export function SetupWizard() {
                         status: scanJob ? jobStatusLabel(scanJob.status, t) : t("jobStatusQueued"),
                       })}
                     </p>
-                    <p className="m-0 mt-0.5 text-[13px] text-muted-foreground">
+                    <p className="m-0 mt-0.5 text-dense text-muted-foreground">
                       {scanJob && jobProgressDetail(scanJob, t)
                         ? jobProgressDetail(scanJob, t)
                         : t("setupScanWaiting")}
@@ -1081,7 +1079,7 @@ export function SetupWizard() {
 }
 
 const FIELD = "h-11 rounded-[10px] border-white/10 bg-white/[0.04] text-[15px]";
-const FIELD_LABEL = "mb-2 block text-[13px] font-medium text-foreground/80";
+const FIELD_LABEL = "mb-2 block text-dense font-medium text-foreground/80";
 const TILE =
   "flex flex-col rounded-[10px] border border-white/10 bg-white/[0.03] transition-all duration-200 hover:border-white/25 hover:bg-white/[0.06] cursor-pointer";
 const TILE_SELECTED =

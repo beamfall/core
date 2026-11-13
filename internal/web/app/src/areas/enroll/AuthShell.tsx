@@ -6,7 +6,7 @@ import { useT } from "@/lib/i18n";
 
 // The house form look (CORE-1114 setup wizard), shared by the sign-in pages.
 export const AUTH_FIELD = "h-11 rounded-[10px] border-white/10 bg-white/[0.04] text-[15px]";
-export const AUTH_FIELD_LABEL = "mb-2 block text-[13px] font-medium text-foreground/80";
+export const AUTH_FIELD_LABEL = "mb-2 block text-dense font-medium text-foreground/80";
 
 // Full-bleed cinema page with the brand bar and one card. The card sits at a
 // fixed offset from the top so it never shifts as its content grows.
