@@ -84,6 +84,10 @@
         {
           "path": "internal/web/app/src/main.tsx",
           "symbol": "rendered"
+        },
+        {
+          "path": "internal/web/app/src/lib/lazyRoute.ts",
+          "symbol": "preload"
         }
       ],
       "entry_points": [
@@ -532,6 +536,34 @@
         {
           "path": "internal/web/app/src/lib/graphql/viewer.ts",
           "symbol": "switchProfile"
+        },
+        {
+          "path": "internal/web/app/src/lib/api.ts",
+          "symbol": "send"
+        },
+        {
+          "path": "internal/web/app/src/lib/session.tsx",
+          "symbol": "beginEpoch"
+        },
+        {
+          "path": "internal/web/app/src/lib/session.tsx",
+          "symbol": "current"
+        },
+        {
+          "path": "internal/web/app/src/lib/session.tsx",
+          "symbol": "load"
+        },
+        {
+          "path": "internal/web/app/src/lib/session.tsx",
+          "symbol": "loadEpoch"
+        },
+        {
+          "path": "internal/web/app/src/lib/session.tsx",
+          "symbol": "refreshProfiles"
+        },
+        {
+          "path": "internal/web/app/src/lib/session.tsx",
+          "symbol": "relock"
         }
       ],
       "entry_points": [
@@ -568,6 +600,18 @@
         {
           "path": "internal/web/app/src/lib/eventStream.ts",
           "symbol": "openEventStream"
+        },
+        {
+          "path": "internal/web/app/src/lib/eventStream.ts",
+          "symbol": "line"
+        },
+        {
+          "path": "internal/web/app/src/lib/eventStream.ts",
+          "symbol": "readOnce"
+        },
+        {
+          "path": "internal/web/app/src/lib/eventStream.ts",
+          "symbol": "wake"
         }
       ],
       "entry_points": [
@@ -704,6 +748,42 @@
         {
           "path": "internal/web/app/src/lib/graphql/viewer.ts",
           "symbol": "fetchNotifications"
+        },
+        {
+          "path": "internal/web/app/src/components/chrome/AccountMenu.tsx",
+          "symbol": "current"
+        },
+        {
+          "path": "internal/web/app/src/components/chrome/AccountMenu.tsx",
+          "symbol": "onKey"
+        },
+        {
+          "path": "internal/web/app/src/components/chrome/AccountMenu.tsx",
+          "symbol": "onPointer"
+        },
+        {
+          "path": "internal/web/app/src/components/chrome/AppShell.tsx",
+          "symbol": "onChange"
+        },
+        {
+          "path": "internal/web/app/src/components/chrome/AppShell.tsx",
+          "symbol": "onKey"
+        },
+        {
+          "path": "internal/web/app/src/components/chrome/AppShell.tsx",
+          "symbol": "refreshIfForeground"
+        },
+        {
+          "path": "internal/web/app/src/components/chrome/AppShell.tsx",
+          "symbol": "refreshUnreadNotifications"
+        },
+        {
+          "path": "internal/web/app/src/components/chrome/AppShell.tsx",
+          "symbol": "toggleSidebar"
+        },
+        {
+          "path": "internal/web/app/src/components/chrome/LibrarySidebar.tsx",
+          "symbol": "item"
         }
       ],
       "entry_points": [
@@ -776,6 +856,14 @@
         {
           "path": "internal/web/app/src/lib/graphql/manage.ts",
           "symbol": "fetchJobs"
+        },
+        {
+          "path": "internal/web/app/src/components/beamfall/ServerActivity.tsx",
+          "symbol": "onVisibility"
+        },
+        {
+          "path": "internal/web/app/src/components/beamfall/ServerActivity.tsx",
+          "symbol": "refresh"
         }
       ],
       "entry_points": [
@@ -1144,6 +1232,14 @@
         {
           "path": "internal/web/app/src/strings/whos-watching.ts",
           "symbol": "whosWatchingStrings"
+        },
+        {
+          "path": "internal/web/app/src/lib/i18n.tsx",
+          "symbol": "setLocale"
+        },
+        {
+          "path": "internal/web/app/src/lib/i18n.tsx",
+          "symbol": "value"
         }
       ],
       "entry_points": [
@@ -1300,6 +1396,22 @@
         {
           "path": "internal/web/app/src/lib/graphql/manage.ts",
           "symbol": "fetchPathPicker"
+        },
+        {
+          "path": "internal/web/app/src/components/beamfall/workbench/PathPickerField.tsx",
+          "symbol": "allowBrowsing"
+        },
+        {
+          "path": "internal/web/app/src/components/beamfall/workbench/PathPickerField.tsx",
+          "symbol": "close"
+        },
+        {
+          "path": "internal/web/app/src/components/beamfall/workbench/PathPickerField.tsx",
+          "symbol": "commit"
+        },
+        {
+          "path": "internal/web/app/src/components/beamfall/workbench/PathPickerField.tsx",
+          "symbol": "load"
         }
       ],
       "entry_points": [
@@ -2600,6 +2712,66 @@
         {
           "path": "internal/web/app/src/lib/graphql/manage.ts",
           "symbol": "fetchPlugins"
+        },
+        {
+          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
+          "symbol": "announceError"
+        },
+        {
+          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
+          "symbol": "closePicker"
+        },
+        {
+          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
+          "symbol": "finishSetup"
+        },
+        {
+          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
+          "symbol": "loadPickerFolder"
+        },
+        {
+          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
+          "symbol": "onBack"
+        },
+        {
+          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
+          "symbol": "onNext"
+        },
+        {
+          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
+          "symbol": "openPicker"
+        },
+        {
+          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
+          "symbol": "refreshScan"
+        },
+        {
+          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
+          "symbol": "runBootstrap"
+        },
+        {
+          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
+          "symbol": "runLibraryCreation"
+        },
+        {
+          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
+          "symbol": "runPluginActivation"
+        },
+        {
+          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
+          "symbol": "saveProviderKeys"
+        },
+        {
+          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
+          "symbol": "togglePlugin"
+        },
+        {
+          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
+          "symbol": "usePickerFolder"
+        },
+        {
+          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
+          "symbol": "validate"
         }
       ],
       "entry_points": [
@@ -3008,6 +3180,18 @@
         {
           "path": "internal/web/app/src/lib/graphql/auth.ts",
           "symbol": "verifyAdminSession"
+        },
+        {
+          "path": "internal/web/app/src/areas/enroll/AdminSessionGate.tsx",
+          "symbol": "lock"
+        },
+        {
+          "path": "internal/web/app/src/areas/enroll/AdminSessionGate.tsx",
+          "symbol": "onUnlock"
+        },
+        {
+          "path": "internal/web/app/src/areas/enroll/AdminSessionGate.tsx",
+          "symbol": "refresh"
         }
       ],
       "entry_points": [
@@ -3028,6 +3212,10 @@
         {
           "path": "internal/web/app/src/lib/graphql/auth.ts",
           "symbol": "promote"
+        },
+        {
+          "path": "internal/web/app/src/areas/enroll/PromotePage.tsx",
+          "symbol": "onSubmit"
         }
       ],
       "entry_points": [
@@ -3048,6 +3236,10 @@
         {
           "path": "internal/web/app/src/lib/graphql/auth.ts",
           "symbol": "logout"
+        },
+        {
+          "path": "internal/web/app/src/areas/enroll/SignOutButton.tsx",
+          "symbol": "onClick"
         }
       ],
       "entry_points": [
@@ -3140,6 +3332,22 @@
         {
           "path": "internal/web/app/src/areas/console/useAsync.ts",
           "symbol": "useAsync"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/ConfirmButton.tsx",
+          "symbol": "run"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/useAsync.ts",
+          "symbol": "beginRequest"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/useAsync.ts",
+          "symbol": "current"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/useAsync.ts",
+          "symbol": "refresh"
         }
       ],
       "entry_points": [
@@ -3220,6 +3428,22 @@
         {
           "path": "internal/web/app/src/lib/graphql/auth.ts",
           "symbol": "verifyAdminSession"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/AdminGate.tsx",
+          "symbol": "beginRequest"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/AdminGate.tsx",
+          "symbol": "invalidateRequest"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/AdminGate.tsx",
+          "symbol": "lock"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/AdminGate.tsx",
+          "symbol": "onUnlock"
         }
       ],
       "entry_points": [
@@ -3352,6 +3576,10 @@
         {
           "path": "internal/web/app/src/lib/graphql/viewer.ts",
           "symbol": "fetchSourceItems"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/SetupChecklist.tsx",
+          "symbol": "footerMessage"
         }
       ],
       "entry_points": [
@@ -3692,6 +3920,34 @@
         {
           "path": "internal/web/app/src/lib/graphql/manage.ts",
           "symbol": "fetchJobs"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Dashboard.tsx",
+          "symbol": "onMove"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Dashboard.tsx",
+          "symbol": "path"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Dashboard.tsx",
+          "symbol": "read"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Dashboard.tsx",
+          "symbol": "terminate"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Dashboard.tsx",
+          "symbol": "x"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Dashboard.tsx",
+          "symbol": "y"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Operations.tsx",
+          "symbol": "onSave"
         }
       ],
       "entry_points": [
@@ -3844,6 +4100,38 @@
         {
           "path": "internal/web/app/src/lib/graphql/manage.ts",
           "symbol": "runHealthBulkOpSelected"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Health.tsx",
+          "symbol": "closeDrill"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Health.tsx",
+          "symbol": "drillDone"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Health.tsx",
+          "symbol": "openDrill"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Health.tsx",
+          "symbol": "runBulk"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Health.tsx",
+          "symbol": "runSelected"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Health.tsx",
+          "symbol": "toggleAll"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Health.tsx",
+          "symbol": "toggleGroup"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Health.tsx",
+          "symbol": "toggleItem"
         }
       ],
       "entry_points": [
@@ -3924,6 +4212,14 @@
         {
           "path": "internal/web/app/src/lib/graphql/manage.ts",
           "symbol": "fetchLibraries"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/ActivityLog.tsx",
+          "symbol": "counts"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/ActivityLog.tsx",
+          "symbol": "toggle"
         }
       ],
       "entry_points": [
@@ -4052,6 +4348,26 @@
         {
           "path": "internal/web/app/src/lib/graphql/manage.ts",
           "symbol": "setSkipDetectionEnabled"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Libraries.tsx",
+          "symbol": "loadScanFolders"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Libraries.tsx",
+          "symbol": "onCreate"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Libraries.tsx",
+          "symbol": "refreshLibraries"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Libraries.tsx",
+          "symbol": "saveRoots"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Libraries.tsx",
+          "symbol": "visit"
         }
       ],
       "entry_points": [
@@ -4240,6 +4556,42 @@
         {
           "path": "internal/web/app/src/lib/graphql/console.ts",
           "symbol": "validateScraperCredential"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Plugins.tsx",
+          "symbol": "credentialAction"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Plugins.tsx",
+          "symbol": "deactivate"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Plugins.tsx",
+          "symbol": "initial"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Plugins.tsx",
+          "symbol": "keys"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Plugins.tsx",
+          "symbol": "publishMutation"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Plugins.tsx",
+          "symbol": "runAction"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Plugins.tsx",
+          "symbol": "save"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Plugins.tsx",
+          "symbol": "saveConfig"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Plugins.tsx",
+          "symbol": "toggle"
         }
       ],
       "entry_points": [
@@ -4272,6 +4624,10 @@
         {
           "path": "internal/web/app/src/lib/graphql/console.ts",
           "symbol": "setCapabilityEnabled"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Capabilities.tsx",
+          "symbol": "toggle"
         }
       ],
       "entry_points": [
@@ -4332,6 +4688,14 @@
         {
           "path": "internal/web/app/src/lib/graphql/console.ts",
           "symbol": "updateProfile"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Profiles.tsx",
+          "symbol": "save"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Profiles.tsx",
+          "symbol": "submit"
         }
       ],
       "entry_points": [
@@ -4416,6 +4780,26 @@
         {
           "path": "internal/web/app/src/lib/graphql/console.ts",
           "symbol": "setDeviceRole"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Devices.tsx",
+          "symbol": "mint"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Devices.tsx",
+          "symbol": "onRevoke"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Devices.tsx",
+          "symbol": "onRevokeAll"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Devices.tsx",
+          "symbol": "onSetRole"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Devices.tsx",
+          "symbol": "onToggleRemote"
         }
       ],
       "entry_points": [
@@ -4588,6 +4972,42 @@
         {
           "path": "internal/web/app/src/lib/graphql/manage.ts",
           "symbol": "fetchLibraries"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/ProfilesAccess.tsx",
+          "symbol": "addWindow"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/ProfilesAccess.tsx",
+          "symbol": "applyCap"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/ProfilesAccess.tsx",
+          "symbol": "editWindow"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/ProfilesAccess.tsx",
+          "symbol": "onChange"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/ProfilesAccess.tsx",
+          "symbol": "removeWindow"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/ProfilesAccess.tsx",
+          "symbol": "revoke"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/ProfilesAccess.tsx",
+          "symbol": "toggle"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/ProfilesAccess.tsx",
+          "symbol": "togglePreauth"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/ProfilesAccess.tsx",
+          "symbol": "update"
         }
       ],
       "entry_points": [
@@ -4616,6 +5036,10 @@
         {
           "path": "internal/web/app/src/lib/graphql/auth.ts",
           "symbol": "setSignInSecurityMode"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/SignInSecurity.tsx",
+          "symbol": "onSubmit"
         }
       ],
       "entry_points": [
@@ -4868,6 +5292,26 @@
         {
           "path": "internal/web/app/src/lib/graphql/viewer.ts",
           "symbol": "fetchProfiles"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/RemoteAccess.tsx",
+          "symbol": "clearPoll"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/RemoteAccess.tsx",
+          "symbol": "patchConfig"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/RemoteAccess.tsx",
+          "symbol": "reset"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/RemoteAccess.tsx",
+          "symbol": "save"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/RemoteAccess.tsx",
+          "symbol": "startRun"
         }
       ],
       "entry_points": [
@@ -4960,6 +5404,10 @@
         {
           "path": "internal/web/app/src/lib/graphql/console.ts",
           "symbol": "revokeAPIToken"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/ApiCredentials.tsx",
+          "symbol": "toggleScope"
         }
       ],
       "entry_points": [
@@ -5016,6 +5464,18 @@
         {
           "path": "internal/web/app/src/lib/graphql/console.ts",
           "symbol": "updateRetentionRule"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Retention.tsx",
+          "symbol": "handleCreate"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Retention.tsx",
+          "symbol": "handleDelete"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Retention.tsx",
+          "symbol": "handleToggle"
         }
       ],
       "entry_points": [
@@ -5188,6 +5648,18 @@
         {
           "path": "internal/web/app/src/lib/graphql/manage.ts",
           "symbol": "fetchImporters"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/PlaybackCache.tsx",
+          "symbol": "onEvict"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/PlaybackCache.tsx",
+          "symbol": "onPrecompute"
+        },
+        {
+          "path": "internal/web/app/src/areas/setup/MigrationOffer.tsx",
+          "symbol": "goToImporter"
         }
       ],
       "entry_points": [
@@ -5232,6 +5704,10 @@
         {
           "path": "internal/web/app/src/areas/manage/index.tsx",
           "symbol": "currentRouteLabel"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/index.tsx",
+          "symbol": "settle"
         }
       ],
       "entry_points": [
@@ -5364,6 +5840,62 @@
         {
           "path": "internal/web/app/src/lib/graphql/manage.ts",
           "symbol": "setLibraryRoots"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/LibrariesPage.tsx",
+          "symbol": "load"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/LibrariesPage.tsx",
+          "symbol": "loadTree"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/LibrariesPage.tsx",
+          "symbol": "onAddRoot"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/LibrariesPage.tsx",
+          "symbol": "onCreate"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/LibrariesPage.tsx",
+          "symbol": "onCreateFolder"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/LibrariesPage.tsx",
+          "symbol": "onDelete"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/LibrariesPage.tsx",
+          "symbol": "onMove"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/LibrariesPage.tsx",
+          "symbol": "onRemoveRoot"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/LibrariesPage.tsx",
+          "symbol": "onRename"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/LibrariesPage.tsx",
+          "symbol": "onRestore"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/LibrariesPage.tsx",
+          "symbol": "onRootsSaved"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/LibrariesPage.tsx",
+          "symbol": "onSaveRoots"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/LibrariesPage.tsx",
+          "symbol": "onScan"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/LibrariesPage.tsx",
+          "symbol": "onTogglePreview"
         }
       ],
       "entry_points": [
@@ -5476,6 +6008,14 @@
         {
           "path": "internal/web/app/src/lib/graphql/manage.ts",
           "symbol": "setScheduleTrigger"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/OperationsPage.tsx",
+          "symbol": "onToggle"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/OperationsPage.tsx",
+          "symbol": "setField"
         }
       ],
       "entry_points": [
@@ -5548,6 +6088,14 @@
         {
           "path": "internal/web/app/src/lib/graphql/manage.ts",
           "symbol": "fetchLibraries"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/ConvertPage.tsx",
+          "symbol": "load"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/ConvertPage.tsx",
+          "symbol": "onConvert"
         }
       ],
       "entry_points": [
@@ -5644,6 +6192,14 @@
         {
           "path": "internal/web/app/src/lib/graphql/manage.ts",
           "symbol": "fetchLibraries"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/RenamePage.tsx",
+          "symbol": "changeCount"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/RenamePage.tsx",
+          "symbol": "previews"
         }
       ],
       "entry_points": [
@@ -5708,6 +6264,22 @@
         {
           "path": "internal/web/app/src/lib/graphql/manage.ts",
           "symbol": "restoreMedia"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/TrashPage.tsx",
+          "symbol": "onConfirm"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/TrashPage.tsx",
+          "symbol": "onRestore"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/TrashPage.tsx",
+          "symbol": "onUndo"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/TrashPage.tsx",
+          "symbol": "rows"
         }
       ],
       "entry_points": [
@@ -5800,6 +6372,30 @@
         {
           "path": "internal/web/app/src/lib/graphql/manage.ts",
           "symbol": "verifyBackup"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/BackupExportPage.tsx",
+          "symbol": "current"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/BackupExportPage.tsx",
+          "symbol": "loadHistory"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/BackupExportPage.tsx",
+          "symbol": "onDownload"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/BackupExportPage.tsx",
+          "symbol": "onGenerate"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/BackupExportPage.tsx",
+          "symbol": "onRun"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/BackupExportPage.tsx",
+          "symbol": "onVerify"
         }
       ],
       "entry_points": [
@@ -5856,6 +6452,18 @@
         {
           "path": "internal/web/app/src/lib/graphql/manage.ts",
           "symbol": "setSubscriptionRetention"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/SubscriptionsPage.tsx",
+          "symbol": "onAdd"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/SubscriptionsPage.tsx",
+          "symbol": "onRemove"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/SubscriptionsPage.tsx",
+          "symbol": "onSaveRetention"
         }
       ],
       "entry_points": [
@@ -6004,6 +6612,58 @@
         {
           "path": "internal/web/app/src/lib/graphql/manage.ts",
           "symbol": "updateSmartCollection"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/CollectionsPage.tsx",
+          "symbol": "commit"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/CollectionsPage.tsx",
+          "symbol": "onAdd"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/CollectionsPage.tsx",
+          "symbol": "onCreate"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/CollectionsPage.tsx",
+          "symbol": "onMove"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/CollectionsPage.tsx",
+          "symbol": "onRemove"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/CollectionsPage.tsx",
+          "symbol": "onRename"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/CollectionsPage.tsx",
+          "symbol": "onReorder"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/CollectionsPage.tsx",
+          "symbol": "onRestore"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/CollectionsPage.tsx",
+          "symbol": "onSave"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/CollectionsPage.tsx",
+          "symbol": "persistOrder"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/CollectionsPage.tsx",
+          "symbol": "reload"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/CollectionsPage.tsx",
+          "symbol": "selected"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/CollectionsPage.tsx",
+          "symbol": "trashed"
         }
       ],
       "entry_points": [
@@ -6084,6 +6744,22 @@
         {
           "path": "internal/web/app/src/lib/graphql/manage.ts",
           "symbol": "undoBatch"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/BulkOpsPage.tsx",
+          "symbol": "fields"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/BulkOpsPage.tsx",
+          "symbol": "mediaIDs"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/BulkOpsPage.tsx",
+          "symbol": "onApplied"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/BulkOpsPage.tsx",
+          "symbol": "onUndo"
         }
       ],
       "entry_points": [
@@ -6212,6 +6888,78 @@
         {
           "path": "internal/web/app/src/lib/graphql/manage.ts",
           "symbol": "updateTag"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/TagsPage.tsx",
+          "symbol": "beginEdit"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/TagsPage.tsx",
+          "symbol": "idList"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/TagsPage.tsx",
+          "symbol": "liveTags"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/TagsPage.tsx",
+          "symbol": "load"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/TagsPage.tsx",
+          "symbol": "modeLabel"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/TagsPage.tsx",
+          "symbol": "onApply"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/TagsPage.tsx",
+          "symbol": "onAssign"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/TagsPage.tsx",
+          "symbol": "onCreate"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/TagsPage.tsx",
+          "symbol": "onDelete"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/TagsPage.tsx",
+          "symbol": "onLoad"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/TagsPage.tsx",
+          "symbol": "onRestore"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/TagsPage.tsx",
+          "symbol": "onSaveEdit"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/TagsPage.tsx",
+          "symbol": "onUnassign"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/TagsPage.tsx",
+          "symbol": "parentOptions"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/TagsPage.tsx",
+          "symbol": "rows"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/TagsPage.tsx",
+          "symbol": "toggle"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/TagsPage.tsx",
+          "symbol": "trashedTags"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/TagsPage.tsx",
+          "symbol": "visit"
         }
       ],
       "entry_points": [
@@ -6304,6 +7052,34 @@
         {
           "path": "internal/web/app/src/lib/graphql/viewer.ts",
           "symbol": "fetchEntity"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/CurationPage.tsx",
+          "symbol": "load"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/CurationPage.tsx",
+          "symbol": "move"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/CurationPage.tsx",
+          "symbol": "onAdd"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/CurationPage.tsx",
+          "symbol": "onLink"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/CurationPage.tsx",
+          "symbol": "onLoad"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/CurationPage.tsx",
+          "symbol": "reload"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/CurationPage.tsx",
+          "symbol": "targetLabel"
         }
       ],
       "entry_points": [
@@ -6328,6 +7104,10 @@
         {
           "path": "internal/web/app/src/lib/graphql/viewer.ts",
           "symbol": "fetchEntity"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/EntityPage.tsx",
+          "symbol": "onLoad"
         }
       ],
       "entry_points": [
@@ -6376,6 +7156,18 @@
         {
           "path": "internal/web/app/src/lib/graphql/manage.ts",
           "symbol": "pinArtworkCandidate"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/ArtworkPage.tsx",
+          "symbol": "loadSlot"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/ArtworkPage.tsx",
+          "symbol": "onLoad"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/ArtworkPage.tsx",
+          "symbol": "onPin"
         }
       ],
       "entry_points": [
@@ -6480,6 +7272,58 @@
         {
           "path": "internal/web/app/src/lib/graphql/manage.ts",
           "symbol": "updateMarker"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/MarkersPage.tsx",
+          "symbol": "onBulkDelete"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/MarkersPage.tsx",
+          "symbol": "onCreate"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/MarkersPage.tsx",
+          "symbol": "onDelete"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/MarkersPage.tsx",
+          "symbol": "onLoad"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/MarkersPage.tsx",
+          "symbol": "onRestore"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/MarkersPage.tsx",
+          "symbol": "onRetag"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/MarkersPage.tsx",
+          "symbol": "onSave"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/MarkersPage.tsx",
+          "symbol": "onSaved"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/MarkersPage.tsx",
+          "symbol": "reload"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/MarkersPage.tsx",
+          "symbol": "removeTag"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/MarkersPage.tsx",
+          "symbol": "set"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/MarkersPage.tsx",
+          "symbol": "swapWith"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/MarkersPage.tsx",
+          "symbol": "toggleSelected"
         }
       ],
       "entry_points": [
@@ -6516,6 +7360,14 @@
         {
           "path": "internal/web/app/src/lib/graphql/manage.ts",
           "symbol": "setMediaFieldLock"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/FieldLocksPage.tsx",
+          "symbol": "onLoad"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/FieldLocksPage.tsx",
+          "symbol": "onToggle"
         }
       ],
       "entry_points": [
@@ -6620,6 +7472,30 @@
         {
           "path": "internal/web/app/src/lib/graphql/viewer.ts",
           "symbol": "fetchManifest"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/NavOverridePage.tsx",
+          "symbol": "beginEdit"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/NavOverridePage.tsx",
+          "symbol": "hidden"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/NavOverridePage.tsx",
+          "symbol": "load"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/NavOverridePage.tsx",
+          "symbol": "ordered"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/NavOverridePage.tsx",
+          "symbol": "patchLayout"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/NavOverridePage.tsx",
+          "symbol": "saveLabel"
         }
       ],
       "entry_points": [
@@ -6768,6 +7644,54 @@
         {
           "path": "internal/web/app/src/lib/graphql/manage.ts",
           "symbol": "suppressUnmatched"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/UnmatchedPage.tsx",
+          "symbol": "load"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/UnmatchedPage.tsx",
+          "symbol": "onApplied"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/UnmatchedPage.tsx",
+          "symbol": "onClearQueue"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/UnmatchedPage.tsx",
+          "symbol": "onDismiss"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/UnmatchedPage.tsx",
+          "symbol": "onRescan"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/unmatched/FixMatchPanel.tsx",
+          "symbol": "onApply"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/unmatched/FixMatchPanel.tsx",
+          "symbol": "onFetchByID"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/unmatched/FixMatchPanel.tsx",
+          "symbol": "onPreview"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/unmatched/FixMatchPanel.tsx",
+          "symbol": "onSearch"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/unmatched/FixMatchPanel.tsx",
+          "symbol": "select"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/unmatched/RecordInbox.tsx",
+          "symbol": "load"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/unmatched/RecordInbox.tsx",
+          "symbol": "onCreated"
         }
       ],
       "entry_points": [
@@ -6808,6 +7732,18 @@
         {
           "path": "internal/web/app/src/lib/graphql/manage.ts",
           "symbol": "createMediaFromUnmatched"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/unmatched/CreateMediaForm.tsx",
+          "symbol": "captureGeneration"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/unmatched/CreateMediaForm.tsx",
+          "symbol": "onSubmit"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/unmatched/CreateMediaForm.tsx",
+          "symbol": "retryArtwork"
         }
       ],
       "entry_points": [
@@ -6840,6 +7776,14 @@
         {
           "path": "internal/web/app/src/lib/graphql/viewer.ts",
           "symbol": "reveal"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/RestrictionsPage.tsx",
+          "symbol": "onRelock"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/RestrictionsPage.tsx",
+          "symbol": "onReveal"
         }
       ],
       "entry_points": [
@@ -6872,6 +7816,10 @@
         {
           "path": "internal/web/app/src/lib/graphql/viewer.ts",
           "symbol": "switchProfile"
+        },
+        {
+          "path": "internal/web/app/src/areas/manage/pages/ProfilePage.tsx",
+          "symbol": "onSwitch"
         }
       ],
       "entry_points": [
@@ -7024,6 +7972,30 @@
         {
           "path": "internal/web/app/src/lib/graphql/viewer.ts",
           "symbol": "fetchSourceItems"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/components/Hero.tsx",
+          "symbol": "activate"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/components/HydratedSection.tsx",
+          "symbol": "abandon"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/components/HydratedSection.tsx",
+          "symbol": "fail"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/components/LayoutView.tsx",
+          "symbol": "markInteraction"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/components/SectionView.tsx",
+          "symbol": "queue"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/BrowsePage.tsx",
+          "symbol": "buildSeeAll"
         }
       ],
       "entry_points": [
@@ -7236,6 +8208,50 @@
         {
           "path": "internal/web/app/src/areas/viewer/pages/LibraryBrowsePage.tsx",
           "symbol": "withSelected"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/components/useVirtualGrid.ts",
+          "symbol": "compute"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/components/useVirtualGrid.ts",
+          "symbol": "recompute"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/LibraryBrowsePage.tsx",
+          "symbol": "chooseViewMode"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/LibraryBrowsePage.tsx",
+          "symbol": "decadeLabel"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/LibraryBrowsePage.tsx",
+          "symbol": "play"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/LibraryBrowsePage.tsx",
+          "symbol": "qualityLabel"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/LibraryBrowsePage.tsx",
+          "symbol": "queueForPage"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/LibraryBrowsePage.tsx",
+          "symbol": "ratingLabel"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/LibraryBrowsePage.tsx",
+          "symbol": "state"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/LibraryBrowsePage.tsx",
+          "symbol": "update"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/LibraryBrowsePage.tsx",
+          "symbol": "withGroup"
         }
       ],
       "entry_points": [
@@ -7296,6 +8312,14 @@
         {
           "path": "internal/web/app/src/lib/graphql/viewer.ts",
           "symbol": "fetchMediaForEntity"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/EntityPage.tsx",
+          "symbol": "buildSeeAll"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/EntityPage.tsx",
+          "symbol": "fallbackQueue"
         }
       ],
       "entry_points": [
@@ -7320,6 +8344,22 @@
         {
           "path": "internal/web/app/src/areas/viewer/pages/SeeAllPage.tsx",
           "symbol": "SeeAllPage"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/SeeAllPage.tsx",
+          "symbol": "goBack"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/SeeAllPage.tsx",
+          "symbol": "loadPage"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/SeeAllPage.tsx",
+          "symbol": "queue"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/SeeAllPage.tsx",
+          "symbol": "reloadShown"
         }
       ],
       "entry_points": [
@@ -7424,6 +8464,18 @@
         {
           "path": "internal/web/app/src/lib/graphql/viewer.ts",
           "symbol": "fetchSemanticCapability"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/SearchPage.tsx",
+          "symbol": "clear"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/SearchPage.tsx",
+          "symbol": "queue"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/SearchPage.tsx",
+          "symbol": "setQuery"
         }
       ],
       "entry_points": [
@@ -7496,6 +8548,22 @@
         {
           "path": "internal/web/app/src/lib/graphql/viewer.ts",
           "symbol": "searchResult"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/components/HeaderSearch.tsx",
+          "symbol": "activate"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/components/HeaderSearch.tsx",
+          "symbol": "onKeyDown"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/lib/useLiveSearch.ts",
+          "symbol": "onKeyDown"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/lib/useLiveSearch.ts",
+          "symbol": "settle"
         }
       ],
       "entry_points": [
@@ -7600,6 +8668,34 @@
         {
           "path": "internal/web/app/src/lib/graphql/viewer.ts",
           "symbol": "fetchMySessions"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/MyDataPage.tsx",
+          "symbol": "onApplyFilters"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/MyDataPage.tsx",
+          "symbol": "onClearFilters"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/MyDataPage.tsx",
+          "symbol": "onDeleteAll"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/MyDataPage.tsx",
+          "symbol": "onExport"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/MyDataPage.tsx",
+          "symbol": "refresh"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/MyDataPage.tsx",
+          "symbol": "refreshLog"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/MyDataPage.tsx",
+          "symbol": "refreshSummary"
         }
       ],
       "entry_points": [
@@ -7656,6 +8752,14 @@
         {
           "path": "internal/web/app/src/lib/graphql/viewer.ts",
           "symbol": "markNotificationRead"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/NotificationsPage.tsx",
+          "symbol": "onMarkRead"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/NotificationsPage.tsx",
+          "symbol": "refreshIfForeground"
         }
       ],
       "entry_points": [
@@ -7772,6 +8876,22 @@
         {
           "path": "internal/web/app/src/lib/graphql/viewer.ts",
           "symbol": "switchProfile"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/ProfilePickerPage.tsx",
+          "symbol": "done"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/ProfilePickerPage.tsx",
+          "symbol": "onPick"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/ProfilePickerPage.tsx",
+          "symbol": "onSwitch"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/ProfilePickerPage.tsx",
+          "symbol": "submit"
         }
       ],
       "entry_points": [
@@ -7896,6 +9016,22 @@
         {
           "path": "internal/web/app/src/lib/graphql/viewer.ts",
           "symbol": "setClientPref"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx",
+          "symbol": "current"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx",
+          "symbol": "load"
+        },
+        {
+          "path": "internal/web/app/src/components/beamfall/profile/AvatarChooser.tsx",
+          "symbol": "drain"
+        },
+        {
+          "path": "internal/web/app/src/components/beamfall/profile/AvatarChooser.tsx",
+          "symbol": "pick"
         }
       ],
       "entry_points": [
@@ -7968,6 +9104,34 @@
         {
           "path": "internal/web/app/src/areas/viewer/lib/cardState.ts",
           "symbol": "timeLeftLabel"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/components/MediaItemCard.tsx",
+          "symbol": "activate"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/components/MediaItemCard.tsx",
+          "symbol": "beginPreviewDwell"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/components/MediaItemCard.tsx",
+          "symbol": "clearPreviewTimer"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/components/MediaItemCard.tsx",
+          "symbol": "handlePointerEnter"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/components/MediaItemCard.tsx",
+          "symbol": "stopOnVisibilityLoss"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/components/MediaItemCard.tsx",
+          "symbol": "stopPreview"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/components/MediaItemCardMenu.tsx",
+          "symbol": "copyLink"
         }
       ],
       "entry_points": [
@@ -8080,6 +9244,10 @@
         {
           "path": "internal/web/app/src/lib/graphql/viewer.ts",
           "symbol": "setWatchlisted"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/actions/useItemActions.ts",
+          "symbol": "run"
         }
       ],
       "entry_points": [
@@ -8112,6 +9280,14 @@
         {
           "path": "internal/web/app/src/lib/graphql/viewer.ts",
           "symbol": "reveal"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/components/RevealControls.tsx",
+          "symbol": "onRelock"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/components/RevealControls.tsx",
+          "symbol": "onReveal"
         }
       ],
       "entry_points": [
@@ -8184,6 +9360,18 @@
         {
           "path": "internal/web/app/src/lib/graphql/viewer.ts",
           "symbol": "setClientPref"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/PlayerPage.tsx",
+          "symbol": "back"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/PlayerPage.tsx",
+          "symbol": "playNext"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/pages/PlayerPage.tsx",
+          "symbol": "playPrevious"
         }
       ],
       "entry_points": [
@@ -8564,6 +9752,162 @@
         {
           "path": "internal/web/app/src/lib/graphql/viewer.ts",
           "symbol": "fetchPlaybackMarkers"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/useMediaLoading.ts",
+          "symbol": "clearTimer"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/useMediaLoading.ts",
+          "symbol": "onFirstFrame"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/useMediaLoading.ts",
+          "symbol": "onPlaying"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/useMediaLoading.ts",
+          "symbol": "onTimeUpdate"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/useMediaLoading.ts",
+          "symbol": "onWaiting"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/useMediaLoading.ts",
+          "symbol": "settle"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "applyPreferencesThenBump"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "atSourceEnd"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "bumpTracks"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "destroyHls"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "detachEngine"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "enterRevealTerminal"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "failPlayback"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "onEnded"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "onOffline"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "onOnline"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "onPause"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "onPlaying"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "onSeeked"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "onSourceEndSeeking"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "onSourceEndWaiting"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "onTimeUpdate"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "playheadPosition"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "reloadAtPlayhead"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "reloadHls"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "reloadNative"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "renegotiate"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "resumeLoad"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "retry"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "setRecovering"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "setWaitingForNetwork"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "showPlaybackInfoError"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "showSourceEndsEarly"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "showUnavailable"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "start"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "stopAtSourceEnd"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "stopForIdentityChange"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "switchToHls"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
+          "symbol": "waitForNetwork"
         }
       ],
       "entry_points": [
@@ -8776,6 +10120,118 @@
         {
           "path": "internal/web/app/src/areas/viewer/player/useChromeAutoHide.ts",
           "symbol": "useChromeAutoHide"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/lib/transport.ts",
+          "symbol": "rows"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/lib/transport.ts",
+          "symbol": "two"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
+          "symbol": "closeSettings"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
+          "symbol": "commit"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
+          "symbol": "commitScrub"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
+          "symbol": "enter"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
+          "symbol": "excluded"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
+          "symbol": "interactive"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
+          "symbol": "keydown"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
+          "symbol": "leave"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
+          "symbol": "move"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
+          "symbol": "onScrubberKeyDown"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
+          "symbol": "onScrubberPointerMove"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
+          "symbol": "onScrubberValueChange"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
+          "symbol": "previewAt"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
+          "symbol": "seekTo"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
+          "symbol": "setOpen"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
+          "symbol": "setPlaybackPosition"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
+          "symbol": "showGestureFeedback"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
+          "symbol": "toggleFullscreen"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
+          "symbol": "toggleMute"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
+          "symbol": "togglePictureInPicture"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
+          "symbol": "togglePlay"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
+          "symbol": "up"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/useChromeAutoHide.ts",
+          "symbol": "clearTimer"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/useChromeAutoHide.ts",
+          "symbol": "onActivity"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/useChromeAutoHide.ts",
+          "symbol": "onPause"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/useChromeAutoHide.ts",
+          "symbol": "reveal"
         }
       ],
       "entry_points": [
@@ -8872,6 +10328,22 @@
         {
           "path": "internal/web/app/src/areas/viewer/player/useSubtitleStyling.ts",
           "symbol": "useSubtitleStyling"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/lib/transport.ts",
+          "symbol": "option"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/useLiveTracks.ts",
+          "symbol": "nudge"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/useSubtitleStyling.ts",
+          "symbol": "applySync"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/useSubtitleStyling.ts",
+          "symbol": "reset"
         }
       ],
       "entry_points": [
@@ -8928,6 +10400,18 @@
         {
           "path": "internal/web/app/src/areas/viewer/player/useAutoSkip.ts",
           "symbol": "useAutoSkip"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/useAutoSkip.ts",
+          "symbol": "dismiss"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/useAutoSkip.ts",
+          "symbol": "onTime"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/useAutoSkip.ts",
+          "symbol": "undo"
         }
       ],
       "entry_points": [
@@ -9044,6 +10528,42 @@
         {
           "path": "internal/web/app/src/areas/viewer/player/useUpNext.ts",
           "symbol": "useUpNext"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/lib/playQueue.ts",
+          "symbol": "live"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/useUpNext.ts",
+          "symbol": "advance"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/useUpNext.ts",
+          "symbol": "cancel"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/useUpNext.ts",
+          "symbol": "clearTimer"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/useUpNext.ts",
+          "symbol": "dismiss"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/useUpNext.ts",
+          "symbol": "inWindow"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/useUpNext.ts",
+          "symbol": "maybeShow"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/useUpNext.ts",
+          "symbol": "onEnded"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/useUpNext.ts",
+          "symbol": "onTime"
         }
       ],
       "entry_points": [
@@ -9068,6 +10588,18 @@
         {
           "path": "internal/web/app/src/areas/viewer/player/useMediaSession.ts",
           "symbol": "useMediaSession"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/useMediaSession.ts",
+          "symbol": "safeSet"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/useMediaSession.ts",
+          "symbol": "syncPlayback"
+        },
+        {
+          "path": "internal/web/app/src/areas/viewer/player/useMediaSession.ts",
+          "symbol": "syncPosition"
         }
       ],
       "entry_points": [
