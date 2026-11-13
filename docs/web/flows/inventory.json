@@ -3459,23 +3459,11 @@
       "members": [
         {
           "path": "internal/web/app/src/areas/console/OwnerTasks.tsx",
-          "symbol": "LINK_TILE"
-        },
-        {
-          "path": "internal/web/app/src/areas/console/OwnerTasks.tsx",
           "symbol": "OwnerTasks"
         },
         {
           "path": "internal/web/app/src/areas/console/OwnerTasks.tsx",
-          "symbol": "TILE"
-        },
-        {
-          "path": "internal/web/app/src/areas/console/OwnerTasks.tsx",
           "symbol": "TaskLink"
-        },
-        {
-          "path": "internal/web/app/src/areas/console/OwnerTasks.tsx",
-          "symbol": "TileHead"
         },
         {
           "path": "internal/web/app/src/areas/console/index.tsx",
@@ -4159,10 +4147,6 @@
         },
         {
           "path": "internal/web/app/src/areas/console/sections/Libraries.tsx",
-          "symbol": "ICON_TILE"
-        },
-        {
-          "path": "internal/web/app/src/areas/console/sections/Libraries.tsx",
           "symbol": "Libraries"
         },
         {
@@ -4172,10 +4156,6 @@
         {
           "path": "internal/web/app/src/areas/console/sections/Libraries.tsx",
           "symbol": "NO_PLUGIN"
-        },
-        {
-          "path": "internal/web/app/src/areas/console/sections/Libraries.tsx",
-          "symbol": "PANEL"
         },
         {
           "path": "internal/web/app/src/areas/console/sections/Libraries.tsx",
