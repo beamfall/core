@@ -297,6 +297,21 @@ describe("PathPickerField", () => {
     expect(screen.getByRole("button", { name: "Browse" })).toHaveFocus();
   });
 
+  it("closes on Escape pressed before the first listing arrives", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchPathPicker).mockImplementation(() => new Promise(() => {}));
+    renderField();
+    const browse = screen.getByRole("button", { name: "Browse" });
+    await user.click(browse);
+    expect(browser()).toBeInTheDocument();
+    expect(browse).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+
+    expect(screen.queryByRole("group", { name: "Folder browser" })).toBeNull();
+    expect(browse).toHaveFocus();
+  });
+
   it("offers to allow browsing a typed folder outside the locations", async () => {
     const user = userEvent.setup();
     renderField();
