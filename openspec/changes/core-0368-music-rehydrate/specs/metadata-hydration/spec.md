@@ -33,11 +33,12 @@ or a manual edit) and any field the operator locked (ADR-0072).
 
 #### Scenario: A locked title survives a re-tag
 
-- **WHEN** the operator locked a Media's title and the file is re-tagged with a different title
-  and album
-- **THEN** the next scan updates the album and keeps the locked title
+- **WHEN** the operator locked a Media's title and the seam re-hydrates that Media with a new
+  fingerprint and a different title and album
+- **THEN** the album is updated and the locked title is kept
 
 #### Scenario: A manually edited title survives a re-tag
 
-- **WHEN** a Media's title was last written by a manual edit and the file is re-tagged
-- **THEN** the next scan keeps the manually edited title
+- **WHEN** a Media's title was last written by a manual edit and the seam re-hydrates that Media
+  with a new fingerprint
+- **THEN** the manually edited title is kept

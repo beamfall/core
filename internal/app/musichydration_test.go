@@ -4,15 +4,19 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/identify"
 	"github.com/beamfall/core/internal/plugin"
 	scanpkg "github.com/beamfall/core/internal/scan"
 	"github.com/beamfall/core/internal/store"
+	"github.com/beamfall/core/internal/store/storetest"
 )
 
 type testHydrationMapper struct{}
@@ -105,6 +109,8 @@ func testArchiveHydrationBundle() plugin.Bundle {
 // the validated, absent-only result without a real Store.
 type fakeHydrationStore struct {
 	fields    map[store.MediaID][]store.MediaField
+	locked    map[string]bool
+	writes    int
 	entities  map[store.EntityID]store.Entity
 	relations []store.EntityRelation
 	externals []struct {
@@ -119,6 +125,7 @@ func newFakeHydrationStore() *fakeHydrationStore {
 }
 
 func (f *fakeHydrationStore) InsertMediaFieldsIfAbsent(_ context.Context, id store.MediaID, fields []store.MediaField) error {
+	f.writes++
 	// Mimic absent-only: keep the first write per field name.
 	have := map[string]bool{}
 	for _, existing := range f.fields[id] {
@@ -131,6 +138,35 @@ func (f *fakeHydrationStore) InsertMediaFieldsIfAbsent(_ context.Context, id sto
 		}
 	}
 	return nil
+}
+
+func (f *fakeHydrationStore) UpsertMediaFieldsWithSource(_ context.Context, id store.MediaID, fields []store.MediaField, _ store.MutationSource) error {
+	f.writes++
+	for _, fld := range fields {
+		replaced := false
+		for i, existing := range f.fields[id] {
+			if existing.Name == fld.Name {
+				f.fields[id][i] = fld
+				replaced = true
+			}
+		}
+		if !replaced {
+			f.fields[id] = append(f.fields[id], fld)
+		}
+	}
+	return nil
+}
+
+func (f *fakeHydrationStore) MediaFields(_ context.Context, id store.MediaID, _ store.LibraryFilter) ([]store.MediaField, error) {
+	return append([]store.MediaField(nil), f.fields[id]...), nil
+}
+
+func (f *fakeHydrationStore) MediaFieldLocks(context.Context, store.MediaID, store.LibraryFilter) ([]store.MediaFieldLock, error) {
+	locks := []store.MediaFieldLock{}
+	for field, locked := range f.locked {
+		locks = append(locks, store.MediaFieldLock{Field: field, Locked: locked})
+	}
+	return locks, nil
 }
 
 func (f *fakeHydrationStore) UpsertEntity(_ context.Context, entity store.Entity) error {
@@ -1024,5 +1060,286 @@ func TestConcurrentHydrationAdoptsTitleOnlyEntityOnce(t *testing.T) {
 	}
 	if len(albums) != 2 || !albums[legacy] {
 		t.Fatalf("albums = %v, want the adopted %s and one scoped album", albums, legacy)
+	}
+}
+
+const testHydrationFingerprintField = "fixture-hydrated-fingerprint"
+
+// rehydratingTestMapper maps the title and album tags and opts in to
+// fingerprint-keyed hydration with the same rule the plugin side ships.
+type rehydratingTestMapper struct{}
+
+func (rehydratingTestMapper) MarkerField() string         { return testHydrationMarkerField }
+func (rehydratingTestMapper) ExternalIDSchemes() []string { return nil }
+func (rehydratingTestMapper) FingerprintField() string    { return testHydrationFingerprintField }
+func (rehydratingTestMapper) MapHydration(tags map[string]string, _ string) HydrationPlan {
+	plan := HydrationPlan{}
+	if tags["title"] != "" {
+		plan.MarkComplete = true
+		plan.MediaFields = append(plan.MediaFields, store.MediaField{Name: "title", Type: store.EntityFieldText, Text: tags["title"]})
+	}
+	if tags["album"] != "" {
+		plan.MarkComplete = true
+		plan.MediaFields = append(plan.MediaFields, store.MediaField{Name: "album", Type: store.EntityFieldText, Text: tags["album"]})
+	}
+	return plan
+}
+func (rehydratingTestMapper) DecideHydrationWrite(recorded, current string) HydrationWrite {
+	switch {
+	case recorded == "":
+		return HydrationWriteFresh
+	case current == "" || recorded == current:
+		return HydrationWriteSkip
+	default:
+		return HydrationWriteReplace
+	}
+}
+
+func rehydrationBundle() plugin.Bundle {
+	bundle := testHydrationBundle()
+	bundle.MediaFields = append(bundle.MediaFields, plugin.FieldSpec{Name: testHydrationFingerprintField, Type: "text", Label: plugin.L("Hydrated From")})
+	return bundle
+}
+
+func newRehydrationAdapter(t *testing.T, st hydrationStore) *hydrationAdapter {
+	t.Helper()
+	registry, err := plugin.NewRegistry([]plugin.Bundle{rehydrationBundle()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hydrators := newHydrationAdapters(registry, st, map[string]HydrationMapper{testHydrationPluginID: rehydratingTestMapper{}})
+	return hydrators[testHydrationPluginID].(*hydrationAdapter)
+}
+
+func hydrateWithFingerprint(t *testing.T, adapter *hydrationAdapter, fingerprint string, tags map[string]string) {
+	t.Helper()
+	if err := adapter.HydrateMetadata(context.Background(), scanpkg.MetadataHydrationInput{
+		MediaID: testMedia, LibraryID: testLib, Class: store.MediaClassAudio,
+		Path: "/x.flac", Metadata: tags, ContentFingerprint: fingerprint,
+	}); err != nil {
+		t.Fatalf("HydrateMetadata(%q): %v", fingerprint, err)
+	}
+}
+
+func TestHydrateMetadataKeyedOnContentFingerprint(t *testing.T) {
+	st := newFakeHydrationStore()
+	adapter := newRehydrationAdapter(t, st)
+	text := func(name string) string {
+		field, _ := st.field(testMedia, name)
+		return field.Text
+	}
+
+	hydrateWithFingerprint(t, adapter, "fp-1", map[string]string{"title": "One", "album": "First"})
+	if text("title") != "One" || text("album") != "First" || text(testHydrationFingerprintField) != "fp-1" {
+		t.Fatalf("fresh hydration fields = %+v", st.fields[testMedia])
+	}
+
+	writes := st.writes
+	hydrateWithFingerprint(t, adapter, "fp-1", map[string]string{"title": "Ignored", "album": "Ignored"})
+	if st.writes != writes || text("title") != "One" {
+		t.Fatalf("same fingerprint wrote %d times, title %q; want no write", st.writes-writes, text("title"))
+	}
+
+	hydrateWithFingerprint(t, adapter, "fp-2", map[string]string{"title": "Two", "album": "Second"})
+	if text("title") != "Two" || text("album") != "Second" || text(testHydrationFingerprintField) != "fp-2" {
+		t.Fatalf("replace hydration fields = %+v", st.fields[testMedia])
+	}
+
+	st.locked = map[string]bool{"title": true}
+	hydrateWithFingerprint(t, adapter, "fp-3", map[string]string{"title": "Three", "album": "Third"})
+	if text("title") != "Two" || text("album") != "Third" {
+		t.Fatalf("locked replace: title %q album %q, want locked title kept and album replaced", text("title"), text("album"))
+	}
+}
+
+func TestHydrateMetadataRejectsUndeclaredFingerprintField(t *testing.T) {
+	registry, err := plugin.NewRegistry([]plugin.Bundle{testHydrationBundle()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := newFakeHydrationStore()
+	adapter := newHydrationAdapters(registry, st, map[string]HydrationMapper{testHydrationPluginID: rehydratingTestMapper{}})[testHydrationPluginID].(*hydrationAdapter)
+	err = adapter.HydrateMetadata(context.Background(), scanpkg.MetadataHydrationInput{
+		MediaID: testMedia, LibraryID: testLib, Class: store.MediaClassAudio,
+		Metadata: map[string]string{"title": "One"}, ContentFingerprint: "fp-1",
+	})
+	if err == nil || !strings.Contains(err.Error(), testHydrationFingerprintField) {
+		t.Fatalf("HydrateMetadata error = %v, want undeclared fingerprint field rejected", err)
+	}
+	assertNoHydrationWrites(t, st)
+}
+
+// countingHydrationStore counts the hydration seam's Media field writes
+// against a real Store.
+type countingHydrationStore struct {
+	*store.Store
+	writes int
+}
+
+func (c *countingHydrationStore) InsertMediaFieldsIfAbsent(ctx context.Context, id store.MediaID, fields []store.MediaField) error {
+	c.writes++
+	return c.Store.InsertMediaFieldsIfAbsent(ctx, id, fields)
+}
+
+func (c *countingHydrationStore) UpsertMediaFieldsWithSource(ctx context.Context, id store.MediaID, fields []store.MediaField, source store.MutationSource) error {
+	c.writes++
+	return c.Store.UpsertMediaFieldsWithSource(ctx, id, fields, source)
+}
+
+type tagProber struct{ tags *map[string]string }
+
+func (p tagProber) Probe(context.Context, string) (ffmpeg.Probe, error) {
+	return ffmpeg.Probe{Container: "flac", AudioCodec: "flac", DurationSeconds: 60, Tags: *p.tags}, nil
+}
+
+// rehydrationScan drives the real scan and hydration seam over one audio
+// file whose bytes, mtime and probe tags a test can rewrite between scans.
+type rehydrationScan struct {
+	t       *testing.T
+	st      *store.Store
+	counted *countingHydrationStore
+	adapter *hydrationAdapter
+	library store.LibraryID
+	root    string
+	path    string
+	tags    map[string]string
+	mediaID store.MediaID
+}
+
+func newRehydrationScan(t *testing.T) *rehydrationScan {
+	t.Helper()
+	st := storetest.Open(t)
+	library, err := st.CreateLibrary(context.Background(), "Library", false, testHydrationPluginID, "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	counted := &countingHydrationStore{Store: st}
+	root := t.TempDir()
+	return &rehydrationScan{t: t, st: st, counted: counted, adapter: newRehydrationAdapter(t, counted),
+		library: library.ID, root: root, path: filepath.Join(root, "01 track.flac")}
+}
+
+// write sets the file's bytes and an mtime age past the stability window.
+func (r *rehydrationScan) write(data string, age time.Duration, tags map[string]string) {
+	r.t.Helper()
+	if err := os.WriteFile(r.path, []byte(data), 0o600); err != nil {
+		r.t.Fatal(err)
+	}
+	r.touch(age)
+	r.tags = tags
+}
+
+func (r *rehydrationScan) touch(age time.Duration) {
+	r.t.Helper()
+	mtime := time.Now().Add(-age)
+	if err := os.Chtimes(r.path, mtime, mtime); err != nil {
+		r.t.Fatal(err)
+	}
+}
+
+func (r *rehydrationScan) scan() {
+	r.t.Helper()
+	result, err := scanpkg.ScanWithMetadataHydration(context.Background(), r.st, tagProber{tags: &r.tags}, nil, nil, nil, nil, nil,
+		map[string]scanpkg.MetadataHydrator{testHydrationPluginID: r.adapter}, scanpkg.Request{LibraryID: r.library, Root: r.root})
+	if err != nil {
+		r.t.Fatalf("scan: %v", err)
+	}
+	if len(result.Files) != 1 {
+		r.t.Fatalf("scan files = %d, want 1", len(result.Files))
+	}
+	r.mediaID = result.Files[0].MediaID
+}
+
+func (r *rehydrationScan) field(name string) string {
+	r.t.Helper()
+	fields, err := r.st.MediaFields(context.Background(), r.mediaID, store.LibraryFilter{AllLibraries: true})
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	for _, field := range fields {
+		if field.Name == name {
+			return field.Text
+		}
+	}
+	return ""
+}
+
+func TestScanRehydratesRetaggedFile(t *testing.T) {
+	r := newRehydrationScan(t)
+	r.write("original audio bytes padding padding", 3*time.Hour, map[string]string{"title": "One", "album": "First"})
+	r.scan()
+	if r.field("title") != "One" || r.field("album") != "First" || r.field(testHydrationFingerprintField) == "" {
+		t.Fatalf("first scan: title %q album %q fingerprint %q", r.field("title"), r.field("album"), r.field(testHydrationFingerprintField))
+	}
+	recorded := r.field(testHydrationFingerprintField)
+
+	// Same bytes, later mtime: the scan re-hashes the file, and the seam skips it.
+	writes := r.counted.writes
+	r.touch(2 * time.Hour)
+	r.scan()
+	if r.counted.writes != writes {
+		t.Fatalf("unchanged file re-hydrated: %d hydration writes, want 0", r.counted.writes-writes)
+	}
+
+	// New bytes derive a new content-fingerprint Media ID, so the import starts
+	// a fresh Media and the seam's Fresh write records the new tags.
+	r.write("retagged audio bytes padding padding padding", time.Hour, map[string]string{"title": "Two", "album": "Second"})
+	r.scan()
+	if r.field("title") != "Two" || r.field("album") != "Second" {
+		t.Fatalf("re-tagged scan: title %q album %q, want the new tags", r.field("title"), r.field("album"))
+	}
+	if got := r.field(testHydrationFingerprintField); got == "" || got == recorded {
+		t.Fatalf("re-tagged fingerprint = %q, want a new fingerprint (was %q)", got, recorded)
+	}
+}
+
+// rehydrate drives the hydration seam directly for the scanned Media with a
+// new content fingerprint. A full re-scan cannot reach a Replace for the same
+// Media: new bytes derive a new content-fingerprint Media ID, so the import
+// starts a fresh Media.
+func (r *rehydrationScan) rehydrate(fingerprint string, tags map[string]string) {
+	r.t.Helper()
+	if err := r.adapter.HydrateMetadata(context.Background(), scanpkg.MetadataHydrationInput{
+		MediaID: r.mediaID, LibraryID: r.library, Class: store.MediaClassAudio,
+		Path: r.path, Metadata: tags, ContentFingerprint: fingerprint,
+	}); err != nil {
+		r.t.Fatalf("HydrateMetadata: %v", err)
+	}
+}
+
+func TestRehydrationReplacesScanTierFields(t *testing.T) {
+	r := newRehydrationScan(t)
+	r.write("original audio bytes padding padding", 2*time.Hour, map[string]string{"title": "One", "album": "First"})
+	r.scan()
+	r.rehydrate("sha256:retagged", map[string]string{"title": "Two", "album": "Second"})
+	if r.field("title") != "Two" || r.field("album") != "Second" || r.field(testHydrationFingerprintField) != "sha256:retagged" {
+		t.Fatalf("title %q album %q fingerprint %q, want the re-tagged values", r.field("title"), r.field("album"), r.field(testHydrationFingerprintField))
+	}
+}
+
+func TestRehydrationKeepsLockedTitle(t *testing.T) {
+	r := newRehydrationScan(t)
+	r.write("original audio bytes padding padding", 2*time.Hour, map[string]string{"title": "One", "album": "First"})
+	r.scan()
+	if _, err := r.st.SetMediaFieldLock(context.Background(), r.mediaID, "title", true, store.LibraryFilter{AllLibraries: true}); err != nil {
+		t.Fatal(err)
+	}
+	r.rehydrate("sha256:retagged", map[string]string{"title": "Two", "album": "Second"})
+	if r.field("title") != "One" || r.field("album") != "Second" {
+		t.Fatalf("title %q album %q, want the locked title kept and the album re-hydrated", r.field("title"), r.field("album"))
+	}
+}
+
+func TestRehydrationKeepsManualTitle(t *testing.T) {
+	r := newRehydrationScan(t)
+	r.write("original audio bytes padding padding", 2*time.Hour, map[string]string{"title": "One", "album": "First"})
+	r.scan()
+	title := "Edited"
+	if err := r.st.UpdateMediaMetadata(context.Background(), r.mediaID, store.MediaMetadata{Title: &title, Source: store.MutationSourceManual}); err != nil {
+		t.Fatal(err)
+	}
+	r.rehydrate("sha256:retagged", map[string]string{"title": "Two", "album": "Second"})
+	if r.field("title") != "One" || r.field("album") != "Second" {
+		t.Fatalf("title %q album %q, want the manually owned title kept and the album re-hydrated", r.field("title"), r.field("album"))
 	}
 }

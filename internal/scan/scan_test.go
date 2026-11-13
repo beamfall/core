@@ -3092,3 +3092,50 @@ func TestJobPayloadVersionRoundTrip(t *testing.T) {
 		t.Errorf("v2 payload LibraryID = %q, want lib-1", back.LibraryID)
 	}
 }
+
+// TestScanPassesContentFingerprintToMetadataHydrator asserts the hook receives
+// the file's content fingerprint and that a re-tagged file (new bytes) reaches
+// it again with a different one, so the hydration seam can tell it apart from
+// an unchanged file.
+func TestScanPassesContentFingerprintToMetadataHydrator(t *testing.T) {
+	root := t.TempDir()
+	path := writeScanFile(t, root, "Artist/Album/01 Track.flac", []byte("original flac bytes padding padding"))
+	st := storetest.Open(t)
+	library, err := st.CreateLibrary(context.Background(), "Music", false, "music", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prober := fakeProber{probe: ffmpeg.Probe{Container: "flac", AudioCodec: "flac", DurationSeconds: 60, Tags: map[string]string{"title": "One"}}}
+	hydrator := &fakeMetadataHydrator{capability: MetadataHydrationCapability{
+		MediaClasses: []store.MediaClass{store.MediaClassAudio},
+		MarkerField:  "music-hydrated",
+	}}
+	scan := func() {
+		t.Helper()
+		if _, err := ScanWithMetadataHydration(context.Background(), st, prober, nil, nil, nil, nil, nil,
+			map[string]MetadataHydrator{"music": hydrator}, Request{LibraryID: library.ID, Root: root}); err != nil {
+			t.Fatalf("Scan returned error: %v", err)
+		}
+	}
+
+	scan()
+	if len(hydrator.calls) != 1 || hydrator.calls[0].ContentFingerprint == "" {
+		t.Fatalf("first scan hydrator calls = %+v, want one call with a content fingerprint", hydrator.calls)
+	}
+	first := hydrator.calls[0].ContentFingerprint
+
+	if err := os.WriteFile(path, []byte("retagged flac bytes padding padding padding"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mtime := time.Now().Add(-30 * time.Minute)
+	if err := os.Chtimes(path, mtime, mtime); err != nil {
+		t.Fatal(err)
+	}
+	scan()
+	if len(hydrator.calls) != 2 {
+		t.Fatalf("hydrator calls after re-tag = %d, want 2", len(hydrator.calls))
+	}
+	if got := hydrator.calls[1].ContentFingerprint; got == "" || got == first {
+		t.Fatalf("re-tagged fingerprint = %q, want a new non-empty fingerprint (first %q)", got, first)
+	}
+}

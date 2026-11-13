@@ -23,10 +23,37 @@ import (
 // hydrationStore is the write slice used by compiled hydration contributions.
 type hydrationStore interface {
 	InsertMediaFieldsIfAbsent(ctx context.Context, id store.MediaID, fields []store.MediaField) error
+	UpsertMediaFieldsWithSource(ctx context.Context, id store.MediaID, fields []store.MediaField, source store.MutationSource) error
+	MediaFields(ctx context.Context, id store.MediaID, filter store.LibraryFilter) ([]store.MediaField, error)
+	MediaFieldLocks(ctx context.Context, id store.MediaID, filter store.LibraryFilter) ([]store.MediaFieldLock, error)
 	UpsertEntity(ctx context.Context, entity store.Entity) error
 	UpsertEntityRelation(ctx context.Context, relation store.EntityRelation) error
 	AddMediaExternalID(ctx context.Context, mediaID store.MediaID, scheme string, value string) error
 	EntityRelationTargets(ctx context.Context, libraryID store.LibraryID, id store.EntityID, relation string) ([]store.EntityID, bool, error)
+}
+
+// HydrationWrite is how a fingerprint-keyed hydration lands, decided by a
+// HydrationRehydrator from the recorded and the current content fingerprint.
+type HydrationWrite int
+
+const (
+	// HydrationWriteFresh writes absent fields only and records the fingerprint.
+	HydrationWriteFresh HydrationWrite = iota
+	// HydrationWriteSkip writes nothing: the bytes were already hydrated.
+	HydrationWriteSkip
+	// HydrationWriteReplace replaces scan-tier values through the source-ranked
+	// upsert (operator, manual and locked fields win) and records the fingerprint.
+	HydrationWriteReplace
+)
+
+// HydrationRehydrator is the optional HydrationMapper extension that keys
+// hydration on the file's content fingerprint, so a re-tagged file is
+// re-hydrated and an unchanged one is not. FingerprintField names a declared
+// text Media field holding the fingerprint the last hydration read; a mapper
+// without it keeps the absent-only write.
+type HydrationRehydrator interface {
+	FingerprintField() string
+	DecideHydrationWrite(recordedFingerprint, currentFingerprint string) HydrationWrite
 }
 
 // hydrationAdapter validates a plugin-supplied write plan against the active
@@ -35,6 +62,9 @@ type hydrationAdapter struct {
 	store      hydrationStore
 	mapper     HydrationMapper
 	capability scanpkg.MetadataHydrationCapability
+
+	rehydrator       HydrationRehydrator
+	fingerprintField string
 
 	declaredMediaFields   map[string]string
 	declaredEntityFields  map[string]map[string]string
@@ -64,7 +94,7 @@ func newHydrationAdapters(registry *plugin.Registry, st hydrationStore, mappers 
 		if !ok {
 			continue
 		}
-		out[pluginID] = &hydrationAdapter{
+		adapter := &hydrationAdapter{
 			store:                 st,
 			mapper:                mapper,
 			capability:            metadataHydrationCapability(bundle, mapper.MarkerField()),
@@ -74,6 +104,11 @@ func newHydrationAdapters(registry *plugin.Registry, st hydrationStore, mappers 
 			declaredExternalIDs:   declaredExternalIDSet(mapper.ExternalIDSchemes()),
 			entityScopes:          declaredEntityScopes(mapper),
 		}
+		if rehydrator, ok := mapper.(HydrationRehydrator); ok {
+			adapter.rehydrator = rehydrator
+			adapter.fingerprintField = rehydrator.FingerprintField()
+		}
+		out[pluginID] = adapter
 	}
 	if len(out) == 0 {
 		return nil
@@ -144,6 +179,13 @@ func (a *hydrationAdapter) HydrateMetadata(ctx context.Context, input scanpkg.Me
 	if !a.capability.Supports(input.Class) {
 		return nil
 	}
+	write, err := a.decideWrite(ctx, input)
+	if err != nil {
+		return err
+	}
+	if write == HydrationWriteSkip {
+		return nil
+	}
 	plan := a.mapper.MapHydration(input.Metadata, input.Path)
 	if plan.Empty() {
 		return nil
@@ -156,7 +198,7 @@ func (a *hydrationAdapter) HydrateMetadata(ctx context.Context, input scanpkg.Me
 	if validated.Empty() {
 		return nil
 	}
-	if err := a.writeMediaFields(ctx, input.MediaID, validated.MediaFields, validated.MarkComplete, marker); err != nil {
+	if err := a.writeMediaFields(ctx, input.MediaID, validated, marker, write, input.ContentFingerprint); err != nil {
 		return err
 	}
 	if err := a.writeRelations(ctx, input.MediaID, input.LibraryID, validated.Relations); err != nil {
@@ -170,6 +212,30 @@ func (a *hydrationAdapter) HydrateMetadata(ctx context.Context, input scanpkg.Me
 	return nil
 }
 
+// decideWrite asks an opted-in mapper how to land this hydration, from the
+// fingerprint recorded at the last hydration and the one the scan computed.
+// A mapper without a fingerprint field always gets the absent-only write.
+func (a *hydrationAdapter) decideWrite(ctx context.Context, input scanpkg.MetadataHydrationInput) (HydrationWrite, error) {
+	if a.rehydrator == nil {
+		return HydrationWriteFresh, nil
+	}
+	if declaredType, ok := a.declaredMediaFields[a.fingerprintField]; a.fingerprintField == "" || !ok || declaredType != string(store.EntityFieldText) {
+		return HydrationWriteFresh, fmt.Errorf("hydration fingerprint field %q is not a declared text field", a.fingerprintField)
+	}
+	fields, err := a.store.MediaFields(ctx, input.MediaID, store.LibraryFilter{AllLibraries: true})
+	if err != nil {
+		return HydrationWriteFresh, err
+	}
+	recorded := ""
+	for _, field := range fields {
+		if field.Name == a.fingerprintField {
+			recorded = field.Text
+			break
+		}
+	}
+	return a.rehydrator.DecideHydrationWrite(recorded, input.ContentFingerprint), nil
+}
+
 func (a *hydrationAdapter) validatePlan(plan HydrationPlan, marker string) (HydrationPlan, error) {
 	validated := HydrationPlan{MarkComplete: plan.MarkComplete}
 	for _, field := range plan.MediaFields {
@@ -178,6 +244,9 @@ func (a *hydrationAdapter) validatePlan(plan HydrationPlan, marker string) (Hydr
 		}
 		if marker != "" && field.Name == marker {
 			return HydrationPlan{}, fmt.Errorf("hydration completion marker %q must be controlled by MarkComplete", marker)
+		}
+		if a.fingerprintField != "" && field.Name == a.fingerprintField {
+			return HydrationPlan{}, fmt.Errorf("hydration fingerprint field %q is recorded by the hydration seam", a.fingerprintField)
 		}
 		declaredType, ok := a.mediaFieldType(field.Name)
 		if !ok {
@@ -366,15 +435,51 @@ func (a *hydrationAdapter) validateEntity(entity HydrationEntity) error {
 	return nil
 }
 
-func (a *hydrationAdapter) writeMediaFields(ctx context.Context, mediaID store.MediaID, mapped []store.MediaField, markComplete bool, marker string) error {
-	fields := append([]store.MediaField(nil), mapped...)
-	if markComplete {
+// writeMediaFields lands the validated Media fields. Fresh is absent-only.
+// Replace upserts at the scan tier — the tier the absent-only path and the
+// import record — so tag values replace earlier tag or filename values while
+// operator and manual values keep winning in canWriteFieldTx, and fields the
+// operator locked (ADR-0072) are left out. Both record the fingerprint.
+func (a *hydrationAdapter) writeMediaFields(ctx context.Context, mediaID store.MediaID, validated HydrationPlan, marker string, write HydrationWrite, fingerprint string) error {
+	fields := append([]store.MediaField(nil), validated.MediaFields...)
+	if validated.MarkComplete {
 		fields = append(fields, store.MediaField{Name: marker, Type: store.EntityFieldFlag, Flag: true})
+	}
+	if a.fingerprintField != "" && fingerprint != "" {
+		fields = append(fields, store.MediaField{Name: a.fingerprintField, Type: store.EntityFieldText, Text: fingerprint})
 	}
 	if len(fields) == 0 {
 		return nil
 	}
-	return a.store.InsertMediaFieldsIfAbsent(ctx, mediaID, fields)
+	if write != HydrationWriteReplace {
+		return a.store.InsertMediaFieldsIfAbsent(ctx, mediaID, fields)
+	}
+	fields, err := a.withoutLockedFields(ctx, mediaID, fields)
+	if err != nil {
+		return err
+	}
+	return a.store.UpsertMediaFieldsWithSource(ctx, mediaID, fields, store.MutationSourceScan)
+}
+
+// withoutLockedFields drops the fields whose source-precedence lock is set.
+func (a *hydrationAdapter) withoutLockedFields(ctx context.Context, mediaID store.MediaID, fields []store.MediaField) ([]store.MediaField, error) {
+	locks, err := a.store.MediaFieldLocks(ctx, mediaID, store.LibraryFilter{AllLibraries: true})
+	if err != nil {
+		return nil, err
+	}
+	locked := map[string]bool{}
+	for _, lock := range locks {
+		if lock.Locked {
+			locked[lock.Field] = true
+		}
+	}
+	kept := fields[:0]
+	for _, field := range fields {
+		if !locked[field.Name] {
+			kept = append(kept, field)
+		}
+	}
+	return kept, nil
 }
 
 // writeRelations writes one plan's relations. A scoped Entity's id is resolved
