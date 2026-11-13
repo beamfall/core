@@ -23,10 +23,13 @@ function ServerConfig() {
   const t = useT();
   const { data, failed, setData } = useAsync(fetchConsoleConfig);
   const [workers, setWorkers] = useState("");
+  const savedWorkers = data?.backgroundWorkers;
 
+  // Keyed on the saved count, not on data: toggling the Viewer-code switch
+  // replaces data and must not discard an unsaved worker-count edit.
   useEffect(() => {
-    if (data) setWorkers(String(data.backgroundWorkers));
-  }, [data]);
+    if (savedWorkers !== undefined) setWorkers(String(savedWorkers));
+  }, [savedWorkers]);
 
   async function onSave(e: FormEvent) {
     e.preventDefault();
