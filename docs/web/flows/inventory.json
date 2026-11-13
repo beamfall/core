@@ -2660,8 +2660,8 @@
       ],
       "entry_points": [
         {
-          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
-          "symbol": "SetupWizard"
+          "path": "internal/web/app/src/areas/setup/orchestrate.ts",
+          "symbol": "bootstrapSetup"
         }
       ]
     },
@@ -2728,8 +2728,8 @@
       ],
       "entry_points": [
         {
-          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
-          "symbol": "SetupWizard"
+          "path": "internal/web/app/src/areas/setup/orchestrate.ts",
+          "symbol": "activatePlugins"
         }
       ]
     },
@@ -2820,8 +2820,8 @@
       ],
       "entry_points": [
         {
-          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
-          "symbol": "SetupWizard"
+          "path": "internal/web/app/src/areas/setup/orchestrate.ts",
+          "symbol": "createFirstLibrary"
         }
       ]
     },
@@ -2876,8 +2876,8 @@
       ],
       "entry_points": [
         {
-          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
-          "symbol": "SetupWizard"
+          "path": "internal/web/app/src/areas/setup/orchestrate.ts",
+          "symbol": "configureUpdateCheck"
         }
       ]
     },
