@@ -114,7 +114,7 @@ function CreateProfileForm({ onCreated }: { onCreated: () => void }) {
         {t("consoleProfilesCreate")}
       </Button>
       {error && (
-        <p role="alert" className="w-full text-sm text-[var(--red-500)]">
+        <p role="alert" className="w-full text-sm text-[var(--state-danger)]">
           {t("consoleProfilesCreateFailed")}
         </p>
       )}

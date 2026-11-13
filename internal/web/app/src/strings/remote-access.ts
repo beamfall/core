@@ -25,7 +25,8 @@ export const remoteAccessStrings = {
     watchAwayPreflightPending: "Preflight pending",
     watchAwayDirectDetail:
       "Second choice: point DNS at home, forward TCP 443 to this server, then wait for the certificate state to become issued.",
-    watchAwayAdvancedRelay: "Advanced: self-hosted relay",
+    watchAwayAdvancedRelay: "Self-hosted relay",
+    remoteAccessReachableVia: "Reachable through",
     watchAwayRelayDetail:
       "Use this only when overlay and Direct HTTPS are not workable. The relay forwards encrypted bytes; it does not terminate media TLS.",
     remoteAccessRefresh: "Refresh",

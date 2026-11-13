@@ -158,9 +158,9 @@ describe("ADR-0034 text-expansion gate — Console (Plugins)", () => {
   it("renders expanded keyed labels in full (incl. Select-bearing surface)", async () => {
     const { container } = renderExpanded(<Plugins />);
     await screen.findAllByText("Studio Metadata");
-    // The active-state chip resolves the expanded de value, present in full.
-    expect(container.textContent).toContain(STRINGS.de.consoleConfigActive);
-    expect(STRINGS.de.consoleConfigActive).toContain("⟧"); // not truncated to a prefix
+    // The section heading resolves the expanded de value, present in full.
+    expect(container.textContent).toContain(STRINGS.de.consoleConfigPlugins);
+    expect(STRINGS.de.consoleConfigPlugins).toContain("⟧"); // not truncated to a prefix
   });
 });
 
@@ -195,7 +195,9 @@ const CLIP_UTILITY =
 // 2026-11-12 (merge of CORE-1131 with CORE-1191): +2 → 28 for the header search result rows — `truncate`
 // on the title and on the detail line. Both are CSS ellipsis only; the full
 // text stays in the DOM and the row is a labelled gridcell.
-const CLIP_BASELINE = 28;
+// 2026-11-13 (CORE-1117): -2 → 26. The bulk-tag and marker-retag mode toggles moved to the
+// shared Segmented control and dropped their `overflow-hidden` wrappers.
+const CLIP_BASELINE = 26;
 
 function tsSources(dir: string, acc: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {

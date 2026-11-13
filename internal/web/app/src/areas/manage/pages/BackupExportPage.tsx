@@ -309,7 +309,7 @@ function BackupHistorySection({
             role="status"
             className={
               verifyResult.ok
-                ? "rounded-md border border-[var(--green-500)]/40 bg-[var(--green-500)]/5 px-3 py-2 text-sm"
+                ? "rounded-md border border-[var(--state-success,var(--state-direct))]/40 bg-[var(--state-success,var(--state-direct))]/5 px-3 py-2 text-sm"
                 : "rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm"
             }
           >
@@ -380,10 +380,10 @@ function ManifestSection({ selected }: { selected: BackupHistoryEntry | null }) 
           </div>
 
           {/* Binding ADR-0077 callout: Recovery Keys are excluded by design. */}
-          <div className="rounded-md border border-[var(--amber-500)]/45 bg-[var(--amber-500)]/5 px-3 py-3">
+          <div className="rounded-md border border-[var(--state-warning)]/45 bg-[var(--state-warning)]/5 px-3 py-3">
             <p className="flex items-center gap-2 text-sm font-semibold">
               <span
-                className="inline-block h-2 w-2 rounded-full bg-[var(--amber-500)]"
+                className="inline-block h-2 w-2 rounded-full bg-[var(--state-warning)]"
                 aria-hidden
               />
               {t("backupKeysCalloutTitle")}

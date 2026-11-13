@@ -1,4 +1,3 @@
-import { Lock } from "lucide-react";
 import {
   type FormEvent,
   type ReactNode,
@@ -244,9 +243,6 @@ function LockedCard({
     <div className="console-gate">
       <Card>
         <CardHeader>
-          <div className="console-gate-mark" aria-hidden>
-            <Lock className="h-4 w-4" />
-          </div>
           <CardTitle>{t(titleKey)}</CardTitle>
           <CardDescription>{t(leadKey)}</CardDescription>
         </CardHeader>
@@ -265,7 +261,7 @@ function LockedCard({
                 />
               </div>
               {rejected && (
-                <p role="alert" className="text-sm text-[var(--red-500)]">
+                <p role="alert" className="text-sm text-[var(--state-danger)]">
                   {t("adminUnlockRejected")}
                 </p>
               )}

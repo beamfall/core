@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setAdvancedSettings } from "@/lib/advancedSettings";
 import { graphql } from "@/lib/api";
 import {
   fetchConsoleConfig,
@@ -163,6 +164,8 @@ function deferred<T>() {
 }
 
 beforeEach(() => {
+  // Most cases cover the full plugin surface; the Normal view has its own block below.
+  setAdvancedSettings(true);
   setAdminEpochSignal();
   vi.mocked(fetchConsoleConfig).mockReset();
   vi.mocked(graphql).mockReset();
@@ -172,7 +175,11 @@ beforeEach(() => {
   mockConsoleConfig(config);
 });
 
-afterEach(() => setAdminEpochSignal());
+afterEach(() => {
+  setAdminEpochSignal();
+  localStorage.clear();
+  setAdvancedSettings(false);
+});
 
 function renderPanel() {
   return render(
@@ -613,12 +620,11 @@ describe("Plugins", () => {
     await waitFor(() => expect(uninstallPluginData).toHaveBeenCalledWith("studio-meta"));
   });
 
-  it("deactivates through setPluginActive without purging data", async () => {
+  it("deactivates through the card switch without purging data", async () => {
     const user = userEvent.setup();
     renderPanel();
-    await openDetails();
 
-    await user.click(await screen.findByRole("button", { name: "Deactivate" }));
+    await user.click(await screen.findByRole("switch", { name: "Studio Metadata" }));
 
     await waitFor(() => expect(setPluginActive).toHaveBeenCalledWith("studio-meta", false));
     expect(uninstallPluginData).not.toHaveBeenCalled();
@@ -649,5 +655,59 @@ describe("Plugins", () => {
     await waitFor(() => expect(setPluginActive).toHaveBeenCalledWith("studio-meta", false));
     await waitFor(() => expect(graphql).toHaveBeenCalledTimes(2));
     expect(screen.getByText("Third-party")).toBeVisible();
+  });
+});
+
+describe("Plugins in the Normal view (CORE-1117)", () => {
+  beforeEach(() => setAdvancedSettings(false));
+
+  it("keeps config and status but leaves permissions, actions and uninstall to Advanced", async () => {
+    renderPanel();
+    await openDetails();
+
+    expect(screen.getByLabelText("Base URL")).toBeVisible();
+    expect(screen.getByText("Endpoint")).toBeVisible();
+    expect(screen.queryByText("net.outbound")).not.toBeInTheDocument();
+    expect(screen.queryByText("Refresh catalog")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Uninstall (purge data)" }),
+    ).not.toBeInTheDocument();
+
+    act(() => setAdvancedSettings(true));
+    expect(screen.getByText("Refresh catalog")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Uninstall (purge data)" })).toBeVisible();
+  });
+
+  it("hides routine provenance and trust chips but always shows a trust warning", async () => {
+    mockConsoleConfig({
+      ...config,
+      plugins: [
+        standingPlugin("trusted", "Trusted Plugin", "First-Party", "Trusted"),
+        standingPlugin("unsigned", "Unsigned Plugin", "Sideloaded", "Unsigned"),
+      ],
+    });
+    renderPanel();
+    await screen.findByText("Trusted Plugin");
+
+    expect(screen.queryByText("First-party")).not.toBeInTheDocument();
+    expect(screen.queryByText("Trusted")).not.toBeInTheDocument();
+    expect(screen.getByText("Unsigned")).toBeVisible();
+  });
+
+  it("drops the Details toggle when Normal would open an empty panel", async () => {
+    mockConsoleConfig({
+      ...config,
+      plugins: [
+        { ...standingPlugin("bare", "Bare Plugin", "First-Party", "Trusted"), controlPolicy: "" },
+      ],
+    });
+    renderPanel();
+    await screen.findByText("Bare Plugin");
+
+    expect(
+      screen.queryByRole("button", { name: "Details for Bare Plugin" }),
+    ).not.toBeInTheDocument();
+    act(() => setAdvancedSettings(true));
+    expect(screen.getByRole("button", { name: "Details for Bare Plugin" })).toBeVisible();
   });
 });

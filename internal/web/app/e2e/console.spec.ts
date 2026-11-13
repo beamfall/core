@@ -170,30 +170,41 @@ test.describe("console", () => {
     const errors = collectFatalErrors(page);
     await gotoConsole(page, "");
     const nav = page.getByRole("navigation", { name: "Console" });
-    // The expanded rail (the collapsed "Maintain" group is asserted below).
-    for (const label of [
+    // The Normal rail (CORE-1117): every first-run and recovery destination, no expert ones.
+    const normal = [
       "Overview",
       "Operations",
       "Live sessions",
       "Library health",
-      "Activity",
       "Libraries",
       "Plugins",
-      "Capabilities",
-      "Layout & Navigation",
       "Profiles & access",
       "Schedules",
       "Remote access",
+      "Backups",
+      "Updates",
+      "Server configuration",
+    ];
+    const advanced = [
+      "Activity",
+      "Capabilities",
+      "Layout & Navigation",
       "API tokens",
-    ]) {
+      "Retention rules",
+    ];
+    for (const label of normal) {
       await expect(nav.getByRole("link", { name: label, exact: true })).toBeVisible();
     }
-    // "Maintain" ships collapsed; expanding it must reveal the operator-only
-    // destinations that no longer sit on the primary rail.
-    await nav.getByText("Maintain", { exact: true }).click();
-    for (const label of ["Backups", "Retention rules", "Updates", "Server configuration"]) {
-      await expect(nav.getByRole("link", { name: label })).toBeVisible();
+    for (const label of advanced) {
+      await expect(nav.getByRole("link", { name: label, exact: true })).toHaveCount(0);
     }
+    // The one "Show advanced settings" switch reveals the expert destinations and persists.
+    await page.getByRole("switch", { name: "Show advanced settings" }).click();
+    for (const label of advanced) {
+      await expect(nav.getByRole("link", { name: label, exact: true })).toBeVisible();
+    }
+    await page.reload();
+    await expect(nav.getByRole("link", { name: "API tokens", exact: true })).toBeVisible();
     await expect(page.getByText("beamfall-web")).toHaveCount(0);
     await expect(page.getByText(/checkout|pricing|entitlement/i)).toHaveCount(0);
     expect(errors, errors.join("\n")).toEqual([]);
@@ -292,8 +303,9 @@ test.describe("console", () => {
     { route: "libraries", heading: "Libraries" },
     { route: "plugins", heading: "Plugins" },
     { route: "config", heading: "Server configuration" },
-    { route: "access", heading: "Enforced filters" },
-    { route: "operations", heading: "Resource governor" },
+    { route: "access", heading: "Profiles" },
+    { route: "schedules", heading: "Enforced filters" },
+    { route: "operations", heading: "Job queue" },
     { route: "sessions", heading: "Live sessions" },
     { route: "updates", heading: "Update awareness" },
     { route: "migrate", heading: "Migration wizard" },
@@ -319,15 +331,15 @@ test.describe("console", () => {
     await expect(
       page.getByRole("heading", { level: 2, name: "Server configuration" }),
     ).toBeVisible();
-    // Hardware transcoding lives behind the section's "Advanced" disclosure.
-    await page.locator("details.console-disclosure > summary").click();
-    await expect(
-      page.getByRole("heading", { level: 2, name: "Hardware transcoding" }),
-    ).toBeVisible();
-    for (const label of ["Hardware acceleration", "Codec", "Quality", "Device"]) {
-      await expect(page.getByText(label).first()).toBeVisible();
+    // The on/off switch is the Normal control; codec, quality and device are Advanced unless the
+    // server already has a value for them (CORE-1117).
+    await expect(page.getByText("Hardware transcoding").first()).toBeVisible();
+    await expect(page.getByRole("switch", { name: "Hardware acceleration" })).toBeVisible();
+    await page.getByRole("switch", { name: "Show advanced settings" }).click();
+    for (const label of ["Codec", "Quality", "Device"]) {
+      await expect(page.getByRole("textbox", { name: label })).toBeVisible();
     }
-    await expect(page.getByRole("button", { name: "Save" })).toHaveCount(2);
+    await expect(page.getByRole("button", { name: "Save" })).toHaveCount(1);
     expect(errors, errors.join("\n")).toEqual([]);
   });
 
@@ -361,10 +373,13 @@ test.describe("console", () => {
     const errors = collectFatalErrors(page);
     await gotoConsole(page, "operations");
 
-    await expect(page.getByRole("heading", { level: 2, name: "Resource governor" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Job queue" })).toBeVisible();
+    const governor = page.getByRole("heading", { level: 2, name: "Resource governor" });
     const compact = page.getByRole("button", { name: "Compact events now" });
-    await expect(compact).toBeHidden();
-    await page.getByText("Advanced", { exact: true }).first().click();
+    await expect(governor).toHaveCount(0);
+    await expect(compact).toHaveCount(0);
+    await page.getByRole("switch", { name: "Show advanced settings" }).click();
+    await expect(governor).toBeVisible();
     await expect(compact).toBeVisible();
     expect(errors, errors.join("\n")).toEqual([]);
   });

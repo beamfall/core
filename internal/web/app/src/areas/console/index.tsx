@@ -20,12 +20,13 @@ import {
   Stethoscope,
   Users,
 } from "lucide-react";
-import { type ComponentType, type ReactElement, type ReactNode, useEffect, useState } from "react";
+import { type ComponentType, type ReactElement, useEffect } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router";
 import { EmptyState, StatusChip } from "@/components/beamfall/workbench";
 import { AppShell } from "@/components/chrome/AppShell";
 import { SectionMenu } from "@/components/chrome/SectionMenu";
 import { Button } from "@/components/ui/button";
+import { AdvancedSettingsSwitch, useAdvancedSettings } from "@/lib/advancedSettings";
 import { isBeamfallAppStoreHost } from "@/lib/beamfallHost";
 import { fetchSetupState } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
@@ -37,7 +38,7 @@ import { BackupExportPage } from "../manage/pages/BackupExportPage";
 import { AdminGate } from "./AdminGate";
 import { OwnerTasks } from "./OwnerTasks";
 import { Section } from "./Section";
-import { AccessAdmin } from "./sections/AccessAdmin";
+import { AccessAdmin, ScheduleAdmin } from "./sections/AccessAdmin";
 import { ActivityLog } from "./sections/ActivityLog";
 import { ApiCredentials } from "./sections/ApiCredentials";
 import { Capabilities } from "./sections/Capabilities";
@@ -65,12 +66,13 @@ interface NavItem {
   icon: ComponentType<LucideProps>;
   element: ReactElement;
   placement: string;
+  // Hidden from the rail in the Normal view unless it is the current page (CORE-1117).
+  advanced?: boolean;
 }
 
 interface NavGroup {
   label: StringKey;
   items: NavItem[];
-  collapsed?: boolean;
 }
 
 export const CONSOLE_IA_PLACEMENTS = [
@@ -220,6 +222,7 @@ const GROUPS: NavGroup[] = [
       },
       {
         path: "activity",
+        advanced: true,
         label: "activityLogHeading",
         icon: Activity,
         element: <ActivityLog />,
@@ -246,6 +249,7 @@ const GROUPS: NavGroup[] = [
       },
       {
         path: "identification",
+        advanced: true,
         label: "capabilitiesHeading",
         icon: Layers,
         element: <Capabilities />,
@@ -253,6 +257,7 @@ const GROUPS: NavGroup[] = [
       },
       {
         path: "layout",
+        advanced: true,
         label: "consoleLayoutNavigation",
         icon: FolderOpen,
         element: <Capabilities />,
@@ -274,7 +279,7 @@ const GROUPS: NavGroup[] = [
         path: "schedules",
         label: "schedules",
         icon: Clock,
-        element: <AccessAdmin />,
+        element: <ScheduleAdmin />,
         placement: "Access/Schedules & Policy",
       },
       {
@@ -286,6 +291,7 @@ const GROUPS: NavGroup[] = [
       },
       {
         path: "api",
+        advanced: true,
         label: "apiTokens",
         icon: KeyRound,
         element: <ApiCredentials />,
@@ -295,7 +301,6 @@ const GROUPS: NavGroup[] = [
   },
   {
     label: "consoleMaintainGroup",
-    collapsed: true,
     items: [
       {
         path: "backups",
@@ -306,6 +311,7 @@ const GROUPS: NavGroup[] = [
       },
       {
         path: "retention",
+        advanced: true,
         label: "retentionRulesTitle",
         icon: Clock,
         element: <Retention />,
@@ -361,13 +367,15 @@ function groupsForHost(appStoreHost: boolean): NavGroup[] {
   })).filter((group) => group.items.length > 0);
 }
 
-// The active-session status shown once an Admin Session is active: the
-// Console is "unlocked" as visible STATE (design system: admin is visible
-// state, never a hidden mode), set at the foot of the rail with the lock action.
+// The foot of the rail, visible at every width: the one Normal/Advanced switch
+// (CORE-1117), then the active-session status: the Console is "unlocked" as
+// visible STATE (design system: admin is visible state, never a hidden mode),
+// with the lock action.
 function SessionBar({ onLock }: { onLock: () => void }) {
   const t = useT();
   return (
     <div className="console-session-bar">
+      <AdvancedSettingsSwitch className="console-advanced-switch" />
       <span className="console-session-lead">
         <span className="console-session-dot" aria-hidden />
         {t("consoleActiveLead")}
@@ -380,81 +388,43 @@ function SessionBar({ onLock }: { onLock: () => void }) {
   );
 }
 
-// A collapsible rail group the operator may fold by hand. Arriving at one of its
-// destinations opens it again, so a route change never lands on a hidden page.
-function NavDisclosure({
-  label,
-  pathname,
-  holdsCurrent,
-  children,
-}: {
-  label: string;
-  pathname: string;
-  holdsCurrent: boolean;
-  children: ReactNode;
-}) {
-  const [open, setOpen] = useState(holdsCurrent);
-  const [seenPath, setSeenPath] = useState(pathname);
-  if (seenPath !== pathname) {
-    setSeenPath(pathname);
-    if (holdsCurrent && !open) setOpen(true);
-  }
-  return (
-    <details
-      className="console-nav-group"
-      open={open}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
-    >
-      <summary className="console-nav-group-label">{label}</summary>
-      {children}
-    </details>
-  );
+// The Normal view leaves out Advanced destinations, except the page the operator
+// is on, and any group that is then empty. Every route stays registered.
+function visibleNavGroups(groups: NavGroup[], advanced: boolean, pathname: string): NavGroup[] {
+  if (advanced) return groups;
+  return groups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => !item.advanced || pathname === `/console/${item.path}`),
+    }))
+    .filter((group) => group.items.length > 0);
 }
 
 function ConsoleNav({ groups }: { groups: NavGroup[] }) {
   const t = useT();
   const { pathname } = useLocation();
+  const [advanced] = useAdvancedSettings();
   return (
     <div className="console-nav">
-      {groups.map((group, gi) => {
-        const links = group.items.map((item) => {
-          const Icon = item.icon;
-          return (
-            <NavLink
-              key={item.path}
-              to={item.path ? `/console/${item.path}` : "/console"}
-              end={item.path === ""}
-              className={({ isActive }) => cn("console-nav-link", isActive && "is-active")}
-            >
-              <Icon className="console-nav-icon" aria-hidden />
-              {t(item.label)}
-            </NavLink>
-          );
-        });
-        if (group.collapsed) {
-          // The advanced group opens itself while one of its destinations is
-          // current, so the rail never hides where the operator is.
-          const holdsCurrent = group.items.some((item) =>
-            pathname.startsWith(`/console/${item.path}`),
-          );
-          return (
-            <NavDisclosure
-              key={group.label + gi}
-              label={t(group.label)}
-              pathname={pathname}
-              holdsCurrent={holdsCurrent}
-            >
-              {links}
-            </NavDisclosure>
-          );
-        }
-        return (
-          <div className="console-nav-group" key={group.label + gi}>
-            <p className="console-nav-group-label">{t(group.label)}</p>
-            {links}
-          </div>
-        );
-      })}
+      {visibleNavGroups(groups, advanced, pathname).map((group) => (
+        <div className="console-nav-group" key={group.label}>
+          <p className="console-nav-group-label">{t(group.label)}</p>
+          {group.items.map((item) => {
+            const Icon = item.icon;
+            return (
+              <NavLink
+                key={item.path}
+                to={item.path ? `/console/${item.path}` : "/console"}
+                end={item.path === ""}
+                className={({ isActive }) => cn("console-nav-link", isActive && "is-active")}
+              >
+                <Icon className="console-nav-icon" aria-hidden />
+                {t(item.label)}
+              </NavLink>
+            );
+          })}
+        </div>
+      ))}
     </div>
   );
 }

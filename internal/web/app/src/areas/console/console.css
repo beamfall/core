@@ -64,20 +64,10 @@
 .console-nav-group-label {
   margin: 0 0 4px;
   padding: 0 10px;
-  font-size: 12.5px;
+  font-size: 12px;
   line-height: 18px;
-  font-weight: 550;
+  font-weight: 500;
   color: var(--text-muted);
-}
-
-summary.console-nav-group-label {
-  cursor: pointer;
-  list-style-position: inside;
-}
-
-summary.console-nav-group-label:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
 }
 
 .console-nav-link {
@@ -88,7 +78,7 @@ summary.console-nav-group-label:focus-visible {
   padding: 7px 10px;
   border-radius: 8px;
   color: var(--text-secondary);
-  font-size: 13.5px;
+  font-size: 14px;
   line-height: 18px;
   font-weight: 500;
   text-decoration: none;
@@ -162,7 +152,7 @@ a.console-status-cell:focus-visible {
 }
 
 .console-status-label {
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--text-muted);
 }
 
@@ -171,7 +161,7 @@ a.console-status-cell:focus-visible {
   align-items: center;
   gap: 8px;
   font-size: 15px;
-  font-weight: 550;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 
@@ -179,11 +169,11 @@ a.console-status-cell:focus-visible {
   width: 7px;
   height: 7px;
   border-radius: 999px;
-  background: var(--green-500);
+  background: var(--state-success, var(--state-direct));
 }
 
 .console-status-dot[data-tone="amber"] {
-  background: var(--amber-500);
+  background: var(--state-warning);
 }
 
 .console-status-dot[data-tone="neutral"] {
@@ -245,11 +235,11 @@ a.console-task:hover .console-task-icon {
 
 .console-task-title {
   font-size: 14px;
-  font-weight: 550;
+  font-weight: 500;
 }
 
 .console-task-lead {
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 18px;
   color: var(--text-muted);
 }
@@ -269,7 +259,7 @@ a.console-task:hover .console-task-icon {
   gap: 10px;
   padding: 12px 16px;
   color: var(--text-primary);
-  font-size: 13.5px;
+  font-size: 14px;
   line-height: 18px;
   text-decoration: none;
 }
@@ -291,28 +281,11 @@ a.console-task:hover .console-task-icon {
   outline-offset: -2px;
 }
 
-.console-disclosure {
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-surface);
-  background: var(--bg-surface);
-}
+/* --- Rail footer: the Normal/Advanced switch, then the active-session status --- */
 
-.console-disclosure > summary {
-  cursor: pointer;
-  padding: 12px 16px;
-  font-size: 13.5px;
-  line-height: 18px;
-  font-weight: 600;
-}
-
-.console-disclosure > summary:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
-}
-
-.console-disclosure-body {
-  border-top: 1px solid var(--border-subtle);
-  padding: 14px 16px;
+.console-advanced-switch {
+  align-self: stretch;
+  margin-bottom: 6px;
 }
 
 /* --- Active-session status: "Console unlocked" operator state, set in the
@@ -343,7 +316,7 @@ a.console-task:hover .console-task-icon {
   width: 7px;
   height: 7px;
   border-radius: 999px;
-  background: var(--green-500);
+  background: var(--state-success, var(--state-direct));
 }
 
 /* --- Section cards: dense, hairline-separated, restrained --- */
@@ -415,6 +388,17 @@ a.console-task:hover .console-task-icon {
   border-bottom: none;
 }
 
+/* At phone width a row's controls drop under the label instead of squeezing it. */
+@media (max-width: 767px) {
+  .console-control-row {
+    flex-wrap: wrap;
+  }
+
+  .console-control-row > :first-child {
+    flex: 1 1 12rem;
+  }
+}
+
 /* A plugin card's header row sits inside the card, so it keeps its inset. */
 .console-control-row.console-plugin-head {
   padding: 12px 16px;
@@ -435,52 +419,11 @@ a.console-task:hover .console-task-icon {
   color: var(--text-muted);
 }
 
-/* --- Dense data table — table-like rows, hover, aligned numerics --- */
+/* --- Data tables: the Table primitive governs rows, header and hover --- */
 
-.console-table {
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-surface);
-  overflow: hidden;
-}
-
-/* Tighten the shadcn table to Workbench density: shorter header, denser
- * cells, hairline rows, hover, and a quiet raised header band. */
-.console-table table {
-  font-size: 13px;
-}
-
-.console-table thead th {
-  height: 38px;
-  padding: 0 14px;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 12.5px;
-  font-weight: 550;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.console-table tbody td {
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border-subtle);
-  vertical-align: middle;
-}
-
-.console-table tbody tr:last-child td {
-  border-bottom: none;
-}
-
-.console-table tbody tr:hover {
-  background: var(--control-bg-hover);
-}
-
-/* The aggregate / total row reads heavier and is set off by a band. */
+/* The aggregate / total row reads heavier. */
 .console-table tbody tr.is-aggregate {
-  background: var(--bg-raised);
-  font-weight: 650;
-}
-
-.console-table tbody tr.is-aggregate:hover {
-  background: var(--bg-raised);
+  font-weight: 600;
 }
 
 .console-num {
@@ -520,7 +463,7 @@ a.console-task:hover .console-task-icon {
   margin: 0 0 8px;
   font-size: 13px;
   line-height: 18px;
-  font-weight: 650;
+  font-weight: 600;
   color: var(--text-primary);
 }
 
@@ -548,14 +491,12 @@ a.console-task:hover .console-task-icon {
 
 .console-empty {
   margin: 0;
-  padding: 14px 16px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-surface);
+  padding: 14px 0;
   color: var(--text-muted);
 }
 
 .console-empty-line {
-  font-size: 13.5px;
+  font-size: 14px;
   line-height: 20px;
 }
 
@@ -592,14 +533,14 @@ a.console-step:hover {
   height: 22px;
   border-radius: 999px;
   border: 1px solid var(--border-subtle);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 600;
   color: var(--text-muted);
 }
 
 .console-step.is-done .console-step-index {
   border-color: oklch(70% 0.14 150 / 60%);
-  color: var(--green-500);
+  color: var(--state-success, var(--state-direct));
 }
 
 .console-step-label {
@@ -611,8 +552,7 @@ a.console-step:hover {
 }
 
 /* ---------------------------------------------------------------------------
- * Job rows (mockup web-app/console-jobs-live.html): the flat job-row list and
- * the channel segmented toggle. Tokens only, no hex.
+ * Job rows (mockup web-app/console-jobs-live.html): the flat job-row list.
  * ------------------------------------------------------------------------- */
 /* Flat job-row list (mockup .job-row): name + progress bar + numeric + badge,
  * hairline-separated — replaces the dense data table for the live jobs panel. */
@@ -656,10 +596,10 @@ a.console-step:hover {
   transition: width 0.4s ease;
 }
 .console-jbar i.warn {
-  background: var(--amber-500);
+  background: var(--state-warning);
 }
 .console-jbar i.danger {
-  background: var(--red-500);
+  background: var(--state-danger);
 }
 
 .console-job-num {
@@ -713,7 +653,7 @@ a.console-step:hover {
   transition: width 0.4s ease;
 }
 .console-meter-track i.warn {
-  background: var(--amber-500);
+  background: var(--state-warning);
 }
 
 /* Stream-state dim: reconnecting/paused fade the last-good rows (fail-soft). */
@@ -722,34 +662,6 @@ a.console-step:hover {
 }
 .console-job-list[data-stream="paused"] {
   opacity: 0.5;
-}
-
-/* Channel segmented toggle (mockup .segmented): Stable / Beta pill switch. */
-.console-segmented {
-  display: inline-flex;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  overflow: hidden;
-}
-.console-segmented button {
-  border: 0;
-  padding: 6px 12px;
-  font-size: 12px;
-  background: var(--bg-raised);
-  color: var(--text-muted);
-  cursor: pointer;
-}
-.console-segmented button + button {
-  border-left: 1px solid var(--border-subtle);
-}
-.console-segmented button.sel {
-  background: var(--accent);
-  color: var(--color-primary-foreground);
-  font-weight: 600;
-}
-.console-segmented button:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 
 /* Dashboard (CORE-1195): live-session delivery, resource graphs, rankings. */
@@ -824,7 +736,7 @@ a.console-step:hover {
 }
 .console-chart-tick {
   fill: var(--text-muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 .console-chart-crosshair {
   stroke: var(--border-strong);

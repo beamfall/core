@@ -1,4 +1,6 @@
+import { X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Segmented } from "@/areas/console/Segmented";
 import {
   EmptyLine,
   ErrorLine,
@@ -113,7 +115,7 @@ export function TagsPage() {
         lead={t("tagsLead")}
         actions={
           <>
-            <StatusBadge state="neutral">{t("tagsCount", { count: liveTags.length })}</StatusBadge>
+            <span className="manage-count">{t("tagsCount", { count: liveTags.length })}</span>
             <Button type="button" variant="outline" size="sm" onClick={load}>
               {t("refresh")}
             </Button>
@@ -453,14 +455,16 @@ function AssignSection({ tags, onError }: { tags: TagInfo[]; onError: (message: 
                   className="inline-flex items-center gap-1.5 rounded-full border bg-muted/50 py-1 pl-3 pr-1.5 text-sm"
                 >
                   {tag.name}
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon"
                     aria-label={`${t("tagUnassign")} ${tag.name}`}
-                    className="text-muted-foreground hover:text-destructive"
+                    className="size-6 text-muted-foreground hover:bg-transparent hover:text-destructive"
                     onClick={() => onUnassign(tag.id)}
                   >
-                    ×
-                  </button>
+                    <X aria-hidden />
+                  </Button>
                 </span>
               ))}
             </div>
@@ -545,28 +549,12 @@ function BulkSection({ tags, onError }: { tags: TagInfo[]; onError: (message: st
       title={t("tagBulkHeading")}
       lead={t("tagBulkLead")}
       actions={
-        <div
-          className="inline-flex overflow-hidden rounded-md border"
-          role="group"
-          aria-label={t("tagBulkHeading")}
-        >
-          {BULK_MODES.map((m) => (
-            <button
-              key={m}
-              type="button"
-              aria-pressed={mode === m}
-              onClick={() => setMode(m)}
-              className={
-                "px-3 py-1.5 text-xs font-medium " +
-                (mode === m
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted/50 text-muted-foreground")
-              }
-            >
-              {modeLabel(m)}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          label={t("tagBulkHeading")}
+          value={mode}
+          onChange={setMode}
+          options={BULK_MODES.map((m) => ({ value: m, label: modeLabel(m) }))}
+        />
       }
     >
       <div className="space-y-3">
@@ -610,14 +598,16 @@ function BulkSection({ tags, onError }: { tags: TagInfo[]; onError: (message: st
                   className="inline-flex items-center gap-1.5 rounded-full border bg-muted/50 py-1 pl-3 pr-1.5 text-sm"
                 >
                   {tag.name}
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon"
                     aria-label={`${t("tagUnassign")} ${tag.name}`}
-                    className="text-muted-foreground hover:text-destructive"
+                    className="size-6 text-muted-foreground hover:bg-transparent hover:text-destructive"
                     onClick={() => toggle(id)}
                   >
-                    ×
-                  </button>
+                    <X aria-hidden />
+                  </Button>
                 </span>
               );
             })}

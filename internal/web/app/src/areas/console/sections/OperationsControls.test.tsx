@@ -1,7 +1,8 @@
 import "@testing-library/jest-dom/vitest";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setAdvancedSettings } from "@/lib/advancedSettings";
 import {
   cancelJob,
   fetchConsoleConfig,
@@ -77,6 +78,8 @@ function job(overrides: Partial<Record<string, unknown>> = {}) {
 }
 
 beforeEach(() => {
+  // Governor status, worker pool and compaction are Advanced (CORE-1117).
+  setAdvancedSettings(true);
   eventObservers = [];
   vi.mocked(fetchOperationsGovernor).mockReset().mockResolvedValue(governorAvailable);
   vi.mocked(fetchConsoleConfig).mockReset().mockResolvedValue(config);
@@ -106,6 +109,11 @@ function driveEventStream(data: unknown = {}) {
   const event = new MessageEvent("message", { data: JSON.stringify(data) });
   act(() => eventObservers.forEach((onEvent) => onEvent(event)));
 }
+
+afterEach(() => {
+  localStorage.clear();
+  setAdvancedSettings(false);
+});
 
 describe("OperationsControls", () => {
   it("renders the live governor posture from operationsGovernor", async () => {
@@ -176,8 +184,6 @@ describe("OperationsControls", () => {
     const user = userEvent.setup();
     renderPanel();
     await screen.findByLabelText("Events retention days");
-    // Governor settings sit behind the in-panel Advanced disclosure.
-    await user.click(screen.getByText("Advanced"));
 
     await user.click(screen.getByRole("button", { name: "Compact events now" }));
 
@@ -286,5 +292,28 @@ describe("OperationsControls", () => {
       expect(screen.queryByText(new RegExp(leak))).toBeNull();
     }
     expect(fetchJobEvents).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("OperationsControls in the Normal view (CORE-1117)", () => {
+  beforeEach(() => setAdvancedSettings(false));
+
+  it("shows the job queue and low-power switch and keeps a changed setting in view", async () => {
+    renderPanel();
+
+    expect(await screen.findByRole("switch", { name: "Low-power mode" })).toBeVisible();
+    // Four workers is not the default, so the field stays visible.
+    expect(await screen.findByLabelText("Background workers")).toBeVisible();
+    expect(screen.queryByLabelText("Events retention days")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Compact events now" })).toBeNull();
+    expect(screen.queryByText("Generation allowed")).toBeNull();
+  });
+
+  it("leaves the worker pool to Advanced at its default", async () => {
+    vi.mocked(fetchConsoleConfig).mockResolvedValue({ ...config, backgroundWorkers: 2 });
+    renderPanel();
+
+    await screen.findByRole("switch", { name: "Low-power mode" });
+    expect(screen.queryByLabelText("Background workers")).toBeNull();
   });
 });

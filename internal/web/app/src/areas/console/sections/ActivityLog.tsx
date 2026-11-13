@@ -197,7 +197,7 @@ export function ActivityLog() {
               ))}
             </DataTable>
           )}
-          <p className="text-[12px] text-muted-foreground" aria-live="polite">
+          <p className="text-xs text-muted-foreground" aria-live="polite">
             {ACTIVITY_TEXT.showing
               .replace("{shown}", String(shown.length))
               .replace("{total}", String(rows.length))}
@@ -236,7 +236,7 @@ function ActivityEntryRows({
           {at ? (
             <time dateTime={entry.occurredAt} title={utc} className="block">
               <span className="block">{formatRelativeTime(at, now, locale)}</span>
-              <span className="block text-[12px] text-muted-foreground">
+              <span className="block text-xs text-muted-foreground">
                 {formatLocalTime(at, locale)}
               </span>
             </time>
@@ -246,7 +246,7 @@ function ActivityEntryRows({
         </TableCell>
         <TableCell className="align-top">
           <span className="block font-medium">{row.sentence}</span>
-          <span className="mt-0.5 flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground">
+          <span className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <StatusBadge>{ACTIVITY_CATEGORY_LABELS[row.category]}</StatusBadge>
             {context}
           </span>
@@ -268,7 +268,7 @@ function ActivityEntryRows({
         <TableRow id={detailsID}>
           <TableCell />
           <TableCell colSpan={2}>
-            <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-[12px]">
+            <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-xs">
               <Detail term={ACTIVITY_TEXT.rawAction} value={entry.action} />
               <Detail term={ACTIVITY_TEXT.exactTime} value={utc} />
               <Detail

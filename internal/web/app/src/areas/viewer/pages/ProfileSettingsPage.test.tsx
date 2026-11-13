@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 import "@testing-library/jest-dom/vitest";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setAdvancedSettings } from "@/lib/advancedSettings";
 import { fetchClientPrefs, setClientPref } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
@@ -50,6 +51,15 @@ beforeEach(() => {
   setProfileKind("adult");
 });
 
+afterEach(() => {
+  localStorage.clear();
+  setAdvancedSettings(false);
+});
+
+async function showAdvanced(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole("switch", { name: "Show advanced settings" }));
+}
+
 function renderPage() {
   return render(
     <I18nProvider>
@@ -81,6 +91,7 @@ describe("ProfileSettingsPage", () => {
   it("persists the downstream audio preference", async () => {
     const user = userEvent.setup();
     renderPage();
+    await showAdvanced(user);
 
     await user.click(await screen.findByLabelText("Audio output"));
     await user.click(await screen.findByRole("option", { name: "Surround" }));
@@ -91,6 +102,7 @@ describe("ProfileSettingsPage", () => {
   it("persists the global skip interval preference", async () => {
     const user = userEvent.setup();
     renderPage();
+    await showAdvanced(user);
 
     await user.click(await screen.findByLabelText("Skip buttons"));
     await user.click(await screen.findByRole("option", { name: "30s" }));
@@ -101,11 +113,45 @@ describe("ProfileSettingsPage", () => {
   it("labels trim silence as long-pause removal and persists the toggle", async () => {
     const user = userEvent.setup();
     renderPage();
+    await showAdvanced(user);
 
     await user.click(await screen.findByRole("switch", { name: "Remove long pauses" }));
 
     expect(screen.getByText(/Smart speed is planned separately/i)).toBeInTheDocument();
     expect(setClientPref).toHaveBeenCalledWith("playback.trim-silence", "on");
+  });
+
+  it("leaves trim silence, skip interval and audio output to Advanced at their defaults", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByRole("switch", { name: "Skip intros" });
+    expect(screen.queryByRole("switch", { name: "Remove long pauses" })).toBeNull();
+    expect(screen.queryByLabelText("Skip buttons")).toBeNull();
+    expect(screen.queryByLabelText("Audio output")).toBeNull();
+
+    await showAdvanced(user);
+    expect(screen.getByRole("switch", { name: "Remove long pauses" })).toBeVisible();
+    expect(screen.getByLabelText("Skip buttons")).toBeVisible();
+    expect(screen.getByLabelText("Audio output")).toBeVisible();
+  });
+
+  it("keeps an Advanced setting in view while it is not at its default", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchClientPrefs).mockResolvedValue([
+      { key: "playback.trim-silence", value: "on" },
+      { key: "playback.skip-interval", value: "30" },
+    ]);
+    renderPage();
+
+    const trim = await screen.findByRole("switch", { name: "Remove long pauses" });
+    expect(screen.getByLabelText("Skip buttons")).toBeVisible();
+    expect(screen.queryByLabelText("Audio output")).toBeNull();
+
+    // Turning it back to the default does not make it vanish mid-edit.
+    await user.click(trim);
+    expect(setClientPref).toHaveBeenCalledWith("playback.trim-silence", "");
+    expect(screen.getByRole("switch", { name: "Remove long pauses" })).not.toBeChecked();
   });
 
   it("shows the recommendations opt-in for an adult Profile", async () => {

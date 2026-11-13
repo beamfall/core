@@ -66,7 +66,7 @@ export function EntityPage() {
         ) : (
           <div className="space-y-3">
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-bold text-[var(--text-primary)]">{entity.title}</h3>
+              <h3 className="text-sm font-semibold text-[var(--text-primary)]">{entity.title}</h3>
               <StatusBadge state="neutral">{entity.kind}</StatusBadge>
             </div>
             {entity.fields.length === 0 ? (

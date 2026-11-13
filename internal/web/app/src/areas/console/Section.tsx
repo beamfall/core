@@ -31,13 +31,3 @@ export function Section({
     </section>
   );
 }
-
-export function AdvancedDisclosure({ children }: { children: ReactNode }) {
-  const t = useT();
-  return (
-    <details className="console-disclosure">
-      <summary>{t("advanced")}</summary>
-      <div className="console-disclosure-body">{children}</div>
-    </details>
-  );
-}
