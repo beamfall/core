@@ -165,6 +165,7 @@ describe("PlayerPage failure and recovery states", () => {
       transcodeCapacityReached: expect.any(String),
       dolbyVisionUnavailable: expect.any(String),
       hdrToneMapUnavailable: expect.any(String),
+      sourceEndsEarly: expect.any(String),
     });
   });
 

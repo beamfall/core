@@ -13,6 +13,8 @@ export const playerRecoveryStrings = {
     playbackDolbyVisionUnavailable:
       "This Dolby Vision video can't be converted to play on this device.",
     playbackHdrToneMapUnavailable: "This server can't convert this HDR video for this device.",
+    playbackSourceEndsEarly:
+      "This file ends early. The rest of it is missing or damaged on the server.",
   },
   fr: {
     playerLoading: "Chargement…",
@@ -28,6 +30,8 @@ export const playerRecoveryStrings = {
       "Cette vidéo Dolby Vision ne peut pas être convertie pour cet appareil.",
     playbackHdrToneMapUnavailable:
       "Ce serveur ne peut pas convertir cette vidéo HDR pour cet appareil.",
+    playbackSourceEndsEarly:
+      "Ce fichier s’arrête avant la fin. Le reste est manquant ou endommagé sur le serveur.",
   },
   de: {
     playerLoading: "Wird geladen…",
@@ -43,6 +47,8 @@ export const playerRecoveryStrings = {
       "Dieses Dolby-Vision-Video kann für dieses Gerät nicht konvertiert werden.",
     playbackHdrToneMapUnavailable:
       "Dieser Server kann dieses HDR-Video für dieses Gerät nicht konvertieren.",
+    playbackSourceEndsEarly:
+      "Diese Datei endet zu früh. Der Rest fehlt auf dem Server oder ist beschädigt.",
   },
   es: {
     playerLoading: "Cargando…",
@@ -58,6 +64,8 @@ export const playerRecoveryStrings = {
       "Este video Dolby Vision no se puede convertir para este dispositivo.",
     playbackHdrToneMapUnavailable:
       "Este servidor no puede convertir este video HDR para este dispositivo.",
+    playbackSourceEndsEarly:
+      "Este archivo termina antes de tiempo. El resto falta o está dañado en el servidor.",
   },
   pt: {
     playerLoading: "Carregando…",
@@ -73,5 +81,7 @@ export const playerRecoveryStrings = {
       "Este vídeo Dolby Vision não pode ser convertido para este dispositivo.",
     playbackHdrToneMapUnavailable:
       "Este servidor não pode converter este vídeo HDR para este dispositivo.",
+    playbackSourceEndsEarly:
+      "Este arquivo termina antes do fim. O restante está ausente ou danificado no servidor.",
   },
 } as const;

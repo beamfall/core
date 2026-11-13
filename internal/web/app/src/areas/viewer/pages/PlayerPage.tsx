@@ -77,6 +77,7 @@ export function PlayerPage() {
       transcodeCapacityReached: t("playbackTranscodeCapacityReached"),
       dolbyVisionUnavailable: t("playbackDolbyVisionUnavailable"),
       hdrToneMapUnavailable: t("playbackHdrToneMapUnavailable"),
+      sourceEndsEarly: t("playbackSourceEndsEarly"),
     },
     startAtSeconds,
     // "" when a card queue drives playback but has nothing after this item, so

@@ -23,6 +23,7 @@ import {
 } from "../lib/transport";
 import {
   freshRecoveryBudget,
+  HLS_FRAG_LOAD_ERROR,
   HLS_NETWORK_ERROR,
   nextRecoveryStep,
   resetRecoveryBudget,
@@ -216,6 +217,26 @@ function hlsErrorStatus(data: unknown): number | undefined {
   return typeof networkDetails?.status === "number" ? networkDetails.status : undefined;
 }
 
+// A fragment's media-timeline span from an hls.js FRAG_BUFFERED or
+// FRAG_LOAD_ERROR payload (data.frag.start / duration).
+function hlsFragSpan(data: unknown): { start: number; end: number } | undefined {
+  if (!data || typeof data !== "object") return undefined;
+  const frag = Reflect.get(data, "frag") as { start?: number; duration?: number } | undefined;
+  if (typeof frag?.start !== "number" || !Number.isFinite(frag.start)) return undefined;
+  const duration = typeof frag.duration === "number" && frag.duration > 0 ? frag.duration : 0;
+  return { start: frag.start, end: frag.start + duration };
+}
+
+// Seconds of media buffered ahead of the playhead.
+function bufferedAhead(video: HTMLVideoElement): number {
+  const ranges = video.buffered;
+  const now = video.currentTime;
+  for (let i = 0; i < (ranges?.length ?? 0); i += 1) {
+    if (ranges.start(i) <= now + 0.25 && ranges.end(i) > now) return ranges.end(i) - now;
+  }
+  return 0;
+}
+
 // A stream-bytes refusal: 401 for a stale or relocked Stream Token, 410 for a
 // stream session the server ended (revocation, idle reap, preemption). On its
 // own it is never proof that the revealed identity ended (CORE-1359): the
@@ -330,6 +351,8 @@ export function usePlayer(
     mediaFileMissing?: string;
     /** The item is gone or outside this Profile (reason media-unavailable / 404). */
     mediaNotAvailable?: string;
+    /** The stream stops before the item's end: the file is truncated or damaged. */
+    sourceEndsEarly?: string;
   } & UnavailableReasonMessages,
   startAtSeconds = 0,
   /** A card queue's next item, declared to playback-info for a pre-minted handoff; "" when that queue has none. */
@@ -756,6 +779,10 @@ export function usePlayer(
               renegotiate(reloadHls);
               return;
             }
+            if (status === 404 && data?.details === HLS_FRAG_LOAD_ERROR) {
+              stopAtSourceEnd(hlsFragSpan(data)?.start ?? video.currentTime + bufferedAhead(video));
+              return;
+            }
             if (!data || !data.fatal) return;
             if (offline && data.type === HLS_NETWORK_ERROR) {
               waitForNetwork(resumeLoad);
@@ -779,11 +806,64 @@ export function usePlayer(
             if (step.swapAudioCodec) hls.swapAudioCodec();
             hls.recoverMediaError();
           });
-          hls.on(Hls.Events.FRAG_BUFFERED, () => {
+          // Only forward progress refills the budget: a fragment buffered past
+          // the furthest point reached since the last seek. A recovery that
+          // re-buffers the same fragment and fails again on the next must run
+          // the budget down, not loop on it forever.
+          let progressMark = Number.NEGATIVE_INFINITY;
+          hls.on(Hls.Events.FRAG_BUFFERED, (_event, data) => {
+            const span = hlsFragSpan(data);
+            if (span) {
+              if (span.end <= progressMark) return;
+              progressMark = span.end;
+            }
             resetRecoveryBudget(recovery);
             renegotiatedSinceProgress = false;
             setRecovering(false);
           });
+          // A fragment 404 is the server saying the source has no media there
+          // (a truncated or damaged file; past-the-end segments are refused
+          // with 404). hls.js would step down every rendition and then fail
+          // with no reason, so stop loading at the cut, play what is buffered,
+          // and say why once the playhead reaches it. A seek back before the
+          // cut loads again; a seek past it explains at once.
+          let sourceEndsAt: number | null = null;
+          let stoppedAtSourceEnd = false;
+          const showSourceEndsEarly = () => {
+            destroyHls();
+            showMessage(messagesRef.current.sourceEndsEarly ?? messagesRef.current.playbackFailed);
+          };
+          // With loading stopped, nothing more will arrive: an empty buffer
+          // ahead is the cut even when the last fragment ends short of it.
+          const atSourceEnd = () =>
+            sourceEndsAt !== null &&
+            (video.currentTime >= sourceEndsAt - 0.5 ||
+              (stoppedAtSourceEnd && bufferedAhead(video) < 0.5));
+          const stopAtSourceEnd = (at: number) => {
+            sourceEndsAt = sourceEndsAt === null ? at : Math.min(sourceEndsAt, at);
+            stoppedAtSourceEnd = true;
+            hls.stopLoad();
+            setRecovering(false);
+            if (video.paused ? video.currentTime >= sourceEndsAt - 0.5 : atSourceEnd()) {
+              showSourceEndsEarly();
+            }
+          };
+          const onSourceEndWaiting = () => {
+            if (hlsRef.current === hls && atSourceEnd()) showSourceEndsEarly();
+          };
+          const onSourceEndSeeking = () => {
+            if (hlsRef.current !== hls) return;
+            progressMark = video.currentTime;
+            if (sourceEndsAt === null) return;
+            if (video.currentTime >= sourceEndsAt - 0.5) showSourceEndsEarly();
+            else {
+              stoppedAtSourceEnd = false;
+              hls.startLoad(video.currentTime);
+            }
+          };
+          videoListeners.push(["waiting", onSourceEndWaiting], ["seeking", onSourceEndSeeking]);
+          video.addEventListener("waiting", onSourceEndWaiting);
+          video.addEventListener("seeking", onSourceEndSeeking);
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
             // One-shot: a later manifest parse (token refresh) must not restore an
             // earlier pick over the viewer's current choice (see reloadHls).

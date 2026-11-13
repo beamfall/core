@@ -58,8 +58,9 @@ const { fakeHlsInstances } = vi.hoisted(() => ({
       subtitleTracks: Array<{ lang?: string; name?: string }>;
       audioTracks: Array<{ lang?: string; name?: string }>;
     };
-    emitFragBuffered: () => void;
+    emitFragBuffered: (frag?: { start: number; duration: number }) => void;
     startLoad: ReturnType<typeof vi.fn>;
+    stopLoad: ReturnType<typeof vi.fn>;
     recoverMediaError: ReturnType<typeof vi.fn>;
     swapAudioCodec: ReturnType<typeof vi.fn>;
     config: { startPosition: number };
@@ -91,10 +92,12 @@ vi.mock("hls.js", () => {
     subtitleTracks: Array<{ lang?: string; name?: string }> = [];
     audioTracks: Array<{ lang?: string; name?: string }> = [];
     startLoad = vi.fn();
+    stopLoad = vi.fn();
     recoverMediaError = vi.fn();
     swapAudioCodec = vi.fn();
     config: { startPosition: number };
     sources: string[] = [];
+    private nextFragStart = 0;
 
     constructor(userConfig?: { startPosition?: number }) {
       this.config = { startPosition: userConfig?.startPosition ?? -1 };
@@ -105,8 +108,14 @@ vi.mock("hls.js", () => {
         emit,
         destroyed: () => this.isDestroyed,
         tracks: this,
-        emitFragBuffered: () => emit("fragBuffered", {}),
+        // Each call without a frag buffers the next 4s fragment: forward progress.
+        emitFragBuffered: (frag?: { start: number; duration: number }) => {
+          const next = frag ?? { start: this.nextFragStart, duration: 4 };
+          this.nextFragStart = Math.max(this.nextFragStart, next.start + next.duration);
+          emit("fragBuffered", { frag: next });
+        },
         startLoad: this.startLoad,
+        stopLoad: this.stopLoad,
         recoverMediaError: this.recoverMediaError,
         swapAudioCodec: this.swapAudioCodec,
         config: this.config,
@@ -136,6 +145,7 @@ const messages = {
   terminalUnavailable: "terminal unavailable",
   mediaNotAvailable: "media not available",
   streamLimitReached: "stream limit reached",
+  sourceEndsEarly: "source ends early",
 };
 
 function Harness({
@@ -1679,6 +1689,97 @@ describe("usePlayer", () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+
+    it("does not refill the budget when a recovery only re-buffers the same fragment", async () => {
+      const hls = await renderHlsPlaying();
+      const firstFragment = { start: 0, duration: 4 };
+      act(() => hls.emitFragBuffered(firstFragment));
+      vi.useFakeTimers();
+      try {
+        for (const delay of [1000, 2000, 4000]) {
+          act(() => hls.emitError(networkError));
+          await act(() => vi.advanceTimersByTimeAsync(delay));
+          // The reload buffers the fragment already played, then fails on the next.
+          act(() => hls.emitFragBuffered(firstFragment));
+        }
+        expect(screen.getByTestId("recovering")).toHaveTextContent("yes");
+        act(() => hls.emitError(networkError));
+        expect(hls.destroyed()).toBe(true);
+        expect(screen.getByTestId("message")).toHaveTextContent("playback failed");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    describe("a source that ends early (fragment 404)", () => {
+      const fragmentMissing = {
+        fatal: false,
+        type: "networkError",
+        details: "fragLoadError",
+        response: { code: 404 },
+        frag: { start: 4, duration: 4 },
+      };
+      function bufferUntil(video: HTMLVideoElement, end: number) {
+        Object.defineProperty(video, "buffered", {
+          configurable: true,
+          value: { length: 1, start: () => 0, end: () => end },
+        });
+      }
+
+      it("stops loading, plays what is buffered, then says why at the cut", async () => {
+        const hls = await renderHlsPlaying();
+        const video = screen.getByTestId("player") as HTMLVideoElement;
+        bufferUntil(video, 4);
+        video.currentTime = 2;
+        act(() => hls.emitError(fragmentMissing));
+        expect(hls.stopLoad).toHaveBeenCalledTimes(1);
+        expect(hls.startLoad).not.toHaveBeenCalled();
+        expect(screen.getByTestId("phase")).toHaveTextContent("playing");
+        // The level fallback's later errors change nothing.
+        act(() => hls.emitError({ ...fragmentMissing, fatal: true }));
+        expect(screen.getByTestId("phase")).toHaveTextContent("playing");
+        video.currentTime = 3.9;
+        act(() => {
+          fireEvent.waiting(video);
+        });
+        expect(hls.destroyed()).toBe(true);
+        expect(screen.getByTestId("phase")).toHaveTextContent("message");
+        expect(screen.getByTestId("message")).toHaveTextContent("source ends early");
+      });
+
+      it("explains at once when the playhead is already at the cut", async () => {
+        const hls = await renderHlsPlaying();
+        const video = screen.getByTestId("player") as HTMLVideoElement;
+        bufferUntil(video, 4);
+        video.currentTime = 3.8;
+        act(() => hls.emitError(fragmentMissing));
+        expect(screen.getByTestId("message")).toHaveTextContent("source ends early");
+      });
+
+      it("loads again after a seek back before the cut, and explains after a seek past it", async () => {
+        const hls = await renderHlsPlaying();
+        const video = screen.getByTestId("player") as HTMLVideoElement;
+        bufferUntil(video, 4);
+        video.currentTime = 2;
+        act(() => hls.emitError(fragmentMissing));
+        video.currentTime = 1;
+        act(() => {
+          fireEvent.seeking(video);
+        });
+        expect(hls.startLoad).toHaveBeenCalledWith(1);
+        // Loading again: an empty buffer is not the cut.
+        bufferUntil(video, 0);
+        act(() => {
+          fireEvent.waiting(video);
+        });
+        expect(screen.getByTestId("phase")).toHaveTextContent("playing");
+        video.currentTime = 90;
+        act(() => {
+          fireEvent.seeking(video);
+        });
+        expect(screen.getByTestId("message")).toHaveTextContent("source ends early");
+      });
     });
 
     it("recovers a fatal media error through recoverMediaError, then with an audio codec swap", async () => {

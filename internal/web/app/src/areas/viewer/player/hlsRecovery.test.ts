@@ -2,6 +2,7 @@ import Hls from "hls.js";
 import { describe, expect, it } from "vitest";
 import {
   freshRecoveryBudget,
+  HLS_FRAG_LOAD_ERROR,
   HLS_MEDIA_ERROR,
   HLS_NETWORK_ERROR,
   nextRecoveryStep,
@@ -13,6 +14,7 @@ describe("hlsRecovery", () => {
   it("pins the inlined error-type strings to the real hls.js enum", () => {
     expect(HLS_NETWORK_ERROR).toBe(Hls.ErrorTypes.NETWORK_ERROR);
     expect(HLS_MEDIA_ERROR).toBe(Hls.ErrorTypes.MEDIA_ERROR);
+    expect(HLS_FRAG_LOAD_ERROR).toBe(Hls.ErrorDetails.FRAG_LOAD_ERROR);
   });
 
   it("retries network errors with 1s/2s/4s backoff, then destroys", () => {
