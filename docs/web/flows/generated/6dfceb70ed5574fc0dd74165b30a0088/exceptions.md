@@ -1,0 +1,9 @@
+# Manage bulk edit and organize with preview and confirm — exceptions
+
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+
+<!-- flowdocs:paragraph:f2a4d5d56365aa1a035e758ee644bde1 -->
+Error reachability, rescue behavior and completeness are unresolved\.
+
+Source: internal/web/app/src/areas/manage/pages/BulkOpsPage\.tsx:107; symbol: BulkEditSection; span SHA256: 2fdd3a354bb9959f851d60892c33a2f153d82e32ddbe401be5706fc20f31eb93.
+

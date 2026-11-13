@@ -1,0 +1,9 @@
+# Manage artwork slots and candidates — related-flows
+
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+
+<!-- flowdocs:paragraph:5342288643077fdffd2a9e14af0cbb73 -->
+Relations are static lexical candidates; computed dispatch remains unresolved\.
+
+Source: internal/web/app/src/areas/manage/pages/ArtworkPage\.tsx:35; symbol: ArtworkPage; span SHA256: 4de7fcc23356a35273de7275a550023fc96b76a9ce3b9990683a7e6a851f080d.
+

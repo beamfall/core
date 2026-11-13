@@ -31,6 +31,7 @@ Generated machine-readable API references live beside the API reference as `llms
 - [Testing architecture](architecture/TESTING.md)
 - [Domain-language index](../CONTEXT.md)
 - [Glossary](glossary/core-platform-entities.md)
+- [Web app flows and sitemap](web/flows/README.md) (Corvint flow documentation)
 
 ## Product and interface contracts
 
