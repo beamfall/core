@@ -33,6 +33,11 @@
   --radius-xl: var(--radius-surface);
 
   --font-sans: var(--font-ui);
+
+  /* The dense step of the type scale (12 meta · 13 dense · 14 control · 15
+   * body · 16 · 20 · 24). `text-dense` replaces scattered text-[13px]. */
+  --text-dense: 0.8125rem;
+  --text-dense--line-height: 1.125rem;
 }
 
 /* Web surface layer. The shared design-system tokens (tokens.css) stay
@@ -46,6 +51,14 @@
   --radius-field: 10px;
   --field-height: 2.5rem;
   --surface-gap: 1.5rem;
+}
+
+/* tokens.css defines --border-strong only for the Manage register, so a
+ * viewer-register `var(--border-strong)` fell back to currentColor (a white
+ * frame). Give the Cinema register the same emphasis hairline; the Manage
+ * blocks in tokens.css keep their own value. */
+:root:not([data-register="manage"]) {
+  --border-strong: color-mix(in oklab, var(--line) 78%, var(--text-primary));
 }
 
 * {
