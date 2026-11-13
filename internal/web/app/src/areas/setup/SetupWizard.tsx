@@ -3,9 +3,7 @@ import {
   Check,
   Clapperboard,
   Film,
-  House,
   LoaderCircle,
-  LockKeyhole,
   type LucideIcon,
   Music,
   Podcast,
@@ -48,7 +46,7 @@ import {
 // token-gated first-run flow that ORCHESTRATES existing server mutations — it
 // never duplicates them. CORE-1114 restyle: a full-bleed branded
 // backdrop (static CSS; animated effects belong in Oscillux), one centred step
-// with a segmented progress bar, icon tiles for choices, and the cinema token
+// with a segmented progress bar, selectable tiles for choices, and the cinema token
 // palette via the app's shadcn semantic classes.
 //
 // Visual step order: token → admin password → sign-in security → owner →
@@ -109,12 +107,6 @@ const PLUGIN_ICON: Record<string, LucideIcon> = {
   filmtv: Clapperboard,
   music: Music,
   podcasts: Podcast,
-};
-
-const PLUGIN_LABEL: Record<string, StringKey> = {
-  filmtv: "setupPluginFilmTV",
-  music: "setupPluginMusic",
-  podcasts: "setupPluginPodcast",
 };
 
 function consumeSetupToken(): string {
@@ -605,6 +597,9 @@ export function SetupWizard() {
   }
 
   const isScanStep = step === STEP_SCAN;
+  const scanTotal = scanJob?.progress?.total ?? 0;
+  const scanFraction =
+    scanTotal > 0 ? Math.min(1, (scanJob?.progress?.current ?? 0) / scanTotal) : null;
   const isLast = isScanStep;
 
   // Hold the body blank while the resume probe runs so a resumed server never
@@ -631,31 +626,32 @@ export function SetupWizard() {
             {t("setupBrandSuffix")}
           </span>
         </div>
-        <span className="text-[13px] text-muted-foreground">{t("setupFreshServer")}</span>
       </header>
 
-      <div className="flex flex-1 items-start justify-center px-4 pb-10 pt-2 sm:items-center sm:px-8 sm:pt-0">
-        <div className="w-full max-w-[600px]">
+      {/* Top-aligned at a fixed offset so the card never jumps between steps. */}
+      <div className="flex flex-1 justify-center px-4 pb-12 pt-2 sm:px-8 sm:pt-[8vh]">
+        <div className="w-full max-w-[560px]">
           {/* Progress: one segment per visible step; names stay for assistive tech. */}
-          <ol className="m-0 mb-6 flex list-none gap-1.5 p-0" aria-label={t("setupBrandSuffix")}>
-            {visibleSteps.map((key, i) => (
-              <li
-                key={key}
-                aria-current={i === visibleIndex ? "step" : undefined}
-                className={cn(
-                  "h-1 flex-1 rounded-full bg-white/10 transition-colors duration-500",
-                  i < visibleIndex && "bg-primary/70",
-                  i === visibleIndex && "bg-primary",
-                )}
-              >
-                <span className="sr-only">{t(key)}</span>
-              </li>
-            ))}
-          </ol>
-
-          <div className="mb-3 flex items-center justify-between text-[13px]">
-            <span className="font-medium text-foreground/80">{t(STEP_KEYS[step])}</span>
-            <span className="text-muted-foreground">
+          <div className="mb-5 flex items-center gap-4">
+            <ol
+              className="m-0 flex flex-1 list-none gap-1.5 p-0"
+              aria-label={t("setupBrandSuffix")}
+            >
+              {visibleSteps.map((key, i) => (
+                <li
+                  key={key}
+                  aria-current={i === visibleIndex ? "step" : undefined}
+                  className={cn(
+                    "h-1 flex-1 rounded-full bg-white/10 transition-colors duration-200",
+                    i < visibleIndex && "bg-primary/70",
+                    i === visibleIndex && "bg-primary",
+                  )}
+                >
+                  <span className="sr-only">{t(key)}</span>
+                </li>
+              ))}
+            </ol>
+            <span className="shrink-0 text-[13px] tabular-nums text-muted-foreground">
               {t("setupStepCount", { n: visibleIndex + 1, total: visibleSteps.length })}
             </span>
           </div>
@@ -672,7 +668,7 @@ export function SetupWizard() {
             key={step}
             onSubmit={onNext}
             noValidate
-            className="animate-in fade-in slide-in-from-bottom-2 rounded-2xl border border-white/10 bg-card p-5 shadow-[0_24px_60px_-28px_rgba(0,0,0,0.7)] duration-300 sm:p-8"
+            className="animate-in fade-in rounded-[14px] border border-white/10 bg-card p-5 shadow-[0_24px_60px_-28px_rgba(0,0,0,0.7)] duration-200 sm:p-8"
           >
             {step === 0 && (
               <section>
@@ -687,7 +683,7 @@ export function SetupWizard() {
                     setToken(e.target.value);
                     setTokenError(null);
                   }}
-                  className={cn(FIELD, "font-mono tracking-wider")}
+                  className={cn(FIELD, "font-mono")}
                   autoComplete="off"
                   autoCapitalize="off"
                   autoCorrect="off"
@@ -703,7 +699,7 @@ export function SetupWizard() {
                     id={errorID}
                     role="alert"
                     tabIndex={-1}
-                    className="mt-2 text-sm text-destructive outline-none"
+                    className="mt-2 text-sm text-(--state-danger) outline-none"
                   >
                     {tokenError}
                   </p>
@@ -751,41 +747,36 @@ export function SetupWizard() {
                 <StepHeading title={t("setupSecurityTitle")} lead={t("setupSecurityLead")} />
                 <div className="grid gap-3 sm:grid-cols-2">
                   {SECURITY_MODES.map(({ mode, label, detail }) => {
-                    const Icon = mode === "home" ? House : LockKeyhole;
                     const sel = securityMode === mode;
                     return (
                       <label
                         key={mode}
                         className={cn(
                           TILE,
-                          "items-start gap-2 p-4 text-left",
+                          "flex-row items-start gap-3 p-4 text-left has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-primary",
                           sel && TILE_SELECTED,
                         )}
                       >
-                        <span className="flex w-full items-center justify-between">
-                          <Icon
-                            aria-hidden
-                            className={cn("size-5", sel ? "text-primary" : "text-muted-foreground")}
-                          />
-                          <input
-                            type="radio"
-                            name="setup-security-mode"
-                            value={mode}
-                            checked={sel}
-                            onChange={() => setSecurityMode(mode)}
-                            className="size-4 accent-[var(--accent)]"
-                          />
-                        </span>
-                        <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                          {t(label)}
-                          {mode === "home" && (
-                            <span className="text-xs font-normal text-primary">
-                              {t("setupSecurityRecommended")}
-                            </span>
-                          )}
-                        </span>
-                        <span className="text-xs leading-relaxed text-muted-foreground">
-                          {t(detail)}
+                        <input
+                          type="radio"
+                          name="setup-security-mode"
+                          value={mode}
+                          checked={sel}
+                          onChange={() => setSecurityMode(mode)}
+                          className="mt-0.5 size-4 shrink-0 accent-[var(--accent)] focus-visible:outline-none"
+                        />
+                        <span className="flex flex-col gap-1">
+                          <span className="flex items-center gap-2 text-[15px] font-semibold text-foreground">
+                            {t(label)}
+                            {mode === "home" && (
+                              <span className="text-[13px] font-normal text-primary">
+                                {t("setupSecurityRecommended")}
+                              </span>
+                            )}
+                          </span>
+                          <span className="text-[13px] leading-snug text-muted-foreground">
+                            {t(detail)}
+                          </span>
                         </span>
                       </label>
                     );
@@ -798,19 +789,20 @@ export function SetupWizard() {
               <section>
                 <StepHeading title={t("setupLibraryTitle")} lead={t("setupLibraryLead")} />
                 <Label className={FIELD_LABEL}>{t("setupLibraryType")}</Label>
-                <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-5">
+                <div className="mb-5 grid grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-2">
                   {libraryTypes.map((spec) => {
                     const sel = spec.type === libraryType;
                     const Icon = TYPE_ICON[spec.type];
                     return (
-                      <button
+                      <Button
                         key={spec.type}
                         type="button"
+                        variant="outline"
                         onClick={() => setLibraryType(spec.type)}
                         aria-pressed={sel}
                         className={cn(
                           TILE,
-                          "items-center gap-1.5 px-2 py-3.5 text-center",
+                          "h-auto items-center gap-2 px-2 py-3.5 text-center shadow-none",
                           sel && TILE_SELECTED,
                         )}
                       >
@@ -821,25 +813,11 @@ export function SetupWizard() {
                         <span className="text-[13px] font-semibold">
                           {t(TYPE_LABEL[spec.type])}
                         </span>
-                        <span className="text-[10.5px] text-muted-foreground">
-                          {t(PLUGIN_LABEL[spec.pluginID])}
-                        </span>
-                      </button>
+                      </Button>
                     );
                   })}
                 </div>
-                <Label htmlFor={libNameID} className={FIELD_LABEL}>
-                  {t("setupLibraryName")}
-                </Label>
-                <Input
-                  id={libNameID}
-                  value={libraryName}
-                  onChange={(e) => setLibraryName(e.target.value)}
-                  className={FIELD}
-                  placeholder={t(TYPE_LABEL[libraryType])}
-                  autoFocus
-                />
-                <Label htmlFor={rootID} className={cn(FIELD_LABEL, "mt-4")}>
+                <Label htmlFor={rootID} className={FIELD_LABEL}>
                   {t("setupLibraryRoot")}
                 </Label>
                 <div className="flex items-stretch gap-2">
@@ -847,15 +825,17 @@ export function SetupWizard() {
                     id={rootID}
                     value={rootPath}
                     onChange={(e) => setRootPath(e.target.value)}
-                    className={cn(FIELD, "flex-1 font-mono")}
-                    placeholder="/media/films"
+                    className={cn(FIELD, "min-w-0 flex-1 font-mono")}
+                    autoComplete="off"
+                    spellCheck={false}
                     required
+                    autoFocus
                     disabled={firstLibraryProgress.rootsSet}
                   />
                   <Button
                     type="button"
                     variant="outline"
-                    className="h-11 rounded-xl"
+                    className="h-11 shrink-0 rounded-[10px] border-white/10 bg-white/[0.04] px-4"
                     onClick={openPicker}
                     aria-expanded={pickerNode != null}
                     disabled={firstLibraryProgress.rootsSet}
@@ -880,6 +860,17 @@ export function SetupWizard() {
                     }}
                   />
                 )}
+
+                <Label htmlFor={libNameID} className={cn(FIELD_LABEL, "mt-5")}>
+                  {t("setupLibraryName")}
+                </Label>
+                <Input
+                  id={libNameID}
+                  value={libraryName}
+                  onChange={(e) => setLibraryName(e.target.value)}
+                  className={FIELD}
+                  placeholder={t(TYPE_LABEL[libraryType])}
+                />
               </section>
             )}
 
@@ -940,15 +931,11 @@ export function SetupWizard() {
                 )}
                 {neededKeys.length > 0 && (
                   <div className="mt-6 border-t border-white/10 pt-5">
-                    <div className="flex items-start gap-3">
-                      <div className="space-y-1">
-                        <h2 className="m-0 text-sm font-semibold">{t("setupKeysTitle")}</h2>
-                        <p className="m-0 text-[12.5px] leading-snug text-muted-foreground">
-                          {t("setupKeysLead")}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="mt-3 grid gap-3">
+                    <h2 className="m-0 text-[15px] font-semibold">{t("setupKeysTitle")}</h2>
+                    <p className="m-0 mt-1 text-[13px] leading-snug text-muted-foreground">
+                      {t("setupKeysLead")}
+                    </p>
+                    <div className="mt-4 grid gap-4">
                       {neededKeys.map((key) => {
                         const fieldId = `setup-key-${key.authRef}`;
                         return (
@@ -970,7 +957,7 @@ export function SetupWizard() {
                                 }))
                               }
                             />
-                            <p className="mb-0 mt-1.5 text-[11.5px] leading-snug text-muted-foreground">
+                            <p className="mb-0 mt-1.5 text-[13px] leading-snug text-muted-foreground">
                               {t("pluginKeySentTo", { hosts: key.hosts.join(", ") })}
                             </p>
                           </div>
@@ -981,9 +968,9 @@ export function SetupWizard() {
                 )}
                 <div className="mt-6 border-t border-white/10 pt-5">
                   <div className="flex items-start justify-between gap-4">
-                    <div className="space-y-1">
-                      <h2 className="m-0 text-sm font-semibold">{t("setupUpdateTitle")}</h2>
-                      <p className="m-0 text-[12.5px] leading-snug text-muted-foreground">
+                    <div>
+                      <h2 className="m-0 text-[15px] font-semibold">{t("setupUpdateTitle")}</h2>
+                      <p className="m-0 mt-1 text-[13px] leading-snug text-muted-foreground">
                         {t("setupUpdateLead")}
                       </p>
                     </div>
@@ -993,25 +980,29 @@ export function SetupWizard() {
                       aria-label={t("setupUpdateToggle")}
                     />
                   </div>
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    {(["stable", "beta"] as const).map((channel) => (
-                      <button
-                        key={channel}
-                        type="button"
-                        disabled={!updateCheckEnabled}
-                        aria-pressed={updateCheckChannel === channel}
-                        onClick={() => setUpdateCheckChannel(channel)}
-                        className={cn(
-                          "rounded-lg border border-white/10 px-3.5 py-1.5 text-[13px] font-medium transition-colors hover:border-white/25 disabled:opacity-45",
-                          updateCheckChannel === channel &&
-                            "border-primary bg-primary/10 text-primary",
-                        )}
-                      >
-                        {t(channel === "stable" ? "updateChannelStable" : "updateChannelBeta")}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="mb-0 mt-2.5 text-[11.5px] leading-snug text-muted-foreground">
+                  {/* Channel only matters once checks are on. */}
+                  {updateCheckEnabled && (
+                    <div className="mt-3 grid grid-cols-2 gap-2 sm:w-64">
+                      {(["stable", "beta"] as const).map((channel) => (
+                        <Button
+                          key={channel}
+                          type="button"
+                          variant="outline"
+                          size="lg"
+                          aria-pressed={updateCheckChannel === channel}
+                          onClick={() => setUpdateCheckChannel(channel)}
+                          className={cn(
+                            TILE,
+                            "flex-row items-center justify-center px-4 shadow-none",
+                            updateCheckChannel === channel && cn(TILE_SELECTED, "text-primary"),
+                          )}
+                        >
+                          {t(channel === "stable" ? "updateChannelStable" : "updateChannelBeta")}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
+                  <p className="mb-0 mt-3 text-[13px] leading-snug text-muted-foreground">
                     {t("setupUpdateDisclosure")}
                   </p>
                 </div>
@@ -1039,15 +1030,34 @@ export function SetupWizard() {
                     </p>
                   </div>
                 </div>
+                {scanFraction != null && (
+                  <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/10" aria-hidden>
+                    <div
+                      className="h-full rounded-full bg-primary transition-[width] duration-200"
+                      style={{ width: `${Math.round(scanFraction * 100)}%` }}
+                    />
+                  </div>
+                )}
               </section>
             )}
 
-            <div className="mt-7 flex items-center gap-2">
+            {error && step !== 0 && (
+              <p
+                ref={errorRef}
+                id={errorID}
+                role="alert"
+                tabIndex={-1}
+                className="mb-0 mt-5 text-sm text-(--state-danger) outline-none"
+              >
+                {error}
+              </p>
+            )}
+            <div className="mt-6 flex items-center gap-2">
               {step > firstStep && !bootstrapped && (
                 <Button
                   type="button"
                   variant="ghost"
-                  className="h-11 rounded-xl px-5"
+                  className="h-11 rounded-[10px] px-5"
                   onClick={onBack}
                   disabled={busy}
                 >
@@ -1057,24 +1067,12 @@ export function SetupWizard() {
               <Button
                 type="submit"
                 disabled={busy}
-                className="ml-auto h-11 min-w-[148px] rounded-xl px-6 text-[15px] font-semibold"
+                className="ml-auto h-11 min-w-[148px] rounded-[10px] px-6 text-[15px] font-semibold"
               >
-                {busy && <LoaderCircle aria-hidden className="size-4 animate-spin" />}
+                {busy && <LoaderCircle aria-hidden className="size-4 motion-safe:animate-spin" />}
                 {busy ? t("setupWorking") : isLast ? t("setupBrowseReady") : t("setupContinue")}
               </Button>
             </div>
-
-            {error && step !== 0 && (
-              <p
-                ref={errorRef}
-                id={errorID}
-                role="alert"
-                tabIndex={-1}
-                className="mt-3 text-sm text-destructive outline-none"
-              >
-                {error}
-              </p>
-            )}
           </form>
         </div>
       </div>
@@ -1082,22 +1080,18 @@ export function SetupWizard() {
   );
 }
 
-const FIELD = "h-11 rounded-xl border-white/10 bg-white/[0.04] text-[15px]";
+const FIELD = "h-11 rounded-[10px] border-white/10 bg-white/[0.04] text-[15px]";
 const FIELD_LABEL = "mb-2 block text-[13px] font-medium text-foreground/80";
 const TILE =
-  "flex flex-col rounded-xl border border-white/10 bg-white/[0.03] transition-all duration-200 hover:border-white/25 hover:bg-white/[0.06] cursor-pointer";
+  "flex flex-col rounded-[10px] border border-white/10 bg-white/[0.03] transition-all duration-200 hover:border-white/25 hover:bg-white/[0.06] cursor-pointer";
 const TILE_SELECTED =
   "border-primary bg-primary/10 shadow-[inset_0_0_0_1px_var(--accent)] hover:border-primary hover:bg-primary/10";
 
 function StepHeading({ title, lead }: { title: string; lead: string }) {
   return (
     <div className="mb-6">
-      <div>
-        <h1 className="m-0 text-2xl font-semibold tracking-tight sm:text-[28px] sm:leading-tight">
-          {title}
-        </h1>
-        <p className="mb-0 mt-1.5 text-sm leading-relaxed text-muted-foreground">{lead}</p>
-      </div>
+      <h1 className="m-0 text-2xl font-semibold leading-tight tracking-tight">{title}</h1>
+      <p className="mb-0 mt-2 text-[15px] leading-relaxed text-muted-foreground">{lead}</p>
     </div>
   );
 }

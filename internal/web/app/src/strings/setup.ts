@@ -2,7 +2,6 @@ export const setupStrings = {
   en: {
     // First-run setup wizard (WEB-1, ADR-0007 §2).
     setupBrandSuffix: "Server setup",
-    setupFreshServer: "New server",
     setupUnlockedBanner: "Server claimed. You're the owner now.",
     setupRailToken: "Unlock",
     setupRailAdminPassword: "Admin password",
@@ -14,28 +13,27 @@ export const setupStrings = {
     setupStepCount: "Step {n} of {total}",
     setupTokenTitle: "Unlock with the setup token",
     setupTokenLead:
-      "Paste the one-time code from the server log. It proves you can reach the server itself before anyone sets an admin password.",
+      "Paste the one-time code from the server log. It proves you can reach the server before anyone sets an admin password.",
     setupToken: "Setup token",
     setupTokenInvalid: "Setup token invalid or already used.",
     setupAdminPasswordTitle: "Set the admin password",
     setupAdminPasswordLead:
-      "It unlocks the Console and owner-only tools. Pick something strong and keep it in your password manager.",
+      "It unlocks the Console and owner-only tools. Use something strong and keep it in a password manager.",
     setupAdminPassword: "Admin password",
     setupAdminPasswordConfirm: "Confirm password",
     setupAdminPasswordMismatch: "The passwords do not match.",
     setupAdminPasswordRequired: "Enter an admin password.",
     setupSecurityTitle: "Choose how the owner signs in",
-    setupSecurityLead: "You can change this later in the Console with the admin password.",
+    setupSecurityLead: "You can change this later in the Console.",
     setupSecurityHome: "Home",
-    setupSecurityHomeDetail:
-      "You can sign in as the owner from any browser with the admin password.",
+    setupSecurityHomeDetail: "Sign in as the owner from any browser with the admin password.",
     setupSecurityStrict: "Strict",
     setupSecurityStrictDetail:
-      "Only paired devices can sign in; to recover, run beamfall pairing-code on the server.",
+      "Only paired devices can sign in. To recover, run beamfall pairing-code on the server.",
     setupSecurityRecommended: "Recommended",
     setupLibraryTitle: "Create your first Library",
     setupLibraryLead:
-      "Point Beamfall at a folder and say what's inside. Films, TV Shows and Mixed all use the Film & TV plugin; Mixed works it out file by file.",
+      "Pick a folder and say what's in it. Films, TV Shows and Mixed use the Film & TV plugin; Mixed sorts each file.",
     setupLibraryType: "Library type",
     setupLibraryName: "Library name",
     setupLibraryRoot: "Root folder",
@@ -51,29 +49,25 @@ export const setupStrings = {
     setupTypeMixed: "Mixed",
     setupTypeMusic: "Music",
     setupTypePodcasts: "Podcasts",
-    setupPluginFilmTV: "Film & TV",
-    setupPluginMusic: "Music",
-    setupPluginPodcast: "Podcast",
     setupProfileTitle: "Name the owner profile",
-    setupProfileLead: "This is you. Everyone else in the house can get their own Profile later.",
+    setupProfileLead: "This is you. Everyone else can get their own Profile later.",
     setupProfileName: "Owner profile name",
     setupProfileDefault: "Owner",
     setupPluginsTitle: "Choose what Beamfall understands",
     setupPluginsLead:
-      "Each plugin teaches Beamfall a kind of media. Turn on what you have; you can change this any time.",
+      "Each plugin teaches Beamfall a kind of media. Turn on what you have; change it any time.",
     setupPluginsEmpty: "No plugins are installed.",
     setupKeysTitle: "Metadata provider keys",
     setupKeysLead:
-      "These plugins fetch titles, details and artwork from providers that ask for a free API key. Paste one now, or skip and add it later in Console › Plugins.",
+      "Titles, details and artwork come from providers that ask for a free API key. Paste one now or add it later in Console › Plugins.",
     setupKeyOptional: "Optional: paste your API key",
     setupKeySaveFailed:
       "The {provider} key couldn't be saved. Check it, or clear the field to add it later in Console › Plugins.",
     setupUpdateTitle: "Update awareness",
-    setupUpdateLead:
-      "Beamfall can check the public release manifest for updates. This is off by default.",
+    setupUpdateLead: "Check the public release manifest for new versions. Off by default.",
     setupUpdateToggle: "Check for updates",
     setupUpdateDisclosure:
-      "When enabled, the request is a plain GET with no library data, account data, cookies, body, query string, or server identity.",
+      "The check is a plain GET with no library data, account data, cookies, body, query string or server identity.",
     setupBack: "Back",
     setupContinue: "Continue",
     setupFinish: "Finish setup",
@@ -82,9 +76,9 @@ export const setupStrings = {
     setupFailed: "Something went wrong. Please try again.",
     setupScanTitle: "Your library is filling up",
     setupScanLead:
-      "Beamfall has started scanning your first Library. You can browse as soon as items appear; the scan keeps running in the background.",
+      "Beamfall is scanning your first Library. Browse as soon as items appear; the scan keeps going in the background.",
     setupScanStatus: "Scan status: {status}",
-    setupScanWaiting: "Waiting for scan progress…",
+    setupScanWaiting: "Waiting for progress…",
     // Seam A — inline migration offer, the final setup step (ADR-0080 /
     // onboarding-funnel §3). Source labels come from the active plugins, never
     // hardcoded here.
