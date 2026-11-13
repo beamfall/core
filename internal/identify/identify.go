@@ -133,6 +133,45 @@ type Service struct {
 	queue             UnmatchedStore
 	pins              MatchPinStore
 	optionalAuthSkips sync.Map
+	// writes serializes Apply's local writes per Media item, so the
+	// provenance row always names the scraper whose metadata was kept.
+	writes mediaWriteLocks
+}
+
+// mediaWriteLocks hands out one mutex per Media item, dropping it once no
+// Apply holds or waits on it.
+type mediaWriteLocks struct {
+	mu    sync.Mutex
+	locks map[store.MediaID]*mediaWriteLock
+}
+
+type mediaWriteLock struct {
+	sync.Mutex
+	refs int
+}
+
+func (l *mediaWriteLocks) lock(id store.MediaID) func() {
+	l.mu.Lock()
+	if l.locks == nil {
+		l.locks = map[store.MediaID]*mediaWriteLock{}
+	}
+	entry := l.locks[id]
+	if entry == nil {
+		entry = &mediaWriteLock{}
+		l.locks[id] = entry
+	}
+	entry.refs++
+	l.mu.Unlock()
+	entry.Lock()
+	return func() {
+		entry.Unlock()
+		l.mu.Lock()
+		entry.refs--
+		if entry.refs == 0 {
+			delete(l.locks, id)
+		}
+		l.mu.Unlock()
+	}
 }
 
 // NewService wires the identification service.
@@ -287,6 +326,19 @@ func (s *Service) Apply(ctx context.Context, mediaID store.MediaID, pluginID, sc
 	if metadata.Title == nil && metadata.Summary == nil && metadata.Year == nil {
 		return fmt.Errorf("identify: scraper %q returned no usable fields", scraperID)
 	}
+	if err := s.applyLocal(ctx, mediaID, pluginID, scraperID, metadata, bundle, spec, result); err != nil {
+		return err
+	}
+	s.applyArtwork(ctx, mediaID, pluginID, scraperID, result)
+	return nil
+}
+
+// applyLocal writes one identification's local rows while holding the Media
+// item's write lock: two identifications racing each other then commit one
+// after the other, never metadata from one with provenance from the other.
+func (s *Service) applyLocal(ctx context.Context, mediaID store.MediaID, pluginID, scraperID string, metadata store.MediaMetadata, bundle plugin.Bundle, spec plugin.ScraperSpec, result scrape.Result) error {
+	unlock := s.writes.lock(mediaID)
+	defer unlock()
 	if err := s.store.UpdateMediaMetadata(ctx, mediaID, metadata); err != nil {
 		return err
 	}
@@ -298,11 +350,7 @@ func (s *Service) Apply(ctx context.Context, mediaID store.MediaID, pluginID, sc
 	if err := s.applyMediaFields(ctx, mediaID, bundle, spec, result); err != nil {
 		return err
 	}
-	if err := s.applyEntities(ctx, mediaID, bundle, spec, result); err != nil {
-		return err
-	}
-	s.applyArtwork(ctx, mediaID, pluginID, scraperID, result)
-	return nil
+	return s.applyEntities(ctx, mediaID, bundle, spec, result)
 }
 
 // applyMediaFields writes the scraper's plugin-declared Media field values
