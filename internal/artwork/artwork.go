@@ -31,14 +31,21 @@ const (
 	SlotPoster   = "poster"
 	SlotBackdrop = "backdrop"
 	SlotThumb    = "thumb"
+	SlotLogo     = "logo"
+	SlotBanner   = "banner"
+	SlotClearart = "clearart"
+	SlotDisc     = "disc"
+	// SlotContainerPoster is the poster of an ordered child container. The
+	// token is fixed by the plugin SDK's artwork slot vocabulary.
+	SlotContainerPoster = "season-poster"
 )
 
 const PreviewUnavailableField = "preview-unavailable"
 
 // KnownSlots is the fixed Core artwork slot vocabulary. Plugins may emit
-// newer slot names; Core ignores them until clients and serving paths know
-// how to handle the shape.
-var KnownSlots = []string{SlotPoster, SlotBackdrop, SlotThumb}
+// other SDK slot names (portrait); Core ignores them until clients and
+// serving paths know how to handle the shape. Backdrop stays one scalar slot.
+var KnownSlots = []string{SlotPoster, SlotBackdrop, SlotThumb, SlotLogo, SlotBanner, SlotClearart, SlotDisc, SlotContainerPoster}
 
 // posterWidth gives frame-grabbed posters enough resolution that the full
 // bucket family (w320/w640/w1280) has real headroom.
@@ -276,9 +283,12 @@ func (s *Service) EntityArtworkVersion(id store.EntityID, slot string) (string, 
 // never re-implement the chain). The poster is the always-generated base; the
 // frame-grab tail of the chain is the sweep that fills the poster in the first
 // place, so a present poster is the resolved end of every fallback here.
+// Logo, banner, clearart and disc have no fallback: a poster drawn in a logo or
+// disc position renders wrongly, so an absent slot serves nothing.
 var slotFallback = map[string]string{
-	SlotBackdrop: SlotPoster,
-	SlotThumb:    SlotPoster,
+	SlotBackdrop:        SlotPoster,
+	SlotThumb:           SlotPoster,
+	SlotContainerPoster: SlotPoster,
 }
 
 // ResolveSlot returns the slot to actually serve for a requested Media slot and
