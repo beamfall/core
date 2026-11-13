@@ -142,13 +142,13 @@ func authorizeDispatchOrder(dispatch *fieldDispatchContext, order fieldDispatchO
 	}
 	if gate&roleManager != 0 && dispatch.scope.DeviceRole != store.DeviceRoleManager {
 		return response{
-			Errors:               []graphError{{Message: "manager role required"}},
+			Errors:               []graphError{newGraphError(ErrorCodeForbidden, "manager role required")},
 			authorizationRefused: true,
 		}
 	}
 	if gate&roleAdmin != 0 && !dispatch.scope.Admin && !adminTokenMayRun(dispatch) {
 		return response{
-			Errors:               []graphError{{Message: "admin session required"}},
+			Errors:               []graphError{newGraphError(ErrorCodeForbidden, "admin session required")},
 			authorizationRefused: true,
 		}
 	}
@@ -1863,7 +1863,7 @@ func dispatchFieldBlock060(dispatch *fieldDispatchContext) response {
 	if fields["identifysearch"] || fields["identifyapply"] || fields["fixmatch"] ||
 		fields["identifylookup"] || fields["fixmatchcandidates"] || fields["fixmatchpreview"] {
 		if h.identify == nil {
-			return response{Errors: []graphError{{Message: "identification unavailable"}}}
+			return response{Errors: []graphError{newGraphError(ErrorCodeInternal, "identification unavailable")}}
 		}
 		if fields["identifysearch"] {
 			candidates, err := h.identifySearch(ctx, scope, req)

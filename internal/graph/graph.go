@@ -937,7 +937,7 @@ func requestCarriesScopedKey(r *http.Request) bool {
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
-		writeGraphError(w, http.StatusMethodNotAllowed, "method not allowed")
+		writeGraphError(w, http.StatusMethodNotAllowed, ErrorCodeInvalid, "method not allowed")
 		return
 	}
 	defer r.Body.Close()
@@ -947,15 +947,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		var maxErr *http.MaxBytesError
 		if errors.As(err, &maxErr) {
-			writeGraphError(w, http.StatusRequestEntityTooLarge, "request body too large")
+			writeGraphError(w, http.StatusRequestEntityTooLarge, ErrorCodeInvalid, "request body too large")
 			return
 		}
-		writeGraphError(w, http.StatusBadRequest, "invalid JSON body")
+		writeGraphError(w, http.StatusBadRequest, ErrorCodeInvalid, "invalid JSON body")
 		return
 	}
 	plan, err := prepareOperation(req)
 	if err != nil {
-		writeJSON(w, http.StatusOK, response{Errors: []graphError{{Message: err.Error()}}})
+		writeJSON(w, http.StatusOK, response{Errors: []graphError{newGraphError(errorCode(err), err.Error())}})
 		return
 	}
 	fields := plan.fields()
@@ -967,7 +967,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if auditErr := h.recordPrivilegedAudit(r.Context(), privilegedNames, observability.AuditActor{}, observability.AuditRefused); auditErr != nil {
 				slog.Error("privileged refusal audit failed", "error", auditErr)
 			}
-			writeGraphError(w, http.StatusUnauthorized, "invalid session")
+			writeGraphError(w, http.StatusUnauthorized, ErrorCodeUnauthenticated, "invalid session")
 			return
 		}
 	}
@@ -985,7 +985,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if auditErr := h.recordPrivilegedAudit(r.Context(), privilegedNames, privilegedActor, observability.AuditRefused); auditErr != nil {
 			slog.Error("privileged refusal audit failed", "error", auditErr)
 		}
-		writeGraphError(w, http.StatusForbidden, "scoped API keys are not accepted here; use the /v1/ developer surface")
+		writeGraphError(w, http.StatusForbidden, ErrorCodeForbidden, "scoped API keys are not accepted here; use the /v1/ developer surface")
 		return
 	}
 	mutationNames := requestedMutationFields(plan)
@@ -994,23 +994,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if len(mutationNames) > 0 {
 		if h.store == nil {
 			h.recordPrivilegedAuditFailure(r.Context(), privilegedNames, privilegedActor)
-			writeJSON(w, http.StatusOK, response{Errors: []graphError{{Message: "mutation audit unavailable"}}})
+			writeJSON(w, http.StatusOK, response{Errors: []graphError{newGraphError(ErrorCodeInternal, "mutation audit unavailable")}})
 			return
 		}
 		operationID, err = newMutationOperationID()
 		if err != nil {
 			h.recordPrivilegedAuditFailure(r.Context(), privilegedNames, privilegedActor)
-			writeJSON(w, http.StatusOK, response{Errors: []graphError{{Message: "mutation audit unavailable"}}})
+			writeJSON(w, http.StatusOK, response{Errors: []graphError{newGraphError(ErrorCodeInternal, "mutation audit unavailable")}})
 			return
 		}
 		if err := h.recordPrivilegedAudit(r.Context(), privilegedMutationNames, privilegedActor, observability.AuditAttempt); err != nil {
 			slog.Error("privileged mutation attempt audit failed", "error", err)
-			writeJSON(w, http.StatusOK, response{Errors: []graphError{{Message: "privileged audit unavailable"}}})
+			writeJSON(w, http.StatusOK, response{Errors: []graphError{newGraphError(ErrorCodeInternal, "privileged audit unavailable")}})
 			return
 		}
 		if err := h.appendMutationAudit(r.Context(), mutationAuditEntry(scope, operationID+":attempt", store.ActivityMutationAttempt, "graphql:"+strings.Join(mutationNames, ","), operationID)); err != nil {
 			h.recordPrivilegedAuditFailure(r.Context(), privilegedNames, privilegedActor)
-			writeJSON(w, http.StatusOK, response{Errors: []graphError{{Message: "mutation audit unavailable"}}})
+			writeJSON(w, http.StatusOK, response{Errors: []graphError{newGraphError(ErrorCodeInternal, "mutation audit unavailable")}})
 			return
 		}
 	}
@@ -1023,7 +1023,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// retry. Preserve that known resolver outcome; the durable request
 		// lifecycle below records it under the stable operation ID.
 		if operationID == "" && !resp.authorizationRefused {
-			resp = response{Errors: []graphError{{Message: "privileged audit unavailable"}}}
+			resp = response{Errors: []graphError{newGraphError(ErrorCodeInternal, "privileged audit unavailable")}}
 		}
 	}
 	if operationID != "" {
@@ -1338,7 +1338,7 @@ func graphFailMessage(field string, err error) string {
 // fields instead accumulate a per-field error via readField and resolve the
 // rest of the batch.
 func graphFail(field string, err error) response {
-	return response{Errors: []graphError{{Message: graphFailMessage(field, err)}}}
+	return response{Errors: []graphError{newGraphError(errorCode(err), graphFailMessage(field, err))}}
 }
 
 // readField records one READ field's outcome under M2 partial-success: on
@@ -1351,7 +1351,9 @@ func graphFail(field string, err error) response {
 func readField[T any](data map[string]any, errs *[]graphError, dataKey, errorField, errorPath string, result T, err error) {
 	if err != nil {
 		data[dataKey] = nil
-		*errs = append(*errs, graphError{Message: graphFailMessage(errorField, err), Path: []string{errorPath}})
+		fail := newGraphError(errorCode(err), graphFailMessage(errorField, err))
+		fail.Path = []string{errorPath}
+		*errs = append(*errs, fail)
 		return
 	}
 	data[dataKey] = result
@@ -5392,10 +5394,13 @@ type graphError struct {
 	// reads). Omitted for whole-response errors (auth gate, unsupported query,
 	// aborted mutation batch) so their wire shape is unchanged.
 	Path []string `json:"path,omitempty"`
+	// Extensions.Code is one of the closed ErrorCodes vocabulary (§7);
+	// error_codes.go owns the mapping.
+	Extensions graphErrorExtensions `json:"extensions"`
 }
 
-func writeGraphError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, response{Errors: []graphError{{Message: message}}})
+func writeGraphError(w http.ResponseWriter, status int, code ErrorCode, message string) {
+	writeJSON(w, status, response{Errors: []graphError{newGraphError(code, message)}})
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
