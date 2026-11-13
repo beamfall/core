@@ -260,6 +260,9 @@ export function AdminGate({
 // The reason-coded locked surface. A managed Profile sees the not-adult reason
 // with NO password form (it can never unlock); every other reason offers the
 // re-auth form. Both carry the explicit Admin≠Reveal distinction line.
+const AUTOFILL_NEW = "new-password";
+const AUTOFILL_CURRENT = "current-password";
+
 function LockedCard({
   reason,
   copy,
@@ -316,7 +319,7 @@ function LockedCard({
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  autoComplete={firstPassword ? "new-password" : "current-password"}
+                  autoComplete={firstPassword ? AUTOFILL_NEW : AUTOFILL_CURRENT}
                   autoFocus
                 />
               </div>
