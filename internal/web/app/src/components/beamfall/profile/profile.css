@@ -146,6 +146,17 @@
   outline-offset: 2px;
 }
 
+/* Picture options sit on a neutral surface; only the chosen one (and the
+ * preview) carries the tone, so the grid never reads as a wall of colour. */
+.bf-avatar-option--picture:not(:has(input:checked)) .bf-avatar {
+  background: var(--bg-raised, rgb(255 255 255 / 6%));
+  color: var(--text-secondary, currentColor);
+}
+
+.bf-avatar-option--picture:not(:has(input:checked)):hover .bf-avatar {
+  color: var(--text-primary, currentColor);
+}
+
 /* A plain colour swatch: the tone with no glyph. */
 .bf-avatar-swatch {
   font-size: 0;

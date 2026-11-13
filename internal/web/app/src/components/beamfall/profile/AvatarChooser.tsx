@@ -84,7 +84,7 @@ export function AvatarChooser({
               (picture) => (
                 <label
                   key={picture.id ?? "initial"}
-                  className="bf-avatar-option"
+                  className="bf-avatar-option bf-avatar-option--picture"
                   title={t(picture.label)}
                 >
                   <input
