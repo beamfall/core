@@ -58,6 +58,11 @@ const (
 	// the enroll redeem path refuses off-LAN pairing-code enrollments until the
 	// operator explicitly enables them.
 	configRemoteEnrollmentEnabled = "enrollment.remote_enabled"
+	// Viewer pairing-code switch (CORE-0393). Default OFF (no override →
+	// Viewer codes allowed): when ON, the server refuses to mint Viewer-role
+	// pairing codes and refuses to redeem Viewer codes minted earlier. Manager
+	// pairing and the demo Viewer enrollment are unaffected.
+	configViewerPairingCodesDisabled = "enrollment.viewer_pairing_codes_disabled"
 )
 
 // capabilityConfigPrefix namespaces the runtime Workflow-capability enabled
@@ -96,6 +101,10 @@ type ConsoleConfig struct {
 	// Default OFF: a missing override refuses remote enrollment.
 	// When ON, off-LAN enrollments are accepted.
 	RemoteEnrollmentEnabled bool
+	// ViewerPairingCodesDisabled refuses Viewer-role pairing codes: none can be
+	// minted and any already minted is refused at redemption. Default OFF.
+	// Manager pairing and the demo Viewer enrollment stay enabled.
+	ViewerPairingCodesDisabled bool
 	// EventsRetentionDays is the age cutoff for events.db compaction. Defaults to
 	// the server bootstrap value, falling back to DefaultEventsRetention.
 	EventsRetentionDays int
@@ -119,12 +128,13 @@ var updateCheckChannels = map[string]bool{"stable": true, "beta": true}
 // ConsoleConfigPatch is a partial console-config write: a nil field leaves the
 // stored value unchanged. The graph layer builds it from the present variables.
 type ConsoleConfigPatch struct {
-	BackgroundWorkers       *int
-	UpdateCheckEnabled      *bool
-	UpdateCheckChannel      *string
-	RemoteEnrollmentEnabled *bool
-	EventsRetentionDays     *int
-	ObservabilityEnabled    *bool
+	BackgroundWorkers          *int
+	UpdateCheckEnabled         *bool
+	UpdateCheckChannel         *string
+	RemoteEnrollmentEnabled    *bool
+	ViewerPairingCodesDisabled *bool
+	EventsRetentionDays        *int
+	ObservabilityEnabled       *bool
 }
 
 // TranscodeConfig is the typed hardware-transcode policy. The
@@ -205,6 +215,9 @@ func (s *Store) ConsoleConfigWithDefaults(ctx context.Context, defaults ConsoleC
 	if raw, ok := values[configRemoteEnrollmentEnabled]; ok {
 		cfg.RemoteEnrollmentEnabled = raw == "1"
 	}
+	if raw, ok := values[configViewerPairingCodesDisabled]; ok {
+		cfg.ViewerPairingCodesDisabled = raw == "1"
+	}
 	if raw, ok := values[configObservabilityEnabled]; ok {
 		cfg.ObservabilityEnabled = raw == "1"
 	}
@@ -232,6 +245,9 @@ func (s *Store) SetConsoleConfig(ctx context.Context, patch ConsoleConfigPatch, 
 	}
 	if patch.RemoteEnrollmentEnabled != nil {
 		writes[configRemoteEnrollmentEnabled] = boolToConfig(*patch.RemoteEnrollmentEnabled)
+	}
+	if patch.ViewerPairingCodesDisabled != nil {
+		writes[configViewerPairingCodesDisabled] = boolToConfig(*patch.ViewerPairingCodesDisabled)
 	}
 	if patch.ObservabilityEnabled != nil {
 		writes[configObservabilityEnabled] = boolToConfig(*patch.ObservabilityEnabled)
