@@ -6,8 +6,8 @@
 # then `make gate-preflight` for the static/lint subset.
 #
 # A PASS here is NOT a merge signal: `make gate` on the exact head stays the
-# merge gate. BASE defaults to the merge-base with main; uncommitted changes are
-# part of the plan.
+# merge gate. BASE defaults to the merge-base with origin/main (local main when
+# there is no origin/main); uncommitted changes are part of the plan.
 #
 # The plan is computed once with --dry-run and the run is bound to it with
 # --manifest, so what ran is what was planned. When that plan already ran
@@ -20,8 +20,10 @@ cd "$ROOT"
 
 base_request="${1:-}"
 if [ -z "$base_request" ]; then
-  main_ref=main
-  git rev-parse --verify --quiet "$main_ref^{commit}" > /dev/null || main_ref=origin/main
+  # CORE-1299: prefer origin/main; the shared checkout's local main lags it
+  # because lanes land by PR, and a stale base over-selects packages.
+  main_ref=origin/main
+  git rev-parse --verify --quiet "$main_ref^{commit}" > /dev/null || main_ref=main
   base_request="$(git merge-base "$main_ref" HEAD)" || {
     echo "gate-affected: no merge-base with $main_ref; pass BASE=<commit>" >&2
     exit 2

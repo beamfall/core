@@ -35,7 +35,7 @@ func (copyEncryptedLibraryDBCipher) SealDBFile(ctx context.Context, libraryID Li
 
 func TestEncryptedLibraryDBLifecycleMigratesBeforeRegistrationAndSealsSidecars(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{EnableEncryptedLibraryDBLifecycle: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{EnableEncryptedLibraryDBLifecycle: true})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestEncryptedLibraryDBLifecycleMigratesBeforeRegistrationAndSealsSidecars(t
 
 func TestEncryptedLibraryDBTempSpillStaysInWorkingAreaAndSealsClean(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{EnableEncryptedLibraryDBLifecycle: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{EnableEncryptedLibraryDBLifecycle: true})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestEncryptedLibraryDBTempSpillStaysInWorkingAreaAndSealsClean(t *testing.T
 
 func TestRewrapEncryptedLibraryDBRequiresSealedCiphertextAndChangesBytes(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{EnableEncryptedLibraryDBLifecycle: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{EnableEncryptedLibraryDBLifecycle: true})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -189,7 +189,7 @@ func assertEncryptedDBTempDir(t *testing.T, db *sql.DB, want string) {
 }
 
 func TestEncryptedLibraryDBLifecycleDisabledKeepsThirdDBUnreachable(t *testing.T) {
-	st, err := Open(context.Background(), t.TempDir(), Options{})
+	st, err := Open(context.Background(), migratedDataDir(t), Options{})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -202,7 +202,7 @@ func TestEncryptedLibraryDBLifecycleDisabledKeepsThirdDBUnreachable(t *testing.T
 
 func TestEncryptedLibraryPlaintextLibraryControlPlaneColumnsFrozen(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{})
+	st, err := Open(ctx, migratedDataDir(t), Options{})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -320,7 +320,7 @@ func TestEncryptedLibraryRestartReconciliationRepairsPlaintextLeftoversToCiphert
 
 func TestEncryptedLibraryImportRoutesToEncryptedDBAndSuppressesOutbox(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -373,7 +373,7 @@ func TestEncryptedLibraryImportRoutesToEncryptedDBAndSuppressesOutbox(t *testing
 
 func TestEncryptedLibrarySearchUnionsCatalogAndOnlyOpenEncryptedDBs(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -781,7 +781,7 @@ func TestEncryptedLibraryEntityWritesStayInsideSealBoundary(t *testing.T) {
 
 func TestEncryptedLibraryImportsAllocateDistinctIDsForDuplicateFingerprints(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -817,7 +817,7 @@ func TestEncryptedLibraryImportsAllocateDistinctIDsForDuplicateFingerprints(t *t
 
 func TestEncryptedLibraryEntityFieldIndexReplaysToRegisteredDB(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -873,7 +873,7 @@ func TestEncryptedLibraryEntityFieldIndexReplaysToRegisteredDB(t *testing.T) {
 // contribution in the encrypted DB too, while the stored value stays inert.
 func TestReconcileEntityFieldIndexesReconcilesEncryptedDB(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -958,7 +958,7 @@ func TestReconcileEntityFieldIndexesReconcilesEncryptedDB(t *testing.T) {
 // next unsealed (replayEntityFieldIndexesForEncryptedDBLocked), not only on boot.
 func TestEncryptedLibraryReconcilesRetiredSurfaceOnUnseal(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -1039,7 +1039,7 @@ func TestEncryptedLibraryReconcilesRetiredSurfaceOnUnseal(t *testing.T) {
 
 func TestEncryptedLibraryCrossLibraryRelationsRejected(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -1089,7 +1089,7 @@ func TestEncryptedLibraryCrossLibraryRelationsRejected(t *testing.T) {
 
 func TestPlaintextCrossLibraryMediaRelationStillAllowed(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -1128,7 +1128,7 @@ func encryptedImport(libraryID LibraryID, fingerprint, path string) ImportMediaF
 func seededEncryptedMedia(t *testing.T, title string) (*Store, Media) {
 	t.Helper()
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -1294,7 +1294,7 @@ func (r *recordingDerivativeReconciler) ReconcileEncryptedDerivatives(ctx contex
 
 func TestEncryptedLibraryUnsealFiresDerivativeReconcileWithSnapshotInventory(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -1353,7 +1353,7 @@ func TestEncryptedLibraryUnsealFiresDerivativeReconcileWithSnapshotInventory(t *
 
 func TestEncryptedLibraryUnsealFailsClosedWhenDerivativeReconcileErrors(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -1388,7 +1388,7 @@ func TestEncryptedLibraryUnsealFailsClosedWhenDerivativeReconcileErrors(t *testi
 
 func TestEncryptedLibraryUnsealWithoutReconcilerIsUnchanged(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -1435,7 +1435,7 @@ func TestEncryptedLibraryUnsealPurgesOrphanedPlaintextDerivative(t *testing.T) {
 
 	seedOrphan := func(t *testing.T) (*Store, LibraryID, MediaID, string) {
 		t.Helper()
-		st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+		st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
 		if err != nil {
 			t.Fatalf("Open: %v", err)
 		}

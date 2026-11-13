@@ -9,7 +9,7 @@ import (
 // openBackoffStore opens a seeded store for the auth-backoff lane tests.
 func openBackoffStore(t *testing.T) *Store {
 	t.Helper()
-	st, err := Open(context.Background(), t.TempDir(), Options{SeedDevelopmentData: true})
+	st, err := Open(context.Background(), migratedDataDir(t), Options{SeedDevelopmentData: true})
 	if err != nil {
 		t.Fatal(err)
 	}

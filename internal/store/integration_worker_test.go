@@ -10,7 +10,7 @@ import (
 func openIWStore(t *testing.T) (*Store, context.Context) {
 	t.Helper()
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{})
+	st, err := Open(ctx, migratedDataDir(t), Options{})
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

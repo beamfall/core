@@ -13,7 +13,7 @@ import (
 // failure reaches the caller instead of being reported as not-found.
 func TestSavedFilterReadsReportNotFoundOnlyForMissingRows(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{})
+	st, err := Open(ctx, migratedDataDir(t), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

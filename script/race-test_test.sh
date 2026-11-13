@@ -484,14 +484,11 @@ run_discovery_failure_case() {
   fi
 }
 
-run_promoted_phase_case() {
-  local name="$1" ordinary_exit="$2" promoted_exit="$3" focused_exit="$4"
-  local parser_exit="$5" expected_exit="$6"
-  local case_dir="$TMP/$name" repo="$TMP/$name-repo"
-  local shim="$TMP/$name-shim" evidence="$case_dir/evidence"
-  local args_file="$case_dir/go-test-args.txt" parser_marker="$case_dir/parser-ran"
-  mkdir -p "$case_dir" "$evidence" "$shim" \
-    "$repo/script" "$repo/internal/foo" "$repo/internal/app" \
+# Builds a module whose diff has one ordinary package (foo) and two promoted
+# packages (graph, playback); writes the base commit to <repo>.base.
+make_promoted_repo() { # <repo>
+  local repo="$1"
+  mkdir -p "$repo/script" "$repo/internal/foo" "$repo/internal/app" \
     "$repo/internal/graph" "$repo/internal/playback"
   cp "$RACE_TEST" "$repo/script/race-test.sh"
   chmod +x "$repo/script/race-test.sh"
@@ -525,14 +522,26 @@ EOF
   git -C "$repo" init -qb main
   git -C "$repo" add .
   git -C "$repo" -c user.name=t -c user.email=t@e.com commit -qm base
-  local base
-  base="$(git -C "$repo" rev-parse HEAD)"
+  git -C "$repo" rev-parse HEAD >"$repo.base"
   printf '\n// direct change\n' >>"$repo/internal/foo/foo.go"
   printf '\n// direct change\n' >>"$repo/internal/graph/graph.go"
   printf '\n// direct change\n' >>"$repo/internal/playback/playback.go"
   git -C "$repo" add internal/foo/foo.go internal/graph/graph.go \
     internal/playback/playback.go
   git -C "$repo" -c user.name=t -c user.email=t@e.com commit -qm changed
+
+}
+
+run_promoted_phase_case() {
+  local name="$1" ordinary_exit="$2" promoted_exit="$3" focused_exit="$4"
+  local parser_exit="$5" expected_exit="$6"
+  local case_dir="$TMP/$name" repo="$TMP/$name-repo"
+  local shim="$TMP/$name-shim" evidence="$case_dir/evidence"
+  local args_file="$case_dir/go-test-args.txt" parser_marker="$case_dir/parser-ran"
+  mkdir -p "$case_dir" "$evidence" "$shim"
+  make_promoted_repo "$repo"
+  local base
+  base="$(<"$repo.base")"
 
   cat >"$shim/go" <<'EOF'
 #!/usr/bin/env bash
@@ -597,8 +606,9 @@ EOF
     status=$?
   fi
   assert_exit_eq "$status" "$expected_exit" "$name (phase precedence)"
+  LC_ALL=C sort -o "$args_file" "$args_file"
   assert_file_eq "$args_file" \
-    $'test -race -short -count=1 -p 4 -parallel 2 -test.timeout=600s -json github.com/beamfall/core/internal/foo\ntest -race -short -count=1 -p 1 -parallel 2 -test.timeout=3600s -json github.com/beamfall/core/internal/graph github.com/beamfall/core/internal/playback\ntest -race -short -count=1 -p 4 -parallel 2 -test.timeout=600s -run '"$RACE_SHORT_HOT_TESTS"$' -json github.com/beamfall/core/internal/app' \
+    $'test -race -short -count=1 -p 1 -parallel 2 -test.timeout=3600s -json github.com/beamfall/core/internal/graph github.com/beamfall/core/internal/playback\ntest -race -short -count=1 -p 4 -parallel 2 -test.timeout=600s -json github.com/beamfall/core/internal/foo\ntest -race -short -count=1 -p 4 -parallel 2 -test.timeout=600s -run '"$RACE_SHORT_HOT_TESTS"$' -json github.com/beamfall/core/internal/app' \
     "$name (all phase arguments)"
   if [[ ! -f "$parser_marker" ]]; then
     echo "FAIL $name parser phase did not execute" >&2
@@ -849,6 +859,74 @@ run_interruption_case() {
   fi
 }
 
+# Interrupting race-short while the ordinary and promoted phases overlap must
+# retire both owned process groups and their signal-ignoring descendants.
+run_overlap_interruption_case() {
+  local signal="$1" expected_status="$2"
+  local name="overlap-interrupted-$signal"
+  local case_dir="$TMP/$name" repo="$TMP/$name-repo" shim="$TMP/$name-shim"
+  local pid_dir="$case_dir/pids" temp_root="$case_dir/tmp"
+  mkdir -p "$case_dir/evidence" "$shim" "$pid_dir" "$temp_root"
+  make_promoted_repo "$repo"
+  local base
+  base="$(<"$repo.base")"
+  cat >"$shim/go" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" != test ]]; then
+  exec "$REAL_GO" "$@"
+fi
+phase=ordinary
+[[ " $* " != *" -p 1 "* ]] || phase=promoted
+trap '' INT TERM
+( trap '' INT TERM; while :; do sleep 300; done ) &
+echo "$!" >"$PID_DIR/$phase.descendant"
+echo "$$" >"$PID_DIR/$phase.leader"
+while :; do wait || true; done
+EOF
+  chmod +x "$shim/go"
+  local real_go
+  real_go="$(command -v go)"
+  ( cd "$repo" && PATH="$shim:$PATH" REAL_GO="$real_go" PID_DIR="$pid_dir" \
+    TMPDIR="$temp_root" AGENT_EVIDENCE_DIR="$case_dir/evidence" \
+    RACE_SHORT_PROMOTED_SHARDS=1 GATE_DIFF_BASE="$base" GATE_DIFF_HEAD=HEAD \
+    run_bash_in_owned_signal_session script/race-test.sh short \
+      >"$case_dir/output.txt" 2>"$case_dir/error.txt" ) &
+  local race_pid=$!
+  register_active_pid "$race_pid"
+  register_active_group "$race_pid"
+  local files=(ordinary.leader ordinary.descendant promoted.leader promoted.descendant)
+  local deadline=$((SECONDS + PROCESS_STARTUP_TIMEOUT_SECONDS)) ready=0 f
+  while [[ "$SECONDS" -lt "$deadline" ]]; do
+    ready=1
+    for f in "${files[@]}"; do [[ -s "$pid_dir/$f" ]] || ready=0; done
+    [[ "$ready" -eq 0 ]] || break
+    sleep 0.05
+  done
+  for f in ordinary.leader promoted.leader; do
+    [[ ! -s "$pid_dir/$f" ]] || register_active_group "$(<"$pid_dir/$f")"
+  done
+  if [[ "$ready" -ne 1 ]]; then
+    echo "FAIL $name both phases did not start concurrently" >&2
+    cat "$case_dir/error.txt" >&2
+    ((FAIL++)) || true
+    cleanup_active_processes
+    return
+  fi
+  kill -"$signal" -- "-$race_pid" 2>/dev/null || true
+  local status=0
+  wait "$race_pid" || status=$?
+  unregister_active_pid "$race_pid"
+  unregister_inactive_groups
+  assert_exit_eq "$status" "$expected_status" "$name (exit status)"
+  for f in "${files[@]}"; do
+    assert_process_gone "$(<"$pid_dir/$f")" "$name ($f)"
+  done
+  assert_process_gone "-$(<"$pid_dir/ordinary.leader")" "$name (ordinary group)"
+  assert_process_gone "-$(<"$pid_dir/promoted.leader")" "$name (promoted group)"
+  cleanup_active_processes
+}
+
 run_fixture_self_interruption_case() {
   local signal="$1" expected_status="$2"
   local name="fixture-interrupted-$signal"
@@ -990,6 +1068,8 @@ run_discovery_failure_case zero-runnable excluded 1 1 'zero runnable packages'
 run_leader_exit_descendant_case
 run_interruption_case TERM 143
 run_interruption_case INT 130
+run_overlap_interruption_case TERM 143
+run_overlap_interruption_case INT 130
 run_fixture_self_interruption_case TERM 143
 run_fixture_self_interruption_case INT 130
 

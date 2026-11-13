@@ -104,7 +104,7 @@ func TestRetentionRuleCandidateResetsWhenLeavingSource(t *testing.T) {
 
 func TestRetentionRuleTrashDisabledRequiresConfirmation(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, TrashDisabled: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, TrashDisabled: true})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

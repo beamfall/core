@@ -189,7 +189,7 @@ func TestSweepManagedFileTrashPurgesOnlyExpiredEntries(t *testing.T) {
 
 func TestSweepManagedFileTrashTrashDisabledRequiresConfirmation(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(ctx, t.TempDir(), store.Options{SeedDevelopmentData: true, TrashDisabled: true})
+	st, err := store.Open(ctx, storetest.MigratedDataDir(t), store.Options{SeedDevelopmentData: true, TrashDisabled: true})
 	if err != nil {
 		t.Fatal(err)
 	}

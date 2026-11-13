@@ -536,6 +536,27 @@ def test_consumer_truth_requires_local_main_branch():
         assert "has no readable local main" in proc.stderr
 
 
+def test_consumer_truth_prefers_origin_main_over_local_main():
+    # CORE-1339: a shared checkout's local main can diverge from what landed.
+    with tempfile.TemporaryDirectory() as d:
+        consumer, core, registry, workspace = consumer_truth_case(pathlib.Path(d), ["wire.json"])
+        repo = seed_consumer_repo(workspace, consumer)
+        landed = git(repo, "rev-parse", "HEAD").stdout.strip()
+        git(repo, "update-ref", "refs/remotes/origin/main", landed)
+        commit_descriptor(repo, "wire.json", "0.9.0", "unpushed local divergence")
+        green = run_checker(registry, repo_root=core, workspace_root=workspace)
+        assert green.returncode == 0, green.stderr
+
+        commit_descriptor(repo, "wire.json", "1.0.0", "local main back at the pin")
+        commit_descriptor(repo, "wire.json", "2.0.0", "landed upstream ahead of the pin")
+        ahead = git(repo, "rev-parse", "HEAD").stdout.strip()
+        git(repo, "update-ref", "refs/remotes/origin/main", ahead)
+        git(repo, "reset", "-q", "--hard", "HEAD~1")
+        red = run_checker(registry, repo_root=core, workspace_root=workspace)
+        assert red.returncode == 1, red.stdout
+        assert "pin '1.0.0' disagrees" in red.stderr, red.stderr
+
+
 def test_consumer_truth_requires_canonical_manifest_entry():
     with tempfile.TemporaryDirectory() as d:
         consumer, core, registry, workspace = consumer_truth_case(pathlib.Path(d), ["wire.json"])
@@ -701,6 +722,7 @@ if __name__ == "__main__":
     test_consumer_truth_missing_repo_and_artifact_red()
     test_consumer_truth_malformed_descriptor_red()
     test_consumer_truth_requires_local_main_branch()
+    test_consumer_truth_prefers_origin_main_over_local_main()
     test_consumer_truth_requires_canonical_manifest_entry()
     test_standalone_checker_reports_consumer_truth_not_verified()
     test_make_gate_runs_the_checker_unconditionally()

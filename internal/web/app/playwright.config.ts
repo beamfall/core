@@ -131,6 +131,24 @@ export default defineConfig({
         bypassCSP: true,
       },
     },
+    // UI STATE INVENTORY (CORE-1305): rows of e2e/lib/ui-states.mjs no other spec covers, at
+    // desktop width and on a phone. The console storage state reaches every area.
+    {
+      name: "ui-states",
+      testMatch: /ui-states\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        storageState: join(authDir, "console.json"),
+      },
+    },
+    {
+      name: "ui-states-mobile",
+      testMatch: /ui-states\.spec\.ts/,
+      use: {
+        ...devices["Pixel 7"],
+        storageState: join(authDir, "console.json"),
+      },
+    },
     // AUTH MATRIX: role/profile combinations that need multiple storage states
     // in one spec, so the test creates its own contexts.
     {

@@ -148,7 +148,7 @@ func TestMountCapabilityProbePreservesUnknownRemoteResults(t *testing.T) {
 }
 
 func TestStoreMountCapabilitiesRejectsFiles(t *testing.T) {
-	st, err := Open(context.Background(), t.TempDir(), Options{})
+	st, err := Open(context.Background(), migratedDataDir(t), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

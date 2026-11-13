@@ -112,7 +112,7 @@ func TestAttachedAllowsByteLocalWrites(t *testing.T) {
 // TestMainAuthorsFreely confirms the default (Main) store still authors — the
 // guard is a no-op for the single-server operator (back-compatible).
 func TestMainAuthorsFreely(t *testing.T) {
-	st, err := Open(context.Background(), t.TempDir(), Options{SeedDevelopmentData: true})
+	st, err := Open(context.Background(), migratedDataDir(t), Options{SeedDevelopmentData: true})
 	if err != nil {
 		t.Fatalf("open main store: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestMainAuthorsFreely(t *testing.T) {
 
 func openAttached(t *testing.T) *Store {
 	t.Helper()
-	st, err := Open(context.Background(), t.TempDir(), Options{Role: serverrole.Attached})
+	st, err := Open(context.Background(), migratedDataDir(t), Options{Role: serverrole.Attached})
 	if err != nil {
 		t.Fatalf("open attached store: %v", err)
 	}

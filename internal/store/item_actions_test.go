@@ -437,7 +437,7 @@ func TestWatchlistSourcePagesPastMutedItems(t *testing.T) {
 // of its Entities must be resolved there.
 func TestWatchlistSourceDropsMutedEncryptedItems(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -519,7 +519,7 @@ func TestItemActionSourcesDropPurgedEntities(t *testing.T) {
 // ones nor runs while the plane is sealed.
 func TestItemActionsReachAnEncryptedLibrary(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
 	if err != nil {
 		t.Fatal(err)
 	}

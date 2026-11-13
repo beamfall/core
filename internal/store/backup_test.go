@@ -18,7 +18,7 @@ import (
 func TestBackupCreatesPairedDatabaseSnapshotsAndManifest(t *testing.T) {
 	ctx := context.Background()
 	backupDir := t.TempDir()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, AllowedRoots: []string{backupDir}})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, AllowedRoots: []string{backupDir}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestBackupCreatesPairedDatabaseSnapshotsAndManifest(t *testing.T) {
 func TestBackupWithOptionsRejectsPathOutsideAllowedRoots(t *testing.T) {
 	ctx := context.Background()
 	allowedDir := t.TempDir()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, AllowedRoots: []string{allowedDir}})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, AllowedRoots: []string{allowedDir}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func TestBackupWithOptionsRejectsSymlinkEscapeAndRootAllowlist(t *testing.T) {
 	if err := os.Symlink(outsideDir, filepath.Join(allowedDir, "outside-link")); err != nil {
 		t.Fatal(err)
 	}
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, AllowedRoots: []string{allowedDir}})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, AllowedRoots: []string{allowedDir}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestConfinedBackupPathRejectsReplacedRoot(t *testing.T) {
 
 func TestBackupWithOptionsRejectsBeforeMkdirAll(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, AllowedRoots: []string{t.TempDir()}})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, AllowedRoots: []string{t.TempDir()}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +224,7 @@ func TestBackupWithOptionsRejectsBeforeMkdirAll(t *testing.T) {
 func TestBackupIncludesEncryptedLibraryCiphertextSnapshotsAndManifest(t *testing.T) {
 	ctx := context.Background()
 	backupDir := t.TempDir()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true, AllowedRoots: []string{backupDir}})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true, AllowedRoots: []string{backupDir}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -353,7 +353,7 @@ func TestBackupCleansPlaintextSnapshotWhenCipherLeavesInputIntact(t *testing.T) 
 func TestBackupSealedEncryptedLibraryStillManifestsCiphertext(t *testing.T) {
 	ctx := context.Background()
 	backupDir := t.TempDir()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true, AllowedRoots: []string{backupDir}})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true, AllowedRoots: []string{backupDir}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,7 +394,7 @@ func TestBackupSealedEncryptedLibraryStillManifestsCiphertext(t *testing.T) {
 func TestRestoreBackupReconstructsEncryptedLibraryCiphertextAndSchemaMetadata(t *testing.T) {
 	ctx := context.Background()
 	backupDir := t.TempDir()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true, AllowedRoots: []string{backupDir}})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true, AllowedRoots: []string{backupDir}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -442,7 +442,7 @@ func TestRestoreBackupReconstructsEncryptedLibraryCiphertextAndSchemaMetadata(t 
 func TestRestoreBackupDrillSeededStoreRowParity(t *testing.T) {
 	ctx := context.Background()
 	backupDir := t.TempDir()
-	source, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, AllowedRoots: []string{backupDir}})
+	source, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, AllowedRoots: []string{backupDir}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -505,7 +505,7 @@ func TestBackupQuarantinedEncryptedLibraryFailsClosed(t *testing.T) {
 
 func TestBackupAfterCloseReturnsErrClosed(t *testing.T) {
 	backupDir := t.TempDir()
-	st, err := Open(context.Background(), t.TempDir(), Options{AllowedRoots: []string{backupDir}})
+	st, err := Open(context.Background(), migratedDataDir(t), Options{AllowedRoots: []string{backupDir}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -520,7 +520,7 @@ func TestBackupAfterCloseReturnsErrClosed(t *testing.T) {
 func TestVerifyBackupSetRejectsMissingRequiredDatabases(t *testing.T) {
 	ctx := context.Background()
 	backupDir := t.TempDir()
-	st, err := Open(ctx, t.TempDir(), Options{AllowedRoots: []string{backupDir}})
+	st, err := Open(ctx, migratedDataDir(t), Options{AllowedRoots: []string{backupDir}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -550,7 +550,7 @@ func TestVerifyBackupSetRejectsMissingRequiredDatabases(t *testing.T) {
 func TestVerifyBackupSetRejectsSnapshotSymlinkEscape(t *testing.T) {
 	ctx := context.Background()
 	backupDir := t.TempDir()
-	st, err := Open(ctx, t.TempDir(), Options{AllowedRoots: []string{backupDir}})
+	st, err := Open(ctx, migratedDataDir(t), Options{AllowedRoots: []string{backupDir}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -602,7 +602,7 @@ func TestVerifyBackupSetRejectsSnapshotSymlinkEscape(t *testing.T) {
 func TestPruneBackupsDoesNotCountPartialDirectories(t *testing.T) {
 	ctx := context.Background()
 	backupDir := t.TempDir()
-	st, err := Open(ctx, t.TempDir(), Options{AllowedRoots: []string{backupDir}})
+	st, err := Open(ctx, migratedDataDir(t), Options{AllowedRoots: []string{backupDir}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -633,7 +633,7 @@ func TestPruneBackupsDoesNotCountPartialDirectories(t *testing.T) {
 func TestRestoreBackupRejectsCorruptedSnapshot(t *testing.T) {
 	ctx := context.Background()
 	backupDir := t.TempDir()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, AllowedRoots: []string{backupDir}})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, AllowedRoots: []string{backupDir}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -667,7 +667,7 @@ func TestRestoreBackupRejectsCorruptedSnapshot(t *testing.T) {
 func TestRestoreBackupRejectsTruncatedSnapshot(t *testing.T) {
 	ctx := context.Background()
 	backupDir := t.TempDir()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, AllowedRoots: []string{backupDir}})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, AllowedRoots: []string{backupDir}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -688,7 +688,7 @@ func TestRestoreBackupRejectsTruncatedSnapshot(t *testing.T) {
 func TestRestoreBackupRejectsNewerManifestInstructions(t *testing.T) {
 	ctx := context.Background()
 	backupDir := t.TempDir()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, AllowedRoots: []string{backupDir}})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, AllowedRoots: []string{backupDir}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1074,7 +1074,7 @@ func TestBackupDefaultRecordsPersistedLibraryRootsAndVolumeIDs(t *testing.T) {
 	ctx := context.Background()
 	backupDir := t.TempDir()
 	mediaRoot := t.TempDir()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, AllowedRoots: []string{backupDir}})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, AllowedRoots: []string{backupDir}})
 	if err != nil {
 		t.Fatal(err)
 	}

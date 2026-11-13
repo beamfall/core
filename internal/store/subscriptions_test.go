@@ -77,7 +77,7 @@ func TestSubscriptionRoundTrip(t *testing.T) {
 
 func TestSubscriptionRetentionTrashDisabledRequiresConfirmation(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, TrashDisabled: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, TrashDisabled: true})
 	if err != nil {
 		t.Fatal(err)
 	}
