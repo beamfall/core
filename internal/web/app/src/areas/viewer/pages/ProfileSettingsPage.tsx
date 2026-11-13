@@ -126,7 +126,7 @@ export function ProfileSettingsPage() {
         </header>
 
         {saveError && (
-          <p className="text-sm text-[var(--red-500)]" role="alert">
+          <p className="text-sm text-[var(--state-danger)]" role="alert">
             {t("settingsSaveFailed")}
           </p>
         )}
@@ -139,7 +139,7 @@ export function ProfileSettingsPage() {
             <div className="settings-group settings-row flex flex-col gap-4">
               <p className="m-0 text-sm text-[var(--text-muted)]">{t("avatarLead")}</p>
               {avatarError && (
-                <p className="m-0 text-sm text-[var(--red-500)]" role="alert">
+                <p className="m-0 text-sm text-[var(--state-danger)]" role="alert">
                   {t("avatarSaveFailed")}
                 </p>
               )}

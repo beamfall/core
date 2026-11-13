@@ -8,6 +8,18 @@ import { useT } from "@/lib/i18n";
 export const AUTH_FIELD = "h-11 rounded-[10px] border-white/10 bg-white/[0.04] text-[15px]";
 export const AUTH_FIELD_LABEL = "mb-2 block text-dense font-medium text-foreground/80";
 
+// The brand wordmark asset the app header uses (chrome.css .bf-wordmark), so
+// the sign-in and setup pages carry the same mark instead of typed text.
+export function Wordmark({ label }: { label: string }) {
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      className="h-3.5 w-[104px] shrink-0 bg-current [mask:url(/web/beamfall-wordmark.svg)_center/contain_no-repeat]"
+    />
+  );
+}
+
 // Full-bleed cinema page with the brand bar and one card. The card sits at a
 // fixed offset from the top so it never shifts as its content grows.
 export function AuthShell({ children }: { children: ReactNode }) {
@@ -17,7 +29,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
       <CinemaBackdrop />
       <header className="flex items-center gap-2.5 px-5 py-4 sm:px-8 sm:py-6">
         <img src={beamfallLogo} alt="" width={28} height={28} className="shrink-0" />
-        <span className="text-base font-semibold tracking-tight">{t("brand")}</span>
+        <Wordmark label={t("brand")} />
       </header>
       <div className="flex flex-1 justify-center px-4 pb-12 pt-2 sm:px-8 sm:pt-[8vh]">
         <div className="animate-in fade-in w-full max-w-[440px] self-start rounded-[14px] border border-white/10 bg-card p-6 shadow-[0_24px_60px_-28px_rgba(0,0,0,0.7)] duration-200 sm:p-8">

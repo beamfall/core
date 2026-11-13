@@ -10,6 +10,7 @@ import {
   Tv,
 } from "lucide-react";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
+import { Wordmark } from "@/areas/enroll/AuthShell";
 import beamfallLogo from "@/assets/beamfall-logo.png";
 import { CinemaBackdrop } from "@/components/beamfall/CinemaBackdrop";
 import { Button } from "@/components/ui/button";
@@ -621,7 +622,7 @@ export function SetupWizard() {
       <header className="flex items-center justify-between px-5 py-4 sm:px-8 sm:py-6">
         <div className="flex items-center gap-2.5">
           <img src={beamfallLogo} alt="" width={28} height={28} className="shrink-0" />
-          <span className="text-base font-semibold tracking-tight">{t("brand")}</span>
+          <Wordmark label={t("brand")} />
           <span className="hidden text-sm text-muted-foreground sm:inline">
             {t("setupBrandSuffix")}
           </span>
