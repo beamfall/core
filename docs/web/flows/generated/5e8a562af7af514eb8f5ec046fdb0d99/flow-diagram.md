@@ -1,11 +1,11 @@
 # Enroll a browser with a pairing code — flow-diagram
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:f0990662dc3d6a908622cc8299903ec4 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/enroll/EnrollPage\.tsx:43; symbol: EnrollPage; span SHA256: c47f9fbfc591d8600ffb4e5bf8ad928e38cf084157f16d18d570897e045204fa.
+Source: internal/web/app/src/areas/enroll/EnrollPage\.tsx:181; symbol: CardHeading; span SHA256: f7e73c414493680f27a87f3e71e6d41ea30bb012047e4a11e1bdbb2d33579ffc.
 
 ```mermaid
 sequenceDiagram
@@ -13,6 +13,8 @@ sequenceDiagram
     participant U as Unresolved runtime
     Note over S,U: Lexical inventory only - no witnessed order
     Note over S: Flow 5e8a562af7af514eb8f5ec046fdb0d99
+    Note over S,U: Source contains call cn in internal/web/app/src/areas/enroll/EnrollPage.tsx at line 198 - order unresolved
+    Note over S,U: Source contains call cn in internal/web/app/src/areas/enroll/EnrollPage.tsx at line 208 - order unresolved
     Note over S,U: Source contains call useT in internal/web/app/src/areas/enroll/EnrollPage.tsx at line 44 - order unresolved
     Note over S,U: Source contains call useId in internal/web/app/src/areas/enroll/EnrollPage.tsx at line 45 - order unresolved
     Note over S,U: Source contains call useId in internal/web/app/src/areas/enroll/EnrollPage.tsx at line 46 - order unresolved
@@ -33,5 +35,7 @@ sequenceDiagram
     Note over S,U: Source contains call t in internal/web/app/src/areas/enroll/PairingCodeHelp.tsx at line 19 - order unresolved
     Note over S,U: Source contains call t in internal/web/app/src/areas/enroll/PairingCodeHelp.tsx at line 20 - order unresolved
     Note over S,U: Source contains call t in internal/web/app/src/areas/enroll/PairingCodeHelp.tsx at line 23 - order unresolved
+    Note over S,U: Source contains call postJSON in internal/web/app/src/lib/graphql/auth.ts at line 96 - order unresolved
+    Note over S,U: Source contains call settleRebind in internal/web/app/src/lib/graphql/auth.ts at line 97 - order unresolved
     Note over S,U: Source contains call rebindCompatibility in internal/web/app/src/lib/graphql/auth.ts at line 28 - order unresolved
 ```

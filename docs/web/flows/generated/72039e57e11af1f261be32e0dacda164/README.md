@@ -1,6 +1,6 @@
 # Viewer notifications inbox — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:e6e4b5c722b0bf6caa1f8d816ec21be9 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,20 +32,14 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow viewer\.notifications: 5 resolved, 8 unresolved members.
+Declared inventory flow viewer\.notifications: 8 resolved, 5 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/viewer/pages/NotificationsPage\.tsx NOTIFICATIONS\_CHANGED\_EVENT: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/viewer/pages/NotificationsPage\.tsx NOTIFICATION\_INBOX\_LIMIT: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/pages/NotificationsPage\.tsx NotificationsPage: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/viewer/pages/NotificationsPage\.tsx TFunction: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/viewer\.ts MARK\_NOTIFICATION\_READ\_MUTATION: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/viewer\.ts NOTIFICATIONS\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts fetchNotifications: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts markNotificationRead: symbol is not a supported declaration in this path at this revision.

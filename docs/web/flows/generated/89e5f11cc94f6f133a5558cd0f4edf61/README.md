@@ -1,6 +1,6 @@
 # Viewer full library browse: sort, filters, grouping, virtual grid — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:90fe09b02130363e76bff5385f4b60ee -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,7 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow viewer\.library\-browse: 15 resolved, 46 unresolved members.
+Declared inventory flow viewer\.library\-browse: 29 resolved, 32 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/viewer/components/useVirtualGrid\.ts VIRTUAL\_GRID\_COLUMN\_MIN: symbol is not a supported declaration in this path at this revision.
 
@@ -84,44 +84,16 @@ Declared inventory flow viewer\.library\-browse: 15 resolved, 46 unresolved memb
 
 - Unresolved member internal/web/app/src/areas/viewer/lib/libraryBrowse\.ts VIEW\_MODE\_KEY: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/areas/viewer/lib/libraryBrowse\.ts browseStateParams: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/libraryBrowse\.ts fetchLibraryItems: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/libraryBrowse\.ts libraryItemsVariables: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/libraryBrowse\.ts oneOf: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/libraryBrowse\.ts parseBrowseState: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/libraryBrowse\.ts readLibraryViewMode: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/libraryBrowse\.ts writeLibraryViewMode: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/areas/viewer/pages/LibraryBrowsePage\.tsx ALL: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/viewer/pages/LibraryBrowsePage\.tsx BROWSE\_MAX\_RENDERED: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/pages/LibraryBrowsePage\.tsx BrowseSelect: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/viewer/pages/LibraryBrowsePage\.tsx EMPTY\_FACETS: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/viewer/pages/LibraryBrowsePage\.tsx GROUP\_VALUE: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/areas/viewer/pages/LibraryBrowsePage\.tsx LibraryBrowse: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/pages/LibraryBrowsePage\.tsx LibraryBrowsePage: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/pages/LibraryBrowsePage\.tsx PendingCard: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/areas/viewer/pages/LibraryBrowsePage\.tsx QUALITY\_LABELS: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/viewer/pages/LibraryBrowsePage\.tsx SORT\_LABELS: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/areas/viewer/pages/LibraryBrowsePage\.tsx Spacer: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/areas/viewer/pages/LibraryBrowsePage\.tsx WATCH\_LABELS: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/pages/LibraryBrowsePage\.tsx newSeed: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/pages/LibraryBrowsePage\.tsx withSelected: symbol is not a supported declaration in this path at this revision.

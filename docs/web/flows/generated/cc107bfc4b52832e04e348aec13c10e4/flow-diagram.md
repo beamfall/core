@@ -1,11 +1,11 @@
 # Session spine: compat handshake, session renewal, identity epoch, request guard — flow-diagram
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1c78e8002cd5e62eb276606e42946313 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/lib/api\.ts:20; symbol: getIdentityEpochSignal; span SHA256: fa6d3dc2d90a19d916a83e3cccb881a3ebdc0bee71bee7562a6646c9727f4bcf.
+Source: internal/web/app/src/lib/api\.ts:368; symbol: fetchSetupRequired; span SHA256: 0d8c70a9a0132d07cd38716b208981a5a9ec35272673295f9d5c27a3b5b6c13c.
 
 ```mermaid
 sequenceDiagram
@@ -13,23 +13,74 @@ sequenceDiagram
     participant U as Unresolved runtime
     Note over S,U: Lexical inventory only - no witnessed order
     Note over S: Flow cc107bfc4b52832e04e348aec13c10e4
+    Note over S,U: Source contains call map in internal/web/app/src/lib/api.ts at line 124 - order unresolved
+    Note over S,U: Source contains call trim in internal/web/app/src/lib/api.ts at line 124 - order unresolved
+    Note over S,U: Source contains call toLowerCase in internal/web/app/src/lib/api.ts at line 124 - order unresolved
+    Note over S,U: Source contains call find in internal/web/app/src/lib/api.ts at line 125 - order unresolved
+    Note over S,U: Source contains call validateRequestBound in internal/web/app/src/lib/api.ts at line 178 - order unresolved
+    Note over S,U: Source contains call validateRequestBound in internal/web/app/src/lib/api.ts at line 179 - order unresolved
+    Note over S,U: Source contains call some in internal/web/app/src/lib/api.ts at line 326 - order unresolved
+    Note over S,U: Source contains call trim in internal/web/app/src/lib/api.ts at line 326 - order unresolved
+    Note over S,U: Source contains call toLowerCase in internal/web/app/src/lib/api.ts at line 326 - order unresolved
+    Note over S,U: Source contains call parse in internal/web/app/src/lib/api.ts at line 282 - order unresolved
+    Note over S,U: Source contains call TextDecoder in internal/web/app/src/lib/api.ts at line 282 - order unresolved
+    Note over S,U: Source contains call decode in internal/web/app/src/lib/api.ts at line 282 - order unresolved
+    Note over S,U: Source contains call parse in internal/web/app/src/lib/api.ts at line 274 - order unresolved
+    Note over S,U: Source contains call TextDecoder in internal/web/app/src/lib/api.ts at line 274 - order unresolved
+    Note over S,U: Source contains call decode in internal/web/app/src/lib/api.ts at line 274 - order unresolved
+    Note over S,U: Source contains call ApiMalformedResponseError in internal/web/app/src/lib/api.ts at line 276 - order unresolved
     Note over S,U: Source contains call any in internal/web/app/src/lib/api.ts at line 48 - order unresolved
+    Note over S,U: Source contains call get in internal/web/app/src/lib/compat.ts at line 132 - order unresolved
+    Note over S,U: Source contains call startsWith in internal/web/app/src/lib/compat.ts at line 133 - order unresolved
+    Note over S,U: Source contains call resolve in internal/web/app/src/lib/compat.ts at line 81 - order unresolved
+    Note over S,U: Source contains call then in internal/web/app/src/lib/compat.ts at line 86 - order unresolved
+    Note over S,U: Source contains call has in internal/web/app/src/lib/compat.ts at line 90 - order unresolved
+    Note over S,U: Source contains call listener in internal/web/app/src/lib/compat.ts at line 92 - order unresolved
+    Note over S,U: Source contains call catch in internal/web/app/src/lib/compat.ts at line 100 - order unresolved
+    Note over S,U: Source contains call advanceCompatibilityEpoch in internal/web/app/src/lib/compat.ts at line 122 - order unresolved
+    Note over S,U: Source contains call performHandshake in internal/web/app/src/lib/compat.ts at line 123 - order unresolved
+    Note over S,U: Source contains call isBlocked in internal/web/app/src/lib/compat.ts at line 124 - order unresolved
+    Note over S,U: Source contains call Error in internal/web/app/src/lib/compat.ts at line 124 - order unresolved
     Note over S,U: Source contains call useEffect in internal/web/app/src/lib/register.tsx at line 25 - order unresolved
     Note over S,U: Source contains call useContext in internal/web/app/src/lib/register.tsx at line 45 - order unresolved
     Note over S,U: Source contains call Error in internal/web/app/src/lib/register.tsx at line 46 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/lib/session.tsx at line 109 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/lib/session.tsx at line 110 - order unresolved
     Note over S,U: Source contains call fetchCurrentSession in internal/web/app/src/lib/session.tsx at line 44 - order unresolved
     Note over S,U: Source contains call isUnauthorized in internal/web/app/src/lib/session.tsx at line 46 - order unresolved
     Note over S,U: Source contains call renewSession in internal/web/app/src/lib/session.tsx at line 47 - order unresolved
     Note over S,U: Source contains call fetchCurrentSession in internal/web/app/src/lib/session.tsx at line 48 - order unresolved
+    Note over S,U: Source contains call useContext in internal/web/app/src/lib/session.tsx at line 354 - order unresolved
+    Note over S,U: Source contains call Error in internal/web/app/src/lib/session.tsx at line 355 - order unresolved
+    Note over S,U: Source contains call viewerIdentityKey in internal/web/app/src/lib/session.tsx at line 350 - order unresolved
+    Note over S,U: Source contains call useContext in internal/web/app/src/lib/session.tsx at line 350 - order unresolved
     Note over S,U: Source contains call clear in internal/web/app/src/lib/viewerCache.ts at line 70 - order unresolved
     Note over S,U: Source contains call delete in internal/web/app/src/lib/viewerCache.ts at line 54 - order unresolved
     Note over S,U: Source contains call entryKey in internal/web/app/src/lib/viewerCache.ts at line 54 - order unresolved
+    Note over S,U: Source contains call entryKey in internal/web/app/src/lib/viewerCache.ts at line 31 - order unresolved
+    Note over S,U: Source contains call has in internal/web/app/src/lib/viewerCache.ts at line 32 - order unresolved
+    Note over S,U: Source contains call get in internal/web/app/src/lib/viewerCache.ts at line 33 - order unresolved
+    Note over S,U: Source contains call delete in internal/web/app/src/lib/viewerCache.ts at line 35 - order unresolved
+    Note over S,U: Source contains call set in internal/web/app/src/lib/viewerCache.ts at line 36 - order unresolved
     Note over S,U: Source contains call entryKey in internal/web/app/src/lib/viewerCache.ts at line 60 - order unresolved
     Note over S,U: Source contains call startsWith in internal/web/app/src/lib/viewerCache.ts at line 63 - order unresolved
     Note over S,U: Source contains call push in internal/web/app/src/lib/viewerCache.ts at line 63 - order unresolved
     Note over S,U: Source contains call slice in internal/web/app/src/lib/viewerCache.ts at line 63 - order unresolved
     Note over S,U: Source contains call stringify in internal/web/app/src/lib/viewerCache.ts at line 22 - order unresolved
+    Note over S,U: Source contains call entryKey in internal/web/app/src/lib/viewerCache.ts at line 42 - order unresolved
+    Note over S,U: Source contains call delete in internal/web/app/src/lib/viewerCache.ts at line 43 - order unresolved
+    Note over S,U: Source contains call set in internal/web/app/src/lib/viewerCache.ts at line 44 - order unresolved
+    Note over S,U: Source contains call keys in internal/web/app/src/lib/viewerCache.ts at line 46 - order unresolved
+    Note over S,U: Source contains call next in internal/web/app/src/lib/viewerCache.ts at line 46 - order unresolved
+    Note over S,U: Source contains call delete in internal/web/app/src/lib/viewerCache.ts at line 48 - order unresolved
+    Note over S,U: Source contains call postJSON in internal/web/app/src/lib/graphql/auth.ts at line 107 - order unresolved
+    Note over S,U: Source contains call rebindCompatibility in internal/web/app/src/lib/graphql/auth.ts at line 108 - order unresolved
+    Note over S,U: Source contains call postJSON in internal/web/app/src/lib/graphql/auth.ts at line 119 - order unresolved
+    Note over S,U: Source contains call settleRebind in internal/web/app/src/lib/graphql/auth.ts at line 123 - order unresolved
     Note over S,U: Source contains call rebindCompatibility in internal/web/app/src/lib/graphql/auth.ts at line 28 - order unresolved
+    Note over S,U: Source contains call signalOrCommitted in internal/web/app/src/lib/graphql/viewer.ts at line 117 - order unresolved
+    Note over S,U: Source contains call rebindCompatibility in internal/web/app/src/lib/graphql/viewer.ts at line 118 - order unresolved
+    Note over S,U: Source contains call rebindCompatibility in internal/web/app/src/lib/graphql/viewer.ts at line 107 - order unresolved
     Note over S,U: Source contains call useCallback in internal/web/app/src/lib/session.tsx at line 123 - order unresolved
     Note over S,U: Source contains call abort in internal/web/app/src/lib/session.tsx at line 124 - order unresolved
     Note over S,U: Source contains call advanceCompatibilityEpoch in internal/web/app/src/lib/session.tsx at line 125 - order unresolved

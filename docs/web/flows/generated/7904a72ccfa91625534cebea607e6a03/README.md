@@ -1,11 +1,11 @@
 # Manage tags: tag tree, assign, bulk, trashed tags — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:507d93b3fc9a029fd8a22230a81cab3b -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/manage/pages/TagsPage\.tsx:155; symbol: TagTree; span SHA256: 7dfdc7777dbcece2e48ae9fc8b495405b1f0ec2db65a491652b3e6cb1f81fbc6.
+Source: internal/web/app/src/areas/manage/pages/TagsPage\.tsx:359; symbol: AssignSection; span SHA256: ff76541b48b3a2f9b4e7cb4baf150f18989432602ae1aa6b427a1a99ae9c95a4.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -32,21 +32,13 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow manage\.tags: 21 resolved, 26 unresolved members.
-
-- Unresolved member internal/web/app/src/areas/manage/pages/TagsPage\.tsx AssignSection: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow manage\.tags: 34 resolved, 13 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/manage/pages/TagsPage\.tsx BULK\_MODES: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/manage/pages/TagsPage\.tsx BulkSection: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/manage/pages/TagsPage\.tsx NO\_PARENT: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/manage/pages/TagsPage\.tsx TARGET\_TYPES: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/manage/pages/TagsPage\.tsx TrashedTable: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/manage/pages/TagsPage\.tsx targetTypeLabel: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts ASSIGN\_TAG\_MUTATION: symbol is not a supported declaration in this path at this revision.
 
@@ -67,21 +59,3 @@ Declared inventory flow manage\.tags: 21 resolved, 26 unresolved members.
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts UNASSIGN\_TAG\_MUTATION: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts UPDATE\_TAG\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts assignTag: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts bulkAssignTags: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts createTag: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts deleteTag: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchTagAssignments: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchTags: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts restoreTag: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts unassignTag: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts updateTag: symbol is not a supported declaration in this path at this revision.

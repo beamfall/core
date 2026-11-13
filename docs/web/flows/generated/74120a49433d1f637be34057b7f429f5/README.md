@@ -1,6 +1,6 @@
 # Backups: history, verify manifest, restore and export — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:5e8fd5b961032ee27658a18b4563b966 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,7 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow manage\.backups: 17 resolved, 9 unresolved members.
+Declared inventory flow manage\.backups: 21 resolved, 5 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/manage/pages/BackupExportPage\.tsx MANIFEST\_BASENAME: symbol is not a supported declaration in this path at this revision.
 
@@ -43,11 +43,3 @@ Declared inventory flow manage\.backups: 17 resolved, 9 unresolved members.
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts METADATA\_EXPORT\_QUERY: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts VERIFY\_BACKUP\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchBackupHistory: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchMetadataExport: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts runBackup: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts verifyBackup: symbol is not a supported declaration in this path at this revision.

@@ -1,11 +1,11 @@
 # App routing: /web basename, area code\-splitting, initial\-route preload — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1413df0f74ab99fe975b438e3cf3ccb0 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/App\.tsx:46; symbol: preloadInitialRoute; span SHA256: d68dbb9aacaeafed1ab256cd81fa1cd9b83218a769c52aa085038942bef37e6c.
+Source: internal/web/app/src/App\.tsx:84; symbol: App; span SHA256: 85c130fae59b090533bc933b93a59e21e0235c72161a524b22ade1ce4a0b10fe.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -32,11 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow shell\.routing: 4 resolved, 17 unresolved members.
-
-- Unresolved member internal/web/app/src/App\.tsx App: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/App\.tsx Area: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow shell\.routing: 8 resolved, 13 unresolved members.
 
 - Unresolved member internal/web/app/src/App\.tsx ConsoleArea: symbol is not a supported declaration in this path at this revision.
 
@@ -46,8 +42,6 @@ Declared inventory flow shell\.routing: 4 resolved, 17 unresolved members.
 
 - Unresolved member internal/web/app/src/App\.tsx PromotePage: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/App\.tsx RouteFallback: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/App\.tsx SetupWizard: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/App\.tsx ViewerArea: symbol is not a supported declaration in this path at this revision.
@@ -55,8 +49,6 @@ Declared inventory flow shell\.routing: 4 resolved, 17 unresolved members.
 - Unresolved member internal/web/app/src/lib/lazyRoute\.ts AnyProps: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/lazyRoute\.ts PreloadableLazy: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/lazyRoute\.ts lazyRoute: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/main\.tsx INITIAL\_ROUTE\_WAIT\_MS: symbol is not a supported declaration in this path at this revision.
 

@@ -1,6 +1,6 @@
 # Backups: history, verify manifest, restore and export — functional-overview
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:9e62d480b654915ed69b4a1b4cb7829a -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
@@ -11,6 +11,11 @@ Source: internal/web/app/src/areas/manage/pages/BackupExportPage\.tsx:88; symbol
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
 
 Source: internal/web/app/src/areas/manage/pages/BackupExportPage\.tsx:365; symbol: ; span SHA256: 00cc8e0122c498497f7530707db0afd0ee9c31fdcd38ef4fa589d28338b9bfb5.
+
+<!-- flowdocs:paragraph:eae2040ff98da9b32f9e48c211a6caf5 -->
+Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:421; symbol: ; span SHA256: 09d8a0da4f42d23c6ffdea5d35f0d01161d61594eddc4c36eab85426cca79758.
 
 | Variation inventory | Runtime coverage | Denominator rule |
 | --- | --- | --- |

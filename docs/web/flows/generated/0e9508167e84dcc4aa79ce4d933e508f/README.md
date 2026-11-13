@@ -1,6 +1,6 @@
 # Setup: pick a library type and folder, create the first Library and scan — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:c31214bd362cae6a37c75010375d5bc6 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,7 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow setup\.first\-library: 3 resolved, 17 unresolved members.
+Declared inventory flow setup\.first\-library: 7 resolved, 13 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/setup/FolderPicker\.tsx Crumb: symbol is not a supported declaration in this path at this revision.
 
@@ -54,16 +54,8 @@ Declared inventory flow setup\.first\-library: 3 resolved, 17 unresolved members
 
 - Unresolved member internal/web/app/src/areas/setup/orchestrate\.ts LibraryTypeSpec: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/areas/setup/orchestrate\.ts createFirstLibrary: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts CREATE\_LIBRARY\_MUTATION: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts SCAN\_LIBRARY\_MUTATION: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts SET\_LIBRARY\_ROOTS\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts createLibrary: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts scanLibrary: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts setLibraryRoots: symbol is not a supported declaration in this path at this revision.

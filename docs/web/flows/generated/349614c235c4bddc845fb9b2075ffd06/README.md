@@ -1,6 +1,6 @@
 # Console play history: filters, history table and rankings — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:4ae3ee98b159a42b8e3c5051888b6842 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,17 +32,11 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow console\.play\-history: 4 resolved, 14 unresolved members.
+Declared inventory flow console\.play\-history: 10 resolved, 8 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/console/sections/PlayHistory\.tsx ALL: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/areas/console/sections/PlayHistory\.tsx PlayHistory: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/areas/console/sections/PlayHistory\.tsx Rank: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/PlayHistory\.tsx RankList: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/PlayHistory\.tsx Rankings: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/console/sections/PlayHistory\.tsx WINDOWS: symbol is not a supported declaration in this path at this revision.
 
@@ -53,11 +47,5 @@ Declared inventory flow console\.play\-history: 4 resolved, 14 unresolved member
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts PLAY\_STATS\_QUERY: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts PROFILES\_ADMIN\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts fetchPlayHistory: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts fetchPlayStats: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts fetchProfilesAdmin: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts LIBRARIES\_QUERY: symbol is not a supported declaration in this path at this revision.

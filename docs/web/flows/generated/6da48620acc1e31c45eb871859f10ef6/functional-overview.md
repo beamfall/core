@@ -1,6 +1,6 @@
 # Console access: library grants, rating ceilings, access schedules, managed policy — functional-overview
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:c494ff0ac7f485886ba942051ab6fbaa -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
@@ -11,6 +11,11 @@ Source: internal/web/app/src/areas/console/lib/schedulePreview\.ts:81; symbol: f
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
 
 Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:101; symbol: ; span SHA256: ac036e77d6365c704350d309390566a9bdbbe1b0eab48455e89291af7b4ac567.
+
+<!-- flowdocs:paragraph:2678f5acbe9d4791019f7315ea5bff1d -->
+Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:590; symbol: ; span SHA256: 338914d8085dc1e4ffbe4cb8de06bd741551873eadb287dbafb47c5491cbf38e.
 
 <!-- flowdocs:paragraph:cae3dd37f7c690b4b0d4cdb1c46e3c10 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.

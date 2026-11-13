@@ -1,6 +1,6 @@
 # Viewer full library browse: sort, filters, grouping, virtual grid — technical-deep-dive
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:efe4d491b636734d616308a092ec5ff6 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -26,6 +26,71 @@ Source: internal/web/app/src/areas/viewer/components/useVirtualGrid\.ts:50; symb
 Declared member: source declares useVirtualGrid; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/viewer/components/useVirtualGrid\.ts:57; symbol: useVirtualGrid; span SHA256: 215b9874fb914bb46b786319853477cbe9a78c030f7833f1fccf726fa409bb75.
+
+<!-- flowdocs:paragraph:4f6e9626d4a43b59c0b0272b24ca8a1d -->
+Declared member: source declares browseStateParams; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/libraryBrowse\.ts:84; symbol: browseStateParams; span SHA256: d38556ce03016332afee0ae4ce337b67d33b8286b905dac8ced1d76aa9d9d080.
+
+<!-- flowdocs:paragraph:65547c552caac91d9ea98efbbe7bede5 -->
+Declared member: source declares fetchLibraryItems; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/libraryBrowse\.ts:151; symbol: fetchLibraryItems; span SHA256: 01eb1c9d71d5da557071ab7ed9ac4dc0a337ab8b773610faca62f0dad66c4a6d.
+
+<!-- flowdocs:paragraph:edfb1c20621f71cf7e463e231a4180db -->
+Declared member: source declares libraryItemsVariables; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/libraryBrowse\.ts:130; symbol: libraryItemsVariables; span SHA256: 103968073a5ae607bf3c6cad0cb5d89478f782aff9724ffa7009b08abf963488.
+
+<!-- flowdocs:paragraph:6c39380d211970b4f830e91da5785cb3 -->
+Declared member: source declares oneOf; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/libraryBrowse\.ts:58; symbol: oneOf; span SHA256: 3a983755b85eb2775a5feadb7369678165b321fc0629dd7abe02bdd6c53e7c08.
+
+<!-- flowdocs:paragraph:4298cbdc1e655f200774038eb58e11b2 -->
+Declared member: source declares parseBrowseState; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/libraryBrowse\.ts:63; symbol: parseBrowseState; span SHA256: 8f6c674187bddc4a9f57e4f1db448eac2500bc2085c3ae464113b75c13f88bb5.
+
+<!-- flowdocs:paragraph:6350ac4a6fb27bba9cc2f2ca1f75442f -->
+Declared member: source declares readLibraryViewMode; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/libraryBrowse\.ts:176; symbol: readLibraryViewMode; span SHA256: 00c0e74e62d0fca656e845acfba841542ff62d5e0792bcebef817d01cfe18311.
+
+<!-- flowdocs:paragraph:dccf6843a6076b1899a455417b87fdac -->
+Declared member: source declares writeLibraryViewMode; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/libraryBrowse\.ts:184; symbol: writeLibraryViewMode; span SHA256: e7fb7828fa886ccad5a5d4087cdb7459046e47c3785f117716690450fdd512e6.
+
+<!-- flowdocs:paragraph:8e2b742285ff80a3816088658acbdced -->
+Declared member: source declares BrowseSelect; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/pages/LibraryBrowsePage\.tsx:572; symbol: BrowseSelect; span SHA256: fd0d3ce16b04b76851e3abc2926bb38408f7cc5f1d93092a76ecdcc3c770fe84.
+
+<!-- flowdocs:paragraph:246ec3d03db1f070d3f135d1b345b721 -->
+Declared member: source declares LibraryBrowse; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/pages/LibraryBrowsePage\.tsx:101; symbol: LibraryBrowse; span SHA256: 927b7fd47b6f700a5acd16a855e10b8deef68251f3817ed4d353103f99922981.
+
+<!-- flowdocs:paragraph:8048ccd9b6f3a8139880b08df59839c4 -->
+Declared member: source declares PendingCard; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/pages/LibraryBrowsePage\.tsx:619; symbol: PendingCard; span SHA256: 7c8865953a2c603b3d904ebf58ed7037385d33428f192a8e1116f9d30d2b8641.
+
+<!-- flowdocs:paragraph:93d959e4b11c26009708660b2a2689d6 -->
+Declared member: source declares Spacer; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/pages/LibraryBrowsePage\.tsx:606; symbol: Spacer; span SHA256: 13350331a67bc85e9951dc1df6b7f5ec9ff736e15adba829a6d0779a101670d4.
+
+<!-- flowdocs:paragraph:d63e30ea31f931b4593b1b60782f53fb -->
+Declared member: source declares newSeed; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/pages/LibraryBrowsePage\.tsx:637; symbol: newSeed; span SHA256: bbb25499e14cef5bf0c6181346a190748aa1de54626f62e8d69e264cbf5e807f.
+
+<!-- flowdocs:paragraph:f4aee683aff30e809b6a9e131bda8f67 -->
+Declared member: source declares withSelected; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/pages/LibraryBrowsePage\.tsx:632; symbol: withSelected; span SHA256: d411734cb2a24c1e910b3a1ed53c8108cc7551f91327b529270f08ff1a16dcdf.
 
 <!-- flowdocs:paragraph:0dedd3bf2439f44d98ccb561255b7903 -->
 Declared member: source declares compute; membership is caller\-declared, not runtime evidence\.

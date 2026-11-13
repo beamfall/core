@@ -1,11 +1,11 @@
 # Viewer My Data / privacy: summary, event log, sessions, stream tokens, export — flow-diagram
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:acc362561c516ccec31539cb78cf4958 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx:67; symbol: MyDataPage; span SHA256: 7ca58af2edc818b84f6626960a47c72e2248344375788d9bfb01137b7f8aba53.
+Source: internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx:558; symbol: EventRow; span SHA256: b90d5000e023b772fdb15c1217e4d50e131eb6efd7cd377e76d3b883a15554b1.
 
 ```mermaid
 sequenceDiagram
@@ -13,8 +13,35 @@ sequenceDiagram
     participant U as Unresolved runtime
     Note over S,U: Lexical inventory only - no witnessed order
     Note over S: Flow f8d45946aa49284f1b86ebef0c980b98
+    Note over S,U: Source contains call useT at line 559 - order unresolved
+    Note over S,U: Source contains call t at line 562 - order unresolved
+    Note over S,U: Source contains call t at line 564 - order unresolved
+    Note over S,U: Source contains call t at line 565 - order unresolved
+    Note over S,U: Source contains call formatDateTime at line 578 - order unresolved
+    Note over S,U: Source contains call useT at line 461 - order unresolved
+    Note over S,U: Source contains call t at line 469 - order unresolved
+    Note over S,U: Source contains call t at line 472 - order unresolved
+    Note over S,U: Source contains call t at line 478 - order unresolved
+    Note over S,U: Source contains call map at line 479 - order unresolved
+    Note over S,U: Source contains call t at line 488 - order unresolved
+    Note over S,U: Source contains call onFromChange at line 493 - order unresolved
+    Note over S,U: Source contains call t at line 498 - order unresolved
+    Note over S,U: Source contains call onToChange at line 503 - order unresolved
+    Note over S,U: Source contains call t at line 510 - order unresolved
+    Note over S,U: Source contains call t at line 513 - order unresolved
+    Note over S,U: Source contains call t at line 525 - order unresolved
+    Note over S,U: Source contains call map at line 529 - order unresolved
+    Note over S,U: Source contains call t at line 537 - order unresolved
+    Note over S,U: Source contains call t at line 546 - order unresolved
+    Note over S,U: Source contains call t at line 549 - order unresolved
     Note over S,U: Source contains call useT at line 68 - order unresolved
     Note over S,U: Source contains call useState at line 94 - order unresolved
+    Note over S,U: Source contains call useT at line 585 - order unresolved
+    Note over S,U: Source contains call push at line 587 - order unresolved
+    Note over S,U: Source contains call formatDateTime at line 588 - order unresolved
+    Note over S,U: Source contains call push at line 589 - order unresolved
+    Note over S,U: Source contains call join at line 600 - order unresolved
+    Note over S,U: Source contains call t at line 603 - order unresolved
     Note over S,U: Source contains call useT at line 366 - order unresolved
     Note over S,U: Source contains call t at line 369 - order unresolved
     Note over S,U: Source contains call t at line 370 - order unresolved
@@ -32,32 +59,6 @@ sequenceDiagram
     Note over S,U: Source contains call t at line 398 - order unresolved
     Note over S,U: Source contains call t at line 402 - order unresolved
     Note over S,U: Source contains call map at line 404 - order unresolved
-    Note over S,U: Source contains call useT at line 461 - order unresolved
-    Note over S,U: Source contains call t at line 469 - order unresolved
-    Note over S,U: Source contains call t at line 472 - order unresolved
-    Note over S,U: Source contains call t at line 478 - order unresolved
-    Note over S,U: Source contains call map at line 479 - order unresolved
-    Note over S,U: Source contains call t at line 488 - order unresolved
-    Note over S,U: Source contains call onFromChange at line 493 - order unresolved
-    Note over S,U: Source contains call t at line 498 - order unresolved
-    Note over S,U: Source contains call t at line 510 - order unresolved
-    Note over S,U: Source contains call t at line 513 - order unresolved
-    Note over S,U: Source contains call t at line 525 - order unresolved
-    Note over S,U: Source contains call map at line 529 - order unresolved
-    Note over S,U: Source contains call t at line 537 - order unresolved
-    Note over S,U: Source contains call t at line 546 - order unresolved
-    Note over S,U: Source contains call t at line 549 - order unresolved
-    Note over S,U: Source contains call useT at line 559 - order unresolved
-    Note over S,U: Source contains call t at line 562 - order unresolved
-    Note over S,U: Source contains call t at line 564 - order unresolved
-    Note over S,U: Source contains call t at line 565 - order unresolved
-    Note over S,U: Source contains call formatDateTime at line 578 - order unresolved
-    Note over S,U: Source contains call useT at line 585 - order unresolved
-    Note over S,U: Source contains call push at line 587 - order unresolved
-    Note over S,U: Source contains call formatDateTime at line 588 - order unresolved
-    Note over S,U: Source contains call push at line 589 - order unresolved
-    Note over S,U: Source contains call join at line 600 - order unresolved
-    Note over S,U: Source contains call t at line 603 - order unresolved
     Note over S,U: Source contains call useT at line 609 - order unresolved
     Note over S,U: Source contains call formatDateTime at line 610 - order unresolved
     Note over S,U: Source contains call t at line 621 - order unresolved
@@ -67,14 +68,14 @@ sequenceDiagram
     Note over S,U: Source contains call createElement at line 634 - order unresolved
     Note over S,U: Source contains call click at line 637 - order unresolved
     Note over S,U: Source contains call revokeObjectURL at line 638 - order unresolved
-    Note over S,U: Source contains call Date at line 645 - order unresolved
-    Note over S,U: Source contains call isNaN at line 646 - order unresolved
-    Note over S,U: Source contains call getTime at line 646 - order unresolved
-    Note over S,U: Source contains call toLocaleString at line 647 - order unresolved
     Note over S,U: Source contains call Date at line 653 - order unresolved
     Note over S,U: Source contains call isNaN at line 654 - order unresolved
     Note over S,U: Source contains call getTime at line 654 - order unresolved
     Note over S,U: Source contains call toLocaleDateString at line 655 - order unresolved
+    Note over S,U: Source contains call Date at line 645 - order unresolved
+    Note over S,U: Source contains call isNaN at line 646 - order unresolved
+    Note over S,U: Source contains call getTime at line 646 - order unresolved
+    Note over S,U: Source contains call toLocaleString at line 647 - order unresolved
     Note over S,U: Source contains call setApplied at line 146 - order unresolved
     Note over S,U: Source contains call setOffset at line 147 - order unresolved
     Note over S,U: Source contains call setDraftLibrary at line 151 - order unresolved

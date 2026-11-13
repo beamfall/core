@@ -1,11 +1,11 @@
 # First\-run setup wizard shell: token intake, step navigation — flow-diagram
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:bd078539d1bee603a51632232872fc2b -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/components/beamfall/CinemaBackdrop\.tsx:4; symbol: CinemaBackdrop; span SHA256: 6880dafb3ea09575091d6bcad24c3bd43e0f7efd6ad47049f784578830fbf852.
+Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:139; symbol: SetupWizard; span SHA256: 5ea0bd2beac7b14842fe7dac0073411f7ca52258541d8dcc42e8d8d9ba4df830.
 
 ```mermaid
 sequenceDiagram
@@ -13,6 +13,75 @@ sequenceDiagram
     participant U as Unresolved runtime
     Note over S,U: Lexical inventory only - no witnessed order
     Note over S: Flow 5d042754bf5df5a7cb8957d1623ccc68
+    Note over S,U: Source contains call useI18n at line 140 - order unresolved
+    Note over S,U: Source contains call useState at line 144 - order unresolved
+    Note over S,U: Source contains call consumeSetupToken at line 149 - order unresolved
+    Note over S,U: Source contains call useState at line 150 - order unresolved
+    Note over S,U: Source contains call useState at line 152 - order unresolved
+    Note over S,U: Source contains call useState at line 153 - order unresolved
+    Note over S,U: Source contains call useState at line 159 - order unresolved
+    Note over S,U: Source contains call useState at line 160 - order unresolved
+    Note over S,U: Source contains call useState at line 169 - order unresolved
+    Note over S,U: Source contains call useState at line 172 - order unresolved
+    Note over S,U: Source contains call t at line 172 - order unresolved
+    Note over S,U: Source contains call Set at line 175 - order unresolved
+    Note over S,U: Source contains call useState at line 176 - order unresolved
+    Note over S,U: Source contains call useState at line 185 - order unresolved
+    Note over S,U: Source contains call useState at line 191 - order unresolved
+    Note over S,U: Source contains call useState at line 194 - order unresolved
+    Note over S,U: Source contains call useState at line 195 - order unresolved
+    Note over S,U: Source contains call useState at line 202 - order unresolved
+    Note over S,U: Source contains call useId at line 206 - order unresolved
+    Note over S,U: Source contains call useId at line 207 - order unresolved
+    Note over S,U: Source contains call useId at line 208 - order unresolved
+    Note over S,U: Source contains call useId at line 209 - order unresolved
+    Note over S,U: Source contains call useId at line 210 - order unresolved
+    Note over S,U: Source contains call useId at line 211 - order unresolved
+    Note over S,U: Source contains call useId at line 212 - order unresolved
+    Note over S,U: Source contains call useEffect at line 214 - order unresolved
+    Note over S,U: Source contains call useEffect at line 224 - order unresolved
+    Note over S,U: Source contains call bootstrapResume at line 226 - order unresolved
+    Note over S,U: Source contains call then at line 227 - order unresolved
+    Note over S,U: Source contains call setTokenStepSkipped at line 233 - order unresolved
+    Note over S,U: Source contains call setStep at line 234 - order unresolved
+    Note over S,U: Source contains call setProbing at line 236 - order unresolved
+    Note over S,U: Source contains call setFirstLibraryProgress at line 240 - order unresolved
+    Note over S,U: Source contains call assign at line 246 - order unresolved
+    Note over S,U: Source contains call setBootstrapped at line 251 - order unresolved
+    Note over S,U: Source contains call setResumedFromRestart at line 252 - order unresolved
+    Note over S,U: Source contains call setStep at line 253 - order unresolved
+    Note over S,U: Source contains call setProbing at line 254 - order unresolved
+    Note over S,U: Source contains call catch at line 256 - order unresolved
+    Note over S,U: Source contains call setProbing at line 261 - order unresolved
+    Note over S,U: Source contains call useEffect at line 274 - order unresolved
+    Note over S,U: Source contains call fetchPlugins at line 277 - order unresolved
+    Note over S,U: Source contains call then at line 277 - order unresolved
+    Note over S,U: Source contains call setPlugins at line 279 - order unresolved
+    Note over S,U: Source contains call some at line 280 - order unresolved
+    Note over S,U: Source contains call setActivePlugins at line 281 - order unresolved
+    Note over S,U: Source contains call has at line 281 - order unresolved
+    Note over S,U: Source contains call Set at line 281 - order unresolved
+    Note over S,U: Source contains call add at line 281 - order unresolved
+    Note over S,U: Source contains call useEffect at line 292 - order unresolved
+    Note over S,U: Source contains call loadProviderKeys at line 295 - order unresolved
+    Note over S,U: Source contains call then at line 296 - order unresolved
+    Note over S,U: Source contains call setProviderKeys at line 297 - order unresolved
+    Note over S,U: Source contains call catch at line 299 - order unresolved
+    Note over S,U: Source contains call filter at line 306 - order unresolved
+    Note over S,U: Source contains call keyNeeded at line 307 - order unresolved
+    Note over S,U: Source contains call some at line 307 - order unresolved
+    Note over S,U: Source contains call has at line 307 - order unresolved
+    Note over S,U: Source contains call filter at line 313 - order unresolved
+    Note over S,U: Source contains call has at line 313 - order unresolved
+    Note over S,U: Source contains call useEffect at line 318 - order unresolved
+    Note over S,U: Source contains call some at line 319 - order unresolved
+    Note over S,U: Source contains call setLibraryType at line 320 - order unresolved
+    Note over S,U: Source contains call useEffect at line 324 - order unresolved
+    Note over S,U: Source contains call URL at line 130 - order unresolved
+    Note over S,U: Source contains call get at line 131 - order unresolved
+    Note over S,U: Source contains call has at line 132 - order unresolved
+    Note over S,U: Source contains call delete at line 134 - order unresolved
+    Note over S,U: Source contains call replaceState at line 135 - order unresolved
     Note over S,U: Source contains call setError at line 361 - order unresolved
     Note over S,U: Source contains call requestAnimationFrame at line 362 - order unresolved
     Note over S,U: Source contains call focus at line 362 - order unresolved

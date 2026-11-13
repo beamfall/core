@@ -1,6 +1,6 @@
 # Manage profile page — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:0f67f37b433ea68edf8807416e03668d -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,12 +32,8 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow manage\.profile: 2 resolved, 4 unresolved members.
+Declared inventory flow manage\.profile: 4 resolved, 2 unresolved members.
 
 - Unresolved member internal/web/app/src/lib/graphql/viewer\.ts PROFILES\_QUERY: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/viewer\.ts SWITCH\_PROFILE\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts fetchProfiles: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts switchProfile: symbol is not a supported declaration in this path at this revision.

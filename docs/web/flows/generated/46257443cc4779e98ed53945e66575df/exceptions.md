@@ -1,9 +1,9 @@
 # Playback engine: playback\-info, capability probe, HLS selection and recovery, progress reports — exceptions
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:d4f33aece5b19dfb659855c1ea33ff20 -->
 Error reachability, rescue behavior and completeness are unresolved\.
 
-Source: internal/web/app/src/areas/viewer/lib/playback\.ts:103; symbol: fetchPlaybackInfo; span SHA256: 6c197262a7c51f224968ec7a4a67526f5d067c062e8683af5b58076f97b79db2.
+Source: internal/web/app/src/areas/viewer/lib/capabilityProfile\.ts:110; symbol: canPlayTypeSupported; span SHA256: 8cc499193d7ce10a5d319863ac112b07794c475a5b67a2fc9dd47f55e22b99a6.
 

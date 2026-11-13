@@ -1,16 +1,96 @@
 # Manage manual and smart collections — technical-deep-dive
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:5b4b3f612d1410c720bddd83a85f1bf9 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:66; symbol: CollectionsPage; span SHA256: ca346d6ac420345f0e08fa35fe37410db44fca3ddc7b0fb240d0462ed10e5b8c.
+Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:388; symbol: CollectionRow; span SHA256: 5ca5177ddfc8b2d4a18487bf9a9fd06dd63e1931236eb8f812e720300a1d9470.
+
+<!-- flowdocs:paragraph:8062a19ec866cd59fd9a50df90f9ebb3 -->
+Declared member: source declares CollectionRow; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:388; symbol: CollectionRow; span SHA256: 5ca5177ddfc8b2d4a18487bf9a9fd06dd63e1931236eb8f812e720300a1d9470.
 
 <!-- flowdocs:paragraph:2d9e3ff6ae953057370a6e0b5a2485b2 -->
 Declared member: source declares ManualCollections; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:145; symbol: ManualCollections; span SHA256: 6951a6f371ac2b7524aa55953aa14d72418d28d60f4a97dc9d7137a5cc00625a.
+
+<!-- flowdocs:paragraph:ecc4d705976824dccaf46566a921bc7a -->
+Declared member: source declares MembersEditor; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:504; symbol: MembersEditor; span SHA256: 533ffbeffb7dabae2d79d8e029795c5fd488779a0aec430755f5fd9a681db512.
+
+<!-- flowdocs:paragraph:2bf8ee825d25085185fb5685ec4e84db -->
+Declared member: source declares SmartCollectionEditor; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:776; symbol: SmartCollectionEditor; span SHA256: 61a9d61474258a3fd8ccdbb1e05a527fe4fc8368084ba6132700e2b0e6d76c2e.
+
+<!-- flowdocs:paragraph:b9478640581b5f0e61a37d652fec156c -->
+Declared member: source declares SmartCollections; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:660; symbol: SmartCollections; span SHA256: a22813af0eb11d9056ced3b2c757d8addb72e987351263c5b7626227e0161799.
+
+<!-- flowdocs:paragraph:2d6ca6eac96219970a1218f448a1bc1a -->
+Declared member: source declares addCollectionMedia; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:887; symbol: addCollectionMedia; span SHA256: 24e8175fe387000fb004a9bcec588a232db3bbc1c47e0a8dd52074c84a0f54b3.
+
+<!-- flowdocs:paragraph:b5a912e13f623ae1d7ab3626498c54c1 -->
+Declared member: source declares createCollection; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:827; symbol: createCollection; span SHA256: 32d2b388c1e774f825f9248bc2d605b9ac6ba1a074e37175192931fccec918d3.
+
+<!-- flowdocs:paragraph:900acb04014d714ccedcc4316faa9fd6 -->
+Declared member: source declares createSmartCollection; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:762; symbol: createSmartCollection; span SHA256: 326c1e13635bcb2b4f5f9c800c4cac92d0f8fb564bf4ac3aec41657aa5776d61.
+
+<!-- flowdocs:paragraph:248d52a1268fc4df014f0617a4d1698b -->
+Declared member: source declares deleteCollection; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:863; symbol: deleteCollection; span SHA256: ad0e0483c877bb2ccc76bc9bf59c4c4c83a06cbd1bb56a5b0c54f163fea061ef.
+
+<!-- flowdocs:paragraph:698dda5a6894839011961248d1b54593 -->
+Declared member: source declares deleteSmartCollection; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:798; symbol: deleteSmartCollection; span SHA256: 69320259fc5a47f29dd5c970cf61ef7666247cc61b1e01ad96bc5b4e6dddb519.
+
+<!-- flowdocs:paragraph:99d583ec0c9a028fa240253fa4f5220f -->
+Declared member: source declares fetchCollections; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:811; symbol: fetchCollections; span SHA256: 03e838b941ae39e71c9e07cf934107255599a109e159c4510f5d4410b651eb3e.
+
+<!-- flowdocs:paragraph:4961cf3de69d42cb6fa3613f21dbc2d8 -->
+Declared member: source declares fetchSmartCollections; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:749; symbol: fetchSmartCollections; span SHA256: e7b71dc060a47fa24509382d58446d6dd6a3600798e1b53bc4b8b45ac9b6b60b.
+
+<!-- flowdocs:paragraph:96f0b2530d8facbc285f43cd451c2f13 -->
+Declared member: source declares removeCollectionMedia; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:903; symbol: removeCollectionMedia; span SHA256: 959338c8fe372a0be428312f31c7822594739458ce66c16bf7ffd3dd8da0abd7.
+
+<!-- flowdocs:paragraph:b1c4a198be4c50f666985f41e813d1d9 -->
+Declared member: source declares reorderCollectionMedia; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:919; symbol: reorderCollectionMedia; span SHA256: d41299788254b91af5edc82167b6e93410ee23a9bce607c1138608477a25a27b.
+
+<!-- flowdocs:paragraph:1e38fc5f05aaa47182c267829c5bdaae -->
+Declared member: source declares restoreCollection; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:875; symbol: restoreCollection; span SHA256: 67be9d043e0a9e9f90684def32a0ce0a4ab9a434d333a7de272da4117a8393f9.
+
+<!-- flowdocs:paragraph:39bd54d1c083d4bc18c920ad4bcebbd0 -->
+Declared member: source declares updateCollection; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:845; symbol: updateCollection; span SHA256: 24e169a43ecc9ad0f5ae36f4259b9c53176ba4d4cd22500f0b1e647017c721ff.
+
+<!-- flowdocs:paragraph:183d734c665c56243a912ed8a80850d0 -->
+Declared member: source declares updateSmartCollection; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:780; symbol: updateSmartCollection; span SHA256: 4664f8e564268e2de23f677a3b414654c267f70fa050a76b26e9cb63d5c6e8af.
 
 <!-- flowdocs:paragraph:a00c01c1683fd19f50b123c8a9cde474 -->
 Declared member: source declares commit; membership is caller\-declared, not runtime evidence\.

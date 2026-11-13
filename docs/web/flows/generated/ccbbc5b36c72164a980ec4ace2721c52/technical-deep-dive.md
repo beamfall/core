@@ -1,6 +1,6 @@
 # Console area shell: route table, section nav, host firewall, session bar — technical-deep-dive
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:3d509693ebc6bc1ba3389a72aeac4b70 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -11,6 +11,11 @@ Source: internal/web/app/src/areas/console/ConfirmButton\.tsx:20; symbol: Confir
 Declared member: source declares ConfirmButton; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/console/ConfirmButton\.tsx:20; symbol: ConfirmButton; span SHA256: fd1970dc9047b48eb27240271171b21b6270a622a3bb61edbb1acec520d7eb7a.
+
+<!-- flowdocs:paragraph:c15844f9cb0d10750f0102e523096941 -->
+Declared member: source declares AdvancedDisclosure; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/Section\.tsx:48; symbol: AdvancedDisclosure; span SHA256: 2ed86e58b94e2059a5f6deaa1ffb137f36adb843c715397cdad415f07443a8c1.
 
 <!-- flowdocs:paragraph:4b8c78ed9b5d0c15b27e44b4929aa817 -->
 Declared member: source declares Section; membership is caller\-declared, not runtime evidence\.
@@ -32,10 +37,30 @@ Declared member: source declares withAdminEpoch; membership is caller\-declared,
 
 Source: internal/web/app/src/areas/console/adminEpoch\.ts:36; symbol: withAdminEpoch; span SHA256: 0142f1d923d537938d5a97fc8c7c2fbf0047a21d0c1dcfb7cfa654820dda5bd7.
 
+<!-- flowdocs:paragraph:42c7924b48fee87ebbfa428d9bfaf0f9 -->
+Declared member: source declares ConsoleNav; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/index\.tsx:386; symbol: ConsoleNav; span SHA256: f6dc381bf0cbbdb8fc3359a8a7714d5a3d3a87d1cada7868412500a03d9a987a.
+
+<!-- flowdocs:paragraph:f21b37581aa63fccdfec7ddba826d246 -->
+Declared member: source declares SessionBar; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/index\.tsx:369; symbol: SessionBar; span SHA256: 2431265332342b0f5ca4b3dfd694288e099de6b2104906af46b31508578c57d9.
+
+<!-- flowdocs:paragraph:dfa5349daa7d2035616e17ca041ef234 -->
+Declared member: source declares groupsForHost; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/index\.tsx:349; symbol: groupsForHost; span SHA256: ad8ac0a8b2c12492d9f889f97bf75e156affbcc495edf397aa7c5d58821cbe11.
+
 <!-- flowdocs:paragraph:fffbb950a57f0041f9d63ae8417c8d88 -->
 Declared member: source declares isAuthRejection; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/console/useAsync\.ts:5; symbol: isAuthRejection; span SHA256: a248d6b0a34f4249ce42aa6fc50fe81e98f05167f6950f48a99517e2eda5001a.
+
+<!-- flowdocs:paragraph:8ea4714447d610411fe4690a3ade7793 -->
+Declared member: source declares useAsync; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/useAsync\.ts:30; symbol: useAsync; span SHA256: ff5d1b28292cb3caee8d30aae6e3d4752d91949a17b1815ec0a6fe37608164db.
 
 <!-- flowdocs:paragraph:da82c129f4c49d79696fc7cd60779583 -->
 Declared member: source declares run; membership is caller\-declared, not runtime evidence\.

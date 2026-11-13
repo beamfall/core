@@ -1,11 +1,11 @@
 # Manage subscriptions and retention kinds — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:72fc3d13fed5a5c6d16b58c22f5f27ef -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/manage/pages/SubscriptionsPage\.tsx:55; symbol: SubscriptionsPage; span SHA256: 882acfccc430b9f86b4a21317df8134e7852ba52a286af6b19fec9c98fcf38ad.
+Source: internal/web/app/src/areas/manage/pages/SubscriptionsPage\.tsx:248; symbol: SubscriptionRow; span SHA256: 7a877860437668555a65c99e46889827619111ac45f63d84424c845340e74c5c.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -32,11 +32,9 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow manage\.subscriptions: 4 resolved, 10 unresolved members.
+Declared inventory flow manage\.subscriptions: 9 resolved, 5 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/manage/pages/SubscriptionsPage\.tsx RETENTION\_KINDS: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/manage/pages/SubscriptionsPage\.tsx SubscriptionRow: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts ADD\_SUBSCRIPTION\_MUTATION: symbol is not a supported declaration in this path at this revision.
 
@@ -45,11 +43,3 @@ Declared inventory flow manage\.subscriptions: 4 resolved, 10 unresolved members
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts SET\_SUBSCRIPTION\_RETENTION\_MUTATION: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts SUBSCRIPTIONS\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts addSubscription: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchSubscriptions: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts removeSubscription: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts setSubscriptionRetention: symbol is not a supported declaration in this path at this revision.

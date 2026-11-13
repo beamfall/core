@@ -1,11 +1,11 @@
 # Manage manual and smart collections — flow-diagram
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:53c48a58745ade83b87ae75f77ce4902 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:66; symbol: CollectionsPage; span SHA256: ca346d6ac420345f0e08fa35fe37410db44fca3ddc7b0fb240d0462ed10e5b8c.
+Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:388; symbol: CollectionRow; span SHA256: 5ca5177ddfc8b2d4a18487bf9a9fd06dd63e1931236eb8f812e720300a1d9470.
 
 ```mermaid
 sequenceDiagram
@@ -13,11 +13,15 @@ sequenceDiagram
     participant U as Unresolved runtime
     Note over S,U: Lexical inventory only - no witnessed order
     Note over S: Flow 01980267f2da1b8a6a45d6a38088bf67
+    Note over S,U: Source contains call useT at line 409 - order unresolved
+    Note over S,U: Source contains call useState at line 410 - order unresolved
+    Note over S,U: Source contains call useState at line 411 - order unresolved
     Note over S,U: Source contains call useT at line 67 - order unresolved
     Note over S,U: Source contains call useSession at line 68 - order unresolved
     Note over S,U: Source contains call useState at line 71 - order unresolved
     Note over S,U: Source contains call useEffect at line 75 - order unresolved
     Note over S,U: Source contains call setLibraryID at line 76 - order unresolved
+    Note over S,U: Source contains call setTab at line 80 - order unresolved
     Note over S,U: Source contains call t at line 82 - order unresolved
     Note over S,U: Source contains call t at line 86 - order unresolved
     Note over S,U: Source contains call t at line 97 - order unresolved
@@ -47,6 +51,30 @@ sequenceDiagram
     Note over S,U: Source contains call filter at line 186 - order unresolved
     Note over S,U: Source contains call sort at line 187 - order unresolved
     Note over S,U: Source contains call localeCompare at line 187 - order unresolved
+    Note over S,U: Source contains call useT at line 513 - order unresolved
+    Note over S,U: Source contains call useState at line 517 - order unresolved
+    Note over S,U: Source contains call useEffect at line 519 - order unresolved
+    Note over S,U: Source contains call setMembers at line 520 - order unresolved
+    Note over S,U: Source contains call sort at line 520 - order unresolved
+    Note over S,U: Source contains call useT at line 787 - order unresolved
+    Note over S,U: Source contains call useState at line 788 - order unresolved
+    Note over S,U: Source contains call useState at line 789 - order unresolved
+    Note over S,U: Source contains call useState at line 790 - order unresolved
+    Note over S,U: Source contains call useT at line 661 - order unresolved
+    Note over S,U: Source contains call useState at line 663 - order unresolved
+    Note over S,U: Source contains call useRef at line 665 - order unresolved
+    Note over S,U: Source contains call useCallback at line 667 - order unresolved
+    Note over S,U: Source contains call async at line 668 - order unresolved
+    Note over S,U: Source contains call setError at line 670 - order unresolved
+    Note over S,U: Source contains call setSmart at line 671 - order unresolved
+    Note over S,U: Source contains call fetchSmartCollections at line 674 - order unresolved
+    Note over S,U: Source contains call setSmart at line 675 - order unresolved
+    Note over S,U: Source contains call setError at line 677 - order unresolved
+    Note over S,U: Source contains call t at line 677 - order unresolved
+    Note over S,U: Source contains call useEffect at line 683 - order unresolved
+    Note over S,U: Source contains call load at line 684 - order unresolved
+    Note over S,U: Source contains call useMemo at line 690 - order unresolved
+    Note over S,U: Source contains call find at line 691 - order unresolved
     Note over S,U: Source contains call trim at line 414 - order unresolved
     Note over S,U: Source contains call setEditing at line 415 - order unresolved
     Note over S,U: Source contains call onRename at line 416 - order unresolved

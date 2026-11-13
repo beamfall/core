@@ -1,6 +1,6 @@
 # Viewer search page: modes \(text, semantic, recommend\) and grouped results — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:f1661fd6712c0947f714a954752f1a79 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,7 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow viewer\.search: 6 resolved, 20 unresolved members.
+Declared inventory flow viewer\.search: 19 resolved, 7 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/viewer/lib/searchRows\.ts HEADER\_SEARCH\_ROWS: symbol is not a supported declaration in this path at this revision.
 
@@ -42,34 +42,8 @@ Declared inventory flow viewer\.search: 6 resolved, 20 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/viewer/lib/searchRows\.ts Translate: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/areas/viewer/lib/searchRows\.ts groupKey: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/searchRows\.ts groupSearchRows: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/searchRows\.ts localized: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/searchRows\.ts searchCountLabel: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/searchRows\.ts searchPagePath: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/searchRows\.ts searchRowDetail: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/searchRows\.ts searchRowOpenPath: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/searchRows\.ts searchRowPlayPath: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/searchRows\.ts searchRowTypeLabel: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/areas/viewer/pages/SearchPage\.tsx MODE\_LABEL: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/pages/SearchPage\.tsx SearchEmpty: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/pages/SearchPage\.tsx SearchPage: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/viewer\.ts CLIENT\_PREFS\_QUERY: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/viewer\.ts SEMANTIC\_CAPABILITY\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts fetchClientPrefs: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts fetchSemanticCapability: symbol is not a supported declaration in this path at this revision.

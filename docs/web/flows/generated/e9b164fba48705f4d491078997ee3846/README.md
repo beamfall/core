@@ -1,6 +1,6 @@
 # Viewer home and node browse: manifest layout, sections, hero — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:0ea23878a420d58906d4a773e5e38a90 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,7 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow viewer\.home\-browse: 20 resolved, 14 unresolved members.
+Declared inventory flow viewer\.home\-browse: 21 resolved, 13 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/viewer/components/HydratedSection\.tsx SECTION\_CACHE\_PREFIX: symbol is not a supported declaration in this path at this revision.
 
@@ -59,5 +59,3 @@ Declared inventory flow viewer\.home\-browse: 20 resolved, 14 unresolved members
 - Unresolved member internal/web/app/src/lib/graphql/viewer\.ts SOURCE\_ITEMS\_QUERY: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/viewer\.ts SourceItemsVars: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts fetchSourceItems: symbol is not a supported declaration in this path at this revision.

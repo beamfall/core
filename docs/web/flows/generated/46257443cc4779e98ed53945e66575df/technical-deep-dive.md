@@ -1,16 +1,56 @@
 # Playback engine: playback\-info, capability probe, HLS selection and recovery, progress reports — technical-deep-dive
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:0dba614742002a4ca6c0bbcbdd7b4dda -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/viewer/lib/playback\.ts:103; symbol: fetchPlaybackInfo; span SHA256: 6c197262a7c51f224968ec7a4a67526f5d067c062e8683af5b58076f97b79db2.
+Source: internal/web/app/src/areas/viewer/lib/capabilityProfile\.ts:110; symbol: canPlayTypeSupported; span SHA256: 8cc499193d7ce10a5d319863ac112b07794c475a5b67a2fc9dd47f55e22b99a6.
+
+<!-- flowdocs:paragraph:3e68ddab5a808dad262e9448653ed0ab -->
+Declared member: source declares canPlayTypeSupported; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/capabilityProfile\.ts:110; symbol: canPlayTypeSupported; span SHA256: 8cc499193d7ce10a5d319863ac112b07794c475a5b67a2fc9dd47f55e22b99a6.
+
+<!-- flowdocs:paragraph:30562d965afb231a476c9ef7c907fc57 -->
+Declared member: source declares downstreamAudioHint; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/capabilityProfile\.ts:222; symbol: downstreamAudioHint; span SHA256: bf3d03b7c3a04387bb8b3b74e8a597efd984ba6b8a47d3ea0eb941ff32d02759.
+
+<!-- flowdocs:paragraph:6a4320a30d7a1d849d710e946eb9f829 -->
+Declared member: source declares mediaCapabilitiesSupports; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/capabilityProfile\.ts:117; symbol: mediaCapabilitiesSupports; span SHA256: f40fdebb06850b60a2a85c196af49c5056d1f91a8485b271c819903c88857ab8.
+
+<!-- flowdocs:paragraph:5b21e56e01fe2d781453c6fad5489dd1 -->
+Declared member: source declares probeAudioCodec; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/capabilityProfile\.ts:179; symbol: probeAudioCodec; span SHA256: bca3bbabd94c5131c32dd6c20588c521e16e578f6b0adcc006f46f1119120717.
+
+<!-- flowdocs:paragraph:3e9cfc924e52314ed5ebeaa7657dc4c8 -->
+Declared member: source declares probeCapabilityProfile; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/capabilityProfile\.ts:234; symbol: probeCapabilityProfile; span SHA256: 160b3143e937ae407d8b58bc55c2dae4cdd4de3df24d1e7efc15516e9ae28cd7.
+
+<!-- flowdocs:paragraph:a0f5dde7adabbc06e31b6ca04221aaf1 -->
+Declared member: source declares probeHDR; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/capabilityProfile\.ts:197; symbol: probeHDR; span SHA256: 3f38fff906b4bde6615667c22aa59cc7b8b6a3bac6ff7649fe9380218bf5d4b1.
+
+<!-- flowdocs:paragraph:96b311957c6a757a6cb93d75d1dbd244 -->
+Declared member: source declares probeVideoCodec; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/capabilityProfile\.ts:132; symbol: probeVideoCodec; span SHA256: 1928e7bb16e918897dc6e76af77a15485a21ac7224ffd80122d124d392a766c0.
 
 <!-- flowdocs:paragraph:5710081c6de291f7e1dc01da385f04df -->
 Declared member: source declares fetchPlaybackInfo; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/viewer/lib/playback\.ts:103; symbol: fetchPlaybackInfo; span SHA256: 6c197262a7c51f224968ec7a4a67526f5d067c062e8683af5b58076f97b79db2.
+
+<!-- flowdocs:paragraph:241e45fe5ca952b033ca9ce22af4e9ec -->
+Declared member: source declares fetchPreviewInfo; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/playback\.ts:203; symbol: fetchPreviewInfo; span SHA256: 5aa44a0568d8f96574af98fb2de8cf99a25c0bbce319896cae82dd4e725f794e.
 
 <!-- flowdocs:paragraph:6df5973afa8f11138911ddd4c3b171e3 -->
 Declared member: source declares hlsStreamOf; membership is caller\-declared, not runtime evidence\.
@@ -21,6 +61,21 @@ Source: internal/web/app/src/areas/viewer/lib/playback\.ts:84; symbol: hlsStream
 Declared member: source declares isRevealTerminalStatus; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/viewer/lib/playback\.ts:89; symbol: isRevealTerminalStatus; span SHA256: c3996a71b4b0de77ebe373329f5cd6f30ca49ce5cf2e33f365dba6ac4a02b672.
+
+<!-- flowdocs:paragraph:d24a248165adb41e6634d7f08b44cde1 -->
+Declared member: source declares serverErrorReason; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/playback\.ts:193; symbol: serverErrorReason; span SHA256: bd31be6a1600e66f3d7f23a6a844d4df85626644dbcb66ed7bbe4b83958611eb.
+
+<!-- flowdocs:paragraph:18e1f2102a575077fa6b56f0363439b4 -->
+Declared member: source declares unavailableReason; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/playback\.ts:170; symbol: unavailableReason; span SHA256: 32c5f269dfa1e2feeb7137087defdc7a2d993600a0f98868f6bb1620677399b3.
+
+<!-- flowdocs:paragraph:ed6be69663bb0ef8e0a57dddc8c02f81 -->
+Declared member: source declares unavailableReasonMessage; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/playback\.ts:181; symbol: unavailableReasonMessage; span SHA256: ddba225ff0746418a72a65150b0a718f786ddb598a7a9899d43df2e6788331d6.
 
 <!-- flowdocs:paragraph:0d3c0a2d86c9d1d59cb078adc91f18df -->
 Declared member: source declares playbackDecision; membership is caller\-declared, not runtime evidence\.
@@ -62,30 +117,140 @@ Declared member: source declares useMediaLoading; membership is caller\-declared
 
 Source: internal/web/app/src/areas/viewer/player/useMediaLoading\.ts:13; symbol: useMediaLoading; span SHA256: 64540a9fd129f836662dd21193052f58c21ac044d975d6e1ab5fb69a2129f7c2.
 
+<!-- flowdocs:paragraph:daa19b8fe82d10db60838e9f1a615c71 -->
+Declared member: source declares applyTrackPreferences; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:1137; symbol: applyTrackPreferences; span SHA256: a342b6c9cf04ec3e33f9f90c24e742d11bd51b9625106f1cd154c75f426b0f79.
+
+<!-- flowdocs:paragraph:6e61d58164dc57ff6f68cbc7ee333302 -->
+Declared member: source declares assetsExpired; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:1196; symbol: assetsExpired; span SHA256: e2e6e9cfc6f2a88c9453386e05e5167245c795d7dde58eee452028053ba2cfcf.
+
+<!-- flowdocs:paragraph:676b82d95fdee1850e6d6573ae30f5ac -->
+Declared member: source declares bufferedAhead; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:231; symbol: bufferedAhead; span SHA256: 83c3d4157d91835eb5c128a31d717a488aa2b6db9b0c6e9c83431e1b8f4ae53f.
+
+<!-- flowdocs:paragraph:ef17041d9d44e0408ba3b4d603b1011e -->
+Declared member: source declares choosePlaybackStream; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:248; symbol: choosePlaybackStream; span SHA256: adfa47117c9c04c0da7de39557d39c3fefed56767870b526b1494d5967fc26fd.
+
+<!-- flowdocs:paragraph:cbd932213a85a370bc2d9281658aca7f -->
+Declared member: source declares completeProgress; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:126; symbol: completeProgress; span SHA256: 2c0587d5b3b9f0022a19623ecc2602b191d124bf95b229cf1c2fa78b2fb09e3b.
+
 <!-- flowdocs:paragraph:c276d3993dce8b2d27608e44dd708844 -->
 Declared member: source declares createProgressQueue; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:91; symbol: createProgressQueue; span SHA256: 4ae1bcf29664334aaae4699172b2b1cc2afdbae510b6ea0dd3b72b3c004f2dde.
+
+<!-- flowdocs:paragraph:43f33a3c2937a7abe4999a81865ee6df -->
+Declared member: source declares emptyState; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:180; symbol: emptyState; span SHA256: e92dd11b17a5752444894e0dc3430aad5d3030b52de131ff23e07b9cde211011.
+
+<!-- flowdocs:paragraph:265a6bed261caba32b747bd91e767dad -->
+Declared member: source declares engineFor; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:263; symbol: engineFor; span SHA256: 8749cd9b4402937c29afe62f1f575d15c6819f2b06715a3516ae29fab2e106ce.
 
 <!-- flowdocs:paragraph:f17e8ca3ec4f1682365b09a6fcee6343 -->
 Declared member: source declares enqueueProgress; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:102; symbol: enqueueProgress; span SHA256: a33e8e53cb3036c980d0a3471bbeffaca4b2b238b74aef143cc2ddc06f4850c4.
 
+<!-- flowdocs:paragraph:301ccf28f72b15b2465364fba6f307a1 -->
+Declared member: source declares hlsErrorStatus; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:212; symbol: hlsErrorStatus; span SHA256: 51c9a8e88750065e4e18fcd0fd811ddef0f5e657732d42a8f4472c74f8c3f304.
+
+<!-- flowdocs:paragraph:28247c5635320debb1b405dacd0779b0 -->
+Declared member: source declares hlsFragSpan; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:222; symbol: hlsFragSpan; span SHA256: 36ac2955ef06b0d8e27e1ac347c70b209109f578d1cab213e801f73d65b253ef.
+
+<!-- flowdocs:paragraph:6b77132dda7c2479fc0d2f0c272f339e -->
+Declared member: source declares isStreamRefusalStatus; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:244; symbol: isStreamRefusalStatus; span SHA256: 73fc413929ce0e73606e3e4dcbd140d5ea4dc98973c045789616e2a4e2729b29.
+
+<!-- flowdocs:paragraph:a8a1cdcca825a81055893d045996497d -->
+Declared member: source declares loadTrickplay; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:1174; symbol: loadTrickplay; span SHA256: 7748910900e363b131f4abd5a5dffcec67825dfa49e1f56641c7291ba67656b9.
+
+<!-- flowdocs:paragraph:b075172b7ca6b9c54f86ac8234a15279 -->
+Declared member: source declares nextPlaybackEventTimeMS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:174; symbol: nextPlaybackEventTimeMS; span SHA256: 226beefa34eabbfd85575d927babd702e6c2756ae0a6d98a1a1d7e257bdc32c5.
+
+<!-- flowdocs:paragraph:0cacd35f941d2c95c1e74f561233737e -->
+Declared member: source declares playbackDecision; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:336; symbol: playbackDecision; span SHA256: 43d030bb9def050507befaf2bf5ccc7d86d96df8f0c140b4387c04facb96f7c4.
+
+<!-- flowdocs:paragraph:21ea50b81bd9893db92d27ff52252f28 -->
+Declared member: source declares probeStreamStatus; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:317; symbol: probeStreamStatus; span SHA256: 540759e2fa4ad7bd5aabc1a1072bd7951629b4a634ab6690f4679b159196d20f.
+
+<!-- flowdocs:paragraph:d378f8afc245e42b6a46ae41b6e25457 -->
+Source contains a lexical call to fetch; dispatch and effects are unresolved\.
+
+Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:322; symbol: ; span SHA256: f356ae58a3e67abc55f35a4b9b67d4ca4f70d6cb134d1595b126b810c3504a18.
+
+<!-- flowdocs:paragraph:3c414818bd20d47fc6b778a23df399a1 -->
+Declared member: source declares retireProgressQueue; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:153; symbol: retireProgressQueue; span SHA256: f2cebbe9e388f0d55b8c300dde109d834141008febe0870aae23122e0c136020.
+
+<!-- flowdocs:paragraph:51e3ad0bf105edd72a6f4f991a0475c3 -->
+Declared member: source declares selectHlsLevel; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:287; symbol: selectHlsLevel; span SHA256: 1a5224d128bcc251b8dc433fa4680bcb81cadea1edf82d05854674efe4f99892.
+
+<!-- flowdocs:paragraph:d377aafdfb8fa2f8ae1827f48816e1b8 -->
+Source contains a lexical call to delete; dispatch and effects are unresolved\.
+
+Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:290; symbol: ; span SHA256: bf071c4b6fb6447d88a1d63abfa65841de12e92828b5e9e63a2ace24a8827a34.
+
+<!-- flowdocs:paragraph:047ef31203ab0a8d6f0ff99a0dbe0e7d -->
+Declared member: source declares selectHlsRendition; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:300; symbol: selectHlsRendition; span SHA256: fd64e27154e8b7756045908d7a4d17b32b5b8312094a28fbff52081408e06790.
+
 <!-- flowdocs:paragraph:561efedc6d94f3309a48124e070d9b51 -->
 Declared member: source declares sendProgress; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:109; symbol: sendProgress; span SHA256: 25524918a6fbf65f0826f696042bbc34344769ea775b9e61e115c989a60c3b5e.
 
-<!-- flowdocs:paragraph:4ee1940f7a84fd793281bc8849b6093b -->
-Source contains a lexical call to delete; dispatch and effects are unresolved\.
+<!-- flowdocs:paragraph:ed7b3eaf026c5f4123198c6b903dcf2d -->
+Declared member: source declares stopProgressQueue; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:290; symbol: ; span SHA256: bf071c4b6fb6447d88a1d63abfa65841de12e92828b5e9e63a2ace24a8827a34.
+Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:139; symbol: stopProgressQueue; span SHA256: 1792583180ccb676c46fe659c482ebfec1b80d269fb4312529fff9470d968794.
 
-<!-- flowdocs:paragraph:92c6489bcdccb45c1294720d1fc70d71 -->
-Source contains a lexical call to fetch; dispatch and effects are unresolved\.
+<!-- flowdocs:paragraph:5f9856876807da7ff7cad89ceec0a4af -->
+Declared member: source declares streamOfKind; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:322; symbol: ; span SHA256: f356ae58a3e67abc55f35a4b9b67d4ca4f70d6cb134d1595b126b810c3504a18.
+Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:256; symbol: streamOfKind; span SHA256: 48cf24adb33a4ab732385df152633b56d849a1e35f18d3c5e0183fdc7e59a10a.
+
+<!-- flowdocs:paragraph:c895546ef12a28ccc7b2683d471c945f -->
+Declared member: source declares terminalState; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:204; symbol: terminalState; span SHA256: d03a0feadd35a782fe8aa84b02caeeab15288a0b17f17251663be25e0414bae6.
+
+<!-- flowdocs:paragraph:746ce06aa8bd3bd3837c7c6e460b4e02 -->
+Declared member: source declares fetchClientPrefs; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:365; symbol: fetchClientPrefs; span SHA256: b1c6c568bae96333d435a5619a12f1cb5955c51390dbafc6e6a29c4e8e42bd5a.
+
+<!-- flowdocs:paragraph:96bb1249b851799f390b67d9d0421d04 -->
+Declared member: source declares fetchPlaybackMarkers; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:273; symbol: fetchPlaybackMarkers; span SHA256: 42907473fcded61af03c4d6d88719493d434aba6a290f8f9ba73f01db77e2aa0.
 
 <!-- flowdocs:paragraph:d8e50298ff81bf0c4ccec542dbd16134 -->
 Declared member: source declares clearTimer; membership is caller\-declared, not runtime evidence\.

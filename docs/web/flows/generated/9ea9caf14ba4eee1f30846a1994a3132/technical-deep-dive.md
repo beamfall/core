@@ -1,6 +1,6 @@
 # Manage unmatched records: inbox, fix match, suppression — technical-deep-dive
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:9a20c6d59f90190fdc5ef4ec17e65941 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -27,10 +27,75 @@ Declared member: source declares suppressionTarget; membership is caller\-declar
 
 Source: internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel\.tsx:38; symbol: suppressionTarget; span SHA256: 4727c35a6e7ef5f93da892e4f1c56f6cf1ea7eaa0e68a372b1d77fbf33c438ee.
 
+<!-- flowdocs:paragraph:715b40ebef6a5be5a10e4b7e117effcc -->
+Declared member: source declares percent; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/pages/unmatched/reasons\.ts:27; symbol: percent; span SHA256: bb570d5eab87528bb048539574816ff9959f103ec641b7f43abf2b8e02e2eb05.
+
+<!-- flowdocs:paragraph:316975f227a05a617a19ef290cc96ba4 -->
+Declared member: source declares reasonLabel; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/pages/unmatched/reasons\.ts:20; symbol: reasonLabel; span SHA256: 6a89f323679ecdda946610a92d6e4551e407701cd28e0ae5ef02faa616298b81.
+
+<!-- flowdocs:paragraph:71b73bb5731bbd781edc46c6f317be5a -->
+Declared member: source declares dismissUnmatched; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1321; symbol: dismissUnmatched; span SHA256: 9a8636ff9c35b282c7343c6e8db5bb35a64d4620d8051e5957bcc08c7788d4a5.
+
 <!-- flowdocs:paragraph:df8ddf5b556c9b0be038976e5293b781 -->
 Declared member: source declares fetchLibraries; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/lib/graphql/manage\.ts:81; symbol: fetchLibraries; span SHA256: 0c03cc7cbf8f14c88723f102436a0d578a5823acaf69a7e777c6207282cb096e.
+
+<!-- flowdocs:paragraph:4aa7eee814eb94ac3e8eafeec661eacc -->
+Declared member: source declares fetchUnmatchedQueue; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1309; symbol: fetchUnmatchedQueue; span SHA256: 233cdbc927303a35f0b30e0de149daa6f9c96db5a4bee4ca26ddbdbdc3f9c245.
+
+<!-- flowdocs:paragraph:80f4242ae0e5f59e64a717d200a6cb2c -->
+Declared member: source declares fetchUnmatchedRecords; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1415; symbol: fetchUnmatchedRecords; span SHA256: e9f627bd6a891627256bcc1e7f7d9ff83e40651e10925a4766343adb6f0e38bc.
+
+<!-- flowdocs:paragraph:60e8cc975aa4f16875927fad0cc4a4d8 -->
+Declared member: source declares fetchUnmatchedSuppressions; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1446; symbol: fetchUnmatchedSuppressions; span SHA256: 170b17c049cf13c4745d5406e7a79f187cd4140ff81b9f3a302dad7250d112e8.
+
+<!-- flowdocs:paragraph:9b8e012233ae18c5349b022478530c59 -->
+Declared member: source declares fixMatch; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1349; symbol: fixMatch; span SHA256: 85dcfb4dcc82bc3d7309d688acd03b872c44712ca11ddac1ce7271fa712ac003.
+
+<!-- flowdocs:paragraph:6e5349c1bdb5100e0f04076483cec36e -->
+Declared member: source declares fixMatchCandidates; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1365; symbol: fixMatchCandidates; span SHA256: 7611988cbc0ce6480222405c48f999675af1a813182efcd4ceb3d88b993d1779.
+
+<!-- flowdocs:paragraph:2df621378433e765fd0486992b4af12d -->
+Declared member: source declares fixMatchPreview; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1396; symbol: fixMatchPreview; span SHA256: 3eb6ebb9c3aa98a0ff8554a79c2a593f091dba999eec4134672de095f70bcb9b.
+
+<!-- flowdocs:paragraph:18177de9205a2f89d5622a92b952069a -->
+Declared member: source declares identifyLookup; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1382; symbol: identifyLookup; span SHA256: 6a124359914872ecca5b953ec02a7bb43c90f87d7618845ea59f1fb43dc1f3b1.
+
+<!-- flowdocs:paragraph:ba1a1dece3fc12c2114915a25d74441f -->
+Declared member: source declares resetUnmatchedSuppression; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1486; symbol: resetUnmatchedSuppression; span SHA256: 65d232b32bbf2ad426babadd45b6e7afb78b147381484b20ee1ebb80a33a4047.
+
+<!-- flowdocs:paragraph:30403f94e5951de80a55ba0fcd0f171d -->
+Declared member: source declares runHealthBulkOp; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1162; symbol: runHealthBulkOp; span SHA256: 5b2bd8d001a8cec8ecc203b0b9673fa95c3e2d8374c0838d20ac83edf21abc11.
+
+<!-- flowdocs:paragraph:749452cb62175697a4c199f4c80838f8 -->
+Declared member: source declares suppressUnmatched; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1475; symbol: suppressUnmatched; span SHA256: 3d848ea9192adf499c3799132e034e12567d2f2d376291146bd0b43d1cc2ceb4.
 
 <!-- flowdocs:paragraph:cf1a8cc00d035ef4c7eec56f0b3018ba -->
 Declared member: source declares load; membership is caller\-declared, not runtime evidence\.

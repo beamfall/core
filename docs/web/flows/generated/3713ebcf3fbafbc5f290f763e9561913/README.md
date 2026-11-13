@@ -1,11 +1,11 @@
 # Manage libraries: library list and folder tree — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a40d7db1429e795fba1e7fd90d5fa280 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/manage/pages/LibrariesPage\.tsx:65; symbol: LibrariesPage; span SHA256: 5ddc867a6a45339fa038b86eb3502d12335499a1262a6f11dfbf2351b42667b1.
+Source: internal/web/app/src/areas/manage/pages/LibrariesPage\.tsx:603; symbol: FolderTree; span SHA256: 316ee15a2c16f9aa021fe31e90cc057db9fcbff2d835dc3f2a92f1737f9d9e8a.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -32,13 +32,9 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow manage\.libraries: 18 resolved, 26 unresolved members.
-
-- Unresolved member internal/web/app/src/areas/manage/pages/LibrariesPage\.tsx FolderTree: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow manage\.libraries: 31 resolved, 13 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/manage/pages/LibrariesPage\.tsx NONE: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/manage/pages/LibrariesPage\.tsx dirname: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts CREATE\_LIBRARY\_MUTATION: symbol is not a supported declaration in this path at this revision.
 
@@ -63,25 +59,3 @@ Declared inventory flow manage\.libraries: 18 resolved, 26 unresolved members.
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts SET\_LIBRARY\_PREVIEW\_CLIPS\_MUTATION: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts SET\_LIBRARY\_ROOTS\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts createLibrary: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts createManagedFolder: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts deleteManagedPath: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchFolderTree: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchPlugins: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts moveManagedPath: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts renameManagedPath: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts restoreManagedPath: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts scanLibrary: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts setLibraryPreviewClips: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts setLibraryRoots: symbol is not a supported declaration in this path at this revision.

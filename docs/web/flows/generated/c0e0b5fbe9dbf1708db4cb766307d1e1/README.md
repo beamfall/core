@@ -1,6 +1,6 @@
 # Manage operations: jobs, schedules, folder watcher — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:60245c3e0f052d78f96a36a170dba1df -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,7 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow manage\.operations: 9 resolved, 18 unresolved members.
+Declared inventory flow manage\.operations: 17 resolved, 10 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/manage/lib/schedule\.ts TriggerFields: symbol is not a supported declaration in this path at this revision.
 
@@ -40,15 +40,7 @@ Declared inventory flow manage\.operations: 9 resolved, 18 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/manage/lib/schedule\.ts WEEKDAY\_KEYS: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/areas/manage/pages/OperationsPage\.tsx JobsSection: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/manage/pages/OperationsPage\.tsx NumberField: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/manage/pages/OperationsPage\.tsx OperationsPage: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/areas/manage/pages/OperationsPage\.tsx WATCHER\_STATE\_LABELS: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/manage/pages/OperationsPage\.tsx WatcherSection: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts JOBS\_QUERY: symbol is not a supported declaration in this path at this revision.
 
@@ -60,12 +52,4 @@ Declared inventory flow manage\.operations: 9 resolved, 18 unresolved members.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts WATCHER\_STATUS\_QUERY: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchJobs: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchSchedules: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchWatcherStatus: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts setScheduleEnabled: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts setScheduleTrigger: symbol is not a supported declaration in this path at this revision.
+- Unresolved member internal/web/app/src/areas/manage/pages/OperationsPage\.tsx setField: symbol is not a supported declaration in this path at this revision.

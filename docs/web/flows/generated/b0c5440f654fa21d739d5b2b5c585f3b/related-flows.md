@@ -1,9 +1,9 @@
 # Manage trash: restore, purge and reversible activity — related-flows
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:44e89872a06ed848c24670ecb8f485a3 -->
 Relations are static lexical candidates; computed dispatch remains unresolved\.
 
-Source: internal/web/app/src/areas/manage/pages/TrashPage\.tsx:160; symbol: PurgeSection; span SHA256: 460803bbad5407e93b0571e9fecea61b9d14ac1b969e86e6c73beb173aecea89.
+Source: internal/web/app/src/areas/manage/pages/TrashPage\.tsx:261; symbol: ActivitySection; span SHA256: 3e919863e35f12ddc418f5cf97c9e47dd440cd05819cdb3dc85ab4dea03403d4.
 

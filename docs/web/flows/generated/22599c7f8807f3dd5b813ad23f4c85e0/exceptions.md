@@ -1,9 +1,9 @@
 # Manage rename: pattern preview, batch rename managed paths, undo — exceptions
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:0c383e60a9fdca9903b325467a844c24 -->
 Error reachability, rescue behavior and completeness are unresolved\.
 
-Source: internal/web/app/src/areas/manage/lib/renamePattern\.ts:63; symbol: applyToStem; span SHA256: c1c4c153726740130c39d9ae2e15b73808657724c910cb51655d761791d61077.
+Source: internal/web/app/src/areas/manage/lib/powertools\.ts:101; symbol: batchRenameManagedPaths; span SHA256: d4941283f47a1fc0e80aebb2f7ea21d8527739b00c4c45e120a1e6f4dab72b88.
 

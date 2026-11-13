@@ -1,6 +1,6 @@
 # Unreached code: unmounted modules and GraphQL operations no UI calls — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:0c157cf095a8933832076857f36bd4b1 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,7 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow unrouted\.modules: 9 resolved, 18 unresolved members.
+Declared inventory flow unrouted\.modules: 17 resolved, 10 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/console/lib/previewMedia\.ts PreviewRoute: symbol is not a supported declaration in this path at this revision.
 
@@ -40,19 +40,11 @@ Declared inventory flow unrouted\.modules: 9 resolved, 18 unresolved members.
 
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts SET\_RETENTION\_CANDIDATE\_HOLD\_MUTATION: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts setRetentionCandidateHold: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts IDENTIFY\_SEARCH\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts identifySearch: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/viewer\.ts REPORT\_PLAYBACK\_MUTATION: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/viewer\.ts SEARCH\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts reportPlayback: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts search: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts EVICT\_PLAYBACK\_CACHE\_MUTATION: symbol is not a supported declaration in this path at this revision.
 
@@ -60,12 +52,4 @@ Declared inventory flow unrouted\.modules: 9 resolved, 18 unresolved members.
 
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts PRECOMPUTE\_RENDITIONS\_MUTATION: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts evictPlaybackRenditionCache: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts fetchPlaybackCache: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts precomputePlaybackRenditions: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts IMPORTERS\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchImporters: symbol is not a supported declaration in this path at this revision.

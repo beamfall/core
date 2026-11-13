@@ -1,11 +1,11 @@
 # Console migration: importer wizard, credentials, mapping, match\-rate report — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b1e470b00f307e4fee5d82cd1a6fbf8a -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/lib/migrationReport\.ts:46; symbol: canRunImport; span SHA256: 9aa01dc5d0dc893408b67ad1915d2e1a3bd71eb2216b0b48257877907831b5eb.
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:457; symbol: CredentialStep; span SHA256: 982543f07bda8a5fe743d0574257247795b41261d8a24299ca1fae0ffe5fba8a.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -32,19 +32,9 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow console\.migration\-import: 14 resolved, 23 unresolved members.
+Declared inventory flow console\.migration\-import: 24 resolved, 13 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/console/sections/RemoteAccess\.tsx CATEGORY\_LABELS: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/RemoteAccess\.tsx CredentialStep: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/RemoteAccess\.tsx ImporterWizard: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/RemoteAccess\.tsx MappingStep: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/RemoteAccess\.tsx MatchRateReport: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/RemoteAccess\.tsx MigrationWizard: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/console/sections/RemoteAccess\.tsx WizardPhase: symbol is not a supported declaration in this path at this revision.
 
@@ -58,8 +48,6 @@ Declared inventory flow console\.migration\-import: 14 resolved, 23 unresolved m
 
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts SET\_SCRAPER\_CREDENTIAL\_MUTATION: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts setScraperCredential: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts IMPORTERS\_QUERY: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts IMPORT\_STATUS\_QUERY: symbol is not a supported declaration in this path at this revision.
@@ -70,12 +58,4 @@ Declared inventory flow console\.migration\-import: 14 resolved, 23 unresolved m
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts RUN\_IMPORT\_MUTATION: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchImportStatus: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchImporters: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts runImport: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/lib/graphql/viewer\.ts PROFILES\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts fetchProfiles: symbol is not a supported declaration in this path at this revision.

@@ -1,6 +1,6 @@
 # Viewer header live search with keyboard shortcut — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:821d361349ab4aa479ebe39f3ec5f003 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,13 +32,11 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow viewer\.header\-search: 10 resolved, 9 unresolved members.
+Declared inventory flow viewer\.header\-search: 12 resolved, 7 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/viewer/components/HeaderSearch\.tsx Cell: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/viewer/components/HeaderSearch\.tsx CellGroup: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/components/HeaderSearch\.tsx ResultRow: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/viewer/lib/useLiveSearch\.ts LiveSearch: symbol is not a supported declaration in this path at this revision.
 
@@ -49,5 +47,3 @@ Declared inventory flow viewer\.header\-search: 10 resolved, 9 unresolved member
 - Unresolved member internal/web/app/src/areas/viewer/lib/useLiveSearch\.ts Settled: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/viewer\.ts SEARCH\_RESULT\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts searchResult: symbol is not a supported declaration in this path at this revision.

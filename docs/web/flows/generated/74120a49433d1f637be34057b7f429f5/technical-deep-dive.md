@@ -1,6 +1,6 @@
 # Backups: history, verify manifest, restore and export — technical-deep-dive
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:bd440ef6f398a92b8ae9faff571537bd -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -56,6 +56,26 @@ Source: internal/web/app/src/areas/manage/pages/BackupExportPage\.tsx:333; symbo
 Declared member: source declares useEpochRequest; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/manage/pages/BackupExportPage\.tsx:52; symbol: useEpochRequest; span SHA256: 4956989a539333fa314f7e8be191c9668056e39cacc8cd94805a2d09a395a711.
+
+<!-- flowdocs:paragraph:6edfc1e0cfa29f5bc5b48e53714c0e96 -->
+Declared member: source declares fetchBackupHistory; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:390; symbol: fetchBackupHistory; span SHA256: a0c4287dcb60ca0e5f8a497c608cb6c91ce3a510b469e61be5b2df2c12b0ce0b.
+
+<!-- flowdocs:paragraph:8511283f0f76863b9f5f4b13e20a794d -->
+Declared member: source declares fetchMetadataExport; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:421; symbol: fetchMetadataExport; span SHA256: 09d8a0da4f42d23c6ffdea5d35f0d01161d61594eddc4c36eab85426cca79758.
+
+<!-- flowdocs:paragraph:427e55bc6a738c263bc39b05b1634b59 -->
+Declared member: source declares runBackup; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:377; symbol: runBackup; span SHA256: 04fa3e07ecf3c6dd10cc5c6326500e3986b3712da7aa0d826f75912bbbb87bfa.
+
+<!-- flowdocs:paragraph:6a970f8376e41e4f9fbb65a974a8f57b -->
+Declared member: source declares verifyBackup; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:410; symbol: verifyBackup; span SHA256: ff290978f8d087a29037153bc691f4df62fd4418ecc478ac039d4a3ef4c43b77.
 
 <!-- flowdocs:paragraph:063db795e8a696eb6c5a9bf59801acab -->
 Declared member: source declares current; membership is caller\-declared, not runtime evidence\.

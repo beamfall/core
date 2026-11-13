@@ -1,11 +1,11 @@
 # Manage navigation overrides: nodes, theme, sections, history — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:8988960cb4d0e8393e958aa5d4408ba9 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/manage/pages/NavOverridePage\.tsx:94; symbol: NavOverridePage; span SHA256: ab214fe8c8411316e5b91e4558a1dd9402db91d5aee9f404635914768f2f0e70.
+Source: internal/web/app/src/areas/manage/pages/NavOverridePage\.tsx:567; symbol: HistoryPanel; span SHA256: 8291c0a24af4fb1e80de0d4b18afdf18acd7d770e47d6a5ec8b6dec958044d68.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -32,21 +32,11 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow manage\.navigation: 10 resolved, 19 unresolved members.
+Declared inventory flow manage\.navigation: 20 resolved, 9 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/manage/pages/NavOverridePage\.tsx DEFAULT\_ACCENT: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/manage/pages/NavOverridePage\.tsx EMPTY\_OVERRIDE: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/manage/pages/NavOverridePage\.tsx HistoryPanel: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/manage/pages/NavOverridePage\.tsx SectionsPanel: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/manage/pages/NavOverridePage\.tsx ThemePanel: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/manage/pages/NavOverridePage\.tsx moved: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/manage/pages/NavOverridePage\.tsx summarize: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts NAV\_OVERRIDE\_FIELDS: symbol is not a supported declaration in this path at this revision.
 
@@ -61,13 +51,3 @@ Declared inventory flow manage\.navigation: 10 resolved, 19 unresolved members.
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts RESTORE\_NAV\_OVERRIDE\_MUTATION: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts SET\_NAV\_OVERRIDE\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchNavOverride: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchNavOverrideHistory: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts resetNavOverride: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts restoreNavOverride: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts setNavOverride: symbol is not a supported declaration in this path at this revision.

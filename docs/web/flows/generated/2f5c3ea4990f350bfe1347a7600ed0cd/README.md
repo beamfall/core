@@ -1,11 +1,11 @@
 # Setup: choose sign\-in security mode and create the owner Profile — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:921bc539b37646864c0e9763a6813444 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/setup/orchestrate\.ts:107; symbol: bootstrapSetup; span SHA256: 3bb47051ddab2eb6bfcbd03e31797b9d0edd4a3547d7b65aa30e68460c621347.
+Source: internal/web/app/src/areas/setup/orchestrate\.ts:225; symbol: bootstrapResume; span SHA256: a688d5610f848cc6ce5b1f97c8e93be757d4d0752bc0a1a7adb7f77f261c717a.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -32,7 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow setup\.owner\-and\-security: 2 resolved, 9 unresolved members.
+Declared inventory flow setup\.owner\-and\-security: 5 resolved, 6 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/setup/SetupWizard\.tsx SECURITY\_MODES: symbol is not a supported declaration in this path at this revision.
 
@@ -42,12 +42,6 @@ Declared inventory flow setup\.owner\-and\-security: 2 resolved, 9 unresolved me
 
 - Unresolved member internal/web/app/src/areas/setup/orchestrate\.ts SetupTokenError: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/areas/setup/orchestrate\.ts bootstrapResume: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/setup/orchestrate\.ts classifySetupError: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts LIBRARIES\_QUERY: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts SETUP\_STATE\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchSetupState: symbol is not a supported declaration in this path at this revision.

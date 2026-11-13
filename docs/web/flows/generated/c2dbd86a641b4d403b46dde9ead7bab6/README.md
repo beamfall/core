@@ -1,6 +1,6 @@
 # Shared workbench widgets: status chips, tables, forms, server path picker — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:3d20088494af7c744e47f6ab419a1b48 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,7 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow shared\.workbench: 13 resolved, 27 unresolved members.
+Declared inventory flow shared\.workbench: 29 resolved, 11 unresolved members.
 
 - Unresolved member internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx BLOCKING: symbol is not a supported declaration in this path at this revision.
 
@@ -40,50 +40,18 @@ Declared inventory flow shared\.workbench: 13 resolved, 27 unresolved members.
 
 - Unresolved member internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx LOCATIONS: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx PathPickerField: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx REASON\_TEXT: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx Row: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx View: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx hostDistributionClass: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/components/beamfall/workbench/index\.tsx BadgeState: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/beamfall/workbench/index\.tsx ControlRow: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/beamfall/workbench/index\.tsx DataTable: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/beamfall/workbench/index\.tsx EmptyLine: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/beamfall/workbench/index\.tsx ErrorLine: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/beamfall/workbench/index\.tsx ErrorState: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/beamfall/workbench/index\.tsx Fieldset: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/beamfall/workbench/index\.tsx ManageField: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/beamfall/workbench/index\.tsx ManageInlineForm: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/beamfall/workbench/index\.tsx ManageSection: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/beamfall/workbench/index\.tsx StatusBadge: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/beamfall/workbench/index\.tsx StatusChip: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/components/beamfall/workbench/index\.tsx StatusTone: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/components/beamfall/workbench/index\.tsx TONE\_CLASS: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/components/beamfall/workbench/index\.tsx TableSkeletonRows: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts ADD\_PATH\_PICKER\_ROOT\_MUTATION: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts PATH\_PICKER\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts addPathPickerRoot: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchPathPicker: symbol is not a supported declaration in this path at this revision.

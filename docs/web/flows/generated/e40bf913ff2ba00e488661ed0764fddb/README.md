@@ -1,11 +1,11 @@
 # Console remote access: certificate, relay, direct connection, watch\-away guide — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:c5111807463cefbdb267ddcdab66807d -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:53; symbol: fetchRemoteAccess; span SHA256: 098987e60ab4f38516105c38f9b7ded03f1f0f85716da05bc7b9010ba507ded5.
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:149; symbol: Field; span SHA256: d5eb2ee4b24ae610bd1aa1313648079d4b81ffbf1836ad03166d202111aef4e4.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -32,7 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow console\.remote\-access: 1 resolved, 16 unresolved members.
+Declared inventory flow console\.remote\-access: 11 resolved, 6 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/console/sections/RemoteAccess\.tsx CERT\_STATE: symbol is not a supported declaration in this path at this revision.
 
@@ -40,28 +40,8 @@ Declared inventory flow console\.remote\-access: 1 resolved, 16 unresolved membe
 
 - Unresolved member internal/web/app/src/areas/console/sections/RemoteAccess\.tsx CONNECTION\_CLASS: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/areas/console/sections/RemoteAccess\.tsx Field: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/RemoteAccess\.tsx GuideStep: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/areas/console/sections/RemoteAccess\.tsx RELAY\_STATE: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/console/sections/RemoteAccess\.tsx RELAY\_TONE: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/RemoteAccess\.tsx RemoteAccess: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/RemoteAccess\.tsx RemoteAccessStatus: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/RemoteAccess\.tsx WatchAwayFlow: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/RemoteAccess\.tsx connectionClassLabels: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/RemoteAccess\.tsx currentEndpointKind: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/RemoteAccess\.tsx directState: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/RemoteAccess\.tsx endpointHost: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/RemoteAccess\.tsx isPublicCleartextConsoleLocation: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts REMOTE\_ACCESS\_QUERY: symbol is not a supported declaration in this path at this revision.

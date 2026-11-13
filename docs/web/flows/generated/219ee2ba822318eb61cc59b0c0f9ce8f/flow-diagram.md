@@ -1,6 +1,6 @@
 # Viewer header live search with keyboard shortcut — flow-diagram
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:e71473953fa4f9ba274a6c9c0a4133b8 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -35,6 +35,15 @@ sequenceDiagram
     Note over S,U: Source contains call flatMap in internal/web/app/src/areas/viewer/components/HeaderSearch.tsx at line 89 - order unresolved
     Note over S,U: Source contains call filter in internal/web/app/src/areas/viewer/components/HeaderSearch.tsx at line 89 - order unresolved
     Note over S,U: Source contains call map in internal/web/app/src/areas/viewer/components/HeaderSearch.tsx at line 89 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/viewer/components/HeaderSearch.tsx at line 257 - order unresolved
+    Note over S,U: Source contains call artworkSlotURL in internal/web/app/src/areas/viewer/components/HeaderSearch.tsx at line 258 - order unresolved
+    Note over S,U: Source contains call searchRowDetail in internal/web/app/src/areas/viewer/components/HeaderSearch.tsx at line 259 - order unresolved
+    Note over S,U: Source contains call filter in internal/web/app/src/areas/viewer/components/HeaderSearch.tsx at line 259 - order unresolved
+    Note over S,U: Source contains call join in internal/web/app/src/areas/viewer/components/HeaderSearch.tsx at line 259 - order unresolved
+    Note over S,U: Source contains call onActivate in internal/web/app/src/areas/viewer/components/HeaderSearch.tsx at line 265 - order unresolved
+    Note over S,U: Source contains call artworkBucketURL in internal/web/app/src/areas/viewer/components/HeaderSearch.tsx at line 273 - order unresolved
+    Note over S,U: Source contains call setImageFailed in internal/web/app/src/areas/viewer/components/HeaderSearch.tsx at line 274 - order unresolved
+    Note over S,U: Source contains call onActivate in internal/web/app/src/areas/viewer/components/HeaderSearch.tsx at line 291 - order unresolved
     Note over S,U: Source contains call useLocation in internal/web/app/src/areas/viewer/components/ViewerActions.tsx at line 10 - order unresolved
     Note over S,U: Source contains call includes in internal/web/app/src/areas/viewer/lib/useLiveSearch.ts at line 101 - order unresolved
     Note over S,U: Source contains call trim in internal/web/app/src/areas/viewer/lib/useLiveSearch.ts at line 36 - order unresolved

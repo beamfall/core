@@ -1,11 +1,11 @@
 # Viewer who&\#39;s\-watching Profile picker with PIN prompt — flow-diagram
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:8dbf2b040d7e71d2cd950e4eb4ed6fe8 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/components/beamfall/profile/ProfileAvatar\.tsx:12; symbol: ProfileAvatar; span SHA256: 4d97af950c27a62df588bc3e465891483c94b5e26de48989d283f9d642a20f03.
+Source: internal/web/app/src/areas/viewer/pages/ProfilePickerPage\.tsx:191; symbol: PinPrompt; span SHA256: 1dda62597ac88864cf9511f76713d3e612a47bf892ca7532a29fd3361e7657ce.
 
 ```mermaid
 sequenceDiagram
@@ -13,6 +13,20 @@ sequenceDiagram
     participant U as Unresolved runtime
     Note over S,U: Lexical inventory only - no witnessed order
     Note over S: Flow 83743f6282cf018923668839ed38a17a
+    Note over S,U: Source contains call useT in internal/web/app/src/areas/viewer/pages/ProfilePickerPage.tsx at line 204 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/viewer/pages/ProfilePickerPage.tsx at line 205 - order unresolved
+    Note over S,U: Source contains call useId in internal/web/app/src/areas/viewer/pages/ProfilePickerPage.tsx at line 206 - order unresolved
+    Note over S,U: Source contains call useId in internal/web/app/src/areas/viewer/pages/ProfilePickerPage.tsx at line 207 - order unresolved
+    Note over S,U: Source contains call useEffect in internal/web/app/src/areas/viewer/pages/ProfilePickerPage.tsx at line 210 - order unresolved
+    Note over S,U: Source contains call focus in internal/web/app/src/areas/viewer/pages/ProfilePickerPage.tsx at line 210 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/areas/viewer/pages/ProfilePickerPage.tsx at line 56 - order unresolved
+    Note over S,U: Source contains call useNavigate in internal/web/app/src/areas/viewer/pages/ProfilePickerPage.tsx at line 57 - order unresolved
+    Note over S,U: Source contains call useLocation in internal/web/app/src/areas/viewer/pages/ProfilePickerPage.tsx at line 58 - order unresolved
+    Note over S,U: Source contains call useSession in internal/web/app/src/areas/viewer/pages/ProfilePickerPage.tsx at line 59 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/viewer/pages/ProfilePickerPage.tsx at line 61 - order unresolved
+    Note over S,U: Source contains call useEffect in internal/web/app/src/areas/viewer/pages/ProfilePickerPage.tsx at line 69 - order unresolved
+    Note over S,U: Source contains call includes in internal/web/app/src/areas/viewer/pages/ProfilePickerPage.tsx at line 43 - order unresolved
+    Note over S,U: Source contains call includes in internal/web/app/src/areas/viewer/pages/ProfilePickerPage.tsx at line 44 - order unresolved
     Note over S,U: Source contains call resolveAvatar in internal/web/app/src/components/beamfall/profile/ProfileAvatar.tsx at line 23 - order unresolved
     Note over S,U: Source contains call find in internal/web/app/src/components/beamfall/profile/ProfileAvatar.tsx at line 24 - order unresolved
     Note over S,U: Source contains call cn in internal/web/app/src/components/beamfall/profile/ProfileAvatar.tsx at line 31 - order unresolved

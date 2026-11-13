@@ -1,6 +1,6 @@
 # Server event stream \(/api/events\) with reconnect backoff — technical-deep-dive
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:c617b67f45f1caac13d3e4b599251040 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -21,6 +21,11 @@ Source: internal/web/app/src/lib/eventStream\.ts:30; symbol: line; span SHA256: 
 Declared member: source declares readOnce; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/lib/eventStream\.ts:72; symbol: readOnce; span SHA256: de5effb7b110d6cf605df292b221dd6627d86a7c6d8c39dba64403b6e857d8b6.
+
+<!-- flowdocs:paragraph:a3e98990b598e71fd41d779addd4bd26 -->
+Source contains a lexical call to fetch; dispatch and effects are unresolved\.
+
+Source: internal/web/app/src/lib/eventStream\.ts:75; symbol: ; span SHA256: f356ae58a3e67abc55f35a4b9b67d4ca4f70d6cb134d1595b126b810c3504a18.
 
 <!-- flowdocs:paragraph:49bb251092d76b4803f9105222e2b193 -->
 Declared member: source declares wake; membership is caller\-declared, not runtime evidence\.

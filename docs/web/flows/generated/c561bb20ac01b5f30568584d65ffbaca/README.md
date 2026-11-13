@@ -1,11 +1,11 @@
 # Console live sessions: update awareness, jobs, live sessions and host graphs — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:9ff22c4952920f9f97df9d794d446ad7 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/console/sections/Dashboard\.tsx:44; symbol: usePolling; span SHA256: 79204b6661ff75c9aa8ce9572f8308f7b414b417fa173a7d4bfbd3ef33b9b6fe.
+Source: internal/web/app/src/areas/console/sections/Dashboard\.tsx:539; symbol: HostGraphs; span SHA256: 6915fcc523176256f95f0cd1ea25a264b83103958d54ef1298c6c42be380709e.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -32,7 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow console\.sessions: 12 resolved, 46 unresolved members.
+Declared inventory flow console\.sessions: 36 resolved, 22 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/console/sections/Dashboard\.tsx CHART\_HEIGHT: symbol is not a supported declaration in this path at this revision.
 
@@ -41,14 +41,6 @@ Declared inventory flow console\.sessions: 12 resolved, 46 unresolved members.
 - Unresolved member internal/web/app/src/areas/console/sections/Dashboard\.tsx EVENT\_SETTLE\_MS: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/console/sections/Dashboard\.tsx HOUR\_MS: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Dashboard\.tsx HostGraphs: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Dashboard\.tsx LineChart: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Dashboard\.tsx LiveSessionCount: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Dashboard\.tsx LiveSessions: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/console/sections/Dashboard\.tsx METHOD: symbol is not a supported declaration in this path at this revision.
 
@@ -62,37 +54,11 @@ Declared inventory flow console\.sessions: 12 resolved, 46 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/console/sections/Dashboard\.tsx Series: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/areas/console/sections/Dashboard\.tsx SessionProgress: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Dashboard\.tsx clock: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Dashboard\.tsx formatBitrate: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Dashboard\.tsx formatBytes: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Dashboard\.tsx niceMax: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Dashboard\.tsx sessionMethod: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Dashboard\.tsx tableRows: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Dashboard\.tsx timeOfDay: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Dashboard\.tsx useEventRefresh: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Dashboard\.tsx useWidth: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/areas/console/sections/Operations\.tsx PAUSE\_AFTER\_ERRORS: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/console/sections/Operations\.tsx StreamState: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/console/sections/Operations\.tsx UPDATE\_STATE\_DISPLAY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Operations\.tsx UpdateAvailableGuidance: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Operations\.tsx UpdateAwareness: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Operations\.tsx updateStateDisplay: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts CONSOLE\_CONFIG\_FIELDS: symbol is not a supported declaration in this path at this revision.
 
@@ -110,18 +76,4 @@ Declared inventory flow console\.sessions: 12 resolved, 46 unresolved members.
 
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts UPDATE\_STATUS\_QUERY: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts fetchConsoleConfig: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts fetchHostMetrics: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts fetchLiveSessions: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts fetchUpdateStatus: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts setConsoleConfig: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts terminateSession: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts JOBS\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchJobs: symbol is not a supported declaration in this path at this revision.

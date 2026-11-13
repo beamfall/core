@@ -1,6 +1,6 @@
 # Console access: devices and pairing codes — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1bb92a991339a7e92cbf35d6e9bdfe5f -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,11 +32,9 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow console\.access\.devices: 7 resolved, 16 unresolved members.
+Declared inventory flow console\.access\.devices: 14 resolved, 9 unresolved members.
 
 - Unresolved member internal/web/app/src/lib/graphql/auth\.ts PairingCode: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/auth\.ts mintPairingCode: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts CONSOLE\_CONFIG\_FIELDS: symbol is not a supported declaration in this path at this revision.
 
@@ -53,15 +51,3 @@ Declared inventory flow console\.access\.devices: 7 resolved, 16 unresolved memb
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts SET\_CONSOLE\_CONFIG\_MUTATION: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts SET\_DEVICE\_ROLE\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts fetchConsoleConfig: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts fetchDevices: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts revokeAllDevices: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts revokeDevice: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts setConsoleConfig: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts setDeviceRole: symbol is not a supported declaration in this path at this revision.

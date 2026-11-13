@@ -1,11 +1,11 @@
 # Console libraries: add a library, roots, preview clips, skip detection — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:438dc9b8791d3ab051e5ef0487225f49 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:99; symbol: LibraryCard; span SHA256: 0eef856b8120a2f9220360db393e826a75027ce143207e3b633d474ebf8db3cf.
+Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:395; symbol: AddLibrary; span SHA256: 5d39f22b21a3c38babdca6c6f64008f3d42514a2b018b17ae8722462992a990f.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -32,15 +32,11 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow console\.libraries: 9 resolved, 25 unresolved members.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Libraries\.tsx AddLibrary: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow console\.libraries: 20 resolved, 14 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/console/sections/Libraries\.tsx CARD: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/console/sections/Libraries\.tsx ICON\_TILE: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Libraries\.tsx Libraries: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/console/sections/Libraries\.tsx NO\_PLUGIN: symbol is not a supported declaration in this path at this revision.
 
@@ -65,21 +61,3 @@ Declared inventory flow console\.libraries: 9 resolved, 25 unresolved members.
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts SKIP\_DETECTION\_ENABLED\_QUERY: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts WATCHER\_STATUS\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts createLibrary: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchFolderTree: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchPlugins: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchSkipDetectionEnabled: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchWatcherStatus: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts scanLibrary: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts setLibraryPreviewClips: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts setLibraryRoots: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts setSkipDetectionEnabled: symbol is not a supported declaration in this path at this revision.

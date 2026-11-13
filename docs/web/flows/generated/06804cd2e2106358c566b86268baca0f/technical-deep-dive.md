@@ -1,11 +1,21 @@
 # Manage restrictions — technical-deep-dive
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1374bf7293150d7098eba5e61bccbb2b -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
 Source: internal/web/app/src/areas/manage/pages/RestrictionsPage\.tsx:16; symbol: RestrictionsPage; span SHA256: 417dbc6d2a1bbd8599adf1cdd5447cc8a1ddd58b2d00abca38ee259921f56a2a.
+
+<!-- flowdocs:paragraph:8a20a6865d00800679a46394703e4e97 -->
+Declared member: source declares relock; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:114; symbol: relock; span SHA256: dd81aadb3d4b78c941f70c445bed3b22c92ec5bc74d54430b1e343dc1d586e0a.
+
+<!-- flowdocs:paragraph:8d93c8c210d18454519c79ed9db90bda -->
+Declared member: source declares reveal; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:105; symbol: reveal; span SHA256: 62950c908e55a3083fecf1f4eca9c0d94134d0568abd9a135bab7d0a06c3a60b.
 
 <!-- flowdocs:paragraph:c6cb3fcafa91b6c9cac77c476679c833 -->
 Declared member: source declares onRelock; membership is caller\-declared, not runtime evidence\.

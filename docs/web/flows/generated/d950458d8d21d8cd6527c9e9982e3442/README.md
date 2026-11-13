@@ -1,6 +1,6 @@
 # Player route: lazy load, timestamp links, info overlay, audio stage — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:6a59db0555986dae76c7bdda5b27251b -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,11 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow player\.page: 9 resolved, 9 unresolved members.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/AudioStage\.tsx creditLine: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/AudioStage\.tsx cssURL: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow player\.page: 14 resolved, 4 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/viewer/player/LazyPlayerPage\.ts LazyPlayerPage: symbol is not a supported declaration in this path at this revision.
 
@@ -45,9 +41,3 @@ Declared inventory flow player\.page: 9 resolved, 9 unresolved members.
 - Unresolved member internal/web/app/src/lib/graphql/viewer\.ts MEDIA\_QUERY: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/viewer\.ts SET\_CLIENT\_PREF\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts fetchClientPrefs: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts fetchMedia: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts setClientPref: symbol is not a supported declaration in this path at this revision.

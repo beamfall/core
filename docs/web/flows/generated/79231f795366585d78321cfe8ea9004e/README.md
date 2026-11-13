@@ -1,11 +1,11 @@
 # Console API tokens and keys: scopes, create, revoke, one\-time secret — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:151edfaff19325261a39adb4bcd0157c -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/console/sections/ApiCredentials\.tsx:42; symbol: apiScopeLabel; span SHA256: 82ae899bfdd27ffca06a52728a8ee3c7eb509e58ef1686ab4124bbf6b30f4abb.
+Source: internal/web/app/src/areas/console/sections/ApiCredentials\.tsx:293; symbol: ApiCredentials; span SHA256: b24c879471c66833e48c191aa9d6810b01f9d37491ed40287fcaef8f8135d587.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -32,19 +32,11 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow console\.api\-credentials: 3 resolved, 18 unresolved members.
+Declared inventory flow console\.api\-credentials: 13 resolved, 8 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/console/sections/ApiCredentials\.tsx API\_SCOPE\_LABELS: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/areas/console/sections/ApiCredentials\.tsx ApiCredentials: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/ApiCredentials\.tsx ApiKeys: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/ApiCredentials\.tsx ApiTokens: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/areas/console/sections/ApiCredentials\.tsx SCOPES: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/ApiCredentials\.tsx SecretBanner: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts API\_KEYS\_QUERY: symbol is not a supported declaration in this path at this revision.
 
@@ -57,15 +49,3 @@ Declared inventory flow console\.api\-credentials: 3 resolved, 18 unresolved mem
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts REVOKE\_API\_KEY\_MUTATION: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts REVOKE\_API\_TOKEN\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts createAPIKey: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts createAPIToken: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts fetchAPIKeys: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts fetchAPITokens: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts revokeAPIKey: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts revokeAPIToken: symbol is not a supported declaration in this path at this revision.

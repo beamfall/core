@@ -1,11 +1,11 @@
 # Manage libraries: library list and folder tree — flow-diagram
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:3717a85144609c0c3c5ba214027809de -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/manage/pages/LibrariesPage\.tsx:65; symbol: LibrariesPage; span SHA256: 5ddc867a6a45339fa038b86eb3502d12335499a1262a6f11dfbf2351b42667b1.
+Source: internal/web/app/src/areas/manage/pages/LibrariesPage\.tsx:603; symbol: FolderTree; span SHA256: 316ee15a2c16f9aa021fe31e90cc057db9fcbff2d835dc3f2a92f1737f9d9e8a.
 
 ```mermaid
 sequenceDiagram
@@ -13,6 +13,13 @@ sequenceDiagram
     participant U as Unresolved runtime
     Note over S,U: Lexical inventory only - no witnessed order
     Note over S: Flow 3713ebcf3fbafbc5f290f763e9561913
+    Note over S,U: Source contains call useT at line 614 - order unresolved
+    Note over S,U: Source contains call t at line 618 - order unresolved
+    Note over S,U: Source contains call formatNodeSize at line 618 - order unresolved
+    Note over S,U: Source contains call onSelect at line 628 - order unresolved
+    Note over S,U: Source contains call preventDefault at line 631 - order unresolved
+    Note over S,U: Source contains call onSelect at line 632 - order unresolved
+    Note over S,U: Source contains call map at line 643 - order unresolved
     Note over S,U: Source contains call useT at line 66 - order unresolved
     Note over S,U: Source contains call useDisplayLocale at line 67 - order unresolved
     Note over S,U: Source contains call useState at line 70 - order unresolved
@@ -28,6 +35,9 @@ sequenceDiagram
     Note over S,U: Source contains call useState at line 207 - order unresolved
     Note over S,U: Source contains call useState at line 208 - order unresolved
     Note over S,U: Source contains call useState at line 210 - order unresolved
+    Note over S,U: Source contains call replace at line 657 - order unresolved
+    Note over S,U: Source contains call lastIndexOf at line 658 - order unresolved
+    Note over S,U: Source contains call slice at line 659 - order unresolved
     Note over S,U: Source contains call min at line 55 - order unresolved
     Note over S,U: Source contains call floor at line 55 - order unresolved
     Note over S,U: Source contains call log at line 55 - order unresolved

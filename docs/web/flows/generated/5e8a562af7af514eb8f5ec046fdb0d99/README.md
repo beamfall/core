@@ -1,11 +1,11 @@
 # Enroll a browser with a pairing code — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:55010e8b006ce347d08e27b295e07e70 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/enroll/EnrollPage\.tsx:43; symbol: EnrollPage; span SHA256: c47f9fbfc591d8600ffb4e5bf8ad928e38cf084157f16d18d570897e045204fa.
+Source: internal/web/app/src/areas/enroll/EnrollPage\.tsx:181; symbol: CardHeading; span SHA256: f7e73c414493680f27a87f3e71e6d41ea30bb012047e4a11e1bdbb2d33579ffc.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -32,16 +32,10 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow enroll\.pair\-device: 3 resolved, 6 unresolved members.
-
-- Unresolved member internal/web/app/src/areas/enroll/EnrollPage\.tsx CardHeading: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow enroll\.pair\-device: 6 resolved, 3 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/enroll/EnrollPage\.tsx FIELD: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/enroll/EnrollPage\.tsx FIELD\_LABEL: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/areas/enroll/EnrollPage\.tsx FormFeedback: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/lib/graphql/auth\.ts RebindOutcome: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/auth\.ts enroll: symbol is not a supported declaration in this path at this revision.

@@ -1,6 +1,6 @@
 # Shell and per\-area error boundaries with reload panel — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:f76d8b307822245509e1079c31647ee3 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,16 +32,10 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow shell\.error\-boundaries: 1 resolved, 6 unresolved members.
+Declared inventory flow shell\.error\-boundaries: 4 resolved, 3 unresolved members.
 
 - Unresolved member internal/web/app/src/components/chrome/ErrorBoundary\.tsx ErrorBoundary: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/components/chrome/ErrorBoundary\.tsx ErrorBoundaryProps: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/components/chrome/ErrorBoundary\.tsx ErrorBoundaryState: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/chrome/ErrorBoundary\.tsx ErrorPanel: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/chrome/ErrorBoundary\.tsx ShellErrorBoundary: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/chrome/ErrorBoundary\.tsx reloadPage: symbol is not a supported declaration in this path at this revision.

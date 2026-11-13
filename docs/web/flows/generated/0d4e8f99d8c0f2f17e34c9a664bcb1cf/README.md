@@ -1,6 +1,6 @@
 # Manage field locks — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1adfdfe5bd36307c9b99d866d0f4c35e -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,12 +32,8 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow manage\.field\-locks: 4 resolved, 4 unresolved members.
+Declared inventory flow manage\.field\-locks: 6 resolved, 2 unresolved members.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts MEDIA\_FIELD\_LOCKS\_QUERY: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts SET\_MEDIA\_FIELD\_LOCK\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchMediaFieldLocks: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts setMediaFieldLock: symbol is not a supported declaration in this path at this revision.

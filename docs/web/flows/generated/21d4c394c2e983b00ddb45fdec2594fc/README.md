@@ -1,11 +1,11 @@
 # Rescan a library or all libraries and follow scan state — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:327a7c1c0a0cb9d6b5293dd95076d4e0 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:40; symbol: emit; span SHA256: 116ad8a4fd3b98c055210f04c3ee6068df2f89d1e8e1f901dd3859bffec1de45.
+Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:195; symbol: RescanAllButton; span SHA256: a7b29862c74ec31c99a6ee4e6850b9b4ed7a91667f30a42bece86aad3478f852.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -32,7 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow action\.library\-rescan: 8 resolved, 21 unresolved members.
+Declared inventory flow action\.library\-rescan: 17 resolved, 12 unresolved members.
 
 - Unresolved member internal/web/app/src/components/beamfall/LibraryRescan\.tsx ACTIVE: symbol is not a supported declaration in this path at this revision.
 
@@ -42,36 +42,18 @@ Declared inventory flow action\.library\-rescan: 8 resolved, 21 unresolved membe
 
 - Unresolved member internal/web/app/src/components/beamfall/LibraryRescan\.tsx POLL\_MS: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/components/beamfall/LibraryRescan\.tsx RescanAllButton: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/beamfall/LibraryRescan\.tsx RescanButton: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/components/beamfall/LibraryRescan\.tsx RescanPhase: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/components/beamfall/LibraryRescan\.tsx RescanState: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/beamfall/LibraryRescan\.tsx RescanStatus: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/components/beamfall/LibraryRescan\.tsx listeners: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/components/beamfall/LibraryRescan\.tsx paused: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/components/beamfall/LibraryRescan\.tsx resetRescansForTest: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/components/beamfall/LibraryRescan\.tsx states: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/components/beamfall/LibraryRescan\.tsx subscribe: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/components/beamfall/LibraryRescan\.tsx timer: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/beamfall/LibraryRescan\.tsx useAnyRescanActive: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/beamfall/LibraryRescan\.tsx useRescanState: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts JOBS\_QUERY: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts SCAN\_LIBRARY\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchJobs: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts scanLibrary: symbol is not a supported declaration in this path at this revision.

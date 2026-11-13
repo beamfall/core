@@ -1,11 +1,16 @@
 # Console remote access: certificate, relay, direct connection, watch\-away guide — functional-overview
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:2e1a418ee714679eef66ac328210a4f6 -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:53; symbol: fetchRemoteAccess; span SHA256: 098987e60ab4f38516105c38f9b7ded03f1f0f85716da05bc7b9010ba507ded5.
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:149; symbol: Field; span SHA256: d5eb2ee4b24ae610bd1aa1313648079d4b81ffbf1836ad03166d202111aef4e4.
+
+<!-- flowdocs:paragraph:71da2b11c41006518490aced42ef916f -->
+Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
+
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:351; symbol: ; span SHA256: bc0f8191b52acd54baafede7a283073ea13a444d613c2907b3bf1d82a2d9fbeb.
 
 <!-- flowdocs:paragraph:a48a1f6df3771ac7c5f8450079a4b6f9 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.

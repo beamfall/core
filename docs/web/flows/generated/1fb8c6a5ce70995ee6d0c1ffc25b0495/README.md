@@ -1,6 +1,6 @@
 # Console access: create and manage Profiles — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:20c76d071e98c9d47d0c6092a0cb6e14 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,11 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow console\.access\.profiles: 4 resolved, 10 unresolved members.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Profiles\.tsx CreateProfileForm: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Profiles\.tsx ProfileRow: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow console\.access\.profiles: 10 resolved, 4 unresolved members.
 
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts CREATE\_PROFILE\_MUTATION: symbol is not a supported declaration in this path at this revision.
 
@@ -45,11 +41,3 @@ Declared inventory flow console\.access\.profiles: 4 resolved, 10 unresolved mem
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts PROFILES\_ADMIN\_QUERY: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts UPDATE\_PROFILE\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts createProfile: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts disableProfile: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts fetchProfilesAdmin: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts updateProfile: symbol is not a supported declaration in this path at this revision.

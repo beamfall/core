@@ -1,6 +1,6 @@
 # UI primitives: button, dialog, alert dialog, select, table, tabs, tree and form controls — functional-overview
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:3b100ec26ad7fca29ab52af50a52ea50 -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
@@ -11,6 +11,11 @@ Source: internal/web/app/src/components/ui/alert\-dialog\.tsx:6; symbol: AlertDi
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
 
 Source: internal/web/app/src/components/ui/badge\.tsx:31; symbol: ; span SHA256: 3469729dcb0519dd0c1e3c6c59852bf7837fa08c57833efa29e3e9d8c204f049.
+
+<!-- flowdocs:paragraph:06f92d02c844b28b4af97398d2a6a593 -->
+Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
+
+Source: internal/web/app/src/components/ui/select\.tsx:59; symbol: ; span SHA256: ad7581f8a2815fbe794d77054a65cf5082e01956d1e49448d55a783c71aa4a66.
 
 | Variation inventory | Runtime coverage | Denominator rule |
 | --- | --- | --- |

@@ -1,11 +1,11 @@
 # Setup: activate plugins and enter provider keys — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:dbd7f52b7c405f2f7fc76fce50eaf622 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/lib/graphql/auth\.ts:26; symbol: settleRebind; span SHA256: b13faca8956ab229de82053f9ca2976e5f0b4a1b28d78439f5d3ec44657139bb.
+Source: internal/web/app/src/areas/setup/orchestrate\.ts:159; symbol: activatePlugins; span SHA256: 026ffcbbcccbe3553646fa05bca51707878dcf9f1e0cf43e3cc3ae3202e11b87.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -32,15 +32,11 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow setup\.plugins: 1 resolved, 13 unresolved members.
+Declared inventory flow setup\.plugins: 6 resolved, 8 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/setup/SetupWizard\.tsx PLUGIN\_ICON: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/setup/SetupWizard\.tsx PLUGIN\_LABEL: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/setup/orchestrate\.ts activatePlugins: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/setup/orchestrate\.ts loadProviderKeys: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/auth\.ts RebindOutcome: symbol is not a supported declaration in this path at this revision.
 
@@ -48,14 +44,8 @@ Declared inventory flow setup\.plugins: 1 resolved, 13 unresolved members.
 
 - Unresolved member internal/web/app/src/lib/graphql/auth\.ts VerifiedAdminSession: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/lib/graphql/auth\.ts verifyAdminSession: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts CONSOLE\_CONFIG\_FIELDS: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts CONSOLE\_CONFIG\_QUERY: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts SET\_PLUGIN\_ACTIVE\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts fetchConsoleConfig: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts setPluginActive: symbol is not a supported declaration in this path at this revision.

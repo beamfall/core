@@ -1,6 +1,6 @@
 # Console access: devices and pairing codes — flow-diagram
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:627edae7273401dd1b8e57469578b420 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -19,6 +19,7 @@ sequenceDiagram
     Note over S,U: Source contains call useState at line 62 - order unresolved
     Note over S,U: Source contains call useT at line 35 - order unresolved
     Note over S,U: Source contains call t at line 40 - order unresolved
+    Note over S,U: Source contains call writeText at line 47 - order unresolved
     Note over S,U: Source contains call t at line 50 - order unresolved
     Note over S,U: Source contains call setBusy at line 65 - order unresolved
     Note over S,U: Source contains call setMinted at line 67 - order unresolved

@@ -1,6 +1,6 @@
 # Player transport: seek bar, trickplay, markers, chapters, renditions, touch gestures — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:626416637ec0e092b486cf87ec5c9048 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,7 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow player\.transport: 49 resolved, 29 unresolved members.
+Declared inventory flow player\.transport: 55 resolved, 23 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/viewer/lib/transport\.ts DEFAULT\_TRICKPLAY\_COLUMNS: symbol is not a supported declaration in this path at this revision.
 
@@ -76,18 +76,6 @@ Declared inventory flow player\.transport: 49 resolved, 29 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx SPEEDS: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx bufferedEnd: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx routeLabel: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx routeStateClass: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx routeSummary: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx useNarrowViewport: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/areas/viewer/player/TransportMenu\.tsx MenuRow: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/TransportMenu\.tsx TransportMenu: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/viewer/player/useChromeAutoHide\.ts IDLE\_MS: symbol is not a supported declaration in this path at this revision.

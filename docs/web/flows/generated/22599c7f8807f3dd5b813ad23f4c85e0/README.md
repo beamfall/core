@@ -1,11 +1,11 @@
 # Manage rename: pattern preview, batch rename managed paths, undo — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:846ef5c10c38ca2f6b640c7d6ccc2223 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/manage/lib/renamePattern\.ts:63; symbol: applyToStem; span SHA256: c1c4c153726740130c39d9ae2e15b73808657724c910cb51655d761791d61077.
+Source: internal/web/app/src/areas/manage/lib/powertools\.ts:101; symbol: batchRenameManagedPaths; span SHA256: d4941283f47a1fc0e80aebb2f7ea21d8527739b00c4c45e120a1e6f4dab72b88.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -32,17 +32,13 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow manage\.rename: 9 resolved, 14 unresolved members.
+Declared inventory flow manage\.rename: 12 resolved, 11 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/manage/lib/powertools\.ts BATCH\_RENAME\_MUTATION: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/manage/lib/powertools\.ts ManagedPathRename: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/manage/lib/powertools\.ts UNDO\_BATCH\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/manage/lib/powertools\.ts batchRenameManagedPaths: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/manage/lib/powertools\.ts undoBatchRename: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/manage/lib/renamePattern\.ts DEFAULT\_PATTERN: symbol is not a supported declaration in this path at this revision.
 
@@ -59,5 +55,3 @@ Declared inventory flow manage\.rename: 9 resolved, 14 unresolved members.
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts FOLDER\_TREE\_QUERY: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts LIBRARIES\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchFolderTree: symbol is not a supported declaration in this path at this revision.

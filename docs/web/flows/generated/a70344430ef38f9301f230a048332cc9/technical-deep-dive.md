@@ -1,6 +1,6 @@
 # Player transport: seek bar, trickplay, markers, chapters, renditions, touch gestures — technical-deep-dive
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:ebb23304efe52dc24f2bbb0c3b2b015d -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -101,6 +101,36 @@ Source: internal/web/app/src/areas/viewer/lib/transport\.ts:56; symbol: resolveT
 Declared member: source declares spokenDuration; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/viewer/lib/transport\.ts:115; symbol: spokenDuration; span SHA256: 8412b6db48a06d975887cf557883b65dbe7addb5dc90ce444ef4b780e2b74699.
+
+<!-- flowdocs:paragraph:199240c8246de9b90ffd6bd5306e001c -->
+Declared member: source declares bufferedEnd; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:1075; symbol: bufferedEnd; span SHA256: 3775c2e50cbe01be75314f8c135c5c4d9641eb6b603c7a7c9a140238281bc1ee.
+
+<!-- flowdocs:paragraph:c46815e85d038d8a3fa73379a94354fb -->
+Declared member: source declares routeLabel; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:1114; symbol: routeLabel; span SHA256: c7d5e17a7a80c1a361c6ec9a5fa8c2e3a9da757039db7e32fea751dcab39b86f.
+
+<!-- flowdocs:paragraph:4d9ff7fad74f949dbca772cf8a5457c3 -->
+Declared member: source declares routeStateClass; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:1108; symbol: routeStateClass; span SHA256: cc5db14a306f130c8ffe6e74aead95511bf0cbb7d2ec8687566322f4ee8833fc.
+
+<!-- flowdocs:paragraph:9f6ffda5ddcbc811e688b271461084ba -->
+Declared member: source declares routeSummary; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:1123; symbol: routeSummary; span SHA256: c760fb679c60886a8363a1ca74b895a7203fa34df48d842c5682ef7aa00ca3a2.
+
+<!-- flowdocs:paragraph:1fe9f23b79192120681e494b1c36cec5 -->
+Declared member: source declares useNarrowViewport; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:1090; symbol: useNarrowViewport; span SHA256: 9ffce54c24787410382243ed0367a3baa123f9c74fea576208d6d1bc689dbd20.
+
+<!-- flowdocs:paragraph:ee4b56b68b08856269f2dfdb85ffaf8f -->
+Declared member: source declares TransportMenu; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/TransportMenu\.tsx:15; symbol: TransportMenu; span SHA256: 226b94196ca2158428e5feafeb8560820ccdd7cc3832f08df745f58122a20fb4.
 
 <!-- flowdocs:paragraph:4c50b0ca0b7941c4e00c3e3aa6aa5490 -->
 Declared member: source declares useChromeAutoHide; membership is caller\-declared, not runtime evidence\.

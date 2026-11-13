@@ -1,11 +1,11 @@
 # Manage subscriptions and retention kinds — flow-diagram
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:3812876bea2833d22454b7951b6e7f21 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/manage/pages/SubscriptionsPage\.tsx:55; symbol: SubscriptionsPage; span SHA256: 882acfccc430b9f86b4a21317df8134e7852ba52a286af6b19fec9c98fcf38ad.
+Source: internal/web/app/src/areas/manage/pages/SubscriptionsPage\.tsx:248; symbol: SubscriptionRow; span SHA256: 7a877860437668555a65c99e46889827619111ac45f63d84424c845340e74c5c.
 
 ```mermaid
 sequenceDiagram
@@ -13,6 +13,25 @@ sequenceDiagram
     participant U as Unresolved runtime
     Note over S,U: Lexical inventory only - no witnessed order
     Note over S: Flow e07cf6403700ca3de20c5f8ee4e8ef12
+    Note over S,U: Source contains call useT at line 257 - order unresolved
+    Note over S,U: Source contains call useState at line 258 - order unresolved
+    Note over S,U: Source contains call useState at line 259 - order unresolved
+    Note over S,U: Source contains call String at line 260 - order unresolved
+    Note over S,U: Source contains call t at line 274 - order unresolved
+    Note over S,U: Source contains call t at line 275 - order unresolved
+    Note over S,U: Source contains call map at line 280 - order unresolved
+    Note over S,U: Source contains call t at line 282 - order unresolved
+    Note over S,U: Source contains call t at line 293 - order unresolved
+    Note over S,U: Source contains call t at line 294 - order unresolved
+    Note over S,U: Source contains call setN at line 296 - order unresolved
+    Note over S,U: Source contains call onSaveRetention at line 304 - order unresolved
+    Note over S,U: Source contains call Number at line 304 - order unresolved
+    Note over S,U: Source contains call t at line 306 - order unresolved
+    Note over S,U: Source contains call t at line 314 - order unresolved
+    Note over S,U: Source contains call t at line 319 - order unresolved
+    Note over S,U: Source contains call t at line 325 - order unresolved
+    Note over S,U: Source contains call onRemove at line 326 - order unresolved
+    Note over S,U: Source contains call t at line 327 - order unresolved
     Note over S,U: Source contains call useT at line 56 - order unresolved
     Note over S,U: Source contains call useSession at line 57 - order unresolved
     Note over S,U: Source contains call useState at line 60 - order unresolved

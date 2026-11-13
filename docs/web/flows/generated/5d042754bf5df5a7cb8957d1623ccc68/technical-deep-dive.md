@@ -1,16 +1,51 @@
 # First\-run setup wizard shell: token intake, step navigation — technical-deep-dive
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:98d0e1f102d40ce83c4a6d1ab1865d73 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/components/beamfall/CinemaBackdrop\.tsx:4; symbol: CinemaBackdrop; span SHA256: 6880dafb3ea09575091d6bcad24c3bd43e0f7efd6ad47049f784578830fbf852.
+Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:139; symbol: SetupWizard; span SHA256: 5ea0bd2beac7b14842fe7dac0073411f7ca52258541d8dcc42e8d8d9ba4df830.
+
+<!-- flowdocs:paragraph:93647d4e1a3e2a1c945e104b3851045e -->
+Declared member: source declares StepHeading; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:1127; symbol: StepHeading; span SHA256: 98c2c47a4374d892d4a2f9a8e5936e9032e8ecadfab9b5e743316a58cd8683e1.
+
+<!-- flowdocs:paragraph:9629f2cfa25908d4717903fa313e0027 -->
+Declared member: source declares consumeSetupToken; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:127; symbol: consumeSetupToken; span SHA256: bc8dd303f5ecdc7d1027eef0099fc5984009041c95c86ac388da0cfa9924fd2f.
+
+<!-- flowdocs:paragraph:f42f6ef5058c52d413dd8f81b3a914a3 -->
+Source contains a lexical call to delete; dispatch and effects are unresolved\.
+
+Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:134; symbol: ; span SHA256: ee92a335d5534e00bc19e11cc79ea2d4076dc4453733a7dceca6db64f1cea5ac.
 
 <!-- flowdocs:paragraph:4bc8a8315bf67a7df7b7d2a2c0615c31 -->
 Declared member: source declares CinemaBackdrop; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/components/beamfall/CinemaBackdrop\.tsx:4; symbol: CinemaBackdrop; span SHA256: 6880dafb3ea09575091d6bcad24c3bd43e0f7efd6ad47049f784578830fbf852.
+
+<!-- flowdocs:paragraph:a59c57b1c664054b34e55afbca0cae93 -->
+Declared member: source declares setScraperCredential; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:177; symbol: setScraperCredential; span SHA256: a7ab48f46207dd2f992f28fcc70ae9522a15cc8b9ac186d3d64d1fd28fd340fb.
+
+<!-- flowdocs:paragraph:42993186c8f65d642c74e75eb352223c -->
+Declared member: source declares browseServerFolders; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1003; symbol: browseServerFolders; span SHA256: 03e73c0c9e7a7c3159dfd5c2be6f98937689b6d90fb77147f1b27a0928ffe876.
+
+<!-- flowdocs:paragraph:3c8711e5fccb7558909c518d4a9172b9 -->
+Declared member: source declares fetchJobs; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:290; symbol: fetchJobs; span SHA256: 84981ee21f1139b8d18ea75b74fdb61f6a726342170062d90fb00fab530ce0f4.
+
+<!-- flowdocs:paragraph:43eb1fc61f48667da8d4b03fc9c45419 -->
+Declared member: source declares fetchPlugins; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:187; symbol: fetchPlugins; span SHA256: e16140da6c394a2a2576e66fe823ba3182bddd20cdd55d42f5286f8e8cf6a218.
 
 <!-- flowdocs:paragraph:82d4585e31b91232f745ef7216147249 -->
 Declared member: source declares announceError; membership is caller\-declared, not runtime evidence\.

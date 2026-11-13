@@ -1,21 +1,86 @@
 # Manage tags: tag tree, assign, bulk, trashed tags — technical-deep-dive
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:e24238003c40f26313784936c7d41737 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/manage/pages/TagsPage\.tsx:155; symbol: TagTree; span SHA256: 7dfdc7777dbcece2e48ae9fc8b495405b1f0ec2db65a491652b3e6cb1f81fbc6.
+Source: internal/web/app/src/areas/manage/pages/TagsPage\.tsx:359; symbol: AssignSection; span SHA256: ff76541b48b3a2f9b4e7cb4baf150f18989432602ae1aa6b427a1a99ae9c95a4.
+
+<!-- flowdocs:paragraph:4232bcf2f18a20ee3994c4c548f5eb5f -->
+Declared member: source declares AssignSection; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/pages/TagsPage\.tsx:359; symbol: AssignSection; span SHA256: ff76541b48b3a2f9b4e7cb4baf150f18989432602ae1aa6b427a1a99ae9c95a4.
+
+<!-- flowdocs:paragraph:8f5b8d6909495c94eede4339cc78f00f -->
+Declared member: source declares BulkSection; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/pages/TagsPage\.tsx:500; symbol: BulkSection; span SHA256: 3c383cc682afd79b490743824e18f3a48083b6146d4cd89ca9a8473f56e35762.
 
 <!-- flowdocs:paragraph:94ab0f371aaea0af540c117d77882ba2 -->
 Declared member: source declares TagTree; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/manage/pages/TagsPage\.tsx:155; symbol: TagTree; span SHA256: 7dfdc7777dbcece2e48ae9fc8b495405b1f0ec2db65a491652b3e6cb1f81fbc6.
 
+<!-- flowdocs:paragraph:6d7a63e0c44897f0a5394c24d70b9e9b -->
+Declared member: source declares TrashedTable; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/pages/TagsPage\.tsx:659; symbol: TrashedTable; span SHA256: 086ccfd78f305ae8c97f706490d07dd0fb767ae26e1322db3c63937a6d48c5e6.
+
+<!-- flowdocs:paragraph:1eba8616c9051332fd978f053559fc72 -->
+Declared member: source declares targetTypeLabel; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/pages/TagsPage\.tsx:353; symbol: targetTypeLabel; span SHA256: 035715d7a99987a18bdf3492e2151c7530c894e9907fa98dbe91f296ed02f446.
+
 <!-- flowdocs:paragraph:d12a84eab9296ce30c89608483ad934d -->
 Declared member: source declares treeOrder; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/manage/pages/TagsPage\.tsx:53; symbol: treeOrder; span SHA256: ae5bc53081cfea9afb04a9b7a3f33eb2adc1e8b108950b14f40c15fe45139f44.
+
+<!-- flowdocs:paragraph:f279965d0b3ac0a2f1b942e6557a144f -->
+Declared member: source declares assignTag; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:525; symbol: assignTag; span SHA256: 66ce7f8fecd70f463c49a2442a874b4a5264abc9958651b38f10d120624f0ea8.
+
+<!-- flowdocs:paragraph:5ce0b418be5300e85b25dfd0f600cb69 -->
+Declared member: source declares bulkAssignTags; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:563; symbol: bulkAssignTags; span SHA256: 3f1e8357ac1a2aadc296a1421297cf3b676c934187f56daa33f49e07c5e2c7af.
+
+<!-- flowdocs:paragraph:f1a35540c8a14acfd35abf995e365c3a -->
+Declared member: source declares createTag; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:470; symbol: createTag; span SHA256: 0791ea12c772306bb9bc73da97938d43133490b0fa733e6508a50e7247dbe84c.
+
+<!-- flowdocs:paragraph:45b6aea6d108380dd03ca5e7255a38ad -->
+Declared member: source declares deleteTag; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:501; symbol: deleteTag; span SHA256: 50000ecd8580d17d8eb66470e71ff4fc485f761aed8f99cc094cbd6c8e511d12.
+
+<!-- flowdocs:paragraph:58d98bf6979673217471a6464102c1b9 -->
+Declared member: source declares fetchTagAssignments; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:453; symbol: fetchTagAssignments; span SHA256: 5bb7b1c70ef5076c9e6c6970bf7c19af5ec1e19260f203b8bddf41bde72626d7.
+
+<!-- flowdocs:paragraph:6c785594ce3ba4311adcb3357e854fa9 -->
+Declared member: source declares fetchTags; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:440; symbol: fetchTags; span SHA256: f3cc9babf71aab1087bffb58c3186203f6e18352bbafb23e53d1c9911a160b35.
+
+<!-- flowdocs:paragraph:da881f56fb07f816f353ece006d2941b -->
+Declared member: source declares restoreTag; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:512; symbol: restoreTag; span SHA256: ffbeecc73cb75f52d707e125a6a514cb7d81806dcdecbdd0014263008da7a296.
+
+<!-- flowdocs:paragraph:96d4e60b9f73f6e086dda08dc3d4c2bf -->
+Declared member: source declares unassignTag; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:544; symbol: unassignTag; span SHA256: 9cab80c0a5387dd66af5fd7507bb471586613b440c996103f1794f244962eaa9.
+
+<!-- flowdocs:paragraph:b648e8b46ab80146e7845996f5507d32 -->
+Declared member: source declares updateTag; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:484; symbol: updateTag; span SHA256: 66c5ce068cf528db2c088d33ccba0336ada084bb415371fcb0d9afeacaef3073.
 
 <!-- flowdocs:paragraph:8ec4164f2cd5d80156ec6620c39e911f -->
 Declared member: source declares beginEdit; membership is caller\-declared, not runtime evidence\.

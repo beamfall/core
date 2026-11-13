@@ -1,6 +1,6 @@
 # Console access: library grants, rating ceilings, access schedules, managed policy — technical-deep-dive
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:08cef2f6a7dc5081c0055b8d6a4b95a8 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -26,6 +26,86 @@ Source: internal/web/app/src/areas/console/lib/schedulePreview\.ts:58; symbol: n
 Declared member: source declares weekMinute; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/console/lib/schedulePreview\.ts:19; symbol: weekMinute; span SHA256: 6ffad898fcf2f91b87523dfc7d62de6317d3e48858447fb1fe2725df6c6c4491.
+
+<!-- flowdocs:paragraph:8da17a3fe1e65d7acb820eebba114d60 -->
+Declared member: source declares AccessGrantList; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:472; symbol: AccessGrantList; span SHA256: b267612b8f1c2008f524c59386e5be7a19c129c5e48cb0300048c36f41648cdc.
+
+<!-- flowdocs:paragraph:9802d7cf529da4eb6981dbfa27bcca21 -->
+Declared member: source declares AccessScheduleEditor; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:265; symbol: AccessScheduleEditor; span SHA256: b7898edfecd2a6b4fe1ee0cad812194013401033c7dc281f96475ad2a1327c87.
+
+<!-- flowdocs:paragraph:45c9cc298ccebbed887f0fb8ca54d2fa -->
+Declared member: source declares CeilingRow; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:218; symbol: CeilingRow; span SHA256: 0b2ab3292ab82dc1f1902f88888cead99f270f4453b90b94827997fab3ff7766.
+
+<!-- flowdocs:paragraph:494109cea9091eb4aa41a4b70d8bd79d -->
+Declared member: source declares LibraryGrantEditor; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:149; symbol: LibraryGrantEditor; span SHA256: c4f190b00b68d746265aa281642a1d4c8531d4e2dc84d6a75b7b56f565c5421a.
+
+<!-- flowdocs:paragraph:a08b27b82534810b9dbaae92bd91acdb -->
+Declared member: source declares ManagedPolicyControls; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:396; symbol: ManagedPolicyControls; span SHA256: 9ccd110baa3b1779f8c5412ed4c7b32961a4255e9e15a7afd742cc9d2a0ba840.
+
+<!-- flowdocs:paragraph:4f274cf595cd771bc57bd425c5708ed3 -->
+Declared member: source declares SchedulePreview; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:368; symbol: SchedulePreview; span SHA256: 59f95e08b59aaf1b3975ff96fa5c52135e798cbfe59e1b0695bca80e0aa96b38.
+
+<!-- flowdocs:paragraph:66d42c5ca7d25264458b2eb54f902ea1 -->
+Declared member: source declares accessGrantsForProfile; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:866; symbol: accessGrantsForProfile; span SHA256: b4979beab1b64383d7fd978a66d80e7e3cfe6fd3d41dae98c417e2b886b3cb26.
+
+<!-- flowdocs:paragraph:425c720fcc5a7d99ae5e5f2ec642face -->
+Declared member: source declares fetchAccessSchedule; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:547; symbol: fetchAccessSchedule; span SHA256: 61f8698a5811f76b00d70d4b87ca8f9cb9b7c4397d4fef47845987c395736ee6.
+
+<!-- flowdocs:paragraph:dfd84a52b73f15933c2d07614c1d3bf6 -->
+Declared member: source declares fetchEnforcedFilters; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:590; symbol: fetchEnforcedFilters; span SHA256: 338914d8085dc1e4ffbe4cb8de06bd741551873eadb287dbafb47c5491cbf38e.
+
+<!-- flowdocs:paragraph:fa96ad2807d0fb1640d705f97e1ca97d -->
+Declared member: source declares revokeAccessGrant; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:883; symbol: revokeAccessGrant; span SHA256: 9f99cab6a30c157fb3b321a2d6da399701f811b9fdb79e45f68e2927f44912c7.
+
+<!-- flowdocs:paragraph:9f98a5af83953a0f6a14fd2b3ca526c6 -->
+Declared member: source declares setAccessSchedule; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:563; symbol: setAccessSchedule; span SHA256: aa382b7d87172123edf55c486ccc0361597a958127d8db9545e876b6ff81afb0.
+
+<!-- flowdocs:paragraph:66db6582ec8012551abdfc161178eeb4 -->
+Declared member: source declares setCertificationCeiling; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:602; symbol: setCertificationCeiling; span SHA256: 64f62c2719d6ab06c33aa6054046295a4df78dfa66e520db71d1fb8a1c307d8f.
+
+<!-- flowdocs:paragraph:d7d542a562192682cad32e5ade993631 -->
+Declared member: source declares setExtensionPreauthorization; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:903; symbol: setExtensionPreauthorization; span SHA256: 8bb525bbaac36023a479d9c39d40af22a461c07a0854e9108125236acfa184e9.
+
+<!-- flowdocs:paragraph:977ba207846ad425525a0f095d421c10 -->
+Declared member: source declares setProfileLibraries; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:814; symbol: setProfileLibraries; span SHA256: aeceb9ee50b60073b0b99f66fc742cb6aa06df8aba20af1466cf12c475ab9acb.
+
+<!-- flowdocs:paragraph:5deadd5237ea64230d360a5f65f31620 -->
+Declared member: source declares setProfileStreamCap; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:839; symbol: setProfileStreamCap; span SHA256: e22b33fc1bf9c5ff731e4aab9983539df2e438a716cc5e67f972adc42c207a8c.
+
+<!-- flowdocs:paragraph:738aa5954ac26a1bf2c9fc8b00729e76 -->
+Declared member: source declares updateProfile; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:791; symbol: updateProfile; span SHA256: 98c03d997d79f65c75d30a882002dd346e94f549e52abe9ddaf34fab2b2e81c2.
 
 <!-- flowdocs:paragraph:61985cc96426c1ed1c8b51af76995983 -->
 Declared member: source declares fetchLibraries; membership is caller\-declared, not runtime evidence\.

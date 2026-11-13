@@ -1,11 +1,11 @@
 # Rescan a library or all libraries and follow scan state — flow-diagram
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b04e658d96258cd9a9a4a89055b5618b -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:40; symbol: emit; span SHA256: 116ad8a4fd3b98c055210f04c3ee6068df2f89d1e8e1f901dd3859bffec1de45.
+Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:195; symbol: RescanAllButton; span SHA256: a7b29862c74ec31c99a6ee4e6850b9b4ed7a91667f30a42bece86aad3478f852.
 
 ```mermaid
 sequenceDiagram
@@ -13,6 +13,29 @@ sequenceDiagram
     participant U as Unresolved runtime
     Note over S,U: Lexical inventory only - no witnessed order
     Note over S: Flow 21d4c394c2e983b00ddb45fdec2594fc
+    Note over S,U: Source contains call useT at line 202 - order unresolved
+    Note over S,U: Source contains call useAnyRescanActive at line 203 - order unresolved
+    Note over S,U: Source contains call useEffect at line 204 - order unresolved
+    Note over S,U: Source contains call ensurePolling at line 205 - order unresolved
+    Note over S,U: Source contains call filter at line 207 - order unresolved
+    Note over S,U: Source contains call startRescan at line 215 - order unresolved
+    Note over S,U: Source contains call t at line 219 - order unresolved
+    Note over S,U: Source contains call useT at line 177 - order unresolved
+    Note over S,U: Source contains call useRescanState at line 178 - order unresolved
+    Note over S,U: Source contains call has at line 179 - order unresolved
+    Note over S,U: Source contains call t at line 185 - order unresolved
+    Note over S,U: Source contains call startRescan at line 186 - order unresolved
+    Note over S,U: Source contains call t at line 189 - order unresolved
+    Note over S,U: Source contains call useT at line 226 - order unresolved
+    Note over S,U: Source contains call useRescanState at line 227 - order unresolved
+    Note over S,U: Source contains call useEffect at line 228 - order unresolved
+    Note over S,U: Source contains call ensurePolling at line 229 - order unresolved
+    Note over S,U: Source contains call t at line 233 - order unresolved
+    Note over S,U: Source contains call find at line 236 - order unresolved
+    Note over S,U: Source contains call jobProgressDetail at line 237 - order unresolved
+    Note over S,U: Source contains call t at line 241 - order unresolved
+    Note over S,U: Source contains call t at line 243 - order unresolved
+    Note over S,U: Source contains call t at line 245 - order unresolved
     Note over S,U: Source contains call listener at line 41 - order unresolved
     Note over S,U: Source contains call setInterval at line 105 - order unresolved
     Note over S,U: Source contains call poll at line 105 - order unresolved
@@ -38,6 +61,9 @@ sequenceDiagram
     Note over S,U: Source contains call setState at line 100 - order unresolved
     Note over S,U: Source contains call foldRescan at line 100 - order unresolved
     Note over S,U: Source contains call get at line 50 - order unresolved
+    Note over S,U: Source contains call clear at line 161 - order unresolved
+    Note over S,U: Source contains call clearInterval at line 162 - order unresolved
+    Note over S,U: Source contains call emit at line 165 - order unresolved
     Note over S,U: Source contains call set at line 45 - order unresolved
     Note over S,U: Source contains call emit at line 46 - order unresolved
     Note over S,U: Source contains call has at line 115 - order unresolved
@@ -52,4 +78,12 @@ sequenceDiagram
     Note over S,U: Source contains call setState at line 136 - order unresolved
     Note over S,U: Source contains call foldRescan at line 136 - order unresolved
     Note over S,U: Source contains call ensurePolling at line 137 - order unresolved
+    Note over S,U: Source contains call add at line 143 - order unresolved
+    Note over S,U: Source contains call delete at line 144 - order unresolved
+    Note over S,U: Source contains call useSyncExternalStore at line 153 - order unresolved
+    Note over S,U: Source contains call values at line 155 - order unresolved
+    Note over S,U: Source contains call some at line 155 - order unresolved
+    Note over S,U: Source contains call has at line 155 - order unresolved
+    Note over S,U: Source contains call useSyncExternalStore at line 148 - order unresolved
+    Note over S,U: Source contains call rescanState at line 148 - order unresolved
 ```

@@ -1,6 +1,6 @@
 # Console retention rules — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:45ae80ac934cdaa0299e6b8c612427a9 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,7 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow console\.retention: 4 resolved, 10 unresolved members.
+Declared inventory flow console\.retention: 8 resolved, 6 unresolved members.
 
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts CREATE\_RETENTION\_RULE\_MUTATION: symbol is not a supported declaration in this path at this revision.
 
@@ -45,11 +45,3 @@ Declared inventory flow console\.retention: 4 resolved, 10 unresolved members.
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts RetentionRulePatch: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts UPDATE\_RETENTION\_RULE\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts createRetentionRule: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts deleteRetentionRule: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts fetchRetentionRules: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts updateRetentionRule: symbol is not a supported declaration in this path at this revision.

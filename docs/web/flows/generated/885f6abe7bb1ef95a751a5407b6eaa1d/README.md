@@ -1,6 +1,6 @@
 # Console operations and updates: resource governor, job queue and job log — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:32780ee0dcd9b635f426a304f0b1b5c7 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,7 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow console\.operations: 1 resolved, 27 unresolved members.
+Declared inventory flow console\.operations: 9 resolved, 19 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/console/sections/OperationsControls\.tsx GovernorSettings: symbol is not a supported declaration in this path at this revision.
 
@@ -70,20 +70,4 @@ Declared inventory flow console\.operations: 1 resolved, 27 unresolved members.
 
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts SET\_CONSOLE\_CONFIG\_MUTATION: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts cancelJob: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts fetchConsoleConfig: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts fetchJobEvents: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts fetchOperationsGovernor: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts retryJob: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts runEventsCompaction: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts setConsoleConfig: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts JOBS\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchJobs: symbol is not a supported declaration in this path at this revision.

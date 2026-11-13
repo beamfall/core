@@ -1,6 +1,6 @@
 # Player audio and subtitle tracks, subtitle styling — exceptions
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:75cc2b61e973c718fe0e7030a78ab46f -->
 Error reachability, rescue behavior and completeness are unresolved\.

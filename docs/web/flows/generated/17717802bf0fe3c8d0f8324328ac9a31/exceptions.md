@@ -1,9 +1,9 @@
 # Viewer media card: preview dwell, state overlay, card menu, artwork — exceptions
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a47aafbbc1e77d84e0c3c894fb287545 -->
 Error reachability, rescue behavior and completeness are unresolved\.
 
-Source: internal/web/app/src/areas/viewer/components/MediaItemCard\.tsx:33; symbol: MediaItemCard; span SHA256: 495702df450883fd29a75fdfaa9ca776eca0fc5b0f01bbbd4da8cdbf4366297e.
+Source: internal/web/app/src/areas/viewer/components/MediaItemCard\.tsx:259; symbol: CardStateOverlay; span SHA256: 26335e262852cff9dc288f54e524fdb41d5b7de94e8e3b75867f868698d359ae.
 

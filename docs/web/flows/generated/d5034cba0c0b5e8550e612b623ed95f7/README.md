@@ -1,6 +1,6 @@
 # Console overview: owner tasks, setup checklist, needs\-attention queue — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:8c4cef5259809a8bc0dc6b382d812825 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,33 +32,23 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow console\.overview: 6 resolved, 25 unresolved members.
+Declared inventory flow console\.overview: 16 resolved, 15 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/console/OwnerTasks\.tsx LINK\_TILE: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/console/OwnerTasks\.tsx TILE: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/areas/console/index\.tsx Overview: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/areas/console/sections/SetupChecklist\.tsx SPINE: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/SetupChecklist\.tsx SetupChecklist: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/console/sections/SetupChecklist\.tsx SpineItem: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/console/sections/SetupChecklist\.tsx dismissedMigrationResumeKey: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/SetupChecklist\.tsx migrationResumeJob: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts CONSOLE\_CONFIG\_FIELDS: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts CONSOLE\_CONFIG\_QUERY: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts JOB\_RETRY\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts fetchConsoleConfig: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts retryJob: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts JOBS\_QUERY: symbol is not a supported declaration in this path at this revision.
 
@@ -70,16 +60,6 @@ Declared inventory flow console\.overview: 6 resolved, 25 unresolved members.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts WATCHER\_STATUS\_QUERY: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchJobs: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchSetupState: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchUnmatchedQueue: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchWatcherStatus: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/lib/graphql/viewer\.ts SOURCE\_ITEMS\_QUERY: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/viewer\.ts SourceItemsVars: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts fetchSourceItems: symbol is not a supported declaration in this path at this revision.

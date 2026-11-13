@@ -1,6 +1,6 @@
 # Viewer Profile settings: preferences toggles and avatar — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:168c54b8d1b9b2f08fe46ecf22475536 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,7 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow viewer\.profile\-settings: 7 resolved, 25 unresolved members.
+Declared inventory flow viewer\.profile\-settings: 17 resolved, 15 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/viewer/lib/preferences\.ts DOWNSTREAM\_AUDIO\_DEFAULT: symbol is not a supported declaration in this path at this revision.
 
@@ -60,26 +60,6 @@ Declared inventory flow viewer\.profile\-settings: 7 resolved, 25 unresolved mem
 
 - Unresolved member internal/web/app/src/areas/viewer/lib/preferences\.ts ViewerPreferences: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/areas/viewer/lib/preferences\.ts downstreamAudio: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/preferences\.ts encodeBool: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/preferences\.ts interval: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/preferences\.ts resolvePreferences: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/preferences\.ts skipIntervalOverrideKey: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/preferences\.ts skipIntervalOverrideValue: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/preferences\.ts speed: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/pages/ProfileSettingsPage\.tsx ToggleRow: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/lib/graphql/viewer\.ts CLIENT\_PREFS\_QUERY: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/viewer\.ts SET\_CLIENT\_PREF\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts fetchClientPrefs: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts setClientPref: symbol is not a supported declaration in this path at this revision.

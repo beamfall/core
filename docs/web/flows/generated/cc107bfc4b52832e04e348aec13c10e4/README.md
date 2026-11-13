@@ -1,11 +1,11 @@
 # Session spine: compat handshake, session renewal, identity epoch, request guard — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:8c8fb5adbf7def0f4cb53cbe74c99a5b -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/lib/api\.ts:20; symbol: getIdentityEpochSignal; span SHA256: fa6d3dc2d90a19d916a83e3cccb881a3ebdc0bee71bee7562a6646c9727f4bcf.
+Source: internal/web/app/src/lib/api\.ts:368; symbol: fetchSetupRequired; span SHA256: 0d8c70a9a0132d07cd38716b208981a5a9ec35272673295f9d5c27a3b5b6c13c.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -32,7 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow shell\.session\-spine: 25 resolved, 90 unresolved members.
+Declared inventory flow shell\.session\-spine: 61 resolved, 54 unresolved members.
 
 - Unresolved member internal/web/app/src/lib/api\.ts ADMIN\_SESSION\_REQUIRED: symbol is not a supported declaration in this path at this revision.
 
@@ -74,43 +74,11 @@ Declared inventory flow shell\.session\-spine: 25 resolved, 90 unresolved member
 
 - Unresolved member internal/web/app/src/lib/api\.ts adminUnlockHandler: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/lib/api\.ts fetchSetupRequired: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/api\.ts fetchSetupStatus: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/api\.ts getJSON: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/api\.ts getManifest: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/api\.ts graphql: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/api\.ts graphqlErrorStatus: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/lib/api\.ts identityEpochReset: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/api\.ts identityEpochSignal: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/lib/api\.ts jsonRequestConfig: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/api\.ts needsAdminSession: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/api\.ts parseErrorPayload: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/api\.ts parseJSONBody: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/api\.ts postJSON: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/api\.ts readResponseBytes: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/lib/api\.ts requestGuard: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/api\.ts requestJSON: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/api\.ts setAdminUnlockHandler: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/api\.ts subscribeEvents: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/api\.ts validateRequestBound: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/compat\.ts CLIENT\_CONTRACT: symbol is not a supported declaration in this path at this revision.
 
@@ -134,23 +102,11 @@ Declared inventory flow shell\.session\-spine: 25 resolved, 90 unresolved member
 
 - Unresolved member internal/web/app/src/lib/compat\.ts RENDERING\_REV\_MIN: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/lib/compat\.ts advanceCompatibilityEpoch: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/lib/compat\.ts identityEpoch: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/compat\.ts isBlocked: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/compat\.ts isCompatibilityRefusal: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/compat\.ts latchedIdentityEpoch: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/compat\.ts latchedRequest: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/compat\.ts performHandshake: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/compat\.ts rebindCompatibility: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/compat\.ts subscribeCompatibilityBlock: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/compat\.ts terminalDecisions: symbol is not a supported declaration in this path at this revision.
 
@@ -168,31 +124,13 @@ Declared inventory flow shell\.session\-spine: 25 resolved, 90 unresolved member
 
 - Unresolved member internal/web/app/src/lib/session\.tsx SessionContext: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/lib/session\.tsx SessionProvider: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/lib/session\.tsx SessionState: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/session\.tsx handshakeRenewingOnce: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/session\.tsx isUnauthorized: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/session\.tsx useSession: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/session\.tsx useViewerIdentity: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/viewerCache\.ts VIEWER\_CACHE\_MAX\_ENTRIES: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/viewerCache\.ts entries: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/lib/viewerCache\.ts readViewerCache: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/viewerCache\.ts writeViewerCache: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/lib/graphql/auth\.ts RebindOutcome: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/auth\.ts promote: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/auth\.ts renewSession: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/viewer\.ts CURRENT\_SESSION\_QUERY: symbol is not a supported declaration in this path at this revision.
 
@@ -203,13 +141,3 @@ Declared inventory flow shell\.session\-spine: 25 resolved, 90 unresolved member
 - Unresolved member internal/web/app/src/lib/graphql/viewer\.ts REVEAL\_MUTATION: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/viewer\.ts SWITCH\_PROFILE\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts fetchCurrentSession: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts fetchProfiles: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts relock: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts reveal: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts switchProfile: symbol is not a supported declaration in this path at this revision.

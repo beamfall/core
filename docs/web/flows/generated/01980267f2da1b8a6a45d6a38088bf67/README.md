@@ -1,11 +1,11 @@
 # Manage manual and smart collections — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:f43cbd18ca111982d423f4ea6d4194ea -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:66; symbol: CollectionsPage; span SHA256: ca346d6ac420345f0e08fa35fe37410db44fca3ddc7b0fb240d0462ed10e5b8c.
+Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:388; symbol: CollectionRow; span SHA256: 5ca5177ddfc8b2d4a18487bf9a9fd06dd63e1931236eb8f812e720300a1d9470.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -32,15 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow manage\.collections: 15 resolved, 32 unresolved members.
-
-- Unresolved member internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx CollectionRow: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx MembersEditor: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx SmartCollectionEditor: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx SmartCollections: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow manage\.collections: 31 resolved, 16 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx TOP\_LEVEL: symbol is not a supported declaration in this path at this revision.
 
@@ -73,27 +65,3 @@ Declared inventory flow manage\.collections: 15 resolved, 32 unresolved members.
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts UPDATE\_COLLECTION\_MUTATION: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts UPDATE\_SMART\_COLLECTION\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts addCollectionMedia: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts createCollection: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts createSmartCollection: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts deleteCollection: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts deleteSmartCollection: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchCollections: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchSmartCollections: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts removeCollectionMedia: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts reorderCollectionMedia: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts restoreCollection: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts updateCollection: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts updateSmartCollection: symbol is not a supported declaration in this path at this revision.

@@ -1,11 +1,11 @@
 # Player up\-next countdown and play queue navigation — flow-diagram
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b5b269684b9427142beb259b4bb203d8 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/viewer/lib/transport\.ts:316; symbol: shouldShowUpNext; span SHA256: 2c57f0680e306e2be448ebb229acd11cc6cb381b084f8e37d0b2c1b8b9952efe.
+Source: internal/web/app/src/areas/viewer/lib/playQueue\.ts:38; symbol: activeQueue; span SHA256: 156d08e1411f0c5295a544e371ec2c766c57837a66aeabe9536310216fb87ab8.
 
 ```mermaid
 sequenceDiagram
@@ -13,6 +13,22 @@ sequenceDiagram
     participant U as Unresolved runtime
     Note over S,U: Lexical inventory only - no witnessed order
     Note over S: Flow fa22fc31bb8d11236cda2f671f818c4a
+    Note over S,U: Source contains call getIdentityEpochSignal in internal/web/app/src/areas/viewer/lib/playQueue.ts at line 39 - order unresolved
+    Note over S,U: Source contains call activeQueue in internal/web/app/src/areas/viewer/lib/playQueue.ts at line 141 - order unresolved
+    Note over S,U: Source contains call fetchLibraryItems in internal/web/app/src/areas/viewer/lib/playQueue.ts at line 102 - order unresolved
+    Note over S,U: Source contains call max in internal/web/app/src/areas/viewer/lib/playQueue.ts at line 107 - order unresolved
+    Note over S,U: Source contains call Set in internal/web/app/src/areas/viewer/lib/playQueue.ts at line 111 - order unresolved
+    Note over S,U: Source contains call filter in internal/web/app/src/areas/viewer/lib/playQueue.ts at line 112 - order unresolved
+    Note over S,U: Source contains call playable in internal/web/app/src/areas/viewer/lib/playQueue.ts at line 112 - order unresolved
+    Note over S,U: Source contains call has in internal/web/app/src/areas/viewer/lib/playQueue.ts at line 112 - order unresolved
+    Note over S,U: Source contains call push in internal/web/app/src/areas/viewer/lib/playQueue.ts at line 114 - order unresolved
+    Note over S,U: Source contains call set in internal/web/app/src/areas/viewer/lib/playQueue.ts at line 115 - order unresolved
+    Note over S,U: Source contains call activeQueue in internal/web/app/src/areas/viewer/lib/playQueue.ts at line 128 - order unresolved
+    Note over S,U: Source contains call activeQueue in internal/web/app/src/areas/viewer/lib/playQueue.ts at line 133 - order unresolved
+    Note over S,U: Source contains call get in internal/web/app/src/areas/viewer/lib/playQueue.ts at line 133 - order unresolved
+    Note over S,U: Source contains call activeQueue in internal/web/app/src/areas/viewer/lib/playQueue.ts at line 161 - order unresolved
+    Note over S,U: Source contains call positionOf in internal/web/app/src/areas/viewer/lib/playQueue.ts at line 163 - order unresolved
+    Note over S,U: Source contains call get in internal/web/app/src/areas/viewer/lib/playQueue.ts at line 166 - order unresolved
     Note over S,U: Source contains call finiteNumber in internal/web/app/src/areas/viewer/lib/transport.ts at line 329 - order unresolved
     Note over S,U: Source contains call finiteNumber in internal/web/app/src/areas/viewer/lib/transport.ts at line 333 - order unresolved
     Note over S,U: Source contains call push in internal/web/app/src/areas/viewer/lib/watchQueue.ts at line 40 - order unresolved

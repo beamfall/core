@@ -1,6 +1,6 @@
 # Shared workbench widgets: status chips, tables, forms, server path picker — flow-diagram
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:bfaba6c9df1357a9d39b2c9607bf8f7f -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -13,6 +13,17 @@ sequenceDiagram
     participant U as Unresolved runtime
     Note over S,U: Lexical inventory only - no witnessed order
     Note over S: Flow c2dbd86a641b4d403b46dde9ead7bab6
+    Note over S,U: Source contains call useT in internal/web/app/src/components/beamfall/workbench/PathPickerField.tsx at line 170 - order unresolved
+    Note over S,U: Source contains call useId in internal/web/app/src/components/beamfall/workbench/PathPickerField.tsx at line 171 - order unresolved
+    Note over S,U: Source contains call hostDistributionClass in internal/web/app/src/components/beamfall/workbench/PathPickerField.tsx at line 172 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/components/beamfall/workbench/PathPickerField.tsx at line 175 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/components/beamfall/workbench/PathPickerField.tsx at line 177 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/components/beamfall/workbench/PathPickerField.tsx at line 178 - order unresolved
+    Note over S,U: Source contains call useRef in internal/web/app/src/components/beamfall/workbench/PathPickerField.tsx at line 180 - order unresolved
+    Note over S,U: Source contains call useRef in internal/web/app/src/components/beamfall/workbench/PathPickerField.tsx at line 181 - order unresolved
+    Note over S,U: Source contains call useEffect in internal/web/app/src/components/beamfall/workbench/PathPickerField.tsx at line 190 - order unresolved
+    Note over S,U: Source contains call focus in internal/web/app/src/components/beamfall/workbench/PathPickerField.tsx at line 195 - order unresolved
+    Note over S,U: Source contains call getBeamfallHost in internal/web/app/src/components/beamfall/workbench/PathPickerField.tsx at line 110 - order unresolved
     Note over S,U: Source contains call separatorOf in internal/web/app/src/components/beamfall/workbench/PathPickerField.tsx at line 52 - order unresolved
     Note over S,U: Source contains call startsWith in internal/web/app/src/components/beamfall/workbench/PathPickerField.tsx at line 53 - order unresolved
     Note over S,U: Source contains call endsWith in internal/web/app/src/components/beamfall/workbench/PathPickerField.tsx at line 53 - order unresolved
@@ -29,20 +40,27 @@ sequenceDiagram
     Note over S,U: Source contains call lastIndexOf in internal/web/app/src/components/beamfall/workbench/PathPickerField.tsx at line 72 - order unresolved
     Note over S,U: Source contains call separatorOf in internal/web/app/src/components/beamfall/workbench/PathPickerField.tsx at line 72 - order unresolved
     Note over S,U: Source contains call includes in internal/web/app/src/components/beamfall/workbench/PathPickerField.tsx at line 47 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/components/beamfall/workbench/index.tsx at line 226 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/components/beamfall/workbench/index.tsx at line 230 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/components/beamfall/workbench/index.tsx at line 231 - order unresolved
+    Note over S,U: Source contains call map in internal/web/app/src/components/beamfall/workbench/index.tsx at line 81 - order unresolved
     Note over S,U: Source contains call useT in internal/web/app/src/components/beamfall/workbench/index.tsx at line 121 - order unresolved
     Note over S,U: Source contains call t in internal/web/app/src/components/beamfall/workbench/index.tsx at line 126 - order unresolved
     Note over S,U: Source contains call useT in internal/web/app/src/components/beamfall/workbench/index.tsx at line 133 - order unresolved
     Note over S,U: Source contains call t in internal/web/app/src/components/beamfall/workbench/index.tsx at line 137 - order unresolved
-    Note over S,U: Source contains call cn in internal/web/app/src/components/beamfall/workbench/index.tsx at line 163 - order unresolved
-    Note over S,U: Source contains call cn in internal/web/app/src/components/beamfall/workbench/index.tsx at line 178 - order unresolved
     Note over S,U: Source contains call useT in internal/web/app/src/components/beamfall/workbench/index.tsx at line 197 - order unresolved
     Note over S,U: Source contains call t in internal/web/app/src/components/beamfall/workbench/index.tsx at line 201 - order unresolved
     Note over S,U: Source contains call t in internal/web/app/src/components/beamfall/workbench/index.tsx at line 209 - order unresolved
     Note over S,U: Source contains call t in internal/web/app/src/components/beamfall/workbench/index.tsx at line 210 - order unresolved
-    Note over S,U: Source contains call useT in internal/web/app/src/components/beamfall/workbench/index.tsx at line 226 - order unresolved
-    Note over S,U: Source contains call t in internal/web/app/src/components/beamfall/workbench/index.tsx at line 230 - order unresolved
-    Note over S,U: Source contains call t in internal/web/app/src/components/beamfall/workbench/index.tsx at line 231 - order unresolved
+    Note over S,U: Source contains call cn in internal/web/app/src/components/beamfall/workbench/index.tsx at line 178 - order unresolved
+    Note over S,U: Source contains call cn in internal/web/app/src/components/beamfall/workbench/index.tsx at line 163 - order unresolved
     Note over S,U: Source contains call cn in internal/web/app/src/components/beamfall/workbench/index.tsx at line 111 - order unresolved
+    Note over S,U: Source contains call cn in internal/web/app/src/components/beamfall/workbench/index.tsx at line 63 - order unresolved
+    Note over S,U: Source contains call cn in internal/web/app/src/components/beamfall/workbench/index.tsx at line 43 - order unresolved
+    Note over S,U: Source contains call from in internal/web/app/src/components/beamfall/workbench/index.tsx at line 97 - order unresolved
+    Note over S,U: Source contains call map in internal/web/app/src/components/beamfall/workbench/index.tsx at line 97 - order unresolved
+    Note over S,U: Source contains call from in internal/web/app/src/components/beamfall/workbench/index.tsx at line 99 - order unresolved
+    Note over S,U: Source contains call map in internal/web/app/src/components/beamfall/workbench/index.tsx at line 99 - order unresolved
     Note over S,U: Source contains call setBusy in internal/web/app/src/components/beamfall/workbench/PathPickerField.tsx at line 239 - order unresolved
     Note over S,U: Source contains call setFailed in internal/web/app/src/components/beamfall/workbench/PathPickerField.tsx at line 240 - order unresolved
     Note over S,U: Source contains call addPathPickerRoot in internal/web/app/src/components/beamfall/workbench/PathPickerField.tsx at line 242 - order unresolved

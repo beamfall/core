@@ -1,6 +1,6 @@
 # Manage unmatched records: inbox, fix match, suppression — flow-diagram
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:d3397ef2a6658591a75180b326e3647d -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -33,31 +33,7 @@ sequenceDiagram
     Note over S,U: Source contains call useT in internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel.tsx at line 70 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel.tsx at line 72 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel.tsx at line 73 - order unresolved
-    Note over S,U: Source contains call async in internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel.tsx at line 75 - order unresolved
-    Note over S,U: Source contains call setBusy in internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel.tsx at line 76 - order unresolved
-    Note over S,U: Source contains call setError in internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel.tsx at line 77 - order unresolved
-    Note over S,U: Source contains call action in internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel.tsx at line 79 - order unresolved
-    Note over S,U: Source contains call onChanged in internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel.tsx at line 80 - order unresolved
-    Note over S,U: Source contains call setError in internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel.tsx at line 84 - order unresolved
-    Note over S,U: Source contains call t in internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel.tsx at line 84 - order unresolved
-    Note over S,U: Source contains call setBusy in internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel.tsx at line 86 - order unresolved
-    Note over S,U: Source contains call t in internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel.tsx at line 92 - order unresolved
-    Note over S,U: Source contains call t in internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel.tsx at line 95 - order unresolved
-    Note over S,U: Source contains call map in internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel.tsx at line 97 - order unresolved
-    Note over S,U: Source contains call setScope in internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel.tsx at line 105 - order unresolved
-    Note over S,U: Source contains call t in internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel.tsx at line 108 - order unresolved
-    Note over S,U: Source contains call t in internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel.tsx at line 109 - order unresolved
-    Note over S,U: Source contains call t in internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel.tsx at line 112 - order unresolved
-    Note over S,U: Source contains call t in internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel.tsx at line 128 - order unresolved
-    Note over S,U: Source contains call t in internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel.tsx at line 132 - order unresolved
-    Note over S,U: Source contains call t in internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel.tsx at line 134 - order unresolved
-    Note over S,U: Source contains call map in internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel.tsx at line 137 - order unresolved
-    Note over S,U: Source contains call run in internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel.tsx at line 146 - order unresolved
-    Note over S,U: Source contains call resetUnmatchedSuppression in internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel.tsx at line 147 - order unresolved
-    Note over S,U: Source contains call suppressionTarget in internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel.tsx at line 148 - order unresolved
-    Note over S,U: Source contains call t in internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel.tsx at line 153 - order unresolved
-    Note over S,U: Source contains call t in internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel.tsx at line 157 - order unresolved
-    Note over S,U: Source contains call t in internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel.tsx at line 158 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/manage/pages/unmatched/reasons.ts at line 23 - order unresolved
     Note over S,U: Source contains call useCallback in internal/web/app/src/areas/manage/pages/UnmatchedPage.tsx at line 55 - order unresolved
     Note over S,U: Source contains call async in internal/web/app/src/areas/manage/pages/UnmatchedPage.tsx at line 55 - order unresolved
     Note over S,U: Source contains call setError in internal/web/app/src/areas/manage/pages/UnmatchedPage.tsx at line 56 - order unresolved

@@ -1,6 +1,6 @@
 # Player audio and subtitle tracks, subtitle styling — technical-deep-dive
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a0e801acdf2855edc648f556d5668f3f -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -17,6 +17,11 @@ Declared member: source declares pickTrackSource; membership is caller\-declared
 
 Source: internal/web/app/src/areas/viewer/lib/transport\.ts:393; symbol: pickTrackSource; span SHA256: 4e211b58d74d3f8f12696b30b15183377334a03676ddccc35c31eade974e272f.
 
+<!-- flowdocs:paragraph:ee94d85d3e423d9f1002f08571645207 -->
+Declared member: source declares SubtitleStylePanel; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/SubtitleStylePanel\.tsx:27; symbol: SubtitleStylePanel; span SHA256: 6b242bf5cb5a8a7b7ec61d23db20e358bcd24dc9ae9e76c946b50d8f67f0e3a5.
+
 <!-- flowdocs:paragraph:7b06efc4300a1873c26b016a50734f8b -->
 Declared member: source declares audioTrackList; membership is caller\-declared, not runtime evidence\.
 
@@ -26,6 +31,16 @@ Source: internal/web/app/src/areas/viewer/player/media\-tracks\.ts:21; symbol: a
 Declared member: source declares audioTracksArray; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/viewer/player/media\-tracks\.ts:28; symbol: audioTracksArray; span SHA256: c7272718c921c806d1e5068f2d69e0cc56e4e55adf1fa828db293630bdff6da3.
+
+<!-- flowdocs:paragraph:732728284a8fc76645c2ae298bc1b6b8 -->
+Declared member: source declares nativeAudioTracks; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/useLiveTracks\.ts:41; symbol: nativeAudioTracks; span SHA256: 3f504c3900b6f6c9e4c423c9d1f4e2e2be8bc6ef11109035de1e70042c3e9493.
+
+<!-- flowdocs:paragraph:be3221e390f971a20f60873fbe13aca0 -->
+Declared member: source declares nativeSubtitleTracks; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/useLiveTracks\.ts:48; symbol: nativeSubtitleTracks; span SHA256: fd55a189700685912d4cfbf17f0e019cc6d3122e4d12562d380ee7a9608143cb.
 
 <!-- flowdocs:paragraph:5786fbe0e3680e547cded5b4bbfd3b31 -->
 Declared member: source declares useSubtitleStyling; membership is caller\-declared, not runtime evidence\.

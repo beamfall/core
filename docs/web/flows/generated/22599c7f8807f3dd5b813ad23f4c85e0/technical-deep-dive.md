@@ -1,11 +1,21 @@
 # Manage rename: pattern preview, batch rename managed paths, undo — technical-deep-dive
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:245c73ec090cd743c140186dd8802434 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/manage/lib/renamePattern\.ts:63; symbol: applyToStem; span SHA256: c1c4c153726740130c39d9ae2e15b73808657724c910cb51655d761791d61077.
+Source: internal/web/app/src/areas/manage/lib/powertools\.ts:101; symbol: batchRenameManagedPaths; span SHA256: d4941283f47a1fc0e80aebb2f7ea21d8527739b00c4c45e120a1e6f4dab72b88.
+
+<!-- flowdocs:paragraph:5ff857e1ea375029f69891b50bb27de6 -->
+Declared member: source declares batchRenameManagedPaths; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/lib/powertools\.ts:101; symbol: batchRenameManagedPaths; span SHA256: d4941283f47a1fc0e80aebb2f7ea21d8527739b00c4c45e120a1e6f4dab72b88.
+
+<!-- flowdocs:paragraph:23411371280d4b6db7d0affbc41c8096 -->
+Declared member: source declares undoBatchRename; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/lib/powertools\.ts:116; symbol: undoBatchRename; span SHA256: 734057241b50990810dbda540085189a5b66743796fca33bed7ada97f8c0dfbd.
 
 <!-- flowdocs:paragraph:3f9545b7e0c8ecb4005bbb3699386688 -->
 Declared member: source declares applyToStem; membership is caller\-declared, not runtime evidence\.
@@ -31,6 +41,11 @@ Source: internal/web/app/src/areas/manage/lib/renamePattern\.ts:83; symbol: prev
 Declared member: source declares splitExt; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/manage/lib/renamePattern\.ts:46; symbol: splitExt; span SHA256: 58226017816d827b6e8ca4355765ebd165a997fc533693d70adb8e5e5f541209.
+
+<!-- flowdocs:paragraph:fa45330368d1156067dc35aa76841922 -->
+Declared member: source declares fetchFolderTree; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:981; symbol: fetchFolderTree; span SHA256: ab89a8c90719da008f4c10b349575bfb6f461aad353c5cc27faa71cf85dab1b5.
 
 <!-- flowdocs:paragraph:33f2d57ceee1924c49f536fcbbe5d214 -->
 Declared member: source declares fetchLibraries; membership is caller\-declared, not runtime evidence\.

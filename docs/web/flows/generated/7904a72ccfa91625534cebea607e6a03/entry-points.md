@@ -1,11 +1,11 @@
 # Manage tags: tag tree, assign, bulk, trashed tags — entry-points
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:bad7ec2663ef1211e08b534b92f977b0 -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.
 
-Source: internal/web/app/src/areas/manage/pages/TagsPage\.tsx:155; symbol: TagTree; span SHA256: 7dfdc7777dbcece2e48ae9fc8b495405b1f0ec2db65a491652b3e6cb1f81fbc6.
+Source: internal/web/app/src/areas/manage/pages/TagsPage\.tsx:359; symbol: AssignSection; span SHA256: ff76541b48b3a2f9b4e7cb4baf150f18989432602ae1aa6b427a1a99ae9c95a4.
 
 <!-- flowdocs:paragraph:802b4d7e2c1f197874dc1a74be2efdcd -->
 Declared entry point: source declares TagsPage; entry dispatch and callers are unresolved\.

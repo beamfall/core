@@ -1,11 +1,11 @@
 # Viewer My Data / privacy: summary, event log, sessions, stream tokens, export — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:c859223843fae170d260c4183da73cf5 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx:67; symbol: MyDataPage; span SHA256: 7ca58af2edc818b84f6626960a47c72e2248344375788d9bfb01137b7f8aba53.
+Source: internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx:558; symbol: EventRow; span SHA256: b90d5000e023b772fdb15c1217e4d50e131eb6efd7cd377e76d3b883a15554b1.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -32,29 +32,11 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow viewer\.my\-data: 9 resolved, 21 unresolved members.
+Declared inventory flow viewer\.my\-data: 23 resolved, 7 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx ALL\_LIBRARIES: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx EventRow: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx LogSection: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx MY\_DATA\_LOG\_PAGE\_SIZE: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx Notice: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx SessionRow: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx SummarySection: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx TokenRow: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx downloadJSON: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx formatDate: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx formatDateTime: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/viewer\.ts DELETE\_MY\_ENGAGEMENT\_MUTATION: symbol is not a supported declaration in this path at this revision.
 
@@ -65,13 +47,3 @@ Declared inventory flow viewer\.my\-data: 9 resolved, 21 unresolved members.
 - Unresolved member internal/web/app/src/lib/graphql/viewer\.ts MY\_ENGAGEMENT\_QUERY: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/viewer\.ts MY\_SESSIONS\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts deleteMyEngagement: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts fetchMyDataSummary: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts fetchMyEngagement: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts fetchMyEngagementLog: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts fetchMySessions: symbol is not a supported declaration in this path at this revision.

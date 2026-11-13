@@ -1,6 +1,6 @@
 # Console access: library grants, rating ceilings, access schedules, managed policy — flow-diagram
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:3d4e315da87c0018723e32b2ddead748 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -16,6 +16,22 @@ sequenceDiagram
     Note over S,U: Source contains call floor in internal/web/app/src/areas/console/lib/schedulePreview.ts at line 82 - order unresolved
     Note over S,U: Source contains call some in internal/web/app/src/areas/console/lib/schedulePreview.ts at line 29 - order unresolved
     Note over S,U: Source contains call weekMinute in internal/web/app/src/areas/console/lib/schedulePreview.ts at line 30 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 473 - order unresolved
+    Note over S,U: Source contains call useAsync in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 474 - order unresolved
+    Note over S,U: Source contains call accessGrantsForProfile in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 475 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 266 - order unresolved
+    Note over S,U: Source contains call useAsync in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 267 - order unresolved
+    Note over S,U: Source contains call fetchAccessSchedule in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 268 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 229 - order unresolved
+    Note over S,U: Source contains call useDisplayLocale in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 230 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 162 - order unresolved
+    Note over S,U: Source contains call useSession in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 163 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 165 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 397 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 398 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 399 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 400 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 401 - order unresolved
     Note over S,U: Source contains call useT in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 60 - order unresolved
     Note over S,U: Source contains call useAsync in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 61 - order unresolved
     Note over S,U: Source contains call useAsync in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 62 - order unresolved
@@ -31,9 +47,17 @@ sequenceDiagram
     Note over S,U: Source contains call map in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 130 - order unresolved
     Note over S,U: Source contains call find in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 136 - order unresolved
     Note over S,U: Source contains call refresh in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 139 - order unresolved
-    Note over S,U: Source contains call useT in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 162 - order unresolved
-    Note over S,U: Source contains call useSession in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 163 - order unresolved
-    Note over S,U: Source contains call useState in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 165 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 369 - order unresolved
+    Note over S,U: Source contains call Date in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 371 - order unresolved
+    Note over S,U: Source contains call nextTransition in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 372 - order unresolved
+    Note over S,U: Source contains call getDay in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 372 - order unresolved
+    Note over S,U: Source contains call getHours in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 372 - order unresolved
+    Note over S,U: Source contains call getMinutes in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 372 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 375 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 378 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 379 - order unresolved
+    Note over S,U: Source contains call formatMinute in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 380 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 384 - order unresolved
     Note over S,U: Source contains call update in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 278 - order unresolved
     Note over S,U: Source contains call preventDefault in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 404 - order unresolved
     Note over S,U: Source contains call setBusy in internal/web/app/src/areas/console/sections/ProfilesAccess.tsx at line 405 - order unresolved

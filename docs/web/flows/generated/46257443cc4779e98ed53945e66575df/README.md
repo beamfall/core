@@ -1,11 +1,11 @@
 # Playback engine: playback\-info, capability probe, HLS selection and recovery, progress reports — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:e49c5863b9f98fc8eb9070186ea8823d -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/viewer/lib/playback\.ts:103; symbol: fetchPlaybackInfo; span SHA256: 6c197262a7c51f224968ec7a4a67526f5d067c062e8683af5b58076f97b79db2.
+Source: internal/web/app/src/areas/viewer/lib/capabilityProfile\.ts:110; symbol: canPlayTypeSupported; span SHA256: 8cc499193d7ce10a5d319863ac112b07794c475a5b67a2fc9dd47f55e22b99a6.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -32,7 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow player\.playback\-engine: 53 resolved, 78 unresolved members.
+Declared inventory flow player\.playback\-engine: 87 resolved, 44 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/viewer/lib/capabilityProfile\.ts AUDIO\_CANDIDATES: symbol is not a supported declaration in this path at this revision.
 
@@ -58,20 +58,6 @@ Declared inventory flow player\.playback\-engine: 53 resolved, 78 unresolved mem
 
 - Unresolved member internal/web/app/src/areas/viewer/lib/capabilityProfile\.ts VideoCodecCap: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/areas/viewer/lib/capabilityProfile\.ts canPlayTypeSupported: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/capabilityProfile\.ts downstreamAudioHint: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/capabilityProfile\.ts mediaCapabilitiesSupports: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/capabilityProfile\.ts probeAudioCodec: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/capabilityProfile\.ts probeCapabilityProfile: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/capabilityProfile\.ts probeHDR: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/capabilityProfile\.ts probeVideoCodec: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/areas/viewer/lib/playback\.ts PlaybackAssets: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/viewer/lib/playback\.ts PlaybackInfo: symbol is not a supported declaration in this path at this revision.
@@ -91,14 +77,6 @@ Declared inventory flow player\.playback\-engine: 53 resolved, 78 unresolved mem
 - Unresolved member internal/web/app/src/areas/viewer/lib/playback\.ts UNAVAILABLE\_REASONS: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/viewer/lib/playback\.ts UnavailableReasonMessages: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/playback\.ts fetchPreviewInfo: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/playback\.ts serverErrorReason: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/playback\.ts unavailableReason: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/playback\.ts unavailableReasonMessage: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/viewer/lib/transport\.ts PlaybackStreamLike: symbol is not a supported declaration in this path at this revision.
 
@@ -136,56 +114,10 @@ Declared inventory flow player\.playback\-engine: 53 resolved, 78 unresolved mem
 
 - Unresolved member internal/web/app/src/areas/viewer/player/usePlayer\.ts TrackPreferences: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/areas/viewer/player/usePlayer\.ts applyTrackPreferences: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/usePlayer\.ts assetsExpired: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/usePlayer\.ts bufferedAhead: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/usePlayer\.ts choosePlaybackStream: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/usePlayer\.ts completeProgress: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/usePlayer\.ts emptyState: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/usePlayer\.ts engineFor: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/usePlayer\.ts hlsErrorStatus: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/usePlayer\.ts hlsFragSpan: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/usePlayer\.ts isStreamRefusalStatus: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/areas/viewer/player/usePlayer\.ts lastPlaybackEventTimeMS: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/areas/viewer/player/usePlayer\.ts loadTrickplay: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/usePlayer\.ts nextPlaybackEventTimeMS: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/areas/viewer/player/usePlayer\.ts pendingLevelPins: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/usePlayer\.ts playbackDecision: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/usePlayer\.ts probeStreamStatus: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/usePlayer\.ts retireProgressQueue: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/usePlayer\.ts selectHlsLevel: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/usePlayer\.ts selectHlsRendition: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/usePlayer\.ts stopProgressQueue: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/usePlayer\.ts streamOfKind: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/usePlayer\.ts terminalState: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/usePlayer\.ts usePlayer: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/viewer\.ts CLIENT\_PREFS\_QUERY: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/viewer\.ts PLAYBACK\_MARKERS\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts fetchClientPrefs: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts fetchPlaybackMarkers: symbol is not a supported declaration in this path at this revision.

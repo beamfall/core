@@ -1,6 +1,6 @@
 # Console play history: filters, history table and rankings — functional-overview
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a4ab346b8654860aef6f3a42d96f63e9 -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
@@ -11,6 +11,11 @@ Source: internal/web/app/src/areas/console/sections/PlayHistory\.tsx:57; symbol:
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
 
 Source: internal/web/app/src/areas/console/sections/PlayHistory\.tsx:170; symbol: ; span SHA256: 297bd5a43a2bd032b66ab8ed0e17553f0b5846c9ae1e8d0fb48056ce0f84c0ed.
+
+<!-- flowdocs:paragraph:5253f6dcfef3ee55adae1ba4a7414fc8 -->
+Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:745; symbol: ; span SHA256: 30be662031e6633e4b0e408c2b988f565f8a3a3e93f158e5aa170a57abe0b1a1.
 
 <!-- flowdocs:paragraph:c89ddab1f39116e601f4f2d8a75d5c11 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.

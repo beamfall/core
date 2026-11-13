@@ -1,6 +1,6 @@
 # Player audio and subtitle tracks, subtitle styling — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:7be5e0657418f3029fd1c95ff69fc812 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,7 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow player\.tracks\-subtitles: 9 resolved, 16 unresolved members.
+Declared inventory flow player\.tracks\-subtitles: 13 resolved, 12 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/viewer/lib/transport\.ts TrackMenuLabels: symbol is not a supported declaration in this path at this revision.
 
@@ -46,8 +46,6 @@ Declared inventory flow player\.tracks\-subtitles: 9 resolved, 16 unresolved mem
 
 - Unresolved member internal/web/app/src/areas/viewer/player/SubtitleStylePanel\.tsx SIZE\_OPTIONS: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/areas/viewer/player/SubtitleStylePanel\.tsx SubtitleStylePanel: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/areas/viewer/player/media\-tracks\.ts AudioTrackLike: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/viewer/player/media\-tracks\.ts AudioTrackListLike: symbol is not a supported declaration in this path at this revision.
@@ -55,12 +53,6 @@ Declared inventory flow player\.tracks\-subtitles: 9 resolved, 16 unresolved mem
 - Unresolved member internal/web/app/src/areas/viewer/player/useLiveTracks\.ts LiveTracks: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/viewer/player/useLiveTracks\.ts MenuOption: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/useLiveTracks\.ts nativeAudioTracks: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/useLiveTracks\.ts nativeSubtitleTracks: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/useLiveTracks\.ts useLiveTracks: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/viewer/player/useSubtitleStyling\.ts CueWithBase: symbol is not a supported declaration in this path at this revision.
 

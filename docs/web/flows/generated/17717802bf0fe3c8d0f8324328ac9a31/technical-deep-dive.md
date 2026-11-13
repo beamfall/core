@@ -1,11 +1,21 @@
 # Viewer media card: preview dwell, state overlay, card menu, artwork — technical-deep-dive
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:f6a1a02e978d19d7f184542fae2cea9e -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/viewer/components/MediaItemCard\.tsx:33; symbol: MediaItemCard; span SHA256: 495702df450883fd29a75fdfaa9ca776eca0fc5b0f01bbbd4da8cdbf4366297e.
+Source: internal/web/app/src/areas/viewer/components/MediaItemCard\.tsx:259; symbol: CardStateOverlay; span SHA256: 26335e262852cff9dc288f54e524fdb41d5b7de94e8e3b75867f868698d359ae.
+
+<!-- flowdocs:paragraph:502187467508dccd7b4def3483c6a49c -->
+Declared member: source declares CardStateOverlay; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/components/MediaItemCard\.tsx:259; symbol: CardStateOverlay; span SHA256: 26335e262852cff9dc288f54e524fdb41d5b7de94e8e3b75867f868698d359ae.
+
+<!-- flowdocs:paragraph:4a982f5a02fbf638025b927cca115bc2 -->
+Declared member: source declares mediaQueryMatches; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/components/MediaItemCard\.tsx:289; symbol: mediaQueryMatches; span SHA256: b9cce485e052b018b4b764371502b67c43e195e789e6496c3eb5a9dbd8ce0060.
 
 <!-- flowdocs:paragraph:3b393a821226a47875c29bf7389c4752 -->
 Declared member: source declares MediaItemCardMenu; membership is caller\-declared, not runtime evidence\.
@@ -21,6 +31,21 @@ Source: internal/web/app/src/areas/viewer/lib/artwork\.ts:24; symbol: artworkBuc
 Declared member: source declares artworkSlotURL; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/viewer/lib/artwork\.ts:12; symbol: artworkSlotURL; span SHA256: b8d777a99a1ec1dca0c26dee880ce3d0f9bf9fe3bfbb8686b6681fed6c2897ad.
+
+<!-- flowdocs:paragraph:e29bd846a75abc00c3f5579999aba374 -->
+Declared member: source declares cardAccessibleName; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/cardState\.ts:51; symbol: cardAccessibleName; span SHA256: d1a88aa33ab74f74f6ecbe291443fb9253ab46cd05decd72ba3a8f10ccd7317b.
+
+<!-- flowdocs:paragraph:4c40b1257a19da9eeb1c05b1d064b886 -->
+Declared member: source declares cardState; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/cardState\.ts:20; symbol: cardState; span SHA256: c88f0445a6148df9f67a9a719bb859b958912efeb93c52082c7b29ca57f74e0e.
+
+<!-- flowdocs:paragraph:ee21c5d6c63bcf76c414ec177db67af7 -->
+Declared member: source declares timeLeftLabel; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/cardState\.ts:56; symbol: timeLeftLabel; span SHA256: 2bfd83eab9d990f100b8dc448fef8166fd9a171e6c4c19945541ffe069a33ddd.
 
 <!-- flowdocs:paragraph:0d29ee28f025e0e65b134565ca4bfb40 -->
 Declared member: source declares activate; membership is caller\-declared, not runtime evidence\.

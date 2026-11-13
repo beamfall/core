@@ -1,6 +1,6 @@
 # App shell chrome: header, library sidebar, account menu, phone layout — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:8883224f23dc77db72bdc229e4b86273 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,7 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow shell\.app\-shell: 16 resolved, 5 unresolved members.
+Declared inventory flow shell\.app\-shell: 17 resolved, 4 unresolved members.
 
 - Unresolved member internal/web/app/src/components/chrome/AppShell\.tsx NOTIFICATION\_BADGE\_LIMIT: symbol is not a supported declaration in this path at this revision.
 
@@ -41,5 +41,3 @@ Declared inventory flow shell\.app\-shell: 16 resolved, 5 unresolved members.
 - Unresolved member internal/web/app/src/components/chrome/AppShell\.tsx SIDEBAR\_PREF: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/viewer\.ts NOTIFICATIONS\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts fetchNotifications: symbol is not a supported declaration in this path at this revision.

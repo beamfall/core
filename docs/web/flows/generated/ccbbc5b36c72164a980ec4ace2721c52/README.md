@@ -1,6 +1,6 @@
 # Console area shell: route table, section nav, host firewall, session bar — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a8815608f3a2f8b6f177591d1327f944 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,19 +32,13 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow console\.shell: 10 resolved, 14 unresolved members.
-
-- Unresolved member internal/web/app/src/areas/console/Section\.tsx AdvancedDisclosure: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow console\.shell: 16 resolved, 8 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/console/adminEpoch\.ts adminEpochSignal: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/console/index\.tsx APP\_STORE\_FIREWALL\_PATHS: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/console/index\.tsx CONSOLE\_IA\_PLACEMENTS: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/index\.tsx ConsoleArea: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/index\.tsx ConsoleNav: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/console/index\.tsx GROUPS: symbol is not a supported declaration in this path at this revision.
 
@@ -54,10 +48,4 @@ Declared inventory flow console\.shell: 10 resolved, 14 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/console/index\.tsx ROUTE\_ALIASES: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/areas/console/index\.tsx SessionBar: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/index\.tsx groupsForHost: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/areas/console/useAsync\.ts AsyncState: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/useAsync\.ts useAsync: symbol is not a supported declaration in this path at this revision.

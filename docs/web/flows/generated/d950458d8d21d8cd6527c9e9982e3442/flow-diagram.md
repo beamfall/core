@@ -1,6 +1,6 @@
 # Player route: lazy load, timestamp links, info overlay, audio stage — flow-diagram
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:8f08f6465223fb0da070854aacfafa6d -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -70,10 +70,6 @@ sequenceDiagram
     Note over S,U: Source contains call creditLine in internal/web/app/src/areas/viewer/player/AudioStage.tsx at line 26 - order unresolved
     Note over S,U: Source contains call creditLine in internal/web/app/src/areas/viewer/player/AudioStage.tsx at line 27 - order unresolved
     Note over S,U: Source contains call setFailedURL in internal/web/app/src/areas/viewer/player/AudioStage.tsx at line 44 - order unresolved
-    Note over S,U: Source contains call filter in internal/web/app/src/areas/viewer/player/AudioStage.tsx at line 64 - order unresolved
-    Note over S,U: Source contains call map in internal/web/app/src/areas/viewer/player/AudioStage.tsx at line 65 - order unresolved
-    Note over S,U: Source contains call filter in internal/web/app/src/areas/viewer/player/AudioStage.tsx at line 66 - order unresolved
-    Note over S,U: Source contains call join in internal/web/app/src/areas/viewer/player/AudioStage.tsx at line 67 - order unresolved
     Note over S,U: Source contains call replace in internal/web/app/src/areas/viewer/player/AudioStage.tsx at line 72 - order unresolved
     Note over S,U: Source contains call useT in internal/web/app/src/areas/viewer/player/InfoOverlay.tsx at line 36 - order unresolved
     Note over S,U: Source contains call buildRouteDetailModel in internal/web/app/src/areas/viewer/player/InfoOverlay.tsx at line 38 - order unresolved

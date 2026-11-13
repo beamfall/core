@@ -1,11 +1,11 @@
 # Create a Media from an unmatched record and upload artwork — flow-diagram
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:807561dd4a10701ef7f48396cf60ca6c -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/manage/pages/unmatched/CreateMediaForm\.tsx:23; symbol: uploadArtwork; span SHA256: ab684484ef0e920778940bc7d20da087174859abf997a4670127ae7a91bffe39.
+Source: internal/web/app/src/areas/manage/pages/unmatched/CreateMediaForm\.tsx:69; symbol: CreateMediaForm; span SHA256: d1340d4fbdb580f067e835013aa42d8fc5cce53aa928502f6fbc3005a09aa114.
 
 ```mermaid
 sequenceDiagram
@@ -13,6 +13,19 @@ sequenceDiagram
     participant U as Unresolved runtime
     Note over S,U: Lexical inventory only - no witnessed order
     Note over S: Flow 6c5316a98e80fcee0fad200be1034235
+    Note over S,U: Source contains call useT at line 78 - order unresolved
+    Note over S,U: Source contains call useState at line 79 - order unresolved
+    Note over S,U: Source contains call useState at line 80 - order unresolved
+    Note over S,U: Source contains call useState at line 82 - order unresolved
+    Note over S,U: Source contains call useState at line 83 - order unresolved
+    Note over S,U: Source contains call useState at line 84 - order unresolved
+    Note over S,U: Source contains call useState at line 85 - order unresolved
+    Note over S,U: Source contains call useRef at line 95 - order unresolved
+    Note over S,U: Source contains call useEffect at line 96 - order unresolved
+    Note over S,U: Source contains call trim at line 51 - order unresolved
+    Note over S,U: Source contains call Number at line 53 - order unresolved
+    Note over S,U: Source contains call Date at line 54 - order unresolved
+    Note over S,U: Source contains call getFullYear at line 54 - order unresolved
     Note over S,U: Source contains call getIdentityEpochSignal at line 111 - order unresolved
     Note over S,U: Source contains call async at line 118 - order unresolved
     Note over S,U: Source contains call captureGeneration at line 119 - order unresolved

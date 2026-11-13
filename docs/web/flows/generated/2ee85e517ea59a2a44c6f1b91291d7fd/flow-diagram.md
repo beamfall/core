@@ -1,6 +1,6 @@
 # Manage artwork slots and candidates — flow-diagram
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:162629d2a5437184156d26a846172605 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -17,6 +17,19 @@ sequenceDiagram
     Note over S,U: Source contains call useState at line 37 - order unresolved
     Note over S,U: Source contains call useState at line 38 - order unresolved
     Note over S,U: Source contains call useState at line 41 - order unresolved
+    Note over S,U: Source contains call useT at line 118 - order unresolved
+    Note over S,U: Source contains call t at line 123 - order unresolved
+    Note over S,U: Source contains call t at line 125 - order unresolved
+    Note over S,U: Source contains call t at line 127 - order unresolved
+    Note over S,U: Source contains call map at line 130 - order unresolved
+    Note over S,U: Source contains call isRelativePreviewURL at line 136 - order unresolved
+    Note over S,U: Source contains call t at line 140 - order unresolved
+    Note over S,U: Source contains call provenance at line 146 - order unresolved
+    Note over S,U: Source contains call provenance at line 148 - order unresolved
+    Note over S,U: Source contains call t at line 148 - order unresolved
+    Note over S,U: Source contains call t at line 151 - order unresolved
+    Note over S,U: Source contains call onPin at line 158 - order unresolved
+    Note over S,U: Source contains call t at line 160 - order unresolved
     Note over S,U: Source contains call startsWith at line 23 - order unresolved
     Note over S,U: Source contains call filter at line 27 - order unresolved
     Note over S,U: Source contains call join at line 27 - order unresolved

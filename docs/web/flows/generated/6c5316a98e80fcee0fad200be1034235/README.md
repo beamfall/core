@@ -1,11 +1,11 @@
 # Create a Media from an unmatched record and upload artwork — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b433906704a1031561e5fac69d2c20b9 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/manage/pages/unmatched/CreateMediaForm\.tsx:23; symbol: uploadArtwork; span SHA256: ab684484ef0e920778940bc7d20da087174859abf997a4670127ae7a91bffe39.
+Source: internal/web/app/src/areas/manage/pages/unmatched/CreateMediaForm\.tsx:69; symbol: CreateMediaForm; span SHA256: d1340d4fbdb580f067e835013aa42d8fc5cce53aa928502f6fbc3005a09aa114.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -32,16 +32,10 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow manage\.unmatched\.create\-media: 4 resolved, 6 unresolved members.
+Declared inventory flow manage\.unmatched\.create\-media: 7 resolved, 3 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/manage/pages/unmatched/CreateMediaForm\.tsx ARTWORK\_SLOT: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/areas/manage/pages/unmatched/CreateMediaForm\.tsx CreateMediaForm: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/areas/manage/pages/unmatched/CreateMediaForm\.tsx EARLIEST\_YEAR: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/areas/manage/pages/unmatched/CreateMediaForm\.tsx validateYear: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts CREATE\_MEDIA\_FROM\_UNMATCHED\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts createMediaFromUnmatched: symbol is not a supported declaration in this path at this revision.

@@ -1,6 +1,6 @@
 # Localization: locale resolution, ICU formatting and string catalogs — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:4be3c788e240b40d011b33b449aee00f -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,7 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow shared\.i18n: 7 resolved, 52 unresolved members.
+Declared inventory flow shared\.i18n: 17 resolved, 42 unresolved members.
 
 - Unresolved member internal/web/app/src/lib/i18n\.tsx I18nContext: symbol is not a supported declaration in this path at this revision.
 
@@ -43,26 +43,6 @@ Declared inventory flow shared\.i18n: 7 resolved, 52 unresolved members.
 - Unresolved member internal/web/app/src/lib/i18n\.tsx SUPPORTED\_LOCALES: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/i18n\.tsx TYPED\_ARG: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/i18n\.tsx formatArg: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/i18n\.tsx formatMessageICU: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/i18n\.tsx formatNumberFor: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/i18n\.tsx isLocale: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/i18n\.tsx parsePluralOptions: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/i18n\.tsx readGroup: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/i18n\.tsx resolveBrowserLocalePreference: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/i18n\.tsx resolveLocalePreference: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/i18n\.tsx selectPluralCategory: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/i18n\.tsx splitTopLevel: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/strings\.ts Locale: symbol is not a supported declaration in this path at this revision.
 

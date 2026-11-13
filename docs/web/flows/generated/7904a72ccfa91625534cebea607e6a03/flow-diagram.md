@@ -1,11 +1,11 @@
 # Manage tags: tag tree, assign, bulk, trashed tags — flow-diagram
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a3e7b63e72224666c05bc986c9dadf3b -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/manage/pages/TagsPage\.tsx:155; symbol: TagTree; span SHA256: 7dfdc7777dbcece2e48ae9fc8b495405b1f0ec2db65a491652b3e6cb1f81fbc6.
+Source: internal/web/app/src/areas/manage/pages/TagsPage\.tsx:359; symbol: AssignSection; span SHA256: ff76541b48b3a2f9b4e7cb4baf150f18989432602ae1aa6b427a1a99ae9c95a4.
 
 ```mermaid
 sequenceDiagram
@@ -13,6 +13,12 @@ sequenceDiagram
     participant U as Unresolved runtime
     Note over S,U: Lexical inventory only - no witnessed order
     Note over S: Flow 7904a72ccfa91625534cebea607e6a03
+    Note over S,U: Source contains call useT at line 360 - order unresolved
+    Note over S,U: Source contains call useState at line 362 - order unresolved
+    Note over S,U: Source contains call useState at line 364 - order unresolved
+    Note over S,U: Source contains call useT at line 501 - order unresolved
+    Note over S,U: Source contains call useState at line 504 - order unresolved
+    Note over S,U: Source contains call Set at line 505 - order unresolved
     Note over S,U: Source contains call useT at line 166 - order unresolved
     Note over S,U: Source contains call useState at line 167 - order unresolved
     Note over S,U: Source contains call useState at line 168 - order unresolved
@@ -22,6 +28,10 @@ sequenceDiagram
     Note over S,U: Source contains call useState at line 85 - order unresolved
     Note over S,U: Source contains call useState at line 86 - order unresolved
     Note over S,U: Source contains call useState at line 87 - order unresolved
+    Note over S,U: Source contains call useT at line 668 - order unresolved
+    Note over S,U: Source contains call t at line 354 - order unresolved
+    Note over S,U: Source contains call t at line 355 - order unresolved
+    Note over S,U: Source contains call t at line 356 - order unresolved
     Note over S,U: Source contains call filter at line 54 - order unresolved
     Note over S,U: Source contains call get at line 58 - order unresolved
     Note over S,U: Source contains call push at line 59 - order unresolved

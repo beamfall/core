@@ -1,6 +1,6 @@
 # Console admin gate: locked reasons and unlock — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:9d50f664f41ea19879a843015959f0e2 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,7 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow console\.admin\-gate: 8 resolved, 13 unresolved members.
+Declared inventory flow console\.admin\-gate: 11 resolved, 10 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/console/AdminGate\.tsx AdminGateCopy: symbol is not a supported declaration in this path at this revision.
 
@@ -53,9 +53,3 @@ Declared inventory flow console\.admin\-gate: 8 resolved, 13 unresolved members.
 - Unresolved member internal/web/app/src/lib/graphql/auth\.ts VERIFY\_ADMIN\_SESSION\_MUTATION: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/auth\.ts VerifiedAdminSession: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/auth\.ts endAdminSession: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/auth\.ts fetchAdminSession: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/auth\.ts verifyAdminSession: symbol is not a supported declaration in this path at this revision.

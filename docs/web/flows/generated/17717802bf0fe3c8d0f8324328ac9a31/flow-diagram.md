@@ -1,11 +1,11 @@
 # Viewer media card: preview dwell, state overlay, card menu, artwork — flow-diagram
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:7ed54513f84204eb1d819ccf1fe69a28 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/viewer/components/MediaItemCard\.tsx:33; symbol: MediaItemCard; span SHA256: 495702df450883fd29a75fdfaa9ca776eca0fc5b0f01bbbd4da8cdbf4366297e.
+Source: internal/web/app/src/areas/viewer/components/MediaItemCard\.tsx:259; symbol: CardStateOverlay; span SHA256: 26335e262852cff9dc288f54e524fdb41d5b7de94e8e3b75867f868698d359ae.
 
 ```mermaid
 sequenceDiagram
@@ -24,12 +24,24 @@ sequenceDiagram
     Note over S,U: Source contains call t in internal/web/app/src/areas/viewer/components/MediaItemCard.tsx at line 60 - order unresolved
     Note over S,U: Source contains call artworkSlotURL in internal/web/app/src/areas/viewer/components/MediaItemCard.tsx at line 61 - order unresolved
     Note over S,U: Source contains call useRef in internal/web/app/src/areas/viewer/components/MediaItemCard.tsx at line 64 - order unresolved
+    Note over S,U: Source contains call matchMedia in internal/web/app/src/areas/viewer/components/MediaItemCard.tsx at line 293 - order unresolved
     Note over S,U: Source contains call useT in internal/web/app/src/areas/viewer/components/MediaItemCardMenu.tsx at line 41 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/areas/viewer/components/MediaItemCardMenu.tsx at line 42 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/areas/viewer/components/MediaItemCardMenu.tsx at line 43 - order unresolved
     Note over S,U: Source contains call useItemActions in internal/web/app/src/areas/viewer/components/MediaItemCardMenu.tsx at line 44 - order unresolved
     Note over S,U: Source contains call useEffect in internal/web/app/src/areas/viewer/components/MediaItemCardMenu.tsx at line 50 - order unresolved
     Note over S,U: Source contains call clearTimeout in internal/web/app/src/areas/viewer/components/MediaItemCardMenu.tsx at line 52 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/viewer/lib/cardState.ts at line 26 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/viewer/lib/cardState.ts at line 32 - order unresolved
+    Note over S,U: Source contains call min in internal/web/app/src/areas/viewer/lib/cardState.ts at line 40 - order unresolved
+    Note over S,U: Source contains call max in internal/web/app/src/areas/viewer/lib/cardState.ts at line 40 - order unresolved
+    Note over S,U: Source contains call round in internal/web/app/src/areas/viewer/lib/cardState.ts at line 40 - order unresolved
+    Note over S,U: Source contains call timeLeftLabel in internal/web/app/src/areas/viewer/lib/cardState.ts at line 41 - order unresolved
+    Note over S,U: Source contains call max in internal/web/app/src/areas/viewer/lib/cardState.ts at line 57 - order unresolved
+    Note over S,U: Source contains call ceil in internal/web/app/src/areas/viewer/lib/cardState.ts at line 57 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/viewer/lib/cardState.ts at line 59 - order unresolved
+    Note over S,U: Source contains call floor in internal/web/app/src/areas/viewer/lib/cardState.ts at line 59 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/viewer/lib/cardState.ts at line 61 - order unresolved
     Note over S,U: Source contains call queueWindow in internal/web/app/src/areas/viewer/components/MediaItemCard.tsx at line 128 - order unresolved
     Note over S,U: Source contains call navigate in internal/web/app/src/areas/viewer/components/MediaItemCard.tsx at line 131 - order unresolved
     Note over S,U: Source contains call navigate in internal/web/app/src/areas/viewer/components/MediaItemCard.tsx at line 133 - order unresolved

@@ -1,6 +1,6 @@
 # Console access: library grants, rating ceilings, access schedules, managed policy — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:721917ad87a1deefc37476a378b728e8 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,7 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow console\.access\.profile\-policy: 15 resolved, 34 unresolved members.
+Declared inventory flow console\.access\.profile\-policy: 31 resolved, 18 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/console/lib/schedulePreview\.ts AccessWindow: symbol is not a supported declaration in this path at this revision.
 
@@ -42,19 +42,7 @@ Declared inventory flow console\.access\.profile\-policy: 15 resolved, 34 unreso
 
 - Unresolved member internal/web/app/src/areas/console/lib/schedulePreview\.ts WEEK\_MINUTES: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx AccessGrantList: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx AccessScheduleEditor: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx CeilingRow: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx LibraryGrantEditor: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx ManagedPolicyControls: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx NO\_CEILING: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx SchedulePreview: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx WEEKDAYS: symbol is not a supported declaration in this path at this revision.
 
@@ -79,25 +67,5 @@ Declared inventory flow console\.access\.profile\-policy: 15 resolved, 34 unreso
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts SET\_PROFILE\_STREAM\_CAP\_MUTATION: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts UPDATE\_PROFILE\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts accessGrantsForProfile: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts fetchAccessSchedule: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts fetchEnforcedFilters: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts revokeAccessGrant: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts setAccessSchedule: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts setCertificationCeiling: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts setExtensionPreauthorization: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts setProfileLibraries: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts setProfileStreamCap: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts updateProfile: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts LIBRARIES\_QUERY: symbol is not a supported declaration in this path at this revision.

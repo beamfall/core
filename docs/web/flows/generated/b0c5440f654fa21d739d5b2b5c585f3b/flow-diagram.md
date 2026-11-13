@@ -1,11 +1,11 @@
 # Manage trash: restore, purge and reversible activity — flow-diagram
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:18ede8bc22ccbe2bc90020f3cd1199ed -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/manage/pages/TrashPage\.tsx:160; symbol: PurgeSection; span SHA256: 460803bbad5407e93b0571e9fecea61b9d14ac1b969e86e6c73beb173aecea89.
+Source: internal/web/app/src/areas/manage/pages/TrashPage\.tsx:261; symbol: ActivitySection; span SHA256: 3e919863e35f12ddc418f5cf97c9e47dd440cd05819cdb3dc85ab4dea03403d4.
 
 ```mermaid
 sequenceDiagram
@@ -13,6 +13,9 @@ sequenceDiagram
     participant U as Unresolved runtime
     Note over S,U: Lexical inventory only - no witnessed order
     Note over S: Flow b0c5440f654fa21d739d5b2b5c585f3b
+    Note over S,U: Source contains call useT at line 262 - order unresolved
+    Note over S,U: Source contains call useState at line 264 - order unresolved
+    Note over S,U: Source contains call useState at line 265 - order unresolved
     Note over S,U: Source contains call useT at line 161 - order unresolved
     Note over S,U: Source contains call useState at line 163 - order unresolved
     Note over S,U: Source contains call useState at line 164 - order unresolved

@@ -1,6 +1,6 @@
 # Viewer notifications inbox — technical-deep-dive
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:af7e8ef8cbdd2d7d70725d699071fb46 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -21,6 +21,16 @@ Source: internal/web/app/src/areas/viewer/pages/NotificationsPage\.tsx:174; symb
 Declared member: source declares notificationKindLabel; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/viewer/pages/NotificationsPage\.tsx:161; symbol: notificationKindLabel; span SHA256: 51cd4778751d2626189460fcc9b7fd3e97adc36db003ce70a2d38bfe8ee34cbf.
+
+<!-- flowdocs:paragraph:29978b18116efed6a9ae099115a3efd2 -->
+Declared member: source declares fetchNotifications; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:295; symbol: fetchNotifications; span SHA256: 52a9f16f6ba71634a431d2d4cd55c72ed0a6170c0ff5fc557280bfa07dd85daf.
+
+<!-- flowdocs:paragraph:c7afae5a8c4e9d12a12bd6806acf1692 -->
+Declared member: source declares markNotificationRead; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:309; symbol: markNotificationRead; span SHA256: 93089bf632b6aa4b2da5351c243500e3131ce651f2dd551d3f006a3fd4258ec7.
 
 <!-- flowdocs:paragraph:87bd4070bf9fa0709398c63cf740affb -->
 Declared member: source declares onMarkRead; membership is caller\-declared, not runtime evidence\.

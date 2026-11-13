@@ -1,6 +1,6 @@
 # Viewer notifications inbox — flow-diagram
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:022de9e1c3870011e548cee6056eaee1 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -19,6 +19,20 @@ sequenceDiagram
     Note over S,U: Source contains call formatDateTime at line 139 - order unresolved
     Note over S,U: Source contains call onMarkRead at line 152 - order unresolved
     Note over S,U: Source contains call t at line 154 - order unresolved
+    Note over S,U: Source contains call useT at line 19 - order unresolved
+    Note over S,U: Source contains call useState at line 21 - order unresolved
+    Note over S,U: Source contains call useCallback at line 24 - order unresolved
+    Note over S,U: Source contains call async at line 25 - order unresolved
+    Note over S,U: Source contains call setError at line 26 - order unresolved
+    Note over S,U: Source contains call setLoading at line 27 - order unresolved
+    Note over S,U: Source contains call setNotifications at line 29 - order unresolved
+    Note over S,U: Source contains call fetchNotifications at line 29 - order unresolved
+    Note over S,U: Source contains call setError at line 31 - order unresolved
+    Note over S,U: Source contains call t at line 31 - order unresolved
+    Note over S,U: Source contains call setLoading at line 33 - order unresolved
+    Note over S,U: Source contains call useEffect at line 39 - order unresolved
+    Note over S,U: Source contains call refreshNotifications at line 40 - order unresolved
+    Note over S,U: Source contains call useEffect at line 43 - order unresolved
     Note over S,U: Source contains call Date at line 175 - order unresolved
     Note over S,U: Source contains call isNaN at line 176 - order unresolved
     Note over S,U: Source contains call getTime at line 176 - order unresolved

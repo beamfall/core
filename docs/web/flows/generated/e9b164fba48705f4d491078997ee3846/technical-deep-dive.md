@@ -1,6 +1,6 @@
 # Viewer home and node browse: manifest layout, sections, hero — technical-deep-dive
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:0377bd96d26f2eb150933abd096a9f4d -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -71,6 +71,11 @@ Source: internal/web/app/src/areas/viewer/lib/renderFocus\.ts:10; symbol: rememb
 Declared member: source declares fetchSectionItems; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/viewer/lib/sections\.ts:42; symbol: fetchSectionItems; span SHA256: 9c1093da4506c29f2aa8df252be20b0b5dc8a5f39a881099dd3b71257e70089a.
+
+<!-- flowdocs:paragraph:46dcae7c4cc5e996ac8aab641d21e113 -->
+Declared member: source declares fetchSourceItems; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:147; symbol: fetchSourceItems; span SHA256: 9f1317f83dd3fa7438a3d9ad73edaad922c0f72c4d85858076328b5d3326f704.
 
 <!-- flowdocs:paragraph:351b909a308c267a194a35761cd1260e -->
 Declared member: source declares activate; membership is caller\-declared, not runtime evidence\.

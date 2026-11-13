@@ -1,6 +1,6 @@
 # Viewer Profile settings: preferences toggles and avatar — flow-diagram
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a97b335f727dff65e293f397bab4d272 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -14,6 +14,27 @@ sequenceDiagram
     Note over S,U: Lexical inventory only - no witnessed order
     Note over S: Flow 6d03d343cff1d14f26774f27046a9347
     Note over S,U: Source contains call get in internal/web/app/src/areas/viewer/lib/preferences.ts at line 72 - order unresolved
+    Note over S,U: Source contains call get in internal/web/app/src/areas/viewer/lib/preferences.ts at line 76 - order unresolved
+    Note over S,U: Source contains call includes in internal/web/app/src/areas/viewer/lib/preferences.ts at line 77 - order unresolved
+    Note over S,U: Source contains call Map in internal/web/app/src/areas/viewer/lib/preferences.ts at line 116 - order unresolved
+    Note over S,U: Source contains call map in internal/web/app/src/areas/viewer/lib/preferences.ts at line 116 - order unresolved
+    Note over S,U: Source contains call interval in internal/web/app/src/areas/viewer/lib/preferences.ts at line 117 - order unresolved
+    Note over S,U: Source contains call bool in internal/web/app/src/areas/viewer/lib/preferences.ts at line 119 - order unresolved
+    Note over S,U: Source contains call bool in internal/web/app/src/areas/viewer/lib/preferences.ts at line 120 - order unresolved
+    Note over S,U: Source contains call bool in internal/web/app/src/areas/viewer/lib/preferences.ts at line 121 - order unresolved
+    Note over S,U: Source contains call bool in internal/web/app/src/areas/viewer/lib/preferences.ts at line 122 - order unresolved
+    Note over S,U: Source contains call bool in internal/web/app/src/areas/viewer/lib/preferences.ts at line 123 - order unresolved
+    Note over S,U: Source contains call bool in internal/web/app/src/areas/viewer/lib/preferences.ts at line 124 - order unresolved
+    Note over S,U: Source contains call speed in internal/web/app/src/areas/viewer/lib/preferences.ts at line 125 - order unresolved
+    Note over S,U: Source contains call bool in internal/web/app/src/areas/viewer/lib/preferences.ts at line 126 - order unresolved
+    Note over S,U: Source contains call interval in internal/web/app/src/areas/viewer/lib/preferences.ts at line 128 - order unresolved
+    Note over S,U: Source contains call skipIntervalOverrideKey in internal/web/app/src/areas/viewer/lib/preferences.ts at line 128 - order unresolved
+    Note over S,U: Source contains call downstreamAudio in internal/web/app/src/areas/viewer/lib/preferences.ts at line 130 - order unresolved
+    Note over S,U: Source contains call find in internal/web/app/src/areas/viewer/lib/preferences.ts at line 105 - order unresolved
+    Note over S,U: Source contains call skipIntervalOverrideKey in internal/web/app/src/areas/viewer/lib/preferences.ts at line 105 - order unresolved
+    Note over S,U: Source contains call includes in internal/web/app/src/areas/viewer/lib/preferences.ts at line 106 - order unresolved
+    Note over S,U: Source contains call get in internal/web/app/src/areas/viewer/lib/preferences.ts at line 83 - order unresolved
+    Note over S,U: Source contains call includes in internal/web/app/src/areas/viewer/lib/preferences.ts at line 84 - order unresolved
     Note over S,U: Source contains call useT in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 41 - order unresolved
     Note over S,U: Source contains call useSession in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 42 - order unresolved
     Note over S,U: Source contains call find in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 44 - order unresolved
@@ -21,6 +42,8 @@ sequenceDiagram
     Note over S,U: Source contains call useState in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 49 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 50 - order unresolved
     Note over S,U: Source contains call useRef in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 51 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 342 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 346 - order unresolved
     Note over S,U: Source contains call useT in internal/web/app/src/components/beamfall/profile/AvatarChooser.tsx at line 26 - order unresolved
     Note over S,U: Source contains call useId in internal/web/app/src/components/beamfall/profile/AvatarChooser.tsx at line 27 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/components/beamfall/profile/AvatarChooser.tsx at line 28 - order unresolved

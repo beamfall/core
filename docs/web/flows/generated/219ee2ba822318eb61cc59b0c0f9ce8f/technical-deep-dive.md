@@ -1,11 +1,16 @@
 # Viewer header live search with keyboard shortcut — technical-deep-dive
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b411703a15d94e63b2a9ad3db1610117 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
 Source: internal/web/app/src/areas/viewer/components/HeaderSearch\.tsx:39; symbol: HeaderSearch; span SHA256: 8e28e7eccaffdb70393af1409ee4e596b0d984cbf0a110ea4257b7f0946e26c2.
+
+<!-- flowdocs:paragraph:bebb18e5d356d61e4826aa521e8c0c6e -->
+Declared member: source declares ResultRow; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/components/HeaderSearch\.tsx:241; symbol: ResultRow; span SHA256: 442a78e390198f3806d9cc964f37fb440b24d8482a673c9edd2c196c406652c3.
 
 <!-- flowdocs:paragraph:fb216378b3532f9675426c4b0b4ac0f4 -->
 Declared member: source declares ViewerActions; membership is caller\-declared, not runtime evidence\.
@@ -31,6 +36,11 @@ Source: internal/web/app/src/areas/viewer/lib/useLiveSearch\.ts:35; symbol: useL
 Declared member: source declares useSearchShortcut; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/viewer/lib/useLiveSearch\.ts:106; symbol: useSearchShortcut; span SHA256: f5f85ce91859809e2213b675ec8d12a1a2d940fe108a21793c2caba7b5c19a5d.
+
+<!-- flowdocs:paragraph:2256c393d13d5bf45d0a33296c482c00 -->
+Declared member: source declares searchResult; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:221; symbol: searchResult; span SHA256: 3daf7e2d1a254bb5d63b4722f09694733f36e6db7b47bedc57df2f4b2031438b.
 
 <!-- flowdocs:paragraph:461e4766cbebdc345050868c94744567 -->
 Declared member: source declares activate; membership is caller\-declared, not runtime evidence\.

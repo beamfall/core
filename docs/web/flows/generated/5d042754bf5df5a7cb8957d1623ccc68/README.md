@@ -1,11 +1,11 @@
 # First\-run setup wizard shell: token intake, step navigation — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:41ccfdb7fec846a5919595866d0d5588 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/components/beamfall/CinemaBackdrop\.tsx:4; symbol: CinemaBackdrop; span SHA256: 6880dafb3ea09575091d6bcad24c3bd43e0f7efd6ad47049f784578830fbf852.
+Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:139; symbol: SetupWizard; span SHA256: 5ea0bd2beac7b14842fe7dac0073411f7ca52258541d8dcc42e8d8d9ba4df830.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -32,7 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow setup\.wizard: 16 resolved, 22 unresolved members.
+Declared inventory flow setup\.wizard: 23 resolved, 15 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/setup/SetupWizard\.tsx FIELD: symbol is not a supported declaration in this path at this revision.
 
@@ -50,30 +50,16 @@ Declared inventory flow setup\.wizard: 16 resolved, 22 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/setup/SetupWizard\.tsx STEP\_SECURITY: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/areas/setup/SetupWizard\.tsx SetupWizard: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/setup/SetupWizard\.tsx StepHeading: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/areas/setup/SetupWizard\.tsx TILE: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/setup/SetupWizard\.tsx TILE\_SELECTED: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/areas/setup/SetupWizard\.tsx consumeSetupToken: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts SCRAPER\_CREDENTIAL\_FIELDS: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts SET\_SCRAPER\_CREDENTIAL\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts setScraperCredential: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts BROWSE\_SERVER\_FOLDERS\_QUERY: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts JOBS\_QUERY: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts PLUGINS\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts browseServerFolders: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchJobs: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchPlugins: symbol is not a supported declaration in this path at this revision.

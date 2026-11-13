@@ -1,11 +1,11 @@
 # Admin Session unlock gate \(admin password\) reused by Console — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:4011766648d2ca3373a232ced7a396a6 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/lib/graphql/auth\.ts:26; symbol: settleRebind; span SHA256: b13faca8956ab229de82053f9ca2976e5f0b4a1b28d78439f5d3ec44657139bb.
+Source: internal/web/app/src/areas/enroll/AdminSessionGate\.tsx:36; symbol: AdminSessionGate; span SHA256: 1c57e2944272208cfdc6a8b847b66f625611ef933a795bad19af3022fb47da32.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -32,9 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow enroll\.admin\-session\-gate: 4 resolved, 10 unresolved members.
-
-- Unresolved member internal/web/app/src/areas/enroll/AdminSessionGate\.tsx AdminSessionGate: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow enroll\.admin\-session\-gate: 8 resolved, 6 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/enroll/AdminSessionGate\.tsx AdminSessionRenderProps: symbol is not a supported declaration in this path at this revision.
 
@@ -47,9 +45,3 @@ Declared inventory flow enroll\.admin\-session\-gate: 4 resolved, 10 unresolved 
 - Unresolved member internal/web/app/src/lib/graphql/auth\.ts VERIFY\_ADMIN\_SESSION\_MUTATION: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/auth\.ts VerifiedAdminSession: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/auth\.ts endAdminSession: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/auth\.ts fetchAdminSession: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/auth\.ts verifyAdminSession: symbol is not a supported declaration in this path at this revision.

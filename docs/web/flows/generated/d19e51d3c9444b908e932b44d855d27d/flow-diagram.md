@@ -1,11 +1,11 @@
 # Console libraries: add a library, roots, preview clips, skip detection — flow-diagram
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:ab09d2fb07cd933e1fc69d6d1e56da09 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:99; symbol: LibraryCard; span SHA256: 0eef856b8120a2f9220360db393e826a75027ce143207e3b633d474ebf8db3cf.
+Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:395; symbol: AddLibrary; span SHA256: 5d39f22b21a3c38babdca6c6f64008f3d42514a2b018b17ae8722462992a990f.
 
 ```mermaid
 sequenceDiagram
@@ -13,6 +13,16 @@ sequenceDiagram
     participant U as Unresolved runtime
     Note over S,U: Lexical inventory only - no witnessed order
     Note over S: Flow d19e51d3c9444b908e932b44d855d27d
+    Note over S,U: Source contains call useT at line 404 - order unresolved
+    Note over S,U: Source contains call useDisplayLocale at line 405 - order unresolved
+    Note over S,U: Source contains call useState at line 406 - order unresolved
+    Note over S,U: Source contains call useState at line 407 - order unresolved
+    Note over S,U: Source contains call useT at line 473 - order unresolved
+    Note over S,U: Source contains call useAsync at line 474 - order unresolved
+    Note over S,U: Source contains call useAsync at line 475 - order unresolved
+    Note over S,U: Source contains call useAsync at line 476 - order unresolved
+    Note over S,U: Source contains call useAsync at line 477 - order unresolved
+    Note over S,U: Source contains call useState at line 478 - order unresolved
     Note over S,U: Source contains call useT at line 112 - order unresolved
     Note over S,U: Source contains call useDisplayLocale at line 113 - order unresolved
     Note over S,U: Source contains call useState at line 118 - order unresolved

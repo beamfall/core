@@ -1,6 +1,6 @@
 # Sign out of the web session — flow-diagram
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:0089f25b280d0f82c7687e665a4c36ba -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -13,9 +13,10 @@ sequenceDiagram
     participant U as Unresolved runtime
     Note over S,U: Lexical inventory only - no witnessed order
     Note over S: Flow 7086235a1aed16e99089f12c4833bcc2
-    Note over S,U: Source contains call useT at line 18 - order unresolved
-    Note over S,U: Source contains call useState at line 19 - order unresolved
-    Note over S,U: Source contains call setBusy at line 23 - order unresolved
-    Note over S,U: Source contains call logout at line 25 - order unresolved
-    Note over S,U: Source contains call assign at line 29 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/areas/enroll/SignOutButton.tsx at line 18 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/enroll/SignOutButton.tsx at line 19 - order unresolved
+    Note over S,U: Source contains call postJSON in internal/web/app/src/lib/graphql/auth.ts at line 158 - order unresolved
+    Note over S,U: Source contains call setBusy in internal/web/app/src/areas/enroll/SignOutButton.tsx at line 23 - order unresolved
+    Note over S,U: Source contains call logout in internal/web/app/src/areas/enroll/SignOutButton.tsx at line 25 - order unresolved
+    Note over S,U: Source contains call assign in internal/web/app/src/areas/enroll/SignOutButton.tsx at line 29 - order unresolved
 ```

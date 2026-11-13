@@ -1,11 +1,26 @@
 # Viewer who&\#39;s\-watching Profile picker with PIN prompt — technical-deep-dive
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:e8cbe093ceea6be83baf49d16aaaaa14 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/components/beamfall/profile/ProfileAvatar\.tsx:12; symbol: ProfileAvatar; span SHA256: 4d97af950c27a62df588bc3e465891483c94b5e26de48989d283f9d642a20f03.
+Source: internal/web/app/src/areas/viewer/pages/ProfilePickerPage\.tsx:191; symbol: PinPrompt; span SHA256: 1dda62597ac88864cf9511f76713d3e612a47bf892ca7532a29fd3361e7657ce.
+
+<!-- flowdocs:paragraph:e047517ad0172fc9818e1d67fbd32d8d -->
+Declared member: source declares PinPrompt; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/pages/ProfilePickerPage\.tsx:191; symbol: PinPrompt; span SHA256: 1dda62597ac88864cf9511f76713d3e612a47bf892ca7532a29fd3361e7657ce.
+
+<!-- flowdocs:paragraph:dd1728a380a2e8159df1959f38eb7991 -->
+Declared member: source declares destination; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/pages/ProfilePickerPage\.tsx:49; symbol: destination; span SHA256: dd68904bd90457d7a76e21f443dca61a6f08f0b59a522e3ab6daa71b8e394621.
+
+<!-- flowdocs:paragraph:e101d94a2d033228d80d4997a3ea846a -->
+Declared member: source declares failureKind; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/pages/ProfilePickerPage\.tsx:41; symbol: failureKind; span SHA256: d77852f018b1df1ab4bc67c1c6ec004f32a38495b51347a75b35cab1edf1cd33.
 
 <!-- flowdocs:paragraph:1ae38c777dd7b507ffa083d4e6d99364 -->
 Declared member: source declares ProfileAvatar; membership is caller\-declared, not runtime evidence\.
@@ -41,6 +56,16 @@ Source: internal/web/app/src/components/beamfall/profile/entry\.ts:23; symbol: m
 Declared member: source declares profilePickedThisTab; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/components/beamfall/profile/entry\.ts:13; symbol: profilePickedThisTab; span SHA256: 0a7415346b5dcfc200bc7949c9eae01fca73f8a98378396ebfa8987661dd747a.
+
+<!-- flowdocs:paragraph:063d5cb68bba58bd30882a3cbbc06d76 -->
+Declared member: source declares fetchProfiles; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:73; symbol: fetchProfiles; span SHA256: 9858e7e681100359f6d87c1dca7279b59328c5e8c71f7f08c2787694c63e5629.
+
+<!-- flowdocs:paragraph:5fc7c39b95d7120c0a070902aca0fccf -->
+Declared member: source declares switchProfile; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:86; symbol: switchProfile; span SHA256: 8af66a65bec999c2320d0ad276774537b365471d314c64bc26fe96d7f3adfb7a.
 
 <!-- flowdocs:paragraph:6d709016ef24fc7ebb115aafdc0bfe6b -->
 Declared member: source declares done; membership is caller\-declared, not runtime evidence\.

@@ -1,11 +1,11 @@
 # Viewer area: session pending/error states, setup hand\-off, viewer routes — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:636caccd786ba516f987856094d1f177 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/viewer/index\.tsx:26; symbol: ViewerSessionError; span SHA256: 15e7bb4f0c6cd0210e45e8d78744ef6e8bf99159c99e202a3085a6d1ead15fbf.
+Source: internal/web/app/src/areas/viewer/index\.tsx:64; symbol: ViewerArea; span SHA256: e8c23e5be0c66a622011605c335083f61b506242b50e7f5c4047f2d83ae145ca.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -32,10 +32,4 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow viewer\.session\-routing: 1 resolved, 3 unresolved members.
-
-- Unresolved member internal/web/app/src/areas/viewer/index\.tsx ViewerArea: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/index\.tsx ViewerRoutes: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/index\.tsx ViewerSessionPending: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow viewer\.session\-routing: 4 resolved, 0 unresolved members.

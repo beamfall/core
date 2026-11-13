@@ -1,6 +1,6 @@
 # Console identification and layout capabilities — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a7d4a0a23006917ea9b9100552daf5bf -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,12 +32,8 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow console\.capabilities: 2 resolved, 4 unresolved members.
+Declared inventory flow console\.capabilities: 4 resolved, 2 unresolved members.
 
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts CAPABILITY\_STATES\_QUERY: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts SET\_CAPABILITY\_ENABLED\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts fetchCapabilityStates: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts setCapabilityEnabled: symbol is not a supported declaration in this path at this revision.

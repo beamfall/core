@@ -1,11 +1,11 @@
 # Player OS media\-session integration \(lock\-screen controls\) — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:9d5cd27d86248da9d7af8b615cbaa893 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/viewer/player/useMediaSession\.ts:81; symbol: safeSet; span SHA256: d9fdf30c1146cc24c5a621e8fe82b00396cd51cebc3259469e87f37fe1f45690.
+Source: internal/web/app/src/areas/viewer/player/useMediaSession\.ts:43; symbol: useMediaSession; span SHA256: ff8020ab582e5523fcf9b66f119ab9318c22b59e45a5ec9e95812fc057cbcfa6.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -32,10 +32,8 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow player\.media\-session: 3 resolved, 3 unresolved members.
+Declared inventory flow player\.media\-session: 4 resolved, 2 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/viewer/player/useMediaSession\.ts MediaSessionOptions: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/viewer/player/useMediaSession\.ts SEEK\_STEP\_SECONDS: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/useMediaSession\.ts useMediaSession: symbol is not a supported declaration in this path at this revision.

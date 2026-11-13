@@ -1,11 +1,11 @@
 # Manage convert: enqueue conversion presets and watch the queue — flow-diagram
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:2c5cfde77320cb3939bea5e80eb50c96 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/manage/lib/powertools\.ts:35; symbol: fetchConvertJobs; span SHA256: 3b89e51500c4d744b00def418205ba3278ec975511b98380eab41eb6eeae4748.
+Source: internal/web/app/src/areas/manage/lib/powertools\.ts:56; symbol: enqueueConvertJob; span SHA256: 71962892d259871d90840facb0d36bdc9d6a5bed458a31f9c2fc0dc18dc3f89c.
 
 ```mermaid
 sequenceDiagram
@@ -15,6 +15,12 @@ sequenceDiagram
     Note over S: Flow b1dcc1ff013249dae7b626c1259d1650
     Note over S,U: Source contains call fetchJobs in internal/web/app/src/areas/manage/lib/powertools.ts at line 36 - order unresolved
     Note over S,U: Source contains call filter in internal/web/app/src/areas/manage/lib/powertools.ts at line 37 - order unresolved
+    Note over S,U: Source contains call toLowerCase in internal/web/app/src/areas/manage/lib/powertools.ts at line 78 - order unresolved
+    Note over S,U: Source contains call includes in internal/web/app/src/areas/manage/lib/powertools.ts at line 80 - order unresolved
+    Note over S,U: Source contains call includes in internal/web/app/src/areas/manage/lib/powertools.ts at line 81 - order unresolved
+    Note over S,U: Source contains call includes in internal/web/app/src/areas/manage/lib/powertools.ts at line 82 - order unresolved
+    Note over S,U: Source contains call includes in internal/web/app/src/areas/manage/lib/powertools.ts at line 83 - order unresolved
+    Note over S,U: Source contains call includes in internal/web/app/src/areas/manage/lib/powertools.ts at line 84 - order unresolved
     Note over S,U: Source contains call useT in internal/web/app/src/areas/manage/pages/ConvertPage.tsx at line 45 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/areas/manage/pages/ConvertPage.tsx at line 47 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/areas/manage/pages/ConvertPage.tsx at line 48 - order unresolved

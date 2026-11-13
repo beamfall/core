@@ -1,6 +1,6 @@
 # App shell chrome: header, library sidebar, account menu, phone layout — technical-deep-dive
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1d9fa88dbb23c673f79fccc995bb9f88 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -36,6 +36,11 @@ Source: internal/web/app/src/components/chrome/LibrarySidebar\.tsx:99; symbol: A
 Declared member: source declares LibrarySidebar; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/components/chrome/LibrarySidebar\.tsx:14; symbol: LibrarySidebar; span SHA256: bbde04f773c1472c988914c991e3c936f6b9d07c8f4cbf35d718b1a8629b43e9.
+
+<!-- flowdocs:paragraph:7caaa5040a8dd8f10b43ffde97d07a18 -->
+Declared member: source declares fetchNotifications; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:295; symbol: fetchNotifications; span SHA256: 52a9f16f6ba71634a431d2d4cd55c72ed0a6170c0ff5fc557280bfa07dd85daf.
 
 <!-- flowdocs:paragraph:02a7e9ba330e7a95d704a8ad36117907 -->
 Declared member: source declares current; membership is caller\-declared, not runtime evidence\.

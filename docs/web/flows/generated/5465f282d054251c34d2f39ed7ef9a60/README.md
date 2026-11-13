@@ -1,11 +1,11 @@
 # Setup: configure the update\-check channel — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:4a1452dc8a053700ca4648fe91c4f6f4 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/lib/graphql/auth\.ts:26; symbol: settleRebind; span SHA256: b13faca8956ab229de82053f9ca2976e5f0b4a1b28d78439f5d3ec44657139bb.
+Source: internal/web/app/src/areas/setup/orchestrate\.ts:181; symbol: configureUpdateCheck; span SHA256: eb088f1d1e70a55690701dc5051f24349cd9a6c6d01ef24fa405600c0a9e023a.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -32,11 +32,9 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow setup\.update\-check: 1 resolved, 10 unresolved members.
+Declared inventory flow setup\.update\-check: 4 resolved, 7 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/setup/orchestrate\.ts UpdateCheckChannel: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/setup/orchestrate\.ts configureUpdateCheck: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/auth\.ts RebindOutcome: symbol is not a supported declaration in this path at this revision.
 
@@ -44,12 +42,8 @@ Declared inventory flow setup\.update\-check: 1 resolved, 10 unresolved members.
 
 - Unresolved member internal/web/app/src/lib/graphql/auth\.ts VerifiedAdminSession: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/lib/graphql/auth\.ts verifyAdminSession: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts CONSOLE\_CONFIG\_FIELDS: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts ConsoleConfigPatch: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/console\.ts SET\_CONSOLE\_CONFIG\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts setConsoleConfig: symbol is not a supported declaration in this path at this revision.

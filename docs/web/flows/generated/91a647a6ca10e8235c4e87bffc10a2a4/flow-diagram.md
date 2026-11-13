@@ -1,11 +1,11 @@
 # Console server and transcode configuration — flow-diagram
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b89e56ddc682034d64055b3467b90caa -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/console/sections/Config\.tsx:21; symbol: ServerConfig; span SHA256: 91c2f1f80d5a565af74b899c64ba777887f22f98e9df47ff0856e73b00ae336b.
+Source: internal/web/app/src/areas/console/sections/Config\.tsx:171; symbol: Config; span SHA256: cf87b5d0b3c2a8081c41ce54a5f24e8c47b3f6572dfc88925186ee95c34fa071.
 
 ```mermaid
 sequenceDiagram
@@ -19,4 +19,8 @@ sequenceDiagram
     Note over S,U: Source contains call useEffect at line 26 - order unresolved
     Note over S,U: Source contains call setWorkers at line 27 - order unresolved
     Note over S,U: Source contains call String at line 27 - order unresolved
+    Note over S,U: Source contains call useT at line 72 - order unresolved
+    Note over S,U: Source contains call useAsync at line 73 - order unresolved
+    Note over S,U: Source contains call useEffect at line 83 - order unresolved
+    Note over S,U: Source contains call setForm at line 84 - order unresolved
 ```

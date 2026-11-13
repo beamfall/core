@@ -1,6 +1,6 @@
 # Server activity indicator \(running jobs and rescans\) in the shell — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:9f18d365d1677e1dfc710d78e1167a59 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -32,12 +32,10 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow shell\.server\-activity: 3 resolved, 4 unresolved members.
+Declared inventory flow shell\.server\-activity: 4 resolved, 3 unresolved members.
 
 - Unresolved member internal/web/app/src/components/beamfall/ServerActivity\.tsx ACTIVE\_POLL\_MS: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/components/beamfall/ServerActivity\.tsx IDLE\_POLL\_MS: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/lib/graphql/manage\.ts JOBS\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts fetchJobs: symbol is not a supported declaration in this path at this revision.

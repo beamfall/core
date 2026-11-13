@@ -1,11 +1,11 @@
 # Viewer media card: preview dwell, state overlay, card menu, artwork — readme
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a50c88cf2eba7a1cea05a48e4c46d3d4 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/viewer/components/MediaItemCard\.tsx:33; symbol: MediaItemCard; span SHA256: 495702df450883fd29a75fdfaa9ca776eca0fc5b0f01bbbd4da8cdbf4366297e.
+Source: internal/web/app/src/areas/viewer/components/MediaItemCard\.tsx:259; symbol: CardStateOverlay; span SHA256: 26335e262852cff9dc288f54e524fdb41d5b7de94e8e3b75867f868698d359ae.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -32,9 +32,7 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow viewer\.media\-card: 11 resolved, 11 unresolved members.
-
-- Unresolved member internal/web/app/src/areas/viewer/components/MediaItemCard\.tsx CardStateOverlay: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow viewer\.media\-card: 16 resolved, 6 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/viewer/components/MediaItemCard\.tsx POINTER\_PREVIEW\_QUERY: symbol is not a supported declaration in this path at this revision.
 
@@ -42,16 +40,8 @@ Declared inventory flow viewer\.media\-card: 11 resolved, 11 unresolved members.
 
 - Unresolved member internal/web/app/src/areas/viewer/components/MediaItemCard\.tsx REDUCED\_MOTION\_QUERY: symbol is not a supported declaration in this path at this revision.
 
-- Unresolved member internal/web/app/src/areas/viewer/components/MediaItemCard\.tsx mediaQueryMatches: symbol is not a supported declaration in this path at this revision.
-
 - Unresolved member internal/web/app/src/areas/viewer/components/MediaItemCardMenu\.tsx COPIED\_RESET\_MS: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/viewer/lib/cardState\.ts CardState: symbol is not a supported declaration in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/viewer/lib/cardState\.ts Translate: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/cardState\.ts cardAccessibleName: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/cardState\.ts cardState: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/cardState\.ts timeLeftLabel: symbol is not a supported declaration in this path at this revision.

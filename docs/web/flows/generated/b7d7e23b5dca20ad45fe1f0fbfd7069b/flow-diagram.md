@@ -1,11 +1,11 @@
 # Manage markers: segment edit, bulk delete, trashed markers — flow-diagram
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:7d953f859a790e0b580890ea7829b735 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:82; symbol: MarkersPage; span SHA256: 3e9ce0a28fcc6badcd8c28d735a9f7bbc501cf39799cbb04f6777bd0adf280b7.
+Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:603; symbol: BulkDeleteConfirm; span SHA256: 06875e3212b9669e3dc36e7164f0f7193644d51ad12ab79d317d837f8da0d044.
 
 ```mermaid
 sequenceDiagram
@@ -13,6 +13,27 @@ sequenceDiagram
     participant U as Unresolved runtime
     Note over S,U: Lexical inventory only - no witnessed order
     Note over S: Flow b7d7e23b5dca20ad45fe1f0fbfd7069b
+    Note over S,U: Source contains call useT at line 612 - order unresolved
+    Note over S,U: Source contains call t at line 622 - order unresolved
+    Note over S,U: Source contains call t at line 627 - order unresolved
+    Note over S,U: Source contains call t at line 628 - order unresolved
+    Note over S,U: Source contains call t at line 631 - order unresolved
+    Note over S,U: Source contains call t at line 636 - order unresolved
+    Note over S,U: Source contains call useT at line 469 - order unresolved
+    Note over S,U: Source contains call useState at line 472 - order unresolved
+    Note over S,U: Source contains call useState at line 473 - order unresolved
+    Note over S,U: Source contains call useT at line 430 - order unresolved
+    Note over S,U: Source contains call t at line 435 - order unresolved
+    Note over S,U: Source contains call t at line 440 - order unresolved
+    Note over S,U: Source contains call t at line 441 - order unresolved
+    Note over S,U: Source contains call t at line 444 - order unresolved
+    Note over S,U: Source contains call t at line 449 - order unresolved
+    Note over S,U: Source contains call useT at line 232 - order unresolved
+    Note over S,U: Source contains call toDraft at line 233 - order unresolved
+    Note over S,U: Source contains call useState at line 234 - order unresolved
+    Note over S,U: Source contains call useEffect at line 238 - order unresolved
+    Note over S,U: Source contains call setDraft at line 239 - order unresolved
+    Note over S,U: Source contains call toDraft at line 239 - order unresolved
     Note over S,U: Source contains call useT at line 83 - order unresolved
     Note over S,U: Source contains call useState at line 84 - order unresolved
     Note over S,U: Source contains call useState at line 85 - order unresolved
@@ -35,6 +56,7 @@ sequenceDiagram
     Note over S,U: Source contains call setLoaded at line 103 - order unresolved
     Note over S,U: Source contains call setError at line 105 - order unresolved
     Note over S,U: Source contains call t at line 105 - order unresolved
+    Note over S,U: Source contains call useT at line 656 - order unresolved
     Note over S,U: Source contains call localeCompare at line 79 - order unresolved
     Note over S,U: Source contains call async at line 502 - order unresolved
     Note over S,U: Source contains call onError at line 503 - order unresolved

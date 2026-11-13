@@ -1,16 +1,51 @@
 # Console activity log — technical-deep-dive
 
-Source revision: 5ffe7939da2318f5153b1a20d0ef6ef94deef162. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:fc7d068d082293ba7042d9b0fee026d8 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/lib/graphql/activity\.ts:29; symbol: fetchActivityRecords; span SHA256: e2460710fdc21e4597b1fd8e53ba346ae2334d2da793921aa1f38be266fa65d5.
+Source: internal/web/app/src/areas/console/sections/ActivityLog\.tsx:212; symbol: ActivityEntryRows; span SHA256: 676a3a4b813614bd0d0b1d72debd68b18a0bbd07da249db98dad8119376437c5.
+
+<!-- flowdocs:paragraph:5f007ee165adcb366e209b0360c6bb84 -->
+Declared member: source declares ActivityEntryRows; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/ActivityLog\.tsx:212; symbol: ActivityEntryRows; span SHA256: 676a3a4b813614bd0d0b1d72debd68b18a0bbd07da249db98dad8119376437c5.
+
+<!-- flowdocs:paragraph:c60efe63d36243f95bd06e8517ed1b39 -->
+Declared member: source declares Detail; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/ActivityLog\.tsx:292; symbol: Detail; span SHA256: 843bde1b2831d64692e303c47b52657fe023628acb4580b603b865dc03d0f908.
+
+<!-- flowdocs:paragraph:9c54505738af753794f27a21158d50c0 -->
+Declared member: source declares fetchActivityPage; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/ActivityLog\.tsx:53; symbol: fetchActivityPage; span SHA256: 80bb9e6a08208ec08916948f4ca3c3c1dfd038af2a95251c687724305c13191c.
+
+<!-- flowdocs:paragraph:d5192617465183079a07af00b78e81c0 -->
+Declared member: source declares namesBy; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/ActivityLog\.tsx:41; symbol: namesBy; span SHA256: 9e9380ce7bfbd44e23fcfdea43a785a65bc59aaeff0a4d92c32eb18046c95aed.
+
+<!-- flowdocs:paragraph:0a6ae45ee543197f5b50331abac6c617 -->
+Declared member: source declares useMinuteClock; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/ActivityLog\.tsx:76; symbol: useMinuteClock; span SHA256: 1e414c809cf5ef5f4a752d117ac2433e7868c0babdafd83b9287fc50b82e78f0.
 
 <!-- flowdocs:paragraph:17c23bcef55a55cb9dbfb840ee5f700e -->
 Declared member: source declares fetchActivityRecords; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/lib/graphql/activity\.ts:29; symbol: fetchActivityRecords; span SHA256: e2460710fdc21e4597b1fd8e53ba346ae2334d2da793921aa1f38be266fa65d5.
+
+<!-- flowdocs:paragraph:5cd95830d48353e021ecf0a93c431cac -->
+Declared member: source declares fetchDevices; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:404; symbol: fetchDevices; span SHA256: 2cb96a1f6fdf5156d5272f0e55d47e88874ef6c042a24d3b1ad18553236c3879.
+
+<!-- flowdocs:paragraph:d2c9fee7d5db97ed501d13505beef6f3 -->
+Declared member: source declares fetchProfilesAdmin; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:745; symbol: fetchProfilesAdmin; span SHA256: 30be662031e6633e4b0e408c2b988f565f8a3a3e93f158e5aa170a57abe0b1a1.
 
 <!-- flowdocs:paragraph:d69a850cd4cf775e954952e114c5c490 -->
 Declared member: source declares fetchLibraries; membership is caller\-declared, not runtime evidence\.
