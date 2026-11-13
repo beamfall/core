@@ -13,6 +13,12 @@ import (
 // SplitAmbiguousEntityScopes already ran for one (kind, relation).
 const entityScopeSplitPrefix = "entity-scope-split."
 
+// entityScopeBackfillPrefix prefixes the server_config rows naming a Library
+// whose Media SplitAmbiguousEntityScopes reopened and for which no backfill
+// scan has been queued yet. Only a backfill scan hydrates an unchanged file
+// again, so the row outlives a crash between the repair and the enqueue.
+const entityScopeBackfillPrefix = "entity-scope-backfill."
+
 // EntityRelationTargets returns the Entities one Entity points at through an
 // entity→entity relation, and whether the Entity exists (and is not trashed).
 // It is the hydration read behind scoped Entity identity: the relation a kind
@@ -75,7 +81,8 @@ func (s *Store) EntityRelationTargets(ctx context.Context, libraryID LibraryID, 
 // marker of every Media it relates to is cleared, so the next scan hydrates
 // those Media again: the first scope seen keeps the Entity (its id, artwork
 // and other relations), every other scope gets its own Entity and its Media
-// move there.
+// move there. Every Library whose Media it reopened is recorded as awaiting a
+// backfill scan (see PendingEntityScopeBackfills).
 //
 // It runs once per (plugin, kind, relation): the run is recorded in
 // server_config, so a relation a person adds by hand later is never undone.
@@ -111,7 +118,7 @@ func (s *Store) SplitAmbiguousEntityScopes(ctx context.Context, pluginID, kind, 
 		return 0, err
 	}
 	rows, err := tx.QueryContext(ctx, `
-		SELECT e.id FROM entity e
+		SELECT e.id, e.library_id FROM entity e
 		JOIN library l ON l.id = e.library_id AND l.plugin_id = ?
 		LEFT JOIN entity_relation r
 		  ON r.from_entity_id = e.id AND r.relation = ? AND r.to_entity_id IS NOT NULL
@@ -124,13 +131,16 @@ func (s *Store) SplitAmbiguousEntityScopes(ctx context.Context, pluginID, kind, 
 		return 0, err
 	}
 	var reopened []EntityID
+	libraries := map[EntityID]LibraryID{}
 	for rows.Next() {
 		var id EntityID
-		if err := rows.Scan(&id); err != nil {
+		var library LibraryID
+		if err := rows.Scan(&id, &library); err != nil {
 			rows.Close()
 			return 0, err
 		}
 		reopened = append(reopened, id)
+		libraries[id] = library
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
@@ -138,14 +148,25 @@ func (s *Store) SplitAmbiguousEntityScopes(ctx context.Context, pluginID, kind, 
 	}
 	rows.Close()
 	for _, id := range reopened {
-		if _, err := tx.ExecContext(ctx, `
+		cleared, err := tx.ExecContext(ctx, `
 			DELETE FROM media_field_int
 			WHERE field = ? AND media_id IN (
 				SELECT to_media_id FROM entity_relation
 				WHERE from_entity_id = ? AND to_media_id IS NOT NULL
 			)
-		`, markerField, id); err != nil {
+		`, markerField, id)
+		if err != nil {
 			return 0, err
+		}
+		if n, err := cleared.RowsAffected(); err != nil {
+			return 0, err
+		} else if n > 0 {
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO server_config(key, value, updated_at_ms) VALUES (?, '', ?)
+				ON CONFLICT(key) DO NOTHING
+			`, entityScopeBackfillPrefix+string(libraries[id]), timeToMillis(now)); err != nil {
+				return 0, err
+			}
 		}
 		if _, err := tx.ExecContext(ctx, `
 			DELETE FROM entity_relation
@@ -158,4 +179,52 @@ func (s *Store) SplitAmbiguousEntityScopes(ctx context.Context, pluginID, kind, 
 		return 0, err
 	}
 	return len(reopened), nil
+}
+
+// PendingEntityScopeBackfills returns the Libraries whose Media a scope repair
+// reopened and for which no backfill scan has been queued yet, in id order.
+func (s *Store) PendingEntityScopeBackfills(ctx context.Context) ([]LibraryID, error) {
+	// Authority face: only the node that authors the repair queues its scans.
+	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
+		return nil, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	rows, err := s.catalogR.QueryContext(ctx, `
+		SELECT substr(key, ?) FROM server_config WHERE substr(key, 1, ?) = ? ORDER BY key
+	`, len(entityScopeBackfillPrefix)+1, len(entityScopeBackfillPrefix), entityScopeBackfillPrefix)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var libraries []LibraryID
+	for rows.Next() {
+		var library LibraryID
+		if err := rows.Scan(&library); err != nil {
+			return nil, err
+		}
+		libraries = append(libraries, library)
+	}
+	return libraries, rows.Err()
+}
+
+// ClearEntityScopeBackfill records that the backfill scan of a Library a scope
+// repair reopened has been queued.
+func (s *Store) ClearEntityScopeBackfill(ctx context.Context, libraryID LibraryID) error {
+	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
+		return err
+	}
+	if libraryID == "" {
+		return errors.New("library ID is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	_, err := s.catalogW.ExecContext(ctx, `DELETE FROM server_config WHERE key = ?`, entityScopeBackfillPrefix+string(libraryID))
+	return err
 }

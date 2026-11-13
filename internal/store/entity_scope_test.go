@@ -138,6 +138,17 @@ func TestSplitAmbiguousEntityScopesRequeuesMembersOnce(t *testing.T) {
 	if got := stale(other.ID); len(got) != 0 {
 		t.Fatalf("another plugin's Media were requeued: %v", got)
 	}
+	// Only a backfill scan hydrates an unchanged file again, so the Library
+	// whose Media were reopened awaits one until it is queued.
+	if pending, err := st.PendingEntityScopeBackfills(ctx); err != nil || !reflect.DeepEqual(pending, []LibraryID{lib.ID}) {
+		t.Fatalf("pending backfills = %v, %v; want %s", pending, err, lib.ID)
+	}
+	if err := st.ClearEntityScopeBackfill(ctx, lib.ID); err != nil {
+		t.Fatal(err)
+	}
+	if pending, err := st.PendingEntityScopeBackfills(ctx); err != nil || len(pending) != 0 {
+		t.Fatalf("pending backfills after clear = %v, %v; want none", pending, err)
+	}
 	if got := targets("entity-merged"); len(got) != 0 {
 		t.Fatalf("merged entity still records scopes %v", got)
 	}
@@ -163,5 +174,8 @@ func TestSplitAmbiguousEntityScopesRequeuesMembersOnce(t *testing.T) {
 	}
 	if _, requeued := stale(lib.ID)[single]; requeued {
 		t.Fatal("second run cleared a hydration marker")
+	}
+	if pending, err := st.PendingEntityScopeBackfills(ctx); err != nil || len(pending) != 0 {
+		t.Fatalf("second run queued backfills %v, %v", pending, err)
 	}
 }

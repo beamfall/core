@@ -52,8 +52,8 @@ scope being hydrated, and SHALL create the scoped Entity otherwise.
 
 At startup Core SHALL, once per plugin and scoped kind, reopen every Entity of that kind in that
 plugin's Libraries whose scope relation does not point at exactly one Entity: it SHALL clear that
-Entity's scope relation rows and the hydration marker of its member Media, so the next scan
-re-hydrates them under scoped identity. It SHALL leave an Entity that records exactly one scope
+Entity's scope relation rows and the hydration marker of its member Media, so they are
+re-hydrated under scoped identity. It SHALL leave an Entity that records exactly one scope
 unchanged, and SHALL NOT repeat the repair after it has run.
 
 #### Scenario: Two albums merged by the old key
@@ -72,3 +72,19 @@ unchanged, and SHALL NOT repeat the repair after it has run.
 - **WHEN** the Media of a reopened Entity that held two scopes are hydrated again
 - **THEN** the existing Entity holds one scope's Media, a new Entity holds the other's, and no Media
   is left without its Entity
+
+### Requirement: The scope repair queues the scan that re-hydrates what it reopened
+
+Because an ordinary scan does not hydrate an unchanged file again, Core SHALL queue a backfill scan
+of every root of each Library whose Media the one-time repair reopened, and SHALL retry the
+queueing at the next start when it fails.
+
+#### Scenario: The repair queues the re-hydrating scan
+
+- **WHEN** the one-time repair reopens Media in a Library
+- **THEN** a backfill scan of each of that Library's roots is queued
+
+#### Scenario: Queueing fails
+
+- **WHEN** the backfill scan of a reopened Library cannot be queued
+- **THEN** it is queued at the next start instead

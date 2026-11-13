@@ -8,6 +8,7 @@
 
 - [x] 2.1 Adopt a compatible title-only Entity instead of creating a scoped twin
 - [x] 2.2 One-time repair reopening title-only Entities that record no scope or several
+- [x] 2.3 The repair durably queues a backfill scan of each affected Library's roots
 
 ## 3. Tests
 

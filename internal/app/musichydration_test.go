@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"testing"
@@ -839,5 +840,81 @@ func TestHydrationSplitsMergedEntityAfterScopeRepair(t *testing.T) {
 	}
 	if len(seen) != 2 {
 		t.Fatalf("both albums ended under one scope: %v", seen)
+	}
+}
+
+// refusingEnqueueStore fails every job enqueue, the way a full or unavailable
+// jobs database would.
+type refusingEnqueueStore struct{ *store.Store }
+
+func (refusingEnqueueStore) EnqueueJob(context.Context, store.Job) (store.Job, error) {
+	return store.Job{}, errors.New("jobs unavailable")
+}
+
+// TestScopeRepairQueuesBackfillScan pins that the repair's reopened Media are
+// actually hydrated again: an ordinary scan skips unchanged files, so the
+// repair queues a backfill scan of every root of the Library, and the pending
+// mark survives a failed enqueue so the next start queues it instead.
+func TestScopeRepairQueuesBackfillScan(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir(), store.Options{SeedDevelopmentData: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	root := t.TempDir()
+	lib, err := st.CreateLibraryWithRoots(ctx, "Shelf", false, testHydrationPluginID, "profile-default", []string{root}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: lib.ID, Path: root + "/one.flac", Title: "one", Container: "flac", Codec: "flac",
+		Class: store.MediaClassAudio, ContentFingerprint: "fp-one",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := identify.EntityIDForName(lib.ID, "album", "Greatest Hits")
+	if err := st.UpsertEntity(ctx, store.Entity{ID: legacy, LibraryID: lib.ID, Kind: "album", Title: "Greatest Hits"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: legacy, Name: "album-track", ToMediaID: media.ID, Cardinality: "one"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetMediaFields(ctx, media.ID, []store.MediaField{{Name: testHydrationMarkerField, Type: store.EntityFieldFlag, Flag: true}}); err != nil {
+		t.Fatal(err)
+	}
+	hydrators := map[string]scanpkg.MetadataHydrator{testHydrationPluginID: newTestAdapterWithMapper(st, scopedAlbumMapper{})}
+	mappers := map[string]HydrationMapper{testHydrationPluginID: scopedAlbumMapper{}}
+	scanJobs := func() []store.Job {
+		t.Helper()
+		jobs, err := st.ListJobs(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []store.Job
+		for _, job := range jobs {
+			if job.Kind == scanpkg.JobKind {
+				out = append(out, job)
+			}
+		}
+		return out
+	}
+
+	splitAmbiguousHydrationScopes(ctx, refusingEnqueueStore{st}, hydrators, mappers, slog.New(slog.DiscardHandler))
+	if got := scanJobs(); len(got) != 0 {
+		t.Fatalf("scan jobs after a refused enqueue = %+v, want none", got)
+	}
+	if pending, err := st.PendingEntityScopeBackfills(ctx); err != nil || len(pending) != 1 || pending[0] != lib.ID {
+		t.Fatalf("pending after a refused enqueue = %v, %v; want %s kept", pending, err, lib.ID)
+	}
+
+	splitAmbiguousHydrationScopes(ctx, st, hydrators, mappers, slog.New(slog.DiscardHandler))
+	got := scanJobs()
+	if len(got) != 1 || !strings.HasSuffix(got[0].DedupeKey, ":backfill") || !strings.Contains(got[0].DedupeKey, string(lib.ID)) {
+		t.Fatalf("scan jobs = %+v, want one backfill scan of %s", got, lib.ID)
+	}
+	if pending, err := st.PendingEntityScopeBackfills(ctx); err != nil || len(pending) != 0 {
+		t.Fatalf("pending after queueing = %v, %v; want none", pending, err)
 	}
 }

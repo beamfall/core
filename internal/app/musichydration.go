@@ -459,17 +459,24 @@ func (a *hydrationAdapter) entityID(ctx context.Context, libraryID store.Library
 	return unscoped, nil
 }
 
-// entityScopeSplitter is the store write behind the one-time scope repair.
+// entityScopeSplitter is the store write behind the one-time scope repair and
+// the backfill scans that re-hydrate what it reopened.
 type entityScopeSplitter interface {
 	SplitAmbiguousEntityScopes(ctx context.Context, pluginID, kind, relation, markerField string, now time.Time) (int, error)
+	PendingEntityScopeBackfills(ctx context.Context) ([]store.LibraryID, error)
+	ClearEntityScopeBackfill(ctx context.Context, libraryID store.LibraryID) error
+	LibraryRoots(ctx context.Context, libraryID store.LibraryID) ([]string, error)
+	EnqueueJob(ctx context.Context, job store.Job) (store.Job, error)
 }
 
 // splitAmbiguousHydrationScopes runs the one-time repair for every scoped kind
 // an active mapper declares: Entities written by title alone before the kind
 // was scoped are reopened so the next scan separates them (the store records
-// the run, so this is a single cheap insert on every later start). A failure
-// only delays the repair to the next start; an Attached node never authors
-// catalog rows and skips it.
+// the run, so this is a single cheap insert on every later start). An
+// ordinary scan never hydrates an unchanged file again, so a backfill scan is
+// then queued for every root of each Library the repair reopened Media in. A
+// failure only delays the repair or the queueing to the next start; an
+// Attached node never authors catalog rows and skips both.
 func splitAmbiguousHydrationScopes(ctx context.Context, st entityScopeSplitter, hydrators map[string]scanpkg.MetadataHydrator, mappers map[string]HydrationMapper, logger *slog.Logger) {
 	for pluginID := range hydrators {
 		mapper := mappers[pluginID]
@@ -488,6 +495,52 @@ func splitAmbiguousHydrationScopes(ctx context.Context, st entityScopeSplitter, 
 			}
 		}
 	}
+	queueEntityScopeBackfills(ctx, st, logger)
+}
+
+// queueEntityScopeBackfills queues a backfill scan of every root of each
+// Library a scope repair reopened Media in, then clears the Library's pending
+// mark. The mark is cleared only after its scans are queued, so a crash in
+// between queues them again on the next start (scan dedupe absorbs repeats).
+func queueEntityScopeBackfills(ctx context.Context, st entityScopeSplitter, logger *slog.Logger) {
+	libraries, err := st.PendingEntityScopeBackfills(ctx)
+	switch {
+	case errors.Is(err, serverrole.ErrAttachedAuthorityRefused):
+		return
+	case err != nil:
+		logger.Warn("entity scope backfill lookup failed; retrying next start", "error", err)
+		return
+	}
+	for _, libraryID := range libraries {
+		if err := queueLibraryBackfill(ctx, st, libraryID); err != nil {
+			logger.Warn("entity scope backfill scan not queued; retrying next start", "library", libraryID, "error", err)
+			continue
+		}
+		if err := st.ClearEntityScopeBackfill(ctx, libraryID); err != nil {
+			logger.Warn("entity scope backfill mark not cleared", "library", libraryID, "error", err)
+		}
+	}
+}
+
+func queueLibraryBackfill(ctx context.Context, st entityScopeSplitter, libraryID store.LibraryID) error {
+	roots, err := st.LibraryRoots(ctx, libraryID)
+	var invalid store.ValidationError
+	if errors.As(err, &invalid) {
+		return nil // the Library is gone: nothing left to hydrate
+	}
+	if err != nil {
+		return err
+	}
+	for _, root := range roots {
+		job, err := scanpkg.NewJob(scanpkg.JobRequest{LibraryID: libraryID, Root: root, CreatedAt: time.Now().UTC(), Backfill: true})
+		if err != nil {
+			return err
+		}
+		if _, err := st.EnqueueJob(ctx, job); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 var _ scanpkg.MetadataHydrator = (*hydrationAdapter)(nil)

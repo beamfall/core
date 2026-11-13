@@ -26,7 +26,9 @@ reproduces it before the fix.
   - A title-only Entity whose scope relation points at two or more Entities is a merge made by the
     old key, and one that records no scope at all (tracks with no album-artist tag) may be one.
     Once, at startup, Core reopens both: it clears their scope relation rows and the hydration
-    marker of their member Media. The next scan re-reads those files' tags: the first scope seen
+    marker of their member Media, and queues a backfill scan of every root of each affected
+    Library (an ordinary scan never re-hydrates an unchanged file; the queueing is recorded so a
+    crash before it retries on the next start). That scan re-reads those files' tags: the first scope seen
     adopts the old id, every other scope gets its own Entity, and each track moves with its album.
     An Entity that records exactly one scope is left alone. The repair is limited to Libraries of
     the plugin whose mapper declares the scope.
