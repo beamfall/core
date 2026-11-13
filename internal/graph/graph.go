@@ -4014,6 +4014,9 @@ func (h *Handler) entityQuery(ctx context.Context, scope auth.Scope, req request
 		return EntityDetailInfo{}, err
 	}
 	for _, group := range groups {
+		if err := h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), group.Items); err != nil {
+			return EntityDetailInfo{}, err
+		}
 		items := make([]SourceItem, len(group.Items))
 		for i, item := range group.Items {
 			items[i] = h.sourceItem(item, scope.Revealed)

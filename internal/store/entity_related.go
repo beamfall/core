@@ -22,14 +22,21 @@ type RelatedEntityGroup struct {
 // lowest sort order), the context Entity never does, and trashed Entities or
 // Entities in Libraries the filter hides are omitted. The context Entity must
 // itself be visible; a hidden one errors like a missing one, as
-// mediaForEntitySQL does.
+// mediaForEntitySQL does. The read runs on the Entity's catalog plane, so an
+// encrypted Library's relations come from its own database.
 func (s *Store) RelatedEntityGroups(ctx context.Context, entityID EntityID, filter LibraryFilter) ([]RelatedEntityGroup, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	if _, err := s.visibleEntitySQL(ctx, entityID, filter); err != nil {
+	// Relations live beside the Entity: the catalog, or an encrypted
+	// Library's own database (a sealed one errors here).
+	plane, err := s.catalogPlaneForEntityLocked(ctx, entityID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.visibleEntitySQLFrom(ctx, plane.reader, entityID, filter); err != nil {
 		return nil, err
 	}
 	libraries, err := loadLibraries(ctx, s.catalogR)
@@ -52,7 +59,7 @@ func (s *Store) RelatedEntityGroups(ctx context.Context, entityID EntityID, filt
 	args = append(args, entityID, entityID, entityID)
 	args = append(args, libArgs...)
 	// #nosec G202 -- the interpolated fragment is internally generated placeholders.
-	rows, err := s.catalogR.QueryContext(ctx, `
+	rows, err := plane.reader.QueryContext(ctx, `
 		WITH linked(id, sort_order) AS (
 			SELECT to_entity_id, sort_order FROM entity_relation
 			WHERE from_entity_id = ? AND to_entity_id IS NOT NULL

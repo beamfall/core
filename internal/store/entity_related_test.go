@@ -201,3 +201,31 @@ func TestRelatedEntityGroupsOrderBySortOrderThenTitle(t *testing.T) {
 		t.Fatalf("RelatedEntityGroups order = %v, want %v", got, want)
 	}
 }
+
+// TestRelatedEntityGroupsReadsTheEncryptedLibraryPlane pins that an encrypted
+// Library's related Entities are read from that Library's own database, where
+// its relations live, and that a sealed Library fails the read.
+func TestRelatedEntityGroupsReadsTheEncryptedLibraryPlane(t *testing.T) {
+	ctx := context.Background()
+	st, media := seededEncryptedMedia(t, "related-plane-target")
+	defer st.Close()
+	upsertRelatedEntity(t, st, "entity-plane-maker", media.LibraryID, "maker", "Maker")
+	upsertRelatedEntity(t, st, "entity-plane-box", media.LibraryID, "box", "Box")
+	relateEntities(t, st, EntityRelation{FromEntityID: "entity-plane-box", Name: "made-by", ToEntityID: "entity-plane-maker"})
+
+	server := LibraryFilter{Revealed: true, AllLibraries: true}
+	groups, err := st.RelatedEntityGroups(ctx, "entity-plane-maker", server)
+	if err != nil {
+		t.Fatalf("RelatedEntityGroups unsealed: %v", err)
+	}
+	if got := groupIDs(groups); !reflect.DeepEqual(got, map[string][]MediaID{"box": {"entity-plane-box"}}) {
+		t.Fatalf("encrypted RelatedEntityGroups = %v, want the box from the Library plane", got)
+	}
+
+	if err := st.SealEncryptedLibraryDB(ctx, media.LibraryID, copyEncryptedLibraryDBCipher{}); err != nil {
+		t.Fatalf("SealEncryptedLibraryDB: %v", err)
+	}
+	if _, err := st.RelatedEntityGroups(ctx, "entity-plane-maker", server); err == nil {
+		t.Fatal("sealed encrypted RelatedEntityGroups succeeded")
+	}
+}

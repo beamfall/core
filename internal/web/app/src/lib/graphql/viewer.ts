@@ -160,7 +160,7 @@ export async function fetchSourceItems(
 // --- Entity detail --------------------------------------------------------
 
 const ENTITY_QUERY =
-  "query Entity($id: String!) { entity(id: $id) { id kind title fields { name type value } relatedEntities { kind kindDisplayName items { id kind title summary artwork { poster } artworkSlots } } } }";
+  "query Entity($id: String!) { entity(id: $id) { id kind title fields { name type value } relatedEntities { kind kindDisplayName items { id kind title summary artwork { poster } artworkSlots engagement { positionSeconds durationSeconds completed totalCount remainingCount } } } } }";
 
 /** Entity — the detail header (declared fields, server-stringified) and its related Entities. */
 export async function fetchEntity(id: string, signal?: AbortSignal): Promise<EntityInfo | null> {
