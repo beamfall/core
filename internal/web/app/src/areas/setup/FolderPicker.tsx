@@ -1,5 +1,5 @@
 import { ChevronRight, Folder, X } from "lucide-react";
-import { Fragment } from "react";
+import { Fragment, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import type { FolderEntryInfo } from "@/lib/graphql/types";
 import { cn } from "@/lib/utils";
@@ -10,6 +10,10 @@ import { cn } from "@/lib/utils";
 // footer that commits the current folder. Data comes from the manager-gated
 // browseServerFolders query; this component is presentational and drives
 // navigation through the onOpenFolder callback.
+//
+// Keyboard: each folder that loads moves focus to its first subfolder (or to
+// "Use this folder" when it has none), so Enter walks down the tree; Escape
+// closes the picker and the host returns focus to its Browse button.
 
 interface Crumb {
   label: string;
@@ -51,9 +55,25 @@ export function FolderPicker({
 }: FolderPickerProps) {
   const crumbs = breadcrumbs(node.path);
   const folders = (node.children ?? []).filter((c) => c.kind === "folder");
+  const listRef = useRef<HTMLDivElement>(null);
+  const commitRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (busy) return;
+    const first = listRef.current?.querySelector<HTMLButtonElement>("button");
+    (first ?? commitRef.current)?.focus();
+  }, [node.path, busy]);
 
   return (
-    <div className="mt-2 overflow-hidden rounded-[10px] border border-white/10 bg-white/[0.03]">
+    <div
+      className="mt-2 overflow-hidden rounded-[10px] border border-white/10 bg-white/[0.03]"
+      onKeyDown={(e) => {
+        if (e.key !== "Escape") return;
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }}
+    >
       {/* Breadcrumb */}
       <div className="flex items-center gap-1 border-b border-white/10 py-1.5 pl-3 pr-1.5 text-dense text-muted-foreground">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-0.5">
@@ -94,13 +114,14 @@ export function FolderPicker({
       </div>
 
       {/* Directory list */}
-      <div className="max-h-56 overflow-y-auto py-1" aria-busy={busy}>
+      <div ref={listRef} className="max-h-56 overflow-y-auto py-1" aria-busy={busy}>
         {busy ? (
           <p className="m-0 px-3 py-2.5 text-dense text-muted-foreground">{labels.loading}</p>
         ) : folders.length === 0 ? (
           <p
+            role={error ? "alert" : undefined}
             className={cn(
-              "m-0 px-3 py-2.5 text-dense",
+              "m-0 px-3 py-2.5 text-dense leading-snug",
               error ? "text-(--state-danger)" : "text-muted-foreground",
             )}
           >
@@ -126,7 +147,9 @@ export function FolderPicker({
           ))
         )}
         {error && !busy && folders.length > 0 && (
-          <p className="m-0 px-3 py-2 text-dense text-(--state-danger)">{error}</p>
+          <p role="alert" className="m-0 px-3 py-2 text-dense leading-snug text-(--state-danger)">
+            {error}
+          </p>
         )}
       </div>
 
@@ -141,6 +164,7 @@ export function FolderPicker({
         <Button
           type="button"
           size="sm"
+          ref={commitRef}
           className="ml-auto shrink-0 rounded-[10px] px-4"
           onClick={onUse}
           disabled={busy}

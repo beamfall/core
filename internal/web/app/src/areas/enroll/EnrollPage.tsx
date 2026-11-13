@@ -13,6 +13,7 @@ import {
   AUTH_FIELD as FIELD,
   AUTH_FIELD_LABEL as FIELD_LABEL,
   FormFeedback,
+  normalizePairingCode,
 } from "./AuthShell";
 import { PairingCodeHelp } from "./PairingCodeHelp";
 
@@ -23,9 +24,10 @@ import { PairingCodeHelp } from "./PairingCodeHelp";
 // session spine re-bootstraps against the freshly-bound session.
 //
 // The pairing code is a CREDENTIAL: it is never logged and never echoed back
-// into the error message. The server returns 401 for an invalid/expired code;
-// every other failure is a generic "enrollment failed" — matching the vanilla
-// app, which is deliberately careful not to leak why a code was rejected.
+// into the error message. The server returns 401 for an invalid OR expired code
+// and deliberately does not say which, so the hint under the field covers both
+// (codes work once, expire after 10 minutes, ask for a new one). 429 is the
+// attempt throttle and 403 a plain-HTTP request from outside the LAN.
 //
 // The code is consumed the moment the server accepts it, so the success is
 // committed (status line + redirect) as soon as enroll() resolves; the
@@ -43,9 +45,12 @@ export function EnrollPage() {
   const codeHintID = useId();
   const deviceNameHintID = useId();
   const errorRef = useRef<HTMLParagraphElement>(null);
+  const codeRef = useRef<HTMLInputElement>(null);
   const [code, setCode] = useState("");
   const [deviceName, setDeviceName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // True after the server refused the code: the hint then says why codes fail.
+  const [rejected, setRejected] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // The owner's sign-in security choice (CORE-1110). Strict turns off
@@ -66,13 +71,17 @@ export function EnrollPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (busy) return;
+    if (!code) {
+      showError(t("pairingCodeRequired"));
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      // Trim the code (a pasted code often carries whitespace); fall back to
-      // the localized "Web Browser" device name when the operator leaves it
-      // blank, exactly as the vanilla enroll form does.
-      const rebind = await enroll(code.trim(), deviceName.trim() || t("webBrowser"));
+      // The code is already normalized as typed; fall back to the localized
+      // "Web Browser" device name when the operator leaves it blank, exactly
+      // as the vanilla enroll form does.
+      const rebind = await enroll(code, deviceName.trim() || t("webBrowser"));
       // Success: reload to BASE_URL so SessionProvider re-bootstraps the
       // now-enrolled session (the vanilla app calls init(); the React app
       // re-runs the whole spine from a fresh load). A failed rebind is its own
@@ -80,21 +89,22 @@ export function EnrollPage() {
       setStatus(rebind === "bound" ? t("enrollConnected") : t("enrollHandshakeIncomplete"));
       window.location.assign(import.meta.env.BASE_URL);
     } catch (err) {
-      // 401 = invalid/expired pairing code; anything else is a generic
-      // failure. A thrown non-ApiError (network down) is "could not reach".
-      const message =
-        err instanceof ApiError
-          ? err.status === 401
-            ? t("pairingCodeInvalid")
-            : t("enrollmentFailed")
-          : t("couldNotReachServer");
-      setError(message);
+      setRejected(err instanceof ApiError && err.status === 401);
       setBusy(false);
-      // Move focus to the error so assistive tech announces the failure.
-      requestAnimationFrame(() => errorRef.current?.focus());
+      showError(pairingCodeErrorMessage(err, t, "enrollRetry"));
     }
     // No finally{setBusy(false)}: on success the page is navigating away, so
     // the form must stay disabled until the reload lands.
+  }
+
+  // The alert announces the problem; focus returns to the code, selected, so
+  // the fix is to type or paste a new one straight away.
+  function showError(message: string) {
+    setError(message);
+    requestAnimationFrame(() => {
+      codeRef.current?.focus();
+      codeRef.current?.select();
+    });
   }
 
   return (
@@ -107,11 +117,15 @@ export function EnrollPage() {
           </Label>
           <Input
             id={codeID}
+            ref={codeRef}
             value={code}
-            onChange={(e) => setCode(e.target.value)}
+            onChange={(e) => {
+              setCode(normalizePairingCode(e.target.value));
+              setError(null);
+              setRejected(false);
+            }}
             className={cn(FIELD, "text-center font-mono text-xl tracking-[0.3em]")}
-            // The pairing code is a credential: no autofill, no spellcheck,
-            // no autocapitalize that would mangle a case-sensitive code.
+            // The pairing code is a credential: no autofill, no spellcheck.
             autoComplete="off"
             autoCapitalize="off"
             autoCorrect="off"
@@ -122,7 +136,7 @@ export function EnrollPage() {
             aria-describedby={error ? `${codeHintID} ${errorID}` : codeHintID}
           />
           <p id={codeHintID} className="mb-0 mt-2 text-dense text-muted-foreground">
-            {t("signInCodeHint")}
+            {t(rejected ? "pairingCodeRejectedHint" : "signInCodeHint")}
           </p>
         </div>
         <div>
@@ -196,7 +210,7 @@ function AdminSignInForm({ deviceName }: { deviceName: string }) {
   // attempt keeps it open because the open state lives on the element.
   return (
     <details className="group mt-5">
-      <summary className="-mx-1 flex cursor-pointer list-none items-center gap-1.5 rounded-md px-1 py-1 text-sm font-medium text-foreground/90 transition-colors duration-150 hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
+      <summary className="-mx-1 flex cursor-pointer list-none items-center gap-1.5 rounded-md px-1 py-1 text-sm font-medium text-foreground/90 transition-colors duration-150 hover:text-foreground [&::-webkit-details-marker]:hidden">
         <ChevronRight
           aria-hidden
           className="size-4 text-muted-foreground transition-transform duration-150 group-open:rotate-90"
@@ -233,6 +247,20 @@ function AdminSignInForm({ deviceName }: { deviceName: string }) {
       </form>
     </details>
   );
+}
+
+// Shared by enroll and promote. The server never says whether a refused code
+// was wrong or expired, so neither does the message; the hint covers both.
+export function pairingCodeErrorMessage(
+  err: unknown,
+  t: ReturnType<typeof useT>,
+  fallback: "enrollRetry" | "promoteRetry",
+): string {
+  if (!(err instanceof ApiError)) return t("pairingCodeOffline");
+  if (err.status === 401) return t("pairingCodeInvalid");
+  if (err.status === 429) return t("tooManyAttempts");
+  if (err.status === 403) return t("adminSignInNeedsSecure");
+  return t(fallback);
 }
 
 function adminSignInErrorMessage(err: unknown, t: ReturnType<typeof useT>): string {

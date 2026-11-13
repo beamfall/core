@@ -8,6 +8,13 @@ import { useT } from "@/lib/i18n";
 export const AUTH_FIELD = "h-11 rounded-[10px] border-white/10 bg-white/[0.04] text-[15px]";
 export const AUTH_FIELD_LABEL = "mb-2 block text-dense font-medium text-foreground/80";
 
+// Pairing codes are case-insensitive and the server ignores spaces and dashes,
+// so typed or pasted input is uppercased and stripped of whitespace as it
+// arrives ("abcd efgh" → "ABCDEFGH"); dashes stay visible, as the Console shows them.
+export function normalizePairingCode(value: string): string {
+  return value.toUpperCase().replace(/\s+/g, "");
+}
+
 // The brand wordmark asset the app header uses (chrome.css .bf-wordmark), so
 // the sign-in and setup pages carry the same mark instead of typed text.
 export function Wordmark({ label }: { label: string }) {
@@ -49,7 +56,8 @@ export function AuthHeading({ title, lead }: { title: string; lead: string }) {
   );
 }
 
-// The status line and the focusable error alert under each form.
+// The status line and the focusable error alert under each form. The error is
+// inline danger text on the card surface, not a tinted box inside the card.
 export function FormFeedback({
   status,
   error,
@@ -64,7 +72,7 @@ export function FormFeedback({
   return (
     <>
       {status && (
-        <p role="status" className="m-0 text-center text-sm text-muted-foreground">
+        <p role="status" className="text-center text-sm text-muted-foreground">
           {status}
         </p>
       )}
@@ -74,7 +82,7 @@ export function FormFeedback({
           id={errorID}
           role="alert"
           tabIndex={-1}
-          className="m-0 flex items-start gap-2 rounded-[10px] border border-(--state-danger)/30 bg-(--state-danger)/10 px-3.5 py-2.5 text-sm text-(--state-danger) outline-none"
+          className="flex items-start gap-2 text-sm leading-snug text-(--state-danger) outline-none"
         >
           <AlertCircle aria-hidden className="mt-0.5 size-4 shrink-0" />
           {error}

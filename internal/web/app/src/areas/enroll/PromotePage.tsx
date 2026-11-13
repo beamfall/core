@@ -13,7 +13,9 @@ import {
   AUTH_FIELD as FIELD,
   AUTH_FIELD_LABEL as FIELD_LABEL,
   FormFeedback,
+  normalizePairingCode,
 } from "./AuthShell";
+import { pairingCodeErrorMessage } from "./EnrollPage";
 
 // Browser→MANAGER promotion (ADR-0007 §3): redeem a MANAGER pairing code for
 // this already-enrolled device. Cookies are untouched — the Device Role changes
@@ -26,14 +28,16 @@ import {
 // (see AdminSessionGate), not used here. The pairing code is a CREDENTIAL: never
 // logged, never echoed back into the error message. The server distinguishes
 // 401 (invalid/expired) from 403 (a valid VIEWER code that does not grant
-// MANAGER); every other failure is a generic "promotion failed".
+// MANAGER); the hint under the field says where manager codes are minted.
 export function PromotePage() {
   const t = useT();
   const navigate = useNavigate();
   const { promote } = useSession();
   const codeID = useId();
   const errorID = useId();
+  const hintID = useId();
   const errorRef = useRef<HTMLParagraphElement>(null);
+  const codeRef = useRef<HTMLInputElement>(null);
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -41,25 +45,33 @@ export function PromotePage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (busy) return;
+    if (!code) {
+      showError(t("pairingCodeRequired"));
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      await promote(code.trim());
+      await promote(code);
       navigate("/", { replace: true });
     } catch (err) {
-      const message =
-        err instanceof ApiError
-          ? err.status === 401
-            ? t("pairingCodeInvalid")
-            : err.status === 403
-              ? t("pairingCodeManagerOnly")
-              : t("promotionFailed")
-          : t("couldNotReachServer");
-      setError(message);
       setBusy(false);
-      requestAnimationFrame(() => errorRef.current?.focus());
+      showError(
+        err instanceof ApiError && err.status === 403
+          ? t("promoteNeedsManagerCode")
+          : pairingCodeErrorMessage(err, t, "promoteRetry"),
+      );
     }
     // On success we navigate away; keep the form disabled until then.
+  }
+
+  // The alert announces the problem; focus returns to the code, selected.
+  function showError(message: string) {
+    setError(message);
+    requestAnimationFrame(() => {
+      codeRef.current?.focus();
+      codeRef.current?.select();
+    });
   }
 
   return (
@@ -72,9 +84,13 @@ export function PromotePage() {
           </Label>
           <Input
             id={codeID}
+            ref={codeRef}
             className={cn(FIELD, "text-center font-mono text-xl tracking-[0.3em]")}
             value={code}
-            onChange={(e) => setCode(e.target.value)}
+            onChange={(e) => {
+              setCode(normalizePairingCode(e.target.value));
+              setError(null);
+            }}
             autoComplete="off"
             autoCapitalize="off"
             autoCorrect="off"
@@ -82,8 +98,15 @@ export function PromotePage() {
             autoFocus
             required
             aria-invalid={error != null}
-            aria-describedby={error ? errorID : undefined}
+            aria-describedby={error ? `${hintID} ${errorID}` : hintID}
           />
+          <p id={hintID} className="mb-0 mt-2 text-dense text-muted-foreground">
+            {t("promoteCodeHint", {
+              page: t("consoleAccessGroup"),
+              action: t("deviceAddHeading"),
+              kind: t("deviceMintManager"),
+            })}
+          </p>
         </div>
         <FormFeedback error={error} errorID={errorID} errorRef={errorRef} />
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

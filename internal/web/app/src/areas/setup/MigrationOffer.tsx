@@ -26,9 +26,15 @@ const IMPORTER_PATH = "console/migrate";
 
 export function MigrationOffer({
   onSkip,
+  embedded = false,
 }: {
-  /** Finish setup without migrating (Seam A skip — stays findable in Seam B). */
-  onSkip: () => void;
+  /**
+   * Finish setup without migrating (Seam A skip — stays findable in Seam B).
+   * Omit it when the host already has a primary action that finishes setup.
+   */
+  onSkip?: () => void;
+  /** Rendered inside another step: an h2 under that step's h1, set off by a rule. */
+  embedded?: boolean;
 }) {
   const { t, locale } = useI18n();
   const [importers, setImporters] = useState<ImporterInfo[] | null>(null);
@@ -60,15 +66,20 @@ export function MigrationOffer({
   }
 
   const loading = importers === null && !failed;
+  const Heading = embedded ? "h2" : "h1";
 
   return (
-    <section>
-      <h1 className="m-0 text-xl font-semibold">{t("setupMigrateTitle")}</h1>
-      <p className="mb-4 mt-0.5 text-dense text-muted-foreground">{t("setupMigrateLead")}</p>
+    <section className={embedded ? "mt-6 border-t border-white/10 pt-5" : undefined}>
+      <Heading className={embedded ? "m-0 text-[15px] font-semibold" : "m-0 text-xl font-semibold"}>
+        {t("setupMigrateTitle")}
+      </Heading>
+      <p className="mb-3 mt-1 text-dense leading-snug text-muted-foreground">
+        {t("setupMigrateLead")}
+      </p>
 
       {/* Additive-only trust copy (funnel §3.3) — communicates the ADR-0037
           data-layer guarantees so a mid-evaluation refugee believes them. */}
-      <ul className="m-0 mb-4 flex list-none flex-col gap-1.5 rounded-lg border bg-muted/25 p-3 text-xs leading-snug text-muted-foreground">
+      <ul className="m-0 mb-4 flex list-disc flex-col gap-1 pl-5 text-dense leading-snug text-muted-foreground marker:text-muted-foreground/60">
         <li>{t("setupMigrateTrustAdditive")}</li>
         <li>{t("setupMigrateTrustScope")}</li>
         <li>{t("setupMigrateTrustNoConnection")}</li>
@@ -77,7 +88,7 @@ export function MigrationOffer({
       </ul>
 
       {loading ? (
-        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-10 w-full" />
       ) : failed ? (
         // The offer still renders; only the source list is unavailable, so the
         // operator can still skip or open the importer.
@@ -91,15 +102,12 @@ export function MigrationOffer({
         </div>
       ) : importers && importers.length > 0 ? (
         <div>
-          <p className="mb-1.5 text-xs text-muted-foreground">{t("setupMigrateSourcesLabel")}</p>
-          <ul className="m-0 flex list-none flex-col gap-2 p-0">
+          <p className="m-0 mb-1 text-dense font-medium text-foreground/80">
+            {t("setupMigrateSourcesLabel")}
+          </p>
+          <ul className="m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0 text-sm">
             {importers.map((imp) => (
-              <li
-                key={`${imp.pluginID}:${imp.id}`}
-                className="rounded-lg border px-3 py-2.5 text-dense"
-              >
-                {displayString(imp.displayName, locale)}
-              </li>
+              <li key={`${imp.pluginID}:${imp.id}`}>{displayString(imp.displayName, locale)}</li>
             ))}
           </ul>
         </div>
@@ -107,16 +115,20 @@ export function MigrationOffer({
         <p className="text-dense text-muted-foreground">{t("setupMigrateNoSources")}</p>
       )}
 
-      <div className="mt-[18px] flex items-center gap-2">
-        <Button type="button" variant="outline" onClick={onSkip}>
-          {t("setupMigrateSkip")}
-        </Button>
-        {(failed || (importers && importers.length > 0)) && (
-          <Button type="button" onClick={goToImporter}>
-            {t("setupMigrateContinue")}
-          </Button>
-        )}
-      </div>
+      {(onSkip || failed || (importers && importers.length > 0)) && (
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          {onSkip && (
+            <Button type="button" variant="outline" onClick={onSkip}>
+              {t("setupMigrateSkip")}
+            </Button>
+          )}
+          {(failed || (importers && importers.length > 0)) && (
+            <Button type="button" variant={onSkip ? "default" : "outline"} onClick={goToImporter}>
+              {t("setupMigrateContinue")}
+            </Button>
+          )}
+        </div>
+      )}
     </section>
   );
 }

@@ -15,13 +15,19 @@ export const setupStrings = {
     setupTokenLead:
       "Paste the one-time code from the server log. It proves you can reach the server before anyone sets an admin password.",
     setupToken: "Setup token",
-    setupTokenInvalid: "Setup token invalid or already used.",
+    setupTokenRequired: "Paste the setup token from the server log to continue.",
+    setupTokenInvalid:
+      "That setup token didn't work. It may be mistyped or already used; restarting the server prints a new one in its log.",
+    setupTokenAgain:
+      "The setup token is cleared after each attempt. Paste it again to finish claiming the server.",
+    setupNeedsSecure:
+      "Setup needs HTTPS or this server's local network. Open the setup link from a device on the same network.",
     setupAdminPasswordTitle: "Set the admin password",
     setupAdminPasswordLead:
       "It unlocks the Console and owner-only tools. Use something strong and keep it in a password manager.",
     setupAdminPassword: "Admin password",
     setupAdminPasswordConfirm: "Confirm password",
-    setupAdminPasswordMismatch: "The passwords do not match.",
+    setupAdminPasswordMismatch: "The passwords don't match. Type the same password in both fields.",
     setupAdminPasswordRequired: "Enter an admin password.",
     setupSecurityTitle: "Choose how the owner signs in",
     setupSecurityLead: "You can change this later in the Console.",
@@ -37,12 +43,20 @@ export const setupStrings = {
     setupLibraryType: "Library type",
     setupLibraryName: "Library name",
     setupLibraryRoot: "Root folder",
-    setupLibraryRootRequired: "Enter a root folder path.",
+    setupLibraryRootRequired: "Type the folder's path on the server, or choose it with Browse.",
+    setupLibraryCreateFailed:
+      "The server couldn't set up that folder: {reason}. Check the path exists and the server can read it.",
+    setupLibraryScanFailed:
+      "The Library is created, but its first scan didn't start: {reason}. Continue to try the scan again.",
     setupLibraryBrowse: "Browse…",
     setupLibraryPickerUse: "Use this folder",
     setupLibraryPickerLoading: "Loading folders…",
-    setupLibraryPickerEmpty: "No subfolders here.",
-    setupLibraryPickerError: "Couldn't read that folder.",
+    setupLibraryPickerEmpty:
+      "No subfolders here. Use this folder if your media files sit directly inside it.",
+    setupLibraryPickerError:
+      "Couldn't read that folder. The server may not have permission to open it; pick another folder.",
+    setupLibraryPickerSeedError:
+      "Couldn't open {path} on the server, so the picker starts at the top of its filesystem.",
     setupLibraryPickerClose: "Close folder picker",
     setupTypeFilms: "Films",
     setupTypeTVShows: "TV Shows",
@@ -73,12 +87,19 @@ export const setupStrings = {
     setupFinish: "Finish setup",
     setupBrowseReady: "Browse what's ready",
     setupWorking: "Working…",
-    setupFailed: "Something went wrong. Please try again.",
+    setupFailed:
+      "The server couldn't finish this step. Check the server log for the cause, then try again.",
+    setupOffline:
+      "Can't reach the server. Check that it's running and you're on its network, then try again.",
     setupScanTitle: "Your library is filling up",
     setupScanLead:
       "Beamfall is scanning your first Library. Browse as soon as items appear; the scan keeps going in the background.",
     setupScanStatus: "Scan status: {status}",
     setupScanWaiting: "Waiting for progress…",
+    setupScanConnectionLost:
+      "Lost contact with the server. Retrying; the scan keeps running on the server.",
+    setupScanStopped:
+      "The scan stopped before it finished. Browse what's ready, then scan this Library again from Console › Libraries.",
     // Seam A — inline migration offer, the final setup step (ADR-0080 /
     // onboarding-funnel §3). Source labels come from the active plugins, never
     // hardcoded here.
