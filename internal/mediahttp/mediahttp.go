@@ -1027,6 +1027,13 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "stream ended", http.StatusGone)
 			return
 		}
+		// A segment past where a truncated source really ends does not exist
+		// and never will; 503 would have the player retry it forever. The
+		// session logged the source end once, so this is not logged again.
+		if errors.Is(err, playback.ErrNotFound) {
+			http.Error(w, "segment does not exist", http.StatusNotFound)
+			return
+		}
 		slog.Error("hls serve failed", "error", err.Error())
 		http.Error(w, "stream unavailable", http.StatusServiceUnavailable)
 		return
