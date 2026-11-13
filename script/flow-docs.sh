@@ -13,6 +13,9 @@
 # input), then the application map
 # is rebuilt at HEAD and compared with map.json ignoring only its revision and
 # digest. Neither mode is wired into `make gate`.
+#
+# Needs a Corvint build whose flow generator is version 5 or later (V1-5491).
+# CORVINT_DOCS and CORVINT override the corvint-docs and corvint executables.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -21,8 +24,12 @@ cd "$ROOT"
 DIR=docs/web/flows
 SCOPE=internal/web/app
 mode="${1:-}"
+CORVINT_DOCS="${CORVINT_DOCS:-corvint-docs}"
+CORVINT="${CORVINT:-corvint}"
 
-command -v corvint >/dev/null || { echo "flow-docs: corvint is not on PATH" >&2; exit 2; }
+for tool in "$CORVINT_DOCS" "$CORVINT"; do
+  command -v "$tool" >/dev/null || { echo "flow-docs: $tool is not on PATH" >&2; exit 2; }
+done
 if ! git diff --quiet HEAD -- "$DIR/inventory.json" "$DIR/appmap.json"; then
   echo "flow-docs: commit $DIR/inventory.json and $DIR/appmap.json first (Corvint reads them from Git at HEAD)" >&2
   exit 2
@@ -34,14 +41,14 @@ tmp="$(cd "$(mktemp -d)" && pwd -P)"
 trap 'rm -rf "$tmp"' EXIT INT TERM
 
 build_map() {
-  corvint flows appmap build --manifest "$DIR/appmap.json" --revision "$rev" --no-workspace
+  "$CORVINT" flows appmap build --manifest "$DIR/appmap.json" --revision "$rev" --no-workspace
 }
 
 case "$mode" in
   generate)
     # The output directory holds the pages, provider.json and generation.json;
     # check compares against that whole directory, so it is kept as written.
-    corvint docs flows generate --revision "$rev" --scope "$SCOPE" \
+    "$CORVINT_DOCS" docs flows generate --revision "$rev" --scope "$SCOPE" \
       --flows "$DIR/inventory.json" --output-dir "$tmp/out" >/dev/null
     build_map >"$tmp/map.json"
     rm -rf "$DIR/generated"
@@ -66,7 +73,7 @@ PY
     ;;
   check)
     status=0
-    corvint docs flows check --revision "$rev" --previous "$DIR/generated/generation.json" \
+    "$CORVINT_DOCS" docs flows check --revision "$rev" --previous "$DIR/generated/generation.json" \
       --output-dir "$DIR/generated" >"$tmp/check.json" || status=$?
     if [ "$status" -ne 0 ]; then
       echo "flow-docs-check: docs flows check exited $status (1 = drift, 2 = invalid)" >&2
