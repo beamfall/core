@@ -45,9 +45,19 @@ package store
 //   - 0111 adds Circle membership, owner-created shadow-principal mappings,
 //     disposable session cache, and durable revoke-notice obligations
 //     .
+//   - 0112 adds device_build_binding, the exact device-to-native-build
+//     mapping ADR-0063 provenance requires (COMPAT-ENROLLMENT-BUILD-MAPPING-1).
+//     It is read once per native compatibility handshake by primary key and
+//     written once at enrollment, off every entity-query path.
 //
 // `make bench` passed on 2026-08-11 for the 0108 bump; the worst measured
 // query was search/fts/revealed at 30.875084 ms against a 60 ms budget (P95
 // across the full bench suite). The original transcript was lost before landing;
 // these are the numbers reported at landing time.
-const schemaFreezeCatalogMigrations = 107
+//
+// The latency bench (`make bench`'s TestEntityQueryLatencyBudget) passed on
+// 2026-11-13 for the 0112 bump; the worst measured query was search/fts/revealed
+// at 27.728167 ms against a 60 ms budget. The host load average was 60-90 and
+// single queries crossed their budgets on both this tree and its base d658ad5b
+// in other runs, so the bench was compared base against head back to back.
+const schemaFreezeCatalogMigrations = 108

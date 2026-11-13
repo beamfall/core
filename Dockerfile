@@ -23,8 +23,12 @@ COPY --from=web /src/internal/web/app-dist ./internal/web/app-dist
 
 ARG TARGETOS
 ARG TARGETARCH
+# First-party native build catalog (ADR-0063): the value printed by
+# `beamfall release build-catalog --manifest FILE`. Empty refuses every native
+# client as an unknown build; only the embedded web UI is known.
+ARG BEAMFALL_FIRST_PARTY_BUILDS=""
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-	go build -trimpath -ldflags="-s -w" -o /out/beamfall ./cmd/beamfall
+	go build -trimpath -ldflags="-s -w -X github.com/beamfall/core/internal/capabilities.FirstPartyBuildManifest=${BEAMFALL_FIRST_PARTY_BUILDS}" -o /out/beamfall ./cmd/beamfall
 
 FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8 AS runtime
 

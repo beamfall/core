@@ -395,22 +395,36 @@ export function usePlayer(
     }
   }, []);
 
+  // The last position whose frame was presented. While a seek is pending,
+  // video.currentTime is the seek target, which a stalled stream may never
+  // present, so progress reports this instead and is never ahead of what the
+  // viewer saw (CORE-0044). Null until a frame is presented in this load.
+  const presentedPositionRef = useRef<number | null>(null);
+  const notePresentedPosition = useCallback((video: HTMLVideoElement) => {
+    if (!video.seeking && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+      presentedPositionRef.current = video.currentTime;
+    }
+  }, []);
+
   const reportProgress = useCallback(
     (finished: boolean) => {
       const video = videoRef.current;
       if (!video || !mediaID || !video.duration) return;
+      notePresentedPosition(video);
+      const position = presentedPositionRef.current;
+      if (position === null) return;
       const eventTimeMS = nextPlaybackEventTimeMS();
       const queue = progressQueueRef.current;
       if (!queue) return;
       enqueueProgress(queue, {
         mediaID,
-        positionSeconds: Math.floor(video.currentTime),
+        positionSeconds: Math.floor(position),
         durationSeconds: Math.floor(video.duration),
         finished,
         eventTimeMS,
       });
     },
-    [mediaID],
+    [mediaID, notePresentedPosition],
   );
 
   const stopProgressReporting = useCallback(
@@ -454,6 +468,7 @@ export function usePlayer(
     const retryFrom = retryFromRef.current?.mediaID === mediaID ? retryFromRef.current.position : 0;
     retryFromRef.current = null;
     lastPositionRef.current = retryFrom;
+    presentedPositionRef.current = null;
     // Listeners bound to the <video> for the whole load (not one engine).
     const videoListeners: Array<[string, () => void]> = [];
 
@@ -1109,13 +1124,16 @@ export function usePlayer(
     const onPause = () => reportProgress(false);
     const onSeeked = () => reportProgress(false);
     const onEnded = () => stopProgressReporting(true);
+    const onTimeUpdate = () => notePresentedPosition(video);
     video.addEventListener("pause", onPause);
     video.addEventListener("seeked", onSeeked);
     video.addEventListener("ended", onEnded);
+    video.addEventListener("timeupdate", onTimeUpdate);
     return () => {
       video.removeEventListener("pause", onPause);
       video.removeEventListener("seeked", onSeeked);
       video.removeEventListener("ended", onEnded);
+      video.removeEventListener("timeupdate", onTimeUpdate);
     };
   }, [reportProgress, stopProgressReporting]);
 
