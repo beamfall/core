@@ -81,7 +81,6 @@ export const managedFileStrings = {
     loading: "Loading...",
     enterFolderToScan: "Enter a folder to scan.",
     jobsUnavailable: "Jobs are unavailable right now.",
-    jobsProgressLabel: "Progress",
     schedulesUnavailable: "Schedules are unavailable right now.",
     couldNotUpdateSchedule: "Could not update the schedule.",
     couldNotUpdateRoots: "Could not update the library roots.",

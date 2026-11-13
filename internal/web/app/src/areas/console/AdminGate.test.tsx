@@ -218,8 +218,15 @@ describe("AdminGate reason-coded locks", () => {
     const user = userEvent.setup();
     render(
       <I18nProvider>
-        <AdminGate sessionBar={(lock) => <button onClick={lock}>Lock now</button>}>
-          <div>UNLOCKED CONTENT</div>
+        <AdminGate>
+          {(lock) => (
+            <>
+              <button type="button" onClick={lock}>
+                Lock now
+              </button>
+              <div>UNLOCKED CONTENT</div>
+            </>
+          )}
         </AdminGate>
       </I18nProvider>,
     );

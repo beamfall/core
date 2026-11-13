@@ -205,6 +205,30 @@ describe("Console IA conformance", () => {
     expect(within(nav).getByText("Maintain").closest("details")).toHaveAttribute("open");
   });
 
+  it("keeps the unlocked status and Lock action outside the folding phone menu", async () => {
+    renderConsole("/console");
+
+    await screen.findByRole("heading", { name: "Common tasks" });
+    const nav = screen.getByRole("navigation", { name: "Console" });
+    const lock = within(nav).getByRole("button", { name: "Lock Console" });
+    expect(lock.closest(".console-session-bar")).not.toBeNull();
+    expect(lock.closest(".section-menu-body")).toBeNull();
+  });
+
+  it("reopens Maintain when navigating into it after a manual collapse", async () => {
+    const user = userEvent.setup();
+    renderConsole("/console/backups");
+
+    const nav = screen.getByRole("navigation", { name: "Console" });
+    const maintain = within(nav).getByText("Maintain");
+    expect(maintain.closest("details")).toHaveAttribute("open");
+    await user.click(maintain);
+    expect(maintain.closest("details")).not.toHaveAttribute("open");
+
+    await user.click(within(nav).getByRole("link", { name: "Retention rules" }));
+    expect(maintain.closest("details")).toHaveAttribute("open");
+  });
+
   it("gives sessions, updates and migration one destination each", async () => {
     const { unmount } = renderConsole("/console/sessions");
     expect(await screen.findByText("live-sessions-panel")).toBeVisible();

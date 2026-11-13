@@ -1485,7 +1485,9 @@
 .bf-transport-bottom {
   display: grid;
   gap: 4px;
-  padding: 0 clamp(16px, 3vw, 40px) clamp(10px, 2vw, 22px);
+  /* Whole-pixel insets: a fractional vw offset rasterized the controls row
+   * two ways over the video layer (CORE-1376). */
+  padding: 0 round(clamp(16px, 3vw, 40px), 1px) round(clamp(10px, 2vw, 22px), 1px);
 }
 
 .bf-route-summary {
@@ -2045,7 +2047,8 @@
   pointer-events: none;
 }
 
-/* Play/pause is the one lit control: a beam disc with a soft glow. */
+/* Play/pause is the one lit control: a flat beam disc. No blurred glow: its
+ * antialiased edge rasterized two ways at fractional offsets (CORE-1376). */
 .bf-transport .bf-control.is-primary {
   width: 52px;
   min-width: 52px;
@@ -2058,9 +2061,7 @@
 .bf-transport .bf-control.is-primary:focus-visible::before {
   inset: 2px;
   background: var(--beam-500);
-  box-shadow:
-    inset 0 1px 0 oklch(100% 0 0 / 45%),
-    0 8px 28px -8px color-mix(in oklab, var(--beam-500) 85%, transparent);
+  box-shadow: none;
   scale: 1;
 }
 
@@ -2082,7 +2083,7 @@
 /* Skip intro / credits floats above the controls as a glass pill. */
 .bf-transport .bf-control.is-skip-segment {
   align-self: flex-end;
-  margin: 0 clamp(16px, 3vw, 40px) 10px;
+  margin: 0 round(clamp(16px, 3vw, 40px), 1px) 10px;
   padding: 0 14px 0 18px;
 }
 

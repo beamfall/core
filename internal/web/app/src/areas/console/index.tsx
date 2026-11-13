@@ -20,7 +20,7 @@ import {
   Stethoscope,
   Users,
 } from "lucide-react";
-import { type ComponentType, type ReactElement, useEffect } from "react";
+import { type ComponentType, type ReactElement, type ReactNode, useEffect, useState } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router";
 import { EmptyState, StatusChip } from "@/components/beamfall/workbench";
 import { AppShell } from "@/components/chrome/AppShell";
@@ -380,6 +380,37 @@ function SessionBar({ onLock }: { onLock: () => void }) {
   );
 }
 
+// A collapsible rail group the operator may fold by hand. Arriving at one of its
+// destinations opens it again, so a route change never lands on a hidden page.
+function NavDisclosure({
+  label,
+  pathname,
+  holdsCurrent,
+  children,
+}: {
+  label: string;
+  pathname: string;
+  holdsCurrent: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(holdsCurrent);
+  const [seenPath, setSeenPath] = useState(pathname);
+  if (seenPath !== pathname) {
+    setSeenPath(pathname);
+    if (holdsCurrent && !open) setOpen(true);
+  }
+  return (
+    <details
+      className="console-nav-group"
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary className="console-nav-group-label">{label}</summary>
+      {children}
+    </details>
+  );
+}
+
 function ConsoleNav({ groups }: { groups: NavGroup[] }) {
   const t = useT();
   const { pathname } = useLocation();
@@ -407,10 +438,14 @@ function ConsoleNav({ groups }: { groups: NavGroup[] }) {
             pathname.startsWith(`/console/${item.path}`),
           );
           return (
-            <details className="console-nav-group" key={group.label + gi} open={holdsCurrent}>
-              <summary className="console-nav-group-label">{t(group.label)}</summary>
+            <NavDisclosure
+              key={group.label + gi}
+              label={t(group.label)}
+              pathname={pathname}
+              holdsCurrent={holdsCurrent}
+            >
               {links}
-            </details>
+            </NavDisclosure>
           );
         }
         return (
@@ -475,9 +510,9 @@ export function ConsoleArea() {
                 label={t("consoleHeading")}
                 className="console-rail"
                 current={t(routeTitle ?? "consoleHeading")}
+                footer={<SessionBar onLock={lock} />}
               >
                 <ConsoleNav groups={groups} />
-                <SessionBar onLock={lock} />
               </SectionMenu>
               <div className="console-content">
                 <Routes>

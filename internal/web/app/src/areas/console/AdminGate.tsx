@@ -41,7 +41,6 @@ export interface AdminGateCopy {
 
 export function AdminGate({
   children,
-  sessionBar,
   copy,
 }: {
   /** The unlocked surface; a function receives the lock action so the area
@@ -49,8 +48,6 @@ export function AdminGate({
   children: ReactNode | ((lock: () => void) => ReactNode);
   /** Replaces the Console wording; the unlock flow itself is unchanged. */
   copy?: AdminGateCopy;
-  /** Slot for the active-session bar, rendered by the area shell when active. */
-  sessionBar?: (lock: () => void) => ReactNode;
 }) {
   const t = useT();
   const { session } = useSession();
@@ -214,12 +211,7 @@ export function AdminGate({
     );
   }
 
-  return (
-    <>
-      {sessionBar?.(lock)}
-      {typeof children === "function" ? children(lock) : children}
-    </>
-  );
+  return <>{typeof children === "function" ? children(lock) : children}</>;
 }
 
 // The reason-coded locked surface. A managed Profile sees the not-adult reason

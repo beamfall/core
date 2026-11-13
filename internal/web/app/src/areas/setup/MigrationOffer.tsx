@@ -21,7 +21,7 @@ import { useI18n } from "@/lib/i18n";
 // acquisition-adjacent surface is allowed here; framing stays generic ("bring
 // your library") and source names are whatever the plugin declares.
 
-// The importer surface this seam deep-links to (console RemoteAccess section).
+// The importer surface this seam deep-links to (the standalone Console Maintain › Migration route).
 const IMPORTER_PATH = "console/migrate";
 
 export function MigrationOffer({
