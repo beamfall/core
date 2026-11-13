@@ -64,4 +64,9 @@ package store
 // at 27.728167 ms against a 60 ms budget. The host load average was 60-90 and
 // single queries crossed their budgets on both this tree and its base d658ad5b
 // in other runs, so the bench was compared base against head back to back.
+//
+// The same bench passed on 2026-11-13 for the 0113 bump; the worst measured
+// query was search/fts/revealed at 50.56275 ms against a 60 ms budget, on a
+// loaded shared host. 0113 adds no index or column on any benched table: the
+// provenance table is read only by the media(id) detail read.
 const schemaFreezeCatalogMigrations = 109
