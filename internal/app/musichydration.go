@@ -546,7 +546,9 @@ func queueEntityScopeBackfills(ctx context.Context, st entityScopeSplitter, logg
 		return
 	}
 	for _, libraryID := range libraries {
-		if err := queueLibraryBackfill(ctx, st, libraryID); err != nil {
+		if err := queueLibraryBackfill(ctx, st, libraryID); errors.Is(err, errNoLibraryRoots) {
+			continue // nothing to scan yet; a later start queues it once a root exists
+		} else if err != nil {
 			logger.Warn("entity scope backfill scan not queued; retrying next start", "library", libraryID, "error", err)
 			continue
 		}
@@ -562,6 +564,10 @@ type backfillQueuer interface {
 	EnqueueJob(ctx context.Context, job store.Job) (store.Job, error)
 }
 
+// errNoLibraryRoots reports a Library with no root to scan: no backfill was
+// queued, so the caller keeps its mark and checks again on a later start.
+var errNoLibraryRoots = errors.New("library has no roots to scan")
+
 func queueLibraryBackfill(ctx context.Context, st backfillQueuer, libraryID store.LibraryID) error {
 	roots, err := st.LibraryRoots(ctx, libraryID)
 	var invalid store.ValidationError
@@ -570,6 +576,9 @@ func queueLibraryBackfill(ctx context.Context, st backfillQueuer, libraryID stor
 	}
 	if err != nil {
 		return err
+	}
+	if len(roots) == 0 {
+		return errNoLibraryRoots
 	}
 	for _, root := range roots {
 		job, err := scanpkg.NewJob(scanpkg.JobRequest{LibraryID: libraryID, Root: root, CreatedAt: time.Now().UTC(), Backfill: true})

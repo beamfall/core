@@ -537,7 +537,6 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// bundle and adapted into scan's shape-neutral hook, keyed by plugin ID.
 	metadataHydrators := newHydrationAdapters(executablePlugins, st, hooks.HydrationMappers)
 	splitAmbiguousHydrationScopes(ctx, st, metadataHydrators, hooks.HydrationMappers, logger)
-	queueHydrationBackfills(ctx, st, metadataHydrators, logger)
 	scanHandler := scanHandlerWithWorkerGovernor(st, observingProber{inner: ffmpegRunner, observability: observabilityController}, ffmpegRunner, parsers, interactiveSidecarExts, autoIdentifier, localExtractors, metadataHydrators, resourceGovernor, artworkService)
 	// First-party EmbeddingProvider seam. The flag records
 	// operator intent and is read at process start. The bundled provider contains
@@ -940,6 +939,10 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 			logger.Info("encrypted libraries awaiting unlock", "sealed", len(sealed), "total_encrypted", len(encIDs))
 		}
 	}
+	// The hydration backfill check reads each Library's Media, so it runs after
+	// the boot unseal; a Library still sealed is checked after its runtime unseal.
+	backfillHydration := func(ctx context.Context) { queueHydrationBackfills(ctx, st, metadataHydrators, logger) }
+	backfillHydration(ctx)
 	// Device push-token registration: the persisting
 	// registrar replaces the old no-op seam. It is gated by the same default-off
 	// flag the seam used (config.PushRegistrationEnabled) and persists the token
@@ -1101,7 +1104,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		IntegrationLifecycle:         integrationController,
 		RemoteAccess:                 graphRemoteAccess,
 		LibEncrypt:                   libEncryptManager,
-		EncryptedLibraryDBLifecycle:  st,
+		EncryptedLibraryDBLifecycle:  hydrationBackfillOnUnseal{encryptedLibraryDBLifecycle: st, backfill: backfillHydration},
 		EncryptedGeneratedAssets:     assetService,
 		ExtensionPusher:              extensionPusher,
 		AccessRequestPusher:          accessRequestPusher,

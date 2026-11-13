@@ -2,13 +2,64 @@ package app
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"testing"
 
+	"github.com/beamfall/core/internal/graph"
 	scanpkg "github.com/beamfall/core/internal/scan"
 	"github.com/beamfall/core/internal/store"
 )
+
+// rootlessStore reports every Library without roots, the way a Library whose
+// roots were all removed reads.
+type rootlessStore struct{ *store.Store }
+
+func (rootlessStore) LibraryRoots(context.Context, store.LibraryID) ([]string, error) {
+	return nil, nil
+}
+
+// sealedMediaStore refuses Media reads, the way an encrypted Library whose
+// database is not yet unsealed does.
+type sealedMediaStore struct{ *store.Store }
+
+func (sealedMediaStore) MediaLackingFieldInLibrary(context.Context, store.LibraryID, store.MediaClass, string) (map[store.MediaID]struct{}, error) {
+	return nil, store.ErrEncryptedLibraryDBDisabled
+}
+
+// TestHydrationBackfillRunsAfterRuntimeUnseal pins that an encrypted Library
+// sealed at start is checked once an operator unseals it, and only when the
+// unseal succeeds.
+func TestHydrationBackfillRunsAfterRuntimeUnseal(t *testing.T) {
+	ctx := context.Background()
+	inner := &unsealRecorder{}
+	runs := 0
+	lifecycle := hydrationBackfillOnUnseal{encryptedLibraryDBLifecycle: inner, backfill: func(context.Context) { runs++ }}
+	inner.err = errors.New("wrong passphrase")
+	if err := lifecycle.UnsealEncryptedLibraryDB(ctx, "lib-1", nil); err == nil || runs != 0 {
+		t.Fatalf("failed unseal: err %v, backfill runs %d; want the error and no run", err, runs)
+	}
+	inner.err = nil
+	if err := lifecycle.UnsealEncryptedLibraryDB(ctx, "lib-1", nil); err != nil || runs != 1 {
+		t.Fatalf("unseal: err %v, backfill runs %d; want no error and one run", err, runs)
+	}
+	var _ graph.EncryptedLibraryDBLifecycle = lifecycle
+	if _, ok := any(lifecycle).(interface {
+		AbortEncryptedLibraryDBProvision(context.Context, store.LibraryID) error
+	}); !ok {
+		t.Fatal("the unseal wrapper hides the staged-provision abort the graph handler asserts for")
+	}
+}
+
+type unsealRecorder struct {
+	encryptedLibraryDBLifecycle
+	err error
+}
+
+func (r *unsealRecorder) UnsealEncryptedLibraryDB(context.Context, store.LibraryID, store.EncryptedLibraryDBCipher) error {
+	return r.err
+}
 
 // TestHydrationBackfillQueuesScanForMediaImportedBeforeTheMapper pins that a
 // Library whose Media predate their plugin's mapper is hydrated: an ordinary
@@ -79,12 +130,18 @@ func TestHydrationBackfillQueuesScanForMediaImportedBeforeTheMapper(t *testing.T
 		return ok
 	}
 
-	queueHydrationBackfills(ctx, refusingEnqueueStore{st}, hydrators, slog.New(slog.DiscardHandler))
-	if got := scanJobs(); len(got) != 0 {
-		t.Fatalf("scan jobs after a refused enqueue = %+v, want none", got)
-	}
-	if checked(stale) {
-		t.Fatal("a Library whose backfill was not queued is recorded as checked")
+	for name, unavailable := range map[string]hydrationBackfillStore{
+		"refused enqueue": refusingEnqueueStore{st},
+		"no roots":        rootlessStore{st},
+		"sealed database": sealedMediaStore{st},
+	} {
+		queueHydrationBackfills(ctx, unavailable, hydrators, slog.New(slog.DiscardHandler))
+		if got := scanJobs(); len(got) != 0 {
+			t.Fatalf("%s: scan jobs = %+v, want none", name, got)
+		}
+		if checked(stale) {
+			t.Fatalf("%s: a Library whose backfill was not queued is recorded as checked", name)
+		}
 	}
 
 	queueHydrationBackfills(ctx, st, hydrators, slog.New(slog.DiscardHandler))

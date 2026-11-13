@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/beamfall/core/internal/graph"
 	scanpkg "github.com/beamfall/core/internal/scan"
 	"github.com/beamfall/core/internal/serverrole"
 	"github.com/beamfall/core/internal/store"
@@ -31,6 +32,9 @@ type hydrationBackfillStore interface {
 // the next start, and a file the backfill cannot hydrate (an unreadable probe)
 // does not queue another scan on every start. A failure only delays the check
 // to the next start; an Attached node never authors catalog rows and skips it.
+// A Library without roots stays unchecked, and so does an encrypted Library
+// whose database is still sealed: the check runs after the boot unseal and
+// again after each runtime unseal (hydrationBackfillOnUnseal).
 func queueHydrationBackfills(ctx context.Context, st hydrationBackfillStore, hydrators map[string]scanpkg.MetadataHydrator, logger *slog.Logger) {
 	if len(hydrators) == 0 {
 		return
@@ -68,7 +72,9 @@ func queueHydrationBackfills(ctx context.Context, st hydrationBackfillStore, hyd
 			continue
 		}
 		if lacking {
-			if err := queueLibraryBackfill(ctx, st, library.ID); err != nil {
+			if err := queueLibraryBackfill(ctx, st, library.ID); errors.Is(err, errNoLibraryRoots) {
+				continue // nothing to scan yet; checked again once a root exists
+			} else if err != nil {
 				logger.Warn("hydration backfill scan not queued; retrying next start", "library", library.ID, "error", err)
 				continue
 			}
@@ -94,4 +100,29 @@ func mediaLackingMarker(ctx context.Context, st hydrationBackfillStore, libraryI
 		}
 	}
 	return false, nil
+}
+
+// encryptedLibraryDBLifecycle is the store surface the graph handler uses for
+// encrypted Library databases, including the staged-provision abort it
+// asserts for.
+type encryptedLibraryDBLifecycle interface {
+	graph.EncryptedLibraryDBLifecycle
+	AbortEncryptedLibraryDBProvision(ctx context.Context, libraryID store.LibraryID) error
+}
+
+// hydrationBackfillOnUnseal runs the hydration backfill check after an
+// encrypted Library's database is unsealed at runtime. A sealed Library's
+// Media are unreadable at start, so its check is deferred until an operator
+// unseals it.
+type hydrationBackfillOnUnseal struct {
+	encryptedLibraryDBLifecycle
+	backfill func(context.Context)
+}
+
+func (l hydrationBackfillOnUnseal) UnsealEncryptedLibraryDB(ctx context.Context, libraryID store.LibraryID, cipher store.EncryptedLibraryDBCipher) error {
+	if err := l.encryptedLibraryDBLifecycle.UnsealEncryptedLibraryDB(ctx, libraryID, cipher); err != nil {
+		return err
+	}
+	l.backfill(context.WithoutCancel(ctx))
+	return nil
 }
