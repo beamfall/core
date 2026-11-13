@@ -340,6 +340,10 @@ type Sessions struct {
 	nextID   int
 	cap      int
 	governor *governor.Governor
+	// waitWindow, when positive, replaces the latency budgets as the length of
+	// one artifact wait window. Tests set it so a slow-encoder scenario runs in
+	// milliseconds instead of whole budgets.
+	waitWindow time.Duration
 }
 
 // SetGovernor wires transcode-activity reporting (ADR-0013: transcode
@@ -711,9 +715,7 @@ func (s *Sessions) FilePathPriorityWithBurnSubtitleAudioLadderMap(ctx context.Co
 			return "", err
 		}
 	}
-	waitCtx, cancel := context.WithTimeout(ctx, waitBudget)
-	defer cancel()
-	if err := s.waitForEncoder(waitCtx, key, session, rung, segment, isSegment, path, run); err != nil {
+	if err := s.waitWhileEncoderProgresses(ctx, key, session, rung, segment, isSegment, path, run, waitBudget); err != nil {
 		return "", err
 	}
 	if isSegment && segmentLacksMedia(path) {
@@ -768,6 +770,68 @@ func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *
 	}
 }
 
+// waitWhileEncoderProgresses runs waitForEncoder in budget-long windows. When
+// a window expires on a segment and the session is healthy but behind the
+// playhead, the request keeps waiting for the bytes instead of failing into a
+// retryable 503 (CORE-0044). Healthy means the session's encoder for rung was
+// this request's run for the whole window, that run started at or before the
+// requested segment, and it wrote a segment during the window. Anything else,
+// such as a stalled run, a run another request replaced or restarted, or a run
+// started past the segment, fails as before. A run writes its segments in
+// order from its base, and the request is at most seekLookaheadSegments past
+// the frontier when the wait starts, so the number of extra windows is bounded.
+func (s *Sessions) waitWhileEncoderProgresses(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int, isSegment bool, path string, run *encoderRun, budget time.Duration) error {
+	for {
+		windowStart := time.Now()
+		current, _, tracked := s.rungEncoder(key, session, rung)
+		waitCtx, cancel := context.WithTimeout(ctx, budget)
+		err := s.waitForEncoder(waitCtx, key, session, rung, segment, isSegment, path, run)
+		cancel()
+		if err == nil || !isSegment || ctx.Err() != nil || !errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+		after, base, stillTracked := s.rungEncoder(key, session, rung)
+		if !tracked || !stillTracked || current != run || after != run || base > segment ||
+			!segmentWrittenSince(filepath.Join(session.dir, rung.ID), base, windowStart) {
+			return err
+		}
+	}
+}
+
+// rungEncoder returns the session's running encoder for rung and the segment it
+// started at. tracked is false when the session is gone or is not encoding rung.
+func (s *Sessions) rungEncoder(key SessionKey, session *hlsSession, rung Rung) (run *encoderRun, base int, tracked bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.liveLocked(key, session) || session.proc == nil || session.currentRung != rung.ID {
+		return nil, 0, false
+	}
+	return session.run, session.baseSegment, true
+}
+
+// segmentWrittenSince reports whether rungDir holds a segment at or past base
+// modified at or after since. Segments cached by earlier runs keep their older
+// times, so only this run's writes count.
+func segmentWrittenSince(rungDir string, base int, since time.Time) bool {
+	entries, err := os.ReadDir(rungDir)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		match := segmentName.FindStringSubmatch(entry.Name())
+		if match == nil {
+			continue
+		}
+		if segment, _ := strconv.Atoi(match[1]); segment < base {
+			continue
+		}
+		if info, err := entry.Info(); err == nil && !info.ModTime().Before(since) {
+			return true
+		}
+	}
+	return false
+}
+
 // beyondSourceEnd reports whether segment starts past the session's known
 // source end.
 func (s *Sessions) beyondSourceEnd(session *hlsSession, segment, segSeconds int) bool {
@@ -816,6 +880,9 @@ func (s *Sessions) markDelivered(key SessionKey, session *hlsSession, rungID str
 func (s *Sessions) transcodeLatencyBudget(session *hlsSession, path string) time.Duration {
 	if fileReady(path) {
 		return fileWaitTimeout
+	}
+	if s.waitWindow > 0 {
+		return s.waitWindow
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

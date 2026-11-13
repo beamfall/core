@@ -93,13 +93,17 @@ func (s *Server) acceptCompatHandshake(ctx context.Context, scope auth.Scope, co
 	distribution := enrollment.Distribution
 	for range 3 {
 		policy := s.compat.snapshot()
-		result := capabilities.Evaluate(contract, enrollment, policy)
+		evaluated, err := s.deviceBuildPolicy(ctx, scope, policy)
+		if err != nil {
+			return capabilities.Record{}, capabilities.Result{}, false, err
+		}
+		result := capabilities.Evaluate(contract, enrollment, evaluated)
 		if result.Servable() && bindNativeSurface {
 			if err := s.deviceSurfaces.BindDeviceSurface(ctx, scope.DeviceID, store.DeviceSurface(contract.Surface)); err != nil {
 				return capabilities.Record{}, capabilities.Result{}, false, err
 			}
 			enrollment.Surface = capabilities.Surface(contract.Surface)
-			result = capabilities.Evaluate(contract, enrollment, policy)
+			result = capabilities.Evaluate(contract, enrollment, evaluated)
 		}
 		record, accepted, err := s.compat.registry.Accept(capabilities.BindingKey{
 			Subject:         compatSubject(scope),

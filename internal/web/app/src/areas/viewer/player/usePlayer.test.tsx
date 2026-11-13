@@ -259,6 +259,11 @@ describe("usePlayer", () => {
     });
     vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
     vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
+    // jsdom never loads media, so readyState stays HAVE_NOTHING; progress only
+    // counts presented frames, so default to a loaded element.
+    vi.spyOn(HTMLMediaElement.prototype, "readyState", "get").mockReturnValue(
+      HTMLMediaElement.HAVE_ENOUGH_DATA,
+    );
   });
 
   afterEach(() => {
@@ -356,6 +361,73 @@ describe("usePlayer", () => {
       .mocked(graphql)
       .mock.calls.map((call) => (call[1] as { eventTimeMS: number }).eventTimeMS);
     expect(times.every((t) => t === 1783432800456)).toBe(true);
+  });
+
+  it("reports the last presented position, not a pending seek target, while a seek stalls (CORE-0044)", async () => {
+    vi.mocked(graphql).mockClear();
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+
+    const video = screen.getByTestId("player") as HTMLVideoElement;
+    Object.defineProperty(video, "duration", { configurable: true, value: 2700 });
+    Object.defineProperty(video, "seeking", { configurable: true, value: false });
+    Object.defineProperty(video, "currentTime", { configurable: true, value: 45.9 });
+    fireEvent.timeUpdate(video);
+
+    // A seek far ahead that the stream has not produced yet: currentTime is the
+    // target, but no frame there has been presented.
+    Object.defineProperty(video, "seeking", { configurable: true, value: true });
+    Object.defineProperty(video, "currentTime", { configurable: true, value: 1800 });
+    fireEvent.timeUpdate(video);
+    fireEvent.pause(video);
+    await waitFor(() => expect(graphql).toHaveBeenCalled());
+    const positions = () =>
+      vi
+        .mocked(graphql)
+        .mock.calls.map((call) => (call[1] as { positionSeconds: number }).positionSeconds);
+    expect(positions()).not.toContain(1800);
+    expect(positions().at(-1)).toBe(45);
+
+    // The seek completes and its frame is presented: now it is progress.
+    Object.defineProperty(video, "seeking", { configurable: true, value: false });
+    Object.defineProperty(video, "currentTime", { configurable: true, value: 1800.4 });
+    fireEvent.seeked(video);
+    await waitFor(() => expect(positions().at(-1)).toBe(1800));
+  });
+
+  it("reports no progress before the load has presented a frame (CORE-0044)", async () => {
+    vi.mocked(graphql).mockClear();
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+
+    const video = screen.getByTestId("player") as HTMLVideoElement;
+    Object.defineProperty(video, "duration", { configurable: true, value: 2700 });
+    Object.defineProperty(video, "seeking", { configurable: true, value: true });
+    Object.defineProperty(video, "currentTime", { configurable: true, value: 1800 });
+    fireEvent.pause(video);
+
+    // The seek settled but no frame is decoded yet: still nothing presented.
+    Object.defineProperty(video, "seeking", { configurable: true, value: false });
+    Object.defineProperty(video, "readyState", {
+      configurable: true,
+      value: HTMLMediaElement.HAVE_METADATA,
+    });
+    fireEvent.timeUpdate(video);
+    fireEvent.pause(video);
+    expect(graphql).not.toHaveBeenCalled();
+
+    Object.defineProperty(video, "readyState", {
+      configurable: true,
+      value: HTMLMediaElement.HAVE_ENOUGH_DATA,
+    });
+    Object.defineProperty(video, "currentTime", { configurable: true, value: 30.2 });
+    fireEvent.pause(video);
+    await waitFor(() => expect(graphql).toHaveBeenCalled());
+    const positions = vi
+      .mocked(graphql)
+      .mock.calls.map((call) => (call[1] as { positionSeconds: number }).positionSeconds);
+    expect(positions).not.toContain(1800);
+    expect(positions.at(-1)).toBe(30);
   });
 
   it("coalesces progress storms to one request and delivers the latest final progress", async () => {
@@ -1666,6 +1738,31 @@ describe("usePlayer", () => {
         expect(screen.getByTestId("phase")).toHaveTextContent("playing");
         act(() => hls.emitFragBuffered());
         expect(screen.getByTestId("recovering")).toHaveTextContent("no");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("waits out a 503 at the playhead instead of moving it (CORE-0044)", async () => {
+      const hls = await renderHlsPlaying();
+      const video = screen.getByTestId("player") as HTMLVideoElement;
+      const sets: number[] = [];
+      Object.defineProperty(video, "currentTime", {
+        configurable: true,
+        get: () => 600,
+        set: (value: number) => sets.push(value),
+      });
+      vi.useFakeTimers();
+      try {
+        act(() => hls.emitError({ ...networkError, response: { code: 503 } }));
+        expect(screen.getByTestId("recovering")).toHaveTextContent("yes");
+        await act(() => vi.advanceTimersByTimeAsync(1000));
+        expect(hls.startLoad).toHaveBeenCalledTimes(1);
+        // Reload from where hls.js stopped (no argument), never a later position.
+        expect(hls.startLoad.mock.calls[0]).toEqual([]);
+        expect(sets).toEqual([]);
+        expect(hls.destroyed()).toBe(false);
+        expect(screen.getByTestId("phase")).toHaveTextContent("playing");
       } finally {
         vi.useRealTimers();
       }

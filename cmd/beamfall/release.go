@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/beamfall/core/internal/capabilities"
 	"github.com/beamfall/core/internal/release"
 )
 
@@ -14,6 +15,7 @@ import (
 //
 //	beamfall release attest --dist DIR --version V --channel C --commit SHA --timestamp TIME --invocation-id ID [--artifact NAME ...]
 //	beamfall release verify --dist DIR
+//	beamfall release build-catalog --manifest FILE
 //
 // `attest` emits a signed release-manifest.json plus an SPDX SBOM and a SLSA
 // provenance attestation; `verify` is the fail-closed upgrade/CI gate that
@@ -24,24 +26,53 @@ func releaseCommand(_ context.Context, args []string, stdout io.Writer) error {
 		return err
 	}
 	if len(args) == 0 {
-		return fmt.Errorf("release subcommand is required (attest|verify)\n\n%s", releaseHelp)
+		return fmt.Errorf("release subcommand is required (attest|verify|build-catalog)\n\n%s", releaseHelp)
 	}
 	switch args[0] {
 	case "attest":
 		return releaseAttest(args[1:], stdout)
 	case "verify":
 		return releaseVerify(args[1:], stdout)
+	case "build-catalog":
+		return releaseBuildCatalog(args[1:], stdout)
 	default:
-		return fmt.Errorf("unknown release subcommand %q (want attest|verify)", args[0])
+		return fmt.Errorf("unknown release subcommand %q (want attest|verify|build-catalog)", args[0])
 	}
 }
 
 const releaseHelp = `Usage: beamfall release <command>
 
 Commands:
-  attest   write release manifest, SBOM, and provenance
-  verify   verify a release dist against the signed manifest
+  attest          write release manifest, SBOM, and provenance
+  verify          verify a release dist against the signed manifest
+  build-catalog   validate a first-party native build manifest and print its link-time value
 `
+
+// releaseBuildCatalog validates the first-party native build manifest a release
+// links into the server (ADR-0063 build provenance) and prints the value for
+// -X github.com/beamfall/core/internal/capabilities.FirstPartyBuildManifest.
+// A malformed manifest fails the release rather than shipping a binary that
+// would refuse every native client at boot.
+func releaseBuildCatalog(args []string, stdout io.Writer) error {
+	fs := commandFlagSet("beamfall release build-catalog", stdout)
+	manifestPath := fs.String("manifest", "", "first-party build manifest JSON ("+capabilities.FirstPartyBuildManifestSchema+")")
+	if helped, err := parseCommandFlags(fs, args); err != nil || helped {
+		return err
+	}
+	if *manifestPath == "" {
+		return fmt.Errorf("--manifest is required")
+	}
+	data, err := os.ReadFile(*manifestPath)
+	if err != nil {
+		return err
+	}
+	encoded, err := capabilities.EncodeFirstPartyBuildManifest(data)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(stdout, encoded)
+	return err
+}
 
 func releaseAttest(args []string, stdout io.Writer) error {
 	fs := commandFlagSet("beamfall release attest", stdout)
