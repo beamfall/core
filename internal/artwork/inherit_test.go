@@ -424,3 +424,90 @@ func TestSweepReadsPosterSourcesPastOnePage(t *testing.T) {
 	s.wantPoster("entity-kept", "cover-kept", true)
 	s.wantPoster("entity-fresh", "cover-fresh", true)
 }
+
+// snapshotScaler reads its source when called, then waits for release before
+// publishing, so a derivative scaled from an old poster lands late.
+type snapshotScaler struct {
+	fakeGrabber
+	started chan struct{}
+	release chan struct{}
+}
+
+func (s *snapshotScaler) ScaleImage(_ context.Context, src string, _ int, dst string) error {
+	// #nosec G304 -- src is a test-owned poster path.
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	close(s.started)
+	<-s.release
+	// #nosec G703 -- dst is a test-owned derivative path.
+	return os.WriteFile(dst, data, 0o600)
+}
+
+// A bucket being scaled from the old inherited poster while the poster is
+// replaced or removed is published before the old buckets are cleared, never
+// after: no derivative of the old poster survives.
+func TestInheritedPosterChangeWaitsForDerivativeInFlight(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*Service, string, posterCandidate) error
+	}{
+		{"replace", func(s *Service, dst string, c posterCandidate) error {
+			info, ok := c.usable()
+			if !ok {
+				return errors.New("fixture: candidate not usable")
+			}
+			_, err := s.copyInheritedPoster(context.Background(), dst, c, info)
+			return err
+		}},
+		{"remove", func(s *Service, dst string, _ posterCandidate) error {
+			return s.removeInheritedPoster(context.Background(), dst)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			scaler := &snapshotScaler{started: make(chan struct{}), release: make(chan struct{})}
+			svc := NewService(storetest.Open(t), scaler, t.TempDir())
+			dst := svc.EntityPosterPath("entity-box")
+			if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(dst, []byte("old cover"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(inheritedMarkerPath(dst), []byte(`{"source":"old"}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			source := filepath.Join(t.TempDir(), "poster.jpg")
+			if err := os.WriteFile(source, []byte("new cover"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			derived := make(chan error, 1)
+			go func() {
+				_, err := svc.EntityPosterDerivative(context.Background(), "entity-box", "w320")
+				derived <- err
+			}()
+			<-scaler.started
+			changed := make(chan error, 1)
+			go func() { changed <- tc.change(svc, dst, posterCandidate{path: source}) }()
+			select {
+			case err := <-changed:
+				changed <- err
+			case <-time.After(200 * time.Millisecond):
+			}
+			close(scaler.release)
+			if err := <-derived; err != nil {
+				t.Fatal(err)
+			}
+			if err := <-changed; err != nil {
+				t.Fatal(err)
+			}
+
+			bucket := filepath.Join(filepath.Dir(dst), SlotPoster+".w320.jpg")
+			if data, err := os.ReadFile(bucket); err == nil && string(data) == "old cover" {
+				t.Fatal("a derivative of the old poster was published after the change")
+			}
+		})
+	}
+}

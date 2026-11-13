@@ -183,7 +183,7 @@ read:
 		}
 	}
 	if first != nil {
-		wrote, err := s.copyInheritedPoster(dst, *first, firstInfo)
+		wrote, err := s.copyInheritedPoster(ctx, dst, *first, firstInfo)
 		if err != nil || !wrote {
 			return false, err
 		}
@@ -196,7 +196,7 @@ read:
 		return true, nil
 	}
 	if hasPoster || marked {
-		return false, s.removeInheritedPoster(dst)
+		return false, s.removeInheritedPoster(ctx, dst)
 	}
 	return false, nil
 }
@@ -206,7 +206,11 @@ read:
 // on disk before the poster and names its source only after it, so a crash
 // never leaves an inherited copy looking like the Entity's own artwork, nor a
 // mark vouching for bytes that were not written.
-func (s *Service) copyInheritedPoster(dst string, candidate posterCandidate, info os.FileInfo) (bool, error) {
+//
+// The poster directory's derivative lock is held across the replacement and
+// the derivative removal, so a bucket being scaled from the old poster is
+// published before the removal, never after it.
+func (s *Service) copyInheritedPoster(ctx context.Context, dst string, candidate posterCandidate, info os.FileInfo) (bool, error) {
 	// #nosec G304 -- the source is a poster path this service built under its artwork root.
 	data, err := os.ReadFile(candidate.path)
 	if err != nil {
@@ -223,6 +227,11 @@ func (s *Service) copyInheritedPoster(dst string, candidate posterCandidate, inf
 
 	s.entityPosterMu.Lock()
 	defer s.entityPosterMu.Unlock()
+	unlock, err := s.lockDerivative(ctx, filepath.Dir(dst))
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
 	hasPoster := regularFileExists(dst)
 	marked := regularFileExists(marker)
 	if hasPoster && !marked {
@@ -259,11 +268,17 @@ func (s *Service) copyInheritedPoster(dst string, candidate posterCandidate, inf
 
 // removeInheritedPoster drops an inherited poster whose sources no longer
 // offer one, with its derivatives and mark. The Entity's own poster, should
-// one have arrived meanwhile, is kept.
-func (s *Service) removeInheritedPoster(dst string) error {
+// one have arrived meanwhile, is kept. Like copyInheritedPoster it holds the
+// derivative lock, so no bucket of the removed poster is published after it.
+func (s *Service) removeInheritedPoster(ctx context.Context, dst string) error {
 	marker := inheritedMarkerPath(dst)
 	s.entityPosterMu.Lock()
 	defer s.entityPosterMu.Unlock()
+	unlock, err := s.lockDerivative(ctx, filepath.Dir(dst))
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if !regularFileExists(marker) {
 		return nil
 	}
