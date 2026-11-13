@@ -144,9 +144,9 @@ export function HydratedSection({
 }
 
 // Skeleton placeholder, ported from buildSkeleton (app.js): never focusable,
-// aria-hidden. The shimmer (bf-shimmer) lives in CSS and reduce-motion drops it,
-// leaving the static tone — matching the design system's "skeletons fade to
-// content, never focusable" rule. Geometry mirrors a shelf rail so the layout
+// aria-hidden. The placeholder tone (bf-shimmer) is a static fill in CSS,
+// matching the design system's "skeletons fade to content, never focusable"
+// rule. Geometry mirrors a shelf rail so the layout
 // does not shift when real content arrives.
 export function SectionSkeleton({ hero }: { hero: boolean }) {
   if (hero) {

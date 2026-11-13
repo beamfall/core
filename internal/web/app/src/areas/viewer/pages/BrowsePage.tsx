@@ -59,7 +59,7 @@ export function BrowsePage({ home = false }: { home?: boolean }) {
       {node && libraryID ? (
         // A Library node leads with its name and the way into the full,
         // sortable library (CORE-1190); the hubs below stay as they were.
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-6">
           <h1 className="bf-page-title">{displayString(node.title, displayLocale)}</h1>
           <Link className="bf-chip" to={`/n/${encodeURIComponent(node.id)}/all`}>
             {t("libraryBrowseAll")}
