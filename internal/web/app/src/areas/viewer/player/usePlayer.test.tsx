@@ -1882,6 +1882,22 @@ describe("usePlayer", () => {
       }
     });
 
+    it("restarts a starving load at the playhead on 'online' without waiting out hls.js's own retry backoff", async () => {
+      const hls = await renderHlsPlaying();
+      const video = screen.getByTestId("player") as HTMLVideoElement;
+      video.currentTime = 30;
+      act(() => {
+        window.dispatchEvent(new Event("offline"));
+      });
+      // No fatal error: hls.js is retrying the fragment on its own timer.
+      act(() => {
+        window.dispatchEvent(new Event("online"));
+      });
+      expect(screen.getByTestId("waiting-for-network")).toHaveTextContent("no");
+      expect(hls.startLoad).toHaveBeenCalledTimes(1);
+      expect(hls.startLoad).toHaveBeenCalledWith(30);
+    });
+
     it("parks a pending backoff retry when the network drops during the wait", async () => {
       const hls = await renderHlsPlaying();
       vi.useFakeTimers();

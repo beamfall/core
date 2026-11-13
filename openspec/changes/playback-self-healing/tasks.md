@@ -8,4 +8,4 @@
 - [x] 6. Web: offline wait and resume (CORE-1362)
 - [x] 7. Web: startup and buffering spinner (CORE-1363)
 - [x] 8. Web: per-reason unavailable copy and action (CORE-1146)
-- [ ] 9. Runtime check against a local server: encoder kill, truncated file, offline, scrub
+- [x] 9. Runtime check against a local server: encoder kill, truncated file, offline, scrub

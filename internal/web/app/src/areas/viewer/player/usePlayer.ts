@@ -482,6 +482,7 @@ export function usePlayer(
     // the 'online' event resumes it at the playhead.
     let offline = navigator.onLine === false;
     let resumeWhenOnline: (() => void) | null = null;
+    let restartLoadWhenOnline: (() => void) | null = null;
     const setWaitingForNetwork = (waiting: boolean) =>
       setState((s) => (s.waitingForNetwork === waiting ? s : { ...s, waitingForNetwork: waiting }));
     const waitForNetwork = (resume: () => void) => {
@@ -497,7 +498,7 @@ export function usePlayer(
       setWaitingForNetwork(false);
       const resume = resumeWhenOnline;
       resumeWhenOnline = null;
-      if (alive) resume?.();
+      if (alive) (resume ?? restartLoadWhenOnline)?.();
     };
     window.addEventListener("offline", onOffline);
     window.addEventListener("online", onOnline);
@@ -862,6 +863,14 @@ export function usePlayer(
             }
           };
           videoListeners.push(["waiting", onSourceEndWaiting], ["seeking", onSourceEndSeeking]);
+          // Back online with no fatal error parked, hls.js may still be in its
+          // own retry backoff (up to 8 s). While the buffer is short, restart
+          // the load at the playhead now instead of waiting out that timer.
+          restartLoadWhenOnline = () => {
+            if (hlsRef.current !== hls || stoppedAtSourceEnd || video.ended) return;
+            if (bufferedAhead(video) >= (hls.config?.maxBufferLength ?? 30)) return;
+            hls.startLoad(video.currentTime);
+          };
           video.addEventListener("waiting", onSourceEndWaiting);
           video.addEventListener("seeking", onSourceEndSeeking);
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
