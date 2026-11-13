@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -701,8 +702,8 @@ func validate(cfg Config) (Config, error) {
 	default:
 		return Config{}, fmt.Errorf("unknown relay transport %q (want %q or %q)", cfg.RemoteAccess.Relay.Transport, RelayTransportTCP, RelayTransportQUIC)
 	}
-	if window := cfg.RemoteAccess.Relay.YamuxStreamWindowBytes; window < 0 || (window > 0 && window < MinRelayYamuxStreamWindowBytes) {
-		return Config{}, fmt.Errorf("relay yamux stream window %d bytes: want 0 (default) or at least %d", window, MinRelayYamuxStreamWindowBytes)
+	if window := cfg.RemoteAccess.Relay.YamuxStreamWindowBytes; window < 0 || (window > 0 && window < MinRelayYamuxStreamWindowBytes) || int64(window) > math.MaxUint32 {
+		return Config{}, fmt.Errorf("relay yamux stream window %d bytes: want 0 (default) or %d to %d", window, MinRelayYamuxStreamWindowBytes, uint64(math.MaxUint32))
 	}
 	cfg.ReviewDemoEnrollment.ProfileID = strings.TrimSpace(cfg.ReviewDemoEnrollment.ProfileID)
 	if cfg.ReviewDemoEnrollment.Enabled && cfg.ReviewDemoEnrollment.ProfileID == "" {

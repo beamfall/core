@@ -189,7 +189,7 @@ func TestRemoteAccessRelayYamuxStreamWindow(t *testing.T) {
 		}
 	})
 
-	for _, value := range []string{"-1", "65536", "lots"} {
+	for _, value := range []string{"-1", "65536", "4294967296", "lots"} {
 		t.Run("rejects "+value, func(t *testing.T) {
 			env := map[string]string{
 				"BEAMFALL_DATA_DIR":                        t.TempDir(),

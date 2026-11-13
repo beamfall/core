@@ -625,7 +625,7 @@ func relayYamuxConfig(streamWindowBytes int) *yamux.Config {
 	}
 	cfg := yamux.DefaultConfig()
 	cfg.ConnectionWriteTimeout = 30 * time.Second
-	cfg.MaxStreamWindowSize = uint32(streamWindowBytes) //nolint:gosec // G115: config validation bounds the window to [256 KiB, MaxInt].
+	cfg.MaxStreamWindowSize = uint32(streamWindowBytes) //nolint:gosec // G115: config validation bounds the window to [256 KiB, MaxUint32].
 	cfg.StreamCloseTimeout = 30 * time.Second
 	cfg.EnableKeepAlive = true
 	cfg.LogOutput = io.Discard
