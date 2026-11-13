@@ -457,6 +457,32 @@ describe("PlayerTransport", () => {
     expect(seeks).toEqual([60]);
   });
 
+  it("seeks on a touch tap of the scrubber (CORE-1360)", () => {
+    const { video } = renderHarnessVideo({ currentTime: 10, duration: 100 });
+    const seeks: number[] = [];
+    let time = 10;
+    Object.defineProperty(video, "currentTime", {
+      configurable: true,
+      get: () => time,
+      set: (value: number) => {
+        time = value;
+        seeks.push(value);
+      },
+    });
+    const scrubber = screen.getByRole("slider", { name: "Playback position" });
+    const control = scrubber.closest(".bf-slider-control") as HTMLElement;
+    mockStageRect(control);
+    const touch = { identifier: 0, clientX: 20, clientY: 5 };
+
+    // A finger fires touchstart and pointerdown at the same spot; the slider
+    // skips its own commit for that pair, so the release must still seek.
+    fireEvent.touchStart(control, { changedTouches: [touch], touches: [touch] });
+    fireTouch(control, "pointerdown", { pointerId: 2, clientX: 20, clientY: 5 });
+    fireTouch(control, "pointerup", { pointerId: 2, clientX: 20, clientY: 5 });
+    fireEvent.touchEnd(control, { changedTouches: [touch], touches: [] });
+    expect(seeks).toEqual([20]);
+  });
+
   it("seeks straight away on scrubber keyboard steps (CORE-1360)", () => {
     const { video } = renderHarnessVideo({ currentTime: 50, duration: 100 });
     const scrubber = screen.getByRole("slider", { name: "Playback position" });

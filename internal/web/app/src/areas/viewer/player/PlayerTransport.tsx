@@ -118,6 +118,25 @@ export function PlayerTransport({
   const [current, setCurrent] = useState(0);
   // The position a pointer drag on the scrubber previews; null when not dragging.
   const [scrubValue, setScrubValue] = useState<number | null>(null);
+  const pendingScrubRef = useRef<number | null>(null);
+  const commitScrubRef = useRef<() => void>(() => undefined);
+  useEffect(() => {
+    const commit = () => commitScrubRef.current();
+    // Only touchcancel reverts: Chrome may fire pointercancel mid-drag while
+    // the slider's touch events carry on to a normal touchend.
+    const cancel = () => {
+      pendingScrubRef.current = null;
+      setScrubValue(null);
+    };
+    document.addEventListener("pointerup", commit);
+    document.addEventListener("touchend", commit);
+    document.addEventListener("touchcancel", cancel);
+    return () => {
+      document.removeEventListener("pointerup", commit);
+      document.removeEventListener("touchend", commit);
+      document.removeEventListener("touchcancel", cancel);
+    };
+  }, []);
   const [duration, setDuration] = useState(0);
   const [paused, setPaused] = useState(true);
   const [volume, setVolumeState] = useState(1);
@@ -367,6 +386,8 @@ export function PlayerTransport({
       }
       lastTap = { time: now, side };
     };
+    // Only touchcancel reverts: Chrome may fire pointercancel mid-drag while
+    // the slider's touch events carry on to a normal touchend.
     const cancel = () => {
       pointer = undefined;
     };
@@ -486,21 +507,28 @@ export function PlayerTransport({
   }
 
   // A drag previews its position (thumb, time and trickplay) and seeks once
-  // on release (CORE-1360); keyboard steps seek straight away.
+  // on release (CORE-1360); keyboard steps seek straight away. The release is
+  // read from the document as well as from onValueCommitted: on a touch tap
+  // the slider sees touchstart and pointerdown at the same value and skips its
+  // own commit, which would leave the tap previewed but never seeked.
   function onScrubberValueChange(value: number, details: Slider.Root.ChangeEventDetails) {
     if (details.reason === "keyboard") {
       setPlaybackPosition(value);
       return;
     }
+    pendingScrubRef.current = value;
     setScrubValue(value);
     if (duration > 0) previewAt(value / duration);
   }
 
-  function onScrubberValueCommitted(value: number, details: Slider.Root.CommitEventDetails) {
-    if (details.reason === "keyboard") return;
+  function commitScrub() {
+    const value = pendingScrubRef.current;
+    if (value === null) return;
+    pendingScrubRef.current = null;
     setScrubValue(null);
     setPlaybackPosition(value);
   }
+  commitScrubRef.current = commitScrub;
 
   // Trickplay preview on scrubber hover, ported from updateTrickplayPreview.
   function onScrubberPointerMove(e: ReactPointerEvent<HTMLElement>) {
@@ -613,7 +641,7 @@ export function PlayerTransport({
               step={0.1}
               value={position}
               onValueChange={onScrubberValueChange}
-              onValueCommitted={onScrubberValueCommitted}
+              onValueCommitted={commitScrub}
               className="bf-slider-root bf-scrubber"
             >
               <input
