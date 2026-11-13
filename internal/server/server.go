@@ -105,6 +105,7 @@ type Server struct {
 	compat              *compatState
 	compatRefusalDir    string
 	deviceSurfaces      deviceSurfaceStore
+	deviceBuilds        deviceBuildStore
 	// eventStreams counts open /api/events and /v1/events streams for the
 	// per-principal cap and the open-streams gauge.
 	eventStreams eventStreamState
@@ -246,6 +247,10 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 	if err != nil {
 		panic(fmt.Errorf("invalid BEAMFALL_KNOWN_PROXIES: %w", err))
 	}
+	firstPartyBuilds, err := capabilities.FirstPartyBuildCatalog()
+	if err != nil {
+		panic(fmt.Errorf("invalid release first-party build catalog: %w", err))
+	}
 	defaultCapabilities := capabilities.EnabledIDs(nil)
 	s := &Server{
 		mux:           http.NewServeMux(),
@@ -266,7 +271,7 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 	for _, opt := range opts {
 		opt(s)
 	}
-	s.compat = newCompatState(s.buildSHA, s.capabilities)
+	s.compat = newCompatState(s.buildSHA, s.capabilities, firstPartyBuilds)
 	s.bindCompatStreamTokens()
 	s.jobStats = makeLogoutIdempotent(s.jobStats)
 	if knownProxies != nil {
@@ -285,6 +290,9 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 	}
 	if deviceSurfaces, ok := jobStats.(deviceSurfaceStore); ok {
 		s.deviceSurfaces = deviceSurfaces
+	}
+	if deviceBuilds, ok := jobStats.(deviceBuildStore); ok {
+		s.deviceBuilds = deviceBuilds
 	}
 	s.handle(http.MethodGet, "/health", "", s.health)
 	s.handle(http.MethodGet, "/metrics", reveal.Aggregate, s.metrics)
@@ -1304,11 +1312,12 @@ func (s *Server) createPairingCode(w http.ResponseWriter, r *http.Request) {
 func (s *Server) enrollDevice(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	r.Body = http.MaxBytesReader(w, r.Body, maxControlBody)
-	var req pairing.EnrollRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	var body enrollDeviceRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeDecodeError(w, r, err)
 		return
 	}
+	req := body.EnrollRequest
 	req.RemoteAddr = r.RemoteAddr
 	req.IsLAN = requestIsLAN(r)
 	resp, err := s.pairing.Enroll(r.Context(), req)
@@ -1325,6 +1334,15 @@ func (s *Server) enrollDevice(w http.ResponseWriter, r *http.Request) {
 			writeErrorCause(w, r, http.StatusInternalServerError, "enrollment failed", err)
 		}
 		return
+	}
+	if body.ClientContract != nil {
+		// The device and its session already exist and the pairing code is
+		// spent, so a failed mapping must not turn into an error that withholds
+		// the device secret. The device stays enrolled without a mapped build,
+		// exactly as if its build had not verified.
+		if err := s.bindEnrolledBuild(r.Context(), resp, *body.ClientContract); err != nil {
+			slog.WarnContext(r.Context(), "enrollment build mapping failed", "device", resp.DeviceID, "surface", body.ClientContract.Surface, "build", body.ClientContract.BuildID, "err", err)
+		}
 	}
 	writeJSON(w, http.StatusCreated, resp)
 }
