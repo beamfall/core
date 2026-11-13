@@ -31,6 +31,7 @@ import {
   revokeAllDevices,
   revokeDevice,
   runEventsCompaction,
+  setConsoleConfig,
   setDeviceRole,
   setExtensionPreauthorization,
   setProfileLibraries,
@@ -53,6 +54,7 @@ const recordedSignals: (AbortSignal | null | undefined)[] = [];
 // throwing on a missing `data.<field>` while these tests assert only the
 // outgoing request (operation name + variables) at the choke-point.
 const DATA = {
+  setConsoleConfig: { backgroundWorkers: 2, viewerPairingCodesDisabled: true, plugins: [] },
   remoteAccess: { directHTTPS: null, relay: null, plainHTTPPublicWarning: false, endpoints: [] },
   jobCancel: { id: "job-1", status: "cancelling" },
   jobRetry: { id: "job-1", status: "queued" },
@@ -180,6 +182,17 @@ describe("console GraphQL requests", () => {
       adminEpoch.abort();
       expect(sent?.aborted, name).toBe(true);
     }
+  });
+
+  it("reads and sets the Viewer pairing-code switch (CORE-0393)", async () => {
+    await fetchConsoleConfig();
+    expect(recorded[0].query).toContain("query ConsoleConfig");
+    expect(recorded[0].query).toContain("viewerPairingCodesDisabled");
+
+    await setConsoleConfig({ viewerPairingCodesDisabled: true });
+    expect(recorded[1].query).toContain("$viewerPairingCodesDisabled: Boolean");
+    expect(recorded[1].query).toContain("viewerPairingCodesDisabled: $viewerPairingCodesDisabled");
+    expect(recorded[1].variables).toEqual({ viewerPairingCodesDisabled: true });
   });
 
   it("cancelJob sends JobCancel(id)", async () => {
