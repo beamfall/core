@@ -1,0 +1,49 @@
+# Player route: lazy load, timestamp links, info overlay, audio stage — technical-deep-dive
+
+Source revision: d442b4a6a38de86be0670669b3a3f6aa47e80b22. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+
+<!-- flowdocs:paragraph:41b41964c0c4920e543ab8d1becb7dd1 -->
+Declared members are listed below; generated call observations do not establish executed behavior\.
+
+Source: internal/web/app/src/areas/viewer/pages/PlayerPage\.tsx:41; symbol: PlayerPage; span SHA256: 23cf3dbe101367b8eb37216ba93bd2f3395527a8ecb2a14a2b116775aff2b593.
+
+<!-- flowdocs:paragraph:8af732ea464b9e36ad8409fcdd36dfd9 -->
+Declared member: source declares buildTimestampedLink; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/pages/PlayerPage\.tsx:403; symbol: buildTimestampedLink; span SHA256: c3fb37a335af45dc7c5cae087c62afcf46a82252a78c0690201022ad10dcf83e.
+
+<!-- flowdocs:paragraph:66a214617dbb1bcb690e947a2e72999d -->
+Declared member: source declares parseTimestampParam; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/pages/PlayerPage\.tsx:397; symbol: parseTimestampParam; span SHA256: 80b1680c0056c1b51d64cca950ba7f60d20c43c0c7ce243fdca04e37fca9f109.
+
+<!-- flowdocs:paragraph:1b75ba00eec3c8847e68b95cee156b8a -->
+Declared member: source declares AudioStage; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/AudioStage\.tsx:11; symbol: AudioStage; span SHA256: b0ddbe700e9792a73aad4a344b29bbe74e7f5dd0c9cc74556ebc21ccf59f8158.
+
+<!-- flowdocs:paragraph:ddf72211e9a53eca5378ddd8f1d7d97b -->
+Declared member: source declares InfoOverlay; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/InfoOverlay\.tsx:15; symbol: InfoOverlay; span SHA256: f069d849e318dad4ee82e4099ff512c575af034a6f312f6debd591012dd794c7.
+
+<!-- flowdocs:paragraph:6accbf256f9f7173b2b4964eab95ba89 -->
+Declared member: source declares preloadPlayer; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/preload\.ts:8; symbol: preloadPlayer; span SHA256: 2ce87c54b1ceb4362c2a94938072100f35dd8f1c448b7a102a5a95cfdfd25707.
+
+<!-- flowdocs:paragraph:44c0a536d967104974563ca4ad6c2d89 -->
+Declared member: source declares back; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/pages/PlayerPage\.tsx:286; symbol: back; span SHA256: dfddc3cd508dcddafaa86975b777bfc8c318d6883d4d5578069dadf9fbcf6d80.
+
+<!-- flowdocs:paragraph:bab5f71e048e8a6d8fcc3fdd9e23464f -->
+Declared member: source declares playNext; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/pages/PlayerPage\.tsx:155; symbol: playNext; span SHA256: 549fbee98e13e47ba9989ac03512f6dc28514550c716cf5d050131e0c83e965d.
+
+<!-- flowdocs:paragraph:7539efee92ad731f49b968bc2b4472fb -->
+Declared member: source declares playPrevious; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/pages/PlayerPage\.tsx:166; symbol: playPrevious; span SHA256: 3e97b13cecdeba1be11dfb641ef8c3be601de36cdc2c1352345b78f107526819.
+

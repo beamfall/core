@@ -32,6 +32,17 @@ gate-preflight:
 gate-affected:
 	@script/gate-affected.sh "$(BASE)"
 
+# Corvint flow documentation for the web app (docs/web/flows/). `flow-docs`
+# regenerates the record at HEAD from the committed inventory and manifest;
+# `flow-docs-check` reports drift against the committed generation.json and
+# map.json. Documentation only: deliberately NOT part of `make gate`.
+.PHONY: flow-docs flow-docs-check
+flow-docs:
+	@script/flow-docs.sh generate
+
+flow-docs-check:
+	@script/flow-docs.sh check
+
 # ADR-0122: a Core wire-contract change carries THREE consumer re-vendor
 # obligations (web, Apple and Android client repositories).
 # The gate step above is guarded on the diff touching a contract source; these
