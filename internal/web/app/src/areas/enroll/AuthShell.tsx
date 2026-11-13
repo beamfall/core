@@ -5,7 +5,7 @@ import { CinemaBackdrop } from "@/components/beamfall/CinemaBackdrop";
 import { useT } from "@/lib/i18n";
 
 // The house form look (CORE-1114 setup wizard), shared by the sign-in pages.
-export const AUTH_FIELD = "h-11 rounded-xl border-white/10 bg-white/[0.04] text-[15px]";
+export const AUTH_FIELD = "h-11 rounded-[10px] border-white/10 bg-white/[0.04] text-[15px]";
 export const AUTH_FIELD_LABEL = "mb-2 block text-[13px] font-medium text-foreground/80";
 
 // Full-bleed cinema page with the brand bar and one card. The card sits at a
@@ -20,7 +20,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
         <span className="text-base font-semibold tracking-tight">{t("brand")}</span>
       </header>
       <div className="flex flex-1 justify-center px-4 pb-12 pt-2 sm:px-8 sm:pt-[8vh]">
-        <div className="animate-in fade-in w-full max-w-[440px] self-start rounded-2xl border border-white/10 bg-card p-6 shadow-[0_24px_60px_-28px_rgba(0,0,0,0.7)] duration-200 sm:p-8">
+        <div className="animate-in fade-in w-full max-w-[440px] self-start rounded-[14px] border border-white/10 bg-card p-6 shadow-[0_24px_60px_-28px_rgba(0,0,0,0.7)] duration-200 sm:p-8">
           {children}
         </div>
       </div>
@@ -31,9 +31,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
 export function AuthHeading({ title, lead }: { title: string; lead: string }) {
   return (
     <div className="mb-6">
-      <h1 className="m-0 text-2xl font-semibold leading-tight tracking-tight sm:text-[26px]">
-        {title}
-      </h1>
+      <h1 className="m-0 text-2xl font-semibold leading-tight tracking-tight">{title}</h1>
       <p className="mb-0 mt-2 text-[15px] leading-relaxed text-muted-foreground">{lead}</p>
     </div>
   );
@@ -64,7 +62,7 @@ export function FormFeedback({
           id={errorID}
           role="alert"
           tabIndex={-1}
-          className="m-0 flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3.5 py-2.5 text-sm text-destructive outline-none focus-visible:ring-2 focus-visible:ring-destructive/40"
+          className="m-0 flex items-start gap-2 rounded-[10px] border border-(--state-danger)/30 bg-(--state-danger)/10 px-3.5 py-2.5 text-sm text-(--state-danger) outline-none"
         >
           <AlertCircle aria-hidden className="mt-0.5 size-4 shrink-0" />
           {error}

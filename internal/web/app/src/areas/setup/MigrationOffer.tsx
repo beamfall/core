@@ -63,12 +63,12 @@ export function MigrationOffer({
 
   return (
     <section>
-      <h1 className="m-0 text-lg font-semibold">{t("setupMigrateTitle")}</h1>
+      <h1 className="m-0 text-xl font-semibold">{t("setupMigrateTitle")}</h1>
       <p className="mb-4 mt-0.5 text-[13px] text-muted-foreground">{t("setupMigrateLead")}</p>
 
       {/* Additive-only trust copy (funnel §3.3) — communicates the ADR-0037
           data-layer guarantees so a mid-evaluation refugee believes them. */}
-      <ul className="m-0 mb-4 flex list-none flex-col gap-1.5 rounded-lg border bg-muted/25 p-3 text-[12px] leading-snug text-muted-foreground">
+      <ul className="m-0 mb-4 flex list-none flex-col gap-1.5 rounded-lg border bg-muted/25 p-3 text-xs leading-snug text-muted-foreground">
         <li>{t("setupMigrateTrustAdditive")}</li>
         <li>{t("setupMigrateTrustScope")}</li>
         <li>{t("setupMigrateTrustNoConnection")}</li>

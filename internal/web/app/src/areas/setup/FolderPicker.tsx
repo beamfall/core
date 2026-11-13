@@ -53,7 +53,7 @@ export function FolderPicker({
   const folders = (node.children ?? []).filter((c) => c.kind === "folder");
 
   return (
-    <div className="mt-2 overflow-hidden rounded-xl border border-white/10 bg-white/[0.03]">
+    <div className="mt-2 overflow-hidden rounded-[10px] border border-white/10 bg-white/[0.03]">
       {/* Breadcrumb */}
       <div className="flex items-center gap-1 border-b border-white/10 py-1.5 pl-3 pr-1.5 text-[13px] text-muted-foreground">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-0.5">
@@ -65,26 +65,30 @@ export function FolderPicker({
                 {isCurrent ? (
                   <span className="truncate px-1 font-medium text-foreground">{crumb.label}</span>
                 ) : (
-                  <button
+                  <Button
                     type="button"
-                    className="rounded-md px-1 py-0.5 transition-colors duration-150 hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
+                    variant="ghost"
+                    size="sm"
+                    className="px-1.5 font-normal text-muted-foreground hover:text-foreground"
                     onClick={() => onOpenFolder(crumb.path)}
                   >
                     {crumb.label}
-                  </button>
+                  </Button>
                 )}
               </Fragment>
             );
           })}
         </div>
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon"
           onClick={onClose}
           aria-label={labels.close}
-          className="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors duration-150 hover:bg-white/[0.06] hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
+          className="size-8 text-muted-foreground hover:text-foreground"
         >
-          <X aria-hidden className="size-4" />
-        </button>
+          <X aria-hidden />
+        </Button>
       </div>
 
       {/* Directory list */}
@@ -95,18 +99,20 @@ export function FolderPicker({
           <p
             className={cn(
               "m-0 px-3 py-2.5 text-[13px]",
-              error ? "text-destructive" : "text-muted-foreground",
+              error ? "text-(--state-danger)" : "text-muted-foreground",
             )}
           >
             {error ?? labels.empty}
           </p>
         ) : (
           folders.map((folder) => (
-            <button
+            <Button
               key={folder.path}
               type="button"
+              variant="ghost"
+              size="lg"
               onClick={() => onOpenFolder(folder.path)}
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors duration-150 hover:bg-white/[0.06] focus-visible:bg-white/[0.06] focus-visible:outline-none"
+              className="w-full justify-start gap-2.5 rounded-none px-3 font-normal has-[>svg]:px-3"
             >
               <Folder aria-hidden className="size-4 shrink-0 text-muted-foreground" />
               <span className="truncate">{folder.name}</span>
@@ -114,11 +120,11 @@ export function FolderPicker({
                 aria-hidden
                 className="ml-auto size-4 shrink-0 text-muted-foreground/60"
               />
-            </button>
+            </Button>
           ))
         )}
         {error && !busy && folders.length > 0 && (
-          <p className="m-0 px-3 py-2 text-[13px] text-destructive">{error}</p>
+          <p className="m-0 px-3 py-2 text-[13px] text-(--state-danger)">{error}</p>
         )}
       </div>
 
@@ -130,7 +136,7 @@ export function FolderPicker({
         <Button
           type="button"
           size="sm"
-          className="ml-auto h-9 shrink-0 rounded-lg px-4"
+          className="ml-auto shrink-0 rounded-[10px] px-4"
           onClick={onUse}
           disabled={busy}
         >

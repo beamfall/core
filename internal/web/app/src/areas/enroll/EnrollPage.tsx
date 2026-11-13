@@ -109,7 +109,7 @@ export function EnrollPage() {
             id={codeID}
             value={code}
             onChange={(e) => setCode(e.target.value)}
-            className={cn(FIELD, "h-14 text-center font-mono text-xl tracking-[0.3em]")}
+            className={cn(FIELD, "text-center font-mono text-xl tracking-[0.3em]")}
             // The pairing code is a credential: no autofill, no spellcheck,
             // no autocapitalize that would mangle a case-sensitive code.
             autoComplete="off"
@@ -146,7 +146,7 @@ export function EnrollPage() {
         <Button
           type="submit"
           disabled={busy}
-          className="h-11 w-full rounded-xl text-[15px] font-semibold"
+          className="h-11 w-full rounded-[10px] text-[15px] font-semibold"
         >
           {t("connect")}
           <ArrowRight aria-hidden className="size-4" />
@@ -226,7 +226,7 @@ function AdminSignInForm({ deviceName }: { deviceName: string }) {
           type="submit"
           variant="outline"
           disabled={busy || password === ""}
-          className="h-11 w-full rounded-xl border-white/15 bg-transparent text-[15px] font-semibold hover:bg-white/[0.06]"
+          className="h-11 w-full rounded-[10px] border-white/15 bg-transparent text-[15px] font-semibold hover:bg-white/[0.06]"
         >
           {t("adminSignIn")}
         </Button>

@@ -668,7 +668,7 @@ export function SetupWizard() {
             key={step}
             onSubmit={onNext}
             noValidate
-            className="animate-in fade-in rounded-2xl border border-white/10 bg-card p-5 shadow-[0_24px_60px_-28px_rgba(0,0,0,0.7)] duration-200 sm:p-8"
+            className="animate-in fade-in rounded-[14px] border border-white/10 bg-card p-5 shadow-[0_24px_60px_-28px_rgba(0,0,0,0.7)] duration-200 sm:p-8"
           >
             {step === 0 && (
               <section>
@@ -683,7 +683,7 @@ export function SetupWizard() {
                     setToken(e.target.value);
                     setTokenError(null);
                   }}
-                  className={cn(FIELD, "font-mono tracking-wider")}
+                  className={cn(FIELD, "font-mono")}
                   autoComplete="off"
                   autoCapitalize="off"
                   autoCorrect="off"
@@ -699,7 +699,7 @@ export function SetupWizard() {
                     id={errorID}
                     role="alert"
                     tabIndex={-1}
-                    className="mt-2 text-sm text-destructive outline-none"
+                    className="mt-2 text-sm text-(--state-danger) outline-none"
                   >
                     {tokenError}
                   </p>
@@ -794,14 +794,15 @@ export function SetupWizard() {
                     const sel = spec.type === libraryType;
                     const Icon = TYPE_ICON[spec.type];
                     return (
-                      <button
+                      <Button
                         key={spec.type}
                         type="button"
+                        variant="outline"
                         onClick={() => setLibraryType(spec.type)}
                         aria-pressed={sel}
                         className={cn(
                           TILE,
-                          "items-center gap-2 px-2 py-3.5 text-center focus-visible:outline-2 focus-visible:outline-primary",
+                          "h-auto items-center gap-2 px-2 py-3.5 text-center shadow-none",
                           sel && TILE_SELECTED,
                         )}
                       >
@@ -812,7 +813,7 @@ export function SetupWizard() {
                         <span className="text-[13px] font-semibold">
                           {t(TYPE_LABEL[spec.type])}
                         </span>
-                      </button>
+                      </Button>
                     );
                   })}
                 </div>
@@ -834,7 +835,7 @@ export function SetupWizard() {
                   <Button
                     type="button"
                     variant="outline"
-                    className="h-11 shrink-0 rounded-xl border-white/10 bg-white/[0.04] px-4"
+                    className="h-11 shrink-0 rounded-[10px] border-white/10 bg-white/[0.04] px-4"
                     onClick={openPicker}
                     aria-expanded={pickerNode != null}
                     disabled={firstLibraryProgress.rootsSet}
@@ -983,19 +984,21 @@ export function SetupWizard() {
                   {updateCheckEnabled && (
                     <div className="mt-3 grid grid-cols-2 gap-2 sm:w-64">
                       {(["stable", "beta"] as const).map((channel) => (
-                        <button
+                        <Button
                           key={channel}
                           type="button"
+                          variant="outline"
+                          size="lg"
                           aria-pressed={updateCheckChannel === channel}
                           onClick={() => setUpdateCheckChannel(channel)}
                           className={cn(
                             TILE,
-                            "h-10 items-center justify-center text-sm font-medium focus-visible:outline-2 focus-visible:outline-primary",
+                            "flex-row items-center justify-center px-4 shadow-none",
                             updateCheckChannel === channel && cn(TILE_SELECTED, "text-primary"),
                           )}
                         >
                           {t(channel === "stable" ? "updateChannelStable" : "updateChannelBeta")}
-                        </button>
+                        </Button>
                       ))}
                     </div>
                   )}
@@ -1044,7 +1047,7 @@ export function SetupWizard() {
                 id={errorID}
                 role="alert"
                 tabIndex={-1}
-                className="mb-0 mt-5 text-sm text-destructive outline-none"
+                className="mb-0 mt-5 text-sm text-(--state-danger) outline-none"
               >
                 {error}
               </p>
@@ -1054,7 +1057,7 @@ export function SetupWizard() {
                 <Button
                   type="button"
                   variant="ghost"
-                  className="h-11 rounded-xl px-5"
+                  className="h-11 rounded-[10px] px-5"
                   onClick={onBack}
                   disabled={busy}
                 >
@@ -1064,7 +1067,7 @@ export function SetupWizard() {
               <Button
                 type="submit"
                 disabled={busy}
-                className="ml-auto h-11 min-w-[148px] rounded-xl px-6 text-[15px] font-semibold"
+                className="ml-auto h-11 min-w-[148px] rounded-[10px] px-6 text-[15px] font-semibold"
               >
                 {busy && <LoaderCircle aria-hidden className="size-4 motion-safe:animate-spin" />}
                 {busy ? t("setupWorking") : isLast ? t("setupBrowseReady") : t("setupContinue")}
@@ -1077,19 +1080,17 @@ export function SetupWizard() {
   );
 }
 
-const FIELD = "h-11 rounded-xl border-white/10 bg-white/[0.04] text-[15px]";
+const FIELD = "h-11 rounded-[10px] border-white/10 bg-white/[0.04] text-[15px]";
 const FIELD_LABEL = "mb-2 block text-[13px] font-medium text-foreground/80";
 const TILE =
-  "flex flex-col rounded-xl border border-white/10 bg-white/[0.03] transition-all duration-200 hover:border-white/25 hover:bg-white/[0.06] cursor-pointer";
+  "flex flex-col rounded-[10px] border border-white/10 bg-white/[0.03] transition-all duration-200 hover:border-white/25 hover:bg-white/[0.06] cursor-pointer";
 const TILE_SELECTED =
   "border-primary bg-primary/10 shadow-[inset_0_0_0_1px_var(--accent)] hover:border-primary hover:bg-primary/10";
 
 function StepHeading({ title, lead }: { title: string; lead: string }) {
   return (
     <div className="mb-6">
-      <h1 className="m-0 text-2xl font-semibold leading-tight tracking-tight sm:text-[28px]">
-        {title}
-      </h1>
+      <h1 className="m-0 text-2xl font-semibold leading-tight tracking-tight">{title}</h1>
       <p className="mb-0 mt-2 text-[15px] leading-relaxed text-muted-foreground">{lead}</p>
     </div>
   );

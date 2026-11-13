@@ -72,7 +72,7 @@ export function PromotePage() {
           </Label>
           <Input
             id={codeID}
-            className={cn(FIELD, "h-14 text-center font-mono text-xl tracking-[0.3em]")}
+            className={cn(FIELD, "text-center font-mono text-xl tracking-[0.3em]")}
             value={code}
             onChange={(e) => setCode(e.target.value)}
             autoComplete="off"
@@ -90,7 +90,7 @@ export function PromotePage() {
           <Button
             type="button"
             variant="ghost"
-            className="h-11 rounded-xl px-5"
+            className="h-11 rounded-[10px] px-5"
             disabled={busy}
             onClick={() => navigate("/", { replace: true })}
           >
@@ -99,7 +99,7 @@ export function PromotePage() {
           <Button
             type="submit"
             disabled={busy}
-            className="h-11 rounded-xl px-6 text-[15px] font-semibold sm:min-w-[140px]"
+            className="h-11 rounded-[10px] px-6 text-[15px] font-semibold sm:min-w-[140px]"
           >
             {t("promote")}
           </Button>
