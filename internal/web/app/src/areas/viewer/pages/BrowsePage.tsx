@@ -1,9 +1,11 @@
 import { Link, useParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
+import { buttonVariants } from "@/components/ui/button";
 import { displayString } from "@/lib/display";
 import type { NavigationNode, Section } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
+import { SectionSkeleton } from "../components/HydratedSection";
 import { LayoutView } from "../components/LayoutView";
 import { RevealControls } from "../components/RevealControls";
 import type { SeeAllTarget } from "../components/SectionView";
@@ -24,7 +26,11 @@ export function BrowsePage({ home = false }: { home?: boolean }) {
   if (loading && !manifest) {
     return (
       <AppShell actions={<ViewerActions />}>
-        <p className="text-sm text-[var(--text-muted)]">{t("loading")}</p>
+        <div aria-busy="true" className="flex flex-col gap-10">
+          <span className="sr-only">{t("loading")}</span>
+          <SectionSkeleton hero />
+          <SectionSkeleton hero={false} />
+        </div>
       </AppShell>
     );
   }
@@ -61,7 +67,10 @@ export function BrowsePage({ home = false }: { home?: boolean }) {
         // sortable library (CORE-1190); the hubs below stay as they were.
         <div className="flex flex-wrap items-center justify-between gap-3 pb-6">
           <h1 className="bf-page-title">{displayString(node.title, displayLocale)}</h1>
-          <Link className="bf-chip" to={`/n/${encodeURIComponent(node.id)}/all`}>
+          <Link
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+            to={`/n/${encodeURIComponent(node.id)}/all`}
+          >
             {t("libraryBrowseAll")}
           </Link>
         </div>

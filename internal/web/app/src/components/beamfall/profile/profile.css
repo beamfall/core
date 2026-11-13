@@ -71,35 +71,28 @@
   width: 100%;
   padding: 16px 8px;
   border: 1px solid transparent;
-  border-radius: var(--radius-card, 16px);
+  border-radius: var(--radius-surface);
   background: transparent;
   color: inherit;
   text-align: center;
   cursor: pointer;
-  transition:
-    background-color 150ms ease,
-    border-color 150ms ease;
+  transition: background-color var(--duration-fast) var(--ease-standard);
 }
 
 .bf-who-tile .bf-avatar {
   transition:
-    transform 150ms ease,
-    box-shadow 150ms ease;
+    transform var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
 }
 
 .bf-who-tile:hover,
 .bf-who-tile:focus-visible {
-  background: var(--control-bg-hover, rgb(255 255 255 / 5%));
+  background: var(--control-bg-hover);
 }
 
 .bf-who-tile:hover .bf-avatar,
 .bf-who-tile:focus-visible .bf-avatar {
   transform: translateY(-2px);
-}
-
-.bf-who-tile:focus-visible {
-  outline: 2px solid var(--focus-ring, currentColor);
-  outline-offset: 2px;
 }
 
 .bf-who-tile:disabled {
@@ -109,7 +102,7 @@
 
 .bf-who-tile.is-current .bf-avatar {
   box-shadow:
-    0 0 0 3px var(--bg-base, #05070a),
+    0 0 0 3px var(--bg-root),
     0 0 0 5px var(--text-primary);
 }
 

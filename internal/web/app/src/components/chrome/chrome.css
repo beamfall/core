@@ -704,21 +704,19 @@
   background: none;
   color: var(--text-secondary);
   font: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: var(--radius-control);
   font-size: 13px;
   line-height: 20px;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
   transition: color var(--duration-fast) var(--ease-standard);
 }
 
 [data-register="viewer"] .bf-see-all:hover {
   color: var(--text-primary);
-}
-
-[data-register="viewer"] .bf-see-all:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-  border-radius: var(--radius-control);
 }
 
 /* Section materializes by fading to content (skeletons fade to content;
@@ -802,8 +800,8 @@
 /* Hover lifts the artwork's edge; keyboard focus rings the artwork itself. */
 [data-register="viewer"] .bf-card:hover .bf-poster {
   box-shadow:
-    inset 0 0 0 1px oklch(100% 0 0 / 14%),
-    0 10px 28px oklch(5% 0.02 255 / 60%);
+    inset 0 0 0 1px color-mix(in oklab, var(--text-primary) 14%, transparent),
+    0 10px 28px color-mix(in oklab, var(--bg-root) 60%, transparent);
 }
 
 [data-register="viewer"] .bf-card:focus-visible .bf-poster {
@@ -811,9 +809,9 @@
   outline-offset: 3px;
 }
 
-/* ArtworkFallback: an accent-tinted gradient, never a grey box. The tint
- * derives from the Library accent (--library-accent) when present, falling back
- * to the beam brand. */
+/* ArtworkFallback: a surface faintly tinted by the Library accent
+ * (--library-accent) when present, with a muted glyph so a missing poster
+ * reads as intentional rather than broken. */
 [data-register="viewer"] .bf-poster {
   position: relative;
   width: 100%;
@@ -821,9 +819,17 @@
   flex: none;
   overflow: hidden;
   border-radius: var(--radius-card);
-  box-shadow: inset 0 0 0 1px oklch(100% 0 0 / 6%);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--text-primary) 6%, transparent);
   transition: box-shadow var(--duration-fast) var(--ease-standard);
-  background: color-mix(in oklab, var(--library-accent, var(--beam-500)) 10%, oklch(20% 0.018 252));
+  background: color-mix(in oklab, var(--library-accent, var(--accent)) 8%, var(--bg-surface));
+}
+
+[data-register="viewer"] .bf-poster-glyph {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  color: var(--text-muted);
+  opacity: 0.6;
 }
 
 [data-register="viewer"] .bf-poster img {
@@ -843,7 +849,7 @@
   height: 100%;
   object-fit: cover;
   pointer-events: none;
-  background: oklch(7% 0.02 255);
+  background: var(--bg-root);
 }
 
 [data-register="viewer"] .bf-card:hover .bf-poster img {
@@ -878,6 +884,32 @@
   text-overflow: ellipsis;
 }
 
+/* Phone: a shelf shows two and a half posters so it reads as scrollable, and
+ * a grid packs three columns instead of two oversized ones. */
+@media (max-width: 760px) {
+  [data-register="viewer"] .bf-shelf {
+    gap: 12px;
+  }
+  [data-register="viewer"] .bf-grid {
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 20px 12px;
+  }
+  [data-register="viewer"] .bf-shelf .bf-card {
+    width: 128px;
+  }
+  [data-register="viewer"] .bf-grid .bf-card {
+    width: 100%;
+  }
+  [data-register="viewer"] .bf-card-title {
+    font-size: 13px;
+    line-height: 18px;
+  }
+  [data-register="viewer"] .bf-card-sub {
+    font-size: 12px;
+    line-height: 16px;
+  }
+}
+
 /* Card state and actions. The shell positions the More trigger over the
  * poster as a sibling of the card button. State sits on a scrim so it reads on
  * any artwork; the play affordance and the trigger appear on hover or focus
@@ -890,8 +922,8 @@
   position: absolute;
   inset: auto 0 0;
   z-index: 2;
-  height: 5px;
-  background: oklch(7% 0.02 255 / 72%);
+  height: 4px;
+  background: color-mix(in oklab, var(--bg-root) 72%, transparent);
 }
 
 [data-register="viewer"] .bf-card-progress > span {
@@ -918,14 +950,13 @@
   line-height: 1;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  box-shadow: 0 2px 8px oklch(7% 0.02 255 / 45%);
 }
 
 [data-register="viewer"] .bf-card-badge-finished {
   padding: 0;
-  background: oklch(14% 0.014 250 / 82%);
-  color: var(--text);
-  border: 1px solid oklch(86% 0.02 250 / 28%);
+  background: color-mix(in oklab, var(--bg-root) 82%, transparent);
+  color: var(--text-primary);
+  border: 1px solid color-mix(in oklab, var(--text-primary) 28%, transparent);
 }
 
 [data-register="viewer"] .bf-card-play {
@@ -936,8 +967,8 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  background: oklch(7% 0.02 255 / 38%);
-  color: oklch(98% 0.004 250);
+  background: color-mix(in oklab, var(--bg-root) 40%, transparent);
+  color: var(--text-primary);
   font-size: 13px;
   font-weight: 600;
   opacity: 0;
@@ -961,10 +992,10 @@
   width: 28px;
   height: 28px;
   padding: 0;
-  border: 1px solid oklch(86% 0.02 250 / 28%);
+  border: 1px solid color-mix(in oklab, var(--text-primary) 28%, transparent);
   border-radius: 999px;
-  background: oklch(14% 0.014 250 / 82%);
-  color: oklch(98% 0.004 250);
+  background: color-mix(in oklab, var(--bg-root) 82%, transparent);
+  color: var(--text-primary);
   cursor: pointer;
   opacity: 0;
   transition: opacity var(--duration-fast) var(--ease-standard);
@@ -981,11 +1012,6 @@
 [data-register="viewer"] .bf-card-shell:focus-within .bf-card-more,
 [data-register="viewer"] .bf-card-more[data-popup-open] {
   opacity: 1;
-}
-
-[data-register="viewer"] .bf-card-more:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
 }
 
 @media (hover: none) {
@@ -1044,8 +1070,8 @@
   z-index: 3;
   padding: 6px 8px;
   border-radius: var(--radius-control);
-  background: oklch(14% 0.014 250 / 92%);
-  color: oklch(98% 0.004 250);
+  background: color-mix(in oklab, var(--bg-root) 92%, transparent);
+  color: var(--text-primary);
   font-size: 12px;
   line-height: 16px;
   pointer-events: none;
@@ -1118,7 +1144,7 @@
 }
 
 [data-register="viewer"] .bf-stack .bf-card:hover .bf-poster {
-  box-shadow: inset 0 0 0 1px oklch(100% 0 0 / 6%);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--text-primary) 6%, transparent);
 }
 
 /* A row is a wide target, so focus rings the row rather than its thumb. */
@@ -1145,9 +1171,9 @@
   width: 100%;
   aspect-ratio: 21 / 9;
   max-height: 480px;
-  border-radius: var(--radius-card);
+  border-radius: var(--radius-surface);
   overflow: hidden;
-  background: color-mix(in oklab, var(--library-accent, var(--beam-500)) 12%, oklch(20% 0.018 252));
+  background: color-mix(in oklab, var(--library-accent, var(--accent)) 8%, var(--bg-surface));
 }
 
 [data-register="viewer"] .bf-hero img {
@@ -1164,8 +1190,8 @@
   inset: 0;
   background: linear-gradient(
     90deg,
-    oklch(11% 0.012 255 / 92%) 0%,
-    oklch(11% 0.012 255 / 55%) 42%,
+    color-mix(in oklab, var(--bg-root) 92%, transparent) 0%,
+    color-mix(in oklab, var(--bg-root) 55%, transparent) 42%,
     transparent 78%
   );
 }
@@ -1203,30 +1229,11 @@
   overflow: hidden;
 }
 
-/* The hero's primary action is one of the few sanctioned brand-accent
- * surfaces (design system: "selected hero actions"). */
+/* The hero's primary action is the shared large primary button; this only
+ * places it under the summary. */
 [data-register="viewer"] .bf-hero-action {
   align-self: flex-start;
   margin-top: 6px;
-  padding: 10px 20px;
-  border: 0;
-  border-radius: var(--radius-control);
-  background: var(--beam-500);
-  color: var(--night-950);
-  font: inherit;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color var(--duration-fast) var(--ease-standard);
-}
-
-[data-register="viewer"] .bf-hero-action:hover {
-  background: var(--beam-600);
-}
-
-[data-register="viewer"] .bf-hero-action:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 3px;
 }
 
 @media (max-width: 760px) {
@@ -1234,7 +1241,11 @@
     aspect-ratio: 4 / 3;
   }
   [data-register="viewer"] .bf-hero-scrim {
-    background: linear-gradient(0deg, oklch(11% 0.012 255 / 92%) 0%, transparent 70%);
+    background: linear-gradient(
+      0deg,
+      color-mix(in oklab, var(--bg-root) 92%, transparent) 0%,
+      transparent 70%
+    );
   }
   [data-register="viewer"] .bf-hero-copy {
     max-width: 100%;
@@ -1259,9 +1270,13 @@
 }
 
 [data-register="viewer"] .bf-chip {
-  padding: 5px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
   border: 1px solid var(--border-subtle);
-  border-radius: 999px;
+  border-radius: var(--radius-field);
   background: var(--control-bg);
   color: var(--text-secondary);
   font: inherit;
@@ -1279,11 +1294,6 @@
   color: var(--text-primary);
 }
 
-[data-register="viewer"] .bf-chip:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
 [data-register="viewer"] .bf-chip[aria-pressed="true"] {
   border-color: color-mix(in oklab, var(--library-accent, var(--accent)) 70%, transparent);
   background: color-mix(in oklab, var(--library-accent, var(--accent)) 18%, var(--bg-surface));
@@ -1296,8 +1306,17 @@
  * ============================================================ */
 
 [data-register="viewer"] .bf-shimmer {
-  background: oklch(22% 0.012 255);
+  background: var(--bg-surface);
   border-radius: var(--radius-card);
+}
+
+[data-register="viewer"] .bf-hero.bf-shimmer {
+  border-radius: var(--radius-surface);
+}
+
+/* A skeleton card borrows the real card's width but is not a control. */
+[data-register="viewer"] .bf-shelf > div.bf-card {
+  cursor: default;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1314,31 +1333,20 @@
 }
 
 /* ============================================================ *
- *  Empty state (Viewer) — calm centered surface, never a grey void.
+ *  Empty state (Viewer) — a centred quiet block: optional muted
+ *  glyph, one line, optional action.
  * ============================================================ */
 
 [data-register="viewer"] .bf-empty {
   margin: 96px auto 0;
   max-width: 34rem;
   padding: 0 16px;
+  align-items: center;
   text-align: center;
 }
 
-[data-register="viewer"] .bf-empty .bf-action-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 40px;
-  padding: 0 14px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-control);
-  background: var(--bg-raised);
-}
-
-[data-register="viewer"] .bf-empty .bf-action-link:first-child {
-  border-color: var(--beam-500);
-  background: var(--beam-500);
-  color: var(--night-950);
+[data-register="viewer"] .bf-empty-glyph {
+  color: var(--text-muted);
 }
 
 /* ============================================================ *
@@ -1346,10 +1354,14 @@
  * ============================================================ */
 
 [data-register="viewer"] .bf-entity-kind {
-  margin: -4px 0 0;
-  color: var(--text-muted);
+  margin: 0;
+  color: var(--text-secondary);
   font-size: 15px;
   line-height: 22px;
+}
+
+[data-register="viewer"] .bf-entity-kind::first-letter {
+  text-transform: uppercase;
 }
 
 [data-register="viewer"] .bf-metadata {
@@ -1396,16 +1408,11 @@
 }
 
 [data-register="viewer"] .bf-profile-card:hover {
-  background: var(--night-850);
-}
-
-[data-register="viewer"] .bf-profile-card:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
+  background: var(--bg-overlay);
 }
 
 [data-register="viewer"] .bf-profile-card.is-current {
-  border-color: oklch(82% 0.145 92 / 45%);
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
 }
 
 /* ============================================================ *
