@@ -1802,6 +1802,67 @@ type HLSProcess struct {
 	// cancellation), so a supervisor can tell an expected kill from a crash.
 	stopRequested atomic.Bool
 	stderr        lockedTail
+	// progress parses the -progress stream on stdout when the argv asked for
+	// one; progressedAt is the UnixNano of the last advance of the encoder's
+	// output time, seeded with the start time.
+	progress        progressWriter
+	progressedAt    atomic.Int64
+	reportsProgress bool
+}
+
+// hlsProgressLineBytes bounds a partial -progress line kept between writes;
+// real lines are a few dozen bytes, so anything longer is discarded.
+const hlsProgressLineBytes = 4 << 10
+
+// progressWriter consumes ffmpeg's -progress key=value stream and reports each
+// increase of out_time_us. Anything else in the stream is ignored.
+type progressWriter struct {
+	mu      sync.Mutex
+	line    []byte
+	lastOut int64
+	advance func()
+}
+
+func (w *progressWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for _, b := range p {
+		if b != '\n' {
+			if len(w.line) < hlsProgressLineBytes {
+				w.line = append(w.line, b)
+			}
+			continue
+		}
+		w.parseLine(string(w.line))
+		w.line = w.line[:0]
+	}
+	return len(p), nil
+}
+
+func (w *progressWriter) parseLine(line string) {
+	value, ok := strings.CutPrefix(strings.TrimSpace(line), "out_time_us=")
+	if !ok {
+		return
+	}
+	out, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || out <= w.lastOut {
+		return // N/A before the first frame, or no forward motion
+	}
+	w.lastOut = out
+	if w.advance != nil {
+		w.advance()
+	}
+}
+
+// requestsProgress reports whether argv asks ffmpeg to write its -progress
+// stream to stdout, the stream ProgressedAt is computed from.
+func requestsProgress(args []string) bool {
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "-progress" && args[i+1] == "pipe:1" {
+			return true
+		}
+	}
+	return false
 }
 
 // lockedTail is a goroutine-safe tailBuffer: exec's copy goroutine writes
@@ -1846,9 +1907,17 @@ func startHLSProcess(cmd *exec.Cmd) (*HLSProcess, error) {
 		cmd.Stderr = &p.stderr
 		cmd.WaitDelay = hlsStderrWaitDelay
 	}
+	reportsProgress := cmd.Stdout == nil && requestsProgress(cmd.Args)
+	if reportsProgress {
+		p.progress.advance = func() { p.progressedAt.Store(time.Now().UnixNano()) }
+		cmd.Stdout = &p.progress
+		cmd.WaitDelay = hlsStderrWaitDelay
+	}
+	p.progressedAt.Store(time.Now().UnixNano())
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
+	p.reportsProgress = reportsProgress
 	return p, nil
 }
 
@@ -1892,6 +1961,31 @@ func (p *HLSProcess) Stop() {
 	p.stopRequested.Store(true)
 	p.killTree()
 	_ = p.Wait()
+}
+
+// Kill terminates the process tree without marking the exit as requested, so
+// a supervisor that kills a wedged encoder still sees a failed run. It does not
+// reap; the owner's Wait does.
+func (p *HLSProcess) Kill() {
+	if p == nil || p.cmd == nil || p.cmd.Process == nil {
+		return
+	}
+	p.killTree()
+}
+
+// ReportsProgress reports whether the process writes ffmpeg's -progress stream,
+// which is what makes ProgressedAt meaningful.
+func (p *HLSProcess) ReportsProgress() bool {
+	return p != nil && p.reportsProgress
+}
+
+// ProgressedAt returns when the encoder's output time last advanced, or its
+// start time before the first advance. It only moves when ReportsProgress.
+func (p *HLSProcess) ProgressedAt() time.Time {
+	if p == nil {
+		return time.Time{}
+	}
+	return time.Unix(0, p.progressedAt.Load())
 }
 
 // StopRequested reports whether the owner asked this process to exit (Stop or
@@ -1961,10 +2055,18 @@ func (r *Runner) startHLS(ctx context.Context, src, dir string, rendition Rendit
 	return process, nil
 }
 
+// hlsProgressArgs asks ffmpeg for its machine-readable progress stream on
+// stdout, which the HLS process turns into ProgressedAt so a supervisor can
+// tell a hung encoder from a slow one.
+func hlsProgressArgs() []string {
+	return []string{"-progress", "pipe:1"}
+}
+
 func hlsArgs(src, dir string, rendition Rendition) []string {
 	args := []string{
 		"-v", "error",
 	}
+	args = append(args, hlsProgressArgs()...)
 	args = append(args, rendition.inputArgs()...)
 	args = append(args, inputProtocolArgs()...)
 	args = append(args,
@@ -2033,8 +2135,9 @@ func (r *Runner) StartHLSSegments(ctx context.Context, src, dir string, startSeg
 	offset := startSegment * segmentSeconds
 	args := []string{
 		"-v", "error",
-		"-ss", strconv.Itoa(offset),
 	}
+	args = append(args, hlsProgressArgs()...)
+	args = append(args, "-ss", strconv.Itoa(offset))
 	args = append(args, rendition.inputArgs()...)
 	args = append(args, inputProtocolArgs()...)
 	args = append(args,

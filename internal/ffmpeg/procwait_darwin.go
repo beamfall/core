@@ -43,7 +43,12 @@ func waitForProcessExit(pid int) error {
 			if eventErrno < 0 {
 				return fmt.Errorf("ffmpeg: invalid kqueue errno %d", eventErrno)
 			}
-			return syscall.Errno(eventErrno)
+			if errno := syscall.Errno(eventErrno); errno != syscall.ESRCH {
+				return errno
+			}
+			// NOTE_EXIT cannot be registered on a child that already exited
+			// and is waiting to be reaped. The caller has not reaped it yet,
+			// so ESRCH here means it has exited; cmd.Wait reaps it.
 		}
 		return nil
 	}

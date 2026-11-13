@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/beamfall/core/internal/ffmpeg"
@@ -97,6 +98,11 @@ const (
 	// FFmpeg every time fails fast instead of respawning on every fetch.
 	encoderRestartBudget = 3
 	encoderRestartWindow = time.Minute
+	// encoderStallTimeout is how long a live encoder's output position may stay
+	// still while a request waits on it before the encoder counts as hung and
+	// is killed. It exceeds both latency budgets so a slow but working start
+	// is never mistaken for a hang.
+	encoderStallTimeout = 15 * time.Second
 )
 
 // errEncoderExited is waitForArtifact's signal that the encoder producing the
@@ -123,6 +129,9 @@ const (
 	exitEndOfInput
 	// exitCrashed: FFmpeg died on its own with a failure status or signal.
 	exitCrashed
+	// exitStalled: the stall watchdog killed FFmpeg because its output
+	// position stopped advancing while a request waited. Recovered like a crash.
+	exitStalled
 )
 
 // encoderRun is one FFmpeg process generation. exited is closed by the
@@ -134,6 +143,11 @@ type encoderRun struct {
 	proc    *ffmpeg.HLSProcess
 	exited  chan struct{}
 	outcome encoderExit // written under Sessions.mu before exited closes
+	// waiting counts the requests currently waiting on this run's artifacts;
+	// the stall watchdog only acts while it is non-zero.
+	waiting atomic.Int32
+	// stalled is set by the stall watchdog just before it kills the process.
+	stalled atomic.Bool
 }
 
 func (r *encoderRun) exitedChan() <-chan struct{} {
@@ -247,6 +261,11 @@ type hlsSession struct {
 	// ErrSourceEnded instead of being encoded as empty segments.
 	sourceEndSeconds int
 	sourceEndKnown   bool
+	// resumeSeconds is where playback info resumed the viewer. The session's
+	// first encoder starts at the segment containing it, so a resume spawns
+	// FFmpeg once instead of starting at 0 for init.mp4 and restarting at the
+	// first media request. Cleared once an encoder starts.
+	resumeSeconds int
 }
 
 // takeRestartLocked spends one crash restart from the session's sliding
@@ -344,7 +363,23 @@ type Sessions struct {
 	// one artifact wait window. Tests set it so a slow-encoder scenario runs in
 	// milliseconds instead of whole budgets.
 	waitWindow time.Duration
+	// stallTimeout, when positive, replaces encoderStallTimeout. Tests set it.
+	stallTimeout time.Duration
+	// resumeHints holds resume positions noted for sessions that do not exist
+	// yet; session creation consumes them. Entries expire with the idle timeout.
+	resumeHints map[SessionKey]resumeHint
 }
+
+// resumeHint is a resume position noted by playback info.
+type resumeHint struct {
+	seconds int
+	at      time.Time
+}
+
+// initRequest is the segment ensureRung is given for an init.mp4 request: any
+// encoder already running for the rendition writes the init segment, and with
+// none running the session starts one at its resume segment.
+const initRequest = -1
 
 // SetGovernor wires transcode-activity reporting (ADR-0013: transcode
 // preempts generation). Optional; nil means no reporting.
@@ -600,12 +635,13 @@ func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.
 		now = time.Now
 	}
 	s := &Sessions{
-		transcoder: transcoder,
-		dir:        scratchDir,
-		now:        now,
-		bootNonce:  newBootNonce(),
-		sessions:   map[SessionKey]*hlsSession{},
-		cap:        defaultTranscodeCap,
+		transcoder:  transcoder,
+		dir:         scratchDir,
+		now:         now,
+		bootNonce:   newBootNonce(),
+		sessions:    map[SessionKey]*hlsSession{},
+		cap:         defaultTranscodeCap,
+		resumeHints: map[SessionKey]resumeHint{},
 	}
 	_ = s.PurgeOrphanedTranscodeDirs()
 	return s
@@ -698,7 +734,8 @@ func (s *Sessions) FilePathPriorityWithBurnSubtitleAudioLadderMap(ctx context.Co
 			return "", err
 		}
 	case file == initSegmentName:
-		if run, err = s.ensureRung(ctx, key, session, rung, 0, path); err != nil {
+		segment = initRequest
+		if run, err = s.ensureRung(ctx, key, session, rung, segment, path); err != nil {
 			return "", err
 		}
 	default:
@@ -740,7 +777,13 @@ func (s *Sessions) FilePathPriorityWithBurnSubtitleAudioLadderMap(ctx context.Co
 func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int, isSegment bool, path string, run *encoderRun) error {
 	restarts := 0
 	for {
+		if run != nil {
+			run.waiting.Add(1)
+		}
 		err := waitForArtifact(ctx, path, run.exitedChan())
+		if run != nil {
+			run.waiting.Add(-1)
+		}
 		if !errors.Is(err, errEncoderExited) {
 			return err
 		}
@@ -928,6 +971,12 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds, videoWid
 		priority:          priority,
 		degraded:          degraded,
 	}
+	if hint, ok := s.resumeHints[key]; ok {
+		delete(s.resumeHints, key)
+		if s.now().Sub(hint.at) < sessionIdleTimeout {
+			session.resumeSeconds = hint.seconds
+		}
+	}
 	if err := writeSessionPlaylists(dir, requestedRungs, durationSeconds); err != nil {
 		_ = os.RemoveAll(dir)
 		return nil, err
@@ -1026,6 +1075,12 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 		return nil, nil
 	}
 	rungDir := filepath.Join(session.dir, rung.ID)
+	if segment == initRequest {
+		if session.proc != nil && session.currentRung == rung.ID {
+			return session.run, nil // every encoder writes init.mp4 when it starts
+		}
+		segment = session.resumeSegmentLocked(rung)
+	}
 	if session.proc != nil && session.currentRung == rung.ID {
 		if session.durationSeconds == 0 {
 			return session.run, nil // linear mode: the running process will reach it
@@ -1108,11 +1163,84 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	session.frontier = segment - 1 // new generation: nothing produced past base yet
 	session.lastAccess = s.now()
 	session.started = true
+	session.resumeSeconds = 0
 	if proc.Running() {
 		run.exited = make(chan struct{})
 		s.reapProcess(key, session, run, rung, segment)
+		if proc.ReportsProgress() {
+			go watchForStall(run, s.encoderStallTimeout())
+		}
 	}
 	return run, nil
+}
+
+// resumeSegmentLocked is the segment an encoder started for an init.mp4
+// request begins at: the one containing the resume position, or 0 when there
+// is none or it lies past the known end of the source.
+func (session *hlsSession) resumeSegmentLocked(rung Rung) int {
+	if session.resumeSeconds <= 0 || session.durationSeconds <= 0 {
+		return 0
+	}
+	segSeconds := rungSegmentSeconds(rung)
+	segment := session.resumeSeconds / segSeconds
+	if segment >= segmentCount(session.durationSeconds, segSeconds) || session.beyondSourceEndLocked(segment, segSeconds) {
+		return 0
+	}
+	return segment
+}
+
+// NoteResumePosition records where playback info resumed the viewer of key's
+// HLS session, so the session's first encoder starts there. A position of 0
+// clears it. A session that already started an encoder ignores it.
+func (s *Sessions) NoteResumePosition(key SessionKey, seconds int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.now()
+	for k, hint := range s.resumeHints {
+		if now.Sub(hint.at) >= sessionIdleTimeout {
+			delete(s.resumeHints, k)
+		}
+	}
+	if session, ok := s.sessions[key]; ok {
+		delete(s.resumeHints, key)
+		if !session.started {
+			session.resumeSeconds = max(seconds, 0)
+		}
+		return
+	}
+	if seconds <= 0 {
+		delete(s.resumeHints, key)
+		return
+	}
+	s.resumeHints[key] = resumeHint{seconds: seconds, at: now}
+}
+
+func (s *Sessions) encoderStallTimeout() time.Duration {
+	if s.stallTimeout > 0 {
+		return s.stallTimeout
+	}
+	return encoderStallTimeout
+}
+
+// watchForStall kills run's process when its output position has not advanced
+// for stall while at least one request is waiting on it, and returns once the
+// process has exited. An encoder nobody waits on is left alone: it may simply
+// be ahead of a paused viewer. The reaper classifies the kill as exitStalled.
+func watchForStall(run *encoderRun, stall time.Duration) {
+	ticker := time.NewTicker(max(stall/4, time.Millisecond))
+	defer ticker.Stop()
+	for {
+		select {
+		case <-run.exited:
+			return
+		case <-ticker.C:
+			if run.waiting.Load() > 0 && time.Since(run.proc.ProgressedAt()) >= stall {
+				run.stalled.Store(true)
+				run.proc.Kill()
+				return
+			}
+		}
+	}
 }
 
 // reapProcess waits for run's process to exit, classifies the exit, releases
@@ -1131,6 +1259,8 @@ func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoder
 			outcome = exitStopped
 		case waitErr == nil:
 			outcome = exitEndOfInput
+		case run.stalled.Load():
+			outcome = exitStalled
 		}
 		// Filesystem reads stay off-lock, as with ensureRung's frontier scan.
 		rungDir := filepath.Join(session.dir, rung.ID)
@@ -1153,7 +1283,7 @@ func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoder
 		if live && session.proc == run.proc {
 			session.proc = nil
 			session.currentRung = ""
-			session.lastCrashed = outcome == exitCrashed
+			session.lastCrashed = outcome == exitCrashed || outcome == exitStalled
 			s.releaseTranscodeLease(session)
 		}
 		lowered := live && sourceEnd >= 0 && session.noteSourceEndLocked(sourceEnd)
@@ -1172,6 +1302,8 @@ func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoder
 			slog.Debug("live transcode stopped", attrs...)
 		case exitEndOfInput:
 			slog.Debug("live transcode reached end of input", attrs...)
+		case exitStalled:
+			slog.Error("live transcode stalled; killed it", append(attrs, "progressed_at", run.proc.ProgressedAt(), "stderr", stderr)...)
 		default:
 			status := "unknown"
 			if waitErr != nil {

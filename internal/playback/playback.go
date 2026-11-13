@@ -922,6 +922,22 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	if burnSubtitleIndex := selectedBurnSubtitleIndex(streams, profile, selectedSubtitleIndex, ov); burnSubtitleIndex >= 0 {
 		grant.BurnSubtitleIndex = burnSubtitleIndex + 1
 	}
+	if s.sessions != nil {
+		// Hand the resume position to the HLS session this decision addresses,
+		// so a resumed transcode starts its encoder once, at that position.
+		key := SessionKey{SessionID: scope.SessionID, MediaID: media.ID, ProfileCapability: grant.ProfileCapability}
+		defer func() {
+			if err != nil {
+				return
+			}
+			for _, stream := range dec.streams {
+				if stream.Kind == "hls" {
+					s.sessions.NoteResumePosition(key, dec.timeline.PositionSeconds)
+					return
+				}
+			}
+		}()
+	}
 	hlsAudio := hlsAudioProfile(profile, streams, loudness, loudnessOK, ov)
 
 	// Generated Asset advertisement: one assets-target token covers
