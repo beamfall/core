@@ -547,6 +547,116 @@ func TestSeekPastFrontierRestartsTranscodeAtSegment(t *testing.T) {
 	}
 }
 
+// TestSlowEncoderBehindPlayheadBlocksInsteadOfFailing holds the encoder behind
+// the playhead (CORE-0044): it writes one segment per 60ms while each wait
+// window is 100ms, and the player asks for a segment three past the frontier.
+// The encoder is healthy, so the request must wait for the bytes, not expire
+// its window into an error the byte layer maps to a retryable 503, and must not
+// restart the encoder it is waiting on.
+func TestSlowEncoderBehindPlayheadBlocksInsteadOfFailing(t *testing.T) {
+	t.Parallel()
+	transcoder := &fakeTranscoder{segmentsToLay: 1}
+	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions.waitWindow = 100 * time.Millisecond
+	defer sessions.Close()
+	key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
+
+	first, err := filePath720(sessions, key, "720p/seg00000.m4s")
+	if err != nil {
+		t.Fatalf("seg0: %v", err)
+	}
+	dir := filepath.Dir(first)
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		for segment := 1; segment <= 3; segment++ {
+			select {
+			case <-done:
+				return
+			case <-time.After(60 * time.Millisecond):
+			}
+			if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("seg%05d.m4s", segment)), []byte("m4s"), 0o600); err != nil {
+				t.Errorf("write seg%d: %v", segment, err)
+				return
+			}
+		}
+	}()
+
+	if _, err := filePath720(sessions, key, "720p/seg00003.m4s"); err != nil {
+		t.Fatalf("seg3 behind a progressing encoder failed: %v", err)
+	}
+	transcoder.mu.Lock()
+	starts := append([]int(nil), transcoder.segmentStarts...)
+	transcoder.mu.Unlock()
+	if len(starts) != 1 || starts[0] != 0 {
+		t.Fatalf("segmentStarts = %v, want [0]: the wait must not restart a progressing encoder", starts)
+	}
+}
+
+// TestStalledEncoderFailsAfterOneWindow is the other side of the health test:
+// an encoder that writes nothing during a window is not healthy, so the request
+// fails after that window instead of waiting forever.
+func TestStalledEncoderFailsAfterOneWindow(t *testing.T) {
+	t.Parallel()
+	const window = 100 * time.Millisecond
+	sessions := NewSessions(&fakeTranscoder{segmentsToLay: 1}, t.TempDir(), nil)
+	sessions.waitWindow = window
+	defer sessions.Close()
+	key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
+
+	if _, err := filePath720(sessions, key, "720p/seg00000.m4s"); err != nil {
+		t.Fatalf("seg0: %v", err)
+	}
+	started := time.Now()
+	_, err := filePath720(sessions, key, "720p/seg00002.m4s")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("stalled encoder err = %v, want context.DeadlineExceeded", err)
+	}
+	if elapsed := time.Since(started); elapsed > 20*window {
+		t.Fatalf("stalled encoder held the request %s, want about one %s window", elapsed, window)
+	}
+}
+
+// TestForwardSeekLatencyIndependentOfDistance bounds forward-seek cost
+// (CORE-0044): however far past the encoder the viewer seeks, the request
+// starts one encoder at the requested segment and returns within the same
+// bound, instead of waiting for the encoder to grind forward to it.
+func TestForwardSeekLatencyIndependentOfDistance(t *testing.T) {
+	t.Parallel()
+	const (
+		durationSeconds = 2 * 60 * 60
+		bound           = 2 * time.Second
+	)
+	for _, segment := range []int{10, 150, 900, 1790} {
+		transcoder := &fakeTranscoder{segmentsToLay: 1}
+		sessions := NewSessions(transcoder, t.TempDir(), nil)
+		sessions.waitWindow = bound
+		key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
+		request := func(name string) error {
+			_, err := sessions.FilePath(context.Background(), key, "/src/movie.mkv", durationSeconds, 1280, 720, false, name)
+			return err
+		}
+		if err := request("720p/seg00000.m4s"); err != nil {
+			t.Fatalf("seg0: %v", err)
+		}
+		started := time.Now()
+		if err := request(fmt.Sprintf("720p/seg%05d.m4s", segment)); err != nil {
+			t.Fatalf("seek to segment %d: %v", segment, err)
+		}
+		elapsed := time.Since(started)
+		sessions.Close()
+		if elapsed > bound {
+			t.Fatalf("seek to segment %d took %s, want <= %s regardless of distance", segment, elapsed, bound)
+		}
+		transcoder.mu.Lock()
+		starts := append([]int(nil), transcoder.segmentStarts...)
+		transcoder.mu.Unlock()
+		if len(starts) != 2 || starts[1] != segment {
+			t.Fatalf("seek to segment %d: segmentStarts = %v, want [0 %d]", segment, starts, segment)
+		}
+	}
+}
+
 // TestTranscodeLatencyBudgetsOnReferenceClip pins ADR-0155 Decision 2.2/2.3
 // as numeric, executable contracts. The synthetic 64x64 clip is the stable
 // reference fixture: it exercises the real FFmpeg first-segment path and a

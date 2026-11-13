@@ -340,6 +340,10 @@ type Sessions struct {
 	nextID   int
 	cap      int
 	governor *governor.Governor
+	// waitWindow, when positive, replaces the latency budgets as the length of
+	// one artifact wait window. Tests set it so a slow-encoder scenario runs in
+	// milliseconds instead of whole budgets.
+	waitWindow time.Duration
 }
 
 // SetGovernor wires transcode-activity reporting (ADR-0013: transcode
@@ -711,9 +715,7 @@ func (s *Sessions) FilePathPriorityWithBurnSubtitleAudioLadderMap(ctx context.Co
 			return "", err
 		}
 	}
-	waitCtx, cancel := context.WithTimeout(ctx, waitBudget)
-	defer cancel()
-	if err := s.waitForEncoder(waitCtx, key, session, rung, segment, isSegment, path, run); err != nil {
+	if err := s.waitWhileEncoderProgresses(ctx, key, session, rung, segment, isSegment, path, run, waitBudget); err != nil {
 		return "", err
 	}
 	if isSegment && segmentLacksMedia(path) {
@@ -768,6 +770,46 @@ func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *
 	}
 }
 
+// waitWhileEncoderProgresses runs waitForEncoder in budget-long windows. When
+// a window expires on a segment, the session's encoder for rung is still the
+// same run, and that run wrote at least one new segment during the window, the
+// session is healthy but behind the playhead: the request keeps waiting for the
+// bytes instead of failing into a retryable 503 (CORE-0044). A window with no
+// new segment, or a run that another request replaced, fails as before. The
+// requested segment is at most seekLookaheadSegments past the frontier when the
+// wait starts, so each extra window needs one more produced segment and the
+// number of windows stays bounded.
+func (s *Sessions) waitWhileEncoderProgresses(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int, isSegment bool, path string, run *encoderRun, budget time.Duration) error {
+	for {
+		current, before, tracked := s.encoderProgress(key, session, rung)
+		waitCtx, cancel := context.WithTimeout(ctx, budget)
+		err := s.waitForEncoder(waitCtx, key, session, rung, segment, isSegment, path, run)
+		cancel()
+		if err == nil || !isSegment || !tracked || ctx.Err() != nil || !errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+		after, frontier, stillTracked := s.encoderProgress(key, session, rung)
+		if !stillTracked || after != current || frontier <= before {
+			return err
+		}
+		run = after
+	}
+}
+
+// encoderProgress returns the session's running encoder for rung and the
+// highest segment it has produced so far. tracked is false when the session is
+// gone or is not encoding rung.
+func (s *Sessions) encoderProgress(key SessionKey, session *hlsSession, rung Rung) (run *encoderRun, frontier int, tracked bool) {
+	s.mu.Lock()
+	if !s.liveLocked(key, session) || session.proc == nil || session.currentRung != rung.ID {
+		s.mu.Unlock()
+		return nil, 0, false
+	}
+	run, base := session.run, session.baseSegment
+	s.mu.Unlock()
+	return run, scanFrontier(filepath.Join(session.dir, rung.ID), base), true
+}
+
 // beyondSourceEnd reports whether segment starts past the session's known
 // source end.
 func (s *Sessions) beyondSourceEnd(session *hlsSession, segment, segSeconds int) bool {
@@ -816,6 +858,9 @@ func (s *Sessions) markDelivered(key SessionKey, session *hlsSession, rungID str
 func (s *Sessions) transcodeLatencyBudget(session *hlsSession, path string) time.Duration {
 	if fileReady(path) {
 		return fileWaitTimeout
+	}
+	if s.waitWindow > 0 {
+		return s.waitWindow
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
