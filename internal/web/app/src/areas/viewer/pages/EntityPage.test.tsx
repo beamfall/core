@@ -243,6 +243,26 @@ describe("EntityPage related Entities", () => {
     expect(screen.getByText("Linked place")).toBeInTheDocument();
   });
 
+  it("reloads related groups when engagement changes", async () => {
+    vi.mocked(fetchEntity).mockResolvedValue(withGroups);
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([]);
+    renderEntity();
+    expect(await screen.findByText("Linked box")).toBeInTheDocument();
+
+    const [boxGroup, placeGroup] = withGroups.relatedEntities ?? [];
+    vi.mocked(fetchEntity).mockResolvedValue({
+      ...withGroups,
+      relatedEntities: [
+        { ...boxGroup, items: [{ ...boxGroup.items[0], title: "Linked box, Finished" }] },
+        placeGroup,
+      ],
+    });
+    act(() => notifyEngagementChanged());
+
+    expect(await screen.findByText("Linked box, Finished")).toBeInTheDocument();
+    expect(fetchEntity).toHaveBeenCalledTimes(2);
+  });
+
   it("renders related groups before a detail Layout", async () => {
     mocks.layouts = [{ id: "rack-detail", sections: [], role: "detail", entityKind: "rack" }];
     vi.mocked(fetchEntity).mockResolvedValue(withGroups);

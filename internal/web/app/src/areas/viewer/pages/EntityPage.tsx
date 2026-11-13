@@ -74,6 +74,8 @@ export function EntityPage() {
   const needsFallback =
     !notFound && !detailLayout && (!!kindHint || !layouts.some((l) => l.role === "detail"));
 
+  // The Entity read carries related-Entity engagement, so it reloads with it.
+  const engagementEpoch = useEngagementEpoch();
   useEffect(() => {
     if (!entityId) return;
     let alive = true;
@@ -111,11 +113,10 @@ export function EntityPage() {
       alive = false;
       controller.abort();
     };
-  }, [identity, entityId]);
+  }, [identity, entityId, engagementEpoch]);
 
   // No detail Layout for this Kind: load the hand-rolled related-Media list,
   // again whenever watched, watchlist or rating state changes under it.
-  const engagementEpoch = useEngagementEpoch();
   useEffect(() => {
     if (!entityId || !needsFallback) return;
     let alive = true;
