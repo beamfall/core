@@ -556,7 +556,13 @@ func queueEntityScopeBackfills(ctx context.Context, st entityScopeSplitter, logg
 	}
 }
 
-func queueLibraryBackfill(ctx context.Context, st entityScopeSplitter, libraryID store.LibraryID) error {
+// backfillQueuer is the store surface queueLibraryBackfill needs.
+type backfillQueuer interface {
+	LibraryRoots(ctx context.Context, libraryID store.LibraryID) ([]string, error)
+	EnqueueJob(ctx context.Context, job store.Job) (store.Job, error)
+}
+
+func queueLibraryBackfill(ctx context.Context, st backfillQueuer, libraryID store.LibraryID) error {
 	roots, err := st.LibraryRoots(ctx, libraryID)
 	var invalid store.ValidationError
 	if errors.As(err, &invalid) {
