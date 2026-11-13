@@ -18,14 +18,18 @@ the copy must say so instead of promising a trash.
 - **Web GraphQL client**: a named `DeleteLibrary` operation calling `deleteLibrary(libraryID)`.
 - **Shared component** `components/beamfall/LibraryDelete.tsx`: a danger-styled "Delete library"
   control that opens an alert dialog titled with the library name. The dialog says the library
-  disappears on every device, files on disk are untouched, watch history is kept but hidden, and
-  there is no restore yet. While the mutation runs both buttons are disabled; on success the dialog
+  disappears on every device, files on disk are untouched, watch history stays on the server (past
+  plays stay in Play History without their titles), and there is no restore yet. While the mutation runs both buttons are disabled; on success the dialog
   closes and the list reloads; on failure the dialog stays open, shows the error and allows a retry.
 - **Console > Libraries** and **Manage > Libraries** place the control in a footer on each library
   card, apart from Rescan and Fix unmatched.
 - **Strings** in en, fr, de, es and pt.
 
 No server, schema or wire-contract change.
+
+The ticket describes history as "hidden with the library". The server does not hide it: Play
+History without a library filter still lists past plays of the deleted library's media, without
+their titles. The dialog copy states that behaviour rather than the ticket's wording.
 
 ## Impact
 

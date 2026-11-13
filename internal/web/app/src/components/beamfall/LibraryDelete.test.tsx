@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { deleteLibrary } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
@@ -19,6 +20,21 @@ function renderButton(onDeleted = vi.fn()) {
   return onDeleted;
 }
 
+// The trigger leaves the page with its card, as it does after the list reloads.
+function SectionWithLibrary() {
+  const [shown, setShown] = useState(true);
+  return (
+    <section>
+      <h2>Libraries</h2>
+      {shown ? (
+        <article>
+          <DeleteLibraryButton library={library} onDeleted={() => setShown(false)} />
+        </article>
+      ) : null}
+    </section>
+  );
+}
+
 beforeEach(() => {
   vi.mocked(deleteLibrary).mockReset().mockResolvedValue(undefined);
 });
@@ -35,7 +51,7 @@ describe("DeleteLibraryButton", () => {
     const dialog = screen.getByRole("alertdialog", { name: "Delete Films?" });
     expect(dialog).toHaveTextContent("every device");
     expect(dialog).toHaveTextContent("Files on disk are not touched");
-    expect(dialog).toHaveTextContent("watch history is kept but hidden");
+    expect(dialog).toHaveTextContent("past plays stay in Play History without their titles");
     expect(dialog).toHaveTextContent("cannot be restored yet");
     expect(dialog).toContainElement(document.activeElement as HTMLElement);
     expect(deleteLibrary).not.toHaveBeenCalled();
@@ -105,5 +121,23 @@ describe("DeleteLibraryButton", () => {
     await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
     expect(deleteLibrary).toHaveBeenCalledTimes(2);
     expect(onDeleted).toHaveBeenCalledTimes(1);
+  });
+
+  it("moves focus to the section heading once the deleted card is gone", async () => {
+    const user = userEvent.setup();
+    render(
+      <I18nProvider>
+        <SectionWithLibrary />
+      </I18nProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Delete library" }));
+    await user.click(
+      screen.getAllByRole("button", { name: "Delete library" }).at(-1) as HTMLElement,
+    );
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "Delete library" })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Libraries" })).toHaveFocus());
   });
 });

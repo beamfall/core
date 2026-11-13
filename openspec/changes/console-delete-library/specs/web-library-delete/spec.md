@@ -10,8 +10,8 @@ server's audited soft delete.
 #### Scenario: Owner deletes a library
 
 - **WHEN** an owner with an open Admin Session confirms the delete
-- **THEN** the client sends `DeleteLibrary` with the library's id, the dialog closes and the library
-  list reloads without that library
+- **THEN** the client sends `DeleteLibrary` with the library's id, the dialog closes, the library
+  list reloads without that library and focus moves to the heading of the libraries section
 
 #### Scenario: Cancel keeps the library
 
@@ -22,7 +22,8 @@ server's audited soft delete.
 
 The "Delete library" control SHALL open an alert dialog titled with the library name. Its copy SHALL
 state that the library disappears on every device, that files on disk are not touched, that watch
-history is kept but hidden, and that the library cannot be restored yet.
+history stays on the server with past plays listed in Play History without their titles, and that
+the library cannot be restored yet.
 
 #### Scenario: Owner opens the dialog
 

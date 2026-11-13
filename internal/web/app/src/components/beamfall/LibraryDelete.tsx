@@ -1,5 +1,5 @@
 import { Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -18,7 +18,9 @@ import { useT } from "@/lib/i18n";
 // The server mutation is an audited soft delete: the Library leaves every store
 // query while media rows, history and files on disk stay. There is no restore
 // mutation yet, so the copy says so instead of promising a trash. A failure
-// keeps the dialog open with the error so the owner can retry.
+// keeps the dialog open with the error so the owner can retry. After a delete
+// the trigger leaves the page with its card, so focus moves to the heading of
+// the surrounding section instead of falling back to the document body.
 export function DeleteLibraryButton({
   library,
   onDeleted,
@@ -30,6 +32,8 @@ export function DeleteLibraryButton({
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const focusAfterDelete = useRef<HTMLElement | null>(null);
 
   function changeOpen(next: boolean) {
     if (busy) return;
@@ -47,6 +51,7 @@ export function DeleteLibraryButton({
       setBusy(false);
       return;
     }
+    focusAfterDelete.current = regionHeading(triggerRef.current);
     setBusy(false);
     setOpen(false);
     onDeleted();
@@ -54,13 +59,13 @@ export function DeleteLibraryButton({
 
   return (
     <AlertDialog open={open} onOpenChange={changeOpen}>
-      <AlertDialogTrigger asChild>
+      <AlertDialogTrigger asChild ref={triggerRef}>
         <Button variant="destructive" size="sm">
           <Trash2 aria-hidden="true" />
           {t("deleteLibrary")}
         </Button>
       </AlertDialogTrigger>
-      <AlertDialogContent>
+      <AlertDialogContent finalFocus={() => focusAfterDelete.current ?? true}>
         <AlertDialogHeader>
           <AlertDialogTitle>{t("deleteLibraryTitle", { library: library.title })}</AlertDialogTitle>
           <AlertDialogDescription>{t("deleteLibraryBody")}</AlertDialogDescription>
@@ -81,4 +86,14 @@ export function DeleteLibraryButton({
       </AlertDialogContent>
     </AlertDialog>
   );
+}
+
+// The heading of the Console section or Manage card that lists the libraries.
+function regionHeading(from: HTMLElement | null): HTMLElement | null {
+  const heading = from
+    ?.closest("section, [data-slot=card]")
+    ?.querySelector<HTMLElement>("h1, h2, [role=heading]");
+  if (!heading) return null;
+  if (!heading.hasAttribute("tabindex")) heading.tabIndex = -1;
+  return heading;
 }
