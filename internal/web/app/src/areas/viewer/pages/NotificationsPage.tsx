@@ -93,7 +93,7 @@ export function NotificationsPage() {
             </Button>
           </div>
           {error && (
-            <p role="alert" className="text-sm text-[var(--red-500)]">
+            <p role="alert" className="text-sm text-[var(--state-danger)]">
               {error}
             </p>
           )}

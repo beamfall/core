@@ -28,7 +28,7 @@
   gap: 18px;
   min-height: 60px;
   padding: 10px 24px;
-  background: color-mix(in oklch, var(--bg-surface) 82%, transparent);
+  background: color-mix(in oklch, var(--bg-root) 86%, transparent);
   border-bottom: 1px solid var(--border-subtle);
   backdrop-filter: blur(18px) saturate(140%);
   -webkit-backdrop-filter: blur(18px) saturate(140%);
@@ -40,7 +40,7 @@
   gap: 10px;
   flex: none;
   font-size: 15px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0;
   color: var(--text-primary);
   text-decoration: none;
@@ -109,7 +109,7 @@
   overscroll-behavior: contain;
   padding: 16px 10px 24px;
   border-right: 1px solid var(--border-subtle);
-  background: color-mix(in oklch, var(--bg-surface) 55%, transparent);
+  background: var(--bg-root);
   scrollbar-width: thin;
   transition: width var(--duration-normal) var(--ease-standard);
 }
@@ -130,7 +130,7 @@
   margin: 22px 12px 6px;
   color: var(--text-muted);
   font-size: 12.5px;
-  font-weight: 550;
+  font-weight: 500;
   line-height: 16px;
   white-space: nowrap;
 }
@@ -140,7 +140,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 42px;
+  min-height: 44px;
   padding: 6px 12px;
   border-radius: 10px;
   color: var(--text-secondary);
@@ -188,14 +188,13 @@
   color: var(--beam-500);
 }
 
-/* A library tile: the library's own accent (or the beam) as a soft wash. */
+/* A library monogram: the library's initial in its own accent (or the beam),
+ * set like a glyph so the icon rail can still tell libraries apart. */
 .bf-side-tile {
   --tile: var(--beam-500);
-  background: color-mix(in oklch, var(--tile) 20%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--tile) 35%, transparent);
-  color: color-mix(in oklch, var(--tile) 70%, white);
-  font-size: 13px;
-  font-weight: 700;
+  color: color-mix(in oklch, var(--tile) 75%, white);
+  font-size: 15px;
+  font-weight: 600;
 }
 
 .bf-side-label {
@@ -354,7 +353,7 @@
   background: var(--beam-500);
   color: var(--night-950);
   font-size: 10px;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 14px;
   text-align: center;
   box-sizing: border-box;
@@ -388,8 +387,7 @@
 .bf-avatar-button[aria-expanded="true"] .bf-avatar {
   box-shadow:
     0 0 0 2px var(--bg-surface),
-    0 0 0 4px var(--beam-500),
-    0 0 18px color-mix(in oklch, var(--beam-500) 45%, transparent);
+    0 0 0 4px var(--beam-500);
 }
 
 .bf-account-panel {
@@ -420,7 +418,7 @@
 .bf-account-name {
   color: var(--text-primary);
   font-size: 15px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 20px;
   overflow-wrap: anywhere;
 }
@@ -444,7 +442,7 @@
   align-items: center;
   gap: 12px;
   width: 100%;
-  min-height: 42px;
+  min-height: 44px;
   padding: 0 10px;
   border: 0;
   border-radius: 10px;
@@ -492,7 +490,7 @@
 /* Sign out reuses the shared button; flatten it into a menu row. */
 .bf-account-panel .bf-account-signout {
   justify-content: flex-start;
-  height: 42px;
+  height: 44px;
   padding: 0 10px 0 40px;
   border-radius: 10px;
   color: var(--text-secondary);
@@ -543,12 +541,12 @@
     gap: 0;
   }
   .bf-icon-button {
-    min-width: 38px;
-    height: 38px;
+    min-width: 40px;
+    height: 40px;
   }
   .bf-avatar-button {
-    width: 38px;
-    height: 38px;
+    width: 40px;
+    height: 40px;
   }
   .bf-account-panel {
     position: fixed;
@@ -570,7 +568,7 @@
  * the accent (design system accent non-use); the revealed session is the
  * sanctioned iris Restrictions tint. */
 .bf-chip-role {
-  font-weight: 550;
+  font-weight: 500;
 }
 
 .bf-chip-revealed {
@@ -629,24 +627,27 @@
 }
 
 /* ============================================================ *
- *  Cinema Dark page atmosphere (Viewer only)
- *  Quiet projector-beam glow falling through a dark room — the
- *  product metaphor as atmosphere, not clutter (design-preview).
+ *  Cinema Dark page (Viewer only)
+ *  A flat dark room: the artwork carries the colour, the chrome
+ *  stays out of its way.
  * ============================================================ */
 
 [data-register="viewer"] .bf-shell {
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 18% -4%, oklch(82% 0.145 92 / 9%), transparent 30rem),
-    radial-gradient(circle at 88% -8%, oklch(74% 0.12 218 / 7%), transparent 28rem),
-    linear-gradient(180deg, var(--bg-root), oklch(10% 0.012 255));
-  background-attachment: fixed;
+  background: var(--bg-root);
 }
 
+/* Content fills the column beside the sidebar up to a wide cap, aligned to
+ * the sidebar edge rather than floating in the middle of a large screen. */
 [data-register="viewer"] .bf-main {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 24px 20px 64px;
+  max-width: 1760px;
+  padding: 28px 32px 72px;
+}
+
+@media (max-width: 760px) {
+  [data-register="viewer"] .bf-main {
+    padding: 20px 16px 56px;
+  }
 }
 
 /* ============================================================ *
@@ -658,7 +659,7 @@
   margin: 0;
   font-size: 28px;
   line-height: 36px;
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: 0;
   color: var(--text-primary);
 }
@@ -675,7 +676,7 @@
   margin: 0;
   font-size: 13px;
   line-height: 18px;
-  font-weight: 550;
+  font-weight: 500;
   color: var(--text-secondary);
 }
 
@@ -689,10 +690,10 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  margin: 0;
-  font-size: 18px;
-  line-height: 26px;
-  font-weight: 650;
+  margin: 0 0 4px;
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
   color: var(--text-primary);
 }
 
@@ -701,11 +702,11 @@
   padding: 0;
   border: 0;
   background: none;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font: inherit;
-  font-size: 12px;
-  line-height: 18px;
-  font-weight: 650;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 600;
   cursor: pointer;
   transition: color var(--duration-fast) var(--ease-standard);
 }
@@ -735,9 +736,9 @@
 /* Horizontal shelf rail. */
 [data-register="viewer"] .bf-shelf {
   display: flex;
-  gap: 14px;
+  gap: 18px;
   overflow-x: auto;
-  padding: 4px 4px 14px;
+  padding: 6px 4px 16px;
   scrollbar-width: thin;
   scroll-snap-type: x proximity;
 }
@@ -751,8 +752,8 @@
 [data-register="viewer"] .bf-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 14px;
-  padding: 4px;
+  gap: 24px 18px;
+  padding: 6px 4px;
 }
 
 /* List & info Sections: dense vertical stacked rows (same card contract,
@@ -770,42 +771,44 @@
  *  sits beneath the image, so layout never shifts while artwork loads.
  * ============================================================ */
 
+/* Artwork-led: the rounded poster is the card and the copy sits on the page
+ * beneath it, so a shelf reads as a row of artwork rather than of boxes. */
 [data-register="viewer"] .bf-card {
   display: flex;
   flex-direction: column;
   width: 100%;
   padding: 0;
-  border: 1px solid var(--border-subtle);
+  border: 0;
   border-radius: var(--radius-card);
-  background: oklch(22% 0.012 255);
+  background: none;
   color: var(--text-primary);
   text-align: left;
   cursor: pointer;
-  overflow: hidden;
-  transition:
-    border-color var(--duration-fast) var(--ease-standard),
-    box-shadow var(--duration-fast) var(--ease-standard),
-    transform var(--duration-fast) var(--ease-standard);
 }
 
 [data-register="viewer"] .bf-shelf .bf-card,
 [data-register="viewer"] .bf-grid .bf-card {
-  width: 150px;
+  width: 164px;
 }
 
 [data-register="viewer"] .bf-grid .bf-card {
   width: 100%;
 }
 
-[data-register="viewer"] .bf-card:hover {
-  border-color: oklch(40% 0.016 250);
-  box-shadow: 0 12px 30px oklch(7% 0.02 255 / 55%);
-  transform: translateY(-2px);
+[data-register="viewer"] .bf-card:focus-visible {
+  outline: 2px solid transparent;
 }
 
-[data-register="viewer"] .bf-card:focus-visible {
+/* Hover lifts the artwork's edge; keyboard focus rings the artwork itself. */
+[data-register="viewer"] .bf-card:hover .bf-poster {
+  box-shadow:
+    inset 0 0 0 1px oklch(100% 0 0 / 14%),
+    0 10px 28px oklch(5% 0.02 255 / 60%);
+}
+
+[data-register="viewer"] .bf-card:focus-visible .bf-poster {
   outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
+  outline-offset: 3px;
 }
 
 /* ArtworkFallback: an accent-tinted gradient, never a grey box. The tint
@@ -817,12 +820,10 @@
   aspect-ratio: 2 / 3;
   flex: none;
   overflow: hidden;
-  background:
-    radial-gradient(
-      circle at 74% 22%,
-      color-mix(in oklab, var(--library-accent, var(--beam-500)) 16%, transparent),
-      transparent 44%
-    ), linear-gradient(150deg, oklch(27% 0.03 248), oklch(16% 0.018 256));
+  border-radius: var(--radius-card);
+  box-shadow: inset 0 0 0 1px oklch(100% 0 0 / 6%);
+  transition: box-shadow var(--duration-fast) var(--ease-standard);
+  background: color-mix(in oklab, var(--library-accent, var(--beam-500)) 10%, oklch(20% 0.018 252));
 }
 
 [data-register="viewer"] .bf-poster img {
@@ -852,16 +853,16 @@
 [data-register="viewer"] .bf-card-copy {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 8px 9px 10px;
+  gap: 2px;
+  padding: 10px 2px 0;
   min-width: 0;
 }
 
 [data-register="viewer"] .bf-card-title {
-  color: var(--text);
-  font-size: 13px;
-  line-height: 18px;
-  font-weight: 620;
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 19px;
+  font-weight: 600;
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -869,8 +870,8 @@
 }
 
 [data-register="viewer"] .bf-card-sub {
-  font-size: 12px;
-  line-height: 16px;
+  font-size: 13px;
+  line-height: 18px;
   color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -915,7 +916,7 @@
   color: var(--accent-ink);
   font-size: 12px;
   line-height: 1;
-  font-weight: 700;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   box-shadow: 0 2px 8px oklch(7% 0.02 255 / 45%);
 }
@@ -935,10 +936,10 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  background: oklch(7% 0.02 255 / 46%);
+  background: oklch(7% 0.02 255 / 38%);
   color: oklch(98% 0.004 250);
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 600;
   opacity: 0;
   transition: opacity var(--duration-fast) var(--ease-standard);
   pointer-events: none;
@@ -1016,7 +1017,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 36px;
+  min-height: 40px;
   padding: 6px 10px;
   border-radius: var(--radius-control);
   font-size: 13px;
@@ -1108,8 +1109,26 @@
   transform: translateY(-50%);
 }
 
+[data-register="viewer"] .bf-stack .bf-card {
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
 [data-register="viewer"] .bf-stack .bf-card:hover {
-  transform: none;
+  background: var(--bg-raised);
+}
+
+[data-register="viewer"] .bf-stack .bf-card:hover .bf-poster {
+  box-shadow: inset 0 0 0 1px oklch(100% 0 0 / 6%);
+}
+
+/* A row is a wide target, so focus rings the row rather than its thumb. */
+[data-register="viewer"] .bf-stack .bf-card:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+[data-register="viewer"] .bf-stack .bf-card:focus-visible .bf-poster {
+  outline-color: transparent;
 }
 
 [data-register="viewer"] .bf-stack .bf-card:hover .bf-poster img {
@@ -1125,16 +1144,10 @@
   position: relative;
   width: 100%;
   aspect-ratio: 21 / 9;
-  max-height: 440px;
-  border: 1px solid var(--border-subtle);
+  max-height: 480px;
   border-radius: var(--radius-card);
   overflow: hidden;
-  background:
-    radial-gradient(
-      circle at 74% 22%,
-      color-mix(in oklab, var(--library-accent, var(--beam-500)) 20%, transparent),
-      transparent 55%
-    ), linear-gradient(150deg, oklch(27% 0.03 248), oklch(16% 0.018 256));
+  background: color-mix(in oklab, var(--library-accent, var(--beam-500)) 12%, oklch(20% 0.018 252));
 }
 
 [data-register="viewer"] .bf-hero img {
@@ -1173,7 +1186,7 @@
   margin: 0;
   font-size: 40px;
   line-height: 48px;
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: 0;
   color: var(--text-primary);
 }
@@ -1202,7 +1215,7 @@
   color: var(--night-950);
   font: inherit;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   transition: background-color var(--duration-fast) var(--ease-standard);
 }
@@ -1217,8 +1230,15 @@
 }
 
 @media (max-width: 760px) {
+  [data-register="viewer"] .bf-hero {
+    aspect-ratio: 4 / 3;
+  }
+  [data-register="viewer"] .bf-hero-scrim {
+    background: linear-gradient(0deg, oklch(11% 0.012 255 / 92%) 0%, transparent 70%);
+  }
   [data-register="viewer"] .bf-hero-copy {
     max-width: 100%;
+    padding: 20px;
   }
   [data-register="viewer"] .bf-hero-title {
     font-size: 30px;
@@ -1271,32 +1291,16 @@
 }
 
 /* ============================================================ *
- *  Skeletons (Viewer) — never-focusable hydration placeholders.
- *  The shimmer is motion, so reduce-motion drops it.
+ *  Skeletons (Viewer) — never-focusable hydration placeholders,
+ *  a static tone with no motion.
  * ============================================================ */
 
 [data-register="viewer"] .bf-shimmer {
-  background: linear-gradient(
-    100deg,
-    oklch(22% 0.012 255) 35%,
-    oklch(26% 0.013 253) 50%,
-    oklch(22% 0.012 255) 65%
-  );
-  background-size: 200% 100%;
-  animation: bf-shimmer 1.4s linear infinite;
+  background: oklch(22% 0.012 255);
   border-radius: var(--radius-card);
 }
 
-@keyframes bf-shimmer {
-  to {
-    background-position: -200% 0;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  [data-register="viewer"] .bf-shimmer {
-    animation: none;
-  }
   [data-register="viewer"] .bf-card:hover {
     transform: none;
   }
@@ -1324,8 +1328,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 36px;
-  padding: 0 13px;
+  min-height: 40px;
+  padding: 0 14px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-control);
   background: var(--bg-raised);
@@ -2366,25 +2370,23 @@
   color: var(--text-muted);
 }
 
+/* The counts read as one line of facts inside the panel, not a row of tiles. */
 .mydata-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  border: 1px solid var(--border-subtle);
-  border-radius: calc(var(--radius-surface) - 4px);
-  overflow: hidden;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 32px;
 }
 
 .mydata-stat {
-  display: grid;
-  gap: 2px;
-  padding: 12px 16px;
-  box-shadow: -1px -1px 0 var(--border-subtle);
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
 }
 
 .mydata-stat-value {
-  font-size: 22px;
+  font-size: 17px;
   font-weight: 600;
-  line-height: 28px;
+  line-height: 24px;
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
 }
@@ -2444,9 +2446,7 @@
 
 .mydata-empty {
   margin: 0;
-  padding: 14px 16px;
-  border: 1px solid var(--border-subtle);
-  border-radius: calc(var(--radius-surface) - 4px);
+  padding: 4px 0;
   font-size: 13.5px;
   color: var(--text-muted);
 }
@@ -2455,8 +2455,7 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  border: 1px solid var(--border-subtle);
-  border-radius: calc(var(--radius-surface) - 4px);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .mydata-row {
@@ -2468,10 +2467,6 @@
   border-bottom: 1px solid var(--border-subtle);
 }
 
-.mydata-row:last-child {
-  border-bottom: 0;
-}
-
 .mydata-row[data-current] {
   background: color-mix(in oklab, var(--accent) 7%, transparent);
 }
@@ -2479,7 +2474,7 @@
 .mydata-pill {
   flex: none;
   font-size: 12.5px;
-  font-weight: 550;
+  font-weight: 500;
   color: var(--accent);
 }
 
@@ -2503,13 +2498,13 @@
 }
 
 .mydata-notice[data-tone="ok"] {
-  color: var(--green-500);
-  background: color-mix(in oklab, var(--green-500) 10%, transparent);
+  color: var(--state-direct);
+  background: color-mix(in oklab, var(--state-direct) 10%, transparent);
 }
 
 .mydata-notice[data-tone="error"] {
-  color: var(--red-500);
-  background: color-mix(in oklab, var(--red-500) 10%, transparent);
+  color: var(--state-danger);
+  background: color-mix(in oklab, var(--state-danger) 10%, transparent);
 }
 
 /* Over a playing stage the bar floats on a top scrim and hides with the
@@ -2558,10 +2553,10 @@ main:has(> .bf-player-stage.is-chrome-hidden) > .bf-player-bar > * {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 36px;
+  min-height: 40px;
   padding: 0 14px;
   border: 1px solid var(--border-strong);
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--text-secondary);
   font-size: 13px;

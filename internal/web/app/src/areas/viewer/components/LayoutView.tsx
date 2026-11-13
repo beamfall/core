@@ -169,7 +169,7 @@ export function LayoutView({
   }
 
   return (
-    <div ref={rootRef} style={accentVar} className="flex flex-col gap-8">
+    <div ref={rootRef} style={accentVar} className="flex flex-col gap-10">
       {connectionLost && (
         <div
           role="status"

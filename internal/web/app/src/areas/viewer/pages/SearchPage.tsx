@@ -132,7 +132,7 @@ export function SearchPage() {
           )}
         </form>
         {live.failed && (
-          <p className="text-sm text-[var(--red-500)]" role="alert">
+          <p className="text-sm text-[var(--state-danger)]" role="alert">
             {t("searchUnavailable")}
           </p>
         )}
