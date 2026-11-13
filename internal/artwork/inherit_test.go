@@ -394,3 +394,33 @@ func TestSweepInheritsAcrossBatches(t *testing.T) {
 		s.wantPoster(store.EntityID(fmt.Sprintf("entity-maker-%03d", i)), "cover-shared", true)
 	}
 }
+
+// Sources are read past the first page: a maker whose only box with a poster
+// sorts after a full page of boxes without one still inherits it, and a maker
+// that already inherited keeps its poster when a full page of boxes without
+// one is added ahead of its source.
+func TestSweepReadsPosterSourcesPastOnePage(t *testing.T) {
+	s := newShelf(t)
+	s.entity("entity-kept", "maker")
+	s.entity("entity-a-zzz", "box")
+	s.holds("entity-a-zzz", s.item("kept", "cover-kept"), 1)
+	s.relate(store.EntityRelation{FromEntityID: "entity-a-zzz", Name: "made-by", ToEntityID: "entity-kept"})
+	s.entity("entity-b-zzz", "box")
+	s.holds("entity-b-zzz", s.item("fresh", "cover-fresh"), 1)
+	s.runSweep()
+	s.wantPoster("entity-kept", "cover-kept", true)
+
+	s.entity("entity-fresh", "maker")
+	s.relate(store.EntityRelation{FromEntityID: "entity-b-zzz", Name: "made-by", ToEntityID: "entity-fresh"})
+	for i := 0; i < entityPosterSourcePage; i++ {
+		for _, set := range []struct{ prefix, maker string }{{"a", "entity-kept"}, {"b", "entity-fresh"}} {
+			id := store.EntityID(fmt.Sprintf("entity-%s-%03d", set.prefix, i))
+			s.entity(id, "box")
+			s.relate(store.EntityRelation{FromEntityID: id, Name: "made-by", ToEntityID: store.EntityID(set.maker)})
+		}
+	}
+	s.runSweep()
+
+	s.wantPoster("entity-kept", "cover-kept", true)
+	s.wantPoster("entity-fresh", "cover-fresh", true)
+}

@@ -48,10 +48,10 @@ func (s *Store) EntitiesOfKindAfter(ctx context.Context, pluginID, kind string, 
 	return refs, rows.Err()
 }
 
-// EntityMemberMediaIDs returns the Media one Entity points at through a
-// relation, ordered rows first by their sort order (the order the Entity's
-// children are shown in), skipping trashed Media.
-func (s *Store) EntityMemberMediaIDs(ctx context.Context, id EntityID, relation string, limit int) ([]MediaID, error) {
+// EntityMemberMediaIDs returns one page of the Media one Entity points at
+// through a relation, ordered rows first by their sort order (the order the
+// Entity's children are shown in), skipping trashed Media.
+func (s *Store) EntityMemberMediaIDs(ctx context.Context, id EntityID, relation string, offset, limit int) ([]MediaID, error) {
 	if id == "" || relation == "" {
 		return nil, errors.New("entity ID and relation name are required")
 	}
@@ -68,8 +68,8 @@ func (s *Store) EntityMemberMediaIDs(ctx context.Context, id EntityID, relation 
 		JOIN media m ON m.id = r.to_media_id AND m.trashed_at_ms IS NULL
 		WHERE r.from_entity_id = ? AND r.relation = ?
 		ORDER BY r.sort_order IS NULL, r.sort_order, r.to_media_id
-		LIMIT ?
-	`, id, relation, limit)
+		LIMIT ? OFFSET ?
+	`, id, relation, limit, max(offset, 0))
 	if err != nil {
 		return nil, err
 	}
@@ -85,9 +85,9 @@ func (s *Store) EntityMemberMediaIDs(ctx context.Context, id EntityID, relation 
 	return ids, rows.Err()
 }
 
-// EntitiesRelatingTo returns the Entities of one kind that point at an Entity
-// through a relation, by title then id, skipping trashed Entities.
-func (s *Store) EntitiesRelatingTo(ctx context.Context, id EntityID, fromKind, relation string, limit int) ([]EntityID, error) {
+// EntitiesRelatingTo returns one page of the Entities of one kind that point
+// at an Entity through a relation, by title then id, skipping trashed Entities.
+func (s *Store) EntitiesRelatingTo(ctx context.Context, id EntityID, fromKind, relation string, offset, limit int) ([]EntityID, error) {
 	if id == "" || fromKind == "" || relation == "" {
 		return nil, errors.New("entity ID, source kind and relation name are required")
 	}
@@ -104,8 +104,8 @@ func (s *Store) EntitiesRelatingTo(ctx context.Context, id EntityID, fromKind, r
 		JOIN entity e ON e.id = r.from_entity_id
 		WHERE r.to_entity_id = ? AND r.relation = ? AND e.kind = ? AND e.trashed_at_ms IS NULL
 		ORDER BY e.title, e.id
-		LIMIT ?
-	`, id, relation, fromKind, limit)
+		LIMIT ? OFFSET ?
+	`, id, relation, fromKind, limit, max(offset, 0))
 	if err != nil {
 		return nil, err
 	}

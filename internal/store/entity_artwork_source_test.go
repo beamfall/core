@@ -85,22 +85,28 @@ func TestEntityArtworkSourceReads(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	members, err := st.EntityMemberMediaIDs(ctx, "entity-box-a", "holds", 10)
+	members, err := st.EntityMemberMediaIDs(ctx, "entity-box-a", "holds", 0, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if want := []MediaID{early, late, unordered}; !reflect.DeepEqual(members, want) {
 		t.Fatalf("EntityMemberMediaIDs = %v, want %v", members, want)
 	}
+	if page, err := st.EntityMemberMediaIDs(ctx, "entity-box-a", "holds", 1, 1); err != nil || !reflect.DeepEqual(page, []MediaID{late}) {
+		t.Fatalf("EntityMemberMediaIDs page 2 = %v, %v; want [%s]", page, err, late)
+	}
 
-	makers, err := st.EntitiesRelatingTo(ctx, "entity-maker", "box", "made-by", 10)
+	makers, err := st.EntitiesRelatingTo(ctx, "entity-maker", "box", "made-by", 0, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if want := []EntityID{"entity-box-b", "entity-box-a"}; !reflect.DeepEqual(makers, want) {
 		t.Fatalf("EntitiesRelatingTo = %v, want %v (by title)", makers, want)
 	}
-	if none, err := st.EntitiesRelatingTo(ctx, "entity-maker", "maker", "made-by", 10); err != nil || len(none) != 0 {
+	if page, err := st.EntitiesRelatingTo(ctx, "entity-maker", "box", "made-by", 1, 1); err != nil || !reflect.DeepEqual(page, []EntityID{"entity-box-a"}) {
+		t.Fatalf("EntitiesRelatingTo page 2 = %v, %v; want [entity-box-a]", page, err)
+	}
+	if none, err := st.EntitiesRelatingTo(ctx, "entity-maker", "maker", "made-by", 0, 10); err != nil || len(none) != 0 {
 		t.Fatalf("EntitiesRelatingTo(other kind) = %v, %v; want none", none, err)
 	}
 }

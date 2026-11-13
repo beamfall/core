@@ -36,10 +36,11 @@ const (
 	// is larger than the Media pass's; the invocation still ends early after
 	// sweepJobBatchSize copies, which each cost a derivative set.
 	entitySweepBatchSize = 50
-	// entityPosterSourceLimit bounds the sources read per rule entry: the
-	// first poster among this many members is plenty, and it keeps one very
-	// large Entity from dominating a batch.
-	entityPosterSourceLimit = 200
+	// entityPosterSourcePage is how many sources one read of a rule entry
+	// returns. The first poster is usually on the first page, so a very large
+	// Entity costs one page; later pages are read only while no usable source
+	// has been found or the recorded one is still being looked for.
+	entityPosterSourcePage = 200
 )
 
 // inheritedMarkerPath is the mark beside an Entity poster that was copied
@@ -96,9 +97,9 @@ func (c posterCandidate) usable() (os.FileInfo, bool) {
 	return info, true
 }
 
-func (s *Service) posterCandidates(ctx context.Context, id store.EntityID, source EntityPosterSource) ([]posterCandidate, error) {
+func (s *Service) posterCandidates(ctx context.Context, id store.EntityID, source EntityPosterSource, offset int) ([]posterCandidate, error) {
 	if source.FromKind == "" {
-		members, err := s.store.EntityMemberMediaIDs(ctx, id, source.Relation, entityPosterSourceLimit)
+		members, err := s.store.EntityMemberMediaIDs(ctx, id, source.Relation, offset, entityPosterSourcePage)
 		if err != nil {
 			return nil, err
 		}
@@ -108,7 +109,7 @@ func (s *Service) posterCandidates(ctx context.Context, id store.EntityID, sourc
 		}
 		return out, nil
 	}
-	related, err := s.store.EntitiesRelatingTo(ctx, id, source.FromKind, source.Relation, entityPosterSourceLimit)
+	related, err := s.store.EntitiesRelatingTo(ctx, id, source.FromKind, source.Relation, offset, entityPosterSourcePage)
 	if err != nil {
 		return nil, err
 	}
@@ -146,33 +147,43 @@ func (s *Service) inheritEntityPoster(ctx context.Context, ref store.EntityRef, 
 	if hasPoster && !marked {
 		return false, nil
 	}
-	var candidates []posterCandidate
+	// Sources are read page by page in order until the first usable one is
+	// found and, for an inherited poster, its recorded source has been seen.
+	seeking := hasPoster && recorded.Source != ""
+	var first *posterCandidate
+	var firstInfo os.FileInfo
+read:
 	for _, source := range rule.Sources {
-		found, err := s.posterCandidates(ctx, ref.ID, source)
-		if err != nil {
-			return false, err
-		}
-		if hasPoster && recorded.Source != "" {
-			for _, candidate := range found {
-				if s.sourceName(candidate.path) != recorded.Source {
-					continue
+		for offset := 0; ; offset += entityPosterSourcePage {
+			page, err := s.posterCandidates(ctx, ref.ID, source, offset)
+			if err != nil {
+				return false, err
+			}
+			for i := range page {
+				candidate := page[i]
+				if seeking && s.sourceName(candidate.path) == recorded.Source {
+					if info, ok := candidate.usable(); ok && recorded.matches(info) {
+						return false, nil
+					}
+					// The recorded source changed; resolve from the top.
+					seeking = false
 				}
-				if info, ok := candidate.usable(); ok && recorded.matches(info) {
-					return false, nil
+				if first == nil {
+					if info, ok := candidate.usable(); ok {
+						first, firstInfo = &candidate, info
+					}
 				}
-				// The recorded source changed; resolve from the top.
-				recorded = inheritedSource{}
+				if first != nil && !seeking {
+					break read
+				}
+			}
+			if len(page) < entityPosterSourcePage {
 				break
 			}
 		}
-		candidates = append(candidates, found...)
 	}
-	for _, candidate := range candidates {
-		info, ok := candidate.usable()
-		if !ok {
-			continue
-		}
-		wrote, err := s.copyInheritedPoster(dst, candidate, info)
+	if first != nil {
+		wrote, err := s.copyInheritedPoster(dst, *first, firstInfo)
 		if err != nil || !wrote {
 			return false, err
 		}
