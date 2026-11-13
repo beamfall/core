@@ -2,7 +2,12 @@ import "@testing-library/jest-dom/vitest";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { endAdminSession, fetchAdminSession, verifyAdminSession } from "@/lib/graphql";
+import {
+  endAdminSession,
+  fetchAdminSession,
+  fetchSetupState,
+  verifyAdminSession,
+} from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
 import { AdminGate } from "./AdminGate";
@@ -28,6 +33,7 @@ vi.mock("react", async (importOriginal) => {
 
 vi.mock("@/lib/graphql", () => ({
   fetchAdminSession: vi.fn(),
+  fetchSetupState: vi.fn(),
   verifyAdminSession: vi.fn(),
   endAdminSession: vi.fn(),
 }));
@@ -43,6 +49,8 @@ beforeEach(() => {
   postUnmountWrites.armed = false;
   postUnmountWrites.count = 0;
   vi.mocked(fetchAdminSession).mockReset();
+  vi.mocked(fetchSetupState).mockReset();
+  vi.mocked(fetchSetupState).mockResolvedValue({ adminPasswordSet: true } as never);
   vi.mocked(verifyAdminSession).mockReset();
   vi.mocked(endAdminSession).mockReset();
   vi.mocked(fetchAdminSession).mockResolvedValue({ active: false });
@@ -85,6 +93,59 @@ function gateNode() {
     </I18nProvider>
   );
 }
+
+describe("AdminGate first admin password (CORE-1132)", () => {
+  it("offers a choose-and-confirm form instead of unlock when no password is set", async () => {
+    vi.mocked(fetchSetupState).mockResolvedValue({ adminPasswordSet: false } as never);
+    vi.mocked(verifyAdminSession).mockResolvedValue({
+      active: true,
+      expiresAt: "2999-01-01T00:00:00Z",
+    });
+    const user = userEvent.setup();
+    renderGate();
+    expect(await screen.findByText("Set an admin password")).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Admin password"), "first-pw");
+    await user.type(screen.getByLabelText("Confirm password"), "different");
+    await user.click(screen.getByRole("button", { name: "Set password and unlock" }));
+    expect(await screen.findByText("The passwords do not match.")).toBeInTheDocument();
+    expect(verifyAdminSession).not.toHaveBeenCalled();
+
+    await user.clear(screen.getByLabelText("Confirm password"));
+    await user.type(screen.getByLabelText("Confirm password"), "first-pw");
+    await user.click(screen.getByRole("button", { name: "Set password and unlock" }));
+    expect(await screen.findByText("UNLOCKED CONTENT")).toBeInTheDocument();
+    expect(verifyAdminSession).toHaveBeenCalledWith("first-pw", expect.anything(), true);
+  });
+
+  it("keeps the ordinary unlock form once a password exists, and never asks to create", async () => {
+    vi.mocked(verifyAdminSession).mockResolvedValue({
+      active: true,
+      expiresAt: "2999-01-01T00:00:00Z",
+    });
+    const user = userEvent.setup();
+    renderGate();
+    await user.type(await screen.findByLabelText("Admin password"), "pw");
+    expect(screen.queryByLabelText("Confirm password")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Unlock Console" }));
+    expect(await screen.findByText("UNLOCKED CONTENT")).toBeInTheDocument();
+    expect(verifyAdminSession).toHaveBeenCalledWith("pw", expect.anything(), false);
+  });
+
+  it("never offers to set a password to a managed Profile or an unreadable setup state", async () => {
+    vi.mocked(fetchSetupState).mockResolvedValue({ adminPasswordSet: false } as never);
+    setSession("managed");
+    const managed = renderGate();
+    expect(await screen.findByText("Console unavailable")).toBeInTheDocument();
+    expect(screen.queryByText("Set an admin password")).toBeNull();
+    managed.unmount();
+
+    setSession("adult");
+    vi.mocked(fetchSetupState).mockRejectedValue(new Error("down"));
+    renderGate();
+    expect(await screen.findByText("Console locked")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Confirm password")).toBeNull();
+  });
+});
 
 describe("AdminGate reason-coded locks", () => {
   it("shows the not-adult reason with NO password form for a managed Profile", async () => {

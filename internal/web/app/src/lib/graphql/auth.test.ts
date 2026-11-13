@@ -29,6 +29,21 @@ beforeEach(() => {
   });
 });
 
+describe("first admin password (CORE-1132)", () => {
+  it("sends createFirst only when asked, and otherwise leaves the variable out", async () => {
+    vi.mocked(graphql).mockResolvedValue({
+      verifyAdminSession: { active: true, expiresAt: "2026-08-02T13:00:00Z" },
+    });
+
+    await verifyAdminSession("password");
+    await verifyAdminSession("password", undefined, true);
+
+    const calls = vi.mocked(graphql).mock.calls;
+    expect(calls[0][1]).toEqual({ password: "password" });
+    expect(calls[1][1]).toEqual({ password: "password", createFirst: true });
+  });
+});
+
 describe("admin-session compatibility epochs", () => {
   it("rebinds after opening the admin session", async () => {
     vi.mocked(graphql).mockResolvedValue({

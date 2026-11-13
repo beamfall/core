@@ -244,3 +244,45 @@ func TestCreateProfileRecordsCreatedAt(t *testing.T) {
 		t.Fatalf("re-read CreatedAtMs = %d, want %d", got.CreatedAtMs, p.CreatedAtMs)
 	}
 }
+
+// TestCreateFirstAdminPassword pins CORE-1132: the first password is written
+// only for a qualifying caller, only when none exists, and never replaces one.
+func TestCreateFirstAdminPassword(t *testing.T) {
+	ctx := context.Background()
+	st := openSeeded(t)
+	now := time.Now()
+	until := now.Add(15 * time.Minute)
+
+	// A Profile the session is not bound to, and a non-Manager Device, write nothing.
+	if ok, err := st.CreateFirstAdminPassword(ctx, "session-manager", "profile-managed", "first-pw", now, until); err != nil || ok {
+		t.Fatalf("unbound profile = %v, %v; want false", ok, err)
+	}
+	if ok, err := st.CreateFirstAdminPassword(ctx, "session-default", "profile-default", "first-pw", now, until); err != nil || ok {
+		t.Fatalf("non-manager device = %v, %v; want false", ok, err)
+	}
+	if set, err := st.AdminPasswordSet(ctx); err != nil || set {
+		t.Fatalf("a refused call set the password: (%v, %v)", set, err)
+	}
+	if _, err := st.CreateFirstAdminPassword(ctx, "session-manager", "profile-default", " ", now, until); err == nil {
+		t.Fatal("blank password accepted")
+	}
+
+	if ok, err := st.CreateFirstAdminPassword(ctx, "session-manager", "profile-default", "first-pw", now, until); err != nil || !ok {
+		t.Fatalf("qualifying caller = %v, %v; want true", ok, err)
+	}
+	if err := st.VerifyAdminPassword(ctx, "first-pw"); err != nil {
+		t.Fatalf("stored password does not verify: %v", err)
+	}
+	session, err := st.Session(ctx, "session-manager")
+	if err != nil || session.AdminUntil.IsZero() {
+		t.Fatalf("window not opened: %+v, %v", session, err)
+	}
+
+	// A second set never replaces it, whoever asks.
+	if ok, err := st.CreateFirstAdminPassword(ctx, "session-manager", "profile-default", "second-pw", now, until); err != nil || ok {
+		t.Fatalf("second set = %v, %v; want false", ok, err)
+	}
+	if err := st.VerifyAdminPassword(ctx, "first-pw"); err != nil {
+		t.Fatalf("first password replaced: %v", err)
+	}
+}
