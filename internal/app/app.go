@@ -773,6 +773,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	identifyService := identify.NewService(scrapeEngine, executablePlugins, st)
 	identifyService.SetArtwork(scrapeEngine, artworkService)
 	identifyService.SetArtworkCandidates(st)
+	identifyService.SetProvenance(st)
 	identifyService.SetFields(st)
 	identifyService.SetEntities(st)
 	identifyService.SetFingerprints(st)

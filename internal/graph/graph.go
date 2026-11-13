@@ -3706,6 +3706,10 @@ type MediaInfo struct {
 	// plugin's Media-targeted relations, in declaration order; filled only by
 	// the media(id) read.
 	Credits []MediaCreditInfo `json:"credits,omitempty"`
+	// MetadataAttribution is the credit declared by the active plugin scraper
+	// that supplied this item's metadata; filled only by the media(id) read
+	// and omitted when there is none to give (CORE-1126).
+	MetadataAttribution *MetadataAttributionInfo `json:"metadataAttribution,omitempty"`
 }
 
 // MediaCreditInfo is one Entity a Media item is linked to, with the declared
@@ -3750,6 +3754,7 @@ func (h *Handler) media(ctx context.Context, scope auth.Scope, req request) (Med
 		info.ArtworkSlots = h.mediaArtworkSlots(media.ID, "/api/media/artwork/"+string(media.ID))
 	}
 	info.Credits = h.mediaCredits(ctx, scope, media.ID)
+	info.MetadataAttribution = h.mediaMetadataAttribution(ctx, media.ID)
 	return info, nil
 }
 
@@ -4742,6 +4747,7 @@ var queryFields = map[string]bool{
 	"markers":                true,
 	"trashedmarkers":         true,
 	"itemstate":              true,
+	"metadatacredits":        true,
 	"sourceitems":            true,
 	"libraryitems":           true,
 	"ambientqueue":           true,

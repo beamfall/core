@@ -53,6 +53,13 @@ type ArtworkCandidateStore interface {
 	MarkArtworkCandidateApplied(ctx context.Context, candidateID string) error
 }
 
+// ProvenanceStore records which plugin scraper supplied a Media item's
+// metadata so readers can credit that source with its declared attribution;
+// *store.Store satisfies it. Optional: nil keeps Apply provenance-free.
+type ProvenanceStore interface {
+	SetMediaMetadataProvenance(ctx context.Context, mediaID store.MediaID, pluginID, scraperID string) error
+}
+
 // Fetcher downloads one remote resource through a hardened client;
 // *scrape.Engine satisfies it (the same SSRF gate as scraper requests).
 type Fetcher interface {
@@ -111,6 +118,7 @@ type Service struct {
 	bundles      Bundles
 	store        MetadataStore
 	candidates   ArtworkCandidateStore
+	provenance   ProvenanceStore
 	fetcher      Fetcher
 	artwork      ArtworkStore
 	fields       FieldStore
@@ -130,6 +138,13 @@ type Service struct {
 // NewService wires the identification service.
 func NewService(engine Engine, bundles Bundles, store MetadataStore) *Service {
 	return &Service{engine: engine, bundles: bundles, store: store}
+}
+
+// SetProvenance wires metadata provenance: every successful metadata write
+// in Apply records the plugin and scraper that supplied it, replacing the
+// item's earlier record.
+func (s *Service) SetProvenance(provenance ProvenanceStore) {
+	s.provenance = provenance
 }
 
 // SetArtwork wires scraped-artwork application: Apply downloads the chosen
@@ -274,6 +289,11 @@ func (s *Service) Apply(ctx context.Context, mediaID store.MediaID, pluginID, sc
 	}
 	if err := s.store.UpdateMediaMetadata(ctx, mediaID, metadata); err != nil {
 		return err
+	}
+	if s.provenance != nil {
+		if err := s.provenance.SetMediaMetadataProvenance(ctx, mediaID, pluginID, scraperID); err != nil {
+			return err
+		}
 	}
 	if err := s.applyMediaFields(ctx, mediaID, bundle, spec, result); err != nil {
 		return err

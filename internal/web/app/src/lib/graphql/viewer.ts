@@ -16,6 +16,7 @@ import type {
   GenericMediaInfo,
   ItemStateInfo,
   ItemTarget,
+  MetadataAttribution,
   MyDataDeleteResult,
   MyDataSummary,
   MyEngagementExport,
@@ -168,15 +169,27 @@ export async function fetchEntity(id: string, signal?: AbortSignal): Promise<Ent
 }
 
 const MEDIA_QUERY =
-  "query Media($id: String!) { media(id: $id) { id title artworkSlots credits { entityID title kind kindDisplayName archetype relation } } }";
+  "query Media($id: String!) { media(id: $id) { id title artworkSlots credits { entityID title kind kindDisplayName archetype relation } metadataAttribution { providerName text url } } }";
 
-/** Media — the player's now-playing read: title, artwork and linked credits. */
+/** Media — the player's now-playing read: title, artwork, linked credits and metadata credit. */
 export async function fetchMedia(
   id: string,
   signal?: AbortSignal,
 ): Promise<GenericMediaInfo | null> {
   const data = await graphql<{ media: GenericMediaInfo | null }>(MEDIA_QUERY, { id }, signal);
   return data.media ?? null;
+}
+
+const METADATA_CREDITS_QUERY = "query MetadataCredits { metadataCredits { text url } }";
+
+/** metadataCredits — every active scraper's declared credit, deduplicated. */
+export async function fetchMetadataCredits(signal?: AbortSignal): Promise<MetadataAttribution[]> {
+  const data = await graphql<{ metadataCredits: MetadataAttribution[] | null }>(
+    METADATA_CREDITS_QUERY,
+    {},
+    signal,
+  );
+  return data.metadataCredits ?? [];
 }
 
 const MEDIA_FOR_ENTITY_QUERY =

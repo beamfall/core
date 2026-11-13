@@ -176,6 +176,7 @@ var resultTypes = map[string]any{
 	"revokeaccessgrant":                  AccessGrantInfo{},
 	"setextensionpreauthorization":       SetExtensionPreauthorizationResult{},
 	"itemstate":                          ItemStateInfo{},
+	"metadatacredits":                    []MetadataAttributionInfo{},
 	"setwatched":                         ItemStateInfo{},
 	"setwatchlisted":                     ItemStateInfo{},
 	"setrating":                          ItemStateInfo{},

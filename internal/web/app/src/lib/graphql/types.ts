@@ -224,6 +224,18 @@ export interface GenericMediaInfo {
   artworkSlots?: Record<string, string>;
   /** Linked Entities in plugin declaration order; only the media(id) read fills it. */
   credits?: MediaCredit[];
+  /** The identifying scraper's declared credit; only the media(id) read fills it. */
+  metadataAttribution?: MetadataAttribution;
+}
+
+/**
+ * A plugin-declared metadata credit (graph.MetadataAttributionInfo). Text,
+ * provider name and link are plugin data; clients link only https URLs.
+ */
+export interface MetadataAttribution {
+  providerName?: DisplayString;
+  text: DisplayString;
+  url: string;
 }
 
 /** One Entity a Media item is linked to (graph.MediaCreditInfo). */

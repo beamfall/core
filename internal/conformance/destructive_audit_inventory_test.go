@@ -120,6 +120,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"MediaFilesForMedia":                      {},
 	"MediaForEntity":                          {},
 	"MediaLibrary":                            {},
+	"MediaMetadataProvenance":                 {},
 	"MediaRelationsOf":                        {},
 	"MutedTargets":                            {},
 	"MyDataSummary":                           {},
