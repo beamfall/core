@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { displayString } from "@/lib/display";
 import type { SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
@@ -115,6 +116,9 @@ export function SeeAllPage() {
     void reloadShown();
   }, [engagementEpoch, reloadShown]);
 
+  const firstPageLoading = busy && items.length === 0;
+  const empty = !busy && !hasMore && items.length === 0;
+
   function goBack() {
     navigate(ctx?.returnTo || "/");
   }
@@ -132,7 +136,9 @@ export function SeeAllPage() {
             <ChevronLeft aria-hidden />
             {t("back")}
           </Button>
-          <p className="text-sm text-[var(--text-muted)]">{t("libraryEmptyLead")}</p>
+          <div className="bf-empty flex flex-col gap-2" role="status">
+            <p className="text-sm text-[var(--text-secondary)]">{t("libraryEmptyLead")}</p>
+          </div>
         </div>
       </AppShell>
     );
@@ -140,7 +146,7 @@ export function SeeAllPage() {
 
   return (
     <AppShell actions={<ViewerActions />}>
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-6">
         <div className="flex flex-col items-start gap-1">
           <Button variant="ghost" size="sm" className="-ml-2" onClick={goBack}>
             <ChevronLeft aria-hidden />
@@ -148,7 +154,24 @@ export function SeeAllPage() {
           </Button>
           <h1 className="bf-page-title">{displayString(ctx.section.title, displayLocale)}</h1>
         </div>
-        <ul ref={gridRef} className="bf-grid">
+        {firstPageLoading && (
+          <div aria-busy="true" className="bf-grid">
+            <span className="sr-only">{t("loading")}</span>
+            {Array.from({ length: 12 }).map((_, i) => (
+              <Skeleton key={i} aria-hidden className="bf-shimmer aspect-[2/3] w-full" />
+            ))}
+          </div>
+        )}
+        {empty && (
+          <div className="bf-empty flex flex-col gap-2" role="status">
+            <p className="text-sm text-[var(--text-secondary)]">{t("libraryEmptyTitle")}</p>
+          </div>
+        )}
+        <ul
+          ref={gridRef}
+          className="bf-grid"
+          style={items.length === 0 ? { display: "none" } : undefined}
+        >
           {gridWindow && gridWindow.topPad > 0 && (
             <li
               aria-hidden
@@ -178,7 +201,7 @@ export function SeeAllPage() {
             />
           )}
         </ul>
-        {hasMore && (
+        {hasMore && items.length > 0 && (
           <div className="flex justify-center">
             <Button onClick={loadPage} disabled={busy}>
               {t("loadMore")}

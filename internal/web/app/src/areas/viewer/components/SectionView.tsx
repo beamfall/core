@@ -1,3 +1,4 @@
+import { ChevronRight } from "lucide-react";
 import { useMemo, useRef } from "react";
 import { useNavigate } from "react-router";
 import { displayString } from "@/lib/display";
@@ -75,6 +76,7 @@ export function SectionView({
             className="bf-see-all"
           >
             {t("seeAll")}
+            <ChevronRight aria-hidden className="size-4" />
           </button>
         )}
       </h2>
