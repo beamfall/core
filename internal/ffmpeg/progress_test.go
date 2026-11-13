@@ -5,6 +5,7 @@ package ffmpeg
 import (
 	"context"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 )
@@ -73,6 +74,11 @@ func TestHLSProcessProgressAdvancesAndKillIsNotAStop(t *testing.T) {
 			t.Fatal("ProgressedAt never advanced past the start time")
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+	// The stall watchdog subtracts ProgressedAt from now, so it must carry a
+	// monotonic clock reading; without one a wall-clock jump fakes a stall.
+	if at := p.ProgressedAt(); !strings.Contains(at.String(), " m=") {
+		t.Fatalf("ProgressedAt %v has no monotonic clock reading", at)
 	}
 
 	p.Kill()

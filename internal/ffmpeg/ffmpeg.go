@@ -1803,9 +1803,11 @@ type HLSProcess struct {
 	stopRequested atomic.Bool
 	stderr        lockedTail
 	// progress parses the -progress stream on stdout when the argv asked for
-	// one; progressedAt is the UnixNano of the last advance of the encoder's
-	// output time, seeded with the start time.
+	// one; progressedAt is the last advance of the encoder's output time as an
+	// offset from started, 0 until the first advance. The offset keeps the
+	// monotonic clock reading, so a wall-clock jump cannot fake a stall.
 	progress        progressWriter
+	started         time.Time
 	progressedAt    atomic.Int64
 	reportsProgress bool
 }
@@ -1909,11 +1911,11 @@ func startHLSProcess(cmd *exec.Cmd) (*HLSProcess, error) {
 	}
 	reportsProgress := cmd.Stdout == nil && requestsProgress(cmd.Args)
 	if reportsProgress {
-		p.progress.advance = func() { p.progressedAt.Store(time.Now().UnixNano()) }
+		p.progress.advance = func() { p.progressedAt.Store(int64(time.Since(p.started))) }
 		cmd.Stdout = &p.progress
 		cmd.WaitDelay = hlsStderrWaitDelay
 	}
-	p.progressedAt.Store(time.Now().UnixNano())
+	p.started = time.Now()
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
@@ -1985,7 +1987,7 @@ func (p *HLSProcess) ProgressedAt() time.Time {
 	if p == nil {
 		return time.Time{}
 	}
-	return time.Unix(0, p.progressedAt.Load())
+	return p.started.Add(time.Duration(p.progressedAt.Load()))
 }
 
 // StopRequested reports whether the owner asked this process to exit (Stop or
