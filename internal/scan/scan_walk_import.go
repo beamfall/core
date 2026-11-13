@@ -58,7 +58,7 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 		}
 		parsedFields = parserMediaFields(s.parser, path, parseProbe)
 		if parsedOK {
-			imported.Title = parsed.Title
+			imported.Title = parsedMediaTitle(s.parser, path, parseProbe, parsed.Title)
 			imported.Year = parsed.Year
 		}
 	}
@@ -201,7 +201,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 		}
 		parsedFields = parserMediaFields(s.parser, path, parseProbe)
 		if parsedOK {
-			imported.Title = parsed.Title
+			imported.Title = parsedMediaTitle(s.parser, path, parseProbe, parsed.Title)
 			imported.Year = parsed.Year
 		}
 	}

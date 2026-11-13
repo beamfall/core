@@ -43,6 +43,7 @@ func firstPartyHooksForBundles(bundles []plugin.Bundle) app.Hooks {
 	}
 	if active[filmtv.PluginID] {
 		hooks.Parsers[filmtv.PluginID] = filmtv.New()
+		hooks.HydrationMappers[filmtv.PluginID] = newFilmTVHydrationMapper()
 		hooks.IdentifyScorers[filmtv.PluginID] = app.IdentifyScorerHook{Scorer: filmtv.NewScorer(), Threshold: filmtv.AutoApplyThreshold}
 		addFilmTVMigrationSources(&hooks)
 		hooks.ScrobbleAdapters = append(hooks.ScrobbleAdapters, app.ScrobbleAdapterHook{PluginID: filmtv.PluginID, Service: filmtv.ScrobbleServiceTrakt, Factory: filmtv.TraktScrobbleFactory})
