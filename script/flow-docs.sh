@@ -69,9 +69,18 @@ PY
     corvint docs flows check --revision "$rev" --previous "$DIR/generated/generation.json" \
       --output-dir "$DIR/generated" >"$tmp/check.json" || status=$?
     if [ "$status" -ne 0 ]; then
-      echo "flow-docs-check: docs flows check exited $status (1 = drift, 2 = invalid); report: " >&2
-      head -c 2000 "$tmp/check.json" >&2
-      echo >&2
+      echo "flow-docs-check: docs flows check exited $status (1 = drift, 2 = invalid)" >&2
+      python3 -I - "$tmp/check.json" >&2 <<'PY' || head -c 2000 "$tmp/check.json" >&2
+import collections, json, sys
+c = json.load(open(sys.argv[1]))
+states = collections.Counter(b.get("state") for b in c.get("bindings", []))
+print(f"  bindings: {dict(states)}; added {len(c.get('added', []))}, retired {len(c.get('retired', []))}, "
+      f"output differences {len(c.get('output_differences', []))}")
+for b in c.get("bindings", []):
+    if b.get("state") != "fresh":
+        before = b.get("before") or {}
+        print(f"  {b.get('state')}: {before.get('path')}:{before.get('start_line')} {b.get('reason', '')}")
+PY
       echo "flow-docs-check: run \`make flow-docs\` and commit the result" >&2
       exit "$status"
     fi
