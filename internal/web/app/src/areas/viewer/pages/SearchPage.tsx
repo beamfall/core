@@ -156,7 +156,7 @@ export function SearchPage() {
         {live.term && answered && total > 0 && (
           <section aria-labelledby="search-results-heading" className="flex flex-col gap-4">
             <div>
-              <h2 id="search-results-heading" className="text-lg font-semibold">
+              <h2 id="search-results-heading" className="sr-only">
                 {t("searchResults")}
               </h2>
               <p className="text-sm text-[var(--text-secondary)]" role="status">
@@ -165,7 +165,7 @@ export function SearchPage() {
             </div>
             {groups.map((group) => (
               <section key={group.key} aria-label={group.label} className="flex flex-col gap-2">
-                <h3 className="text-sm font-semibold text-[var(--text-secondary)]">
+                <h3 className="text-base font-semibold text-[var(--text-primary)]">
                   {group.label}
                 </h3>
                 <ul className="bf-grid">

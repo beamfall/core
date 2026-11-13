@@ -1,3 +1,4 @@
+import { Bell } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
@@ -100,7 +101,12 @@ export function NotificationsPage() {
           {loading ? (
             <p className="text-sm text-[var(--text-muted)]">{t("loading")}</p>
           ) : notifications.length === 0 ? (
-            <p className="text-sm text-[var(--text-muted)]">{t("notificationsEmpty")}</p>
+            <div role="status" className="flex flex-col items-center gap-3 py-16 text-center">
+              <Bell aria-hidden className="size-6 text-[var(--text-muted)]" />
+              <p className="m-0 text-[15px] text-[var(--text-secondary)]">
+                {t("notificationsEmpty")}
+              </p>
+            </div>
           ) : (
             <ul className="settings-group">
               {notifications.map((notification) => (
