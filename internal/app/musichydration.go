@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/beamfall/core/internal/identify"
@@ -41,6 +42,10 @@ type hydrationAdapter struct {
 	declaredExternalIDs   map[string]bool
 	// entityScopes maps a scoped entity kind to the relation recording its scope.
 	entityScopes map[string]string
+	// scopeMu serialises a scoped plan's identity resolution with the relation
+	// writes that record its scope, so two scans hydrating one Library at once
+	// cannot both adopt the same title-only Entity for different scopes.
+	scopeMu sync.Mutex
 }
 
 func newHydrationAdapters(registry *plugin.Registry, st hydrationStore, mappers map[string]HydrationMapper) map[string]scanpkg.MetadataHydrator {
@@ -154,10 +159,8 @@ func (a *hydrationAdapter) HydrateMetadata(ctx context.Context, input scanpkg.Me
 	if err := a.writeMediaFields(ctx, input.MediaID, validated.MediaFields, validated.MarkComplete, marker); err != nil {
 		return err
 	}
-	for _, relation := range validated.Relations {
-		if err := a.writeRelation(ctx, input.MediaID, input.LibraryID, relation); err != nil {
-			return err
-		}
+	if err := a.writeRelations(ctx, input.MediaID, input.LibraryID, validated.Relations); err != nil {
+		return err
 	}
 	for _, externalID := range validated.ExternalIDs {
 		if err := a.store.AddMediaExternalID(ctx, input.MediaID, externalID.Scheme, externalID.Value); err != nil {
@@ -374,7 +377,25 @@ func (a *hydrationAdapter) writeMediaFields(ctx context.Context, mediaID store.M
 	return a.store.InsertMediaFieldsIfAbsent(ctx, mediaID, fields)
 }
 
-func (a *hydrationAdapter) writeRelation(ctx context.Context, mediaID store.MediaID, libraryID store.LibraryID, mapped HydrationRelation) error {
+// writeRelations writes one plan's relations. A scoped Entity's id is resolved
+// once per plan, so every relation from it (its Media and its scope) lands on
+// the same Entity, and under scopeMu, so the resolution and the scope relation
+// that settles it are one step for concurrent scans.
+func (a *hydrationAdapter) writeRelations(ctx context.Context, mediaID store.MediaID, libraryID store.LibraryID, relations []HydrationRelation) error {
+	if len(a.entityScopes) > 0 {
+		a.scopeMu.Lock()
+		defer a.scopeMu.Unlock()
+	}
+	resolved := map[string]store.EntityID{}
+	for _, relation := range relations {
+		if err := a.writeRelation(ctx, mediaID, libraryID, relation, resolved); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *hydrationAdapter) writeRelation(ctx context.Context, mediaID store.MediaID, libraryID store.LibraryID, mapped HydrationRelation, resolved map[string]store.EntityID) error {
 	if mapped.From.Kind == "" {
 		return nil
 	}
@@ -392,7 +413,7 @@ func (a *hydrationAdapter) writeRelation(ctx context.Context, mediaID store.Medi
 			return nil
 		}
 	}
-	fromID, err := a.upsertEntity(ctx, libraryID, mapped.From)
+	fromID, err := a.upsertEntity(ctx, libraryID, mapped.From, resolved)
 	if err != nil {
 		return err
 	}
@@ -405,7 +426,7 @@ func (a *hydrationAdapter) writeRelation(ctx context.Context, mediaID store.Medi
 		SortOrder:    mapped.SortOrder,
 	}
 	if mapped.ToEntity != nil {
-		toID, err := a.upsertEntity(ctx, libraryID, *mapped.ToEntity)
+		toID, err := a.upsertEntity(ctx, libraryID, *mapped.ToEntity, resolved)
 		if err != nil {
 			return err
 		}
@@ -415,8 +436,8 @@ func (a *hydrationAdapter) writeRelation(ctx context.Context, mediaID store.Medi
 	return a.store.UpsertEntityRelation(ctx, relation)
 }
 
-func (a *hydrationAdapter) upsertEntity(ctx context.Context, libraryID store.LibraryID, mapped HydrationEntity) (store.EntityID, error) {
-	id, err := a.entityID(ctx, libraryID, mapped)
+func (a *hydrationAdapter) upsertEntity(ctx context.Context, libraryID store.LibraryID, mapped HydrationEntity, resolved map[string]store.EntityID) (store.EntityID, error) {
+	id, err := a.entityID(ctx, libraryID, mapped, resolved)
 	if err != nil {
 		return "", err
 	}
@@ -435,12 +456,25 @@ func (a *hydrationAdapter) upsertEntity(ctx context.Context, libraryID store.Lib
 // of the same kind and title (written before the kind was scoped) is kept when
 // its scope relation points at nothing or only at this scope, so a rescan
 // neither orphans nor duplicates it; one that records another scope is left
-// alone and the scoped Entity is created beside it.
-func (a *hydrationAdapter) entityID(ctx context.Context, libraryID store.LibraryID, mapped HydrationEntity) (store.EntityID, error) {
-	unscoped := identify.EntityIDForName(libraryID, mapped.Kind, mapped.Title)
+// alone and the scoped Entity is created beside it. resolved holds the ids
+// already resolved for the plan being written, which win over a fresh lookup.
+func (a *hydrationAdapter) entityID(ctx context.Context, libraryID store.LibraryID, mapped HydrationEntity, resolved map[string]store.EntityID) (store.EntityID, error) {
 	if mapped.Scope == "" {
-		return unscoped, nil
+		return identify.EntityIDForName(libraryID, mapped.Kind, mapped.Title), nil
 	}
+	key := mapped.Kind + "\x00" + mapped.Scope + "\x00" + mapped.Title
+	if id, ok := resolved[key]; ok {
+		return id, nil
+	}
+	id, err := a.scopedEntityID(ctx, libraryID, mapped)
+	if err == nil {
+		resolved[key] = id
+	}
+	return id, err
+}
+
+func (a *hydrationAdapter) scopedEntityID(ctx context.Context, libraryID store.LibraryID, mapped HydrationEntity) (store.EntityID, error) {
+	unscoped := identify.EntityIDForName(libraryID, mapped.Kind, mapped.Title)
 	relation := a.entityScopes[mapped.Kind]
 	scoped := identify.EntityIDForScopedName(libraryID, mapped.Kind, mapped.Scope, mapped.Title)
 	if _, exists, err := a.store.EntityRelationTargets(ctx, libraryID, scoped, relation); err != nil || exists {

@@ -5,7 +5,9 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/beamfall/core/internal/identify"
 	"github.com/beamfall/core/internal/plugin"
@@ -916,5 +918,111 @@ func TestScopeRepairQueuesBackfillScan(t *testing.T) {
 	}
 	if pending, err := st.PendingEntityScopeBackfills(ctx); err != nil || len(pending) != 0 {
 		t.Fatalf("pending after queueing = %v, %v; want none", pending, err)
+	}
+}
+
+// rendezvousHydrationStore serialises a fakeHydrationStore for concurrent use
+// and holds the first two reads of one Entity's scope until both have been
+// read (or a short wait passes), so two hydrations that are not serialised
+// read the same state before either writes.
+type rendezvousHydrationStore struct {
+	mu      sync.Mutex
+	inner   *fakeHydrationStore
+	watched store.EntityID
+	arrived int
+	both    chan struct{}
+}
+
+func (r *rendezvousHydrationStore) InsertMediaFieldsIfAbsent(ctx context.Context, id store.MediaID, fields []store.MediaField) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.inner.InsertMediaFieldsIfAbsent(ctx, id, fields)
+}
+
+func (r *rendezvousHydrationStore) UpsertEntity(ctx context.Context, entity store.Entity) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.inner.UpsertEntity(ctx, entity)
+}
+
+func (r *rendezvousHydrationStore) UpsertEntityRelation(ctx context.Context, relation store.EntityRelation) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.inner.UpsertEntityRelation(ctx, relation)
+}
+
+func (r *rendezvousHydrationStore) AddMediaExternalID(ctx context.Context, mediaID store.MediaID, scheme, value string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.inner.AddMediaExternalID(ctx, mediaID, scheme, value)
+}
+
+func (r *rendezvousHydrationStore) EntityRelationTargets(ctx context.Context, libraryID store.LibraryID, id store.EntityID, relation string) ([]store.EntityID, bool, error) {
+	r.mu.Lock()
+	targets, exists, err := r.inner.EntityRelationTargets(ctx, libraryID, id, relation)
+	watched := id == r.watched
+	if watched {
+		r.arrived++
+		if r.arrived == 2 {
+			close(r.both)
+		}
+	}
+	r.mu.Unlock()
+	if watched {
+		select {
+		case <-r.both:
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+	return targets, exists, err
+}
+
+// TestConcurrentHydrationAdoptsTitleOnlyEntityOnce pins that two scans
+// hydrating one Library at once cannot both adopt one title-only Entity for
+// different scopes: one adopts it, the other gets its own scoped Entity, and
+// every track's album records only that track's album artist.
+func TestConcurrentHydrationAdoptsTitleOnlyEntityOnce(t *testing.T) {
+	inner := newFakeHydrationStore()
+	legacy := identify.EntityIDForName(testLib, "album", "Greatest Hits")
+	inner.entities[legacy] = store.Entity{ID: legacy, LibraryID: testLib, Kind: "album", Title: "Greatest Hits"}
+	st := &rendezvousHydrationStore{inner: inner, watched: legacy, both: make(chan struct{})}
+	adapter := newTestAdapterWithMapper(st, scopedAlbumMapper{})
+	tracks := map[store.MediaID]string{"media-1": "First Band", "media-2": "Second Band"}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, len(tracks))
+	for media, artist := range tracks {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- adapter.HydrateMetadata(context.Background(), scanpkg.MetadataHydrationInput{
+				MediaID: media, LibraryID: testLib, Class: store.MediaClassAudio, Path: "/x.bin",
+				Metadata: map[string]string{"album": "Greatest Hits", "album-artist": artist},
+			})
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	albums := map[store.EntityID]bool{}
+	for media, artist := range tracks {
+		owner, ok := inner.relation("album-track", media)
+		if !ok {
+			t.Fatalf("no album-track relation for %s", media)
+		}
+		albums[owner.FromEntityID] = true
+		targets, _, _ := inner.EntityRelationTargets(context.Background(), testLib, owner.FromEntityID, "album-artist")
+		want := identify.EntityIDForName(testLib, "artist", artist)
+		if len(targets) != 1 || targets[0] != want {
+			t.Fatalf("%s album %s scope = %v, want only %s (%s)", media, owner.FromEntityID, targets, want, artist)
+		}
+	}
+	if len(albums) != 2 || !albums[legacy] {
+		t.Fatalf("albums = %v, want the adopted %s and one scoped album", albums, legacy)
 	}
 }
