@@ -1,4 +1,4 @@
-import { Check, ClipboardCheck, RefreshCw } from "lucide-react";
+import { Check, RefreshCw } from "lucide-react";
 import { Link } from "react-router";
 import { ErrorState, StatusChip } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
@@ -24,7 +24,7 @@ import { useAsync } from "../useAsync";
 
 // Each spine item: a setup-step boolean derived from SetupState, a deep-link to
 // the Console/app station that completes it, and its label. The destinations
-// are the live routes: Libraries (scan), RemoteAccess (migrate, /console/remote),
+// are the live routes: Libraries (scan), MigrationWizard (migrate, /console/migrate),
 // the browser-promotion page (enroll), and Profiles & Access (profiles).
 interface SpineItem {
   label: StringKey;
@@ -40,7 +40,7 @@ const SPINE: SpineItem[] = [
   },
   {
     label: "setupChecklistMigrate",
-    to: "/console/remote",
+    to: "/console/migrate",
     // Migration is optional and has no SetupState flag; it is always offered as
     // a forward step (the operator skipped it at Seam A, or never had a source).
     done: () => false,
@@ -118,7 +118,6 @@ export function SetupChecklist() {
   return (
     <Section
       heading="setupChecklistHeading"
-      icon={ClipboardCheck}
       lead="setupChecklistLead"
       actions={
         <Button

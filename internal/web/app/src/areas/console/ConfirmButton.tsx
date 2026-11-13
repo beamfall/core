@@ -10,7 +10,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { useT } from "@/lib/i18n";
 import type { StringKey } from "@/strings";
 
@@ -55,7 +55,11 @@ export function ConfirmButton({
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
       <AlertDialogTrigger asChild>
-        <Button variant={variant} size={size} disabled={disabled}>
+        <Button
+          variant={variant === "destructive" ? "danger" : variant}
+          size={size}
+          disabled={disabled}
+        >
           {label}
         </Button>
       </AlertDialogTrigger>
@@ -69,6 +73,7 @@ export function ConfirmButton({
         <AlertDialogFooter>
           <AlertDialogCancel disabled={busy}>{t("cancel")}</AlertDialogCancel>
           <AlertDialogAction
+            className={variant === "destructive" ? buttonVariants({ variant }) : undefined}
             disabled={busy}
             onClick={(e) => {
               e.preventDefault();

@@ -1,3 +1,4 @@
+import { ChevronLeft } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
@@ -122,7 +123,13 @@ export function SeeAllPage() {
     return (
       <AppShell actions={<ViewerActions />}>
         <div className="flex flex-col gap-3">
-          <Button variant="outline" size="sm" onClick={() => navigate("/")}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-2 self-start"
+            onClick={() => navigate("/")}
+          >
+            <ChevronLeft aria-hidden />
             {t("back")}
           </Button>
           <p className="text-sm text-[var(--text-muted)]">{t("libraryEmptyLead")}</p>
@@ -134,8 +141,9 @@ export function SeeAllPage() {
   return (
     <AppShell actions={<ViewerActions />}>
       <div className="flex flex-col gap-4">
-        <div className="flex items-center gap-3">
-          <Button variant="outline" size="sm" onClick={goBack}>
+        <div className="flex flex-col items-start gap-1">
+          <Button variant="ghost" size="sm" className="-ml-2" onClick={goBack}>
+            <ChevronLeft aria-hidden />
             {t("back")}
           </Button>
           <h1 className="bf-page-title">{displayString(ctx.section.title, displayLocale)}</h1>

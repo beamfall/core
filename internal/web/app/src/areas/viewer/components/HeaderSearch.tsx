@@ -183,7 +183,7 @@ export function HeaderSearch() {
               >
                 {(group: CellGroup) => (
                   <Autocomplete.Group key={group.key} items={group.items}>
-                    <Autocomplete.GroupLabel className="px-3 pt-2 pb-1 text-xs font-semibold tracking-wide text-[var(--text-muted)] uppercase">
+                    <Autocomplete.GroupLabel className="px-3 pt-2 pb-1 text-xs font-medium text-[var(--text-muted)]">
                       {group.label}
                     </Autocomplete.GroupLabel>
                     {group.items

@@ -10,7 +10,7 @@ import { useI18n } from "@/lib/i18n";
 // inline migration offer presented as the final step of first-run setup.
 //
 // This is a BOUNDARY, not the importer: it lists what the active plugins
-// declare and hands off to the existing importer surface (/console/remote,
+// declare and hands off to the existing importer surface (/console/migrate,
 // ADR-0037). It adds no import semantics. Skip is first-class (§3.2) — skipping
 // finishes setup without running anything, and the post-setup checklist (Seam
 // B) still pins the "Migrate from another server" item, so the path stays
@@ -22,7 +22,7 @@ import { useI18n } from "@/lib/i18n";
 // your library") and source names are whatever the plugin declares.
 
 // The importer surface this seam deep-links to (console RemoteAccess section).
-const IMPORTER_PATH = "console/remote";
+const IMPORTER_PATH = "console/migrate";
 
 export function MigrationOffer({
   onSkip,

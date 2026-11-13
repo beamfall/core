@@ -3,7 +3,7 @@ export const setupStrings = {
     // First-run setup wizard (WEB-1, ADR-0007 §2).
     setupBrandSuffix: "Server setup",
     setupFreshServer: "New server",
-    setupUnlockedBanner: "Server claimed — you're the owner now.",
+    setupUnlockedBanner: "Server claimed. You're the owner now.",
     setupRailToken: "Unlock",
     setupRailAdminPassword: "Admin password",
     setupRailSecurity: "Sign-in security",
@@ -65,7 +65,7 @@ export const setupStrings = {
     setupKeysTitle: "Metadata provider keys",
     setupKeysLead:
       "These plugins fetch titles, details and artwork from providers that ask for a free API key. Paste one now, or skip and add it later in Console › Plugins.",
-    setupKeyOptional: "Optional — paste your API key",
+    setupKeyOptional: "Optional: paste your API key",
     setupKeySaveFailed:
       "The {provider} key couldn't be saved. Check it, or clear the field to add it later in Console › Plugins.",
     setupUpdateTitle: "Update awareness",
@@ -92,15 +92,15 @@ export const setupStrings = {
     setupMigrateLead:
       "Switching from another server? Import your watch history, ratings, and collections so you pick up where you left off.",
     setupMigrateTrustAdditive:
-      "Additive only — it fills gaps and never overwrites or downgrades your Beamfall progress.",
+      "Additive only. It fills gaps and never overwrites or downgrades your Beamfall progress.",
     setupMigrateTrustScope:
-      "Imports watch state, ratings, and collections only — never files, metadata, or settings.",
+      "Imports watch state, ratings, and collections only, never files, metadata, or settings.",
     setupMigrateTrustNoConnection:
       "No ongoing connection is kept, and your old server is never modified.",
     setupMigrateTrustRerunnable:
-      "Re-runnable — keep using the old server and re-import the difference on switch day.",
+      "Re-runnable. Keep using the old server and re-import the difference on switch day.",
     setupMigrateTrustReportFirst:
-      "Report first — you preview exactly what will import before anything is written.",
+      "Report first. You preview exactly what will import before anything is written.",
     setupMigrateSourcesLabel: "Available sources",
     setupMigrateSourcesUnavailable:
       "Could not load the available sources. You can open the importer later from the Console.",

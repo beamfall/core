@@ -44,7 +44,9 @@ export function AdminGate({
   sessionBar,
   copy,
 }: {
-  children: ReactNode;
+  /** The unlocked surface; a function receives the lock action so the area
+   * can place the session status inside its own layout. */
+  children: ReactNode | ((lock: () => void) => ReactNode);
   /** Replaces the Console wording; the unlock flow itself is unchanged. */
   copy?: AdminGateCopy;
   /** Slot for the active-session bar, rendered by the area shell when active. */
@@ -215,7 +217,7 @@ export function AdminGate({
   return (
     <>
       {sessionBar?.(lock)}
-      {children}
+      {typeof children === "function" ? children(lock) : children}
     </>
   );
 }

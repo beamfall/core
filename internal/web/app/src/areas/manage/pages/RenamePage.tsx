@@ -1,4 +1,3 @@
-import { Braces, Eye, PencilLine } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   EmptyLine,
@@ -153,7 +152,7 @@ export function RenamePage() {
 
   return (
     <div className="space-y-4">
-      <ManageSection title={t("renameBatchTitle")} icon={PencilLine} lead={t("renameLead")}>
+      <ManageSection title={t("renameBatchTitle")} lead={t("renameLead")}>
         <div className="manage-fieldrow space-y-3">
           <div className="grid gap-1">
             <Label htmlFor="rename-library">{t("library")}</Label>
@@ -193,7 +192,7 @@ export function RenamePage() {
         </div>
       </ManageSection>
 
-      <ManageSection title={t("renamePatternTitle")} icon={Braces}>
+      <ManageSection title={t("renamePatternTitle")}>
         <div className="manage-fieldrow flex flex-wrap items-end gap-3">
           <Field
             label={t("renameFindLabel")}
@@ -228,7 +227,6 @@ export function RenamePage() {
 
       <ManageSection
         title={t("renamePreviewTitle")}
-        icon={Eye}
         actions={
           <div className="flex items-center gap-2">
             <AlertDialog>

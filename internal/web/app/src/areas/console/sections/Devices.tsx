@@ -1,4 +1,4 @@
-import { Copy, MonitorSmartphone, Plus, QrCode } from "lucide-react";
+import { Copy, MonitorSmartphone, Plus } from "lucide-react";
 import { useState } from "react";
 import { DataTable, EmptyState, ErrorState, StatusChip } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
@@ -97,7 +97,6 @@ export function Devices() {
     <div className="space-y-6">
       <Section
         heading="devicesHeading"
-        icon={MonitorSmartphone}
         lead="devicesLead"
         actions={
           revocableCount > 0 ? (
@@ -169,7 +168,7 @@ export function Devices() {
         )}
       </Section>
 
-      <Section heading="deviceAddHeading" icon={Plus} lead="deviceAddLead">
+      <Section heading="deviceAddHeading" lead="deviceAddLead">
         {minted && <PairingCodeBanner code={minted} />}
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button variant="outline" disabled={busy} onClick={() => void mint("viewer")}>
@@ -186,13 +185,13 @@ export function Devices() {
         <p className="mt-2 text-[12px] leading-snug text-muted-foreground">{t("deviceMintHint")}</p>
       </Section>
 
-      <Section heading="remoteEnrollHeading" icon={QrCode} lead="remoteEnrollLead">
+      <Section heading="remoteEnrollHeading" lead="remoteEnrollLead">
         {config.loading ? (
           <Skeleton className="h-10 w-full" />
         ) : config.failed || !config.data ? (
           <ErrorState message="devicesUnavailable" />
         ) : (
-          <div className="flex items-start justify-between gap-4 rounded-lg border bg-muted/25 p-3">
+          <div className="flex items-start justify-between gap-4 console-card console-card-pad">
             <div className="space-y-1">
               <p className="m-0 text-[13px] font-semibold">{t("remoteEnrollToggle")}</p>
               <p className="m-0 text-[12px] leading-snug text-muted-foreground">

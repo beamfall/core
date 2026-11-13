@@ -330,7 +330,9 @@ test.describe("manage", () => {
   test("libraries renders the library list or empty state", async ({ page }) => {
     const errors = collectFatalErrors(page);
     await gotoManage(page, "libraries");
-    await expect(page.getByText("Libraries").first()).toBeVisible();
+    // The section menu's phone toggle repeats the current section's name and is
+    // hidden at this width, so these probes look for a visible match.
+    await expect(page.getByText("Libraries").filter({ visible: true }).first()).toBeVisible();
     await expect(page.getByText("Nothing to show in this library yet.")).toHaveCount(0);
     await unlockManageInPlace(page);
     // CORE-1131 shows each library as a card headed by its title.
@@ -345,7 +347,7 @@ test.describe("manage", () => {
   test("trash renders its list or empty-state with restore gated per row", async ({ page }) => {
     const errors = collectFatalErrors(page);
     await gotoManage(page, "trash");
-    await expect(page.getByText("Trash").first()).toBeVisible();
+    await expect(page.getByText("Trash").filter({ visible: true }).first()).toBeVisible();
     // Either the trash table renders (with a Restore button per row) or the
     // empty-state line shows — both are non-crash outcomes. The seed trash is
     // empty, so the empty-state is expected; assert one of the two settled.
@@ -358,21 +360,25 @@ test.describe("manage", () => {
   test("bulk edit renders its preview surface", async ({ page }) => {
     const errors = collectFatalErrors(page);
     await gotoManage(page, "bulk");
-    await expect(page.getByText("Bulk edit & file operations").first()).toBeVisible();
+    await expect(
+      page.getByText("Bulk edit & file operations").filter({ visible: true }).first(),
+    ).toBeVisible();
     expect(errors, errors.join("\n")).toEqual([]);
   });
 
   test("artwork candidates screen renders", async ({ page }) => {
     const errors = collectFatalErrors(page);
     await gotoManage(page, "artwork");
-    await expect(page.getByText("Artwork candidates").first()).toBeVisible();
+    await expect(
+      page.getByText("Artwork candidates").filter({ visible: true }).first(),
+    ).toBeVisible();
     expect(errors, errors.join("\n")).toEqual([]);
   });
 
   test("subscriptions screen renders", async ({ page }) => {
     const errors = collectFatalErrors(page);
     await gotoManage(page, "subscriptions");
-    await expect(page.getByText("Subscriptions").first()).toBeVisible();
+    await expect(page.getByText("Subscriptions").filter({ visible: true }).first()).toBeVisible();
     expect(errors, errors.join("\n")).toEqual([]);
   });
 
@@ -384,7 +390,7 @@ test.describe("manage", () => {
     // WEB-5 evidence: the Manage operations route exposes the launch Scheduler
     // and Watcher surfaces, not just a generic page shell.
     for (const label of ["Jobs", "Schedules", "Folder watcher"]) {
-      await expect(page.getByText(label).first()).toBeVisible();
+      await expect(page.getByText(label).filter({ visible: true }).first()).toBeVisible();
     }
     expect(errors, errors.join("\n")).toEqual([]);
   });
@@ -392,7 +398,9 @@ test.describe("manage", () => {
   test("unmatched queue screen renders", async ({ page }) => {
     const errors = collectFatalErrors(page);
     await gotoManage(page, "unmatched");
-    await expect(page.getByText("Unmatched records").first()).toBeVisible();
+    await expect(
+      page.getByText("Unmatched records").filter({ visible: true }).first(),
+    ).toBeVisible();
     await expect(page.getByText("No unmatched records.")).toHaveCount(0);
     await unlockManageInPlace(page);
     await expect(
@@ -406,7 +414,7 @@ test.describe("manage", () => {
   test("field-locks screen renders", async ({ page }) => {
     const errors = collectFatalErrors(page);
     await gotoManage(page, "field-locks");
-    await expect(page.getByText("Field locks").first()).toBeVisible();
+    await expect(page.getByText("Field locks").filter({ visible: true }).first()).toBeVisible();
     await expect(page.getByLabel("Media ID")).toBeVisible();
     await expect(page.getByRole("button", { name: "Load" })).toBeDisabled();
     await expect(page.getByText("Enter a media ID to view its field locks.")).toBeVisible();
@@ -416,14 +424,14 @@ test.describe("manage", () => {
   test("restrictions screen renders", async ({ page }) => {
     const errors = collectFatalErrors(page);
     await gotoManage(page, "restrictions");
-    await expect(page.getByText("Restrictions").first()).toBeVisible();
+    await expect(page.getByText("Restrictions").filter({ visible: true }).first()).toBeVisible();
     expect(errors, errors.join("\n")).toEqual([]);
   });
 
   test("profile screen renders", async ({ page }) => {
     const errors = collectFatalErrors(page);
     await gotoManage(page, "profile");
-    await expect(page.getByText("Profiles").first()).toBeVisible();
+    await expect(page.getByText("Profiles").filter({ visible: true }).first()).toBeVisible();
     expect(errors, errors.join("\n")).toEqual([]);
   });
 });

@@ -1,4 +1,3 @@
-import { CalendarClock, Filter } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { EmptyState, ErrorState } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
@@ -70,7 +69,7 @@ export function ProfilesAccess() {
 
   if (filters.failed) {
     return (
-      <Section heading="enforcedFiltersHeading" icon={Filter} lead="enforcedFiltersLead">
+      <Section heading="enforcedFiltersHeading" lead="enforcedFiltersLead">
         <ErrorState message="enforcedFiltersUnavailable" />
       </Section>
     );
@@ -78,7 +77,7 @@ export function ProfilesAccess() {
 
   return (
     <div className="space-y-8">
-      <Section heading="accessSchedulesHeading" icon={CalendarClock} lead="accessSchedulesLead">
+      <Section heading="accessSchedulesHeading" lead="accessSchedulesLead">
         <div className="console-card console-card-pad space-y-4">
           {/* Supervisor-authored policy, distinct from the managed Profile's own
               Mute (ADR-0087 §29). */}
@@ -120,7 +119,7 @@ export function ProfilesAccess() {
 
       <Separator />
 
-      <Section heading="enforcedFiltersHeading" icon={Filter} lead="enforcedFiltersLead">
+      <Section heading="enforcedFiltersHeading" lead="enforcedFiltersLead">
         {plugins.length === 0 ? (
           <EmptyState message="enforcedFiltersEmpty" />
         ) : !selectedProfile ? (
@@ -183,7 +182,7 @@ function LibraryGrantEditor({
   if (failed) return <ErrorState message="libraryAccessUnavailable" />;
 
   return (
-    <div className="space-y-2 border-t border-[var(--border)] pt-4">
+    <div className="space-y-2 border-t border-[var(--border-subtle)] pt-4">
       <div className="space-y-1">
         <Label className="text-xs">{t("libraryAccessHeading")}</Label>
         <p className="text-xs text-muted-foreground">{t("libraryAccessHint")}</p>
@@ -371,7 +370,7 @@ function SchedulePreview({ windows }: { windows: AccessWindowInput[] }) {
   const now = new Date();
   const next = nextTransition(windows, now.getDay(), now.getHours() * 60 + now.getMinutes());
   return (
-    <div className="space-y-1 border-t border-[var(--border)] pt-3 text-[13px] text-muted-foreground">
+    <div className="space-y-1 border-t border-[var(--border-subtle)] pt-3 text-[13px] text-muted-foreground">
       <p>{t("accessScheduleServerLocalNote")}</p>
       {next ? (
         <p>
@@ -418,7 +417,7 @@ function ManagedPolicyControls({ profileID, managed }: { profileID: string; mana
   }
 
   return (
-    <div className="space-y-4 border-t border-[var(--border)] pt-4">
+    <div className="space-y-4 border-t border-[var(--border-subtle)] pt-4">
       <form onSubmit={applyCap} className="flex flex-wrap items-end gap-2">
         <div className="space-y-1">
           <Label htmlFor="stream-cap" className="text-xs">
@@ -489,14 +488,14 @@ function AccessGrantList({ profileID }: { profileID: string }) {
 
   if (failed) {
     return (
-      <div className="border-t border-[var(--border)] pt-4">
+      <div className="border-t border-[var(--border-subtle)] pt-4">
         <p className="text-xs text-muted-foreground">{t("accessGrantsUnavailable")}</p>
       </div>
     );
   }
 
   return (
-    <div className="border-t border-[var(--border)] pt-4 space-y-2">
+    <div className="border-t border-[var(--border-subtle)] pt-4 space-y-2">
       <div className="space-y-1">
         <Label className="text-xs">{t("accessGrantsHeading")}</Label>
         <p className="text-xs text-muted-foreground">{t("accessGrantsHint")}</p>
@@ -508,7 +507,7 @@ function AccessGrantList({ profileID }: { profileID: string }) {
         data.map((grant) => (
           <div
             key={grant.mediaID}
-            className="flex items-center justify-between gap-2 rounded border border-[var(--border)] px-3 py-2"
+            className="flex items-center justify-between gap-2 rounded border border-[var(--border-subtle)] px-3 py-2"
           >
             <span className="truncate font-mono text-xs">{grant.mediaID}</span>
             <ConfirmButton

@@ -1,10 +1,4 @@
-import {
-  AlertCircle,
-  ArrowRight,
-  KeyRound,
-  type LucideIcon,
-  MonitorSmartphone,
-} from "lucide-react";
+import { AlertCircle, ArrowRight } from "lucide-react";
 import { type FormEvent, type RefObject, useEffect, useId, useRef, useState } from "react";
 import beamfallLogo from "@/assets/beamfall-logo.png";
 import { CinemaBackdrop } from "@/components/beamfall/CinemaBackdrop";
@@ -111,13 +105,8 @@ export function EnrollPage() {
       </header>
 
       <div className="flex flex-1 items-start justify-center px-4 pb-12 pt-2 sm:items-center sm:px-8 sm:pt-0">
-        <div className="animate-in fade-in slide-in-from-bottom-2 w-full max-w-[460px] rounded-2xl border border-white/10 bg-card/70 p-6 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.7)] backdrop-blur-xl duration-300 sm:p-8">
-          <CardHeading
-            icon={MonitorSmartphone}
-            title={t("enrollTitle")}
-            lead={t("signInLead")}
-            level={1}
-          />
+        <div className="animate-in fade-in slide-in-from-bottom-2 w-full max-w-[460px] rounded-2xl border border-white/10 bg-card p-6 shadow-[0_24px_60px_-28px_rgba(0,0,0,0.7)] duration-300 sm:p-8">
+          <CardHeading title={t("enrollTitle")} lead={t("signInLead")} level={1} />
           <form onSubmit={onSubmit} className="space-y-5" noValidate>
             <div>
               <Label htmlFor={codeID} className={FIELD_LABEL}>
@@ -163,7 +152,7 @@ export function EnrollPage() {
             <Button
               type="submit"
               disabled={busy}
-              className="h-11 w-full rounded-full text-[15px] font-semibold shadow-[0_8px_30px_-8px_var(--accent)]"
+              className="h-11 w-full rounded-xl text-[15px] font-semibold"
             >
               {t("connect")}
               <ArrowRight aria-hidden className="size-4" />
@@ -179,13 +168,11 @@ export function EnrollPage() {
 }
 
 function CardHeading({
-  icon: Icon,
   title,
   lead,
   level,
   id,
 }: {
-  icon: LucideIcon;
   title: string;
   lead: string;
   level: 1 | 2;
@@ -193,15 +180,7 @@ function CardHeading({
 }) {
   const Heading = level === 1 ? "h1" : "h2";
   return (
-    <div className="mb-6 flex gap-4">
-      <span
-        className={cn(
-          "flex shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary ring-1 ring-primary/25",
-          level === 1 ? "size-11 shadow-[0_0_28px_-6px_var(--accent)]" : "size-9",
-        )}
-      >
-        <Icon aria-hidden className={level === 1 ? "size-5" : "size-4"} />
-      </span>
+    <div className={level === 1 ? "mb-6" : "mb-5"}>
       <div>
         <Heading
           id={id}
@@ -286,9 +265,8 @@ function AdminSignInForm({ deviceName }: { deviceName: string }) {
   }
 
   return (
-    <section className="mt-8 border-t border-white/10 pt-7" aria-labelledby={`${passwordID}-title`}>
+    <section className="mt-8 border-t border-white/10 pt-6" aria-labelledby={`${passwordID}-title`}>
       <CardHeading
-        icon={KeyRound}
         title={t("adminSignInTitle")}
         lead={t("adminSignInLead")}
         level={2}
@@ -315,7 +293,7 @@ function AdminSignInForm({ deviceName }: { deviceName: string }) {
           type="submit"
           variant="secondary"
           disabled={busy || password === ""}
-          className="h-11 w-full rounded-full border border-white/10 bg-white/[0.06] text-[15px] hover:bg-white/[0.1]"
+          className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.06] text-[15px] hover:bg-white/[0.1]"
         >
           {t("adminSignIn")}
         </Button>

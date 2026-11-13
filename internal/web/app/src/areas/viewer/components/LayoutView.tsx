@@ -239,11 +239,11 @@ export function LayoutView({
           {t("libraryEmptyOwnerTitle")}
         </p>
         <p className="text-sm text-[var(--text-secondary)]">{t("libraryEmptyOwnerLead")}</p>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap justify-center gap-2">
           <Link to="/console/libraries" className="bf-action-link">
             {t("libraryEmptyStartScan")}
           </Link>
-          <Link to="/console/remote" className="bf-action-link">
+          <Link to="/console/migrate" className="bf-action-link">
             {t("libraryEmptyMigrate")}
           </Link>
         </div>

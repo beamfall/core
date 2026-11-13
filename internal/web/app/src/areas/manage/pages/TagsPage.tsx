@@ -1,4 +1,3 @@
-import { ListTodo, Tag, Tags, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   EmptyLine,
@@ -111,7 +110,6 @@ export function TagsPage() {
     <div className="space-y-4">
       <ManageSection
         title={t("tagsHeading")}
-        icon={Tags}
         lead={t("tagsLead")}
         actions={
           <>
@@ -132,7 +130,6 @@ export function TagsPage() {
 
       <ManageSection
         title={t("tagsDeletedHeading")}
-        icon={Trash2}
         actions={
           <div className="flex items-center gap-2">
             <Switch id="tags-show-trashed" checked={showTrashed} onCheckedChange={setShowTrashed} />
@@ -404,7 +401,6 @@ function AssignSection({ tags, onError }: { tags: TagInfo[]; onError: (message: 
   return (
     <ManageSection
       title={t("tagAssignHeading")}
-      icon={Tag}
       lead={t("tagAssignLead")}
       actions={
         assignment ? (
@@ -547,7 +543,6 @@ function BulkSection({ tags, onError }: { tags: TagInfo[]; onError: (message: st
   return (
     <ManageSection
       title={t("tagBulkHeading")}
-      icon={ListTodo}
       lead={t("tagBulkLead")}
       actions={
         <div

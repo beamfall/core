@@ -1,14 +1,4 @@
-import {
-  Boxes,
-  Folder,
-  FolderPlus,
-  LibraryBig,
-  Plus,
-  RefreshCw,
-  ScanLine,
-  SearchCheck,
-  X,
-} from "lucide-react";
+import { Folder, FolderPlus, Plus, RefreshCw, ScanLine, SearchCheck, X } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { RescanAllButton, RescanButton, RescanStatus } from "@/components/beamfall/LibraryRescan";
@@ -57,13 +47,10 @@ import { useAsync } from "../useAsync";
 
 const NO_PLUGIN = "__none__";
 
-// Libraries screen styling (CORE-1131): the setup wizard's glass tiles and
-// icon tiles (CORE-1114), one full-width card per library so long folder
-// paths stay readable.
-const CARD = "rounded-xl border border-white/10 bg-white/[0.03] backdrop-blur-sm";
-const ICON_TILE =
-  "flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary ring-1 ring-primary/25";
-const PANEL = "rounded-lg border border-white/[0.07] bg-black/20 p-3";
+// Libraries screen styling: one full-width card per library so long folder
+// paths stay readable. Solid surfaces, divided lists, no icon tiles.
+const CARD =
+  "rounded-[var(--radius-surface)] border border-[var(--border-subtle)] bg-[var(--bg-surface)]";
 
 function lastSegment(path: string): string {
   const parts = path.split(/[\\/]+/).filter(Boolean);
@@ -216,10 +203,7 @@ function LibraryCard({
   const watching = watcher?.state === "watching";
   return (
     <article aria-labelledby={`library-${library.id}`} className={CARD}>
-      <header className="flex flex-wrap items-start gap-3 border-b border-white/[0.07] p-4">
-        <span className={ICON_TILE}>
-          <LibraryBig aria-hidden className="size-5" />
-        </span>
+      <header className="flex flex-wrap items-start gap-3 border-b border-[var(--border-subtle)] p-4">
         <div className="min-w-0 flex-1 space-y-1">
           <h3 id={`library-${library.id}`} className="m-0 text-base font-semibold leading-tight">
             {library.title}
@@ -267,16 +251,16 @@ function LibraryCard({
         <RescanStatus libraryID={library.id} hasRoots={roots.length > 0} />
         <div className="grid gap-4 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
           <section aria-labelledby={`folders-${library.id}`} className="space-y-2">
-            <h4
-              id={`folders-${library.id}`}
-              className="m-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-            >
+            <h4 id={`folders-${library.id}`} className="m-0 text-sm font-semibold text-foreground">
               {t("libraryFolders")}
             </h4>
             {roots.length > 0 && (
-              <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+              <ul className="m-0 flex list-none flex-col p-0">
                 {roots.map((root) => (
-                  <li key={root} className={cn(PANEL, "flex min-w-0 items-center gap-3 py-2")}>
+                  <li
+                    key={root}
+                    className="flex min-w-0 items-center gap-3 border-b border-[var(--border-subtle)] py-2 last:border-b-0"
+                  >
                     <Folder aria-hidden className="size-4 shrink-0 text-primary" />
                     <span className="min-w-0 flex-1" title={root}>
                       <span className="block truncate text-sm font-medium">
@@ -338,13 +322,10 @@ function LibraryCard({
           </section>
 
           <section aria-labelledby={`options-${library.id}`} className="space-y-1">
-            <h4
-              id={`options-${library.id}`}
-              className="m-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-            >
+            <h4 id={`options-${library.id}`} className="m-0 text-sm font-semibold text-foreground">
               {t("libraryOptions")}
             </h4>
-            <div className={cn(PANEL, "divide-y divide-white/[0.06] py-1")}>
+            <div className="divide-y divide-[var(--border-subtle)]">
               <SettingRow
                 label={t("previewClips")}
                 help={t("previewClipsHelp")}
@@ -419,12 +400,9 @@ function AddLibrary({
     <form
       onSubmit={onCreate}
       aria-labelledby="add-library-heading"
-      className={cn(CARD, "flex flex-wrap items-end gap-4 p-4 ring-1 ring-primary/20")}
+      className={cn(CARD, "flex flex-wrap items-end gap-4 p-4")}
     >
       <div className="flex w-full items-center gap-3">
-        <span className={ICON_TILE}>
-          <FolderPlus aria-hidden className="size-5" />
-        </span>
         <div>
           <h3 id="add-library-heading" className="m-0 text-base font-semibold">
             {t("taskAddLibrary")}
@@ -496,7 +474,6 @@ export function Libraries() {
   return (
     <Section
       heading="libraries"
-      icon={LibraryBig}
       lead="librariesLead"
       actions={
         <>
@@ -535,7 +512,7 @@ export function Libraries() {
       ) : libs.failed ? (
         <ErrorState message="consoleConfigUnavailable" />
       ) : empty ? (
-        <EmptyState message="libraryEmptyLead" icon={Boxes} />
+        <EmptyState message="libraryEmptyLead" />
       ) : (
         <div className="grid gap-4">
           {libraryList.map((library) => (

@@ -83,7 +83,7 @@ export const pluginStrings = {
     pluginLifecycleReversible: "Reversible",
     pluginUninstall: "Uninstall (purge data)",
     pluginUninstallHelp:
-      "Permanently remove every item this plugin stored, then leave it deactivated. Irreversible — purged items are not routed to Trash, but are re-derivable by re-scraping.",
+      "Permanently remove every item this plugin stored, then leave it deactivated. Irreversible. Purged items are not routed to Trash, but are re-derivable by re-scraping.",
     pluginLifecycleIrreversible: "Irreversible",
     pluginUninstallConfirm: "Uninstall this plugin and purge its data?",
     pluginUninstallConfirmBody:
@@ -129,7 +129,7 @@ export const pluginStrings = {
     pluginLifecycleReversible: "Réversible",
     pluginUninstall: "Désinstaller (purger les données)",
     pluginUninstallHelp:
-      "Supprime définitivement chaque élément stocké par ce module, puis le laisse désactivé. Cette action est irréversible — les éléments purgés ne sont pas envoyés dans la corbeille, mais peuvent être recréés par une nouvelle extraction.",
+      "Supprime définitivement chaque élément stocké par ce module, puis le laisse désactivé. Cette action est irréversible. Les éléments purgés ne sont pas envoyés dans la corbeille, mais peuvent être recréés par une nouvelle extraction.",
     pluginLifecycleIrreversible: "Irréversible",
     pluginUninstallConfirm: "Désinstaller ce module et purger ses données?",
     pluginUninstallConfirmBody:

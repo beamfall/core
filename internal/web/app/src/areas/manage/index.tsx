@@ -31,6 +31,7 @@ import {
 } from "react";
 import { Navigate, NavLink, Route, Routes, useLocation } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
+import { SectionMenu } from "@/components/chrome/SectionMenu";
 import { setAdminUnlockHandler } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { useRegister } from "@/lib/register";
@@ -218,22 +219,27 @@ export function ManageArea() {
   return (
     <AppShell>
       <div className="manage-area flex flex-col gap-5 md:flex-row md:gap-6">
-        <nav aria-label={t("manageTitle")} className="manage-nav md:w-52 md:shrink-0">
-          {NAV_GROUPS.map((group, i) => (
-            <div key={i} className="manage-nav-group">
-              {group.map((item) => (
-                // NavLink sets aria-current="page" on the active <a>; the
-                // Workbench active treatment (beam left-edge marker, raised
-                // fill) keys off that attribute in manage.css — so the visual
-                // state and the assistive-tech state share one source of truth.
-                <NavLink key={item.to} to={item.to} className="manage-nav-link">
-                  <item.icon className="manage-nav-icon" aria-hidden />
-                  {item.text ?? t(item.label)}
-                </NavLink>
-              ))}
-            </div>
-          ))}
-        </nav>
+        <SectionMenu
+          label={t("manageTitle")}
+          className="md:w-52 md:shrink-0"
+          current={routeTitle.text ?? t(routeTitle.label ?? "manageTitle")}
+        >
+          <div className="manage-nav">
+            {NAV_GROUPS.map((group, i) => (
+              <div key={i} className="manage-nav-group">
+                {group.map((item) => (
+                  // NavLink sets aria-current="page" on the active <a>; the
+                  // Workbench active treatment (raised fill) keys off that attribute in manage.css — so the visual
+                  // state and the assistive-tech state share one source of truth.
+                  <NavLink key={item.to} to={item.to} className="manage-nav-link">
+                    <item.icon className="manage-nav-icon" aria-hidden />
+                    {item.text ?? t(item.label)}
+                  </NavLink>
+                ))}
+              </div>
+            ))}
+          </div>
+        </SectionMenu>
 
         <div className="min-w-0 grow">
           {/* The route's one h1; each ManageSection card title below it is an h2. */}

@@ -1,4 +1,4 @@
-import { Activity, ChevronDown, ChevronRight, RefreshCw, ScrollText } from "lucide-react";
+import { ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   DataTable,
@@ -120,7 +120,6 @@ export function ActivityLog() {
   return (
     <Section
       heading="activityLogHeading"
-      icon={Activity}
       actions={
         <Button variant="outline" size="sm" onClick={() => void refresh()}>
           <RefreshCw className="console-nav-icon" aria-hidden />
@@ -136,7 +135,7 @@ export function ActivityLog() {
       ) : failed ? (
         <ErrorState message="activityLogUnavailable" />
       ) : rows.length === 0 ? (
-        <EmptyState message="activityLogEmpty" icon={ScrollText} />
+        <EmptyState message="activityLogEmpty" />
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-3">

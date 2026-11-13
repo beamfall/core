@@ -1,4 +1,3 @@
-import { FolderTree, Trash2, WandSparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EmptyLine, ErrorLine, ManageSection, ManageTable } from "@/components/beamfall/workbench";
 import {
@@ -80,7 +79,6 @@ export function CollectionsPage() {
     <Tabs.Root value={tab} onValueChange={(value) => setTab(value as Tab)} className="space-y-4">
       <ManageSection
         title={t("collections")}
-        icon={FolderTree}
         actions={
           <div className="flex items-center gap-2">
             <Tabs.List className="manage-tabs" aria-label={t("collections")}>
@@ -272,7 +270,6 @@ function ManualCollections({ libraryID }: { libraryID: string }) {
     <>
       <ManageSection
         title={t("collections")}
-        icon={FolderTree}
         actions={
           <label className="flex items-center gap-2 text-sm">
             <input
@@ -358,7 +355,7 @@ function ManualCollections({ libraryID }: { libraryID: string }) {
       )}
 
       {includeTrashed && trashed.length > 0 && (
-        <ManageSection title={t("trashedCollections")} icon={Trash2}>
+        <ManageSection title={t("trashedCollections")}>
           <ManageTable>
             <TableHeader>
               <TableRow>
@@ -478,7 +475,7 @@ function CollectionRow({
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button type="button" variant="destructive" size="sm">
+              <Button type="button" variant="danger" size="sm">
                 {t("collectionDelete")}
               </Button>
             </AlertDialogTrigger>
@@ -622,7 +619,7 @@ function MembersEditor({
                 <TableCell className="text-right">
                   <Button
                     type="button"
-                    variant="destructive"
+                    variant="danger"
                     size="sm"
                     onClick={() => onRemove(m.mediaID)}
                   >
@@ -705,7 +702,7 @@ function SmartCollections({ libraryID }: { libraryID: string }) {
 
   return (
     <>
-      <ManageSection title={t("smartCollections")} icon={WandSparkles}>
+      <ManageSection title={t("smartCollections")}>
         {smart.length === 0 ? (
           <EmptyLine message={t("noSmartCollections")} />
         ) : (
@@ -731,7 +728,7 @@ function SmartCollections({ libraryID }: { libraryID: string }) {
                   <TableCell className="text-right">
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
-                        <Button type="button" variant="destructive" size="sm">
+                        <Button type="button" variant="danger" size="sm">
                           {t("remove")}
                         </Button>
                       </AlertDialogTrigger>

@@ -106,7 +106,8 @@ describe("TrashPage", () => {
 
   it("surfaces a reversible-action undo and flags the irreversible purge", async () => {
     renderPage();
-    await screen.findByText("media.trash");
+    // The row reads as a sentence; the raw event key stays on the cell for hover.
+    await screen.findByTitle("media.trash");
     // media.trash row carries an Undo control; trash.purge row is flagged.
     expect(screen.getByRole("button", { name: "Undo" })).toBeInTheDocument();
     expect(screen.getByText("No undo")).toBeInTheDocument();

@@ -1,6 +1,4 @@
-import { ShieldCheck } from "lucide-react";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -91,7 +89,7 @@ export function SignInSecurity() {
   }
 
   return (
-    <Section heading="signinSecurityHeading" icon={ShieldCheck} lead="signinSecurityLead">
+    <Section heading="signinSecurityHeading" lead="signinSecurityLead">
       {loadFailed && (
         <div
           role="alert"
@@ -108,7 +106,7 @@ export function SignInSecurity() {
           </Button>
         </div>
       )}
-      <form onSubmit={onSubmit} className="max-w-xl space-y-4" noValidate>
+      <form onSubmit={onSubmit} className="grid max-w-xl gap-5" noValidate>
         <fieldset className="m-0 grid gap-3 border-0 p-0" disabled={current === null}>
           <legend className="sr-only">{t("signinSecurityHeading")}</legend>
           {MODES.map(({ mode, label, detail }) => (
@@ -125,7 +123,9 @@ export function SignInSecurity() {
                 <span className="flex items-center gap-2 font-medium text-foreground">
                   {t(label)}
                   {mode === "home" && (
-                    <Badge variant="outline">{t("setupSecurityRecommended")}</Badge>
+                    <span className="text-xs font-normal text-[var(--accent)]">
+                      {t("setupSecurityRecommended")}
+                    </span>
                   )}
                 </span>
                 <span className="text-xs text-muted-foreground">{t(detail)}</span>

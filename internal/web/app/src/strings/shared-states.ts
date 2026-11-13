@@ -47,7 +47,7 @@ export const sharedStateStrings = {
     libraryEmptyLead: "This library has no visible content for the current profile and filters.",
     // Empty-as-activation (onboarding-funnel §6) — owner/manager only. Non-owner
     // and no-access empties keep the inert copy above, byte-for-byte.
-    libraryEmptyOwnerTitle: "Your library is ready — let's fill it.",
+    libraryEmptyOwnerTitle: "Your library is ready. Let's fill it.",
     libraryEmptyOwnerLead:
       "Start a scan to bring in your media, or migrate it from another server.",
     libraryEmptyStartScan: "Start first scan",

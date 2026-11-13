@@ -176,6 +176,8 @@ describe("OperationsControls", () => {
     const user = userEvent.setup();
     renderPanel();
     await screen.findByLabelText("Events retention days");
+    // Governor settings sit behind the in-panel Advanced disclosure.
+    await user.click(screen.getByText("Advanced"));
 
     await user.click(screen.getByRole("button", { name: "Compact events now" }));
 

@@ -34,7 +34,7 @@ export const profileSearchStrings = {
     searchModeKeyword: "Keyword",
     searchModeSemantic: "Semantic",
     searchModeRecommend: "Recommend",
-    searchModeFellBackToKeyword: "Semantic unavailable — showing keyword results.",
+    searchModeFellBackToKeyword: "Semantic search unavailable. Showing keyword results.",
     searchRestrictedNotice: "Some results may be hidden by your access settings.",
     // Leak-safe no-access / stale deep-link terminal surface (ADR-0083 §32).
     notAvailableTitle: "Not available",
@@ -105,7 +105,8 @@ export const profileSearchStrings = {
     searchModeKeyword: "Mots-clés",
     searchModeSemantic: "Sémantique",
     searchModeRecommend: "Recommandations",
-    searchModeFellBackToKeyword: "Sémantique indisponible — résultats par mots-clés affichés.",
+    searchModeFellBackToKeyword:
+      "Recherche sémantique indisponible. Résultats par mots-clés affichés.",
     searchRestrictedNotice: "Certains résultats peuvent être masqués par vos réglages d’accès.",
     notAvailableTitle: "Non disponible",
     notAvailableLead: "Ceci n’est pas disponible pour le profil actuel.",

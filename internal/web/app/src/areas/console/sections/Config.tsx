@@ -1,4 +1,3 @@
-import { Cpu, ServerCog } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import { ControlRow, ErrorState, Fieldset } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
@@ -36,7 +35,7 @@ function ServerConfig() {
   }
 
   return (
-    <Section heading="consoleConfigHeading" icon={ServerCog} lead="consoleConfigLead">
+    <Section heading="consoleConfigHeading" lead="consoleConfigLead">
       {failed ? (
         <ErrorState message="consoleConfigUnavailable" />
       ) : (
@@ -91,7 +90,7 @@ function TranscodeConfig() {
   }
 
   return (
-    <Section heading="transcodeConfigHeading" icon={Cpu} lead="transcodeConfigLead">
+    <Section heading="transcodeConfigHeading" lead="transcodeConfigLead">
       {failed ? (
         <ErrorState message="transcodeConfigUnavailable" />
       ) : (

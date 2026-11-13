@@ -1,18 +1,16 @@
 import {
   Activity,
-  AlertTriangle,
-  BellRing,
   Boxes,
   Clock,
   Database,
   FolderOpen,
   Gauge,
   HardDrive,
-  HeartPulse,
   History,
   Home,
   KeyRound,
   Layers,
+  Lock,
   type LucideProps,
   Network,
   Plug,
@@ -20,13 +18,13 @@ import {
   ServerCog,
   ShieldCheck,
   Stethoscope,
-  Terminal,
   Users,
 } from "lucide-react";
 import { type ComponentType, type ReactElement, useEffect } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router";
 import { EmptyState, StatusChip } from "@/components/beamfall/workbench";
 import { AppShell } from "@/components/chrome/AppShell";
+import { SectionMenu } from "@/components/chrome/SectionMenu";
 import { Button } from "@/components/ui/button";
 import { isBeamfallAppStoreHost } from "@/lib/beamfallHost";
 import { fetchSetupState } from "@/lib/graphql";
@@ -44,14 +42,14 @@ import { ActivityLog } from "./sections/ActivityLog";
 import { ApiCredentials } from "./sections/ApiCredentials";
 import { Capabilities } from "./sections/Capabilities";
 import { Config } from "./sections/Config";
-import { HostGraphs, LiveSessionCount } from "./sections/Dashboard";
+import { HostGraphs, LiveSessionCount, LiveSessions } from "./sections/Dashboard";
 import { Health } from "./sections/Health";
 import { Libraries } from "./sections/Libraries";
-import { Operations } from "./sections/Operations";
+import { UpdateAwareness } from "./sections/Operations";
 import { OperationsControls } from "./sections/OperationsControls";
 import { PlayHistory } from "./sections/PlayHistory";
 import { Plugins } from "./sections/Plugins";
-import { RemoteAccess } from "./sections/RemoteAccess";
+import { MigrationWizard, RemoteAccess } from "./sections/RemoteAccess";
 import { Retention } from "./sections/Retention";
 import { SetupChecklist } from "./sections/SetupChecklist";
 import { useAsync } from "./useAsync";
@@ -120,49 +118,45 @@ function Overview() {
     },
   ].filter(Boolean) as { to: string; label: StringKey }[];
 
-  return (
-    <div className="space-y-8">
-      <OwnerTasks />
+  const libraryState = needsLibrary ? "setupChecklistNext" : "consoleOverviewReady";
 
+  return (
+    <div className="space-y-10">
       <Section heading="consoleOverviewHeading" lead="consoleOverviewLead">
-        <div className="console-overview-tiles">
+        <div className="console-status-strip">
           {(
             [
-              ["consoleOverviewServer", "consoleOverviewReady", HeartPulse],
-              ["libraries", needsLibrary ? "setupChecklistNext" : "consoleOverviewReady", Boxes],
-              ["jobs", "consoleOverviewReady", Gauge],
+              ["consoleOverviewServer", "consoleOverviewReady"],
+              ["libraries", libraryState],
+              ["jobs", "consoleOverviewReady"],
             ] as const
-          ).map(([label, state, Icon]) => (
-            <div className="console-overview-tile" key={label}>
-              <Icon className="console-nav-icon" aria-hidden />
-              <span>{t(label)}</span>
-              <StatusChip tone={state === "setupChecklistNext" ? "amber" : "green"}>
+          ).map(([label, state]) => (
+            <div className="console-status-cell" key={label}>
+              <span className="console-status-label">{t(label)}</span>
+              <span className="console-status-value">
+                <span
+                  className="console-status-dot"
+                  data-tone={state === "setupChecklistNext" ? "amber" : "green"}
+                  aria-hidden
+                />
                 {t(state)}
-              </StatusChip>
+              </span>
             </div>
           ))}
-          <Link className="console-overview-tile" to="/console/sessions">
-            <Users className="console-nav-icon" aria-hidden />
-            <span>{t("liveSessionsHeading")}</span>
+          <Link className="console-status-cell" to="/console/sessions">
+            <span className="console-status-label">{t("liveSessionsHeading")}</span>
             <LiveSessionCount />
           </Link>
         </div>
       </Section>
 
-      <HostGraphs />
-
-      <Section
-        heading="consoleNeedsAttentionHeading"
-        icon={BellRing}
-        lead="consoleNeedsAttentionLead"
-      >
+      <Section heading="consoleNeedsAttentionHeading" lead="consoleNeedsAttentionLead">
         {queue.length === 0 ? (
-          <EmptyState message="consoleNeedsAttentionEmpty" icon={AlertTriangle} />
+          <EmptyState message="consoleNeedsAttentionEmpty" />
         ) : (
           <div className="console-card">
             {queue.map((row) => (
               <Link className="console-triage-row" key={row.label} to={row.to}>
-                <AlertTriangle className="console-nav-icon" aria-hidden />
                 <span>{t(row.label)}</span>
                 <StatusChip tone="amber">{t("setupChecklistNext")}</StatusChip>
               </Link>
@@ -170,6 +164,10 @@ function Overview() {
           </div>
         )}
       </Section>
+
+      <OwnerTasks />
+
+      <HostGraphs />
 
       <SetupChecklist />
     </div>
@@ -203,7 +201,7 @@ const GROUPS: NavGroup[] = [
         path: "sessions",
         label: "liveSessionsHeading",
         icon: Users,
-        element: <Operations />,
+        element: <LiveSessions />,
         placement: "Monitor/Live Sessions",
       },
       {
@@ -317,14 +315,14 @@ const GROUPS: NavGroup[] = [
         path: "migrate",
         label: "jobKindMigration",
         icon: Rocket,
-        element: <RemoteAccess />,
+        element: <MigrationWizard />,
         placement: "Maintain/Migration",
       },
       {
         path: "updates",
         label: "consoleUpdates",
         icon: HardDrive,
-        element: <OperationsControls />,
+        element: <UpdateAwareness />,
         placement: "Maintain/Updates",
       },
       {
@@ -353,7 +351,7 @@ function groupsForHost(appStoreHost: boolean): NavGroup[] {
     items: group.items
       .filter((item) => !APP_STORE_FIREWALL_PATHS.has(item.path))
       .map((item) =>
-        item.path === "remote" || item.path === "migrate"
+        item.path === "remote"
           ? {
               ...item,
               element: <RemoteAccess suppressDispatchSurfaces />,
@@ -363,20 +361,19 @@ function groupsForHost(appStoreHost: boolean): NavGroup[] {
   })).filter((group) => group.items.length > 0);
 }
 
-// The active-session bar shown once an Admin Session is active — the Console is
-// "unlocked" as visible STATE (design system: admin is visible state, never a
-// hidden mode). A live dot + the lock affordance.
+// The active-session status shown once an Admin Session is active: the
+// Console is "unlocked" as visible STATE (design system: admin is visible
+// state, never a hidden mode), set at the foot of the rail with the lock action.
 function SessionBar({ onLock }: { onLock: () => void }) {
   const t = useT();
   return (
     <div className="console-session-bar">
       <span className="console-session-lead">
         <span className="console-session-dot" aria-hidden />
-        <ShieldCheck className="console-nav-icon" aria-hidden />
         {t("consoleActiveLead")}
       </span>
-      <Button variant="outline" size="sm" onClick={onLock}>
-        <Terminal className="console-nav-icon" aria-hidden />
+      <Button variant="ghost" size="sm" onClick={onLock} className="-ml-2">
+        <Lock className="console-nav-icon" aria-hidden />
         {t("adminLock")}
       </Button>
     </div>
@@ -385,8 +382,9 @@ function SessionBar({ onLock }: { onLock: () => void }) {
 
 function ConsoleNav({ groups }: { groups: NavGroup[] }) {
   const t = useT();
+  const { pathname } = useLocation();
   return (
-    <nav aria-label={t("consoleHeading")} className="console-nav shrink-0 sm:w-56">
+    <div className="console-nav">
       {groups.map((group, gi) => {
         const links = group.items.map((item) => {
           const Icon = item.icon;
@@ -403,8 +401,13 @@ function ConsoleNav({ groups }: { groups: NavGroup[] }) {
           );
         });
         if (group.collapsed) {
+          // The advanced group opens itself while one of its destinations is
+          // current, so the rail never hides where the operator is.
+          const holdsCurrent = group.items.some((item) =>
+            pathname.startsWith(`/console/${item.path}`),
+          );
           return (
-            <details className="console-nav-group" key={group.label + gi}>
+            <details className="console-nav-group" key={group.label + gi} open={holdsCurrent}>
               <summary className="console-nav-group-label">{t(group.label)}</summary>
               {links}
             </details>
@@ -417,7 +420,7 @@ function ConsoleNav({ groups }: { groups: NavGroup[] }) {
           </div>
         );
       })}
-    </nav>
+    </div>
   );
 }
 
@@ -465,25 +468,34 @@ export function ConsoleArea() {
       <div className="console-area">
         {/* The route's one h1 (also while the AdminGate is locked); each Section title is an h2. */}
         <h1 className="sr-only">{t(routeTitle ?? "consoleHeading")}</h1>
-        <AdminGate sessionBar={(lock) => <SessionBar onLock={lock} />}>
-          <div className="flex flex-col gap-8 sm:flex-row">
-            <ConsoleNav groups={groups} />
-            <div className="min-w-0 flex-1">
-              <Routes>
-                {allItems.map((item) => (
-                  <Route key={item.path} path={item.path} element={item.element} />
-                ))}
-                {ROUTE_ALIASES.map((route) => (
-                  <Route
-                    key={route.path}
-                    path={route.path}
-                    element={<Navigate to={route.to} replace />}
-                  />
-                ))}
-                <Route path="*" element={<Navigate to="/console" replace />} />
-              </Routes>
+        <AdminGate>
+          {(lock) => (
+            <div className="console-layout">
+              <SectionMenu
+                label={t("consoleHeading")}
+                className="console-rail"
+                current={t(routeTitle ?? "consoleHeading")}
+              >
+                <ConsoleNav groups={groups} />
+                <SessionBar onLock={lock} />
+              </SectionMenu>
+              <div className="console-content">
+                <Routes>
+                  {allItems.map((item) => (
+                    <Route key={item.path} path={item.path} element={item.element} />
+                  ))}
+                  {ROUTE_ALIASES.map((route) => (
+                    <Route
+                      key={route.path}
+                      path={route.path}
+                      element={<Navigate to={route.to} replace />}
+                    />
+                  ))}
+                  <Route path="*" element={<Navigate to="/console" replace />} />
+                </Routes>
+              </div>
             </div>
-          </div>
+          )}
         </AdminGate>
       </div>
     </AppShell>

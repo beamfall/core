@@ -10,7 +10,7 @@ import { rememberRenderFocus } from "../lib/renderFocus";
 
 // Hero Section, ported from the vanilla buildHero (app.js): one prominent
 // featured item (the Source's first item) — a wide full-bleed frame with a
-// backdrop-or-poster image behind a text-safe scrim, an eyebrow (the Section
+// backdrop-or-poster image behind a text-safe scrim, a visually hidden label (the Section
 // title), a Display-size title, an optional summary, and exactly one focusable
 // primary action (no autoplay). Absent artwork leaves the accent-tinted
 // fallback gradient (never a grey box).
@@ -57,7 +57,7 @@ export function Hero({
         )}
         <div aria-hidden className="bf-hero-scrim" />
         <div className="bf-hero-copy">
-          <span className="bf-eyebrow">{displayString(section.title, displayLocale)}</span>
+          <span className="sr-only">{displayString(section.title, displayLocale)}</span>
           <h2 className="bf-hero-title">{item.title}</h2>
           {item.summary && <p className="bf-hero-summary">{item.summary}</p>}
           <button

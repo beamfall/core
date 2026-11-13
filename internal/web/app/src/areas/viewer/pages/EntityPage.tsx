@@ -161,8 +161,8 @@ export function EntityPage() {
       {!notFound && (entity || previewTitle) && (
         <div className="flex flex-col gap-8">
           <header className="flex flex-col gap-3">
-            {kindHint && <span className="bf-entity-kind">{kindHint}</span>}
             <h1 className="bf-page-title">{entity?.title ?? previewTitle}</h1>
+            {kindHint && <p className="bf-entity-kind">{kindHint}</p>}
             {!entity && <Skeleton aria-hidden className="h-4 w-40" />}
             {entity && <ItemActions target={{ entityID: entityId }} />}
             {entity && entity.fields.length > 0 && (

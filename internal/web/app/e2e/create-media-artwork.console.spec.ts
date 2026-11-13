@@ -63,7 +63,9 @@ test.describe("manage unmatched: create Media with artwork", () => {
     });
 
     await page.goto("/web/manage/unmatched");
-    await expect(page.getByText("Unmatched records").first()).toBeVisible();
+    await expect(
+      page.getByText("Unmatched records").filter({ visible: true }).first(),
+    ).toBeVisible();
 
     // Pin the create target to the unrestricted seed Library so the Media the
     // chain produces is visible to this Profile without a reveal.

@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/chrome/AppShell";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { fetchNotifications, markNotificationRead } from "@/lib/graphql";
 import type { NotificationInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
@@ -80,37 +78,41 @@ export function NotificationsPage() {
           <p className="bf-lead">{t("notificationsLead")}</p>
         </header>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-3">
-              <CardTitle>{t("notificationsInboxHeading")}</CardTitle>
-              <Badge variant="outline">
+        <section aria-labelledby="notifications-inbox" className="flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-baseline gap-3">
+              <h2 id="notifications-inbox" className="text-[17px] font-semibold">
+                {t("notificationsInboxHeading")}
+              </h2>
+              <span className="text-sm text-[var(--text-muted)]">
                 {t("notificationsUnreadCount", { count: unreadCount })}
-              </Badge>
+              </span>
             </div>
             <Button variant="outline" size="sm" onClick={() => void refreshNotifications(true)}>
               {t("refresh")}
             </Button>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            {error && <p className="text-sm text-[var(--red-500)]">{error}</p>}
-            {loading ? (
-              <p className="text-sm text-[var(--text-muted)]">{t("loading")}</p>
-            ) : notifications.length === 0 ? (
-              <p className="text-sm text-[var(--text-muted)]">{t("notificationsEmpty")}</p>
-            ) : (
-              <ul className="flex flex-col gap-2">
-                {notifications.map((notification) => (
-                  <NotificationRow
-                    key={notification.id}
-                    notification={notification}
-                    onMarkRead={onMarkRead}
-                  />
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+          </div>
+          {error && (
+            <p role="alert" className="text-sm text-[var(--red-500)]">
+              {error}
+            </p>
+          )}
+          {loading ? (
+            <p className="text-sm text-[var(--text-muted)]">{t("loading")}</p>
+          ) : notifications.length === 0 ? (
+            <p className="text-sm text-[var(--text-muted)]">{t("notificationsEmpty")}</p>
+          ) : (
+            <ul className="settings-group">
+              {notifications.map((notification) => (
+                <NotificationRow
+                  key={notification.id}
+                  notification={notification}
+                  onMarkRead={onMarkRead}
+                />
+              ))}
+            </ul>
+          )}
+        </section>
       </div>
     </AppShell>
   );
@@ -125,24 +127,29 @@ function NotificationRow({
 }) {
   const t = useT();
   return (
-    <li
-      className={
-        "flex flex-col gap-3 rounded-[var(--radius-control)] border px-3 py-3 sm:flex-row sm:items-center sm:justify-between " +
-        (notification.read ? "border-[var(--border-subtle)]" : "border-[var(--accent)]")
-      }
-    >
-      <div className="flex min-w-0 flex-col gap-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="secondary">{notificationKindLabel(notification.kind, t)}</Badge>
-          {!notification.read && <Badge variant="outline">{t("notificationsUnread")}</Badge>}
-          <span className="text-xs text-[var(--text-muted)]">
-            {formatDateTime(notification.createdAt)}
+    <li className="settings-row flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex min-w-0 gap-3">
+        <span
+          aria-hidden
+          className={
+            "mt-[7px] size-2 shrink-0 rounded-full " +
+            (notification.read ? "bg-transparent" : "bg-[var(--accent)]")
+          }
+        />
+        <div className="flex min-w-0 flex-col gap-1">
+          <div className="flex flex-wrap items-center gap-x-2 text-xs text-[var(--text-muted)]">
+            <span>{notificationKindLabel(notification.kind, t)}</span>
+            {!notification.read && <span className="sr-only">{t("notificationsUnread")}</span>}
+            <span aria-hidden>·</span>
+            <span>{formatDateTime(notification.createdAt)}</span>
+          </div>
+          <span className="text-sm font-medium text-[var(--text-primary)]">
+            {notification.title}
           </span>
+          {notification.body && (
+            <span className="text-sm text-[var(--text-secondary)]">{notification.body}</span>
+          )}
         </div>
-        <span className="text-sm font-medium text-[var(--text-primary)]">{notification.title}</span>
-        {notification.body && (
-          <span className="text-sm text-[var(--text-secondary)]">{notification.body}</span>
-        )}
       </div>
       {!notification.read && (
         <Button

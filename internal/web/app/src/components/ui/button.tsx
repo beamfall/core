@@ -22,6 +22,11 @@ const buttonVariants = cva(
           "bg-destructive text-destructive-foreground shadow-xs hover:bg-destructive/90 focus-visible:ring-destructive/20",
         outline:
           "border border-input bg-background shadow-xs hover:bg-accent hover:text-accent-foreground",
+        // A destructive trigger that does not shout: repeated per-row actions
+        // (Revoke, Remove) read as text in the danger hue. The confirm step
+        // that actually destroys keeps the filled `destructive` variant.
+        danger:
+          "border border-input bg-transparent text-destructive hover:border-destructive/50 hover:bg-destructive/10",
         secondary: "bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/80",
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",

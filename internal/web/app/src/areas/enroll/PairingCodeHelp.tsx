@@ -8,8 +8,8 @@ export function PairingCodeHelp() {
   const t = useT();
   const titleID = useId();
   return (
-    <section aria-labelledby={titleID} className="mt-10 border-t pt-6">
-      <h2 id={titleID} className="text-lg font-semibold">
+    <section aria-labelledby={titleID} className="mt-8 border-t border-white/10 pt-6">
+      <h2 id={titleID} className="text-base font-semibold">
         {t("signInWhereTitle")}
       </h2>
       <ul className="mt-3 flex list-disc flex-col gap-3 pl-5 text-sm leading-relaxed text-muted-foreground">

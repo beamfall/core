@@ -80,14 +80,23 @@
   align-items: flex-start;
 }
 
+/* A column at least one viewport tall, so the source footer sits at the
+ * bottom of short pages instead of floating under the content. */
 .bf-content {
+  display: flex;
   flex: 1;
+  flex-direction: column;
   min-width: 0;
+  min-height: calc(100dvh - 60px);
+}
+
+.bf-main {
+  flex: 1 0 auto;
+  width: 100%;
 }
 
 /* The library sidebar (CORE-1131): a quiet vertical list that holds any number
- * of libraries. The active entry is brighter with a 3px beam bar on its
- * leading edge (the one sanctioned chrome accent). Desktop can collapse it to
+ * of libraries. The active entry is brighter on a soft beam fill. Desktop can collapse it to
  * an icon rail; phones open it as a drawer over the page. */
 .bf-sidebar {
   position: sticky;
@@ -118,13 +127,11 @@
 }
 
 .bf-side-heading {
-  margin: 20px 12px 8px;
+  margin: 22px 12px 6px;
   color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.08em;
+  font-size: 12.5px;
+  font-weight: 550;
   line-height: 16px;
-  text-transform: uppercase;
   white-space: nowrap;
 }
 
@@ -159,18 +166,6 @@
 .bf-side-link.is-active {
   color: var(--text-primary);
   background: color-mix(in oklch, var(--beam-500) 10%, transparent);
-}
-
-.bf-side-link.is-active::before {
-  content: "";
-  position: absolute;
-  top: 9px;
-  bottom: 9px;
-  left: 0;
-  width: 3px;
-  border-radius: 0 3px 3px 0;
-  background: var(--beam-500);
-  box-shadow: 0 0 12px var(--beam-500);
 }
 
 .bf-side-glyph,
@@ -322,7 +317,7 @@
 .bf-icon-button:hover,
 .bf-icon-button.is-active {
   color: var(--text-primary);
-  background: var(--night-850);
+  background: var(--control-bg-hover);
 }
 
 .bf-icon-button:focus-visible {
@@ -432,9 +427,8 @@
 
 .bf-account-role {
   color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  font-size: 12px;
+  font-weight: 500;
   line-height: 16px;
 }
 
@@ -576,15 +570,13 @@
  * the accent (design system accent non-use); the revealed session is the
  * sanctioned iris Restrictions tint. */
 .bf-chip-role {
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-weight: 550;
 }
 
 .bf-chip-revealed {
   border-color: oklch(67% 0.13 310 / 55%);
   background: oklch(67% 0.13 310 / 22%);
   color: var(--text-primary);
-  letter-spacing: 0.04em;
 }
 
 /* A revealed session is visually explicit: an iris keyline under the header,
@@ -679,13 +671,12 @@
   line-height: 22px;
 }
 
-[data-register="viewer"] .bf-eyebrow {
-  font-size: 12px;
-  line-height: 16px;
-  font-weight: 640;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-muted);
+[data-register="viewer"] .bf-field-label {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 550;
+  color: var(--text-secondary);
 }
 
 /* ============================================================ *
@@ -815,7 +806,6 @@
 [data-register="viewer"] .bf-card:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
-  box-shadow: 0 0 0 4px oklch(82% 0.145 92 / 18%);
 }
 
 /* ArtworkFallback: an accent-tinted gradient, never a grey box. The tint
@@ -1324,43 +1314,10 @@
  * ============================================================ */
 
 [data-register="viewer"] .bf-empty {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
-  margin: 72px auto 0;
-  max-width: 38rem;
-  padding: 34px 32px;
-  border: 1px solid color-mix(in oklab, var(--border-subtle) 78%, var(--beam-500));
-  border-radius: var(--radius-card);
-  background:
-    radial-gradient(
-      circle at 16% 0%,
-      color-mix(in oklab, var(--beam-500) 14%, transparent),
-      transparent 38%
-    ),
-    linear-gradient(
-      135deg,
-      color-mix(in oklab, var(--bg-raised) 62%, transparent),
-      var(--bg-surface)
-    );
-  box-shadow:
-    inset 0 1px 0 oklch(100% 0 0 / 5%),
-    0 18px 48px oklch(5% 0.014 255 / 44%);
+  margin: 96px auto 0;
+  max-width: 34rem;
+  padding: 0 16px;
   text-align: center;
-}
-
-[data-register="viewer"] .bf-empty::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: linear-gradient(
-    115deg,
-    transparent 0 48%,
-    oklch(82% 0.145 92 / 9%) 49% 51%,
-    transparent 52% 100%
-  );
-  opacity: 0.7;
 }
 
 [data-register="viewer"] .bf-empty .bf-action-link {
@@ -1385,12 +1342,10 @@
  * ============================================================ */
 
 [data-register="viewer"] .bf-entity-kind {
+  margin: -4px 0 0;
   color: var(--text-muted);
-  font-size: 12px;
-  line-height: 16px;
-  font-weight: 640;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-size: 15px;
+  line-height: 22px;
 }
 
 [data-register="viewer"] .bf-metadata {
@@ -2262,12 +2217,11 @@
 }
 
 /* ============================================================ *
- *  House style for the operator register (CORE-1131)
- *  The setup redesign's look carried into Console and Manage: soft
- *  accent glows behind the page, glass cards (translucent fill,
- *  hairline border, backdrop blur, inset top highlight) and a gentle
- *  accent glow on hover. Tokens mix from --text-primary so the same
- *  rules read in light and dark themes.
+ *  Workbench surfaces (Console and Manage)
+ *  One flat root, one surface tone, one hairline. Cards declare
+ *  elevation once (the border), share the web surface radius and
+ *  never blur. Tokens mix from --text-primary so the same rules read
+ *  in Workbench Dark and Workbench Light.
  * ============================================================ */
 
 [data-register="manage"] {
@@ -2276,35 +2230,20 @@
   --glass-fill: color-mix(in oklab, var(--text-primary) 3%, transparent);
   --glass-fill-raised: color-mix(in oklab, var(--text-primary) 5%, transparent);
   --glass-divider: color-mix(in oklab, var(--text-primary) 7%, transparent);
-  --glass-highlight: inset 0 1px 0 color-mix(in oklab, var(--text-primary) 6%, transparent);
-  --glass-radius: 12px;
+  --glass-highlight: none;
+  --glass-radius: var(--radius-surface);
 }
 
 [data-register="manage"] .bf-shell {
-  background:
-    radial-gradient(
-      50% 40% at 8% -6%,
-      color-mix(in oklab, var(--accent) 16%, transparent),
-      transparent 70%
-    ), radial-gradient(40% 35% at 96% -4%, rgba(139, 92, 246, 0.1), transparent 70%),
-    linear-gradient(180deg, var(--bg-root), var(--workbench-root-foot));
-  background-attachment: fixed;
+  background: var(--bg-root);
 }
 
 [data-register="manage"]
-  :is(
-    .console-card,
-    .console-fieldset,
-    .console-disclosure,
-    .console-table,
-    .console-session-bar,
-    .manage-section
-  ) {
+  :is(.console-card, .console-fieldset, .console-disclosure, .console-table, .manage-section) {
   border: 1px solid var(--glass-border);
-  border-radius: var(--glass-radius);
+  border-radius: var(--radius-surface);
   background: var(--glass-fill);
-  box-shadow: var(--glass-highlight);
-  backdrop-filter: blur(8px);
+  box-shadow: none;
 }
 
 [data-register="manage"] :is(.console-fieldset-head, .console-disclosure-body) {
@@ -2312,7 +2251,7 @@
 }
 
 [data-register="manage"] .console-disclosure > summary {
-  border-radius: var(--glass-radius);
+  border-radius: var(--radius-surface);
   transition: background 120ms ease;
 }
 
@@ -2320,11 +2259,11 @@
   background: var(--glass-fill-raised);
 }
 
-/* Tables: a quiet glass header band, hairline rows, accent-tinted hover. */
+/* Tables: hairline rows, a quiet hover, no header band. */
 [data-register="manage"] .console-table thead th,
 [data-register="manage"] .manage-table thead th {
-  background: var(--glass-fill-raised);
-  border-bottom-color: var(--glass-divider);
+  background: transparent;
+  border-bottom-color: var(--glass-border);
 }
 
 [data-register="manage"] .console-table tbody td,
@@ -2338,7 +2277,7 @@
 
 [data-register="manage"] .console-table tbody tr:hover,
 [data-register="manage"] .manage-table tbody tr:hover td {
-  background: color-mix(in oklab, var(--accent) 6%, transparent);
+  background: var(--glass-fill);
 }
 
 [data-register="manage"] .console-table tbody tr.is-aggregate,
@@ -2346,7 +2285,6 @@
   background: var(--glass-fill-raised);
 }
 
-/* Rows inside glass cards share the divider tone. */
 [data-register="manage"]
   :is(.console-triage-row, .console-step, .console-control-row, .console-job-row) {
   border-color: var(--glass-divider);
@@ -2357,278 +2295,109 @@
 }
 
 [data-register="manage"] .console-triage-row:hover {
-  background: color-mix(in oklab, var(--accent) 6%, transparent);
+  background: var(--glass-fill);
 }
 
-/* Empty states: the icon sits in an accent tile, as on setup. */
-[data-register="manage"] .console-empty {
-  gap: 10px;
-  padding: 36px 16px;
-}
-
-[data-register="manage"] .console-empty-icon {
-  box-sizing: content-box;
-  width: 18px;
-  height: 18px;
-  padding: 11px;
-  border-radius: 12px;
-  opacity: 1;
-  color: var(--accent);
-  background: color-mix(in oklab, var(--accent) 15%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 25%, transparent);
-}
-
-[data-register="manage"] .manage-empty {
-  justify-content: center;
-  min-height: 72px;
-}
-
-/* Section headings: larger, with the lead set off beneath. */
 [data-register="manage"] .console-section > div:first-child h2 {
-  font-size: 18px;
-  line-height: 24px;
-  letter-spacing: -0.01em;
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 650;
 }
 
 [data-register="manage"] .console-section {
-  gap: 14px;
+  gap: 16px;
 }
 
 [data-register="manage"] .manage-area .manage-section-title {
-  font-size: 15px;
-  line-height: 20px;
+  font-size: 16px;
+  line-height: 22px;
   font-weight: 650;
 }
 
 [data-register="manage"] .manage-area .manage-section-lead {
-  font-size: 13px;
-  line-height: 18px;
+  font-size: 13.5px;
+  line-height: 20px;
 }
 
-/* Active rail links pick up a soft accent wash. */
 [data-register="manage"] :is(.console-nav-link.is-active, .manage-nav-link[aria-current="page"]) {
   background: color-mix(in oklab, var(--accent) 12%, transparent);
 }
 
-@media (prefers-reduced-transparency: reduce) {
-  [data-register="manage"]
-    :is(
-      .console-card,
-      .console-fieldset,
-      .console-disclosure,
-      .console-table,
-      .console-session-bar,
-      .manage-section
-    ) {
-    backdrop-filter: none;
-    background: var(--bg-surface);
-  }
-}
-
-/* The setup redesign's icon tile, shared by Console and Manage headers. */
-.house-icon-tile {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  width: 38px;
-  height: 38px;
-  border-radius: 12px;
-  color: var(--accent);
-  background: linear-gradient(
-    135deg,
-    color-mix(in oklab, var(--accent) 24%, transparent),
-    color-mix(in oklab, rgb(139 92 246) 14%, transparent)
-  );
-  box-shadow:
-    inset 0 0 0 1px color-mix(in oklab, var(--accent) 30%, transparent),
-    0 6px 18px -10px var(--accent);
-}
-
 /* ============================================================ *
- *  My Data & Privacy (viewer) in the house style (CORE-1131)
- *  Glass panels with icon tiles, stat tiles, glowing accents.
+ *  My Data & Privacy (viewer): flat bordered panels, one stat
+ *  strip, divided lists. No glass, no icon tiles, no glows.
  * ============================================================ */
 
-.mydata {
-  --glass-border: color-mix(in oklab, var(--text-primary) 10%, transparent);
-  --glass-fill: color-mix(in oklab, var(--text-primary) 3.5%, transparent);
-  --glass-fill-raised: color-mix(in oklab, var(--text-primary) 5.5%, transparent);
-  --glass-divider: color-mix(in oklab, var(--text-primary) 7%, transparent);
-  --glass-highlight: inset 0 1px 0 color-mix(in oklab, var(--text-primary) 6%, transparent);
-  --mydata-tint: var(--brand-cyan-500, var(--accent));
-  --mydata-ink: var(--brand-cyan-300, var(--accent));
-  padding-block: 8px 24px;
-}
-
-.mydata .house-icon-tile {
-  color: var(--mydata-ink);
-  background: linear-gradient(
-    135deg,
-    color-mix(in oklab, var(--mydata-tint) 38%, transparent),
-    color-mix(in oklab, rgb(139 92 246) 22%, transparent)
-  );
-  box-shadow:
-    inset 0 0 0 1px color-mix(in oklab, var(--mydata-tint) 45%, transparent),
-    0 8px 22px -10px var(--mydata-tint);
-}
-
-.mydata-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
-  gap: 12px;
-}
-
 .mydata-hero {
-  position: relative;
-  isolation: isolate;
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  padding: 8px 0 4px;
-}
-
-.mydata-hero::before {
-  content: "";
-  position: absolute;
-  inset: -60px 0 auto 0;
-  height: 220px;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    radial-gradient(
-      40% 60% at 12% 40%,
-      color-mix(in oklab, var(--mydata-tint) 18%, transparent),
-      transparent 70%
-    ), radial-gradient(35% 55% at 70% 20%, rgb(139 92 246 / 0.1), transparent 70%);
-}
-
-.mydata-hero-tile {
-  width: 52px;
-  height: 52px;
-  border-radius: 16px;
+  padding-top: 8px;
 }
 
 .mydata-panel {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding: 20px 22px 22px;
-  border: 1px solid var(--glass-border);
-  border-radius: 16px;
-  background: var(--glass-fill);
-  box-shadow:
-    var(--glass-highlight),
-    0 20px 40px -32px rgb(0 0 0 / 0.6);
-  backdrop-filter: blur(10px);
-  transition:
-    border-color 160ms ease,
-    box-shadow 160ms ease;
-}
-
-.mydata-panel:hover {
-  border-color: color-mix(in oklab, var(--mydata-tint) 22%, var(--glass-border));
-  box-shadow:
-    var(--glass-highlight),
-    0 20px 44px -30px color-mix(in oklab, var(--mydata-tint) 45%, transparent);
-}
-
-.mydata-panel[data-tone="danger"] {
-  border-color: color-mix(in oklab, var(--red-500) 26%, transparent);
-  background: linear-gradient(
-    180deg,
-    color-mix(in oklab, var(--red-500) 6%, transparent),
-    var(--glass-fill) 60%
-  );
-}
-
-.mydata-panel[data-tone="danger"] .house-icon-tile {
-  color: var(--red-500);
-  background: color-mix(in oklab, var(--red-500) 16%, transparent);
-  box-shadow:
-    inset 0 0 0 1px color-mix(in oklab, var(--red-500) 30%, transparent),
-    0 6px 18px -10px var(--red-500);
+  gap: 16px;
+  padding: 20px 22px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-surface);
+  background: var(--bg-surface);
 }
 
 .mydata-panel-head {
   display: flex;
-  align-items: center;
-  gap: 14px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
 }
 
 .mydata-panel-title {
+  margin: 0;
   font-size: 17px;
-  line-height: 22px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
+  font-weight: 600;
+  line-height: 24px;
   color: var(--text-primary);
 }
 
-.mydata-panel-lead,
-.mydata-muted {
-  font-size: 13px;
-  line-height: 18px;
+.mydata-panel-lead {
+  margin: 0;
+  max-width: 64ch;
+  font-size: 13.5px;
+  line-height: 20px;
   color: var(--text-muted);
 }
 
-.mydata-stat {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 14px 14px 12px;
-  border: 1px solid var(--glass-divider);
-  border-radius: 12px;
-  background: var(--glass-fill-raised);
+.mydata-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  border: 1px solid var(--border-subtle);
+  border-radius: calc(var(--radius-surface) - 4px);
   overflow: hidden;
 }
 
-.mydata-stat::after {
-  content: "";
-  position: absolute;
-  inset: auto -20% -60% auto;
-  width: 90px;
-  height: 90px;
-  border-radius: 50%;
-  background: radial-gradient(
-    circle,
-    color-mix(in oklab, var(--mydata-tint) 16%, transparent),
-    transparent 70%
-  );
-  pointer-events: none;
-}
-
-.mydata-stat-icon {
-  width: 16px;
-  height: 16px;
-  margin-bottom: 6px;
-  color: var(--mydata-ink);
+.mydata-stat {
+  display: grid;
+  gap: 2px;
+  padding: 12px 16px;
+  box-shadow: -1px -1px 0 var(--border-subtle);
 }
 
 .mydata-stat-value {
-  font-size: 28px;
-  line-height: 32px;
-  font-weight: 650;
-  letter-spacing: -0.02em;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 28px;
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
 }
 
 .mydata-stat-label {
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--text-muted);
 }
 
-.mydata-range {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-
-.mydata-range svg {
-  color: var(--mydata-ink);
+.mydata-range,
+.mydata-muted {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--text-muted);
 }
 
 .mydata-subsection {
@@ -2636,25 +2405,25 @@
   flex-direction: column;
   gap: 10px;
   padding-top: 16px;
-  border-top: 1px solid var(--glass-divider);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .mydata-subheading {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  margin: 0;
+  font-size: 14px;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text-primary);
+}
+
+.mydata-bar-row {
+  display: grid;
+  gap: 6px;
 }
 
 .mydata-bar {
-  height: 6px;
-  margin-top: 6px;
+  height: 4px;
   border-radius: 999px;
-  background: var(--glass-divider);
+  background: var(--control-bg);
   overflow: hidden;
 }
 
@@ -2662,7 +2431,7 @@
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--mydata-tint), rgb(139 92 246));
+  background: var(--accent);
 }
 
 .mydata-filters {
@@ -2670,109 +2439,66 @@
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 12px;
-  padding: 14px;
-  border: 1px solid var(--glass-divider);
-  border-radius: 12px;
-  background: var(--glass-fill-raised);
 }
 
-@media (max-width: 639px) {
-  .mydata-filters > * {
-    flex: 1 1 100%;
-  }
+.mydata-empty {
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: calc(var(--radius-surface) - 4px);
+  font-size: 13.5px;
+  color: var(--text-muted);
 }
 
 .mydata-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: calc(var(--radius-surface) - 4px);
 }
 
 .mydata-row {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--glass-divider);
-  border-radius: 12px;
-  background: var(--glass-fill-raised);
-  transition:
-    background 120ms ease,
-    border-color 120ms ease;
+  min-height: 52px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
-.mydata-row:hover {
-  background: color-mix(in oklab, var(--mydata-tint) 6%, transparent);
+.mydata-row:last-child {
+  border-bottom: 0;
 }
 
 .mydata-row[data-current] {
-  border-color: color-mix(in oklab, var(--mydata-tint) 45%, transparent);
-  background: color-mix(in oklab, var(--mydata-tint) 8%, transparent);
-}
-
-.mydata-row-icon {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
-  color: var(--mydata-ink);
-  background: color-mix(in oklab, var(--mydata-tint) 13%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--mydata-tint) 22%, transparent);
+  background: color-mix(in oklab, var(--accent) 7%, transparent);
 }
 
 .mydata-pill {
-  flex: 0 0 auto;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--mydata-ink);
-  background: color-mix(in oklab, var(--mydata-tint) 15%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--mydata-tint) 35%, transparent);
-}
-
-.mydata-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 28px 16px;
-  text-align: center;
-  font-size: 13px;
-  color: var(--text-muted);
-  border: 1px dashed var(--glass-border);
-  border-radius: 12px;
-}
-
-.mydata-empty-icon {
-  display: inline-flex;
-  padding: 11px;
-  border-radius: 12px;
-  color: var(--mydata-ink);
-  background: color-mix(in oklab, var(--mydata-tint) 15%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--mydata-tint) 25%, transparent);
+  flex: none;
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--accent);
 }
 
 .mydata-pager {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-muted);
 }
 
 .mydata-notice {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
-  padding: 8px 12px;
-  border-radius: 10px;
-  font-size: 13px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13.5px;
 }
 
 .mydata-notice[data-tone="ok"] {
@@ -2783,13 +2509,6 @@
 .mydata-notice[data-tone="error"] {
   color: var(--red-500);
   background: color-mix(in oklab, var(--red-500) 10%, transparent);
-}
-
-@media (prefers-reduced-transparency: reduce) {
-  .mydata-panel {
-    backdrop-filter: none;
-    background: var(--bg-surface);
-  }
 }
 
 /* Over a playing stage the bar floats on a top scrim and hides with the
@@ -2915,4 +2634,90 @@ main:has(> .bf-player-stage.is-chrome-hidden) > .bf-player-bar > * {
 .bf-item-actions-error {
   color: var(--text-secondary);
   font-size: 13px;
+}
+
+/* Viewer settings: one bordered group per section, rows divided by hairlines,
+ * rather than a separate box around every control. */
+.settings-group {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-surface);
+  background: var(--bg-surface);
+  overflow: hidden;
+}
+
+.settings-row {
+  padding: 14px 18px;
+}
+
+.settings-group > .settings-row + .settings-row {
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* Section menu (SectionMenu.tsx): an area's rail behind one button on phones,
+ * the full rail from 768px up. */
+.section-menu-toggle {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-field);
+  background: var(--control-bg);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.section-menu-toggle:hover {
+  background: var(--control-bg-hover);
+}
+
+.section-menu-toggle:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.section-menu-chevron {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.section-menu[data-open] .section-menu-chevron {
+  transform: rotate(180deg);
+}
+
+.section-menu:not([data-open]) .section-menu-body {
+  display: none;
+}
+
+.section-menu[data-open] .section-menu-body {
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-surface);
+  background: var(--bg-surface);
+}
+
+@media (min-width: 768px) {
+  .section-menu-toggle {
+    display: none;
+  }
+
+  .section-menu:not([data-open]) .section-menu-body,
+  .section-menu[data-open] .section-menu-body {
+    display: block;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+  }
 }

@@ -1,4 +1,3 @@
-import { Layers } from "lucide-react";
 import { useState } from "react";
 import { EmptyState, ErrorState, StatusChip } from "@/components/beamfall/workbench";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -36,13 +35,13 @@ export function Capabilities() {
   const probe = states.filter((s) => s.kind === "probe");
 
   return (
-    <Section heading="capabilitiesHeading" icon={Layers} lead="capabilitiesLead">
+    <Section heading="capabilitiesHeading" lead="capabilitiesLead">
       {loading ? (
         <Skeleton className="h-32 w-full" />
       ) : failed ? (
         <ErrorState message="capabilitiesUnavailable" />
       ) : states.length === 0 ? (
-        <EmptyState message="capabilitiesEmpty" icon={Layers} />
+        <EmptyState message="capabilitiesEmpty" />
       ) : (
         <div className="space-y-4">
           {workflow.length > 0 && (

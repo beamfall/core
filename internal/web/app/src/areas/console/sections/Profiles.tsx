@@ -1,7 +1,5 @@
-import { Users } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { EmptyState, ErrorState } from "@/components/beamfall/workbench";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,21 +34,21 @@ export function Profiles() {
 
   if (profiles.failed) {
     return (
-      <Section heading="consoleProfilesHeading" icon={Users} lead="consoleProfilesLead">
+      <Section heading="consoleProfilesHeading" lead="consoleProfilesLead">
         <ErrorState message="consoleProfilesUnavailable" />
       </Section>
     );
   }
 
   return (
-    <Section heading="consoleProfilesHeading" icon={Users} lead="consoleProfilesLead">
+    <Section heading="consoleProfilesHeading" lead="consoleProfilesLead">
       <div className="space-y-6">
         <CreateProfileForm onCreated={() => void profiles.refresh()} />
 
         {rows.length === 0 ? (
           <EmptyState message="consoleProfilesEmpty" />
         ) : (
-          <ul className="space-y-2">
+          <ul className="console-card divide-y divide-border">
             {rows.map((p) => (
               <ProfileRow key={p.id} profile={p} onDisabled={() => void profiles.refresh()} />
             ))}
@@ -150,7 +148,7 @@ function ProfileRow({
   }
 
   return (
-    <li className="console-card console-card-pad space-y-3">
+    <li className="console-card-pad space-y-3">
       <div className="flex flex-wrap items-end gap-3">
         <div className="min-w-48 flex-1 space-y-1">
           <Label htmlFor={`profile-name-${profile.id}`}>{t("consoleProfilesNameLabel")}</Label>
@@ -173,9 +171,6 @@ function ProfileRow({
             </SelectContent>
           </Select>
         </div>
-        <Badge variant={kind === "managed" ? "secondary" : "outline"}>
-          {kind === "managed" ? t("consoleProfilesKindManaged") : t("consoleProfilesKindAdult")}
-        </Badge>
         <Button
           type="button"
           size="sm"

@@ -584,7 +584,7 @@ function BrowseSelect({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="bf-eyebrow">
+      <label htmlFor={id} className="bf-field-label">
         {label}
       </label>
       <Select value={value} onValueChange={onChange}>

@@ -1,8 +1,7 @@
-import { BellRing, ListChecks, RefreshCw } from "lucide-react";
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { RefreshCw } from "lucide-react";
+import { type FormEvent, useEffect, useState } from "react";
 import {
   ControlRow,
-  EmptyState,
   ErrorState,
   Fieldset,
   StatusChip,
@@ -11,25 +10,16 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import { subscribeEvents } from "@/lib/api";
 import {
   fetchConsoleConfig,
-  fetchJobs,
   fetchUpdateStatus,
   setConsoleConfig,
   type UpdateCheckState,
 } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
-import { jobKindLabel, jobProgressDetail, jobStatusLabel, jobStatusState } from "@/lib/jobDisplay";
 import type { StringKey } from "@/strings";
 import { Section } from "../Section";
 import { useAsync } from "../useAsync";
-import { LiveSessions } from "./Dashboard";
-
-function statusTone(status: string): StatusTone {
-  const state = jobStatusState(status);
-  return state === "red" || state === "green" || state === "amber" ? state : "neutral";
-}
 
 /**
  * How each update-check state presents. "upToDate" is the ONLY entry that reads
@@ -95,7 +85,7 @@ function UpdateAvailableGuidance({
         </div>
       </dl>
 
-      <div className="space-y-1 border-l-4 border-[var(--amber-500)] pl-3">
+      <div className="space-y-1 rounded-[var(--radius-field)] bg-[color-mix(in_oklab,var(--amber-500)_10%,transparent)] px-4 py-3">
         <p className="m-0">{t("updateMigrationPossible")}</p>
         <p className="m-0 font-semibold">{t("updateBackupRequired")}</p>
         <p className="m-0">{t("updateExportNotBackup")}</p>
@@ -167,7 +157,9 @@ function UpdateAvailableGuidance({
   );
 }
 
-function UpdateAwareness() {
+// Update awareness (ADR-0079): the update-check switch, channel and the
+// current/latest versions. It owns the Maintain › Updates destination.
+export function UpdateAwareness() {
   const t = useT();
   const config = useAsync(fetchConsoleConfig);
   const status = useAsync(fetchUpdateStatus);
@@ -202,7 +194,6 @@ function UpdateAwareness() {
   return (
     <Section
       heading="updateAwarenessHeading"
-      icon={BellRing}
       lead="updateAwarenessLead"
       actions={
         <Button variant="outline" size="sm" onClick={() => void status.refresh()}>
@@ -299,129 +290,5 @@ function UpdateAwareness() {
         </form>
       )}
     </Section>
-  );
-}
-
-// The live-connection state of the jobs stream, mirroring the mockup's three
-// indicator states (console-jobs-live.html): live (SSE open, pulsing green),
-// reconnecting (transport error, auto-retry, amber blink), and paused (retries
-// exhausted — the manual Refresh fallback re-appears). "connecting" is the
-// pre-first-open mount state and renders no indicator/button.
-type StreamState = "connecting" | "live" | "reconnecting" | "paused";
-
-// After this many consecutive transport errors with no intervening open we
-// treat the stream as paused (retries effectively exhausted) and surface the
-// manual refresh escape, per mockup State 3.
-const PAUSE_AFTER_ERRORS = 3;
-
-// The live-status indicator (mockup .live): a pulsing/blinking dot + label that
-// signals stream liveness. In the paused state it becomes the manual-refresh
-// fallback button — the only state with a button (honest, never-silent).
-function LiveIndicator({ state, onRefresh }: { state: StreamState; onRefresh: () => void }) {
-  const t = useT();
-  if (state === "connecting") return null;
-  if (state === "paused") {
-    return (
-      <button
-        type="button"
-        className="console-live is-paused console-live-refresh"
-        onClick={onRefresh}
-      >
-        <span className="console-live-dot" aria-hidden />
-        {t("jobsLivePaused")} · {t("jobsRefreshNow")}
-        <RefreshCw className="console-nav-icon" aria-hidden />
-      </button>
-    );
-  }
-  const live = state === "live";
-  return (
-    <span className={`console-live ${live ? "is-live" : "is-reconnecting"}`} role="status">
-      <span className="console-live-dot" aria-hidden />
-      {live ? t("jobsLive") : t("jobsReconnecting")}
-    </span>
-  );
-}
-
-// Jobs queue (ADR-0013) — the job substrate with progress detail. Live via the
-// SSE event stream (ADR-0040): any server-side job event triggers a refresh,
-// and the EventSource lifecycle drives the live-status indicator. Last-good
-// rows are retained across a reconnect (refresh only replaces on success), so
-// the panel never blanks mid-stream (fail-soft, per mockup State 2).
-function JobsQueue() {
-  const t = useT();
-  const { data, loading, failed, refresh } = useAsync(fetchJobs);
-  const jobs = data ?? [];
-  const [stream, setStream] = useState<StreamState>("connecting");
-  const errorsRef = useRef(0);
-
-  useEffect(() => {
-    return subscribeEvents(
-      () => void refresh(),
-      undefined,
-      (s) => {
-        if (s === "live") {
-          errorsRef.current = 0;
-          setStream("live");
-        } else {
-          errorsRef.current += 1;
-          setStream(errorsRef.current >= PAUSE_AFTER_ERRORS ? "paused" : "reconnecting");
-        }
-      },
-    );
-  }, [refresh]);
-
-  return (
-    <Section
-      heading="jobs"
-      icon={ListChecks}
-      actions={<LiveIndicator state={stream} onRefresh={() => void refresh()} />}
-    >
-      {loading ? (
-        <Skeleton className="h-32 w-full" />
-      ) : failed ? (
-        <ErrorState message="jobsUnavailable" />
-      ) : jobs.length === 0 ? (
-        <EmptyState message="noJobs" />
-      ) : (
-        <div className="console-card console-job-list" data-stream={stream}>
-          {jobs.map((job) => {
-            const { current, total } = job.progress;
-            const pct = total > 0 ? Math.round((current / total) * 100) : 0;
-            const tone = statusTone(job.status);
-            return (
-              <div key={job.id} className="console-job-row">
-                <span className="console-job-name">{jobKindLabel(job.kind, t)}</span>
-                <span
-                  className="console-jbar"
-                  role="progressbar"
-                  aria-valuenow={pct}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-label={t("jobsProgressLabel")}
-                >
-                  <i
-                    className={tone === "amber" ? "warn" : undefined}
-                    style={{ width: `${pct}%` }}
-                  />
-                </span>
-                <span className="console-job-num console-mono">{jobProgressDetail(job, t)}</span>
-                <StatusChip tone={tone}>{jobStatusLabel(job.status, t)}</StatusChip>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </Section>
-  );
-}
-
-// Operations (ADR-0007 §4): the job queue + the live sessions dashboard.
-export function Operations() {
-  return (
-    <div className="space-y-8">
-      <LiveSessions />
-      <JobsQueue />
-      <UpdateAwareness />
-    </div>
   );
 }

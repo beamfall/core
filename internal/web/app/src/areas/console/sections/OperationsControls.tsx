@@ -1,4 +1,4 @@
-import { Cpu, Gauge, ListOrdered, RefreshCw, SlidersHorizontal } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import {
   ControlRow,
@@ -28,7 +28,7 @@ import { useT } from "@/lib/i18n";
 import { jobKindLabel, jobProgressDetail, jobStatusLabel, jobStatusState } from "@/lib/jobDisplay";
 import type { StringKey } from "@/strings";
 import { ConfirmButton } from "../ConfirmButton";
-import { Section } from "../Section";
+import { AdvancedDisclosure, Section } from "../Section";
 import { useAsync } from "../useAsync";
 
 function statusTone(status: string): StatusTone {
@@ -91,7 +91,6 @@ function GovernorStatus() {
   return (
     <Section
       heading="governorHeading"
-      icon={Gauge}
       actions={
         <Button variant="outline" size="sm" onClick={() => void refresh()}>
           <RefreshCw className="console-nav-icon" aria-hidden />
@@ -105,7 +104,7 @@ function GovernorStatus() {
         <ErrorState message="governorUnavailable" />
       ) : !data?.available ? (
         <div className="space-y-1">
-          <EmptyState message="governorUnwiredLine" icon={Cpu} />
+          <EmptyState message="governorUnwiredLine" />
           <p className="px-1 text-[12px] leading-snug text-muted-foreground">
             {t("governorUnwiredHelp")}
           </p>
@@ -201,7 +200,7 @@ function GovernorSettings() {
   }
 
   return (
-    <Section heading="governorSettingsHeading" icon={SlidersHorizontal}>
+    <Section heading="governorSettingsHeading">
       {config.loading ? (
         <Skeleton className="h-32 w-full" />
       ) : config.failed ? (
@@ -343,7 +342,6 @@ function JobQueue() {
   return (
     <Section
       heading="jobQueueHeading"
-      icon={ListOrdered}
       actions={
         <Button variant="outline" size="sm" onClick={() => void refresh()}>
           <RefreshCw className="console-nav-icon" aria-hidden />
@@ -419,16 +417,19 @@ function JobQueue() {
 }
 
 // Operations controls (WEB-5K, ADR-0013 §4-§5 / ADR-0061): the operator surface
-// over the resource governor and the job-queue substrate — live governor
-// posture, background-worker write settings with low-power mode, and the job
-// queue with per-job cancel/retry and an inline durable logs view. Admin-session
+// over the job-queue substrate and the resource governor — the job queue with
+// per-job cancel/retry and an inline durable logs view, the live governor
+// posture, and (behind Advanced, IA §5) the background-worker write settings
+// with low-power mode. Admin-session
 // gated by the Console graph dispatch (the jobs/governor fields require admin).
 export function OperationsControls() {
   return (
     <div className="space-y-8">
-      <GovernorStatus />
-      <GovernorSettings />
       <JobQueue />
+      <GovernorStatus />
+      <AdvancedDisclosure>
+        <GovernorSettings />
+      </AdvancedDisclosure>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { ChevronDown, KeyRound, Plug } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   EmptyState,
@@ -208,7 +208,7 @@ export function Plugins() {
   }
 
   return (
-    <Section heading="consoleConfigPlugins" icon={Plug}>
+    <Section heading="consoleConfigPlugins">
       {loading && !data ? (
         // Only the first load shows a skeleton. A later refresh keeps the cards
         // mounted, so it cannot discard a typed key or an unsaved config draft.
@@ -216,7 +216,7 @@ export function Plugins() {
       ) : failed ? (
         <ErrorState message="consoleConfigUnavailable" />
       ) : plugins.length === 0 ? (
-        <EmptyState message="none" icon={Plug} />
+        <EmptyState message="none" />
       ) : (
         <>
           {pluginStandingUnavailable && (
@@ -275,8 +275,9 @@ function keyStatusChip(status: string, t: ReturnType<typeof useT>) {
   return <StatusChip tone={entry?.tone ?? "neutral"}>{entry ? t(entry.label) : status}</StatusChip>;
 }
 
-const CARD = "rounded-2xl border border-white/10 bg-card/70 backdrop-blur-xl";
-const KEY_INPUT = "h-10 rounded-xl border-white/10 bg-white/[0.04]";
+const CARD =
+  "rounded-[var(--radius-surface)] border border-[var(--border-subtle)] bg-[var(--bg-surface)]";
+const KEY_INPUT = "h-10 rounded-xl";
 
 function PluginCard({
   plugin,
@@ -311,23 +312,10 @@ function PluginCard({
 
   return (
     <article className={CARD} aria-label={name}>
-      <div className="console-control-row px-4 py-3">
+      <div className="console-control-row console-plugin-head">
         <div className="flex min-w-0 items-center gap-3">
-          <span
-            aria-hidden
-            className={cn(
-              "grid size-10 shrink-0 place-items-center rounded-xl",
-              plugin.active
-                ? "bg-primary/15 text-primary"
-                : "bg-white/[0.05] text-muted-foreground",
-            )}
-          >
-            <Plug className="size-5" />
-          </span>
           <div className="min-w-0 space-y-1">
-            <div className="console-control-label break-words text-[15px] font-semibold">
-              {name}
-            </div>
+            <div className="break-words text-[15px] font-semibold">{name}</div>
             <div className="flex flex-wrap items-center gap-1.5">
               {provenanceChip(plugin.provenance, t)}
               {trustBadge(plugin.trustState, t)}
@@ -345,7 +333,6 @@ function PluginCard({
             type="button"
             size="sm"
             variant="ghost"
-            className="rounded-full"
             aria-expanded={expanded}
             aria-controls={detailsID}
             aria-label={t("pluginDetailsToggle", { name })}
@@ -369,17 +356,14 @@ function PluginCard({
       </div>
 
       {keys.length > 0 && (
-        <div className="space-y-2 border-t border-white/[0.06] px-4 py-3">
-          <div className="flex items-center gap-2">
-            <KeyRound aria-hidden className="size-4 text-muted-foreground" />
-            <h3 className="m-0 text-[13px] font-semibold">{t("pluginKeysHeading")}</h3>
-          </div>
+        <div className="border-t border-[var(--border-subtle)] px-4 pt-3">
+          <h3 className="m-0 text-sm font-semibold">{t("pluginKeysHeading")}</h3>
           {missingKey && (
-            <p className="m-0 text-[12.5px] leading-snug text-muted-foreground">
+            <p className="m-0 mt-1 text-[13px] leading-snug text-muted-foreground">
               {t("pluginKeysLead")}
             </p>
           )}
-          <div className="grid gap-2">
+          <div className="divide-y divide-[var(--border-subtle)]">
             {keys.map((key) => (
               <ProviderKeyRow key={key.authRef} providerKey={key} onCredential={onCredential} />
             ))}
@@ -392,7 +376,7 @@ function PluginCard({
       <div
         id={detailsID}
         hidden={!expanded}
-        className="space-y-4 border-t border-white/[0.06] px-4 py-4"
+        className="space-y-4 border-t border-[var(--border-subtle)] px-4 py-4"
       >
         {plugin.controlPolicy && (
           <p className="m-0 text-[12px] text-muted-foreground">
@@ -439,13 +423,12 @@ function ProviderKeyRow({
   }
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+    <div className="py-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <div className="text-sm font-medium">{label}</div>
-          <div className="text-[11.5px] text-muted-foreground">
+          <div className="text-xs text-muted-foreground">
             {t("pluginKeySentTo", { hosts: hosts.join(", ") })}
-            <span className="ml-1.5 font-mono opacity-70">{authRef}</span>
           </div>
         </div>
         {keyStatusChip(status, t)}
@@ -466,12 +449,7 @@ function ProviderKeyRow({
           aria-label={t("pluginKeyField", { provider: label })}
           onChange={(event) => setSecret(event.target.value)}
         />
-        <Button
-          type="submit"
-          size="sm"
-          className="rounded-full px-4"
-          disabled={pending || !secret.trim()}
-        >
+        <Button type="submit" size="sm" className="px-4" disabled={pending || !secret.trim()}>
           {t("consoleScraperSave")}
         </Button>
         {status !== "missing" && (
@@ -480,7 +458,6 @@ function ProviderKeyRow({
               type="button"
               size="sm"
               variant="ghost"
-              className="rounded-full"
               disabled={pending}
               onClick={() => void run(() => validateScraperCredential(authRef), false)}
             >
@@ -490,7 +467,6 @@ function ProviderKeyRow({
               type="button"
               size="sm"
               variant="ghost"
-              className="rounded-full"
               disabled={pending}
               onClick={() => void run(() => disableScraperCredential(authRef), true)}
             >

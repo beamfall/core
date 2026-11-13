@@ -31,10 +31,8 @@
 }
 
 /* ---------------------------------------------------------------------------
- * Left-nav: a dense, grouped operator rail with a beam active marker.
- * Ported in spirit from the vanilla manage nav; the active state borrows the
- * accent only as a left-edge marker (design-system §accent use: "selected
- * state, focus, and primary action"), never a full accent fill.
+ * Left-nav: a dense, grouped operator rail. The active link is carried by a
+ * raised fill alone, never a keyline or an accent stripe.
  * ------------------------------------------------------------------------- */
 .manage-nav {
   display: flex;
@@ -88,18 +86,6 @@
   background: var(--bg-raised);
 }
 
-/* The beam left-edge marker — the only accent the nav carries. */
-.manage-nav-link[aria-current="page"]::before {
-  content: "";
-  position: absolute;
-  left: 2px;
-  top: 7px;
-  bottom: 7px;
-  width: 3px;
-  border-radius: 999px;
-  background: var(--accent);
-}
-
 /* ---------------------------------------------------------------------------
  * Section chrome: an operator panel, not a consumer card. Thin border, surface
  * fill, no drop shadow (design-system §Elevation: "prefer contrast, borders,
@@ -137,7 +123,7 @@
 
 /* ---------------------------------------------------------------------------
  * Tables: the table-like list register. Dense rows, hairline separators, subtle
- * zebra + hover, uppercase muted column heads, tabular numerals. This is the
+ * zebra + hover, sentence-case muted column heads, tabular numerals. This is the
  * single biggest visible shift from the Viewer — lists read as a workbench
  * table, not a stack of cards.
  * ------------------------------------------------------------------------- */
@@ -151,11 +137,9 @@
 .manage-area .manage-table thead th {
   height: 30px;
   padding: 0 var(--mg-space-2);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 16px;
-  font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-weight: 600;
   color: var(--text-muted);
   border-bottom: 1px solid var(--border-subtle);
   background: transparent;

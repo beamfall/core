@@ -28,8 +28,24 @@
   --color-ring: var(--focus-ring);
 
   --radius-sm: calc(var(--radius-control) - 2px);
-  --radius-md: var(--radius-control);
-  --radius-lg: var(--radius-card);
+  --radius-md: var(--radius-field);
+  --radius-lg: var(--radius-surface);
+  --radius-xl: var(--radius-surface);
+
+  --font-sans: var(--font-ui);
+}
+
+/* Web surface layer. The shared design-system tokens (tokens.css) stay
+ * canonical for colour; this layer sets the embedded web app's own shape and
+ * type: one surface radius for cards and panels, one field radius for inputs
+ * and buttons, and a self-hosted UI face so the app renders the same offline. */
+:root {
+  --font-ui:
+    "Instrument Sans Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --radius-surface: 14px;
+  --radius-field: 10px;
+  --field-height: 2.5rem;
+  --surface-gap: 1.5rem;
 }
 
 * {
@@ -41,7 +57,85 @@ body {
   margin: 0;
   background: var(--bg-root);
   color: var(--text-primary);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  color-scheme: dark;
+  scrollbar-color: color-mix(in oklch, var(--text-muted) 45%, transparent) transparent;
+}
+
+[data-register="manage"][data-theme="light"] {
+  color-scheme: light;
+}
+
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+  letter-spacing: -0.015em;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+/* Tailwind 4 borders default to currentColor; a bare `border` utility should
+ * draw the quiet hairline, not a white frame. */
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: var(--color-border);
+  }
+}
+
+input[type="radio"],
+input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
+::selection {
+  background: color-mix(in oklch, var(--accent) 38%, transparent);
+  color: var(--text-primary);
+}
+
+input,
+textarea {
+  caret-color: var(--accent);
+}
+
+a {
+  text-underline-offset: 0.2em;
+  text-decoration-thickness: from-font;
+}
+
+table,
+time,
+[data-numeric] {
+  font-variant-numeric: tabular-nums;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: color-mix(in oklch, var(--text-muted) 40%, transparent);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in oklch, var(--text-muted) 65%, transparent);
 }
 
 #root {

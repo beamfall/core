@@ -1,14 +1,4 @@
-import {
-  ArrowRightLeft,
-  ChevronLeft,
-  Download,
-  ExternalLink,
-  Inbox,
-  Network,
-  RefreshCw,
-  Rocket,
-  Wifi,
-} from "lucide-react";
+import { ChevronLeft, ExternalLink, RefreshCw, Wifi } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import {
@@ -63,7 +53,7 @@ import {
 } from "@/lib/migrationReport";
 import type { StringKey } from "@/strings";
 import { getAdminEpochSignal } from "../adminEpoch";
-import { Section } from "../Section";
+import { AdvancedDisclosure, Section } from "../Section";
 import { useAsync } from "../useAsync";
 
 const CERT_STATE: Record<string, StringKey> = {
@@ -200,12 +190,10 @@ function GuideStep({
   return (
     <div className="console-card console-card-pad space-y-3">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <span className="grid h-6 w-6 place-items-center rounded-full border text-xs font-semibold">
-            {index}
-          </span>
-          <h3 className="text-sm font-semibold">{t(title)}</h3>
-        </div>
+        <h3 className="flex items-baseline gap-2 text-sm font-semibold">
+          <span className="tabular-nums text-muted-foreground">{index}</span>
+          {t(title)}
+        </h3>
         <StatusChip tone={tone}>{t(state)}</StatusChip>
       </div>
       {children}
@@ -335,7 +323,6 @@ export function RemoteAccessStatus() {
   return (
     <Section
       heading="remoteAccessHeading"
-      icon={Network}
       lead="remoteAccessLead"
       actions={
         <Button variant="outline" size="sm" onClick={() => void refresh()}>
@@ -384,7 +371,6 @@ function QBittorrentIngest() {
   return (
     <Section
       heading="qbittorrentHeading"
-      icon={Download}
       lead="qbittorrentLead"
       actions={
         <Button variant="outline" size="sm" onClick={() => void refresh()}>
@@ -396,7 +382,7 @@ function QBittorrentIngest() {
       {failed ? (
         <ErrorState message="qbittorrentUnavailable" />
       ) : !config?.enabled ? (
-        <EmptyState message="qbittorrentEmpty" icon={Inbox} />
+        <EmptyState message="qbittorrentEmpty" />
       ) : (
         <div className="space-y-4">
           {config.routes.length === 0 ? (
@@ -853,7 +839,9 @@ function ImporterWizard({
 // Migration Wizard (ADR-0037): list installed Importers, configure + run one
 // (additive, re-runnable). Each run enqueues a job that surfaces in the
 // Operations queue and in the inline progress view here.
-function MigrationWizard() {
+// The Maintain › Migration destination: the Importers that bring another
+// server's library in (ADR-0037).
+export function MigrationWizard() {
   const t = useT();
   const displayLocale = useDisplayLocale();
   const { data, failed } = useAsync(fetchImporters);
@@ -862,18 +850,18 @@ function MigrationWizard() {
 
   if (active) {
     return (
-      <Section heading="migrationWizardHeading" icon={Rocket} lead="migrationWizardLead">
+      <Section heading="migrationWizardHeading" lead="migrationWizardLead">
         <ImporterWizard importer={active} onBack={() => setActive(null)} />
       </Section>
     );
   }
 
   return (
-    <Section heading="migrationWizardHeading" icon={Rocket} lead="migrationWizardLead">
+    <Section heading="migrationWizardHeading" lead="migrationWizardLead">
       {failed ? (
         <ErrorState message="migrationWizardUnavailable" />
       ) : importers.length === 0 ? (
-        <EmptyState message="migrationWizardEmpty" icon={ArrowRightLeft} />
+        <EmptyState message="migrationWizardEmpty" />
       ) : (
         <DataTable
           columns={[
@@ -888,8 +876,10 @@ function MigrationWizard() {
               <TableCell className="font-medium">
                 {displayString(imp.displayName, displayLocale)}
               </TableCell>
-              <TableCell>{imp.input}</TableCell>
-              <TableCell>{imp.conflict}</TableCell>
+              <TableCell>{importerInputLabel(imp, t)}</TableCell>
+              <TableCell>
+                {imp.conflict === "additive" ? t("migrationConflictAdditive") : imp.conflict}
+              </TableCell>
               <TableCell className="text-right">
                 <Button size="sm" variant="outline" onClick={() => setActive(imp)}>
                   {t("migrationWizardConfigure")}
@@ -903,8 +893,17 @@ function MigrationWizard() {
   );
 }
 
-// The remote-access / ingest / migration screen: how the server is reachable,
-// what the ingest seam is doing, and the migration Importers.
+// Plain words for the importer's declared input; an input this build does not
+// know keeps the declared value rather than guessing.
+function importerInputLabel(imp: ImporterInfo, t: ReturnType<typeof useT>): string {
+  if (imp.credentialRequired) return t("migrationInputCredentials");
+  if (imp.input === "export-file") return t("migrationInputExportFile");
+  return imp.input;
+}
+
+// The Access › Remote Access destination: how the server is reachable. The
+// qBittorrent ingest seam is rarely touched, so it sits behind Advanced (IA
+// §5); App Store hosts get the status alone.
 export function RemoteAccess({
   suppressDispatchSurfaces = false,
 }: {
@@ -914,10 +913,9 @@ export function RemoteAccess({
     <div className="space-y-8">
       <RemoteAccessStatus />
       {!suppressDispatchSurfaces && (
-        <>
+        <AdvancedDisclosure>
           <QBittorrentIngest />
-          <MigrationWizard />
-        </>
+        </AdvancedDisclosure>
       )}
     </div>
   );

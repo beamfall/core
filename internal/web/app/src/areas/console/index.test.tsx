@@ -24,7 +24,9 @@ vi.mock("@/lib/graphql", () => ({
   fetchWatcherStatus: vi.fn().mockResolvedValue([]),
 }));
 vi.mock("./AdminGate", () => ({
-  AdminGate: ({ children }: { children: ReactNode }) => <>{children}</>,
+  AdminGate: ({ children }: { children: ReactNode | ((lock: () => void) => ReactNode) }) => (
+    <>{typeof children === "function" ? children(() => {}) : children}</>
+  ),
 }));
 
 vi.mock("./sections/SetupChecklist", () => ({
@@ -40,7 +42,7 @@ vi.mock("./sections/AccessAdmin", () => ({
   AccessAdmin: () => <div>access-panel</div>,
 }));
 vi.mock("./sections/Operations", () => ({
-  Operations: () => <div>operations-panel</div>,
+  UpdateAwareness: () => <div>update-awareness-panel</div>,
 }));
 vi.mock("./sections/OperationsControls", () => ({
   OperationsControls: () => <div>operations-controls-panel</div>,
@@ -59,14 +61,10 @@ vi.mock("./sections/RemoteAccess", () => ({
   RemoteAccess: ({ suppressDispatchSurfaces = false }: { suppressDispatchSurfaces?: boolean }) => (
     <div>
       <div>remote-status</div>
-      {!suppressDispatchSurfaces && (
-        <>
-          <div>qbittorrent-panel</div>
-          <div>migration-panel</div>
-        </>
-      )}
+      {!suppressDispatchSurfaces && <div>qbittorrent-panel</div>}
     </div>
   ),
+  MigrationWizard: () => <div>migration-panel</div>,
 }));
 vi.mock("./sections/ApiCredentials", () => ({
   ApiCredentials: () => <div>api-panel</div>,
@@ -138,7 +136,7 @@ describe("ConsoleArea App Store host firewall", () => {
     expect(screen.getByText("remote-status")).toBeVisible();
     expect(screen.queryByRole("link", { name: "Capabilities" })).toBeNull();
     expect(screen.queryByText("qbittorrent-panel")).toBeNull();
-    expect(screen.queryByText("migration-panel")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Migration" })).toBeNull();
   });
 
   it("keeps the full Console for direct-distribution macOS hosts", () => {
@@ -147,16 +145,16 @@ describe("ConsoleArea App Store host firewall", () => {
     renderConsole("/console/remote");
 
     expect(screen.getByRole("link", { name: "Capabilities" })).toBeVisible();
-    expect(screen.getByText("qbittorrent-panel")).toBeVisible();
-    expect(screen.getByText("migration-panel")).toBeVisible();
+    expect(screen.getByText("qbittorrent-panel")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Migration" })).toBeInTheDocument();
   });
 
   it("keeps the full Console for browser hosts with no native bridge", () => {
     renderConsole("/console/remote");
 
     expect(screen.getByRole("link", { name: "Capabilities" })).toBeVisible();
-    expect(screen.getByText("qbittorrent-panel")).toBeVisible();
-    expect(screen.getByText("migration-panel")).toBeVisible();
+    expect(screen.getByText("qbittorrent-panel")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Migration" })).toBeInTheDocument();
   });
 
   it("does not render the capabilities route for iPad App Store hosts", async () => {
@@ -197,6 +195,30 @@ describe("Console IA conformance", () => {
     expect(within(nav).getByText("Operations")).toBeVisible();
     expect(within(nav).queryByRole("link", { name: "Server Config" })).toBeNull();
     expect(within(nav).getByText("Maintain").closest("details")).not.toHaveAttribute("open");
+  });
+
+  it("opens Maintain while one of its destinations is current", async () => {
+    renderConsole("/console/migrate");
+
+    expect(await screen.findByText("migration-panel")).toBeVisible();
+    const nav = screen.getByRole("navigation", { name: "Console" });
+    expect(within(nav).getByText("Maintain").closest("details")).toHaveAttribute("open");
+  });
+
+  it("gives sessions, updates and migration one destination each", async () => {
+    const { unmount } = renderConsole("/console/sessions");
+    expect(await screen.findByText("live-sessions-panel")).toBeVisible();
+    expect(screen.queryByText("update-awareness-panel")).toBeNull();
+    unmount();
+
+    const updates = renderConsole("/console/updates");
+    expect(await screen.findByText("update-awareness-panel")).toBeVisible();
+    expect(screen.queryByText("live-sessions-panel")).toBeNull();
+    updates.unmount();
+
+    renderConsole("/console/remote");
+    expect(await screen.findByText("remote-status")).toBeVisible();
+    expect(screen.queryByText("migration-panel")).toBeNull();
   });
 
   it("renders Overview status, triage, and first-run regions with queue deep links", async () => {
@@ -241,7 +263,7 @@ describe("Console IA conformance", () => {
 
   it("keeps group and in-panel Advanced disclosures keyboard-operable", async () => {
     const user = userEvent.setup();
-    const { unmount } = renderConsole("/console/config");
+    const { unmount } = renderConsole("/console");
 
     const maintain = screen.getByText("Maintain");
     expect(maintain.closest("details")).not.toHaveAttribute("open");

@@ -280,7 +280,10 @@ test.describe("console", () => {
     await expect(devicesSection).toContainText("Devices");
     await expectVisualParity(page, testInfo, "console-alert-dialog-open-focused", {
       archivedSubject: alertDialog,
-      mask: [currentDeviceRow],
+      // Every row, not just the first: with the compact shell the table sits in
+      // the viewport, and the number of E2E manager rows above the fold depends
+      // on which earlier tests enrolled a device. Each row's text is asserted above.
+      mask: [devicesSection.locator('[data-slot="table-body"]')],
     });
   });
 
@@ -291,7 +294,9 @@ test.describe("console", () => {
     { route: "config", heading: "Server configuration" },
     { route: "access", heading: "Enforced filters" },
     { route: "operations", heading: "Resource governor" },
-    { route: "sessions", heading: "Update awareness" },
+    { route: "sessions", heading: "Live sessions" },
+    { route: "updates", heading: "Update awareness" },
+    { route: "migrate", heading: "Migration wizard" },
     { route: "health", heading: "Library health" },
     { route: "remote", heading: "Remote access" },
     { route: "api", heading: "API tokens" },
@@ -326,13 +331,21 @@ test.describe("console", () => {
     expect(errors, errors.join("\n")).toEqual([]);
   });
 
-  // Update awareness / Jobs / Live sessions now share the "Live sessions"
-  // destination; /console/operations owns the resource governor + job queue.
-  test("console/sessions exposes update awareness, jobs and live sessions rows", async ({
-    page,
-  }) => {
+  // One destination per surface (console IA §3): live sessions, update
+  // awareness (Maintain › Updates) and the job queue (Monitor › Operations).
+  test("console/sessions exposes live session rows", async ({ page }) => {
     const errors = collectFatalErrors(page);
     await gotoConsole(page, "sessions");
+
+    await expect(page.getByRole("heading", { level: 2, name: "Live sessions" })).toBeVisible();
+    await expect(page.getByText(/No active sessions|Terminate|Restricted/i).first()).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Update awareness" })).toHaveCount(0);
+    expect(errors, errors.join("\n")).toEqual([]);
+  });
+
+  test("console/updates exposes update awareness", async ({ page }) => {
+    const errors = collectFatalErrors(page);
+    await gotoConsole(page, "updates");
 
     await expect(page.getByRole("heading", { level: 2, name: "Update awareness" })).toBeVisible();
     await expect(page.getByText("plain GET").first()).toBeVisible();
@@ -341,9 +354,18 @@ test.describe("console", () => {
     await expect(page.getByRole("button", { name: "Save update settings" })).toBeVisible();
     await expect(page.getByText("Current").first()).toBeVisible();
     await expect(page.getByText("Latest").first()).toBeVisible();
-    await expect(page.getByRole("heading", { level: 2, name: "Jobs" })).toBeVisible();
-    await expect(page.getByRole("heading", { level: 2, name: "Live sessions" })).toBeVisible();
-    await expect(page.getByText(/No active sessions|Terminate|Restricted/i).first()).toBeVisible();
+    expect(errors, errors.join("\n")).toEqual([]);
+  });
+
+  test("console/operations keeps governor tuning behind Advanced", async ({ page }) => {
+    const errors = collectFatalErrors(page);
+    await gotoConsole(page, "operations");
+
+    await expect(page.getByRole("heading", { level: 2, name: "Resource governor" })).toBeVisible();
+    const compact = page.getByRole("button", { name: "Compact events now" });
+    await expect(compact).toBeHidden();
+    await page.getByText("Advanced", { exact: true }).first().click();
+    await expect(compact).toBeVisible();
     expect(errors, errors.join("\n")).toEqual([]);
   });
 
@@ -445,11 +467,10 @@ test.describe("console", () => {
     }
   });
 
-  test("console/remote exposes local migration wizard", async ({ page }) => {
+  test("console/migrate exposes local migration wizard", async ({ page }) => {
     const errors = collectFatalErrors(page);
-    await gotoConsole(page, "remote");
+    await gotoConsole(page, "migrate");
 
-    await expect(page.getByRole("heading", { level: 2, name: "Remote access" })).toBeVisible();
     await expect(page.getByRole("heading", { level: 2, name: "Migration wizard" })).toBeVisible();
     await expect(page.getByText(/No importers available|Configure/i).first()).toBeVisible();
     expect(errors, errors.join("\n")).toEqual([]);

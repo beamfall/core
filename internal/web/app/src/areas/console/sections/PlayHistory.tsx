@@ -1,4 +1,3 @@
-import { History } from "lucide-react";
 import { useState } from "react";
 import {
   DataTable,
@@ -136,7 +135,7 @@ function HistoryTable() {
       ) : failed ? (
         <ErrorState message="playHistoryUnavailable" />
       ) : plays.length === 0 ? (
-        <EmptyState message="playHistoryEmpty" icon={History} />
+        <EmptyState message="playHistoryEmpty" />
       ) : (
         <DataTable
           columns={[
@@ -254,7 +253,7 @@ function Rankings() {
       ) : failed ? (
         <ErrorState message="playStatsUnavailable" />
       ) : users.length === 0 && items.length === 0 ? (
-        <EmptyState message="playStatsEmpty" icon={History} />
+        <EmptyState message="playStatsEmpty" />
       ) : (
         <div className="console-rank-grid">
           <RankList heading="playStatsTopUsers" rows={users} />

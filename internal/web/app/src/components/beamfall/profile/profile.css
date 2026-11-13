@@ -1,6 +1,6 @@
 /* Profile avatars and the "Who's watching?" picker (CORE-1196).
  * Tones come from the brand ramps; the glyph sits on them in ink so every
- * tone keeps its contrast in both registers. Glows are static. */
+ * tone keeps its contrast in both registers. Flat fills, no gloss or glow. */
 
 .bf-avatar {
   --avatar-tone: var(--mist-500);
@@ -12,16 +12,12 @@
   width: var(--avatar-size);
   height: var(--avatar-size);
   border-radius: 28%;
-  background:
-    radial-gradient(120% 120% at 30% 20%, rgb(255 255 255 / 28%), transparent 55%),
-    var(--avatar-tone);
+  background: var(--avatar-tone);
   color: var(--ink-950);
   font-size: calc(var(--avatar-size) * 0.44);
   font-weight: 700;
   line-height: 1;
-  box-shadow:
-    inset 0 0 0 1px rgb(255 255 255 / 22%),
-    0 0 0 1px rgb(0 0 0 / 18%);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 14%);
   user-select: none;
 }
 
@@ -93,17 +89,12 @@
 
 .bf-who-tile:hover,
 .bf-who-tile:focus-visible {
-  border-color: var(--color-glass-border, rgb(255 255 255 / 12%));
-  background: var(--color-glass, rgb(255 255 255 / 5%));
+  background: var(--control-bg-hover, rgb(255 255 255 / 5%));
 }
 
 .bf-who-tile:hover .bf-avatar,
 .bf-who-tile:focus-visible .bf-avatar {
-  transform: translateY(-2px) scale(1.04);
-  box-shadow:
-    inset 0 0 0 1px rgb(255 255 255 / 30%),
-    0 0 0 3px color-mix(in oklab, var(--avatar-tone) 55%, transparent),
-    0 12px 40px -8px color-mix(in oklab, var(--avatar-tone) 70%, transparent);
+  transform: translateY(-2px);
 }
 
 .bf-who-tile:focus-visible {
@@ -118,8 +109,8 @@
 
 .bf-who-tile.is-current .bf-avatar {
   box-shadow:
-    inset 0 0 0 1px rgb(255 255 255 / 30%),
-    0 0 0 3px color-mix(in oklab, var(--avatar-tone) 70%, transparent);
+    0 0 0 3px var(--bg-base, #05070a),
+    0 0 0 5px var(--text-primary);
 }
 
 @media (prefers-reduced-motion: reduce) {

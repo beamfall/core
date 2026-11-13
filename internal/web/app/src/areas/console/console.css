@@ -13,7 +13,39 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* --- Section sidebar: grouped rail, beam-keyline active state --- */
+/* --- Layout: a sticky rail beside a content column with a readable max
+ * width. The rail stacks above the content on phones. --- */
+
+.console-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.console-content {
+  min-width: 0;
+  flex: 1;
+  max-width: 68rem;
+}
+
+@media (min-width: 768px) {
+  .console-layout {
+    flex-direction: row;
+    gap: 40px;
+  }
+
+  .console-rail {
+    position: sticky;
+    top: 84px;
+    flex: 0 0 13.5rem;
+    align-self: flex-start;
+    max-height: calc(100dvh - 104px);
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+}
+
+/* --- Section rail: grouped links, fill-only active state --- */
 
 .console-nav {
   display: flex;
@@ -31,12 +63,10 @@
 
 .console-nav-group-label {
   margin: 0 0 4px;
-  padding: 0 8px;
-  font-size: 11px;
-  line-height: 16px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  padding: 0 10px;
+  font-size: 12.5px;
+  line-height: 18px;
+  font-weight: 550;
   color: var(--text-muted);
 }
 
@@ -55,12 +85,12 @@ summary.console-nav-group-label:focus-visible {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 7px 10px 7px 12px;
-  border-radius: var(--radius-control);
-  color: var(--text-muted);
-  font-size: 13px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 13.5px;
   line-height: 18px;
-  font-weight: 600;
+  font-weight: 500;
   text-decoration: none;
   transition:
     color var(--duration-fast) var(--ease-standard),
@@ -77,23 +107,17 @@ summary.console-nav-group-label:focus-visible {
   outline-offset: -2px;
 }
 
-/* Active section: a quiet beam keyline + raised fill — accent as selection
- * state, never a full beam tab (design system: restrained accent). */
+/* Active section: a soft accent fill, accent-coloured glyph. Selection is
+ * carried by fill alone, never by a keyline. */
 .console-nav-link.is-active {
   color: var(--text-primary);
   background: var(--bg-raised);
-  font-weight: 650;
+  font-weight: 600;
 }
 
-.console-nav-link.is-active::before {
-  content: "";
-  position: absolute;
-  left: 2px;
-  top: 7px;
-  bottom: 7px;
-  width: 3px;
-  border-radius: 999px;
-  background: var(--accent);
+.console-nav-link.is-active .console-nav-icon {
+  color: var(--accent);
+  opacity: 1;
 }
 
 .console-nav-icon {
@@ -103,31 +127,155 @@ summary.console-nav-group-label:focus-visible {
   opacity: 0.85;
 }
 
-.console-overview-tiles {
+/* Overview status strip: one surface, cells split by hairlines. */
+.console-status-strip {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-surface);
+  background: var(--bg-surface);
+  overflow: hidden;
 }
 
-.console-overview-tile,
+@media (min-width: 1024px) {
+  .console-status-strip {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.console-status-cell {
+  display: grid;
+  gap: 4px;
+  padding: 14px 18px;
+  color: var(--text-primary);
+  text-decoration: none;
+  box-shadow: -1px -1px 0 var(--border-subtle);
+}
+
+a.console-status-cell:hover {
+  background: var(--control-bg-hover);
+}
+
+a.console-status-cell:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.console-status-label {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.console-status-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+}
+
+.console-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--green-500);
+}
+
+.console-status-dot[data-tone="amber"] {
+  background: var(--amber-500);
+}
+
+.console-status-dot[data-tone="neutral"] {
+  background: var(--text-muted);
+}
+
+/* Common tasks: a two-column list of rows, not a grid of icon cards. */
+.console-task-list {
+  display: grid;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-surface);
+  background: var(--bg-surface);
+  overflow: hidden;
+}
+
+@media (min-width: 1024px) {
+  .console-task-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.console-task {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 64px;
+  padding: 12px 18px;
+  color: var(--text-primary);
+  text-decoration: none;
+  box-shadow: -1px -1px 0 var(--border-subtle);
+}
+
+a.console-task:hover {
+  background: var(--control-bg-hover);
+}
+
+a.console-task:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.console-task-icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  color: var(--text-muted);
+}
+
+a.console-task:hover .console-task-icon {
+  color: var(--accent);
+}
+
+.console-task-text {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+}
+
+.console-task-title {
+  font-size: 14px;
+  font-weight: 550;
+}
+
+.console-task-lead {
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--text-muted);
+}
+
+.console-task-end {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+}
+
 .console-triage-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 12px 14px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-card);
-  background: var(--bg-surface);
+  padding: 12px 16px;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: 13.5px;
   line-height: 18px;
   text-decoration: none;
 }
 
 .console-triage-row {
-  border-width: 0 0 1px;
-  border-radius: 0;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .console-triage-row:last-child {
@@ -145,16 +293,16 @@ summary.console-nav-group-label:focus-visible {
 
 .console-disclosure {
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-card);
+  border-radius: var(--radius-surface);
   background: var(--bg-surface);
 }
 
 .console-disclosure > summary {
   cursor: pointer;
-  padding: 11px 16px;
-  font-size: 13px;
+  padding: 12px 16px;
+  font-size: 13.5px;
   line-height: 18px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .console-disclosure > summary:focus-visible {
@@ -167,30 +315,17 @@ summary.console-nav-group-label:focus-visible {
   padding: 14px 16px;
 }
 
-/* --- Active-session bar: "Console unlocked" operator state --- */
+/* --- Active-session status: "Console unlocked" operator state, set in the
+ * rail as a quiet line rather than a banner over every page --- */
 
 .console-session-bar {
-  position: relative;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 20px;
-  padding: 8px 14px 8px 16px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-card);
-  background: var(--bg-surface);
-}
-
-.console-session-bar::before {
-  content: "";
-  position: absolute;
-  left: 6px;
-  top: 8px;
-  bottom: 8px;
-  width: 3px;
-  border-radius: 999px;
-  background: var(--accent);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 20px;
+  padding: 12px 10px 0;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .console-session-lead {
@@ -209,44 +344,43 @@ summary.console-nav-group-label:focus-visible {
   height: 7px;
   border-radius: 999px;
   background: var(--green-500);
-  box-shadow: 0 0 0 3px oklch(70% 0.14 150 / 22%);
 }
 
 /* --- Section cards: dense, hairline-separated, restrained --- */
 
 .console-section + .console-section {
-  margin-top: 32px;
+  margin-top: 40px;
 }
 
 .console-card {
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-card);
+  border-radius: var(--radius-surface);
   background: var(--bg-surface);
 }
 
 .console-card-pad {
-  padding: 14px 16px;
+  padding: 16px 18px;
 }
 
 /* Grouped fieldsets — a settings-console read: a labeled keyline-separated
  * block of controls. */
 .console-fieldset {
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-card);
+  border-radius: var(--radius-surface);
   background: var(--bg-surface);
   padding: 0;
   margin: 0;
 }
 
 .console-fieldset-head {
-  padding: 11px 16px;
+  padding: 14px 18px;
   border-bottom: 1px solid var(--border-subtle);
 }
 
 .console-fieldset-title {
-  font-size: 13px;
-  line-height: 18px;
-  font-weight: 700;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
   margin: 0;
 }
 
@@ -259,7 +393,7 @@ summary.console-nav-group-label:focus-visible {
 }
 
 .console-fieldset-body {
-  padding: 14px 16px;
+  padding: 14px 18px;
 }
 
 /* A key/value control row inside a fieldset (label left, control right). */
@@ -281,6 +415,12 @@ summary.console-nav-group-label:focus-visible {
   border-bottom: none;
 }
 
+/* A plugin card's header row sits inside the card, so it keeps its inset. */
+.console-control-row.console-plugin-head {
+  padding: 12px 16px;
+  border-bottom: none;
+}
+
 .console-control-label {
   font-size: 13px;
   line-height: 18px;
@@ -299,7 +439,7 @@ summary.console-nav-group-label:focus-visible {
 
 .console-table {
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-card);
+  border-radius: var(--radius-surface);
   overflow: hidden;
 }
 
@@ -310,19 +450,17 @@ summary.console-nav-group-label:focus-visible {
 }
 
 .console-table thead th {
-  height: 34px;
-  padding: 0 12px;
-  background: var(--bg-raised);
+  height: 38px;
+  padding: 0 14px;
+  background: transparent;
   color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 12.5px;
+  font-weight: 550;
   border-bottom: 1px solid var(--border-subtle);
 }
 
 .console-table tbody td {
-  padding: 8px 12px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--border-subtle);
   vertical-align: middle;
 }
@@ -409,23 +547,16 @@ summary.console-nav-group-label:focus-visible {
 /* --- Empty / unavailable states: quiet, centered in their card --- */
 
 .console-empty {
-  display: grid;
-  place-items: center;
-  gap: 6px;
-  padding: 28px 16px;
-  text-align: center;
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-surface);
   color: var(--text-muted);
 }
 
-.console-empty-icon {
-  width: 20px;
-  height: 20px;
-  opacity: 0.6;
-}
-
 .console-empty-line {
-  font-size: 13px;
-  line-height: 18px;
+  font-size: 13.5px;
+  line-height: 20px;
 }
 
 /* --- Setup wizard: numbered checklist rows --- */
@@ -480,87 +611,9 @@ a.console-step:hover {
 }
 
 /* ---------------------------------------------------------------------------
- * Jobs-live (mockup web-app/console-jobs-live.html): the live-connection
- * indicator, the flat job-row list, and the channel segmented toggle. The
- * indicator is the heart of the screen — a pulsing dot signals SSE liveness
- * (live), an amber blink signals auto-retry (reconnecting), and the paused
- * state demotes to a manual-refresh fallback button. Tokens only, no hex.
+ * Job rows (mockup web-app/console-jobs-live.html): the flat job-row list and
+ * the channel segmented toggle. Tokens only, no hex.
  * ------------------------------------------------------------------------- */
-.console-live {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  line-height: 16px;
-  font-variant-numeric: tabular-nums;
-}
-
-.console-live-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: currentColor;
-}
-
-.console-live.is-live {
-  color: var(--green-500);
-}
-.console-live.is-live .console-live-dot {
-  animation: console-live-pulse 1.6s ease-in-out infinite;
-}
-
-.console-live.is-reconnecting {
-  color: var(--amber-500);
-}
-.console-live.is-reconnecting .console-live-dot {
-  animation: console-live-blink 1s steps(2) infinite;
-}
-
-.console-live.is-paused {
-  color: var(--text-muted);
-}
-
-/* The paused-state fallback button reuses the indicator shell plus an accent
- * label — the only state that exposes a manual refresh (honest, never-silent). */
-.console-live-refresh {
-  border: 0;
-  background: none;
-  padding: 0;
-  cursor: pointer;
-  color: var(--accent);
-  gap: 6px;
-}
-.console-live-refresh .console-live-dot {
-  background: var(--text-muted);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .console-live .console-live-dot {
-    animation: none;
-  }
-}
-
-@keyframes console-live-pulse {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.45;
-    transform: scale(0.8);
-  }
-}
-
-@keyframes console-live-blink {
-  0% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0.25;
-  }
-}
-
 /* Flat job-row list (mockup .job-row): name + progress bar + numeric + badge,
  * hairline-separated — replaces the dense data table for the live jobs panel. */
 .console-job-list {
@@ -717,10 +770,6 @@ a.console-step:hover {
   align-items: center;
   gap: 10px;
   min-width: 150px;
-}
-a.console-overview-tile {
-  color: inherit;
-  text-decoration: none;
 }
 .console-chart-grid-wrap,
 .console-rank-grid {

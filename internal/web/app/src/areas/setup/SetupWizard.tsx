@@ -3,24 +3,17 @@ import {
   Check,
   Clapperboard,
   Film,
-  FolderOpen,
   House,
-  KeyRound,
   LoaderCircle,
   LockKeyhole,
   type LucideIcon,
   Music,
   Podcast,
-  ScanSearch,
-  ShieldCheck,
-  Sparkles,
   Tv,
-  UserRound,
 } from "lucide-react";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import beamfallLogo from "@/assets/beamfall-logo.png";
 import { CinemaBackdrop } from "@/components/beamfall/CinemaBackdrop";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -638,9 +631,7 @@ export function SetupWizard() {
             {t("setupBrandSuffix")}
           </span>
         </div>
-        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-muted-foreground backdrop-blur">
-          {t("setupFreshServer")}
-        </span>
+        <span className="text-[13px] text-muted-foreground">{t("setupFreshServer")}</span>
       </header>
 
       <div className="flex flex-1 items-start justify-center px-4 pb-10 pt-2 sm:items-center sm:px-8 sm:pt-0">
@@ -654,7 +645,7 @@ export function SetupWizard() {
                 className={cn(
                   "h-1 flex-1 rounded-full bg-white/10 transition-colors duration-500",
                   i < visibleIndex && "bg-primary/70",
-                  i === visibleIndex && "bg-primary shadow-[0_0_12px_var(--accent)]",
+                  i === visibleIndex && "bg-primary",
                 )}
               >
                 <span className="sr-only">{t(key)}</span>
@@ -662,8 +653,8 @@ export function SetupWizard() {
             ))}
           </ol>
 
-          <div className="mb-3 flex items-center justify-between text-xs font-medium uppercase tracking-[0.14em]">
-            <span className="text-primary">{t(STEP_KEYS[step])}</span>
+          <div className="mb-3 flex items-center justify-between text-[13px]">
+            <span className="font-medium text-foreground/80">{t(STEP_KEYS[step])}</span>
             <span className="text-muted-foreground">
               {t("setupStepCount", { n: visibleIndex + 1, total: visibleSteps.length })}
             </span>
@@ -671,7 +662,7 @@ export function SetupWizard() {
 
           {/* Unlocked banner — shown once the bootstrap POST succeeds */}
           {bootstrapped && (
-            <div className="mb-4 flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3.5 py-1.5 text-[12.5px] text-primary">
+            <div className="mb-4 flex items-center gap-2 text-[13px] text-primary">
               <Check aria-hidden className="size-3.5 shrink-0" />
               {t("setupUnlockedBanner")}
             </div>
@@ -681,15 +672,11 @@ export function SetupWizard() {
             key={step}
             onSubmit={onNext}
             noValidate
-            className="animate-in fade-in slide-in-from-bottom-2 rounded-2xl border border-white/10 bg-card/70 p-5 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.7)] backdrop-blur-xl duration-300 sm:p-8"
+            className="animate-in fade-in slide-in-from-bottom-2 rounded-2xl border border-white/10 bg-card p-5 shadow-[0_24px_60px_-28px_rgba(0,0,0,0.7)] duration-300 sm:p-8"
           >
             {step === 0 && (
               <section>
-                <StepHeading
-                  icon={KeyRound}
-                  title={t("setupTokenTitle")}
-                  lead={t("setupTokenLead")}
-                />
+                <StepHeading title={t("setupTokenTitle")} lead={t("setupTokenLead")} />
                 <Label htmlFor={tokenID} className={FIELD_LABEL}>
                   {t("setupToken")}
                 </Label>
@@ -727,7 +714,6 @@ export function SetupWizard() {
             {step === 1 && (
               <section>
                 <StepHeading
-                  icon={LockKeyhole}
                   title={t("setupAdminPasswordTitle")}
                   lead={t("setupAdminPasswordLead")}
                 />
@@ -762,11 +748,7 @@ export function SetupWizard() {
             {step === STEP_SECURITY && (
               <fieldset className="m-0 border-0 p-0">
                 <legend className="sr-only">{t("setupSecurityTitle")}</legend>
-                <StepHeading
-                  icon={ShieldCheck}
-                  title={t("setupSecurityTitle")}
-                  lead={t("setupSecurityLead")}
-                />
+                <StepHeading title={t("setupSecurityTitle")} lead={t("setupSecurityLead")} />
                 <div className="grid gap-3 sm:grid-cols-2">
                   {SECURITY_MODES.map(({ mode, label, detail }) => {
                     const Icon = mode === "home" ? House : LockKeyhole;
@@ -797,9 +779,9 @@ export function SetupWizard() {
                         <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
                           {t(label)}
                           {mode === "home" && (
-                            <Badge variant="outline" className="border-primary/40 text-primary">
+                            <span className="text-xs font-normal text-primary">
                               {t("setupSecurityRecommended")}
-                            </Badge>
+                            </span>
                           )}
                         </span>
                         <span className="text-xs leading-relaxed text-muted-foreground">
@@ -814,11 +796,7 @@ export function SetupWizard() {
 
             {step === STEP_LIBRARY && (
               <section>
-                <StepHeading
-                  icon={FolderOpen}
-                  title={t("setupLibraryTitle")}
-                  lead={t("setupLibraryLead")}
-                />
+                <StepHeading title={t("setupLibraryTitle")} lead={t("setupLibraryLead")} />
                 <Label className={FIELD_LABEL}>{t("setupLibraryType")}</Label>
                 <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-5">
                   {libraryTypes.map((spec) => {
@@ -907,11 +885,7 @@ export function SetupWizard() {
 
             {step === STEP_PROFILE && (
               <section>
-                <StepHeading
-                  icon={UserRound}
-                  title={t("setupProfileTitle")}
-                  lead={t("setupProfileLead")}
-                />
+                <StepHeading title={t("setupProfileTitle")} lead={t("setupProfileLead")} />
                 <Label htmlFor={profileID} className={FIELD_LABEL}>
                   {t("setupProfileName")}
                 </Label>
@@ -928,11 +902,7 @@ export function SetupWizard() {
 
             {step === STEP_PLUGINS && (
               <section>
-                <StepHeading
-                  icon={Blocks}
-                  title={t("setupPluginsTitle")}
-                  lead={t("setupPluginsLead")}
-                />
+                <StepHeading title={t("setupPluginsTitle")} lead={t("setupPluginsLead")} />
                 {plugins.length === 0 ? (
                   <p className="text-sm text-muted-foreground">{t("setupPluginsEmpty")}</p>
                 ) : (
@@ -969,9 +939,8 @@ export function SetupWizard() {
                   </ul>
                 )}
                 {neededKeys.length > 0 && (
-                  <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                  <div className="mt-6 border-t border-white/10 pt-5">
                     <div className="flex items-start gap-3">
-                      <KeyRound aria-hidden className="mt-0.5 size-4 shrink-0 text-primary" />
                       <div className="space-y-1">
                         <h2 className="m-0 text-sm font-semibold">{t("setupKeysTitle")}</h2>
                         <p className="m-0 text-[12.5px] leading-snug text-muted-foreground">
@@ -1010,7 +979,7 @@ export function SetupWizard() {
                     </div>
                   </div>
                 )}
-                <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                <div className="mt-6 border-t border-white/10 pt-5">
                   <div className="flex items-start justify-between gap-4">
                     <div className="space-y-1">
                       <h2 className="m-0 text-sm font-semibold">{t("setupUpdateTitle")}</h2>
@@ -1033,7 +1002,7 @@ export function SetupWizard() {
                         aria-pressed={updateCheckChannel === channel}
                         onClick={() => setUpdateCheckChannel(channel)}
                         className={cn(
-                          "rounded-full border border-white/10 px-3.5 py-1.5 text-xs font-medium transition-colors disabled:opacity-45",
+                          "rounded-lg border border-white/10 px-3.5 py-1.5 text-[13px] font-medium transition-colors hover:border-white/25 disabled:opacity-45",
                           updateCheckChannel === channel &&
                             "border-primary bg-primary/10 text-primary",
                         )}
@@ -1051,16 +1020,12 @@ export function SetupWizard() {
 
             {isScanStep && (
               <section>
-                <StepHeading
-                  icon={ScanSearch}
-                  title={t("setupScanTitle")}
-                  lead={t("setupScanLead")}
-                />
-                <div className="flex items-center gap-3.5 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                  <span className="relative flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/15">
-                    <span className="absolute inset-0 animate-ping rounded-full bg-primary/20 motion-reduce:hidden" />
-                    <Sparkles aria-hidden className="size-5 text-primary" />
-                  </span>
+                <StepHeading title={t("setupScanTitle")} lead={t("setupScanLead")} />
+                <div className="flex items-start gap-3">
+                  <LoaderCircle
+                    aria-hidden
+                    className="mt-0.5 size-5 shrink-0 text-primary motion-safe:animate-spin"
+                  />
                   <div>
                     <p className="m-0 text-sm font-semibold">
                       {t("setupScanStatus", {
@@ -1082,7 +1047,7 @@ export function SetupWizard() {
                 <Button
                   type="button"
                   variant="ghost"
-                  className="h-11 rounded-full px-5"
+                  className="h-11 rounded-xl px-5"
                   onClick={onBack}
                   disabled={busy}
                 >
@@ -1092,7 +1057,7 @@ export function SetupWizard() {
               <Button
                 type="submit"
                 disabled={busy}
-                className="ml-auto h-11 min-w-[148px] rounded-full px-6 text-[15px] font-semibold shadow-[0_8px_30px_-8px_var(--accent)]"
+                className="ml-auto h-11 min-w-[148px] rounded-xl px-6 text-[15px] font-semibold"
               >
                 {busy && <LoaderCircle aria-hidden className="size-4 animate-spin" />}
                 {busy ? t("setupWorking") : isLast ? t("setupBrowseReady") : t("setupContinue")}
@@ -1122,22 +1087,11 @@ const FIELD_LABEL = "mb-2 block text-[13px] font-medium text-foreground/80";
 const TILE =
   "flex flex-col rounded-xl border border-white/10 bg-white/[0.03] transition-all duration-200 hover:border-white/25 hover:bg-white/[0.06] cursor-pointer";
 const TILE_SELECTED =
-  "border-primary bg-primary/10 shadow-[0_0_0_1px_var(--accent),0_10px_30px_-12px_var(--accent)] hover:border-primary hover:bg-primary/10";
+  "border-primary bg-primary/10 shadow-[inset_0_0_0_1px_var(--accent)] hover:border-primary hover:bg-primary/10";
 
-function StepHeading({
-  icon: Icon,
-  title,
-  lead,
-}: {
-  icon: LucideIcon;
-  title: string;
-  lead: string;
-}) {
+function StepHeading({ title, lead }: { title: string; lead: string }) {
   return (
-    <div className="mb-6 flex gap-4">
-      <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary ring-1 ring-primary/25">
-        <Icon aria-hidden className="size-5" />
-      </span>
+    <div className="mb-6">
       <div>
         <h1 className="m-0 text-2xl font-semibold tracking-tight sm:text-[28px] sm:leading-tight">
           {title}

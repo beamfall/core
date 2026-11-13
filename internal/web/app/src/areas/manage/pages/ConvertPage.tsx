@@ -1,4 +1,3 @@
-import { FileCog, ListOrdered } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import {
   EmptyLine,
@@ -89,7 +88,7 @@ function ConvertEnqueueSection() {
   };
 
   return (
-    <ManageSection title={t("convert")} icon={FileCog} lead={t("convertLead")}>
+    <ManageSection title={t("convert")} lead={t("convertLead")}>
       <div className="manage-fieldrow space-y-3">
         <div className="grid gap-1">
           <Label htmlFor="convert-library">{t("library")}</Label>
@@ -174,7 +173,6 @@ function ConvertQueueSection() {
   return (
     <ManageSection
       title={t("convertQueueTitle")}
-      icon={ListOrdered}
       actions={
         <Button type="button" variant="outline" size="sm" onClick={load}>
           {t("refresh")}
