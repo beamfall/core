@@ -160,3 +160,44 @@ func loadForTest(t *testing.T, env map[string]string) Config {
 	}
 	return cfg
 }
+
+// CORE-1386: the tcp carrier's yamux stream window is configurable so core can
+// match a relay that overrides its default.
+func TestRemoteAccessRelayYamuxStreamWindow(t *testing.T) {
+	t.Run("defaults to zero", func(t *testing.T) {
+		cfg := loadForTest(t, nil)
+		if got := cfg.RemoteAccess.Relay.YamuxStreamWindowBytes; got != 0 {
+			t.Fatalf("relay yamux window = %d, want 0 (default)", got)
+		}
+	})
+
+	t.Run("from environment", func(t *testing.T) {
+		cfg := loadForTest(t, map[string]string{"BEAMFALL_RELAY_YAMUX_STREAM_WINDOW_BYTES": " 8388608 "})
+		if got := cfg.RemoteAccess.Relay.YamuxStreamWindowBytes; got != 8<<20 {
+			t.Fatalf("relay yamux window = %d, want %d", got, 8<<20)
+		}
+	})
+
+	t.Run("from flag", func(t *testing.T) {
+		cfg, err := Load([]string{"--data-dir", t.TempDir(), "--relay-yamux-stream-window-bytes", "2097152"},
+			func(string) (string, bool) { return "", false })
+		if err != nil {
+			t.Fatalf("Load returned error: %v", err)
+		}
+		if got := cfg.RemoteAccess.Relay.YamuxStreamWindowBytes; got != 2<<20 {
+			t.Fatalf("relay yamux window = %d, want %d", got, 2<<20)
+		}
+	})
+
+	for _, value := range []string{"-1", "65536", "lots"} {
+		t.Run("rejects "+value, func(t *testing.T) {
+			env := map[string]string{
+				"BEAMFALL_DATA_DIR":                        t.TempDir(),
+				"BEAMFALL_RELAY_YAMUX_STREAM_WINDOW_BYTES": value,
+			}
+			if _, err := Load(nil, func(name string) (string, bool) { v, ok := env[name]; return v, ok }); err == nil {
+				t.Fatalf("Load accepted relay yamux window %q", value)
+			}
+		})
+	}
+}
