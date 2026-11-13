@@ -116,6 +116,8 @@ export function PlayerTransport({
 }) {
   const t = useT();
   const [current, setCurrent] = useState(0);
+  // The position a pointer drag on the scrubber previews; null when not dragging.
+  const [scrubValue, setScrubValue] = useState<number | null>(null);
   const [duration, setDuration] = useState(0);
   const [paused, setPaused] = useState(true);
   const [volume, setVolumeState] = useState(1);
@@ -483,10 +485,30 @@ export function PlayerTransport({
     seekBy(e.key === "ArrowLeft" ? -amount : amount);
   }
 
+  // A drag previews its position (thumb, time and trickplay) and seeks once
+  // on release (CORE-1360); keyboard steps seek straight away.
+  function onScrubberValueChange(value: number, details: Slider.Root.ChangeEventDetails) {
+    if (details.reason === "keyboard") {
+      setPlaybackPosition(value);
+      return;
+    }
+    setScrubValue(value);
+    if (duration > 0) previewAt(value / duration);
+  }
+
+  function onScrubberValueCommitted(value: number, details: Slider.Root.CommitEventDetails) {
+    if (details.reason === "keyboard") return;
+    setScrubValue(null);
+    setPlaybackPosition(value);
+  }
+
   // Trickplay preview on scrubber hover, ported from updateTrickplayPreview.
   function onScrubberPointerMove(e: ReactPointerEvent<HTMLElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / Math.max(rect.width, 1)));
+    previewAt(Math.max(0, Math.min(1, (e.clientX - rect.left) / Math.max(rect.width, 1))));
+  }
+
+  function previewAt(ratio: number) {
     const time = ratio * duration;
     setHover(duration > 0 ? { left: ratio * 100, time } : null);
     if (!state.trickplay) {
@@ -515,6 +537,7 @@ export function PlayerTransport({
     });
   }
 
+  const position = scrubValue ?? current;
   const markerModel = buildMarkerStripModel(state.markers, {
     durationSeconds: duration,
     currentTimeSeconds: current,
@@ -533,7 +556,7 @@ export function PlayerTransport({
   const volumeLevel = muted ? 0 : volume;
   const VolumeIcon = volumeLevel === 0 ? VolumeX : volumeLevel < 0.5 ? Volume1 : Volume2;
   const menuSide = narrow ? "top" : "left";
-  const progressPercent = duration > 0 ? (current / duration) * 100 : 0;
+  const progressPercent = duration > 0 ? (position / duration) * 100 : 0;
   const bufferedPercent = duration > 0 ? Math.min(100, (buffered / duration) * 100) : 0;
 
   return (
@@ -582,14 +605,15 @@ export function PlayerTransport({
         </div>
 
         <div className="bf-scrub-row">
-          <span className="bf-time is-start">{formatClockTime(current)}</span>
+          <span className="bf-time is-start">{formatClockTime(position)}</span>
           <div className="bf-scrub-wrap">
             <Slider.Root
               min={0}
               max={Math.max(duration, 0.1)}
               step={0.1}
-              value={current}
-              onValueChange={setPlaybackPosition}
+              value={position}
+              onValueChange={onScrubberValueChange}
+              onValueCommitted={onScrubberValueCommitted}
               className="bf-slider-root bf-scrubber"
             >
               <input
@@ -599,7 +623,7 @@ export function PlayerTransport({
                 min={0}
                 max={duration || 0}
                 step={0.1}
-                value={current}
+                value={position}
                 onChange={() => undefined}
                 className="bf-scrubber-visual"
               />
@@ -655,7 +679,7 @@ export function PlayerTransport({
                   className="bf-slider-thumb"
                   onKeyDown={onScrubberKeyDown}
                   getAriaLabel={() => t("playbackPosition")}
-                  aria-valuetext={formatAriaTime(current, duration)}
+                  aria-valuetext={formatAriaTime(position, duration)}
                 />
               </Slider.Control>
             </Slider.Root>
@@ -683,7 +707,7 @@ export function PlayerTransport({
               )
             )}
           </div>
-          <span className="bf-time is-end">{formatRemainingTime(current, duration)}</span>
+          <span className="bf-time is-end">{formatRemainingTime(position, duration)}</span>
         </div>
 
         <div className="bf-controls bf-transport-row">

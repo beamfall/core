@@ -131,19 +131,69 @@ export async function fetchPlaybackInfo(
   return info;
 }
 
+/** What a playback message offers: another attempt, or a way back out. */
+export type PlaybackMessageAction = "retry" | "back";
+
+/** The copy for each `reason` a playback-info `unavailable` decision can carry. */
+export interface UnavailableReasonMessages {
+  mediaFileMissing?: string;
+  mediaNotAvailable?: string;
+  transcodeDisallowed?: string;
+  streamLimitReached?: string;
+  transcodeCapacityReached?: string;
+  dolbyVisionUnavailable?: string;
+  hdrToneMapUnavailable?: string;
+}
+
+// Every reason internal/playback leaves on an `unavailable` decision
+// (decide, transcodeRefusal, VideoSignal.FullTranscodeRefusal). A limit the
+// viewer can wait out offers Try again; a gate or a missing capability that
+// another attempt cannot change offers Back.
+export const UNAVAILABLE_REASONS: Record<
+  string,
+  { message: keyof UnavailableReasonMessages; action: PlaybackMessageAction }
+> = {
+  "media-file-unavailable": { message: "mediaFileMissing", action: "retry" },
+  "media-unavailable": { message: "mediaNotAvailable", action: "back" },
+  "transcode-disallowed": { message: "transcodeDisallowed", action: "back" },
+  "stream-limit-reached": { message: "streamLimitReached", action: "retry" },
+  "transcode-capacity-reached": { message: "transcodeCapacityReached", action: "retry" },
+  "dolby-vision-p5-transcode-unavailable": { message: "dolbyVisionUnavailable", action: "back" },
+  "hdr-tone-map-unverified": { message: "hdrToneMapUnavailable", action: "back" },
+};
+
+/**
+ * The words and action for a playback-info `reason` that leaves nothing to
+ * play. An unknown reason gets no message (the caller's generic copy) and
+ * Try again.
+ */
+export function unavailableReason(
+  reason: string | undefined,
+  messages: UnavailableReasonMessages,
+): { message?: string; action: PlaybackMessageAction } {
+  const entry =
+    reason && Object.hasOwn(UNAVAILABLE_REASONS, reason) ? UNAVAILABLE_REASONS[reason] : undefined;
+  if (!entry) return { action: "retry" };
+  return { message: messages[entry.message], action: entry.action };
+}
+
 /** The words for a playback-info `reason` that leaves nothing to play. */
 export function unavailableReasonMessage(
   reason: string | undefined,
-  messages: { mediaFileMissing?: string; mediaNotAvailable?: string },
+  messages: UnavailableReasonMessages,
 ): string | undefined {
-  switch (reason) {
-    case "media-file-unavailable":
-      return messages.mediaFileMissing;
-    case "media-unavailable":
-      return messages.mediaNotAvailable;
-    default:
-      return undefined;
-  }
+  return unavailableReason(reason, messages).message;
+}
+
+/**
+ * The server's own wording for a refused playback-info request: the JSON
+ * error body is `{"error": "..."}` (writeErrorCause). Empty when the payload
+ * carries none.
+ */
+export function serverErrorReason(err: unknown): string {
+  if (!(err instanceof ApiError) || !err.payload || typeof err.payload !== "object") return "";
+  const detail = Reflect.get(err.payload, "error");
+  return typeof detail === "string" ? detail.trim() : "";
 }
 
 /**

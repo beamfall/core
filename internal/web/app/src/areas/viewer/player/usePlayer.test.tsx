@@ -134,6 +134,8 @@ const messages = {
   playbackUnsupportedCodec: "unsupported codec",
   playbackFailed: "playback failed",
   terminalUnavailable: "terminal unavailable",
+  mediaNotAvailable: "media not available",
+  streamLimitReached: "stream limit reached",
 };
 
 function Harness({
@@ -172,6 +174,9 @@ function Harness({
       <output data-testid="phase">{state.phase}</output>
       <output data-testid="message">{state.message}</output>
       <output data-testid="recovering">{state.recovering ? "yes" : "no"}</output>
+      <output data-testid="waiting-for-network">{state.waitingForNetwork ? "yes" : "no"}</output>
+      <output data-testid="action">{state.action ?? ""}</output>
+      <output data-testid="detail">{state.detail ?? ""}</output>
       <button type="button" onClick={retry}>
         retry
       </button>
@@ -236,6 +241,8 @@ describe("usePlayer", () => {
     resetIdentityEpoch.mockReset();
     setIdentityEpochReset(resetIdentityEpoch);
     fakeHlsInstances.length = 0;
+    // Drop any once-queued answer a test left unconsumed.
+    vi.mocked(fetchPlaybackInfo).mockReset();
     vi.mocked(fetchPlaybackInfo).mockResolvedValue({
       decision: "direct-play",
       streams: [{ kind: "direct-play", url: "/api/media/direct/token" }],
@@ -781,41 +788,142 @@ describe("usePlayer", () => {
     },
   );
 
+  it("offers Back when playback-info answers 404", async () => {
+    vi.mocked(fetchPlaybackInfo).mockRejectedValueOnce(
+      new ApiError("not found", 404, { error: "media unavailable" }),
+    );
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("message"));
+    expect(screen.getByTestId("message")).toHaveTextContent("media not available");
+    expect(screen.getByTestId("action")).toHaveTextContent("back");
+    expect(resetIdentityEpoch).not.toHaveBeenCalled();
+  });
+
+  it("shows the server's reason with Try again for other playback-info HTTP errors (CORE-1146)", async () => {
+    vi.mocked(fetchPlaybackInfo).mockRejectedValueOnce(
+      new ApiError("server error", 500, { error: "playback info unavailable" }),
+    );
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("message"));
+    expect(screen.getByTestId("message")).toHaveTextContent("playback unavailable");
+    expect(screen.getByTestId("detail")).toHaveTextContent("playback info unavailable");
+    expect(screen.getByTestId("action")).toHaveTextContent("retry");
+  });
+
+  it("maps an unavailable decision's reason to its copy and action (CORE-1146)", async () => {
+    vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce({
+      decision: "unavailable",
+      reason: "media-unavailable",
+    });
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("message"));
+    expect(screen.getByTestId("message")).toHaveTextContent("media not available");
+    expect(screen.getByTestId("action")).toHaveTextContent("back");
+  });
+
+  it("waits for the network when playback-info cannot be reached offline, then starts on 'online' (CORE-1362)", async () => {
+    const onLine = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    vi.mocked(fetchPlaybackInfo).mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("waiting-for-network")).toHaveTextContent("yes"));
+    expect(screen.getByTestId("phase")).not.toHaveTextContent("message");
+    expect(fetchPlaybackInfo).toHaveBeenCalledTimes(1);
+
+    onLine.mockReturnValue(true);
+    act(() => {
+      window.dispatchEvent(new Event("online"));
+    });
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    expect(fetchPlaybackInfo).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId("waiting-for-network")).toHaveTextContent("no");
+  });
+
+  it("reports an unreachable server with Try again while online", async () => {
+    vi.mocked(fetchPlaybackInfo).mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("message"));
+    expect(screen.getByTestId("message")).toHaveTextContent("server unreachable");
+    expect(screen.getByTestId("action")).toHaveTextContent("retry");
+  });
+
   it.each([403, 410])(
-    "turns a reveal-terminal %i HLS error into the terminal player state immediately, without a token refresh",
+    "renegotiates a %i stream refusal through playback-info instead of going terminal (CORE-1359)",
     async (status) => {
       vi.mocked(Hls.isSupported).mockReturnValue(true);
-      vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce({
-        decision: "transcode",
-        streams: [{ kind: "hls", url: "/api/media/hls/token/master.m3u8" }],
-      });
+      vi.mocked(fetchPlaybackInfo)
+        .mockResolvedValueOnce({
+          decision: "transcode",
+          streams: [{ kind: "hls", url: "/api/media/hls/token/master.m3u8" }],
+        })
+        .mockResolvedValueOnce({
+          decision: "transcode",
+          streams: [{ kind: "hls", url: "/api/media/hls/token2/master.m3u8" }],
+        });
 
       render(<Harness />);
       await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
-      // The revealed manifest is addressable while the reveal holds…
-      expect(screen.getByTestId("stream-url")).toHaveTextContent(
-        "/api/media/hls/token/master.m3u8",
-      );
-      expect(fakeHlsInstances).toHaveLength(1);
+      const video = screen.getByTestId("player") as HTMLVideoElement;
+      video.currentTime = 42;
       const callsBeforeError = vi.mocked(fetchPlaybackInfo).mock.calls.length;
 
-      await expectEpochReset(() => {
-        fakeHlsInstances[0].emitError({ fatal: true, response: { code: status } });
-      });
+      // A 410 on stream bytes is an evicted stream session, not an ended reveal.
+      fakeHlsInstances[0].emitError({ fatal: true, response: { code: status } });
 
-      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("terminal"));
-      expect(screen.getByTestId("message")).toHaveTextContent("terminal unavailable");
-      // …and is gone once it goes terminal: the session that minted it is retired,
-      // so the pre-terminal stream URL, its playback document and its live hls.js
-      // session must not survive as replayable state.
-      expect(screen.getByTestId("stream-url")).toBeEmptyDOMElement();
-      expect(screen.getByTestId("info")).toHaveTextContent("none");
-      expect(screen.getByTestId("decision")).toBeEmptyDOMElement();
-      expect(fakeHlsInstances[0].destroyed()).toBe(true);
-      // 403/410 mean relocked/hidden, not a stale token — never worth a refresh.
-      expect(vi.mocked(fetchPlaybackInfo).mock.calls.length).toBe(callsBeforeError);
+      await waitFor(() =>
+        expect(screen.getByTestId("stream-url")).toHaveTextContent(
+          "/api/media/hls/token2/master.m3u8",
+        ),
+      );
+      expect(vi.mocked(fetchPlaybackInfo).mock.calls.length).toBe(callsBeforeError + 1);
+      expect(fakeHlsInstances[0].sources).toContain("/api/media/hls/token2/master.m3u8");
+      expect(fakeHlsInstances[0].config.startPosition).toBe(42);
+      expect(fakeHlsInstances[0].destroyed()).toBe(false);
+      expect(screen.getByTestId("phase")).toHaveTextContent("playing");
+      expect(resetIdentityEpoch).not.toHaveBeenCalled();
     },
   );
+
+  it("shares one playback-info refresh between concurrent stream refusals", async () => {
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+    let resolveRefresh: (info: Awaited<ReturnType<typeof fetchPlaybackInfo>>) => void = () => {};
+    vi.mocked(fetchPlaybackInfo)
+      .mockResolvedValueOnce({
+        decision: "transcode",
+        streams: [{ kind: "hls", url: "/api/media/hls/token/master.m3u8" }],
+      })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveRefresh = resolve;
+          }),
+      );
+
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    const callsBeforeError = vi.mocked(fetchPlaybackInfo).mock.calls.length;
+
+    // hls.js reports each refused segment and playlist request on its own.
+    act(() => {
+      fakeHlsInstances[0].emitError({ fatal: false, response: { code: 401 } });
+      fakeHlsInstances[0].emitError({ fatal: true, response: { code: 401 } });
+      fakeHlsInstances[0].emitError({ fatal: true, networkDetails: { status: 401 } });
+    });
+    expect(vi.mocked(fetchPlaybackInfo).mock.calls.length).toBe(callsBeforeError + 1);
+    expect(screen.getByTestId("recovering")).toHaveTextContent("yes");
+
+    await act(async () => {
+      resolveRefresh({
+        decision: "transcode",
+        streams: [{ kind: "hls", url: "/api/media/hls/token2/master.m3u8" }],
+      });
+    });
+    expect(fakeHlsInstances[0].sources).toEqual([
+      "/api/media/hls/token/master.m3u8",
+      "/api/media/hls/token2/master.m3u8",
+    ]);
+    expect(screen.getByTestId("phase")).toHaveTextContent("playing");
+    expect(resetIdentityEpoch).not.toHaveBeenCalled();
+  });
 
   it("treats a first mid-playback 401 as a stale stream token: refreshes playback info and resumes at the same position instead of going terminal", async () => {
     vi.mocked(Hls.isSupported).mockReturnValue(true);
@@ -885,7 +993,7 @@ describe("usePlayer", () => {
     expect(screen.getByTestId("up-next")).toHaveTextContent("media-next");
   });
 
-  it("goes reveal-terminal on a second 401 after the refreshed stream token also expires", async () => {
+  it("offers Try again, not the terminal card, on a second refusal before playback progresses", async () => {
     vi.mocked(Hls.isSupported).mockReturnValue(true);
     vi.mocked(fetchPlaybackInfo)
       .mockResolvedValueOnce({
@@ -901,27 +1009,44 @@ describe("usePlayer", () => {
     await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
 
     const callsBeforeFirstError = vi.mocked(fetchPlaybackInfo).mock.calls.length;
-    fakeHlsInstances[0].emitError({ fatal: true, response: { code: 401 } });
-    await waitFor(() =>
-      expect(vi.mocked(fetchPlaybackInfo).mock.calls.length).toBe(callsBeforeFirstError + 1),
-    );
+    fakeHlsInstances[0].emitError({ fatal: true, response: { code: 410 } });
     await waitFor(() =>
       expect(screen.getByTestId("stream-url")).toHaveTextContent(
         "/api/media/hls/token2/master.m3u8",
       ),
     );
+    expect(vi.mocked(fetchPlaybackInfo).mock.calls.length).toBe(callsBeforeFirstError + 1);
 
-    const callsBeforeSecondError = vi.mocked(fetchPlaybackInfo).mock.calls.length;
-    await expectEpochReset(() => {
-      fakeHlsInstances[0].emitError({ fatal: true, response: { code: 401 } });
+    act(() => fakeHlsInstances[0].emitError({ fatal: true, response: { code: 410 } }));
+
+    expect(screen.getByTestId("phase")).toHaveTextContent("message");
+    expect(screen.getByTestId("message")).toHaveTextContent("playback failed");
+    expect(screen.getByTestId("action")).toHaveTextContent("retry");
+    expect(fakeHlsInstances[0].destroyed()).toBe(true);
+    expect(resetIdentityEpoch).not.toHaveBeenCalled();
+    // One renegotiation per stretch without progress.
+    expect(vi.mocked(fetchPlaybackInfo).mock.calls.length).toBe(callsBeforeFirstError + 1);
+  });
+
+  it("renegotiates again after buffered progress", async () => {
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+    let call = 0;
+    vi.mocked(fetchPlaybackInfo).mockImplementation(async () => {
+      call += 1;
+      return {
+        decision: "transcode",
+        streams: [{ kind: "hls", url: `/api/media/hls/token${call}/master.m3u8` }],
+      };
     });
 
-    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("terminal"));
-    expect(screen.getByTestId("message")).toHaveTextContent("terminal unavailable");
-    expect(screen.getByTestId("stream-url")).toBeEmptyDOMElement();
-    expect(screen.getByTestId("info")).toHaveTextContent("none");
-    // Exactly one refresh attempt total — the second 401 does not retry again.
-    expect(vi.mocked(fetchPlaybackInfo).mock.calls.length).toBe(callsBeforeSecondError);
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    fakeHlsInstances[0].emitError({ fatal: true, response: { code: 410 } });
+    await waitFor(() => expect(screen.getByTestId("stream-url")).toHaveTextContent("token2"));
+    act(() => fakeHlsInstances[0].emitFragBuffered());
+    fakeHlsInstances[0].emitError({ fatal: true, response: { code: 410 } });
+    await waitFor(() => expect(screen.getByTestId("stream-url")).toHaveTextContent("token3"));
+    expect(screen.getByTestId("phase")).toHaveTextContent("playing");
   });
 
   it("goes reveal-terminal when the playback-info refresh itself fails", async () => {
@@ -946,6 +1071,45 @@ describe("usePlayer", () => {
     expect(screen.getByTestId("info")).toHaveTextContent("none");
   });
 
+  it("offers Try again when the playback-info refresh cannot reach the server", async () => {
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+    vi.mocked(fetchPlaybackInfo)
+      .mockResolvedValueOnce({
+        decision: "transcode",
+        streams: [{ kind: "hls", url: "/api/media/hls/token/master.m3u8" }],
+      })
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    fakeHlsInstances[0].emitError({ fatal: true, response: { code: 401 } });
+
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("message"));
+    expect(screen.getByTestId("message")).toHaveTextContent("server unreachable");
+    expect(screen.getByTestId("action")).toHaveTextContent("retry");
+    expect(screen.getByTestId("terminal-flag")).toHaveTextContent("no");
+    expect(resetIdentityEpoch).not.toHaveBeenCalled();
+  });
+
+  it("shows the server's reason when the playback-info refresh fails with a server error", async () => {
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+    vi.mocked(fetchPlaybackInfo)
+      .mockResolvedValueOnce({
+        decision: "transcode",
+        streams: [{ kind: "hls", url: "/api/media/hls/token/master.m3u8" }],
+      })
+      .mockRejectedValueOnce(new ApiError("failed", 500, { error: "playback info unavailable" }));
+
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    fakeHlsInstances[0].emitError({ fatal: true, response: { code: 410 } });
+
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("message"));
+    expect(screen.getByTestId("message")).toHaveTextContent("playback unavailable");
+    expect(screen.getByTestId("detail")).toHaveTextContent("playback info unavailable");
+    expect(resetIdentityEpoch).not.toHaveBeenCalled();
+  });
+
   it("never loads a direct-play file into hls.js when the refreshed info lost its HLS stream", async () => {
     vi.mocked(Hls.isSupported).mockReturnValue(true);
     vi.mocked(fetchPlaybackInfo)
@@ -961,13 +1125,32 @@ describe("usePlayer", () => {
     render(<Harness />);
     await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
 
-    await expectEpochReset(() => {
-      fakeHlsInstances[0].emitError({ fatal: true, response: { code: 401 } });
-    });
+    fakeHlsInstances[0].emitError({ fatal: true, response: { code: 401 } });
 
-    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("terminal"));
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("message"));
+    expect(screen.getByTestId("message")).toHaveTextContent("playback failed");
+    expect(screen.getByTestId("action")).toHaveTextContent("retry");
     expect(fakeHlsInstances[0].sources).not.toContain("/api/media/direct/token2");
-    expect(screen.getByTestId("stream-url")).toBeEmptyDOMElement();
+    expect(fakeHlsInstances[0].destroyed()).toBe(true);
+    expect(resetIdentityEpoch).not.toHaveBeenCalled();
+  });
+
+  it("maps an unavailable refresh to the reason's copy and action", async () => {
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+    vi.mocked(fetchPlaybackInfo)
+      .mockResolvedValueOnce({
+        decision: "transcode",
+        streams: [{ kind: "hls", url: "/api/media/hls/token/master.m3u8" }],
+      })
+      .mockResolvedValueOnce({ decision: "unavailable", reason: "stream-limit-reached" });
+
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    fakeHlsInstances[0].emitError({ fatal: true, response: { code: 410 } });
+
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("message"));
+    expect(screen.getByTestId("message")).toHaveTextContent("stream limit reached");
+    expect(screen.getByTestId("action")).toHaveTextContent("retry");
   });
 
   // feature:hls-error-recovery
@@ -1281,35 +1464,119 @@ describe("usePlayer", () => {
         return video;
       }
 
-      it("goes reveal-terminal when the probe shows a relock", async () => {
-        const fetchSpy = vi
-          .spyOn(globalThis, "fetch")
-          .mockResolvedValue(new Response("", { status: 403 }));
+      it.each([401, 410])(
+        "renegotiates and reloads at the playhead when the probe shows a %i refusal",
+        async (status) => {
+          const fetchSpy = vi
+            .spyOn(globalThis, "fetch")
+            .mockResolvedValue(new Response("", { status }));
+          vi.mocked(fetchPlaybackInfo)
+            .mockResolvedValueOnce({
+              decision: "direct-play",
+              streams: [{ kind: "direct-play", url: "/api/media/direct/token" }],
+            })
+            .mockResolvedValueOnce({
+              decision: "direct-play",
+              streams: [{ kind: "direct-play", url: "/api/media/direct/token2" }],
+            });
+          render(<Harness />);
+          await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+          const video = screen.getByTestId("player") as HTMLVideoElement;
+          video.currentTime = 33;
+          failNetwork();
+          expect(fetchSpy).toHaveBeenCalledWith(
+            "/api/media/direct/token",
+            expect.objectContaining({ headers: { Range: "bytes=0-0" } }),
+          );
+          await waitFor(() =>
+            expect(screen.getByTestId("stream-url")).toHaveTextContent("/api/media/direct/token2"),
+          );
+          expect(video.getAttribute("src")).toBe("/api/media/direct/token2");
+          video.currentTime = 0;
+          fireEvent.loadedMetadata(video);
+          expect(video.currentTime).toBe(33);
+          expect(screen.getByTestId("phase")).toHaveTextContent("playing");
+          expect(resetIdentityEpoch).not.toHaveBeenCalled();
+        },
+      );
+
+      it("goes reveal-terminal only when playback-info itself answers the refusal", async () => {
+        vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 403 }));
+        vi.mocked(fetchPlaybackInfo)
+          .mockResolvedValueOnce({
+            decision: "direct-play",
+            streams: [{ kind: "direct-play", url: "/api/media/direct/token" }],
+          })
+          .mockRejectedValueOnce(new ApiError("relocked", 403));
         render(<Harness />);
         await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
         await expectEpochReset(() => {
           failNetwork();
         });
-        expect(fetchSpy).toHaveBeenCalledWith(
-          "/api/media/direct/token",
-          expect.objectContaining({ headers: { Range: "bytes=0-0" } }),
-        );
         await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("terminal"));
         expect(screen.getByTestId("terminal-flag")).toHaveTextContent("yes");
       });
 
-      it("reports a generic failure when the probe is not a relock", async () => {
+      it("reloads at the playhead on a 1/2/4 s backoff, then reports failure", async () => {
         vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 500 }));
         render(<Harness />);
         await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
-        failNetwork();
-        await waitFor(() =>
-          expect(screen.getByTestId("message")).toHaveTextContent("playback failed"),
-        );
-        expect(resetIdentityEpoch).not.toHaveBeenCalled();
+        const video = screen.getByTestId("player") as HTMLVideoElement;
+        video.currentTime = 12;
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+        try {
+          for (const delay of [1000, 2000, 4000]) {
+            const loads = vi.mocked(HTMLMediaElement.prototype.load).mock.calls.length;
+            await act(async () => {
+              failNetwork();
+            });
+            await waitFor(() => expect(screen.getByTestId("recovering")).toHaveTextContent("yes"));
+            await act(() => vi.advanceTimersByTimeAsync(delay - 50));
+            expect(vi.mocked(HTMLMediaElement.prototype.load).mock.calls.length).toBe(loads);
+            await act(() => vi.advanceTimersByTimeAsync(50));
+            // The reload re-binds the same stream and seeks back to the playhead.
+            expect(vi.mocked(HTMLMediaElement.prototype.load).mock.calls.length).toBe(loads + 1);
+            expect(video.getAttribute("src")).toBe("/api/media/direct/token");
+            video.currentTime = 0;
+            fireEvent.loadedMetadata(video);
+            expect(video.currentTime).toBe(12);
+            expect(screen.getByTestId("phase")).toHaveTextContent("playing");
+          }
+          await act(async () => {
+            failNetwork();
+          });
+          await waitFor(() =>
+            expect(screen.getByTestId("message")).toHaveTextContent("playback failed"),
+          );
+          expect(screen.getByTestId("recovering")).toHaveTextContent("no");
+          expect(resetIdentityEpoch).not.toHaveBeenCalled();
+        } finally {
+          vi.useRealTimers();
+        }
       });
 
-      it("reports a generic failure when the probe hangs past its timeout", async () => {
+      it("refills the backoff budget once playback resumes", async () => {
+        vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 500 }));
+        render(<Harness />);
+        await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+        try {
+          for (let round = 0; round < 5; round += 1) {
+            await act(async () => {
+              failNetwork();
+            });
+            await waitFor(() => expect(screen.getByTestId("recovering")).toHaveTextContent("yes"));
+            await act(() => vi.advanceTimersByTimeAsync(1000));
+            fireEvent.playing(screen.getByTestId("player"));
+            expect(screen.getByTestId("recovering")).toHaveTextContent("no");
+          }
+          expect(screen.getByTestId("phase")).toHaveTextContent("playing");
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it("retries rather than failing when the probe hangs past its timeout", async () => {
         vi.useFakeTimers({ shouldAdvanceTime: true });
         try {
           vi.spyOn(globalThis, "fetch").mockImplementation(
@@ -1323,25 +1590,39 @@ describe("usePlayer", () => {
           render(<Harness />);
           await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
           failNetwork();
-          await vi.advanceTimersByTimeAsync(5001);
-          await waitFor(() =>
-            expect(screen.getByTestId("message")).toHaveTextContent("playback failed"),
-          );
+          await act(() => vi.advanceTimersByTimeAsync(5001));
+          expect(screen.getByTestId("recovering")).toHaveTextContent("yes");
+          expect(screen.getByTestId("phase")).toHaveTextContent("playing");
           expect(resetIdentityEpoch).not.toHaveBeenCalled();
         } finally {
           vi.useRealTimers();
         }
       });
 
-      it("reports a generic failure when the probe itself fails", async () => {
-        vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("offline"));
+      it("waits for the network instead of probing while offline (CORE-1362)", async () => {
+        const fetchSpy = vi.spyOn(globalThis, "fetch");
         render(<Harness />);
         await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
-        failNetwork();
-        await waitFor(() =>
-          expect(screen.getByTestId("message")).toHaveTextContent("playback failed"),
-        );
-        expect(resetIdentityEpoch).not.toHaveBeenCalled();
+        const video = screen.getByTestId("player") as HTMLVideoElement;
+        video.currentTime = 20;
+        act(() => {
+          window.dispatchEvent(new Event("offline"));
+        });
+        expect(screen.getByTestId("waiting-for-network")).toHaveTextContent("yes");
+        const loads = vi.mocked(HTMLMediaElement.prototype.load).mock.calls.length;
+        act(() => {
+          failNetwork();
+        });
+        expect(fetchSpy).not.toHaveBeenCalled();
+        expect(vi.mocked(HTMLMediaElement.prototype.load).mock.calls.length).toBe(loads);
+        act(() => {
+          window.dispatchEvent(new Event("online"));
+        });
+        expect(screen.getByTestId("waiting-for-network")).toHaveTextContent("no");
+        expect(vi.mocked(HTMLMediaElement.prototype.load).mock.calls.length).toBe(loads + 1);
+        video.currentTime = 0;
+        fireEvent.loadedMetadata(video);
+        expect(video.currentTime).toBe(20);
       });
     });
   });
@@ -1415,14 +1696,18 @@ describe("usePlayer", () => {
       expect(screen.getByTestId("phase")).toHaveTextContent("message");
     });
 
-    it("keeps a reveal-terminal refusal terminal even when it is typed as a network error", async () => {
+    it("renegotiates a 410 refusal even when it is typed as a network error, without spending the budget", async () => {
       const hls = await renderHlsPlaying();
-      await expectEpochReset(() => {
-        hls.emitError({ ...networkError, response: { code: 410 } });
+      vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce({
+        decision: "transcode",
+        streams: [{ kind: "hls", url: "/api/media/hls/token2/master.m3u8" }],
       });
-      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("terminal"));
+      hls.emitError({ ...networkError, response: { code: 410 } });
+      await waitFor(() => expect(hls.sources).toContain("/api/media/hls/token2/master.m3u8"));
       expect(hls.startLoad).not.toHaveBeenCalled();
-      expect(hls.destroyed()).toBe(true);
+      expect(hls.destroyed()).toBe(false);
+      expect(screen.getByTestId("phase")).toHaveTextContent("playing");
+      expect(resetIdentityEpoch).not.toHaveBeenCalled();
     });
 
     it("routes a fatal 401 network error to the token refresh without spending the in-place budget", async () => {
@@ -1440,6 +1725,9 @@ describe("usePlayer", () => {
       );
       expect(fetchPlaybackInfo).toHaveBeenCalledTimes(loadsBeforeError + 1);
       expect(screen.getByTestId("phase")).toHaveTextContent("playing");
+      // Reconnecting until the fresh stream buffers.
+      expect(screen.getByTestId("recovering")).toHaveTextContent("yes");
+      act(() => hls.emitFragBuffered());
       expect(screen.getByTestId("recovering")).toHaveTextContent("no");
       expect(resetIdentityEpoch).not.toHaveBeenCalled();
       vi.useFakeTimers();
@@ -1459,6 +1747,59 @@ describe("usePlayer", () => {
       }
     });
 
+    it("waits for the network without spending the budget while offline, then resumes on 'online' (CORE-1362)", async () => {
+      const hls = await renderHlsPlaying();
+      vi.useFakeTimers();
+      try {
+        act(() => {
+          window.dispatchEvent(new Event("offline"));
+        });
+        expect(screen.getByTestId("waiting-for-network")).toHaveTextContent("yes");
+        // Any number of offline faults never exhausts the budget.
+        for (let i = 0; i < 6; i += 1) act(() => hls.emitError(networkError));
+        await act(() => vi.advanceTimersByTimeAsync(10_000));
+        expect(hls.startLoad).not.toHaveBeenCalled();
+        expect(hls.destroyed()).toBe(false);
+        expect(screen.getByTestId("phase")).toHaveTextContent("playing");
+        expect(screen.getByTestId("recovering")).toHaveTextContent("no");
+
+        act(() => {
+          window.dispatchEvent(new Event("online"));
+        });
+        expect(screen.getByTestId("waiting-for-network")).toHaveTextContent("no");
+        expect(hls.startLoad).toHaveBeenCalledTimes(1);
+        expect(screen.getByTestId("recovering")).toHaveTextContent("yes");
+        // The full budget is still there.
+        for (const delay of [1000, 2000, 4000]) {
+          act(() => hls.emitError(networkError));
+          expect(hls.destroyed()).toBe(false);
+          await act(() => vi.advanceTimersByTimeAsync(delay));
+        }
+        expect(hls.startLoad).toHaveBeenCalledTimes(4);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("parks a pending backoff retry when the network drops during the wait", async () => {
+      const hls = await renderHlsPlaying();
+      vi.useFakeTimers();
+      try {
+        act(() => hls.emitError(networkError));
+        act(() => {
+          window.dispatchEvent(new Event("offline"));
+        });
+        await act(() => vi.advanceTimersByTimeAsync(1000));
+        expect(hls.startLoad).not.toHaveBeenCalled();
+        act(() => {
+          window.dispatchEvent(new Event("online"));
+        });
+        expect(hls.startLoad).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("re-runs the load for the same media when retry is invoked from the message state", async () => {
       const hls = await renderHlsPlaying();
       act(() => hls.emitError({ fatal: true, type: "otherError" }));
@@ -1468,6 +1809,18 @@ describe("usePlayer", () => {
       await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
       expect(fetchPlaybackInfo).toHaveBeenCalledTimes(loads + 1);
       expect(fakeHlsInstances).toHaveLength(2);
+    });
+
+    it("resumes Try again at the last presented position (CORE-1364)", async () => {
+      const hls = await renderHlsPlaying();
+      const video = screen.getByTestId("player") as HTMLVideoElement;
+      video.currentTime = 64;
+      fireEvent.timeUpdate(video);
+      act(() => hls.emitError({ fatal: true, type: "otherError" }));
+      expect(screen.getByTestId("phase")).toHaveTextContent("message");
+      fireEvent.click(screen.getByRole("button", { name: "retry" }));
+      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+      expect(fakeHlsInstances[1].config.startPosition).toBe(64);
     });
   });
 });

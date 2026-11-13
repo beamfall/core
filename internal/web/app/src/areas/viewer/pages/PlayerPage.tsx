@@ -1,3 +1,4 @@
+import { LoaderCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,7 @@ import { SkippedOverlay } from "../player/SkippedOverlay";
 import { UpNextCard } from "../player/UpNextCard";
 import { useAutoSkip } from "../player/useAutoSkip";
 import { useChromeAutoHide } from "../player/useChromeAutoHide";
+import { useMediaLoading } from "../player/useMediaLoading";
 import { useMediaSession } from "../player/useMediaSession";
 import { usePlayer } from "../player/usePlayer";
 import { useUpNext } from "../player/useUpNext";
@@ -70,6 +72,11 @@ export function PlayerPage() {
       terminalUnavailable: t("playerTerminalUnavailable"),
       mediaFileMissing: t("playbackMediaFileMissing"),
       mediaNotAvailable: t("playbackMediaNotAvailable"),
+      transcodeDisallowed: t("playbackTranscodeDisallowed"),
+      streamLimitReached: t("playbackStreamLimitReached"),
+      transcodeCapacityReached: t("playbackTranscodeCapacityReached"),
+      dolbyVisionUnavailable: t("playbackDolbyVisionUnavailable"),
+      hdrToneMapUnavailable: t("playbackHdrToneMapUnavailable"),
     },
     startAtSeconds,
     // "" when a card queue drives playback but has nothing after this item, so
@@ -78,6 +85,7 @@ export function PlayerPage() {
   );
 
   const playing = state.phase === "playing";
+  const showSpinner = useMediaLoading(videoRef, state.phase === "loading" || playing);
   const isAudio = state.info?.mediaClass === "audio";
   const credits = media?.credits ?? [];
   // The per-collection skip interval belongs to the item's container Entity
@@ -92,6 +100,11 @@ export function PlayerPage() {
   const showSkipIntervalLabel = collection
     ? t("collectionSkipIntervalLabel", { title: collectionTitle })
     : "";
+  // A video shows its backdrop until the first frame (CORE-1363).
+  const videoPoster =
+    media && state.info && !isAudio
+      ? media.artworkSlots?.backdrop || media.artworkSlots?.thumb || ""
+      : "";
   const artworkURL = media
     ? media.artworkSlots?.poster || media.artworkSlots?.thumb || media.artworkSlots?.backdrop || ""
     : "";
@@ -287,7 +300,12 @@ export function PlayerPage() {
           <p className="text-[var(--red-500)]" role="alert">
             {state.message}
           </p>
-          {state.terminal ? (
+          {state.detail ? (
+            <p className="text-sm text-white/70">
+              {t("playbackServerReason", { reason: state.detail })}
+            </p>
+          ) : null}
+          {state.terminal || state.action === "back" ? (
             <Button onClick={back}>{t("backToBrowse")}</Button>
           ) : (
             <Button onClick={retry}>{t("tryAgain")}</Button>
@@ -299,7 +317,7 @@ export function PlayerPage() {
           className={"bf-player-stage" + (playing && chromeHidden ? " is-chrome-hidden" : "")}
         >
           {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-          <video ref={videoRef} playsInline controls={false} />
+          <video ref={videoRef} playsInline controls={false} poster={videoPoster || undefined} />
           {isAudio && (
             <AudioStage
               title={navTitle}
@@ -308,13 +326,31 @@ export function PlayerPage() {
               queuePosition={queuePosition}
             />
           )}
-          {state.recovering && (
+          {showSpinner && (
+            <div
+              className="pointer-events-none absolute inset-0 flex items-center justify-center"
+              role="status"
+            >
+              <LoaderCircle aria-hidden className="size-10 animate-spin text-white/80" />
+              <span className="sr-only">{t("playerLoading")}</span>
+            </div>
+          )}
+          {state.waitingForNetwork ? (
             <p
               className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-md bg-black/70 px-3 py-1 text-sm text-white"
               role="status"
             >
-              {t("reconnecting")}
+              {t("playerWaitingForNetwork")}
             </p>
+          ) : (
+            state.recovering && (
+              <p
+                className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-md bg-black/70 px-3 py-1 text-sm text-white"
+                role="status"
+              >
+                {t("reconnecting")}
+              </p>
+            )
           )}
           {playing && (
             <PlayerTransport

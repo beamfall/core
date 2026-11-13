@@ -8,9 +8,12 @@ import {
   hlsStreamOf,
   isRevealTerminalStatus,
   type PlaybackInfo,
+  type PlaybackMessageAction,
   type PlaybackRendition,
   type PlaybackStream,
-  unavailableReasonMessage,
+  serverErrorReason,
+  type UnavailableReasonMessages,
+  unavailableReason,
 } from "../lib/playback";
 import {
   hlsLevelIndex,
@@ -18,7 +21,12 @@ import {
   resumePositionFromInfo,
   type TrickplayManifest,
 } from "../lib/transport";
-import { freshRecoveryBudget, nextRecoveryStep, resetRecoveryBudget } from "./hlsRecovery";
+import {
+  freshRecoveryBudget,
+  HLS_NETWORK_ERROR,
+  nextRecoveryStep,
+  resetRecoveryBudget,
+} from "./hlsRecovery";
 
 // The player engine, ported from the vanilla play() / startPreparedPlayback /
 // applyPlaybackSource / reportProgress (app.js). It owns the <video> element,
@@ -47,9 +55,17 @@ export interface PlayerState {
   trickplayBaseURL: string;
   /** True when playing through hls.js (vs native <video src>). */
   hlsActive: boolean;
-  /** True while hls.js is retrying after a fatal error; playback stays mounted.
-   *  Optional so fixtures that predate recovery still type as a PlayerState. */
+  /** True while the engine is retrying after a network or media fault; playback
+   *  stays mounted. Optional so fixtures that predate recovery still type as a
+   *  PlayerState. */
   recovering?: boolean;
+  /** True while the browser reports no network: retries wait for it to return
+   *  instead of spending their budget (CORE-1362). */
+  waitingForNetwork?: boolean;
+  /** What a message offers: Try again (the default) or Back. */
+  action?: PlaybackMessageAction;
+  /** The server's own reason for a refused request, shown under the message. */
+  detail?: string;
   /** Monotonic counter bumped when the live hls.js track set changes; lets the
    *  transport re-derive its audio/subtitle menus off the live tracks. */
   tracksVersion: number;
@@ -174,6 +190,7 @@ function emptyState(): PlayerState {
     trickplayBaseURL: "",
     hlsActive: false,
     recovering: false,
+    waitingForNetwork: false,
     tracksVersion: 0,
   };
 }
@@ -197,6 +214,14 @@ function hlsErrorStatus(data: unknown): number | undefined {
   if (typeof response?.code === "number") return response.code;
   const networkDetails = Reflect.get(data, "networkDetails") as { status?: number } | undefined;
   return typeof networkDetails?.status === "number" ? networkDetails.status : undefined;
+}
+
+// A stream-bytes refusal: 401 for a stale or relocked Stream Token, 410 for a
+// stream session the server ended (revocation, idle reap, preemption). On its
+// own it is never proof that the revealed identity ended (CORE-1359): the
+// player renegotiates through playback-info, whose answer decides.
+function isStreamRefusalStatus(status: number): boolean {
+  return status === 401 || status === 403 || status === 410;
 }
 
 function choosePlaybackStream(info: PlaybackInfo): PlaybackStream | null {
@@ -305,7 +330,7 @@ export function usePlayer(
     mediaFileMissing?: string;
     /** The item is gone or outside this Profile (reason media-unavailable / 404). */
     mediaNotAvailable?: string;
-  },
+  } & UnavailableReasonMessages,
   startAtSeconds = 0,
   /** A card queue's next item, declared to playback-info for a pre-minted handoff; "" when that queue has none. */
   nextMediaID?: string,
@@ -331,7 +356,14 @@ export function usePlayer(
     [],
   );
 
-  const retry = useCallback(() => setRetryKey((key) => key + 1), []);
+  // The last presented position, so Try again resumes where the viewer was
+  // rather than at the opening ?t= or server resume point (CORE-1364).
+  const lastPositionRef = useRef(0);
+  const retryFromRef = useRef<{ mediaID: string; position: number } | null>(null);
+  const retry = useCallback(() => {
+    retryFromRef.current = { mediaID, position: lastPositionRef.current };
+    setRetryKey((key) => key + 1);
+  }, [mediaID]);
 
   const destroyHls = useCallback(() => {
     if (hlsRef.current) {
@@ -396,6 +428,56 @@ export function usePlayer(
     }
     const msg = messagesRef.current;
     setState(emptyState());
+    const retryFrom = retryFromRef.current?.mediaID === mediaID ? retryFromRef.current.position : 0;
+    retryFromRef.current = null;
+    lastPositionRef.current = retryFrom;
+    // Listeners bound to the <video> for the whole load (not one engine).
+    const videoListeners: Array<[string, () => void]> = [];
+
+    const setRecovering = (recovering: boolean) =>
+      setState((s) => (s.recovering === recovering ? s : { ...s, recovering }));
+    const showMessage = (
+      message: string,
+      options: { action?: PlaybackMessageAction; detail?: string } = {},
+    ) =>
+      setState((s) => ({
+        ...s,
+        phase: "message",
+        message,
+        recovering: false,
+        waitingForNetwork: false,
+        action: options.action ?? "retry",
+        detail: options.detail ?? "",
+      }));
+    const showUnavailable = (reason: string | undefined, fallback: string) => {
+      const { message, action } = unavailableReason(reason, messagesRef.current);
+      showMessage(message || fallback, { action });
+    };
+
+    // Connectivity (CORE-1362): while the browser reports no network, a failed
+    // load waits for it to come back instead of spending its retry budget, and
+    // the 'online' event resumes it at the playhead.
+    let offline = navigator.onLine === false;
+    let resumeWhenOnline: (() => void) | null = null;
+    const setWaitingForNetwork = (waiting: boolean) =>
+      setState((s) => (s.waitingForNetwork === waiting ? s : { ...s, waitingForNetwork: waiting }));
+    const waitForNetwork = (resume: () => void) => {
+      resumeWhenOnline = resume;
+      setState((s) => ({ ...s, recovering: false, waitingForNetwork: true }));
+    };
+    const onOffline = () => {
+      offline = true;
+      setWaitingForNetwork(true);
+    };
+    const onOnline = () => {
+      offline = false;
+      setWaitingForNetwork(false);
+      const resume = resumeWhenOnline;
+      resumeWhenOnline = null;
+      if (alive) resume?.();
+    };
+    window.addEventListener("offline", onOffline);
+    window.addEventListener("online", onOnline);
 
     // A Reveal-terminal playback response (401/403/410 — relocked, hidden, or
     // an expired reveal token) means the server has ENDED the revealed
@@ -412,6 +494,23 @@ export function usePlayer(
       resetIdentityEpoch();
     };
 
+    // A refused or failed playback-info request. Only playback-info itself
+    // answering 401/403/410 is the explicit sign that the server ended the
+    // revealed identity (CORE-1359); every other failure can be tried again,
+    // except an item that is gone (404), which offers Back.
+    const showPlaybackInfoError = (err: unknown) => {
+      const m = messagesRef.current;
+      if (err instanceof ApiError && isRevealTerminalStatus(err.status)) {
+        enterRevealTerminal();
+      } else if (err instanceof ApiError && err.status === 404) {
+        showMessage(m.mediaNotAvailable || m.playbackUnavailable, { action: "back" });
+      } else if (err instanceof ApiError) {
+        showMessage(m.playbackUnavailable, { detail: serverErrorReason(err) });
+      } else {
+        showMessage(m.couldNotReachServer);
+      }
+    };
+
     async function start() {
       // Markers do not depend on playback info, so their request runs in
       // parallel with it; neither markers nor trickplay ever gate attaching
@@ -422,21 +521,11 @@ export function usePlayer(
         info = await fetchPlaybackInfo(mediaID, nextMediaIDRef.current);
       } catch (err) {
         if (!alive) return;
-        if (err instanceof ApiError && isRevealTerminalStatus(err.status)) {
-          enterRevealTerminal();
-        } else if (err instanceof ApiError) {
-          setState((s) => ({
-            ...s,
-            phase: "message",
-            message: (err.status === 404 && msg.mediaNotAvailable) || msg.playbackUnavailable,
-          }));
-        } else {
-          setState((s) => ({
-            ...s,
-            phase: "message",
-            message: msg.couldNotReachServer,
-          }));
+        if (!(err instanceof ApiError) && offline) {
+          waitForNetwork(() => void start());
+          return;
         }
+        showPlaybackInfoError(err);
         return;
       }
       if (!alive) return;
@@ -448,11 +537,7 @@ export function usePlayer(
         !stream ||
         !stream.url
       ) {
-        setState((s) => ({
-          ...s,
-          phase: "message",
-          message: unavailableReasonMessage(info.reason, msg) || msg.playbackUnavailable,
-        }));
+        showUnavailable(info.reason, msg.playbackUnavailable);
         return;
       }
 
@@ -460,17 +545,40 @@ export function usePlayer(
       if (!video) return;
       boundVideo = video;
 
+      // The playhead: the native resume point not yet applied, else the
+      // element's own position.
+      const playheadPosition = () =>
+        pendingNativeResume > 0
+          ? pendingNativeResume
+          : Number.isFinite(video.currentTime)
+            ? video.currentTime
+            : 0;
+      // The native route's network retry budget (CORE-1361): hls.js keeps its
+      // own per instance.
+      const nativeRecovery = freshRecoveryBudget();
+      // Real playback is progress: it refills the native retry budget and
+      // re-arms the automatic renegotiation (hls.js counts FRAG_BUFFERED).
+      const onPlaying = () => {
+        setRecovering(false);
+        if (hlsRef.current) return;
+        resetRecoveryBudget(nativeRecovery);
+        renegotiatedSinceProgress = false;
+      };
+      const onTimeUpdate = () => {
+        if (pendingNativeResume === 0 && video.currentTime > 0) {
+          lastPositionRef.current = video.currentTime;
+        }
+      };
+      videoListeners.push(["playing", onPlaying], ["timeupdate", onTimeUpdate]);
+      for (const [type, listener] of videoListeners) video.addEventListener(type, listener);
+
       // HLS streams (server transcode and direct-stream audio-copy) need the
       // HLS path. Safari keeps native HLS; other browsers play the fMP4
       // segments through hls.js via MSE; native HLS is the no-MSE fallback;
       // otherwise the honest message.
       const initialEngine = engineFor(video, stream);
       if (initialEngine === "unsupported") {
-        setState((s) => ({
-          ...s,
-          phase: "message",
-          message: msg.transcodedPlaybackUnsupported,
-        }));
+        showMessage(msg.transcodedPlaybackUnsupported);
         return;
       }
       let activeStream: PlaybackStream = stream;
@@ -499,6 +607,61 @@ export function usePlayer(
         tokenRefreshMetadataHandler = null;
         video.removeAttribute("src");
         video.load();
+      };
+
+      // Stream renegotiation (CORE-1359). A refused stream request (see
+      // isStreamRefusalStatus) asks playback-info again for a fresh stream of
+      // the same kind and reloads it at the playhead; playback-info's answer
+      // decides whether the identity ended. Concurrent refusals share one
+      // request, and a second refusal before any playback progress fails with
+      // Try again, so a stream the server keeps refusing cannot loop.
+      let renegotiating = false;
+      let renegotiatedSinceProgress = false;
+      const renegotiate = (reload: (fresh: PlaybackStream, position: number) => void) => {
+        if (renegotiating) return;
+        if (renegotiatedSinceProgress) {
+          detachEngine();
+          showMessage(messagesRef.current.playbackFailed);
+          return;
+        }
+        renegotiating = true;
+        renegotiatedSinceProgress = true;
+        const kind = activeStream.kind;
+        const position = playheadPosition();
+        setRecovering(true);
+        // The refresh replaces info, so it declares the same next item: Up Next
+        // and auto-advance survive a renewed token.
+        void fetchPlaybackInfo(mediaID, nextMediaIDRef.current)
+          .then((refreshed) => {
+            if (!alive) return;
+            const fresh = streamOfKind(refreshed, kind);
+            if (!fresh?.url) {
+              // Never load a stream of another kind into the running engine.
+              detachEngine();
+              showUnavailable(refreshed.reason, messagesRef.current.playbackFailed);
+              return;
+            }
+            info = refreshed;
+            activeStream = fresh;
+            reload(fresh, position);
+            // The refreshed info only renews the token: its decision may still name
+            // the direct play this session switched away from, so the details keep
+            // the decision of the stream actually playing.
+            setState((s) => ({
+              ...s,
+              info: { ...refreshed, decision: s.decision },
+              stream: fresh,
+              streams: refreshed.streams ?? [],
+            }));
+          })
+          .catch((err: unknown) => {
+            if (!alive) return;
+            detachEngine();
+            showPlaybackInfoError(err);
+          })
+          .finally(() => {
+            renegotiating = false;
+          });
       };
 
       // Binds `target` to the <video> through `engine`, starting at `resume`.
@@ -550,89 +713,54 @@ export function usePlayer(
           // recoverMediaError path, and only an exhausted budget ends playback.
           // The "recovering" flag drives the non-modal reconnecting state.
           const recovery = freshRecoveryBudget();
-          const setRecovering = (recovering: boolean) =>
-            setState((s) => (s.recovering === recovering ? s : { ...s, recovering }));
           const failPlayback = () => {
             destroyHls();
-            setState((s) => ({
-              ...s,
-              phase: "message",
-              recovering: false,
-              message: messagesRef.current.playbackFailed,
-            }));
+            showMessage(messagesRef.current.playbackFailed);
           };
-          // A 401 on a segment/playlist request means the Stream Token expired
-          // mid-session (tokens live max(1h, 2*duration)) — the Profile is
-          // still valid, only the token is stale. Re-request playback info once
-          // for a fresh token and reload the source at the current position
-          // instead of ending the session; only a failed refresh or a second
-          // 401 on the refreshed stream is treated as reveal-terminal. 403/410
-          // stay reveal-terminal immediately (relocked/hidden, not a stale
-          // token).
-          let streamTokenRefreshed = false;
-          const refreshStreamToken = () => {
-            const resumePosition = video.currentTime;
-            // The refresh replaces info, so it declares the same next item: Up Next
-            // and auto-advance survive a renewed token.
-            void fetchPlaybackInfo(mediaID, nextMediaIDRef.current)
-              .then((refreshedInfo) => {
-                if (!alive) return;
-                const refreshedStream = streamOfKind(refreshedInfo, target.kind);
-                if (!refreshedStream || !refreshedStream.url) {
-                  destroyHls();
-                  enterRevealTerminal();
-                  return;
-                }
-                tokenRefreshMetadataHandler = () => {
-                  if (alive) video.currentTime = resumePosition;
-                };
-                video.addEventListener("loadedmetadata", tokenRefreshMetadataHandler, {
-                  once: true,
-                });
-                // loadSource re-runs hls.js's auto startLoad with the configured
-                // startPosition; point it at the current position rather than
-                // the original resume point.
-                hls.config.startPosition = resumePosition;
-                // The reload re-parses the manifest: carry the viewer's current manual
-                // rendition (Auto is -1, so nothing is re-pinned) onto the new parse.
-                if (hls.manualLevel >= 0) pendingLevelPins.set(hls, hls.manualLevel);
-                hls.loadSource(refreshedStream.url);
-                activeStream = refreshedStream;
-                // The refreshed info only renews the token: its decision may still name
-                // the direct play this session switched away from, so the details keep
-                // the decision of the stream actually playing.
-                setState((s) => ({
-                  ...s,
-                  info: { ...refreshedInfo, decision: s.decision },
-                  stream: refreshedStream,
-                  streams: refreshedInfo.streams ?? [],
-                }));
-              })
-              .catch(() => {
-                if (!alive) return;
-                destroyHls();
-                enterRevealTerminal();
-              });
+          // Re-arms loading once the network is back, with a full budget.
+          const resumeLoad = () => {
+            if (!alive || hlsRef.current !== hls) return;
+            resetRecoveryBudget(recovery);
+            setRecovering(true);
+            hls.startLoad();
           };
-          // Where the two paths meet, HTTP-status routing runs before the
-          // in-place budget: the first 401 takes the one-shot token refresh and
-          // a later 401/403/410 goes reveal-terminal, neither consuming a
-          // startLoad/recoverMediaError attempt. hls.js never retries a 4xx, so
-          // a 401 arrives as a fatal NETWORK_ERROR; checked the other way round
-          // an auth failure would burn the transient-fault budget first.
+          // A refused segment/playlist request renegotiates the stream (see
+          // renegotiate) and reloads it in this instance at the playhead,
+          // keeping the viewer's manual rendition.
+          const reloadHls = (fresh: PlaybackStream, position: number) => {
+            if (hlsRef.current !== hls) return;
+            tokenRefreshMetadataHandler = () => {
+              if (alive) video.currentTime = position;
+            };
+            video.addEventListener("loadedmetadata", tokenRefreshMetadataHandler, { once: true });
+            // loadSource re-runs hls.js's auto startLoad with the configured
+            // startPosition; point it at the playhead rather than the original
+            // resume point.
+            hls.config.startPosition = position;
+            // The reload re-parses the manifest: carry the viewer's current manual
+            // rendition (Auto is -1, so nothing is re-pinned) onto the new parse.
+            if (hls.manualLevel >= 0) pendingLevelPins.set(hls, hls.manualLevel);
+            hls.loadSource(fresh.url ?? "");
+          };
+          // HTTP-status routing runs before the in-place budget: a refusal
+          // renegotiates without consuming a startLoad/recoverMediaError
+          // attempt. hls.js never retries a 4xx, so a 401 arrives as a fatal
+          // NETWORK_ERROR; checked the other way round an auth failure would
+          // burn the transient-fault budget first. Offline network faults wait
+          // for the network without spending the budget at all.
           hls.on(Hls.Events.ERROR, (_event, data) => {
+            // A fresh stream is on its way: the old source's failures are moot.
+            if (renegotiating) return;
             const status = hlsErrorStatus(data);
-            if (status === 401 && !streamTokenRefreshed) {
-              streamTokenRefreshed = true;
-              refreshStreamToken();
-              return;
-            }
-            if (status && isRevealTerminalStatus(status)) {
-              destroyHls();
-              enterRevealTerminal();
+            if (status && isStreamRefusalStatus(status)) {
+              renegotiate(reloadHls);
               return;
             }
             if (!data || !data.fatal) return;
+            if (offline && data.type === HLS_NETWORK_ERROR) {
+              waitForNetwork(resumeLoad);
+              return;
+            }
             const step = nextRecoveryStep(recovery, data.type);
             if (step.kind === "destroy") {
               failPlayback();
@@ -642,7 +770,9 @@ export function usePlayer(
             if (step.kind === "network") {
               recoveryTimer = window.setTimeout(() => {
                 recoveryTimer = null;
-                if (alive && hlsRef.current === hls) hls.startLoad();
+                if (!alive || hlsRef.current !== hls) return;
+                if (offline) waitForNetwork(resumeLoad);
+                else hls.startLoad();
               }, step.delayMs);
               return;
             }
@@ -651,11 +781,12 @@ export function usePlayer(
           });
           hls.on(Hls.Events.FRAG_BUFFERED, () => {
             resetRecoveryBudget(recovery);
+            renegotiatedSinceProgress = false;
             setRecovering(false);
           });
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
             // One-shot: a later manifest parse (token refresh) must not restore an
-            // earlier pick over the viewer's current choice (see refreshStreamToken).
+            // earlier pick over the viewer's current choice (see reloadHls).
             const pin = pendingLevelPins.get(hls);
             pendingLevelPins.delete(hls);
             if (pin !== undefined) {
@@ -684,22 +815,41 @@ export function usePlayer(
           videoErrorHandler = () => {
             if (!alive) return;
             const code = video.error?.code;
-            // MEDIA_ERR_NETWORK: a relock (401/403/410) on the native route
-            // surfaces here, not as a status, so probe the stream URL before
-            // deciding between reveal-terminal and a generic failure.
+            // MEDIA_ERR_NETWORK hides the HTTP status (CORE-1361). Offline, wait
+            // for the network; otherwise probe the stream URL: a refusal
+            // renegotiates the stream, and any other fault reloads the source at
+            // the playhead on the same 1/2/4 s backoff hls.js uses.
             if (code === 2) {
+              const play = !video.paused || video.played.length === 0;
+              const position = playheadPosition();
+              const reloadAtPlayhead = () => {
+                if (alive && activeStream === target) reloadNative(target, position, play);
+              };
+              if (offline) {
+                waitForNetwork(reloadAtPlayhead);
+                return;
+              }
               void probeStreamStatus(streamURL).then((status) => {
-                if (!alive || activeStream !== target) return;
-                if (status !== undefined && isRevealTerminalStatus(status)) {
-                  detachEngine();
-                  enterRevealTerminal();
+                if (!alive || activeStream !== target || renegotiating) return;
+                if (status !== undefined && isStreamRefusalStatus(status)) {
+                  renegotiate((fresh, at) => reloadNative(fresh, at, play));
                   return;
                 }
-                setState((s) => ({
-                  ...s,
-                  phase: "message",
-                  message: messagesRef.current.playbackFailed,
-                }));
+                if (offline) {
+                  waitForNetwork(reloadAtPlayhead);
+                  return;
+                }
+                const step = nextRecoveryStep(nativeRecovery, HLS_NETWORK_ERROR);
+                if (step.kind !== "network") {
+                  showMessage(messagesRef.current.playbackFailed);
+                  return;
+                }
+                setRecovering(true);
+                recoveryTimer = window.setTimeout(() => {
+                  recoveryTimer = null;
+                  if (offline) waitForNetwork(reloadAtPlayhead);
+                  else reloadAtPlayhead();
+                }, step.delayMs);
               });
               return;
             }
@@ -707,13 +857,11 @@ export function usePlayer(
             // Direct play the browser cannot decode falls over to the HLS
             // sibling once, at the position playback had reached.
             if (undecodable && target.kind !== "hls" && switchToHls()) return;
-            setState((s) => ({
-              ...s,
-              phase: "message",
-              message: undecodable
+            showMessage(
+              undecodable
                 ? messagesRef.current.playbackUnsupportedCodec
                 : messagesRef.current.playbackFailed,
-            }));
+            );
           };
           video.addEventListener("error", videoErrorHandler);
           video.src = streamURL;
@@ -727,6 +875,13 @@ export function usePlayer(
           tracksMetadataHandler = applyPreferencesThenBump;
           video.addEventListener("loadedmetadata", tracksMetadataHandler, { once: true });
         }
+      };
+
+      // Reloads a native-route stream at `position` (a retry or a renewed token).
+      const reloadNative = (target: PlaybackStream, position: number, play: boolean) => {
+        detachEngine();
+        activeStream = target;
+        attachEngine(target, "native", position, { play });
       };
 
       // Switches direct play to the HLS stream of the same inventory at the
@@ -745,12 +900,7 @@ export function usePlayer(
           if (at < 0) return false;
           pinRendition = sibling.renditions?.[at];
         }
-        const position =
-          pendingNativeResume > 0
-            ? pendingNativeResume
-            : Number.isFinite(video.currentTime)
-              ? video.currentTime
-              : 0;
+        const position = playheadPosition();
         // A rendition pick keeps the viewer's pause. The failover also plays when
         // playback never began: the error can fire before `canplay`, while the
         // element is still paused only because autoplay had not yet kicked in.
@@ -772,14 +922,13 @@ export function usePlayer(
       };
       switchRef.current = switchToHls;
 
-      attachEngine(
-        stream,
-        initialEngine,
-        startAtSeconds > 0 ? startAtSeconds : resumePositionFromInfo(info),
-        {
-          play: true,
-        },
-      );
+      const opening =
+        retryFrom > 0
+          ? retryFrom
+          : startAtSeconds > 0
+            ? startAtSeconds
+            : resumePositionFromInfo(info);
+      attachEngine(stream, initialEngine, opening, { play: true });
 
       setState({
         phase: "playing",
@@ -794,6 +943,7 @@ export function usePlayer(
         trickplayBaseURL: "",
         hlsActive: initialEngine === "hlsjs",
         recovering: false,
+        waitingForNetwork: offline,
         tracksVersion: 0,
       });
 
@@ -823,6 +973,8 @@ export function usePlayer(
     return () => {
       alive = false;
       switchRef.current = null;
+      window.removeEventListener("offline", onOffline);
+      window.removeEventListener("online", onOnline);
       if (recoveryTimer !== null) {
         clearTimeout(recoveryTimer);
         recoveryTimer = null;
@@ -838,6 +990,7 @@ export function usePlayer(
       destroyHls();
       const video = boundVideo ?? videoRef.current;
       if (video) {
+        for (const [type, listener] of videoListeners) video.removeEventListener(type, listener);
         if (videoErrorHandler) {
           video.removeEventListener("error", videoErrorHandler);
         }

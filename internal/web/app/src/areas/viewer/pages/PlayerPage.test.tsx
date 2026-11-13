@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchMedia } from "@/lib/graphql";
@@ -60,6 +60,19 @@ function renderPlayer(state: PlayerState, navState?: unknown) {
   return { retry };
 }
 
+function stageVideo(): HTMLVideoElement {
+  const video = document.querySelector("video");
+  if (!video) throw new Error("no <video> on the stage");
+  return video;
+}
+
+// The <video> presented its first frame, so the loading spinner clears.
+function presentFirstFrame(): HTMLVideoElement {
+  const video = stageVideo();
+  fireEvent.loadedData(video);
+  return video;
+}
+
 describe("PlayerPage timestamp links", () => {
   afterEach(() => vi.unstubAllEnvs());
 
@@ -103,13 +116,140 @@ describe("PlayerPage failure and recovery states", () => {
 
   it("renders a non-modal reconnecting status while hls.js recovers", () => {
     renderPlayer(playerState({ phase: "playing", hlsActive: true, recovering: true }));
+    presentFirstFrame();
     expect(screen.getByRole("status")).toHaveTextContent("Reconnecting…");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("hides the reconnecting status once playback is healthy", () => {
     renderPlayer(playerState({ phase: "playing", hlsActive: true }));
+    presentFirstFrame();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("offers Back to Browse, not Try again, when another attempt cannot help (CORE-1146)", () => {
+    const { retry } = renderPlayer(
+      playerState({
+        phase: "message",
+        message: "This item is not available.",
+        action: "back",
+      }),
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("This item is not available.");
+    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Back to Browse" }));
+    expect(retry).not.toHaveBeenCalled();
+  });
+
+  it("shows the server's reason under the message (CORE-1146)", () => {
+    renderPlayer(
+      playerState({
+        phase: "message",
+        message: "Playback unavailable.",
+        detail: "playback info unavailable",
+      }),
+    );
+    expect(screen.getByText("Server said: playback info unavailable")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+  });
+
+  it("passes copy for every unavailable reason to the engine", () => {
+    renderPlayer(playerState({ phase: "loading" }));
+    const messages = vi.mocked(usePlayer).mock.calls.at(-1)?.[1];
+    expect(messages).toMatchObject({
+      mediaFileMissing: expect.any(String),
+      mediaNotAvailable: expect.any(String),
+      transcodeDisallowed: expect.any(String),
+      streamLimitReached:
+        "This profile has reached its stream limit. Stop another stream, then try again.",
+      transcodeCapacityReached: expect.any(String),
+      dolbyVisionUnavailable: expect.any(String),
+      hdrToneMapUnavailable: expect.any(String),
+    });
+  });
+
+  it("shows Waiting for network instead of Reconnecting while offline (CORE-1362)", () => {
+    renderPlayer(
+      playerState({ phase: "playing", hlsActive: true, recovering: true, waitingForNetwork: true }),
+    );
+    presentFirstFrame();
+    expect(screen.getByRole("status")).toHaveTextContent("Waiting for network…");
+    expect(screen.queryByText("Reconnecting…")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+});
+
+describe("PlayerPage loading spinner (CORE-1363)", () => {
+  beforeEach(() => vi.mocked(usePlayer).mockReset());
+  afterEach(() => vi.useRealTimers());
+
+  it("shows while playback info loads", () => {
+    renderPlayer(playerState({ phase: "loading" }));
+    expect(screen.getByRole("status")).toHaveTextContent("Loading…");
+  });
+
+  it("shows from attach until the first frame", () => {
+    renderPlayer(playerState({ phase: "playing" }));
+    expect(screen.getByRole("status")).toHaveTextContent("Loading…");
+    presentFirstFrame();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("shows when playback waits for data longer than 500 ms, and clears when it resumes", () => {
+    vi.useFakeTimers();
+    renderPlayer(playerState({ phase: "playing" }));
+    const video = presentFirstFrame();
+    Object.defineProperty(video, "paused", { configurable: true, value: false });
+    fireEvent.waiting(video);
+    act(() => {
+      vi.advanceTimersByTime(499);
+    });
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("Loading…");
+    fireEvent.playing(video);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("clears a stall once time moves again", () => {
+    vi.useFakeTimers();
+    renderPlayer(playerState({ phase: "playing" }));
+    const video = presentFirstFrame();
+    Object.defineProperty(video, "paused", { configurable: true, value: false });
+    fireEvent.stalled(video);
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("Loading…");
+    video.currentTime = 5;
+    fireEvent.timeUpdate(video);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("stays hidden for a wait while paused", () => {
+    vi.useFakeTimers();
+    renderPlayer(playerState({ phase: "playing" }));
+    const video = presentFirstFrame();
+    fireEvent.waiting(video);
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("uses the backdrop as the video poster", async () => {
+    vi.mocked(fetchMedia).mockResolvedValueOnce({
+      id: "media-alpha",
+      title: "Alpha",
+      artworkSlots: { poster: "/art/poster.jpg", backdrop: "/art/backdrop.jpg" },
+      credits: [],
+    } as never);
+    renderPlayer(
+      playerState({ phase: "playing", info: { mediaClass: "video" } as PlayerState["info"] }),
+    );
+    await waitFor(() => expect(stageVideo()).toHaveAttribute("poster", "/art/backdrop.jpg"));
   });
 });
 
