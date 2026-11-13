@@ -1,6 +1,6 @@
 # Console access: devices and pairing codes — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b86d0772ed233f57d577991e3f90ad09 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -12,10 +12,55 @@ Declared member: source declares PairingCodeBanner; membership is caller\-declar
 
 Source: internal/web/app/src/areas/console/sections/Devices\.tsx:34; symbol: PairingCodeBanner; span SHA256: ebc14cf17ced8e9523db158092eb0f3c1e1c9ba6459a4d9d043584d07044c9ce.
 
+<!-- flowdocs:paragraph:d1d51ad8bb894be1a228a48706b6636d -->
+Declared member: source declares PairingCode; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/auth\.ts:162; symbol: PairingCode; span SHA256: b3348fdb951b9f9a2778ef5da443bd40c987d8e422ab50c29460e3ae2bfe16cc.
+
 <!-- flowdocs:paragraph:a4006b7f59c5d393d460d89eb567ff00 -->
 Declared member: source declares mintPairingCode; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/lib/graphql/auth\.ts:172; symbol: mintPairingCode; span SHA256: 5def720378d83676b5aa475bfd7d6464c38f32797ddee8a491b13c9b6d787b80.
+
+<!-- flowdocs:paragraph:cda7af3f244d1e4e98cafef68a8f9c33 -->
+Declared member: source declares CONSOLE\_CONFIG\_FIELDS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:60; symbol: CONSOLE\_CONFIG\_FIELDS; span SHA256: b411ac10419f025e04f75e76a7d72f1e56b58a6bb29a48cfc563ac5e494d4524.
+
+<!-- flowdocs:paragraph:0055be14473615d47e71469e2892bd80 -->
+Declared member: source declares CONSOLE\_CONFIG\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:63; symbol: CONSOLE\_CONFIG\_QUERY; span SHA256: 807152d4b6fac63afa4aabcd9d0c39bf5450489c0dfe06a584dfdc9ce66b34a8.
+
+<!-- flowdocs:paragraph:bd17cb1345fe6e9d650bdb756e55a053 -->
+Declared member: source declares ConsoleConfigPatch; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:138; symbol: ConsoleConfigPatch; span SHA256: bb928d35d539663a8de47415fff2ece595fbc56665addb8b729d3ebd010264be.
+
+<!-- flowdocs:paragraph:662ef4b4d6f315f4e66f203e4e8c9f48 -->
+Declared member: source declares DEVICES\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:401; symbol: DEVICES\_QUERY; span SHA256: 2efe78749cb59a6e16b6191959a5275d16d86d9bcdd864daf177341bb9f940e8.
+
+<!-- flowdocs:paragraph:312ca1370fd569124ad4a2cfcf913e91 -->
+Declared member: source declares REVOKE\_ALL\_DEVICES\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:428; symbol: REVOKE\_ALL\_DEVICES\_MUTATION; span SHA256: 5fa095e2038fb56ad1f2e437cb0addfc02d4ea858f1b028d092a1209a046b8f6.
+
+<!-- flowdocs:paragraph:29a38c876ffba4356d96a828ad69de17 -->
+Declared member: source declares REVOKE\_DEVICE\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:409; symbol: REVOKE\_DEVICE\_MUTATION; span SHA256: 59f1db45841632fd08b6a4e2d08abe9bc49825b7cf4eee308d0f389a9337259a.
+
+<!-- flowdocs:paragraph:961e370f7284c09eed5bc015feb46e33 -->
+Declared member: source declares SET\_CONSOLE\_CONFIG\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:146; symbol: SET\_CONSOLE\_CONFIG\_MUTATION; span SHA256: 96ec96c025389982e0cb99715108b2047ff92f89ee6b1840b7d19749b076c9b5.
+
+<!-- flowdocs:paragraph:bfb0a6481e9881d2b1e59265d908ea82 -->
+Declared member: source declares SET\_DEVICE\_ROLE\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:442; symbol: SET\_DEVICE\_ROLE\_MUTATION; span SHA256: 342743982823959afe4b968bb369c85e34c0b05e193c0dd16f161960f5ecf9ff.
 
 <!-- flowdocs:paragraph:244d8079355d7d4a0a6b388f48646c4f -->
 Declared member: source declares fetchConsoleConfig; membership is caller\-declared, not runtime evidence\.

@@ -1,11 +1,16 @@
 # Manage entities — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:3ee36c4eba07c33befba4a3f2d389955 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
 Source: internal/web/app/src/areas/manage/pages/EntityPage\.tsx:24; symbol: EntityPage; span SHA256: 397517278d0181aa246f1fee6658b0eb41f983aa5dc7b254ae00d382ea6d7ad6.
+
+<!-- flowdocs:paragraph:7f95d7836ca4bba01193611ab942d788 -->
+Declared member: source declares ENTITY\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:161; symbol: ENTITY\_QUERY; span SHA256: 627c6e771053a52180953962e10b8430cfd41399070925fd0e39ca02186007e9.
 
 <!-- flowdocs:paragraph:b8974e9eddf11f4a8ebb2cc81d92588b -->
 Declared member: source declares fetchEntity; membership is caller\-declared, not runtime evidence\.

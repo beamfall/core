@@ -1,11 +1,16 @@
 # Console access: sign\-in security mode — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:7598953b4f1ab901ae1bc1e47f42df84 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/console/sections/SignInSecurity\.tsx:39; symbol: SignInSecurity; span SHA256: 9ce4bc07ef045f54e6245a77ffc3dd156e88e0d66377414910b20080e97fb951.
+Source: internal/web/app/src/areas/console/sections/SignInSecurity\.tsx:20; symbol: MODES; span SHA256: 90e6161f267e5263014b4b349fff23872e6b22df4a24310a8031f8712616117d.
+
+<!-- flowdocs:paragraph:4eb75558b20564f8a66759c3e247b165 -->
+Declared member: source declares MODES; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/SignInSecurity\.tsx:20; symbol: MODES; span SHA256: 90e6161f267e5263014b4b349fff23872e6b22df4a24310a8031f8712616117d.
 
 <!-- flowdocs:paragraph:ee005fa113021438f045f4563f54ea18 -->
 Declared member: source declares refusalMessage; membership is caller\-declared, not runtime evidence\.

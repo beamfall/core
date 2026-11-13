@@ -1,11 +1,21 @@
 # Player OS media\-session integration \(lock\-screen controls\) — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a00d6187a8562c48a4178fb9a5402481 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/viewer/player/useMediaSession\.ts:43; symbol: useMediaSession; span SHA256: ff8020ab582e5523fcf9b66f119ab9318c22b59e45a5ec9e95812fc057cbcfa6.
+Source: internal/web/app/src/areas/viewer/player/useMediaSession\.ts:21; symbol: MediaSessionOptions; span SHA256: 95576f28669ad505c5392f40a89e0b690355ee7fe776f9c634f395d223406529.
+
+<!-- flowdocs:paragraph:40dcd990fe1fd3ee1e6db88b88034dd6 -->
+Declared member: source declares MediaSessionOptions; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/useMediaSession\.ts:21; symbol: MediaSessionOptions; span SHA256: 95576f28669ad505c5392f40a89e0b690355ee7fe776f9c634f395d223406529.
+
+<!-- flowdocs:paragraph:ebeadda1e24f95120e0269c1f2f955f4 -->
+Declared member: source declares SEEK\_STEP\_SECONDS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/useMediaSession\.ts:19; symbol: SEEK\_STEP\_SECONDS; span SHA256: e84c7e2f1841f8844b108e17ceae0789bf201f40816201ef1f5ebd12768c6c88.
 
 <!-- flowdocs:paragraph:730688f98aa96e1d15b5f291ad29c37b -->
 Declared member: source declares safeSet; membership is caller\-declared, not runtime evidence\.

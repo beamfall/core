@@ -1,6 +1,6 @@
 # Console retention rules — readme
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:45ae80ac934cdaa0299e6b8c612427a9 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -10,13 +10,9 @@ Source: internal/web/app/src/areas/console/sections/Retention\.tsx:21; symbol: R
 
 Security summaries: not collected; absence is not a clean security finding.
 
-- A declared inventory flow with no resolved member is reported, not generated\.
-
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
 - Declared inventory flows: structural and lexical relations between flows are not derived\.
-
-- Declared inventory members that do not resolve are listed in generation\.json inventory\.flows\[\]\.unresolved and in their flow README\.
 
 - Gitlinks are opaque superproject identities; their contents are not inspected\.
 
@@ -32,16 +28,4 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow console\.retention: 8 resolved, 6 unresolved members.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts CREATE\_RETENTION\_RULE\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts DELETE\_RETENTION\_RULE\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts RETENTION\_RULES\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts RetentionRuleDraft: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts RetentionRulePatch: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts UPDATE\_RETENTION\_RULE\_MUTATION: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow console\.retention: 14 resolved, 0 unresolved members.

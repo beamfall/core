@@ -1,11 +1,26 @@
 # Manage rename: pattern preview, batch rename managed paths, undo — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:245c73ec090cd743c140186dd8802434 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/manage/lib/powertools\.ts:101; symbol: batchRenameManagedPaths; span SHA256: d4941283f47a1fc0e80aebb2f7ea21d8527739b00c4c45e120a1e6f4dab72b88.
+Source: internal/web/app/src/areas/manage/lib/powertools\.ts:94; symbol: BATCH\_RENAME\_MUTATION; span SHA256: e5dd76e8dbf66d08a67333fab549d2fe731dd892ba3f96313995cd7a069e2b96.
+
+<!-- flowdocs:paragraph:24d5a63ed41c8b2dea225e0b0dc4e866 -->
+Declared member: source declares BATCH\_RENAME\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/lib/powertools\.ts:94; symbol: BATCH\_RENAME\_MUTATION; span SHA256: e5dd76e8dbf66d08a67333fab549d2fe731dd892ba3f96313995cd7a069e2b96.
+
+<!-- flowdocs:paragraph:fa14ca8f1f3e7fbbf620ad7d5b0b4c3a -->
+Declared member: source declares ManagedPathRename; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/lib/powertools\.ts:89; symbol: ManagedPathRename; span SHA256: e1353dda33f216fd1b0b5da4f680b943036715198354788450fc2b07324275b5.
+
+<!-- flowdocs:paragraph:57e02423a96276cbfb857d24a921c453 -->
+Declared member: source declares UNDO\_BATCH\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/lib/powertools\.ts:112; symbol: UNDO\_BATCH\_MUTATION; span SHA256: fb7492988879ce4c2533e44ac258796b6580063b6844027d6496e5dc4f39ed04.
 
 <!-- flowdocs:paragraph:5ff857e1ea375029f69891b50bb27de6 -->
 Declared member: source declares batchRenameManagedPaths; membership is caller\-declared, not runtime evidence\.
@@ -16,6 +31,26 @@ Source: internal/web/app/src/areas/manage/lib/powertools\.ts:101; symbol: batchR
 Declared member: source declares undoBatchRename; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/manage/lib/powertools\.ts:116; symbol: undoBatchRename; span SHA256: 734057241b50990810dbda540085189a5b66743796fca33bed7ada97f8c0dfbd.
+
+<!-- flowdocs:paragraph:f9bf5e4889149bc7f1a233add7dd6613 -->
+Declared member: source declares DEFAULT\_PATTERN; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/lib/renamePattern\.ts:28; symbol: DEFAULT\_PATTERN; span SHA256: 3a48d2ea834ba2556e0cac89ba732a8a65078ec6f30b4539bb4c8e7512f4141a.
+
+<!-- flowdocs:paragraph:e8750f1b9629965bbc813fa10ffd5892 -->
+Declared member: source declares RenamePattern; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/lib/renamePattern\.ts:15; symbol: RenamePattern; span SHA256: 8528a8a06f54058431ff05e967b86f503ed7c1eb06a628279e711ab9d9e086e0.
+
+<!-- flowdocs:paragraph:5d38b1198803781b824a0f56aa9531ff -->
+Declared member: source declares RenamePreview; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/lib/renamePattern\.ts:37; symbol: RenamePreview; span SHA256: 90880cf316252705c8aeaa64044dd81e62f8e03eed720422a0fb47f288047d42.
+
+<!-- flowdocs:paragraph:70dce697959ac21fac5b8cf6508fd785 -->
+Declared member: source declares RenameSource; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/lib/renamePattern\.ts:10; symbol: RenameSource; span SHA256: 07255a097a80c725ae6a286d6e21c2bfd02bf66435b9e462bd485f5ef6365549.
 
 <!-- flowdocs:paragraph:3f9545b7e0c8ecb4005bbb3699386688 -->
 Declared member: source declares applyToStem; membership is caller\-declared, not runtime evidence\.
@@ -41,6 +76,26 @@ Source: internal/web/app/src/areas/manage/lib/renamePattern\.ts:83; symbol: prev
 Declared member: source declares splitExt; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/manage/lib/renamePattern\.ts:46; symbol: splitExt; span SHA256: 58226017816d827b6e8ca4355765ebd165a997fc533693d70adb8e5e5f541209.
+
+<!-- flowdocs:paragraph:4d886de54be78c2c259f218baeebf85a -->
+Declared member: source declares Field; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/pages/RenamePage\.tsx:309; symbol: Field; span SHA256: 6c84ad7025fca92c3a20cb8c9fde1ff9d0d68f8be943d2f2ddca44e259c8dc6d.
+
+<!-- flowdocs:paragraph:3c8d26904f9334ef0765c2c0e3a1660a -->
+Declared member: source declares NumField; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/pages/RenamePage\.tsx:333; symbol: NumField; span SHA256: 8ad4d6a6e5984b5c622139151a90df410f3aada2e73285b4a5b899b90bc859c1.
+
+<!-- flowdocs:paragraph:628852ba57cbce72ce57a3d3b762b189 -->
+Declared member: source declares FOLDER\_TREE\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:977; symbol: FOLDER\_TREE\_QUERY; span SHA256: 3336a24b314258a4ae372a934c6962f39f967d30a7a96fa2656098de7a8447e7.
+
+<!-- flowdocs:paragraph:7b6932b49dbe46185cb5a1597204b9bd -->
+Declared member: source declares LIBRARIES\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:77; symbol: LIBRARIES\_QUERY; span SHA256: 65bf15c326193e30a3a53d948eb6f5e5664d2b9bbf29e2359a95b66f56bd612e.
 
 <!-- flowdocs:paragraph:fa45330368d1156067dc35aa76841922 -->
 Declared member: source declares fetchFolderTree; membership is caller\-declared, not runtime evidence\.

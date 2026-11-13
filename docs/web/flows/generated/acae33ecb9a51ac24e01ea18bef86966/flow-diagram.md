@@ -1,6 +1,6 @@
 # Console admin gate: locked reasons and unlock — flow-diagram
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:6506c30cf6a970da06a91e620e0477db -->
 Static source inventory only; sequence and runtime ordering are unresolved\.

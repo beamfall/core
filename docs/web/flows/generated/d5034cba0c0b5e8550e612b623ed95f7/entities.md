@@ -1,9 +1,9 @@
 # Console overview: owner tasks, setup checklist, needs\-attention queue — entities
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:249d480b482d5293569103acd00333be -->
 Runtime entities and persistence effects are unresolved; lexical calls are listed separately\.
 
-Source: internal/web/app/src/areas/console/OwnerTasks\.tsx:78; symbol: OwnerTasks; span SHA256: 0ad919b5f193d62405ffe6f8ed8bdf75a839aba68215e40ceedbd74362b07101.
+Source: internal/web/app/src/areas/console/OwnerTasks\.tsx:33; symbol: LINK\_TILE; span SHA256: d2e91ba24b0c8d83580d2a9972c53632963a1024b956ccff1e9a570e2c40d8c3.
 

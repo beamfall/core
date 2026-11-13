@@ -1,6 +1,6 @@
 # Console plugins: standing, lifecycle, config editor, provider keys — readme
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:826a68869060badccad2d3bbd0ddb1c6 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -10,13 +10,9 @@ Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:931; symbol: Ac
 
 Security summaries: not collected; absence is not a clean security finding.
 
-- A declared inventory flow with no resolved member is reported, not generated\.
-
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
 - Declared inventory flows: structural and lexical relations between flows are not derived\.
-
-- Declared inventory members that do not resolve are listed in generation\.json inventory\.flows\[\]\.unresolved and in their flow README\.
 
 - Gitlinks are opaque superproject identities; their contents are not inspected\.
 
@@ -32,44 +28,4 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow console\.plugins: 33 resolved, 20 unresolved members.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Plugins\.tsx BUILT\_IN\_PLUGIN\_IDS: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Plugins\.tsx CARD: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Plugins\.tsx KEY\_INPUT: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Plugins\.tsx KEY\_STATUS: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Plugins\.tsx PLUGIN\_STANDING\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Plugins\.tsx PROVENANCE\_LABELS: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Plugins\.tsx PluginStandingInfo: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Plugins\.tsx PluginWithStanding: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Plugins\.tsx RISK\_LABELS: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Plugins\.tsx RISK\_TONES: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Plugins\.tsx STATUS\_TONES: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts CONSOLE\_CONFIG\_FIELDS: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts CONSOLE\_CONFIG\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts DISABLE\_SCRAPER\_CREDENTIAL\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts SCRAPER\_CREDENTIAL\_FIELDS: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts SET\_PLUGIN\_ACTIVE\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts SET\_PLUGIN\_CONFIG\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts SET\_SCRAPER\_CREDENTIAL\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts UNINSTALL\_PLUGIN\_DATA\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts VALIDATE\_SCRAPER\_CREDENTIAL\_MUTATION: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow console\.plugins: 53 resolved, 0 unresolved members.

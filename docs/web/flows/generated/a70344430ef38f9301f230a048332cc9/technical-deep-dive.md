@@ -1,11 +1,91 @@
 # Player transport: seek bar, trickplay, markers, chapters, renditions, touch gestures — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:ebb23304efe52dc24f2bbb0c3b2b015d -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/viewer/lib/transport\.ts:180; symbol: buildMarkerStripModel; span SHA256: 21ecf4403dd4e5387feab2ebb18c8ca990084b88343ac74be6ad774122dbf1f5.
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:10; symbol: DEFAULT\_TRICKPLAY\_COLUMNS; span SHA256: 73d34cd672bd70bad3928a6a449f541fe4a0719dd92af9ecfb2069497d12c8de.
+
+<!-- flowdocs:paragraph:f40a634696fdf2abed2c527ab4a84675 -->
+Declared member: source declares DEFAULT\_TRICKPLAY\_COLUMNS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:10; symbol: DEFAULT\_TRICKPLAY\_COLUMNS; span SHA256: 73d34cd672bd70bad3928a6a449f541fe4a0719dd92af9ecfb2069497d12c8de.
+
+<!-- flowdocs:paragraph:4403872ea2ff6fc6f20c45f25122076f -->
+Declared member: source declares DEFAULT\_TRICKPLAY\_INTERVAL; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:12; symbol: DEFAULT\_TRICKPLAY\_INTERVAL; span SHA256: ff973356df5111544b6e55ed7b41d7f823abddcbfc31c42748efd40b0076bf49.
+
+<!-- flowdocs:paragraph:219213c8f66ce98b8ec3609e4c34b28b -->
+Declared member: source declares DEFAULT\_TRICKPLAY\_ROWS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:11; symbol: DEFAULT\_TRICKPLAY\_ROWS; span SHA256: 9b7b15d225955074b293893c86f6b299022592c0bfe2740f7b5bd3942a1e21f0.
+
+<!-- flowdocs:paragraph:779694dd04880c115f60d07d384a0a74 -->
+Declared member: source declares DEFAULT\_TRICKPLAY\_TILE\_HEIGHT; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:14; symbol: DEFAULT\_TRICKPLAY\_TILE\_HEIGHT; span SHA256: 0f95f3111cc912c591a5465a27610aecacb51e75a0eb8376e9e6c00e8cffea10.
+
+<!-- flowdocs:paragraph:abb3579a29b56bb567b03812004d0fed -->
+Declared member: source declares DEFAULT\_TRICKPLAY\_TILE\_WIDTH; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:13; symbol: DEFAULT\_TRICKPLAY\_TILE\_WIDTH; span SHA256: 212005d3df252abc11578679c73bab2e8ef3773fe3ce29f24cdad01262890e4d.
+
+<!-- flowdocs:paragraph:b64608ad453f410c66c3feb309dd917b -->
+Declared member: source declares MarkerRange; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:147; symbol: MarkerRange; span SHA256: 4b4ef67557f1942c02f609f2107f0384adcb97fd7416fe3bff1b491ddabd449f.
+
+<!-- flowdocs:paragraph:4e9d47de78149f2903349ad5fe913ae6 -->
+Declared member: source declares MarkerSkip; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:157; symbol: MarkerSkip; span SHA256: d4fe55889b04356a1e9c8540ef3bf9d5352998239b9fa3775688f1707485afb0.
+
+<!-- flowdocs:paragraph:764005f1fda904d6ed7d0466c40fffa8 -->
+Declared member: source declares MarkerStripModel; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:163; symbol: MarkerStripModel; span SHA256: ab9f9eaad70c00e10f626f4ba4a911b0505892084ea5afae152fa8da20e29eda.
+
+<!-- flowdocs:paragraph:fdc1e1a0cc6a3b8c39f772e36999b865 -->
+Declared member: source declares MarkerTick; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:140; symbol: MarkerTick; span SHA256: 05c27ff28cfb72fde07dcbf678b85ab6b70180de0f923b59c15490bef074760e.
+
+<!-- flowdocs:paragraph:a507f0378f092e305e4f78bc069be4c0 -->
+Declared member: source declares RenditionMenuLabels; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:514; symbol: RenditionMenuLabels; span SHA256: b3c30d9bdf1941278a43a4ab3ed20ff3991dc089a4997432b030f1af9293de32.
+
+<!-- flowdocs:paragraph:f234885b3953b0d114b26f92d45c9471 -->
+Declared member: source declares RenditionMenuModel; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:509; symbol: RenditionMenuModel; span SHA256: c930d556e241a6adb6055f6dc71e66d2bef6ba9d337c1a321d273744b57b133a.
+
+<!-- flowdocs:paragraph:efb061bc7c1c7fca43fdeab2e4f42da1 -->
+Declared member: source declares RenditionMenuOption; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:501; symbol: RenditionMenuOption; span SHA256: ea877a3c40a7c46806e7a032f87b041328d5d758209e70cb501fc68d2e89362a.
+
+<!-- flowdocs:paragraph:3d15cf52f14d3a0e744ca72276957d62 -->
+Declared member: source declares RouteDetailLabels; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:584; symbol: RouteDetailLabels; span SHA256: f0a6b633397f2303a7e58b34ca4e0ed382d82df31263fcf0ea79acebfdf65cfc.
+
+<!-- flowdocs:paragraph:92cc19955c30b796fccc963d96b21f38 -->
+Declared member: source declares RouteDetailRow; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:578; symbol: RouteDetailRow; span SHA256: ca7e2f6043050dc444b820fd3cf6543a618ecd19ceab700847c07e84e4e585dd.
+
+<!-- flowdocs:paragraph:2e427db054db545540229fd2dd0c5244 -->
+Declared member: source declares TrickplayManifest; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:32; symbol: TrickplayManifest; span SHA256: 1d41c101a97563d212207edf6b6859af16c26f2fc09f9a69055b1d6842ee168d.
+
+<!-- flowdocs:paragraph:5f1df0e5692613acf0baaaced96a7367 -->
+Declared member: source declares TrickplayTile; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:42; symbol: TrickplayTile; span SHA256: 33ea2bba588846602a31f69a724a6f33bf009cbd4f0f3805bc6b5e2954243bc9.
 
 <!-- flowdocs:paragraph:c09f54aa25afad7ab1d4f89d07da70fc -->
 Declared member: source declares buildMarkerStripModel; membership is caller\-declared, not runtime evidence\.
@@ -102,6 +182,31 @@ Declared member: source declares spokenDuration; membership is caller\-declared,
 
 Source: internal/web/app/src/areas/viewer/lib/transport\.ts:115; symbol: spokenDuration; span SHA256: 8412b6db48a06d975887cf557883b65dbe7addb5dc90ce444ef4b780e2b74699.
 
+<!-- flowdocs:paragraph:96db2f37609d75819a6189764de24578 -->
+Declared member: source declares GESTURE\_THRESHOLD; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:69; symbol: GESTURE\_THRESHOLD; span SHA256: 286714e1d7789ccb025511ccbadcad042044bf70eb00bec2aa1e4c6303e7ca1c.
+
+<!-- flowdocs:paragraph:bb58161a6a157af54df3bc5721bf7d16 -->
+Declared member: source declares GestureFeedback; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:64; symbol: GestureFeedback; span SHA256: ba159179aba9055a1d1a2ca94a2c6718e1c6c966f0a464d88e1add2c7b0344f3.
+
+<!-- flowdocs:paragraph:0d2f845ea2460c92fd4b4303ec9c00b5 -->
+Declared member: source declares NARROW\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:1086; symbol: NARROW\_QUERY; span SHA256: 924794d33787c299b2fe3f934d11818f644c41472daa681eeccd878a4e9d78a4.
+
+<!-- flowdocs:paragraph:67faf59cd145b971c4a859fe41c95ef6 -->
+Declared member: source declares OpenKey; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:63; symbol: OpenKey; span SHA256: 1223e7eee8e131de8fe21241fbb889447f0051ef7aaa658059e258f1bfdf7929.
+
+<!-- flowdocs:paragraph:082517d9a904e0ec8e8ed5af9a99db18 -->
+Declared member: source declares SPEEDS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:68; symbol: SPEEDS; span SHA256: c8f829f65841e16af3fa39586f3869fa543fbe9c274457e2c988986317f483ed.
+
 <!-- flowdocs:paragraph:199240c8246de9b90ffd6bd5306e001c -->
 Declared member: source declares bufferedEnd; membership is caller\-declared, not runtime evidence\.
 
@@ -127,10 +232,20 @@ Declared member: source declares useNarrowViewport; membership is caller\-declar
 
 Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:1090; symbol: useNarrowViewport; span SHA256: 9ffce54c24787410382243ed0367a3baa123f9c74fea576208d6d1bc689dbd20.
 
+<!-- flowdocs:paragraph:08cf0d7f8ee78c873ad839f33961bdf4 -->
+Declared member: source declares MenuRow; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/TransportMenu\.tsx:11; symbol: MenuRow; span SHA256: 248ac740381c2b45e5620b4942334d4aa92cd1cfa97ffee8d31b1e142b5d7977.
+
 <!-- flowdocs:paragraph:ee4b56b68b08856269f2dfdb85ffaf8f -->
 Declared member: source declares TransportMenu; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/viewer/player/TransportMenu\.tsx:15; symbol: TransportMenu; span SHA256: 226b94196ca2158428e5feafeb8560820ccdd7cc3832f08df745f58122a20fb4.
+
+<!-- flowdocs:paragraph:249f742d65febb3c77db9db93df0fe26 -->
+Declared member: source declares IDLE\_MS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/useChromeAutoHide\.ts:10; symbol: IDLE\_MS; span SHA256: dcc36531d43753da7b7557e6b1334eafa9724d26706f6a27ad622da46ab48913.
 
 <!-- flowdocs:paragraph:4c50b0ca0b7941c4e00c3e3aa6aa5490 -->
 Declared member: source declares useChromeAutoHide; membership is caller\-declared, not runtime evidence\.

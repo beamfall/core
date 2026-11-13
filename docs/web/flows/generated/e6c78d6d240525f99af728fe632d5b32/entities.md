@@ -1,6 +1,6 @@
 # App shell chrome: header, library sidebar, account menu, phone layout — entities
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:e55c8c1ee89e2600da227f7a3c9f3835 -->
 Runtime entities and persistence effects are unresolved; lexical calls are listed separately\.

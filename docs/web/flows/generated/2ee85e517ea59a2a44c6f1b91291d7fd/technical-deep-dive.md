@@ -1,6 +1,6 @@
 # Manage artwork slots and candidates — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:54128c7a95e6c297734be98b13d6f6aa -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -12,6 +12,11 @@ Declared member: source declares ArtworkSlot; membership is caller\-declared, no
 
 Source: internal/web/app/src/areas/manage/pages/ArtworkPage\.tsx:109; symbol: ArtworkSlot; span SHA256: 3b24fc378abd6f54f20cef653a5c94bd2eaef1ea4774c78c2b89fe526085bfec.
 
+<!-- flowdocs:paragraph:ed0975d2ee0b2ea9872b8a518464eec7 -->
+Declared member: source declares SLOTS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/pages/ArtworkPage\.tsx:12; symbol: SLOTS; span SHA256: ac887fc850b6b808b0bda53a3222f1cf6410cf23a9ef8b72cf8e365c3c1f598c.
+
 <!-- flowdocs:paragraph:69c9089d518c32f013a2b51e0995daea -->
 Declared member: source declares isRelativePreviewURL; membership is caller\-declared, not runtime evidence\.
 
@@ -21,6 +26,16 @@ Source: internal/web/app/src/areas/manage/pages/ArtworkPage\.tsx:22; symbol: isR
 Declared member: source declares provenance; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/manage/pages/ArtworkPage\.tsx:26; symbol: provenance; span SHA256: 40e024c5d0a13f65b408cf416ce0d1d95f3c430257b30c04f3cf100cecf85434.
+
+<!-- flowdocs:paragraph:88bdd1ba00df3f039bd9f0a666ae90d0 -->
+Declared member: source declares ARTWORK\_CANDIDATES\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:656; symbol: ARTWORK\_CANDIDATES\_QUERY; span SHA256: c550b72ed6423a79de1720e096cfe9cdeaaf84c49cd69c37b3ffd21ec7bc496b.
+
+<!-- flowdocs:paragraph:9b3230769f2ab25d919bd6b3c71e0ca8 -->
+Declared member: source declares PIN\_ARTWORK\_CANDIDATE\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:671; symbol: PIN\_ARTWORK\_CANDIDATE\_MUTATION; span SHA256: ca37986acd72d6f086f249c621780382866891d840bc6bb89084c74ae7eff9c0.
 
 <!-- flowdocs:paragraph:1a86595dcf2acf38e3e63bcc3be664cc -->
 Declared member: source declares fetchArtworkCandidates; membership is caller\-declared, not runtime evidence\.

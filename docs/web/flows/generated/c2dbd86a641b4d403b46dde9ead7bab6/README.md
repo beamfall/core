@@ -1,22 +1,18 @@
 # Shared workbench widgets: status chips, tables, forms, server path picker — readme
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:3d20088494af7c744e47f6ab419a1b48 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:582; symbol: BrowserMessage; span SHA256: 565a53e0e7456e363d84abc4a68e7b2d435fafca173a70f6698306ae42c6d4a5.
+Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:107; symbol: BLOCKING; span SHA256: ddde0d22bc7f824e0f3f7a44c6f10081a3bdf021d56e072d3fd6c02233d232e6.
 
 
 Security summaries: not collected; absence is not a clean security finding.
 
-- A declared inventory flow with no resolved member is reported, not generated\.
-
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
 - Declared inventory flows: structural and lexical relations between flows are not derived\.
-
-- Declared inventory members that do not resolve are listed in generation\.json inventory\.flows\[\]\.unresolved and in their flow README\.
 
 - Gitlinks are opaque superproject identities; their contents are not inspected\.
 
@@ -32,26 +28,4 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow shared\.workbench: 29 resolved, 11 unresolved members.
-
-- Unresolved member internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx BLOCKING: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx Crumb: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx LOCATIONS: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx REASON\_TEXT: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx Row: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx View: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/beamfall/workbench/index\.tsx BadgeState: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/beamfall/workbench/index\.tsx StatusTone: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/beamfall/workbench/index\.tsx TONE\_CLASS: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts ADD\_PATH\_PICKER\_ROOT\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts PATH\_PICKER\_QUERY: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow shared\.workbench: 40 resolved, 0 unresolved members.

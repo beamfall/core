@@ -1,11 +1,11 @@
 # Player transport: seek bar, trickplay, markers, chapters, renditions, touch gestures — flow-diagram
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:e56c4e24895f7bfec80b11f456e2848e -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/viewer/lib/transport\.ts:180; symbol: buildMarkerStripModel; span SHA256: 21ecf4403dd4e5387feab2ebb18c8ca990084b88343ac74be6ad774122dbf1f5.
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:10; symbol: DEFAULT\_TRICKPLAY\_COLUMNS; span SHA256: 73d34cd672bd70bad3928a6a449f541fe4a0719dd92af9ecfb2069497d12c8de.
 
 ```mermaid
 sequenceDiagram

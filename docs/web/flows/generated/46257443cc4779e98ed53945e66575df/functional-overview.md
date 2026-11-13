@@ -1,11 +1,11 @@
 # Playback engine: playback\-info, capability probe, HLS selection and recovery, progress reports — functional-overview
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:ab5e259be927c11685ac672b6ac99359 -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
 
-Source: internal/web/app/src/areas/viewer/lib/capabilityProfile\.ts:110; symbol: canPlayTypeSupported; span SHA256: 8cc499193d7ce10a5d319863ac112b07794c475a5b67a2fc9dd47f55e22b99a6.
+Source: internal/web/app/src/areas/viewer/lib/capabilityProfile\.ts:85; symbol: AUDIO\_CANDIDATES; span SHA256: 94955eba6053462d874d6ccbf0bcdc13dbf76138e1a44d5d97fb0555b32e1339.
 
 <!-- flowdocs:paragraph:12641fed49f4a4bb5252d7ce09a78e7d -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.

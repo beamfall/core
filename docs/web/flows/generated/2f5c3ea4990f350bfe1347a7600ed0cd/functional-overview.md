@@ -1,11 +1,11 @@
 # Setup: choose sign\-in security mode and create the owner Profile — functional-overview
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:30e1e73555e8b3de05308898e6718350 -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
 
-Source: internal/web/app/src/areas/setup/orchestrate\.ts:225; symbol: bootstrapResume; span SHA256: a688d5610f848cc6ce5b1f97c8e93be757d4d0752bc0a1a7adb7f77f261c717a.
+Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:94; symbol: SECURITY\_MODES; span SHA256: 009350b6896c002518fa268b58f8440741d9067009d6d86cabe95062b7ec28f7.
 
 <!-- flowdocs:paragraph:61db3d896958b2f1c1f338427452eef0 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.

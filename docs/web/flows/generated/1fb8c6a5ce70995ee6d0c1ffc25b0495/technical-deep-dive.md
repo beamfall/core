@@ -1,6 +1,6 @@
 # Console access: create and manage Profiles — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:e5eac34367c88e3379ca616229ec6c05 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -21,6 +21,26 @@ Source: internal/web/app/src/areas/console/sections/Profiles\.tsx:127; symbol: P
 Declared member: source declares Profiles; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/console/sections/Profiles\.tsx:33; symbol: Profiles; span SHA256: 2d1880965cfade294edcb05e757ef5173daa1a2d5dcce3702bffeaea0ad2e2ee.
+
+<!-- flowdocs:paragraph:1b09d0fdafe132bee242798511c82804 -->
+Declared member: source declares CREATE\_PROFILE\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:752; symbol: CREATE\_PROFILE\_MUTATION; span SHA256: 789afa257f13d9d3ad8afa01879438fad304e3bef898ac80931e83df4ec69a63.
+
+<!-- flowdocs:paragraph:b39b76b686145c70a367ee337326fa3d -->
+Declared member: source declares DISABLE\_PROFILE\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:767; symbol: DISABLE\_PROFILE\_MUTATION; span SHA256: 7728f81c1be823e1dad69e5ff3156a1fc28efee08f83316d654b3ef0c6b409bb.
+
+<!-- flowdocs:paragraph:d7b74b5c77e992e349ff9f32a693c9d5 -->
+Declared member: source declares PROFILES\_ADMIN\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:737; symbol: PROFILES\_ADMIN\_QUERY; span SHA256: f81461f06935721b01e01e88c898fdf527fb268cfc0ae778a3d6072847f6aeba.
+
+<!-- flowdocs:paragraph:a502d5a5f6e81f8aa46ff5de0b5d262d -->
+Declared member: source declares UPDATE\_PROFILE\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:787; symbol: UPDATE\_PROFILE\_MUTATION; span SHA256: 62b9b5868d1cb87d171180aae651142df986dd3714810901c5f38b89e423e2c6.
 
 <!-- flowdocs:paragraph:671d2af7bcb1047a1d2765ff3421db5d -->
 Declared member: source declares createProfile; membership is caller\-declared, not runtime evidence\.

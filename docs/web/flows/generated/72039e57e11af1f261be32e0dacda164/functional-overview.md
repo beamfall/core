@@ -1,11 +1,11 @@
 # Viewer notifications inbox — functional-overview
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:d5acb925d833768ac9fb93ba4790126f -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
 
-Source: internal/web/app/src/areas/viewer/pages/NotificationsPage\.tsx:119; symbol: NotificationRow; span SHA256: b24148d2db280286c5eac686af7ff3c720a22c3f543f7c474148b109b291bb61.
+Source: internal/web/app/src/areas/viewer/pages/NotificationsPage\.tsx:12; symbol: NOTIFICATIONS\_CHANGED\_EVENT; span SHA256: 7dde5112c416d78842d0a78b8b573bc6866f08d7ac535b0bcf9c82ce0969e72c.
 
 <!-- flowdocs:paragraph:33c13f9e6a2fb70fcde0a7070cf568f6 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.

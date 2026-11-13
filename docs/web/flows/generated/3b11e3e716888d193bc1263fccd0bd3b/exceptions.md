@@ -1,6 +1,6 @@
 # Console access: devices and pairing codes — exceptions
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:86333a016b42ebde79a44a8bd1edf622 -->
 Error reachability, rescue behavior and completeness are unresolved\.

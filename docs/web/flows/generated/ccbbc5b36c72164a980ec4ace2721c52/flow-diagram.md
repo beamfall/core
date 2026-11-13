@@ -1,6 +1,6 @@
 # Console area shell: route table, section nav, host firewall, session bar — flow-diagram
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:fad205a35a982626c5b6b92999240d7d -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -22,6 +22,7 @@ sequenceDiagram
     Note over S,U: Source contains call t in internal/web/app/src/areas/console/Section.tsx at line 35 - order unresolved
     Note over S,U: Source contains call t in internal/web/app/src/areas/console/Section.tsx at line 37 - order unresolved
     Note over S,U: Source contains call any in internal/web/app/src/areas/console/adminEpoch.ts at line 38 - order unresolved
+    Note over S,U: Source contains call Set in internal/web/app/src/areas/console/index.tsx at line 347 - order unresolved
     Note over S,U: Source contains call useRegister in internal/web/app/src/areas/console/index.tsx at line 433 - order unresolved
     Note over S,U: Source contains call useSession in internal/web/app/src/areas/console/index.tsx at line 434 - order unresolved
     Note over S,U: Source contains call useT in internal/web/app/src/areas/console/index.tsx at line 435 - order unresolved
@@ -30,6 +31,7 @@ sequenceDiagram
     Note over S,U: Source contains call isBeamfallAppStoreHost in internal/web/app/src/areas/console/index.tsx at line 437 - order unresolved
     Note over S,U: Source contains call flatMap in internal/web/app/src/areas/console/index.tsx at line 438 - order unresolved
     Note over S,U: Source contains call find in internal/web/app/src/areas/console/index.tsx at line 439 - order unresolved
+    Note over S,U: Source contains call test in internal/web/app/src/areas/console/index.tsx at line 441 - order unresolved
     Note over S,U: Source contains call useEffect in internal/web/app/src/areas/console/index.tsx at line 445 - order unresolved
     Note over S,U: Source contains call setRegister in internal/web/app/src/areas/console/index.tsx at line 445 - order unresolved
     Note over S,U: Source contains call t in internal/web/app/src/areas/console/index.tsx at line 450 - order unresolved

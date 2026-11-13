@@ -1,6 +1,6 @@
 # Manage bulk edit and organize with preview and confirm — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:4e04a272dd846032ff66ba2b609ce8ab -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -26,6 +26,36 @@ Source: internal/web/app/src/areas/manage/pages/BulkOpsPage\.tsx:238; symbol: Or
 Declared member: source declares fieldSummary; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/manage/pages/BulkOpsPage\.tsx:48; symbol: fieldSummary; span SHA256: c32236a032a5446ce7616de986712770de4e826bf0be062a2c3fd99d6f4e2dbf.
+
+<!-- flowdocs:paragraph:d47bf7c5e71ce31d6d98338e8c8d0d61 -->
+Declared member: source declares BULK\_EDIT\_APPLY\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:947; symbol: BULK\_EDIT\_APPLY\_MUTATION; span SHA256: 0326265a0f25e288f53a602026e865186d86d28b3c6f36e3ea74b9c37a2d8443.
+
+<!-- flowdocs:paragraph:028ea42fedfb559a4892e66e089e2b52 -->
+Declared member: source declares BULK\_EDIT\_PREVIEW\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:932; symbol: BULK\_EDIT\_PREVIEW\_QUERY; span SHA256: 7e3bb4d0680d407ab3fd0d77ec1f68b3c1774d7945b7fb44d67298a7b52adb24.
+
+<!-- flowdocs:paragraph:3a72c49e9694d084be5c51a4deb988ee -->
+Declared member: source declares LIBRARIES\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:77; symbol: LIBRARIES\_QUERY; span SHA256: 65bf15c326193e30a3a53d948eb6f5e5664d2b9bbf29e2359a95b66f56bd612e.
+
+<!-- flowdocs:paragraph:59690e2ba253d897a1fff94df9fb1f29 -->
+Declared member: source declares ORGANIZE\_APPLY\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1122; symbol: ORGANIZE\_APPLY\_MUTATION; span SHA256: 728ddc2a69aed4e4479578f3480d8ca14233e21f887572fe679dd81c855ac93f.
+
+<!-- flowdocs:paragraph:2a25600fd1da97242b4b4d0d37c826da -->
+Declared member: source declares ORGANIZE\_PREVIEW\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:962; symbol: ORGANIZE\_PREVIEW\_QUERY; span SHA256: 0a70ad802382112360d73055366f41c77771c6cc1beff954720db575f5833602.
+
+<!-- flowdocs:paragraph:5d292b195d3fc444edca1b62a7df4b1a -->
+Declared member: source declares UNDO\_BATCH\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1134; symbol: UNDO\_BATCH\_MUTATION; span SHA256: fb7492988879ce4c2533e44ac258796b6580063b6844027d6496e5dc4f39ed04.
 
 <!-- flowdocs:paragraph:e036e34331b8e8c20ccc94d027b3986b -->
 Declared member: source declares bulkEditApply; membership is caller\-declared, not runtime evidence\.

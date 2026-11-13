@@ -1,6 +1,6 @@
 # Sign out of the web session — exceptions
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:829eeadd1f6f4a1ffcad2929f62f7550 -->
 Error reachability, rescue behavior and completeness are unresolved\.

@@ -1,11 +1,21 @@
 # Viewer header live search with keyboard shortcut — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b411703a15d94e63b2a9ad3db1610117 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/viewer/components/HeaderSearch\.tsx:39; symbol: HeaderSearch; span SHA256: 8e28e7eccaffdb70393af1409ee4e596b0d984cbf0a110ea4257b7f0946e26c2.
+Source: internal/web/app/src/areas/viewer/components/HeaderSearch\.tsx:24; symbol: Cell; span SHA256: 3b7bbd9317fb2ac063f6d5a3e62b50b6060e672f1448364128bed90693a799f7.
+
+<!-- flowdocs:paragraph:33f6c5a917f2914cbf16dabc177f1f3a -->
+Declared member: source declares Cell; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/components/HeaderSearch\.tsx:24; symbol: Cell; span SHA256: 3b7bbd9317fb2ac063f6d5a3e62b50b6060e672f1448364128bed90693a799f7.
+
+<!-- flowdocs:paragraph:4a5924fce7ad02bd66ca1c1781c0a501 -->
+Declared member: source declares CellGroup; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/components/HeaderSearch\.tsx:29; symbol: CellGroup; span SHA256: cc950229be26869fec9510a40af7d22a67fd1c16109c603723c340765f3c5923.
 
 <!-- flowdocs:paragraph:bebb18e5d356d61e4826aa521e8c0c6e -->
 Declared member: source declares ResultRow; membership is caller\-declared, not runtime evidence\.
@@ -16,6 +26,26 @@ Source: internal/web/app/src/areas/viewer/components/HeaderSearch\.tsx:241; symb
 Declared member: source declares ViewerActions; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/viewer/components/ViewerActions\.tsx:9; symbol: ViewerActions; span SHA256: 4544667d6d60fee03e733edb0db7229738e56b09f7570838090c5bcc6e7a1b22.
+
+<!-- flowdocs:paragraph:75346587e21c12140857859d23b79806 -->
+Declared member: source declares LiveSearch; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/useLiveSearch\.ts:9; symbol: LiveSearch; span SHA256: 00d11229db6d2340acafc279164c778be5aa125f68926ffa0b39a1492d24a28c.
+
+<!-- flowdocs:paragraph:bfc0a7e2afd0f5bba49dde2357693b6f -->
+Declared member: source declares NOTHING; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/useLiveSearch\.ts:30; symbol: NOTHING; span SHA256: cdffae487195b8fc536332648ca10d4d8ff4515e88705940cc88e994f2239e92.
+
+<!-- flowdocs:paragraph:85bf3609ac42ef531c76dc41b579a0a2 -->
+Declared member: source declares SEARCH\_DEBOUNCE\_MS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/useLiveSearch\.ts:7; symbol: SEARCH\_DEBOUNCE\_MS; span SHA256: 7b1a88eeabeba2f774d072b16bf57eeb4bb636272cd9c68b258251fff6fdfb2e.
+
+<!-- flowdocs:paragraph:4c37ec6112154beb8a5ee8ad556b4ee7 -->
+Declared member: source declares Settled; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/useLiveSearch\.ts:23; symbol: Settled; span SHA256: 13812f5965dcc397f9f40927f6fe7500e1a364b8973586a7279b419e752aefb8.
 
 <!-- flowdocs:paragraph:81d7c482a3ea2354095a67443f765f3b -->
 Declared member: source declares isEditable; membership is caller\-declared, not runtime evidence\.
@@ -36,6 +66,11 @@ Source: internal/web/app/src/areas/viewer/lib/useLiveSearch\.ts:35; symbol: useL
 Declared member: source declares useSearchShortcut; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/viewer/lib/useLiveSearch\.ts:106; symbol: useSearchShortcut; span SHA256: f5f85ce91859809e2213b675ec8d12a1a2d940fe108a21793c2caba7b5c19a5d.
+
+<!-- flowdocs:paragraph:0bd02c0f7477431762dd77dc529acbb4 -->
+Declared member: source declares SEARCH\_RESULT\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:211; symbol: SEARCH\_RESULT\_QUERY; span SHA256: 2657b15ca18988a1185cca1d4da0e668c8866740d471da29d015c8ca97c46d7d.
 
 <!-- flowdocs:paragraph:2256c393d13d5bf45d0a33296c482c00 -->
 Declared member: source declares searchResult; membership is caller\-declared, not runtime evidence\.

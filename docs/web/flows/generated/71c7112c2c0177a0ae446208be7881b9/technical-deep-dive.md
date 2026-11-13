@@ -1,11 +1,16 @@
 # Console migration: importer wizard, credentials, mapping, match\-rate report — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:f24cb76ee579e1bc08cd46cdeb08bcbc -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:457; symbol: CredentialStep; span SHA256: 982543f07bda8a5fe743d0574257247795b41261d8a24299ca1fae0ffe5fba8a.
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:141; symbol: CATEGORY\_LABELS; span SHA256: 4aafe40cebd58b74f2169fb9edfec61aa0bc3d3a342b3a83030aca6dc535ee7e.
+
+<!-- flowdocs:paragraph:d9ac37f09ebfde5edf52977225efd3fd -->
+Declared member: source declares CATEGORY\_LABELS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:141; symbol: CATEGORY\_LABELS; span SHA256: 4aafe40cebd58b74f2169fb9edfec61aa0bc3d3a342b3a83030aca6dc535ee7e.
 
 <!-- flowdocs:paragraph:dfe8a3661b9de2f08f2c367c9110e413 -->
 Declared member: source declares CredentialStep; membership is caller\-declared, not runtime evidence\.
@@ -26,6 +31,26 @@ Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:524; symbo
 Declared member: source declares MatchRateReport; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:592; symbol: MatchRateReport; span SHA256: 321207af92f501271601c71f3e2f23d753b11ed3240381cafca7f2c3ef88c520.
+
+<!-- flowdocs:paragraph:7c9d42b302778610bf8d095f65ea43a0 -->
+Declared member: source declares WizardPhase; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:451; symbol: WizardPhase; span SHA256: d93d150b7b77be6cd0a4eca45493eb2d1281ce27a81963db95935d12256b1d6a.
+
+<!-- flowdocs:paragraph:7ffeb3e93984ddd9ba5c8454651f3352 -->
+Declared member: source declares CategoryCount; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/migrationReport\.ts:68; symbol: CategoryCount; span SHA256: 4a90ae0c58cc3382260af2a7464f01da3cd8726fcae1fa141a890679d106ddcd.
+
+<!-- flowdocs:paragraph:914003d0f809c4e21470c6c2e627e0e7 -->
+Declared member: source declares MatchReport; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/migrationReport\.ts:78; symbol: MatchReport; span SHA256: 003857d48743081aaf67748c0e98410c0b198207f60bd5a0410e04f0ba619ab6.
+
+<!-- flowdocs:paragraph:64ba66380f123604fd38e14c0d96d4cd -->
+Declared member: source declares WizardConfig; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/migrationReport\.ts:10; symbol: WizardConfig; span SHA256: e626ae1f3aaacfe7339289f1877bda11e1338b6fd345d9f72d717a776d7094b2.
 
 <!-- flowdocs:paragraph:ac44e8a11392ce53681ad58c818bd1e5 -->
 Declared member: source declares canRunImport; membership is caller\-declared, not runtime evidence\.
@@ -67,10 +92,45 @@ Declared member: source declares toggleCategory; membership is caller\-declared,
 
 Source: internal/web/app/src/lib/migrationReport\.ts:35; symbol: toggleCategory; span SHA256: 96d87d9463577fe5907f1fe54c7b531a9ac8f90b70e9a772022ac01284de3b2f.
 
+<!-- flowdocs:paragraph:6a99c74c101d25d94ea65836eaf093eb -->
+Declared member: source declares SCRAPER\_CREDENTIAL\_FIELDS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:171; symbol: SCRAPER\_CREDENTIAL\_FIELDS; span SHA256: 889e4881c381c872d423ff3ae2a36029303bc887796c1f1d232edcf2964edbf7.
+
+<!-- flowdocs:paragraph:4854c09256f21c64e42a53599b0f9cae -->
+Declared member: source declares SET\_SCRAPER\_CREDENTIAL\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:174; symbol: SET\_SCRAPER\_CREDENTIAL\_MUTATION; span SHA256: 7cc89b976674fff28000c424bdf87e1211936eba0d95ed14099687d424344d5b.
+
 <!-- flowdocs:paragraph:059943e30784abf1b2a34f06c719724b -->
 Declared member: source declares setScraperCredential; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/lib/graphql/console\.ts:177; symbol: setScraperCredential; span SHA256: a7ab48f46207dd2f992f28fcc70ae9522a15cc8b9ac186d3d64d1fd28fd340fb.
+
+<!-- flowdocs:paragraph:209093a5dc114e84390492d6d303af60 -->
+Declared member: source declares IMPORTERS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1257; symbol: IMPORTERS\_QUERY; span SHA256: 953d9e3262687f9cb1528d973c05d99957405c3fd49a86b9725e5429949268f9.
+
+<!-- flowdocs:paragraph:f2cf42bc1c763cf8345a3e3125902261 -->
+Declared member: source declares IMPORT\_STATUS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1296; symbol: IMPORT\_STATUS\_QUERY; span SHA256: 39487e391f977479fd79dea2a12984a7ff422f71cadb41fae820b662b7f647b3.
+
+<!-- flowdocs:paragraph:86f28c0c8830293588c27d398a55cfbd -->
+Declared member: source declares ImportMapping; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1272; symbol: ImportMapping; span SHA256: be0b4e4201d53c667386d8644183f00a2934eab5a133e3435f76877478966f80.
+
+<!-- flowdocs:paragraph:f75c5f38ba61922bea37d1919db33b45 -->
+Declared member: source declares LIBRARIES\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:77; symbol: LIBRARIES\_QUERY; span SHA256: 65bf15c326193e30a3a53d948eb6f5e5664d2b9bbf29e2359a95b66f56bd612e.
+
+<!-- flowdocs:paragraph:b25cbbd6a6066264281ee1ccd47674a9 -->
+Declared member: source declares RUN\_IMPORT\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1266; symbol: RUN\_IMPORT\_MUTATION; span SHA256: f55af987eaf8a1bf7815e24bb8b9e2830ccb2976380775c87e66e5d8aba20ac1.
 
 <!-- flowdocs:paragraph:ca3905bfa72ffaa2029be0dd3fe3c033 -->
 Declared member: source declares fetchImportStatus; membership is caller\-declared, not runtime evidence\.
@@ -91,6 +151,11 @@ Source: internal/web/app/src/lib/graphql/manage\.ts:81; symbol: fetchLibraries; 
 Declared member: source declares runImport; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/lib/graphql/manage\.ts:1278; symbol: runImport; span SHA256: dc8237091d6cb4762d7670d83f58f30bbad9b5056a3697879586a8ebbf2843f0.
+
+<!-- flowdocs:paragraph:084fcf64706b70e2b26f007d10a012b4 -->
+Declared member: source declares PROFILES\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:70; symbol: PROFILES\_QUERY; span SHA256: afea04a7b095a38903ed99b6d38ab40e9d25ad3c5613e2a10a82f8a484955285.
 
 <!-- flowdocs:paragraph:253410dfe3c55ed260ecad00157644c4 -->
 Declared member: source declares fetchProfiles; membership is caller\-declared, not runtime evidence\.

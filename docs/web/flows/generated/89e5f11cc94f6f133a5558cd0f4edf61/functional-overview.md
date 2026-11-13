@@ -1,11 +1,11 @@
 # Viewer full library browse: sort, filters, grouping, virtual grid — functional-overview
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b39cb1ce9b49d31a1712abf362065e19 -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
 
-Source: internal/web/app/src/areas/viewer/components/useVirtualGrid\.ts:37; symbol: readColumns; span SHA256: 0548b29e2ddf2bd9ea8e432834a57f336451cdcc1e314b63181e9337d8fefce0.
+Source: internal/web/app/src/areas/viewer/components/useVirtualGrid\.ts:18; symbol: VIRTUAL\_GRID\_COLUMN\_MIN; span SHA256: 87590b98abc150d2bb68da279e1fa3abe4e7ee1db2f02213a61255815d87e645.
 
 <!-- flowdocs:paragraph:cbf5a11194499353865c136eca4c2335 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.

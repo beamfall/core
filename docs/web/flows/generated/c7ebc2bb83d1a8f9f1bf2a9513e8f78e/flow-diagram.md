@@ -1,6 +1,6 @@
 # Console plugins: standing, lifecycle, config editor, provider keys — flow-diagram
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:5629adbba4881389c5b286a922a7c260 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -17,6 +17,7 @@ sequenceDiagram
     Note over S,U: Source contains call useState at line 945 - order unresolved
     Note over S,U: Source contains call useState at line 946 - order unresolved
     Note over S,U: Source contains call displayString at line 947 - order unresolved
+    Note over S,U: Source contains call Set at line 46 - order unresolved
     Note over S,U: Source contains call useT at line 805 - order unresolved
     Note over S,U: Source contains call displayString at line 806 - order unresolved
     Note over S,U: Source contains call t at line 807 - order unresolved

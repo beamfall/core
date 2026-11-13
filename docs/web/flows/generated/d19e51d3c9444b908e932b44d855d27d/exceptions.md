@@ -1,6 +1,6 @@
 # Console libraries: add a library, roots, preview clips, skip detection — exceptions
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:3f9b5b597d8b94e2521970f2f525c755 -->
 Error reachability, rescue behavior and completeness are unresolved\.

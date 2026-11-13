@@ -1,6 +1,6 @@
 # Enroll a browser with a pairing code — related-flows
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:ff5781afe82b1198e76ec8a1be01aa4b -->
 Relations are static lexical candidates; computed dispatch remains unresolved\.

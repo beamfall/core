@@ -1,6 +1,6 @@
 # Console plugins: standing, lifecycle, config editor, provider keys — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:6c40ca56526c648a3f4525a94d97a615 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -12,10 +12,40 @@ Declared member: source declares ActionRow; membership is caller\-declared, not 
 
 Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:931; symbol: ActionRow; span SHA256: 2a20e7df7d8ac823ea677063b20d2017cc11d6c03e2b7774889185c0c031b315.
 
+<!-- flowdocs:paragraph:042ab21061500088ea2861ec91a1ba25 -->
+Declared member: source declares BUILT\_IN\_PLUGIN\_IDS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:46; symbol: BUILT\_IN\_PLUGIN\_IDS; span SHA256: 96966792b5c7c53093f0fbd18cc6e2455e52113917824aec272acca37faef145.
+
+<!-- flowdocs:paragraph:f8850f3c243c90676887877808b2a145 -->
+Declared member: source declares CARD; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:278; symbol: CARD; span SHA256: 51c224757d6491093e3ea0461204a5b9a21b3f1a9a01a01b11bf692ca949ac1b.
+
 <!-- flowdocs:paragraph:6ba9efbfad32102b25088518e2e62f8b -->
 Declared member: source declares ConfigField; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:792; symbol: ConfigField; span SHA256: be6bd6d8f7a36079968e537a0038d396e05a38a662a78f08bb66c1af01085e27.
+
+<!-- flowdocs:paragraph:e5a79c3e28ee3dbdbf9b579fc263ac9e -->
+Declared member: source declares KEY\_INPUT; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:279; symbol: KEY\_INPUT; span SHA256: 6ee9ea1dce95e8037c987c1995249901dae159af7e24666ecf63e0cdf244be46.
+
+<!-- flowdocs:paragraph:3876af1d422d292206aa06fd2fabce30 -->
+Declared member: source declares KEY\_STATUS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:264; symbol: KEY\_STATUS; span SHA256: a5674b0e5faef97c0552d1abc0cfc14eace963faf3205e5e1a722a1bc267f29c.
+
+<!-- flowdocs:paragraph:b1b34a4add5f1564d226d877b1fd3f57 -->
+Declared member: source declares PLUGIN\_STANDING\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:56; symbol: PLUGIN\_STANDING\_QUERY; span SHA256: c85cef42c6855e7e0712d37f67d9b62ea41ce5e862dcfe186dedc1890e183730.
+
+<!-- flowdocs:paragraph:18fa30a95f6acc27f9f6692bda0e3c9b -->
+Declared member: source declares PROVENANCE\_LABELS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:59; symbol: PROVENANCE\_LABELS; span SHA256: 55caa158bd1009747c9c0eb42d8aa16b3000af79e2d8bf9f56b4c0851ef7bd87.
 
 <!-- flowdocs:paragraph:b6ec3db4d2703a17278a688f915945e7 -->
 Declared member: source declares PermissionRow; membership is caller\-declared, not runtime evidence\.
@@ -42,10 +72,35 @@ Declared member: source declares PluginLifecycle; membership is caller\-declared
 
 Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:600; symbol: PluginLifecycle; span SHA256: ac14e45b631672f9a71737d185b3f21eb78a05f355332b396834536161a76ceb.
 
+<!-- flowdocs:paragraph:e3014a5af26e66885b96cb956b84eb4f -->
+Declared member: source declares PluginStandingInfo; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:65; symbol: PluginStandingInfo; span SHA256: ac39f966ccbe3b7e8470878c65c06f7540c5dd3c98462c72b01889628496f0d9.
+
+<!-- flowdocs:paragraph:112a7378f2dd69703c471a8f4096f2f3 -->
+Declared member: source declares PluginWithStanding; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:71; symbol: PluginWithStanding; span SHA256: 319f915972f8406f756f5fe3392b4b2fe89379bbb253f70baa77cd9c1b9da739.
+
 <!-- flowdocs:paragraph:5eec270bb273532dbaaddbcafbbb7cf8 -->
 Declared member: source declares ProviderKeyRow; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:421; symbol: ProviderKeyRow; span SHA256: 0780c60c03f97fa7a5029c287709505938ca3753977c6754c8448fb650cf60bd.
+
+<!-- flowdocs:paragraph:9922d3fb19d539beec261a61982ffbf6 -->
+Declared member: source declares RISK\_LABELS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:919; symbol: RISK\_LABELS; span SHA256: e6cc34fb258151b5bf461fd41453d7a1d068d0315f945458a20752a2658a24d6.
+
+<!-- flowdocs:paragraph:f918233bdedaa0e5b6128116fdcb8208 -->
+Declared member: source declares RISK\_TONES; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:912; symbol: RISK\_TONES; span SHA256: 7aaf1f228e2748b6df2ea2b1ecfbfbf693d6e5264747ae223e0f7c8923e890af.
+
+<!-- flowdocs:paragraph:f64ee013c21a1eb7b92468bf100c7d8a -->
+Declared member: source declares STATUS\_TONES; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:890; symbol: STATUS\_TONES; span SHA256: daff9947f5c763fbbd37e0c79dc5e17bb6ab4a1f44db47e7dbe7e988f44ce302.
 
 <!-- flowdocs:paragraph:08964ff6707689405b50e881b0865fb8 -->
 Declared member: source declares StatusRow; membership is caller\-declared, not runtime evidence\.
@@ -86,6 +141,51 @@ Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:122; symbol: pr
 Declared member: source declares trustBadge; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:132; symbol: trustBadge; span SHA256: 4ebe920259450d34b32316a8bbe52eb6e0e9a1812a8fe922a49e7d9c299dee6a.
+
+<!-- flowdocs:paragraph:795724dd291da486f02e923b0b4914e3 -->
+Declared member: source declares CONSOLE\_CONFIG\_FIELDS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:60; symbol: CONSOLE\_CONFIG\_FIELDS; span SHA256: b411ac10419f025e04f75e76a7d72f1e56b58a6bb29a48cfc563ac5e494d4524.
+
+<!-- flowdocs:paragraph:3d0dfbe4661a3322c1300d3c79cad776 -->
+Declared member: source declares CONSOLE\_CONFIG\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:63; symbol: CONSOLE\_CONFIG\_QUERY; span SHA256: 807152d4b6fac63afa4aabcd9d0c39bf5450489c0dfe06a584dfdc9ce66b34a8.
+
+<!-- flowdocs:paragraph:22549fe6c7e10a8829b23cfecf954d86 -->
+Declared member: source declares DISABLE\_SCRAPER\_CREDENTIAL\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:205; symbol: DISABLE\_SCRAPER\_CREDENTIAL\_MUTATION; span SHA256: 87f2f5d3c385301eb326da0c88eb72fd131ab32c04f387e8027fa6e608ddc5a1.
+
+<!-- flowdocs:paragraph:09bc47da141119e143bd7d8685b7be1e -->
+Declared member: source declares SCRAPER\_CREDENTIAL\_FIELDS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:171; symbol: SCRAPER\_CREDENTIAL\_FIELDS; span SHA256: 889e4881c381c872d423ff3ae2a36029303bc887796c1f1d232edcf2964edbf7.
+
+<!-- flowdocs:paragraph:cd254a057b0cc71ddbc554b7f9ce7b54 -->
+Declared member: source declares SET\_PLUGIN\_ACTIVE\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:75; symbol: SET\_PLUGIN\_ACTIVE\_MUTATION; span SHA256: 5d610be88d9c30f38833fb5e0664955b32333bf3ab1597449ed24b543e7e4834.
+
+<!-- flowdocs:paragraph:b61a228e4694726fe55cef04f92243e9 -->
+Declared member: source declares SET\_PLUGIN\_CONFIG\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:116; symbol: SET\_PLUGIN\_CONFIG\_MUTATION; span SHA256: d5f96ae51a80e6dd5c252b3ccde270a34f5224dff84bb0e4a45193c11ed1a362.
+
+<!-- flowdocs:paragraph:968fc66ff5329671c264ed1d7ebb0969 -->
+Declared member: source declares SET\_SCRAPER\_CREDENTIAL\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:174; symbol: SET\_SCRAPER\_CREDENTIAL\_MUTATION; span SHA256: 7cc89b976674fff28000c424bdf87e1211936eba0d95ed14099687d424344d5b.
+
+<!-- flowdocs:paragraph:a2d4691854236310f00586439ebe3a97 -->
+Declared member: source declares UNINSTALL\_PLUGIN\_DATA\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:95; symbol: UNINSTALL\_PLUGIN\_DATA\_MUTATION; span SHA256: 741f64a2ccdb3374cc3ee11ef424bb02ce3a18108bf9795168e57e44615dc915.
+
+<!-- flowdocs:paragraph:cb38d1afc4f0cd0a820637648b85ac30 -->
+Declared member: source declares VALIDATE\_SCRAPER\_CREDENTIAL\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:192; symbol: VALIDATE\_SCRAPER\_CREDENTIAL\_MUTATION; span SHA256: f97e1477ee94c7032127e537a028fe8238fc1eaba7a769cc9fc9bbc3666ac096.
 
 <!-- flowdocs:paragraph:61def85a2eb8046e2457498e668c1161 -->
 Declared member: source declares disableScraperCredential; membership is caller\-declared, not runtime evidence\.

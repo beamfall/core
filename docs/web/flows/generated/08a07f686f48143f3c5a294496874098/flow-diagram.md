@@ -1,11 +1,11 @@
 # Console qBittorrent ingest connection and outcomes — flow-diagram
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:aebd45d90840183e184200d63458ba48 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:378; symbol: QBittorrentIngest; span SHA256: 992e79270af5b78e4f93ef0fca68f5332d54838483cf1baa4c3b10df9417f2b3.
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:126; symbol: QB\_OUTCOME; span SHA256: 974482f2a9553d3517a2b9ec34f3668717f270709c24d1e6ee63eeada0c060da.
 
 ```mermaid
 sequenceDiagram

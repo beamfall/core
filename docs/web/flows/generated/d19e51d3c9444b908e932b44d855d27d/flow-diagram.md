@@ -1,6 +1,6 @@
 # Console libraries: add a library, roots, preview clips, skip detection — flow-diagram
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:ab09d2fb07cd933e1fc69d6d1e56da09 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -35,6 +35,7 @@ sequenceDiagram
     Note over S,U: Source contains call useState at line 128 - order unresolved
     Note over S,U: Source contains call find at line 129 - order unresolved
     Note over S,U: Source contains call split at line 69 - order unresolved
+    Note over S,U: Source contains call filter at line 69 - order unresolved
     Note over S,U: Source contains call useCallback at line 131 - order unresolved
     Note over S,U: Source contains call async at line 131 - order unresolved
     Note over S,U: Source contains call setScanFolders at line 133 - order unresolved

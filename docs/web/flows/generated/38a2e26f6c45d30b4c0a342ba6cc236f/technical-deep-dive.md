@@ -1,6 +1,6 @@
 # Home\-mode admin password sign\-in on the enroll page — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:e3078687ba2ddb8ce2a995bc72c24a56 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -11,6 +11,11 @@ Source: internal/web/app/src/areas/enroll/EnrollPage\.tsx:261; symbol: AdminSign
 Declared member: source declares adminSignInErrorMessage; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/enroll/EnrollPage\.tsx:328; symbol: adminSignInErrorMessage; span SHA256: 0bbae5c215e0d5bb8e514dc21d32103909cf7e82b970e19c5f7039517837903d.
+
+<!-- flowdocs:paragraph:a22c661c5ba2939356a7b5690ea37183 -->
+Declared member: source declares RebindOutcome; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/auth\.ts:24; symbol: RebindOutcome; span SHA256: a13b573d7be9cfe91b8383ea226d2f958d932ac9472eeae193776b1bac15bdb1.
 
 <!-- flowdocs:paragraph:0b7db71215021386959a39df0acd81ac -->
 Declared member: source declares adminSignIn; membership is caller\-declared, not runtime evidence\.

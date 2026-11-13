@@ -1,11 +1,26 @@
 # Manage operations: jobs, schedules, folder watcher — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:c1de3dce91b7f396971bee242a7ee11a -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/manage/lib/schedule\.ts:84; symbol: formatDateTime; span SHA256: 4c4f22aad3de466b51cd4fb27a8e47bb30b49fd73e9f5433d3cc6725e95cc64a.
+Source: internal/web/app/src/areas/manage/lib/schedule\.ts:48; symbol: TriggerFields; span SHA256: ca19feaf51a5b803a084aabbd6aebdde46ffcd58516ea0c62e1b87465a3acd35.
+
+<!-- flowdocs:paragraph:4f237c977cb0684132ae5d34b914bc1a -->
+Declared member: source declares TriggerFields; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/lib/schedule\.ts:48; symbol: TriggerFields; span SHA256: ca19feaf51a5b803a084aabbd6aebdde46ffcd58516ea0c62e1b87465a3acd35.
+
+<!-- flowdocs:paragraph:ef9c2ff788909569b730416676b0994f -->
+Declared member: source declares TriggerKind; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/lib/schedule\.ts:9; symbol: TriggerKind; span SHA256: 7f7dea6e9e9fdf71ae7d8aa951048687bd4119ffbb19c306c13cabe87a9ba7b8.
+
+<!-- flowdocs:paragraph:cb991a3d95415046e6129b0fc8b0b041 -->
+Declared member: source declares WEEKDAY\_KEYS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/lib/schedule\.ts:12; symbol: WEEKDAY\_KEYS; span SHA256: 476549bc8a85f2a42efaf60f4478ee2185ca27f3ecb65c3cd58ffbcd13cee691.
 
 <!-- flowdocs:paragraph:c7343d1e7a0e044fb2694915ec0501a0 -->
 Declared member: source declares formatDateTime; membership is caller\-declared, not runtime evidence\.
@@ -52,10 +67,40 @@ Declared member: source declares SchedulesSection; membership is caller\-declare
 
 Source: internal/web/app/src/areas/manage/pages/OperationsPage\.tsx:133; symbol: SchedulesSection; span SHA256: cb70d11a533afb5c1ea066e2025d18de18c97c3f6ca9a26a9e4333d6564b5ba3.
 
+<!-- flowdocs:paragraph:78c2f2db22ab54f3bf02679ed6a74237 -->
+Declared member: source declares WATCHER\_STATE\_LABELS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/pages/OperationsPage\.tsx:44; symbol: WATCHER\_STATE\_LABELS; span SHA256: 3171a311afd0ea8c64f76bb8a46003cdec5c20d745a01ee6dfde47af4a5354a7.
+
 <!-- flowdocs:paragraph:1af7f34578772fd659c0a6473d7f3e26 -->
 Declared member: source declares WatcherSection; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/manage/pages/OperationsPage\.tsx:358; symbol: WatcherSection; span SHA256: 01e47cc31f66add0f22d0bd27040b8156893bcef87029122eaa9ab4b8021418d.
+
+<!-- flowdocs:paragraph:dbb8ede4f16a1932802de902c253c472 -->
+Declared member: source declares JOBS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:286; symbol: JOBS\_QUERY; span SHA256: 10f1f3bacf7fbd455bf418c8503ff518f957a45ee1c80502a1ffd014086a0aad.
+
+<!-- flowdocs:paragraph:6608283c93d2ec869f39a0600cc9ecd4 -->
+Declared member: source declares SCHEDULES\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:300; symbol: SCHEDULES\_QUERY; span SHA256: 6e74f219557520bbfe02f92279f02cdb49747dbf5b5c9aa39af72cdf8102b64d.
+
+<!-- flowdocs:paragraph:c6a86b8fb9d2821695b0a7fc348b29a5 -->
+Declared member: source declares UPDATE\_SCHEDULE\_ENABLED\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:309; symbol: UPDATE\_SCHEDULE\_ENABLED\_MUTATION; span SHA256: cb2ba74f04fb8db05dac9f6fbeeac0ab075dac7b57561cf23324184ab7534181.
+
+<!-- flowdocs:paragraph:2f5cc946fb12a8d1286d733ddf0d1fbe -->
+Declared member: source declares UPDATE\_SCHEDULE\_TRIGGER\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:324; symbol: UPDATE\_SCHEDULE\_TRIGGER\_MUTATION; span SHA256: ae0d663db81cc2e4da0fbbc7cd23132256d3cc099fa0ca202634e2d8a3e79aa6.
+
+<!-- flowdocs:paragraph:79b1c3ab80d521f38a531e5b718c5107 -->
+Declared member: source declares WATCHER\_STATUS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1496; symbol: WATCHER\_STATUS\_QUERY; span SHA256: 6911b18fb97913600d6b287e68235dca706d8395c722018627fe4073f7b2aa2b.
 
 <!-- flowdocs:paragraph:e159e0fae40c2e1b276fd3bac366904f -->
 Declared member: source declares fetchJobs; membership is caller\-declared, not runtime evidence\.
@@ -86,4 +131,9 @@ Source: internal/web/app/src/lib/graphql/manage\.ts:328; symbol: setScheduleTrig
 Declared member: source declares onToggle; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/manage/pages/OperationsPage\.tsx:151; symbol: onToggle; span SHA256: b33265846093e8829ec114495ee710a728fd91273644f686468b753584b2619c.
+
+<!-- flowdocs:paragraph:5cf52845ff87d578fbd6012d770253e1 -->
+Declared member: source declares setField; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/pages/OperationsPage\.tsx:219; symbol: setField; span SHA256: 4e8768fdcc709c991f56a4186eb89ba5255946cc46ab217fe933b277a6bb2386.
 

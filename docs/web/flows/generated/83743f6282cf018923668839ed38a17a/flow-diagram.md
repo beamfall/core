@@ -1,11 +1,11 @@
 # Viewer who&\#39;s\-watching Profile picker with PIN prompt — flow-diagram
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:8dbf2b040d7e71d2cd950e4eb4ed6fe8 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/viewer/pages/ProfilePickerPage\.tsx:191; symbol: PinPrompt; span SHA256: 1dda62597ac88864cf9511f76713d3e612a47bf892ca7532a29fd3361e7657ce.
+Source: internal/web/app/src/areas/viewer/pages/ProfilePickerPage\.tsx:35; symbol: FAILURE\_MESSAGE; span SHA256: 822692c2083b855cb446429b0cac5e2c35adc7232f3248ea84920ddc133b8873.
 
 ```mermaid
 sequenceDiagram
@@ -37,6 +37,7 @@ sequenceDiagram
     Note over S,U: Source contains call toLocaleUpperCase in internal/web/app/src/components/beamfall/profile/avatar.ts at line 97 - order unresolved
     Note over S,U: Source contains call split in internal/web/app/src/components/beamfall/profile/avatar.ts at line 79 - order unresolved
     Note over S,U: Source contains call Number in internal/web/app/src/components/beamfall/profile/avatar.ts at line 80 - order unresolved
+    Note over S,U: Source contains call test in internal/web/app/src/components/beamfall/profile/avatar.ts at line 81 - order unresolved
     Note over S,U: Source contains call generatedTone in internal/web/app/src/components/beamfall/profile/avatar.ts at line 82 - order unresolved
     Note over S,U: Source contains call find in internal/web/app/src/components/beamfall/profile/avatar.ts at line 84 - order unresolved
     Note over S,U: Source contains call generatedTone in internal/web/app/src/components/beamfall/profile/avatar.ts at line 85 - order unresolved

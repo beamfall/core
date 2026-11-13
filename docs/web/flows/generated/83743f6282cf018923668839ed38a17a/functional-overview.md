@@ -1,11 +1,11 @@
 # Viewer who&\#39;s\-watching Profile picker with PIN prompt — functional-overview
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:fd5311933ade9ef1e2f4aa00e0448161 -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
 
-Source: internal/web/app/src/areas/viewer/pages/ProfilePickerPage\.tsx:191; symbol: PinPrompt; span SHA256: 1dda62597ac88864cf9511f76713d3e612a47bf892ca7532a29fd3361e7657ce.
+Source: internal/web/app/src/areas/viewer/pages/ProfilePickerPage\.tsx:35; symbol: FAILURE\_MESSAGE; span SHA256: 822692c2083b855cb446429b0cac5e2c35adc7232f3248ea84920ddc133b8873.
 
 <!-- flowdocs:paragraph:203d183d137c3893ef4927e6528acdd1 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
@@ -16,6 +16,11 @@ Source: internal/web/app/src/areas/viewer/pages/ProfilePickerPage\.tsx:50; symbo
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
 
 Source: internal/web/app/src/components/beamfall/profile/ProfileAvatar\.tsx:33; symbol: ; span SHA256: 033b3103f48ba51017137031d93d3001a1df271a6a91aee46eba7ce62f158ff0.
+
+<!-- flowdocs:paragraph:d9a7e1cdb0f744ff21a8f4fba7e0cdc0 -->
+Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
+
+Source: internal/web/app/src/components/beamfall/profile/avatar\.ts:81; symbol: ; span SHA256: 019f9094a4f57fa30464a3a9c55d67e89b7a312a8980bc1763e9752f957a59c2.
 
 <!-- flowdocs:paragraph:f52be7246663d4d34e2a2f4b7d7b479a -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.

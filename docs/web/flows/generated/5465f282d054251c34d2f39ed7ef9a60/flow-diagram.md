@@ -1,11 +1,11 @@
 # Setup: configure the update\-check channel — flow-diagram
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:90dc49e6a5b16314d1d9c6d9da74ea5e -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/setup/orchestrate\.ts:181; symbol: configureUpdateCheck; span SHA256: eb088f1d1e70a55690701dc5051f24349cd9a6c6d01ef24fa405600c0a9e023a.
+Source: internal/web/app/src/areas/setup/orchestrate\.ts:38; symbol: UpdateCheckChannel; span SHA256: bd5955f7abfd6b60f80d302824d8ee419c7c19aa76ad7abc062bdee76afbfb44.
 
 ```mermaid
 sequenceDiagram

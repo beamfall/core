@@ -1,11 +1,11 @@
 # Session spine: compat handshake, session renewal, identity epoch, request guard — functional-overview
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:8566deffabd357e28213c5ce965df96c -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
 
-Source: internal/web/app/src/lib/api\.ts:368; symbol: fetchSetupRequired; span SHA256: 0d8c70a9a0132d07cd38716b208981a5a9ec35272673295f9d5c27a3b5b6c13c.
+Source: internal/web/app/src/lib/api\.ts:102; symbol: ADMIN\_SESSION\_REQUIRED; span SHA256: fc3499cc96d72c65475ea9616779522bb2676ba3c5790775fa9a1c64e87522a1.
 
 <!-- flowdocs:paragraph:7138980270118b1908eb2661383e0203 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
@@ -16,6 +16,11 @@ Source: internal/web/app/src/lib/api\.ts:370; symbol: ; span SHA256: b602e618878
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
 
 Source: internal/web/app/src/lib/api\.ts:409; symbol: ; span SHA256: b000498545434be95cd01361a024da618fb8219d72bbc88c97e9f53ff54f0692.
+
+<!-- flowdocs:paragraph:4c413e482f986e3d59a33510f8a301cf -->
+Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
+
+Source: internal/web/app/src/lib/session\.tsx:98; symbol: ; span SHA256: 153a91759e826dc65de7090a23746f9396b00424a5d068ed67028db2531a8ea9.
 
 <!-- flowdocs:paragraph:527c6e015737dde6cf19a3e0a39cd034 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.

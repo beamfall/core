@@ -1,6 +1,6 @@
 # Manage curation: fields, relations and files of a Media — related-flows
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:dcaa630b3dbff511a0cc1c8cc5353234 -->
 Relations are static lexical candidates; computed dispatch remains unresolved\.

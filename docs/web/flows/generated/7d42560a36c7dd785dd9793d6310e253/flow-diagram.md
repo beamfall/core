@@ -1,11 +1,11 @@
 # Service worker registration and reload\-on\-controller\-change — flow-diagram
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:56d463b3d3c6cd0c370f2cb95e0573dc -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/lib/pwa\.ts:32; symbol: registerServiceWorker; span SHA256: 55a7cccd9279f66b2ba0e5458bc0af4b632b9ae52b3bbc338a2a2dc5a7f9ee03.
+Source: internal/web/app/src/lib/pwa\.ts:17; symbol: ServiceWorkerHost; span SHA256: 2bc16f6af4e4c3747d39d332451418ddbff2ecdf4635f69bb99a25b5f4094a96.
 
 ```mermaid
 sequenceDiagram
@@ -13,6 +13,7 @@ sequenceDiagram
     participant U as Unresolved runtime
     Note over S,U: Lexical inventory only - no witnessed order
     Note over S: Flow 7d42560a36c7dd785dd9793d6310e253
+    Note over S,U: Source contains call addEventListener at line 19 - order unresolved
     Note over S,U: Source contains call reloadOnceOnControllerChange at line 40 - order unresolved
     Note over S,U: Source contains call reload at line 40 - order unresolved
     Note over S,U: Source contains call addEventListener at line 41 - order unresolved

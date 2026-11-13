@@ -1,6 +1,6 @@
 # Enroll a browser with a pairing code — entities
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:f93f3b76124edd8969de7b7546bbfb88 -->
 Runtime entities and persistence effects are unresolved; lexical calls are listed separately\.

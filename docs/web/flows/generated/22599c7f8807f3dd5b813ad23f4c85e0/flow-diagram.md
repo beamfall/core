@@ -1,11 +1,11 @@
 # Manage rename: pattern preview, batch rename managed paths, undo — flow-diagram
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a7ee900810878723a59ba48b854a0455 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/manage/lib/powertools\.ts:101; symbol: batchRenameManagedPaths; span SHA256: d4941283f47a1fc0e80aebb2f7ea21d8527739b00c4c45e120a1e6f4dab72b88.
+Source: internal/web/app/src/areas/manage/lib/powertools\.ts:94; symbol: BATCH\_RENAME\_MUTATION; span SHA256: e5dd76e8dbf66d08a67333fab549d2fe731dd892ba3f96313995cd7a069e2b96.
 
 ```mermaid
 sequenceDiagram
@@ -21,6 +21,9 @@ sequenceDiagram
     Note over S,U: Source contains call padStart in internal/web/app/src/areas/manage/lib/renamePattern.ts at line 54 - order unresolved
     Note over S,U: Source contains call lastIndexOf in internal/web/app/src/areas/manage/lib/renamePattern.ts at line 47 - order unresolved
     Note over S,U: Source contains call slice in internal/web/app/src/areas/manage/lib/renamePattern.ts at line 49 - order unresolved
+    Note over S,U: Source contains call onChange in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 326 - order unresolved
+    Note over S,U: Source contains call onChange in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 356 - order unresolved
+    Note over S,U: Source contains call Number in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 356 - order unresolved
     Note over S,U: Source contains call useT in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 52 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 54 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 55 - order unresolved

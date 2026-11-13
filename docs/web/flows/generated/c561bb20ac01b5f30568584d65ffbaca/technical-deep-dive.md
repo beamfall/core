@@ -1,11 +1,31 @@
 # Console live sessions: update awareness, jobs, live sessions and host graphs — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:35115d1eabb769fdc83352e20b083618 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/console/sections/Dashboard\.tsx:539; symbol: HostGraphs; span SHA256: 6915fcc523176256f95f0cd1ea25a264b83103958d54ef1298c6c42be380709e.
+Source: internal/web/app/src/areas/console/sections/Dashboard\.tsx:289; symbol: CHART\_HEIGHT; span SHA256: 795a0efbd16af2c292727707936c42deca150072ae3d45c960aba52fb4eb6337.
+
+<!-- flowdocs:paragraph:c7f82d4e4233e5e5038eb2f386f77536 -->
+Declared member: source declares CHART\_HEIGHT; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Dashboard\.tsx:289; symbol: CHART\_HEIGHT; span SHA256: 795a0efbd16af2c292727707936c42deca150072ae3d45c960aba52fb4eb6337.
+
+<!-- flowdocs:paragraph:24ac0d709388fe9c8e7a10b5aad9dd7e -->
+Declared member: source declares ChartProps; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Dashboard\.tsx:278; symbol: ChartProps; span SHA256: cd02dc6ebb1298b2103d6f21b8ca0c75cdf54d525ce3a44d9a8b12b4b4b00b1d.
+
+<!-- flowdocs:paragraph:3deba254bfbcfcfaf3ea34e223a85aa1 -->
+Declared member: source declares EVENT\_SETTLE\_MS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Dashboard\.tsx:53; symbol: EVENT\_SETTLE\_MS; span SHA256: 9a7f09e3d144200b83c5dd2c07eec81e3fa2b8f0568c93512feb4e38ee73d5fb.
+
+<!-- flowdocs:paragraph:5e68fc3bae40ad1a9d3c2cc1ebe8d2a5 -->
+Declared member: source declares HOUR\_MS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Dashboard\.tsx:42; symbol: HOUR\_MS; span SHA256: 766825938596dd98f538812f25fcf1ac62d5bba135f28b5620bea5668d3f3d12.
 
 <!-- flowdocs:paragraph:d0a1486c5d0b6dc8b099fa21e0a66278 -->
 Declared member: source declares HostGraphs; membership is caller\-declared, not runtime evidence\.
@@ -26,6 +46,36 @@ Source: internal/web/app/src/areas/console/sections/Dashboard\.tsx:256; symbol: 
 Declared member: source declares LiveSessions; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/console/sections/Dashboard\.tsx:169; symbol: LiveSessions; span SHA256: 265d914ebe86b9d292a6f05ba8bf021fa6bb15730304e3cb28cceb17ad913339.
+
+<!-- flowdocs:paragraph:5a41984fb48257ef433c86a719110838 -->
+Declared member: source declares METHOD; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Dashboard\.tsx:116; symbol: METHOD; span SHA256: 5d1fc3f9937e4b57a6fa2c1d3fb1892e4e398a06f7dda5ab46f239ab8ef2fbbc.
+
+<!-- flowdocs:paragraph:6aa8ff1871b8154e6df16c2ec1ab2e63 -->
+Declared member: source declares METRICS\_POLL\_MS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Dashboard\.tsx:41; symbol: METRICS\_POLL\_MS; span SHA256: b82b31324166617ed1ba78dc724363dc595584acdb93d33ec1bb5250857b0536.
+
+<!-- flowdocs:paragraph:78eb9af40032d3a0e0cec773f0b5c003 -->
+Declared member: source declares PAD; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Dashboard\.tsx:290; symbol: PAD; span SHA256: b3e1e1b4b2c4756873043cd18dca915cd36bb7c1cda3611b6151386c7d3f2bc5.
+
+<!-- flowdocs:paragraph:66efe22b50e9f493e4fd5d3a36633028 -->
+Declared member: source declares REASON; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Dashboard\.tsx:122; symbol: REASON; span SHA256: e3ff651b078c9a1a9bba6875733fdc0123b2d7b4dbd2ad98f58ee320b6c26099.
+
+<!-- flowdocs:paragraph:89a9c5143757f5827f687dce78b5583c -->
+Declared member: source declares SESSIONS\_POLL\_MS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Dashboard\.tsx:40; symbol: SESSIONS\_POLL\_MS; span SHA256: 93038cc8a1cf1599fc87669e6d135704398b242ac23675c0d72686077ac6e06a.
+
+<!-- flowdocs:paragraph:ddf260053a3475df2084e672c56b9257 -->
+Declared member: source declares Series; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Dashboard\.tsx:268; symbol: Series; span SHA256: 72f5bff8afb2cc19d95f1283208c8bbed353785940e24c0c29540a6852d5e4e3.
 
 <!-- flowdocs:paragraph:005440138d764af88b1fb1f9ed54878a -->
 Declared member: source declares SessionProgress; membership is caller\-declared, not runtime evidence\.
@@ -92,6 +142,21 @@ Declared member: source declares LiveIndicator; membership is caller\-declared, 
 
 Source: internal/web/app/src/areas/console/sections/Operations\.tsx:320; symbol: LiveIndicator; span SHA256: 4c70e30783c64e64f94e1cc290da264ddee95a4b5beed8d382a0d4bd0ee5a5f1.
 
+<!-- flowdocs:paragraph:5261cdef5c5bbad75efbf127136407ab -->
+Declared member: source declares PAUSE\_AFTER\_ERRORS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Operations\.tsx:315; symbol: PAUSE\_AFTER\_ERRORS; span SHA256: 82f1df21731bc527c7f5f157b09083b7915c81574e1942d9b45f0412b1e684b9.
+
+<!-- flowdocs:paragraph:ba75f49cd9fceeb94815120d346f39b6 -->
+Declared member: source declares StreamState; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Operations\.tsx:310; symbol: StreamState; span SHA256: 9e6f10e3c1dc15248db006c8bc27640b3869ff787d68640bbb634f9500952b60.
+
+<!-- flowdocs:paragraph:2b25d22df704838c85e44ec117272843 -->
+Declared member: source declares UPDATE\_STATE\_DISPLAY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Operations\.tsx:41; symbol: UPDATE\_STATE\_DISPLAY; span SHA256: 65aa5f072cfbdf321366c62d1c4e62076ce808f6ddf0938c4c83915546b723c2.
+
 <!-- flowdocs:paragraph:c6b5973b8e5713912843021e03ea51ba -->
 Declared member: source declares UpdateAvailableGuidance; membership is caller\-declared, not runtime evidence\.
 
@@ -111,6 +176,46 @@ Source: internal/web/app/src/areas/console/sections/Operations\.tsx:29; symbol: 
 Declared member: source declares updateStateDisplay; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/console/sections/Operations\.tsx:53; symbol: updateStateDisplay; span SHA256: 3ff2ac25c93597be76c6b933c1681d9964d22d04d6726bc0328845ce1306b9a1.
+
+<!-- flowdocs:paragraph:f77289c18c424af141b5c875f35a2ad7 -->
+Declared member: source declares CONSOLE\_CONFIG\_FIELDS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:60; symbol: CONSOLE\_CONFIG\_FIELDS; span SHA256: b411ac10419f025e04f75e76a7d72f1e56b58a6bb29a48cfc563ac5e494d4524.
+
+<!-- flowdocs:paragraph:29349315aeccd75bea1b0886622d16be -->
+Declared member: source declares CONSOLE\_CONFIG\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:63; symbol: CONSOLE\_CONFIG\_QUERY; span SHA256: 807152d4b6fac63afa4aabcd9d0c39bf5450489c0dfe06a584dfdc9ce66b34a8.
+
+<!-- flowdocs:paragraph:1b0aa424be10fad2ef27bb82bc7c1b84 -->
+Declared member: source declares ConsoleConfigPatch; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:138; symbol: ConsoleConfigPatch; span SHA256: bb928d35d539663a8de47415fff2ece595fbc56665addb8b729d3ebd010264be.
+
+<!-- flowdocs:paragraph:1b8a3c704cfb0a118aceb8304c61a156 -->
+Declared member: source declares HOST\_METRICS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:329; symbol: HOST\_METRICS\_QUERY; span SHA256: 7e54ddffeb61a1e97b05b83c5f31c9bac7ad4fec864a48c53313e6f113f68603.
+
+<!-- flowdocs:paragraph:082c40ba53de084d094bdaad255c10b7 -->
+Declared member: source declares LIVE\_SESSIONS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:314; symbol: LIVE\_SESSIONS\_QUERY; span SHA256: 80737307272489f5a23ac82dd9d129bf5edc61e926df71374701b235c58d9a89.
+
+<!-- flowdocs:paragraph:a032ded29bb677368efed2bd58795cf0 -->
+Declared member: source declares SET\_CONSOLE\_CONFIG\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:146; symbol: SET\_CONSOLE\_CONFIG\_MUTATION; span SHA256: 96ec96c025389982e0cb99715108b2047ff92f89ee6b1840b7d19749b076c9b5.
+
+<!-- flowdocs:paragraph:4f715251f210f38c010513aa6041cffd -->
+Declared member: source declares TERMINATE\_SESSION\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:382; symbol: TERMINATE\_SESSION\_MUTATION; span SHA256: 6813655cc1ab9343b77671f5195685ff353a9cd7fe641a8a2653aa0934381e0a.
+
+<!-- flowdocs:paragraph:f691e18975f20744cb0f19a11b2f2113 -->
+Declared member: source declares UPDATE\_STATUS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:162; symbol: UPDATE\_STATUS\_QUERY; span SHA256: e8ee5061e0f1fe8bc1d374cf232df323083416ab3782df3de48e5e2a7c2c06c2.
 
 <!-- flowdocs:paragraph:ebbe879a8d9c684055c3e49e9792c75b -->
 Declared member: source declares fetchConsoleConfig; membership is caller\-declared, not runtime evidence\.
@@ -141,6 +246,11 @@ Source: internal/web/app/src/lib/graphql/console\.ts:149; symbol: setConsoleConf
 Declared member: source declares terminateSession; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/lib/graphql/console\.ts:386; symbol: terminateSession; span SHA256: c1d116b4d1da2b11211afc24e9acf691bbc2a74f22dd38fc67d8ceed226a4b6d.
+
+<!-- flowdocs:paragraph:52e1dd3be3d3c5acf1d42016c090a8e0 -->
+Declared member: source declares JOBS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:286; symbol: JOBS\_QUERY; span SHA256: 10f1f3bacf7fbd455bf418c8503ff518f957a45ee1c80502a1ffd014086a0aad.
 
 <!-- flowdocs:paragraph:b428ff91f601e9c3b6abad1e1154ee69 -->
 Declared member: source declares fetchJobs; membership is caller\-declared, not runtime evidence\.

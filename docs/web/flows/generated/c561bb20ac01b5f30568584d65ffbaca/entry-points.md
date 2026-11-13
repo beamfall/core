@@ -1,11 +1,11 @@
 # Console live sessions: update awareness, jobs, live sessions and host graphs — entry-points
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:14377edbdea354d4aa300479b9292c97 -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.
 
-Source: internal/web/app/src/areas/console/sections/Dashboard\.tsx:539; symbol: HostGraphs; span SHA256: 6915fcc523176256f95f0cd1ea25a264b83103958d54ef1298c6c42be380709e.
+Source: internal/web/app/src/areas/console/sections/Dashboard\.tsx:289; symbol: CHART\_HEIGHT; span SHA256: 795a0efbd16af2c292727707936c42deca150072ae3d45c960aba52fb4eb6337.
 
 <!-- flowdocs:paragraph:a1863259e34d901a00049557bdc24256 -->
 Declared entry point: source declares Operations; entry dispatch and callers are unresolved\.

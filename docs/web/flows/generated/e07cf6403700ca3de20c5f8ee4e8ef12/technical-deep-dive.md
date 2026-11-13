@@ -1,16 +1,41 @@
 # Manage subscriptions and retention kinds — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:cd4a445434ea1b41ff3aa52b8ba595a8 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/manage/pages/SubscriptionsPage\.tsx:248; symbol: SubscriptionRow; span SHA256: 7a877860437668555a65c99e46889827619111ac45f63d84424c845340e74c5c.
+Source: internal/web/app/src/areas/manage/pages/SubscriptionsPage\.tsx:44; symbol: RETENTION\_KINDS; span SHA256: 5dd4f70d180d5a5bf45e288263059770089c15c92e9c9ebac0706e8f2e0321a6.
+
+<!-- flowdocs:paragraph:92c9a17a33f96f06b4c69bd523250a5f -->
+Declared member: source declares RETENTION\_KINDS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/pages/SubscriptionsPage\.tsx:44; symbol: RETENTION\_KINDS; span SHA256: 5dd4f70d180d5a5bf45e288263059770089c15c92e9c9ebac0706e8f2e0321a6.
 
 <!-- flowdocs:paragraph:17b5c54320d661177ad3dfa12e628d92 -->
 Declared member: source declares SubscriptionRow; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/manage/pages/SubscriptionsPage\.tsx:248; symbol: SubscriptionRow; span SHA256: 7a877860437668555a65c99e46889827619111ac45f63d84424c845340e74c5c.
+
+<!-- flowdocs:paragraph:302a04af7a2d58c4b2c5b9f2cb50ca92 -->
+Declared member: source declares ADD\_SUBSCRIPTION\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:724; symbol: ADD\_SUBSCRIPTION\_MUTATION; span SHA256: 7e4f33812bdfad4c1b4a9a3f826b3078a6d474642b79f61e2db59d5b44968054.
+
+<!-- flowdocs:paragraph:68697d9c81c6333ab52dfef9774db2d0 -->
+Declared member: source declares REMOVE\_SUBSCRIPTION\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:715; symbol: REMOVE\_SUBSCRIPTION\_MUTATION; span SHA256: da4997153292f295c9af20a3528aa05df8194a1714d4039a93ee3b47599d166b.
+
+<!-- flowdocs:paragraph:20e87403c5f4941891c42a6f732ee855 -->
+Declared member: source declares SET\_SUBSCRIPTION\_RETENTION\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:700; symbol: SET\_SUBSCRIPTION\_RETENTION\_MUTATION; span SHA256: 0a313ca85eaf40d1625c249188b4323b51bf3c37131349bd561333dbae2f0eae.
+
+<!-- flowdocs:paragraph:ea808e0529055fd059614441ae5c2b96 -->
+Declared member: source declares SUBSCRIPTIONS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:689; symbol: SUBSCRIPTIONS\_QUERY; span SHA256: 597c69afd28b8c7a37c431a0212c68571f5961b2d63ddcf31ba22078daa4f866.
 
 <!-- flowdocs:paragraph:088e21c89257ccb18ed259bfef430601 -->
 Declared member: source declares addSubscription; membership is caller\-declared, not runtime evidence\.

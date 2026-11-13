@@ -1,6 +1,6 @@
 # Viewer home and node browse: manifest layout, sections, hero — exceptions
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:02951f332d3881255b500fa1662d748c -->
 Error reachability, rescue behavior and completeness are unresolved\.

@@ -1,11 +1,11 @@
 # Setup: pick a library type and folder, create the first Library and scan — flow-diagram
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:9c4b31b78600baf2f03fad35648f8643 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/setup/FolderPicker\.tsx:41; symbol: FolderPicker; span SHA256: 56637f07f224a16796fbe78c7c3253cd5f8eb8f4f2563bf44e469fdd9b78fe4f.
+Source: internal/web/app/src/areas/setup/FolderPicker\.tsx:12; symbol: Crumb; span SHA256: 8dc484cd4428026505f71f33237f8927be749ec80598b5c47633346e6be964aa.
 
 ```mermaid
 sequenceDiagram
@@ -22,6 +22,8 @@ sequenceDiagram
     Note over S,U: Source contains call split in internal/web/app/src/areas/setup/FolderPicker.tsx at line 22 - order unresolved
     Note over S,U: Source contains call filter in internal/web/app/src/areas/setup/FolderPicker.tsx at line 22 - order unresolved
     Note over S,U: Source contains call push in internal/web/app/src/areas/setup/FolderPicker.tsx at line 26 - order unresolved
+    Note over S,U: Source contains call constructor in internal/web/app/src/areas/setup/orchestrate.ts at line 86 - order unresolved
+    Note over S,U: Source contains call super in internal/web/app/src/areas/setup/orchestrate.ts at line 87 - order unresolved
     Note over S,U: Source contains call libraryTypeSpec in internal/web/app/src/areas/setup/orchestrate.ts at line 140 - order unresolved
     Note over S,U: Source contains call createLibrary in internal/web/app/src/areas/setup/orchestrate.ts at line 145 - order unresolved
     Note over S,U: Source contains call setLibraryRoots in internal/web/app/src/areas/setup/orchestrate.ts at line 148 - order unresolved

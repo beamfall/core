@@ -1,6 +1,6 @@
 # Console libraries: add a library, roots, preview clips, skip detection — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b339e8eea91d08cbbdda27d052e4f8fd -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -12,10 +12,30 @@ Declared member: source declares AddLibrary; membership is caller\-declared, not
 
 Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:395; symbol: AddLibrary; span SHA256: 5d39f22b21a3c38babdca6c6f64008f3d42514a2b018b17ae8722462992a990f.
 
+<!-- flowdocs:paragraph:6221df9ce3782bd19d9469793282a253 -->
+Declared member: source declares CARD; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:63; symbol: CARD; span SHA256: 857bbc9d9cac33399ba8dbff956881f9febfeda7602765fd613e0a3fc1f3517b.
+
+<!-- flowdocs:paragraph:f6328cd657c74d36065f85dbc69aaa0a -->
+Declared member: source declares ICON\_TILE; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:64; symbol: ICON\_TILE; span SHA256: 40cd2b7b074f50c8125f1846690fb2879a7227039f3a7e28bfa38faa3dad960c.
+
 <!-- flowdocs:paragraph:63449bfcd2af54473e45deb360dbfd5a -->
 Declared member: source declares LibraryCard; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:99; symbol: LibraryCard; span SHA256: 0eef856b8120a2f9220360db393e826a75027ce143207e3b633d474ebf8db3cf.
+
+<!-- flowdocs:paragraph:0bd6e28f01e3c18ba9f26cfea395bd16 -->
+Declared member: source declares NO\_PLUGIN; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:58; symbol: NO\_PLUGIN; span SHA256: 17f67590137e911d4b294ef112f46933914ad14d02fb429e063bd77ba1740cf1.
+
+<!-- flowdocs:paragraph:aa53e997a91ce735f1df9fee8d52a938 -->
+Declared member: source declares PANEL; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:66; symbol: PANEL; span SHA256: b14b0c0074d19a97f04388f2475075f5c0cf1a39008c9b23ac9f8812b4a5c04e.
 
 <!-- flowdocs:paragraph:bcec644aacbc3336bbfd45d77e927b4d -->
 Declared member: source declares SettingRow; membership is caller\-declared, not runtime evidence\.
@@ -26,6 +46,56 @@ Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:73; symbol: S
 Declared member: source declares lastSegment; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:68; symbol: lastSegment; span SHA256: 905abdd89a542d8fc5d199f30a2cfc0c69da37c54cbd3ab4a34d6a7ade20befb.
+
+<!-- flowdocs:paragraph:c6a4c9fe76ecdd0e6c105b776c8bb4b3 -->
+Declared member: source declares CREATE\_LIBRARY\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:127; symbol: CREATE\_LIBRARY\_MUTATION; span SHA256: f7fb27a3dbbf723fcf2af67266afe79128cb232437341eeb1b4605717129c08d.
+
+<!-- flowdocs:paragraph:16a465b44f37fa878bf4bd28ecff2b12 -->
+Declared member: source declares FOLDER\_TREE\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:977; symbol: FOLDER\_TREE\_QUERY; span SHA256: 3336a24b314258a4ae372a934c6962f39f967d30a7a96fa2656098de7a8447e7.
+
+<!-- flowdocs:paragraph:26475eab5d098e934a692d51a2cc0a33 -->
+Declared member: source declares LIBRARIES\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:77; symbol: LIBRARIES\_QUERY; span SHA256: 65bf15c326193e30a3a53d948eb6f5e5664d2b9bbf29e2359a95b66f56bd612e.
+
+<!-- flowdocs:paragraph:0900d1006def04a20dded3abbcda2f0c -->
+Declared member: source declares PLUGINS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:184; symbol: PLUGINS\_QUERY; span SHA256: 7a4bd942789b37e6183f5c54fe22167c3272766b445680e132a35b0adc451bd5.
+
+<!-- flowdocs:paragraph:f7574525757e2412d5284f9392a3911d -->
+Declared member: source declares SCAN\_LIBRARY\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:100; symbol: SCAN\_LIBRARY\_MUTATION; span SHA256: b4ab8d53d142d2a21eca7e4086fcd9ba88394a16720e841d710ae6d57d0b82c0.
+
+<!-- flowdocs:paragraph:e39d3c363ef0025b34ae36ab0f760495 -->
+Declared member: source declares SET\_LIBRARY\_PREVIEW\_CLIPS\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:86; symbol: SET\_LIBRARY\_PREVIEW\_CLIPS\_MUTATION; span SHA256: 34e6bec63248d41eb55643c8da4328ea76e64bb40e9cfdccc2572de2964dc001.
+
+<!-- flowdocs:paragraph:8f8ecf4ea26fb457c7c61216661b402a -->
+Declared member: source declares SET\_LIBRARY\_ROOTS\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:112; symbol: SET\_LIBRARY\_ROOTS\_MUTATION; span SHA256: 812fd46770d4837468d43945c3cd9ab6e1bcbe4ec42d480293c9b7872b267816.
+
+<!-- flowdocs:paragraph:63e16f1cf2662e9c88aecb55c5b23af5 -->
+Declared member: source declares SET\_SKIP\_DETECTION\_ENABLED\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:167; symbol: SET\_SKIP\_DETECTION\_ENABLED\_MUTATION; span SHA256: 8b4dc871c26f4b139ac1840cfb509281f368a09321d74a83279c8d4e8661fd65.
+
+<!-- flowdocs:paragraph:71d233b7f81c4d7e33779eeb36e50398 -->
+Declared member: source declares SKIP\_DETECTION\_ENABLED\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:149; symbol: SKIP\_DETECTION\_ENABLED\_QUERY; span SHA256: f0a13bb1674c2fbb37e664c4b2334f2dfd3a74bf746a4ebdabbb6a0f00960728.
+
+<!-- flowdocs:paragraph:bc91e9afbe0f6ae75aa6d8d999f74371 -->
+Declared member: source declares WATCHER\_STATUS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1496; symbol: WATCHER\_STATUS\_QUERY; span SHA256: 6911b18fb97913600d6b287e68235dca706d8395c722018627fe4073f7b2aa2b.
 
 <!-- flowdocs:paragraph:0d8d215d41e4be9972f144e90fac513d -->
 Declared member: source declares createLibrary; membership is caller\-declared, not runtime evidence\.

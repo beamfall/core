@@ -1,11 +1,16 @@
 # Viewer My Data / privacy: summary, event log, sessions, stream tokens, export — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:0ffb157aeb8349dd2f5109af03300ef7 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx:558; symbol: EventRow; span SHA256: b90d5000e023b772fdb15c1217e4d50e131eb6efd7cd377e76d3b883a15554b1.
+Source: internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx:58; symbol: ALL\_LIBRARIES; span SHA256: eb3f07ba74a0fc603288f92ab1ebcf39cb6f259d1a28387ee36024bb03f48ee7.
+
+<!-- flowdocs:paragraph:e43b9523f9d425379fe38d6aa0091b21 -->
+Declared member: source declares ALL\_LIBRARIES; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx:58; symbol: ALL\_LIBRARIES; span SHA256: eb3f07ba74a0fc603288f92ab1ebcf39cb6f259d1a28387ee36024bb03f48ee7.
 
 <!-- flowdocs:paragraph:ccf29c030e74c94ca59f5c97d13cc42e -->
 Declared member: source declares EventRow; membership is caller\-declared, not runtime evidence\.
@@ -16,6 +21,11 @@ Source: internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx:558; symbol: Eve
 Declared member: source declares LogSection; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx:428; symbol: LogSection; span SHA256: 6ae4310f148ee1fcf611c6f68d33ec0bb33fd3a865302eb9362aa25ed6e04a1c.
+
+<!-- flowdocs:paragraph:3c92003a9e4e52d8838c3571d861d223 -->
+Declared member: source declares MY\_DATA\_LOG\_PAGE\_SIZE; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx:55; symbol: MY\_DATA\_LOG\_PAGE\_SIZE; span SHA256: 20c1a92fd7e22045fddb3fce5f2d205b1c32c870a70246ac86fffa87654c64b1.
 
 <!-- flowdocs:paragraph:c33df5d93e1771fac0a04c17154b204b -->
 Declared member: source declares Notice; membership is caller\-declared, not runtime evidence\.
@@ -56,6 +66,31 @@ Source: internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx:651; symbol: for
 Declared member: source declares formatDateTime; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx:643; symbol: formatDateTime; span SHA256: 53585f12a75720d09c20226d3cf64fb34bc8cf2c59507803836bb28aa67ef756.
+
+<!-- flowdocs:paragraph:53f107c1bebe6a73b78cc063224b2153 -->
+Declared member: source declares DELETE\_MY\_ENGAGEMENT\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:348; symbol: DELETE\_MY\_ENGAGEMENT\_MUTATION; span SHA256: a2bca1e38316e7b7182f0eef84112704610841916beaaeaff19548aece5d6ffd.
+
+<!-- flowdocs:paragraph:7a28ea03a19725758ffe18188a05067f -->
+Declared member: source declares MY\_DATA\_SUMMARY\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:325; symbol: MY\_DATA\_SUMMARY\_QUERY; span SHA256: 5ec3ec0cf28287c08e063c067444b56a6b961ecd974a8d9ba552c7afe7900be8.
+
+<!-- flowdocs:paragraph:aef0501086e64e3e61a0b40a747876d3 -->
+Declared member: source declares MY\_ENGAGEMENT\_LOG\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:334; symbol: MY\_ENGAGEMENT\_LOG\_QUERY; span SHA256: 318fb5e84685d0de629ab5a5abe7c0c4f6923af85cb0ec04d9622cdf7baba06b.
+
+<!-- flowdocs:paragraph:3a09a6cfc697885299ed84a70c69670e -->
+Declared member: source declares MY\_ENGAGEMENT\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:316; symbol: MY\_ENGAGEMENT\_QUERY; span SHA256: 5f162ffa36703a549f2bb5c3ab3ad85dec06db12195e50188ba1fbdf95863fad.
+
+<!-- flowdocs:paragraph:623e11ba76d17927987dbde7c959c8d5 -->
+Declared member: source declares MY\_SESSIONS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:282; symbol: MY\_SESSIONS\_QUERY; span SHA256: f80a007c13834f5879a67b5d5e087aee3544ed0743f26adbe988fc7fad8446c7.
 
 <!-- flowdocs:paragraph:74384390ef1c8a3573fbd322c2216cb1 -->
 Declared member: source declares deleteMyEngagement; membership is caller\-declared, not runtime evidence\.

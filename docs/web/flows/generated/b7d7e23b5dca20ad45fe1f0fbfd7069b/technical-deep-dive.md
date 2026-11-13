@@ -1,6 +1,6 @@
 # Manage markers: segment edit, bulk delete, trashed markers — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:85b4e9c2498fdb402caaeb906be9979a -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -27,6 +27,11 @@ Declared member: source declares MarkerRow; membership is caller\-declared, not 
 
 Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:211; symbol: MarkerRow; span SHA256: f18be83652007bb46967d665bb4ecc55024232ec2f0403e5dfb73d136689e4ef.
 
+<!-- flowdocs:paragraph:139767f9a87795ba498106571cd04a5a -->
+Declared member: source declares SEGMENT\_KINDS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:58; symbol: SEGMENT\_KINDS; span SHA256: b6eddb15ecc389be311f02a7fc248eae764f606514233b667606fe539dfc1609.
+
 <!-- flowdocs:paragraph:74eab67c50278391712c1539eed1bcea -->
 Declared member: source declares TrashedSection; membership is caller\-declared, not runtime evidence\.
 
@@ -46,6 +51,41 @@ Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:77; symbol: byS
 Declared member: source declares toDraft; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:65; symbol: toDraft; span SHA256: 60a71a558504a9ca7a04bb501686a495682e5580623f837c60404c8523de0f8d.
+
+<!-- flowdocs:paragraph:536669df3c1c3b086ea53a5addea4d24 -->
+Declared member: source declares CREATE\_MARKER\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:604; symbol: CREATE\_MARKER\_MUTATION; span SHA256: 5a99e9f4b1e2a095550078530befb3a0c7fb34b158342adeedbea4ff8cd80f82.
+
+<!-- flowdocs:paragraph:2148d28a51fe2af3e94732955bf1528c -->
+Declared member: source declares DELETE\_MARKER\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:632; symbol: DELETE\_MARKER\_MUTATION; span SHA256: e1ebabc33f82dc42958ccfc613d799ff3cef6128c6a64eb08827f8ccb28802ce.
+
+<!-- flowdocs:paragraph:e60ea1a7e61d34590a0eb69b6d216a5a -->
+Declared member: source declares MARKERS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:582; symbol: MARKERS\_QUERY; span SHA256: 5972ee84aa0d21ff787e140723cd89fa51f999d17244ee3e262a870769a8f604.
+
+<!-- flowdocs:paragraph:1a115196231e885f3238423efd1d4fbc -->
+Declared member: source declares MARKER\_FIELDS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:580; symbol: MARKER\_FIELDS; span SHA256: 9214c1f8be29998f3378c5481fbbbd9bb04b113376d7f5cc7e4598f2f73eed7b.
+
+<!-- flowdocs:paragraph:a6e068cb4e6cb89c5f7f52d8e924a5ff -->
+Declared member: source declares RESTORE\_MARKER\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:643; symbol: RESTORE\_MARKER\_MUTATION; span SHA256: b2a6fe8630422560fb8f6e9509e3209a26d7eb570541c71ac67d4da577a399ab.
+
+<!-- flowdocs:paragraph:5e2ba002bb9565b6686c6f8b2c02cf41 -->
+Declared member: source declares TRASHED\_MARKERS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:591; symbol: TRASHED\_MARKERS\_QUERY; span SHA256: 7ba6b3550d6697260af439d792afa363c2f89bae43808989182cca3ec71cbc20.
+
+<!-- flowdocs:paragraph:8a6e9c5a84a04853e99b45480e5f66af -->
+Declared member: source declares UPDATE\_MARKER\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:618; symbol: UPDATE\_MARKER\_MUTATION; span SHA256: b51cc2febb998c632b6c89c807793879f683d0507209c8e337532298fa0d464f.
 
 <!-- flowdocs:paragraph:27d6726dbea2d13be4841fc376da12d6 -->
 Declared member: source declares createMarker; membership is caller\-declared, not runtime evidence\.

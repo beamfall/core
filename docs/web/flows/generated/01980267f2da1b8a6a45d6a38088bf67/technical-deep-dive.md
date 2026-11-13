@@ -1,6 +1,6 @@
 # Manage manual and smart collections — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:5b4b3f612d1410c720bddd83a85f1bf9 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -31,6 +31,86 @@ Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:776; symbol
 Declared member: source declares SmartCollections; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:660; symbol: SmartCollections; span SHA256: a22813af0eb11d9056ced3b2c757d8addb72e987351263c5b7626227e0161799.
+
+<!-- flowdocs:paragraph:8e67b54ca04dd2ddc106da15a5fe6367 -->
+Declared member: source declares TOP\_LEVEL; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:64; symbol: TOP\_LEVEL; span SHA256: e59e3c601adc4ed7fed1cb75d5341ad9d88d5f54d2b7cbda129413f652c9c94f.
+
+<!-- flowdocs:paragraph:07893738f3e22354f934bbe7681b48a2 -->
+Declared member: source declares Tab; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:60; symbol: Tab; span SHA256: db70df7878eef838e2b620e5b7ad9fb892c9762e49ce02d6d6af98117068729d.
+
+<!-- flowdocs:paragraph:7cd8463e44bd5c3bcbbfd9e9d30b2e8c -->
+Declared member: source declares ADD\_COLLECTION\_MEDIA\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:882; symbol: ADD\_COLLECTION\_MEDIA\_MUTATION; span SHA256: b9800eb55d25669e3fadb7b66faa9e138346198a51b681c6847f5e7037d4c7d4.
+
+<!-- flowdocs:paragraph:9b372a8c46b818a1b77c6f5f4e7b0aee -->
+Declared member: source declares COLLECTIONS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:806; symbol: COLLECTIONS\_QUERY; span SHA256: 15a22daa2c750cfc136535b1102fe33d220ea5f506071fb8385b7b2cd9853808.
+
+<!-- flowdocs:paragraph:faab3b41329ffcaad714a2af18469b53 -->
+Declared member: source declares COLLECTION\_FIELDS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:741; symbol: COLLECTION\_FIELDS; span SHA256: f7c8709f3e5dac66df48dc44bf8eed7286e560aad03ea8e1de645f3305f15ee8.
+
+<!-- flowdocs:paragraph:c0556b06a725f271f7cdd90a87178e1d -->
+Declared member: source declares CREATE\_COLLECTION\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:822; symbol: CREATE\_COLLECTION\_MUTATION; span SHA256: 9f70c6f4e40e52638966950b128044a4f06b78e4e1c6578a6b48d53f0c405341.
+
+<!-- flowdocs:paragraph:c8318af40af1de4f06f575b9632cbcae -->
+Declared member: source declares CREATE\_SMART\_COLLECTION\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:757; symbol: CREATE\_SMART\_COLLECTION\_MUTATION; span SHA256: 960b9996994d04c40bdc108a741179976e62bc35c3b724fc4f17708f8471f2e0.
+
+<!-- flowdocs:paragraph:1707548a55924a11edec394cfedad405 -->
+Declared member: source declares DELETE\_COLLECTION\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:858; symbol: DELETE\_COLLECTION\_MUTATION; span SHA256: bff84d47e582c70a88e086ecc7ad8ed8467ddfe201b1a5911cf3107c60d57ace.
+
+<!-- flowdocs:paragraph:0e9434ffebc5710e3052bd020d81eaf0 -->
+Declared member: source declares DELETE\_SMART\_COLLECTION\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:793; symbol: DELETE\_SMART\_COLLECTION\_MUTATION; span SHA256: f8a2a80e9ffa493a12fed938f26252c011918603c4e1f21284c9555ae127a74b.
+
+<!-- flowdocs:paragraph:56ef0b54189a9725d8c7b1d6c3b0f39a -->
+Declared member: source declares REMOVE\_COLLECTION\_MEDIA\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:898; symbol: REMOVE\_COLLECTION\_MEDIA\_MUTATION; span SHA256: d4c9f7e4fdccfbc1c5394a5455965ec6f024d8638484019acb6343ec7905bcd6.
+
+<!-- flowdocs:paragraph:547dc37a05ac3f5af11e45fabf0a6726 -->
+Declared member: source declares REORDER\_COLLECTION\_MEDIA\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:914; symbol: REORDER\_COLLECTION\_MEDIA\_MUTATION; span SHA256: 69756766157fc624a3c4805881bffa73afb29c4f21683b0ae9a96743e2cf1711.
+
+<!-- flowdocs:paragraph:f29535ada59523011a3f595cf36e4913 -->
+Declared member: source declares RESTORE\_COLLECTION\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:870; symbol: RESTORE\_COLLECTION\_MUTATION; span SHA256: f2237573a4ffe43b01cf2e03d6d52983ee75aeeafe8dcbf2da8bb8a6f1fc62fe.
+
+<!-- flowdocs:paragraph:7b15f9c397674b7061291399710d4bc1 -->
+Declared member: source declares SMART\_COLLECTIONS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:744; symbol: SMART\_COLLECTIONS\_QUERY; span SHA256: ce96f8b484f94948c04dd1569d64873c3f18dd10eba333aba126ba256e328fcf.
+
+<!-- flowdocs:paragraph:5f466962bda5be8ca266846001c8f425 -->
+Declared member: source declares SMART\_COLLECTION\_FIELDS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:740; symbol: SMART\_COLLECTION\_FIELDS; span SHA256: 121bfaa3bd5e1df8da6e7d1e930717f50b7805db608475a6b83dfe8b2be4945a.
+
+<!-- flowdocs:paragraph:ea2699cd77758d0d558505606eb73b84 -->
+Declared member: source declares UPDATE\_COLLECTION\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:840; symbol: UPDATE\_COLLECTION\_MUTATION; span SHA256: 2665b7ad04fc2ec0350e0e58ed6b8dffa6957e0e6a8755b9a6faa7f718fc0b3e.
+
+<!-- flowdocs:paragraph:ba27bb01b256c92362ff23d76125d0d7 -->
+Declared member: source declares UPDATE\_SMART\_COLLECTION\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:775; symbol: UPDATE\_SMART\_COLLECTION\_MUTATION; span SHA256: dcaa908bfc3671eb216e733a4143058389f5841a5043a1d975cc9a1a9067beb9.
 
 <!-- flowdocs:paragraph:2d6ca6eac96219970a1218f448a1bc1a -->
 Declared member: source declares addCollectionMedia; membership is caller\-declared, not runtime evidence\.

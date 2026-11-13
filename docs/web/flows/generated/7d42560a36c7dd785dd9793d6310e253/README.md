@@ -1,22 +1,18 @@
 # Service worker registration and reload\-on\-controller\-change — readme
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:e21a6122a0aae7c6e502c5661bcfcb85 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/lib/pwa\.ts:32; symbol: registerServiceWorker; span SHA256: 55a7cccd9279f66b2ba0e5458bc0af4b632b9ae52b3bbc338a2a2dc5a7f9ee03.
+Source: internal/web/app/src/lib/pwa\.ts:17; symbol: ServiceWorkerHost; span SHA256: 2bc16f6af4e4c3747d39d332451418ddbff2ecdf4635f69bb99a25b5f4094a96.
 
 
 Security summaries: not collected; absence is not a clean security finding.
 
-- A declared inventory flow with no resolved member is reported, not generated\.
-
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
 - Declared inventory flows: structural and lexical relations between flows are not derived\.
-
-- Declared inventory members that do not resolve are listed in generation\.json inventory\.flows\[\]\.unresolved and in their flow README\.
 
 - Gitlinks are opaque superproject identities; their contents are not inspected\.
 
@@ -32,6 +28,4 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow shell\.pwa: 2 resolved, 1 unresolved members.
-
-- Unresolved member internal/web/app/src/lib/pwa\.ts ServiceWorkerHost: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow shell\.pwa: 3 resolved, 0 unresolved members.

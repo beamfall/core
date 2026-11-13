@@ -1,11 +1,21 @@
 # Manage profile page — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:ce2d183befac9a098d3014f11762f7c1 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
 Source: internal/web/app/src/areas/manage/pages/ProfilePage\.tsx:13; symbol: ProfilePage; span SHA256: 8352e86aab9b2df2d8cd9db9436977b6fe453d18647faf91fedb9b916b31b79d.
+
+<!-- flowdocs:paragraph:99d8bb3c980875c5caf5f33dd29c7357 -->
+Declared member: source declares PROFILES\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:70; symbol: PROFILES\_QUERY; span SHA256: afea04a7b095a38903ed99b6d38ab40e9d25ad3c5613e2a10a82f8a484955285.
+
+<!-- flowdocs:paragraph:6fcc093990b24bdbcf7b2df99cb17ac5 -->
+Declared member: source declares SWITCH\_PROFILE\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:78; symbol: SWITCH\_PROFILE\_MUTATION; span SHA256: 8deacfde38957976f70ab2861be0cbbaf4c86a5566207cc62a48b60616fc73db.
 
 <!-- flowdocs:paragraph:334c00c5a237a5454b2213f15fbbd077 -->
 Declared member: source declares fetchProfiles; membership is caller\-declared, not runtime evidence\.

@@ -1,6 +1,6 @@
 # Manage field locks — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:0362ab97778bce24c60cc9ce4b475bc7 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -11,6 +11,16 @@ Source: internal/web/app/src/areas/manage/pages/FieldLocksPage\.tsx:33; symbol: 
 Declared member: source declares fieldLabel; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/manage/pages/FieldLocksPage\.tsx:22; symbol: fieldLabel; span SHA256: c6d38121233affe7bf0de77aaa17abc6f60a6a8b57260b947dc242d630463d3d.
+
+<!-- flowdocs:paragraph:e928c6a00ffbebc216de82a6f2563bc1 -->
+Declared member: source declares MEDIA\_FIELD\_LOCKS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1227; symbol: MEDIA\_FIELD\_LOCKS\_QUERY; span SHA256: f8ecfeb8013080221188570738e3daffded484ac57a354a91aefdd63e4490b7c.
+
+<!-- flowdocs:paragraph:21bd6ef5cdf2926c5cb6638e6531ce0b -->
+Declared member: source declares SET\_MEDIA\_FIELD\_LOCK\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1238; symbol: SET\_MEDIA\_FIELD\_LOCK\_MUTATION; span SHA256: edc77b8cb03706ca0f920d6629fec92035ead51b310fee02f044e5a21859f5d4.
 
 <!-- flowdocs:paragraph:a9074903cc128ee2499a82c7bd957349 -->
 Declared member: source declares fetchMediaFieldLocks; membership is caller\-declared, not runtime evidence\.

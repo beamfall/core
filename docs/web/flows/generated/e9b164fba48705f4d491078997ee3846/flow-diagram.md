@@ -1,6 +1,6 @@
 # Viewer home and node browse: manifest layout, sections, hero — flow-diagram
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:c37d8827514c653c240c6de3f5708c4e -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -49,6 +49,7 @@ sequenceDiagram
     Note over S,U: Source contains call focus in internal/web/app/src/areas/viewer/lib/renderFocus.ts at line 34 - order unresolved
     Note over S,U: Source contains call escape in internal/web/app/src/areas/viewer/lib/renderFocus.ts at line 43 - order unresolved
     Note over S,U: Source contains call replace in internal/web/app/src/areas/viewer/lib/renderFocus.ts at line 45 - order unresolved
+    Note over S,U: Source contains call Set in internal/web/app/src/areas/viewer/lib/sections.ts at line 8 - order unresolved
     Note over S,U: Source contains call useT in internal/web/app/src/areas/viewer/pages/BrowsePage.tsx at line 19 - order unresolved
     Note over S,U: Source contains call useDisplayLocale in internal/web/app/src/areas/viewer/pages/BrowsePage.tsx at line 20 - order unresolved
     Note over S,U: Source contains call useParams in internal/web/app/src/areas/viewer/pages/BrowsePage.tsx at line 21 - order unresolved

@@ -1,11 +1,11 @@
 # Manage navigation overrides: nodes, theme, sections, history — functional-overview
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1deeb1b83c7305a82bf12318207101ef -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
 
-Source: internal/web/app/src/areas/manage/pages/NavOverridePage\.tsx:567; symbol: HistoryPanel; span SHA256: 8291c0a24af4fb1e80de0d4b18afdf18acd7d770e47d6a5ec8b6dec958044d68.
+Source: internal/web/app/src/areas/manage/pages/NavOverridePage\.tsx:55; symbol: DEFAULT\_ACCENT; span SHA256: f8d513443d51f97f7d43dbc891aa1b8152ff430a1220277997181e47c564f541.
 
 <!-- flowdocs:paragraph:5cf8b2240435bb4c67a3347929b5acb6 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.

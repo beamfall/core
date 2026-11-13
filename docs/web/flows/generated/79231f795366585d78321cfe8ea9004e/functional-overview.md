@@ -1,11 +1,11 @@
 # Console API tokens and keys: scopes, create, revoke, one\-time secret — functional-overview
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:0aa1ed185672cc3502de80e7702529cd -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
 
-Source: internal/web/app/src/areas/console/sections/ApiCredentials\.tsx:293; symbol: ApiCredentials; span SHA256: b24c879471c66833e48c191aa9d6810b01f9d37491ed40287fcaef8f8135d587.
+Source: internal/web/app/src/areas/console/sections/ApiCredentials\.tsx:34; symbol: API\_SCOPE\_LABELS; span SHA256: ff2b726eff11658140fc63668c837d96b0b9923876a2c2de81700c20a04bfbfb.
 
 <!-- flowdocs:paragraph:aebe2bd2c991821932716bc8f0666a40 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.

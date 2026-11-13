@@ -1,6 +1,6 @@
 # Manage libraries: library list and folder tree — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:ec8f6bf546861800ebfdc7ba05fda003 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -17,6 +17,11 @@ Declared member: source declares LibraryRow; membership is caller\-declared, not
 
 Source: internal/web/app/src/areas/manage/pages/LibrariesPage\.tsx:189; symbol: LibraryRow; span SHA256: 9b6f8f4da69d604b2ae9ba22f607663aa1a64e59ae483f648ae062bcb3a9c9f6.
 
+<!-- flowdocs:paragraph:5206174b19976b1aff326b01e6b02cee -->
+Declared member: source declares NONE; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/pages/LibrariesPage\.tsx:48; symbol: NONE; span SHA256: 16bb2bbcba7409d11cea2974ed39f3b2dc4f2d28162bec8cf0e3b6a5fb90a4d8.
+
 <!-- flowdocs:paragraph:c85107fca4561a5f53f3a79ebce624d8 -->
 Declared member: source declares dirname; membership is caller\-declared, not runtime evidence\.
 
@@ -26,6 +31,66 @@ Source: internal/web/app/src/areas/manage/pages/LibrariesPage\.tsx:656; symbol: 
 Declared member: source declares formatNodeSize; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/manage/pages/LibrariesPage\.tsx:52; symbol: formatNodeSize; span SHA256: 51618271b513d01a664063f895e2490dd163e6b7fb7be480d0cbaa4adeef60da.
+
+<!-- flowdocs:paragraph:76a23b8dec8a0d11bd33adb5824ea0a4 -->
+Declared member: source declares CREATE\_LIBRARY\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:127; symbol: CREATE\_LIBRARY\_MUTATION; span SHA256: f7fb27a3dbbf723fcf2af67266afe79128cb232437341eeb1b4605717129c08d.
+
+<!-- flowdocs:paragraph:3636614613ac875475c37a09bf4682e1 -->
+Declared member: source declares CREATE\_MANAGED\_FOLDER\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1042; symbol: CREATE\_MANAGED\_FOLDER\_MUTATION; span SHA256: d7d9983fcdbbe79a6d3f3bb822a8ec97baaf4f2e4b357dd7bfaf4edfdbe4634e.
+
+<!-- flowdocs:paragraph:42fa92e0cf8c196cc226896872af46e3 -->
+Declared member: source declares DELETE\_MANAGED\_PATH\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1092; symbol: DELETE\_MANAGED\_PATH\_MUTATION; span SHA256: 338db3db9e18f4ae0a188daeebd34918f77ba98b7befdbe40133e2b946e5944b.
+
+<!-- flowdocs:paragraph:2b7e4ea5e21b8ec84ce7860a5689216a -->
+Declared member: source declares FOLDER\_TREE\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:977; symbol: FOLDER\_TREE\_QUERY; span SHA256: 3336a24b314258a4ae372a934c6962f39f967d30a7a96fa2656098de7a8447e7.
+
+<!-- flowdocs:paragraph:2ab9c0cefcbfd1063697b7bf4ac72bec -->
+Declared member: source declares LIBRARIES\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:77; symbol: LIBRARIES\_QUERY; span SHA256: 65bf15c326193e30a3a53d948eb6f5e5664d2b9bbf29e2359a95b66f56bd612e.
+
+<!-- flowdocs:paragraph:f3a015f556657b072e08e233751890f3 -->
+Declared member: source declares MOVE\_MANAGED\_PATH\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1075; symbol: MOVE\_MANAGED\_PATH\_MUTATION; span SHA256: b8d22c97c8491dc4c7edcfb3ec4849609d863cf033a8ce3195ac4b320aad3f58.
+
+<!-- flowdocs:paragraph:e073b7259c870972b2abd1fcad46e79c -->
+Declared member: source declares PLUGINS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:184; symbol: PLUGINS\_QUERY; span SHA256: 7a4bd942789b37e6183f5c54fe22167c3272766b445680e132a35b0adc451bd5.
+
+<!-- flowdocs:paragraph:a87dc47ed344b6afeeeba2083dd20ea1 -->
+Declared member: source declares RENAME\_MANAGED\_PATH\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1058; symbol: RENAME\_MANAGED\_PATH\_MUTATION; span SHA256: 7fe08e0ae74934d4d2119045b6b3ff635fa4986df092e2142cbea6123ac31445.
+
+<!-- flowdocs:paragraph:c777116c6cf999f48ecab55fa38dca56 -->
+Declared member: source declares RESTORE\_MANAGED\_PATH\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1107; symbol: RESTORE\_MANAGED\_PATH\_MUTATION; span SHA256: c9275f0dbd66f07bbaf4a58aef14cca3ed83f2c4d219e456bdccc752a5ebd561.
+
+<!-- flowdocs:paragraph:64965dd6b2ba41582444ef27bc2e5bd4 -->
+Declared member: source declares SCAN\_LIBRARY\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:100; symbol: SCAN\_LIBRARY\_MUTATION; span SHA256: b4ab8d53d142d2a21eca7e4086fcd9ba88394a16720e841d710ae6d57d0b82c0.
+
+<!-- flowdocs:paragraph:0a9bc5b5c0d68ba6458c7cd9e1e36767 -->
+Declared member: source declares SET\_LIBRARY\_PREVIEW\_CLIPS\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:86; symbol: SET\_LIBRARY\_PREVIEW\_CLIPS\_MUTATION; span SHA256: 34e6bec63248d41eb55643c8da4328ea76e64bb40e9cfdccc2572de2964dc001.
+
+<!-- flowdocs:paragraph:7f90598ffe2472734134ca4fd50f34f1 -->
+Declared member: source declares SET\_LIBRARY\_ROOTS\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:112; symbol: SET\_LIBRARY\_ROOTS\_MUTATION; span SHA256: 812fd46770d4837468d43945c3cd9ab6e1bcbe4ec42d480293c9b7872b267816.
 
 <!-- flowdocs:paragraph:45d8123263276ebd40a8b9b309af236f -->
 Declared member: source declares createLibrary; membership is caller\-declared, not runtime evidence\.

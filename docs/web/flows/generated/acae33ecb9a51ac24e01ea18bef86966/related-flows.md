@@ -1,6 +1,6 @@
 # Console admin gate: locked reasons and unlock — related-flows
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:5256407658fe9f636490d35f6a48ed2f -->
 Relations are static lexical candidates; computed dispatch remains unresolved\.

@@ -1,11 +1,11 @@
 # Manage navigation overrides: nodes, theme, sections, history — flow-diagram
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:cfec355f39d019cbb2990d69b192dbf3 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/manage/pages/NavOverridePage\.tsx:567; symbol: HistoryPanel; span SHA256: 8291c0a24af4fb1e80de0d4b18afdf18acd7d770e47d6a5ec8b6dec958044d68.
+Source: internal/web/app/src/areas/manage/pages/NavOverridePage\.tsx:55; symbol: DEFAULT\_ACCENT; span SHA256: f8d513443d51f97f7d43dbc891aa1b8152ff430a1220277997181e47c564f541.
 
 ```mermaid
 sequenceDiagram
@@ -42,6 +42,8 @@ sequenceDiagram
     Note over S,U: Source contains call useState at line 354 - order unresolved
     Note over S,U: Source contains call useEffect at line 357 - order unresolved
     Note over S,U: Source contains call setAccent at line 357 - order unresolved
+    Note over S,U: Source contains call test at line 360 - order unresolved
+    Note over S,U: Source contains call trim at line 360 - order unresolved
     Note over S,U: Source contains call t at line 364 - order unresolved
     Note over S,U: Source contains call t at line 366 - order unresolved
     Note over S,U: Source contains call t at line 369 - order unresolved

@@ -1,6 +1,6 @@
 # Console server and transcode configuration — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:568c44e75937331b4d91471e0fe73ed6 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -16,6 +16,36 @@ Source: internal/web/app/src/areas/console/sections/Config\.tsx:21; symbol: Serv
 Declared member: source declares TranscodeConfig; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/console/sections/Config\.tsx:71; symbol: TranscodeConfig; span SHA256: a38e1e23e9cf1b28d8463ae438bf30575aa410cb2d67f7c0252a4dd80da18a79.
+
+<!-- flowdocs:paragraph:4a0b0196c67c2ef2ffd6bfbe67e585db -->
+Declared member: source declares CONSOLE\_CONFIG\_FIELDS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:60; symbol: CONSOLE\_CONFIG\_FIELDS; span SHA256: b411ac10419f025e04f75e76a7d72f1e56b58a6bb29a48cfc563ac5e494d4524.
+
+<!-- flowdocs:paragraph:58c10bea4e5a679513d328f988339845 -->
+Declared member: source declares CONSOLE\_CONFIG\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:63; symbol: CONSOLE\_CONFIG\_QUERY; span SHA256: 807152d4b6fac63afa4aabcd9d0c39bf5450489c0dfe06a584dfdc9ce66b34a8.
+
+<!-- flowdocs:paragraph:8b239deb4386478568af976be7bd2574 -->
+Declared member: source declares ConsoleConfigPatch; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:138; symbol: ConsoleConfigPatch; span SHA256: bb928d35d539663a8de47415fff2ece595fbc56665addb8b729d3ebd010264be.
+
+<!-- flowdocs:paragraph:e9cd33a7e9e8966b26b870aec3e2ba09 -->
+Declared member: source declares SET\_CONSOLE\_CONFIG\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:146; symbol: SET\_CONSOLE\_CONFIG\_MUTATION; span SHA256: 96ec96c025389982e0cb99715108b2047ff92f89ee6b1840b7d19749b076c9b5.
+
+<!-- flowdocs:paragraph:c76696beb20e33da40be220d76832116 -->
+Declared member: source declares SET\_TRANSCODE\_CONFIG\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:294; symbol: SET\_TRANSCODE\_CONFIG\_MUTATION; span SHA256: 3fedd70b67fd6ac7530e7ddee066d8ca870393e17535ed0e21324dd4a7663475.
+
+<!-- flowdocs:paragraph:b1b97cf7d601b8fa655356bbfb440809 -->
+Declared member: source declares TRANSCODE\_CONFIG\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:281; symbol: TRANSCODE\_CONFIG\_QUERY; span SHA256: caf97011b3fea4adde1973838c25a80ea1250b15fb1b272f4b2da8b5299f6327.
 
 <!-- flowdocs:paragraph:7b8febb65a016d08af1497bacecd0621 -->
 Declared member: source declares fetchConsoleConfig; membership is caller\-declared, not runtime evidence\.

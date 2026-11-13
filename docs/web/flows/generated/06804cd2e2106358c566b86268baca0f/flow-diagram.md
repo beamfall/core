@@ -1,6 +1,6 @@
 # Manage restrictions — flow-diagram
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:81591007b037041f06a2388546b4035c -->
 Static source inventory only; sequence and runtime ordering are unresolved\.

@@ -1,11 +1,11 @@
 # Player auto\-skip of intro/credits segments with skipped toast — entry-points
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:c4c68f2624cc46febcede6e9ecef4632 -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.
 
-Source: internal/web/app/src/areas/viewer/lib/transport\.ts:242; symbol: autoSkipEnabled; span SHA256: 8dd8c2860593b6a064e04f7c27424a0d53a4d2dcc65e69745dde997a12b16cc3.
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:227; symbol: AUTO\_SKIP\_SEGMENT\_KINDS; span SHA256: 519db138d4e94f43eaab0dfd646f015da47f1acb9e06f0829aa2b9e0c001d6c9.
 
 <!-- flowdocs:paragraph:75f67fb86c7275f1c64f10e6c06c8753 -->
 Declared entry point: source declares useAutoSkip; entry dispatch and callers are unresolved\.

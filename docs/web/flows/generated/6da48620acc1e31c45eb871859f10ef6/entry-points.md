@@ -1,11 +1,11 @@
 # Console access: library grants, rating ceilings, access schedules, managed policy — entry-points
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b457388dee701b3b77c92fa7d2a27004 -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.
 
-Source: internal/web/app/src/areas/console/lib/schedulePreview\.ts:81; symbol: formatMinute; span SHA256: cd2dedbdcfc087257986931a78cb50353b5c95111cb01e7e688970c0be8400a5.
+Source: internal/web/app/src/areas/console/lib/schedulePreview\.ts:9; symbol: AccessWindow; span SHA256: 1ca7681e58d4347f95ebf7158b8a82b6a9aa8527b4cf756c5ff3bea726162698.
 
 <!-- flowdocs:paragraph:e7dc12292c27d95d1ba083a6e252b8a8 -->
 Declared entry point: source declares ProfilesAccess; entry dispatch and callers are unresolved\.

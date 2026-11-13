@@ -1,6 +1,6 @@
 # Viewer entity detail page and not\-available state — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:4e4a241607db2eb1f4b7ceb5bfe9f802 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -11,6 +11,16 @@ Source: internal/web/app/src/areas/viewer/components/NotAvailable\.tsx:12; symbo
 Declared member: source declares NotAvailable; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/viewer/components/NotAvailable\.tsx:12; symbol: NotAvailable; span SHA256: bcc1fb11f85246e5aea8aaf1983829233de1717f09c48dc7c7b0bcd21e68c688.
+
+<!-- flowdocs:paragraph:471575ad7629d0f0828382017e80e198 -->
+Declared member: source declares EntityLinkState; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/entityPreview\.ts:12; symbol: EntityLinkState; span SHA256: 306072d78415db6ed1a2a930e1146dec6c329528ae154b22c6130f9acaae6f54.
+
+<!-- flowdocs:paragraph:24ab3a850a34535032ff3f3765858ab3 -->
+Declared member: source declares EntityPreview; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/entityPreview\.ts:7; symbol: EntityPreview; span SHA256: 6b190b8d9e14e4d3908da58f8a307b31445eb9869a1cdc76c779511c1a72f55d.
 
 <!-- flowdocs:paragraph:09dd469c0e61ebbf52b5c258b129047c -->
 Declared member: source declares entityLinkState; membership is caller\-declared, not runtime evidence\.
@@ -31,6 +41,16 @@ Source: internal/web/app/src/areas/viewer/pages/EntityPage\.tsx:27; symbol: enti
 Declared member: source declares entityMediaCacheKey; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/viewer/pages/EntityPage\.tsx:28; symbol: entityMediaCacheKey; span SHA256: f8fe7d8adbfae3e7a6c821a12d246cd423c3ec14c0c07129f443cad6f92f9567.
+
+<!-- flowdocs:paragraph:e9acd61afd37a82b1dd9f126febbe6f5 -->
+Declared member: source declares ENTITY\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:161; symbol: ENTITY\_QUERY; span SHA256: 627c6e771053a52180953962e10b8430cfd41399070925fd0e39ca02186007e9.
+
+<!-- flowdocs:paragraph:8138336ddfec5399ef49c32a5dbc7593 -->
+Declared member: source declares MEDIA\_FOR\_ENTITY\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:182; symbol: MEDIA\_FOR\_ENTITY\_QUERY; span SHA256: 3691b35a2c9a11e53e8e28e377b176a2c38c03d83b4d73ccf8e86e7a9220e81f.
 
 <!-- flowdocs:paragraph:768ddfcd7f7fb3a9c14541976c3bb10a -->
 Declared member: source declares fetchEntity; membership is caller\-declared, not runtime evidence\.

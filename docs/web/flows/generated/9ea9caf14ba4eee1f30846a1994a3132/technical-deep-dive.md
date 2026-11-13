@@ -1,6 +1,6 @@
 # Manage unmatched records: inbox, fix match, suppression — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:9a20c6d59f90190fdc5ef4ec17e65941 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -17,6 +17,11 @@ Declared member: source declares RecordInbox; membership is caller\-declared, no
 
 Source: internal/web/app/src/areas/manage/pages/unmatched/RecordInbox\.tsx:19; symbol: RecordInbox; span SHA256: 925e3191176e41749f53e3c4b3d9607a6e28b290393525c7f66122a499e1674e.
 
+<!-- flowdocs:paragraph:a186c142dbdf2c20bf816670fa276a41 -->
+Declared member: source declares SCOPES; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel\.tsx:15; symbol: SCOPES; span SHA256: 3bbf5d781652ab97998c3045d337f1677c791167fc9b9bc720ca1021c96fdcd2.
+
 <!-- flowdocs:paragraph:20bb99387215148e0eeff41061276fba -->
 Declared member: source declares SuppressionPanel; membership is caller\-declared, not runtime evidence\.
 
@@ -27,6 +32,11 @@ Declared member: source declares suppressionTarget; membership is caller\-declar
 
 Source: internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel\.tsx:38; symbol: suppressionTarget; span SHA256: 4727c35a6e7ef5f93da892e4f1c56f6cf1ea7eaa0e68a372b1d77fbf33c438ee.
 
+<!-- flowdocs:paragraph:ed5f0d98acf8e76d13400818f58b0455 -->
+Declared member: source declares REASON\_STRING\_KEYS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/pages/unmatched/reasons\.ts:8; symbol: REASON\_STRING\_KEYS; span SHA256: a9ba87881dc40268ef8d922f627f525fc2f470e1c4578026c607b8068b79eca3.
+
 <!-- flowdocs:paragraph:715b40ebef6a5be5a10e4b7e117effcc -->
 Declared member: source declares percent; membership is caller\-declared, not runtime evidence\.
 
@@ -36,6 +46,71 @@ Source: internal/web/app/src/areas/manage/pages/unmatched/reasons\.ts:27; symbol
 Declared member: source declares reasonLabel; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/manage/pages/unmatched/reasons\.ts:20; symbol: reasonLabel; span SHA256: 6a89f323679ecdda946610a92d6e4551e407701cd28e0ae5ef02faa616298b81.
+
+<!-- flowdocs:paragraph:83517351d7d7b672b6e0a02c31bda77c -->
+Declared member: source declares DISMISS\_UNMATCHED\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1317; symbol: DISMISS\_UNMATCHED\_MUTATION; span SHA256: 52673c476d9b984667949ec0580356a9072ce9934a40a0e7bcd334b750403db7.
+
+<!-- flowdocs:paragraph:9353bbd0a5cb00d794f65bd46be9993c -->
+Declared member: source declares FIX\_MATCH\_CANDIDATES\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1361; symbol: FIX\_MATCH\_CANDIDATES\_QUERY; span SHA256: 14e20bcb04f985d6fe578f17f560b62da773455d1928ed5261bd10add45cd700.
+
+<!-- flowdocs:paragraph:cfca118ac8c7ae6ba36a30599e84e268 -->
+Declared member: source declares FIX\_MATCH\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1345; symbol: FIX\_MATCH\_MUTATION; span SHA256: 7788dc9eecf21151322caf107059eb6ba93593f4c07fd0d415218d6df61f2d24.
+
+<!-- flowdocs:paragraph:23196a324b9f221e8c1461ad458575c1 -->
+Declared member: source declares FIX\_MATCH\_PREVIEW\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1392; symbol: FIX\_MATCH\_PREVIEW\_QUERY; span SHA256: 4df6bcff1ef7bfd2861789789ba791d20b684a2c8e880a8ac342fb3427393391.
+
+<!-- flowdocs:paragraph:da7367354055da9c100bfdc8e0443291 -->
+Declared member: source declares IDENTIFY\_LOOKUP\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1378; symbol: IDENTIFY\_LOOKUP\_QUERY; span SHA256: 0314b753a825a4fcf788e7600edf78127fe754867147830954f595fd8b1a6ff4.
+
+<!-- flowdocs:paragraph:8f8d88b5639b6c920c8aeede2562746a -->
+Declared member: source declares LIBRARIES\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:77; symbol: LIBRARIES\_QUERY; span SHA256: 65bf15c326193e30a3a53d948eb6f5e5664d2b9bbf29e2359a95b66f56bd612e.
+
+<!-- flowdocs:paragraph:249642204de03f1eaafe97a11b946428 -->
+Declared member: source declares RESET\_UNMATCHED\_SUPPRESSION\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1482; symbol: RESET\_UNMATCHED\_SUPPRESSION\_MUTATION; span SHA256: a15927dc8dbddc0e6f4cdb75a44ff712f664ae49e0c63eaecd95d950af2d50dc.
+
+<!-- flowdocs:paragraph:12d0f75e5937fb60c61451e64bb84af6 -->
+Declared member: source declares SUPPRESS\_UNMATCHED\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1471; symbol: SUPPRESS\_UNMATCHED\_MUTATION; span SHA256: 5f562f7810de8c156e476e7a62ee55f3bdcd88cc174cbfb7b26dcac830ebc0f9.
+
+<!-- flowdocs:paragraph:7619731c3c8205283cd976fdcc29304f -->
+Declared member: source declares SuppressionScope; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1460; symbol: SuppressionScope; span SHA256: ee9b6d461a501cc01a58401adcd6703a32f44492f168dd6b4b7753b4d3f641a7.
+
+<!-- flowdocs:paragraph:4d478b94ee028711209548241e1893ae -->
+Declared member: source declares SuppressionTarget; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1463; symbol: SuppressionTarget; span SHA256: f6def8ce0d371b45deb91d1b162f6066bb5770864dcc3668ef80a1a7baef9d8b.
+
+<!-- flowdocs:paragraph:96c883fa98430fd15ccb522457f61906 -->
+Declared member: source declares UNMATCHED\_QUEUE\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1305; symbol: UNMATCHED\_QUEUE\_QUERY; span SHA256: 796566d07b91fb280ee678627600eab3498e58abf293f4fc33eeb30449a2e20b.
+
+<!-- flowdocs:paragraph:dfd1491e140c8017de0ec1a3d9f9e401 -->
+Declared member: source declares UNMATCHED\_RECORDS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1411; symbol: UNMATCHED\_RECORDS\_QUERY; span SHA256: 3f79802779b88409aac3364203224ee28d47c0aca8f23e0e494f0c20fcccc9d9.
+
+<!-- flowdocs:paragraph:7774c98a1a01727e4d5ef687eda9b1d7 -->
+Declared member: source declares UNMATCHED\_SUPPRESSIONS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1442; symbol: UNMATCHED\_SUPPRESSIONS\_QUERY; span SHA256: 5e581292d6f66dd04da9d394ada2286a642cfbf92b200dc9c472a0a5dfdb9cb2.
 
 <!-- flowdocs:paragraph:71b73bb5731bbd781edc46c6f317be5a -->
 Declared member: source declares dismissUnmatched; membership is caller\-declared, not runtime evidence\.

@@ -1,11 +1,21 @@
 # Manage navigation overrides: nodes, theme, sections, history — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a80490f922c4116882b9d9858c822e0e -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/manage/pages/NavOverridePage\.tsx:567; symbol: HistoryPanel; span SHA256: 8291c0a24af4fb1e80de0d4b18afdf18acd7d770e47d6a5ec8b6dec958044d68.
+Source: internal/web/app/src/areas/manage/pages/NavOverridePage\.tsx:55; symbol: DEFAULT\_ACCENT; span SHA256: f8d513443d51f97f7d43dbc891aa1b8152ff430a1220277997181e47c564f541.
+
+<!-- flowdocs:paragraph:fee1ecb467fce4efdbd41163615717dd -->
+Declared member: source declares DEFAULT\_ACCENT; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/pages/NavOverridePage\.tsx:55; symbol: DEFAULT\_ACCENT; span SHA256: f8d513443d51f97f7d43dbc891aa1b8152ff430a1220277997181e47c564f541.
+
+<!-- flowdocs:paragraph:f26bbcbc2a5d7485d71fbcf32f896fc5 -->
+Declared member: source declares EMPTY\_OVERRIDE; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/pages/NavOverridePage\.tsx:56; symbol: EMPTY\_OVERRIDE; span SHA256: 4a7160e3e587781a2d2349f6517efdcbbf6e6d36f4d005af8f5534eb836928cf.
 
 <!-- flowdocs:paragraph:33cdd979e50eeb5f7d3ad34e8784bf93 -->
 Declared member: source declares HistoryPanel; membership is caller\-declared, not runtime evidence\.
@@ -41,6 +51,41 @@ Source: internal/web/app/src/areas/manage/pages/NavOverridePage\.tsx:66; symbol:
 Declared member: source declares summarize; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/manage/pages/NavOverridePage\.tsx:554; symbol: summarize; span SHA256: c146faf260113a5f28e8d02cb71838f531ef739a2a6b1268cbdedb45ea908375.
+
+<!-- flowdocs:paragraph:d789da8f18731a7192868994f2248023 -->
+Declared member: source declares NAV\_OVERRIDE\_FIELDS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1512; symbol: NAV\_OVERRIDE\_FIELDS; span SHA256: 66e53382c9fc54e66771580f823ce5e7a2acbe83ee2508f8a126413cf7ee9237.
+
+<!-- flowdocs:paragraph:9533eff3fb79721e3719fdded2fcb9c3 -->
+Declared member: source declares NAV\_OVERRIDE\_HISTORY\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1523; symbol: NAV\_OVERRIDE\_HISTORY\_QUERY; span SHA256: 532b806796415c0b0ed0411f577d9cd72b547d82c0241e7148ce33f657d10d1f.
+
+<!-- flowdocs:paragraph:45e6313aeaf97cd8acfc868f66d19649 -->
+Declared member: source declares NAV\_OVERRIDE\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1515; symbol: NAV\_OVERRIDE\_QUERY; span SHA256: 152ca00d98fb5f9110718148e533258277091b9885c306c0ba03467781a50378.
+
+<!-- flowdocs:paragraph:d6d361cdd83c2beba33588f4b5e56269 -->
+Declared member: source declares NavOverridePatch; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1536; symbol: NavOverridePatch; span SHA256: 18c083bdfa6a4fa02df10021c2b3e6257019a6c3fbf4d3a85944c1dccc036fce.
+
+<!-- flowdocs:paragraph:2d48d7eece53aad108d4c9202799356f -->
+Declared member: source declares RESET\_NAV\_OVERRIDE\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1553; symbol: RESET\_NAV\_OVERRIDE\_MUTATION; span SHA256: 2caf14d76aeef21a5739d033bf8e0c534dc337dd314b0a64b08089c4e28444a4.
+
+<!-- flowdocs:paragraph:81f39b394b8bdde9f27a3e9a6c2f9aa5 -->
+Declared member: source declares RESTORE\_NAV\_OVERRIDE\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1564; symbol: RESTORE\_NAV\_OVERRIDE\_MUTATION; span SHA256: 2f0144397301ab353d3f5ce4edf138087836ce0d270b0139e838851a772d28e2.
+
+<!-- flowdocs:paragraph:0c862c217c00363854c70514302c2b6f -->
+Declared member: source declares SET\_NAV\_OVERRIDE\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1533; symbol: SET\_NAV\_OVERRIDE\_MUTATION; span SHA256: 314d13d1cc78d5d42ce5d91d3b7b36470792c2f3fc861b6a69aea267ac4b8d94.
 
 <!-- flowdocs:paragraph:366111f97ac6856185716f38cc4ae0a6 -->
 Declared member: source declares fetchNavOverride; membership is caller\-declared, not runtime evidence\.

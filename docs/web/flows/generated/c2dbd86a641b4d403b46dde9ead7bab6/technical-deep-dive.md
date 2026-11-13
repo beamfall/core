@@ -1,11 +1,16 @@
 # Shared workbench widgets: status chips, tables, forms, server path picker — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:d39938af0f67ff2fed90c069627f07f3 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:582; symbol: BrowserMessage; span SHA256: 565a53e0e7456e363d84abc4a68e7b2d435fafca173a70f6698306ae42c6d4a5.
+Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:107; symbol: BLOCKING; span SHA256: ddde0d22bc7f824e0f3f7a44c6f10081a3bdf021d56e072d3fd6c02233d232e6.
+
+<!-- flowdocs:paragraph:dae22baca674bbbaac7d9a945a65f723 -->
+Declared member: source declares BLOCKING; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:107; symbol: BLOCKING; span SHA256: ddde0d22bc7f824e0f3f7a44c6f10081a3bdf021d56e072d3fd6c02233d232e6.
 
 <!-- flowdocs:paragraph:1c602f5e393c63153aeaf1332605625c -->
 Declared member: source declares BrowserMessage; membership is caller\-declared, not runtime evidence\.
@@ -17,10 +22,35 @@ Declared member: source declares BrowserSkeleton; membership is caller\-declared
 
 Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:572; symbol: BrowserSkeleton; span SHA256: d79864ab3fd8cfd723623b6df38cec9b54887e57f733b810ce2c06843820a16f.
 
+<!-- flowdocs:paragraph:5cd866cdca8e78b6baea3276e443ec34 -->
+Declared member: source declares Crumb; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:76; symbol: Crumb; span SHA256: 8dc484cd4428026505f71f33237f8927be749ec80598b5c47633346e6be964aa.
+
+<!-- flowdocs:paragraph:d4012fff0c2eede76760665e363d2210 -->
+Declared member: source declares LOCATIONS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:44; symbol: LOCATIONS; span SHA256: ad0bc57213df1f2d5332e0dc5872a881db511bb344f98a6c33c101d363f17eb5.
+
 <!-- flowdocs:paragraph:099b2b3e33ee82235702492709ac5feb -->
 Declared member: source declares PathPickerField; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:130; symbol: PathPickerField; span SHA256: 72e38f867da1c496d88608a81d2490e64569b672711a467935a7255b30ece0e2.
+
+<!-- flowdocs:paragraph:f7e4497b1f5f1a15ef23dafbcf46636c -->
+Declared member: source declares REASON\_TEXT; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:96; symbol: REASON\_TEXT; span SHA256: 61ac1b7b267d61751df28ba314918b3cf2777bee949431a59805ebd1ebdf7f17.
+
+<!-- flowdocs:paragraph:f651ed4921eb626c7925dd0556977195 -->
+Declared member: source declares Row; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:121; symbol: Row; span SHA256: 274512771e9578a5af18c2f8f897ebaac2a8a6eff06fbe63fc165253d756836b.
+
+<!-- flowdocs:paragraph:4431f1f3dcb7fa7e58803fb9fb31623f -->
+Declared member: source declares View; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:116; symbol: View; span SHA256: b20cdf51b31c69276576ce14482ae789d11d5aade5af289bf1a4c4b4fc83d67e.
 
 <!-- flowdocs:paragraph:f5e3c621cc5ca4c7b5992ac08ab0ad1f -->
 Declared member: source declares hostDistributionClass; membership is caller\-declared, not runtime evidence\.
@@ -51,6 +81,11 @@ Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:
 Declared member: source declares separatorOf; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:46; symbol: separatorOf; span SHA256: 95c5ab65dd756f0ac4ca59a7a61abce7014c755d3d07216da6f56aab5662ce61.
+
+<!-- flowdocs:paragraph:14e42bc1f6b3b243bcac439485f6f498 -->
+Declared member: source declares BadgeState; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/components/beamfall/workbench/index\.tsx:50; symbol: BadgeState; span SHA256: b7f0e8140f6ee805b3a6baa02fdd50e9d4b2807fe214d0696647bb578d436b39.
 
 <!-- flowdocs:paragraph:6d9228b442904d1a6c080486bb11679f -->
 Declared member: source declares ControlRow; membership is caller\-declared, not runtime evidence\.
@@ -112,10 +147,30 @@ Declared member: source declares StatusChip; membership is caller\-declared, not
 
 Source: internal/web/app/src/components/beamfall/workbench/index\.tsx:33; symbol: StatusChip; span SHA256: 1c1f20b69fbc3e253352be05ba183a759db88b2351f89feb9135166c1065323f.
 
+<!-- flowdocs:paragraph:144713e47c69e9393e4ff8a6a3df8000 -->
+Declared member: source declares StatusTone; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/components/beamfall/workbench/index\.tsx:22; symbol: StatusTone; span SHA256: 00e621d22a6dc96bbdc60cb3843afb561b74a6931ac726a3ab6c4e2451632a1b.
+
+<!-- flowdocs:paragraph:1b033bf3d346e522e94f73ac01c5963b -->
+Declared member: source declares TONE\_CLASS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/components/beamfall/workbench/index\.tsx:24; symbol: TONE\_CLASS; span SHA256: 974fec12c088131190de7306f3f0a777adef23dc6873db7742451892668b2e0b.
+
 <!-- flowdocs:paragraph:b04f42c7acd9991c50f23bcacfe19dc9 -->
 Declared member: source declares TableSkeletonRows; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/components/beamfall/workbench/index\.tsx:94; symbol: TableSkeletonRows; span SHA256: 2b929aee549d7a9a8d7a1f9f3a27a181ea4c5456e78cea82eb42933db186f85a.
+
+<!-- flowdocs:paragraph:e03d1e1676080ab8574914c617239bf3 -->
+Declared member: source declares ADD\_PATH\_PICKER\_ROOT\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1031; symbol: ADD\_PATH\_PICKER\_ROOT\_MUTATION; span SHA256: 9468a9ba9a12ce9e6ec960a47fa3bd65a899cffc4ff7aabeeeab58ee4f2c21a8.
+
+<!-- flowdocs:paragraph:fe35bd46dbb9492a875701c4842e8d50 -->
+Declared member: source declares PATH\_PICKER\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1011; symbol: PATH\_PICKER\_QUERY; span SHA256: 941e743f9a238da8ed74388bb7e9ba6ae64e7009b5f64104db5be9b610e45698.
 
 <!-- flowdocs:paragraph:f68cd08477d8c3c4d06483b01e322a48 -->
 Declared member: source declares addPathPickerRoot; membership is caller\-declared, not runtime evidence\.

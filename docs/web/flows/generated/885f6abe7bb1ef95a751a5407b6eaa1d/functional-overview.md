@@ -1,11 +1,16 @@
 # Console operations and updates: resource governor, job queue and job log — functional-overview
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:967425ef27db8dc28db44f47eeb44f08 -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
 
-Source: internal/web/app/src/areas/console/sections/OperationsControls\.tsx:34; symbol: statusTone; span SHA256: 268e63d4691ce29825a25335520600508f4aa86cfdba29bae473d22f05a7e07c.
+Source: internal/web/app/src/areas/console/sections/OperationsControls\.tsx:150; symbol: GovernorSettings; span SHA256: abc1dc8faca9781de3fb18b37fb9703e88f622dd772866977a585ed5dcf4a906.
+
+<!-- flowdocs:paragraph:1d039c52a432f3022e67850709c55b74 -->
+Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
+
+Source: internal/web/app/src/areas/console/sections/OperationsControls\.tsx:167; symbol: ; span SHA256: 0a538645cd8ca6c586e1aacef75cf41a68b4797e5293c28f6e8d3711c2fe5ebb.
 
 <!-- flowdocs:paragraph:a53cc221eb50dd7801ab0a058d1cac8a -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.

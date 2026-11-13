@@ -1,6 +1,6 @@
 # Manage curation: fields, relations and files of a Media — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:c666295d85413adc3ea2d99c7fc348d0 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -21,6 +21,46 @@ Source: internal/web/app/src/areas/manage/pages/CurationPage\.tsx:415; symbol: F
 Declared member: source declares RelationsSection; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/manage/pages/CurationPage\.tsx:227; symbol: RelationsSection; span SHA256: 1cf4ea5553b81345860b24189fecc4cebd3c434b6030df8c11ad617280653deb.
+
+<!-- flowdocs:paragraph:f4773a4c3f90c94663987f6f02b5b455 -->
+Declared member: source declares Subject; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/pages/CurationPage\.tsx:46; symbol: Subject; span SHA256: 69fb2461f81539e7e642c0a27019570877bfaba12c9344aa25ba3857b6106f6f.
+
+<!-- flowdocs:paragraph:97d13a57d5a301c80697b94552403f03 -->
+Declared member: source declares SubjectType; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/pages/CurationPage\.tsx:39; symbol: SubjectType; span SHA256: 76f41af5ce0723881e2326ca594ee3ef28275b4bb930d4cacc5c80e5778fe893.
+
+<!-- flowdocs:paragraph:20d936f4ed19aeaa98fd02f7f1a2078d -->
+Declared member: source declares ENTITY\_RELATIONS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:216; symbol: ENTITY\_RELATIONS\_QUERY; span SHA256: 4463e33e05a67d347a0c0a1e120ff24af5e2b5bb972b2b04ec276d08035e664e.
+
+<!-- flowdocs:paragraph:f6766b479ed78e7fb26b350301319878 -->
+Declared member: source declares LINK\_MEDIA\_RELATION\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:268; symbol: LINK\_MEDIA\_RELATION\_MUTATION; span SHA256: 262bb598ff106b878e9e2fa44eb0239dda05d6652d3e1016d35cb53bc40fa014.
+
+<!-- flowdocs:paragraph:f560ef928ec71f16addc4d542a67e6c3 -->
+Declared member: source declares MEDIA\_FIELDS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:194; symbol: MEDIA\_FIELDS\_QUERY; span SHA256: 307dff93eabefb6dbee9f9d25fcf0fe97a0f8eed45bfc42f1c153463969ba0e9.
+
+<!-- flowdocs:paragraph:2217b65037d19dcc909bea47cf3995c8 -->
+Declared member: source declares MEDIA\_FILES\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:205; symbol: MEDIA\_FILES\_QUERY; span SHA256: c17d5784df8c545e849d8e6da4276a7b5235261357007d56b93a78f671d47e19.
+
+<!-- flowdocs:paragraph:e729144a92a6ccfb764b86bfad3775a1 -->
+Declared member: source declares MEDIA\_RELATIONS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:230; symbol: MEDIA\_RELATIONS\_QUERY; span SHA256: 25d246929cb5d7a7c62995b4ff4557e6d3f01ee11d2f6f1392c5f6e9cf9250d0.
+
+<!-- flowdocs:paragraph:b81077e97f4d3a4ad0644668541a91fd -->
+Declared member: source declares UPSERT\_ENTITY\_RELATION\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:245; symbol: UPSERT\_ENTITY\_RELATION\_MUTATION; span SHA256: 872aa3cd15c52a61b39a57836c4ec0c4eef811d2820f0e5fed40f4eb593831e0.
 
 <!-- flowdocs:paragraph:ed64e5159723933f17391ab44ce75367 -->
 Declared member: source declares fetchEntityRelations; membership is caller\-declared, not runtime evidence\.
@@ -51,6 +91,11 @@ Source: internal/web/app/src/lib/graphql/manage\.ts:272; symbol: linkMediaRelati
 Declared member: source declares upsertEntityRelation; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/lib/graphql/manage\.ts:254; symbol: upsertEntityRelation; span SHA256: 938a059b807ef0e336ff575f6e290dc0991b554c8b727a9d59d80f052b6e0b1e.
+
+<!-- flowdocs:paragraph:888765e206196d55e49a3d9f15c1148f -->
+Declared member: source declares ENTITY\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:161; symbol: ENTITY\_QUERY; span SHA256: 627c6e771053a52180953962e10b8430cfd41399070925fd0e39ca02186007e9.
 
 <!-- flowdocs:paragraph:7ac9b615f42e5afca1ba4280c058d1b4 -->
 Declared member: source declares fetchEntity; membership is caller\-declared, not runtime evidence\.

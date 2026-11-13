@@ -1,11 +1,11 @@
 # Console play history: filters, history table and rankings — flow-diagram
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1c42c21ee8caeaea6f5f5e8a17af475b -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/console/sections/PlayHistory\.tsx:57; symbol: HistoryTable; span SHA256: 3d5a6b53ad59aeeb5bfc6ec442ac4a9bce0f98d8a2a4379ed47214ea812a1516.
+Source: internal/web/app/src/areas/console/sections/PlayHistory\.tsx:36; symbol: ALL; span SHA256: ff90f3c4c9e00f62141a4cbb65a7eb2dc81a58af6fd26e22ce851a90921cf523.
 
 ```mermaid
 sequenceDiagram

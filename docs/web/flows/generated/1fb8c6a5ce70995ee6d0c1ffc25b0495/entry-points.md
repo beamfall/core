@@ -1,6 +1,6 @@
 # Console access: create and manage Profiles — entry-points
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b6e26d74ccb4d26271516568bc66d858 -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.

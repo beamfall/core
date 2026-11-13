@@ -1,11 +1,11 @@
 # Server activity indicator \(running jobs and rescans\) in the shell — flow-diagram
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:3e597afee5d80bfa22564d704454121e -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/components/beamfall/ServerActivity\.tsx:22; symbol: ServerActivity; span SHA256: fa0d4a07644d2f7afae61ab1daf203693a17f2c36308e0a3f7dadee7beaa286c.
+Source: internal/web/app/src/components/beamfall/ServerActivity\.tsx:19; symbol: ACTIVE\_POLL\_MS; span SHA256: 15aee462f01638cfa092a2b1c1be144490603ce140d97ff5961dfcbedeaf4d7f.
 
 ```mermaid
 sequenceDiagram

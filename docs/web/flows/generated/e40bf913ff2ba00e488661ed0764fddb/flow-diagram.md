@@ -1,11 +1,11 @@
 # Console remote access: certificate, relay, direct connection, watch\-away guide — flow-diagram
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:786209b29f4d10a61de26299e4f95511 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:149; symbol: Field; span SHA256: d5eb2ee4b24ae610bd1aa1313648079d4b81ffbf1836ad03166d202111aef4e4.
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:69; symbol: CERT\_STATE; span SHA256: 34c6e6df39126b1ed055c8538ad882ae2190a0b5ad63d03e6e98e2ef9e0b8cab.
 
 ```mermaid
 sequenceDiagram

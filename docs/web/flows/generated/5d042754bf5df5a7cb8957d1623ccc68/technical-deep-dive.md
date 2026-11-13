@@ -1,16 +1,66 @@
 # First\-run setup wizard shell: token intake, step navigation — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:98d0e1f102d40ce83c4a6d1ab1865d73 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:139; symbol: SetupWizard; span SHA256: 5ea0bd2beac7b14842fe7dac0073411f7ca52258541d8dcc42e8d8d9ba4df830.
+Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:1120; symbol: FIELD; span SHA256: d783e4d9925d71009e173e96781eb7458f23e9bc6963878bc2cc5fd12a8c8cb3.
+
+<!-- flowdocs:paragraph:71cdcdd8947609f0395565b0a8464def -->
+Declared member: source declares FIELD; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:1120; symbol: FIELD; span SHA256: d783e4d9925d71009e173e96781eb7458f23e9bc6963878bc2cc5fd12a8c8cb3.
+
+<!-- flowdocs:paragraph:263a34c9f1358d0e6a7f75870d143314 -->
+Declared member: source declares FIELD\_LABEL; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:1121; symbol: FIELD\_LABEL; span SHA256: e8e21c1667d55561cabe94f9ba4481c32409699f4c0c737775fda5a74b77abed.
+
+<!-- flowdocs:paragraph:b537f2a2c8013aa94f5ca233c1667d16 -->
+Declared member: source declares STEP\_KEYS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:76; symbol: STEP\_KEYS; span SHA256: b433105f61f6138c0667634cf838aa40f87832de6402e7c88cc5b8018acc9b2f.
+
+<!-- flowdocs:paragraph:59119b644e0e6e73ba32d1c39b0c10f9 -->
+Declared member: source declares STEP\_LIBRARY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:91; symbol: STEP\_LIBRARY; span SHA256: 7bdf998afff197f4ffb47d0c1b92c6d694576e8b4cdca95c29b01696c4094eff.
+
+<!-- flowdocs:paragraph:b41df6f55c4742f3e8956cf2c0370248 -->
+Declared member: source declares STEP\_PLUGINS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:90; symbol: STEP\_PLUGINS; span SHA256: 74ca365c914d1832d49571ad124d5819ad40ca0bd69fed8a7f2ccada8ed73812.
+
+<!-- flowdocs:paragraph:19edf357c6bf304b4ac33c2364a610d3 -->
+Declared member: source declares STEP\_PROFILE; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:89; symbol: STEP\_PROFILE; span SHA256: 3d339ca654906ddfa74e06740113b81657da8bea2d661ba045ff0f7206856942.
+
+<!-- flowdocs:paragraph:72624c05404dcc47d8777d226dd5c2f5 -->
+Declared member: source declares STEP\_SCAN; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:92; symbol: STEP\_SCAN; span SHA256: 573933e507a5eaf57fe5bcd87f8309484036b1a5aeeec21969354ecb2ff67367.
+
+<!-- flowdocs:paragraph:06757ed3695848a4094d6e19b8df1bbe -->
+Declared member: source declares STEP\_SECURITY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:88; symbol: STEP\_SECURITY; span SHA256: 3d9b6f0d807f8ddf0b41a1419af77195c48555cd88bf9933519b21b38a53db4b.
 
 <!-- flowdocs:paragraph:93647d4e1a3e2a1c945e104b3851045e -->
 Declared member: source declares StepHeading; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:1127; symbol: StepHeading; span SHA256: 98c2c47a4374d892d4a2f9a8e5936e9032e8ecadfab9b5e743316a58cd8683e1.
+
+<!-- flowdocs:paragraph:d6b7e94aa4267b8550f558f3c1539588 -->
+Declared member: source declares TILE; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:1122; symbol: TILE; span SHA256: 07e5f13b4546e00b4433057c4eefe73ac5d1555d3031d5cb21e59a83ea2dec52.
+
+<!-- flowdocs:paragraph:79f812e3081efdfb84ff7b8a59b92832 -->
+Declared member: source declares TILE\_SELECTED; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:1124; symbol: TILE\_SELECTED; span SHA256: 3669bbd0c401ff70e0a60e82046636b46980fb31db38165a88f1835f643ef077.
 
 <!-- flowdocs:paragraph:9629f2cfa25908d4717903fa313e0027 -->
 Declared member: source declares consumeSetupToken; membership is caller\-declared, not runtime evidence\.
@@ -27,10 +77,35 @@ Declared member: source declares CinemaBackdrop; membership is caller\-declared,
 
 Source: internal/web/app/src/components/beamfall/CinemaBackdrop\.tsx:4; symbol: CinemaBackdrop; span SHA256: 6880dafb3ea09575091d6bcad24c3bd43e0f7efd6ad47049f784578830fbf852.
 
+<!-- flowdocs:paragraph:e92de797e53628c6593b394dfa4ab0cc -->
+Declared member: source declares SCRAPER\_CREDENTIAL\_FIELDS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:171; symbol: SCRAPER\_CREDENTIAL\_FIELDS; span SHA256: 889e4881c381c872d423ff3ae2a36029303bc887796c1f1d232edcf2964edbf7.
+
+<!-- flowdocs:paragraph:667ca4341e12932c987b6671272ae3c8 -->
+Declared member: source declares SET\_SCRAPER\_CREDENTIAL\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:174; symbol: SET\_SCRAPER\_CREDENTIAL\_MUTATION; span SHA256: 7cc89b976674fff28000c424bdf87e1211936eba0d95ed14099687d424344d5b.
+
 <!-- flowdocs:paragraph:a59c57b1c664054b34e55afbca0cae93 -->
 Declared member: source declares setScraperCredential; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/lib/graphql/console\.ts:177; symbol: setScraperCredential; span SHA256: a7ab48f46207dd2f992f28fcc70ae9522a15cc8b9ac186d3d64d1fd28fd340fb.
+
+<!-- flowdocs:paragraph:804b7271c7f426db69ef1750a4db7f93 -->
+Declared member: source declares BROWSE\_SERVER\_FOLDERS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:994; symbol: BROWSE\_SERVER\_FOLDERS\_QUERY; span SHA256: c42cefba6ae335aa336534d70c739aa26671a4036cd6eac22615f093297e70b1.
+
+<!-- flowdocs:paragraph:1808fd4504740bb11b5e0f4ea6d7d99a -->
+Declared member: source declares JOBS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:286; symbol: JOBS\_QUERY; span SHA256: 10f1f3bacf7fbd455bf418c8503ff518f957a45ee1c80502a1ffd014086a0aad.
+
+<!-- flowdocs:paragraph:ed6429bf0d2c19cbc5259ecb0476a778 -->
+Declared member: source declares PLUGINS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:184; symbol: PLUGINS\_QUERY; span SHA256: 7a4bd942789b37e6183f5c54fe22167c3272766b445680e132a35b0adc451bd5.
 
 <!-- flowdocs:paragraph:42993186c8f65d642c74e75eb352223c -->
 Declared member: source declares browseServerFolders; membership is caller\-declared, not runtime evidence\.

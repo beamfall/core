@@ -1,6 +1,6 @@
 # Player route: lazy load, timestamp links, info overlay, audio stage — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:41b41964c0c4920e543ab8d1becb7dd1 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -37,10 +37,30 @@ Declared member: source declares InfoOverlay; membership is caller\-declared, no
 
 Source: internal/web/app/src/areas/viewer/player/InfoOverlay\.tsx:15; symbol: InfoOverlay; span SHA256: f069d849e318dad4ee82e4099ff512c575af034a6f312f6debd591012dd794c7.
 
+<!-- flowdocs:paragraph:471bba825384c5b461ddaabc9a348bda -->
+Declared member: source declares LazyPlayerPage; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/LazyPlayerPage\.ts:6; symbol: LazyPlayerPage; span SHA256: 152a4e6aa48116f25161381259a16bbf1818d53d4804e93fed314569f0fc0152.
+
 <!-- flowdocs:paragraph:6accbf256f9f7173b2b4964eab95ba89 -->
 Declared member: source declares preloadPlayer; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/viewer/player/preload\.ts:8; symbol: preloadPlayer; span SHA256: 2ce87c54b1ceb4362c2a94938072100f35dd8f1c448b7a102a5a95cfdfd25707.
+
+<!-- flowdocs:paragraph:ab0e12be061df825a5ee8e42651f58dd -->
+Declared member: source declares CLIENT\_PREFS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:362; symbol: CLIENT\_PREFS\_QUERY; span SHA256: 9bacd1650b0a3e712344a1d217c82eeb1787add2a7fe4dac99cd39090e64fe99.
+
+<!-- flowdocs:paragraph:34a420e35dd60e836115a5a3a61a72e8 -->
+Declared member: source declares MEDIA\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:170; symbol: MEDIA\_QUERY; span SHA256: be6e55ef3222be8279594a3e0402ba2a8e540264590a840ee79e868c766693d3.
+
+<!-- flowdocs:paragraph:64ab0ff16bc94fe089dc4a4c0f8a7c0e -->
+Declared member: source declares SET\_CLIENT\_PREF\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:370; symbol: SET\_CLIENT\_PREF\_MUTATION; span SHA256: e47826c070db48a265b316996d973df6f54760325eff3c60c8084c5923d1ff8b.
 
 <!-- flowdocs:paragraph:4c5912436b95a9a0ced2c45490696193 -->
 Declared member: source declares fetchClientPrefs; membership is caller\-declared, not runtime evidence\.

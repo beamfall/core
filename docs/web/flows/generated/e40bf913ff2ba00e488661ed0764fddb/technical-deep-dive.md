@@ -1,11 +1,26 @@
 # Console remote access: certificate, relay, direct connection, watch\-away guide — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:196d6bcec934682106b5b1486918d76b -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:149; symbol: Field; span SHA256: d5eb2ee4b24ae610bd1aa1313648079d4b81ffbf1836ad03166d202111aef4e4.
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:69; symbol: CERT\_STATE; span SHA256: 34c6e6df39126b1ed055c8538ad882ae2190a0b5ad63d03e6e98e2ef9e0b8cab.
+
+<!-- flowdocs:paragraph:87569f5d6a77ffe348188f05f286ba59 -->
+Declared member: source declares CERT\_STATE; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:69; symbol: CERT\_STATE; span SHA256: 34c6e6df39126b1ed055c8538ad882ae2190a0b5ad63d03e6e98e2ef9e0b8cab.
+
+<!-- flowdocs:paragraph:8fb58d7509c93f9af5d2efc1fcbfa105 -->
+Declared member: source declares CERT\_TONE; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:74; symbol: CERT\_TONE; span SHA256: c6f1c4fb4a4d25c63e39368c3e75d8195175e45feea79d57feb0d9a87c73aea9.
+
+<!-- flowdocs:paragraph:9b6e0c4c013dc0f8b1ba01da8298543d -->
+Declared member: source declares CONNECTION\_CLASS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:118; symbol: CONNECTION\_CLASS; span SHA256: 29bcf2b55a26428bb7e9f5e8df06e0abc0ecfc24e0151aa29ede1f0b003f6e8a.
 
 <!-- flowdocs:paragraph:36360ce0ea8ef62a70befd9caa440e8d -->
 Declared member: source declares Field; membership is caller\-declared, not runtime evidence\.
@@ -16,6 +31,16 @@ Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:149; symbo
 Declared member: source declares GuideStep; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:186; symbol: GuideStep; span SHA256: 9d187ab8b1bb4f436b2d2386da06feb110e9addc1750609059a8b8cc0b44e475.
+
+<!-- flowdocs:paragraph:2503af96ac55f10948f2d599c4d44665 -->
+Declared member: source declares RELAY\_STATE; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:79; symbol: RELAY\_STATE; span SHA256: ee71e32feee640eaac341d8b70121e5f496374e668749733f776c59ec2d2e170.
+
+<!-- flowdocs:paragraph:564b838c8feeb55c1eefe95c850dfb40 -->
+Declared member: source declares RELAY\_TONE; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:87; symbol: RELAY\_TONE; span SHA256: ba28d8ab1ab2a01f0fb24d717adacfe0459d6bc84085d8e5c88d3a1d04fdbdbb.
 
 <!-- flowdocs:paragraph:bbedd217afad8ad279a3b5f7fc18f24e -->
 Declared member: source declares RemoteAccessStatus; membership is caller\-declared, not runtime evidence\.
@@ -51,6 +76,11 @@ Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:170; symbo
 Declared member: source declares isPublicCleartextConsoleLocation; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:95; symbol: isPublicCleartextConsoleLocation; span SHA256: ab3baa786565646a41a5e66bd380e4df352300cc5e2fade8f983b3feb245f796.
+
+<!-- flowdocs:paragraph:f4962e408d1b0923be75cab8269d9350 -->
+Declared member: source declares REMOTE\_ACCESS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/console\.ts:49; symbol: REMOTE\_ACCESS\_QUERY; span SHA256: c0b594694f2bce1ef6994a9bd2875a577a337243f204b7dfca9b7baa92ee7d2e.
 
 <!-- flowdocs:paragraph:49da87cc013afd686889d723572ab581 -->
 Declared member: source declares fetchRemoteAccess; membership is caller\-declared, not runtime evidence\.

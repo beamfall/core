@@ -1,6 +1,6 @@
 # Player route: lazy load, timestamp links, info overlay, audio stage — flow-diagram
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:8f08f6465223fb0da070854aacfafa6d -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -89,6 +89,7 @@ sequenceDiagram
     Note over S,U: Source contains call t in internal/web/app/src/areas/viewer/player/InfoOverlay.tsx at line 76 - order unresolved
     Note over S,U: Source contains call map in internal/web/app/src/areas/viewer/player/InfoOverlay.tsx at line 78 - order unresolved
     Note over S,U: Source contains call t in internal/web/app/src/areas/viewer/player/InfoOverlay.tsx at line 80 - order unresolved
+    Note over S,U: Source contains call lazyRoute in internal/web/app/src/areas/viewer/player/LazyPlayerPage.ts at line 6 - order unresolved
     Note over S,U: Source contains call preload in internal/web/app/src/areas/viewer/player/preload.ts at line 9 - order unresolved
     Note over S,U: Source contains call catch in internal/web/app/src/areas/viewer/player/preload.ts at line 9 - order unresolved
     Note over S,U: Source contains call navigate in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 287 - order unresolved

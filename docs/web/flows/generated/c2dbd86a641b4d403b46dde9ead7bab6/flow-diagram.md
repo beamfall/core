@@ -1,11 +1,11 @@
 # Shared workbench widgets: status chips, tables, forms, server path picker — flow-diagram
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:bfaba6c9df1357a9d39b2c9607bf8f7f -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:582; symbol: BrowserMessage; span SHA256: 565a53e0e7456e363d84abc4a68e7b2d435fafca173a70f6698306ae42c6d4a5.
+Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:107; symbol: BLOCKING; span SHA256: ddde0d22bc7f824e0f3f7a44c6f10081a3bdf021d56e072d3fd6c02233d232e6.
 
 ```mermaid
 sequenceDiagram
@@ -13,6 +13,7 @@ sequenceDiagram
     participant U as Unresolved runtime
     Note over S,U: Lexical inventory only - no witnessed order
     Note over S: Flow c2dbd86a641b4d403b46dde9ead7bab6
+    Note over S,U: Source contains call Set in internal/web/app/src/components/beamfall/workbench/PathPickerField.tsx at line 107 - order unresolved
     Note over S,U: Source contains call useT in internal/web/app/src/components/beamfall/workbench/PathPickerField.tsx at line 170 - order unresolved
     Note over S,U: Source contains call useId in internal/web/app/src/components/beamfall/workbench/PathPickerField.tsx at line 171 - order unresolved
     Note over S,U: Source contains call hostDistributionClass in internal/web/app/src/components/beamfall/workbench/PathPickerField.tsx at line 172 - order unresolved

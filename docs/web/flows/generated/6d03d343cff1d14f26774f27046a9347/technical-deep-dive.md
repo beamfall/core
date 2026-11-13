@@ -1,11 +1,76 @@
 # Viewer Profile settings: preferences toggles and avatar — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:38285d02add8fefb2d6836755806024e -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/viewer/lib/preferences\.ts:71; symbol: bool; span SHA256: c70cba4d32e3c85a1f4452e3eea1cfc0c2b6a55bcca22f5723f03b8b0706fdc9.
+Source: internal/web/app/src/areas/viewer/lib/preferences\.ts:55; symbol: DOWNSTREAM\_AUDIO\_DEFAULT; span SHA256: 3771a4b3ebde3d18b22a870949ce024390336f24c946805d4f2275fab532ccc4.
+
+<!-- flowdocs:paragraph:154c42dbdeeb36dfaf8c6ab679d98ddf -->
+Declared member: source declares DOWNSTREAM\_AUDIO\_DEFAULT; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/preferences\.ts:55; symbol: DOWNSTREAM\_AUDIO\_DEFAULT; span SHA256: 3771a4b3ebde3d18b22a870949ce024390336f24c946805d4f2275fab532ccc4.
+
+<!-- flowdocs:paragraph:9f35c8996c58a379755a557528696ce4 -->
+Declared member: source declares DOWNSTREAM\_AUDIO\_MODES; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/preferences\.ts:53; symbol: DOWNSTREAM\_AUDIO\_MODES; span SHA256: f1b78c8a1d348884a50ab39babd5512a149838b92672fb1a327b9954891dd914.
+
+<!-- flowdocs:paragraph:7450a0e7a915a23015575aac0b488e2c -->
+Declared member: source declares DownstreamAudioMode; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/preferences\.ts:54; symbol: DownstreamAudioMode; span SHA256: 96521fbdff512021a5829b1a5db69de9af8aec1e77981dbef3c8f39b8f7280f3.
+
+<!-- flowdocs:paragraph:3bbf4e2ddb5efe1bb6125cab83b721ad -->
+Declared member: source declares PLAYBACK\_SPEEDS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/preferences\.ts:47; symbol: PLAYBACK\_SPEEDS; span SHA256: d4065adab0854a48a8261cd4b9d2f3a5b8cd554cb2105e487e93d198d4848420.
+
+<!-- flowdocs:paragraph:153da55f08028291cc3776bfba9938af -->
+Declared member: source declares PLAYBACK\_SPEED\_DEFAULT; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/preferences\.ts:49; symbol: PLAYBACK\_SPEED\_DEFAULT; span SHA256: 0d641e4849081595b2970bcdde83001e9958960190583a1303b925e8c3485b63.
+
+<!-- flowdocs:paragraph:8b9e538539e52f49e917f5e645af784e -->
+Declared member: source declares PREF\_KEYS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/preferences\.ts:28; symbol: PREF\_KEYS; span SHA256: 77562d219fadf5c3fe102bd04263ccc22f2f7de920ed6c13b31c9bdd8eb233de.
+
+<!-- flowdocs:paragraph:b7ef4c639748ab8a0ac5f2ae8358dbe1 -->
+Declared member: source declares PREF\_ON; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/preferences\.ts:44; symbol: PREF\_ON; span SHA256: f30e700931b71e1e2435da7004696fd3430a27c7760cc7ea40ccc5c9636e541d.
+
+<!-- flowdocs:paragraph:791bd610e40f8605979b70e7003240e0 -->
+Declared member: source declares PlaybackSpeed; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/preferences\.ts:48; symbol: PlaybackSpeed; span SHA256: e9a7b0a7fbc7f7b2736a00e4748499c285bb67ee51dbb8bf629a6402d1b78248.
+
+<!-- flowdocs:paragraph:d037713d87f1e21f267909ad4876f87e -->
+Declared member: source declares PrefKey; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/preferences\.ts:41; symbol: PrefKey; span SHA256: 5878bd2e7d4956d450bcb4b048953652ef41d5ed51dab9a1ec4823e85592b7a4.
+
+<!-- flowdocs:paragraph:155dd3fb2a1b94f79f8d3b56d108e45e -->
+Declared member: source declares SKIP\_INTERVALS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/preferences\.ts:50; symbol: SKIP\_INTERVALS; span SHA256: ec26760eb9f8666c4019c4c54fff82199fb8b88d615f67acfd26c2641b60ea9a.
+
+<!-- flowdocs:paragraph:f2508b132fdb423a82a99e18ece8f2d2 -->
+Declared member: source declares SKIP\_INTERVAL\_DEFAULT; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/preferences\.ts:52; symbol: SKIP\_INTERVAL\_DEFAULT; span SHA256: 2b4820e24fe7424f43b0ff7f3d9d2ea0879e229075c07081fc616bcd19be9f4c.
+
+<!-- flowdocs:paragraph:9a8ba56512ec54b81fd103165b2132dd -->
+Declared member: source declares SkipInterval; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/preferences\.ts:51; symbol: SkipInterval; span SHA256: b198bace394bfc213a9a04cb1a30b90e9ebed6e18d18bf2ee8a36aff6ee028f9.
+
+<!-- flowdocs:paragraph:f76f481a4bbaf1b713bcfc117d970b7d -->
+Declared member: source declares ViewerPreferences; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/preferences\.ts:58; symbol: ViewerPreferences; span SHA256: ff80b8a70f6a4744a83f97ad6128cc0265ef6e40b0084526a3d609f68692415c.
 
 <!-- flowdocs:paragraph:07b992ace104adbd064ab8bef44edbbe -->
 Declared member: source declares bool; membership is caller\-declared, not runtime evidence\.
@@ -56,6 +121,16 @@ Source: internal/web/app/src/areas/viewer/pages/ProfileSettingsPage\.tsx:333; sy
 Declared member: source declares AvatarChooser; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/components/beamfall/profile/AvatarChooser\.tsx:19; symbol: AvatarChooser; span SHA256: b1fa7b149728222693bd2d0f7b59655c341fed0d100261d53460949c04274ef5.
+
+<!-- flowdocs:paragraph:1cc1f1bb894d9e495160740840934d1d -->
+Declared member: source declares CLIENT\_PREFS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:362; symbol: CLIENT\_PREFS\_QUERY; span SHA256: 9bacd1650b0a3e712344a1d217c82eeb1787add2a7fe4dac99cd39090e64fe99.
+
+<!-- flowdocs:paragraph:970cc5def5d7899347e564739e0fd26f -->
+Declared member: source declares SET\_CLIENT\_PREF\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:370; symbol: SET\_CLIENT\_PREF\_MUTATION; span SHA256: e47826c070db48a265b316996d973df6f54760325eff3c60c8084c5923d1ff8b.
 
 <!-- flowdocs:paragraph:04d2c6d6f8cf75e11f662a024c0a25db -->
 Declared member: source declares fetchClientPrefs; membership is caller\-declared, not runtime evidence\.

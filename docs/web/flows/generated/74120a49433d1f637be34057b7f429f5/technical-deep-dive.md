@@ -1,6 +1,6 @@
 # Backups: history, verify manifest, restore and export — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:bd440ef6f398a92b8ae9faff571537bd -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -16,6 +16,11 @@ Source: internal/web/app/src/areas/manage/pages/BackupExportPage\.tsx:112; symbo
 Declared member: source declares ExportSection; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/manage/pages/BackupExportPage\.tsx:444; symbol: ExportSection; span SHA256: 6d39aa75683e8a70a5bea8019d190425846dc76a4f6c2e00a34d2fc3ac35c5b0.
+
+<!-- flowdocs:paragraph:638013ab4df0d589b36c323ea32770b0 -->
+Declared member: source declares MANIFEST\_BASENAME; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/pages/BackupExportPage\.tsx:41; symbol: MANIFEST\_BASENAME; span SHA256: f3384076906c8d030affe1b7d2e62f929ccbca9a59b9211807b659717aaf9d35.
 
 <!-- flowdocs:paragraph:dd897063a19e4e5077201385fe71a7d0 -->
 Declared member: source declares ManifestSection; membership is caller\-declared, not runtime evidence\.
@@ -56,6 +61,26 @@ Source: internal/web/app/src/areas/manage/pages/BackupExportPage\.tsx:333; symbo
 Declared member: source declares useEpochRequest; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/manage/pages/BackupExportPage\.tsx:52; symbol: useEpochRequest; span SHA256: 4956989a539333fa314f7e8be191c9668056e39cacc8cd94805a2d09a395a711.
+
+<!-- flowdocs:paragraph:d53c5d5a07174a5e4b4ab7c26cdf3841 -->
+Declared member: source declares BACKUP\_HISTORY\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:382; symbol: BACKUP\_HISTORY\_QUERY; span SHA256: f3facd6b018959e493b61bc0cada81c210521ec257d95b967909217e66f9edbc.
+
+<!-- flowdocs:paragraph:e54d6822f306f783e644b6b2ebcc8909 -->
+Declared member: source declares BACKUP\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:374; symbol: BACKUP\_MUTATION; span SHA256: 1dcb49f9a36f5814158c324f762c1deebfd3316a9fcc3458f55a3c91a833e9e4.
+
+<!-- flowdocs:paragraph:57d28e50cbc163cbd28c806fdec01532 -->
+Declared member: source declares METADATA\_EXPORT\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:417; symbol: METADATA\_EXPORT\_QUERY; span SHA256: 10628220bbf3012802081a52a2726ad24f00d4a1d4d26fec4402f7e8e13dacd1.
+
+<!-- flowdocs:paragraph:b0e1d64a93b214e2411560ad5959481f -->
+Declared member: source declares VERIFY\_BACKUP\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:402; symbol: VERIFY\_BACKUP\_MUTATION; span SHA256: 9c188185cb154332819f853a1e77bdc2ef3e82521e95e36188ae7697f3f81141.
 
 <!-- flowdocs:paragraph:6edfc1e0cfa29f5bc5b48e53714c0e96 -->
 Declared member: source declares fetchBackupHistory; membership is caller\-declared, not runtime evidence\.

@@ -1,16 +1,41 @@
 # Player up\-next countdown and play queue navigation — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:d3c5a539ef601cb9f5c3f7c7a71d80a2 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/viewer/lib/playQueue\.ts:38; symbol: activeQueue; span SHA256: 156d08e1411f0c5295a544e371ec2c766c57837a66aeabe9536310216fb87ab8.
+Source: internal/web/app/src/areas/viewer/lib/playQueue\.ts:16; symbol: MAX\_STEPS\_BACK; span SHA256: 817b0ee1a34dbed2e1b5495a55e80bacc4b4be912abf2b780cc1001ca19a2637.
+
+<!-- flowdocs:paragraph:f6a20e76d942ed4a1237ba2d26b4fd84 -->
+Declared member: source declares MAX\_STEPS\_BACK; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/playQueue\.ts:16; symbol: MAX\_STEPS\_BACK; span SHA256: 817b0ee1a34dbed2e1b5495a55e80bacc4b4be912abf2b780cc1001ca19a2637.
+
+<!-- flowdocs:paragraph:2efda9af1ab2a487b840e7a65ccb2595 -->
+Declared member: source declares PlayQueue; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/playQueue\.ts:18; symbol: PlayQueue; span SHA256: 4ea9a4bea3cc730e1db9028aa481de9a3c50e040e96dc86ad856c5c59a02e392.
+
+<!-- flowdocs:paragraph:1683cc9d1b28584aef88072268b9d032 -->
+Declared member: source declares PlayQueueStart; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/playQueue\.ts:44; symbol: PlayQueueStart; span SHA256: 75b294b8ec1d59629063b89928f60883a7b9566a4dfed3410dc678aaa90caf3e.
+
+<!-- flowdocs:paragraph:610248e186c31a66011f44bc518bc4c5 -->
+Declared member: source declares QUEUE\_PAGE; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/playQueue\.ts:15; symbol: QUEUE\_PAGE; span SHA256: bfde572895e161eeb2d96cdbc5ce01388f070b9ecd00b70332bec90ac8d4f765.
 
 <!-- flowdocs:paragraph:57635e082cc478a5e2c2458acbb176e2 -->
 Declared member: source declares activeQueue; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/viewer/lib/playQueue\.ts:38; symbol: activeQueue; span SHA256: 156d08e1411f0c5295a544e371ec2c766c57837a66aeabe9536310216fb87ab8.
+
+<!-- flowdocs:paragraph:3158f556577fb3bcae33a045fde17fe0 -->
+Declared member: source declares current; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/playQueue\.ts:32; symbol: current; span SHA256: 6ab08dfd49a4e625f9c0757319e76a3ff0d9e140afaf3130839c2d81f686d5d9.
 
 <!-- flowdocs:paragraph:bbb649ce37f42c62c79117f06af6fe9d -->
 Declared member: source declares leavePlayQueue; membership is caller\-declared, not runtime evidence\.
@@ -62,6 +87,21 @@ Declared member: source declares shouldShowUpNext; membership is caller\-declare
 
 Source: internal/web/app/src/areas/viewer/lib/transport\.ts:316; symbol: shouldShowUpNext; span SHA256: 2c57f0680e306e2be448ebb229acd11cc6cb381b084f8e37d0b2c1b8b9952efe.
 
+<!-- flowdocs:paragraph:06013216d06cb3c6b293836163724a06 -->
+Declared member: source declares MAX\_QUEUE; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/watchQueue\.ts:30; symbol: MAX\_QUEUE; span SHA256: ba7fc5a5527ea6e2a6a4145ba00bf496142188022a7ff9a00b0d22b4b443bec4.
+
+<!-- flowdocs:paragraph:81aaa05a0665a6103928ac75410c3bf7 -->
+Declared member: source declares PlayQueueItem; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/watchQueue\.ts:14; symbol: PlayQueueItem; span SHA256: 38fae66ec0ccc0af6e7c8ef31275f9720f3b188afb065b3c60e3ce53104961c0.
+
+<!-- flowdocs:paragraph:fb376961b1f61fadc7253090748fb9a2 -->
+Declared member: source declares PlayerNavState; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/watchQueue\.ts:20; symbol: PlayerNavState; span SHA256: caa6a9395bf5b9c05e7247e312c6ed41a1314ae2ff97ef11e7db514fa77f6525.
+
 <!-- flowdocs:paragraph:c150397e86c57937b13a7ce81a8ce645 -->
 Declared member: source declares playQueueOf; membership is caller\-declared, not runtime evidence\.
 
@@ -86,6 +126,11 @@ Source: internal/web/app/src/areas/viewer/lib/watchQueue\.ts:79; symbol: readPla
 Declared member: source declares UpNextCard; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/viewer/player/UpNextCard\.tsx:8; symbol: UpNextCard; span SHA256: 2f8aba99d9a269c61f31ff321ff8f6a4b54dc196b29b3b2b8600817986ad9e1d.
+
+<!-- flowdocs:paragraph:273e96f0e09899412a543a861742f42a -->
+Declared member: source declares COUNTDOWN\_START; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/useUpNext\.ts:13; symbol: COUNTDOWN\_START; span SHA256: 0a40fd7f30bd61b977206cc27446ee33dc39b65180cc1ba0bb039910b82bb4b3.
 
 <!-- flowdocs:paragraph:0c968d535581ad5cddf9fe0480ae7e91 -->
 Declared member: source declares live; membership is caller\-declared, not runtime evidence\.

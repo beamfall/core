@@ -1,11 +1,11 @@
 # Session spine: compat handshake, session renewal, identity epoch, request guard — exceptions
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1d2bea13f9340091de9b2f2d0418f40b -->
 Error reachability, rescue behavior and completeness are unresolved\.
 
-Source: internal/web/app/src/lib/api\.ts:368; symbol: fetchSetupRequired; span SHA256: 0d8c70a9a0132d07cd38716b208981a5a9ec35272673295f9d5c27a3b5b6c13c.
+Source: internal/web/app/src/lib/api\.ts:102; symbol: ADMIN\_SESSION\_REQUIRED; span SHA256: fc3499cc96d72c65475ea9616779522bb2676ba3c5790775fa9a1c64e87522a1.
 
 <!-- flowdocs:paragraph:1997b261ff5a10295cad2350caef3da8 -->
 Source contains a throw statement; runtime reachability is unresolved\.
