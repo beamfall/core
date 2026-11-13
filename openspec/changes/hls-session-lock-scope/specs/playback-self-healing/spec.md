@@ -4,7 +4,9 @@
 
 The live HLS session manager SHALL NOT hold its global lock while it stops an encoder, waits for
 an encoder to exit, spawns an encoder or removes a session's directory. A session whose encoder
-is being replaced SHALL keep its transcode slot and lease until the replacement starts or fails.
+is being replaced SHALL keep its transcode slot and lease until the replacement starts or fails,
+and a torn-down session SHALL keep them until its encoder has stopped. Shutdown SHALL NOT return
+while an encoder start is still in progress.
 
 #### Scenario: Slow encoder teardown
 
@@ -23,3 +25,14 @@ is being replaced SHALL keep its transcode slot and lease until the replacement 
 - **WHEN** a session is torn down while its encoder is being replaced
 - **THEN** the teardown does not wait for the replacement, the replacing request fails with the
   session-evicted error, and the session's lease and directory are released
+
+#### Scenario: Slow teardown at the transcode cap
+
+- **WHEN** the transcode cap is full and a torn-down session's encoder is slow to exit
+- **THEN** a new session is refused until that encoder has stopped, and the governor keeps
+  counting it as a realtime transcode until then
+
+#### Scenario: Shutdown during a replacement
+
+- **WHEN** the server shuts down while a session's encoder is being replaced
+- **THEN** shutdown returns only after the replacement has stopped any encoder it spawned

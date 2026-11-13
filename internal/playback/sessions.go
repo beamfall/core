@@ -380,6 +380,15 @@ type Sessions struct {
 	// stopEncoder, when set, replaces (*ffmpeg.HLSProcess).Stop. Tests set it
 	// to a slow Stop.
 	stopEncoder func(*ffmpeg.HLSProcess)
+	// stopping counts encoders removed from the map whose teardown has not yet
+	// stopped them (or whose off-lock start has not yet given up). They still
+	// run, so they still count against the cap.
+	stopping int
+	// starting counts ensureRung starts running with mu released. Close waits
+	// for it to reach zero so no start outlives it with a process it spawned.
+	starting int
+	// startsIdle, when non-nil, is closed when starting drops to zero.
+	startsIdle chan struct{}
 }
 
 // sessionTeardown is the slow half of removing a session: stopping its FFmpeg
@@ -389,16 +398,39 @@ type Sessions struct {
 type sessionTeardown struct {
 	proc *ffmpeg.HLSProcess
 	dir  string
+	// lease is the session's transcode lease, released only once proc has
+	// stopped so the governor keeps background generation out until then.
+	lease *governor.TranscodeLease
+	// counted means removeLocked added this teardown to s.stopping.
+	counted bool
 }
 
-// runTeardowns stops each process, then removes each directory. Call it
-// without s.mu held.
+// runTeardowns stops each process, removes each directory, then releases each
+// lease and transcode slot. Call it without s.mu held.
 func (s *Sessions) runTeardowns(teardowns []sessionTeardown) {
 	for _, t := range teardowns {
 		s.stop(t.proc)
 		if t.dir != "" {
 			_ = os.RemoveAll(t.dir)
 		}
+		if t.lease != nil {
+			t.lease.Release()
+		}
+		if t.counted {
+			s.mu.Lock()
+			s.stopping--
+			s.mu.Unlock()
+		}
+	}
+}
+
+// finishStartLocked records the end of an off-lock ensureRung start and wakes
+// Close once none remain. Callers hold mu.
+func (s *Sessions) finishStartLocked() {
+	s.starting--
+	if s.starting == 0 && s.startsIdle != nil {
+		close(s.startsIdle)
+		s.startsIdle = nil
 	}
 }
 
@@ -536,9 +568,10 @@ func (s *Sessions) CanAdmitPriority(key SessionKey, priority Priority) bool {
 	return s.preemptableLocked(key, priority) != nil
 }
 
-// liveCount counts sessions holding a live FFmpeg process. Callers hold mu.
+// liveCount counts sessions holding a live FFmpeg process, plus removed
+// sessions whose encoder has not stopped yet. Callers hold mu.
 func (s *Sessions) liveCount() int {
-	count := 0
+	count := s.stopping
 	for _, session := range s.sessions {
 		if session.holdsTranscodeLocked() {
 			count++
@@ -619,11 +652,24 @@ func (s *Sessions) removeLocked(key SessionKey) *sessionTeardown {
 		return nil
 	}
 	teardown := &sessionTeardown{proc: session.proc, dir: session.dir}
-	// Released here rather than when the process exits: the session is gone
-	// from the map, so nothing else will release it. An ensureRung start in
-	// progress (startPending) holds this same lease; it sees the eviction when
-	// it relocks, stops what it spawned and removes the directory again.
-	s.releaseTranscodeLease(session)
+	switch {
+	case session.proc != nil:
+		// The process keeps running until the teardown stops it, so the
+		// teardown keeps the slot and the lease until then.
+		teardown.lease = session.transcodeLease
+		session.transcodeLease = nil
+		teardown.counted = true
+		s.stopping++
+	case session.startPending:
+		// An off-lock ensureRung start owns this session's lease and may be
+		// spawning a process. It sees the eviction when it relocks, stops what
+		// it spawned, removes the directory again, then releases the lease and
+		// this slot.
+		s.stopping++
+	default:
+		// No process: nothing else will release the lease.
+		s.releaseTranscodeLease(session)
+	}
 	// Clear the process fields too: a request may still hold this *hlsSession
 	// across an unlock window, and a torn-down session must never read back as
 	// one holding a live transcode. liveLocked is the authoritative eviction
@@ -650,9 +696,10 @@ func (s *Sessions) liveLocked(key SessionKey, session *hlsSession) bool {
 // and returns how many it stopped (ADR-0012 §7: a revoked device's in-flight
 // transcodes die, not just its future requests). Sessions are keyed by
 // (SessionID, MediaID) — one Session may hold several live transcodes — so this
-// stops all of them at once. It mirrors removeLocked (Stop the FFmpeg process,
-// release the transcode slot, delete the artifacts), the same teardown idle
-// reaping and preemption already use, so it introduces no new shutdown path.
+// stops all of them at once. It uses removeLocked and runTeardowns (stop the
+// FFmpeg process, delete the artifacts, then release the transcode slot), the
+// same teardown idle reaping and preemption already use, so it introduces no
+// new shutdown path. The teardowns run after the lock is released.
 // Calling it for a Session with no live transcode is a zero-stop no-op — a
 // direct-play session has nothing to abort. The caller (the audited
 // device-revocation mutation) invokes this after RevokeDevice has already
@@ -1206,6 +1253,7 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	// counted meanwhile, and startMu keeps a second request on this session from
 	// starting another encoder.
 	session.startPending = true
+	s.starting++
 	s.mu.Unlock()
 	if victim != nil {
 		s.runTeardowns([]sessionTeardown{*victim})
@@ -1222,18 +1270,23 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	s.mu.Lock()
 	session.startPending = false
 	if !s.liveLocked(key, session) {
-		// Torn down while the lock was released. removeLocked already released
-		// the lease and scheduled the directory's removal, possibly before the
-		// replaced process exited or the new one wrote anything, so stop the new
-		// process and remove the directory again.
+		// Torn down while the lock was released. removeLocked counted this
+		// start in s.stopping and scheduled the directory's removal, possibly
+		// before the replaced process exited or the new one wrote anything, so
+		// stop the new process and remove the directory again before releasing
+		// the lease and the slot.
 		s.mu.Unlock()
 		if err == nil {
 			s.stop(proc)
 		}
 		_ = os.RemoveAll(session.dir)
 		s.mu.Lock()
+		s.releaseTranscodeLease(session)
+		s.stopping--
+		s.finishStartLocked()
 		return nil, ErrSessionEvicted
 	}
+	s.finishStartLocked()
 	if err != nil {
 		// Launch failed: this session holds no live process, so release its
 		// transcode lease. This is the rollback for a fresh start and the teardown
@@ -1570,7 +1623,9 @@ func (s *Sessions) PurgeOrphanedTranscodeDirs() error {
 	return joined
 }
 
-// Close stops every running transcode and removes its working directory.
+// Close stops every running transcode and removes its working directory. It
+// also waits for encoder starts running with the lock released: each sees its
+// session gone and stops what it spawned.
 func (s *Sessions) Close() {
 	s.mu.Lock()
 	var teardowns []sessionTeardown
@@ -1579,6 +1634,19 @@ func (s *Sessions) Close() {
 	}
 	s.mu.Unlock()
 	s.runTeardowns(teardowns)
+	for {
+		s.mu.Lock()
+		if s.starting == 0 {
+			s.mu.Unlock()
+			return
+		}
+		if s.startsIdle == nil {
+			s.startsIdle = make(chan struct{})
+		}
+		idle := s.startsIdle
+		s.mu.Unlock()
+		<-idle
+	}
 }
 
 // fileReady reports whether path exists with a non-empty body — the readiness

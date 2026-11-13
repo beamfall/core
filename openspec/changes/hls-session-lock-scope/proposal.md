@@ -17,12 +17,15 @@ is slow to exit stalls playback server-wide.
 
 ## What Changes
 
-- Removing a session takes it out of the map and releases its transcode lease under the lock.
-  The caller then stops the process and deletes the directory after releasing the lock.
+- Removing a session takes it out of the map under the lock. The caller then stops the process
+  and deletes the directory after releasing the lock. The session's slot and transcode lease stay
+  held until its process has stopped, so the transcode cap and the governor still see it running.
 - Replacing or starting an encoder marks the session as starting, then releases the lock to
   stop the old process, tear down any preempted victim and spawn the new process. A per-session
   start mutex, always taken before the global lock, stops a second request on the same session
   from starting another encoder meanwhile.
 - A session that is starting still counts against the transcode cap and keeps its lease.
 - If the session is evicted while the lock is released, the start stops what it spawned,
-  removes the directory again and fails with the session-evicted error.
+  removes the directory again, releases the lease and slot, and fails with the session-evicted
+  error.
+- Shutdown waits for starts running with the lock released, so no encoder outlives it.
