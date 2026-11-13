@@ -398,7 +398,7 @@
   width: 260px;
   padding: 8px;
   border: 1px solid var(--border-subtle);
-  border-radius: 16px;
+  border-radius: 14px;
   background: color-mix(in oklch, var(--bg-surface) 92%, transparent);
   backdrop-filter: blur(20px) saturate(140%);
   -webkit-backdrop-filter: blur(20px) saturate(140%);
@@ -1499,7 +1499,6 @@
   font-size: 12px;
   line-height: 16px;
   font-weight: 600;
-  letter-spacing: 0.02em;
   color: oklch(86% 0.02 250 / 86%);
 }
 
@@ -1516,7 +1515,7 @@
   overflow: hidden;
   font-size: clamp(18px, 1.6vw + 8px, 26px);
   line-height: 1.2;
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: -0.012em;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -1543,7 +1542,7 @@
   min-width: 44px;
   font-size: 12px;
   line-height: 16px;
-  font-weight: 550;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
   color: oklch(92% 0.012 250 / 90%);
 }
@@ -1885,7 +1884,7 @@
   border-radius: 999px;
   background: oklch(8% 0.012 255 / 82%);
   color: oklch(98% 0.004 250);
-  font-weight: 700;
+  font-weight: 600;
   text-align: center;
   pointer-events: none;
   animation: bf-gesture-feedback 700ms var(--ease-standard);
@@ -1932,7 +1931,7 @@
   border-color: transparent;
   background: var(--beam-500);
   color: var(--night-950);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .bf-control.is-primary:hover {
@@ -2505,7 +2504,7 @@
   gap: 8px;
   margin: 0;
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: 10px;
   font-size: 13.5px;
 }
 

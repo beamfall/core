@@ -300,9 +300,7 @@ export function PlayerPage() {
         <div className="flex flex-1 items-center justify-center p-6">
           <div className="flex max-w-md flex-col items-center gap-3 text-center">
             <AlertCircle aria-hidden className="size-7 text-[var(--state-danger)]" />
-            {navTitle ? (
-              <h2 className="m-0 text-xl font-semibold text-white">{navTitle}</h2>
-            ) : null}
+            {navTitle ? <h2 className="m-0 text-xl font-semibold text-white">{navTitle}</h2> : null}
             <p className="m-0 text-[15px] leading-relaxed text-white/75" role="alert">
               {state.message}
             </p>
