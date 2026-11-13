@@ -129,7 +129,7 @@
 .bf-side-heading {
   margin: 22px 12px 6px;
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 500;
   line-height: 16px;
   white-space: nowrap;
@@ -2242,25 +2242,15 @@
   background: var(--bg-root);
 }
 
-[data-register="manage"]
-  :is(.console-card, .console-fieldset, .console-disclosure, .console-table, .manage-section) {
+[data-register="manage"] :is(.console-card, .console-fieldset, .console-table, .manage-section) {
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-surface);
   background: var(--glass-fill);
   box-shadow: none;
 }
 
-[data-register="manage"] :is(.console-fieldset-head, .console-disclosure-body) {
+[data-register="manage"] .console-fieldset-head {
   border-color: var(--glass-divider);
-}
-
-[data-register="manage"] .console-disclosure > summary {
-  border-radius: var(--radius-surface);
-  transition: background 120ms ease;
-}
-
-[data-register="manage"] .console-disclosure > summary:hover {
-  background: var(--glass-fill-raised);
 }
 
 /* Tables: hairline rows, a quiet hover, no header band. */
@@ -2305,7 +2295,7 @@
 [data-register="manage"] .console-section > div:first-child h2 {
   font-size: 20px;
   line-height: 28px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 [data-register="manage"] .console-section {
@@ -2315,11 +2305,11 @@
 [data-register="manage"] .manage-area .manage-section-title {
   font-size: 16px;
   line-height: 22px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 [data-register="manage"] .manage-area .manage-section-lead {
-  font-size: 13.5px;
+  font-size: 13px;
   line-height: 20px;
 }
 
@@ -2364,7 +2354,7 @@
 .mydata-panel-lead {
   margin: 0;
   max-width: 64ch;
-  font-size: 13.5px;
+  font-size: 13px;
   line-height: 20px;
   color: var(--text-muted);
 }
@@ -2391,14 +2381,14 @@
 }
 
 .mydata-stat-label {
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--text-muted);
 }
 
 .mydata-range,
 .mydata-muted {
   margin: 0;
-  font-size: 13.5px;
+  font-size: 13px;
   color: var(--text-muted);
 }
 
@@ -2458,7 +2448,7 @@
 .mydata-empty {
   margin: 0;
   padding: 4px 0;
-  font-size: 13.5px;
+  font-size: 13px;
   color: var(--text-muted);
 }
 
@@ -2484,7 +2474,7 @@
 
 .mydata-pill {
   flex: none;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--accent);
 }
@@ -2505,7 +2495,7 @@
   margin: 0;
   padding: 10px 12px;
   border-radius: 10px;
-  font-size: 13.5px;
+  font-size: 13px;
 }
 
 .mydata-notice[data-tone="ok"] {

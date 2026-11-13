@@ -527,7 +527,7 @@ function LibraryRow({
       </div>
 
       <details className="group mt-4 border-t border-[var(--border-subtle)]">
-        <summary className="cursor-pointer py-2.5 text-[13px] font-semibold">
+        <summary className="cursor-pointer py-2.5 text-dense font-semibold">
           {t("libraryRoots")}
         </summary>
         <div className="space-y-2 pb-1">

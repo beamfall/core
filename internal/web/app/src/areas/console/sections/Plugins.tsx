@@ -372,7 +372,7 @@ function PluginCard({
         <div className="border-t border-[var(--border-subtle)] px-4 pt-3">
           <h3 className="m-0 text-sm font-semibold">{t("pluginKeysHeading")}</h3>
           {missingKey && (
-            <p className="m-0 mt-1 text-[13px] leading-snug text-muted-foreground">
+            <p className="m-0 mt-1 text-dense leading-snug text-muted-foreground">
               {t("pluginKeysLead")}
             </p>
           )}

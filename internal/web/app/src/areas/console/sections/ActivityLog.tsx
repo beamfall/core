@@ -127,7 +127,7 @@ export function ActivityLog() {
         </Button>
       }
     >
-      <p className="max-w-2xl text-[13px] leading-snug text-muted-foreground">
+      <p className="max-w-2xl text-dense leading-snug text-muted-foreground">
         {ACTIVITY_TEXT.lead}
       </p>
       {loading ? (

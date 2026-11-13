@@ -78,38 +78,34 @@ export function CollectionsPage() {
 
   return (
     <Tabs.Root value={tab} onValueChange={(value) => setTab(value as Tab)} className="space-y-4">
-      <ManageSection
-        title={t("collections")}
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <Tabs.List className="manage-tabs" aria-label={t("collections")}>
-              <Tabs.Tab value="manual" className="manage-tab">
-                {t("collectionManual")}
-              </Tabs.Tab>
-              <Tabs.Tab value="smart" className="manage-tab">
-                {t("collectionSmart")}
-              </Tabs.Tab>
-            </Tabs.List>
-            <Label htmlFor="collections-library" className="sr-only">
-              {t("library")}
-            </Label>
-            <Select value={libraryID} onValueChange={setLibraryID}>
-              <SelectTrigger id="collections-library" size="sm" className="w-56">
-                <SelectValue placeholder={t("library")} />
-              </SelectTrigger>
-              <SelectContent>
-                {libraries.map((lib) => (
-                  <SelectItem key={lib.id} value={lib.id}>
-                    {lib.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        }
-      >
-        {libraries.length === 0 && <p className="manage-empty">{t("noCollections")}</p>}
-      </ManageSection>
+      {/* A toolbar, not a card: the route already names the page, so the tabs and
+          the Library filter sit directly above the content they switch. */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Tabs.List className="manage-tabs" aria-label={t("collections")}>
+          <Tabs.Tab value="manual" className="manage-tab">
+            {t("collectionManual")}
+          </Tabs.Tab>
+          <Tabs.Tab value="smart" className="manage-tab">
+            {t("collectionSmart")}
+          </Tabs.Tab>
+        </Tabs.List>
+        <Label htmlFor="collections-library" className="sr-only">
+          {t("library")}
+        </Label>
+        <Select value={libraryID} onValueChange={setLibraryID}>
+          <SelectTrigger id="collections-library" className="w-56">
+            <SelectValue placeholder={t("library")} />
+          </SelectTrigger>
+          <SelectContent>
+            {libraries.map((lib) => (
+              <SelectItem key={lib.id} value={lib.id}>
+                {lib.title}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      {libraries.length === 0 && <p className="manage-empty">{t("noCollections")}</p>}
 
       <Tabs.Panel value="manual" className="space-y-4">
         <ManualCollections libraryID={libraryID} />

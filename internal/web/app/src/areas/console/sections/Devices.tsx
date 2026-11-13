@@ -196,7 +196,7 @@ export function Devices() {
           ) : (
             <div className="flex items-start justify-between gap-4 console-card console-card-pad">
               <div className="space-y-1">
-                <p className="m-0 text-[13px] font-semibold">{t("remoteEnrollToggle")}</p>
+                <p className="m-0 text-dense font-semibold">{t("remoteEnrollToggle")}</p>
                 <p className="m-0 text-[12px] leading-snug text-muted-foreground">
                   {t("remoteEnrollToggleHint")}
                 </p>

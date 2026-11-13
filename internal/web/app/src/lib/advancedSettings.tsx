@@ -74,7 +74,7 @@ export function AdvancedSettingsSwitch({ className }: { className?: string }) {
   const [advanced, setAdvanced] = useAdvancedSettings();
   return (
     <div className={cn("flex min-h-8 items-center justify-between gap-3", className)}>
-      <label htmlFor={id} className="cursor-pointer text-[13px] text-muted-foreground">
+      <label htmlFor={id} className="cursor-pointer text-dense text-muted-foreground">
         {t("showAdvancedSettings")}
       </label>
       <Switch id={id} checked={advanced} onCheckedChange={setAdvanced} />

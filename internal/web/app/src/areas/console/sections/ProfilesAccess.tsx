@@ -82,7 +82,7 @@ export function ProfilesAccess() {
         <div className="console-card console-card-pad space-y-4">
           {/* Supervisor-authored policy, distinct from the managed Profile's own
               Mute (ADR-0087 §29). */}
-          <p className="text-[13px] text-muted-foreground">{t("managedPolicyFraming")}</p>
+          <p className="text-dense text-muted-foreground">{t("managedPolicyFraming")}</p>
           <div className="max-w-sm space-y-2">
             <Label>{t("accessScheduleProfileLabel")}</Label>
             <Select value={profileID} onValueChange={setProfileID}>
@@ -371,7 +371,7 @@ function SchedulePreview({ windows }: { windows: AccessWindowInput[] }) {
   const now = new Date();
   const next = nextTransition(windows, now.getDay(), now.getHours() * 60 + now.getMinutes());
   return (
-    <div className="space-y-1 border-t border-[var(--border-subtle)] pt-3 text-[13px] text-muted-foreground">
+    <div className="space-y-1 border-t border-[var(--border-subtle)] pt-3 text-dense text-muted-foreground">
       <p>{t("accessScheduleServerLocalNote")}</p>
       {next ? (
         <p>
