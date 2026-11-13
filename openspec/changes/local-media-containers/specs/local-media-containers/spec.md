@@ -5,7 +5,8 @@
 When a Library's plugin supplies a hydration mapper that groups a file into container Entities,
 a scan SHALL write those Entities and their relations from the local path alone, with no provider
 credentials, and SHALL mark the file complete so later scans do not rewrite them. Media already in
-the Library without the completion mark SHALL be grouped on the next scan.
+the Library without the completion mark SHALL be grouped by a backfill scan the server queues once,
+on its first start with the mapper, for each Library holding such Media.
 
 #### Scenario: Episode files with no provider keys
 
@@ -20,7 +21,8 @@ the Library without the completion mark SHALL be grouped on the next scan.
 #### Scenario: Library scanned before the change
 
 - **WHEN** an episode Media imported earlier lacks the completion mark
-- **THEN** the next scan groups it into its show and season
+- **THEN** the server's first start with the mapper queues one backfill scan of its Library, which groups it into its show and season
+- **AND** later starts queue no further backfill for that Library
 
 ### Requirement: A parser may supply the per-file Media title
 

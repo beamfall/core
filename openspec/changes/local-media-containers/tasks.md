@@ -8,6 +8,7 @@
 - [x] 2.1 Pin plugin-filmtv v0.1.7 (with plugin-sdk v0.3.4 and every bundled plugin on a release that declares it)
 - [x] 2.2 Film & TV hydration mapper: season Entity scoped by series, `season-episode` in episode order, `season-of` to the show, completion flag
 - [x] 2.3 Tests: grouping plan validates against the bundle; movies marked complete; hooks registered
+- [x] 2.4 One-time startup backfill scan for Libraries holding Media without the marker, recorded after the enqueue
 
 ## 3. Verify and close
 

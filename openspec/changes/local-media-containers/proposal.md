@@ -24,8 +24,11 @@ offers the parsed per-file title (`(*filmtv.Parser).MediaTitle`).
   title, with its season number) linked to the Media through `season-episode` in episode order, and
   links the season to the show Entity through `season-of`. It marks every visited file complete
   with `filmtv-hydrated`, so a file is hydrated once.
-- Existing Libraries are backfilled by the existing hydration backfill: Media without the
-  completion flag are hydrated on the next scan.
+- Existing Libraries are backfilled once. An ordinary scan skips unchanged files, so on each start
+  `internal/app` checks every Library of a plugin with a hydration marker field that it has not
+  checked before: when any Media of a hydrated class lacks the marker, it queues a backfill scan of
+  the Library's roots. The check is recorded in `server_config` only after the scan is queued, so a
+  failed enqueue is retried on the next start. This also covers any later plugin that adds a mapper.
 
 ## Non-goals
 
@@ -39,14 +42,17 @@ offers the parsed per-file title (`(*filmtv.Parser).MediaTitle`).
 
 - A path the parser cannot read as an episode writes no Entities; the file is still marked complete
   and lists ungrouped, as today.
-- The first scan after upgrade probes each video file that lacks the completion flag once (the
-  backfill path re-reads tags). Later scans skip them.
+- The backfill scan after upgrade probes each video file that lacks the completion flag once (the
+  backfill path re-reads tags). A file it cannot hydrate does not queue another backfill: the
+  Library is recorded as checked.
+- An Attached node never authors catalog rows and skips the check.
 
 ## Acceptance evidence
 
 - `internal/scan`: `TestMediaTitlerReplacesParsedTitle`, `TestMediaTitlerEmptyKeepsParsedTitle`.
 - `cmd/beamfall`: `TestFilmTVHydrationGroupsEpisodeIntoSeasonAndShow`,
   `TestFilmTVHydrationMarksMovieComplete`, `TestFilmTVHooksRegisterHydration`.
+- `internal/app`: `TestHydrationBackfillQueuesScanForMediaImportedBeforeTheMapper`.
 - The plan validates against the pinned plugin-filmtv v0.1.7 bundle (`validatePlan` in the test).
 
 ## Rollback
