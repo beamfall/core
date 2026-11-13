@@ -332,6 +332,7 @@ func TestSweepRefreshesInheritedPosterWhenSourceChanges(t *testing.T) {
 
 	s.wantPoster("entity-box", "a new and longer cover", true)
 	s.wantPoster("entity-maker", "a new and longer cover", true)
+	// #nosec G304 -- stale is a test-owned derivative path.
 	if data, err := os.ReadFile(stale); err == nil && string(data) == "old derivative" {
 		t.Fatal("derivative of the replaced poster survived the refresh")
 	}
@@ -505,6 +506,7 @@ func TestInheritedPosterChangeWaitsForDerivativeInFlight(t *testing.T) {
 			}
 
 			bucket := filepath.Join(filepath.Dir(dst), SlotPoster+".w320.jpg")
+			// #nosec G304 -- bucket is a test-owned derivative path.
 			if data, err := os.ReadFile(bucket); err == nil && string(data) == "old cover" {
 				t.Fatal("a derivative of the old poster was published after the change")
 			}

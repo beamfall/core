@@ -136,17 +136,19 @@ func (s *Store) SplitAmbiguousEntityScopes(ctx context.Context, pluginID, kind, 
 		var id EntityID
 		var library LibraryID
 		if err := rows.Scan(&id, &library); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return 0, err
 		}
 		reopened = append(reopened, id)
 		libraries[id] = library
 	}
 	if err := rows.Err(); err != nil {
-		rows.Close()
+		_ = rows.Close()
 		return 0, err
 	}
-	rows.Close()
+	if err := rows.Close(); err != nil {
+		return 0, err
+	}
 	for _, id := range reopened {
 		cleared, err := tx.ExecContext(ctx, `
 			DELETE FROM media_field_int
