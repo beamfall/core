@@ -3,11 +3,14 @@
 // MEDIA_ERROR gets one plain recoverMediaError() and then one
 // swapAudioCodec()+recoverMediaError(); anything past the budget (or any other
 // fatal type) destroys the instance. The budget resets once a fragment buffers
-// again, so "consecutive" means without intervening progress.
+// past the furthest point reached, so "consecutive" means without intervening
+// forward progress (re-buffering the same fragment is not progress).
 
 // String values of Hls.ErrorTypes, inlined so this module stays free of the
 // hls.js runtime (hlsRecovery.test.ts pins them to the real enum).
 export const HLS_NETWORK_ERROR = "networkError";
+// hls.js ErrorDetails.FRAG_LOAD_ERROR: a media segment request failed.
+export const HLS_FRAG_LOAD_ERROR = "fragLoadError";
 export const HLS_MEDIA_ERROR = "mediaError";
 
 export const NETWORK_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;

@@ -14,6 +14,7 @@ import { migrationStrings } from "./migration";
 import { onboardingStrings } from "./onboarding";
 import { pathPickerStrings } from "./path-picker";
 import { playbackStrings } from "./playback";
+import { playerRecoveryStrings } from "./player-recovery";
 import { pluginStrings } from "./plugins";
 import { powerToolStrings } from "./power-tools";
 import { profileSearchStrings } from "./profile-search";
@@ -52,6 +53,7 @@ export const en = {
   ...profileSearchStrings.en,
   ...powerToolStrings.en,
   ...itemActionStrings.en,
+  ...playerRecoveryStrings.en,
 } as const;
 
 export const fr = {
@@ -81,6 +83,7 @@ export const fr = {
   ...profileSearchStrings.fr,
   ...powerToolStrings.fr,
   ...itemActionStrings.fr,
+  ...playerRecoveryStrings.fr,
 } as const;
 
 export const de = {
@@ -110,6 +113,7 @@ export const de = {
   ...profileSearchStrings.de,
   ...powerToolStrings.de,
   ...itemActionStrings.de,
+  ...playerRecoveryStrings.de,
 } as const;
 
 export const es = {
@@ -139,6 +143,7 @@ export const es = {
   ...profileSearchStrings.es,
   ...powerToolStrings.es,
   ...itemActionStrings.es,
+  ...playerRecoveryStrings.es,
 } as const;
 
 export const pt = {
@@ -168,4 +173,5 @@ export const pt = {
   ...profileSearchStrings.pt,
   ...powerToolStrings.pt,
   ...itemActionStrings.pt,
+  ...playerRecoveryStrings.pt,
 } as const;

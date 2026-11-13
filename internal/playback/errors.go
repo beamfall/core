@@ -1,6 +1,9 @@
 package playback
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 var (
 	// ErrInvalidRequest reports a client-supplied playback request whose shape is
@@ -14,4 +17,9 @@ var (
 	// HTTP 404. Info/PreviewInfo still preserve their Reveal-safe unavailable
 	// envelopes where absence is part of the successful response contract.
 	ErrNotFound = errors.New("playback resource not found")
+	// ErrSourceEnded reports an HLS segment that lies past where the media
+	// source actually ends: the file is shorter than its probed duration, so the
+	// synthesized playlist advertises segments no encoder can fill. It wraps
+	// ErrNotFound because retrying can never produce the segment.
+	ErrSourceEnded = fmt.Errorf("%w: source ended before this segment", ErrNotFound)
 )

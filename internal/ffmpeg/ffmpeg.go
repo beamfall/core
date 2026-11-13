@@ -24,6 +24,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 )
 
 //go:embed ffmpeg.pin
@@ -1781,33 +1783,82 @@ func (r Rendition) burnInArgs(burnIndex int) []string {
 	return out
 }
 
+// hlsStderrTailBytes bounds the stderr an HLS process keeps for its exit
+// diagnostic. The encoders run at -v error, so a few KB holds the last errors
+// without letting a chatty failure grow server memory.
+const hlsStderrTailBytes = 4 << 10
+
+// hlsStderrWaitDelay bounds how long Wait lets a stray descendant holding the
+// stderr pipe delay the reap once the leader has exited.
+const hlsStderrWaitDelay = time.Second
+
 // HLSProcess is a running HLS transcode owned by its caller.
 type HLSProcess struct {
 	cmd     *exec.Cmd
 	wait    sync.Once
 	kill    sync.Once
 	waitErr error
+	// stopRequested records that the owner asked for this exit (Stop or context
+	// cancellation), so a supervisor can tell an expected kill from a crash.
+	stopRequested atomic.Bool
+	stderr        lockedTail
+}
+
+// lockedTail is a goroutine-safe tailBuffer: exec's copy goroutine writes
+// while a supervisor may read the tail.
+type lockedTail struct {
+	mu   sync.Mutex
+	tail tailBuffer
+}
+
+func (l *lockedTail) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.tail.Write(p)
+}
+
+func (l *lockedTail) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.tail.String()
 }
 
 func newHLSProcess(cmd *exec.Cmd) *HLSProcess {
-	return &HLSProcess{cmd: cmd}
+	p := &HLSProcess{cmd: cmd}
+	p.stderr.tail.limit = hlsStderrTailBytes
+	return p
 }
 
 // startHLSProcess is the single lifecycle boundary for every long-running HLS
 // process. Context cancellation and Stop share one process-group kill path;
-// concurrent Wait calls share exactly one exec.Cmd.Wait call.
+// concurrent Wait calls share exactly one exec.Cmd.Wait call. Unless the
+// caller already routed stderr, its bounded tail is kept for StderrTail.
 func startHLSProcess(cmd *exec.Cmd) (*HLSProcess, error) {
 	applySysProcAttr(cmd)
 	configureProcessGroup(cmd)
 	p := newHLSProcess(cmd)
 	cmd.Cancel = func() error {
+		p.stopRequested.Store(true)
 		p.killTree()
 		return nil
+	}
+	if cmd.Stderr == nil {
+		cmd.Stderr = &p.stderr
+		cmd.WaitDelay = hlsStderrWaitDelay
 	}
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
 	return p, nil
+}
+
+// StartHLSCommand starts an already-built command under the same HLS process
+// lifecycle the Runner's starters use; cmd must come from exec.CommandContext.
+// It is the seam for a Transcoder that
+// builds its own command (test fakes standing in for ffmpeg); production
+// starters build the hardened ffmpeg command themselves.
+func StartHLSCommand(cmd *exec.Cmd) (*HLSProcess, error) {
+	return startHLSProcess(cmd)
 }
 
 func (p *HLSProcess) killTree() {
@@ -1838,8 +1889,25 @@ func (p *HLSProcess) Stop() {
 	if p == nil || p.cmd == nil || p.cmd.Process == nil {
 		return
 	}
+	p.stopRequested.Store(true)
 	p.killTree()
 	_ = p.Wait()
+}
+
+// StopRequested reports whether the owner asked this process to exit (Stop or
+// context cancellation). An exit without it is the encoder's own: end of input
+// when Wait returns nil, a crash or an outside kill otherwise.
+func (p *HLSProcess) StopRequested() bool {
+	return p != nil && p.stopRequested.Load()
+}
+
+// StderrTail returns the last few KB the process wrote to stderr. It is
+// complete once Wait has returned.
+func (p *HLSProcess) StderrTail() string {
+	if p == nil {
+		return ""
+	}
+	return strings.TrimSpace(p.stderr.String())
 }
 
 // StartHLS launches an H.264/AAC HLS transcode of src into dir, writing

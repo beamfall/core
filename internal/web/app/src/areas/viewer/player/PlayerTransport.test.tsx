@@ -427,6 +427,72 @@ describe("PlayerTransport", () => {
     expect(screen.getByRole("combobox", { name: speed })).toBeVisible();
     expect(screen.getByRole("button", { name: pip })).toBeVisible();
   });
+  it("previews a scrubber drag and seeks once on release (CORE-1360)", () => {
+    const { video } = renderHarnessVideo({ currentTime: 10, duration: 100 });
+    const seeks: number[] = [];
+    let time = 10;
+    Object.defineProperty(video, "currentTime", {
+      configurable: true,
+      get: () => time,
+      set: (value: number) => {
+        time = value;
+        seeks.push(value);
+      },
+    });
+    const scrubber = screen.getByRole("slider", { name: "Playback position" });
+    const control = scrubber.closest(".bf-slider-control") as HTMLElement;
+    mockStageRect(control);
+
+    fireMouse(control, "pointerdown", 20);
+    fireMouse(document, "pointermove", 40);
+    fireMouse(document, "pointermove", 60);
+    expect(seeks).toEqual([]);
+    expect(scrubber).toHaveAttribute("aria-valuetext", expect.stringContaining("1 minute"));
+    expect(screen.getAllByText("1:00").length).toBeGreaterThan(0);
+    // Playback moving on underneath does not pull the previewed thumb back.
+    fireEvent.timeUpdate(video);
+    expect(scrubber).toHaveAttribute("aria-valuetext", expect.stringContaining("1 minute"));
+
+    fireMouse(document, "pointerup", 60);
+    expect(seeks).toEqual([60]);
+  });
+
+  it("seeks on a touch tap of the scrubber (CORE-1360)", () => {
+    const { video } = renderHarnessVideo({ currentTime: 10, duration: 100 });
+    const seeks: number[] = [];
+    let time = 10;
+    Object.defineProperty(video, "currentTime", {
+      configurable: true,
+      get: () => time,
+      set: (value: number) => {
+        time = value;
+        seeks.push(value);
+      },
+    });
+    const scrubber = screen.getByRole("slider", { name: "Playback position" });
+    const control = scrubber.closest(".bf-slider-control") as HTMLElement;
+    mockStageRect(control);
+    const touch = { identifier: 0, clientX: 20, clientY: 5 };
+
+    // A finger fires touchstart and pointerdown at the same spot; the slider
+    // skips its own commit for that pair, so the release must still seek.
+    fireEvent.touchStart(control, { changedTouches: [touch], touches: [touch] });
+    fireTouch(control, "pointerdown", { pointerId: 2, clientX: 20, clientY: 5 });
+    fireTouch(control, "pointerup", { pointerId: 2, clientX: 20, clientY: 5 });
+    fireEvent.touchEnd(control, { changedTouches: [touch], touches: [] });
+    expect(seeks).toEqual([20]);
+  });
+
+  it("seeks straight away on scrubber keyboard steps (CORE-1360)", () => {
+    const { video } = renderHarnessVideo({ currentTime: 50, duration: 100 });
+    const scrubber = screen.getByRole("slider", { name: "Playback position" });
+
+    fireEvent.keyDown(scrubber, { key: "ArrowRight" });
+    expect(video.currentTime).toBe(55);
+    fireEvent.keyDown(scrubber, { key: "End" });
+    expect(video.currentTime).toBe(100);
+  });
+
   it("routes keyboard seeks through the configured skip interval", () => {
     render(<Harness skipInterval={30} />);
     const video = screen.getByTestId("video") as HTMLVideoElement;
@@ -563,4 +629,24 @@ function fireTouch(
 function tap(target: Element, clientX: number, pointerId: number) {
   fireTouch(target, "pointerdown", { pointerId, clientX, clientY: 50 });
   fireTouch(target, "pointerup", { pointerId, clientX, clientY: 50 });
+}
+
+function fireMouse(
+  target: Element | Document,
+  type: "pointerdown" | "pointermove" | "pointerup",
+  clientX: number,
+) {
+  const event = new MouseEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    button: 0,
+    buttons: type === "pointerup" ? 0 : 1,
+    clientX,
+    clientY: 5,
+  });
+  Object.defineProperties(event, {
+    pointerId: { value: 1 },
+    pointerType: { value: "mouse" },
+  });
+  fireEvent(target, event);
 }
