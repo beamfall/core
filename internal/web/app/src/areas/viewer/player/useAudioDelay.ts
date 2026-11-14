@@ -121,7 +121,9 @@ export function useAudioDelay({
       // the next interaction; until then the element plays undelayed.
       void context.resume().then(
         () => {
-          if (context.state === "running") apply();
+          // A pause can land while the resume is in flight; settle on its state.
+          if (video.paused) void context.suspend().catch(() => {});
+          else if (context.state === "running") apply();
         },
         () => {},
       );
@@ -158,7 +160,9 @@ export function useAudioDelay({
     };
     const hold = () => {
       const graph = graphs.get(video);
-      if (graph?.context.state === "running") void graph.context.suspend().catch(() => {});
+      // Suspend even when the context does not report "running" yet: a resume
+      // may still be pending, and the context applies the calls in order.
+      if (graph && graph.context.state !== "closed") void graph.context.suspend().catch(() => {});
     };
     const flush = () => {
       const graph = graphs.get(video);

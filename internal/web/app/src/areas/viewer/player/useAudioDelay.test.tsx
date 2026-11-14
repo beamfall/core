@@ -158,4 +158,36 @@ describe("useAudioDelay", () => {
     });
     expect(context.createDelay.mock.calls.length).toBe(delays + 1);
   });
+
+  it("settles suspended when a pause lands while a resume is in flight", async () => {
+    let paused = false;
+    const element = video("/api/media/m1/stream");
+    Object.defineProperty(element, "paused", { configurable: true, get: () => paused });
+    const { result } = render(element, "m6");
+    act(() => result.current.nudgeAudioDelay(0.5));
+    const context = createMediaElementSource.mock.contexts[0] as FakeAudioContext;
+    context.state = "suspended";
+    let finishResume = () => {};
+    context.resume.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishResume = () => {
+            context.state = "running";
+            resolve();
+          };
+        }),
+    );
+    act(() => {
+      element.dispatchEvent(new Event("play"));
+    });
+    paused = true;
+    act(() => {
+      element.dispatchEvent(new Event("pause"));
+    });
+    context.suspend.mockClear();
+    await act(async () => {
+      finishResume();
+    });
+    expect(context.suspend).toHaveBeenCalled();
+  });
 });
