@@ -3518,7 +3518,11 @@ func (s *Store) CreateLibraryWithRoots(ctx context.Context, title string, restri
 	id := base
 	for suffix := 2; ; suffix++ {
 		var count int
-		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM library WHERE id = ?`, id).Scan(&count); err != nil {
+		// A purged Library's id stays retired (see libraryPurgedConfigPrefix).
+		if err := tx.QueryRowContext(ctx, `
+			SELECT (SELECT COUNT(*) FROM library WHERE id = ?)
+			     + (SELECT COUNT(*) FROM server_config WHERE key = ?)`,
+			id, libraryPurgedConfigPrefix+string(id)).Scan(&count); err != nil {
 			return Library{}, err
 		}
 		if count == 0 {

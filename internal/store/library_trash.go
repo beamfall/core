@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"log/slog"
 	"time"
 )
 
@@ -44,6 +45,12 @@ type LibraryPurge struct {
 	MediaIDs   []MediaID
 	EntityIDs  []EntityID
 }
+
+// libraryPurgedConfigPrefix keys a tombstone server_config row per purged
+// Library id. Activity, notifications and history keep naming a purged
+// restricted Library's id so they stay hidden; CreateLibraryWithRoots never
+// hands that id out again, or a new Library would reveal them to its scope.
+const libraryPurgedConfigPrefix = "library.purged."
 
 // ActivityLibraryID is the Library id a library.purge activity record carries.
 // The activity log hides a record naming a Library that no longer exists, which
@@ -191,17 +198,23 @@ func (s *Store) purgeLibraryLocked(ctx context.Context, id LibraryID) (LibraryPu
 	if _, err := tx.ExecContext(ctx, `DELETE FROM library WHERE id = ?`, id); err != nil {
 		return LibraryPurge{}, err
 	}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT OR REPLACE INTO server_config(key, value, updated_at_ms) VALUES (?, '1', ?)`,
+		libraryPurgedConfigPrefix+string(id), time.Now().UnixMilli()); err != nil {
+		return LibraryPurge{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return LibraryPurge{}, err
 	}
-	// The catalog is the authority and is already committed; the events-side
-	// cleanup below is idempotent and the next retention sweep repeats it, so a
-	// failure here is reported without pretending the purge did not happen.
+	// The catalog is the authority and is already committed, so the purge has
+	// happened: callers must still record it and drop its artwork. The
+	// events-side cleanup below is idempotent and the next retention sweep
+	// repeats it, so a failure here is logged rather than returned.
 	if _, err := s.eventsW.ExecContext(ctx, `DELETE FROM schedule_occurrence WHERE schedule_id = ?`, scanScheduleID(id)); err != nil {
-		return purge, err
+		slog.WarnContext(ctx, "library purge: schedule occurrence cleanup failed", "library", id, "error", err)
 	}
 	if _, err := s.pruneOrphanedEngagementRowsLocked(ctx); err != nil {
-		return purge, err
+		slog.WarnContext(ctx, "library purge: engagement cleanup failed", "library", id, "error", err)
 	}
 	return purge, nil
 }

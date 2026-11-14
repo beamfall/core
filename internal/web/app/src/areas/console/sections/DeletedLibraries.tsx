@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { purgeLibrary, restoreLibrary } from "@/lib/graphql";
 import type { LibraryPurgeResult, TrashedLibraryInfo } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
+import { requestManifestRefresh } from "@/lib/manifestRefresh";
 
 // "Recently deleted" (CORE-1201): the libraries an admin deleted and can still
 // get back. Restore is one click, because it loses nothing. "Delete
@@ -170,6 +171,7 @@ function DeletedLibraryRow({
     setError(null);
     try {
       await restoreLibrary(library.id);
+      requestManifestRefresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "");
       return;

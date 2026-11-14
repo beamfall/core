@@ -327,6 +327,28 @@ func TestPurgeLibraryRefusesLiveUnknownAndCustodialLibraries(t *testing.T) {
 	}
 }
 
+func TestPurgedLibraryIDIsNeverReissued(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	library, _, _ := trashFixtureLibrary(t, st, "Films")
+	if err := st.DeleteLibrary(ctx, library.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.PurgeLibrary(ctx, library.ID); err != nil {
+		t.Fatalf("PurgeLibrary: %v", err)
+	}
+
+	// Activity and history still name the purged id, so a new Library with the
+	// same title must not inherit it.
+	again, err := st.CreateLibraryWithRoots(ctx, "Films", false, "", "profile-default", []string{t.TempDir()}, "")
+	if err != nil {
+		t.Fatalf("CreateLibraryWithRoots: %v", err)
+	}
+	if again.ID == library.ID {
+		t.Fatalf("new Library reused purged id %q", library.ID)
+	}
+}
+
 func TestSweepPurgeTrashedLibrariesHonoursRetentionAndCustodial(t *testing.T) {
 	st := openSeeded(t)
 	ctx := context.Background()

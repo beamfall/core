@@ -10,6 +10,7 @@ import { createLibrary } from "@/lib/graphql";
 import type { PluginSummary } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { libraryTypeOptions } from "@/lib/libraryTypes";
+import { requestManifestRefresh } from "@/lib/manifestRefresh";
 import { cn } from "@/lib/utils";
 import { MutationFailure } from "./DeletedLibraries";
 import { CARD } from "./libraryStyles";
@@ -93,6 +94,7 @@ export function AddLibrary({
         selected.familyScope ?? undefined,
         roots,
       );
+      requestManifestRefresh();
       await onCreated({ id: created.id, title: created.title || name, roots });
     } catch (err) {
       setFailure(err instanceof Error ? err.message : "");

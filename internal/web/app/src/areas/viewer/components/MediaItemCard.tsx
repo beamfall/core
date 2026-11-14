@@ -253,7 +253,8 @@ export function MediaItemCard({
             remainingCount={state.remainingCount}
             progressPercent={state.progressPercent}
           />
-          {isMedia && (
+          {/* The pill names what activating the card does, so it shows only when that plays. */}
+          {isMedia && playOnActivate && (
             <span aria-hidden="true" className="bf-card-play">
               <Play size={16} fill="currentColor" />
               {primaryLabel}

@@ -15,6 +15,9 @@ interface Entry {
   count: number;
   fetchedAt: number;
   inFlight: Promise<void> | null;
+  // A forced revalidate that arrived mid-fetch: that fetch may predate the
+  // change, so one more runs when it settles.
+  refetch: boolean;
 }
 
 let entry: Entry | null = null;
@@ -33,11 +36,14 @@ function subscribe(listener: () => void) {
 
 function revalidate(scope: string, force: boolean): void {
   if (entry?.scope !== scope) {
-    entry = { scope, count: 0, fetchedAt: 0, inFlight: null };
+    entry = { scope, count: 0, fetchedAt: 0, inFlight: null, refetch: false };
     emit();
   }
   const current = entry;
-  if (current.inFlight) return;
+  if (current.inFlight) {
+    if (force) current.refetch = true;
+    return;
+  }
   if (
     !force &&
     current.fetchedAt > 0 &&
@@ -58,7 +64,12 @@ function revalidate(scope: string, force: boolean): void {
     )
     .finally(() => {
       current.inFlight = null;
-      if (entry === current) emit();
+      if (entry !== current) return;
+      emit();
+      if (current.refetch) {
+        current.refetch = false;
+        revalidate(scope, true);
+      }
     });
 }
 

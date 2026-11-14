@@ -60,6 +60,7 @@ import type {
   WatcherStatusInfo,
 } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
+import { requestManifestRefresh } from "@/lib/manifestRefresh";
 import { cn } from "@/lib/utils";
 import { ConfirmButton } from "../ConfirmButton";
 import { Section } from "../Section";
@@ -484,6 +485,7 @@ export function Libraries() {
     setUndoError(null);
     try {
       await restoreLibrary(library.id);
+      requestManifestRefresh();
     } catch (err) {
       setUndoError(err instanceof Error ? err.message : "");
       return;
