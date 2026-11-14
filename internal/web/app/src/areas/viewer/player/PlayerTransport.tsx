@@ -37,6 +37,7 @@ import type { MetadataAttribution } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
 import { SKIP_INTERVALS, type SkipInterval } from "../lib/preferences";
 import {
+  buildChapterList,
   buildMarkerStripModel,
   buildRenditionMenuModel,
   chapterSeekTarget,
@@ -45,6 +46,7 @@ import {
   formatRemainingTime,
   resolveTrickplayTile,
 } from "../lib/transport";
+import { ChapterList } from "./ChapterList";
 import { InfoOverlay } from "./InfoOverlay";
 import { SubtitleStylePanel } from "./SubtitleStylePanel";
 import { TransportMenu } from "./TransportMenu";
@@ -153,6 +155,7 @@ export function PlayerTransport({
   const [gestureFeedback, setGestureFeedback] = useState<GestureFeedback | null>(null);
   const [openKey, setOpenKey] = useState<OpenKey>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [chaptersOpen, setChaptersOpen] = useState(false);
   const [buffered, setBuffered] = useState(0);
   const [hover, setHover] = useState<{ left: number; time: number } | null>(null);
   const narrow = useNarrowViewport();
@@ -176,8 +179,8 @@ export function PlayerTransport({
 
   // Report open/closed up so the stage can keep chrome visible while a menu is up.
   useEffect(() => {
-    onMenuOpenChange?.(settingsOpen || openKey !== null);
-  }, [openKey, settingsOpen, onMenuOpenChange]);
+    onMenuOpenChange?.(settingsOpen || chaptersOpen || openKey !== null);
+  }, [openKey, settingsOpen, chaptersOpen, onMenuOpenChange]);
 
   const closeSettings = useCallback((restoreFocus: boolean) => {
     setSettingsOpen(false);
@@ -576,6 +579,10 @@ export function PlayerTransport({
   });
   const previousChapter = chapterSeekTarget(state.markers, current, -1);
   const nextChapter = chapterSeekTarget(state.markers, current, 1);
+  const chapters = buildChapterList(state.markers, {
+    thumbnailBase: state.info?.assets?.markerThumbnailBase,
+    currentTimeSeconds: current,
+  });
   const skipBackLabel = t("seekBackSeconds", { seconds: skipInterval });
   const skipForwardLabel = t("seekForwardSeconds", { seconds: skipInterval });
 
@@ -821,6 +828,14 @@ export function PlayerTransport({
             <ChevronsRight aria-hidden="true" />
             <span className="sr-only">{t("nextChapter")}</span>
           </button>
+          <ChapterList
+            chapters={chapters}
+            trickplay={state.trickplay}
+            trickplayBaseURL={state.trickplayBaseURL}
+            container={layerRef}
+            onSeek={seekTo}
+            onOpenChange={setChaptersOpen}
+          />
 
           <div className="bf-volume">
             <button

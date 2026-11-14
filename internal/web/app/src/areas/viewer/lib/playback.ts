@@ -38,6 +38,8 @@ export interface PlaybackAssets {
   trickplay?: string;
   /** Silent sampled MP4 preview clip URL for hover/focus preview surfaces. */
   previewClip?: string;
+  /** Marker thumbnail directory URL (ends in `/`); files are `marker-<ms>.jpg`. */
+  markerThumbnailBase?: string;
   /** ISO expiry of the asset Stream Token; an expired token suppresses trickplay. */
   expiresAt?: string;
   /** Optional bar/phrase timing hints composed with beatgrid.json by clients. */

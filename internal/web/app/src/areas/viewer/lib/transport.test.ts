@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   autoSkipSegmentAt,
   autoSkipSegmentKey,
+  buildChapterList,
   buildRenditionMenuModel,
   chapterSeekTarget,
   renditionIndex,
@@ -19,6 +20,42 @@ describe("chapterSeekTarget", () => {
     expect(chapterSeekTarget(markers, 31, -1)).toBe(0);
     expect(chapterSeekTarget(markers, 31, 1)).toBe(60);
     expect(chapterSeekTarget(markers, 60.5, 1)).toBeNull();
+  });
+});
+
+describe("buildChapterList", () => {
+  const markers = [
+    { title: "Credits", startSeconds: 300, endSeconds: 330, segmentKind: "credits" },
+    { title: "Second", startSeconds: 120, endSeconds: 240, segmentKind: "" },
+    { title: "", startSeconds: 0, endSeconds: 120, segmentKind: "" },
+    { title: "Opening", startSeconds: 0, endSeconds: null, segmentKind: "" },
+    { title: "Intro", startSeconds: 5, endSeconds: 30, segmentKind: "intro" },
+    { title: "Third", startSeconds: 240.5, endSeconds: null, segmentKind: "" },
+  ];
+
+  it("keeps range and point Markers without a segment kind, sorted and de-duplicated", () => {
+    const chapters = buildChapterList(markers, { currentTimeSeconds: 130 });
+    expect(chapters.map((chapter) => [chapter.startSeconds, chapter.title])).toEqual([
+      [0, "Opening"],
+      [120, "Second"],
+      [240.5, "Third"],
+    ]);
+    expect(chapters.map((chapter) => chapter.current)).toEqual([false, true, false]);
+    expect(chapters.every((chapter) => chapter.thumbnailURL === null)).toBe(true);
+  });
+
+  it("names thumbnails with the server's millisecond marker file name", () => {
+    const chapters = buildChapterList(markers, { thumbnailBase: "/api/media/assets/tok/" });
+    expect(chapters.map((chapter) => chapter.thumbnailURL)).toEqual([
+      "/api/media/assets/tok/marker-0.jpg",
+      "/api/media/assets/tok/marker-120000.jpg",
+      "/api/media/assets/tok/marker-240500.jpg",
+    ]);
+    expect(chapters[0].current).toBe(true);
+  });
+
+  it("returns no chapters when every Marker is a segment", () => {
+    expect(buildChapterList([markers[0], markers[4]])).toEqual([]);
   });
 });
 
