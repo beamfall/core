@@ -169,7 +169,7 @@ func TestManagerInvalidSaveChangesNothing(t *testing.T) {
 		{Format: "slack", URL: "http://169.254.169.254/x"},
 		{Format: "email", URL: "smtps://mail.example", From: "a@example.com"}, // no recipients
 		{Format: "carrier-pigeon", URL: "https://x.example"},
-		{Format: "ntfy", URL: "https://user:pw@ntfy.example/t"},
+		{Format: "ntfy", URL: "https://user:pw@ntfy.example/t"}, // #nosec G101 -- a refused user-info test input, not a credential.
 		{Format: "ntfy", URL: "https://ntfy.example/t", Name: strings.Repeat("n", maxNameRunes+1)},
 		{ID: good.ID, Format: "slack"}, // a format change needs a URL
 	}
@@ -267,7 +267,7 @@ func TestManagerSettingsValidateBaseURL(t *testing.T) {
 }
 
 func TestRedactURL(t *testing.T) {
-	cases := map[string]string{
+	cases := map[string]string{ // #nosec G101 -- redaction test inputs, not credentials.
 		"https://hooks.example":           "https://hooks.example",
 		"https://hooks.example/":          "https://hooks.example",
 		"https://ntfy.example:8443/topic": "https://ntfy.example:8443/…",

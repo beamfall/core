@@ -380,7 +380,7 @@ func (m *Manager) buildFileEndpoint(in EndpointInput, prior fileEndpoint, existi
 		fe.ID = id
 	}
 	if fe.URL == "" {
-		if !existing || prior.Format != string(format) && !(prior.Format == "" && format == FormatGeneric) {
+		if !existing || prior.Format != string(format) && (prior.Format != "" || format != FormatGeneric) {
 			return fileEndpoint{}, ErrConfigDiagnostic // a new endpoint, or a format change, needs a URL
 		}
 		fe.URL = prior.URL

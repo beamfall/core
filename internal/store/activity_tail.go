@@ -31,6 +31,7 @@ func (s *Store) ActivityEntriesAfter(ctx context.Context, afterID int64, actions
 	}
 	args = append(args, limit)
 	placeholders := strings.TrimSuffix(strings.Repeat("?, ", len(actions)), ", ")
+	// #nosec G202 -- only generated placeholders are interpolated; every value is bound.
 	rows, err := s.eventsR.QueryContext(ctx, `
 		SELECT id, operation_id, occurred_at_ms, action, session_id, device_id, profile_id, target_type, target_id, library_id, token_id, api_key_id
 		FROM activity_entry
