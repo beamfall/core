@@ -1,5 +1,8 @@
-# Merge gate CI. Local `make gate` is the serial reproducer for non-race checks;
-# race remains merge-blocking here as its own lane.
+# Hosted checks: INFORMATIONAL ONLY. Hosted GitHub Actions is not a merge gate
+# (operator decision 2026-07-22); the blocking signal is the local `make gate`
+# on the exact head. A hosted runner has no sibling workspace, Corvint,
+# OpenSpec, Swift or the gate's container images, so it runs only the subset
+# of gate steps it can satisfy, instead of a `make gate` that cannot pass here.
 name: gate
 
 on:
@@ -32,16 +35,22 @@ jobs:
           cache-dependency-path: internal/web/app/package-lock.json
       - name: check trust documents
         run: sh .github/check-trust-docs.sh
-      # make gate runs vuln-check (govulncheck) and the FFmpeg unit tests, which
-      # refuse to skip when ffmpeg is missing. The runner's own ffmpeg is enough
-      # for those; the pinned jellyfin build is checked by the gate's
-      # ffmpeg-tonemap-conforming step in a debian:bookworm container.
-      - name: install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
-      - name: install ffmpeg
-        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends ffmpeg
-      - name: make gate
-        run: make gate
+      - name: install govulncheck and golangci-lint
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
+      - name: release workflow pins
+        run: make release-workflow-pins-check
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l cmd internal tools)
+          if [ -n "$unformatted" ]; then echo "gofmt needed:"; echo "$unformatted"; exit 1; fi
+      - name: go vet
+        run: go vet ./...
+      - name: vuln-check
+        run: make vuln-check
+      - name: golangci-lint (staticcheck + gosec)
+        run: make lint
 
   race:
     runs-on: ubuntu-latest
