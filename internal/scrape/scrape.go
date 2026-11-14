@@ -865,7 +865,17 @@ func (e *Engine) loginToken(ctx context.Context, spec plugin.ScraperSpec, secret
 	if ok && e.clock.Now().Before(cached.expires) {
 		return cached.token, nil
 	}
-	payload, err := json.Marshal(map[string]string{spec.Login.SecretField: secret})
+	fields := map[string]string{spec.Login.SecretField: secret}
+	// SecretFields adds further body keys, each resolved like the scraper's own
+	// AuthRef; a missing one fails the exchange rather than logging in without it.
+	for field, ref := range spec.Login.SecretFields {
+		extra, err := e.credentials.Secret(ref)
+		if err != nil {
+			return "", fmt.Errorf("scrape: scraper %q login field %q: resolving credential %q: %w", spec.ID, field, ref, err)
+		}
+		fields[field] = extra
+	}
+	payload, err := json.Marshal(fields)
 	if err != nil {
 		return "", fmt.Errorf("scrape: scraper %q login: %w", spec.ID, err)
 	}

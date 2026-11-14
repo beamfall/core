@@ -3,6 +3,7 @@ package graph
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -114,6 +115,48 @@ func TestAdminSessionRejectsManagedProfile(t *testing.T) {
 		authorizeManaged)
 	if len(errs) == 0 || !strings.Contains(errs[0].Message, "rejected") {
 		t.Fatalf("managed-profile verify errors = %#v, want rejection", errs)
+	}
+}
+
+// TestVerifyAdminSessionCreateFirstChoosesTheFirstPassword is the CORE-1132
+// vertical slice: with no admin password, the owner's Manager session chooses
+// one through verifyAdminSession with createFirst and lands in an open Admin
+// Session; once it exists createFirst is an ordinary unlock and replaces nothing.
+func TestVerifyAdminSessionCreateFirstChoosesTheFirstPassword(t *testing.T) {
+	// feature:admin-session
+	st := storetest.Open(t)
+	handler := newTestHandlerWithStore(st)
+	const create = `{"query":"mutation V($password: String!, $createFirst: Boolean){ verifyAdminSession(password:$password, createFirst:$createFirst){ active expiresAt } }","variables":{"password":"%s","createFirst":%t}}`
+
+	// Without createFirst a locked-out owner cannot set one by typing a password.
+	_, errs := post(t, handler, fmt.Sprintf(create, "first choice", false), authorizeManager)
+	if len(errs) == 0 || !strings.Contains(errs[0].Message, "rejected") {
+		t.Fatalf("plain unlock with no password errors = %#v, want generic rejection", errs)
+	}
+	if set, err := st.AdminPasswordSet(t.Context()); err != nil || set {
+		t.Fatalf("a plain unlock set the password: (%v, %v)", set, err)
+	}
+
+	data, errs := post(t, handler, fmt.Sprintf(create, "first choice", true), authorizeManager)
+	if len(errs) != 0 {
+		t.Fatalf("createFirst errors = %#v", errs)
+	}
+	var verified AdminSessionInfo
+	mustUnmarshal(t, data["verifyAdminSession"], &verified)
+	if !verified.Active || verified.ExpiresAt == "" {
+		t.Fatalf("createFirst = %#v, want an open Admin Session", verified)
+	}
+	data, errs = post(t, handler, `{"query":"query { adminSession { active } setupState { adminPasswordSet } }"}`, authorizeManager)
+	if len(errs) != 0 || !strings.Contains(string(data["adminSession"]), "true") || !strings.Contains(string(data["setupState"]), "true") {
+		t.Fatalf("after createFirst: data=%v errs=%#v", data, errs)
+	}
+
+	// Post-set: a later createFirst with another password is just a failed unlock.
+	if _, errs := post(t, handler, fmt.Sprintf(create, "someone else", true), authorizeManager); len(errs) == 0 {
+		t.Fatal("createFirst replaced or accepted a password after one existed")
+	}
+	if err := st.VerifyAdminPassword(t.Context(), "first choice"); err != nil {
+		t.Fatalf("first password changed: %v", err)
 	}
 }
 

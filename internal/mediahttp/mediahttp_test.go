@@ -950,6 +950,35 @@ func TestArtworkFallsBackToPosterForMissingSlot(t *testing.T) {
 	}
 }
 
+func TestArtworkServesWidenedSlotsWithPerSlotFallback(t *testing.T) {
+	handler, svc := newArtworkTestHandler(t)
+	writeTestPoster(t, svc, "media-alpha")
+
+	// Container poster falls back to the poster; logo has no fallback.
+	rec := httptest.NewRecorder()
+	handler.Artwork(rec, artworkRequest("media-alpha", artwork.SlotContainerPoster))
+	if rec.Code != http.StatusOK || rec.Body.String() != "jpeg bytes" {
+		t.Fatalf("season-poster fallback = %d %q, want 200 poster bytes", rec.Code, rec.Body.String())
+	}
+	for _, slot := range []string{artwork.SlotLogo, artwork.SlotBanner, artwork.SlotClearart, artwork.SlotDisc} {
+		rec := httptest.NewRecorder()
+		handler.Artwork(rec, artworkRequest("media-alpha", slot))
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("%s without its file: status = %d, want 404 (no poster fallback)", slot, rec.Code)
+		}
+	}
+
+	// Stored slots serve their own bytes.
+	for _, slot := range []string{artwork.SlotLogo, artwork.SlotBanner, artwork.SlotClearart, artwork.SlotDisc, artwork.SlotContainerPoster} {
+		writeTestArtwork(t, svc, "media-alpha", slot, slot+" bytes")
+		rec := httptest.NewRecorder()
+		handler.Artwork(rec, artworkRequest("media-alpha", slot))
+		if rec.Code != http.StatusOK || rec.Body.String() != slot+" bytes" {
+			t.Fatalf("%s: %d %q, want 200 %q", slot, rec.Code, rec.Body.String(), slot+" bytes")
+		}
+	}
+}
+
 func TestArtworkHidesRestrictedMediaWithoutReveal(t *testing.T) {
 	handler, svc := newArtworkTestHandler(t)
 	writeTestPoster(t, svc, "media-archive")
@@ -981,7 +1010,7 @@ func TestArtworkRejectsUnknownSlot(t *testing.T) {
 	writeTestPoster(t, svc, "media-alpha")
 	rec := httptest.NewRecorder()
 
-	handler.Artwork(rec, artworkRequest("media-alpha", "banner"))
+	handler.Artwork(rec, artworkRequest("media-alpha", "portrait"))
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404 for unknown slot", rec.Code)
@@ -2272,7 +2301,7 @@ func TestEntityArtworkRejectsUnknownSlotAndBucket(t *testing.T) {
 	writeTestEntityPoster(t, svc, "entity-maker")
 
 	slot := httptest.NewRecorder()
-	handler.EntityArtwork(slot, entityArtworkRequest("entity-maker", "banner"))
+	handler.EntityArtwork(slot, entityArtworkRequest("entity-maker", "portrait"))
 	bucket := httptest.NewRecorder()
 	handler.EntityArtwork(bucket, entityArtworkRequest("entity-maker", "poster?bucket=w999"))
 

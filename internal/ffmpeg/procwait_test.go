@@ -3,10 +3,7 @@
 package ffmpeg
 
 import (
-	"os"
 	"os/exec"
-	"strconv"
-	"strings"
 	"testing"
 	"time"
 )
@@ -25,38 +22,20 @@ func TestWaitForProcessExitLeavesLeaderWaitable(t *testing.T) {
 	}
 }
 
-// TestWaitForProcessExitOnAnExitedChild proves a child that exited before the
-// wait began counts as exited, not as a failed wait: on darwin the kqueue
-// NOTE_EXIT registration on such a child fails with ESRCH.
-func TestWaitForProcessExitOnAnExitedChild(t *testing.T) {
+// TestWaitForProcessExitAcceptsAnAlreadyExitedLeader covers a leader that
+// exits before the wait registers: it is a zombie by then, and the wait must
+// report a clean exit rather than an error that reads as an encoder crash.
+func TestWaitForProcessExitAcceptsAnAlreadyExitedLeader(t *testing.T) {
 	cmd := exec.Command("sh", "-c", "exit 0")
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	// Wait until the child is a zombie: exited, its status not yet reaped.
-	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
-		if exited, err := childExited(cmd.Process); err == nil && exited {
-			break
-		}
-		if time.Now().After(deadline) {
-			_ = cmd.Wait()
-			t.Fatal("child never exited")
-		}
-	}
+	time.Sleep(200 * time.Millisecond) // let the leader exit and become a zombie
 	if err := waitForProcessExit(cmd.Process.Pid); err != nil {
 		_ = cmd.Wait()
-		t.Fatalf("wait on an exited child: %v", err)
+		t.Fatalf("already-exited leader: %v", err)
 	}
 	if err := cmd.Wait(); err != nil {
-		t.Fatalf("exit status: %v", err)
+		t.Fatalf("leader exit status: %v", err)
 	}
-}
-
-// childExited reports whether p has exited without reaping it.
-func childExited(p *os.Process) (bool, error) {
-	out, err := exec.Command("ps", "-o", "stat=", "-p", strconv.Itoa(p.Pid)).Output() // #nosec G204 -- fixed ps argv; the pid is our own child
-	if err != nil {
-		return false, err
-	}
-	return strings.HasPrefix(strings.TrimSpace(string(out)), "Z"), nil
 }

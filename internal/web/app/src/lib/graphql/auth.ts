@@ -43,7 +43,7 @@ export async function fetchAdminSession(signal?: AbortSignal): Promise<AdminSess
 }
 
 const VERIFY_ADMIN_SESSION_MUTATION =
-  "mutation VerifyAdminSession($password: String!) { verifyAdminSession(password: $password) { active expiresAt } }";
+  "mutation VerifyAdminSession($password: String!, $createFirst: Boolean) { verifyAdminSession(password: $password, createFirst: $createFirst) { active expiresAt } }";
 
 /** An accepted admin credential plus the outcome of the handshake after it. */
 export interface VerifiedAdminSession extends AdminSessionInfo {
@@ -55,14 +55,19 @@ export interface VerifiedAdminSession extends AdminSessionInfo {
  * VerifyAdminSession — open an Admin Session with the admin password. Rejects
  * only when the credential step itself fails; `rebind` reports the handshake
  * that follows, which the caller surfaces separately (the session is live).
+ *
+ * `createFirst` (CORE-1132) asks the server to choose `password` as the admin
+ * password when none exists yet; it never replaces one and is otherwise an
+ * ordinary unlock. Only the Console gate's set-password step passes it.
  */
 export async function verifyAdminSession(
   password: string,
   signal?: AbortSignal,
+  createFirst?: boolean,
 ): Promise<VerifiedAdminSession> {
   const data = await graphql<{ verifyAdminSession: AdminSessionInfo }>(
     VERIFY_ADMIN_SESSION_MUTATION,
-    { password },
+    createFirst ? { password, createFirst: true } : { password },
     signal,
   );
   const info = data.verifyAdminSession;

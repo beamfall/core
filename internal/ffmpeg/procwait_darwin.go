@@ -9,6 +9,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// waitForProcessExit blocks until pid, an unreaped child of this process, has
+// exited. kqueue refuses EVFILT_PROC with ESRCH once the child is already a
+// zombie; an unreaped child's pid cannot be reused, so ESRCH means it has
+// already exited, not that it is unknown.
 func waitForProcessExit(pid int) error {
 	if pid < 0 {
 		return syscall.EINVAL
@@ -32,6 +36,9 @@ func waitForProcessExit(pid int) error {
 		if err == syscall.EINTR {
 			continue
 		}
+		if err == syscall.ESRCH {
+			return nil // already exited before the watch was registered
+		}
 		if err != nil {
 			return err
 		}
@@ -46,9 +53,7 @@ func waitForProcessExit(pid int) error {
 			if errno := syscall.Errno(eventErrno); errno != syscall.ESRCH {
 				return errno
 			}
-			// NOTE_EXIT cannot be registered on a child that already exited
-			// and is waiting to be reaped. The caller has not reaped it yet,
-			// so ESRCH here means it has exited; cmd.Wait reaps it.
+			return nil // already exited before the watch was registered
 		}
 		return nil
 	}
