@@ -21,6 +21,9 @@
 - [x] 2.3 `script/gate_slot_test.py` in `support script tests`: two gates serialize in arrival
       order, a stale entry is reclaimed, refusal, cancellation, re-entry, coordinator integration
 - [x] 2.4 Document the slot in `docs/architecture/TESTING.md`
+- [x] 2.5 Review fixes: the slot is taken before repository capacity (`run-with-evidence.sh`, and a
+      coordinator that inherited capacity does not wait), and process start times are read in one
+      time zone; tests for both
 
 ## 3. Verify and close
 

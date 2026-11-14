@@ -26,6 +26,7 @@ while waiting; 64 for usage errors; 127 when COMMAND cannot be started; 70 when
 
 from __future__ import annotations
 
+import calendar
 from contextlib import contextmanager
 import fcntl
 import json
@@ -62,7 +63,8 @@ def _ps(*arguments: str) -> str | None:
         result = subprocess.run(
             ["ps", *arguments],
             capture_output=True,
-            env={**os.environ, "LC_ALL": "C"},
+            # Start times are compared between callers: one locale and one zone.
+            env={**os.environ, "LC_ALL": "C", "TZ": "UTC"},
             text=True,
             timeout=30,
         )
@@ -74,7 +76,7 @@ def _ps(*arguments: str) -> str | None:
 
 def _start_epoch(text: str) -> int | None:
     try:
-        return int(time.mktime(time.strptime(" ".join(text.split()), "%a %b %d %H:%M:%S %Y")))
+        return calendar.timegm(time.strptime(" ".join(text.split()), "%a %b %d %H:%M:%S %Y"))
     except (ValueError, OverflowError):
         return None
 

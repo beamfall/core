@@ -43,6 +43,11 @@ if [ "${BEAMFALL_GATE_CAPACITY_HELD:-0}" != 1 ] && command_is_make_gate "$@"; th
   }
   export BEAMFALL_GATE_CAPACITY_HELD=1
   run_command=(python3 "$capacity" -- "$@")
+  # The machine gate slot comes before repository capacity on every path
+  # (CORE-1470): a gate that queued for the slot while it held capacity would
+  # deadlock with one that holds the slot and waits for that capacity.
+  slot="$ROOT/script/gate-slot.py"
+  [ ! -f "$slot" ] || run_command=(python3 "$slot" -- "${run_command[@]}")
 fi
 
 repo_marker_present() {

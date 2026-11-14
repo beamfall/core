@@ -205,6 +205,7 @@ def machine_slot_module():
 def take_machine_slot(
     locks: ExitStack,
     preflight: bool,
+    capacity_inherited: bool,
     command: list[str],
     generation: int,
     generation_path: Path,
@@ -214,6 +215,9 @@ def take_machine_slot(
 
     One full gate runs on a machine at a time across every repository
     (CORE-1470). A preflight never queues; it only says who holds the slot.
+    Neither does a gate whose ancestor already took repository capacity
+    without the slot: waiting for the slot while holding capacity would
+    deadlock with a gate that holds the slot and waits for that capacity.
     Returns (False, None) when the run was cancelled or superseded while
     queued, otherwise (True, slot), where slot is None unless this run now
     holds the slot itself. The slot is advisory plumbing around the gate, not
@@ -233,6 +237,14 @@ def take_machine_slot(
                     file=sys.stderr,
                     flush=True,
                 )
+            return True, None
+        if capacity_inherited:
+            print(
+                "gate: repository capacity was taken before the machine gate slot; "
+                "running without waiting for the slot",
+                file=sys.stderr,
+                flush=True,
+            )
             return True, None
         slot = gate_slot.Slot(command, cwd=ROOT)
         slot.join()
@@ -444,6 +456,7 @@ def supervise(command: list[str]) -> int:
             capacity_path = common_dir / "beamfall-gate.capacity.lock"
             capacity_label = f"gate capacity ({capacity_path})"
             capacity_fd = inherited_capacity_lock(capacity_path)
+        capacity_inherited = capacity_fd is not None
         if capacity_fd is None:
             capacity_fd = os.open(
                 capacity_path,
@@ -455,6 +468,7 @@ def supervise(command: list[str]) -> int:
             proceed, machine_slot = take_machine_slot(
                 locks,
                 preflight,
+                capacity_inherited,
                 command,
                 generation,
                 generation_path,

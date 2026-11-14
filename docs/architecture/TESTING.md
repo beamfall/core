@@ -306,6 +306,16 @@ python3 script/gate-slot.py -- corvint-tasks gate run --gate gate ...
 The slot follows the wrapping command's process. If that process is killed outright while the gate
 under it keeps running, the slot frees before that gate ends; stop the gate too.
 
+The slot always comes before repository capacity. `script/run-with-evidence.sh -- make gate` takes
+the slot first and capacity second. A gate that starts under a process which already holds capacity
+but not the slot does not queue: it says so and runs, because waiting there would deadlock with a
+gate that holds the slot and waits for that capacity.
+
+Two limits are known. Killing the gate coordinator outright (SIGKILL) frees the slot at once, while
+its supervisor still takes a few seconds to stop the worker tree, so a gate in another repository
+can start during that cleanup. And a preflight never queues, so a Mac preflight can still run next
+to a gate; run core preflights on wsl.
+
 Other repositories share the slot by starting their gate through core's script
 (`python3 <core>/script/gate-slot.py -- make gate`). `script/gate_slot_test.py` proves the order,
 the refusal, the reclaim of a dead holder and the coordinator's use of the slot.

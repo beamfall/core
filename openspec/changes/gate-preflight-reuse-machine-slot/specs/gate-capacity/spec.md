@@ -64,6 +64,11 @@ recorded start time. No timeout SHALL release a live holder.
 - **WHEN** an entry's pid belongs to a live process with a different start time
 - **THEN** the entry is treated as dead
 
+#### Scenario: Different time zones
+
+- **WHEN** the holder and a waiter run with different `TZ` settings
+- **THEN** the waiter reads the same start time for the holder and waits for it
+
 ### Requirement: A gate under a holder re-enters
 
 A caller whose ancestor process holds the slot SHALL run without joining the queue.
@@ -102,3 +107,21 @@ coordinator says so and runs.
 
 - **WHEN** the slot directory cannot be created or written
 - **THEN** the gate prints that it is running without the machine slot and runs
+
+### Requirement: The slot is taken before repository capacity
+
+No gate SHALL wait for the machine slot while it holds repository capacity.
+`script/run-with-evidence.sh` SHALL take the slot before capacity for `make gate`. A coordinator
+that inherited capacity from a process that does not hold the slot SHALL say so and run without
+waiting for the slot.
+
+#### Scenario: Evidence-wrapped gate
+
+- **WHEN** `script/run-with-evidence.sh -- make gate` starts while another gate holds the slot
+- **THEN** it waits for the slot and repository capacity stays free until it has the slot
+
+#### Scenario: Capacity taken first
+
+- **WHEN** a full gate starts under a process that holds repository capacity but not the slot,
+  while another gate holds the slot
+- **THEN** the gate runs without waiting and prints that it did not take the slot

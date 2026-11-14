@@ -23,6 +23,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 SLOT = ROOT / "script/gate-slot.py"
 LATEST = ROOT / "tools/gate/gate_latest.py"
+CAPACITY = ROOT / "script/gate-capacity.py"
 TIMEOUT = 30
 
 # A stand-in gate: says when it starts, runs until told to stop, says when it ends.
@@ -234,6 +235,20 @@ class GateSlotTest(SlotCase):
         self.assertEqual(status, 0)
         self.assertRegex(errors, f"holder .* pid {holder.pid}, .* has ended; removed its queue entry")
         self.assertNotIn("holder end", self.seen())
+
+    def test_callers_in_different_time_zones_agree_on_a_live_holder(self) -> None:
+        holder = self.slot(*self.holding("holder"), TZ="Asia/Tokyo")
+        self.wait_started("holder")
+        waiter = self.slot(*self.holding("waiter"), TZ="America/Toronto")
+        self.wait_queued(2)
+        time.sleep(1.0)
+        self.assertEqual(self.seen(), ["holder start"])
+        self.release("holder").touch()
+        self.assertEqual(self.finish(holder)[0], 0)
+        self.release("waiter").touch()
+        status, errors = self.finish(waiter)
+        self.assertEqual(status, 0, errors)
+        self.assertEqual(self.seen(), ["holder start", "holder end", "waiter start", "waiter end"])
 
     def test_stale_entries_do_not_hold_the_slot(self) -> None:
         gone = subprocess.Popen(["true"])
@@ -448,6 +463,28 @@ class CoordinatorSlotTest(SlotCase):
         self.assertEqual(status, 0, errors)
         self.assertNotIn("waiting for the machine gate slot", errors)
         self.assertEqual(self.seen(), ["gate start", "gate end"])
+
+    def test_gate_that_inherited_capacity_does_not_wait_for_the_slot(self) -> None:
+        # Capacity taken first, by a wrapper that did not take the slot: the
+        # gate must not then queue for the slot with capacity in hand.
+        holder = self.slot(*self.holding("other"), cwd=self.directory)
+        self.wait_started("other")
+        runner = self.repository / "tools/gate/gate_latest.py"
+        self.release("gate").touch()
+        gate = self.start(
+            [sys.executable, str(CAPACITY), "--", sys.executable, str(runner), "--", *self.holding("gate")]
+        )
+        status, errors = self.finish(gate)
+        self.assertEqual(status, 0, errors)
+        self.assertIn(
+            "gate: repository capacity was taken before the machine gate slot; "
+            "running without waiting for the slot",
+            errors,
+        )
+        self.assertEqual([entry["pid"] for entry in self.entries()], [holder.pid])
+        self.assertEqual(self.seen(), ["other start", "gate start", "gate end"])
+        self.release("other").touch()
+        self.assertEqual(self.finish(holder)[0], 0)
 
     def test_unusable_store_runs_the_gate(self) -> None:
         blocker = self.directory / "blocker"
