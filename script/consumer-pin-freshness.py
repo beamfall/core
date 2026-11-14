@@ -262,9 +262,13 @@ def pending_publication(ctx: AheadContext, rel: str, data: bytes) -> tuple[str, 
                 ctx.producer,
                 ["for-each-ref", "--contains", commit, "--format=%(refname)", "refs/remotes", "refs/heads"],
             )
-            if not refs:
-                return None
-            return refs.splitlines()[0], commit, (ctx.now - int(when)) / 86400
+            # Ancestry alone is not publication: the ref's tip must still carry the bytes,
+            # or a branch that moved on (or reverted) would excuse a superseded pin.
+            for ref in (refs or "").splitlines():
+                tip = run_git(ctx.producer, ["rev-parse", "--verify", "--quiet", f"{ref}:{rel}"])
+                if tip == blob:
+                    return ref, commit, (ctx.now - int(when)) / 86400
+            return None
     return None
 
 

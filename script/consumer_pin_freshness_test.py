@@ -600,6 +600,15 @@ def control_consumer_ahead_behind_matching(root: Path) -> None:
     expect_red("consumer behind (an older core publication) -> RED",
                check("wire contract v0"), "byte drift", "make regen-wire-goldens")
     expect_red("consumer copy core never published -> RED", check("hand-edited"), "byte drift")
+    # A pending ref that moved on past the consumer's bytes no longer publishes them:
+    # reachability from the tip is not enough (CORE-1442 review).
+    git(repo, "checkout", "-q", "-b", "moved", "refs/remotes/origin/stack/pending")
+    commit_file(repo, artifact, "wire contract v2 superseded")
+    git(repo, "update-ref", "refs/remotes/origin/stack/pending", "HEAD")
+    git(repo, "checkout", "-q", "lane")
+    git(repo, "branch", "-q", "-D", "moved")
+    expect_red("consumer on bytes the pending ref has since replaced -> RED",
+               check("wire contract v2"), "byte drift")
     # Only branches and remote-tracking refs are publications; a stray ref such as a
     # stash or scratch ref is shared across worktrees but is not (CORE-1442 review).
     git(repo, "checkout", "-q", "-b", "scratch")
