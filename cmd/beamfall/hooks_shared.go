@@ -170,6 +170,22 @@ func (musicHydrationMapper) ExternalIDSchemes() []string {
 	return []string{music.SchemeMusicBrainzRecording}
 }
 
+// FingerprintField names the field recording the content fingerprint a
+// track's tags were last hydrated from, so a re-tagged file is re-hydrated.
+func (musicHydrationMapper) FingerprintField() string { return music.HydratedFingerprintField }
+
+// DecideHydrationWrite delegates the Fresh/Skip/Replace rule to the plugin.
+func (musicHydrationMapper) DecideHydrationWrite(recorded, current string) app.HydrationWrite {
+	switch music.DecideHydrationWrite(recorded, current) {
+	case music.HydrationWriteSkip:
+		return app.HydrationWriteSkip
+	case music.HydrationWriteReplace:
+		return app.HydrationWriteReplace
+	default:
+		return app.HydrationWriteFresh
+	}
+}
+
 // EntityScopes declares that an album is scoped by its album artist.
 func (musicHydrationMapper) EntityScopes() []app.HydrationEntityScope {
 	return []app.HydrationEntityScope{{Kind: "album", Relation: "album-artist"}}

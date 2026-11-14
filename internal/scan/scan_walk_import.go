@@ -94,14 +94,14 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 	}
 	if _, stale := s.backfillStale[media.ID]; stale && s.metadataHydrator != nil && s.prober != nil {
 		if media.Class == store.MediaClassImage {
-			if err := s.hydrateMetadata(media, path, nil); err != nil {
+			if err := s.hydrateMetadata(media, path, stored.ContentFingerprint, nil); err != nil {
 				return err
 			}
 		} else if probe, probeErr := s.prober.Probe(s.ctx, path); probeErr != nil {
 			slog.Warn("scan: metadata backfill probe failed, skipping hydration", "path", path, "error", probeErr.Error())
 		} else {
 			media.Class = mediaClassFromProbe(probe)
-			if err := s.hydrateMetadata(media, path, probe.Tags); err != nil {
+			if err := s.hydrateMetadata(media, path, stored.ContentFingerprint, probe.Tags); err != nil {
 				return err
 			}
 		}
@@ -221,7 +221,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 			return err
 		}
 	}
-	if err := s.hydrateMetadata(media, path, probeTags); err != nil {
+	if err := s.hydrateMetadata(media, path, fingerprint, probeTags); err != nil {
 		return err
 	}
 	fields := append([]store.MediaField(nil), parsedFields...)
@@ -247,7 +247,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 	return s.ctx.Err()
 }
 
-func (s *scanWalkState) hydrateMetadata(media store.Media, path string, metadata map[string]string) error {
+func (s *scanWalkState) hydrateMetadata(media store.Media, path, fingerprint string, metadata map[string]string) error {
 	if s.metadataHydrator == nil {
 		return nil
 	}
@@ -255,11 +255,12 @@ func (s *scanWalkState) hydrateMetadata(media store.Media, path string, metadata
 		return nil
 	}
 	return s.metadataHydrator.HydrateMetadata(s.ctx, MetadataHydrationInput{
-		MediaID:   media.ID,
-		LibraryID: s.req.LibraryID,
-		Class:     media.Class,
-		Path:      path,
-		Metadata:  metadata,
+		MediaID:            media.ID,
+		LibraryID:          s.req.LibraryID,
+		Class:              media.Class,
+		Path:               path,
+		Metadata:           metadata,
+		ContentFingerprint: fingerprint,
 	})
 }
 
