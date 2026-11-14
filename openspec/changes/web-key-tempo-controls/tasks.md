@@ -8,3 +8,4 @@
 - [x] 5. Show "not applied" when the server did not echo the adjustment
 - [x] 6. Component tests: shown, hidden (no capability, not karaoke), applying (request carries
       the adjustment, position conversion)
+- [x] 7. Media session position and seeks, and auto-skip markers, in song seconds under a tempo

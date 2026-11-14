@@ -19,6 +19,7 @@ import {
   isComposedPictureServed,
   type PlaybackNext,
   sameAdjustment,
+  songSecondsPerStreamSecond,
 } from "../lib/playback";
 import { previousInPlayQueue } from "../lib/playQueue";
 import {
@@ -105,6 +106,8 @@ export function PlayerPage() {
   );
 
   const playing = state.phase === "playing";
+  // Song seconds per stream second under an applied tempo (CORE-1659).
+  const songScale = songSecondsPerStreamSecond(state.info);
 
   // Key and tempo controls (CORE-1659): only when the server advertises the
   // ranges and plays this Media as a karaoke song (an audio item served as a composed
@@ -251,6 +254,7 @@ export function PlayerPage() {
       recap: resolvedPrefs.autoSkipRecap,
       credits: resolvedPrefs.autoSkipCredits,
     },
+    songScale,
   });
 
   // Browser Media Session (ADR-0084 §43): mirror transport state to the OS and
@@ -269,6 +273,7 @@ export function PlayerPage() {
     artworkURL,
     onNextTrack: playNext,
     onPreviousTrack: playPrevious,
+    songScale,
   });
 
   // A relock during playback drops restricted content from every view at once

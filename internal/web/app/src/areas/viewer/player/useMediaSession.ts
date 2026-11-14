@@ -38,6 +38,12 @@ export interface MediaSessionOptions {
   album?: string;
   /** Artwork for the OS surface. */
   artworkURL?: string;
+  /**
+   * Song seconds per stream second: the tempo the server applied (CORE-1659).
+   * The OS surface shows song time, so a lock-screen seek is in song seconds
+   * and lands at that song position in the stream. 1 when nothing was applied.
+   */
+  songScale?: number;
 }
 
 export function useMediaSession({
@@ -51,6 +57,7 @@ export function useMediaSession({
   artist,
   album,
   artworkURL,
+  songScale = 1,
 }: MediaSessionOptions): void {
   // Metadata: set when active, cleared when not. Kept in its own effect so a
   // title change updates the OS surface without re-binding the action handlers.
@@ -89,17 +96,19 @@ export function useMediaSession({
 
     safeSet("play", () => void video.play().catch(() => {}));
     safeSet("pause", () => video.pause());
+    // OS offsets and seek times are song seconds; the <video> plays stream seconds.
+    const scale = songScale > 0 && Number.isFinite(songScale) ? songScale : 1;
     safeSet("seekbackward", (details) => {
       const step = details?.seekOffset ?? SEEK_STEP_SECONDS;
-      video.currentTime = Math.max(0, video.currentTime - step);
+      video.currentTime = Math.max(0, video.currentTime - step / scale);
     });
     safeSet("seekforward", (details) => {
       const step = details?.seekOffset ?? SEEK_STEP_SECONDS;
       const end = Number.isFinite(video.duration) ? video.duration : Infinity;
-      video.currentTime = Math.min(end, video.currentTime + step);
+      video.currentTime = Math.min(end, video.currentTime + step / scale);
     });
     safeSet("seekto", (details) => {
-      if (details?.seekTime != null) video.currentTime = details.seekTime;
+      if (details?.seekTime != null) video.currentTime = details.seekTime / scale;
     });
     // nexttrack only when the server pre-minted a next item; the advance is
     // routed through the player's own handler (Stream-Token'd, queue-aware).
@@ -119,10 +128,12 @@ export function useMediaSession({
       if (typeof ms.setPositionState !== "function") return;
       if (!Number.isFinite(video.duration) || video.duration <= 0) return;
       try {
+        // Song time: a stream second covers `scale` song seconds, so the
+        // song advances at the element's rate times the applied tempo.
         ms.setPositionState({
-          duration: video.duration,
-          position: Math.min(video.currentTime, video.duration),
-          playbackRate: video.playbackRate || 1,
+          duration: video.duration * scale,
+          position: Math.min(video.currentTime, video.duration) * scale,
+          playbackRate: (video.playbackRate || 1) * scale,
         });
       } catch {
         /* invalid state mid-load — ignore, the next tick corrects it */
@@ -156,5 +167,5 @@ export function useMediaSession({
       }
       ms.playbackState = "none";
     };
-  }, [videoRef, active, next, onNext, onNextTrack, onPreviousTrack]);
+  }, [videoRef, active, next, onNext, onNextTrack, onPreviousTrack, songScale]);
 }

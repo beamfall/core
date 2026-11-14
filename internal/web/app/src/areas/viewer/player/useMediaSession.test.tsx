@@ -151,6 +151,24 @@ describe("useMediaSession", () => {
     );
   });
 
+  // CORE-1659: under an applied tempo the OS surface shows song time.
+  it("mirrors song time and maps OS seeks back to stream time under a tempo", () => {
+    const { video } = setup({ songScale: 1.25 });
+    video.currentTime = 40;
+    video.emit("timeupdate");
+    expect(fakeSession.setPositionState).toHaveBeenLastCalledWith({
+      duration: 125,
+      position: 50,
+      playbackRate: 1.25,
+    });
+    handlers.get("seekto")?.({ seekTime: 50 });
+    expect(video.currentTime).toBe(40);
+    handlers.get("seekforward")?.({ seekOffset: 10 });
+    expect(video.currentTime).toBe(48);
+    handlers.get("seekbackward")?.({ seekOffset: 5 });
+    expect(video.currentTime).toBe(44);
+  });
+
   it("only wires nexttrack when a next item exists, routing through onNext", () => {
     setup();
     expect(handlers.get("nexttrack")).toBeNull();
