@@ -335,6 +335,27 @@ gate_rss_sample_session_kb() {  # gate_rss_sample_session_kb <sid> -> summed RSS
   printf '%s' "$sum"
 }
 
+# macOS `ps -o sess=` prints 0 for every process, so a session sum there is the
+# whole host's RSS. The full-run recorder falls back to the process tree rooted
+# at the gate shell instead (descendants that reparent away are not counted).
+gate_rss_sample_tree_kb() {  # gate_rss_sample_tree_kb <root-pid> -> summed RSS in KB, or 0
+  local root="$1" sum
+  sum="$(ps -ax -o pid=,ppid=,rss= 2>/dev/null | awk -v root="$root" '
+    { pid[NR] = $1; ppid[NR] = $2; rss[NR] = $3 }
+    END {
+      tree[root] = 1
+      do {
+        grew = 0
+        for (i = 1; i <= NR; i++)
+          if (!(pid[i] in tree) && (ppid[i] in tree)) { tree[pid[i]] = 1; grew = 1 }
+      } while (grew)
+      for (i = 1; i <= NR; i++) if (pid[i] in tree) s += rss[i]
+      print s + 0
+    }')" || sum=0
+  case "$sum" in ''|*[!0-9]*) sum=0 ;; esac
+  printf '%s' "$sum"
+}
+
 # Starts a background sampler that polls a process group (or, for the full-gate
 # recorder, the whole supervised session) every 0.2s and tracks the
 # running maximum in a file (renamed in atomically, so a cross-process reader
@@ -363,13 +384,13 @@ gate_rss_track_start() {  # gate_rss_track_start <target> <pid_var> <file_var> [
   (
     set +e
     peak=0
-    while { [ "$scope" = session ] || gate_group_alive "$target"; } \
+    while { [ "$scope" != group ] || gate_group_alive "$target"; } \
       && { [ -z "$stopfile" ] || [ ! -s "$stopfile" ]; }; do
-      if [ "$scope" = session ]; then
-        cur="$(gate_rss_sample_session_kb "$target")"
-      else
-        cur="$(gate_rss_sample_kb "$target")"
-      fi
+      case "$scope" in
+        session) cur="$(gate_rss_sample_session_kb "$target")" ;;
+        tree) cur="$(gate_rss_sample_tree_kb "$target")" ;;
+        *) cur="$(gate_rss_sample_kb "$target")" ;;
+      esac
       [ "$cur" -gt "$peak" ] 2>/dev/null && peak="$cur"
       printf '%s' "$peak" >"$outfile.partial" 2>/dev/null
       mv -f "$outfile.partial" "$outfile" 2>/dev/null
@@ -504,17 +525,22 @@ PY
 }
 
 gate_full_rss_start() {
-  local sid tracker_pid="" tracker_file=""
+  local sid tracker_pid="" tracker_file="" target scope=session
   sid="$(ps -o sess= -p "$$" 2>/dev/null | tr -d ' ')"
   [ -n "$sid" ] || {
     echo "ERROR gate cannot resolve its session for full-run RSS measurement" >&2
     return 1
   }
+  target="$sid"
+  if [ "$sid" = 0 ]; then
+    scope=tree
+    target="$$"
+  fi
   read -r GATE_HOST_PHYSICAL_KB GATE_HOST_AVAILABLE_KB GATE_HOST_SWAP_TOTAL_KB \
     < <(gate_host_memory_snapshot)
   GATE_FULL_RSS_STOP_FILE="$(mktemp)"
-  gate_rss_track_start "$sid" tracker_pid tracker_file \
-    "" "$GATE_FULL_RSS_STOP_FILE" session
+  gate_rss_track_start "$target" tracker_pid tracker_file \
+    "" "$GATE_FULL_RSS_STOP_FILE" "$scope"
   GATE_FULL_RSS_TRACKER_PID="$tracker_pid"
   GATE_FULL_RSS_FILE="$tracker_file"
   GATE_FULL_STARTED_NS="$(gate_monotonic_ns)"
