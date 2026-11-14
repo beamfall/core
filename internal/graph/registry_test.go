@@ -261,10 +261,11 @@ var originalScopedFields = []string{
 	"setconsoleconfig",
 	"setscrapercredential",
 	"setfavorite",
-	"itemstate",      // CORE-1194: per-Profile item state read
-	"setwatched",     // CORE-1194: mark a Media or Entity tree watched/unwatched
-	"setwatchlisted", // CORE-1194: per-Profile watchlist add/remove
-	"setrating",      // CORE-1194: personal rating set/clear
+	"itemstate",       // CORE-1194: per-Profile item state read
+	"metadatacredits", // CORE-1126: active plugin scrapers' declared attribution
+	"setwatched",      // CORE-1194: mark a Media or Entity tree watched/unwatched
+	"setwatchlisted",  // CORE-1194: per-Profile watchlist add/remove
+	"setrating",       // CORE-1194: personal rating set/clear
 	"setfollow",
 	"setlibraryaiindexing",
 	"skipdetectionenabled",    // ENR-7 (ADR-0048 Decision 3/6): per-Library skip-detection toggle (read)

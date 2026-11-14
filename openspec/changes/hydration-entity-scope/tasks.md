@@ -1,0 +1,23 @@
+## 1. Scoped identity
+
+- [x] 1.1 `HydrationEntity.Scope` and the scoped id formula
+- [x] 1.2 `EntityScopes` declaration and plan validation
+- [x] 1.3 Music mapper scopes albums by album artist, falling back to artist
+
+## 2. Existing databases
+
+- [x] 2.1 Adopt a compatible title-only Entity instead of creating a scoped twin
+- [x] 2.2 One-time repair reopening title-only Entities that record no scope or several
+- [x] 2.3 The repair durably queues a backfill scan of each affected Library's roots
+
+## 3. Tests
+
+- [x] 3.1 Failing test first: two same-titled albums by different album artists merge
+- [x] 3.2 Adoption, refusal to adopt another scope's Entity, compilation stays one album
+- [x] 3.3 Store: relation targets read and the one-time split
+
+## 4. Verify and close
+
+- [ ] 4.1 Focused package tests and `internal/conformance`
+- [ ] 4.2 Run `make gate`
+- [ ] 4.3 Run `openspec archive hydration-entity-scope` after landing, before completing CORE-1212

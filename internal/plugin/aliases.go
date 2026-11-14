@@ -23,6 +23,7 @@ type (
 	EntityFilter         = sdk.EntityFilter
 	MediaFieldRoute      = sdk.MediaFieldRoute
 	ScraperSpec          = sdk.ScraperSpec
+	Attribution          = sdk.Attribution
 	EntityMap            = sdk.EntityMap
 	LabelMapSpec         = sdk.LabelMapSpec
 	LoginSpec            = sdk.LoginSpec
