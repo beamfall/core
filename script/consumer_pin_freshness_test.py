@@ -497,6 +497,77 @@ def control_stale_local_main(root: Path) -> None:
         fallback.stdout + fallback.stderr,
     )
 
+def control_consumer_ahead_behind_matching(root: Path) -> None:
+    """CORE-1442: a consumer already on a pending core publication is advisory, not stale.
+
+    The fixture producer publishes wire-contract v0 then v1 on main; a pending core
+    stack (another ref) carries v2. The consumer vendors each in turn.
+    """
+    repo = root / "producer"
+    (repo / "script").mkdir(parents=True)
+    for name in ("consumer-pin-freshness.py", "sha256-manifest.py"):
+        shutil.copy2(CORE / "script" / name, repo / "script" / name)
+    obligation = obligation_by_id("apple-ui-wire-contract-pin")
+    (repo / "script" / "consumer-pin-obligations.json").write_text(
+        json.dumps({**REGISTRY, "obligations": [obligation]}), encoding="utf-8"
+    )
+    artifact = obligation["byteCopies"][0]["producer"]
+    git(repo, "init", "-q", "-b", "main")
+    git(repo, "add", "script")
+    git(repo, "commit", "-q", "-m", "tooling")
+    commit_file(repo, artifact, "wire contract v0")
+    commit_file(repo, artifact, "wire contract v1")
+    git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    git(repo, "checkout", "-q", "-b", "pending")
+    commit_file(repo, artifact, "wire contract v2")
+    git(repo, "update-ref", "refs/remotes/origin/stack/pending", "HEAD")
+    pending_time = int(git(repo, "log", "-1", "--format=%ct"))
+    git(repo, "checkout", "-q", "main")
+    git(repo, "branch", "-q", "-D", "pending")
+    git(repo, "checkout", "-q", "-b", "lane")
+    commit_file(repo, "internal/server/unrelated.go", "server change that leaves the artifact alone")
+
+    workspace = root / "workspace"
+    consumer = workspace / "beamfall-apple-ui"
+    (consumer / obligation["consumerProbe"]).parent.mkdir(parents=True)
+    (consumer / obligation["consumerProbe"]).write_text("probe\n", encoding="utf-8")
+    (workspace / WORKSPACE_MANIFEST).write_text(json.dumps({"schemaVersion": 1, "repositories": [
+        {"name": "beamfall-apple-ui", "class": "client-library",
+         "coreContractObligations": [obligation["id"]]}]}), encoding="utf-8")
+    vendored = consumer / obligation["byteCopies"][0]["consumer"]
+    vendored.parent.mkdir(parents=True, exist_ok=True)
+
+    def check(content: str, **extra: str):
+        vendored.write_text(content + "\n", encoding="utf-8")
+        env = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": str(root),
+               "BEAMFALL_WORKSPACE_ROOT": str(workspace), **extra}
+        return subprocess.run(
+            [sys.executable, str(repo / "script" / "consumer-pin-freshness.py"), "--all"],
+            capture_output=True, text=True, env=env, check=False,
+        )
+
+    matching = check("wire contract v1")
+    expect("consumer matching this branch -> PASS",
+           matching.returncode == 0 and "PASS — all 1" in matching.stdout,
+           matching.stdout + matching.stderr)
+    ahead = check("wire contract v2")
+    expect("consumer ahead on a young pending publication, artifact unchanged -> advisory PASS",
+           ahead.returncode == 0 and "[AHEAD  ]" in ahead.stdout and "ADVISORY" in ahead.stdout
+           and "refs/remotes/origin/stack/pending" in ahead.stdout,
+           ahead.stdout + ahead.stderr)
+    expect_red("consumer ahead past the window -> RED telling the lander to land the core pin",
+               check("wire contract v2", BEAMFALL_PIN_AHEAD_NOW=str(pending_time + 4 * 86400)),
+               "beamfall-apple-ui", "window has been open", "land the core pin")
+    expect_red("consumer ahead with the window disabled -> RED",
+               check("wire contract v2", BEAMFALL_PIN_AHEAD_MAX_DAYS="0"), "byte drift")
+    expect_red("consumer behind (an older core publication) -> RED",
+               check("wire contract v0"), "byte drift", "make regen-wire-goldens")
+    expect_red("consumer copy core never published -> RED", check("hand-edited"), "byte drift")
+    commit_file(repo, artifact, "wire contract v3 from this branch")
+    expect_red("branch changes the artifact while the consumer is on v2 -> RED",
+               check("wire contract v2"), "byte drift")
+
+
 CONTROLS = [
     control_all_current,
     control_corpus_registry_covers_all_files,
@@ -513,6 +584,7 @@ CONTROLS = [
     control_declared_owner_probe_cannot_be_masked,
     control_diff_guard,
     control_stale_local_main,
+    control_consumer_ahead_behind_matching,
 ]
 
 
