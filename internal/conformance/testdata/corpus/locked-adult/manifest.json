@@ -57,6 +57,7 @@
   ],
   "libraries": [
     {
+      "icon": "folder",
       "id": "library-local",
       "pluginID": null,
       "previewClips": true,

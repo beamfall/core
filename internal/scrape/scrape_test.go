@@ -881,6 +881,74 @@ func TestInvalidateCredentialClearsLoginBearerCache(t *testing.T) {
 	}
 }
 
+// TestLoginBearerSendsEverySecretField pins CORE-1129: a login sends its
+// SecretField secret and every SecretFields secret in one body, re-runs the
+// exchange when either ref is rotated, and sends nothing when a second
+// secret is missing.
+func TestLoginBearerSendsEverySecretField(t *testing.T) {
+	logins := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
+		logins++
+		var body map[string]string
+		if err := jsonDecode(r, &body); err != nil {
+			t.Fatal(err)
+		}
+		if body["pin"] != "user-pin" || body["apikey"] != "project-key-value" || len(body) != 2 {
+			t.Errorf("login body = %v, want pin and apikey", body)
+		}
+		fmt.Fprint(w, `{"data": {"token": "jwt-abc"}}`)
+	})
+	mux.HandleFunc("/series/9", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data": {"name": "Beacon Drift"}}`)
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	spec := plugin.ScraperSpec{
+		ID: "tokensource", Kind: "http-json", Endpoint: server.URL,
+		AuthRef: "user-pin-ref", AuthStyle: "login-bearer",
+		Login: &plugin.LoginSpec{
+			Path: "/login", SecretField: "pin", TokenPath: "data.token",
+			SecretFields: map[string]string{"apikey": "project-key"},
+		},
+		LookupTemplate: "/series/{id}",
+		FieldMap:       map[string]string{"title": "data.name"},
+	}
+	engine := New(WithInsecureLoopback(), WithCredentials(staticCredentials{
+		"user-pin-ref": "user-pin", "project-key": "project-key-value",
+	}))
+	lookup := func() {
+		t.Helper()
+		if _, err := engine.Lookup(context.Background(), spec, "9"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	lookup()
+	lookup()
+	if logins != 1 {
+		t.Fatalf("login ran %d times across two lookups, want 1", logins)
+	}
+	engine.InvalidateCredential("project-key")
+	lookup()
+	if logins != 2 {
+		t.Fatalf("login ran %d times after rotating the SecretFields ref, want 2", logins)
+	}
+	engine.InvalidateCredential("user-pin-ref")
+	lookup()
+	if logins != 3 {
+		t.Fatalf("login ran %d times after rotating the AuthRef, want 3", logins)
+	}
+
+	missing := New(WithInsecureLoopback(), WithCredentials(staticCredentials{"user-pin-ref": "user-pin"}))
+	if _, err := missing.Lookup(context.Background(), spec, "9"); err == nil || !strings.Contains(err.Error(), `"project-key"`) {
+		t.Fatalf("lookup without the SecretFields secret = %v, want a resolving-credential error", err)
+	}
+	if logins != 3 {
+		t.Fatalf("login ran with a missing SecretFields secret (%d exchanges)", logins)
+	}
+}
+
 // TestLoginBearerReloginOn401 pins the expired-token path: a 401 on an
 // authed request invalidates the cached token, re-runs the login exchange
 // once, and retries the request with the fresh token.

@@ -110,6 +110,63 @@
   opacity: 1;
 }
 
+/* Compact rail (phone width): one disclosure summarised by the current
+ * destination, so the page content starts above the fold. */
+.console-nav-disclosure {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  background: var(--bg-raised);
+}
+
+.console-nav-summary {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 44px;
+  padding: 0 12px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+  list-style: none;
+}
+
+.console-nav-summary::-webkit-details-marker {
+  display: none;
+}
+
+.console-nav-summary::after {
+  content: "";
+  margin-left: auto;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--text-muted);
+  border-bottom: 2px solid var(--text-muted);
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.console-nav-disclosure[open] > .console-nav-summary::after {
+  transform: translateY(2px) rotate(-135deg);
+}
+
+.console-nav-summary:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+  border-radius: var(--radius-card);
+}
+
+.console-nav-panel {
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 4px 6px 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.console-nav-panel .console-nav-group:first-child {
+  margin-top: 8px;
+}
+
 .console-nav-icon {
   flex: 0 0 auto;
   width: 15px;
@@ -429,6 +486,72 @@ a.console-task:hover .console-task-icon {
 .console-num {
   font-variant-numeric: tabular-nums;
   text-align: right;
+}
+
+/* Library health: six count columns, each carrying optional remediation
+ * buttons. Let headers and action rows wrap so the table fits its card
+ * instead of clipping the right-most columns behind an invisible scroll. */
+.console-health-table thead th {
+  height: auto;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  white-space: normal;
+  line-height: 14px;
+}
+
+.console-health-table tbody td {
+  white-space: normal;
+}
+
+.console-health-table tbody td:first-child {
+  overflow-wrap: anywhere;
+}
+
+/* Phones: one stacked card per library — the title, then label/count rows. */
+@media (max-width: 639px) {
+  .console-health-table thead {
+    display: none;
+  }
+
+  .console-health-table table,
+  .console-health-table tbody,
+  .console-health-table tr,
+  .console-health-table tbody td {
+    display: block;
+    width: 100%;
+  }
+
+  .console-health-table tbody tr {
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .console-health-table tbody tr:last-child {
+    border-bottom: none;
+  }
+
+  .console-health-table tbody td {
+    border-bottom: none;
+    padding: 4px 12px;
+  }
+
+  .console-health-table tbody td:first-child {
+    font-weight: 650;
+  }
+
+  .console-health-table tbody td.console-num {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .console-health-table tbody td.console-num::before {
+    content: attr(data-label);
+    color: var(--text-muted);
+    font-size: 12px;
+    text-align: left;
+  }
 }
 
 /* A muted, monospace timestamp / id cell. */

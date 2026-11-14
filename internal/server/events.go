@@ -23,12 +23,16 @@ type EventStore interface {
 	ReadEventOutbox(ctx context.Context, afterSeq int64, limit int) ([]store.OutboxEvent, error)
 	Media(ctx context.Context, id store.MediaID, filter store.LibraryFilter) (store.Media, error)
 	LibraryVisible(ctx context.Context, id store.LibraryID, filter store.LibraryFilter) (bool, error)
+	// EventOutboxChanged returns a channel closed by the next committed outbox
+	// write. Taken before a read and waited on after it, it never misses a write.
+	EventOutboxChanged() <-chan struct{}
 }
 
-// eventPollInterval is how often a connected SSE reader checks the outbox for
-// new events once it has drained the backlog. Short enough to feel realtime,
-// long enough that an idle stream costs almost nothing.
-const eventPollInterval = 250 * time.Millisecond
+// eventFallbackPollInterval is how long an idle stream waits before it reads
+// the outbox without having been woken. Streams are woken by the store's
+// commit signal (EventOutboxChanged), so this read only catches an event from
+// a writer that cannot signal: another process on the same data directory.
+const eventFallbackPollInterval = 30 * time.Second
 
 // eventBatchLimit bounds how many outbox rows one poll reads, so a reader that
 // reconnects far behind the tail catches up in bounded steps instead of one
@@ -38,8 +42,8 @@ const eventBatchLimit = 256
 // eventKeepaliveInterval is how long a stream may go without writing before it
 // sends an SSE comment frame. Idle streams through the relay or an operator's
 // reverse proxy are otherwise dropped silently, and the failed write is how the
-// handler learns its peer is gone. Polling is tick-granular, so 10 s keeps the
-// observed gap under 15 s.
+// handler learns its peer is gone. The stream wakes when the frame is due, so
+// 10 s keeps the observed gap under 15 s.
 const eventKeepaliveInterval = 10 * time.Second
 
 // eventScopeRecheckInterval bounds how long a stream trusts its cached Scope
@@ -63,6 +67,7 @@ type eventStreamState struct {
 	open      int
 	keepalive time.Duration
 	recheck   time.Duration
+	fallback  time.Duration
 	resolve   func(context.Context, *http.Request) (auth.Scope, error)
 }
 
@@ -125,6 +130,13 @@ func (s *Server) eventKeepalive() time.Duration {
 		return s.eventStreams.keepalive
 	}
 	return eventKeepaliveInterval
+}
+
+func (s *Server) eventFallbackPoll() time.Duration {
+	if s.eventStreams.fallback > 0 {
+		return s.eventStreams.fallback
+	}
+	return eventFallbackPollInterval
 }
 
 func (s *Server) eventScopeRecheck() time.Duration {
@@ -199,14 +211,16 @@ func (s *Server) eventStream(w http.ResponseWriter, r *http.Request, beforeEmit 
 
 	cursor := resumeCursor(r)
 	ctx := r.Context()
-	ticker := time.NewTicker(eventPollInterval)
-	defer ticker.Stop()
-
 	keepalive := s.eventKeepalive()
 	recheck := s.eventScopeRecheck()
+	fallback := s.eventFallbackPoll()
 	lastWrite := time.Now()
 	scopeCheckedAt := lastWrite
-	// fresh marks a Scope derived during the current poll: the periodic
+	// The stream sleeps until the store signals a committed outbox write or the
+	// next deadline (Scope re-check, keepalive, fallback read) comes due.
+	timer := time.NewTimer(fallback)
+	defer timer.Stop()
+	// fresh marks a Scope derived during the current pass: the periodic
 	// re-check's. The handshake's Scope is not fresh: the header flush can block
 	// long enough for a revocation, so the first backlog re-derives it too.
 	fresh := false
@@ -222,7 +236,7 @@ func (s *Server) eventStream(w http.ResponseWriter, r *http.Request, beforeEmit 
 	// the outbox has something to deliver, keeps the ADR-0004 Reveal contract on
 	// this long-lived transport — a relock, revocation, expiry or
 	// access-schedule change is seen before the next event is written — while
-	// an idle poll costs one outbox read. A session that can no longer resolve
+	// an idle stream reads nothing between deadlines. A session that can no longer resolve
 	// a Scope ends the stream.
 	currentScope := func() (store.ProfileID, store.LibraryFilter, error) {
 		if !fresh {
@@ -234,13 +248,9 @@ func (s *Server) eventStream(w http.ResponseWriter, r *http.Request, beforeEmit 
 	}
 
 	for {
-		// An idle stream still re-checks its Scope periodically, so a revoked
-		// or expired session's stream ends rather than polling forever.
-		if time.Since(scopeCheckedAt) >= recheck {
-			if err := refreshScope(); err != nil {
-				return
-			}
-		}
+		// Take the signal before reading: a write that commits after the read
+		// below has already closed this channel, so the wait cannot miss it.
+		changed := s.events.EventOutboxChanged()
 
 		next, wrote, err := s.drainEventsWith(ctx, w, flusher, cursor, beforeEmit, currentScope)
 		fresh = false
@@ -252,18 +262,41 @@ func (s *Server) eventStream(w http.ResponseWriter, r *http.Request, beforeEmit 
 			return // store error or client gone: end the stream
 		}
 		cursor = next
+		readAt := time.Now()
 		if wrote {
-			lastWrite = time.Now()
-		} else if time.Since(lastWrite) >= keepalive {
-			if err := writeKeepalive(w, flusher); err != nil {
-				return // peer gone: release the handler
-			}
-			lastWrite = time.Now()
+			lastWrite = readAt
 		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
+
+		// Wait for a write, or for the fallback read to come due. The Scope
+		// re-check and the keepalive come due in between without reading the
+		// outbox, so an idle stream costs no outbox reads beyond the fallback.
+		for woken := false; !woken; {
+			now := time.Now()
+			// An idle stream still re-checks its Scope periodically, so a revoked
+			// or expired session's stream ends rather than staying open.
+			if now.Sub(scopeCheckedAt) >= recheck {
+				if err := refreshScope(); err != nil {
+					return
+				}
+				fresh = false
+			}
+			if now.Sub(lastWrite) >= keepalive {
+				if err := writeKeepalive(w, flusher); err != nil {
+					return // peer gone: release the handler
+				}
+				lastWrite = now
+			}
+			if now.Sub(readAt) >= fallback {
+				break
+			}
+			timer.Reset(min(scopeCheckedAt.Add(recheck).Sub(now), lastWrite.Add(keepalive).Sub(now), readAt.Add(fallback).Sub(now)))
+			select {
+			case <-ctx.Done():
+				return
+			case <-changed:
+				woken = true
+			case <-timer.C:
+			}
 		}
 	}
 }

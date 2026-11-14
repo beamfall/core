@@ -11,9 +11,10 @@ import { HydratedSection, SECTION_LOAD_TIMEOUT_MS, sectionCacheKey } from "./Hyd
 
 const identityMock = vi.hoisted(() => ({ identity: null as string | null }));
 
-vi.mock("../lib/sections", () => ({
-  fetchSectionItems: vi.fn(),
-}));
+vi.mock("../lib/sections", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/sections")>();
+  return { ...actual, fetchSectionItems: vi.fn() };
+});
 
 // No identity by default: the state-family cases run uncached, as without a
 // SessionProvider. The cache cases bind one explicitly.
@@ -84,6 +85,26 @@ describe("HydratedSection state-family conformance", () => {
 
     expect(onConnectionLost).toHaveBeenCalledTimes(1);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("reports an uncached failure as failed, never as empty", async () => {
+    vi.mocked(fetchSectionItems).mockRejectedValue(new Error("offline"));
+    const onHydrationStateChange = vi.fn();
+    render(
+      <I18nProvider>
+        <MemoryRouter>
+          <HydratedSection
+            section={section}
+            libraryID="lib1"
+            entityID=""
+            onHydrationStateChange={onHydrationStateChange}
+          />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    await waitFor(() => expect(onHydrationStateChange).toHaveBeenLastCalledWith("failed"));
+    expect(onHydrationStateChange).not.toHaveBeenCalledWith("empty");
   });
 
   it("collapses a no-access Source result exactly like a genuine empty Source result", async () => {

@@ -404,63 +404,67 @@ export function Health() {
       ) : rows.length === 0 ? (
         <EmptyState message="libraryHealthEmpty" />
       ) : (
-        <DataTable columns={columns}>
-          <TableRow className="is-aggregate">
-            <TableCell>{t("libraryHealthAggregate")}</TableCell>
-            {(() => {
-              const agg = aggregateCounts(rows);
-              return DIMENSIONS.map((dim) => (
-                <TableCell key={dim.countKey} className="console-num">
-                  <CountCell count={agg[dim.countKey] ?? 0} />
-                </TableCell>
-              ));
-            })()}
-          </TableRow>
-          {rows.map((row) => (
-            <TableRow key={row.libraryID}>
-              <TableCell className="font-medium">{row.title}</TableCell>
-              {DIMENSIONS.map((dim) => {
-                const count = row.counts[dim.countKey] ?? 0;
-                return (
-                  <TableCell key={dim.countKey} className="console-num">
-                    <div className="flex items-center justify-end gap-2">
-                      <CountCell
-                        count={count}
-                        label={t(dim.label)}
-                        onClick={count > 0 ? () => openDrill(row, dim) : undefined}
-                      />
-                      {dim.dimKey === "unmatched" && count > 0 && (
-                        <Button asChild size="sm" variant="outline">
-                          <Link to="/manage/unmatched">{t("unmatchedFixMatch")}</Link>
-                        </Button>
-                      )}
-                      {dim.summaryBulkField &&
-                        dim.bulkLabel &&
-                        count > 0 &&
-                        (dim.confirmKey ? (
-                          <ConfirmButton
-                            size="sm"
-                            variant="outline"
-                            label={t(dim.bulkLabel)}
-                            confirm={dim.confirmKey}
-                            onConfirm={() => runBulk(dim.summaryBulkField!, row.libraryID)}
-                          />
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => void runBulk(dim.summaryBulkField!, row.libraryID)}
-                          >
-                            {t(dim.bulkLabel)}
-                          </Button>
-                        ))}
-                    </div>
+        // Wraps the shared DataTable so health-only CSS can wrap the per-cell
+        // actions and stack rows on phones instead of clipping the right columns.
+        <div className="console-health-table">
+          <DataTable columns={columns}>
+            <TableRow className="is-aggregate">
+              <TableCell>{t("libraryHealthAggregate")}</TableCell>
+              {(() => {
+                const agg = aggregateCounts(rows);
+                return DIMENSIONS.map((dim) => (
+                  <TableCell key={dim.countKey} className="console-num" data-label={t(dim.label)}>
+                    <CountCell count={agg[dim.countKey] ?? 0} />
                   </TableCell>
-                );
-              })}
+                ));
+              })()}
             </TableRow>
-          ))}
-        </DataTable>
+            {rows.map((row) => (
+              <TableRow key={row.libraryID}>
+                <TableCell className="font-medium">{row.title}</TableCell>
+                {DIMENSIONS.map((dim) => {
+                  const count = row.counts[dim.countKey] ?? 0;
+                  return (
+                    <TableCell key={dim.countKey} className="console-num" data-label={t(dim.label)}>
+                      <div className="console-health-cell flex flex-wrap items-center justify-end gap-2">
+                        <CountCell
+                          count={count}
+                          label={t(dim.label)}
+                          onClick={count > 0 ? () => openDrill(row, dim) : undefined}
+                        />
+                        {dim.dimKey === "unmatched" && count > 0 && (
+                          <Button asChild size="sm" variant="outline">
+                            <Link to="/manage/unmatched">{t("unmatchedFixMatch")}</Link>
+                          </Button>
+                        )}
+                        {dim.summaryBulkField &&
+                          dim.bulkLabel &&
+                          count > 0 &&
+                          (dim.confirmKey ? (
+                            <ConfirmButton
+                              size="sm"
+                              variant="outline"
+                              label={t(dim.bulkLabel)}
+                              confirm={dim.confirmKey}
+                              onConfirm={() => runBulk(dim.summaryBulkField!, row.libraryID)}
+                            />
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => void runBulk(dim.summaryBulkField!, row.libraryID)}
+                            >
+                              {t(dim.bulkLabel)}
+                            </Button>
+                          ))}
+                      </div>
+                    </TableCell>
+                  );
+                })}
+              </TableRow>
+            ))}
+          </DataTable>
+        </div>
       )}
     </Section>
   );

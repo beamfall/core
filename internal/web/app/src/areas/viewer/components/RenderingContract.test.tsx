@@ -68,13 +68,21 @@ describe("React Viewer rendering contract", () => {
     expect(document.body.textContent).not.toMatch(/restricted|hidden|permission|count/i);
   });
 
-  it("keeps the connection-loss diagnostic alongside an all-failed empty Layout", async () => {
+  it("shows a retryable load failure, not the empty library, when every Section fails", async () => {
     vi.mocked(fetchSectionItems).mockRejectedValue(new Error("offline"));
 
-    renderLayout({ id: "layout", sections: [section("one")] });
+    renderLayout({ id: "layout", sections: [section("one"), section("two")] });
 
     expect(await screen.findByText(/connection lost/i)).toBeInTheDocument();
-    expect(screen.getByText(/nothing to show in this library yet/i)).toBeInTheDocument();
+    expect(await screen.findByText(/could not reach the server/i)).toBeInTheDocument();
+    expect(screen.queryByText(/nothing to show in this library yet/i)).toBeNull();
+
+    vi.mocked(fetchSectionItems).mockResolvedValue([item("recovered")]);
+    await act(async () => screen.getByRole("button", { name: /try again/i }).click());
+
+    expect(await screen.findAllByRole("button", { name: "recovered" })).toHaveLength(2);
+    expect(screen.queryByText(/could not reach the server/i)).toBeNull();
+    expect(screen.queryByText(/connection lost/i)).toBeNull();
   });
 
   it("focuses the first item of the first non-empty Section", async () => {

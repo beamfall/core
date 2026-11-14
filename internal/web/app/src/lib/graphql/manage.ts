@@ -33,6 +33,7 @@ import type {
   LibraryHealthInfo,
   LibraryInfo,
   LibraryPreviewClipsResult,
+  LibraryPurgeResult,
   LibraryRootsResult,
   ManagedPathInfo,
   ManagedTrashInfo,
@@ -65,6 +66,7 @@ import type {
   TagInfo,
   TagTargetType,
   TrashEntry,
+  TrashedLibraryInfo,
   UnmatchedItemInfo,
   UnmatchedRecordInfo,
   UnmatchedSuppressionInfo,
@@ -75,7 +77,7 @@ import type {
 // --- Libraries ------------------------------------------------------------
 
 const LIBRARIES_QUERY =
-  "query Libraries { libraries { id title pluginID previewClips restricted roots } }";
+  "query Libraries { libraries { id title pluginID previewClips restricted roots icon iconChoice defaultIcon } }";
 
 /** Libraries — the manageable Library list with roots + preview-clip toggle. */
 export async function fetchLibraries(signal?: AbortSignal): Promise<LibraryInfo[]> {
@@ -95,6 +97,20 @@ export async function setLibraryPreviewClips(
     setLibraryPreviewClips: LibraryPreviewClipsResult;
   }>(SET_LIBRARY_PREVIEW_CLIPS_MUTATION, { libraryID, enabled });
   return data.setLibraryPreviewClips;
+}
+
+// The icon write rides the console-config mutation: the published management
+// contract is frozen until its next major version, so a Library icon cannot
+// have an operation of its own yet (CORE-1200).
+const SET_LIBRARY_ICON_MUTATION =
+  "mutation SetLibraryIcon($libraryID: String!, $libraryIcon: String!) { setConsoleConfig(libraryID: $libraryID, libraryIcon: $libraryIcon) { backgroundWorkers } }";
+
+/** SetLibraryIcon — choose a Library's icon; "" returns it to its default. */
+export async function setLibraryIcon(libraryID: string, icon: string): Promise<void> {
+  await graphql<{ setConsoleConfig: unknown }>(SET_LIBRARY_ICON_MUTATION, {
+    libraryID,
+    libraryIcon: icon,
+  });
 }
 
 const SCAN_LIBRARY_MUTATION =
@@ -136,25 +152,78 @@ export async function setLibraryRoots(
 }
 
 const CREATE_LIBRARY_MUTATION =
-  "mutation CreateLibrary($title: String!, $pluginID: String, $familyScope: String) { createLibrary(title: $title, pluginID: $pluginID, familyScope: $familyScope) { id title pluginID } }";
+  "mutation CreateLibrary($title: String!, $pluginID: String, $familyScope: String, $roots: [String!]) { createLibrary(title: $title, pluginID: $pluginID, familyScope: $familyScope, roots: $roots) { id title pluginID } }";
 
 /**
  * CreateLibrary — create a Library, optionally bound to a plugin and a
  * familyScope (ADR-0028 §1: the Film & TV plugin's films/tvshows/mixed scope,
  * read by the hand-rolled resolver via trimmedVariable). familyScope is
- * ignored for plugins without scopes (Music/Podcast).
+ * ignored for plugins without scopes (Music/Podcast). `roots` gives the new
+ * Library its folders in the same call: the server creates the Library and
+ * its folders together, so a refused folder leaves nothing behind.
  */
 export async function createLibrary(
   title: string,
   pluginID: string | null,
   familyScope?: string,
+  roots?: string[],
 ): Promise<CreateLibraryResult> {
   const data = await graphql<{ createLibrary: CreateLibraryResult }>(CREATE_LIBRARY_MUTATION, {
     title,
     pluginID,
     familyScope,
+    roots,
   });
   return data.createLibrary;
+}
+
+const TRASHED_LIBRARIES_QUERY =
+  "query TrashedLibraries { trashedLibraries { id title trashedAt mediaCount purgeable purgeAfter } }";
+
+/**
+ * TrashedLibraries — the deleted Libraries that can still be restored (admin),
+ * newest deletion first. purgeAfter is when the retention sweep removes one for
+ * good; a Library that is not purgeable has none.
+ */
+export async function fetchTrashedLibraries(signal?: AbortSignal): Promise<TrashedLibraryInfo[]> {
+  const data = await graphql<{ trashedLibraries: TrashedLibraryInfo[] }>(
+    TRASHED_LIBRARIES_QUERY,
+    {},
+    signal,
+  );
+  return data.trashedLibraries;
+}
+
+const RESTORE_LIBRARY_MUTATION =
+  "mutation RestoreLibrary($libraryID: String!) { restoreLibrary(libraryID: $libraryID) }";
+
+/**
+ * RestoreLibrary — bring a deleted Library back (admin, audited). Its media,
+ * watch history, grants, folders and scan schedule return as they were, and
+ * the server queues a scan of its folders.
+ */
+export async function restoreLibrary(libraryID: string): Promise<boolean> {
+  const data = await graphql<{ restoreLibrary: boolean }>(RESTORE_LIBRARY_MUTATION, { libraryID });
+  return data.restoreLibrary;
+}
+
+const PURGE_LIBRARY_MUTATION =
+  "mutation PurgeLibrary($libraryID: String!, $confirm: Boolean!) { purgeLibrary(libraryID: $libraryID, confirm: $confirm) { libraryID title mediaRemoved entitiesRemoved } }";
+
+/**
+ * PurgeLibrary — permanently remove an already deleted Library (admin,
+ * audited). The server refuses without confirm: true. Catalog records, watch
+ * history and generated artwork go; the files on disk are never touched.
+ */
+export async function purgeLibrary(
+  libraryID: string,
+  confirm: boolean,
+): Promise<LibraryPurgeResult> {
+  const data = await graphql<{ purgeLibrary: LibraryPurgeResult }>(PURGE_LIBRARY_MUTATION, {
+    libraryID,
+    confirm,
+  });
+  return data.purgeLibrary;
 }
 
 const SKIP_DETECTION_ENABLED_QUERY =

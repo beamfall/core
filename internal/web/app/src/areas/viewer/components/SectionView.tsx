@@ -4,6 +4,7 @@ import { useNavigate } from "react-router";
 import { displayString } from "@/lib/display";
 import type { Section, SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
+import { SECTION_GRID_CAP } from "../lib/sections";
 import { playQueueOf } from "../lib/watchQueue";
 import { MediaItemCard } from "./MediaItemCard";
 import { useVirtualGrid, VIRTUAL_GRID_MIN_ITEMS } from "./useVirtualGrid";
@@ -69,7 +70,7 @@ export function SectionView({
     <section className="bf-section flex flex-col gap-3">
       <h2 className="bf-section-title">
         <span>{displayString(section.title, displayLocale)}</span>
-        {section.kind === "shelf" && seeAll && (
+        {seeAll && (section.kind === "shelf" || items.length >= SECTION_GRID_CAP) && (
           <button
             type="button"
             onClick={() => navigate(seeAll.href, { state: seeAll.state })}
@@ -102,6 +103,7 @@ export function SectionView({
               posInSet={index + 1}
               setSize={items.length}
               queue={queue}
+              playOnActivate={section.kind === "list"}
               focusAnchor={
                 navigationID
                   ? { navigation: navigationID, section: section.id, item: item.id }

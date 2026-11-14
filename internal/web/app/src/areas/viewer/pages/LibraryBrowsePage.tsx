@@ -354,6 +354,7 @@ function LibraryBrowse({
           queue={queueForPage(pageIndex)}
           posInSet={index + 1}
           setSize={itemCount}
+          playOnActivate={viewMode === "list"}
         />
       ) : (
         <PendingCard key={`pending-${index}`} />

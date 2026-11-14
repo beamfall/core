@@ -1,4 +1,4 @@
-import { Link, useParams } from "react-router";
+import { Link, Navigate, useParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { buttonVariants } from "@/components/ui/button";
 import { displayString } from "@/lib/display";
@@ -16,7 +16,10 @@ import { seeAllTargetFor } from "../lib/seeall";
 // renderLayout (app.js). Resolves a NavigationNode to its Layout and renders it
 // scoped to the node's libraryID. Home ("/") binds to the first layout
 // NavigationNode (the aggregate Home entry); "/n/:nodeId" binds to a named one.
-// Defensive: only the "layout" view type is renderable (others are skipped).
+// Only the "layout" view type is renderable. A "/n/:nodeId" that names no
+// layout node (the manifest's "ambient" entry, which carries no Layout, or a
+// library that is gone or hidden from this Profile) redirects to Home rather
+// than drawing Home's shelves under another node's address.
 export function BrowsePage({ home = false }: { home?: boolean }) {
   const t = useT();
   const displayLocale = useDisplayLocale();
@@ -38,9 +41,10 @@ export function BrowsePage({ home = false }: { home?: boolean }) {
   const layoutNodes: NavigationNode[] = (manifest?.navigation || []).filter(
     (entry) => entry.view === "layout",
   );
-  const node = home
-    ? layoutNodes[0]
-    : layoutNodes.find((entry) => entry.id === nodeId) || layoutNodes[0];
+  const node = home ? layoutNodes[0] : layoutNodes.find((entry) => entry.id === nodeId);
+  if (!home && !node && layoutNodes.length > 0) {
+    return <Navigate to="/" replace />;
+  }
   const layout = (manifest?.layouts || []).find((l) => l.id === node?.layoutID) || null;
   const libraryID = node?.libraryID || "";
 

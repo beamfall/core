@@ -72,6 +72,7 @@ func TestFirstPartyParserHooksHaveExactPluginIdentities(t *testing.T) {
 		familyarchive.PluginID: reflect.TypeOf(familyarchive.New()),
 		filmtv.PluginID:        reflect.TypeOf(filmtv.New()),
 		karaoke.PluginID:       reflect.TypeOf(karaoke.New()),
+		music.PluginID:         reflect.TypeOf(music.NewParser()),
 	}
 	hooks := firstPartyHooks()
 	if len(hooks.Parsers) != len(want) {
@@ -86,6 +87,35 @@ func TestFirstPartyParserHooksHaveExactPluginIdentities(t *testing.T) {
 		if gotType := reflect.TypeOf(parser); gotType != wantType {
 			t.Errorf("parser hook %q type = %v, want %v", pluginID, gotType, wantType)
 		}
+	}
+}
+
+// A music library's scanner gets the plugin's parser, so an embedded TITLE tag
+// names the track and a tag-poor rip still loses its track-ordinal prefix.
+func TestFirstPartyMusicParserTitlesTracksFromTagsThenFilename(t *testing.T) {
+	parser := firstPartyHooks().Parsers[music.PluginID]
+	if parser == nil {
+		t.Fatal("Music parser hook missing")
+	}
+	const path = "/music/Artist/Album/01 - Opening Light.flac"
+	tests := []struct {
+		name      string
+		path      string
+		tags      map[string]string
+		wantTitle string
+		wantOK    bool
+	}{
+		{name: "title tag wins", path: path, tags: map[string]string{"TITLE": "Opening Light (Live)", "track": "3"}, wantTitle: "Opening Light (Live)", wantOK: true},
+		{name: "no tags falls back to filename", path: path, wantTitle: "Opening Light", wantOK: true},
+		{name: "bare ordinal is left to the scanner default", path: "/music/Artist/Album/07.flac"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parsed, ok := parser.Parse(tt.path, sdk.ParseProbe{HasAudio: true, Tags: tt.tags})
+			if ok != tt.wantOK || parsed.Title != tt.wantTitle {
+				t.Fatalf("Parse = (title %q, ok %v), want (title %q, ok %v)", parsed.Title, ok, tt.wantTitle, tt.wantOK)
+			}
+		})
 	}
 }
 

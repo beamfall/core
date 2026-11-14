@@ -30,6 +30,7 @@ type V1Store interface {
 	Libraries(ctx context.Context, filter store.LibraryFilter) ([]store.Library, error)
 	SourceItems(ctx context.Context, filter store.LibraryFilter, query store.SourceQuery) ([]store.SourceItem, error)
 	Media(ctx context.Context, id store.MediaID, filter store.LibraryFilter) (store.Media, error)
+	VisibleMediaBatch(ctx context.Context, ids []store.MediaID, filter store.LibraryFilter) (map[store.MediaID]store.Media, error)
 	ActiveSessions(ctx context.Context, now time.Time, filter store.LibraryFilter) ([]store.ActiveSession, error)
 	LibraryRoots(ctx context.Context, libraryID store.LibraryID) ([]string, error)
 	AppendSessionControlEventWithActivity(ctx context.Context, target store.SessionID, payload store.SessionControlPayload, activity store.ActivityEntry, now time.Time) error
@@ -223,13 +224,27 @@ func (s *Server) v1LibraryMedia(w http.ResponseWriter, r *http.Request) {
 		items = items[:page.limit]
 		nextCursor = page.nextCursor()
 	}
+	// The feed row carries no year or duration; one batch read under the same
+	// filter fills them for the whole page.
+	ids := make([]store.MediaID, len(items))
+	for i, item := range items {
+		ids[i] = item.ID
+	}
+	details, err := s.v1.VisibleMediaBatch(r.Context(), ids, scope.LibraryFilter())
+	if err != nil {
+		writeErrorCause(w, r, http.StatusInternalServerError, "catalog read failed", err)
+		return
+	}
 	out := make([]v1MediaItem, 0, len(items))
 	for _, item := range items {
+		detail := details[item.ID]
 		out = append(out, v1MediaItem{
-			ID:        string(item.ID),
-			LibraryID: string(libraryID),
-			Title:     item.Title,
-			Summary:   item.Summary,
+			ID:              string(item.ID),
+			LibraryID:       string(libraryID),
+			Title:           item.Title,
+			Summary:         item.Summary,
+			Year:            detail.Year,
+			DurationSeconds: detail.DurationSeconds,
 		})
 	}
 	writeJSON(w, http.StatusOK, v1LibraryMediaResponse{Media: out, NextCursor: nextCursor})

@@ -57,12 +57,14 @@
   ],
   "libraries": [
     {
+      "icon": "folder",
       "id": "library-local",
       "pluginID": null,
       "previewClips": true,
       "title": "Local Library"
     },
     {
+      "icon": "folder",
       "id": "library-archive",
       "pluginID": null,
       "previewClips": true,

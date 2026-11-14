@@ -22,6 +22,10 @@ export const MAX_RENDERED_SECTIONS = 24;
 // only its viewport slice mounts even as multiple pages are retained.
 export const SEEALL_PAGE = 60;
 
+// A grid or list Section hydrates at most this many items in place; one that
+// fills the cap offers See All, which pages through the whole Source.
+export const SECTION_GRID_CAP = 100;
+
 export interface SectionFetchContext {
   libraryID: string;
   /** The context entity for entity-media Sources; "" elsewhere (server ignores it). */
@@ -55,7 +59,7 @@ export async function fetchSectionItems(
       ? 1
       : section.kind === "shelf"
         ? 20
-        : 100;
+        : SECTION_GRID_CAP;
   return fetchSourceItems(
     {
       kind: source.kind || "",

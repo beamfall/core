@@ -2,7 +2,7 @@ export const onboardingStrings = {
   en: {
     setupChecklistHeading: "Get to first value",
     setupChecklistLead:
-      "Your path to a first successful browse. Each step opens where you finish it. Reading this leaks no secret, only whether each step is done.",
+      "Your path to a first successful browse. Each step opens where you finish it.",
     setupChecklistScan: "Start your first scan",
     setupChecklistMigrate: "Migrate from another server",
     setupChecklistEnroll: "Add a device or browser",
@@ -40,6 +40,8 @@ export const onboardingStrings = {
     setupChecklistLead:
       "Les étapes d'intégration dont ce serveur a encore besoin. Lire ceci ne divulgue aucun secret, seulement si la configuration est terminée.",
     setupIncomplete: "Configuration incomplète.",
+    setupChecklistFirstValue: "Tout est prêt. Vous pouvez parcourir votre bibliothèque.",
+    setupChecklistNext: "Étape suivante",
     setupChecklistDone: "Fait",
     setupChecklistUnavailable: "Impossible de charger l'état de configuration.",
     pairingCodeRequired: "Saisissez le code de jumelage pour continuer.",
@@ -61,6 +63,8 @@ export const onboardingStrings = {
     setupChecklistLead:
       "Die Einrichtungsschritte, die dieser Server noch benötigt. Dies preiszugeben verrät kein Geheimnis, nur, ob die Einrichtung abgeschlossen ist.",
     setupIncomplete: "Einrichtung unvollständig.",
+    setupChecklistFirstValue: "Alles bereit. Die Bibliothek kann durchsucht werden.",
+    setupChecklistNext: "Nächster Schritt",
     setupChecklistDone: "Erledigt",
     setupChecklistUnavailable: "Einrichtungsstatus konnte nicht geladen werden.",
     pairingCodeRequired: "Gib den Kopplungscode ein, um fortzufahren.",
@@ -82,6 +86,8 @@ export const onboardingStrings = {
     setupChecklistLead:
       "Los pasos de incorporación que este servidor aún necesita. Leer esto no revela ningún secreto, solo si la configuración terminó.",
     setupIncomplete: "Configuración incompleta.",
+    setupChecklistFirstValue: "Todo listo. Ya puedes explorar tu biblioteca.",
+    setupChecklistNext: "Siguiente paso",
     setupChecklistDone: "Hecho",
     setupChecklistUnavailable: "No se pudo cargar el estado de configuración.",
     pairingCodeRequired: "Introduce el código de emparejamiento para continuar.",
@@ -103,6 +109,8 @@ export const onboardingStrings = {
     setupChecklistLead:
       "As etapas de integração que este servidor ainda precisa. Ler isso não revela nenhum segredo, apenas se a configuração foi concluída.",
     setupIncomplete: "Configuração incompleta.",
+    setupChecklistFirstValue: "Tudo pronto. Sua biblioteca já pode ser explorada.",
+    setupChecklistNext: "Próxima etapa",
     setupChecklistDone: "Concluído",
     setupChecklistUnavailable: "Não foi possível carregar o estado de configuração.",
     pairingCodeRequired: "Digite o código de pareamento para continuar.",

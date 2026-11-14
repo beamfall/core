@@ -98,8 +98,11 @@ describe("Library browse", () => {
     await user.click(screen.getByRole("button", { name: "Sort direction: Descending" }));
     expect(screen.getByTestId("where")).toHaveTextContent("/n/films/all?sort=year");
 
+    // Posters open the detail page; only list rows play on activation.
+    expect(document.querySelector(".bf-card-play")).toBeNull();
     await user.click(screen.getByRole("button", { name: "List" }));
     expect(screen.getByRole("list", { name: "Films" })).toHaveClass("bf-stack");
+    expect(document.querySelector(".bf-card-play")).not.toBeNull();
     expect(window.localStorage.getItem("beamfall.libraryView.lib")).toBe("list");
   });
 
@@ -151,7 +154,8 @@ describe("Library browse", () => {
     expect(screen.queryByRole("button", { name: /Remove filter/ })).toBeNull();
   });
 
-  it("hands a played card's loaded neighbours to the player as its queue (CORE-1143)", async () => {
+  // A poster opens the detail page (CORE-1144), which forwards the queue to its Play.
+  it("hands an opened card's loaded neighbours on as the player's queue (CORE-1143)", async () => {
     vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
     const user = userEvent.setup();
 
@@ -160,7 +164,7 @@ describe("Library browse", () => {
         <MemoryRouter initialEntries={["/n/films/all"]}>
           <Routes>
             <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
-            <Route path="/watch/:id" element={<WatchState />} />
+            <Route path="/media/:id" element={<WatchState />} />
           </Routes>
         </MemoryRouter>
       </I18nProvider>,

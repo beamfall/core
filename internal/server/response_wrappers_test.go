@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -233,5 +234,51 @@ func TestBeamOfferRouteMapsFailures(t *testing.T) {
 	rec := offer(`{"mediaID":"media-alpha"}`, authorizeViewer)
 	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "beam handoff unavailable") {
 		t.Fatalf("unwired beam status = %d body=%s, want 503", rec.Code, rec.Body.String())
+	}
+}
+
+// readerFromWriter is a ResponseWriter whose io.ReaderFrom stands in for the
+// net/http sendfile path, recording what reaches it.
+type readerFromWriter struct {
+	*httptest.ResponseRecorder
+	readFromCalls int
+	copied        int64
+}
+
+func (w *readerFromWriter) ReadFrom(src io.Reader) (int64, error) {
+	w.readFromCalls++
+	n, err := io.Copy(w.ResponseRecorder, src)
+	w.copied += n
+	return n, err
+}
+
+// The tracking and base-URL wrappers must keep the server's io.ReaderFrom
+// reachable (http.ServeContent's sendfile path for direct play) while still
+// tracking the committed status.
+func TestWriterChainForwardsReaderFrom(t *testing.T) {
+	inner := &readerFromWriter{ResponseRecorder: httptest.NewRecorder()}
+	tracked, w := trackResponseWriter(inner)
+	chain := prefixedWriter(w)
+
+	if _, ok := http.ResponseWriter(chain).(io.ReaderFrom); !ok {
+		t.Fatal("wrapper chain hides io.ReaderFrom")
+	}
+	// io.CopyN is how http.ServeContent sends a file body.
+	n, err := io.CopyN(chain, strings.NewReader("media-bytes"), int64(len("media-bytes")))
+	if err != nil || n != int64(len("media-bytes")) {
+		t.Fatalf("copy = %d, %v", n, err)
+	}
+	if inner.readFromCalls != 1 || inner.copied != n || inner.Body.String() != "media-bytes" {
+		t.Fatalf("ReadFrom calls = %d, copied = %d, body = %q", inner.readFromCalls, inner.copied, inner.Body.String())
+	}
+	if !tracked.committed || tracked.statusCode() != http.StatusOK {
+		t.Fatalf("tracked committed = %v, status = %d", tracked.committed, tracked.statusCode())
+	}
+
+	// A writer without io.ReaderFrom still receives every byte.
+	rec := httptest.NewRecorder()
+	tracked, w = trackResponseWriter(rec)
+	if n, err := w.(io.ReaderFrom).ReadFrom(strings.NewReader("plain")); err != nil || n != 5 || rec.Body.String() != "plain" || !tracked.committed {
+		t.Fatalf("fallback copy = %d, %v, body %q, committed %v", n, err, rec.Body.String(), tracked.committed)
 	}
 }

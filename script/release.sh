@@ -72,9 +72,12 @@ for target in "${targets[@]}"; do
   offer_url="${SOURCE_OFFER_BASE_URL%/}/${name}.source.json"
   mkdir -p "${work}"
 
+  # BEAMFALL_BUNDLED_CREDENTIALS (ref=value,...) carries Beamfall's own
+  # metadata project keys into official builds (internal/app.BundledCredentials);
+  # unset, the build ships none and owners register their own.
   CGO_ENABLED=0 GOOS="${GOOS}" GOARCH="${GOARCH}" \
     go build -trimpath \
-      -ldflags="-s -w -X github.com/beamfall/core/internal/capabilities.ReleaseVersion=${VERSION} -X github.com/beamfall/core/internal/capabilities.SourceOfferURL=${offer_url}${first_party_ldflag}" \
+      -ldflags="-s -w -X github.com/beamfall/core/internal/capabilities.ReleaseVersion=${VERSION} -X github.com/beamfall/core/internal/capabilities.SourceOfferURL=${offer_url}${first_party_ldflag} -X github.com/beamfall/core/internal/app.BundledCredentials=${BEAMFALL_BUNDLED_CREDENTIALS:-}" \
       -o "${work}/beamfall" ./cmd/beamfall
 
   python3 "${ROOT}/script/source-artifact.py" write \

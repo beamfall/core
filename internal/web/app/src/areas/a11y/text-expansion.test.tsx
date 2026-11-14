@@ -200,7 +200,10 @@ const CLIP_UTILITY =
 // `title`) and `overflow-hidden` on the aria-hidden setup progress bar (no text);
 // -2 because the bulk-tag and marker-retag mode toggles moved to the shared
 // Segmented control and dropped their `overflow-hidden` wrappers. Net 28.
-const CLIP_BASELINE = 28;
+// 2026-11-13 (CORE-1201): +1 → 29 for the Console Libraries Recently deleted rows —
+// `truncate` on the library title. CSS ellipsis only; the full title stays in the
+// DOM and a `title`, and the row's Restore and permanent-delete buttons name it.
+const CLIP_BASELINE = 29;
 
 function tsSources(dir: string, acc: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {

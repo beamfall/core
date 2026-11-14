@@ -30,35 +30,7 @@ import type { StringKey } from "@/strings";
 // The setup token and admin password are CREDENTIALS — they ride the request
 // body and are never logged or echoed.
 
-/** The five Library-type tiles, each mapped to a plugin + optional familyScope.
- * Scope value strings are verbatim from filmtv/bundle.go FamilyScopes; Music
- * and Podcast plugins have no familyScope. */
-export type LibraryType = "films" | "tvshows" | "mixed" | "music" | "podcasts";
-
 export type UpdateCheckChannel = "stable" | "beta";
-
-export interface LibraryTypeSpec {
-  /** The Library-type tile id (also the filmtv familyScope where applicable). */
-  type: LibraryType;
-  /** The installed plugin this tile binds the Library to. */
-  pluginID: string;
-  /** The Film & TV familyScope, or null for plugins without scopes. */
-  familyScope: string | null;
-}
-
-export const LIBRARY_TYPES: readonly LibraryTypeSpec[] = [
-  { type: "films", pluginID: "filmtv", familyScope: "films" },
-  { type: "tvshows", pluginID: "filmtv", familyScope: "tvshows" },
-  { type: "mixed", pluginID: "filmtv", familyScope: "mixed" },
-  { type: "music", pluginID: "music", familyScope: null },
-  { type: "podcasts", pluginID: "podcasts", familyScope: null },
-] as const;
-
-export function libraryTypeSpec(type: LibraryType): LibraryTypeSpec {
-  const spec = LIBRARY_TYPES.find((s) => s.type === type);
-  if (!spec) throw new Error(`unknown library type: ${type}`);
-  return spec;
-}
 
 /** What `POST /api/setup` returns on success (graph bootstrap result). */
 export interface SetupBootstrapResult {
@@ -130,21 +102,23 @@ export async function bootstrapSetup(input: {
 }
 
 /**
- * Create the first Library from the chosen tile, then set its single root.
+ * Create the first Library from the chosen media type (a plugin and, for a
+ * plugin with family scopes, one scope; see lib/libraryTypes), then set its
+ * single root.
  * Returns the created Library id.
  */
 export async function createFirstLibrary(input: {
   title: string;
-  type: LibraryType;
+  pluginID: string;
+  familyScope: string | null;
   rootPath: string;
   progress?: FirstLibraryProgress;
 }): Promise<FirstLibraryResult> {
-  const spec = libraryTypeSpec(input.type);
   let progress: FirstLibraryProgress = { ...(input.progress ?? { rootsSet: false }) };
   try {
     const libraryID =
       progress.libraryID ??
-      (await createLibrary(input.title, spec.pluginID, spec.familyScope ?? undefined)).id;
+      (await createLibrary(input.title, input.pluginID, input.familyScope ?? undefined)).id;
     progress = { ...progress, libraryID };
     if (!progress.rootsSet) {
       await setLibraryRoots(libraryID, [input.rootPath]);

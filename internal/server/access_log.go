@@ -49,23 +49,50 @@ func (m *requestMetrics) writePrometheus(body *strings.Builder) {
 	_, _ = fmt.Fprintf(body, "beamfall_http_request_duration_seconds_count %d\n", m.count.Load())
 }
 
-// recordAccess emits the per-request access line and counts the request. It
+// slowRequestThreshold is how long a response may take to start before its
+// access line is raised to Warn.
+const slowRequestThreshold = time.Second
+
+// accessLevel is the level of a request's access line: Warn for a response
+// that was slow to start, Info for a server error, Debug for the routine rest
+// (which includes a request the client abandoned, status 499). Slowness is
+// measured to the first byte, so a long download or an open event stream is
+// routine.
+func accessLevel(status int, firstByte time.Duration) slog.Level {
+	switch {
+	case firstByte >= slowRequestThreshold:
+		return slog.LevelWarn
+	case status >= http.StatusInternalServerError:
+		return slog.LevelInfo
+	default:
+		return slog.LevelDebug
+	}
+}
+
+// recordAccess counts the request and emits its access line at accessLevel. It
 // logs the matched route pattern, the path with any Stream Token redacted and
-// no query string, and only the class of the presented credential — never a
-// credential value.
-func (s *Server) recordAccess(r *http.Request, requestID string, status int, elapsed time.Duration) {
+// no query string, and only the class of the presented credential, never a
+// credential value. A line whose level is disabled formats nothing.
+func (s *Server) recordAccess(r *http.Request, requestID string, status int, firstByte, elapsed time.Duration) {
 	s.requestMetrics.observe(status, elapsed)
+	ctx := r.Context()
+	level := accessLevel(status, firstByte)
+	logger := slog.Default()
+	if !logger.Enabled(ctx, level) {
+		return
+	}
 	route := r.Pattern
 	if route == "" {
 		route = "unmatched"
 	}
-	slog.InfoContext(r.Context(), "http request",
+	logger.Log(ctx, level, "http request",
 		"requestID", requestID,
 		"method", r.Method,
 		"route", route,
 		"path", redactTokenPath(r.URL),
 		"status", status,
 		"latency_ms", elapsed.Milliseconds(),
+		"first_byte_ms", firstByte.Milliseconds(),
 		"principal", principalClass(r),
 	)
 }

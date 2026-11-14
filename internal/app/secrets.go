@@ -155,6 +155,18 @@ func lanSetupURLs(scheme, listenAddr string, addrs []net.Addr) []string {
 	return urls
 }
 
+// remoteSetupHint is the token-free address pattern to open from another
+// device when the server listens on every interface (CORE-1097). Interface
+// addresses can be unreachable from the LAN, as in a bridged container, so the
+// operator substitutes the host's own address. Empty unless wildcard-bound.
+func remoteSetupHint(scheme, listenAddr string) string {
+	host, port, err := net.SplitHostPort(listenAddr)
+	if err != nil || (host != "" && host != "0.0.0.0" && host != "::") {
+		return ""
+	}
+	return fmt.Sprintf("%s://<this server's address>:%s/web/", scheme, port)
+}
+
 func configureReviewDemoEnrollment(cfgProfileID string, dataDir string, svc *pairing.Service, logger *slog.Logger) error {
 	key, err := (secretFiles{dir: filepath.Join(dataDir, "secrets")}).Secret(reviewDemoEnrollmentSecretRef)
 	if err != nil {

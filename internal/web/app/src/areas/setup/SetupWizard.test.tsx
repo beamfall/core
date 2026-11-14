@@ -162,13 +162,20 @@ describe("SetupWizard folder picker", () => {
   });
 });
 
+const FIRST_PARTY_PLUGINS = [
+  { id: "filmtv", displayName: "Film & TV" },
+  { id: "music", displayName: "Music" },
+  { id: "photos", displayName: "Photos" },
+  { id: "karaoke", displayName: "Karaoke" },
+];
+
 describe("SetupWizard first scan", () => {
   beforeEach(() => {
     mocks.bootstrapResume.mockResolvedValue({
       alreadyBootstrapped: true,
       state: { complete: false, pluginsActivated: true },
     });
-    mocks.fetchPlugins.mockResolvedValue([]);
+    mocks.fetchPlugins.mockResolvedValue(FIRST_PARTY_PLUGINS);
     mocks.createFirstLibrary.mockResolvedValue({
       libraryID: "lib1",
       scanJobID: "job-scan-1",
@@ -200,12 +207,32 @@ describe("SetupWizard first scan", () => {
     await screen.findByRole("heading", { name: "Your library is filling up" });
     expect(mocks.createFirstLibrary).toHaveBeenCalledWith({
       title: "Films",
-      type: "films",
+      pluginID: "filmtv",
+      familyScope: "films",
       rootPath: "/media/films",
       progress: { rootsSet: false },
     });
     expect(await screen.findByText("214/500 files - Scanning")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Browse what's ready" })).toBeInTheDocument();
+  });
+
+  it("offers every media type the server's plugins provide (CORE-1156)", async () => {
+    const user = userEvent.setup();
+    renderSetupWizard();
+
+    await screen.findByRole("heading", { name: "Create your first Library" });
+    for (const name of ["Films", "TV Shows", "Mixed", "Music", "Photos", "Karaoke"]) {
+      expect(await screen.findByRole("radio", { name })).toBeInTheDocument();
+    }
+    await user.click(screen.getByRole("radio", { name: "Photos" }));
+    await user.type(screen.getByLabelText("Root folder"), "/media/photos");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => {
+      expect(mocks.createFirstLibrary).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Photos", pluginID: "photos", familyScope: null }),
+      );
+    });
   });
 
   it("offers migration under the scan, with Browse what's ready as the way past it", async () => {

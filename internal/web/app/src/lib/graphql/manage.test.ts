@@ -15,17 +15,21 @@ import {
   dismissUnmatched,
   fetchBackupHistory,
   fetchMetadataExport,
+  fetchTrashedLibraries,
   fixMatch,
   identifySearch,
   linkMediaRelation,
+  purgeLibrary,
   purgeTrash,
   removeCollectionMedia,
   reorderCollectionMedia,
   restoreCollection,
+  restoreLibrary,
   restoreMarker,
   restoreMedia,
   restoreTag,
   runBackup,
+  setLibraryIcon,
   unassignTag,
   updateCollection,
   updateMarker,
@@ -144,6 +148,72 @@ describe("manage GraphQL requests", () => {
       expect(sent?.aborted, name).toBe(true);
     }
   });
+  it("fetchTrashedLibraries sends the named TrashedLibraries query", async () => {
+    const trashed = [
+      {
+        id: "library-1",
+        title: "Films",
+        trashedAt: "2026-11-01T10:00:00Z",
+        mediaCount: 3,
+        purgeable: true,
+        purgeAfter: "2026-12-01T10:00:00Z",
+      },
+    ];
+    vi.mocked(fetch).mockImplementationOnce((_url, init) => {
+      recorded.push(JSON.parse(init?.body as string) as Recorded);
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ data: { trashedLibraries: trashed } }),
+      } as Response);
+    });
+
+    await expect(fetchTrashedLibraries()).resolves.toEqual(trashed);
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].query).toContain("query TrashedLibraries ");
+    expect(recorded[0].query).toContain(
+      "trashedLibraries { id title trashedAt mediaCount purgeable purgeAfter }",
+    );
+  });
+
+  it("restoreLibrary sends the named RestoreLibrary mutation for one library", async () => {
+    vi.mocked(fetch).mockImplementationOnce((_url, init) => {
+      recorded.push(JSON.parse(init?.body as string) as Recorded);
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ data: { restoreLibrary: true } }),
+      } as Response);
+    });
+
+    await expect(restoreLibrary("library-1")).resolves.toBe(true);
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].query).toContain("mutation RestoreLibrary(");
+    expect(recorded[0].query).toContain("restoreLibrary(libraryID: $libraryID)");
+    expect(recorded[0].variables).toEqual({ libraryID: "library-1" });
+  });
+
+  it("purgeLibrary sends the named PurgeLibrary mutation with the confirmation", async () => {
+    const result = { libraryID: "library-1", title: "Films", mediaRemoved: 3, entitiesRemoved: 1 };
+    vi.mocked(fetch).mockImplementationOnce((_url, init) => {
+      recorded.push(JSON.parse(init?.body as string) as Recorded);
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ data: { purgeLibrary: result } }),
+      } as Response);
+    });
+
+    await expect(purgeLibrary("library-1", true)).resolves.toEqual(result);
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].query).toContain("mutation PurgeLibrary(");
+    expect(recorded[0].query).toContain("purgeLibrary(libraryID: $libraryID, confirm: $confirm)");
+    expect(recorded[0].variables).toEqual({ libraryID: "library-1", confirm: true });
+  });
+
   it("restoreMedia returns the updated trash list", async () => {
     await expect(restoreMedia("media-alpha")).resolves.toEqual([]);
     expect(recorded).toHaveLength(1);
@@ -191,6 +261,20 @@ describe("manage GraphQL requests", () => {
 // because every function below simply returns `data.<field>` without
 // dereferencing nested properties of an absent payload.
 describe("manage mutation request recording", () => {
+  it("setLibraryIcon sends the choice through setConsoleConfig(libraryID, libraryIcon)", async () => {
+    await setLibraryIcon("library-1", "headphones");
+    expect(recorded[0].query).toContain("mutation SetLibraryIcon(");
+    expect(recorded[0].query).toContain(
+      "setConsoleConfig(libraryID: $libraryID, libraryIcon: $libraryIcon)",
+    );
+    expect(recorded[0].variables).toEqual({ libraryID: "library-1", libraryIcon: "headphones" });
+
+    // Clearing the choice sends the empty name, not an omitted variable: the
+    // server reads an absent libraryIcon as "not an icon write".
+    await setLibraryIcon("library-1", "");
+    expect(recorded[1].variables).toEqual({ libraryID: "library-1", libraryIcon: "" });
+  });
+
   it("createTag sends CreateTag(name, parentTagID)", async () => {
     // feature:tags
     await createTag("Action", "parent-1");

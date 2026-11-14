@@ -3800,11 +3800,26 @@
         "kind": "scalar"
       },
       {
+        "name": "defaultIcon",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "encrypted",
         "kind": "scalar"
       },
       {
         "name": "familyScope",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "icon",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "iconChoice",
         "kind": "scalar",
         "optional": true
       },
@@ -7290,11 +7305,26 @@
         "kind": "scalar"
       },
       {
+        "name": "defaultIcon",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "encrypted",
         "kind": "scalar"
       },
       {
         "name": "familyScope",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "icon",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "iconChoice",
         "kind": "scalar",
         "optional": true
       },
@@ -8507,6 +8537,11 @@
               "optional": true
             },
             {
+              "name": "icon",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "id",
               "kind": "scalar"
             },
@@ -8528,6 +8563,11 @@
         "children": [
           {
             "name": "accent",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "icon",
             "kind": "scalar",
             "optional": true
           },
@@ -11580,6 +11620,11 @@
               "optional": true
             },
             {
+              "name": "icon",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "id",
               "kind": "scalar"
             },
@@ -11601,6 +11646,11 @@
         "children": [
           {
             "name": "accent",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "icon",
             "kind": "scalar",
             "optional": true
           },
@@ -12983,6 +13033,28 @@
     ]
   },
   {
+    "field": "purgelibrary",
+    "kind": "object",
+    "children": [
+      {
+        "name": "entitiesRemoved",
+        "kind": "scalar"
+      },
+      {
+        "name": "libraryID",
+        "kind": "scalar"
+      },
+      {
+        "name": "mediaRemoved",
+        "kind": "scalar"
+      },
+      {
+        "name": "title",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "purgetrash",
     "kind": "object",
     "children": [
@@ -14295,6 +14367,10 @@
         "optional": true
       }
     ]
+  },
+  {
+    "field": "restorelibrary",
+    "kind": "object"
   },
   {
     "field": "restoremanagedpath",
@@ -18460,11 +18536,26 @@
         "kind": "scalar"
       },
       {
+        "name": "defaultIcon",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "encrypted",
         "kind": "scalar"
       },
       {
         "name": "familyScope",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "icon",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "iconChoice",
         "kind": "scalar",
         "optional": true
       },
@@ -18509,11 +18600,26 @@
         "kind": "scalar"
       },
       {
+        "name": "defaultIcon",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "encrypted",
         "kind": "scalar"
       },
       {
         "name": "familyScope",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "icon",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "iconChoice",
         "kind": "scalar",
         "optional": true
       },
@@ -18558,11 +18664,26 @@
         "kind": "scalar"
       },
       {
+        "name": "defaultIcon",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "encrypted",
         "kind": "scalar"
       },
       {
         "name": "familyScope",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "icon",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "iconChoice",
         "kind": "scalar",
         "optional": true
       },
@@ -18607,11 +18728,26 @@
         "kind": "scalar"
       },
       {
+        "name": "defaultIcon",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "encrypted",
         "kind": "scalar"
       },
       {
         "name": "familyScope",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "icon",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "iconChoice",
         "kind": "scalar",
         "optional": true
       },
@@ -23843,6 +23979,36 @@
       },
       {
         "name": "presentAtMS",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "trashedlibraries",
+    "kind": "object",
+    "children": [
+      {
+        "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "mediaCount",
+        "kind": "scalar"
+      },
+      {
+        "name": "purgeAfter",
+        "kind": "scalar"
+      },
+      {
+        "name": "purgeable",
+        "kind": "scalar"
+      },
+      {
+        "name": "title",
+        "kind": "scalar"
+      },
+      {
+        "name": "trashedAt",
         "kind": "scalar"
       }
     ]

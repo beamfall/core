@@ -27,3 +27,13 @@ export function artworkBucketURL(url: string, bucket: string): string {
   }
   return `${url}${url.includes("?") ? "&" : "?"}bucket=${bucket}`;
 }
+
+// Builds a `srcset` from derivative buckets so high-DPI screens fetch a sharper
+// derivative (the server serves w320, w640, w1280 and original). Each bucket is
+// named `w<width>`, which is also its intrinsic width descriptor.
+export function artworkSrcSet(url: string, buckets: readonly `w${number}`[]): string {
+  if (!url) {
+    return "";
+  }
+  return buckets.map((bucket) => `${artworkBucketURL(url, bucket)} ${bucket.slice(1)}w`).join(", ");
+}

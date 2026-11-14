@@ -87,6 +87,10 @@ func addFilmTVMigrationSources(hooks *app.Hooks) {
 }
 
 func addMusicHooks(hooks *app.Hooks) {
+	// The parser treats an embedded TITLE tag as authoritative and falls back
+	// to the filename for tag-poor rips; without it a scanned track keeps its
+	// filename stem ("01 - Opening Light") as its title.
+	hooks.Parsers[music.PluginID] = music.NewParser()
 	hooks.HydrationMappers[music.PluginID] = musicHydrationMapper{}
 	// With no provider artwork an album shows the cover of its first track
 	// that has one, and an artist the cover of one of its albums, else of a

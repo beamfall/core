@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -298,3 +299,34 @@ func TestOpsUnrestrictedJobFailureRedactsConsoleVisibleState(t *testing.T) {
 
 // csrfHeaderName mirrors auth.CSRFHeader without importing auth into the test.
 const csrfHeaderName = "X-Beamfall-Csrf"
+
+// A request the client abandoned (the web UI aborts superseded fetches) is not
+// a server failure: it logs at debug and records 499, not a 5xx.
+func TestWriteErrorCauseClientCancelIsDebugAnd499(t *testing.T) {
+	var logs bytes.Buffer
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(old) })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/graphql", nil)
+	tracked, w := trackResponseWriter(httptest.NewRecorder())
+
+	writeErrorCause(w, req, http.StatusInternalServerError, "catalog read failed", fmt.Errorf("query: %w", context.Canceled))
+
+	if got := tracked.statusCode(); got != statusClientClosedRequest {
+		t.Fatalf("status = %d, want %d", got, statusClientClosedRequest)
+	}
+	if out := logs.String(); !strings.Contains(out, "level=DEBUG") || strings.Contains(out, "level=ERROR") {
+		t.Fatalf("client cancel should log at DEBUG only, got %q", out)
+	}
+
+	// The same error while the request is still live is a real failure.
+	logs.Reset()
+	rec := httptest.NewRecorder()
+	writeErrorCause(rec, httptest.NewRequest(http.MethodPost, "/api/graphql", nil), http.StatusInternalServerError, "catalog read failed", context.Canceled)
+	if rec.Code != http.StatusInternalServerError || !strings.Contains(logs.String(), "level=ERROR") {
+		t.Fatalf("live request: status %d, log %q", rec.Code, logs.String())
+	}
+}

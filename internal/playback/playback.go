@@ -2064,8 +2064,15 @@ func audioOnlyCodecDeclared(media store.Media, streams []store.MediaFileStream, 
 // new container with the video passed through untouched. vetoesSourceContainer
 // is deliberately not consulted: this branch already leaves the source
 // container.
+//
+// A source container the profile does not declare (an mkv for a browser that plays only
+// mp4/webm) is the plain remux case of ADR-0010 §2: the streams are playable, only the
+// container is not, so the video is copied into the HLS container instead of re-encoded. The
+// HDR-preservation rule applies to that swap, so a source without a recorded video stream, or
+// with HDR10+/Dolby Vision metadata, still falls through to the full transcode.
 func audioCopyEligible(media store.Media, file store.MediaFile, streams []store.MediaFileStream, profile CapabilityProfile, selectedSubtitleIndex *int, ov quirkOverlay) bool {
-	if !slices.Contains(profile.Containers, media.Container) {
+	containerDeclared := slices.Contains(profile.Containers, media.Container)
+	if !containerDeclared && !remuxPreservesHDR(streams) {
 		return false
 	}
 	if ov.vetoesVideoPassthrough(media, file, streams) {
@@ -2073,7 +2080,7 @@ func audioCopyEligible(media store.Media, file store.MediaFile, streams []store.
 	}
 	return videoDirectPlayable(media, file, streams, profile) &&
 		subtitleFormatsCompatible(streams, profile, selectedSubtitleIndex, ov) &&
-		audioNeedsRework(streams, profile, ov)
+		(!containerDeclared || audioNeedsRework(streams, profile, ov))
 }
 
 // audioNeedsRework reports whether the audio-copy rung has work to do: the
@@ -2125,6 +2132,12 @@ func videoDirectPlayable(media store.Media, file store.MediaFile, streams []stor
 // still applies. The public videoDirectPlayable passes false, so canDirectPlay and
 // audioCopyEligible are unchanged: DV never leaks into the audio-copy path.
 func videoPlayable(media store.Media, file store.MediaFile, streams []store.MediaFileStream, profile CapabilityProfile, asBaseLayer bool) bool {
+	// An audio-class item has no picture to judge: against a per-codec envelope its audio
+	// streams (audioDirectPlayable) are the whole codec question, and the media's audio codec
+	// must not be looked up among the video codecs.
+	if media.Class == store.MediaClassAudio && len(profile.VideoCodecs) > 0 {
+		return true
+	}
 	if len(profile.VideoCodecs) == 0 {
 		return slices.Contains(profile.DirectCodecs, media.Codec)
 	}

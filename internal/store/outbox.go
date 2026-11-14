@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -44,9 +45,71 @@ var ErrEventCursorTooOld = errors.New("event outbox cursor too old")
 // device is a stateless remote (ADR-0035 §7 — "not Beam").
 const OutboxAggregateSession = "session"
 
+// outboxNotifier wakes event-outbox readers when a write commits, so a
+// long-lived reader waits on a channel instead of polling the table. It is a
+// broadcast: every waiter holds the same channel, and a commit closes it. With
+// no waiter there is no channel and a notify does nothing.
+type outboxNotifier struct {
+	mu sync.Mutex
+	ch chan struct{}
+}
+
+func (n *outboxNotifier) wait() <-chan struct{} {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.ch == nil {
+		n.ch = make(chan struct{})
+	}
+	return n.ch
+}
+
+func (n *outboxNotifier) notify() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.ch != nil {
+		close(n.ch)
+		n.ch = nil
+	}
+}
+
+// EventOutboxChanged returns a channel that is closed once an outbox write
+// commits after this call. A reader takes the channel BEFORE it reads the
+// outbox and waits on it afterwards, so a write that lands between the read
+// and the wait is never missed. The signal is in-process only: a reader keeps
+// a slow fallback read for a writer that cannot signal (another process on the
+// same data directory).
+func (s *Store) EventOutboxChanged() <-chan struct{} {
+	return s.outbox.wait()
+}
+
+// commitOutboxTx commits an events.db transaction that wrote outbox rows and
+// wakes the readers. A transaction that turned out to write none costs a
+// reader one empty read.
+func (s *Store) commitOutboxTx(tx *sql.Tx) error {
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.outbox.notify()
+	return nil
+}
+
+// appendOutboxRow inserts one outbox row outside a transaction and wakes the
+// readers.
+func (s *Store) appendOutboxRow(ctx context.Context, occurredAtMS int64, kind, aggregateType string, aggregateID any, payload string) error {
+	if _, err := s.eventsW.ExecContext(ctx,
+		"INSERT INTO event_outbox(occurred_at_ms, kind, aggregate_type, aggregate_id, payload_json) VALUES (?, ?, ?, ?, ?)",
+		occurredAtMS, kind, aggregateType, aggregateID, payload,
+	); err != nil {
+		return err
+	}
+	s.outbox.notify()
+	return nil
+}
+
 // ReadEventOutbox returns up to limit outbox events with Seq greater than
 // afterSeq, oldest first. It is the read half of the realtime event spine: a
-// long-lived SSE reader polls with the last Seq it delivered. Read-only;
+// long-lived SSE reader reads with the last Seq it delivered, when
+// EventOutboxChanged wakes it. Read-only;
 // reveal filtering is the caller's concern (a "media" event is filtered through
 // the session's LibraryFilter at delivery, never here — this read is unscoped
 // like ListJobs, and the SSE handler is the reveal boundary).
@@ -242,11 +305,7 @@ func (s *Store) appendMediaEventLocked(ctx context.Context, kind string, mediaID
 		return err
 	}
 	now = normalizeTime(now)
-	_, err = s.eventsW.ExecContext(ctx,
-		"INSERT INTO event_outbox(occurred_at_ms, kind, aggregate_type, aggregate_id, payload_json) VALUES (?, ?, ?, ?, ?)",
-		timeToMillis(now), kind, OutboxAggregateMedia, mediaID, string(payloadJSON),
-	)
-	return err
+	return s.appendOutboxRow(ctx, timeToMillis(now), kind, OutboxAggregateMedia, mediaID, string(payloadJSON))
 }
 
 // appendMediaEventsLocked is the batched form of appendMediaEventLocked: it
@@ -285,6 +344,7 @@ func (s *Store) appendMediaEventsLocked(ctx context.Context, kind string, mediaI
 			args...); err != nil {
 			return err
 		}
+		s.outbox.notify()
 	}
 	return nil
 }
@@ -350,7 +410,11 @@ func (s *Store) AppendSessionControlEvent(ctx context.Context, target SessionID,
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	return appendSessionControlEventSQL(ctx, s.eventsW, target, raw, now)
+	if err := appendSessionControlEventSQL(ctx, s.eventsW, target, raw, now); err != nil {
+		return err
+	}
+	s.outbox.notify()
+	return nil
 }
 
 // AppendSessionControlEventWithActivity records the transport command and its
@@ -383,7 +447,7 @@ func (s *Store) AppendSessionControlEventWithActivity(ctx context.Context, targe
 	if err := appendActivitySQL(ctx, tx, activity); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return s.commitOutboxTx(tx)
 }
 
 func sessionControlPayloadJSON(target SessionID, payload SessionControlPayload) ([]byte, error) {
@@ -541,11 +605,7 @@ func (s *Store) AppendExtensionEvent(ctx context.Context, payload ExtensionEvent
 		return err
 	}
 	now = normalizeTime(now)
-	_, err = s.eventsW.ExecContext(ctx,
-		"INSERT INTO event_outbox(occurred_at_ms, kind, aggregate_type, aggregate_id, payload_json) VALUES (?, ?, ?, ?, ?)",
-		timeToMillis(now), ExtensionEventKind, OutboxAggregateExtension, payload.RequestID, string(normalizeJSON(raw)),
-	)
-	return err
+	return s.appendOutboxRow(ctx, timeToMillis(now), ExtensionEventKind, OutboxAggregateExtension, payload.RequestID, string(normalizeJSON(raw)))
 }
 
 // OutboxAggregateInvalidation is the AggregateType for server-initiated
@@ -641,11 +701,7 @@ func (s *Store) AppendInvalidationEvent(ctx context.Context, payload Invalidatio
 		return err
 	}
 	now = normalizeTime(now)
-	_, err = s.eventsW.ExecContext(ctx,
-		"INSERT INTO event_outbox(occurred_at_ms, kind, aggregate_type, aggregate_id, payload_json) VALUES (?, ?, ?, ?, ?)",
-		timeToMillis(now), InvalidationKind, OutboxAggregateInvalidation, string(payload.ProfileID), string(normalizeJSON(raw)),
-	)
-	return err
+	return s.appendOutboxRow(ctx, timeToMillis(now), InvalidationKind, OutboxAggregateInvalidation, string(payload.ProfileID), string(normalizeJSON(raw)))
 }
 
 // AppendGroupSyncEvent records a Group Conductor sync signal in the outbox.
@@ -677,9 +733,5 @@ func (s *Store) AppendGroupSyncEvent(ctx context.Context, payload GroupSyncPaylo
 		return err
 	}
 	now = normalizeTime(now)
-	_, err = s.eventsW.ExecContext(ctx,
-		"INSERT INTO event_outbox(occurred_at_ms, kind, aggregate_type, aggregate_id, payload_json) VALUES (?, ?, ?, ?, ?)",
-		timeToMillis(now), GroupSyncKind, OutboxAggregateGroup, payload.GroupID, string(normalizeJSON(raw)),
-	)
-	return err
+	return s.appendOutboxRow(ctx, timeToMillis(now), GroupSyncKind, OutboxAggregateGroup, payload.GroupID, string(normalizeJSON(raw)))
 }

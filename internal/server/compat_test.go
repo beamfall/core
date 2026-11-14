@@ -652,6 +652,8 @@ func (s *compatEventStore) ReadEventOutbox(context.Context, int64, int) ([]store
 	return append([]store.OutboxEvent(nil), s.events...), nil
 }
 
+func (*compatEventStore) EventOutboxChanged() <-chan struct{} { return nil }
+
 func (*compatEventStore) Media(context.Context, store.MediaID, store.LibraryFilter) (store.Media, error) {
 	return store.Media{}, errors.New("unexpected Media lookup")
 }

@@ -1,8 +1,25 @@
-import { Folder, FolderPlus, Plus, RefreshCw, ScanLine, SearchCheck, X } from "lucide-react";
-import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import {
+  Check,
+  Folder,
+  FolderPlus,
+  Loader2,
+  Plus,
+  RefreshCw,
+  ScanLine,
+  SearchCheck,
+  Undo2,
+  X,
+} from "lucide-react";
+import { type FormEvent, useCallback, useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router";
 import { DeleteLibraryButton } from "@/components/beamfall/LibraryDelete";
-import { RescanAllButton, RescanButton, RescanStatus } from "@/components/beamfall/LibraryRescan";
+import { LibraryIconPicker, useLibraryIconSymbol } from "@/components/beamfall/LibraryIconPicker";
+import {
+  RescanAllButton,
+  RescanButton,
+  RescanStatus,
+  startRescan,
+} from "@/components/beamfall/LibraryRescan";
 import {
   EmptyState,
   ErrorLine,
@@ -10,7 +27,6 @@ import {
   PathPickerField,
 } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -24,12 +40,13 @@ import { Switch } from "@/components/ui/switch";
 import { Advanced } from "@/lib/advancedSettings";
 import { displayString } from "@/lib/display";
 import {
-  createLibrary,
   fetchFolderTree,
   fetchLibraries,
   fetchPlugins,
   fetchSkipDetectionEnabled,
+  fetchTrashedLibraries,
   fetchWatcherStatus,
+  restoreLibrary,
   scanLibrary,
   setLibraryPreviewClips,
   setLibraryRoots,
@@ -38,21 +55,19 @@ import {
 import type {
   FolderEntryInfo,
   LibraryInfo,
+  LibraryPurgeResult,
   PluginSummary,
   WatcherStatusInfo,
 } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
+import { requestManifestRefresh } from "@/lib/manifestRefresh";
 import { cn } from "@/lib/utils";
 import { ConfirmButton } from "../ConfirmButton";
 import { Section } from "../Section";
 import { useAsync } from "../useAsync";
-
-const NO_PLUGIN = "__none__";
-
-// Libraries screen styling: one full-width card per library so long folder
-// paths stay readable. Solid surfaces, divided lists, no icon tiles.
-const CARD =
-  "rounded-[var(--radius-surface)] border border-[var(--border-subtle)] bg-[var(--bg-surface)]";
+import { AddLibrary } from "./AddLibrary";
+import { DeletedLibraries, MutationFailure } from "./DeletedLibraries";
+import { CARD } from "./libraryStyles";
 
 function lastSegment(path: string): string {
   const parts = path.split(/[\\/]+/).filter(Boolean);
@@ -91,12 +106,14 @@ function LibraryCard({
   skipDetectionEnabled,
   watcher,
   onChanged,
+  onDeleted,
 }: {
   library: LibraryInfo;
   plugins: PluginSummary[];
   skipDetectionEnabled: boolean;
   watcher?: WatcherStatusInfo;
   onChanged: () => void;
+  onDeleted: () => void;
 }) {
   const t = useT();
   const displayLocale = useDisplayLocale();
@@ -116,6 +133,7 @@ function LibraryCard({
   const [scanFolders, setScanFolders] = useState<FolderEntryInfo[]>([]);
   const [scanError, setScanError] = useState("");
   const plugin = plugins.find((p) => p.id === library.pluginID);
+  const HeaderIcon = useLibraryIconSymbol(library);
 
   const loadScanFolders = useCallback(async () => {
     if ((library.roots ?? []).length === 0) {
@@ -206,6 +224,7 @@ function LibraryCard({
   return (
     <article aria-labelledby={`library-${library.id}`} className={CARD}>
       <header className="flex flex-wrap items-start gap-3 border-b border-[var(--border-subtle)] p-4">
+        <HeaderIcon aria-hidden className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1 space-y-1">
           <h3 id={`library-${library.id}`} className="m-0 text-base font-semibold leading-tight">
             {library.title}
@@ -347,6 +366,8 @@ function LibraryCard({
           </section>
         </div>
 
+        <LibraryIconPicker library={library} onChanged={onChanged} />
+
         <Advanced>
           <section aria-labelledby={`scan-heading-${library.id}`} className="space-y-2">
             <h4
@@ -381,99 +402,109 @@ function LibraryCard({
         </Advanced>
       </div>
       <footer className="flex justify-end border-t border-white/[0.07] px-4 py-3">
-        <DeleteLibraryButton library={library} onDeleted={onChanged} />
+        <DeleteLibraryButton library={library} onDeleted={onDeleted} />
       </footer>
     </article>
   );
 }
 
-// Add-library panel: shown on demand (or when there are no libraries yet).
-function AddLibrary({
-  plugins,
-  onCreated,
-  onCancel,
-}: {
-  plugins: PluginSummary[];
-  onCreated: () => Promise<void>;
-  onCancel?: () => void;
-}) {
-  const t = useT();
-  const displayLocale = useDisplayLocale();
-  const [title, setTitle] = useState("");
-  const [pluginID, setPluginID] = useState(NO_PLUGIN);
-
-  async function onCreate(e: FormEvent) {
-    e.preventDefault();
-    if (!title.trim()) return;
-    await createLibrary(title.trim(), pluginID === NO_PLUGIN ? null : pluginID);
-    setTitle("");
-    setPluginID(NO_PLUGIN);
-    await onCreated();
-  }
-
-  return (
-    <form
-      onSubmit={onCreate}
-      aria-labelledby="add-library-heading"
-      className={cn(CARD, "flex flex-wrap items-end gap-4 p-4")}
-    >
-      <div className="flex w-full items-center gap-3">
-        <div>
-          <h3 id="add-library-heading" className="m-0 text-base font-semibold">
-            {t("taskAddLibrary")}
-          </h3>
-          <p className="m-0 text-xs text-muted-foreground">{t("taskAddLibraryLead")}</p>
-        </div>
-      </div>
-      <div className="min-w-48 flex-1 space-y-1.5">
-        <Label htmlFor="new-lib-title">{t("libraryName")}</Label>
-        <Input id="new-lib-title" value={title} onChange={(e) => setTitle(e.target.value)} />
-      </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="new-lib-plugin">{t("libraryKind")}</Label>
-        <Select value={pluginID} onValueChange={setPluginID}>
-          <SelectTrigger id="new-lib-plugin" className="w-52">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={NO_PLUGIN}>{t("libraryNoKind")}</SelectItem>
-            {plugins.map((p) => (
-              <SelectItem key={p.id} value={p.id}>
-                {displayString(p.displayName, displayLocale)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="flex gap-2">
-        {onCancel && (
-          <Button type="button" variant="ghost" onClick={onCancel}>
-            {t("cancel")}
-          </Button>
-        )}
-        <Button type="submit" disabled={!title.trim()}>
-          <Plus className="console-nav-icon" aria-hidden />
-          {t("createLibrary")}
-        </Button>
-      </div>
-    </form>
-  );
-}
+// What the section last did to a library. The control that did it (a card's
+// delete button, a deleted library's Restore) is gone by the time the server
+// answers, so this line says what happened and takes focus.
+type LibraryNotice =
+  | { kind: "created" | "deleted" | "restored"; id: string; title: string }
+  | { kind: "purged"; id: string; title: string; mediaRemoved: number };
 
 // Libraries (ADR-0003): the manageable Library list with create + per-Library
-// folders / options / scan controls, and the plugin binding at creation.
+// folders / options / scan controls, the plugin binding at creation, and the
+// deleted libraries that can still be restored (CORE-1201).
 export function Libraries() {
   const t = useT();
   const libs = useAsync(fetchLibraries);
   const plugins = useAsync(fetchPlugins);
   const skipDetection = useAsync(fetchSkipDetectionEnabled);
   const watchers = useAsync(fetchWatcherStatus);
+  const trashed = useAsync(fetchTrashedLibraries);
   const [adding, setAdding] = useState(false);
+  const [notice, setNotice] = useState<LibraryNotice | null>(null);
+  const noticeRef = useRef<HTMLParagraphElement>(null);
+  const noticeID = useId();
+  const [undoing, setUndoing] = useState(false);
+  // null: Undo has not failed. Otherwise the server's reason, which may be empty.
+  const [undoError, setUndoError] = useState<string | null>(null);
+  const undoInFlight = useRef(false);
 
-  // Watcher state follows roots, so it reloads with the library list.
-  async function refreshLibraries() {
-    await Promise.all([libs.refresh(), watchers.refresh()]);
+  useEffect(() => {
+    if (!notice) return;
+    // One microtask late: the closing dialog hands focus back to its trigger in
+    // a microtask of its own, and this has to land after it.
+    queueMicrotask(() => noticeRef.current?.focus());
+  }, [notice]);
+
+  function announce(next: LibraryNotice) {
+    setUndoError(null);
+    setNotice(next);
   }
+
+  // Watcher state and the deleted list both follow the library list.
+  async function refreshLibraries() {
+    await Promise.all([libs.refresh(), watchers.refresh(), trashed.refresh()]);
+  }
+
+  // The server has confirmed, so the card goes at once; the reload behind it
+  // picks up anything else that changed.
+  async function onLibraryDeleted(library: Pick<LibraryInfo, "id" | "title">) {
+    libs.setData((libs.data ?? []).filter((item) => item.id !== library.id));
+    announce({ kind: "deleted", id: library.id, title: library.title });
+    await Promise.all([refreshLibraries(), skipDetection.refresh()]);
+  }
+
+  async function onLibraryRestored(library: Pick<LibraryInfo, "id" | "title">) {
+    trashed.setData((trashed.data ?? []).filter((item) => item.id !== library.id));
+    announce({ kind: "restored", id: library.id, title: library.title });
+    await Promise.all([refreshLibraries(), skipDetection.refresh()]);
+  }
+
+  async function onLibraryPurged(result: LibraryPurgeResult) {
+    trashed.setData((trashed.data ?? []).filter((item) => item.id !== result.libraryID));
+    announce({
+      kind: "purged",
+      id: result.libraryID,
+      title: result.title,
+      mediaRemoved: result.mediaRemoved,
+    });
+    await trashed.refresh();
+  }
+
+  // Undo the delete just announced: the same restore "Recently deleted" offers,
+  // one click away from the confirmation.
+  async function undoDelete(library: Pick<LibraryInfo, "id" | "title">) {
+    if (undoInFlight.current) return;
+    undoInFlight.current = true;
+    setUndoing(true);
+    setUndoError(null);
+    try {
+      await restoreLibrary(library.id);
+      requestManifestRefresh();
+    } catch (err) {
+      setUndoError(err instanceof Error ? err.message : "");
+      return;
+    } finally {
+      undoInFlight.current = false;
+      setUndoing(false);
+    }
+    await onLibraryRestored(library);
+  }
+
+  const noticeText = !notice
+    ? ""
+    : notice.kind === "purged"
+      ? t("libraryPurged", { library: notice.title, count: notice.mediaRemoved })
+      : notice.kind === "restored"
+        ? t("libraryRestored", { library: notice.title })
+        : notice.kind === "created"
+          ? t("libraryCreated", { library: notice.title })
+          : t("libraryDeleted", { library: notice.title });
 
   const pluginList = plugins.data ?? [];
   const libraryList = libs.data ?? [];
@@ -514,12 +545,50 @@ export function Libraries() {
       {(adding || empty) && (
         <AddLibrary
           plugins={pluginList}
+          pluginsState={
+            plugins.failed ? "failed" : plugins.loading && !plugins.data ? "loading" : "ready"
+          }
           onCancel={empty ? undefined : () => setAdding(false)}
-          onCreated={async () => {
+          onCreated={async (library) => {
             setAdding(false);
-            await refreshLibraries();
+            announce({ kind: "created", id: library.id, title: library.title });
+            // Like the first library in setup, a new library starts scanning
+            // its folders at once; its card shows the scan's progress.
+            void startRescan(library.id, library.roots);
+            await Promise.all([refreshLibraries(), skipDetection.refresh()]);
           }}
         />
+      )}
+
+      {notice && (
+        <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <p
+              ref={noticeRef}
+              id={noticeID}
+              role="status"
+              tabIndex={-1}
+              className="m-0 flex min-w-0 items-start gap-2.5 rounded-sm text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Check aria-hidden className="mt-0.5 size-4 shrink-0 text-emerald-400" />
+              {noticeText}
+            </p>
+            {notice.kind === "deleted" && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                aria-describedby={noticeID}
+                aria-disabled={undoing || undefined}
+                onClick={() => void undoDelete(notice)}
+              >
+                {undoing ? <Loader2 aria-hidden className="animate-spin" /> : <Undo2 aria-hidden />}
+                {undoing ? t("restoreLibraryBusy") : t("undoDeleteLibrary")}
+              </Button>
+            )}
+          </div>
+          <MutationFailure title={t("restoreLibraryFailed")} reason={undoError} />
+        </div>
       )}
 
       {firstLoad ? (
@@ -541,10 +610,20 @@ export function Libraries() {
                 void refreshLibraries();
                 void skipDetection.refresh();
               }}
+              onDeleted={() => void onLibraryDeleted(library)}
             />
           ))}
         </div>
       )}
+
+      {/* Shown only once the list has loaded with something in it: a failed or
+          empty load leaves the section as it was before libraries could be
+          restored. */}
+      <DeletedLibraries
+        libraries={trashed.data ?? []}
+        onRestored={onLibraryRestored}
+        onPurged={onLibraryPurged}
+      />
     </Section>
   );
 }

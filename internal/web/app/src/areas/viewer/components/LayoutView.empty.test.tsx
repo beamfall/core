@@ -1,8 +1,11 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Section } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
+import { fetchSectionItems } from "../lib/sections";
 import { LayoutView } from "./LayoutView";
 
 // Empty-as-activation (onboarding-funnel §6): an empty browse is an ACTIVATION
@@ -14,7 +17,12 @@ import { LayoutView } from "./LayoutView";
 const mockSession = vi.fn();
 vi.mock("@/lib/session", () => ({
   useSession: () => mockSession(),
+  useViewerIdentity: () => null,
 }));
+vi.mock("../lib/sections", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/sections")>();
+  return { ...actual, fetchSectionItems: vi.fn() };
+});
 
 function renderEmpty(isManager: boolean) {
   mockSession.mockReturnValue({ manifest: null, isManager });
@@ -31,6 +39,7 @@ function renderEmpty(isManager: boolean) {
 afterEach(() => {
   cleanup();
   mockSession.mockReset();
+  vi.mocked(fetchSectionItems).mockReset();
 });
 
 describe("LayoutView empty-as-activation", () => {
@@ -55,5 +64,45 @@ describe("LayoutView empty-as-activation", () => {
     expect(screen.getByText(/nothing to show in this library yet/i)).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /start first scan/i })).toBeNull();
     expect(screen.queryByRole("link", { name: /migrate/i })).toBeNull();
+  });
+
+  it("never offers the owner first-scan CTA when every Section failed to load", async () => {
+    vi.mocked(fetchSectionItems).mockRejectedValue(new Error("offline"));
+    mockSession.mockReturnValue({ manifest: null, isManager: true });
+    const shelf: Section = {
+      id: "recent",
+      kind: "shelf",
+      title: { en: "Recent" },
+      artworkSlot: "poster",
+      source: { kind: "recent" } as Section["source"],
+    };
+    render(
+      <I18nProvider>
+        <MemoryRouter>
+          <LayoutView layout={{ id: "browse", sections: [shelf] }} libraryID="lib1" />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    expect(await screen.findByRole("button", { name: /try again/i })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /start first scan/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: /migrate/i })).toBeNull();
+  });
+
+  it("treats a missing manifest as a load failure whose retry reloads the session", async () => {
+    const refresh = vi.fn().mockResolvedValue(undefined);
+    mockSession.mockReturnValue({ manifest: null, isManager: true, refresh });
+    render(
+      <I18nProvider>
+        <MemoryRouter>
+          <LayoutView layout={null} libraryID="" />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    expect(screen.getByText(/could not reach the server/i)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /start first scan/i })).toBeNull();
+    await userEvent.setup().click(screen.getByRole("button", { name: /try again/i }));
+    expect(refresh).toHaveBeenCalledTimes(1);
   });
 });
