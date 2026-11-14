@@ -194,10 +194,15 @@ func directPlayRefusalCause(media store.Media, file store.MediaFile, streams []s
 	if !slices.Contains(profile.Containers, media.Container) {
 		return PlayReasonContainer
 	}
-	if ov.vetoesVideoPassthrough(media, file, streams) ||
-		ov.vetoesAudioPassthrough(streams) ||
-		ov.vetoesSourceContainer() {
+	if base := ov.withoutClientCeiling(); base.vetoesVideoPassthrough(media, file, streams) ||
+		base.vetoesAudioPassthrough(streams) ||
+		base.vetoesSourceContainer() {
 		return PlayReasonDeviceQuirk
+	}
+	// The viewer's streaming ceiling is the only narrowing left: it is a
+	// bitrate refusal the viewer chose, not a device fault.
+	if ov.vetoesVideoPassthrough(media, file, streams) {
+		return PlayReasonBitrate
 	}
 	if audioOnlyMedia(media, streams) {
 		// A track has no picture to blame: its Media.Codec is the audio codec,
