@@ -351,9 +351,10 @@
       "get": {
         "operationId": "lookupMediaByExternalID",
         "summary": "Find the Media carrying an external identifier.",
-        "description": "Requires the `read-catalog` scope. Answers whether an item another system knows by `scheme`/`value` is in the library. Reveal-filtered: Media the key cannot see are dropped, so an empty list never says whether hidden Media carry the identifier. An identifier normally names one Media; duplicate imports can share one until a dedupe pass resolves them.",
+        "description": "Accepts a scoped key with the `read-catalog` scope or an enrolled device Session. Answers whether an item another system knows by `scheme`/`value` is in the library. Reveal-filtered: Media the caller cannot see are dropped, so an empty list never says whether hidden Media carry the identifier. An identifier normally names one Media; duplicate imports can share one until a dedupe pass resolves them.",
         "x-required-scope": "read-catalog",
-        "security": [{ "scopedKey": ["read-catalog"] }],
+        "x-credentials": ["scopedKey", "deviceSession"],
+        "security": [{ "scopedKey": ["read-catalog"] }, { "deviceSession": [], "deviceID": [], "deviceSecret": [] }],
         "parameters": [
           { "name": "scheme", "in": "query", "required": true, "schema": { "type": "string", "pattern": "^[a-z0-9.-]+$" }, "description": "Identifier scheme, as plugins attach it." },
           { "name": "value", "in": "query", "required": true, "schema": { "type": "string" }, "description": "Identifier value within the scheme." }

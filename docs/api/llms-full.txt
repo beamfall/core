@@ -82,9 +82,11 @@ Accepts a scoped key with the `read-catalog` scope or an enrolled device Session
 
 Find the Media carrying an external identifier.
 
+Accepted credentials: `scopedKey`, `deviceSession`
+
 Required scope: `read-catalog`
 
-Requires the `read-catalog` scope. Answers whether an item another system knows by `scheme`/`value` is in the library. Reveal-filtered: Media the key cannot see are dropped, so an empty list never says whether hidden Media carry the identifier. An identifier normally names one Media; duplicate imports can share one until a dedupe pass resolves them.
+Accepts a scoped key with the `read-catalog` scope or an enrolled device Session. Answers whether an item another system knows by `scheme`/`value` is in the library. Reveal-filtered: Media the caller cannot see are dropped, so an empty list never says whether hidden Media carry the identifier. An identifier normally names one Media; duplicate imports can share one until a dedupe pass resolves them.
 
 **Parameters**
 
@@ -100,7 +102,7 @@ Requires the `read-catalog` scope. Answers whether an item another system knows 
 | 200 | The visible Media carrying the identifier; empty when none do. | object {`media`: array of [MediaDetail](#mediadetail)} |
 | 400 | scheme or value missing, or scheme malformed. | [Error](#error) |
 | 401 | No valid credential was presented. | [Error](#error) |
-| 403 | The scoped key does not carry the scope this operation requires. | [Error](#error) |
+| 403 | The credential is not accepted: a scoped key without the required scope, or a credential kind the operation does not list in `x-credentials`. | [Error](#error) |
 
 ### GET `/v1/media/{mediaID}`
 
@@ -710,7 +712,7 @@ item, belongs in the domain plugin or the tool, not in Core.
 | Need | Surface | Credential |
 |---|---|---|
 | Sign a user in | Jellyfin compat `POST /compat/jellyfin/Users/AuthenticateByName` | The user's own Beamfall sign-in |
-| Check availability, read Media | `GET /v1/media?scheme=&value=`, `GET /v1/media/{mediaID}` | Scoped key with `read-catalog` |
+| Check availability, read Media | `GET /v1/media?scheme=&value=`, `GET /v1/media/{mediaID}` | Scoped key with `read-catalog`, or an enrolled device Session |
 | Find Libraries and roots | `GET /v1/libraries` | Scoped key with `read-catalog` |
 | Trigger a targeted scan | `POST /v1/scans` | Scoped key with `ingest` |
 | Learn that an item arrived | `GET /v1/events` (SSE) or the Webhook Emitter | Scoped key with `events-subscribe`, or an operator-configured webhook endpoint |
@@ -1129,9 +1131,10 @@ source: docs/api/openapi.json
       "get": {
         "operationId": "lookupMediaByExternalID",
         "summary": "Find the Media carrying an external identifier.",
-        "description": "Requires the `read-catalog` scope. Answers whether an item another system knows by `scheme`/`value` is in the library. Reveal-filtered: Media the key cannot see are dropped, so an empty list never says whether hidden Media carry the identifier. An identifier normally names one Media; duplicate imports can share one until a dedupe pass resolves them.",
+        "description": "Accepts a scoped key with the `read-catalog` scope or an enrolled device Session. Answers whether an item another system knows by `scheme`/`value` is in the library. Reveal-filtered: Media the caller cannot see are dropped, so an empty list never says whether hidden Media carry the identifier. An identifier normally names one Media; duplicate imports can share one until a dedupe pass resolves them.",
         "x-required-scope": "read-catalog",
-        "security": [{ "scopedKey": ["read-catalog"] }],
+        "x-credentials": ["scopedKey", "deviceSession"],
+        "security": [{ "scopedKey": ["read-catalog"] }, { "deviceSession": [], "deviceID": [], "deviceSecret": [] }],
         "parameters": [
           { "name": "scheme", "in": "query", "required": true, "schema": { "type": "string", "pattern": "^[a-z0-9.-]+$" }, "description": "Identifier scheme, as plugins attach it." },
           { "name": "value", "in": "query", "required": true, "schema": { "type": "string" }, "description": "Identifier value within the scheme." }

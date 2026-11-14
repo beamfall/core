@@ -43,6 +43,16 @@ func TestV1LookupMediaByExternalID(t *testing.T) {
 		t.Fatalf("externalIDs = %#v, want %#v", got, wantIDs)
 	}
 
+	// An enrolled device Session of the managed Profile sees the same filtered answer.
+	rec = v1DeviceRequest(t, srv, http.MethodGet, "/v1/media?scheme=example.db&value=item-7", "", "", authorizeManaged)
+	var viaDevice v1MediaLookupResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &viaDevice); err != nil || rec.Code != http.StatusOK {
+		t.Fatalf("device session lookup = %d %s (%v)", rec.Code, rec.Body.String(), err)
+	}
+	if len(viaDevice.Media) != 1 || viaDevice.Media[0].ID != "media-alpha" {
+		t.Fatalf("device session lookup = %#v, want only the visible media-alpha", viaDevice.Media)
+	}
+
 	// An identifier nobody carries is an empty list, not an error.
 	rec = v1Get(t, srv, "/v1/media?scheme=example.db&value=absent", key)
 	if rec.Code != http.StatusOK || rec.Body.String() != "{\"media\":[]}\n" {

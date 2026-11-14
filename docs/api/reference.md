@@ -74,9 +74,11 @@ Accepts a scoped key with the `read-catalog` scope or an enrolled device Session
 
 Find the Media carrying an external identifier.
 
+Accepted credentials: `scopedKey`, `deviceSession`
+
 Required scope: `read-catalog`
 
-Requires the `read-catalog` scope. Answers whether an item another system knows by `scheme`/`value` is in the library. Reveal-filtered: Media the key cannot see are dropped, so an empty list never says whether hidden Media carry the identifier. An identifier normally names one Media; duplicate imports can share one until a dedupe pass resolves them.
+Accepts a scoped key with the `read-catalog` scope or an enrolled device Session. Answers whether an item another system knows by `scheme`/`value` is in the library. Reveal-filtered: Media the caller cannot see are dropped, so an empty list never says whether hidden Media carry the identifier. An identifier normally names one Media; duplicate imports can share one until a dedupe pass resolves them.
 
 **Parameters**
 
@@ -92,7 +94,7 @@ Requires the `read-catalog` scope. Answers whether an item another system knows 
 | 200 | The visible Media carrying the identifier; empty when none do. | object {`media`: array of [MediaDetail](#mediadetail)} |
 | 400 | scheme or value missing, or scheme malformed. | [Error](#error) |
 | 401 | No valid credential was presented. | [Error](#error) |
-| 403 | The scoped key does not carry the scope this operation requires. | [Error](#error) |
+| 403 | The credential is not accepted: a scoped key without the required scope, or a credential kind the operation does not list in `x-credentials`. | [Error](#error) |
 
 ### GET `/v1/media/{mediaID}`
 

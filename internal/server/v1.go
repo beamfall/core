@@ -346,7 +346,7 @@ type v1MediaLookupResponse struct {
 // returns the visible Media carrying scheme=value; Media outside the key's
 // grants are dropped, so an empty list never says whether hidden Media exist.
 func (s *Server) v1MediaByExternalID(w http.ResponseWriter, r *http.Request) {
-	scope, ok := s.v1Scope(w, r, store.ScopeReadCatalog)
+	scope, ok := s.v1Caller(w, r, store.ScopeReadCatalog)
 	if !ok {
 		return
 	}

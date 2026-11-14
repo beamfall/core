@@ -27702,6 +27702,10 @@
         "method": "GET",
         "pattern": "/v1/media",
         "scope": "read-catalog",
+        "credentials": [
+          "scopedKey",
+          "deviceSession"
+        ],
         "revealClass": "content-json",
         "response": {
           "contentType": "application/json",

@@ -16,7 +16,7 @@ item, belongs in the domain plugin or the tool, not in Core.
 | Need | Surface | Credential |
 |---|---|---|
 | Sign a user in | Jellyfin compat `POST /compat/jellyfin/Users/AuthenticateByName` | The user's own Beamfall sign-in |
-| Check availability, read Media | `GET /v1/media?scheme=&value=`, `GET /v1/media/{mediaID}` | Scoped key with `read-catalog` |
+| Check availability, read Media | `GET /v1/media?scheme=&value=`, `GET /v1/media/{mediaID}` | Scoped key with `read-catalog`, or an enrolled device Session |
 | Find Libraries and roots | `GET /v1/libraries` | Scoped key with `read-catalog` |
 | Trigger a targeted scan | `POST /v1/scans` | Scoped key with `ingest` |
 | Learn that an item arrived | `GET /v1/events` (SSE) or the Webhook Emitter | Scoped key with `events-subscribe`, or an operator-configured webhook endpoint |
