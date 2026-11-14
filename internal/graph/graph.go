@@ -501,6 +501,9 @@ type Handler struct {
 	// composition time, so graph stays domain-agnostic — it only builds, lists,
 	// revokes, and mints grants for opaque (kind, ref) targets.
 	offlinePacks OfflinePackService
+	// webhooks is the console webhook manager (CORE-1697). Nil means the build
+	// has none, so the webhook fields report it unavailable.
+	webhooks WebhookAdmin
 }
 
 // OfflinePackService is the consumer-side seam for the Offline Pack substrate
@@ -4903,6 +4906,9 @@ var queryFields = map[string]bool{
 	"profilesessions":        true,
 	"libraryhealth":          true,
 	"trashedlibraries":       true, // CORE-1201: deleted Libraries that can still be restored
+	"webhooks":               true, // CORE-1697: console-managed outbound notification endpoints
+	"webhookdeliveries":      true, // CORE-1697: webhook delivery log
+	"webhooksettings":        true, // CORE-1697: shared webhook options and choices
 	"libraryhealthitems":     true,
 	"libraryduplicategroups": true,
 	"metadataexport":         true,
@@ -5053,6 +5059,10 @@ var mutationFields = map[string]bool{
 	"deletelibrary":                      true,
 	"restorelibrary":                     true,
 	"purgelibrary":                       true,
+	"savewebhook":                        true, // CORE-1697: add or edit a webhook endpoint
+	"deletewebhook":                      true, // CORE-1697: remove a webhook endpoint
+	"testwebhook":                        true, // CORE-1697: send one test notification
+	"setwebhooksettings":                 true, // CORE-1697: save shared webhook options
 	"scanlibrary":                        true,
 	"addsubscription":                    true,
 	"removesubscription":                 true,
@@ -5204,6 +5214,14 @@ var adminFields = map[string]bool{
 	"restorelibrary":         true,
 	"purgelibrary":           true,
 	"scanlibrary":            true,
+	// Webhooks (CORE-1697): endpoint URLs and secrets are owner configuration.
+	"webhooks":           true,
+	"webhookdeliveries":  true,
+	"webhooksettings":    true,
+	"savewebhook":        true,
+	"deletewebhook":      true,
+	"testwebhook":        true,
+	"setwebhooksettings": true,
 	// Authorized native→server import transport (apple ADR-0003 §1/§3,
 	// POWERTOOLS-6B): the Admin Session tier the loopback bearer authenticates as
 	// — only the native Companion authority can register a source token or import.

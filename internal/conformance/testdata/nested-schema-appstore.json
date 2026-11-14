@@ -4703,6 +4703,10 @@
     ]
   },
   {
+    "field": "deletewebhook",
+    "kind": "object"
+  },
+  {
     "field": "devices",
     "kind": "object",
     "children": [
@@ -14796,6 +14800,68 @@
     ]
   },
   {
+    "field": "savewebhook",
+    "kind": "object",
+    "children": [
+      {
+        "name": "allowPrivateNetwork",
+        "kind": "scalar"
+      },
+      {
+        "name": "disabled",
+        "kind": "scalar"
+      },
+      {
+        "name": "eventKinds",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
+        "name": "format",
+        "kind": "scalar"
+      },
+      {
+        "name": "from",
+        "kind": "scalar"
+      },
+      {
+        "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "name",
+        "kind": "scalar"
+      },
+      {
+        "name": "problem",
+        "kind": "scalar"
+      },
+      {
+        "name": "secretSet",
+        "kind": "scalar"
+      },
+      {
+        "name": "to",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
+        "name": "url",
+        "kind": "scalar"
+      },
+      {
+        "name": "username",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "scanestimate",
     "kind": "object",
     "children": [
@@ -22258,6 +22324,32 @@
     ]
   },
   {
+    "field": "setwebhooksettings",
+    "kind": "object",
+    "children": [
+      {
+        "name": "eventKinds",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
+        "name": "formats",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
+        "name": "publicBaseURL",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "skipdetectionenabled",
     "kind": "object",
     "children": [
@@ -23086,6 +23178,28 @@
     "children": [
       {
         "name": "sessionID",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "testwebhook",
+    "kind": "object",
+    "children": [
+      {
+        "name": "diagnostic",
+        "kind": "scalar"
+      },
+      {
+        "name": "durationMs",
+        "kind": "scalar"
+      },
+      {
+        "name": "ok",
+        "kind": "scalar"
+      },
+      {
+        "name": "statusClass",
         "kind": "scalar"
       }
     ]
@@ -26003,6 +26117,132 @@
       },
       {
         "name": "presentAtMS",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "webhookdeliveries",
+    "kind": "object",
+    "children": [
+      {
+        "name": "at",
+        "kind": "scalar"
+      },
+      {
+        "name": "attempts",
+        "kind": "scalar"
+      },
+      {
+        "name": "durationMs",
+        "kind": "scalar"
+      },
+      {
+        "name": "endpointID",
+        "kind": "scalar"
+      },
+      {
+        "name": "eventKind",
+        "kind": "scalar"
+      },
+      {
+        "name": "outcome",
+        "kind": "scalar"
+      },
+      {
+        "name": "statusClass",
+        "kind": "scalar"
+      },
+      {
+        "name": "test",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "webhooks",
+    "kind": "object",
+    "children": [
+      {
+        "name": "allowPrivateNetwork",
+        "kind": "scalar"
+      },
+      {
+        "name": "disabled",
+        "kind": "scalar"
+      },
+      {
+        "name": "eventKinds",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
+        "name": "format",
+        "kind": "scalar"
+      },
+      {
+        "name": "from",
+        "kind": "scalar"
+      },
+      {
+        "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "name",
+        "kind": "scalar"
+      },
+      {
+        "name": "problem",
+        "kind": "scalar"
+      },
+      {
+        "name": "secretSet",
+        "kind": "scalar"
+      },
+      {
+        "name": "to",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
+        "name": "url",
+        "kind": "scalar"
+      },
+      {
+        "name": "username",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "webhooksettings",
+    "kind": "object",
+    "children": [
+      {
+        "name": "eventKinds",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
+        "name": "formats",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
+        "name": "publicBaseURL",
         "kind": "scalar"
       }
     ]

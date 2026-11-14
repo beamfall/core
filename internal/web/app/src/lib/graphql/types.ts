@@ -1607,3 +1607,50 @@ export interface RetentionCandidateHoldResult {
   mediaID: string;
   hold: boolean;
 }
+
+/**
+ * One webhook endpoint (graph.WebhookEndpointInfo). url is redacted to scheme
+ * and host; a stored signing key, token or password shows only as secretSet.
+ * problem is empty for a running endpoint, else why it cannot run.
+ */
+export interface WebhookEndpointInfo {
+  id: string;
+  name: string;
+  format: string;
+  url: string;
+  eventKinds: string[];
+  disabled: boolean;
+  allowPrivateNetwork: boolean;
+  secretSet: boolean;
+  from: string;
+  to: string[];
+  username: string;
+  problem: string;
+}
+
+/** The outcome of one webhook test send (graph.WebhookTestResultInfo). */
+export interface WebhookTestResultInfo {
+  ok: boolean;
+  statusClass: string;
+  diagnostic: string;
+  durationMs: number;
+}
+
+/** One webhook delivery log row (graph.WebhookDeliveryInfo); at is RFC 3339. */
+export interface WebhookDeliveryInfo {
+  endpointID: string;
+  eventKind: string;
+  outcome: string;
+  statusClass: string;
+  attempts: number;
+  durationMs: number;
+  at: string;
+  test: boolean;
+}
+
+/** Shared webhook options and the console's choices (graph.WebhookSettingsInfo). */
+export interface WebhookSettingsInfo {
+  publicBaseURL: string;
+  formats: string[];
+  eventKinds: string[];
+}

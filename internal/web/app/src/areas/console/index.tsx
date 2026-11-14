@@ -19,6 +19,7 @@ import {
   ShieldCheck,
   Stethoscope,
   Users,
+  Webhook,
 } from "lucide-react";
 import { type ComponentType, type ReactElement, useEffect } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router";
@@ -53,6 +54,7 @@ import { Plugins } from "./sections/Plugins";
 import { MigrationWizard, RemoteAccess } from "./sections/RemoteAccess";
 import { Retention } from "./sections/Retention";
 import { SetupChecklist } from "./sections/SetupChecklist";
+import { Webhooks } from "./sections/Webhooks";
 import { useAsync } from "./useAsync";
 import "./console.css";
 
@@ -296,6 +298,14 @@ const GROUPS: NavGroup[] = [
         icon: KeyRound,
         element: <ApiCredentials />,
         placement: "Access/API Keys",
+      },
+      {
+        path: "webhooks",
+        advanced: true,
+        label: "webhooksHeading",
+        icon: Webhook,
+        element: <Webhooks />,
+        placement: "Access/Webhooks",
       },
     ],
   },

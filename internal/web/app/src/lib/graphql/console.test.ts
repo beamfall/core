@@ -5,6 +5,7 @@ import {
   createProfile,
   createRetentionRule,
   deleteRetentionRule,
+  deleteWebhook,
   disableProfile,
   evictPlaybackRenditionCache,
   fetchAccessSchedule,
@@ -26,17 +27,23 @@ import {
   fetchRetentionRules,
   fetchTranscodeConfig,
   fetchUpdateStatus,
+  fetchWebhookDeliveries,
+  fetchWebhookSettings,
+  fetchWebhooks,
   precomputePlaybackRenditions,
   retryJob,
   revokeAllDevices,
   revokeDevice,
   runEventsCompaction,
+  saveWebhook,
   setConsoleConfig,
   setDeviceRole,
   setExtensionPreauthorization,
   setProfileLibraries,
   setProfileStreamCap,
   setRetentionCandidateHold,
+  setWebhookSettings,
+  testWebhook,
   updateProfile,
   updateRetentionRule,
 } from "./console";
@@ -77,6 +84,10 @@ const DATA = {
   updateRetentionRule: { id: "r-1", name: "Rule" },
   deleteRetentionRule: { id: "r-1", name: "Rule" },
   setRetentionCandidateHold: { ruleID: "r-1", mediaID: "m-1", hold: true },
+  saveWebhook: { id: "hook-1", name: "Alerts", format: "ntfy" },
+  deleteWebhook: true,
+  testWebhook: { ok: true, statusClass: "2xx", diagnostic: "", durationMs: 40 },
+  setWebhookSettings: { publicBaseURL: "https://media.example.net", formats: [], eventKinds: [] },
 };
 
 // The transport matrix: every Console READ the common fetch path
@@ -102,6 +113,9 @@ const CONSOLE_READS: [string, (signal: AbortSignal) => Promise<unknown>][] = [
   ["fetchRetentionRules", (s) => fetchRetentionRules(s)],
   ["fetchUpdateStatus", (s) => fetchUpdateStatus(s)],
   ["fetchProfilesAdmin", (s) => fetchProfilesAdmin(s)],
+  ["fetchWebhooks", (s) => fetchWebhooks(s)],
+  ["fetchWebhookDeliveries", (s) => fetchWebhookDeliveries(s)],
+  ["fetchWebhookSettings", (s) => fetchWebhookSettings(s)],
 ];
 
 beforeEach(() => {
@@ -388,5 +402,45 @@ describe("console GraphQL requests", () => {
       mediaID: "m-1",
       hold: true,
     });
+  });
+
+  it("webhook reads and mutations bind their variables into GraphQL fields (CORE-1697)", async () => {
+    await fetchWebhooks();
+    await fetchWebhookDeliveries();
+    await fetchWebhookSettings();
+    await saveWebhook({
+      id: "hook-1",
+      name: "Alerts",
+      format: "ntfy",
+      eventKinds: ["media.added"],
+      secret: "token",
+    });
+    expect(await deleteWebhook("hook-1")).toBe(true);
+    expect((await testWebhook("hook-1")).durationMs).toBe(40);
+    await setWebhookSettings("https://media.example.net");
+
+    expect(recorded[0].query).toContain("webhooks { id name format url eventKinds");
+    expect(recorded[0].query).toContain("secretSet");
+    expect(recorded[1].query).toContain("webhookDeliveries { endpointID eventKind outcome");
+    expect(recorded[2].query).toContain("webhookSettings { publicBaseURL formats eventKinds }");
+    expect(recorded[3].query).toContain(
+      "saveWebhook(id: $id, name: $name, format: $format, url: $url, eventKinds: $eventKinds, disabled: $disabled, allowPrivateNetwork: $allowPrivateNetwork, secret: $secret, from: $from, to: $to, username: $username)",
+    );
+    // An omitted url keeps the saved one, so it must not be sent at all.
+    expect(recorded[3].variables).toEqual({
+      id: "hook-1",
+      name: "Alerts",
+      format: "ntfy",
+      eventKinds: ["media.added"],
+      secret: "token",
+    });
+    expect(recorded[4].query).toContain("deleteWebhook(id: $id)");
+    expect(recorded[4].variables).toEqual({ id: "hook-1" });
+    expect(recorded[5].query).toContain(
+      "testWebhook(id: $id) { ok statusClass diagnostic durationMs }",
+    );
+    expect(recorded[5].variables).toEqual({ id: "hook-1" });
+    expect(recorded[6].query).toContain("setWebhookSettings(publicBaseURL: $publicBaseURL)");
+    expect(recorded[6].variables).toEqual({ publicBaseURL: "https://media.example.net" });
   });
 });

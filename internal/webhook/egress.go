@@ -95,7 +95,7 @@ var errUnsafeEndpointURL = errors.New("webhook endpoint URL is malformed or unsa
 
 // endpointAllowsLocal validates an endpoint URL before any delivery and reports
 // whether its host approves local-class destinations. A URL must be an
-// absolute http(s) URL with a host and no user info (credentials belong in the
+// absolute URL with a host, no user info and a scheme its format accepts (credentials belong in the
 // secret store, invariant #4). An IP-literal host in the refused class is
 // rejected; one in the local class is the operator naming a LAN receiver, which
 // approves local destinations. A hostname approves them only through the
@@ -105,7 +105,7 @@ func endpointAllowsLocal(ep Endpoint) (bool, error) {
 	if err != nil || u.Opaque != "" || u.User != nil {
 		return false, errUnsafeEndpointURL
 	}
-	if u.Scheme != "http" && u.Scheme != "https" {
+	if !schemeAllowed(ep.format(), u.Scheme) {
 		return false, errUnsafeEndpointURL
 	}
 	host := u.Hostname()
@@ -129,6 +129,16 @@ func endpointAllowsLocal(ep Endpoint) (bool, error) {
 		}
 	}
 	return ep.AllowPrivateNetwork, nil
+}
+
+// schemeAllowed reports whether a URL scheme fits an endpoint format: email
+// takes smtp (STARTTLS is then required unless the server is local and no
+// password is sent) or smtps (implicit TLS); every other format takes http(s).
+func schemeAllowed(format Format, scheme string) bool {
+	if format == FormatEmail {
+		return scheme == "smtp" || scheme == "smtps"
+	}
+	return scheme == "http" || scheme == "https"
 }
 
 // lanHostnameSuffixes are DNS suffixes conventionally served only on a home

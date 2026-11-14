@@ -42,6 +42,10 @@ import type {
   TerminateSessionResult,
   TranscodeConfigInfo,
   UpdateStatusInfo,
+  WebhookDeliveryInfo,
+  WebhookEndpointInfo,
+  WebhookSettingsInfo,
+  WebhookTestResultInfo,
 } from "./types";
 
 // --- Remote access (ADR-0012/0018/0025) -----------------------------------
@@ -1008,4 +1012,113 @@ export async function setRetentionCandidateHold(
     setRetentionCandidateHold: RetentionCandidateHoldResult;
   }>(SET_RETENTION_CANDIDATE_HOLD_MUTATION, { ruleID, mediaID, hold }, signal);
   return data.setRetentionCandidateHold;
+}
+
+// --- Webhooks (CORE-1697; ADR-0040 §2.5 Webhook Emitter) -------------------
+
+const WEBHOOK_ENDPOINT_FIELDS =
+  "id name format url eventKinds disabled allowPrivateNetwork secretSet from to username problem";
+
+const WEBHOOKS_QUERY = `query Webhooks { webhooks { ${WEBHOOK_ENDPOINT_FIELDS} } }`;
+
+const WEBHOOK_DELIVERIES_QUERY =
+  "query WebhookDeliveries { webhookDeliveries { endpointID eventKind outcome statusClass attempts durationMs at test } }";
+
+const WEBHOOK_SETTINGS_QUERY =
+  "query WebhookSettings { webhookSettings { publicBaseURL formats eventKinds } }";
+
+const SAVE_WEBHOOK_MUTATION = `mutation SaveWebhook($id: String, $name: String, $format: String, $url: String, $eventKinds: [String!], $disabled: Boolean, $allowPrivateNetwork: Boolean, $secret: String, $from: String, $to: [String!], $username: String) { saveWebhook(id: $id, name: $name, format: $format, url: $url, eventKinds: $eventKinds, disabled: $disabled, allowPrivateNetwork: $allowPrivateNetwork, secret: $secret, from: $from, to: $to, username: $username) { ${WEBHOOK_ENDPOINT_FIELDS} } }`;
+
+const DELETE_WEBHOOK_MUTATION = "mutation DeleteWebhook($id: String!) { deleteWebhook(id: $id) }";
+
+const TEST_WEBHOOK_MUTATION =
+  "mutation TestWebhook($id: String!) { testWebhook(id: $id) { ok statusClass diagnostic durationMs } }";
+
+const SET_WEBHOOK_SETTINGS_MUTATION =
+  "mutation SetWebhookSettings($publicBaseURL: String) { setWebhookSettings(publicBaseURL: $publicBaseURL) { publicBaseURL formats eventKinds } }";
+
+/** Webhooks — the configured notification endpoints, URLs redacted. */
+export async function fetchWebhooks(signal?: AbortSignal): Promise<WebhookEndpointInfo[]> {
+  const data = await graphql<{ webhooks: WebhookEndpointInfo[] }>(WEBHOOKS_QUERY, {}, signal);
+  return data.webhooks;
+}
+
+/** WebhookDeliveries — the recent delivery log, newest first. */
+export async function fetchWebhookDeliveries(signal?: AbortSignal): Promise<WebhookDeliveryInfo[]> {
+  const data = await graphql<{ webhookDeliveries: WebhookDeliveryInfo[] }>(
+    WEBHOOK_DELIVERIES_QUERY,
+    {},
+    signal,
+  );
+  return data.webhookDeliveries;
+}
+
+/** WebhookSettings — shared options plus the formats and event kinds on offer. */
+export async function fetchWebhookSettings(signal?: AbortSignal): Promise<WebhookSettingsInfo> {
+  const data = await graphql<{ webhookSettings: WebhookSettingsInfo }>(
+    WEBHOOK_SETTINGS_QUERY,
+    {},
+    signal,
+  );
+  return data.webhookSettings;
+}
+
+/**
+ * One endpoint to create (no id) or replace. An omitted url keeps the saved
+ * one; an omitted secret keeps the saved secret and an empty one clears it.
+ */
+export interface WebhookDraft {
+  id?: string;
+  name: string;
+  format: string;
+  url?: string;
+  eventKinds: string[];
+  disabled?: boolean;
+  allowPrivateNetwork?: boolean;
+  secret?: string;
+  from?: string;
+  to?: string[];
+  username?: string;
+}
+
+export async function saveWebhook(
+  draft: WebhookDraft,
+  signal?: AbortSignal,
+): Promise<WebhookEndpointInfo> {
+  const data = await graphql<{ saveWebhook: WebhookEndpointInfo }>(
+    SAVE_WEBHOOK_MUTATION,
+    draft as unknown as Record<string, unknown>,
+    signal,
+  );
+  return data.saveWebhook;
+}
+
+export async function deleteWebhook(id: string, signal?: AbortSignal): Promise<boolean> {
+  const data = await graphql<{ deleteWebhook: boolean }>(DELETE_WEBHOOK_MUTATION, { id }, signal);
+  return data.deleteWebhook;
+}
+
+/** Sends one synthetic notification; a failed delivery is a result, not an error. */
+export async function testWebhook(
+  id: string,
+  signal?: AbortSignal,
+): Promise<WebhookTestResultInfo> {
+  const data = await graphql<{ testWebhook: WebhookTestResultInfo }>(
+    TEST_WEBHOOK_MUTATION,
+    { id },
+    signal,
+  );
+  return data.testWebhook;
+}
+
+export async function setWebhookSettings(
+  publicBaseURL: string,
+  signal?: AbortSignal,
+): Promise<WebhookSettingsInfo> {
+  const data = await graphql<{ setWebhookSettings: WebhookSettingsInfo }>(
+    SET_WEBHOOK_SETTINGS_MUTATION,
+    { publicBaseURL },
+    signal,
+  );
+  return data.setWebhookSettings;
 }

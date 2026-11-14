@@ -89,10 +89,10 @@ type App struct {
 	watcherDisabled bool
 	schedule        *schedulepkg.Service
 	proxyTee        *proxytee.Service
-	// webhook is the Webhook Emitter Integration Plugin, nil
-	// when no endpoints are configured (the plugin is dormant — opt-in,
-	// ADR-0003). When non-nil, Run drives it as a long-lived goroutine.
-	webhook *webhook.Emitter
+	// webhook is the Webhook Emitter Integration Plugin and its console
+	// management surface. Endpoints are opt-in (ADR-0003): with none enabled
+	// the emitter idles. Run drives it as a long-lived goroutine.
+	webhook *webhook.Manager
 	// scrobble is the Scrobble Integration Plugin dispatcher, nil when
 	// no adapters are configured (the plugin is dormant — opt-in, ADR-0003). When
 	// non-nil, Run drives its queue-drain goroutine and the graph playback path
@@ -1275,15 +1275,16 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	for _, surface := range srv.Surfaces() {
 		surfaces.Register(surface)
 	}
-	// Webhook Emitter Integration Plugin: an opt-in consumer of
-	// the same event outbox the SSE surface reads. nil (dormant) unless the
-	// operator has configured at least one endpoint in
-	// <DataDir>/webhook-endpoints.json; Run starts its goroutine only then.
-	webhookEmitter, err := buildWebhookEmitter(cfg, st, logger)
+	// Webhook Emitter Integration Plugin: a consumer of the same event
+	// outbox the SSE surface reads, plus derived notifications (Media added,
+	// playback, sign-ins, devices). Owners manage endpoints in the console;
+	// with none configured the emitter idles.
+	webhookManager, err := buildWebhookManager(cfg, st, artworkService, libEncryptManager, logger)
 	if err != nil {
 		_ = st.Close()
 		return nil, err
 	}
+	graphHandler.SetWebhooks(webhookManager)
 	// Scrobble Integration Plugin: an opt-in consumer of the
 	// unwatched→watched transition (the graph playback path, NOT a new SSE event
 	// kind). Dormant unless the operator has activated an adapter in
@@ -1340,7 +1341,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		watcherDisabled:        watcherDisabled,
 		schedule:               scheduleService,
 		proxyTee:               proxyTee,
-		webhook:                webhookEmitter,
+		webhook:                webhookManager,
 		scrobble:               scrobbleDispatcher,
 		integration:            integrationMgr,
 		logger:                 logger,
@@ -1752,10 +1753,10 @@ func (a *App) Run(ctx context.Context) error {
 		defer jobsDone.Done()
 		a.hostMetrics.Run(jobsCtx)
 	}()
-	// Webhook Emitter: a long-lived consumer of the event
-	// outbox, started only when the operator configured at least one endpoint
-	// (a.webhook is nil and this goroutine is skipped otherwise). It shares the
-	// jobsCtx lifecycle so it stops and is awaited before the store closes.
+	// Webhook Emitter: a long-lived consumer of the event outbox. It idles
+	// while no endpoint is enabled, so endpoints added in the console start
+	// without a restart. It shares the jobsCtx lifecycle so it stops and is
+	// awaited before the store closes.
 	if a.webhook != nil {
 		jobsDone.Add(1)
 		go func() {
@@ -2525,30 +2526,6 @@ func enqueueArtworkSweep(ctx context.Context, st *store.Store, logger *slog.Logg
 	if err != nil {
 		logger.Warn("artwork sweep enqueue failed", "error", err)
 	}
-}
-
-// buildWebhookEmitter wires the ADR-0040 §2.5 Webhook Emitter Integration
-// Plugin. It returns (nil, nil) — dormant — when no endpoints are configured
-// (the opt-in default). Config is plugin-private JSON at
-// <DataDir>/webhook-endpoints.json; each endpoint's HMAC secret is resolved
-// from a 0600 secret file under <DataDir>/secrets (invariant #5, the same
-// secretFiles reader the scrape engine and qBittorrent ingest use) and never
-// read from the JSON. The dead-letter is plugin-private JSON at
-// <DataDir>/webhook-dead-letter.json — no core schema (invariant #3).
-func buildWebhookEmitter(cfg config.Config, st *store.Store, logger *slog.Logger) (*webhook.Emitter, error) {
-	secrets := secretFiles{dir: filepath.Join(cfg.DataDir, "secrets")}
-	emitterCfg, err := webhook.LoadConfig(filepath.Join(cfg.DataDir, "webhook-endpoints.json"), secrets)
-	if err != nil {
-		return nil, fmt.Errorf("webhook emitter: %w", err)
-	}
-	if len(emitterCfg.Endpoints) == 0 {
-		return nil, nil // dormant: no endpoints configured
-	}
-	deadLetter, err := webhook.OpenDeadLetter(filepath.Join(cfg.DataDir, "webhook-dead-letter.json"))
-	if err != nil {
-		return nil, fmt.Errorf("webhook emitter: %w", err)
-	}
-	return webhook.New(emitterCfg, st, nil, deadLetter, logger)
 }
 
 // buildScrobbleDispatcher wires the ADR-0049 Scrobble Integration Plugin. It is

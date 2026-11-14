@@ -104,6 +104,9 @@ var resultTypes = map[string]any{
 	"profilesessions":        ProfileSessionInfo{},
 	"libraryhealth":          LibraryHealthInfo{},
 	"trashedlibraries":       TrashedLibraryInfo{},
+	"webhooks":               WebhookEndpointInfo{},
+	"webhookdeliveries":      WebhookDeliveryInfo{},
+	"webhooksettings":        WebhookSettingsInfo{},
 	"libraryhealthitems":     HealthItemInfo{},
 	"libraryduplicategroups": DuplicateGroupInfo{},
 	"metadataexport":         MetadataExportInfo{},
@@ -262,6 +265,10 @@ var resultTypes = map[string]any{
 	"deletelibrary":                      deleteLibraryResult{},
 	"restorelibrary":                     restoreLibraryResult{},
 	"purgelibrary":                       LibraryPurgeResult{},
+	"savewebhook":                        WebhookEndpointInfo{},
+	"deletewebhook":                      deleteWebhookResult{},
+	"testwebhook":                        WebhookTestResultInfo{},
+	"setwebhooksettings":                 WebhookSettingsInfo{},
 	"scanlibrary":                        JobInfo{},
 	"addsubscription":                    SubscriptionInfo{},
 	"removesubscription":                 SubscriptionInfo{},
@@ -472,6 +479,9 @@ type deleteLibraryResult struct{}
 // (CORE-1201): execute() assigns data["restoreLibrary"] = true, so like
 // deleteLibraryResult it carries no nested fields.
 type restoreLibraryResult struct{}
+
+// deleteWebhookResult models the boolean-leaf webhook removal (CORE-1697).
+type deleteWebhookResult struct{}
 
 // registerImportSourceResult models the scalar-result import-token mutation
 // (apple ADR-0003 §3, POWERTOOLS-6B): execute() assigns data["registerImportSource"]

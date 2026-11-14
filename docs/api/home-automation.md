@@ -94,6 +94,78 @@ or `.home.arpa` suffix) and lacks the flag. A hostname under a public domain
 that resolves to a LAN address gets no warning, so check the dead-letter after
 upgrading.
 
+## Managing webhooks in the console
+
+Owners add, edit, test and remove webhooks under **Console → Access →
+Webhooks** (an advanced page). This needs an Admin Session. The page writes
+the same `webhook-endpoints.json` the server reads at boot, so endpoints added
+by hand and in the console live side by side. A save is applied straight away:
+the emitter restarts with the new endpoint list and no server restart is needed.
+Each save, delete and settings change is logged to the activity log as a
+`config.update` with the target type `webhook`.
+
+### Formats
+
+Each endpoint has one format, which decides the request shape:
+
+| Format | Target URL | Secret | Body |
+|---|---|---|---|
+| `discord` | the channel webhook URL | none (the URL is the credential) | an embed with the headline, the details and the poster attached as an image |
+| `slack` | the incoming-webhook URL | none (the URL is the credential) | Block Kit text with the poster as an image accessory |
+| `ntfy` | the topic URL, such as `https://ntfy.sh/<topic>` | optional access token, sent as `Authorization: Bearer` | title, message, tags and priority headers; the poster is attached when the server allows attachments |
+| `gotify` | the Gotify server URL | the application token, sent as `X-Gotify-Key` | title, message and priority, with the poster as `bigImageUrl` |
+| `email` | `smtps://host[:465]` (implicit TLS) or `smtp://host[:587]` (STARTTLS required) | the SMTP password | a plain-text message from **From** to each **To** address, signed in as **Username** |
+| `generic` | any receiver | the HMAC key | the JSON event body, signed in `X-Beamfall-Signature` as described above |
+
+Endpoints from files written before formats existed are `generic`. A password
+is never sent over an unencrypted SMTP connection: `smtp://` without STARTTLS
+is accepted only for a local server reached without a password. All formats
+follow the delivery rules above, including the local-network approval.
+
+### Events
+
+An endpoint subscribes to any of these derived events, or to every event when
+none is ticked. A `generic` endpoint with no filter also receives the raw event
+kinds it received before formats existed (such as `session.control`):
+
+| Event | When |
+|---|---|
+| `media.added` | a new item is added to a library |
+| `playback.started`, `playback.stopped` | a live session starts or stops playing an item |
+| `profile.switched` | a device switches its active profile |
+| `admin.signed_in`, `admin.sign_in_failed` | an owner signs in to the console, or a sign-in is refused |
+| `device.enrolled`, `device.revoked` | a device is paired or its access is revoked |
+| `session.terminated` | an owner ends a live session |
+
+Item events carry the title, the media class and year (where known) and an
+artwork URL. The artwork URL is built from the **Public server URL** set on the
+Webhooks page. Leave that blank and no URL is sent. Fetching it needs a
+session, so a chat receiver cannot load it by itself. For that reason, Discord
+and ntfy messages attach the poster image instead of linking to it.
+
+### Secrets
+
+Secrets are written to a `0600` file in the server's secret store and
+referenced by `secret_ref`. They are never written to `webhook-endpoints.json`
+and never returned by the API. The console shows only whether a secret is set.
+Leave the field blank on an edit to keep the stored secret. A URL is shown only
+as scheme and host, because a Discord or Slack URL, or an ntfy topic, is
+itself a credential. Leave the URL blank on an edit to keep it. Deleting an
+endpoint also deletes its stored secret. An endpoint whose secret is missing
+or whose saved settings no longer validate shows as **Not running** with the
+reason, and it sends nothing until fixed.
+
+### Test sends and the delivery log
+
+**Send test** delivers one `webhook.test` notification to that endpoint only,
+and shows the result inline: delivered with the round-trip time, or the fixed
+failure diagnostic. A test send skips the retry schedule.
+
+The delivery log lists the last 200 deliveries, newest first. Each row gives
+the endpoint, the event, the outcome with its status class (`2xx`, `4xx`,
+`5xx` or a transport failure), the number of attempts, the duration and the
+time. The log holds no event bodies, URLs or response text.
+
 ## Recipes
 
 ### Movie mode

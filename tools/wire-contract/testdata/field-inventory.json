@@ -898,6 +898,11 @@
       ]
     },
     {
+      "field": "deletewebhook",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
       "field": "devices",
       "effect": "read",
       "tier": "admin",
@@ -2582,6 +2587,25 @@
       ]
     },
     {
+      "field": "savewebhook",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "allowPrivateNetwork",
+        "disabled",
+        "eventKinds",
+        "format",
+        "from",
+        "id",
+        "name",
+        "problem",
+        "secretSet",
+        "to",
+        "url",
+        "username"
+      ]
+    },
+    {
       "field": "scanestimate",
       "effect": "read",
       "tier": "admin",
@@ -3191,6 +3215,16 @@
       ]
     },
     {
+      "field": "setwebhooksettings",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "eventKinds",
+        "formats",
+        "publicBaseURL"
+      ]
+    },
+    {
       "field": "skipdetectionenabled",
       "effect": "read",
       "tier": "admin",
@@ -3390,6 +3424,17 @@
       "tier": "admin",
       "children": [
         "sessionID"
+      ]
+    },
+    {
+      "field": "testwebhook",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "diagnostic",
+        "durationMs",
+        "ok",
+        "statusClass"
       ]
     },
     {
@@ -3794,6 +3839,50 @@
         "item",
         "positionMS",
         "presentAtMS"
+      ]
+    },
+    {
+      "field": "webhookdeliveries",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "at",
+        "attempts",
+        "durationMs",
+        "endpointID",
+        "eventKind",
+        "outcome",
+        "statusClass",
+        "test"
+      ]
+    },
+    {
+      "field": "webhooks",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "allowPrivateNetwork",
+        "disabled",
+        "eventKinds",
+        "format",
+        "from",
+        "id",
+        "name",
+        "problem",
+        "secretSet",
+        "to",
+        "url",
+        "username"
+      ]
+    },
+    {
+      "field": "webhooksettings",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "eventKinds",
+        "formats",
+        "publicBaseURL"
       ]
     }
   ]
