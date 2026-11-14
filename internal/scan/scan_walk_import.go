@@ -71,10 +71,21 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 	if err := s.flushPendingParts(); err != nil {
 		return err
 	}
+	versionKey := s.versionGroupKey(imported, parsed, parsedOK)
+	if mediaID, attached, err := s.attachVersion(versionKey, imported, parsed); err != nil || attached {
+		if err != nil {
+			return err
+		}
+		if err := s.queueCompletion(path, mediaID, stored.ContentFingerprint, false); err != nil {
+			return err
+		}
+		return s.ctx.Err()
+	}
 	media, _, err := s.st.ImportMediaFile(s.ctx, imported)
 	if err != nil {
 		return err
 	}
+	s.rememberVersionAnchor(versionKey, media.ID, stored.ContentFingerprint, parsed)
 	fields := append([]store.MediaField(nil), parsedFields...)
 	if parsedOK {
 		fields = appendParsedStructuralMediaFields(fields, parsed)
@@ -212,10 +223,21 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 	if err := s.flushPendingParts(); err != nil {
 		return err
 	}
+	versionKey := s.versionGroupKey(imported, parsed, parsedOK)
+	if mediaID, attached, err := s.attachVersion(versionKey, imported, parsed); err != nil || attached {
+		if err != nil {
+			return err
+		}
+		if err := s.queueCompletion(path, mediaID, fingerprint, false); err != nil {
+			return err
+		}
+		return s.ctx.Err()
+	}
 	media, _, err := s.st.ImportMediaFile(s.ctx, imported)
 	if err != nil {
 		return err
 	}
+	s.rememberVersionAnchor(versionKey, media.ID, fingerprint, parsed)
 	if isImage {
 		if err := applyLocalMetadata(s.ctx, s.st, s.req.LibraryID, media.ID, task.local); err != nil {
 			return err

@@ -47,6 +47,7 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 		result:              Result{FilesSeen: checkpoint.FilesSeen, MediaImported: checkpoint.MediaImported, LastPath: checkpoint.LastPath, MissingCredentials: append([]string(nil), checkpoint.MissingCredentials...), seenMedia: map[store.MediaID]bool{}, totalFiles: checkpoint.TotalFiles},
 		directoryContexts:   map[string]ParseContext{},
 		directoryPreflights: map[string]*contextualDirectoryPreflight{},
+		versionAnchors:      map[string]versionAnchor{},
 		sidecars:            newSidecarDiscovery(interactiveSidecarExts),
 		pendingCompletions:  make([]*completedFile, 0, workers),
 		containerArt:        map[store.EntityID]*containerArtChoice{},

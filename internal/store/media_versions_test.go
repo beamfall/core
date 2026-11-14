@@ -1,0 +1,167 @@
+package store
+
+import (
+	"context"
+	"errors"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func versionImport(libraryID LibraryID, path, title string) ImportMediaFile {
+	return ImportMediaFile{
+		LibraryID:          libraryID,
+		Path:               path,
+		Title:              title,
+		Container:          "mkv",
+		Codec:              "hevc",
+		Class:              MediaClassVideo,
+		ContentFingerprint: HashMediaFilePath(path),
+		Streams:            []MediaFileStream{{Index: 0, Type: "video", Codec: "hevc"}},
+	}
+}
+
+func versionLabels(t *testing.T, st *Store, mediaID MediaID) map[string]string {
+	t.Helper()
+	files, err := st.MediaFilesForMedia(context.Background(), mediaID, LibraryFilter{AllowedIDs: []LibraryID{"library-local"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	labels := map[string]string{}
+	for _, f := range files {
+		labels[filepath.Base(f.Path)] = f.VersionLabel
+	}
+	return labels
+}
+
+// TestImportMediaFileVersionGroupsFilesOfOneTitle: a 4K file joins the 1080p
+// file's Media as a labelled Version, and a re-scan keeps both slots.
+func TestImportMediaFileVersionGroupsFilesOfOneTitle(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	anchorPath := filepath.Join(root, "Night Harbor (2004) - 1080p.mkv")
+	media, anchor, err := st.ImportMediaFile(ctx, versionImport("library-local", anchorPath, "Night Harbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	uhdPath := filepath.Join(root, "Night Harbor (2004) - 4K.mkv")
+	req := MediaVersionImport{
+		MediaID:           media.ID,
+		File:              versionImport("library-local", uhdPath, "Night Harbor"),
+		Label:             "4K",
+		AnchorFingerprint: anchor.ContentFingerprint,
+		AnchorLabel:       "1080p",
+	}
+	file, err := st.ImportMediaFileVersion(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if file.MediaID != media.ID || file.VersionLabel != "4K" {
+		t.Fatalf("version file = %+v", file)
+	}
+	want := map[string]string{filepath.Base(anchorPath): "1080p", filepath.Base(uhdPath): "4K"}
+	if got := versionLabels(t, st, media.ID); !equalLabels(got, want) {
+		t.Fatalf("labels = %v, want %v", got, want)
+	}
+	streams, err := st.MediaFileStreams(ctx, file.ContentFingerprint)
+	if err != nil || len(streams) != 1 {
+		t.Fatalf("version streams = %v, %v", streams, err)
+	}
+
+	// A re-scan of the same bytes keeps the slot even under another label.
+	req.Label = "UHD"
+	if again, err := st.ImportMediaFileVersion(ctx, req); err != nil || again.VersionLabel != "4K" {
+		t.Fatalf("re-scan = %+v, %v; want slot 4K kept", again, err)
+	}
+	if got := versionLabels(t, st, media.ID); !equalLabels(got, want) {
+		t.Fatalf("labels after re-scan = %v, want %v", got, want)
+	}
+}
+
+// TestImportMediaFileVersionUnlabelledTakesDefaultSlot: a labelled file
+// imported first moves out of the default slot when an unlabelled sibling
+// arrives, so the unlabelled file becomes the primary.
+func TestImportMediaFileVersionUnlabelledTakesDefaultSlot(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	extendedPath := filepath.Join(root, "Coastline (1998) - Extended.mkv")
+	media, anchor, err := st.ImportMediaFile(ctx, versionImport("library-local", extendedPath, "Coastline"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	plainPath := filepath.Join(root, "Coastline (1998).mkv")
+	if _, err := st.ImportMediaFileVersion(ctx, MediaVersionImport{
+		MediaID:           media.ID,
+		File:              versionImport("library-local", plainPath, "Coastline"),
+		AnchorFingerprint: anchor.ContentFingerprint,
+		AnchorLabel:       "Extended",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{filepath.Base(extendedPath): "Extended", filepath.Base(plainPath): ""}
+	if got := versionLabels(t, st, media.ID); !equalLabels(got, want) {
+		t.Fatalf("labels = %v, want %v", got, want)
+	}
+	primary, err := st.PrimaryMediaFile(ctx, media.ID, LibraryFilter{AllowedIDs: []LibraryID{"library-local"}})
+	if err != nil || filepath.Base(primary.Path) != filepath.Base(plainPath) {
+		t.Fatalf("primary = %+v, %v; want the unlabelled file", primary, err)
+	}
+}
+
+// TestImportMediaFileVersionRefusesAndRollsBack: a taken slot, bytes on
+// another Media, a Media in another Library or a bad label all refuse, and a
+// refusal undoes the anchor relabel.
+func TestImportMediaFileVersionRefusesAndRollsBack(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	firstPath := filepath.Join(root, "Night Harbor (2004).mkv")
+	media, anchor, err := st.ImportMediaFile(ctx, versionImport("library-local", firstPath, "Night Harbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherPath := filepath.Join(root, "Coastline (1998).mkv")
+	if _, _, err := st.ImportMediaFile(ctx, versionImport("library-local", otherPath, "Coastline")); err != nil {
+		t.Fatal(err)
+	}
+
+	cases := map[string]MediaVersionImport{
+		// Two unlabelled files of one title: the default slot is taken. The
+		// anchor relabel to "" is a no-op, so this checks the slot guard.
+		"default slot taken": {MediaID: media.ID, File: versionImport("library-local", filepath.Join(root, "Night Harbor (2004) copy.mkv"), "Night Harbor")},
+		// Coastline's bytes already belong to Coastline's Media.
+		"bytes on another media": {MediaID: media.ID, File: versionImport("library-local", otherPath, "Coastline"), Label: "Alt",
+			AnchorFingerprint: anchor.ContentFingerprint, AnchorLabel: "Theatrical"},
+		"media in another library": {MediaID: media.ID, File: versionImport("library-archive", filepath.Join(root, "Night Harbor (2004) - 4K.mkv"), "Night Harbor"), Label: "4K"},
+		"unknown media":            {MediaID: "media-absent", File: versionImport("library-local", filepath.Join(root, "x.mkv"), "x"), Label: "4K"},
+	}
+	for name, req := range cases {
+		if _, err := st.ImportMediaFileVersion(ctx, req); !errors.Is(err, ErrVersionNotAttached) {
+			t.Errorf("%s: err = %v, want ErrVersionNotAttached", name, err)
+		}
+	}
+	if got := versionLabels(t, st, media.ID); !equalLabels(got, map[string]string{filepath.Base(firstPath): ""}) {
+		t.Fatalf("refused attaches changed the Media: %v", got)
+	}
+
+	for _, label := range []string{" 4K", "a\tb", strings.Repeat("x", MaxMediaVersionLabelLen+1)} {
+		_, err := st.ImportMediaFileVersion(ctx, MediaVersionImport{MediaID: media.ID, File: versionImport("library-local", filepath.Join(root, "y.mkv"), "y"), Label: label})
+		if err == nil || errors.Is(err, ErrVersionNotAttached) {
+			t.Errorf("label %q: err = %v, want a validation error", label, err)
+		}
+	}
+}
+
+func equalLabels(got, want map[string]string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for k, v := range want {
+		if g, ok := got[k]; !ok || g != v {
+			return false
+		}
+	}
+	return true
+}

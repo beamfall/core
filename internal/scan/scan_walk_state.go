@@ -37,6 +37,7 @@ type scanWalkState struct {
 	pendingParts        []parsedPartImport
 	directoryContexts   map[string]ParseContext
 	directoryPreflights map[string]*contextualDirectoryPreflight
+	versionAnchors      map[string]versionAnchor
 	sidecars            *sidecarDiscovery
 	deriveCtx           context.Context
 	cancelDerivations   context.CancelFunc
