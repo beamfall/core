@@ -944,7 +944,10 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	}
 	// The hydration backfill check reads each Library's Media, so it runs after
 	// the boot unseal; a Library still sealed is checked after its runtime unseal.
-	backfillHydration := func(ctx context.Context) { queueHydrationBackfills(ctx, st, metadataHydrators, logger) }
+	backfillHydration := func(ctx context.Context) {
+		reclassifyAttachedPictureAudio(ctx, st, ffmpegRunner, logger)
+		queueHydrationBackfills(ctx, st, metadataHydrators, logger)
+	}
 	backfillHydration(ctx)
 	// Device push-token registration: the persisting
 	// registrar replaces the old no-op seam. It is gated by the same default-off

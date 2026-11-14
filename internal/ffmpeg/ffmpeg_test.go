@@ -2,6 +2,7 @@ package ffmpeg
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -885,5 +886,39 @@ func TestLoudnessFromTags(t *testing.T) {
 	}
 	if _, ok := loudnessFromTags(map[string]string{"replaygain_track_gain": "garbage"}); ok {
 		t.Fatal("loudnessFromTags recovered a measurement from an unparseable gain")
+	}
+}
+
+// TestProbeAudioWithAttachedPicture (CORE-1262): an audio file whose only video
+// stream is attached cover art is audio-with-artwork; a plain audio file, a
+// real video (even one that also carries cover art) and a silent picture are
+// not.
+func TestProbeAudioWithAttachedPicture(t *testing.T) {
+	stream := func(index int, kind, codec string, attached bool) string {
+		pic := 0
+		if attached {
+			pic = 1
+		}
+		return fmt.Sprintf(`{"index":%d,"codec_type":%q,"codec_name":%q,"disposition":{"attached_pic":%d}}`, index, kind, codec, pic)
+	}
+	for name, tc := range map[string]struct {
+		streams []string
+		want    bool
+	}{
+		"mp3 with cover art":     {[]string{stream(0, "audio", "mp3", false), stream(1, "video", "mjpeg", true)}, true},
+		"cover art first":        {[]string{stream(0, "video", "png", true), stream(1, "audio", "flac", false)}, true},
+		"plain audio":            {[]string{stream(0, "audio", "flac", false)}, false},
+		"video with cover art":   {[]string{stream(0, "video", "h264", false), stream(1, "audio", "aac", false), stream(2, "video", "mjpeg", true)}, false},
+		"picture without audio":  {[]string{stream(0, "video", "mjpeg", true)}, false},
+		"real video, no picture": {[]string{stream(0, "video", "h264", false), stream(1, "audio", "aac", false)}, false},
+	} {
+		doc := `{"format":{"format_name":"mp3","duration":"200"},"streams":[` + strings.Join(tc.streams, ",") + `]}`
+		probe, err := parseProbe([]byte(doc), "/m/track.mp3")
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if got := probe.AudioWithAttachedPicture(); got != tc.want {
+			t.Errorf("%s: AudioWithAttachedPicture = %v, want %v", name, got, tc.want)
+		}
 	}
 }
