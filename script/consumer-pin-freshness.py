@@ -44,6 +44,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import runpy
 import subprocess
@@ -237,7 +238,8 @@ def pending_publication(ctx: AheadContext, rel: str, data: bytes) -> tuple[str, 
     """(ref, commit, age_days) of a core publication of these bytes that is not on HEAD.
 
     None when the bytes are already in HEAD's history of the artifact (the consumer
-    is behind) or appear on no ref at all (the consumer copy is simply wrong).
+    is behind) or appear on no branch or remote-tracking ref (the consumer copy is
+    simply wrong). Stashes and other refs are not publications.
     """
     blob = git_blob_id(data)
     head = run_git(ctx.producer, ["log", "--format=", "--raw", "--no-abbrev", "HEAD", "--", rel])
@@ -247,7 +249,7 @@ def pending_publication(ctx: AheadContext, rel: str, data: bytes) -> tuple[str, 
         return None
     log = run_git(
         ctx.producer,
-        ["log", "--all", "--format=commit %H %ct", "--raw", "--no-abbrev", "--", rel],
+        ["log", "--branches", "--remotes", "--format=commit %H %ct", "--raw", "--no-abbrev", "--", rel],
     )
     if log is None:
         return None
@@ -260,8 +262,9 @@ def pending_publication(ctx: AheadContext, rel: str, data: bytes) -> tuple[str, 
                 ctx.producer,
                 ["for-each-ref", "--contains", commit, "--format=%(refname)", "refs/remotes", "refs/heads"],
             )
-            ref = (refs or "").splitlines()[0] if refs else commit
-            return ref, commit, (ctx.now - int(when)) / 86400
+            if not refs:
+                return None
+            return refs.splitlines()[0], commit, (ctx.now - int(when)) / 86400
     return None
 
 
@@ -639,6 +642,8 @@ def ahead_context(args: argparse.Namespace, producer: Path) -> AheadContext | No
     raw = os.environ.get("BEAMFALL_PIN_AHEAD_MAX_DAYS", str(AHEAD_MAX_DAYS_DEFAULT))
     try:
         max_days = float(raw)
+        if not math.isfinite(max_days):
+            raise ValueError(raw)
     except ValueError:
         print(f"consumer-pin-freshness: ignoring malformed BEAMFALL_PIN_AHEAD_MAX_DAYS={raw!r}", file=sys.stderr)
         max_days = float(AHEAD_MAX_DAYS_DEFAULT)

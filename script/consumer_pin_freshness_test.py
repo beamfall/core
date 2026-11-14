@@ -592,9 +592,23 @@ def control_consumer_ahead_behind_matching(root: Path) -> None:
                "beamfall-apple-ui", "window has been open", "land the core pin")
     expect_red("consumer ahead with the window disabled -> RED",
                check("wire contract v2", BEAMFALL_PIN_AHEAD_MAX_DAYS="0"), "byte drift")
+    for bad in ("nan", "inf"):
+        expect_red(f"non-finite window {bad} falls back to the default and still expires -> RED",
+                   check("wire contract v2", BEAMFALL_PIN_AHEAD_MAX_DAYS=bad,
+                         BEAMFALL_PIN_AHEAD_NOW=str(pending_time + 4 * 86400)),
+                   "window has been open", "land the core pin")
     expect_red("consumer behind (an older core publication) -> RED",
                check("wire contract v0"), "byte drift", "make regen-wire-goldens")
     expect_red("consumer copy core never published -> RED", check("hand-edited"), "byte drift")
+    # Only branches and remote-tracking refs are publications; a stray ref such as a
+    # stash or scratch ref is shared across worktrees but is not (CORE-1442 review).
+    git(repo, "checkout", "-q", "-b", "scratch")
+    commit_file(repo, artifact, "wire contract scratch")
+    git(repo, "update-ref", "refs/scratch/abandoned", "HEAD")
+    git(repo, "checkout", "-q", "lane")
+    git(repo, "branch", "-q", "-D", "scratch")
+    expect_red("consumer matching bytes only on a non-branch ref -> RED",
+               check("wire contract scratch"), "byte drift")
     commit_file(repo, artifact, "wire contract v3 from this branch")
     expect_red("branch changes the artifact while the consumer is on v2 -> RED",
                check("wire contract v2"), "byte drift")
