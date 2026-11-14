@@ -57,6 +57,41 @@ function readCardHeight(grid: HTMLElement): number {
   return tallest;
 }
 
+// The grid's column count, row pitch and page-space top, from the same live
+// geometry the window uses. Rows not yet measured use the fallback height.
+function gridGeometry(grid: HTMLElement, fixedColumns?: number) {
+  const gap = readGap(grid);
+  return {
+    columns: fixedColumns ?? readColumns(grid, gap),
+    rowHeight: (readCardHeight(grid) || VIRTUAL_GRID_FALLBACK_ROW_HEIGHT) + gap,
+    top: grid.getBoundingClientRect().top + window.scrollY,
+  };
+}
+
+/**
+ * The page scroll position that puts the row holding `index` at the top of the
+ * viewport. Unmeasured rows use the fallback height, so the caller settles the
+ * final position once the card renders.
+ */
+export function virtualGridScrollTop(
+  grid: HTMLElement,
+  index: number,
+  fixedColumns?: number,
+): number {
+  const { columns, rowHeight, top } = gridGeometry(grid, fixedColumns);
+  return Math.max(0, top + Math.floor(index / columns) * rowHeight);
+}
+
+/** The index of the first item in the row at page offset `pageY`. */
+export function virtualGridIndexAt(
+  grid: HTMLElement,
+  pageY: number,
+  fixedColumns?: number,
+): number {
+  const { columns, rowHeight, top } = gridGeometry(grid, fixedColumns);
+  return Math.max(0, Math.floor((pageY - top) / rowHeight)) * columns;
+}
+
 export function useVirtualGrid({
   gridRef,
   itemCount,

@@ -48,6 +48,15 @@ function pageFor(request: LibraryItemsRequest) {
       decades: [1990],
       qualities: ["hd1080"],
     },
+    // A title sort reports where each initial starts across the whole result.
+    letters:
+      request.state.sort === "title"
+        ? [
+            { letter: "#", offset: 0, count: 5 },
+            { letter: "I", offset: 5, count: 895 },
+            { letter: "M", offset: 900, count: total - 900 },
+          ]
+        : [],
   };
 }
 
@@ -258,5 +267,136 @@ describe("Library browse", () => {
     act(() => notifyEngagementChanged());
     expect(await screen.findByRole("button", { name: "Item 0, Finished" })).toBeInTheDocument();
     expect(screen.getByText("1,200 items")).toBeInTheDocument();
+  });
+
+  function renderBrowse(url: string) {
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={[url]}>
+          <Routes>
+            <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
+          </Routes>
+          <Where />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+  }
+
+  it("jumps to a title initial from the letter rail and focuses its first item (CORE-1685)", async () => {
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
+    // jsdom lays nothing out; the jump's scroll is observed, not performed.
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    const user = userEvent.setup();
+    renderBrowse("/n/films/all");
+
+    const rail = await screen.findByRole("navigation", { name: "Jump to letter" });
+    // Every letter keeps its place; an empty one says so and is skipped.
+    const letterB = screen.getByRole("button", { name: "B, no titles" });
+    expect(letterB).toHaveAttribute("aria-disabled", "true");
+    expect(letterB).toHaveAttribute("tabindex", "-1");
+    // The letter at the top of the grid is current, and is the one tab stop.
+    const other = screen.getByRole("button", { name: "Numbers and symbols, 5 titles" });
+    expect(other).toHaveAttribute("aria-current", "true");
+    expect(other).toHaveAttribute("tabindex", "0");
+    expect(rail.querySelectorAll('[tabindex="0"]')).toHaveLength(1);
+
+    // The arrows skip empty letters and jump the grid without leaving the rail.
+    other.focus();
+    scrollTo.mockClear();
+    await user.keyboard("{ArrowDown}");
+    const letterI = screen.getByRole("button", { name: "I, 895 titles" });
+    expect(letterI).toHaveFocus();
+    expect(scrollTo).toHaveBeenCalled();
+    await user.keyboard("{End}");
+    expect(screen.getByRole("button", { name: "M, 300 titles" })).toHaveFocus();
+
+    // Typing an empty letter goes on to the next letter with titles, and says so.
+    await user.keyboard("j");
+    expect(screen.getByRole("button", { name: "M, 300 titles" })).toHaveFocus();
+    expect(rail.querySelector('[role="status"]')).toHaveTextContent(
+      "No titles start with J. Showing M.",
+    );
+    await user.keyboard("i");
+    expect(letterI).toHaveFocus();
+    expect(rail.querySelector('[role="status"]')).toHaveTextContent("Showing I.");
+    expect(document.activeElement).toBe(letterI);
+
+    // A click also lands focus on the letter's first title.
+    await user.click(letterI);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Item 5" })).toHaveFocus());
+    // Clicking an empty letter does nothing.
+    scrollTo.mockClear();
+    await user.click(letterB);
+    expect(scrollTo).not.toHaveBeenCalled();
+    scrollTo.mockRestore();
+
+    await user.click(screen.getByRole("button", { name: "List" }));
+    expect(screen.getByRole("navigation", { name: "Jump to letter" })).toBeInTheDocument();
+  });
+
+  it("swaps the rail for a Jump to sheet where the rail is too cramped (CORE-1685)", async () => {
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    const matchMedia = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      matches: true,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    })) as typeof window.matchMedia;
+    const user = userEvent.setup();
+    try {
+      renderBrowse("/n/films/all");
+
+      const trigger = await screen.findByRole("button", { name: "Jump to letter" });
+      expect(screen.queryByRole("navigation", { name: "Jump to letter" })).toBeNull();
+      await user.click(trigger);
+      const sheet = await screen.findByRole("dialog", { name: "Jump to letter" });
+      expect(sheet).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "B, no titles" })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+      await user.click(screen.getByRole("button", { name: "I, 895 titles" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      await waitFor(() => expect(screen.getByRole("button", { name: "Item 5" })).toHaveFocus());
+    } finally {
+      window.matchMedia = matchMedia;
+      scrollTo.mockRestore();
+    }
+  });
+
+  it("offers no letter rail on a short list (CORE-1685)", async () => {
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) => ({
+      ...pageFor(request),
+      total: 40,
+      items: pageFor(request).items.slice(0, 40),
+      letters: [{ letter: "I", offset: 0, count: 40 }],
+    }));
+    renderBrowse("/n/films/all");
+
+    expect(await screen.findByText("40 items")).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Jump to letter" })).toBeNull();
+  });
+
+  it("offers no letter rail on a sort other than title", async () => {
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
+
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/n/films/all?sort=year"]}>
+          <Routes>
+            <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    expect(await screen.findByText("1,200 items")).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Jump to letter" })).toBeNull();
   });
 });

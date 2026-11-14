@@ -7829,6 +7829,42 @@
         ]
       },
       {
+        "name": "letters",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "count",
+              "kind": "scalar"
+            },
+            {
+              "name": "letter",
+              "kind": "scalar"
+            },
+            {
+              "name": "offset",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "count",
+            "kind": "scalar"
+          },
+          {
+            "name": "letter",
+            "kind": "scalar"
+          },
+          {
+            "name": "offset",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
         "name": "total",
         "kind": "scalar"
       }

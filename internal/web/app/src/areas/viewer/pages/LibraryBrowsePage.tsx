@@ -16,9 +16,15 @@ import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
 import type { StringKey } from "@/strings";
 import { useEngagementEpoch } from "../actions";
+import { LibraryLetterRail } from "../components/LibraryLetterRail";
 import { MediaItemCard } from "../components/MediaItemCard";
 import { RevealControls } from "../components/RevealControls";
-import { useVirtualGrid, VIRTUAL_GRID_MIN_ITEMS } from "../components/useVirtualGrid";
+import {
+  useVirtualGrid,
+  VIRTUAL_GRID_MIN_ITEMS,
+  virtualGridIndexAt,
+  virtualGridScrollTop,
+} from "../components/useVirtualGrid";
 import { ViewerActions } from "../components/ViewerActions";
 import {
   browseStateParams,
@@ -29,6 +35,7 @@ import {
   LIBRARY_WATCH_STATES,
   type LibraryBrowseState,
   type LibraryItemsFacets,
+  type LibraryItemsLetter,
   type LibrarySort,
   type LibraryViewMode,
   parseBrowseState,
@@ -66,6 +73,10 @@ const QUALITY_LABELS: Record<string, StringKey> = {
 };
 
 const EMPTY_FACETS: LibraryItemsFacets = { groupings: [], decades: [], qualities: [] };
+// The sticky header's height plus a little air, kept clear above a jumped-to row.
+const LETTER_JUMP_HEADER_CLEARANCE = 72;
+// The letter rail is for long lists; a short one fits on a screen or two.
+const LETTER_RAIL_MIN_ITEMS = 60;
 
 // Library browse (/n/:nodeId/all, CORE-1190): every item of one Library the
 // profile may see, counted, sorted and filtered by the server (libraryItems)
@@ -120,6 +131,7 @@ function LibraryBrowse({
 
   const [total, setTotal] = useState<number | null>(null);
   const [facets, setFacets] = useState<LibraryItemsFacets>(EMPTY_FACETS);
+  const [letters, setLetters] = useState<LibraryItemsLetter[]>([]);
   const [failed, setFailed] = useState(false);
   const [starting, setStarting] = useState(false);
   // Pages arrive out of order as the window moves; the map is keyed by page
@@ -127,6 +139,9 @@ function LibraryBrowse({
   const pagesRef = useRef(new Map<number, SourceItem[]>());
   const pendingRef = useRef(new Set<number>());
   const generationRef = useRef(0);
+  // The item a letter jump is heading for, settled (and focused, when asked)
+  // once its card renders.
+  const pendingJumpRef = useRef<{ offset: number; focus: boolean } | null>(null);
   const [, setLoadedTick] = useState(0);
   const [retryTick, setRetryTick] = useState(0);
 
@@ -146,7 +161,10 @@ function LibraryBrowse({
           pendingRef.current.delete(pageIndex);
           pagesRef.current.set(pageIndex, page.items);
           setTotal(page.total);
-          if (pageIndex === 0) setFacets(page.facets);
+          if (pageIndex === 0) {
+            setFacets(page.facets);
+            setLetters(page.letters);
+          }
           setLoadedTick((tick) => tick + 1);
         })
         .catch(() => {
@@ -168,6 +186,8 @@ function LibraryBrowse({
     pendingRef.current = new Set();
     setFailed(false);
     setTotal(null);
+    setLetters([]);
+    pendingJumpRef.current = null;
     loadPage(0);
   }, [loadPage, retryTick]);
 
@@ -233,6 +253,63 @@ function LibraryBrowse({
     for (let pageIndex = first; pageIndex <= last; pageIndex += 1) loadPage(pageIndex);
     // refreshTick re-runs this after an engagement change emptied the cache.
   }, [start, end, loadPage, refreshTick]);
+
+  // A letter jump scrolls the grid to the row holding that offset; the window
+  // then loads its page, and the effect below settles the row under the header
+  // once its card lands, focusing the card when the jump asked for it.
+  const listColumns = viewMode === "list" ? 1 : undefined;
+  const [, setJumpTick] = useState(0);
+  function jumpTo(offset: number, focus: boolean) {
+    const grid = listRef.current;
+    if (!grid) return;
+    pendingJumpRef.current = { offset, focus };
+    const top = virtualGridScrollTop(grid, offset, listColumns);
+    window.scrollTo({ top: Math.max(0, top - LETTER_JUMP_HEADER_CLEARANCE) });
+    setJumpTick((tick) => tick + 1);
+  }
+  useEffect(() => {
+    const jump = pendingJumpRef.current;
+    if (jump === null) return;
+    const cell = listRef.current?.querySelector<HTMLElement>(
+      `[aria-posinset="${jump.offset + 1}"]`,
+    );
+    const card = cell?.querySelector<HTMLElement>(":scope > button");
+    if (!cell || !card) return;
+    pendingJumpRef.current = null;
+    const top = cell.getBoundingClientRect().top + window.scrollY - LETTER_JUMP_HEADER_CLEARANCE;
+    window.scrollTo({ top: Math.max(0, top) });
+    if (jump.focus) card.focus({ preventScroll: true });
+  });
+
+  // The rail highlights the letter of the row at the top of the grid.
+  const showLetterRail =
+    state.sort === "title" && letters.length > 0 && itemCount > LETTER_RAIL_MIN_ITEMS;
+  const [currentLetter, setCurrentLetter] = useState<string | null>(null);
+  useEffect(() => {
+    if (!showLetterRail) return;
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      const grid = listRef.current;
+      if (!grid) return;
+      const index = virtualGridIndexAt(
+        grid,
+        window.scrollY + LETTER_JUMP_HEADER_CLEARANCE,
+        listColumns,
+      );
+      const at = letters.findLast((entry) => entry.offset <= index) ?? letters[0];
+      setCurrentLetter(at.letter);
+    };
+    const onScroll = () => {
+      if (!frame) frame = window.requestAnimationFrame(measure);
+    };
+    measure();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", onScroll);
+    };
+  }, [showLetterRail, letters, listColumns]);
 
   function update(patch: Partial<LibraryBrowseState>) {
     setSearchParams(browseStateParams({ ...state, ...patch }), { replace: true });
@@ -575,16 +652,21 @@ function LibraryBrowse({
           </div>
         )}
 
-        <ul
-          ref={listRef}
-          aria-label={heading}
-          aria-busy={total === null}
-          className={viewMode === "list" ? "bf-stack" : "bf-grid"}
-        >
-          {gridWindow && gridWindow.topPad > 0 && <Spacer height={gridWindow.topPad} />}
-          {cells}
-          {gridWindow && gridWindow.bottomPad > 0 && <Spacer height={gridWindow.bottomPad} />}
-        </ul>
+        <div className="flex items-start gap-2">
+          <ul
+            ref={listRef}
+            aria-label={heading}
+            aria-busy={total === null}
+            className={`min-w-0 flex-1 ${viewMode === "list" ? "bf-stack" : "bf-grid"}`}
+          >
+            {gridWindow && gridWindow.topPad > 0 && <Spacer height={gridWindow.topPad} />}
+            {cells}
+            {gridWindow && gridWindow.bottomPad > 0 && <Spacer height={gridWindow.bottomPad} />}
+          </ul>
+          {showLetterRail && (
+            <LibraryLetterRail letters={letters} current={currentLetter} onJump={jumpTo} />
+          )}
+        </div>
       </div>
     </AppShell>
   );

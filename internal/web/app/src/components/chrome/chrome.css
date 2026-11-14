@@ -1296,6 +1296,144 @@
 }
 
 /* ============================================================ *
+ *  Letter rail (Viewer, CORE-1685) — a sticky column of title
+ *  initials beside a title-sorted Library grid (approved board:
+ *  console-list-controls, A–Z jump rail). Letters with no titles
+ *  stay in place, dimmed, so the alphabet never shifts. Dragging
+ *  the rail shows the letter under the pointer in a bubble.
+ * ============================================================ */
+
+[data-register="viewer"] .bf-letter-rail {
+  position: sticky;
+  top: 72px;
+  flex: none;
+  align-self: flex-start;
+  width: 34px;
+  height: calc(100dvh - 84px);
+  max-height: 560px;
+  border-left: 1px solid var(--border-subtle);
+  background: var(--bg-raised);
+  touch-action: none;
+  user-select: none;
+}
+
+[data-register="viewer"] .bf-letter-rail ul {
+  display: grid;
+  align-content: space-between;
+  height: 100%;
+  margin: 0;
+  padding: 6px 0;
+  list-style: none;
+}
+
+[data-register="viewer"] .bf-letter-rail button {
+  display: block;
+  width: 100%;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+[data-register="viewer"] .bf-letter-rail button:hover {
+  color: var(--text-primary);
+}
+
+[data-register="viewer"] .bf-letter-rail button[aria-disabled="true"],
+[data-register="viewer"] .bf-letter-sheet button[aria-disabled="true"] {
+  color: color-mix(in srgb, var(--text-muted) 38%, transparent);
+  cursor: default;
+}
+
+[data-register="viewer"] .bf-letter-rail button[aria-current="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+[data-register="viewer"] .bf-letter-rail button:focus-visible,
+[data-register="viewer"] .bf-letter-sheet button:focus-visible,
+[data-register="viewer"] .bf-letter-rail-trigger:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+[data-register="viewer"] .bf-letter-bubble {
+  position: absolute;
+  right: 44px;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 34px;
+  font-weight: 650;
+  line-height: 1;
+  box-shadow: var(--shadow-card);
+  pointer-events: none;
+}
+
+[data-register="viewer"] .bf-letter-bubble small {
+  position: absolute;
+  bottom: -20px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Narrow or short viewports: the rail would be too cramped, so a
+ * "Jump to" control opens a sheet of 36px letter cells instead. */
+[data-register="viewer"] .bf-letter-rail-trigger {
+  position: sticky;
+  top: 72px;
+  flex: none;
+  align-self: flex-start;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+[data-register="viewer"] .bf-letter-sheet {
+  display: grid;
+  grid-template-columns: repeat(6, 36px);
+  justify-content: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-register="viewer"] .bf-letter-sheet button {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* ============================================================ *
  *  Skeletons (Viewer) — never-focusable hydration placeholders,
  *  a static tone with no motion.
  * ============================================================ */
