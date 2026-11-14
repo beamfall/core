@@ -362,12 +362,13 @@ func TestValidBucket(t *testing.T) {
 }
 
 func TestValidSlot(t *testing.T) {
-	for _, name := range []string{SlotPoster, SlotBackdrop, SlotThumb} {
+	for _, name := range []string{SlotPoster, SlotBackdrop, SlotThumb, SlotLogo, SlotBanner, SlotClearart, SlotDisc, SlotContainerPoster, "season-poster"} {
 		if !ValidSlot(name) {
 			t.Errorf("ValidSlot(%q) = false, want true", name)
 		}
 	}
-	for _, name := range []string{"", "banner", "Poster", "w320"} {
+	// portrait is an SDK slot Core does not serve yet.
+	for _, name := range []string{"", "portrait", "Poster", "Logo", "w320"} {
 		if ValidSlot(name) {
 			t.Errorf("ValidSlot(%q) = true, want false", name)
 		}
@@ -750,6 +751,52 @@ func TestResolveSlotFallsBackToPoster(t *testing.T) {
 	// An unknown slot never resolves.
 	if served, ok := svc.ResolveSlot("media-alpha", "bogus"); ok {
 		t.Fatalf("ResolveSlot(unknown) = (%q, true), want absent", served)
+	}
+}
+
+func TestWidenedSlotsResolveDeriveAndFallBack(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(storetest.Open(t), &fakeScaler{}, t.TempDir())
+	writePoster(t, svc, "media-alpha")
+
+	// The container poster falls back to the poster; logo, banner, clearart
+	// and disc have no fallback and serve nothing while absent.
+	if served, ok := svc.ResolveSlot("media-alpha", SlotContainerPoster); !ok || served != SlotPoster {
+		t.Fatalf("ResolveSlot(season-poster) = (%q, %v), want (poster, true)", served, ok)
+	}
+	for _, slot := range []string{SlotLogo, SlotBanner, SlotClearart, SlotDisc} {
+		if served, ok := svc.ResolveSlot("media-alpha", slot); ok {
+			t.Fatalf("ResolveSlot(%q) without its file = (%q, true), want absent", slot, served)
+		}
+	}
+
+	// Imported bytes win over the fallback, and every new slot derives
+	// its own bucket next to its original.
+	for _, slot := range []string{SlotLogo, SlotBanner, SlotClearart, SlotDisc, SlotContainerPoster} {
+		if err := svc.ImportArtwork(ctx, "media-alpha", slot, []byte(slot+"-bytes")); err != nil {
+			t.Fatalf("ImportArtwork(%q): %v", slot, err)
+		}
+		if served, ok := svc.ResolveSlot("media-alpha", slot); !ok || served != slot {
+			t.Fatalf("ResolveSlot(%q) with own file = (%q, %v), want (%q, true)", slot, served, ok, slot)
+		}
+		if _, ok := svc.ArtworkVersion("media-alpha", slot); !ok {
+			t.Fatalf("ArtworkVersion(%q) absent after import", slot)
+		}
+		path, err := svc.ArtworkDerivative(ctx, "media-alpha", slot, "w640")
+		if err != nil {
+			t.Fatalf("ArtworkDerivative(%q): %v", slot, err)
+		}
+		if want := filepath.Join(filepath.Dir(svc.PosterPath("media-alpha")), slot+".w640.jpg"); path != want {
+			t.Fatalf("ArtworkDerivative(%q) = %q, want %q", slot, path, want)
+		}
+	}
+
+	// A slot outside the vocabulary is not importable or addressable.
+	if err := svc.ImportArtwork(ctx, "media-alpha", "portrait", []byte("x")); err == nil {
+		t.Fatal("ImportArtwork(portrait) succeeded, want unknown-slot error")
+	}
+	if _, err := svc.ArtworkDerivative(ctx, "media-alpha", "portrait", "w640"); err == nil {
+		t.Fatal("ArtworkDerivative(portrait) succeeded, want unknown-slot error")
 	}
 }
 

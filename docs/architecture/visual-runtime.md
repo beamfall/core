@@ -67,12 +67,39 @@ Normative platform tap rules:
   mix under AVPlayer; an AVAudioEngine tap only where playback runs through the engine) and applies
   output latency: live `AVAudioSession.outputLatency` route updates on iOS/tvOS, output-device
   latency on macOS (never 0).
+- Windows taps the app's own decoded PCM in its playback pipeline before the audio renderer;
+  system loopback capture (WASAPI loopback or any other whole-device mix) is not a conforming
+  source.
+- Linux taps libmpv's decoded PCM after mpv's audio filters (a post-filter tap on the
+  `DecodedPcm` output path); capturing the desktop mixer (PipeWire/PulseAudio monitor sources)
+  is not a conforming source.
 - Any source the host cannot tap (for example AirPlay/cast routes; client DRM is excluded by
   ADR-0112) sets `live-analysis-unavailable` and degrades to generated assets only.
 
 The producer-side conformance pack lives under
 `internal/conformance/testdata/visualsync/`: it pins the contract artifact plus WAV-derived
 `AudioFrame` sequences, including output-latency, gap, and stall cases.
+
+## visual-uniforms.v1
+
+How an `AudioFrame` becomes shader uniforms is owned by Oscillux (ADR-0228, ADR-0232), not by
+core or any client. Oscillux's visual-uniforms document defines `visual-uniforms.v1`: every
+uniform's formula, smoothing and clamp, the 24→64 spectrum interpolation, reset events, the
+neutral values under `live-analysis-unavailable`, and the Reduce Motion ceilings. Its
+`conformance/uniforms/` goldens are derived from this pack's `sine-440` and `gap-stall-latency`
+frame goldens at dt 1/60, and its gate regenerates them byte-identically. Hosts consume the
+pinned Oscillux mapper and do not re-derive uniforms.
+
+Core keeps only host policy. Where each platform taps decoded PCM is listed above. The OS setting
+that turns on Reduce Motion for Visuals is:
+
+| Host | Reduce Motion source |
+|---|---|
+| iOS, iPadOS, tvOS, macOS | SwiftUI `accessibilityReduceMotion` (`UIAccessibility.isReduceMotionEnabled`; `NSWorkspace.accessibilityDisplayShouldReduceMotion` on macOS) |
+| Android phone and TV | `Settings.Global.ANIMATOR_DURATION_SCALE` equal to 0 (Remove animations), observed for changes |
+| Web | `matchMedia('(prefers-reduced-motion: reduce)')`, observed for changes |
+| Windows | `UISettings.AnimationsEnabled` false (Settings > Accessibility > Animation effects off) |
+| Linux (GTK 4) | `GtkSettings:gtk-enable-animations` false |
 
 ## SmartPreset v1 contract
 
