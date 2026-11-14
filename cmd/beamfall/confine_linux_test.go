@@ -35,8 +35,7 @@ func unlistedEtcFixture() string {
 		if err != nil || !info.Mode().IsRegular() {
 			continue
 		}
-		// #nosec G304 -- path is one of the fixed /etc candidates listed above.
-		if _, err := os.ReadFile(path); err == nil {
+		if _, err := os.ReadFile(path); err == nil { // #nosec G304 -- path comes from the fixed /etc fixture list above
 			return path
 		}
 	}
@@ -215,9 +214,7 @@ func localInferenceConfinementHelper() {
 	case "write-work":
 		err = os.WriteFile(filepath.Join(work, "labels.json"), []byte("{}"), 0o600)
 	case "read-etc":
-		// #nosec G304 G703 -- the parent test sets this to unlistedEtcFixture's path;
-		// the read is the confinement probe and must be denied.
-		if _, readErr := os.ReadFile(os.Getenv("BEAMFALL_LOCAL_INFERENCE_ETC")); errors.Is(readErr, os.ErrPermission) {
+		if _, readErr := os.ReadFile(os.Getenv("BEAMFALL_LOCAL_INFERENCE_ETC")); errors.Is(readErr, os.ErrPermission) { // #nosec G703 -- the parent test sets this path; reading outside the grants is the probe and must be denied
 			os.Exit(0)
 		}
 		os.Exit(4)
@@ -305,9 +302,7 @@ func TestShimExecsConfinedWorkerWhenThreadsMigrate(t *testing.T) {
 				t.Fatal(err)
 			}
 			input, model, work := t.TempDir(), t.TempDir(), t.TempDir()
-			// #nosec G302 -- model is this test's own t.TempDir() directory, which
-			// needs the search bit.
-			if err := os.Chmod(model, 0o700); err != nil {
+			if err := os.Chmod(model, 0o700); err != nil { // #nosec G302 -- model is a directory; owner-only 0700 is the least that keeps it traversable
 				t.Fatal(err)
 			}
 			cmd := exec.Command(self, "-test.run=^TestShimExecsConfinedWorkerWhenThreadsMigrate$")
@@ -416,9 +411,7 @@ func TestConfinedWorkerProbe(t *testing.T) {
 	if nnp, err := unix.PrctlRetInt(unix.PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0); err != nil || nnp != 1 {
 		gaps = append(gaps, fmt.Sprintf("no_new_privs = %d (%v), want 1", nnp, err))
 	}
-	// #nosec G304 -- denied is the parent shim's probe path; the read must be
-	// refused by landlock.
-	if _, err := os.ReadFile(denied); !errors.Is(err, os.ErrPermission) {
+	if _, err := os.ReadFile(denied); !errors.Is(err, os.ErrPermission) { // #nosec G304 -- the shim helper passes a test-owned path; reading it is the probe and must be denied
 		gaps = append(gaps, fmt.Sprintf("read outside the landlock grants: err = %v, want permission denied", err))
 	}
 	if mode == "local-inference" {
