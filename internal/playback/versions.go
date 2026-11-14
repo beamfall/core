@@ -3,6 +3,8 @@ package playback
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"path/filepath"
+	"strings"
 
 	"github.com/beamfall/core/internal/store"
 )
@@ -47,4 +49,21 @@ func versionInfos(mediaID store.MediaID, versions [][]store.MediaFile, streams [
 		infos[i] = info
 	}
 	return infos
+}
+
+// versionFacts returns the Media facts a Version is judged by. The Media row
+// holds one file's probe facts, so with several Versions each one is judged by
+// what is known per file instead: its container from its own path, the way a
+// scan names it, and its video codec from its own stream inventory. Frame size
+// and duration are not stored per file, so they stay the row's.
+func versionFacts(media store.Media, file store.MediaFile, streams []store.MediaFileStream) store.Media {
+	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(file.Path)), ".")
+	if ext == "" {
+		ext = "file"
+	}
+	media.Container = ext
+	if video, ok := primaryVideoStream(streams); ok && video.Codec != "" {
+		media.Codec = video.Codec
+	}
+	return media
 }

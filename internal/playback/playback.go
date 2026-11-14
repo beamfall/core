@@ -874,6 +874,10 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	if err != nil {
 		return decision{}, err
 	}
+	if len(versions) > 0 {
+		// Every rung below judges the negotiated Version by its own file facts.
+		media = versionFacts(media, file, streams)
+	}
 	// One deferred stamp covers every decision return below, like
 	// audioLanguage: the picker lists the same Versions whatever the verdict,
 	// so a viewer whose pick cannot play can still pick another.
@@ -1270,11 +1274,17 @@ func (s *Service) negotiateVersion(ctx context.Context, media store.Media, files
 			}
 		}
 	}
-	if !selected && !directPlayEligible(media, versions[0][0], streams[0], profile, selectedSubtitleIndex, ov) {
+	facts := func(i int) store.Media {
+		if len(versions) < 2 {
+			return media
+		}
+		return versionFacts(media, versions[i][0], streams[i])
+	}
+	if !selected && !directPlayEligible(facts(0), versions[0][0], streams[0], profile, selectedSubtitleIndex, ov) {
 		// Look for a Version whose primary Part the client can play as-is (or whose
 		// P7 HDR10 base layer plays), preferring it over a transcoding default.
 		for i, version := range versions {
-			if directPlayEligible(media, version[0], streams[i], profile, selectedSubtitleIndex, ov) {
+			if directPlayEligible(facts(i), version[0], streams[i], profile, selectedSubtitleIndex, ov) {
 				chosen = i
 				break
 			}

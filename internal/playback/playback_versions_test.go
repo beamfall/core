@@ -31,7 +31,14 @@ func resolveSel(t *testing.T, svc *Service, scope auth.Scope, p PartInfo) Select
 // (the 1:N write path, ADR-0009 §2), with an optional probed stream inventory.
 func addVersion(t *testing.T, st *store.Store, mediaID store.MediaID, fingerprint, versionLabel string, partOrdinal int, streams []store.MediaFileStream) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), fingerprint+".bin")
+	addVersionFile(t, st, mediaID, fingerprint+".mkv", fingerprint, versionLabel, partOrdinal, streams)
+}
+
+// addVersionFile is addVersion with the file name given, so a test controls
+// the container a Version's path names.
+func addVersionFile(t *testing.T, st *store.Store, mediaID store.MediaID, name, fingerprint, versionLabel string, partOrdinal int, streams []store.MediaFileStream) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), name)
 	if err := os.WriteFile(path, []byte("beamfall bytes"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -283,5 +290,68 @@ func TestInfoOmitsVersionsForOneVersion(t *testing.T) {
 	}
 	if resp.Versions != nil || resp.Decision != "direct-play" {
 		t.Fatalf("single Version = %s with versions %+v, want direct-play and no list", resp.Decision, resp.Versions)
+	}
+}
+
+// TestVersionJudgedByItsOwnFileFacts guards that a Version other than the one
+// the Media row describes is judged by its own container and video codec, not
+// the row's: a selected MP4 Version is not offered as direct play to an
+// MKV-only client, and an AV1 Version is not direct-played by a client without
+// AV1, even though the row says "mkv" and "hevc".
+func TestVersionJudgedByItsOwnFileFacts(t *testing.T) {
+	service, st, scope := capabilityTestService(t)
+	sdrHEVC := []store.MediaFileStream{
+		{Index: 0, Type: "video", Codec: "hevc", Profile: "Main 10"},
+		audioStream(1, "eac3", 6),
+	}
+	anchorPath := filepath.Join(t.TempDir(), "Night Harbor.mkv")
+	if err := os.WriteFile(anchorPath, []byte("beamfall bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	anchor, _, err := st.ImportMediaFile(context.Background(), store.ImportMediaFile{
+		LibraryID: "library-local", Path: anchorPath, Title: "Night Harbor",
+		Container: "mkv", Codec: "hevc", Class: store.MediaClassVideo,
+		ContentFingerprint: "fp-facts-mkv", DurationSecondsHint: 120,
+		VideoWidthHint: 1920, VideoHeightHint: 1080, Streams: sdrHEVC,
+	})
+	if err != nil {
+		t.Fatalf("ImportMediaFile: %v", err)
+	}
+	mediaID := anchor.ID
+	addVersionFile(t, st, mediaID, "Night Harbor - Remux.mp4", "fp-facts-mp4", "Remux", 0, sdrHEVC)
+	addVersionFile(t, st, mediaID, "Night Harbor - AV1.mkv", "fp-facts-av1", "AV1", 0, []store.MediaFileStream{
+		{Index: 0, Type: "video", Codec: "av1", Profile: "Main"},
+		audioStream(1, "eac3", 6),
+	})
+	mkvOnly := main10_1080p
+	mkvOnly.Containers = []string{"mkv"}
+	info := func(label string, profile CapabilityProfile) InfoResponse {
+		t.Helper()
+		resp, err := service.Info(context.Background(), scope, InfoRequest{
+			MediaID:           string(mediaID),
+			CapabilityProfile: profile,
+			SelectedVersion:   versionID(mediaID, label),
+		})
+		if err != nil {
+			t.Fatalf("Info(%q): %v", label, err)
+		}
+		for _, v := range resp.Versions {
+			if v.Selected != (v.Label == label) {
+				t.Fatalf("Info(%q) Versions = %+v, want only %q selected", label, resp.Versions, label)
+			}
+		}
+		return resp
+	}
+	if resp := info("", mkvOnly); resp.Decision != "direct-play" {
+		t.Fatalf("MKV default Version = %s (%s), want direct-play", resp.Decision, resp.Reason)
+	}
+	if resp := info("Remux", mkvOnly); resp.Decision == "direct-play" {
+		t.Fatalf("MP4 Version to an MKV-only client = direct-play, want it judged by its own container")
+	}
+	if resp := info("Remux", main10_1080p); resp.Decision != "direct-play" {
+		t.Fatalf("MP4 Version to an MP4 client = %s (%s), want direct-play", resp.Decision, resp.Reason)
+	}
+	if resp := info("AV1", main10_1080p); resp.Decision == "direct-play" {
+		t.Fatalf("AV1 Version to a client without AV1 = direct-play, want it judged by its own codec")
 	}
 }
