@@ -23,7 +23,7 @@ Every `/v1` route contract SHALL declare the credentials it accepts from the clo
 
 #### Scenario: Responses are not stored by caches
 
-- **WHEN** any `/v1` route answers
+- **WHEN** any `/v1` route answers, including a `HEAD` request served by a `GET` route
 - **THEN** the response carries `Cache-Control: no-store`
 
 #### Scenario: Browser client preflight

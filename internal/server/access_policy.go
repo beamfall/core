@@ -15,11 +15,12 @@ func (s *Server) requestAccessClass(r *http.Request, method string) (AccessClass
 	probe := r.Clone(r.Context())
 	probe.Method = method
 	_, registered := s.mux.Handler(probe)
-	_, pattern, ok := strings.Cut(registered, " ")
-	if !ok {
+	if !strings.Contains(registered, " ") {
 		return AccessClassUnclassified, false
 	}
-	class, ok := s.accessClasses[method+" "+pattern]
+	// Key on the matched registration, not the request method: HEAD is served
+	// by the GET registration and takes its policy.
+	class, ok := s.accessClasses[registered]
 	return class, ok
 }
 

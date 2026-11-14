@@ -80,6 +80,10 @@ func TestV1CatalogReadsAcceptDeviceSessions(t *testing.T) {
 		if got := rec.Header().Get("Cache-Control"); got != "no-store" {
 			t.Errorf("GET %s Cache-Control = %q, want no-store", path, got)
 		}
+		head := v1DeviceRequest(t, srv, http.MethodHead, path, "", "", authorizeManaged)
+		if got := head.Header().Get("Cache-Control"); head.Code != http.StatusOK || got != "no-store" {
+			t.Errorf("HEAD %s = %d, Cache-Control %q; want 200 and no-store", path, head.Code, got)
+		}
 	}
 	if rec := v1DeviceRequest(t, srv, http.MethodGet, "/v1/media/media-archive", "", "", authorizeManaged); rec.Code != http.StatusNotFound {
 		t.Errorf("managed device session GET hidden media = %d, want 404: %s", rec.Code, rec.Body.String())
@@ -233,20 +237,24 @@ func TestV1PreflightAllowsDeviceSessionHeaders(t *testing.T) {
 }
 
 // TestV1PlaybackInfoKeepsCaptionStreamIndex keeps the stream index of a muxed
-// subtitle track, which has no URL to fetch.
+// subtitle track, with or without a URL to fetch.
 func TestV1PlaybackInfoKeepsCaptionStreamIndex(t *testing.T) {
 	index := 3
 	out := v1PlaybackInfoFrom(playback.InfoResponse{CaptionTracks: []playback.CaptionTrack{
 		{ID: "muxed", Format: "pgs", StreamIndex: &index},
 		{ID: "sidecar", Format: "vtt", URL: "/api/media/subtitle/x"},
+		{ID: "muxed-text", Format: "vtt", URL: "/api/media/subtitle/y", StreamIndex: &index},
 	}})
-	if len(out.CaptionTracks) != 2 {
-		t.Fatalf("captionTracks = %+v, want 2", out.CaptionTracks)
+	if len(out.CaptionTracks) != 3 {
+		t.Fatalf("captionTracks = %+v, want 3", out.CaptionTracks)
 	}
 	if got := out.CaptionTracks[0].StreamIndex; got == nil || *got != 3 {
 		t.Errorf("muxed streamIndex = %v, want 3", got)
 	}
 	if out.CaptionTracks[1].URL == "" || out.CaptionTracks[1].StreamIndex != nil {
 		t.Errorf("sidecar track = %+v, want URL and no streamIndex", out.CaptionTracks[1])
+	}
+	if got := out.CaptionTracks[2]; got.URL == "" || got.StreamIndex == nil || *got.StreamIndex != 3 {
+		t.Errorf("muxed text track = %+v, want both URL and streamIndex", got)
 	}
 }
