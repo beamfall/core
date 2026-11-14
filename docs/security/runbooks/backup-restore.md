@@ -24,7 +24,8 @@ set.
 
 ## Restore
 
-1. Stop Beamfall. The command refuses to run while `<data-dir>/server.lock` exists.
+1. Stop Beamfall. The command refuses to run while a server holds the lock on
+   `<data-dir>/server.lock`; a leftover file from a stopped or crashed server does not block it.
 2. Restore the verified manifest:
 
    ```sh

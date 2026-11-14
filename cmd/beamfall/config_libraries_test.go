@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -156,11 +155,9 @@ func TestApplyConfigOfflineRejectsUnknownPluginWithoutHalfApplying(t *testing.T)
 
 func TestApplyConfigOfflineRefusesRunningServer(t *testing.T) {
 	dataDir := offlineConfigDataDir(t)
-	if err := os.WriteFile(filepath.Join(dataDir, "server.lock"), []byte("1"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	holdServerLockForTest(t, dataDir)
 	if _, err := applyOffline(t, dataDir, `{"version":1,"backgroundWorkers":2,"plugins":[]}`); err == nil {
-		t.Fatal("offline apply ran while server.lock was present")
+		t.Fatal("offline apply ran while the server lock was held")
 	}
 }
 

@@ -2,11 +2,9 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/beamfall/core/internal/config"
@@ -75,17 +73,6 @@ func tokenCreate(ctx context.Context, args []string, stdout io.Writer) error {
 		_, _ = fmt.Fprintf(stdout, "%s\n", fullToken)
 	}
 	return nil
-}
-
-func refuseServerLock(dataDir string) error {
-	_, err := os.Stat(filepath.Join(dataDir, "server.lock"))
-	if err == nil {
-		return errors.New("server appears to be running; stop the server before bootstrapping the first API token")
-	}
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	return err
 }
 
 func tokenList(ctx context.Context, args []string, stdout io.Writer) error {

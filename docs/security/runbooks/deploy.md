@@ -25,7 +25,7 @@ Stand up or update a Beamfall Core server instance.
    / `BEAMFALL_PUBLIC_METRICS=true` opt-in is the alternative and serves every caller with no
    credential.
 5. Optional, first install only: seed libraries **before** the first start (the server must be
-   stopped; the command refuses a live `server.lock`):
+   stopped; the command refuses while a running server holds `server.lock`):
    `beamfall apply-config --data-dir <data-dir> --file libraries.json` with
    `{"version":1,"backgroundWorkers":2,"plugins":[],"libraries":[{"title":"Films","plugin":"filmtv","roots":["/media/films"]}]}`.
    Libraries match by exact title plus plugin; missing ones are created, missing roots are added,
