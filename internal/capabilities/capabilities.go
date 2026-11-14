@@ -26,12 +26,6 @@ type Report struct {
 var ReleaseVersion = "development"
 var SourceOfferURL string
 
-// ReleaseCommit is the source revision stamped at link time
-// (-X .../capabilities.ReleaseCommit=<sha>). Builds without VCS metadata, such
-// as a container built from a source tree with no .git, rely on it; when unset
-// the Go build info's vcs.revision is used.
-var ReleaseCommit string
-
 // Current reports the build identity plus the *default* runtime capability state
 // (no operator Workflow overrides applied). Callers that hold the persisted
 // Console overrides (the server, and `beamfall capabilities` reading the store)
@@ -82,16 +76,7 @@ func (r Report) Validate() error {
 	return ValidateManifest(*r.CapabilityManifest)
 }
 
-// Commit reports the source revision this binary was built from, or
-// "development" when neither a link-time stamp nor VCS build info exists.
-func Commit() string {
-	return detectCommit()
-}
-
 func detectCommit() string {
-	if commit := strings.TrimSpace(ReleaseCommit); commit != "" {
-		return commit
-	}
 	if info, ok := debug.ReadBuildInfo(); ok {
 		for _, setting := range info.Settings {
 			if setting.Key == "vcs.revision" && setting.Value != "" {

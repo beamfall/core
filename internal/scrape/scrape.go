@@ -776,8 +776,7 @@ func (e *Engine) Credential(ref string) (string, error) {
 	if e.credentials == nil {
 		return "", fmt.Errorf("scrape: credential %q requested but no CredentialSource is configured", ref)
 	}
-	secret, err := e.credentials.Secret(ref)
-	return secret, classifyCredentialErr(ref, err)
+	return e.credentials.Secret(ref)
 }
 
 // CredentialAvailable reports whether ref currently resolves to a non-empty
@@ -817,7 +816,7 @@ func (e *Engine) authorizer(ctx context.Context, spec plugin.ScraperSpec) (func(
 	}
 	secret, err := e.credentials.Secret(spec.AuthRef)
 	if err != nil {
-		return nil, fmt.Errorf("scrape: resolving credential %q: %w", spec.AuthRef, classifyCredentialErr(spec.AuthRef, err))
+		return nil, fmt.Errorf("scrape: resolving credential %q: %w", spec.AuthRef, err)
 	}
 	style := spec.AuthStyle
 	if style == "" {

@@ -11,14 +11,16 @@ tags are rejected by release policy.
    bundle to `/boot/config/plugins/dockerMan/templates-user/my-Beamfall-Core.xml`.
 2. **Docker → Add Container**, pick the template, set the paths below, then **Apply**.
 3. Open `http://<unraid-ip>:8800/web/setup`. The one-time setup token is in the container log
-   (`docker logs Beamfall-Core 2>&1 | grep 'first-run setup:'`). The log URL names the listener
-   address; from another device use the server's LAN address with the same token.
+   (`docker logs Beamfall-Core 2>&1 | grep 'first-run setup'`). The tokened URL names the listener
+   address; a browser on the same network can instead open one of the token-free LAN URLs the
+   server prints beside it. In a bridge-networked container those are container-internal, so use
+   the Unraid host's own address with port 8800.
 
 ## Install from a local build (before a release digest exists)
 
 Build the image on the Unraid host from a source tree, then point the template at the local tag.
 The build context has no `.git`, so pass the version and commit explicitly; an unstamped build
-reports `development-unstamped`.
+reports version `development`.
 
 ```sh
 # From a machine with a checkout:

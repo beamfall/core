@@ -27,17 +27,8 @@ ARG TARGETARCH
 # `beamfall release build-catalog --manifest FILE`. Empty refuses every native
 # client as an unknown build; only the embedded web UI is known.
 ARG BEAMFALL_FIRST_PARTY_BUILDS=""
-# Build identity. The build context excludes .git, so Go cannot read VCS info:
-# pass --build-arg BEAMFALL_VERSION=<version> --build-arg BEAMFALL_COMMIT=$(git rev-parse HEAD).
-# An unstamped build reports version "development-unstamped" and commit "development".
-ARG BEAMFALL_VERSION=development-unstamped
-ARG BEAMFALL_COMMIT=
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-	go build -trimpath -ldflags="-s -w \
-		-X github.com/beamfall/core/internal/capabilities.ReleaseVersion=${BEAMFALL_VERSION} \
-		-X github.com/beamfall/core/internal/capabilities.ReleaseCommit=${BEAMFALL_COMMIT} \
-		-X github.com/beamfall/core/internal/capabilities.FirstPartyBuildManifest=${BEAMFALL_FIRST_PARTY_BUILDS}" \
-		-o /out/beamfall ./cmd/beamfall
+	go build -trimpath -ldflags="-s -w -X github.com/beamfall/core/internal/capabilities.FirstPartyBuildManifest=${BEAMFALL_FIRST_PARTY_BUILDS}" -o /out/beamfall ./cmd/beamfall
 
 FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8 AS runtime
 
@@ -82,11 +73,6 @@ RUN set -eux; \
 	rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /out/beamfall /usr/local/bin/beamfall
-
-ARG BEAMFALL_VERSION=development-unstamped
-ARG BEAMFALL_COMMIT=
-LABEL org.opencontainers.image.version="${BEAMFALL_VERSION}" \
-	org.opencontainers.image.revision="${BEAMFALL_COMMIT:-unstamped}"
 
 RUN set -eux; \
 	groupadd --system --gid 1000 beamfall; \

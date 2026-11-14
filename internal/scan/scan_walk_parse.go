@@ -2,6 +2,7 @@ package scan
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -124,7 +125,7 @@ func (s *scanWalkState) flushPendingParts() error {
 	}
 	if s.identifier != nil && s.libraryPluginID != "" {
 		if err := s.identifier.AutoIdentify(s.ctx, media.ID, s.libraryPluginID, first.imported.ContentFingerprint, first.parsed); err != nil {
-			s.reportAutoIdentifyError(first.imported.Path, media.ID, err)
+			slog.Warn("scan: auto-identify failed", "path", first.imported.Path, "media", string(media.ID), "error", err.Error())
 		}
 	}
 	for _, file := range files {

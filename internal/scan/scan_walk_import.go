@@ -242,7 +242,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 	}
 	if s.identifier != nil && s.libraryPluginID != "" {
 		if err := s.identifier.AutoIdentify(s.ctx, media.ID, s.libraryPluginID, fingerprint, parsed); err != nil {
-			s.reportAutoIdentifyError(path, media.ID, err)
+			slog.Warn("scan: auto-identify failed", "path", path, "media", string(media.ID), "error", err.Error())
 		}
 	}
 	if err := s.queueCompletion(path, media.ID, fingerprint, isImage); err != nil {
