@@ -16,7 +16,7 @@ import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
 import type { StringKey } from "@/strings";
 import { useEngagementEpoch } from "../actions";
-import { LibraryLetterRail, letterRailInitial } from "../components/LibraryLetterRail";
+import { LibraryLetterRail, letterRailOwner } from "../components/LibraryLetterRail";
 import { MediaItemCard } from "../components/MediaItemCard";
 import { RevealControls } from "../components/RevealControls";
 import {
@@ -303,9 +303,8 @@ function LibraryBrowse({
       const item = pagesRef.current.get(Math.floor(index / LIBRARY_BROWSE_PAGE))?.[
         index % LIBRARY_BROWSE_PAGE
       ];
-      const initial = item ? letterRailInitial(item.title) : null;
       const at =
-        letters.find((entry) => entry.letter === initial && entry.offset <= index) ??
+        (item && letterRailOwner(letters, item.title, index)) ??
         letters.findLast((entry) => entry.offset <= index) ??
         letters[0];
       setCurrentLetter(at.letter);

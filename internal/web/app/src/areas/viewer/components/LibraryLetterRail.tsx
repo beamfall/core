@@ -40,14 +40,25 @@ function viewportHeight(): number {
   return window.innerHeight;
 }
 
-/** The rail initial of a title, as the server derives it: an upper-cased first letter, else "#". */
-export function letterRailInitial(title: string): string {
+/**
+ * The rail letter that holds a title at or before `index`. The server keys a
+ * letter by upper-casing the title's first rune under Go's simple mapping,
+ * which JavaScript does not expose, so a title matches its letter exactly or
+ * case-insensitively rather than by re-deriving the key here.
+ */
+export function letterRailOwner(
+  letters: LibraryItemsLetter[],
+  title: string,
+  index: number,
+): LibraryItemsLetter | undefined {
   const first = [...title][0] ?? "";
-  if (!/^\p{L}$/u.test(first)) return LETTER_RAIL_OTHER;
-  // Go upper-cases one rune at a time; a letter whose full upper case is
-  // several characters ("ß" to "SS") stays as it is there, so here too.
-  const upper = first.toUpperCase();
-  return [...upper].length === 1 ? upper : first;
+  const started = letters.filter((entry) => entry.offset <= index);
+  if (!/^\p{L}$/u.test(first)) return started.find((entry) => entry.letter === LETTER_RAIL_OTHER);
+  const lower = first.toLowerCase();
+  return (
+    started.find((entry) => entry.letter === first) ??
+    started.find((entry) => entry.letter.toLowerCase() === lower)
+  );
 }
 
 /** The rail's letters: "#", A to Z, then any other initial the result holds. */
@@ -241,7 +252,10 @@ export function LibraryLetterRail({
           {t("libraryLetterTrigger")}
         </button>
         <Dialog open={sheetOpen} onOpenChange={setSheetOpen}>
-          <DialogContent finalFocus={() => !pickedRef.current}>
+          <DialogContent
+            className="flex max-h-[calc(100dvh-1rem)] flex-col"
+            finalFocus={() => !pickedRef.current}
+          >
             <DialogHeader>
               <DialogTitle>{t("libraryLetterRailLabel")}</DialogTitle>
             </DialogHeader>

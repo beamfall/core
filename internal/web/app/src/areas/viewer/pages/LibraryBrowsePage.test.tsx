@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { notifyEngagementChanged } from "../actions/engagementSync";
-import { letterRailInitial } from "../components/LibraryLetterRail";
+import { letterRailOwner } from "../components/LibraryLetterRail";
 import { fetchLibraryItems, type LibraryItemsRequest } from "../lib/libraryBrowse";
 import { LibraryBrowsePage } from "./LibraryBrowsePage";
 
@@ -389,14 +389,25 @@ describe("Library browse", () => {
     }
   });
 
-  it("derives a title's rail initial as the server does (CORE-1685)", () => {
-    expect(letterRailInitial("apple")).toBe("A");
-    expect(letterRailInitial("été")).toBe("É");
-    expect(letterRailInitial("3 days")).toBe("#");
-    expect(letterRailInitial("~tilde")).toBe("#");
-    // Go upper-cases rune by rune, so a letter with a multi-character upper case stays.
-    expect(letterRailInitial("ßalpha")).toBe("ß");
-    expect(letterRailInitial("")).toBe("#");
+  it("finds the rail letter that holds a title, under the server's rune casing (CORE-1685)", () => {
+    const letters = [
+      { letter: "#", offset: 0, count: 2 },
+      { letter: "A", offset: 2, count: 1 },
+      { letter: "ß", offset: 3, count: 1 },
+      { letter: "ẞ", offset: 4, count: 1 },
+      { letter: "ᾈ", offset: 5, count: 1 },
+    ];
+    const owner = (title: string, index: number) => letterRailOwner(letters, title, index)?.letter;
+    expect(owner("3 days", 0)).toBe("#");
+    expect(owner("~tilde", 1)).toBe("#");
+    expect(owner("apple", 2)).toBe("A");
+    // Go keeps "ß" and "ẞ" apart and maps "ᾀ" to "ᾈ"; JavaScript's full
+    // upper case would give "SS" and "ἈΙ".
+    expect(owner("ßalpha", 3)).toBe("ß");
+    expect(owner("ẞbeta", 4)).toBe("ẞ");
+    expect(owner("ᾀgamma", 5)).toBe("ᾈ");
+    // A letter that starts below the index does not hold it yet.
+    expect(owner("apple", 1)).toBeUndefined();
   });
 
   it("offers no letter rail on a short list (CORE-1685)", async () => {

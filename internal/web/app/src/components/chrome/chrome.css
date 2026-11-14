@@ -1416,8 +1416,9 @@
   grid-template-columns: repeat(6, 36px);
   justify-content: center;
   gap: 6px;
-  /* A result with many initials scrolls inside the sheet, not off screen. */
-  max-height: calc(100dvh - 10rem);
+  /* A result with many initials scrolls inside the dialog, which the
+     sheet's DialogContent holds to the viewport (LibraryLetterRail). */
+  min-height: 0;
   overflow-y: auto;
   margin: 0;
   padding: 2px;
