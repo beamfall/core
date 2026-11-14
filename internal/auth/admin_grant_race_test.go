@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -128,5 +129,64 @@ func TestChangeSignInSecurityModeLosesRaceWithOwnershipTransfer(t *testing.T) {
 	}
 	if audit := signInSecurityAudit(t, st); len(audit) != 0 {
 		t.Fatalf("lost race audited as a change: %+v", audit)
+	}
+}
+
+// TestBeginAdminSessionLostRaceNotesRefusal (CORE-1087): an admin sign-in
+// that loses the ownership-transfer race after the password check is a
+// refused sign-in, so it must note the same decisive refusal as a non-owner.
+// The note is what internal/server turns into the `auth refused` record and
+// the beamfall_auth_refusals_total counter; it carries only closed-vocabulary
+// fields, never the password or session.
+// feature:admin-session
+func TestBeginAdminSessionLostRaceNotesRefusal(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	now := time.Unix(2_650_000, 0).UTC()
+	const password = "right-password-core-1087"
+	if err := st.SetAdminPassword(ctx, password, now); err != nil {
+		t.Fatal(err)
+	}
+	service := NewServiceWithClock(st, func() time.Time { return now })
+	scope, err := service.ScopeFromRequest(ctx, authenticatedRequest("session-manager", "device-mac", "dev-manager-secret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetProfileOwner(ctx, scope.ProfileID); err != nil {
+		t.Fatal(err)
+	}
+	other, err := st.CreateProfile(ctx, "Other Owner", store.ProfileAdult,
+		store.LibraryFilter{Revealed: true, AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Control: a won race notes nothing, so the note below is the lost race's.
+	okCtx := WithRefusalNote(ctx)
+	if _, err := service.BeginAdminSession(okCtx, scope, password); err != nil {
+		t.Fatalf("control BeginAdminSession: %v", err)
+	}
+	if refusal, ok := RefusalFromContext(okCtx); ok {
+		t.Fatalf("granted admin sign-in noted a refusal: %+v", refusal)
+	}
+
+	service.beforeAdminGrant = func() {
+		if err := st.SetProfileOwner(ctx, other.ID); err != nil {
+			t.Errorf("transfer: %v", err)
+		}
+	}
+	noteCtx := WithRefusalNote(ctx)
+	if _, err := service.BeginAdminSession(noteCtx, scope, password); err != ErrAdminPassword {
+		t.Fatalf("BeginAdminSession err = %v, want ErrAdminPassword after losing the race", err)
+	}
+	refusal, ok := RefusalFromContext(noteCtx)
+	want := Refusal{Operation: refusalOperationAdminSession, Reason: RefusalAdminPasswordRejected, Decisive: true}
+	if !ok || refusal != want {
+		t.Fatalf("lost-race refusal = (%+v, %v), want (%+v, true)", refusal, ok, want)
+	}
+	for _, field := range []string{refusal.Operation, string(refusal.Reason)} {
+		if strings.Contains(field, password) || strings.Contains(field, string(scope.SessionID)) {
+			t.Fatalf("refusal note carries secret material: %+v", refusal)
+		}
 	}
 }
