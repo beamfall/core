@@ -2,28 +2,31 @@ package scan
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
+	"github.com/beamfall/core/internal/jobs"
 	"github.com/beamfall/core/internal/store"
 )
 
 // LocalArtworkImporter imports curated sidecar image files into Media artwork
 // slots and releases a slot's local lock when its sidecar disappears. The
 // artwork service implements it; scan discovers it on the ImageDeriver it is
-// handed, so composition needs no new wiring.
+// handed, so composition needs no new wiring. root is the absolute library
+// root the sidecar must be read through.
 type LocalArtworkImporter interface {
-	ImportLocalArtwork(ctx context.Context, id store.MediaID, slot, path string) (bool, error)
+	ImportLocalArtwork(ctx context.Context, id store.MediaID, slot, root, path string) (bool, error)
 	ReleaseLocalArtwork(ctx context.Context, id store.MediaID, slot string) error
 }
 
 // ContainerArtworkImporter is the Entity counterpart of LocalArtworkImporter,
 // used for ordered container artwork.
 type ContainerArtworkImporter interface {
-	ImportEntityLocalArtwork(ctx context.Context, id store.EntityID, slot, path string) (bool, error)
+	ImportEntityLocalArtwork(ctx context.Context, id store.EntityID, slot, root, path string) (bool, error)
 	ReleaseEntityLocalArtwork(ctx context.Context, id store.EntityID, slot string) error
 }
 
@@ -229,18 +232,27 @@ func (d *sidecarDiscovery) containerArtworkIn(dir string, ordinal int) string {
 }
 
 // containerArtChoice is the per-scan container sidecar decision for one Entity.
+// An empty path asks for a release, which the importer performs only once the
+// sidecar its lock recorded is gone.
 type containerArtChoice struct {
 	path string
-	// complete is true when some Media of the Entity had both its folder and
-	// the parent folder inside the scanned root, so a missing sidecar really
-	// is missing rather than outside the scan.
-	complete bool
 }
 
 // stableSidecar reports whether a sidecar is settled (not still being written).
 func stableSidecar(path string) bool {
 	info, err := os.Lstat(path)
 	return err == nil && info.Mode().IsRegular() && now().Sub(info.ModTime()) >= stabilityWindow
+}
+
+// importPaths returns the absolute library root and sidecar path an importer
+// reads through.
+func (s *scanWalkState) importPaths(sidecar string) (string, string, error) {
+	root, err := filepath.Abs(s.req.Root)
+	if err != nil {
+		return "", "", err
+	}
+	abs, err := filepath.Abs(sidecar)
+	return root, abs, err
 }
 
 // insideRoot reports whether dir is the scan root or below it.
@@ -251,8 +263,9 @@ func (s *scanWalkState) insideRoot(dir string) bool {
 
 // applyLocalArtwork imports or releases the local artwork of one completed
 // non-image Media. It runs on every scan, fast path included, so an edited
-// sidecar next to an unchanged media file still re-imports. Failures are
-// logged and never fail the scan.
+// sidecar next to an unchanged media file still re-imports. A slot with no
+// candidate asks for a release, which keeps the lock while its recorded
+// sidecar still exists. Failures are logged and never fail the scan.
 func (s *scanWalkState) applyLocalArtwork(mediaPath string, mediaID store.MediaID) {
 	if s.localArtwork == nil || imageClassForPath(mediaPath) {
 		return
@@ -269,9 +282,9 @@ func (s *scanWalkState) applyLocalArtwork(mediaPath string, mediaID store.MediaI
 		if !stableSidecar(sidecar) {
 			continue
 		}
-		abs, err := filepath.Abs(sidecar)
+		root, abs, err := s.importPaths(sidecar)
 		if err == nil {
-			_, err = s.localArtwork.ImportLocalArtwork(s.ctx, mediaID, slot, abs)
+			_, err = s.localArtwork.ImportLocalArtwork(s.ctx, mediaID, slot, root, abs)
 		}
 		if err != nil {
 			slog.Warn("importing local artwork failed", "media", mediaID, "slot", slot, "error", err.Error())
@@ -305,7 +318,6 @@ func (s *scanWalkState) noteContainerArtwork(mediaPath string, mediaID store.Med
 	parent := filepath.Dir(dir)
 	if parent != dir && s.insideRoot(parent) {
 		dirs = append(dirs, parent)
-		choice.complete = true
 	}
 	if choice.path != "" {
 		return
@@ -318,25 +330,36 @@ func (s *scanWalkState) noteContainerArtwork(mediaPath string, mediaID store.Med
 	}
 }
 
-// applyContainerArtwork writes the per-scan container sidecar decisions.
+// applyContainerArtwork writes the container sidecar decisions gathered so
+// far and clears them. It runs after the walk and before a job yields, so a
+// resumed scan does not lose the decisions of Media it will skip.
 func (s *scanWalkState) applyContainerArtwork() {
 	for entityID, choice := range s.containerArt {
-		switch {
-		case choice.path != "":
-			if !stableSidecar(choice.path) {
-				continue
-			}
-			abs, err := filepath.Abs(choice.path)
-			if err == nil {
-				_, err = s.containerArtwork.ImportEntityLocalArtwork(s.ctx, entityID, "poster", abs)
-			}
-			if err != nil {
-				slog.Warn("importing container artwork failed", "entity", entityID, "error", err.Error())
-			}
-		case choice.complete:
+		if choice.path == "" {
 			if err := s.containerArtwork.ReleaseEntityLocalArtwork(s.ctx, entityID, "poster"); err != nil {
 				slog.Warn("releasing container artwork failed", "entity", entityID, "error", err.Error())
 			}
+			continue
+		}
+		if !stableSidecar(choice.path) {
+			continue
+		}
+		root, abs, err := s.importPaths(choice.path)
+		if err == nil {
+			_, err = s.containerArtwork.ImportEntityLocalArtwork(s.ctx, entityID, "poster", root, abs)
+		}
+		if err != nil {
+			slog.Warn("importing container artwork failed", "entity", entityID, "error", err.Error())
 		}
 	}
+	clear(s.containerArt)
+}
+
+// flushContainerArtworkOnYield applies the container decisions gathered so far
+// when the job yields, then returns err unchanged.
+func (s *scanWalkState) flushContainerArtworkOnYield(err error) error {
+	if errors.Is(err, jobs.ErrYielded) {
+		s.applyContainerArtwork()
+	}
+	return err
 }

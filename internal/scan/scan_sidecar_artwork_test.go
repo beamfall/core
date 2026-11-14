@@ -275,3 +275,27 @@ func TestLocalArtworkVocabularyTargetsKnownSlots(t *testing.T) {
 		t.Fatalf("media slots = %v, want poster,backdrop,thumb", slots)
 	}
 }
+
+func TestLocalArtworkContainerPosterReleasesAtLibraryRoot(t *testing.T) {
+	root := t.TempDir()
+	poster := writeScanFile(t, root, "season01-poster.jpg", jpegBytes("container one"))
+	writeScanFile(t, root, "Show S01E01.mkv", []byte("video one"))
+	st := storetest.Open(t)
+	svc := artwork.NewService(st, &copyingArtworkTools{}, t.TempDir())
+	identifier := &containerIdentifier{folder: filepath.Base(root), entityID: "entity-container-1", ordinal: 1, st: st}
+
+	scanWithArtwork(t, st, root, identifier, svc)
+	if !svc.IsEntityArtworkLocked("entity-container-1", artwork.SlotPoster) {
+		t.Fatal("root-level container poster was not imported and locked")
+	}
+	if err := os.Remove(poster); err != nil {
+		t.Fatal(err)
+	}
+	scanWithArtwork(t, st, root, identifier, svc)
+	if svc.IsEntityArtworkLocked("entity-container-1", artwork.SlotPoster) {
+		t.Fatal("root-level container lock survived its sidecar's removal")
+	}
+	if got := slotBytes(t, svc.EntityPosterPath("entity-container-1")); got != string(jpegBytes("container one")) {
+		t.Fatalf("container poster after removal = %q, want art kept", got)
+	}
+}

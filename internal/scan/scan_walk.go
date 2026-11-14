@@ -122,14 +122,14 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 		})
 	}
 	if err != nil {
-		return Result{}, err
+		return Result{}, state.flushContainerArtworkOnYield(err)
 	}
 	if err := state.flushPendingParts(); err != nil {
-		return Result{}, err
+		return Result{}, state.flushContainerArtworkOnYield(err)
 	}
 	for len(state.pendingCompletions) > 0 {
 		if err := state.completeFirst(); err != nil {
-			return Result{}, err
+			return Result{}, state.flushContainerArtworkOnYield(err)
 		}
 	}
 	state.applyContainerArtwork()

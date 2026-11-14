@@ -1079,11 +1079,15 @@ func (s *Service) ImportCandidateArtwork(ctx context.Context, id store.MediaID, 
 // the write path identify's entity hydration lands EntityMap ArtworkPath
 // images through. Same normalization and derivative invalidation as
 // ImportPoster. A poster locked by local artwork is refused with a
-// *SlotLockedError.
+// *SlotLockedError, and an Entity of a Sealed or Encrypted Library (or one
+// whose Library cannot be resolved while either gate is set) gets nothing.
 //
 // The imported poster is the Entity's own: it replaces an inherited copy and
 // clears the inherited mark, after which the sweep leaves it alone.
 func (s *Service) ImportEntityPoster(ctx context.Context, id store.EntityID, data []byte) error {
+	if s.entityProtected(ctx, id) {
+		return nil
+	}
 	s.entityPosterMu.Lock()
 	defer s.entityPosterMu.Unlock()
 	dst := s.EntityPosterPath(id)

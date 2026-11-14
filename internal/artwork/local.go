@@ -107,20 +107,24 @@ func (s *Service) ImportManualArtwork(ctx context.Context, id store.MediaID, slo
 // an unchanged sidecar (same path, size and modification time as the lock
 // marker, with the slot file still present) is a no-op. Sealed and Encrypted
 // Libraries import nothing and get no marker (ADR-0045). The sidecar must be
-// an absolute path to a regular file (a symlink is refused), within the size
-// cap, and its bytes must be a JPEG, PNG or WebP image.
-func (s *Service) ImportLocalArtwork(ctx context.Context, id store.MediaID, slot, path string) (bool, error) {
+// an absolute path inside the absolute library root, it is opened through
+// that root so no symlink can lead outside it, the file itself must be a
+// regular file (a symlink is refused) within the size cap, and its bytes must
+// be a JPEG, PNG or WebP image.
+func (s *Service) ImportLocalArtwork(ctx context.Context, id store.MediaID, slot, root, path string) (bool, error) {
 	if !ValidSlot(slot) {
 		return false, fmt.Errorf("unknown artwork slot %q", slot)
 	}
 	if s.isSealed(ctx, id) || s.isEncrypted(ctx, id) {
 		return false, nil
 	}
-	return s.importLocal(ctx, s.ArtworkPath(id, slot), string(id), slot, path)
+	return s.importLocal(ctx, s.ArtworkPath(id, slot), string(id), slot, root, path)
 }
 
-// ReleaseLocalArtwork removes a Media slot's local lock after its sidecar
-// disappeared. The artwork itself stays; later scrapes may replace it again.
+// ReleaseLocalArtwork removes a Media slot's local lock once the sidecar it
+// recorded is gone. A lock whose sidecar still exists is kept, so a stale
+// caller cannot unlock artwork a newer import just locked. The artwork itself
+// stays; later scrapes may replace it again.
 func (s *Service) ReleaseLocalArtwork(ctx context.Context, id store.MediaID, slot string) error {
 	if !ValidSlot(slot) {
 		return fmt.Errorf("unknown artwork slot %q", slot)
@@ -131,17 +135,17 @@ func (s *Service) ReleaseLocalArtwork(ctx context.Context, id store.MediaID, slo
 // ImportEntityLocalArtwork is ImportLocalArtwork for an Entity slot, used for
 // ordered container artwork. The Entity's Library gates it the same way and a
 // lookup failure fails closed.
-func (s *Service) ImportEntityLocalArtwork(ctx context.Context, id store.EntityID, slot, path string) (bool, error) {
+func (s *Service) ImportEntityLocalArtwork(ctx context.Context, id store.EntityID, slot, root, path string) (bool, error) {
 	if !ValidSlot(slot) {
 		return false, fmt.Errorf("unknown artwork slot %q", slot)
 	}
 	if s.entityProtected(ctx, id) {
 		return false, nil
 	}
-	return s.importLocal(ctx, s.EntityArtworkPath(id, slot), string(id), slot, path)
+	return s.importLocal(ctx, s.EntityArtworkPath(id, slot), string(id), slot, root, path)
 }
 
-// ReleaseEntityLocalArtwork removes an Entity slot's local lock and keeps the art.
+// ReleaseEntityLocalArtwork is ReleaseLocalArtwork for an Entity slot.
 func (s *Service) ReleaseEntityLocalArtwork(ctx context.Context, id store.EntityID, slot string) error {
 	if !ValidSlot(slot) {
 		return fmt.Errorf("unknown artwork slot %q", slot)
@@ -162,11 +166,20 @@ func (s *Service) entityProtected(ctx context.Context, id store.EntityID) bool {
 	return (s.sealed != nil && s.sealed(entity.LibraryID)) || (s.encrypted != nil && s.encrypted(entity.LibraryID))
 }
 
-func (s *Service) importLocal(ctx context.Context, dst, owner, slot, src string) (bool, error) {
-	if !filepath.IsAbs(src) {
-		return false, fmt.Errorf("local artwork path %q is not absolute", src)
+func (s *Service) importLocal(ctx context.Context, dst, owner, slot, root, src string) (bool, error) {
+	if !filepath.IsAbs(root) || !filepath.IsAbs(src) {
+		return false, fmt.Errorf("local artwork path %q or root %q is not absolute", src, root)
 	}
-	info, err := os.Lstat(src)
+	rel, err := filepath.Rel(root, src)
+	if err != nil || !filepath.IsLocal(rel) {
+		return false, fmt.Errorf("local artwork %q is outside the library root", src)
+	}
+	libraryRoot, err := os.OpenRoot(root)
+	if err != nil {
+		return false, err
+	}
+	defer libraryRoot.Close()
+	info, err := libraryRoot.Lstat(rel)
 	if err != nil {
 		return false, err
 	}
@@ -182,27 +195,44 @@ func (s *Service) importLocal(ctx context.Context, dst, owner, slot, src string)
 	}
 	defer unlock()
 	want := slotLock{Source: SourceLocal, Path: src, Size: info.Size(), ModTimeNS: info.ModTime().UnixNano()}
-	if current, ok := readSlotLock(dst); ok && current == want && nonEmptyRegularFile(dst) && !regularFileExists(generatedMarkerPath(dst)) {
+	current, hadLock := readSlotLock(dst)
+	if hadLock && current == want && nonEmptyRegularFile(dst) && !regularFileExists(generatedMarkerPath(dst)) {
 		return false, nil
 	}
-	data, err := readLocalImage(src, info)
+	data, err := readLocalImage(libraryRoot, rel, src, info)
 	if err != nil {
 		return false, err
 	}
+	// Lock before publishing: a pending marker (no size or time, so it never
+	// matches a sidecar) protects the slot if the import is interrupted, and
+	// the next rescan retries it.
+	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+		return false, err
+	}
+	if err := writeSlotLock(dst, slotLock{Source: SourceLocal, Path: src}); err != nil {
+		return false, err
+	}
 	if err := s.importArtwork(ctx, dst, owner, slot, data); err != nil {
+		if !hadLock {
+			_ = os.Remove(lockMarkerPath(dst))
+		}
 		return false, err
 	}
 	if err := os.Remove(generatedMarkerPath(dst)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return false, err
 	}
-	marker, err := json.Marshal(want)
-	if err != nil {
-		return false, err
-	}
-	if err := writeAtomicFile(lockMarkerPath(dst), marker, nil); err != nil {
+	if err := writeSlotLock(dst, want); err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+func writeSlotLock(dst string, lock slotLock) error {
+	marker, err := json.Marshal(lock)
+	if err != nil {
+		return err
+	}
+	return writeAtomicFile(lockMarkerPath(dst), marker, nil)
 }
 
 func (s *Service) releaseLocal(ctx context.Context, dst string) error {
@@ -215,17 +245,22 @@ func (s *Service) releaseLocal(ctx context.Context, dst string) error {
 	if !ok || current.Source != SourceLocal {
 		return nil
 	}
+	if current.Path != "" {
+		if info, err := os.Lstat(current.Path); err == nil && info.Mode().IsRegular() {
+			return nil
+		}
+	}
 	if err := os.Remove(lockMarkerPath(dst)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	return nil
 }
 
-// readLocalImage reads a sidecar image without following a symlink swapped in
-// after the Lstat: the opened file must be the same file the Lstat saw.
-func readLocalImage(src string, lstat os.FileInfo) ([]byte, error) {
-	// #nosec G304 -- src is a regular file under a scanned library root, re-checked below.
-	file, err := os.Open(src)
+// readLocalImage reads a sidecar through the library root, so no path
+// component can resolve outside it, and checks that the opened file is the
+// regular file the Lstat saw rather than one swapped in afterwards.
+func readLocalImage(libraryRoot *os.Root, rel, src string, lstat os.FileInfo) ([]byte, error) {
+	file, err := libraryRoot.Open(rel)
 	if err != nil {
 		return nil, err
 	}
