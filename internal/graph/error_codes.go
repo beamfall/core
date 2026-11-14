@@ -158,6 +158,7 @@ var clientErrorCodes = map[string]ErrorCode{
 	"a grant cannot bind both a Profile and all Libraries":     ErrorCodeInvalid,
 	"display name is ambiguous":                                ErrorCodeInvalid,
 	"importer does not support the requested data category":    ErrorCodeInvalid,
+	"libraryIcon cannot be combined with other console config": ErrorCodeInvalid,
 	"library has no roots":                                     ErrorCodeInvalid,
 	"library is not flagged encrypted":                         ErrorCodeInvalid,
 	"media does not belong to the subscription library":        ErrorCodeInvalid,
