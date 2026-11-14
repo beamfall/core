@@ -1282,6 +1282,12 @@ scope_matches() {
       contract:contracts/*|contract:internal/conformance/*|contract:internal/graph/*|contract:tools/wire-contract/*) return 0 ;;
       contract:Makefile|contract:testing/release-gates/gate-commands.tsv|contract:script/crossrepo-conformance.sh|contract:script/crossrepo-conformance_test.sh|contract:script/crossrepo-conformance_pin_test.sh|contract:script/crossrepo-conformance_interrupt_test.py) return 0 ;;
       contract:tools/gate/gate.sh|contract:tools/gate/gate_scope_test.sh) return 0 ;;
+      # CORE-0947: the tone-map conformance binary is built from internal/ffmpeg
+      # alone (gate_scope_test.sh proves its module closure), so only these
+      # inputs can change its verdict. Dispatch itself (run_docker_step) is
+      # covered by gate_scope_test.sh, so gate.sh edits stay gateable without
+      # Docker.
+      tonemap:internal/ffmpeg/*|tonemap:go.mod|tonemap:go.sum|tonemap:tools/gate/ffmpeg-tonemap-conforming.sh) return 0 ;;
     esac
   done <<<"$paths"
   return 1
@@ -1295,6 +1301,51 @@ run_scoped_step() {
   else
     gate_metric "$name" skip 0 0 "scope:$scope"
     echo "SKIP $name elapsed_s=0 (no $scope changes)"
+  fi
+}
+
+# CORE-0947: skip contract for steps that need a reachable Docker daemon. With
+# a daemon the step always runs. Without one (a Linux gate host with no Docker,
+# say) it SKIPs only when the diff provably cannot reach it; a change inside its
+# scope, an unprovable diff range or release mode still runs the step, which
+# then fails closed naming the missing daemon. The skip is recorded as a scope
+# skip, so gate_metric refuses it in release mode.
+docker_daemon_available() {
+  command -v docker >/dev/null 2>&1 || return 1
+  timeout 30 docker info >/dev/null 2>&1
+}
+
+# CORE-0947: fail within seconds, at the start of the gate and in preflight,
+# when the tail tone-map step would need a Docker daemon that is not there.
+tonemap_docker_precondition() {
+  if docker_daemon_available; then
+    echo "tone-map Docker precondition: daemon reachable; the pinned FFmpeg tone-map step will run"
+    return 0
+  fi
+  if ! scope_matches tonemap; then
+    echo "tone-map Docker precondition: no Docker daemon, but this change cannot reach the tone-map inputs; the step will SKIP"
+    return 0
+  fi
+  cat >&2 <<'MSG'
+tone-map Docker precondition: no reachable Docker daemon, and this run needs the
+pinned FFmpeg tone-map conformance step (the change touches its inputs, the diff
+range is unprovable, or this is a release gate). The step runs the pinned
+bookworm FFmpeg in a container (internal/ffmpeg/ffmpeg.lock).
+Fix: start a Docker daemon and rerun. macOS with colima: `colima start`, then
+`docker context use colima` or export DOCKER_HOST=unix://$HOME/.colima/default/docker.sock.
+Linux: start dockerd (or gate this change on a host that has one).
+MSG
+  return 1
+}
+
+run_docker_step() {
+  local name="$1" scope="$2"
+  shift 2
+  if docker_daemon_available || scope_matches "$scope"; then
+    run_step "$name" "$@"
+  else
+    gate_metric "$name" skip 0 0 "scope:$scope:no-docker-daemon"
+    echo "SKIP $name elapsed_s=0 (no Docker daemon and no $scope changes; run on a Docker host to exercise it)"
   fi
 }
 
@@ -1349,6 +1400,7 @@ run_gate_preflight_steps() {
   preflight_step "release workflow pins check" make release-workflow-pins-check
   preflight_step "contract registry check" python3 script/check-contract-registry.py
   preflight_step "quarantine manifest" script/check-quarantine.sh
+  preflight_step "tone-map Docker precondition" tonemap_docker_precondition
   preflight_step "gate fixture guard selftest" python3 script/gate_fixture_guard_test.py
   preflight_step "API docs drift selftest" python3 script/check_api_docs_test.py
   preflight_step "API docs drift" python3 script/check-api-docs.py
@@ -1443,6 +1495,7 @@ fi
 # expiresAt (unbounded quarantine is prohibited); also fails if entry count
 # exceeds the hard cap. Runs first so a stale quarantine is caught before tests.
 run_step "quarantine manifest" script/check-quarantine.sh
+run_step "tone-map Docker precondition" tonemap_docker_precondition
 run_step "gate fixture guard selftest" python3 script/gate_fixture_guard_test.py
 run_step "API docs drift selftest" python3 script/check_api_docs_test.py
 run_step "API docs drift" python3 script/check-api-docs.py
@@ -1510,7 +1563,7 @@ run_step "go test + line-coverage ratchet" go run ./cmd/covratchet -floor testin
 # Real-encoder wall-clock SLOs run only after mandatory parallel work drains;
 # coverage still exercises the deterministic budget classification above.
 run_step "playback transcode latency budgets" env BEAMFALL_PERF=1 BEAMFALL_PERF_LOAD_WORKERS=1 GOMAXPROCS=2 go test ./internal/playback -run '^Test(TranscodeLatencyBudgetsOnReferenceClip|InjectedPlaybackLatencyRegressionReds)$' -v -count=1 -timeout 45s
-run_step "pinned FFmpeg tone-map conformance" make ffmpeg-tonemap-conforming
+run_docker_step "pinned FFmpeg tone-map conformance" tonemap make ffmpeg-tonemap-conforming
 
 # The script-scoped orchestration suites are process-heavy. Keep them in the
 # serial tail: overlapping roadmap fixtures with race-short previously made
