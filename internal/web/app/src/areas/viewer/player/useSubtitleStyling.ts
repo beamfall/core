@@ -1,14 +1,19 @@
-import type Hls from "hls.js";
+import Hls from "hls.js";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { clampSync, readSync, SUBTITLE_OFFSET_LIMIT, writeSync } from "./playbackSync";
 
 // Subtitle styling + sync ("where supported", ADR-0007 transport spec), ported
 // from applySubtitleStyling / applySubtitleSync / subtitleStylingAvailable /
 // subtitleSyncSupported (app.js). Styling rides a CSS custom property
 // (--bf-subtitle-size-scale) plus a background class on the stage (the ::cue
 // rules live in player-deferred.css). Sync shifts native TextTrack cue times,
-// anchored against each cue's authored time so repeated nudges stay exact;
-// hls.js renders its own cue DOM, so sync is unsupported there and degrades
-// honestly. The styling controls only surface once a real subtitle track exists.
+// anchored against each cue's authored time so repeated nudges stay exact.
+// hls.js renders through native TextTracks by default (renderTextTracksNatively)
+// and appends cues as each subtitle fragment arrives, so on that route the
+// offset is re-applied after every appended fragment (CORE-1671); only a
+// non-native hls.js renderer degrades honestly. The offset persists per Profile
+// and Media (playbackSync.ts). The styling controls only surface once a real
+// subtitle track exists.
 
 export type SubtitleBackground = "none" | "dark" | "solid";
 
@@ -22,21 +27,28 @@ export function useSubtitleStyling({
   videoRef,
   hlsRef,
   tracksVersion,
+  profileID = "",
+  mediaID = "",
 }: {
   stageRef: React.RefObject<HTMLElement | null>;
   videoRef: React.RefObject<HTMLVideoElement | null>;
   hlsRef: React.RefObject<Hls | null>;
   /** Bumped by usePlayer when the live track set changes — re-checks support. */
   tracksVersion: number;
+  /** Keys the persisted offset; empty leaves it unpersisted. */
+  profileID?: string;
+  mediaID?: string;
 }) {
   const [sizeScale, setSizeScale] = useState(1);
   const [background, setBackground] = useState<SubtitleBackground>("dark");
-  const [syncOffset, setSyncOffset] = useState(0);
+  const [syncOffset, setSyncOffset] = useState(() => readSync(profileID, mediaID).subtitleOffset);
   // Whether any subtitle track exists (styling) / a native one exists (sync).
   const [stylingAvailable, setStylingAvailable] = useState(false);
   const [syncSupported, setSyncSupported] = useState(false);
-  const syncOffsetRef = useRef(0);
+  const syncOffsetRef = useRef(syncOffset);
   syncOffsetRef.current = syncOffset;
+  const keyRef = useRef({ profileID, mediaID });
+  keyRef.current = { profileID, mediaID };
 
   // Apply size + background to the stage element whenever they change.
   useEffect(() => {
@@ -66,6 +78,15 @@ export function useSubtitleStyling({
     }
   }, [videoRef]);
 
+  // A different item (or Profile) brings its own persisted offset.
+  useEffect(() => {
+    const stored = readSync(profileID, mediaID).subtitleOffset;
+    if (stored === syncOffsetRef.current) return;
+    syncOffsetRef.current = stored;
+    setSyncOffset(stored);
+    applySync();
+  }, [profileID, mediaID, applySync]);
+
   // Re-check availability and re-apply sync whenever the live track set changes.
   useEffect(() => {
     const video = videoRef.current;
@@ -73,33 +94,69 @@ export function useSubtitleStyling({
     const nativeCount = video && video.textTracks ? video.textTracks.length : 0;
     const hlsCount = hls && Array.isArray(hls.subtitleTracks) ? hls.subtitleTracks.length : 0;
     setStylingAvailable(nativeCount > 0 || hlsCount > 0);
-    // Native cue retiming works on TextTracks; hls.js owns its own rendering.
-    setSyncSupported(!hls && nativeCount > 0);
+    // Cue retiming works on native TextTracks, which hls.js fills unless it was
+    // configured to render its own cue DOM.
+    const hlsRendersNatively = !hls || hls.config?.renderTextTracksNatively !== false;
+    setSyncSupported(nativeCount > 0 && hlsRendersNatively);
     if (syncOffsetRef.current) {
       applySync();
     }
   }, [videoRef, hlsRef, tracksVersion, applySync]);
 
-  const nudgeSync = useCallback(
-    (delta: number) => {
-      setSyncOffset((prev) => {
-        const next = Math.round((prev + delta) * 10) / 10;
-        syncOffsetRef.current = next;
-        return next;
-      });
-      // applySync reads the ref, which we just updated synchronously.
+  // Cues keep arriving after the track set settles: hls.js appends each
+  // subtitle fragment's cues (and in-band captions) as it buffers, and a
+  // sidecar <track> loads its file asynchronously. Re-apply after each so new
+  // cues pick up the offset; anchored cues are left exactly where they are.
+  useEffect(() => {
+    const video = videoRef.current;
+    const hls = hlsRef.current;
+    const reapply = () => {
+      if (syncOffsetRef.current) applySync();
+    };
+    // <track> "load" does not bubble, so listen in the capture phase.
+    video?.addEventListener("load", reapply, true);
+    const hlsEvents = [
+      Hls.Events?.SUBTITLE_FRAG_PROCESSED,
+      Hls.Events?.FRAG_PARSING_USERDATA,
+      Hls.Events?.SUBTITLE_TRACK_SWITCH,
+    ].filter((name): name is NonNullable<typeof name> => Boolean(name));
+    if (hls && typeof hls.on === "function") {
+      for (const name of hlsEvents) hls.on(name, reapply);
+    }
+    return () => {
+      video?.removeEventListener("load", reapply, true);
+      if (hls && typeof hls.off === "function") {
+        for (const name of hlsEvents) hls.off(name, reapply);
+      }
+    };
+  }, [videoRef, hlsRef, tracksVersion, applySync]);
+
+  const commitOffset = useCallback(
+    (next: number) => {
+      syncOffsetRef.current = next;
+      setSyncOffset(next);
+      writeSync(keyRef.current.profileID, keyRef.current.mediaID, { subtitleOffset: next });
       applySync();
     },
     [applySync],
   );
 
+  const nudgeSync = useCallback(
+    (delta: number) => {
+      commitOffset(
+        clampSync(syncOffsetRef.current + delta, -SUBTITLE_OFFSET_LIMIT, SUBTITLE_OFFSET_LIMIT),
+      );
+    },
+    [commitOffset],
+  );
+
+  const resetSync = useCallback(() => commitOffset(0), [commitOffset]);
+
   const reset = useCallback(() => {
     setSizeScale(1);
     setBackground("dark");
-    setSyncOffset(0);
-    syncOffsetRef.current = 0;
-    applySync();
-  }, [applySync]);
+    commitOffset(0);
+  }, [commitOffset]);
 
   return {
     sizeScale,
@@ -108,6 +165,7 @@ export function useSubtitleStyling({
     setBackground,
     syncOffset,
     nudgeSync,
+    resetSync,
     reset,
     applySync,
     stylingAvailable,

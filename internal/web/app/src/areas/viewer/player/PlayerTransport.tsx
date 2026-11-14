@@ -45,9 +45,11 @@ import {
   formatRemainingTime,
   resolveTrickplayTile,
 } from "../lib/transport";
+import { AudioSyncPanel } from "./AudioSyncPanel";
 import { InfoOverlay } from "./InfoOverlay";
 import { SubtitleStylePanel } from "./SubtitleStylePanel";
 import { TransportMenu } from "./TransportMenu";
+import { useAudioDelay } from "./useAudioDelay";
 import { useLiveTracks } from "./useLiveTracks";
 import type { PlayerState, SwitchResult } from "./usePlayer";
 import { useSubtitleStyling } from "./useSubtitleStyling";
@@ -61,7 +63,7 @@ import { useSubtitleStyling } from "./useSubtitleStyling";
 // (openKey), and the open state is reported up so the player stage can
 // suppress idle auto-hide while settings or a menu is up. Every control is
 // keyboard-operable and labelled (the a11y gate).
-type OpenKey = "audio" | "subtitle" | "quality" | "info" | "subtitleStyle" | null;
+type OpenKey = "audio" | "subtitle" | "quality" | "info" | "subtitleStyle" | "audioSync" | null;
 type GestureFeedback =
   | { kind: "seek"; side: "left" | "right"; amount: number }
   | { kind: "volume"; value: number };
@@ -75,6 +77,7 @@ export function PlayerTransport({
   state,
   mediaTitle = "",
   mediaID = "",
+  profileID = "",
   metadataAttribution,
   stageRef,
   skipInterval = 10,
@@ -95,6 +98,8 @@ export function PlayerTransport({
   mediaTitle?: string;
   /** The current Media's id, for the info overlay's item actions. */
   mediaID?: string;
+  /** The active Profile; subtitle offset and audio delay persist per Profile and Media. */
+  profileID?: string;
   /** The current Media's plugin-declared metadata credit, for the info overlay. */
   metadataAttribution?: MetadataAttribution;
   /** The player stage element — subtitle styling rides a CSS var/class on it. */
@@ -215,7 +220,19 @@ export function PlayerTransport({
     videoRef,
     hlsRef,
     tracksVersion: state.tracksVersion,
+    profileID,
+    mediaID,
   });
+
+  const audioSync = useAudioDelay({
+    videoRef,
+    profileID,
+    mediaID,
+    stream: state.stream,
+    streams: state.streams,
+  });
+  // Audio-only items have nothing to line the sound up with.
+  const audioSyncAvailable = state.info?.mediaClass !== "audio";
 
   const tracks = useLiveTracks({
     videoRef,
@@ -970,8 +987,19 @@ export function PlayerTransport({
                     setBackground={subtitle.setBackground}
                     syncOffset={subtitle.syncOffset}
                     nudgeSync={subtitle.nudgeSync}
+                    resetSync={subtitle.resetSync}
                     reset={subtitle.reset}
                     syncSupported={subtitle.syncSupported}
+                  />
+                )}
+                {audioSyncAvailable && (
+                  <AudioSyncPanel
+                    open={openKey === "audioSync"}
+                    onOpenChange={(open) => setOpen("audioSync", open)}
+                    audioDelay={audioSync.audioDelay}
+                    nudgeAudioDelay={audioSync.nudgeAudioDelay}
+                    resetAudioDelay={audioSync.resetAudioDelay}
+                    supported={audioSync.audioDelaySupported}
                   />
                 )}
                 <TransportMenu

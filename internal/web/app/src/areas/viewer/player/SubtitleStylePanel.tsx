@@ -3,14 +3,18 @@ import { useRef } from "react";
 import { Dialog } from "@/components/ui/astryx-primitives";
 import { NativeSelect } from "@/components/ui/select";
 import { useT } from "@/lib/i18n";
+import { formatSync, SUBTITLE_OFFSET_LIMIT } from "./playbackSync";
+import { SyncNudger } from "./SyncNudger";
 import type { SubtitleBackground } from "./useSubtitleStyling";
 
 // The subtitle styling/sync panel, ported from renderSubtitleStylePanel
-// (app.js): a role="dialog" with text-size and background selects plus a sync
-// nudger (−0.5s / +0.5s). The styling button only surfaces when a subtitle track
+// (app.js): a role="dialog" with text-size and background selects plus the
+// subtitle offset nudger (CORE-1671: ±0.1 s and ±0.5 s steps, the value, a
+// reset). The trigger row shows a non-zero offset so it is visible without
+// opening the panel. The styling button only surfaces when a subtitle track
 // exists; the sync controls disable with an honest "unavailable on this route"
-// note when the active route is hls.js (which renders its own cue DOM). Escape
-// closes and returns focus to the trigger.
+// note when cues are not native TextTracks (an hls.js build rendering its own
+// cue DOM). Escape closes and returns focus to the trigger.
 const SIZE_OPTIONS: { value: number; key: Parameters<ReturnType<typeof useT>>[0] }[] = [
   { value: 0.85, key: "subtitleSizeSmall" },
   { value: 1, key: "subtitleSizeMedium" },
@@ -33,6 +37,7 @@ export function SubtitleStylePanel({
   setBackground,
   syncOffset,
   nudgeSync,
+  resetSync,
   reset,
   syncSupported,
 }: {
@@ -44,13 +49,12 @@ export function SubtitleStylePanel({
   setBackground: (bg: SubtitleBackground) => void;
   syncOffset: number;
   nudgeSync: (delta: number) => void;
+  resetSync: () => void;
   reset: () => void;
   syncSupported: boolean;
 }) {
   const t = useT();
   const anchorRef = useRef<HTMLDivElement | null>(null);
-  const sign = syncOffset > 0 ? "+" : "";
-  const syncDisplay = `${sign}${syncOffset.toFixed(1)}s`;
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange} modal={false}>
@@ -60,7 +64,9 @@ export function SubtitleStylePanel({
             <Type />
           </span>
           <span className="bf-settings-label">{t("subtitleStyling")}</span>
-          <span className="bf-settings-value" />
+          <span className="bf-settings-value">
+            {syncOffset !== 0 ? formatSync(syncOffset) : ""}
+          </span>
           <ChevronRight aria-hidden="true" className="bf-settings-chevron" />
         </Dialog.Trigger>
         <Dialog.Portal container={anchorRef}>
@@ -108,30 +114,15 @@ export function SubtitleStylePanel({
               </NativeSelect>
             </div>
 
-            <div className="bf-subtitle-row">
-              <span id="bf-subtitle-sync-label">{t("subtitleSync")}</span>
-              <span className="bf-subtitle-sync" aria-labelledby="bf-subtitle-sync-label">
-                <button
-                  type="button"
-                  aria-label={`${t("subtitleSync")} −0.5s`}
-                  disabled={!syncSupported}
-                  onClick={() => nudgeSync(-0.5)}
-                >
-                  −
-                </button>
-                <span className="bf-subtitle-sync-value" aria-live="polite">
-                  {syncDisplay}
-                </span>
-                <button
-                  type="button"
-                  aria-label={`${t("subtitleSync")} +0.5s`}
-                  disabled={!syncSupported}
-                  onClick={() => nudgeSync(0.5)}
-                >
-                  +
-                </button>
-              </span>
-            </div>
+            <SyncNudger
+              label={t("subtitleSync")}
+              value={syncOffset}
+              min={-SUBTITLE_OFFSET_LIMIT}
+              max={SUBTITLE_OFFSET_LIMIT}
+              supported={syncSupported}
+              onNudge={nudgeSync}
+              onReset={resetSync}
+            />
 
             {!syncSupported && (
               <p className="bf-subtitle-unsupported">{t("subtitleSyncUnsupported")}</p>
