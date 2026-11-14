@@ -4,11 +4,22 @@ import { useLocation, useNavigate, useParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { getIdentityEpochSignal } from "@/lib/api";
 import { displayString } from "@/lib/display";
-import { fetchClientPrefs, fetchMedia, setClientPref } from "@/lib/graphql";
-import type { ClientPref, GenericMediaInfo } from "@/lib/graphql/types";
+import {
+  fetchClientPrefs,
+  fetchMedia,
+  fetchPlaybackAdjustmentRanges,
+  setClientPref,
+} from "@/lib/graphql";
+import type { ClientPref, GenericMediaInfo, PlaybackAdjustmentRanges } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
-import { hasPicture, type PlaybackNext } from "../lib/playback";
+import {
+  adjustmentApplied,
+  hasPicture,
+  isComposedPictureServed,
+  type PlaybackNext,
+  sameAdjustment,
+} from "../lib/playback";
 import { previousInPlayQueue } from "../lib/playQueue";
 import {
   resolvePreferences,
@@ -24,6 +35,7 @@ import {
 } from "../lib/subtitleAppearance";
 import { type PlayQueueItem, queueNeighbours, readPlayerNavState } from "../lib/watchQueue";
 import { AudioStage } from "../player/AudioStage";
+import { KaraokeControls } from "../player/KaraokeControls";
 import { PlayerTransport } from "../player/PlayerTransport";
 import { SkippedOverlay } from "../player/SkippedOverlay";
 import { UpNextCard } from "../player/UpNextCard";
@@ -68,7 +80,7 @@ export function PlayerPage() {
   const startAtSeconds = parseTimestampParam(new URLSearchParams(location.search).get("t"));
   const { previous: previousInQueue, next: nextInQueue } = queueNeighbours(queue, mediaId || "");
 
-  const { videoRef, hlsRef, state, retry, switchToHls } = usePlayer(
+  const { videoRef, hlsRef, state, retry, switchToHls, adjustment, adjust } = usePlayer(
     mediaId || "",
     {
       couldNotReachServer: t("couldNotReachServer"),
@@ -93,6 +105,36 @@ export function PlayerPage() {
   );
 
   const playing = state.phase === "playing";
+
+  // Key and tempo controls (CORE-1659): only when the server advertises the
+  // ranges and plays this Media as a karaoke song (an audio item served as a composed
+  // picture). A key
+  // or tempo change restarts the stream, which clears state.info for a moment,
+  // so the song verdict is kept per Media and the controls keep their focus.
+  const [adjustmentRanges, setAdjustmentRanges] = useState<PlaybackAdjustmentRanges | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchPlaybackAdjustmentRanges(controller.signal).then((ranges) => {
+      if (!controller.signal.aborted) setAdjustmentRanges(ranges);
+    });
+    return () => controller.abort();
+  }, []);
+  const karaokeRef = useRef<{ mediaID: string; karaoke: boolean } | null>(null);
+  if (state.info) {
+    karaokeRef.current = {
+      mediaID: mediaId || "",
+      karaoke: state.info.mediaClass === "audio" && isComposedPictureServed(state.info),
+    };
+  }
+  const karaokeSong = karaokeRef.current?.mediaID === (mediaId || "") && karaokeRef.current.karaoke;
+  const showKaraokeControls =
+    adjustmentRanges !== null && karaokeSong && state.phase !== "terminal";
+  // Judged only once the stream that was asked for this adjustment is playing,
+  // so a restart in flight never flashes "Not applied".
+  const karaokeApplied =
+    playing && state.info && sameAdjustment(state.adjustment, adjustment)
+      ? adjustmentApplied(state.info, adjustment)
+      : null;
   const showSpinner = useMediaLoading(videoRef, state.phase === "loading" || playing);
   const isAudio = state.info?.mediaClass === "audio";
   const credits = media?.credits ?? [];
@@ -351,6 +393,14 @@ export function PlayerPage() {
         <Button variant="outline" size="sm" onClick={back}>
           {t("back")}
         </Button>
+        {showKaraokeControls && adjustmentRanges ? (
+          <KaraokeControls
+            ranges={adjustmentRanges}
+            adjustment={adjustment}
+            applied={karaokeApplied}
+            onChange={adjust}
+          />
+        ) : null}
       </div>
 
       {state.phase === "message" || state.phase === "terminal" ? (

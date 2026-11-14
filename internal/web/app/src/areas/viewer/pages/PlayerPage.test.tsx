@@ -1,13 +1,14 @@
 import "@testing-library/jest-dom/vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setIdentityEpochSignal } from "@/lib/api";
-import { fetchClientPrefs, fetchMedia, setClientPref } from "@/lib/graphql";
+import { fetchClientPrefs, fetchMedia, fetchPlaybackAdjustmentRanges, setClientPref } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
+import type { PlaybackAdjustment, PlaybackInfo } from "../lib/playback";
 import { PlayerTransport } from "../player/PlayerTransport";
 import type { PlayerState } from "../player/usePlayer";
-import { usePlayer } from "../player/usePlayer";
+import { DEFAULT_ADJUSTMENT, usePlayer } from "../player/usePlayer";
 import { buildTimestampedLink, PlayerPage } from "./PlayerPage";
 
 vi.mock("@/lib/session", () => ({
@@ -18,8 +19,12 @@ vi.mock("@/lib/graphql", () => ({
   fetchClientPrefs: vi.fn().mockResolvedValue([]),
   setClientPref: vi.fn().mockResolvedValue(undefined),
   fetchMedia: vi.fn().mockResolvedValue(null),
+  fetchPlaybackAdjustmentRanges: vi.fn().mockResolvedValue(null),
 }));
-vi.mock("../player/usePlayer", () => ({ usePlayer: vi.fn() }));
+vi.mock("../player/usePlayer", () => ({
+  usePlayer: vi.fn(),
+  DEFAULT_ADJUSTMENT: { pitchShiftSemitones: 0, tempo: 1 },
+}));
 vi.mock("../player/PlayerTransport", () => ({ PlayerTransport: vi.fn(() => null) }));
 
 function playerState(overrides: Partial<PlayerState>): PlayerState {
@@ -40,25 +45,33 @@ function playerState(overrides: Partial<PlayerState>): PlayerState {
   };
 }
 
-function renderPlayer(state: PlayerState, navState?: unknown) {
+function renderPlayer(
+  state: PlayerState,
+  navState?: unknown,
+  adjustment: PlaybackAdjustment = DEFAULT_ADJUSTMENT,
+) {
   const retry = vi.fn();
+  const adjust = vi.fn();
   vi.mocked(usePlayer).mockReturnValue({
     videoRef: { current: null },
     hlsRef: { current: null },
     state,
     retry,
     switchToHls: vi.fn(() => false as const),
+    adjustment,
+    adjust,
   });
-  render(
+  const tree = () => (
     <I18nProvider>
       <MemoryRouter initialEntries={[{ pathname: "/watch/media-alpha", state: navState }]}>
         <Routes>
           <Route path="/watch/:mediaId" element={<PlayerPage />} />
         </Routes>
       </MemoryRouter>
-    </I18nProvider>,
+    </I18nProvider>
   );
-  return { retry };
+  const view = render(tree());
+  return { retry, adjust, rerender: () => view.rerender(tree()) };
 }
 
 function stageVideo(): HTMLVideoElement {
@@ -351,6 +364,8 @@ describe("PlayerPage Back", () => {
       state: playerState({ phase: "playing" }),
       retry: vi.fn(),
       switchToHls: vi.fn(() => false as const),
+      adjustment: DEFAULT_ADJUSTMENT,
+      adjust: vi.fn(),
     });
     render(
       <I18nProvider>
@@ -444,5 +459,152 @@ describe("PlayerPage subtitle appearance prefs (CORE-1681)", () => {
     } finally {
       setIdentityEpochSignal();
     }
+  });
+});
+
+// CORE-1659: key and tempo controls for a karaoke song.
+describe("PlayerPage karaoke key and tempo controls", () => {
+  const ranges = {
+    pitchShiftSemitonesMin: -6,
+    pitchShiftSemitonesMax: 6,
+    tempoMin: 0.75,
+    tempoMax: 1.25,
+  };
+  // A synthetic karaoke song: an audio item the server composes a picture for.
+  const karaokeInfo = {
+    mediaClass: "audio",
+    reason: "composed-picture",
+    streams: [],
+  } as unknown as PlaybackInfo;
+
+  beforeEach(() => {
+    vi.mocked(usePlayer).mockReset();
+    vi.mocked(fetchPlaybackAdjustmentRanges).mockResolvedValue(ranges);
+  });
+  afterEach(() => vi.mocked(fetchPlaybackAdjustmentRanges).mockResolvedValue(null));
+
+  it("shows key and tempo controls for a karaoke song when the server advertises them", async () => {
+    renderPlayer(playerState({ phase: "playing", info: karaokeInfo }));
+    const group = await screen.findByRole("group", { name: "Key and tempo" });
+    expect(group).toHaveTextContent("Key 0");
+    expect(group).toHaveTextContent("Tempo 100%");
+    for (const name of [
+      "Lower the key by a semitone",
+      "Raise the key by a semitone",
+      "Reset the key",
+      "Slow down by 5%",
+      "Speed up by 5%",
+      "Reset the tempo",
+    ]) {
+      expect(screen.getByRole("button", { name })).toBeInTheDocument();
+    }
+    expect(within(group).getByRole("status")).toHaveTextContent("Key 0, Tempo 100%");
+  });
+
+  it("hides the controls when the server does not advertise the capability", async () => {
+    vi.mocked(fetchPlaybackAdjustmentRanges).mockResolvedValue(null);
+    renderPlayer(playerState({ phase: "playing", info: karaokeInfo }));
+    await waitFor(() => expect(fetchPlaybackAdjustmentRanges).toHaveBeenCalled());
+    await act(async () => {});
+    expect(screen.queryByRole("group", { name: "Key and tempo" })).not.toBeInTheDocument();
+  });
+
+  it("hides the controls for a Media that is not a karaoke song", async () => {
+    renderPlayer(
+      playerState({
+        phase: "playing",
+        info: {
+          mediaClass: "video",
+          reason: "direct-play",
+          streams: [],
+        } as unknown as PlaybackInfo,
+      }),
+    );
+    await waitFor(() => expect(fetchPlaybackAdjustmentRanges).toHaveBeenCalled());
+    await act(async () => {});
+    expect(screen.queryByRole("group", { name: "Key and tempo" })).not.toBeInTheDocument();
+  });
+
+  it("applies a key and a tempo step through the player", async () => {
+    const { adjust } = renderPlayer(playerState({ phase: "playing", info: karaokeInfo }));
+    fireEvent.click(await screen.findByRole("button", { name: "Raise the key by a semitone" }));
+    expect(adjust).toHaveBeenLastCalledWith({ pitchShiftSemitones: 1, tempo: 1 });
+    fireEvent.click(screen.getByRole("button", { name: "Slow down by 5%" }));
+    expect(adjust).toHaveBeenLastCalledWith({ pitchShiftSemitones: 0, tempo: 0.95 });
+  });
+
+  it("shows the applied key and tempo the server echoed", async () => {
+    const adjustment = { pitchShiftSemitones: 2, tempo: 0.95 };
+    renderPlayer(
+      playerState({ phase: "playing", info: { ...karaokeInfo, adjustment }, adjustment }),
+      undefined,
+      adjustment,
+    );
+    const group = await screen.findByRole("group", { name: "Key and tempo" });
+    expect(group).toHaveTextContent("Key +2");
+    expect(group).toHaveTextContent("Tempo 95%");
+    expect(group).not.toHaveTextContent("Not applied");
+    expect(within(group).getByRole("status")).toHaveTextContent("Key +2, Tempo 95%");
+  });
+
+  it("says Not applied when the server did not echo the adjustment", async () => {
+    const adjustment = { pitchShiftSemitones: 1, tempo: 1 };
+    renderPlayer(
+      playerState({ phase: "playing", info: karaokeInfo, adjustment }),
+      undefined,
+      adjustment,
+    );
+    const group = await screen.findByRole("group", { name: "Key and tempo" });
+    expect(group).toHaveTextContent("Key +1");
+    expect(group).toHaveTextContent("Not applied");
+    expect(within(group).getByRole("status")).toHaveTextContent("Key +1, Tempo 100%: not applied");
+  });
+
+  it("keeps the controls mounted while a change restarts the stream", async () => {
+    const adjustment = { pitchShiftSemitones: 1, tempo: 1 };
+    const { adjust, rerender } = renderPlayer(playerState({ phase: "playing", info: karaokeInfo }));
+    const up = await screen.findByRole("button", { name: "Raise the key by a semitone" });
+    up.focus();
+    fireEvent.click(up);
+    expect(adjust).toHaveBeenCalledTimes(1);
+    // The restart clears state.info; the song verdict stays for this Media.
+    vi.mocked(usePlayer).mockReturnValue({
+      ...vi.mocked(usePlayer).mock.results.at(-1)?.value,
+      state: playerState({ phase: "loading" }),
+      adjustment,
+    });
+    rerender();
+    expect(up).toHaveFocus();
+    expect(screen.getByRole("group", { name: "Key and tempo" })).toHaveTextContent("Key +1");
+    expect(screen.getByRole("group", { name: "Key and tempo" })).not.toHaveTextContent(
+      "Not applied",
+    );
+  });
+
+  it("clamps to the advertised range and keeps the control at its limit focusable", async () => {
+    vi.mocked(fetchPlaybackAdjustmentRanges).mockResolvedValue({
+      pitchShiftSemitonesMin: -2,
+      pitchShiftSemitonesMax: 2,
+      tempoMin: 0.9,
+      tempoMax: 1.1,
+    });
+    const adjustment = { pitchShiftSemitones: 2, tempo: 0.9 };
+    const { adjust } = renderPlayer(
+      playerState({ phase: "playing", info: { ...karaokeInfo, adjustment }, adjustment }),
+      undefined,
+      adjustment,
+    );
+    const up = await screen.findByRole("button", { name: "Raise the key by a semitone" });
+    const slower = screen.getByRole("button", { name: "Slow down by 5%" });
+    expect(up).toHaveAttribute("aria-disabled", "true");
+    expect(up).not.toBeDisabled();
+    expect(slower).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(up);
+    fireEvent.click(slower);
+    expect(adjust).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Speed up by 5%" }));
+    expect(adjust).toHaveBeenLastCalledWith({ pitchShiftSemitones: 2, tempo: 0.95 });
+    fireEvent.click(screen.getByRole("button", { name: "Reset the key" }));
+    expect(adjust).toHaveBeenLastCalledWith({ pitchShiftSemitones: 0, tempo: 0.9 });
   });
 });

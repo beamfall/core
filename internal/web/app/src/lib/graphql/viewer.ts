@@ -26,6 +26,7 @@ import type {
   NavigationManifest,
   NotificationInfo,
   NotificationReadResult,
+  PlaybackAdjustmentRanges,
   PlaybackMarker,
   ProfileSummary,
   ReportPlaybackResult,
@@ -288,6 +289,38 @@ export async function fetchPlaybackMarkers(mediaID: string): Promise<PlaybackMar
     mediaID,
   });
   return data.markers ?? [];
+}
+
+const PLAYBACK_ADJUSTMENTS_QUERY =
+  "query PlaybackAdjustments { serverInfo { playbackAdjustments { pitchShiftSemitonesMin pitchShiftSemitonesMax tempoMin tempoMax } } }";
+
+/**
+ * PlaybackAdjustments — the pitch shift and tempo ranges the server accepts
+ * (CORE-1658), or null when it advertises none: the field is absent, the read
+ * fails (a server that predates it), or the ranges are not usable.
+ */
+export async function fetchPlaybackAdjustmentRanges(
+  signal?: AbortSignal,
+): Promise<PlaybackAdjustmentRanges | null> {
+  try {
+    const data = await graphql<{
+      serverInfo: { playbackAdjustments?: PlaybackAdjustmentRanges | null } | null;
+    }>(PLAYBACK_ADJUSTMENTS_QUERY, {}, signal);
+    const ranges = data.serverInfo?.playbackAdjustments;
+    if (!ranges) return null;
+    const { pitchShiftSemitonesMin, pitchShiftSemitonesMax, tempoMin, tempoMax } = ranges;
+    const usable =
+      [pitchShiftSemitonesMin, pitchShiftSemitonesMax, tempoMin, tempoMax].every(Number.isFinite) &&
+      pitchShiftSemitonesMin <= 0 &&
+      pitchShiftSemitonesMax >= 0 &&
+      tempoMin > 0 &&
+      tempoMin <= 1 &&
+      tempoMax >= 1 &&
+      (pitchShiftSemitonesMin < pitchShiftSemitonesMax || tempoMin < tempoMax);
+    return usable ? ranges : null;
+  } catch {
+    return null;
+  }
 }
 
 // --- My Data / Privacy panel (ADR-0036) -----------------------------------

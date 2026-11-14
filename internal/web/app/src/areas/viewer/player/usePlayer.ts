@@ -7,11 +7,13 @@ import {
   fetchPlaybackInfo,
   hlsStreamOf,
   isRevealTerminalStatus,
+  type PlaybackAdjustment,
   type PlaybackInfo,
   type PlaybackMessageAction,
   type PlaybackRendition,
   type PlaybackStream,
   serverErrorReason,
+  songSecondsPerStreamSecond,
   type UnavailableReasonMessages,
   unavailableReason,
 } from "../lib/playback";
@@ -67,12 +69,17 @@ export interface PlayerState {
   action?: PlaybackMessageAction;
   /** The server's own reason for a refused request, shown under the message. */
   detail?: string;
+  /** The key and tempo this load asked playback-info for (CORE-1659); the
+   *  echo in info.adjustment says whether the server applied them. */
+  adjustment?: PlaybackAdjustment;
   /** Monotonic counter bumped when the live hls.js track set changes; lets the
    *  transport re-derive its audio/subtitle menus off the live tracks. */
   tracksVersion: number;
 }
 
 const REPORT_INTERVAL_MS = 15000;
+/** The song as recorded: no pitch shift, the recorded tempo. */
+export const DEFAULT_ADJUSTMENT: PlaybackAdjustment = { pitchShiftSemitones: 0, tempo: 1 };
 const REPORT_PLAYBACK_MUTATION =
   "mutation ReportPlayback($mediaID: ID!, $positionSeconds: Int!, $durationSeconds: Int!, $finished: Boolean!, $eventTimeMS: Int!) { reportPlayback(mediaID: $mediaID, positionSeconds: $positionSeconds, durationSeconds: $durationSeconds, finished: $finished, eventTimeMS: $eventTimeMS) { mediaID } }";
 let lastPlaybackEventTimeMS = 0;
@@ -379,14 +386,37 @@ export function usePlayer(
     [],
   );
 
-  // The last presented position, so Try again resumes where the viewer was
-  // rather than at the opening ?t= or server resume point (CORE-1364).
+  // The last presented position in song seconds, so Try again resumes where
+  // the viewer was rather than at the opening ?t= or server resume point
+  // (CORE-1364).
   const lastPositionRef = useRef(0);
   const retryFromRef = useRef<{ mediaID: string; position: number } | null>(null);
   const retry = useCallback(() => {
     retryFromRef.current = { mediaID, position: lastPositionRef.current };
     setRetryKey((key) => key + 1);
   }, [mediaID]);
+
+  // The key and tempo asked for this Media (CORE-1659); another Media starts
+  // as recorded. A ref feeds the load effect, which a change re-runs.
+  const [requested, setRequested] = useState<{
+    mediaID: string;
+    adjustment: PlaybackAdjustment;
+  } | null>(null);
+  const adjustment = requested?.mediaID === mediaID ? requested.adjustment : DEFAULT_ADJUSTMENT;
+  const adjustmentRef = useRef(adjustment);
+  adjustmentRef.current = adjustment;
+  // Song seconds per stream second of the stream playing now: the tempo the
+  // server applied. Progress reports and the resume point stay in song time.
+  const songScaleRef = useRef(1);
+  // Restarts the stream with a new key or tempo at the same song position.
+  const adjust = useCallback(
+    (next: PlaybackAdjustment) => {
+      retryFromRef.current = { mediaID, position: lastPositionRef.current };
+      setRequested({ mediaID, adjustment: next });
+      setRetryKey((key) => key + 1);
+    },
+    [mediaID],
+  );
 
   const destroyHls = useCallback(() => {
     if (hlsRef.current) {
@@ -416,10 +446,11 @@ export function usePlayer(
       const eventTimeMS = nextPlaybackEventTimeMS();
       const queue = progressQueueRef.current;
       if (!queue) return;
+      const songScale = songScaleRef.current;
       enqueueProgress(queue, {
         mediaID,
-        positionSeconds: Math.floor(position),
-        durationSeconds: Math.floor(video.duration),
+        positionSeconds: Math.floor(position * songScale),
+        durationSeconds: Math.floor(video.duration * songScale),
         finished,
         eventTimeMS,
       });
@@ -469,6 +500,8 @@ export function usePlayer(
     retryFromRef.current = null;
     lastPositionRef.current = retryFrom;
     presentedPositionRef.current = null;
+    const requestedAdjustment = adjustmentRef.current;
+    songScaleRef.current = 1;
     // Listeners bound to the <video> for the whole load (not one engine).
     const videoListeners: Array<[string, () => void]> = [];
 
@@ -557,7 +590,7 @@ export function usePlayer(
       const markersRequest = fetchPlaybackMarkers(mediaID).catch((): PlaybackMarker[] => []);
       let info: PlaybackInfo;
       try {
-        info = await fetchPlaybackInfo(mediaID, nextMediaIDRef.current);
+        info = await fetchPlaybackInfo(mediaID, nextMediaIDRef.current, requestedAdjustment);
       } catch (err) {
         if (!alive) return;
         if (!(err instanceof ApiError) && offline) {
@@ -583,6 +616,9 @@ export function usePlayer(
       const video = videoRef.current;
       if (!video) return;
       boundVideo = video;
+      // Stream seconds are song seconds divided by the applied tempo (CORE-1658).
+      const songScale = songSecondsPerStreamSecond(info);
+      songScaleRef.current = songScale;
 
       // The playhead: the native resume point not yet applied, else the
       // element's own position.
@@ -605,7 +641,7 @@ export function usePlayer(
       };
       const onTimeUpdate = () => {
         if (pendingNativeResume === 0 && video.currentTime > 0) {
-          lastPositionRef.current = video.currentTime;
+          lastPositionRef.current = video.currentTime * songScale;
         }
       };
       videoListeners.push(["playing", onPlaying], ["timeupdate", onTimeUpdate]);
@@ -670,7 +706,7 @@ export function usePlayer(
         setRecovering(true);
         // The refresh replaces info, so it declares the same next item: Up Next
         // and auto-advance survive a renewed token.
-        void fetchPlaybackInfo(mediaID, nextMediaIDRef.current)
+        void fetchPlaybackInfo(mediaID, nextMediaIDRef.current, requestedAdjustment)
           .then((refreshed) => {
             if (!alive) return;
             const fresh = streamOfKind(refreshed, kind);
@@ -1026,13 +1062,14 @@ export function usePlayer(
       };
       switchRef.current = switchToHls;
 
+      // The opening song position, as a stream position.
       const opening =
         retryFrom > 0
           ? retryFrom
           : startAtSeconds > 0
             ? startAtSeconds
             : resumePositionFromInfo(info);
-      attachEngine(stream, initialEngine, opening, { play: true });
+      attachEngine(stream, initialEngine, opening / songScale, { play: true });
 
       setState({
         phase: "playing",
@@ -1049,6 +1086,7 @@ export function usePlayer(
         recovering: false,
         waitingForNetwork: offline,
         tracksVersion: 0,
+        adjustment: requestedAdjustment,
       });
 
       // Applied only while still playing: a terminal or message state must not
@@ -1137,7 +1175,7 @@ export function usePlayer(
     };
   }, [reportProgress, stopProgressReporting]);
 
-  return { videoRef, hlsRef, state, retry, switchToHls };
+  return { videoRef, hlsRef, state, retry, switchToHls, adjustment, adjust };
 }
 
 interface TrackPreferences {

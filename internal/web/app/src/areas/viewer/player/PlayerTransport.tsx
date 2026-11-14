@@ -35,6 +35,7 @@ import { Slider } from "@/components/ui/astryx-primitives";
 import { NativeSelect } from "@/components/ui/select";
 import type { MetadataAttribution } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
+import { songSecondsPerStreamSecond } from "../lib/playback";
 import { SKIP_INTERVALS, type SkipInterval } from "../lib/preferences";
 import {
   SUBTITLE_APPEARANCE_DEFAULTS,
@@ -134,6 +135,9 @@ export function PlayerTransport({
   onMenuOpenChange?: (open: boolean) => void;
 }) {
   const t = useT();
+  // The transport's times are song seconds; an adjusted stream runs at song
+  // time divided by the applied tempo (CORE-1659).
+  const songScale = songSecondsPerStreamSecond(state.info);
   const [current, setCurrent] = useState(0);
   // The position a pointer drag on the scrubber previews; null when not dragging.
   const [scrubValue, setScrubValue] = useState<number | null>(null);
@@ -257,13 +261,13 @@ export function PlayerTransport({
     const video = videoRef.current;
     if (!video) return;
     const sync = () => {
-      setCurrent(Number.isFinite(video.currentTime) ? video.currentTime : 0);
-      setDuration(Number.isFinite(video.duration) ? video.duration : 0);
+      setCurrent(Number.isFinite(video.currentTime) ? video.currentTime * songScale : 0);
+      setDuration(Number.isFinite(video.duration) ? video.duration * songScale : 0);
       setPaused(video.paused);
       setVolumeState(video.volume);
       setMuted(video.muted);
       setPlaybackRate(video.playbackRate);
-      setBuffered(bufferedEnd(video));
+      setBuffered(bufferedEnd(video) * songScale);
     };
     sync();
     video.addEventListener("timeupdate", sync);
@@ -284,7 +288,7 @@ export function PlayerTransport({
       video.removeEventListener("ratechange", sync);
       video.removeEventListener("progress", sync);
     };
-  }, [videoRef]);
+  }, [videoRef, songScale]);
 
   useEffect(() => {
     const sync = () => {
@@ -322,9 +326,9 @@ export function PlayerTransport({
       const video = videoRef.current;
       if (!video) return;
       const dur = Number.isFinite(video.duration) ? video.duration : Infinity;
-      video.currentTime = Math.max(0, Math.min(dur, video.currentTime + seconds));
+      video.currentTime = Math.max(0, Math.min(dur, video.currentTime + seconds / songScale));
     },
-    [videoRef],
+    [videoRef, songScale],
   );
 
   const setVolume = useCallback(
@@ -522,7 +526,7 @@ export function PlayerTransport({
   function setPlaybackPosition(value: number) {
     const video = videoRef.current;
     if (video && Number.isFinite(value)) {
-      video.currentTime = value;
+      video.currentTime = value / songScale;
       setCurrent(value);
     }
   }
@@ -606,7 +610,7 @@ export function PlayerTransport({
   function seekTo(seconds: number | null) {
     const video = videoRef.current;
     if (!video || seconds === null) return;
-    video.currentTime = Math.max(0, Math.min(duration || Infinity, seconds));
+    video.currentTime = Math.max(0, Math.min(duration || Infinity, seconds)) / songScale;
   }
 
   const volumeLevel = muted ? 0 : volume;
@@ -640,7 +644,7 @@ export function PlayerTransport({
           onClick={() => {
             const video = videoRef.current;
             if (video && markerModel.skip) {
-              video.currentTime = markerModel.skip.endSeconds;
+              video.currentTime = markerModel.skip.endSeconds / songScale;
             }
           }}
           className="bf-control is-skip-segment"

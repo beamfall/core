@@ -302,6 +302,18 @@ export interface PlaybackMarker {
   title: string;
 }
 
+/**
+ * serverInfo.playbackAdjustments (graph.PlaybackAdjustmentRanges, CORE-1658):
+ * the inclusive pitch shift (whole semitones) and tempo ranges playback-info
+ * accepts. Absent on a server without playback adjustment.
+ */
+export interface PlaybackAdjustmentRanges {
+  pitchShiftSemitonesMin: number;
+  pitchShiftSemitonesMax: number;
+  tempoMin: number;
+  tempoMax: number;
+}
+
 /** The reportPlayback mutation result. */
 export interface ReportPlaybackResult {
   mediaID: string;

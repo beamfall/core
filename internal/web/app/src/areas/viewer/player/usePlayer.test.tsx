@@ -11,7 +11,7 @@ import {
 import { fetchPlaybackMarkers } from "@/lib/graphql";
 import type { PlaybackMarker } from "@/lib/graphql/types";
 import { ApiError, fetchPlaybackInfo } from "../lib/playback";
-import { selectHlsLevel, selectHlsRendition, usePlayer } from "./usePlayer";
+import { DEFAULT_ADJUSTMENT, selectHlsLevel, selectHlsRendition, usePlayer } from "./usePlayer";
 
 vi.mock("@/lib/graphql", () => ({
   fetchPlaybackMarkers: vi.fn().mockResolvedValue([]),
@@ -157,7 +157,7 @@ function Harness({
   startAtSeconds?: number;
   nextMediaID?: string;
 }) {
-  const { videoRef, state, retry, switchToHls } = usePlayer(
+  const { videoRef, state, retry, switchToHls, adjust } = usePlayer(
     mediaID,
     messages,
     startAtSeconds,
@@ -189,6 +189,9 @@ function Harness({
       <output data-testid="detail">{state.detail ?? ""}</output>
       <button type="button" onClick={retry}>
         retry
+      </button>
+      <button type="button" onClick={() => adjust({ pitchShiftSemitones: 1, tempo: 0.8 })}>
+        adjust
       </button>
       {/* The revealed playback document, surfaced so a test can assert it stops
           being addressable once the reveal goes terminal. */}
@@ -661,11 +664,52 @@ describe("usePlayer", () => {
 
     await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
 
-    expect(fetchPlaybackInfo).toHaveBeenCalledWith("media-alpha", undefined);
+    expect(fetchPlaybackInfo).toHaveBeenCalledWith("media-alpha", undefined, DEFAULT_ADJUSTMENT);
     const video = screen.getByTestId("player");
     expect(video).toHaveAttribute("src", "/api/media/direct/token");
     fireEvent.canPlay(video);
     expect(HTMLMediaElement.prototype.play).toHaveBeenCalledOnce();
+  });
+
+  // CORE-1659: a key or tempo change restarts the stream at the same song
+  // position; stream seconds are song seconds divided by the applied tempo.
+  it("restarts with the requested adjustment at the same song position", async () => {
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    const video = screen.getByTestId("player") as HTMLVideoElement;
+    fireEvent.loadedMetadata(video);
+    video.currentTime = 30;
+    fireEvent.timeUpdate(video);
+
+    const adjustment = { pitchShiftSemitones: 1, tempo: 0.8 };
+    vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce({
+      decision: "transcode",
+      reason: "composed-picture",
+      adjustment,
+      timeline: { positionSeconds: 12 },
+      streams: [{ kind: "direct-play", url: "/api/media/direct/adjusted" }],
+    });
+    fireEvent.click(screen.getByRole("button", { name: "adjust" }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("stream-url")).toHaveTextContent("/api/media/direct/adjusted"),
+    );
+    expect(fetchPlaybackInfo).toHaveBeenLastCalledWith("media-alpha", undefined, adjustment);
+    const restarted = screen.getByTestId("player") as HTMLVideoElement;
+    fireEvent.loadedMetadata(restarted);
+    expect(restarted.currentTime).toBe(37.5);
+
+    // Progress is reported in song seconds.
+    vi.mocked(graphql).mockClear();
+    Object.defineProperty(restarted, "duration", { configurable: true, value: 100 });
+    restarted.currentTime = 40;
+    fireEvent.timeUpdate(restarted);
+    fireEvent.pause(restarted);
+    await waitFor(() => expect(graphql).toHaveBeenCalled());
+    expect(vi.mocked(graphql).mock.calls.at(-1)?.[1]).toMatchObject({
+      positionSeconds: 32,
+      durationSeconds: 80,
+    });
   });
 
   it("honors a timestamped playback deep link over resume", async () => {
@@ -1071,7 +1115,11 @@ describe("usePlayer", () => {
         "/api/media/hls/token2/master.m3u8",
       ),
     );
-    expect(fetchPlaybackInfo).toHaveBeenLastCalledWith("media-alpha", "media-next");
+    expect(fetchPlaybackInfo).toHaveBeenLastCalledWith(
+      "media-alpha",
+      "media-next",
+      DEFAULT_ADJUSTMENT,
+    );
     expect(screen.getByTestId("up-next")).toHaveTextContent("media-next");
   });
 

@@ -6,6 +6,7 @@ import { consoleAccessStrings } from "./console-access";
 import { consoleOperationsStrings } from "./console-operations";
 import { customizationStrings } from "./customization";
 import { itemActionStrings } from "./item-actions";
+import { karaokeStrings } from "./karaoke";
 import { libraryHealthStrings } from "./library-health";
 import { libraryOperationsStrings } from "./library-operations";
 import { libraryTrashStrings } from "./library-trash";
@@ -60,6 +61,7 @@ export const en = {
   ...playerRecoveryStrings.en,
   ...libraryTrashStrings.en,
   ...mediaDetailStrings.en,
+  ...karaokeStrings.en,
 } as const;
 
 export const fr = {
@@ -93,6 +95,7 @@ export const fr = {
   ...playerRecoveryStrings.fr,
   ...libraryTrashStrings.fr,
   ...mediaDetailStrings.fr,
+  ...karaokeStrings.fr,
 } as const;
 
 export const de = {
@@ -126,6 +129,7 @@ export const de = {
   ...playerRecoveryStrings.de,
   ...libraryTrashStrings.de,
   ...mediaDetailStrings.de,
+  ...karaokeStrings.de,
 } as const;
 
 export const es = {
@@ -159,6 +163,7 @@ export const es = {
   ...playerRecoveryStrings.es,
   ...libraryTrashStrings.es,
   ...mediaDetailStrings.es,
+  ...karaokeStrings.es,
 } as const;
 
 export const pt = {
@@ -192,4 +197,5 @@ export const pt = {
   ...playerRecoveryStrings.pt,
   ...libraryTrashStrings.pt,
   ...mediaDetailStrings.pt,
+  ...karaokeStrings.pt,
 } as const;
