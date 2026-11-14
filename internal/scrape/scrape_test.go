@@ -768,6 +768,73 @@ func TestAuthStyleLoginBearer(t *testing.T) {
 	}
 }
 
+// TestAuthStyleLoginBearerSecretFields pins the multi-secret login (TheTVDB's
+// subscriber shape): SecretField carries the AuthRef secret and each
+// SecretFields entry adds a body key resolved like an AuthRef. A single-secret
+// login still sends exactly one key, and a missing extra secret fails closed
+// before any request reaches the source.
+func TestAuthStyleLoginBearerSecretFields(t *testing.T) {
+	var got map[string]string
+	logins := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
+		logins++
+		got = nil
+		if err := jsonDecode(r, &got); err != nil {
+			t.Fatal(err)
+		}
+		fmt.Fprint(w, `{"data": {"token": "jwt-abc"}}`)
+	})
+	mux.HandleFunc("/series/9", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data": {"name": "Beacon Drift"}}`)
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	spec := func(login *plugin.LoginSpec) plugin.ScraperSpec {
+		return plugin.ScraperSpec{
+			ID: "tokensource", Kind: "http-json", Endpoint: server.URL,
+			AuthRef: "tokensource-pin", AuthStyle: "login-bearer", Login: login,
+			LookupTemplate: "/series/{id}",
+			FieldMap:       map[string]string{"title": "data.name"},
+		}
+	}
+	creds := staticCredentials{"tokensource-pin": "1234", "tokensource-key": "s3cret"}
+
+	t.Run("multi-field", func(t *testing.T) {
+		engine := New(WithInsecureLoopback(), WithCredentials(creds))
+		login := &plugin.LoginSpec{Path: "/login", SecretField: "pin", SecretFields: map[string]string{"apikey": "tokensource-key"}, TokenPath: "data.token"}
+		if _, err := engine.Lookup(context.Background(), spec(login), "9"); err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != 2 || got["pin"] != "1234" || got["apikey"] != "s3cret" {
+			t.Fatalf("login body = %v, want pin and apikey", got)
+		}
+	})
+	t.Run("single-field", func(t *testing.T) {
+		engine := New(WithInsecureLoopback(), WithCredentials(creds))
+		login := &plugin.LoginSpec{Path: "/login", SecretField: "pin", TokenPath: "data.token"}
+		if _, err := engine.Lookup(context.Background(), spec(login), "9"); err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != 1 || got["pin"] != "1234" {
+			t.Fatalf("login body = %v, want only pin", got)
+		}
+	})
+	t.Run("missing extra secret fails closed", func(t *testing.T) {
+		before := logins
+		engine := New(WithInsecureLoopback(), WithCredentials(staticCredentials{"tokensource-pin": "1234"}))
+		login := &plugin.LoginSpec{Path: "/login", SecretField: "pin", SecretFields: map[string]string{"apikey": "tokensource-key"}, TokenPath: "data.token"}
+		_, err := engine.Lookup(context.Background(), spec(login), "9")
+		if err == nil || !strings.Contains(err.Error(), "tokensource-key") {
+			t.Fatalf("err = %v, want a missing-credential error naming the ref", err)
+		}
+		if logins != before {
+			t.Fatalf("login request reached the source despite the missing secret")
+		}
+	})
+}
+
 // TestInvalidateCredentialClearsLoginBearerCache pins WEB-5H rotation/disable:
 // an AuthRef-scoped credential change invalidates every login-bearer token
 // cached for that ref, so the next request exchanges the secret again.
