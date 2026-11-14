@@ -26,6 +26,7 @@ import { sessionUpdateStrings } from "./sessions-updates";
 import { setupStrings } from "./setup";
 import { sharedStateStrings } from "./shared-states";
 import { viewerAccountStrings } from "./viewer-account";
+import { watchPartyStrings } from "./watch-party";
 import { whosWatchingStrings } from "./whos-watching";
 
 export const en = {
@@ -56,6 +57,7 @@ export const en = {
   ...powerToolStrings.en,
   ...itemActionStrings.en,
   ...playerRecoveryStrings.en,
+  ...watchPartyStrings.en,
   ...libraryTrashStrings.en,
   ...mediaDetailStrings.en,
 } as const;
@@ -88,6 +90,7 @@ export const fr = {
   ...powerToolStrings.fr,
   ...itemActionStrings.fr,
   ...playerRecoveryStrings.fr,
+  ...watchPartyStrings.fr,
   ...libraryTrashStrings.fr,
   ...mediaDetailStrings.fr,
 } as const;
@@ -120,6 +123,7 @@ export const de = {
   ...powerToolStrings.de,
   ...itemActionStrings.de,
   ...playerRecoveryStrings.de,
+  ...watchPartyStrings.de,
   ...libraryTrashStrings.de,
   ...mediaDetailStrings.de,
 } as const;
@@ -152,6 +156,7 @@ export const es = {
   ...powerToolStrings.es,
   ...itemActionStrings.es,
   ...playerRecoveryStrings.es,
+  ...watchPartyStrings.es,
   ...libraryTrashStrings.es,
   ...mediaDetailStrings.es,
 } as const;
@@ -184,6 +189,7 @@ export const pt = {
   ...powerToolStrings.pt,
   ...itemActionStrings.pt,
   ...playerRecoveryStrings.pt,
+  ...watchPartyStrings.pt,
   ...libraryTrashStrings.pt,
   ...mediaDetailStrings.pt,
 } as const;
