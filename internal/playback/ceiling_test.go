@@ -258,3 +258,64 @@ func TestStreamingCeilingSeparatesFingerprints(t *testing.T) {
 		t.Fatal("a ceiling must change the capability fingerprint so sessions do not share renditions across ceilings")
 	}
 }
+
+// TestStreamingCeilingHoldsAudioToStereoAAC checks that a ceiling transcode
+// does not pass lossless audio through: each rung reserves only 256 kbit/s
+// for audio, so passthrough would push the stream past the ceiling.
+func TestStreamingCeilingHoldsAudioToStereoAAC(t *testing.T) {
+	profile := CapabilityProfile{
+		Client:          "passthrough-tv",
+		Containers:      []string{"mp4"},
+		VideoCodecs:     []VideoCodecCap{{Codec: "h264", MaxHeight: 1080}},
+		AudioCodecs:     []AudioCodecCap{{Codec: "truehd", MaxChannels: 8}, {Codec: "eac3", MaxChannels: 6}},
+		DownstreamAudio: "passthrough",
+	}
+	audioGrant := func(t *testing.T, profile CapabilityProfile) streamtoken.Grant {
+		t.Helper()
+		service, st, scope := capabilityTestService(t)
+		mediaID := importProbedMedia(t, st, "fp-ceiling-truehd", "mkv", "h264", 1920, 1080, []store.MediaFileStream{
+			videoStream("h264", "High", 0, ""),
+			audioStream(1, "truehd", 8),
+		})
+		resp, err := service.Info(context.Background(), scope, InfoRequest{MediaID: string(mediaID), CapabilityProfile: profile})
+		if err != nil {
+			t.Fatalf("Info: %v", err)
+		}
+		grant, err := service.tokens.UnverifiedGrant(resp.Streams[0].Token, streamtoken.TargetMediaHLS)
+		if err != nil {
+			t.Fatalf("grant: %v", err)
+		}
+		return grant
+	}
+	if got := audioGrant(t, profile).HLSAudioCodec; got != "copy" {
+		t.Fatalf("without a ceiling HLSAudioCodec = %q, want copy: the fixture must pass audio through", got)
+	}
+	capped := audioGrant(t, withCeiling(profile, 2_000_000))
+	if capped.HLSAudioCodec != "" || capped.HLSAudioChannels != 0 {
+		t.Fatalf("under a ceiling audio = %q/%d, want stereo AAC", capped.HLSAudioCodec, capped.HLSAudioChannels)
+	}
+}
+
+// TestStreamingCeilingNamesItselfForDolbyVisionP7 checks the dashboard reason
+// for a P7 source whose HDR10 base layer would direct play without the
+// ceiling: the ceiling refused it, not the HDR format.
+func TestStreamingCeilingNamesItselfForDolbyVisionP7(t *testing.T) {
+	service, st, scope := capabilityTestService(t)
+	p7 := videoStream("hevc", "Main 10", 7, "smpte2084")
+	p7.DoViBLCompatID = doViBLCompatHDR10
+	mediaID := importProbedMediaSized(t, st, "fp-ceiling-p7", "mkv", "hevc", 1920, 1080, ceilingSourceBytes, []store.MediaFileStream{
+		p7,
+		audioStream(1, "eac3", 6),
+	})
+	resp, err := service.Info(context.Background(), scope, InfoRequest{MediaID: string(mediaID), CapabilityProfile: withCeiling(main10_1080p, 5_000_000)})
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	if resp.Reason != bitrateCeilingReason {
+		t.Fatalf("decision reason = %q, want %s", resp.Reason, bitrateCeilingReason)
+	}
+	obs, ok := service.PlayObservation(scope.SessionID, mediaID)
+	if !ok || obs.Reason != PlayReasonBitrate {
+		t.Fatalf("observation = %+v (%v), want reason %s", obs, ok, PlayReasonBitrate)
+	}
+}

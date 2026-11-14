@@ -33,6 +33,11 @@ ceiling below the lowest rung SHALL leave the lowest rung. Audio-only items are 
 - **WHEN** a 2160p source is transcoded for an HEVC-capable client under a 40 Mbit/s ceiling
 - **THEN** the 2160p HEVC rung is still advertised
 
+#### Scenario: Transcoded audio fits the rung
+
+- **WHEN** a source the profile could pass lossless audio through for is transcoded under a ceiling
+- **THEN** the audio is re-encoded to stereo AAC, within the audio share each rung reserves
+
 ### Requirement: The decision names the viewer ceiling only when it alone applies
 
 When the viewer's streaming ceiling is the only reason a video source was not handed over,
@@ -59,3 +64,9 @@ would be without the ceiling.
 
 - **WHEN** the profile cannot decode the source codec and carries a ceiling
 - **THEN** the live-session dashboard names the codec, not the bitrate, as the reason
+
+#### Scenario: Dolby Vision base layer refused by the ceiling
+
+- **WHEN** a Dolby Vision profile 7 source would direct play its HDR10 base layer without the
+  ceiling and the ceiling refuses it
+- **THEN** the reason is `bitrate-ceiling` and the dashboard names the bitrate, not the HDR format

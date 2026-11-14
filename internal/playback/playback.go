@@ -954,6 +954,9 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 		}()
 	}
 	hlsAudio := hlsAudioProfile(profile, streams, loudness, loudnessOK, ov)
+	if ov.clientMaxBitrate > 0 && ov.vetoesVideoPassthrough(media, file, streams) {
+		hlsAudio = ceilingBoundAudio(hlsAudio)
+	}
 
 	// Generated Asset advertisement: one assets-target token covers
 	// the trickplay manifest + sheets, the preview clip, and Marker
@@ -1712,6 +1715,19 @@ func hlsAudioProfile(profile CapabilityProfile, streams []store.MediaFileStream,
 	if loudnessOK {
 		gain := loudness.GainDB
 		audio.GainDB = &gain
+	}
+	return audio
+}
+
+// ceilingBoundAudio holds a re-encoded stream's audio to stereo AAC under the
+// viewer's streaming ceiling. Each ladder rung reserves 256 kbit/s for audio
+// (bandwidthFor); passthrough or 5.1 E-AC-3 can exceed that on its own, which
+// would push the stream past the ceiling the viewer chose. Stereo AAC at the
+// encoder's default rate fits the reserve.
+func ceilingBoundAudio(audio ffmpeg.AudioProfile) ffmpeg.AudioProfile {
+	audio.Codec = "aac"
+	if audio.Channels <= 0 || audio.Channels > 2 {
+		audio.Channels = 2
 	}
 	return audio
 }

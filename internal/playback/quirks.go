@@ -677,7 +677,6 @@ func (ov quirkOverlay) vetoesVideoPassthrough(media store.Media, file store.Medi
 	}
 	if bitrateCap > 0 {
 		bitrate := estimatedSourceBitrate(media, file)
-		println("DBG", bitrate, bitrateCap, media.DurationSeconds, file.SizeBytes)
 		if bitrate <= 0 || bitrate > bitrateCap {
 			return true
 		}
