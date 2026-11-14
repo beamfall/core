@@ -8,4 +8,4 @@
 - [x] 3. Card activation: poster cards in shelf and grid sections open the page; list rows and the
       hero keep playing at once; tests
 - [x] 4. Register `/media/:mediaId` in the viewer area routes
-- [ ] 5. Owner review in the running UI; `make gate` at landing; `openspec archive media-detail-page`
+- [x] 5. Owner review in the running UI; `make gate` at landing; `openspec archive media-detail-page`
