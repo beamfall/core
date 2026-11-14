@@ -22,15 +22,41 @@ func CheckLibraryRoots(roots []string) error {
 	return nil
 }
 
+// CheckAddedLibraryRoots runs CheckLibraryRoots on the submitted roots that a
+// Library update adds. A root already saved on the Library may be kept even
+// when the server can no longer read it, so a Library whose folders have gone
+// missing can still be repaired by removing them one at a time (CORE-1606).
+func CheckAddedLibraryRoots(saved, submitted []string) error {
+	kept := make(map[string]bool, len(saved))
+	for _, root := range saved {
+		kept[cleanLibraryRoot(root)] = true
+	}
+	for _, root := range submitted {
+		if strings.TrimSpace(root) != "" && kept[cleanLibraryRoot(root)] {
+			continue
+		}
+		if err := checkLibraryRoot(root); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// cleanLibraryRoot is the absolute, cleaned form a root is saved in.
+func cleanLibraryRoot(root string) string {
+	root = strings.TrimSpace(root)
+	if absolute, err := filepath.Abs(root); err == nil {
+		return filepath.Clean(absolute)
+	}
+	return root
+}
+
 func checkLibraryRoot(root string) error {
 	root = strings.TrimSpace(root)
 	if root == "" {
 		return ValidationError("library root is required")
 	}
-	path := root
-	if absolute, err := filepath.Abs(root); err == nil {
-		path = filepath.Clean(absolute)
-	}
+	path := cleanLibraryRoot(root)
 	info, err := os.Stat(path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):

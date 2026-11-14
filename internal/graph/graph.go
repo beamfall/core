@@ -2283,7 +2283,11 @@ func (h *Handler) setLibraryRoots(ctx context.Context, scope auth.Scope, req req
 	if !ok {
 		return LibraryInfo{}, clientError("roots is required")
 	}
-	if err := store.CheckLibraryRoots(roots); err != nil {
+	saved, err := h.store.LibraryRoots(ctx, store.LibraryID(libraryID))
+	if err != nil {
+		return LibraryInfo{}, err
+	}
+	if err := store.CheckAddedLibraryRoots(saved, roots); err != nil {
 		return LibraryInfo{}, err
 	}
 	if err := h.store.SetLibraryRoots(ctx, store.LibraryID(libraryID), roots); err != nil {
