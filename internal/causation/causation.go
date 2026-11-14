@@ -65,6 +65,9 @@ type Limits struct {
 	DeadLetterRecords  int
 	DeadLetterWindow   time.Duration
 	DeadLetterCapacity int
+	// MaxTrackedDescendants bounds the descendant ledger that binds the
+	// outbox rows a mutation appends to that mutation's chain.
+	MaxTrackedDescendants int
 }
 
 // DefaultLimits returns the ADR-0125 containment contract.
@@ -79,6 +82,8 @@ func DefaultLimits() Limits {
 		DeadLetterRecords:  8,
 		DeadLetterWindow:   time.Minute,
 		DeadLetterCapacity: 256,
+
+		MaxTrackedDescendants: 65536,
 	}
 }
 
@@ -110,6 +115,9 @@ func normalizeLimits(limits Limits) Limits {
 	}
 	if limits.DeadLetterCapacity <= 0 {
 		limits.DeadLetterCapacity = defaults.DeadLetterCapacity
+	}
+	if limits.MaxTrackedDescendants <= 0 {
+		limits.MaxTrackedDescendants = defaults.MaxTrackedDescendants
 	}
 	return limits
 }
@@ -152,6 +160,11 @@ type chainState struct {
 	expiresAt time.Time
 }
 
+type descendant struct {
+	token     Token
+	expiresAt time.Time
+}
+
 type workerWindow struct {
 	startedAt time.Time
 	actions   int
@@ -170,6 +183,7 @@ type CausationCap struct {
 	mu                sync.Mutex
 	chains            map[[sha256.Size]byte]chainState
 	workers           map[string]workerWindow
+	descendants       map[string]descendant
 	deadLetters       []DeadLetter
 	deadWindowStart   time.Time
 	deadWindowRecords int
@@ -188,6 +202,8 @@ func NewCausationCap(limits Limits, now func() time.Time) *CausationCap {
 		now:     now,
 		chains:  make(map[[sha256.Size]byte]chainState),
 		workers: make(map[string]workerWindow),
+
+		descendants: make(map[string]descendant),
 	}
 	_, cap.entropyErr = rand.Read(cap.key[:])
 	return cap
@@ -217,6 +233,16 @@ func (c *CausationCap) TokenFor(root string, startedAt time.Time) (Token, error)
 // calling worker's rate window. Every denial is sent to the bounded/coalesced
 // dead-letter surface before the mutation seam can run.
 func (c *CausationCap) Admit(workerID string, token Token, action string) error {
+	return c.AdmitWithDescendants(workerID, token, action, nil)
+}
+
+// AdmitWithDescendants is Admit for a mutation whose seam appends outbox rows.
+// descendants are opaque keys naming those rows; on admission each key is
+// bound to token, so Inherited hands a worker the spent chain rather than a
+// fresh root when the row is delivered (ADR-0125: every descendant outbox event
+// retains the token). The ledger is checked before any budget is spent and
+// fails closed when full. A key already bound keeps its first chain.
+func (c *CausationCap) AdmitWithDescendants(workerID string, token Token, action string, descendants []string) error {
 	now := c.now().UTC()
 	chainID, expiresAt, validationErr := c.validateToken(token, now)
 
@@ -254,6 +280,23 @@ func (c *CausationCap) Admit(workerID string, token Token, action string) error 
 		c.recordAbortLocked(now, workerID, token, action, ErrWorkerRateLimit)
 		return ErrWorkerRateLimit
 	}
+	fresh := 0
+	for _, key := range descendants {
+		if _, bound := c.descendants[key]; !bound {
+			fresh++
+		}
+	}
+	if len(c.descendants)+fresh > c.limits.MaxTrackedDescendants {
+		c.recordAbortLocked(now, workerID, token, action, ErrTrackingCapacity)
+		return ErrTrackingCapacity
+	}
+	// A descendant row is delivered after the mutation; its entry outlives the
+	// row's own fresh-root lifetime, after which a re-minted root is expired.
+	for _, key := range descendants {
+		if _, bound := c.descendants[key]; !bound {
+			c.descendants[key] = descendant{token: token, expiresAt: now.Add(c.limits.ChainLifetime)}
+		}
+	}
 
 	chain.actions++
 	chain.expiresAt = expiresAt
@@ -261,6 +304,19 @@ func (c *CausationCap) Admit(workerID string, token Token, action string) error 
 	c.chains[chainID] = chain
 	c.workers[workerID] = window
 	return nil
+}
+
+// Inherited returns the chain token a descendant key was bound to by
+// AdmitWithDescendants, or the zero Token when the key is unbound or expired.
+func (c *CausationCap) Inherited(key string) Token {
+	now := c.now().UTC()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entry, ok := c.descendants[key]
+	if !ok || !now.Before(entry.expiresAt) {
+		return ""
+	}
+	return entry.token
 }
 
 func (c *CausationCap) validateToken(token Token, now time.Time) ([sha256.Size]byte, time.Time, error) {
@@ -309,6 +365,11 @@ func (c *CausationCap) pruneLocked(now time.Time) {
 	for workerID, window := range c.workers {
 		if !now.Before(window.startedAt.Add(c.limits.WorkerWindow)) {
 			delete(c.workers, workerID)
+		}
+	}
+	for key, entry := range c.descendants {
+		if !now.Before(entry.expiresAt) {
+			delete(c.descendants, key)
 		}
 	}
 }

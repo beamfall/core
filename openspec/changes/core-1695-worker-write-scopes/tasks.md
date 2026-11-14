@@ -1,17 +1,17 @@
 ## 1. Build
 
-- [ ] 1.1 Add the five permission kinds, high-risk set and dispatch entries
-- [ ] 1.2 Add the Host methods, seams, wire methods and audit actions with Console labels
-- [ ] 1.3 Wire the seams in `internal/app` (store, artwork service, watch-state adapter)
-- [ ] 1.4 Update the glossary permission list
-- [ ] 1.5 Bind descendant outbox rows to the caller's causation chain; add the promotion rows to ARCHITECTURE.md section 4
+- [x] 1.1 Add the five permission kinds, high-risk set and dispatch entries
+- [x] 1.2 Add the Host methods, seams, wire methods and audit actions with Console labels
+- [x] 1.3 Wire the seams in `internal/app` (store, artwork service, watch-state adapter)
+- [x] 1.4 Update the glossary permission list
+- [x] 1.5 Bind descendant outbox rows to the caller's causation chain; add the promotion rows to ARCHITECTURE.md section 4
 
 ## 2. Prove
 
-- [ ] 2.1 Tests: vocabulary sync and dispatch coverage, denial without approval, scope, audit
-- [ ] 2.2 Sample Worker test creates a collection and sets artwork over the wire
-- [ ] 2.5 Self-chain test: a Worker's own descendant rows return its token and stop at the budget
-- [ ] 2.3 `openspec validate --all --strict` passes
+- [x] 2.1 Tests: vocabulary sync and dispatch coverage, denial without approval, scope, audit
+- [x] 2.2 Sample Worker test creates a collection and sets artwork over the wire
+- [x] 2.5 Self-chain test: a Worker's own descendant rows return its token and stop at the budget
+- [x] 2.3 `openspec validate --all --strict` passes
 - [ ] 2.4 wsl preflight passes on the head
 
 ## 3. Close

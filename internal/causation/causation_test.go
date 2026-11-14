@@ -197,3 +197,63 @@ func TestDeadLetterNewRecordRateIsBounded(t *testing.T) {
 		t.Fatalf("suppressed records = %d, want 18", snapshot.Suppressed)
 	}
 }
+
+func TestAdmitWithDescendantsBindsRowsToTheChain(t *testing.T) {
+	now := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+	cap := NewCausationCap(DefaultLimits(), func() time.Time { return now })
+	token, err := cap.TokenFor("root", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := cap.TokenFor("other", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cap.AdmitWithDescendants("worker", token, "write", []string{"a", "b"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := cap.Inherited("a"); got != token {
+		t.Fatalf("Inherited(a) = %q, want the admitting chain", got)
+	}
+	if got := cap.Inherited("unbound"); got != "" {
+		t.Fatalf("Inherited(unbound) = %q, want empty", got)
+	}
+	if err := cap.AdmitWithDescendants("worker", other, "write", []string{"a"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := cap.Inherited("a"); got != token {
+		t.Fatal("a later chain rebound a descendant already bound to another chain")
+	}
+	now = now.Add(DefaultLimits().ChainLifetime)
+	if got := cap.Inherited("b"); got != "" {
+		t.Fatalf("Inherited(b) after the chain lifetime = %q, want empty", got)
+	}
+}
+
+func TestAdmitWithDescendantsFailsClosedWhenTheLedgerIsFull(t *testing.T) {
+	now := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+	limits := DefaultLimits()
+	limits.MaxTrackedDescendants = 2
+	limits.GlobalActions = 2
+	cap := NewCausationCap(limits, func() time.Time { return now })
+	token, err := cap.TokenFor("root", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cap.AdmitWithDescendants("worker", token, "write", []string{"a", "b", "c"}); !errors.Is(err, ErrTrackingCapacity) {
+		t.Fatalf("over-capacity admit: err = %v, want %v", err, ErrTrackingCapacity)
+	}
+	if got := cap.Inherited("a"); got != "" {
+		t.Fatal("a refused admission bound a descendant")
+	}
+	// The refusal spent no budget: both actions remain.
+	for i := 0; i < 2; i++ {
+		if err := cap.AdmitWithDescendants("worker", token, "write", []string{"a"}); err != nil {
+			t.Fatalf("admit %d after refusal: %v", i, err)
+		}
+	}
+	snapshot := cap.DeadLetters()
+	if len(snapshot.Records) != 1 || snapshot.Records[0].Reason != DeadLetterTrackingCapacity {
+		t.Fatalf("dead letters = %+v, want one tracking-capacity record", snapshot.Records)
+	}
+}
