@@ -337,6 +337,47 @@ func TestScanImportsAudiobookNarratorFromProbeTags(t *testing.T) {
 	}
 }
 
+// A track with embedded cover art is still audio: the attached picture is
+// artwork, not a video stream, so it must not reach the stream inventory that
+// gates direct play (CORE-1143).
+func TestScanTrackWithEmbeddedCoverArtIsAudio(t *testing.T) {
+	root := t.TempDir()
+	writeScanFile(t, root, "Novel/Novel.m4a", []byte("track bytes"))
+	st := storetest.Open(t)
+	library, err := st.CreateLibrary(context.Background(), "Audiobooks", false, audiobook.PluginID, "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prober := fakeProber{probe: ffmpeg.Probe{
+		Container:  "m4a",
+		AudioCodec: "aac",
+		Streams: []ffmpeg.ProbeStream{
+			{Index: 0, Type: "audio", Codec: "aac", Channels: 2},
+			{Index: 1, Type: "video", Codec: "mjpeg", AttachedPicture: true},
+			{Index: 2, Type: "subtitle", Codec: "mov_text"},
+		},
+	}}
+	parsers := map[string]FilenameParser{audiobook.PluginID: audiobook.New()}
+	result, err := Scan(context.Background(), st, prober, nil, parsers, nil, nil, Request{LibraryID: library.ID, Root: root})
+	if err != nil {
+		t.Fatalf("Scan returned error: %v", err)
+	}
+	media, err := st.Media(context.Background(), result.Files[0].MediaID, store.LibraryFilter{AllowedIDs: []store.LibraryID{library.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if media.Class != store.MediaClassAudio || media.Codec != "aac" {
+		t.Fatalf("media class/codec = %q/%q, want audio/aac", media.Class, media.Codec)
+	}
+	streams, err := st.MediaFileStreams(context.Background(), result.Files[0].ContentFingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(streams) != 2 || streams[0].Type != "audio" || streams[1].Type != "subtitle" || streams[1].Index != 2 {
+		t.Fatalf("streams = %+v, want audio(0) and subtitle(2) with the cover art dropped", streams)
+	}
+}
+
 func TestScanImportsM4BAudiobookChaptersAsMarkers(t *testing.T) {
 	root := t.TempDir()
 	writeScanFile(t, root, "Novel/Novel.m4b", []byte("audiobook bytes"))

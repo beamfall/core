@@ -116,3 +116,40 @@ func TestScanTriggersIdentificationAndPinSurvivesRescan(t *testing.T) {
 		t.Fatalf("pin cleared by rescan: pinned=%v err=%v", pinned, err)
 	}
 }
+
+func TestRescanRetriesAutoIdentifyUntilTheItemIsIdentified(t *testing.T) {
+	root := t.TempDir()
+	writeScanFile(t, root, "Summer Picnic/clip01.mov", []byte("family archive bytes"))
+	st := storetest.Open(t)
+	library, err := st.CreateLibrary(context.Background(), "Family Archive", false, "familyarchive", "profile-default")
+	if err != nil {
+		t.Fatalf("CreateLibrary: %v", err)
+	}
+	// The recording identifier writes nothing, which is what a failed attempt
+	// (for example a missing provider credential) leaves behind.
+	identifier := &recordingIdentifier{}
+	scan := func() Result {
+		t.Helper()
+		result, err := Scan(context.Background(), st, nil, nil, map[string]FilenameParser{"familyarchive": familyArchiveParser{}}, nil, identifier, Request{
+			LibraryID: library.ID,
+			Root:      root,
+		})
+		if err != nil {
+			t.Fatalf("Scan returned error: %v", err)
+		}
+		return result
+	}
+	result := scan()
+	scan()
+	if identifier.calls != 2 {
+		t.Fatalf("identifier calls after rescan = %d, want 2 (an unidentified item is retried)", identifier.calls)
+	}
+	if err := st.UpsertMediaFieldsWithSource(context.Background(), result.Files[0].MediaID,
+		[]store.MediaField{{Name: "class", Type: store.EntityFieldText, Text: "home-video"}}, store.MutationSourceOperator); err != nil {
+		t.Fatal(err)
+	}
+	scan()
+	if identifier.calls != 2 {
+		t.Fatalf("identifier calls after identified rescan = %d, want 2 (an identified item is left alone)", identifier.calls)
+	}
+}

@@ -44,11 +44,17 @@ describe("RemoteAccessStatus", () => {
   it("surfaces connection classes from remote-access endpoints", async () => {
     renderStatus();
 
-    expect(await screen.findByText("LAN (direct)")).toBeInTheDocument();
-    expect(screen.getByText("Direct HTTPS (ACME)")).toBeInTheDocument();
-    expect(screen.getByText("Overlay network")).toBeInTheDocument();
-    expect(screen.getByText("Self-hosted relay")).toBeInTheDocument();
-    expect(screen.getByText("Hosted relay")).toBeInTheDocument();
+    // One plain line names every class, in place of a chip per class (CORE-1117).
+    const line = (await screen.findByText(/^Reachable through/)).textContent;
+    for (const label of [
+      "LAN (direct)",
+      "Direct HTTPS (ACME)",
+      "Overlay network",
+      "Self-hosted relay",
+      "Hosted relay",
+    ]) {
+      expect(line).toContain(label);
+    }
   });
 
   it("guides install and polling when no overlay is detected", async () => {

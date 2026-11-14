@@ -125,7 +125,7 @@ func TestBackupIngestRoutesEncryptedCustodialUpload(t *testing.T) {
 
 func TestBackupIngestContentAddressedDedup(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +176,7 @@ func TestBackupIngestContentAddressedDedup(t *testing.T) {
 
 func TestBackupIngestFailedEncryptDoesNotPublishFinalCiphertext(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +221,7 @@ func TestBackupIngestFailedEncryptDoesNotPublishFinalCiphertext(t *testing.T) {
 
 func TestBackupIngestFailedImportRemovesNewCiphertext(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +276,7 @@ func TestBackupIngestDurabilityPrecedesCatalogCommit(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
-			st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+			st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -438,7 +438,7 @@ func TestBackupIngestOpenSweepsOrphanedPlainScratch(t *testing.T) {
 
 func TestBackupIngestPolicyFailures(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -486,7 +486,7 @@ func TestBackupIngestPolicyFailures(t *testing.T) {
 
 func TestBackupIngestRejectsDeclaredSizeMismatch(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -542,7 +542,7 @@ func (c *objectBoundBackupIngestCipher) EncryptObjectFile(libraryID, plaintextPa
 // and never falls back to the context-free seam.
 func TestBackupIngestPrefersObjectBoundEncryptor(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,6 +5,7 @@ import {
   ApiError,
   ApiMalformedResponseError,
   ApiResponseTooLargeError,
+  fetchSetupStatus,
   getJSON,
   graphql,
   isAuthRejection,
@@ -261,5 +262,24 @@ describe("response body and in-band authorization typing", () => {
 
     await expect(pending).rejects.toMatchObject({ name: "ApiError", status: 200 });
     await expect(pending).rejects.not.toSatisfy(isAuthRejection);
+  });
+});
+
+describe("setup probe", () => {
+  it("leaves the sign-in security mode unknown when the probe fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("network down")));
+    await expect(fetchSetupStatus()).resolves.toEqual({
+      required: false,
+      tokenRequired: true,
+      securityMode: null,
+    });
+  });
+
+  it("reads home for a server that predates the mode field", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ required: false }))),
+    );
+    await expect(fetchSetupStatus()).resolves.toMatchObject({ securityMode: "home" });
   });
 });

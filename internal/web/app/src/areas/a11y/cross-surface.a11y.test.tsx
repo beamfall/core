@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -124,8 +124,8 @@ describe("ADR-0100 web a11y conformance — Viewer (browse)", () => {
     // Section heading carries real h2 semantics; the card grid is a labelled list.
     expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("Continue Watching");
     // Each card is a reachable, labelled button (accessible name = its title).
-    expect(screen.getByRole("button", { name: /Alpha/ })).toBeVisible();
-    expect(screen.getByRole("button", { name: /Bravo/ })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^Alpha/ })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^Bravo/ })).toBeVisible();
     await expectNoAxeViolations(container);
     expectNoPositiveTabindex(container);
   });
@@ -171,6 +171,9 @@ describe("ADR-0100 web a11y conformance — Console (Plugins)", () => {
       </I18nProvider>,
     );
     await screen.findAllByText("Studio Metadata");
+    // Details are collapsed by default (CORE-1115); open them so axe also
+    // covers the config, permission, action and lifecycle controls.
+    fireEvent.click(screen.getByRole("button", { name: "Details for Studio Metadata" }));
     // A config control with a programmatic label (reachable + labelled).
     expect(screen.getByLabelText("Fetch artwork")).toBeVisible();
     await expectNoAxeViolations(container);

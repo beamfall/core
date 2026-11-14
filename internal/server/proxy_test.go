@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -195,5 +196,94 @@ func TestBlankHopHeaderDoesNotInheritProxyProximity(t *testing.T) {
 	unproxied := srv.resolveProxyRequest(forwardedRequest("127.0.0.1:4000", nil))
 	if !requestIsLAN(unproxied) {
 		t.Fatal("a client inside the declared CIDR sending no hop header lost LAN standing")
+	}
+}
+
+// TestParseKnownProxiesAcceptsBareAddresses pins the documented entry shape:
+// every BEAMFALL_KNOWN_PROXIES entry is an address or a CIDR. A bare address is
+// the single-host prefix for that address, goes through the same safety check
+// as a CIDR, and dedupes against the equivalent single-host CIDR.
+func TestParseKnownProxiesAcceptsBareAddresses(t *testing.T) {
+	tests := []struct {
+		name       string
+		value      string
+		allowBroad bool
+		want       string
+	}{
+		{name: "bare IPv4 is a /32", value: "172.28.0.2", want: "172.28.0.2/32"},
+		{name: "bare IPv6 is a /128", value: "fd00::2", want: "fd00::2/128"},
+		{name: "IPv4-mapped IPv6 unmaps to IPv4", value: "::ffff:10.0.0.5", want: "10.0.0.5/32"},
+		{name: "mixed bare and CIDR", value: "172.28.0.2, 10.0.0.0/8", want: "10.0.0.0/8,172.28.0.2/32"},
+		{name: "bare and single-host CIDR collapse", value: "10.0.0.5, 10.0.0.5/32, ::ffff:10.0.0.5", want: "10.0.0.5/32"},
+		{name: "public bare address with broad escape hatch", value: "8.8.8.8", allowBroad: true, want: "8.8.8.8/32"},
+		{name: "existing CIDR parses as before", value: "10.1.2.3/8, 192.168.1.0/24, fc00::/7", want: "10.0.0.0/8,192.168.1.0/24,fc00::/7"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			proxies, err := ParseKnownProxies(tt.value, tt.allowBroad)
+			if err != nil {
+				t.Fatalf("ParseKnownProxies(%q) = %v", tt.value, err)
+			}
+			if got := proxies.String(); got != tt.want {
+				t.Fatalf("ParseKnownProxies(%q) = %q, want %q", tt.value, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseKnownProxiesRejectsBadEntries(t *testing.T) {
+	tests := []struct {
+		name      string
+		value     string
+		wantEntry string
+		wantText  string
+	}{
+		{name: "public bare address without escape hatch", value: "8.8.8.8", wantText: "public or over-broad"},
+		{name: "public mapped address without escape hatch", value: "::ffff:8.8.8.8", wantText: "public or over-broad"},
+		{name: "garbage", value: "10.0.0.2, not-an-ip", wantEntry: `"not-an-ip"`, wantText: "must be an address or CIDR"},
+		{name: "bad CIDR", value: "10.0.0.0/99", wantEntry: `"10.0.0.0/99"`, wantText: "must be an address or CIDR"},
+		{name: "address with port", value: "10.0.0.2:8080", wantEntry: `"10.0.0.2:8080"`, wantText: "must be an address or CIDR"},
+		{name: "zoned IPv6 address", value: "fe80::1%eth0", wantEntry: `"fe80::1%eth0"`, wantText: "without an IPv6 zone"},
+		{name: "zoned IPv6 CIDR", value: "fe80::1%eth0/128", wantEntry: `"fe80::1%eth0/128"`, wantText: "must be an address or CIDR"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseKnownProxies(tt.value, false)
+			if err == nil {
+				t.Fatalf("ParseKnownProxies(%q) accepted a bad entry", tt.value)
+			}
+			if !strings.Contains(err.Error(), tt.wantEntry) || !strings.Contains(err.Error(), tt.wantText) {
+				t.Fatalf("ParseKnownProxies(%q) error = %q, want it to name %s and say %q", tt.value, err, tt.wantEntry, tt.wantText)
+			}
+		})
+	}
+}
+
+// TestBareKnownProxyResolvesForwardedHeaders proves a proxy declared by bare
+// address is trusted: a request whose peer is that address resolves the client
+// from its forwarding headers, while a neighbouring peer does not.
+func TestBareKnownProxyResolvesForwardedHeaders(t *testing.T) {
+	proxies, err := ParseKnownProxies("172.28.0.2", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &Server{knownProxies: proxies}
+
+	got := srv.resolveProxyRequest(forwardedRequest("172.28.0.2:4000", http.Header{
+		"X-Forwarded-For":   {"198.51.100.9"},
+		"X-Forwarded-Proto": {"https"},
+	}))
+	if got.RemoteAddr != "198.51.100.9:4000" || !requestIsHTTPS(got) {
+		t.Fatalf("bare proxy peer: RemoteAddr = %q, https = %v; want the forwarded client over https", got.RemoteAddr, requestIsHTTPS(got))
+	}
+	if resolution, ok := ProxyResolutionFromRequest(got); !ok || !resolution.Trusted {
+		t.Fatalf("bare proxy peer: resolution = %#v, present = %v; want trusted", resolution, ok)
+	}
+
+	neighbour := srv.resolveProxyRequest(forwardedRequest("172.28.0.3:4000", http.Header{
+		"X-Forwarded-For": {"198.51.100.9"},
+	}))
+	if neighbour.RemoteAddr != "172.28.0.3:4000" {
+		t.Fatalf("undeclared neighbour: RemoteAddr = %q, want the peer kept", neighbour.RemoteAddr)
 	}
 }

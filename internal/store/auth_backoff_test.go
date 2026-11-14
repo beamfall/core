@@ -9,7 +9,7 @@ import (
 // openBackoffStore opens a seeded store for the auth-backoff lane tests.
 func openBackoffStore(t *testing.T) *Store {
 	t.Helper()
-	st, err := Open(context.Background(), t.TempDir(), Options{SeedDevelopmentData: true})
+	st, err := Open(context.Background(), migratedDataDir(t), Options{SeedDevelopmentData: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,5 +155,39 @@ func TestAuthBackoffDelayCapped(t *testing.T) {
 	}
 	if delay := until.Sub(at); delay > policy.MaxDelay {
 		t.Fatalf("delay %v exceeded cap %v", delay, policy.MaxDelay)
+	}
+}
+
+// TestReserveAuthAttemptCountsEveryLaneOrNone: a reservation records a failure
+// on every lane at once, records nothing once any lane is locked, and a later
+// success at the same instant reopens the lanes.
+func TestReserveAuthAttemptCountsEveryLaneOrNone(t *testing.T) {
+	st := openBackoffStore(t)
+	ctx := context.Background()
+	policy := AuthBackoff{Window: 10 * time.Minute, FreeAttempts: 2, BaseDelay: time.Second, MaxDelay: time.Hour}
+	at := time.Unix(2_100_000, 0).UTC()
+	const action = "test.reserve"
+	keys := []string{"source", "global"}
+
+	recordFailure(t, st, action, "source", at)
+	if until, err := st.ReserveAuthAttempt(ctx, action, keys, at, policy); err != nil || !until.IsZero() {
+		t.Fatalf("first reservation = (%v, %v), want open", until, err)
+	}
+	// "source" now holds two failures and is locked; "global" holds one.
+	until, err := st.ReserveAuthAttempt(ctx, action, keys, at, policy)
+	if err != nil || !until.After(at) {
+		t.Fatalf("second reservation = (%v, %v), want locked", until, err)
+	}
+	if failures, _, err := st.consecutiveAuthFailures(ctx, action, "global", at.Add(-time.Hour)); err != nil || failures != 1 {
+		t.Fatalf("global failures = (%d, %v), want 1: a locked reservation must record nothing", failures, err)
+	}
+	for _, key := range keys {
+		recordSuccess(t, st, action, key, at)
+	}
+	if until, err := st.ReserveAuthAttempt(ctx, action, keys, at, policy); err != nil || !until.IsZero() {
+		t.Fatalf("reservation after success = (%v, %v), want open", until, err)
+	}
+	if _, err := st.ReserveAuthAttempt(ctx, action, []string{"source", ""}, at, policy); err == nil {
+		t.Fatal("reservation with an empty key succeeded")
 	}
 }

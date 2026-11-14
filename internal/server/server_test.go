@@ -113,6 +113,9 @@ func TestRoutesAreRecorded(t *testing.T) {
 		{Method: http.MethodPost, Pattern: "/api/web/enroll", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodPost, Pattern: "/api/web/logout", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodPost, Pattern: "/api/web/promote", RevealClass: reveal.ContentJSON},
+		{Method: http.MethodPost, Pattern: "/api/web/session/renew", RevealClass: reveal.ContentJSON},
+		{Method: http.MethodPost, Pattern: "/api/web/admin-signin", RevealClass: reveal.ContentJSON},
+		{Method: http.MethodPost, Pattern: "/api/web/signin-security", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodPost, Pattern: "/api/setup", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodGet, Pattern: "/api/setup"},
 		{Method: http.MethodGet, Pattern: "/api/events", RevealClass: reveal.EventFanout},
@@ -306,37 +309,65 @@ func TestPackAuthorityRouteDispatchesAndDegrades(t *testing.T) {
 }
 
 func TestSetupRequiredProbe(t *testing.T) {
-	probe := func(srv *Server) bool {
+	probe := func(srv *Server, remoteAddr string) map[string]bool {
 		t.Helper()
 		req := httptest.NewRequest(http.MethodGet, "/api/setup", nil)
+		req.Host = "192.168.4.10:8800"
+		if remoteAddr != "" {
+			req.RemoteAddr = remoteAddr
+		}
 		rec := httptest.NewRecorder()
 		srv.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
 		}
-		var body map[string]bool
-		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
 			t.Fatalf("decode setup probe: %v", err)
 		}
-		if _, ok := body["required"]; !ok || len(body) != 1 {
-			t.Fatalf("body = %#v, want exactly {\"required\": bool}", body)
+		var mode string
+		if err := json.Unmarshal(raw["securityMode"], &mode); err != nil || mode != "home" {
+			t.Fatalf("securityMode = %s, want \"home\"", raw["securityMode"])
 		}
-		return body["required"]
+		body := map[string]bool{}
+		for _, key := range []string{"required", "tokenRequired"} {
+			var value bool
+			if err := json.Unmarshal(raw[key], &value); err != nil {
+				t.Fatalf("%s = %s: %v", key, raw[key], err)
+			}
+			body[key] = value
+		}
+		if len(raw) != 3 {
+			t.Fatalf("body = %s, want exactly required, tokenRequired and securityMode", rec.Body.String())
+		}
+		return body
 	}
 
 	// Fresh server with the bootstrap token installed: setup is required. The
 	// probe must answer without any session or CSRF header (unenrolled browser).
+	// An off-LAN browser needs the token; a LAN browser does not (CORE-1105).
 	srv := newTestServer(t)
 	srv.pairing.SetBootstrapToken("first-run-token")
-	if required := probe(srv); !required {
-		t.Fatalf("required = false, want true while the setup token is installed")
+	if body := probe(srv, "203.0.113.9:51000"); !body["required"] || !body["tokenRequired"] {
+		t.Fatalf("public probe = %#v, want required and tokenRequired", body)
+	}
+	if body := probe(srv, "192.168.4.20:51000"); !body["required"] || body["tokenRequired"] {
+		t.Fatalf("LAN probe = %#v, want required without tokenRequired", body)
+	}
+	rebound := httptest.NewRequest(http.MethodGet, "/api/setup", nil)
+	rebound.Host = "attacker.example:8800"
+	rebound.RemoteAddr = "192.168.4.20:51000"
+	reboundRec := httptest.NewRecorder()
+	srv.ServeHTTP(reboundRec, rebound)
+	if !strings.Contains(reboundRec.Body.String(), `"tokenRequired":true`) {
+		t.Fatalf("LAN probe through a rebindable Host = %s, want tokenRequired", reboundRec.Body.String())
 	}
 
 	// After the token is consumed (here: cleared, as a successful Bootstrap
 	// would), the probe reports setup is no longer required.
 	srv.pairing.SetBootstrapToken("")
-	if required := probe(srv); required {
-		t.Fatalf("required = true, want false after the setup token is consumed")
+	if body := probe(srv, ""); body["required"] || body["tokenRequired"] {
+		t.Fatalf("probe = %#v, want neither after the setup token is consumed", body)
 	}
 }
 

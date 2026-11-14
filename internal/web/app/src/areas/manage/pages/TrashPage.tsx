@@ -23,6 +23,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ACTIVITY_TEXT, describeActivity } from "@/lib/activityDisplay";
 import { fetchActivityLog, fetchTrashList, purgeTrash, restoreMedia } from "@/lib/graphql";
 import type { ActivityEntryInfo, TrashEntry } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
@@ -223,7 +224,7 @@ function PurgeSection({ onPurged }: { onPurged: () => Promise<void> | void }) {
         <div className="flex items-center gap-3">
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button type="button" variant="destructive" disabled={!canPurge}>
+              <Button type="button" variant="danger" disabled={!canPurge}>
                 {busy ? t("purgeRunning") : t("purgeAction")}
               </Button>
             </AlertDialogTrigger>
@@ -299,8 +300,8 @@ function ActivitySection() {
         <ManageTable>
           <TableHeader>
             <TableRow>
-              <TableHead>{t("activityLogHeading")}</TableHead>
-              <TableHead>{t("title")}</TableHead>
+              <TableHead>{ACTIVITY_TEXT.when}</TableHead>
+              <TableHead>{ACTIVITY_TEXT.what}</TableHead>
               <TableHead className="text-right">{t("activityUndo")}</TableHead>
             </TableRow>
           </TableHeader>
@@ -316,16 +317,9 @@ function ActivitySection() {
                     <TableCell className="manage-cell-num whitespace-nowrap">
                       {formatDateTime(entry.occurredAt)}
                     </TableCell>
-                    <TableCell>
-                      <span className="font-medium">{entry.action}</span>
-                      {entry.targetType && (
-                        <span className="text-muted-foreground">
-                          {" — "}
-                          {entry.targetType}
-                          {entry.targetID ? `:${entry.targetID}` : ""}
-                        </span>
-                      )}
-                    </TableCell>
+                    {/* The same sentence the Console activity log shows; the raw
+                        event key stays available on hover for operators. */}
+                    <TableCell title={entry.action}>{describeActivity(entry).sentence}</TableCell>
                     <TableCell className="text-right">
                       {reversible ? (
                         <Button type="button" variant="outline" size="sm" onClick={onUndo}>

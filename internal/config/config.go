@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -253,7 +254,18 @@ type RelayConfig struct {
 	// v1 TLS/yamux carrier; "quic" is the ADR-0018 v2 carrier with independent
 	// per-stream flow control.
 	Transport string
+	// YamuxStreamWindowBytes overrides the v1 (tcp) carrier's per-stream yamux
+	// receive window, which bounds relayed upload throughput (the relay's own
+	// --yamux-stream-window-bytes bounds downloads). 0 uses the 4 MiB default
+	// shared with the relay; set it to the relay's value when the relay
+	// overrides its default. Positive values must be at least 256 KiB, yamux's
+	// initial window. Ignored for the quic transport.
+	YamuxStreamWindowBytes int
 }
+
+// MinRelayYamuxStreamWindowBytes is yamux's initial stream window; the
+// multiplexer refuses a smaller maximum.
+const MinRelayYamuxStreamWindowBytes = 256 * 1024
 
 const (
 	RelayTransportTCP  = "tcp"
@@ -507,6 +519,13 @@ func LoadWithOutput(args []string, lookupEnv func(string) (string, bool), output
 	if value, ok := lookupEnv("BEAMFALL_RELAY_TRANSPORT"); ok {
 		cfg.RemoteAccess.Relay.Transport = strings.TrimSpace(value)
 	}
+	if value, ok := lookupEnv("BEAMFALL_RELAY_YAMUX_STREAM_WINDOW_BYTES"); ok {
+		window, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil {
+			return Config{}, fmt.Errorf("parse BEAMFALL_RELAY_YAMUX_STREAM_WINDOW_BYTES: %w", err)
+		}
+		cfg.RemoteAccess.Relay.YamuxStreamWindowBytes = window
+	}
 
 	fs := flag.NewFlagSet("beamfall serve", flag.ContinueOnError)
 	fs.SetOutput(output)
@@ -549,6 +568,7 @@ func LoadWithOutput(args []string, lookupEnv func(string) (string, bool), output
 	fs.StringVar(&cfg.RemoteAccess.Relay.PublicHost, "relay-public-host", cfg.RemoteAccess.Relay.PublicHost, "SNI host the relay routes inbound connections by (empty = public-domain)")
 	fs.StringVar(&cfg.RemoteAccess.Relay.CAFile, "relay-ca", cfg.RemoteAccess.Relay.CAFile, "relay carrier CA PEM file (empty = system roots)")
 	fs.StringVar(&cfg.RemoteAccess.Relay.Transport, "relay-transport", cfg.RemoteAccess.Relay.Transport, "relay carrier transport: tcp or quic (default tcp)")
+	fs.IntVar(&cfg.RemoteAccess.Relay.YamuxStreamWindowBytes, "relay-yamux-stream-window-bytes", cfg.RemoteAccess.Relay.YamuxStreamWindowBytes, "tcp relay carrier per-stream window in bytes; 0 uses the 4 MiB default; match the relay's --yamux-stream-window-bytes")
 	attached := cfg.Role == serverrole.Attached
 	fs.BoolVar(&attached, "attached", attached, "run as an attached Origin Node (ADR-0123): performs byte-local work but never authors catalog rows, issues Stream Tokens, or authors engagement (default: main server)")
 	if err := fs.Parse(args); err != nil {
@@ -681,6 +701,9 @@ func validate(cfg Config) (Config, error) {
 	case RelayTransportTCP, RelayTransportQUIC:
 	default:
 		return Config{}, fmt.Errorf("unknown relay transport %q (want %q or %q)", cfg.RemoteAccess.Relay.Transport, RelayTransportTCP, RelayTransportQUIC)
+	}
+	if window := cfg.RemoteAccess.Relay.YamuxStreamWindowBytes; window < 0 || (window > 0 && window < MinRelayYamuxStreamWindowBytes) || int64(window) > math.MaxUint32 {
+		return Config{}, fmt.Errorf("relay yamux stream window %d bytes: want 0 (default) or %d to %d", window, MinRelayYamuxStreamWindowBytes, uint64(math.MaxUint32))
 	}
 	cfg.ReviewDemoEnrollment.ProfileID = strings.TrimSpace(cfg.ReviewDemoEnrollment.ProfileID)
 	if cfg.ReviewDemoEnrollment.Enabled && cfg.ReviewDemoEnrollment.ProfileID == "" {

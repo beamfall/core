@@ -44,7 +44,7 @@ describe("French Canadian catalog coverage", () => {
       (key) => key.startsWith("pluginLifecycle") || key.startsWith("pluginUninstall"),
     );
 
-    expect(keys).toHaveLength(9);
+    expect(keys).toHaveLength(8);
     for (const key of keys) expect(STRINGS.fr[key], key).not.toBe(STRINGS.en[key]);
   });
 });

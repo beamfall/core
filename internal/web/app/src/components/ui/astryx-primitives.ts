@@ -1,4 +1,5 @@
 export { AlertDialog } from "@base-ui/react/alert-dialog";
+export { Autocomplete } from "@base-ui/react/autocomplete";
 export { Combobox } from "@base-ui/react/combobox";
 export { Dialog } from "@base-ui/react/dialog";
 export {

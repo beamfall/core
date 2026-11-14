@@ -158,9 +158,9 @@ describe("ADR-0034 text-expansion gate — Console (Plugins)", () => {
   it("renders expanded keyed labels in full (incl. Select-bearing surface)", async () => {
     const { container } = renderExpanded(<Plugins />);
     await screen.findAllByText("Studio Metadata");
-    // The active-state chip resolves the expanded de value, present in full.
-    expect(container.textContent).toContain(STRINGS.de.consoleConfigActive);
-    expect(STRINGS.de.consoleConfigActive).toContain("⟧"); // not truncated to a prefix
+    // The section heading resolves the expanded de value, present in full.
+    expect(container.textContent).toContain(STRINGS.de.consoleConfigPlugins);
+    expect(STRINGS.de.consoleConfigPlugins).toContain("⟧"); // not truncated to a prefix
   });
 });
 
@@ -189,7 +189,18 @@ const CLIP_UTILITY =
 // on the picker container (no text slot) and 2 `truncate` on filesystem-derived
 // slots (folder name + footer path). Both truncate gracefully: CSS ellipsis only,
 // so the full value stays in the DOM text node and is reachable by AT.
-const CLIP_BASELINE = 24;
+// 2026-11-11 (CORE-1131): +2 → 26 for Console Libraries folder rows — 2 `truncate`
+// on the folder name and full path. CSS ellipsis only; the full path stays in the
+// DOM text node and a `title`, and the row's remove button names it for AT.
+// 2026-11-12 (merge of CORE-1131 with CORE-1191): +2 → 28 for the header search result rows — `truncate`
+// on the title and on the detail line. Both are CSS ellipsis only; the full
+// text stays in the DOM and the row is a labelled gridcell.
+// 2026-11-13 (CORE-1117): +2 for the setup redesign — `truncate` on the
+// FolderPicker's current breadcrumb (CSS ellipsis; full name in the DOM and a
+// `title`) and `overflow-hidden` on the aria-hidden setup progress bar (no text);
+// -2 because the bulk-tag and marker-retag mode toggles moved to the shared
+// Segmented control and dropped their `overflow-hidden` wrappers. Net 28.
+const CLIP_BASELINE = 28;
 
 function tsSources(dir: string, acc: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {

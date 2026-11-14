@@ -4445,7 +4445,11 @@ func TestSourceItemsReportArtworkPresenceHonestly(t *testing.T) {
 	handler := newTestHandlerWithStore(st)
 	// media-alpha has a stored poster; media-archive does not.
 	handler.SetArtwork(fakeArtworkLocator{media: map[store.MediaID]map[string]bool{
-		"media-alpha": {artwork.SlotPoster: true, artwork.SlotBackdrop: true},
+		"media-alpha": {
+			artwork.SlotPoster: true, artwork.SlotBackdrop: true,
+			artwork.SlotLogo: true, artwork.SlotContainerPoster: true,
+			"portrait": true, // outside Core's vocabulary: never listed
+		},
 	}})
 
 	body := []byte(`{"query":"query { sourceItems { id artwork { poster } artworkSlots } }","variables":{"kind":"recently-added"}}`)
@@ -4475,8 +4479,10 @@ func TestSourceItemsReportArtworkPresenceHonestly(t *testing.T) {
 		t.Fatalf("media-alpha artwork = %#v, want canonical versioned poster path", alpha.Artwork)
 	}
 	wantSlots := map[string]string{
-		artwork.SlotPoster:   "/api/media/artwork/media-alpha/poster?v=av1",
-		artwork.SlotBackdrop: "/api/media/artwork/media-alpha/backdrop?v=av1",
+		artwork.SlotPoster:          "/api/media/artwork/media-alpha/poster?v=av1",
+		artwork.SlotBackdrop:        "/api/media/artwork/media-alpha/backdrop?v=av1",
+		artwork.SlotLogo:            "/api/media/artwork/media-alpha/logo?v=av1",
+		artwork.SlotContainerPoster: "/api/media/artwork/media-alpha/season-poster?v=av1",
 	}
 	if !reflect.DeepEqual(alpha.ArtworkSlots, wantSlots) {
 		t.Fatalf("media-alpha artworkSlots = %#v, want %#v", alpha.ArtworkSlots, wantSlots)
@@ -5391,17 +5397,25 @@ func TestAPITokenLifecycleAndBearerAuth(t *testing.T) {
 		t.Fatalf("createApiToken = %#v", created.Data.CreateApiToken)
 	}
 
-	// A standing Bearer token can never hold an Admin Session (admin is an
-	// interactive per-session re-auth, ADR-0007 §2), so it cannot reach the
-	// Console apiTokens surface — a token managing other tokens would be the
-	// privilege escalation the Admin Session tier exists to prevent.
+	// A standing Bearer token never holds an Admin Session (admin is an
+	// interactive per-session re-auth, ADR-0007 §2). It may run only the
+	// allowlisted operator-CLI ops (adminTokenOps): listing tokens is one, but a
+	// token minting another credential is the privilege escalation the Admin
+	// Session tier exists to prevent, so createApiToken stays refused.
 	list := []byte(`{"query":"query { apiTokens { id name revoked } }"}`)
 	bearerReq := httptest.NewRequest(http.MethodPost, "/api/graphql", bytes.NewReader(list))
 	bearerReq.Header.Set("Authorization", "Bearer "+token)
 	bearerRec := httptest.NewRecorder()
 	handler.ServeHTTP(bearerRec, bearerReq)
-	if !bytes.Contains(bearerRec.Body.Bytes(), []byte("admin session required")) {
-		t.Fatalf("bearer apiTokens reached the Console surface = %s", bearerRec.Body.String())
+	if bytes.Contains(bearerRec.Body.Bytes(), []byte("admin session required")) || !bytes.Contains(bearerRec.Body.Bytes(), []byte(`"name":"ci"`)) {
+		t.Fatalf("bearer apiTokens (CLI op) = %s", bearerRec.Body.String())
+	}
+	mintReq := httptest.NewRequest(http.MethodPost, "/api/graphql", bytes.NewReader(create))
+	mintReq.Header.Set("Authorization", "Bearer "+token)
+	mintRec := httptest.NewRecorder()
+	handler.ServeHTTP(mintRec, mintReq)
+	if !bytes.Contains(mintRec.Body.Bytes(), []byte("admin session required")) {
+		t.Fatalf("bearer createApiToken reached the Console surface = %s", mintRec.Body.String())
 	}
 
 	// Under the operator's Admin Session the list reads back and never carries
@@ -5463,5 +5477,106 @@ func TestAPITokenLifecycleAndBearerAuth(t *testing.T) {
 	}
 	if !sawCreate || !sawRevoke {
 		t.Fatalf("activity missing token lifecycle entries: %+v", entries)
+	}
+}
+
+// TestMediaReadCarriesCredits pins the media(id) credits decoration
+// (CORE-1143): every Entity reached through the owning bundle's
+// Media-targeted relations, in declaration order, labeled with the kind's
+// display name and archetype, and nothing for a plugin-less item.
+func TestMediaReadCarriesCredits(t *testing.T) {
+	st := storetest.Open(t)
+	registry, err := newTestPluginRegistry([]plugin.Bundle{{
+		ID:          "tunes",
+		Version:     "1.0.0",
+		DisplayName: plugin.L("Tunes"),
+		MediaLabel:  plugin.L("Cut"),
+		EntityKinds: []plugin.EntityKind{{
+			Name:            "record",
+			DisplayName:     plugin.L("Record"),
+			Archetype:       "container",
+			OrderedChildren: true,
+			Relations:       []plugin.RelationSpec{{Name: "record-cut", ToKind: plugin.MediaKindName, Cardinality: "one"}},
+		}, {
+			Name:        "performer",
+			DisplayName: plugin.L("Performer"),
+			Archetype:   "person",
+			Relations:   []plugin.RelationSpec{{Name: "plays-on", ToKind: plugin.MediaKindName}},
+		}},
+		Layouts: []plugin.LayoutSpec{{ID: "home", Role: "browse"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewHandler(
+		manifest.NewService(st, func() time.Time { return time.Unix(0, 0).UTC() }, registry),
+		auth.NewService(st),
+		st,
+		registry,
+	)
+	ctx := context.Background()
+	library, err := st.CreateLibrary(ctx, "Tunes Library", false, "tunes", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID:          library.ID,
+		Path:               "/srv/tunes/one.mp3",
+		Title:              "Cut One",
+		Container:          "mp3",
+		Codec:              "mp3",
+		ContentFingerprint: "fp-cut-one",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range []store.Entity{
+		{ID: "entity-performer", LibraryID: library.ID, Kind: "performer", Title: "The Performer"},
+		{ID: "entity-record", LibraryID: library.ID, Kind: "record", Title: "The Record"},
+	} {
+		if err := st.UpsertEntity(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, r := range []store.EntityRelation{
+		{FromEntityID: "entity-performer", Name: "plays-on", ToMediaID: media.ID},
+		{FromEntityID: "entity-record", Name: "record-cut", ToMediaID: media.ID},
+	} {
+		if err := st.UpsertEntityRelation(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	read := func(id string) MediaInfo {
+		t.Helper()
+		body := []byte(`{"query":"query($id:String!) { media(id: $id) { id title credits } }","variables":{"id":"` + id + `"}}`)
+		req := httptest.NewRequest(http.MethodPost, "/api/graphql", bytes.NewReader(body))
+		authorizeViewer(req)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("media status = %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp struct {
+			Data map[string]MediaInfo `json:"data"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatal(err)
+		}
+		return resp.Data["media"]
+	}
+
+	got := read(string(media.ID)).Credits
+	want := []MediaCreditInfo{
+		{EntityID: "entity-record", Title: "The Record", Kind: "record", KindDisplayName: plugin.L("Record"), Archetype: "container", Relation: "record-cut"},
+		{EntityID: "entity-performer", Title: "The Performer", Kind: "performer", KindDisplayName: plugin.L("Performer"), Archetype: "person", Relation: "plays-on"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("credits = %#v, want %#v", got, want)
+	}
+
+	plain := read("media-alpha")
+	if plain.ID != "media-alpha" || plain.Credits != nil {
+		t.Fatalf("plugin-less media = %#v, want no credits", plain)
 	}
 }

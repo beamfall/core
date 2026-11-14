@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/plugin"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -78,10 +79,21 @@ func parseSearchMode(req request) (SearchMode, error) {
 // SearchResultItem is one explainable result (ADR-0041 #106): the canonical
 // SourceItem fields plus how it was found (Mode) and, for semantic hits, the
 // cosine Score in [0,1]. Keyword hits carry mode=keyword and score=0.
+//
+// The remaining fields describe the row for display (CORE-1191): the Library it
+// lives in, the Media year and class, or the Entity kind with its
+// plugin-declared display name. All are omitted when the row's Library is not
+// visible to the caller's scope.
 type SearchResultItem struct {
 	SourceItem
-	Mode  SearchMode `json:"mode"`
-	Score float32    `json:"score"`
+	Mode                  SearchMode          `json:"mode"`
+	Score                 float32             `json:"score"`
+	LibraryID             string              `json:"libraryID,omitempty"`
+	LibraryTitle          string              `json:"libraryTitle,omitempty"`
+	Year                  int                 `json:"year,omitempty"`
+	MediaClass            string              `json:"mediaClass,omitempty"`
+	EntityKind            string              `json:"entityKind,omitempty"`
+	EntityKindDisplayName plugin.LocaleString `json:"entityKindDisplayName,omitempty"`
 }
 
 // SearchResultResponse is the explainable search envelope (ADR-0041 #106). Mode
@@ -106,6 +118,60 @@ type SearchResultResponse struct {
 // Library/Reveal scope has no populated index, so keyword results never escape
 // under a semantic label.
 func (h *Handler) searchResult(ctx context.Context, scope auth.Scope, req request) (SearchResultResponse, error) {
+	resp, err := h.searchResultRows(ctx, scope, req)
+	if err != nil {
+		return SearchResultResponse{}, err
+	}
+	if err := h.describeSearchRows(ctx, scope.LibraryFilter(), resp.Items); err != nil {
+		return SearchResultResponse{}, err
+	}
+	return resp, nil
+}
+
+// describeSearchRows fills each row's display detail in place: Library, year
+// and class or kind. Rows in a Library the scope cannot see keep none of it.
+func (h *Handler) describeSearchRows(ctx context.Context, filter store.LibraryFilter, items []SearchResultItem) error {
+	if h.store == nil || len(items) == 0 {
+		return nil
+	}
+	rows := make([]store.SourceItem, len(items))
+	for i, item := range items {
+		rows[i] = store.SourceItem{ID: store.MediaID(item.ID), Kind: item.Kind}
+	}
+	details, err := h.store.SearchRowDetails(ctx, filter, rows)
+	if err != nil {
+		return err
+	}
+	type kindKey struct {
+		library store.LibraryID
+		kind    string
+	}
+	displayNames := map[kindKey]plugin.LocaleString{}
+	for i, detail := range details {
+		if detail.LibraryID == "" {
+			continue
+		}
+		items[i].LibraryID = string(detail.LibraryID)
+		items[i].LibraryTitle = detail.LibraryTitle
+		items[i].Year = detail.Year
+		items[i].MediaClass = detail.MediaClass
+		items[i].EntityKind = detail.EntityKind
+		if detail.EntityKind == "" {
+			continue
+		}
+		key := kindKey{detail.LibraryID, detail.EntityKind}
+		name, ok := displayNames[key]
+		if !ok {
+			name = h.entityKindSpec(ctx, detail.LibraryID, detail.EntityKind).DisplayName
+			displayNames[key] = name
+		}
+		items[i].EntityKindDisplayName = name
+	}
+	return nil
+}
+
+// searchResultRows resolves the search mode and its rows, before display detail.
+func (h *Handler) searchResultRows(ctx context.Context, scope auth.Scope, req request) (SearchResultResponse, error) {
 	if h.store == nil {
 		return SearchResultResponse{Mode: SearchModeKeyword, Items: []SearchResultItem{}}, nil
 	}
@@ -231,6 +297,9 @@ func (h *Handler) searchResult(ctx context.Context, scope auth.Scope, req reques
 	if err := h.store.AnnotateMuted(ctx, scope.ProfileID, filter, results); err != nil {
 		return SearchResultResponse{}, err
 	}
+	if err := h.store.AnnotateEngagement(ctx, scope.ProfileID, filter, results); err != nil {
+		return SearchResultResponse{}, err
+	}
 	items := make([]SearchResultItem, len(results))
 	for i, item := range results {
 		items[i] = SearchResultItem{SourceItem: h.sourceItem(item, scope.Revealed), Mode: SearchModeKeyword}
@@ -334,6 +403,9 @@ func (h *Handler) semanticItems(ctx context.Context, profileID store.ProfileID, 
 	// Semantic search is a deliberately-surfaced surface (§2.2 "searchable on
 	// purpose", §2.5 "search (FTS / semantic)"): muted hits carry the badge (§2.7).
 	if err := h.store.AnnotateMuted(ctx, profileID, filter, sources); err != nil {
+		return nil, err
+	}
+	if err := h.store.AnnotateEngagement(ctx, profileID, filter, sources); err != nil {
 		return nil, err
 	}
 	items := make([]SearchResultItem, len(sources))

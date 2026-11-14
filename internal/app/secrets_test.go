@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io/fs"
 	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -463,35 +464,25 @@ func TestSecretFilesMoveSecretRefusesUnsafeOrDriftedState(t *testing.T) {
 	})
 }
 
-// CORE-1097: a wildcard bind prints a loopback setup URL that no other device
-// can reach, so the operator also gets a LAN hint.
-func TestSetupLANHint(t *testing.T) {
-	for _, tc := range []struct {
-		addr       string
-		candidates []string
-		want       []string
-		empty      bool
-	}{
-		{addr: "0.0.0.0:8800", want: []string{"<this server's LAN address>:8800/web/setup"}},
-		{addr: "[::]:8800", candidates: []string{"192.168.4.3", "172.17.0.2"}, want: []string{":8800/web/setup", "192.168.4.3, 172.17.0.2", "host's LAN address"}},
-		{addr: "192.168.4.3:8800", candidates: []string{"192.168.4.3"}, empty: true},
-		{addr: "127.0.0.1:8800", empty: true},
-		{addr: "not-an-addr", empty: true},
-	} {
-		got := setupLANHint(tc.addr, tc.candidates)
-		if tc.empty {
-			if got != "" {
-				t.Errorf("setupLANHint(%q) = %q, want empty", tc.addr, got)
-			}
-			continue
+func TestLANSetupURLs(t *testing.T) {
+	cidr := func(s string) net.Addr {
+		ip, ipNet, err := net.ParseCIDR(s)
+		if err != nil {
+			t.Fatal(err)
 		}
-		for _, w := range tc.want {
-			if !strings.Contains(got, w) {
-				t.Errorf("setupLANHint(%q) = %q, missing %q", tc.addr, got, w)
-			}
-		}
-		if strings.Contains(got, "token=") {
-			t.Errorf("setupLANHint(%q) must not carry the token: %q", tc.addr, got)
-		}
+		ipNet.IP = ip
+		return ipNet
+	}
+	addrs := []net.Addr{cidr("127.0.0.1/8"), cidr("192.168.4.3/24"), cidr("169.254.1.2/16"), cidr("fd00::5/64"), cidr("10.0.0.7/8")}
+	got := lanSetupURLs("http", "0.0.0.0:8800", addrs)
+	want := []string{"http://192.168.4.3:8800/web/", "http://10.0.0.7:8800/web/"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("wildcard bind = %v, want %v", got, want)
+	}
+	if got := lanSetupURLs("http", "[::]:8800", addrs); len(got) != 2 {
+		t.Fatalf("IPv6 wildcard bind = %v, want the two IPv4 LAN URLs", got)
+	}
+	if got := lanSetupURLs("http", "127.0.0.1:8800", addrs); got != nil {
+		t.Fatalf("loopback bind = %v, want none", got)
 	}
 }

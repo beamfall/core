@@ -52,7 +52,7 @@ func TestJobPersistsAcrossReopen(t *testing.T) {
 
 func TestJobDedupeReturnsActiveAndAllowsAfterTerminal(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{})
+	st, err := Open(ctx, migratedDataDir(t), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestJobDedupeReturnsActiveAndAllowsAfterTerminal(t *testing.T) {
 
 func TestClaimHonorsClassPriorityAndCancellation(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{})
+	st, err := Open(ctx, migratedDataDir(t), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestClaimHonorsClassPriorityAndCancellation(t *testing.T) {
 
 func TestYieldedJobKeepsCheckpointAndRunsAgain(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{})
+	st, err := Open(ctx, migratedDataDir(t), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +162,7 @@ func TestYieldedJobKeepsCheckpointAndRunsAgain(t *testing.T) {
 
 func TestResumeInterruptedJobsYieldsRunningJobs(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{})
+	st, err := Open(ctx, migratedDataDir(t), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestResumeInterruptedJobsYieldsRunningJobs(t *testing.T) {
 
 func TestStaleWorkerCannotFinishReclaimedJob(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{})
+	st, err := Open(ctx, migratedDataDir(t), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +225,7 @@ func TestStaleWorkerCannotFinishReclaimedJob(t *testing.T) {
 
 func TestJobProgressWritesCheckpointEventsAndOutbox(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{})
+	st, err := Open(ctx, migratedDataDir(t), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +269,7 @@ func TestJobProgressWritesCheckpointEventsAndOutbox(t *testing.T) {
 
 func TestJobRetryRequeuesTerminalJobWithCheckpointAndEventsAreReadable(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{})
+	st, err := Open(ctx, migratedDataDir(t), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -318,7 +318,7 @@ func TestJobRetryRequeuesTerminalJobWithCheckpointAndEventsAreReadable(t *testin
 
 func TestJobStatsGroupsByClassAndStatus(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{})
+	st, err := Open(ctx, migratedDataDir(t), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -353,7 +353,7 @@ func TestJobStatsGroupsByClassAndStatus(t *testing.T) {
 func leaseTestStore(t *testing.T, id JobID) (*Store, time.Time) {
 	t.Helper()
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{})
+	st, err := Open(ctx, migratedDataDir(t), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { TableCell, TableRow } from "@/components/ui/table";
+import { Advanced } from "@/lib/advancedSettings";
 import {
   fetchConsoleConfig,
   fetchDevices,
@@ -185,27 +186,30 @@ export function Devices() {
         <p className="mt-2 text-[12px] leading-snug text-muted-foreground">{t("deviceMintHint")}</p>
       </Section>
 
-      <Section heading="remoteEnrollHeading" lead="remoteEnrollLead">
-        {config.loading ? (
-          <Skeleton className="h-10 w-full" />
-        ) : config.failed || !config.data ? (
-          <ErrorState message="devicesUnavailable" />
-        ) : (
-          <div className="flex items-start justify-between gap-4 rounded-lg border bg-muted/25 p-3">
-            <div className="space-y-1">
-              <p className="m-0 text-[13px] font-semibold">{t("remoteEnrollToggle")}</p>
-              <p className="m-0 text-[12px] leading-snug text-muted-foreground">
-                {t("remoteEnrollToggleHint")}
-              </p>
+      {/* Remote enrollment is an Advanced setting, kept in view while on (CORE-1117). */}
+      <Advanced keep={Boolean(config.data?.remoteEnrollmentEnabled)}>
+        <Section heading="remoteEnrollHeading" lead="remoteEnrollLead">
+          {config.loading ? (
+            <Skeleton className="h-10 w-full" />
+          ) : config.failed || !config.data ? (
+            <ErrorState message="devicesUnavailable" />
+          ) : (
+            <div className="flex items-start justify-between gap-4 console-card console-card-pad">
+              <div className="space-y-1">
+                <p className="m-0 text-dense font-semibold">{t("remoteEnrollToggle")}</p>
+                <p className="m-0 text-[12px] leading-snug text-muted-foreground">
+                  {t("remoteEnrollToggleHint")}
+                </p>
+              </div>
+              <Switch
+                checked={config.data.remoteEnrollmentEnabled}
+                onCheckedChange={(v) => void onToggleRemote(v)}
+                aria-label={t("remoteEnrollToggle")}
+              />
             </div>
-            <Switch
-              checked={config.data.remoteEnrollmentEnabled}
-              onCheckedChange={(v) => void onToggleRemote(v)}
-              aria-label={t("remoteEnrollToggle")}
-            />
-          </div>
-        )}
-      </Section>
+          )}
+        </Section>
+      </Advanced>
     </div>
   );
 }

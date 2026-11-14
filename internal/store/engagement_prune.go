@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"strings"
 )
 
@@ -15,6 +17,9 @@ type EngagementPruneCounts struct {
 	// Media existence; Entity-only events carry no Media reference and are never
 	// orphaned by a Media purge — they clear only via the My-Data hard-delete.
 	EventRows int
+	// ItemActionRows is watchlist_item and item_rating rows erased because
+	// their Media or Entity target no longer exists.
+	ItemActionRows int
 }
 
 // PruneOrphanedEngagementRows reconciles events rows against raw catalog Media
@@ -34,14 +39,27 @@ func (s *Store) PruneOrphanedEngagementRows(ctx context.Context) (EngagementPrun
 }
 
 func (s *Store) pruneOrphanedEngagementRowsLocked(ctx context.Context) (EngagementPruneCounts, error) {
+	readers, allReadable, err := s.catalogReadersLocked(ctx)
+	if err != nil {
+		return EngagementPruneCounts{}, err
+	}
+	if !allReadable {
+		// A sealed Encrypted Library cannot reveal which of its targets still
+		// exist, so nothing is provably orphaned until it is open again.
+		return EngagementPruneCounts{}, nil
+	}
 	ids, err := s.engagementMediaIDs(ctx)
 	if err != nil {
 		return EngagementPruneCounts{}, err
 	}
-	if len(ids) == 0 {
+	orphanEntities, err := s.orphanedItemActionEntities(ctx, readers)
+	if err != nil {
+		return EngagementPruneCounts{}, err
+	}
+	if len(ids) == 0 && len(orphanEntities) == 0 {
 		return EngagementPruneCounts{}, nil
 	}
-	existing, err := s.existingMediaIDs(ctx, ids)
+	existing, err := s.existingMediaIDs(ctx, readers, ids)
 	if err != nil {
 		return EngagementPruneCounts{}, err
 	}
@@ -99,11 +117,117 @@ func (s *Store) pruneOrphanedEngagementRowsLocked(ctx context.Context) (Engageme
 			return EngagementPruneCounts{}, err
 		}
 		counts.EventRows += int(affected)
+		for _, table := range []string{"watchlist_item", "item_rating"} {
+			// #nosec G202 -- table is drawn from the closed literal list above.
+			result, err = tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE target_kind = 'media' AND target_id IN (`+placeholders+`)`, args...)
+			if err != nil {
+				return EngagementPruneCounts{}, err
+			}
+			affected, err = result.RowsAffected()
+			if err != nil {
+				return EngagementPruneCounts{}, err
+			}
+			counts.ItemActionRows += int(affected)
+		}
+	}
+	for _, id := range orphanEntities {
+		for _, table := range []string{"watchlist_item", "item_rating"} {
+			// #nosec G202 -- table is drawn from the closed literal list above.
+			result, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE target_kind = 'entity' AND target_id = ?`, id)
+			if err != nil {
+				return EngagementPruneCounts{}, err
+			}
+			affected, err := result.RowsAffected()
+			if err != nil {
+				return EngagementPruneCounts{}, err
+			}
+			counts.ItemActionRows += int(affected)
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return EngagementPruneCounts{}, err
 	}
 	return counts, nil
+}
+
+// catalogReadersLocked returns the reader of every catalog plane that can be
+// read now: the shared catalog and each open Encrypted Library, trashed ones
+// included. allReadable is false when one is sealed, quarantined or not open.
+func (s *Store) catalogReadersLocked(ctx context.Context) (readers []*sql.DB, allReadable bool, err error) {
+	// A trashed Encrypted Library can still be restored, so its plane counts
+	// until the Library row itself is purged.
+	rows, err := s.catalogR.QueryContext(ctx, `SELECT id FROM library WHERE encrypted = 1`)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	var encrypted []LibraryID
+	for rows.Next() {
+		var id LibraryID
+		if err := rows.Scan(&id); err != nil {
+			return nil, false, err
+		}
+		encrypted = append(encrypted, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	readers = []*sql.DB{s.catalogR}
+	allReadable = true
+	for _, id := range encrypted {
+		db := s.encryptedDBs[id]
+		if db == nil || db.state != "unsealed-registered" || db.reader == nil {
+			allReadable = false
+			continue
+		}
+		readers = append(readers, db.reader)
+	}
+	return readers, allReadable, nil
+}
+
+// orphanedItemActionEntities returns the Entity targets of watchlist and rating
+// rows that exist in none of the catalog planes. Like the Media sweep it tests
+// raw existence, so a hidden or trashed Entity keeps its rows.
+func (s *Store) orphanedItemActionEntities(ctx context.Context, readers []*sql.DB) ([]string, error) {
+	rows, err := s.eventsR.QueryContext(ctx, `
+		SELECT target_id FROM watchlist_item WHERE target_kind = 'entity'
+		UNION
+		SELECT target_id FROM item_rating WHERE target_kind = 'entity'
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	var orphans []string
+	for _, id := range ids {
+		found := false
+		for _, reader := range readers {
+			var one int
+			err := reader.QueryRowContext(ctx, `SELECT 1 FROM entity WHERE id = ?`, id).Scan(&one)
+			if err == nil {
+				found = true
+				break
+			}
+			if !errors.Is(err, sql.ErrNoRows) {
+				return nil, err
+			}
+		}
+		if !found {
+			orphans = append(orphans, id)
+		}
+	}
+	return orphans, nil
 }
 
 func (s *Store) engagementMediaIDs(ctx context.Context) ([]MediaID, error) {
@@ -115,6 +239,10 @@ func (s *Store) engagementMediaIDs(ctx context.Context) ([]MediaID, error) {
 		SELECT media_id FROM playback_progress
 		UNION
 		SELECT media_id FROM engagement_event WHERE media_id IS NOT NULL
+		UNION
+		SELECT target_id FROM watchlist_item WHERE target_kind = 'media'
+		UNION
+		SELECT target_id FROM item_rating WHERE target_kind = 'media'
 	`)
 	if err != nil {
 		return nil, err
@@ -131,33 +259,36 @@ func (s *Store) engagementMediaIDs(ctx context.Context) ([]MediaID, error) {
 	return ids, rows.Err()
 }
 
-func (s *Store) existingMediaIDs(ctx context.Context, ids []MediaID) (map[MediaID]bool, error) {
+func (s *Store) existingMediaIDs(ctx context.Context, readers []*sql.DB, ids []MediaID) (map[MediaID]bool, error) {
 	existing := make(map[MediaID]bool, len(ids))
-	for _, batch := range mediaIDBatches(ids, 500) {
-		placeholders, args := mediaIDPlaceholders(batch)
-		rows, err := s.catalogR.QueryContext(ctx, `SELECT id FROM media WHERE id IN (`+placeholders+`)`, args...)
-		if err != nil {
-			return nil, err
-		}
-		for rows.Next() {
-			var id MediaID
-			if err := rows.Scan(&id); err != nil {
-				_ = rows.Close()
+	for _, reader := range readers {
+		for _, batch := range mediaIDBatches(ids, 500) {
+			if err := markExistingMediaIDs(ctx, reader, batch, existing); err != nil {
 				return nil, err
 			}
-			existing[id] = true
-		}
-		// A mid-iteration error must fail the prune: a truncated result would
-		// misclassify live media as orphans and hard-delete their engagement.
-		if err := rows.Err(); err != nil {
-			_ = rows.Close()
-			return nil, err
-		}
-		if err := rows.Close(); err != nil {
-			return nil, err
 		}
 	}
 	return existing, nil
+}
+
+func markExistingMediaIDs(ctx context.Context, reader *sql.DB, batch []MediaID, existing map[MediaID]bool) error {
+	placeholders, args := mediaIDPlaceholders(batch)
+	// #nosec G202 -- placeholders is generated by mediaIDPlaceholders; IDs are bound args.
+	rows, err := reader.QueryContext(ctx, `SELECT id FROM media WHERE id IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id MediaID
+		if err := rows.Scan(&id); err != nil {
+			return err
+		}
+		existing[id] = true
+	}
+	// A mid-iteration error must fail the prune: a truncated result would
+	// misclassify live media as orphans and hard-delete their engagement.
+	return rows.Err()
 }
 
 func mediaIDBatches(ids []MediaID, size int) [][]MediaID {

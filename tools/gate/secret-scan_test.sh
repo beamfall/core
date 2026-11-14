@@ -54,8 +54,8 @@ prerequisites = [
     "make seeded-red-canary-controls",
     "make relay-vector-freshness-prove relay-vector-freshness",
     "python3 script/consumer_pin_freshness_test.py",
-    "python3 script/consumer-pin-freshness.py",
     "fi",
+    "python3 script/consumer-pin-freshness.py",
 ]
 canonical_entry = [*preamble, guard_condition, guard, "fi", *prerequisites, coordinator]
 
@@ -129,7 +129,7 @@ invalid_entries = {
     ),
     "dropped prerequisite": entry.replace("  make seeded-red-canary-controls\n", "", 1),
     "prerequisite only in a comment": entry.replace(
-        "  python3 script/consumer-pin-freshness.py", "  # python3 script/consumer-pin-freshness.py", 1
+        "\npython3 script/consumer-pin-freshness.py", "\n# python3 script/consumer-pin-freshness.py", 1
     ),
 }
 for description, invalid_entry in invalid_entries.items():

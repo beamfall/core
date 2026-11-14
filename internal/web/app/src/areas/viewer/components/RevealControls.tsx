@@ -1,3 +1,4 @@
+import { Lock, LockOpen } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -68,9 +69,16 @@ export function RevealControls() {
 
   if (revealed) {
     return (
-      <Button variant="outline" size="sm" onClick={onRelock} disabled={busy}>
-        {t("relock")}
-      </Button>
+      <button
+        type="button"
+        className="bf-icon-button bf-reveal-open"
+        onClick={onRelock}
+        disabled={busy}
+        aria-label={t("relock")}
+        title={t("relock")}
+      >
+        <LockOpen aria-hidden className="size-[18px]" />
+      </button>
     );
   }
 
@@ -83,9 +91,15 @@ export function RevealControls() {
         setPin("");
       }}
     >
-      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
-        {t("restrictions")}
-      </Button>
+      <button
+        type="button"
+        className="bf-icon-button"
+        onClick={() => setOpen(true)}
+        aria-label={t("restrictions")}
+        title={t("restrictions")}
+      >
+        <Lock aria-hidden className="size-[18px]" />
+      </button>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t("restrictionsTitle")}</DialogTitle>
@@ -103,7 +117,7 @@ export function RevealControls() {
               autoFocus
             />
           </label>
-          {error && <p className="text-sm text-[var(--red-500)]">{error}</p>}
+          {error && <p className="text-sm text-[var(--state-danger)]">{error}</p>}
           <DialogFooter>
             <Button type="submit" disabled={busy}>
               {t("reveal")}

@@ -93,7 +93,7 @@ function ConvertEnqueueSection() {
         <div className="grid gap-1">
           <Label htmlFor="convert-library">{t("library")}</Label>
           <Select value={libraryID} onValueChange={setLibraryID}>
-            <SelectTrigger id="convert-library" size="sm" className="w-64">
+            <SelectTrigger id="convert-library" className="w-64">
               <SelectValue placeholder={t("library")} />
             </SelectTrigger>
             <SelectContent>
@@ -119,7 +119,7 @@ function ConvertEnqueueSection() {
         <div className="grid gap-1">
           <Label htmlFor="convert-preset">{t("convertPresetLabel")}</Label>
           <Select value={preset} onValueChange={setPreset}>
-            <SelectTrigger id="convert-preset" size="sm" className="w-64">
+            <SelectTrigger id="convert-preset" className="w-64">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

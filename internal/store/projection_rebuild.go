@@ -13,6 +13,7 @@ const (
 
 	playbackProjectionOperationProgress = "progress"
 	playbackProjectionOperationImport   = "import"
+	playbackProjectionOperationMark     = "mark"
 )
 
 type playbackProjectionEvent struct {
@@ -71,6 +72,8 @@ func applyPlaybackProjectionEvent(ctx context.Context, tx *sql.Tx, event playbac
 		return applyProgressProjectionEvent(ctx, tx, event)
 	case playbackProjectionOperationImport:
 		return applyImportedPlayProjectionEvent(ctx, tx, event)
+	case playbackProjectionOperationMark:
+		return applyMarkProjectionEvent(ctx, tx, event)
 	default:
 		return fmt.Errorf("unknown playback projection operation %q", event.Operation)
 	}
@@ -83,8 +86,8 @@ func applyProgressProjectionEvent(ctx context.Context, tx *sql.Tx, event playbac
 		ON CONFLICT(profile_id, media_id) DO UPDATE SET
 		  position_seconds = CASE WHEN (`+positionAdvancedPredicate+`) THEN excluded.position_seconds ELSE playback_progress.position_seconds END,
 		  duration_seconds = excluded.duration_seconds,
-		  play_count = CASE WHEN ? > 0 THEN MAX(playback_progress.play_count, excluded.play_count) ELSE play_count + (CASE WHEN excluded.watched = 1 AND playback_progress.watched = 0 THEN 1 ELSE 0 END) END,
-		  last_played_at_ms = CASE WHEN (? > 0 AND excluded.play_count > playback_progress.play_count) THEN excluded.updated_at_ms WHEN excluded.watched = 1 AND playback_progress.watched = 0 THEN excluded.updated_at_ms ELSE last_played_at_ms END,
+		  play_count = CASE WHEN ? > 0 THEN MAX(playback_progress.play_count, excluded.play_count) ELSE play_count + (CASE WHEN excluded.watched = 1 AND playback_progress.watched = 0 AND (`+positionAdvancedPredicate+`) THEN 1 ELSE 0 END) END,
+		  last_played_at_ms = CASE WHEN (? > 0 AND excluded.play_count > playback_progress.play_count) THEN excluded.updated_at_ms WHEN excluded.watched = 1 AND playback_progress.watched = 0 AND (`+positionAdvancedPredicate+`) THEN excluded.updated_at_ms ELSE last_played_at_ms END,
 		  watched = CASE WHEN (`+positionAdvancedPredicate+`) THEN excluded.watched ELSE playback_progress.watched END,
 		  updated_at_ms = CASE WHEN (`+positionAdvancedPredicate+`) THEN excluded.updated_at_ms ELSE playback_progress.updated_at_ms END,
 		  event_time_ms = CASE WHEN (`+positionAdvancedPredicate+`) THEN excluded.event_time_ms ELSE playback_progress.event_time_ms END,

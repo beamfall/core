@@ -32,6 +32,17 @@ gate-preflight:
 gate-affected:
 	@script/gate-affected.sh "$(BASE)"
 
+# Corvint flow documentation for the web app (docs/web/flows/). `flow-docs`
+# regenerates the record at HEAD from the committed inventory and manifest;
+# `flow-docs-check` reports drift against the committed generation.json and
+# map.json. Documentation only: deliberately NOT part of `make gate`.
+.PHONY: flow-docs flow-docs-check
+flow-docs:
+	@script/flow-docs.sh generate
+
+flow-docs-check:
+	@script/flow-docs.sh check
+
 # ADR-0122: a Core wire-contract change carries THREE consumer re-vendor
 # obligations (web, Apple and Android client repositories).
 # The gate step above is guarded on the diff touching a contract source; these
@@ -59,9 +70,17 @@ crossrepo-conformance-interrupt-test:
 image-buildability-check:
 	@tools/gate/image-buildability.sh
 
+# The second pass lints the linux build (CORE-1474): the merge gate runs on
+# macOS, so `//go:build linux` files such as the confinement layer would
+# otherwise never be linted, and Linux is the production server target. Each
+# GOOS keeps its own cache dir so the passes do not evict each other.
 lint:
 	@GOLANGCI_LINT_CACHE="$${TMPDIR:-/tmp}/beamfall-golangci-lint-$$(basename "$$PWD")" \
 		golangci-lint run --allow-serial-runners ./...
+	@if [ "$$(go env GOOS)" != linux ]; then \
+		GOOS=linux GOLANGCI_LINT_CACHE="$${TMPDIR:-/tmp}/beamfall-golangci-lint-$$(basename "$$PWD")-linux" \
+			golangci-lint run --allow-serial-runners ./...; \
+	fi
 
 gate-race: race-short race-prove
 
@@ -108,6 +127,7 @@ web-e2e-full:
 
 web-ui-e2e-runner-test:
 	@script/web-ui-e2e-runner_test.sh
+	@node script/web-ui-state-coverage_test.mjs
 
 web-build:
 	@npm --prefix internal/web/app run verify:build

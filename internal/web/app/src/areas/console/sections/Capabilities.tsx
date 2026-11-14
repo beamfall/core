@@ -1,4 +1,3 @@
-import { Layers } from "lucide-react";
 import { useState } from "react";
 import { EmptyState, ErrorState, StatusChip } from "@/components/beamfall/workbench";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -42,7 +41,7 @@ export function Capabilities() {
       ) : failed ? (
         <ErrorState message="capabilitiesUnavailable" />
       ) : states.length === 0 ? (
-        <EmptyState message="capabilitiesEmpty" icon={Layers} />
+        <EmptyState message="capabilitiesEmpty" />
       ) : (
         <div className="space-y-4">
           {workflow.length > 0 && (
@@ -53,12 +52,8 @@ export function Capabilities() {
               <div className="console-card console-card-pad space-y-3">
                 {workflow.map((s) => (
                   <div key={s.id} className="console-control-row">
-                    <div className="min-w-0 flex items-center gap-2">
-                      <span className="console-control-label font-medium">{s.id}</span>
-                      <StatusChip tone={s.enabled ? "green" : "neutral"}>
-                        {t(s.enabled ? "capabilitiesEnabled" : "capabilitiesDisabled")}
-                      </StatusChip>
-                    </div>
+                    {/* The switch is the state; no chip repeats it (CORE-1117). */}
+                    <span className="console-control-label min-w-0 font-medium">{s.id}</span>
                     <div className="flex shrink-0 items-center gap-2">
                       <Switch
                         checked={s.enabled}

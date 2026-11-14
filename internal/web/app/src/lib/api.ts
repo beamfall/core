@@ -99,6 +99,27 @@ const GRAPHQL_AUTH_STATUS: Readonly<Record<string, number>> = {
   unauthorized: 401,
 };
 
+const ADMIN_SESSION_REQUIRED = "admin session required";
+
+/**
+ * Asked when a GraphQL operation is refused for want of an Admin Session.
+ * Resolves true once the surface has opened one, false if it gave up.
+ */
+export type AdminUnlockHandler = () => Promise<boolean>;
+
+let adminUnlockHandler: AdminUnlockHandler | undefined;
+
+/**
+ * Register the one surface that offers an in-place admin unlock (the Manage
+ * area). A refused operation waits on the handler that was registered when it
+ * was SENT — so a late refusal belongs to the page that asked, not to whatever
+ * is showing by then — and is sent once more after a successful unlock. The
+ * caller sees only the final outcome. Call with no argument to unregister.
+ */
+export function setAdminUnlockHandler(handler?: AdminUnlockHandler): void {
+  adminUnlockHandler = handler;
+}
+
 function graphqlErrorStatus(messages: readonly string[]): number {
   const matched = messages.map((message) => GRAPHQL_AUTH_STATUS[message.trim().toLowerCase()]);
   return matched.find((status) => status !== undefined) ?? 200;
@@ -300,19 +321,33 @@ export interface GraphQLResult<T> {
 
 /** Issue a GraphQL operation against /api/graphql. Honors an optional
  * AbortSignal, threaded through to the underlying transport request. */
+function needsAdminSession(result: GraphQLResult<unknown>): boolean {
+  return (
+    result.errors?.some((e) => e.message.trim().toLowerCase() === ADMIN_SESSION_REQUIRED) ?? false
+  );
+}
+
+export interface GraphQLOptions {
+  /**
+   * False for a background read the page did not ask for (a header poll, say):
+   * a refusal for want of an Admin Session then fails the read quietly instead
+   * of putting the page's in-place unlock in front of the user.
+   */
+  adminUnlock?: boolean;
+}
+
 export async function graphql<T = unknown>(
   query: string,
   variables: Record<string, unknown> = {},
   signal?: AbortSignal,
+  options: GraphQLOptions = {},
 ): Promise<T> {
-  const result = await postJSON<GraphQLResult<T>>(
-    "/api/graphql",
-    {
-      query,
-      variables,
-    },
-    signal,
-  );
+  const send = () => postJSON<GraphQLResult<T>>("/api/graphql", { query, variables }, signal);
+  const unlock = options.adminUnlock === false ? undefined : adminUnlockHandler;
+  let result = await send();
+  // The refused operation did not run, so sending it again after the unlock
+  // cannot repeat it.
+  if (unlock && needsAdminSession(result) && (await unlock())) result = await send();
   if (result.errors?.length) {
     const messages = result.errors.map((e) => e.message);
     throw new ApiError(messages.join("; "), graphqlErrorStatus(messages));
@@ -339,36 +374,61 @@ export async function fetchSetupRequired(): Promise<boolean> {
   }
 }
 
+/** The owner's sign-in security choice (CORE-1110): Home keeps admin-password sign-in, Strict turns it off. */
+export type SignInSecurityMode = "home" | "strict";
+
+/**
+ * GET /api/setup in full: whether setup is pending, whether this browser
+ * would need the one-time setup token (false on the local network while setup
+ * is pending, CORE-1105) and the sign-in security mode (CORE-1110). Errors
+ * resolve to `{required:false, tokenRequired:true, securityMode:null}`: a failed
+ * read leaves the mode unknown, never Home.
+ */
+export async function fetchSetupStatus(): Promise<{
+  required: boolean;
+  tokenRequired: boolean;
+  securityMode: SignInSecurityMode | null;
+}> {
+  try {
+    const data = await getJSON<{
+      required?: boolean;
+      tokenRequired?: boolean;
+      securityMode?: string;
+    }>("/api/setup");
+    return {
+      required: data.required === true,
+      tokenRequired: data.tokenRequired !== false,
+      securityMode: data.securityMode === "strict" ? "strict" : "home",
+    };
+  } catch {
+    return { required: false, tokenRequired: true, securityMode: null };
+  }
+}
+
 /** Fetch the Navigation Manifest (the Viewer's nav + layout document). */
 export function getManifest<T = unknown>(signal?: AbortSignal): Promise<T> {
   return getJSON<T>("/api/manifest", signal);
 }
 
-/** The live state of an SSE subscription, surfaced to a connection indicator. */
-export type EventStreamState = "live" | "reconnecting";
+import { type EventStreamState, openEventStream } from "./eventStream";
+
+export type { EventStreamState };
 
 /**
  * Subscribe to the Reveal-filtered SSE event stream (/api/events, ADR-0040).
- * Returns an unsubscribe function. The wire format, route, and event payload
- * are unchanged; `onState` is an additive, optional observer of the browser's
- * own EventSource lifecycle: "live" on open, "reconnecting" on a transport
- * error (EventSource auto-retries with backoff until the returned unsubscribe
- * closes it). When both `onError` and `onState` are supplied both run on error
- * — they are composed, never overwritten.
+ * Returns an unsubscribe function. Every event is delivered, whatever its kind:
+ * core frames each one with an `event: <kind>` line, which the browser's own
+ * EventSource never hands to `onmessage`, so the stream is read directly. The
+ * kind is the delivered event's `type`. `onState` is an optional observer of
+ * the connection: "live" once the stream opens, "reconnecting" after a
+ * transport error (the stream retries with backoff, resuming from the last
+ * event id, until the returned unsubscribe closes it). `onError` and `onState`
+ * both run on an error.
  */
 export function subscribeEvents(
   onEvent: (event: MessageEvent) => void,
   onError?: (err: Event) => void,
   onState?: (state: EventStreamState) => void,
 ): () => void {
-  const source = new EventSource("/api/events", { withCredentials: true });
-  source.onmessage = onEvent;
-  if (onState) source.onopen = () => onState("live");
-  if (onError || onState) {
-    source.onerror = (err) => {
-      onError?.(err);
-      onState?.("reconnecting");
-    };
-  }
-  return () => source.close();
+  return openEventStream("/api/events", { onEvent, onError, onState });
 }

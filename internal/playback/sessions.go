@@ -3,15 +3,18 @@ package playback
 import (
 	"context"
 	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/beamfall/core/internal/ffmpeg"
@@ -87,7 +90,72 @@ const (
 	// client is never preempted — it never fails mid-stream — while a reaped
 	// paused client resumes transparently at position.
 	preemptIdleAfter = 30 * time.Second
+	// maxRequestEncoderRestarts bounds how many times one waiting request
+	// restarts an encoder that died under it before failing fast.
+	maxRequestEncoderRestarts = 2
+	// encoderRestartBudget restarts per encoderRestartWindow bound crash
+	// recovery across all of a session's requests, so a source that kills
+	// FFmpeg every time fails fast instead of respawning on every fetch.
+	encoderRestartBudget = 3
+	encoderRestartWindow = time.Minute
+	// encoderStallTimeout is how long a live encoder's output position may stay
+	// still while a request waits on it before the encoder counts as hung and
+	// is killed. It exceeds both latency budgets so a slow but working start
+	// is never mistaken for a hang.
+	encoderStallTimeout = 15 * time.Second
 )
+
+// errEncoderExited is waitForArtifact's signal that the encoder producing the
+// awaited artifact has exited without producing it.
+var errEncoderExited = errors.New("live transcode exited")
+
+// errEncoderFailing is returned once crash recovery is exhausted: the
+// encoder keeps dying and the restart budget is spent.
+var errEncoderFailing = errors.New("live transcode keeps failing")
+
+// errEncoderEnded is returned when the encoder reached the end of its input
+// without producing the awaited artifact and the source is not known to be
+// short — an encoder fault rather than a missing segment.
+var errEncoderEnded = errors.New("live transcode ended without producing the artifact")
+
+// encoderExit classifies how a live FFmpeg process ended.
+type encoderExit int
+
+const (
+	// exitStopped: the server stopped it (rendition switch, far seek,
+	// eviction, shutdown). Expected; never restarted on its behalf.
+	exitStopped encoderExit = iota
+	// exitEndOfInput: FFmpeg exited cleanly after reading its whole input.
+	exitEndOfInput
+	// exitCrashed: FFmpeg died on its own with a failure status or signal.
+	exitCrashed
+	// exitStalled: the stall watchdog killed FFmpeg because its output
+	// position stopped advancing while a request waited. Recovered like a crash.
+	exitStalled
+)
+
+// encoderRun is one FFmpeg process generation. exited is closed by the
+// process reaper after it has recorded outcome and released the session's
+// hold on the process, so a request waiting on an artifact notices the exit
+// at once instead of waiting out its latency budget. exited is nil for a
+// process that is not running (test transcoders), which never signals.
+type encoderRun struct {
+	proc    *ffmpeg.HLSProcess
+	exited  chan struct{}
+	outcome encoderExit // written under Sessions.mu before exited closes
+	// waiting counts the requests currently waiting on this run's artifacts;
+	// the stall watchdog only acts while it is non-zero.
+	waiting atomic.Int32
+	// stalled is set by the stall watchdog just before it kills the process.
+	stalled atomic.Bool
+}
+
+func (r *encoderRun) exitedChan() <-chan struct{} {
+	if r == nil {
+		return nil
+	}
+	return r.exited
+}
 
 // ErrTranscodeCapacity is returned when admission control cannot start
 // another transcode: every slot is held by an actively-streaming session.
@@ -139,8 +207,22 @@ type hlsSession struct {
 	// the first segment request starts one (one rendition per live session,
 	// ADR-0010 §8 — switching rungs replaces the process).
 	currentRung string
-	proc        *ffmpeg.HLSProcess
-	baseSegment int
+	// deliveredRung is the rendition whose media the viewer was last served,
+	// from a running encoder or from segments already on disk. Unlike
+	// currentRung it outlives the encoder: a finished encode is still what the
+	// viewer is being served until the session ends.
+	deliveredRung string
+	proc          *ffmpeg.HLSProcess
+	// startPending is set while ensureRung stops a replaced process and spawns
+	// the next one with mu released. The session keeps its transcode slot and
+	// lease meanwhile.
+	startPending bool
+	baseSegment  int
+	// startMu serializes encoder starts and replacements for this session, so
+	// ensureRung can release mu around Stop and spawn without a second request
+	// on the same session starting another encoder meanwhile. Lock order:
+	// startMu before mu, never the reverse.
+	startMu sync.Mutex
 	// frontier caches the highest produced segment for the current
 	// (proc, baseSegment) generation so the common seek-lookahead check needs no
 	// syscall under the lock. It only ever advances forward within a generation
@@ -173,6 +255,60 @@ type hlsSession struct {
 	// exactly once on launch-failure rollback, process reap, or teardown. nil
 	// means the session holds no live process (or the governor is unwired).
 	transcodeLease *governor.TranscodeLease
+	// run is the generation of the current or most recent process (proc).
+	run *encoderRun
+	// lastCrashed records that the most recent process exit was a crash, so
+	// the next start is a crash restart and draws on crashRestarts.
+	lastCrashed bool
+	// crashRestarts holds the start times of recent crash restarts, bounding
+	// them to encoderRestartBudget per encoderRestartWindow.
+	crashRestarts []time.Time
+	// sourceEndSeconds is an upper bound on where the source's media ends,
+	// known once an encoder hit end of input early or produced a segment with
+	// no media (a truncated file whose probed duration overstates it). It only
+	// ever lowers. Segments starting at or after it are refused as
+	// ErrSourceEnded instead of being encoded as empty segments.
+	sourceEndSeconds int
+	sourceEndKnown   bool
+	// resumeSeconds is where playback info resumed the viewer. The session's
+	// first encoder starts at the segment containing it, so a resume spawns
+	// FFmpeg once instead of starting at 0 for init.mp4 and restarting at the
+	// first media request. Cleared once an encoder starts.
+	resumeSeconds int
+}
+
+// takeRestartLocked spends one crash restart from the session's sliding
+// window budget, reporting false when the budget is exhausted.
+func (h *hlsSession) takeRestartLocked(now time.Time) bool {
+	recent := h.crashRestarts[:0]
+	for _, at := range h.crashRestarts {
+		if now.Sub(at) < encoderRestartWindow {
+			recent = append(recent, at)
+		}
+	}
+	h.crashRestarts = recent
+	if len(recent) >= encoderRestartBudget {
+		return false
+	}
+	h.crashRestarts = append(h.crashRestarts, now)
+	return true
+}
+
+// noteSourceEndLocked lowers the known source end to seconds, reporting
+// whether it changed (so each new fact is logged once).
+func (h *hlsSession) noteSourceEndLocked(seconds int) bool {
+	if h.sourceEndKnown && seconds >= h.sourceEndSeconds {
+		return false
+	}
+	h.sourceEndSeconds = seconds
+	h.sourceEndKnown = true
+	return true
+}
+
+// beyondSourceEndLocked reports whether a segment starts at or past the known
+// source end.
+func (h *hlsSession) beyondSourceEndLocked(segment, segSeconds int) bool {
+	return h.sourceEndKnown && segment*segSeconds >= h.sourceEndSeconds
 }
 
 func (h *hlsSession) rung(id string) (Rung, bool) {
@@ -232,7 +368,121 @@ type Sessions struct {
 	nextID   int
 	cap      int
 	governor *governor.Governor
+	// waitWindow, when positive, replaces the latency budgets as the length of
+	// one artifact wait window. Tests set it so a slow-encoder scenario runs in
+	// milliseconds instead of whole budgets.
+	waitWindow time.Duration
+	// stallTimeout, when positive, replaces encoderStallTimeout. Tests set it.
+	stallTimeout time.Duration
+	// resumeHints holds resume positions noted for sessions that do not exist
+	// yet; session creation consumes them. Entries expire with the idle timeout.
+	resumeHints map[SessionKey]resumeHint
+	// stopEncoder, when set, replaces (*ffmpeg.HLSProcess).Stop. Tests set it
+	// to a slow Stop.
+	stopEncoder func(*ffmpeg.HLSProcess)
+	// removeDir, when set, replaces os.RemoveAll in runTeardowns. Tests set it
+	// to a slow removal.
+	removeDir func(string) error
+	// stopping counts encoders removed from the map whose teardown has not yet
+	// stopped them (or whose off-lock start has not yet given up). They still
+	// run, so they still count against the cap.
+	stopping int
+	// starting counts ensureRung starts running with mu released.
+	starting int
+	// detached counts sessionTeardowns handed out under mu that runTeardowns
+	// has not finished, including ones that only remove a directory. Close
+	// waits for starting, stopping and detached to reach zero so no encoder,
+	// lease or directory outlives it.
+	detached int
+	// offLockIdle, when non-nil, is closed when starting, stopping and
+	// detached all drop to zero.
+	offLockIdle chan struct{}
 }
+
+// sessionTeardown is the slow half of removing a session: stopping its FFmpeg
+// process (which waits for the exit) and deleting its working directory. A
+// caller collects it under s.mu and runs it after releasing the lock, so one
+// slow teardown never stalls requests for every other session. Whoever builds
+// one under mu adds it to s.detached; runTeardowns takes it back out.
+type sessionTeardown struct {
+	proc *ffmpeg.HLSProcess
+	dir  string
+	// lease is the session's transcode lease, released only once proc has
+	// stopped so the governor keeps background generation out until then.
+	lease *governor.TranscodeLease
+	// counted means removeLocked added this teardown to s.stopping.
+	counted bool
+}
+
+// runTeardowns stops each process, removes each directory, then releases each
+// lease and transcode slot. Call it without s.mu held.
+func (s *Sessions) runTeardowns(teardowns []sessionTeardown) {
+	for _, t := range teardowns {
+		s.stop(t.proc)
+		if t.dir != "" {
+			if s.removeDir != nil {
+				_ = s.removeDir(t.dir)
+			} else {
+				_ = os.RemoveAll(t.dir)
+			}
+		}
+		if t.lease != nil {
+			t.lease.Release()
+		}
+		s.mu.Lock()
+		if t.counted {
+			s.stopping--
+		}
+		s.detached--
+		s.wakeCloseLocked()
+		s.mu.Unlock()
+	}
+}
+
+// wakeCloseLocked wakes a waiting Close once no start or teardown is running
+// with mu released. Call it after decrementing starting, stopping or detached.
+// Callers hold mu.
+func (s *Sessions) wakeCloseLocked() {
+	if s.offLockIdleLocked() && s.offLockIdle != nil {
+		close(s.offLockIdle)
+		s.offLockIdle = nil
+	}
+}
+
+// offLockIdleLocked reports whether no encoder start or teardown is running
+// with mu released. Callers hold mu.
+func (s *Sessions) offLockIdleLocked() bool {
+	return s.starting == 0 && s.stopping == 0 && s.detached == 0
+}
+
+// stop stops proc and waits for it to exit. Call it without s.mu held.
+func (s *Sessions) stop(proc *ffmpeg.HLSProcess) {
+	if proc == nil {
+		return
+	}
+	if s.stopEncoder != nil {
+		s.stopEncoder(proc)
+		return
+	}
+	proc.Stop()
+}
+
+// holdsTranscodeLocked reports whether session occupies a transcode slot: it
+// has a live process, or ensureRung is starting one. Callers hold mu.
+func (session *hlsSession) holdsTranscodeLocked() bool {
+	return session.proc != nil || session.startPending
+}
+
+// resumeHint is a resume position noted by playback info.
+type resumeHint struct {
+	seconds int
+	at      time.Time
+}
+
+// initRequest is the segment ensureRung is given for an init.mp4 request: any
+// encoder already running for the rendition writes the init segment, and with
+// none running the session starts one at its resume segment.
+const initRequest = -1
 
 // SetGovernor wires transcode-activity reporting (ADR-0013: transcode
 // preempts generation). Optional; nil means no reporting.
@@ -294,7 +544,7 @@ func (s *Sessions) ActiveKeys() []SessionKey {
 	defer s.mu.Unlock()
 	keys := make([]SessionKey, 0, len(s.sessions))
 	for key, session := range s.sessions {
-		if session.proc != nil {
+		if session.holdsTranscodeLocked() {
 			keys = append(keys, key)
 		}
 	}
@@ -330,7 +580,7 @@ func (s *Sessions) CanAdmitSession(sessionID store.SessionID, mediaID store.Medi
 func (s *Sessions) CanAdmitPriority(key SessionKey, priority Priority) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if session, ok := s.sessions[key]; ok && session.proc != nil {
+	if session, ok := s.sessions[key]; ok && session.holdsTranscodeLocked() {
 		return true
 	}
 	if s.liveCount() < s.cap {
@@ -339,11 +589,12 @@ func (s *Sessions) CanAdmitPriority(key SessionKey, priority Priority) bool {
 	return s.preemptableLocked(key, priority) != nil
 }
 
-// liveCount counts sessions holding a live FFmpeg process. Callers hold mu.
+// liveCount counts sessions holding a live FFmpeg process, plus removed
+// sessions whose encoder has not stopped yet. Callers hold mu.
 func (s *Sessions) liveCount() int {
-	count := 0
+	count := s.stopping
 	for _, session := range s.sessions {
-		if session.proc != nil {
+		if session.holdsTranscodeLocked() {
 			count++
 		}
 	}
@@ -369,7 +620,13 @@ func (s *Sessions) preemptableLocked(key SessionKey, priority Priority) *Session
 	var victim *SessionKey
 	var oldest time.Time
 	for other, session := range s.sessions {
-		if other == key || session.proc == nil {
+		if other == key || !session.holdsTranscodeLocked() {
+			continue
+		}
+		if session.startPending {
+			// Its encoder start runs with mu released and may still be stopping
+			// the process it replaces, which a teardown could not wait for, so
+			// the newcomer would launch while that process still held the slot.
 			continue
 		}
 		idle := session.lastAccess.Before(cutoff)
@@ -397,38 +654,58 @@ func (s *Sessions) preemptableLocked(key SessionKey, priority Priority) *Session
 // content reaches the byte layer with grant.Degraded set (the conductor roster
 // is the gate), so a client cannot use it as a general cap bypass. Callers hold
 // mu.
-func (s *Sessions) admitLocked(key SessionKey, priority Priority, degraded bool) error {
+// A preempted victim's teardown is returned for the caller to run after
+// releasing mu.
+func (s *Sessions) admitLocked(key SessionKey, priority Priority, degraded bool) (*sessionTeardown, error) {
 	if s.liveCount() < s.cap {
-		return nil
+		return nil, nil
 	}
 	if victim := s.preemptableLocked(key, priority); victim != nil {
-		s.removeLocked(*victim)
-		return nil
+		return s.removeLocked(*victim), nil
 	}
 	if degraded {
-		return nil // over-cap, lowest rung only: keep the party member streaming
+		return nil, nil // over-cap, lowest rung only: keep the party member streaming
 	}
-	return ErrTranscodeCapacity
+	return nil, ErrTranscodeCapacity
 }
 
-// removeLocked stops and forgets one session. Callers hold mu.
-func (s *Sessions) removeLocked(key SessionKey) {
+// removeLocked forgets one session and releases its transcode lease. It returns
+// the session's teardown (stop the process, delete the working directory),
+// which the caller runs after releasing mu, or nil when key has no session.
+// Callers hold mu.
+func (s *Sessions) removeLocked(key SessionKey) *sessionTeardown {
 	session, ok := s.sessions[key]
 	if !ok {
-		return
+		return nil
 	}
-	if session.proc != nil {
-		session.proc.Stop()
+	teardown := &sessionTeardown{proc: session.proc, dir: session.dir}
+	s.detached++
+	switch {
+	case session.proc != nil:
+		// The process keeps running until the teardown stops it, so the
+		// teardown keeps the slot and the lease until then.
+		teardown.lease = session.transcodeLease
+		session.transcodeLease = nil
+		teardown.counted = true
+		s.stopping++
+	case session.startPending:
+		// An off-lock ensureRung start owns this session's lease and may be
+		// spawning a process. It sees the eviction when it relocks, stops what
+		// it spawned, removes the directory again, then releases the lease and
+		// this slot.
+		s.stopping++
+	default:
+		// No process: nothing else will release the lease.
 		s.releaseTranscodeLease(session)
-		// Clear the process fields too: a request may still hold this *hlsSession
-		// across an unlock window, and a torn-down session must never read back as
-		// one holding a live transcode. liveLocked is the authoritative eviction
-		// check (the map entry is gone below); this keeps the object itself honest.
-		session.proc = nil
-		session.currentRung = ""
 	}
-	_ = os.RemoveAll(session.dir)
+	// Clear the process fields too: a request may still hold this *hlsSession
+	// across an unlock window, and a torn-down session must never read back as
+	// one holding a live transcode. liveLocked is the authoritative eviction
+	// check (the map entry is gone below); this keeps the object itself honest.
+	session.proc = nil
+	session.currentRung = ""
 	delete(s.sessions, key)
+	return teardown
 }
 
 // liveLocked reports whether session is still the session registered for key.
@@ -447,9 +724,10 @@ func (s *Sessions) liveLocked(key SessionKey, session *hlsSession) bool {
 // and returns how many it stopped (ADR-0012 §7: a revoked device's in-flight
 // transcodes die, not just its future requests). Sessions are keyed by
 // (SessionID, MediaID) — one Session may hold several live transcodes — so this
-// stops all of them at once. It mirrors removeLocked (Stop the FFmpeg process,
-// release the transcode slot, delete the artifacts), the same teardown idle
-// reaping and preemption already use, so it introduces no new shutdown path.
+// stops all of them at once. It uses removeLocked and runTeardowns (stop the
+// FFmpeg process, delete the artifacts, then release the transcode slot), the
+// same teardown idle reaping and preemption already use, so it introduces no
+// new shutdown path. The teardowns run after the lock is released.
 // Calling it for a Session with no live transcode is a zero-stop no-op — a
 // direct-play session has nothing to abort. The caller (the audited
 // device-revocation mutation) invokes this after RevokeDevice has already
@@ -457,17 +735,15 @@ func (s *Sessions) liveLocked(key SessionKey, session *hlsSession) bool {
 // leaves running until idle reap.
 func (s *Sessions) TerminateSession(sessionID store.SessionID) int {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	victims := make([]SessionKey, 0)
+	var teardowns []sessionTeardown
 	for key := range s.sessions {
 		if key.SessionID == sessionID {
-			victims = append(victims, key)
+			teardowns = append(teardowns, *s.removeLocked(key))
 		}
 	}
-	for _, key := range victims {
-		s.removeLocked(key)
-	}
-	return len(victims)
+	s.mu.Unlock()
+	s.runTeardowns(teardowns)
+	return len(teardowns)
 }
 
 // NewSessions creates a transcode session manager rooted at dataDir/transcode.
@@ -488,12 +764,13 @@ func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.
 		now = time.Now
 	}
 	s := &Sessions{
-		transcoder: transcoder,
-		dir:        scratchDir,
-		now:        now,
-		bootNonce:  newBootNonce(),
-		sessions:   map[SessionKey]*hlsSession{},
-		cap:        defaultTranscodeCap,
+		transcoder:  transcoder,
+		dir:         scratchDir,
+		now:         now,
+		bootNonce:   newBootNonce(),
+		sessions:    map[SessionKey]*hlsSession{},
+		cap:         defaultTranscodeCap,
+		resumeHints: map[SessionKey]resumeHint{},
 	}
 	_ = s.PurgeOrphanedTranscodeDirs()
 	return s
@@ -573,35 +850,200 @@ func (s *Sessions) FilePathPriorityWithBurnSubtitleAudioLadderMap(ctx context.Co
 	path := filepath.Join(session.dir, rungID, file)
 	waitBudget := s.transcodeLatencyBudget(session, path)
 
+	segment := 0
+	isSegment := false
+	var run *encoderRun
 	switch {
 	case file == "index.m3u8":
 		if session.durationSeconds > 0 {
 			return path, nil // synthesized at session creation
 		}
 		// Linear mode: ffmpeg owns the variant playlist, so it must run.
-		if err := s.ensureRung(ctx, key, session, rung, 0, path); err != nil {
+		if run, err = s.ensureRung(ctx, key, session, rung, 0, path); err != nil {
 			return "", err
 		}
 	case file == initSegmentName:
-		if err := s.ensureRung(ctx, key, session, rung, 0, path); err != nil {
+		segment = initRequest
+		if run, err = s.ensureRung(ctx, key, session, rung, segment, path); err != nil {
 			return "", err
 		}
 	default:
 		match := segmentName.FindStringSubmatch(file)
-		segment, _ := strconv.Atoi(match[1])
+		segment, _ = strconv.Atoi(match[1])
+		isSegment = true
 		if session.durationSeconds > 0 && segment >= segmentCount(session.durationSeconds, rungSegmentSeconds(rung)) {
 			return "", errors.New("unknown stream file")
 		}
-		if err := s.ensureRung(ctx, key, session, rung, segment, path); err != nil {
+		if s.beyondSourceEnd(session, segment, rungSegmentSeconds(rung)) {
+			return "", ErrSourceEnded // known short source: never encode an empty segment
+		}
+		if run, err = s.ensureRung(ctx, key, session, rung, segment, path); err != nil {
 			return "", err
 		}
 	}
-	waitCtx, cancel := context.WithTimeout(ctx, waitBudget)
-	defer cancel()
-	if err := waitForFile(waitCtx, path); err != nil {
+	if err := s.waitWhileEncoderProgresses(ctx, key, session, rung, segment, isSegment, path, run, waitBudget); err != nil {
 		return "", err
 	}
+	if isSegment && segmentLacksMedia(path) {
+		// FFmpeg started past the real end of a truncated source writes a
+		// segment with no media; serving it as playable would stall the player.
+		s.noteSourceEnd(key, session, rung, segment*rungSegmentSeconds(rung), "")
+		return "", ErrSourceEnded
+	}
+	if file != "index.m3u8" {
+		s.markDelivered(key, session, rung.ID)
+	}
 	return path, nil
+}
+
+// waitForEncoder waits for path while watching the encoder run that should
+// produce it. An encoder that crashes under the wait is restarted at the
+// requested segment inside this request (at most maxRequestEncoderRestarts
+// times, and within the session's crash-restart budget); an encoder that hit
+// end of input fails the request at once instead of letting it wait out its
+// budget; an encoder the server stopped (switch, seek, teardown) leaves the
+// request waiting for its replacement as before.
+func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int, isSegment bool, path string, run *encoderRun) error {
+	restarts := 0
+	for {
+		if run != nil {
+			run.waiting.Add(1)
+		}
+		err := waitForArtifact(ctx, path, run.exitedChan())
+		if run != nil {
+			run.waiting.Add(-1)
+		}
+		if !errors.Is(err, errEncoderExited) {
+			return err
+		}
+		switch run.outcome {
+		case exitStopped:
+			s.mu.Lock()
+			live := s.liveLocked(key, session)
+			s.mu.Unlock()
+			if !live {
+				return ErrSessionEvicted
+			}
+			run = nil // replaced by another request's encoder: keep waiting
+		case exitEndOfInput:
+			if isSegment && s.beyondSourceEnd(session, segment, rungSegmentSeconds(rung)) {
+				return ErrSourceEnded
+			}
+			return errEncoderEnded
+		default:
+			if restarts >= maxRequestEncoderRestarts {
+				return errEncoderFailing
+			}
+			restarts++
+			if run, err = s.ensureRung(ctx, key, session, rung, segment, path); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+// waitWhileEncoderProgresses runs waitForEncoder in budget-long windows. When
+// a window expires on a segment and the session is healthy but behind the
+// playhead, the request keeps waiting for the bytes instead of failing into a
+// retryable 503 (CORE-0044). Healthy means the session's encoder for rung was
+// this request's run for the whole window, that run started at or before the
+// requested segment, and it wrote a segment during the window. Anything else,
+// such as a stalled run, a run another request replaced or restarted, or a run
+// started past the segment, fails as before. A run writes its segments in
+// order from its base, and the request is at most seekLookaheadSegments past
+// the frontier when the wait starts, so the number of extra windows is bounded.
+func (s *Sessions) waitWhileEncoderProgresses(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int, isSegment bool, path string, run *encoderRun, budget time.Duration) error {
+	for {
+		windowStart := time.Now()
+		current, _, tracked := s.rungEncoder(key, session, rung)
+		waitCtx, cancel := context.WithTimeout(ctx, budget)
+		err := s.waitForEncoder(waitCtx, key, session, rung, segment, isSegment, path, run)
+		cancel()
+		if err == nil || !isSegment || ctx.Err() != nil || !errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+		after, base, stillTracked := s.rungEncoder(key, session, rung)
+		if !tracked || !stillTracked || current != run || after != run || base > segment ||
+			!segmentWrittenSince(filepath.Join(session.dir, rung.ID), base, windowStart) {
+			return err
+		}
+	}
+}
+
+// rungEncoder returns the session's running encoder for rung and the segment it
+// started at. tracked is false when the session is gone or is not encoding rung.
+func (s *Sessions) rungEncoder(key SessionKey, session *hlsSession, rung Rung) (run *encoderRun, base int, tracked bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.liveLocked(key, session) || session.proc == nil || session.currentRung != rung.ID {
+		return nil, 0, false
+	}
+	return session.run, session.baseSegment, true
+}
+
+// segmentWrittenSince reports whether rungDir holds a segment at or past base
+// modified at or after since. Segments cached by earlier runs keep their older
+// times, so only this run's writes count.
+func segmentWrittenSince(rungDir string, base int, since time.Time) bool {
+	entries, err := os.ReadDir(rungDir)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		match := segmentName.FindStringSubmatch(entry.Name())
+		if match == nil {
+			continue
+		}
+		if segment, _ := strconv.Atoi(match[1]); segment < base {
+			continue
+		}
+		if info, err := entry.Info(); err == nil && !info.ModTime().Before(since) {
+			return true
+		}
+	}
+	return false
+}
+
+// beyondSourceEnd reports whether segment starts past the session's known
+// source end.
+func (s *Sessions) beyondSourceEnd(session *hlsSession, segment, segSeconds int) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return session.beyondSourceEndLocked(segment, segSeconds)
+}
+
+// noteSourceEnd records that the source has no media from seconds on and logs
+// it once per new (lower) bound.
+func (s *Sessions) noteSourceEnd(key SessionKey, session *hlsSession, rung Rung, seconds int, stderr string) {
+	s.mu.Lock()
+	lowered := s.liveLocked(key, session) && session.noteSourceEndLocked(seconds)
+	s.mu.Unlock()
+	if lowered {
+		logSourceEnd(key, session, rung, seconds, stderr)
+	}
+}
+
+func logSourceEnd(key SessionKey, session *hlsSession, rung Rung, seconds int, stderr string) {
+	slog.Warn("media source ends before its probed duration; refusing segments past the end",
+		"media", key.MediaID,
+		"session_dir", filepath.Base(session.dir),
+		"rung", rung.ID,
+		"source_end_seconds", seconds,
+		"source_end_segment", seconds/rungSegmentSeconds(rung),
+		"probed_duration_seconds", session.durationSeconds,
+		"stderr", stderr)
+}
+
+// markDelivered records the rendition a media request was just served from. A
+// player switching back to a rendition already on disk starts no encoder, so
+// the encoder start alone would keep reporting the previous rendition.
+// Variant playlists do not count: a player may read several while choosing.
+func (s *Sessions) markDelivered(key SessionKey, session *hlsSession, rungID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.liveLocked(key, session) {
+		session.deliveredRung = rungID
+	}
 }
 
 // transcodeLatencyBudget classifies a missing artifact before ensureRung
@@ -610,6 +1052,9 @@ func (s *Sessions) FilePathPriorityWithBurnSubtitleAudioLadderMap(ctx context.Co
 func (s *Sessions) transcodeLatencyBudget(session *hlsSession, path string) time.Duration {
 	if fileReady(path) {
 		return fileWaitTimeout
+	}
+	if s.waitWindow > 0 {
+		return s.waitWindow
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -626,12 +1071,16 @@ func (s *Sessions) transcodeLatencyBudget(session *hlsSession, path string) time
 // rung in place of the resolution ladder, so the master and
 // served rendition copy the source video and transcode only the audio.
 func (s *Sessions) session(key SessionKey, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, priority Priority) (*hlsSession, error) {
+	var teardowns []sessionTeardown
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer func() {
+		s.mu.Unlock()
+		s.runTeardowns(teardowns)
+	}()
 	requestedRungs := rungsForSession(videoWidth, videoHeight, audioCopy, degraded, caps)
 	if existing, ok := s.sessions[key]; ok {
 		if existing.src != src || existing.durationSeconds != durationSeconds || existing.degraded != degraded || !rungsEqual(existing.rungs, requestedRungs) || existing.sourceVideo != sourceVideo || existing.burnSubtitleIndex != burnSubtitleIndex || !audioProfilesEqual(existing.audioProfile, audioProfile) || !equalOptionalInt(existing.audioStreamIndex, audioStreamIndex) {
-			s.removeLocked(key) // mode-shaping changed; old artifacts are incompatible
+			teardowns = append(teardowns, *s.removeLocked(key)) // mode-shaping changed; old artifacts are incompatible
 		} else {
 			existing.lastAccess = s.now()
 			if priority > existing.priority {
@@ -655,8 +1104,15 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds, videoWid
 		priority:          priority,
 		degraded:          degraded,
 	}
+	if hint, ok := s.resumeHints[key]; ok {
+		delete(s.resumeHints, key)
+		if s.now().Sub(hint.at) < sessionIdleTimeout {
+			session.resumeSeconds = hint.seconds
+		}
+	}
 	if err := writeSessionPlaylists(dir, requestedRungs, durationSeconds); err != nil {
-		_ = os.RemoveAll(dir)
+		teardowns = append(teardowns, sessionTeardown{dir: dir})
+		s.detached++
 		return nil, err
 	}
 	s.sessions[key] = session
@@ -738,26 +1194,35 @@ func writeSessionPlaylists(dir string, rungs []Rung, durationSeconds int) error 
 // the first process (through admission control), replaces it on a rendition
 // switch (same session, new rendition stream — ADR-0010 §8's restart-at-a-
 // new-bitrate, reusing the seek-restart machinery), and restarts it when a
-// seek lands outside the produced window.
-func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int, path string) error {
+// seek lands outside the produced window. It returns the encoder run that will
+// produce path, or nil when path already exists.
+func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int, path string) (*encoderRun, error) {
 	if _, err := os.Stat(path); err == nil {
-		return nil // already produced (possibly by an earlier rendition run)
+		return nil, nil // already produced (possibly by an earlier rendition run)
 	}
+	session.startMu.Lock()
+	defer session.startMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.liveLocked(key, session) {
-		return ErrSessionEvicted // torn down between s.session() and this lock
+		return nil, ErrSessionEvicted // torn down between s.session() and this lock
 	}
 	if _, err := os.Stat(path); err == nil {
-		return nil
+		return nil, nil
 	}
 	rungDir := filepath.Join(session.dir, rung.ID)
+	if segment == initRequest {
+		if session.proc != nil && session.currentRung == rung.ID {
+			return session.run, nil // every encoder writes init.mp4 when it starts
+		}
+		segment = session.resumeSegmentLocked(rung)
+	}
 	if session.proc != nil && session.currentRung == rung.ID {
 		if session.durationSeconds == 0 {
-			return nil // linear mode: the running process will reach it
+			return session.run, nil // linear mode: the running process will reach it
 		}
 		if segment >= session.baseSegment && segment <= session.frontier+seekLookaheadSegments {
-			return nil // within the cached frontier; the running transcode reaches it
+			return session.run, nil // within the cached frontier; the running transcode reaches it
 		}
 		// Cache miss: the request is beyond the cached frontier, so refresh from
 		// disk — but never hold s.mu across the ReadDir. Drop the lock, scan, then
@@ -770,21 +1235,28 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 		scanned := scanFrontier(rungDir, base)
 		s.mu.Lock()
 		if !s.liveLocked(key, session) {
-			return ErrSessionEvicted // torn down while the frontier scan ran off-lock
+			return nil, ErrSessionEvicted // torn down while the frontier scan ran off-lock
 		}
 		if session.proc == proc && session.currentRung == rung.ID && session.baseSegment == base {
 			if scanned > session.frontier {
 				session.frontier = scanned // advance-only within this generation
 			}
 			if segment >= session.baseSegment && segment <= session.frontier+seekLookaheadSegments {
-				return nil // the running transcode will reach it; wait outside the lock
+				return session.run, nil // the running transcode will reach it; wait outside the lock
 			}
 		}
 	}
-	starting := session.proc == nil
-	if starting {
-		if err := s.admitLocked(key, session.priority, session.degraded); err != nil {
-			return err
+	var victim *sessionTeardown
+	var replaced *ffmpeg.HLSProcess
+	if session.proc == nil {
+		// The last encoder crashed: this start is a crash restart, bounded by
+		// the session budget so a source that kills FFmpeg fails fast.
+		if session.lastCrashed && !session.takeRestartLocked(s.now()) {
+			return nil, errEncoderFailing
+		}
+		var err error
+		if victim, err = s.admitLocked(key, session.priority, session.degraded); err != nil {
+			return nil, err
 		}
 		// Acquire the realtime-transcode lease BEFORE the process launches: the
 		// governor preempts background generation the moment this session commits
@@ -800,10 +1272,22 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 		// guards above already rejected an evicted session — whose lease removeLocked
 		// has released — so the lease this branch carries across the swap is always
 		// the live one. The session stays exactly one live transcode unit.
-		session.proc.Stop()
+		replaced = session.proc
 		session.proc = nil
 		session.currentRung = ""
 	}
+	// Stopping a process waits for it to exit, and spawning one can be slow too,
+	// so both run with mu released: one session's encoder churn must not stall
+	// requests for every other session. startPending keeps this session's slot
+	// counted meanwhile, and startMu keeps a second request on this session from
+	// starting another encoder.
+	session.startPending = true
+	s.starting++
+	s.mu.Unlock()
+	if victim != nil {
+		s.runTeardowns([]sessionTeardown{*victim})
+	}
+	s.stop(replaced)
 	procCtx := context.WithoutCancel(ctx)
 	var proc *ffmpeg.HLSProcess
 	var err error
@@ -812,38 +1296,196 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	} else {
 		proc, err = s.transcoder.StartHLS(procCtx, session.src, rungDir, session.rendition(rung))
 	}
+	s.mu.Lock()
+	session.startPending = false
+	if !s.liveLocked(key, session) {
+		// Torn down while the lock was released. removeLocked counted this
+		// start in s.stopping and scheduled the directory's removal, possibly
+		// before the replaced process exited or the new one wrote anything, so
+		// stop the new process and remove the directory again before releasing
+		// the lease and the slot.
+		s.mu.Unlock()
+		if err == nil {
+			s.stop(proc)
+		}
+		_ = os.RemoveAll(session.dir)
+		s.mu.Lock()
+		s.releaseTranscodeLease(session)
+		s.stopping--
+		s.starting--
+		s.wakeCloseLocked()
+		return nil, ErrSessionEvicted
+	}
+	s.starting--
+	s.wakeCloseLocked()
 	if err != nil {
 		// Launch failed: this session holds no live process, so release its
 		// transcode lease. This is the rollback for a fresh start and the teardown
 		// for a replacement that could not relaunch — either way the session drops
 		// to zero live transcodes and generation may resume.
 		s.releaseTranscodeLease(session)
-		return err
+		return nil, err
 	}
+	run := &encoderRun{proc: proc}
 	session.proc = proc
+	session.run = run
 	session.currentRung = rung.ID
+	session.deliveredRung = rung.ID
 	session.baseSegment = segment
 	session.frontier = segment - 1 // new generation: nothing produced past base yet
 	session.lastAccess = s.now()
 	session.started = true
+	session.resumeSeconds = 0
 	if proc.Running() {
-		s.reapProcess(key, proc)
+		run.exited = make(chan struct{})
+		s.reapProcess(key, session, run, rung, segment)
+		if proc.ReportsProgress() {
+			go watchForStall(run, s.encoderStallTimeout())
+		}
 	}
-	return nil
+	return run, nil
 }
 
-func (s *Sessions) reapProcess(key SessionKey, proc *ffmpeg.HLSProcess) {
-	go func() {
-		_ = proc.Wait()
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		session, ok := s.sessions[key]
-		if !ok || session.proc != proc {
-			return // superseded by a replacement or already torn down: not our lease
+// resumeSegmentLocked is the segment an encoder started for an init.mp4
+// request begins at: the one containing the resume position, or 0 when there
+// is none or it lies past the known end of the source.
+func (session *hlsSession) resumeSegmentLocked(rung Rung) int {
+	if session.resumeSeconds <= 0 || session.durationSeconds <= 0 {
+		return 0
+	}
+	segSeconds := rungSegmentSeconds(rung)
+	segment := session.resumeSeconds / segSeconds
+	if segment >= segmentCount(session.durationSeconds, segSeconds) || session.beyondSourceEndLocked(segment, segSeconds) {
+		return 0
+	}
+	return segment
+}
+
+// NoteResumePosition records where playback info resumed the viewer of key's
+// HLS session, so the session's first encoder starts there. A position of 0
+// clears it. A session that already started an encoder ignores it.
+func (s *Sessions) NoteResumePosition(key SessionKey, seconds int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.now()
+	for k, hint := range s.resumeHints {
+		if now.Sub(hint.at) >= sessionIdleTimeout {
+			delete(s.resumeHints, k)
 		}
-		session.proc = nil
-		session.currentRung = ""
-		s.releaseTranscodeLease(session)
+	}
+	if session, ok := s.sessions[key]; ok {
+		delete(s.resumeHints, key)
+		if !session.started {
+			session.resumeSeconds = max(seconds, 0)
+		}
+		return
+	}
+	if seconds <= 0 {
+		delete(s.resumeHints, key)
+		return
+	}
+	s.resumeHints[key] = resumeHint{seconds: seconds, at: now}
+}
+
+func (s *Sessions) encoderStallTimeout() time.Duration {
+	if s.stallTimeout > 0 {
+		return s.stallTimeout
+	}
+	return encoderStallTimeout
+}
+
+// watchForStall kills run's process when its output position has not advanced
+// for stall while at least one request is waiting on it, and returns once the
+// process has exited. An encoder nobody waits on is left alone: it may simply
+// be ahead of a paused viewer. The reaper classifies the kill as exitStalled.
+func watchForStall(run *encoderRun, stall time.Duration) {
+	ticker := time.NewTicker(max(stall/4, time.Millisecond))
+	defer ticker.Stop()
+	for {
+		select {
+		case <-run.exited:
+			return
+		case <-ticker.C:
+			if run.waiting.Load() > 0 && time.Since(run.proc.ProgressedAt()) >= stall {
+				run.stalled.Store(true)
+				run.proc.Kill()
+				return
+			}
+		}
+	}
+}
+
+// reapProcess waits for run's process to exit, classifies the exit, releases
+// the session's hold on it (when it is still the session's process), records
+// where a truncated source ended, logs the exit once, and then closes
+// run.exited so waiting requests react immediately. Server-initiated stops and
+// clean end-of-input exits log at debug; a crash logs at error with its exit
+// status and stderr tail.
+func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoderRun, rung Rung, base int) {
+	go func() {
+		defer close(run.exited)
+		waitErr := run.proc.Wait()
+		outcome := exitCrashed
+		switch {
+		case run.proc.StopRequested():
+			outcome = exitStopped
+		case waitErr == nil:
+			outcome = exitEndOfInput
+		case run.stalled.Load():
+			outcome = exitStalled
+		}
+		// Filesystem reads stay off-lock, as with ensureRung's frontier scan.
+		rungDir := filepath.Join(session.dir, rung.ID)
+		segSeconds := rungSegmentSeconds(rung)
+		frontier := scanFrontier(rungDir, base)
+		sourceEnd := -1
+		if outcome == exitEndOfInput && session.durationSeconds > 0 {
+			last := frontier
+			for last >= base && segmentLacksMedia(filepath.Join(rungDir, fmt.Sprintf("seg%05d.m4s", last))) {
+				last--
+			}
+			if end := last + 1; end < segmentCount(session.durationSeconds, segSeconds) {
+				sourceEnd = end * segSeconds
+			}
+		}
+
+		s.mu.Lock()
+		run.outcome = outcome
+		live := s.liveLocked(key, session)
+		if live && session.proc == run.proc {
+			session.proc = nil
+			session.currentRung = ""
+			session.lastCrashed = outcome == exitCrashed || outcome == exitStalled
+			s.releaseTranscodeLease(session)
+		}
+		lowered := live && sourceEnd >= 0 && session.noteSourceEndLocked(sourceEnd)
+		s.mu.Unlock()
+
+		stderr := run.proc.StderrTail()
+		attrs := []any{
+			"media", key.MediaID,
+			"session_dir", filepath.Base(session.dir),
+			"rung", rung.ID,
+			"base_segment", base,
+			"frontier_segment", frontier,
+		}
+		switch outcome {
+		case exitStopped:
+			slog.Debug("live transcode stopped", attrs...)
+		case exitEndOfInput:
+			slog.Debug("live transcode reached end of input", attrs...)
+		case exitStalled:
+			slog.Error("live transcode stalled; killed it", append(attrs, "progressed_at", run.proc.ProgressedAt(), "stderr", stderr)...)
+		default:
+			status := "unknown"
+			if waitErr != nil {
+				status = waitErr.Error()
+			}
+			slog.Error("live transcode exited unexpectedly", append(attrs, "status", status, "stderr", stderr)...)
+		}
+		if lowered {
+			logSourceEnd(key, session, rung, sourceEnd, stderr)
+		}
 	}()
 }
 
@@ -944,13 +1586,15 @@ func (s *Sessions) Run(ctx context.Context) {
 
 func (s *Sessions) reap() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	var teardowns []sessionTeardown
 	cutoff := s.now().Add(-sessionIdleTimeout)
 	for key, session := range s.sessions {
 		if session.lastAccess.Before(cutoff) {
-			s.removeLocked(key)
+			teardowns = append(teardowns, *s.removeLocked(key))
 		}
 	}
+	s.mu.Unlock()
+	s.runTeardowns(teardowns)
 }
 
 // sessionDirName matches a transcode session working directory
@@ -1010,12 +1654,30 @@ func (s *Sessions) PurgeOrphanedTranscodeDirs() error {
 	return joined
 }
 
-// Close stops every running transcode and removes its working directory.
+// Close stops every running transcode and removes its working directory. It
+// also waits for encoder starts and teardowns running with the lock released
+// (a start sees its session gone and stops what it spawned), so no encoder,
+// lease or directory outlives it.
 func (s *Sessions) Close() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	var teardowns []sessionTeardown
 	for key := range s.sessions {
-		s.removeLocked(key)
+		teardowns = append(teardowns, *s.removeLocked(key))
+	}
+	s.mu.Unlock()
+	s.runTeardowns(teardowns)
+	for {
+		s.mu.Lock()
+		if s.offLockIdleLocked() {
+			s.mu.Unlock()
+			return
+		}
+		if s.offLockIdle == nil {
+			s.offLockIdle = make(chan struct{})
+		}
+		idle := s.offLockIdle
+		s.mu.Unlock()
+		<-idle
 	}
 }
 
@@ -1038,12 +1700,20 @@ func fileReady(path string) bool {
 // cannot be armed (the directory is gone, or the OS refuses a handle), it falls
 // back to the slow polling loop so a watcher failure degrades, never errors.
 func waitForFile(ctx context.Context, path string) error {
+	return waitForArtifact(ctx, path, nil)
+}
+
+// waitForArtifact is waitForFile that also watches the producing encoder:
+// when exited closes before path is ready it returns errEncoderExited, so a
+// dead encoder is noticed in milliseconds rather than at the deadline. A nil
+// exited never fires.
+func waitForArtifact(ctx context.Context, path string, exited <-chan struct{}) error {
 	if fileReady(path) {
 		return nil // fast path: already produced, no watch needed
 	}
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		return pollForFile(ctx, path)
+		return pollForArtifact(ctx, path, exited)
 	}
 	defer watcher.Close()
 	// Arm the watch on the parent dir BEFORE the post-arm stat: a file that
@@ -1052,7 +1722,7 @@ func waitForFile(ctx context.Context, path string) error {
 	// where an event is missed and the file already exists — the classic
 	// inotify setup race.
 	if err := watcher.Add(filepath.Dir(path)); err != nil {
-		return pollForFile(ctx, path)
+		return pollForArtifact(ctx, path, exited)
 	}
 	if fileReady(path) {
 		return nil // appeared during arm
@@ -1073,6 +1743,11 @@ func waitForFile(ctx context.Context, path string) error {
 			return ctx.Err()
 		case <-deadline.C:
 			return errors.New("stream not ready")
+		case <-exited:
+			if fileReady(path) {
+				return nil // the encoder's last write landed just before it exited
+			}
+			return errEncoderExited
 		case event := <-watcher.Events:
 			if filepath.Clean(event.Name) != filepath.Clean(path) {
 				continue
@@ -1087,7 +1762,7 @@ func waitForFile(ctx context.Context, path string) error {
 				settleC = settle.C
 			}
 		case <-watcher.Errors:
-			return pollForFile(ctx, path) // watch broke; degrade to polling
+			return pollForArtifact(ctx, path, exited) // watch broke; degrade to polling
 		case <-settleC:
 			settleC = nil
 			if fileReady(path) {
@@ -1105,6 +1780,12 @@ func waitForFile(ctx context.Context, path string) error {
 // preserving waitForFile's exact contract (ready → nil, deadline → "stream not
 // ready", cancel → ctx.Err()) when an fsnotify watch cannot be established.
 func pollForFile(ctx context.Context, path string) error {
+	return pollForArtifact(ctx, path, nil)
+}
+
+// pollForArtifact is pollForFile that also returns errEncoderExited once
+// exited closes with path still not ready.
+func pollForArtifact(ctx context.Context, path string, exited <-chan struct{}) error {
 	deadline := time.Now().Add(fileWaitTimeout)
 	for {
 		if fileReady(path) {
@@ -1116,7 +1797,68 @@ func pollForFile(ctx context.Context, path string) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-exited:
+			if fileReady(path) {
+				return nil
+			}
+			return errEncoderExited
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
+}
+
+// segmentLacksMedia reports whether the fMP4 segment at path is a complete,
+// well-formed ISO-BMFF box sequence carrying no media payload (no non-empty
+// mdat box). FFmpeg's HLS muxer writes such a segment — a lone styp box,
+// EXTINF 0 — when it is started at or past the real end of a truncated input.
+// Anything it cannot positively parse reads as media, so an unexpected layout
+// is served as before rather than refused. It reads only box headers.
+func segmentLacksMedia(path string) bool {
+	f, err := os.Open(path) // #nosec G304 -- path is a segment file inside the session's own encoder output directory
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || info.Size() == 0 {
+		return false
+	}
+	size := info.Size()
+	var header [16]byte
+	for off := int64(0); off < size; {
+		if size-off < 8 {
+			return false // trailing bytes that are not a box
+		}
+		if _, err := f.ReadAt(header[:8], off); err != nil {
+			return false
+		}
+		boxSize := int64(binary.BigEndian.Uint32(header[:4]))
+		headerSize := int64(8)
+		switch boxSize {
+		case 0: // box extends to end of file
+			boxSize = size - off
+		case 1: // 64-bit largesize follows the type
+			if size-off < 16 {
+				return false
+			}
+			if _, err := f.ReadAt(header[8:16], off+8); err != nil {
+				return false
+			}
+			large := binary.BigEndian.Uint64(header[8:16])
+			// #nosec G115 -- size-off is positive (loop guard), so it fits in uint64.
+			if large > uint64(size-off) {
+				return false
+			}
+			boxSize = int64(large) // #nosec G115 -- large <= size-off, an int64, so it fits.
+			headerSize = 16
+		}
+		if boxSize < headerSize || boxSize > size-off {
+			return false
+		}
+		if string(header[4:8]) == "mdat" && boxSize > headerSize {
+			return false
+		}
+		off += boxSize
+	}
+	return true
 }

@@ -4,16 +4,20 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/store"
+	"github.com/beamfall/core/internal/store/storetest"
 )
 
 // originalScopedFields is the frozen baseline: the set of scoped top-level
@@ -142,7 +146,11 @@ var originalScopedFields = []string{
 	"libraryhealth",
 	"libraryhealthitems",
 	"libraryindexstatus",
+	"libraryitems", // CORE-1190: full library browse read
 	"livesessions",
+	"hostmetrics",
+	"playhistory",
+	"playstats",
 	"devices",
 	"manifest",
 	"markers",
@@ -253,6 +261,11 @@ var originalScopedFields = []string{
 	"setconsoleconfig",
 	"setscrapercredential",
 	"setfavorite",
+	"itemstate",       // CORE-1194: per-Profile item state read
+	"metadatacredits", // CORE-1126: active plugin scrapers' declared attribution
+	"setwatched",      // CORE-1194: mark a Media or Entity tree watched/unwatched
+	"setwatchlisted",  // CORE-1194: per-Profile watchlist add/remove
+	"setrating",       // CORE-1194: personal rating set/clear
 	"setfollow",
 	"setlibraryaiindexing",
 	"skipdetectionenabled",    // ENR-7 (ADR-0048 Decision 3/6): per-Library skip-detection toggle (read)
@@ -762,6 +775,84 @@ func TestConsoleFieldsRequireAdminSession(t *testing.T) {
 		if len(errs) == 0 || errs[0].Message != "admin session required" {
 			t.Errorf("Console field %q with a non-admin manager session returned %#v, want \"admin session required\" (missing roleAdmin in fieldHandler?)", field, errs)
 		}
+	}
+}
+
+// TestAdminAPITokenPassesOnlyCLIOps pins ADR-0007 §2 for operator-CLI auth: an
+// admin API token (no Admin Session) is accepted for exactly the adminTokenOps
+// allowlist and refused for every other Console field, so the browser Admin
+// Session requirement is unchanged and the allowlist cannot grow silently.
+func TestAdminAPITokenPassesOnlyCLIOps(t *testing.T) {
+	st := storetest.Open(t)
+	_, token, err := st.CreateAPIToken(t.Context(), "cli", time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := newTestHandlerWithStore(st)
+	authorize := func(req *http.Request) { req.Header.Set("Authorization", "Bearer "+token) }
+
+	wantOps := []string{"apitokens", "backup", "revokeapitoken", "runjob", "scanlibrary"}
+	if got := sortedKeys(adminTokenOps); !slices.Equal(got, wantOps) {
+		t.Fatalf("adminTokenOps = %v, want %v", got, wantOps)
+	}
+	for field := range adminTokenOps {
+		if !adminFields[field] {
+			t.Errorf("adminTokenOps %q is not a Console field", field)
+		}
+	}
+	for field := range adminFields {
+		kind := "query"
+		if mutationFields[field] {
+			kind = "mutation"
+		}
+		body := `{"query":"` + kind + ` { ` + fieldHandlerRegistry[field].wireName + ` }"}`
+		_, errs := post(t, handler, body, authorize)
+		refused := len(errs) > 0 && errs[0].Message == "admin session required"
+		if adminTokenOps[field] && refused {
+			t.Errorf("CLI op %q refused for an admin API token: %#v", field, errs)
+		}
+		if !adminTokenOps[field] && !refused {
+			t.Errorf("Console field %q with an admin API token returned %#v, want \"admin session required\"", field, errs)
+		}
+	}
+}
+
+// TestAdminAPITokenCLIOpsEndToEnd drives the operator-CLI operations with a
+// token: list, scan, and revoke succeed, a manager session without an Admin
+// Session is still refused, and a mixed request cannot smuggle a non-CLI field.
+func TestAdminAPITokenCLIOpsEndToEnd(t *testing.T) {
+	st := storetest.Open(t)
+	info, token, err := st.CreateAPIToken(t.Context(), "cli", time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := newTestHandlerWithStore(st)
+	authorize := func(req *http.Request) { req.Header.Set("Authorization", "Bearer "+token) }
+
+	data, errs := post(t, handler, `{"query":"query { apiTokens { id revoked } }"}`, authorize)
+	if len(errs) != 0 || !strings.Contains(string(data["apiTokens"]), info.ID) {
+		t.Fatalf("token list via token: data=%s errs=%#v", data["apiTokens"], errs)
+	}
+	_, errs = post(t, handler, `{"query":"mutation { runJob { id status } }"}`, authorize)
+	for _, e := range errs {
+		if e.Message == "admin session required" {
+			t.Fatalf("runJob via token refused: %#v", errs)
+		}
+	}
+	// A non-admin manager session is still refused for the same fields.
+	_, errs = post(t, handler, `{"query":"query { apiTokens { id } }"}`, authorizeManager)
+	if len(errs) == 0 || errs[0].Message != "admin session required" {
+		t.Fatalf("manager session without Admin Session errors = %#v, want admin gate", errs)
+	}
+	// Mixing a CLI op with a non-CLI Console field is refused as a whole.
+	_, errs = post(t, handler, `{"query":"query { apiTokens { id } libraries { id } }"}`, authorize)
+	if len(errs) == 0 || errs[0].Message != "admin session required" {
+		t.Fatalf("mixed request errors = %#v, want admin gate", errs)
+	}
+	data, errs = post(t, handler,
+		`{"query":"mutation R($id:String!){ revokeApiToken(id:$id){ id revoked } }","variables":{"id":"`+info.ID+`"}}`, authorize)
+	if len(errs) != 0 || !strings.Contains(string(data["revokeApiToken"]), `"revoked":true`) {
+		t.Fatalf("token revoke via token: data=%s errs=%#v", data["revokeApiToken"], errs)
 	}
 }
 

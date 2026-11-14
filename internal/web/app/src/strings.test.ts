@@ -9,36 +9,48 @@ const LOCALES = ["en", "fr", "de", "es", "pt"] as const satisfies readonly Local
 const PARTIAL_CATALOGS: Record<Locale, Partial<StringTable>> = { en, fr, de, es, pt };
 
 // Captured after WEB-HLS-RECOVERY-1 added localized playback-recovery keys atop
-// WEBUI-SHELL-RESILIENCE-UPGRADE-BLANK-1 (2026-08-30).
-const BASE_SERIALIZED_LENGTH = 376_365;
-const BASE_REGISTRY_SHA256 = "1c8b13aeb08896685f0bec4c568c8c9db2916d63c9aa284f66b4d8a506335e4f";
-const BASE_KEY_ORDER_SHA256 = "4f37a22eaa9d9f4c65da32360c9fee3fc0ff5baa084a48f7712be51a7d0e2bc1";
-const BASE_PLACEHOLDER_SHA256 = "cfb037d0b30a58ca9303842d43e79294f3174e0d9efd08a5d21d1ff0a6510b55";
+// WEBUI-SHELL-RESILIENCE-UPGRADE-BLANK-1 (2026-08-30); updated for CORE-1141 player settings copy,
+// the CORE-1197 Manage unlock copy, the CORE-1190 library browse copy, the CORE-1143 audio
+// player and queue copy, the CORE-1194 item action copy, the CORE-1192 card state copy, the
+// CORE-1195 console dashboard copy (with its memory-unavailable fix), the CORE-1191 header search copy and the CORE-1196
+// who's-watching copy; merged with CORE-1106 admin-password sign-in keys, CORE-1110 sign-in
+// security keys, CORE-1114 setup wizard copy, CORE-1115 provider-key copy, CORE-1131 rescan and
+// account-menu copy and CORE-1142 folder-picker copy; updated for the CORE-1146, CORE-1362 and
+// CORE-1363 player recovery copy, the CORE-1342 source-ends-early copy and the CORE-1117 copy cleanup
+// and orphan-key removal; updated for the setup/enroll redesign copy tightening and removal of
+// the orphaned setupFreshServer and setupPlugin* keys; merged with the Normal/Advanced settings copy and the setup and pairing error copy, dropping the orphaned pairingCodeManagerOnly, enrollmentFailed and promotionFailed keys; merged with
+// the CORE-1132 first admin password copy and the CORE-0393 Viewer pairing-code switch copy;
+// merged with the CORE-1126 metadata credits copy, the CORE-1171 delete-library copy and the CORE-1117 design-system
+// copy (settings modes, onboarding, viewer browse and detail).
+const BASE_SERIALIZED_LENGTH = 460_372;
+const BASE_REGISTRY_SHA256 = "abb4baecdf8ae5441989adcdb97c80f322d0f9c4be87921c878737153af91cd7";
+const BASE_KEY_ORDER_SHA256 = "223ccb422eb58c04f36507c6696d81a1e11d70e55b9c3e97ff6d943278fa7ce7";
+const BASE_PLACEHOLDER_SHA256 = "a5f99362cb82f7e33d76946cb561f8b5779d7ec7725905e5af4156714636e648";
 const BASE_CATALOGS = {
   en: {
-    partialCount: 1_435,
-    partialSha256: "dd9f601b90e34c7eb10719337e925d958310e0ce18d46a35a0fb755f09ea983b",
-    resolvedSha256: "1f134282c0634d4a0b6b9a2d7c2125ba913a1bb4941667d636872caa290fe78b",
+    partialCount: 1_729,
+    partialSha256: "86721c216fda6bc79c027ace1f8ad46525908b25c3ba5c22022f9baa007d65fe",
+    resolvedSha256: "fb11bfcb0891d2427a4b39038ffcb8f46f39f90dfed05a95b0ef4dd4d20ba2b6",
   },
   fr: {
-    partialCount: 661,
-    partialSha256: "7ce39672d0c8a8d2b326f9e8cba96b327096cfcfe71b77bbf693a23153fcec97",
-    resolvedSha256: "7da7a6a013c582dbc6c61aaf30e02f3ddc7c0f25694ade6f5895f0373fb2fc0d",
+    partialCount: 804,
+    partialSha256: "d798500c08958877393be4e35155ac9578201e8761575d27c03a6f154ef1711f",
+    resolvedSha256: "c18e31d2b966c99f8b93eacb67c10435e40c11fd7758691fe7176fe304dc3160",
   },
   de: {
-    partialCount: 596,
-    partialSha256: "e2731c519d5d6ff745b4dac5b2e07a0ac93d6fef0b14f93c1395aa9edd49ecac",
-    resolvedSha256: "62d2c477acd88b6fd35e58032703186360f04e3a7b7d7bf2819321c21aabdbd0",
+    partialCount: 698,
+    partialSha256: "2414ec0b9afc8a070dde7ee65ca535924f7f0ffc9fad161de125376ac377d5f6",
+    resolvedSha256: "c2d9ef9351bd1bc6dcdd644427df6fbd09d0c35fdd176808e3d3fc149f40508e",
   },
   es: {
-    partialCount: 596,
-    partialSha256: "23a81991a532dff344eba7a91bc4d90931c19836475ae855293249049b670172",
-    resolvedSha256: "dfe680cbc0640b0d0958d0dcc3d927374a01a1ade063b1b4578a1ce3382888bf",
+    partialCount: 698,
+    partialSha256: "9fbd030fb905d12112e9bc2a855f36f2d09d96746e6640b7b5ff15e50f840db8",
+    resolvedSha256: "178502a9a764999d0bae997b4aeea794f9fe1a2a9f62dac7c428df5aecaed2fa",
   },
   pt: {
-    partialCount: 596,
-    partialSha256: "e5dc871adbd336143addf2982ef9e558b97eff051672dd5a64b9dcf8c92d0176",
-    resolvedSha256: "b941eeb21f96b9983c0024f5f90f471c990ff513ae287054732198037c45ddda",
+    partialCount: 698,
+    partialSha256: "a55fb7393f22a9f00192b75a4d8dadcc2f6d6118b22b2a51f0feb6ccc7de0eb4",
+    resolvedSha256: "3c9a52fb077943ee6506444603ea2024383e327250185349f4b1a213808df40f",
   },
 } as const satisfies Record<
   Locale,
@@ -62,7 +74,10 @@ function withEnglishFallback(partial: Partial<StringTable>): StringTable {
 function placeholderInventory(table: StringTable): Record<string, string[]> {
   const inventory: Record<string, string[]> = {};
   for (const [key, value] of Object.entries(table)) {
-    const placeholders = [...value.matchAll(/\{([^{}]+)\}/g)].map((match) => match[1]);
+    // Argument names only: an ICU plural contributes its argument, not its translated branches.
+    const placeholders = [...value.matchAll(/\{\s*([A-Za-z_]\w*)\s*[,}]/g)].map(
+      (match) => match[1],
+    );
     if (placeholders.length > 0) inventory[key] = placeholders;
   }
   return inventory;

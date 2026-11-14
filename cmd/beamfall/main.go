@@ -64,6 +64,8 @@ func runWithOutput(ctx context.Context, args []string, stdout io.Writer) error {
 		// Internal local inference hardening re-exec target;
 		// not an operator command — dispatched by internal/integrationhost, omitted from help.
 		return localInferenceShim(ctx, args[1:])
+	case "pairing-code":
+		return pairingCodeCommand(ctx, args[1:], stdout)
 	case "release":
 		return releaseCommand(ctx, args[1:], stdout)
 	case "reset-admin-password":
@@ -91,6 +93,7 @@ Commands:
                          from stdin; additive; --data-dir applies offline before first start
   export-config          export a console config document; --data-dir reads offline
   backup                 request a server-side backup
+  pairing-code           mint a one-time owner pairing code while the server is stopped
   release                release helper commands
   reset-admin-password   set the local admin password while the server is stopped
   restore                restore a backup while the server is stopped

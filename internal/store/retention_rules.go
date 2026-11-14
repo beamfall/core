@@ -496,7 +496,7 @@ func decodeRetentionSourceExpr(expr string) (SourceQuery, error) {
 		query.Kind = "all-items"
 	}
 	switch query.Kind {
-	case "continue-watching", "next-up", "recently-played", "most-played", "queue", "resume-progress":
+	case "continue-watching", "next-up", "recently-played", "most-played", "queue", "resume-progress", "watchlist", "rated":
 		return SourceQuery{}, ValidationError("retention source cannot be profile-dependent")
 	case "entity-items", "directory":
 		return SourceQuery{}, ValidationError("retention source must yield media")

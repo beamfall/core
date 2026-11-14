@@ -1,16 +1,15 @@
+/* Status: a coloured dot and plain text. No filled capsule, so a row of
+ * statuses reads as a sentence instead of a strip of pills. */
 .status-chip {
+  --chip-tone: var(--text-muted);
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  min-height: 22px;
-  padding: 2px 9px;
-  border-radius: 999px;
-  font-size: 11px;
+  gap: 6px;
+  min-height: 20px;
+  font-size: 12px;
   line-height: 16px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  color: var(--text-primary);
-  background: color-mix(in oklab, var(--bg-raised) 70%, transparent);
+  font-weight: 500;
+  color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -19,50 +18,350 @@
   width: 6px;
   height: 6px;
   border-radius: 999px;
-  background: currentColor;
-  opacity: 0.9;
+  background: var(--chip-tone);
 }
 
 .status-chip.is-green {
-  background: color-mix(in oklab, var(--state-direct) 28%, transparent);
+  --chip-tone: var(--state-direct);
 }
 
 .status-chip.is-amber {
-  background: color-mix(in oklab, var(--state-warning) 30%, transparent);
+  --chip-tone: var(--state-warning);
 }
 
 .status-chip.is-red {
-  background: color-mix(in oklab, var(--state-danger) 32%, transparent);
+  --chip-tone: var(--state-danger);
+  color: var(--state-danger);
 }
 
 .status-chip.is-cyan {
-  background: color-mix(in oklab, var(--state-remote) 28%, transparent);
+  --chip-tone: var(--state-remote);
 }
 
 .status-chip.is-iris {
-  background: color-mix(in oklab, var(--state-restricted) 32%, transparent);
+  --chip-tone: var(--state-restricted);
 }
 
-[data-theme="light"] .status-chip {
-  background: var(--paper-200);
+/* ============================================================ *
+ *  Folder browser (PathPickerField, CORE-1142)
+ *  One bordered panel below the path row: breadcrumb, folder rows
+ *  and a footer that commits the shown folder.
+ * ============================================================ */
+.path-browser {
+  --pb-border: color-mix(in oklab, var(--text-primary) 10%, transparent);
+  --pb-divider: color-mix(in oklab, var(--text-primary) 7%, transparent);
+  --pb-fill: color-mix(in oklab, var(--text-primary) 3%, transparent);
+  --pb-hover: color-mix(in oklab, var(--accent) 12%, transparent);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin-top: 8px;
+  overflow: hidden;
+  border: 1px solid var(--pb-border);
+  border-radius: var(--radius-field);
+  background: var(--pb-fill);
 }
 
-[data-theme="light"] .status-chip.is-green {
-  background: color-mix(in oklab, var(--state-direct) 28%, transparent);
+.path-browser-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border-bottom: 1px solid var(--pb-divider);
 }
 
-[data-theme="light"] .status-chip.is-amber {
-  background: color-mix(in oklab, var(--state-warning) 30%, transparent);
+.path-browser-icon-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  transition: background var(--duration-fast) var(--ease-standard);
 }
 
-[data-theme="light"] .status-chip.is-red {
-  background: color-mix(in oklab, var(--state-danger) 32%, transparent);
+.path-browser-icon-button svg {
+  width: 16px;
+  height: 16px;
 }
 
-[data-theme="light"] .status-chip.is-cyan {
-  background: color-mix(in oklab, var(--state-remote) 28%, transparent);
+.path-browser-icon-button:hover:not(:disabled) {
+  background: var(--pb-hover);
+  color: var(--text-primary);
 }
 
-[data-theme="light"] .status-chip.is-iris {
-  background: color-mix(in oklab, var(--state-restricted) 30%, transparent);
+.path-browser-icon-button:disabled {
+  opacity: 0.35;
+}
+
+.path-browser-crumbs-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.path-browser-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0;
+  padding: 2px;
+  overflow-x: auto;
+  list-style: none;
+  scrollbar-width: none;
+}
+
+.path-browser-crumbs::-webkit-scrollbar {
+  display: none;
+}
+
+.path-browser-crumbs li {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.path-browser-crumb {
+  padding: 4px 8px;
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+button.path-browser-crumb:hover {
+  background: var(--pb-hover);
+  color: var(--text-primary);
+}
+
+.path-browser-crumb.is-current {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.path-browser-crumb-sep {
+  color: var(--text-muted);
+}
+
+.path-browser-crumb-sep svg {
+  width: 13px;
+  height: 13px;
+}
+
+.path-browser-body {
+  min-height: 132px;
+  max-height: min(320px, 46vh);
+  overflow-y: auto;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+
+.path-browser-body[data-busy] {
+  opacity: 0.55;
+}
+
+.path-browser-list {
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+}
+
+.path-browser-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 4px 8px;
+  border-radius: var(--radius-control);
+  text-align: left;
+  color: var(--text-primary);
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.path-browser-row:hover:not(:disabled),
+.path-browser-row:focus-visible {
+  background: var(--pb-hover);
+}
+
+.path-browser-row:disabled {
+  color: var(--text-muted);
+}
+
+.path-browser-icon-button:focus-visible,
+.path-browser-crumb:focus-visible,
+.path-browser-row:focus-visible {
+  outline: 2px solid var(--focus-ring, var(--accent));
+  outline-offset: -2px;
+}
+
+/* The folder glyph is a plain icon, not a tinted tile. */
+.path-browser-tile {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: var(--accent);
+}
+
+.path-browser-tile svg {
+  width: 16px;
+  height: 16px;
+}
+
+.path-browser-row:disabled .path-browser-tile {
+  color: var(--text-muted);
+}
+
+.path-browser-row-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.path-browser-row-name {
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.path-browser-row-meta {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.path-browser-row-meta.is-path,
+.path-browser-foot-path {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+.path-browser-row-chevron {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+}
+
+.path-browser-skeleton {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+}
+
+.path-browser-skeleton span {
+  height: 36px;
+  border-radius: var(--radius-control);
+  background: var(--pb-fill);
+  animation: path-browser-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes path-browser-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .path-browser-skeleton span {
+    animation: none;
+  }
+}
+
+.path-browser-message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 132px;
+  padding: 16px 24px;
+  text-align: center;
+}
+
+.path-browser-message-icon {
+  display: inline-flex;
+  margin-bottom: 8px;
+  color: var(--text-muted);
+}
+
+.path-browser-message[data-tone="warn"] .path-browser-message-icon {
+  color: var(--state-warning);
+}
+
+.path-browser-message-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.path-browser-message-title {
+  max-width: 100%;
+  margin: 0 0 4px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.path-browser-message-text {
+  max-width: 44ch;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.path-browser-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--pb-divider);
+  color: var(--text-primary);
+  font-size: 13px;
+  background: color-mix(in oklab, var(--state-danger) 12%, transparent);
+}
+
+.path-browser-error > svg {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  color: var(--state-danger);
+}
+
+.path-browser-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 12px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--pb-divider);
+  background: color-mix(in oklab, var(--text-primary) 2%, transparent);
+}
+
+.path-browser-foot-text {
+  display: flex;
+  flex: 1 1 180px;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.path-browser-foot-path {
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.path-browser-foot-note {
+  color: var(--text-secondary);
 }

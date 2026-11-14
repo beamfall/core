@@ -127,3 +127,95 @@ func TestWebSetupThrottlesRepeatedFailures(t *testing.T) {
 	}
 	t.Fatal("setup never throttled repeated invalid tokens")
 }
+
+func postSetupFrom(srv *Server, remoteAddr, body string, header map[string]string) *httptest.ResponseRecorder {
+	req := newJSONRequest(http.MethodPost, "/api/setup", strings.NewReader(body))
+	req.Header.Set(auth.CSRFHeader, "1")
+	req.RemoteAddr = remoteAddr
+	req.Host = "192.168.4.10:8800"
+	for name, value := range header {
+		if name == "Host" {
+			req.Host = value
+			continue
+		}
+		req.Header.Set(name, value)
+	}
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	return rec
+}
+
+// TestWebSetupLANClaimWithoutToken covers CORE-1105: while setup is pending a
+// LAN browser completes setup with no token, and setup cannot run again after.
+func TestWebSetupLANClaimWithoutToken(t *testing.T) {
+	for _, addr := range []string{"192.168.4.20:51000", "127.0.0.1:51000", "[fe80::1%en0]:51000"} {
+		t.Run(addr, func(t *testing.T) {
+			srv := newTestServer(t)
+			srv.pairing.SetBootstrapToken("setup-tok-1")
+			rec := postSetupFrom(srv, addr, `{"deviceName":"Setup Browser","profileName":"Owner"}`, nil)
+			if rec.Code != http.StatusCreated {
+				t.Fatalf("LAN setup status = %d, want 201: %s", rec.Code, rec.Body.String())
+			}
+			if srv.pairing.SetupRequired() {
+				t.Fatal("setup still pending after a LAN claim")
+			}
+			again := postSetupFrom(srv, addr, `{"deviceName":"Second Browser"}`, nil)
+			if again.Code != http.StatusUnauthorized {
+				t.Fatalf("LAN setup after completion status = %d, want 401: %s", again.Code, again.Body.String())
+			}
+		})
+	}
+}
+
+func TestWebSetupLANClaimRefusals(t *testing.T) {
+	tests := []struct {
+		name   string
+		addr   string
+		body   string
+		header map[string]string
+	}{
+		{name: "public source without token", addr: "203.0.113.9:51000", body: `{"deviceName":"B"}`},
+		{name: "LAN source forwarded through an undeclared proxy", addr: "192.168.4.20:51000", body: `{"deviceName":"B"}`, header: map[string]string{"X-Forwarded-For": "203.0.113.9"}},
+		{name: "LAN source with a wrong token", addr: "192.168.4.20:51000", body: `{"token":"not-the-token","deviceName":"B"}`},
+		{name: "LAN source addressing a rebindable public name", addr: "192.168.4.20:51000", body: `{"deviceName":"B"}`, header: map[string]string{"Host": "attacker.example:8800"}},
+		{name: "loopback source addressing a rebindable public name", addr: "127.0.0.1:51000", body: `{"deviceName":"B"}`, header: map[string]string{"Host": "rebind.attacker.example"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newTestServer(t)
+			srv.pairing.SetBootstrapToken("setup-tok-1")
+			rec := postSetupFrom(srv, tc.addr, tc.body, tc.header)
+			if rec.Code == http.StatusCreated || rec.Code < 400 {
+				t.Fatalf("status = %d, want a refusal: %s", rec.Code, rec.Body.String())
+			}
+			if len(rec.Result().Cookies()) != 0 {
+				t.Fatalf("refused setup set cookies: %v", rec.Result().Cookies())
+			}
+			if !srv.pairing.SetupRequired() {
+				t.Fatal("refused setup consumed the one-time token")
+			}
+		})
+	}
+}
+
+func TestSetupHostResistsRebinding(t *testing.T) {
+	for host, want := range map[string]bool{
+		"192.168.4.10:8800":    true,
+		"192.168.4.10":         true,
+		"[fe80::1%25en0]:8800": true,
+		"[::1]:8800":           true,
+		"localhost:8800":       true,
+		"LOCALHOST.":           true,
+		"app.localhost":        true,
+		"tower.local:8800":     true,
+		"attacker.example":     false,
+		"attacker.example:80":  false,
+		"local.example.com":    false,
+		"localhost.example":    false,
+		"":                     false,
+	} {
+		if got := setupHostResistsRebinding(host); got != want {
+			t.Errorf("setupHostResistsRebinding(%q) = %v, want %v", host, got, want)
+		}
+	}
+}

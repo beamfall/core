@@ -13,49 +13,30 @@ type ApprovedDelta = {
   normalizedSHA256: string;
 };
 
-// Exact approved focus and Cut Beam header deltas; archived PNGs remain immutable.
-const approvedVisualDeltas: Readonly<Record<string, ApprovedDelta>> = {
-  "player-desktop/shared-dialog-open-focused.png": {
-    differentPixels: 1190,
-    coordinateSHA256: "b98548126162a410ed554547d63e86b93bf06c23a73b32eb47d53322c4610e63",
-    normalizedSHA256: "6b0800e8790f1a3c3ffbbad0af1d310826e69caeb7c6f8d756a1f463d0490364",
-  },
-  "manage/manage-collections-tab-focused-selected.png": {
-    differentPixels: 1032,
-    coordinateSHA256: "c5a9894f0485ae0e3e4bbd7749df94a39412e551364e4ba9cd4bae212e57450e",
-    normalizedSHA256: "2d5ea534b16a957e4a9ab496faece5fa7f5e0eb4c59049e1e317c8bb14bb1093",
-  },
-  "manage/manage-smart-tab-focused-selected.png": {
-    differentPixels: 1032,
-    coordinateSHA256: "c5a9894f0485ae0e3e4bbd7749df94a39412e551364e4ba9cd4bae212e57450e",
-    normalizedSHA256: "2d5ea534b16a957e4a9ab496faece5fa7f5e0eb4c59049e1e317c8bb14bb1093",
-  },
-  "manage/manage-curation-subject-select-open-focused-selected.png": {
-    differentPixels: 938,
-    coordinateSHA256: "90c6eb2f9c0cbd43f028f03e2e2e29a64626176e3aa2d46e087fac8e11da6c11",
-    normalizedSHA256: "f2efeab6b8ac5f42bd2f9a8463d5d61ad6cbfc7f68645759119366215863b9ea",
-  },
-  "manage/manage-curation-versions-tab-focused-selected.png": {
-    differentPixels: 938,
-    coordinateSHA256: "90c6eb2f9c0cbd43f028f03e2e2e29a64626176e3aa2d46e087fac8e11da6c11",
-    normalizedSHA256: "f2efeab6b8ac5f42bd2f9a8463d5d61ad6cbfc7f68645759119366215863b9ea",
-  },
-  "manage/manage-curation-extras-tab-focused-selected.png": {
-    differentPixels: 938,
-    coordinateSHA256: "90c6eb2f9c0cbd43f028f03e2e2e29a64626176e3aa2d46e087fac8e11da6c11",
-    normalizedSHA256: "f2efeab6b8ac5f42bd2f9a8463d5d61ad6cbfc7f68645759119366215863b9ea",
-  },
-  "manage/manage-curation-relation-select-open-focused-selected.png": {
-    differentPixels: 1389,
-    coordinateSHA256: "deb5104dae71a5e7d261cb67c4d9fa536c2ea6ef878fa034efa157d1e91539af",
-    normalizedSHA256: "943b19b4f60173f6e38fcd04f371fd1639873e044a29ed5d1fc550cecba911e9",
-  },
-};
+// Exact approved deltas against the archive; archived PNGs remain immutable. None remain:
+// every state that carried one is now in redesignedSinceMigration (CORE-1131).
+const approvedVisualDeltas: Readonly<Record<string, ApprovedDelta>> = {};
 
 // CORE-0045 redesigned the player transport after the migration. These states keep their archived
 // PNG SHA-pinned in the manifest but no longer compare the live render to it; the live
-// goldens under e2e/goldens/ are the regression baseline for them.
+// goldens under e2e/goldens/ are the regression baseline for them. CORE-1131 moved library
+// navigation into a left sidebar and redesigned the Manage and Console shells, so every Manage,
+// Console and desktop shared-dialog state joins them. CORE-1141 (controls over a bottom gradient,
+// one settings sheet) re-recorded all 22 of the player live PNGs from the new layout; CORE-1191
+// replaced the viewer header Search link with a search field, which also redesigns the shared
+// dialog state.
 const redesignedSinceMigration: ReadonlySet<string> = new Set([
+  "console/console-alert-dialog-open-focused.png",
+  "console/console-kind-select-open-focused-selected.png",
+  "manage/manage-alert-dialog-open-focused.png",
+  "manage/manage-collections-tab-focused-selected.png",
+  "manage/manage-curation-extras-tab-focused-selected.png",
+  "manage/manage-curation-relation-select-open-focused-selected.png",
+  "manage/manage-curation-subject-select-open-focused-selected.png",
+  "manage/manage-curation-versions-tab-focused-selected.png",
+  "manage/manage-library-select-open-focused-selected.png",
+  "manage/manage-smart-tab-focused-selected.png",
+  "player-desktop/shared-dialog-open-focused.png",
   "player-desktop/player-audio-listbox-open-focused-selected.png",
   "player-desktop/player-details-dialog-open-focused.png",
   "player-desktop/player-playback-slider-focused-selected.png",

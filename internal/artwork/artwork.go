@@ -31,14 +31,21 @@ const (
 	SlotPoster   = "poster"
 	SlotBackdrop = "backdrop"
 	SlotThumb    = "thumb"
+	SlotLogo     = "logo"
+	SlotBanner   = "banner"
+	SlotClearart = "clearart"
+	SlotDisc     = "disc"
+	// SlotContainerPoster is the poster of an ordered child container. The
+	// token is fixed by the plugin SDK's artwork slot vocabulary.
+	SlotContainerPoster = "season-poster"
 )
 
 const PreviewUnavailableField = "preview-unavailable"
 
 // KnownSlots is the fixed Core artwork slot vocabulary. Plugins may emit
-// newer slot names; Core ignores them until clients and serving paths know
-// how to handle the shape.
-var KnownSlots = []string{SlotPoster, SlotBackdrop, SlotThumb}
+// other SDK slot names (portrait); Core ignores them until clients and
+// serving paths know how to handle the shape. Backdrop stays one scalar slot.
+var KnownSlots = []string{SlotPoster, SlotBackdrop, SlotThumb, SlotLogo, SlotBanner, SlotClearart, SlotDisc, SlotContainerPoster}
 
 // posterWidth gives frame-grabbed posters enough resolution that the full
 // bucket family (w320/w640/w1280) has real headroom.
@@ -112,6 +119,11 @@ type Service struct {
 	sealed    SealedPredicate
 	encrypted EncryptedPredicate
 	deriveMu  [64]derivativeLock
+	// entityRules declares which Entity kinds inherit a poster (inherit.go);
+	// entityPosterMu serializes an inherited copy against an imported Entity
+	// poster so the Entity's own artwork is never overwritten by a copy.
+	entityRules    []EntityPosterRule
+	entityPosterMu sync.Mutex
 }
 
 type derivativeLock struct {
@@ -276,9 +288,12 @@ func (s *Service) EntityArtworkVersion(id store.EntityID, slot string) (string, 
 // never re-implement the chain). The poster is the always-generated base; the
 // frame-grab tail of the chain is the sweep that fills the poster in the first
 // place, so a present poster is the resolved end of every fallback here.
+// Logo, banner, clearart and disc have no fallback: a poster drawn in a logo or
+// disc position renders wrongly, so an absent slot serves nothing.
 var slotFallback = map[string]string{
-	SlotBackdrop: SlotPoster,
-	SlotThumb:    SlotPoster,
+	SlotBackdrop:        SlotPoster,
+	SlotThumb:           SlotPoster,
+	SlotContainerPoster: SlotPoster,
 }
 
 // ResolveSlot returns the slot to actually serve for a requested Media slot and
@@ -718,10 +733,20 @@ func (s *Service) GenerateDerivatives(ctx context.Context, id store.MediaID) {
 
 // GeneratePoster grabs one frame from the Media item's primary file. The
 // server-internal filter sees every Library: posters for restricted media are
-// generated at rest and reveal-filtered at the serving boundary.
+// generated at rest and reveal-filtered at the serving boundary. A poster
+// locked by local artwork is kept: no embedded cover is extracted and no frame
+// is grabbed.
 func (s *Service) GeneratePoster(ctx context.Context, id store.MediaID) error {
 	if s.grabber == nil {
 		return errors.New("no frame grabber configured")
+	}
+	unlock, err := s.lockDerivative(ctx, filepath.Dir(s.PosterPath(id)))
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if s.localPosterLocked(id) {
+		return nil
 	}
 	serverFilter := store.LibraryFilter{Revealed: true, AllLibraries: true}
 	media, err := s.store.Media(ctx, id, serverFilter)
@@ -803,11 +828,23 @@ func (s *Service) ImportEmbeddedPoster(ctx context.Context, id store.MediaID) (b
 	if err != nil {
 		return false, err
 	}
+	unlock, err := s.lockDerivative(ctx, filepath.Dir(s.PosterPath(id)))
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
 	return s.importEmbeddedPoster(ctx, id, file.Path)
 }
 
+// localPosterLocked reports whether the poster slot holds locked artwork.
+func (s *Service) localPosterLocked(id store.MediaID) bool {
+	_, locked := readSlotLock(s.PosterPath(id))
+	return locked && nonEmptyRegularFile(s.PosterPath(id))
+}
+
+// importEmbeddedPoster runs with the poster directory lock held.
 func (s *Service) importEmbeddedPoster(ctx context.Context, id store.MediaID, src string) (bool, error) {
-	if s.embedded == nil {
+	if s.embedded == nil || s.localPosterLocked(id) {
 		return false, nil
 	}
 	dst := s.PosterPath(id)
@@ -837,6 +874,12 @@ type sweepCheckpoint struct {
 	LastID    string `json:"last_id,omitempty"`
 	Generated int    `json:"generated"`
 	Failed    int    `json:"failed"`
+	// The Entity pass that follows the Media pass of a whole-catalog sweep:
+	// the rule being swept, the last Entity visited under it, and the
+	// posters inherited so far.
+	EntityRule   int    `json:"entity_rule,omitempty"`
+	EntityLastID string `json:"entity_last_id,omitempty"`
+	Inherited    int    `json:"inherited,omitempty"`
 }
 
 const sweepJobBatchSize = 10
@@ -889,6 +932,9 @@ func NewSelectedSweepJob(mediaIDs []store.MediaID, createdAt time.Time) (store.J
 
 // SweepHandler returns the job handler that fills in missing posters,
 // checkpointing by Media ID so a preempted sweep resumes where it stopped.
+// A whole-catalog sweep then gives Entities of the declared kinds a poster
+// inherited from their sources (SetEntityPosterRules), with its own
+// checkpoint.
 func SweepHandler(service *Service) jobs.Handler {
 	return func(ctx context.Context, job store.Job) (jobs.Result, error) {
 		var payload sweepPayload
@@ -938,20 +984,27 @@ func SweepHandler(service *Service) jobs.Handler {
 				break
 			}
 		}
+		more := (pagedAll && len(ids) > processed) || (!pagedAll && processed >= sweepJobBatchSize)
+		if pagedAll && !more && ctx.Err() == nil {
+			var err error
+			if more, err = service.inheritEntityPosters(ctx, &checkpoint); err != nil {
+				return jobs.Result{}, err
+			}
+		}
 		checkpoint.Version = 1
 		data, err := json.Marshal(checkpoint)
 		if err != nil {
 			return jobs.Result{}, err
 		}
 		progress := store.JobProgress{
-			Current: int64(checkpoint.Generated),
+			Current: int64(checkpoint.Generated + checkpoint.Inherited),
 			Unit:    "posters",
 			Message: "Generating artwork",
 		}
 		if err := service.store.UpdateJobCheckpoint(ctx, job.ID, job.LeaseOwner, data, progress, time.Now().UTC()); err != nil {
 			return jobs.Result{}, err
 		}
-		if (pagedAll && len(ids) > processed) || (!pagedAll && processed >= sweepJobBatchSize) || ctx.Err() != nil {
+		if more || ctx.Err() != nil {
 			return jobs.Result{Checkpoint: data}, jobs.ErrYielded
 		}
 		return jobs.Result{}, nil
@@ -968,8 +1021,14 @@ func (s *Service) ImportPoster(ctx context.Context, id store.MediaID, data []byt
 }
 
 // ImportArtwork stores fetched artwork bytes as the Media item's requested
-// slot (scraped artwork application, ADR-0009).
+// slot (scraped artwork application, ADR-0009). A slot locked by local artwork
+// is refused with a *SlotLockedError (ADR-0072), so the caller does not mark
+// its candidate applied; ImportManualArtwork is the manual-pick bypass.
 func (s *Service) ImportArtwork(ctx context.Context, id store.MediaID, slot string, data []byte) error {
+	return s.importMediaArtwork(ctx, id, slot, data, true)
+}
+
+func (s *Service) importMediaArtwork(ctx context.Context, id store.MediaID, slot string, data []byte, honourLock bool) error {
 	if !ValidSlot(slot) {
 		return fmt.Errorf("unknown artwork slot %q", slot)
 	}
@@ -985,6 +1044,14 @@ func (s *Service) ImportArtwork(ctx context.Context, id store.MediaID, slot stri
 		return nil
 	}
 	dst := s.ArtworkPath(id, slot)
+	unlock, err := s.lockDerivative(ctx, filepath.Dir(dst))
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if lock, locked := readSlotLock(dst); honourLock && locked {
+		return &SlotLockedError{Slot: slot, Source: lock.Source}
+	}
 	if err := s.importArtwork(ctx, dst, string(id), slot, data); err != nil {
 		return err
 	}
@@ -1011,9 +1078,34 @@ func (s *Service) ImportCandidateArtwork(ctx context.Context, id store.MediaID, 
 // ImportEntityPoster stores fetched artwork bytes as the Entity's poster —
 // the write path identify's entity hydration lands EntityMap ArtworkPath
 // images through. Same normalization and derivative invalidation as
-// ImportPoster.
+// ImportPoster. A poster locked by local artwork is refused with a
+// *SlotLockedError, and an Entity of a Sealed or Encrypted Library (or one
+// whose Library cannot be resolved while either gate is set) gets nothing.
+//
+// The imported poster is the Entity's own: it replaces an inherited copy and
+// clears the inherited mark, after which the sweep leaves it alone.
 func (s *Service) ImportEntityPoster(ctx context.Context, id store.EntityID, data []byte) error {
-	return s.importArtwork(ctx, s.EntityPosterPath(id), string(id), SlotPoster, data)
+	if s.entityProtected(ctx, id) {
+		return nil
+	}
+	s.entityPosterMu.Lock()
+	defer s.entityPosterMu.Unlock()
+	dst := s.EntityPosterPath(id)
+	unlock, err := s.lockDerivative(ctx, filepath.Dir(dst))
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if lock, locked := readSlotLock(dst); locked {
+		return &SlotLockedError{Slot: SlotPoster, Source: lock.Source}
+	}
+	if err := s.importArtwork(ctx, dst, string(id), SlotPoster, data); err != nil {
+		return err
+	}
+	if err := os.Remove(inheritedMarkerPath(dst)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 // importArtwork backs the Media and Entity artwork import paths; owner is the

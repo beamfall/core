@@ -1,4 +1,6 @@
+import { X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Segmented } from "@/areas/console/Segmented";
 import {
   EmptyLine,
   ErrorLine,
@@ -383,14 +385,16 @@ function MarkerRow({
               className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs"
             >
               {tag}
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon"
                 aria-label={`${t("markersDelete")} ${tag}`}
-                className="text-muted-foreground hover:text-destructive"
+                className="size-6 text-muted-foreground hover:bg-transparent hover:text-destructive"
                 onClick={() => removeTag(tag)}
               >
-                ×
-              </button>
+                <X aria-hidden />
+              </Button>
             </span>
           ))}
           <Input
@@ -521,24 +525,15 @@ function BulkSection({
       <div className="space-y-3">
         <div className="space-y-1">
           <Label>{t("markersRetagMode")}</Label>
-          <div className="inline-flex overflow-hidden rounded-md border">
-            <button
-              type="button"
-              aria-pressed={mode === "add"}
-              className={`px-3 py-1.5 text-sm ${mode === "add" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
-              onClick={() => setMode("add")}
-            >
-              {t("markersRetagAdd")}
-            </button>
-            <button
-              type="button"
-              aria-pressed={mode === "replace"}
-              className={`border-l px-3 py-1.5 text-sm ${mode === "replace" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
-              onClick={() => setMode("replace")}
-            >
-              {t("markersRetagReplace")}
-            </button>
-          </div>
+          <Segmented
+            label={t("markersRetagMode")}
+            value={mode}
+            onChange={setMode}
+            options={[
+              { value: "add", label: t("markersRetagAdd") },
+              { value: "replace", label: t("markersRetagReplace") },
+            ]}
+          />
         </div>
 
         <div className="space-y-1">
@@ -550,14 +545,16 @@ function BulkSection({
                 className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs"
               >
                 {tag}
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon"
                   aria-label={`${t("markersDelete")} ${tag}`}
-                  className="text-muted-foreground hover:text-destructive"
+                  className="size-6 text-muted-foreground hover:bg-transparent hover:text-destructive"
                   onClick={() => setTags(tags.filter((x) => x !== tag))}
                 >
-                  ×
-                </button>
+                  <X aria-hidden />
+                </Button>
               </span>
             ))}
             <Input

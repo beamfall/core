@@ -1,4 +1,4 @@
-import { ArrowRightLeft, ChevronLeft, ExternalLink, Inbox, RefreshCw, Wifi } from "lucide-react";
+import { ChevronLeft, ExternalLink, RefreshCw, Wifi } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import {
@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { TableCell, TableRow } from "@/components/ui/table";
+import { Advanced } from "@/lib/advancedSettings";
 import { displayString } from "@/lib/display";
 import type {
   ImporterInfo,
@@ -190,12 +191,10 @@ function GuideStep({
   return (
     <div className="console-card console-card-pad space-y-3">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <span className="grid h-6 w-6 place-items-center rounded-full border text-xs font-semibold">
-            {index}
-          </span>
-          <h3 className="text-sm font-semibold">{t(title)}</h3>
-        </div>
+        <h3 className="flex items-baseline gap-2 text-sm font-semibold">
+          <span className="tabular-nums text-muted-foreground">{index}</span>
+          {t(title)}
+        </h3>
         <StatusChip tone={tone}>{t(state)}</StatusChip>
       </div>
       {children}
@@ -235,7 +234,7 @@ function WatchAwayFlow({
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-base font-semibold">{t("watchAwayHeading")}</h2>
+        <h3 className="text-base font-semibold">{t("watchAwayHeading")}</h3>
         <p className="text-sm text-muted-foreground">{t("watchAwayLead")}</p>
       </div>
       <GuideStep
@@ -288,29 +287,29 @@ function WatchAwayFlow({
           )}
         </div>
       </GuideStep>
-      <details className="console-card console-card-pad">
-        <summary className="cursor-pointer text-sm font-semibold">
-          {t("watchAwayAdvancedRelay")}
-        </summary>
-        <div className="mt-3 space-y-3 text-sm text-muted-foreground">
-          <p>{t("watchAwayRelayDetail")}</p>
-          {relay?.enabled ? (
-            <>
-              <Field label="remoteAccessEndpoint" value={relay.endpoint} />
-              <Field label="remoteAccessPublicHost" value={relay.publicHost} />
-              <div className="flex items-center justify-between gap-4">
-                <span>{t("remoteAccessConnection")}</span>
-                <StatusChip tone={RELAY_TONE[relay.connectionState] ?? "neutral"}>
-                  {t(RELAY_STATE[relay.connectionState] ?? "relayStateDisabled")}
-                </StatusChip>
-              </div>
-              {relay.lastError && <Field label="remoteAccessLastError" value={relay.lastError} />}
-            </>
-          ) : (
-            <p>{t("remoteAccessOff")}</p>
-          )}
+      <Advanced keep={Boolean(relay?.enabled)}>
+        <div className="console-card console-card-pad space-y-3">
+          <h3 className="text-sm font-semibold">{t("watchAwayAdvancedRelay")}</h3>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>{t("watchAwayRelayDetail")}</p>
+            {relay?.enabled ? (
+              <>
+                <Field label="remoteAccessEndpoint" value={relay.endpoint} />
+                <Field label="remoteAccessPublicHost" value={relay.publicHost} />
+                <div className="flex items-center justify-between gap-4">
+                  <span>{t("remoteAccessConnection")}</span>
+                  <StatusChip tone={RELAY_TONE[relay.connectionState] ?? "neutral"}>
+                    {t(RELAY_STATE[relay.connectionState] ?? "relayStateDisabled")}
+                  </StatusChip>
+                </div>
+                {relay.lastError && <Field label="remoteAccessLastError" value={relay.lastError} />}
+              </>
+            ) : (
+              <p>{t("remoteAccessOff")}</p>
+            )}
+          </div>
         </div>
-      </details>
+      </Advanced>
     </div>
   );
 }
@@ -320,6 +319,7 @@ function WatchAwayFlow({
 export function RemoteAccessStatus() {
   const t = useT();
   const { data, failed, refresh } = useAsync(fetchRemoteAccess);
+  const displayLocale = useDisplayLocale();
   const connectionClasses = connectionClassLabels(data?.endpoints);
 
   return (
@@ -339,16 +339,17 @@ export function RemoteAccessStatus() {
         <div className="space-y-4">
           <WatchAwayFlow data={data ?? undefined} refresh={refresh} />
           {connectionClasses.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {connectionClasses.map((label) => (
-                <StatusChip key={label} tone="cyan">
-                  {t(label)}
-                </StatusChip>
-              ))}
-            </div>
+            <p className="text-sm text-muted-foreground">
+              {t("remoteAccessReachableVia")}{" "}
+              <span className="text-foreground">
+                {new Intl.ListFormat(displayLocale, { type: "conjunction" }).format(
+                  connectionClasses.map((label) => t(label)),
+                )}
+              </span>
+            </p>
           )}
           {data?.plainHTTPPublicWarning && (
-            <div className="rounded-md border border-amber-400/60 bg-amber-500/10 px-3 py-2 text-sm text-amber-700">
+            <div className="rounded-md border border-[var(--state-warning)]/45 bg-[var(--state-warning)]/10 px-3 py-2 text-sm">
               {t("remoteAccessPlainHTTPPublicWarning")}
             </div>
           )}
@@ -384,7 +385,7 @@ function QBittorrentIngest() {
       {failed ? (
         <ErrorState message="qbittorrentUnavailable" />
       ) : !config?.enabled ? (
-        <EmptyState message="qbittorrentEmpty" icon={Inbox} />
+        <EmptyState message="qbittorrentEmpty" />
       ) : (
         <div className="space-y-4">
           {config.routes.length === 0 ? (
@@ -841,7 +842,9 @@ function ImporterWizard({
 // Migration Wizard (ADR-0037): list installed Importers, configure + run one
 // (additive, re-runnable). Each run enqueues a job that surfaces in the
 // Operations queue and in the inline progress view here.
-function MigrationWizard() {
+// The Maintain › Migration destination: the Importers that bring another
+// server's library in (ADR-0037).
+export function MigrationWizard() {
   const t = useT();
   const displayLocale = useDisplayLocale();
   const { data, failed } = useAsync(fetchImporters);
@@ -861,7 +864,7 @@ function MigrationWizard() {
       {failed ? (
         <ErrorState message="migrationWizardUnavailable" />
       ) : importers.length === 0 ? (
-        <EmptyState message="migrationWizardEmpty" icon={ArrowRightLeft} />
+        <EmptyState message="migrationWizardEmpty" />
       ) : (
         <DataTable
           columns={[
@@ -876,8 +879,10 @@ function MigrationWizard() {
               <TableCell className="font-medium">
                 {displayString(imp.displayName, displayLocale)}
               </TableCell>
-              <TableCell>{imp.input}</TableCell>
-              <TableCell>{imp.conflict}</TableCell>
+              <TableCell>{importerInputLabel(imp, t)}</TableCell>
+              <TableCell>
+                {imp.conflict === "additive" ? t("migrationConflictAdditive") : imp.conflict}
+              </TableCell>
               <TableCell className="text-right">
                 <Button size="sm" variant="outline" onClick={() => setActive(imp)}>
                   {t("migrationWizardConfigure")}
@@ -891,8 +896,17 @@ function MigrationWizard() {
   );
 }
 
-// The remote-access / ingest / migration screen: how the server is reachable,
-// what the ingest seam is doing, and the migration Importers.
+// Plain words for the importer's declared input; an input this build does not
+// know keeps the declared value rather than guessing.
+function importerInputLabel(imp: ImporterInfo, t: ReturnType<typeof useT>): string {
+  if (imp.credentialRequired) return t("migrationInputCredentials");
+  if (imp.input === "export-file") return t("migrationInputExportFile");
+  return imp.input;
+}
+
+// The Access › Remote Access destination: how the server is reachable. The
+// qBittorrent ingest seam is rarely touched, so it is an Advanced setting
+// (CORE-1117); App Store hosts get the status alone.
 export function RemoteAccess({
   suppressDispatchSurfaces = false,
 }: {
@@ -902,10 +916,9 @@ export function RemoteAccess({
     <div className="space-y-8">
       <RemoteAccessStatus />
       {!suppressDispatchSurfaces && (
-        <>
+        <Advanced>
           <QBittorrentIngest />
-          <MigrationWizard />
-        </>
+        </Advanced>
       )}
     </div>
   );

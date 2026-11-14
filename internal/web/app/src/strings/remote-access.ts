@@ -2,7 +2,7 @@ export const remoteAccessStrings = {
   en: {
     remoteAccessHeading: "Remote access",
     remoteAccessLead:
-      "How this server is reachable from outside the LAN. Status only — no secret or token is ever shown here.",
+      "How this server is reachable from outside the LAN. Status only: no secret or token is ever shown here.",
     watchAwayHeading: "Watch away from home",
     watchAwayLead:
       "Start with Tailscale or WireGuard. Use Direct HTTPS only when DNS and router forwarding are under your control; relay stays advanced.",
@@ -25,7 +25,8 @@ export const remoteAccessStrings = {
     watchAwayPreflightPending: "Preflight pending",
     watchAwayDirectDetail:
       "Second choice: point DNS at home, forward TCP 443 to this server, then wait for the certificate state to become issued.",
-    watchAwayAdvancedRelay: "Advanced: self-hosted relay",
+    watchAwayAdvancedRelay: "Self-hosted relay",
+    remoteAccessReachableVia: "Reachable through",
     watchAwayRelayDetail:
       "Use this only when overlay and Direct HTTPS are not workable. The relay forwards encrypted bytes; it does not terminate media TLS.",
     remoteAccessRefresh: "Refresh",
@@ -57,7 +58,7 @@ export const remoteAccessStrings = {
   fr: {
     remoteAccessHeading: "Accès à distance",
     remoteAccessLead:
-      "Comment ce serveur est joignable depuis l'extérieur du réseau local. État seulement — aucun secret ni jeton n'est jamais affiché ici.",
+      "Comment ce serveur est joignable depuis l'extérieur du réseau local. État seulement : aucun secret ni jeton n'est jamais affiché ici.",
     remoteAccessRefresh: "Actualiser",
     remoteAccessLanDirect: "Réseau local (direct)",
     remoteAccessLanDirectDetail: "Toujours joignable sur le réseau local en HTTP.",
@@ -86,7 +87,7 @@ export const remoteAccessStrings = {
   de: {
     remoteAccessHeading: "Fernzugriff",
     remoteAccessLead:
-      "Wie dieser Server von außerhalb des LANs erreichbar ist. Nur Status — hier werden niemals Geheimnisse oder Token angezeigt.",
+      "Wie dieser Server von außerhalb des LANs erreichbar ist. Nur Status: hier werden niemals Geheimnisse oder Token angezeigt.",
     remoteAccessRefresh: "Aktualisieren",
     remoteAccessLanDirect: "LAN (direkt)",
     remoteAccessLanDirectDetail: "Im lokalen Netzwerk immer über HTTP erreichbar.",
@@ -144,7 +145,7 @@ export const remoteAccessStrings = {
   pt: {
     remoteAccessHeading: "Acesso remoto",
     remoteAccessLead:
-      "Como este servidor é acessível de fora da rede local. Apenas status — nenhum segredo ou token é exibido aqui.",
+      "Como este servidor é acessível de fora da rede local. Apenas status: nenhum segredo ou token é exibido aqui.",
     remoteAccessRefresh: "Atualizar",
     remoteAccessLanDirect: "Rede local (direto)",
     remoteAccessLanDirectDetail: "Sempre acessível na rede local via HTTP.",

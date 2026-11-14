@@ -20,7 +20,7 @@ import (
 )
 
 func TestOpenSeedsDevelopmentData(t *testing.T) {
-	store, err := Open(context.Background(), t.TempDir(), Options{SeedDevelopmentData: true})
+	store, err := Open(context.Background(), migratedDataDir(t), Options{SeedDevelopmentData: true})
 	if err != nil {
 		t.Fatalf("Open returned error: %v", err)
 	}
@@ -369,8 +369,8 @@ func TestOpenCreatesJobTablesAndEventsVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 21 {
-		t.Fatalf("events user_version = %d, want 21", version)
+	if version != 22 {
+		t.Fatalf("events user_version = %d, want 22", version)
 	}
 	for _, name := range []string{"job", "job_checkpoint", "job_event", "event_outbox", "schedule_occurrence", "schedule_occurrence_member"} {
 		if !tableExists(t, store.eventsW, name) {
@@ -400,7 +400,7 @@ func TestOpenRefusesNetworkDataDir(t *testing.T) {
 	})
 	defer restore()
 
-	_, err := Open(context.Background(), t.TempDir(), Options{})
+	_, err := Open(context.Background(), migratedDataDir(t), Options{})
 
 	if err == nil {
 		t.Fatal("Open accepted network data dir")
@@ -416,7 +416,7 @@ func TestOpenAllowsNetworkDataDirWithExplicitOverride(t *testing.T) {
 	})
 	defer restore()
 
-	store, err := Open(context.Background(), t.TempDir(), Options{AllowNetworkDataDir: true})
+	store, err := Open(context.Background(), migratedDataDir(t), Options{AllowNetworkDataDir: true})
 	if err != nil {
 		t.Fatalf("Open returned error: %v", err)
 	}
@@ -1165,7 +1165,7 @@ func TestPendingMigrationsBackupBeforeApplying(t *testing.T) {
 }
 
 func TestSearchMediaMatchesPrefixesAndFiltersReveal(t *testing.T) {
-	st, err := Open(context.Background(), t.TempDir(), Options{SeedDevelopmentData: true})
+	st, err := Open(context.Background(), migratedDataDir(t), Options{SeedDevelopmentData: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1223,7 +1223,7 @@ func TestSearchMediaMatchesPrefixesAndFiltersReveal(t *testing.T) {
 }
 
 func TestSearchMediaFoldsDiacriticsTyposAndTextFields(t *testing.T) {
-	st, err := Open(context.Background(), t.TempDir(), Options{SeedDevelopmentData: true})
+	st, err := Open(context.Background(), migratedDataDir(t), Options{SeedDevelopmentData: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1266,7 +1266,7 @@ func TestSearchMediaFoldsDiacriticsTyposAndTextFields(t *testing.T) {
 }
 
 func TestTrashPurgeRemovesOnlyExpiredRows(t *testing.T) {
-	st, err := Open(context.Background(), t.TempDir(), Options{SeedDevelopmentData: true})
+	st, err := Open(context.Background(), migratedDataDir(t), Options{SeedDevelopmentData: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1361,7 +1361,7 @@ func TestTrashPurgeSweepTrashDisabledRequiresConfirmation(t *testing.T) {
 
 func TestPurgeTrashedBeforeFailsAfterActivityAppendFailure(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true})
 	if err != nil {
 		t.Fatal(err)
 	}

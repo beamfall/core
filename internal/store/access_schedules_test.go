@@ -12,7 +12,7 @@ import (
 // malformed window is rejected by validation. feature:access-schedules
 func TestProfileAccessWindowsRoundTripAndValidate(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true})
 	if err != nil {
 		t.Fatalf("Open returned error: %v", err)
 	}

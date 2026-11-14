@@ -10,7 +10,7 @@ import (
 // isolation (§2.9 "other Profiles unaffected"), and the My-Data "clear all" (§2.8).
 func TestMuteRoundTrip(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{})
+	st, err := Open(ctx, migratedDataDir(t), Options{})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -366,7 +366,7 @@ func TestMuteKeepsSearchAndDirectFetch(t *testing.T) {
 // TestSetMuteValidates covers the input guards.
 func TestSetMuteValidates(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{})
+	st, err := Open(ctx, migratedDataDir(t), Options{})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

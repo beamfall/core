@@ -816,6 +816,9 @@ type SourceItem struct {
 	// (applyMuteFilterLocked): a badged item still appears, marked-not-hidden so
 	// the state is legible and reversible in place (§2.7).
 	Muted bool
+	// Engagement is the acting Profile's playback state for this item, set by
+	// AnnotateEngagement; nil means no state.
+	Engagement *SourceEngagement
 }
 
 // PairingCode is a short-lived enrollment grant.
@@ -1222,7 +1225,9 @@ func (s *Store) catalogPlaneForEntityLocked(ctx context.Context, id EntityID) (c
 			return catalogPlane{}, err
 		}
 	}
-	return catalogPlane{}, errors.New("entity not found")
+	// The same sentinel a hidden Entity reports, so callers that drop missing
+	// targets also drop one that was purged or whose Library is sealed.
+	return catalogPlane{}, errVisibleEntityNotFound
 }
 
 // EnrollDevice inserts an enrolled Device and its initial hidden Session atomically.
@@ -1704,7 +1709,12 @@ func (s *Store) ProfileByName(ctx context.Context, name string) (Profile, error)
 	return s.profileSQL(ctx, id)
 }
 
-// OwnerProfile returns the single designated owner Profile.
+// ErrNoOwnerProfile means no Profile is designated owner yet. It wraps
+// sql.ErrNoRows so existing callers keep matching it.
+var ErrNoOwnerProfile = fmt.Errorf("no owner profile: %w", sql.ErrNoRows)
+
+// OwnerProfile returns the single designated owner Profile, or
+// ErrNoOwnerProfile.
 func (s *Store) OwnerProfile(ctx context.Context) (Profile, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -1712,7 +1722,11 @@ func (s *Store) OwnerProfile(ctx context.Context) (Profile, error) {
 		return Profile{}, err
 	}
 	var id ProfileID
-	if err := s.catalogR.QueryRowContext(ctx, `SELECT id FROM profile WHERE is_owner = 1 LIMIT 1`).Scan(&id); err != nil {
+	err := s.catalogR.QueryRowContext(ctx, `SELECT id FROM profile WHERE is_owner = 1 LIMIT 1`).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Profile{}, ErrNoOwnerProfile
+	}
+	if err != nil {
 		return Profile{}, err
 	}
 	return s.profileSQL(ctx, id)
@@ -2967,7 +2981,7 @@ func (s *Store) UpdateMediaMetadata(ctx context.Context, id MediaID, metadata Me
 // SourceItems returns visible Media rows for a bounded manifest Source.
 func (s *Store) SourceItems(ctx context.Context, filter LibraryFilter, query SourceQuery) ([]SourceItem, error) {
 	switch query.Kind {
-	case "", "recently-added", "all-items", "on-this-day", "continue-watching", "next-up", "recently-played", "most-played", "top-tracks", "top-artists", "top-albums", "listening-summary", "queue", "entity-items", "entity-media", "random", "resume-progress", "availability", "watched-by-any-profile", "directory", "smart-collection":
+	case "", "recently-added", "all-items", "on-this-day", "continue-watching", "next-up", "recently-played", "most-played", "top-tracks", "top-artists", "top-albums", "listening-summary", "queue", "entity-items", "entity-media", "random", "resume-progress", "availability", "watched-by-any-profile", "directory", "smart-collection", "watchlist", "rated":
 	default:
 		return []SourceItem{}, nil
 	}
@@ -3013,7 +3027,7 @@ func (s *Store) SourceItems(ctx context.Context, filter LibraryFilter, query Sou
 	// (§2.2). A profile-less rail (e.g. an unauthenticated all-items scan) has no
 	// mute list to apply, so it passes through unchanged.
 	if query.ProfileID != "" && strings.TrimSpace(query.Query) == "" {
-		items, err = s.applyMuteFilterLocked(ctx, query.ProfileID, filter, items)
+		items, err = s.applyMuteFilterLocked(ctx, s.catalogR, query.ProfileID, filter, items)
 		if err != nil {
 			return nil, err
 		}
@@ -3056,6 +3070,16 @@ func (s *Store) sourceItemsForKind(ctx context.Context, filter LibraryFilter, qu
 			return []SourceItem{}, nil
 		}
 		return s.playedItemsSQL(ctx, query.ProfileID, filter, "play_count DESC, last_played_at_ms DESC, media_id", limit, offset)
+	case "watchlist":
+		if query.ProfileID == "" {
+			return []SourceItem{}, nil
+		}
+		return s.watchlistItemsSQL(ctx, query.ProfileID, filter, limit, offset)
+	case "rated":
+		if query.ProfileID == "" {
+			return []SourceItem{}, nil
+		}
+		return s.ratedItemsSQL(ctx, query.ProfileID, filter, limit, offset)
 	case "top-tracks", "top-artists", "top-albums", "listening-summary":
 		if query.ProfileID == "" {
 			return []SourceItem{}, nil
@@ -3792,10 +3816,15 @@ func (s *Store) FirstRunSetupComplete(ctx context.Context) (bool, error) {
 // by an earlier setup that stopped after its Profile write. That Profile is
 // reused as the owner (the designated owner first, else the oldest adult
 // Profile) and renamed to profileName, so a retry never adds a second owner.
-func (s *Store) BootstrapOwner(ctx context.Context, profileName string, device Device, session Session) (Profile, error) {
+// mode is the owner's sign-in security choice (CORE-1110); empty means Home.
+func (s *Store) BootstrapOwner(ctx context.Context, profileName string, device Device, session Session, mode SignInSecurityMode) (Profile, error) {
 	profileName = strings.TrimSpace(profileName)
 	if profileName == "" {
 		return Profile{}, ValidationError("profile name is required")
+	}
+	mode, err := ParseSignInSecurityMode(string(mode))
+	if err != nil {
+		return Profile{}, err
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -3851,12 +3880,20 @@ func (s *Store) BootstrapOwner(ctx context.Context, profileName string, device D
 	); err != nil {
 		return Profile{}, err
 	}
+	if err := upsertSignInSecurityModeTx(ctx, tx, mode, s.serverNow()); err != nil {
+		return Profile{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return Profile{}, err
 	}
-	// The setup is stored: a cancelled request must not turn it into a
-	// retryable failure that would enroll a second owner.
-	return s.profileSQL(context.WithoutCancel(ctx), profileID)
+	// The setup is stored: neither a cancelled request nor a failed read-back
+	// may turn it into a retryable failure, because a retry would find the
+	// enrolled Device, enroll a second owner and demote this one.
+	profile, err := s.profileSQL(context.WithoutCancel(ctx), profileID)
+	if err != nil {
+		return Profile{ID: profileID, Name: profileName, Kind: ProfileAdult, IsOwner: true}, nil
+	}
+	return profile, nil
 }
 
 // partialOwnerTx returns the Profile an interrupted first-run setup left

@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isAuthRejection } from "@/lib/api";
+import { displayString } from "@/lib/display";
 import { fetchEntity, fetchMediaForEntity } from "@/lib/graphql";
 import type { EntityInfo, Layout, Section, SourceItem } from "@/lib/graphql/types";
+import { useDisplayLocale } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
 import {
   clearViewerCache,
@@ -12,6 +14,8 @@ import {
   readViewerCache,
   writeViewerCache,
 } from "@/lib/viewerCache";
+import { ItemActions } from "../actions";
+import { useEngagementEpoch } from "../actions/engagementSync";
 import { findCachedSectionItem } from "../components/HydratedSection";
 import { LayoutView } from "../components/LayoutView";
 import { MediaItemCard } from "../components/MediaItemCard";
@@ -20,6 +24,7 @@ import type { SeeAllTarget } from "../components/SectionView";
 import { ViewerActions } from "../components/ViewerActions";
 import { readEntityPreview } from "../lib/entityPreview";
 import { seeAllTargetFor } from "../lib/seeall";
+import { playQueueOf } from "../lib/watchQueue";
 
 const entityCacheKey = (id: string) => `entity:${id}`;
 const entityMediaCacheKey = (id: string) => `entity-media:${id}`;
@@ -29,7 +34,9 @@ const entityMediaCacheKey = (id: string) => `entity-media:${id}`;
 // values). When the manifest carries a detail Layout for this Entity's Kind
 // (role: "detail", matching entityKind), its Sections render through the same
 // LayoutView as browse, with entityID riding the variables for entity-media
-// Sources. Otherwise the hand-rolled mediaForEntity list renders. `kind` is a
+// Sources. Otherwise the hand-rolled mediaForEntity list renders. Related
+// Entities (either relation direction, grouped by kind) render before both,
+// so an Entity linked only to other Entities never opens empty. `kind` is a
 // plugin display label, rendered as text only (invariant #1 / #5).
 //
 // Instant paint: an entity (and its related list) already loaded for the bound
@@ -44,6 +51,7 @@ export function EntityPage() {
   const location = useLocation();
   const { manifest } = useSession();
   const identity = useViewerIdentity();
+  const displayLocale = useDisplayLocale();
   const [entity, setEntity] = useState<EntityInfo | null>(
     () => readViewerCache<EntityInfo>(identity, entityCacheKey(entityId)) ?? null,
   );
@@ -52,6 +60,8 @@ export function EntityPage() {
   const [fallback, setFallback] = useState<SourceItem[] | null>(
     () => readViewerCache<SourceItem[]>(identity, entityMediaCacheKey(entityId)) ?? null,
   );
+
+  const fallbackQueue = useMemo(() => (fallback ? playQueueOf(fallback) : undefined), [fallback]);
 
   const navPreview = readEntityPreview(location.state, identity, entityId);
   const previewTitle = navPreview?.title ?? findCachedSectionItem(identity, entityId)?.title ?? "";
@@ -64,6 +74,8 @@ export function EntityPage() {
   const needsFallback =
     !notFound && !detailLayout && (!!kindHint || !layouts.some((l) => l.role === "detail"));
 
+  // The Entity read carries related-Entity engagement, so it reloads with it.
+  const engagementEpoch = useEngagementEpoch();
   useEffect(() => {
     if (!entityId) return;
     let alive = true;
@@ -101,9 +113,10 @@ export function EntityPage() {
       alive = false;
       controller.abort();
     };
-  }, [identity, entityId]);
+  }, [identity, entityId, engagementEpoch]);
 
-  // No detail Layout for this Kind: load the hand-rolled related-Media list.
+  // No detail Layout for this Kind: load the hand-rolled related-Media list,
+  // again whenever watched, watchlist or rating state changes under it.
   useEffect(() => {
     if (!entityId || !needsFallback) return;
     let alive = true;
@@ -127,7 +140,7 @@ export function EntityPage() {
       alive = false;
       controller.abort();
     };
-  }, [identity, entityId, needsFallback]);
+  }, [identity, entityId, needsFallback, engagementEpoch]);
 
   function buildSeeAll(section: Section): SeeAllTarget {
     return seeAllTargetFor({
@@ -141,9 +154,12 @@ export function EntityPage() {
   return (
     <AppShell actions={<ViewerActions />}>
       {loading && !entity && !previewTitle && (
-        <div className="flex flex-col gap-3">
-          <Skeleton className="h-8 w-64" />
-          <Skeleton className="h-4 w-40" />
+        <div aria-hidden className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1">
+            <Skeleton className="bf-shimmer h-9 w-72 max-w-full" />
+            <Skeleton className="bf-shimmer h-[22px] w-28" />
+          </div>
+          <Skeleton className="bf-shimmer h-10 w-80 max-w-full" />
         </div>
       )}
       {/* fetchEntity returns null for an inaccessible OR a missing entity (the
@@ -153,12 +169,15 @@ export function EntityPage() {
       {notFound && !loading && <NotAvailable />}
       {!notFound && (entity || previewTitle) && (
         <div className="flex flex-col gap-8">
-          <header className="flex flex-col gap-3">
-            {kindHint && <span className="bf-entity-kind">{kindHint}</span>}
-            <h1 className="bf-page-title">{entity?.title ?? previewTitle}</h1>
-            {!entity && <Skeleton aria-hidden className="h-4 w-40" />}
+          <header className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1">
+              <h1 className="bf-page-title">{entity?.title ?? previewTitle}</h1>
+              {kindHint && <p className="bf-entity-kind">{kindHint}</p>}
+            </div>
+            {!entity && <Skeleton aria-hidden className="bf-shimmer h-10 w-80 max-w-full" />}
+            {entity && <ItemActions target={{ entityID: entityId }} />}
             {entity && entity.fields.length > 0 && (
-              <dl className="bf-metadata mt-2">
+              <dl className="bf-metadata">
                 {entity.fields.map((field, i) => (
                   <div key={`${field.name}-${i}`} className="contents">
                     <dt>{field.name}</dt>
@@ -168,6 +187,24 @@ export function EntityPage() {
               </dl>
             )}
           </header>
+
+          {entity?.relatedEntities?.map((group) => (
+            <section key={group.kind} className="bf-section flex flex-col gap-3">
+              <h2 className="bf-section-title">
+                <span>{displayString(group.kindDisplayName, displayLocale) || group.kind}</span>
+              </h2>
+              <ul className="bf-grid">
+                {group.items.map((item, index) => (
+                  <MediaItemCard
+                    key={`${item.id}-${index}`}
+                    item={item}
+                    posInSet={index + 1}
+                    setSize={group.items.length}
+                  />
+                ))}
+              </ul>
+            </section>
+          ))}
 
           {detailLayout ? (
             <LayoutView
@@ -187,6 +224,7 @@ export function EntityPage() {
                     item={item}
                     posInSet={index + 1}
                     setSize={fallback.length}
+                    queue={fallbackQueue}
                   />
                 ))}
               </ul>

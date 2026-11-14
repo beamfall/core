@@ -11,7 +11,7 @@ import {
 import { fetchPlaybackMarkers } from "@/lib/graphql";
 import type { PlaybackMarker } from "@/lib/graphql/types";
 import { ApiError, fetchPlaybackInfo } from "../lib/playback";
-import { selectHlsLevel, usePlayer } from "./usePlayer";
+import { selectHlsLevel, selectHlsRendition, usePlayer } from "./usePlayer";
 
 vi.mock("@/lib/graphql", () => ({
   fetchPlaybackMarkers: vi.fn().mockResolvedValue([]),
@@ -54,11 +54,13 @@ const { fakeHlsInstances } = vi.hoisted(() => ({
     tracks: {
       subtitleTrack: number;
       currentLevel: number;
+      levels: Array<{ height?: number; bitrate?: number }>;
       subtitleTracks: Array<{ lang?: string; name?: string }>;
       audioTracks: Array<{ lang?: string; name?: string }>;
     };
-    emitFragBuffered: () => void;
+    emitFragBuffered: (frag?: { start: number; duration: number }) => void;
     startLoad: ReturnType<typeof vi.fn>;
+    stopLoad: ReturnType<typeof vi.fn>;
     recoverMediaError: ReturnType<typeof vi.fn>;
     swapAudioCodec: ReturnType<typeof vi.fn>;
     config: { startPosition: number };
@@ -81,6 +83,7 @@ vi.mock("hls.js", () => {
     subtitleTrack = -1;
     // hls.js: assigning currentLevel makes it the manual level (-1 is Auto).
     currentLevel = -1;
+    levels: Array<{ height?: number; bitrate?: number }> = [];
     get manualLevel() {
       return this.currentLevel;
     }
@@ -89,10 +92,12 @@ vi.mock("hls.js", () => {
     subtitleTracks: Array<{ lang?: string; name?: string }> = [];
     audioTracks: Array<{ lang?: string; name?: string }> = [];
     startLoad = vi.fn();
+    stopLoad = vi.fn();
     recoverMediaError = vi.fn();
     swapAudioCodec = vi.fn();
     config: { startPosition: number };
     sources: string[] = [];
+    private nextFragStart = 0;
 
     constructor(userConfig?: { startPosition?: number }) {
       this.config = { startPosition: userConfig?.startPosition ?? -1 };
@@ -103,8 +108,14 @@ vi.mock("hls.js", () => {
         emit,
         destroyed: () => this.isDestroyed,
         tracks: this,
-        emitFragBuffered: () => emit("fragBuffered", {}),
+        // Each call without a frag buffers the next 4s fragment: forward progress.
+        emitFragBuffered: (frag?: { start: number; duration: number }) => {
+          const next = frag ?? { start: this.nextFragStart, duration: 4 };
+          this.nextFragStart = Math.max(this.nextFragStart, next.start + next.duration);
+          emit("fragBuffered", { frag: next });
+        },
         startLoad: this.startLoad,
+        stopLoad: this.stopLoad,
         recoverMediaError: this.recoverMediaError,
         swapAudioCodec: this.swapAudioCodec,
         config: this.config,
@@ -132,16 +143,26 @@ const messages = {
   playbackUnsupportedCodec: "unsupported codec",
   playbackFailed: "playback failed",
   terminalUnavailable: "terminal unavailable",
+  mediaNotAvailable: "media not available",
+  streamLimitReached: "stream limit reached",
+  sourceEndsEarly: "source ends early",
 };
 
 function Harness({
   mediaID = "media-alpha",
   startAtSeconds = 0,
+  nextMediaID,
 }: {
   mediaID?: string;
   startAtSeconds?: number;
+  nextMediaID?: string;
 }) {
-  const { videoRef, state, retry, switchToHls } = usePlayer(mediaID, messages, startAtSeconds);
+  const { videoRef, state, retry, switchToHls } = usePlayer(
+    mediaID,
+    messages,
+    startAtSeconds,
+    nextMediaID,
+  );
   return (
     <>
       <video data-testid="player" ref={videoRef} />
@@ -163,6 +184,9 @@ function Harness({
       <output data-testid="phase">{state.phase}</output>
       <output data-testid="message">{state.message}</output>
       <output data-testid="recovering">{state.recovering ? "yes" : "no"}</output>
+      <output data-testid="waiting-for-network">{state.waitingForNetwork ? "yes" : "no"}</output>
+      <output data-testid="action">{state.action ?? ""}</output>
+      <output data-testid="detail">{state.detail ?? ""}</output>
       <button type="button" onClick={retry}>
         retry
       </button>
@@ -174,6 +198,7 @@ function Harness({
       <output data-testid="decision">{state.decision}</output>
       <output data-testid="info-decision">{state.info?.decision ?? ""}</output>
       <output data-testid="markers">{state.markers.length}</output>
+      <output data-testid="up-next">{state.info?.next?.mediaID ?? ""}</output>
     </>
   );
 }
@@ -226,12 +251,19 @@ describe("usePlayer", () => {
     resetIdentityEpoch.mockReset();
     setIdentityEpochReset(resetIdentityEpoch);
     fakeHlsInstances.length = 0;
+    // Drop any once-queued answer a test left unconsumed.
+    vi.mocked(fetchPlaybackInfo).mockReset();
     vi.mocked(fetchPlaybackInfo).mockResolvedValue({
       decision: "direct-play",
       streams: [{ kind: "direct-play", url: "/api/media/direct/token" }],
     });
     vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
     vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
+    // jsdom never loads media, so readyState stays HAVE_NOTHING; progress only
+    // counts presented frames, so default to a loaded element.
+    vi.spyOn(HTMLMediaElement.prototype, "readyState", "get").mockReturnValue(
+      HTMLMediaElement.HAVE_ENOUGH_DATA,
+    );
   });
 
   afterEach(() => {
@@ -329,6 +361,73 @@ describe("usePlayer", () => {
       .mocked(graphql)
       .mock.calls.map((call) => (call[1] as { eventTimeMS: number }).eventTimeMS);
     expect(times.every((t) => t === 1783432800456)).toBe(true);
+  });
+
+  it("reports the last presented position, not a pending seek target, while a seek stalls (CORE-0044)", async () => {
+    vi.mocked(graphql).mockClear();
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+
+    const video = screen.getByTestId("player") as HTMLVideoElement;
+    Object.defineProperty(video, "duration", { configurable: true, value: 2700 });
+    Object.defineProperty(video, "seeking", { configurable: true, value: false });
+    Object.defineProperty(video, "currentTime", { configurable: true, value: 45.9 });
+    fireEvent.timeUpdate(video);
+
+    // A seek far ahead that the stream has not produced yet: currentTime is the
+    // target, but no frame there has been presented.
+    Object.defineProperty(video, "seeking", { configurable: true, value: true });
+    Object.defineProperty(video, "currentTime", { configurable: true, value: 1800 });
+    fireEvent.timeUpdate(video);
+    fireEvent.pause(video);
+    await waitFor(() => expect(graphql).toHaveBeenCalled());
+    const positions = () =>
+      vi
+        .mocked(graphql)
+        .mock.calls.map((call) => (call[1] as { positionSeconds: number }).positionSeconds);
+    expect(positions()).not.toContain(1800);
+    expect(positions().at(-1)).toBe(45);
+
+    // The seek completes and its frame is presented: now it is progress.
+    Object.defineProperty(video, "seeking", { configurable: true, value: false });
+    Object.defineProperty(video, "currentTime", { configurable: true, value: 1800.4 });
+    fireEvent.seeked(video);
+    await waitFor(() => expect(positions().at(-1)).toBe(1800));
+  });
+
+  it("reports no progress before the load has presented a frame (CORE-0044)", async () => {
+    vi.mocked(graphql).mockClear();
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+
+    const video = screen.getByTestId("player") as HTMLVideoElement;
+    Object.defineProperty(video, "duration", { configurable: true, value: 2700 });
+    Object.defineProperty(video, "seeking", { configurable: true, value: true });
+    Object.defineProperty(video, "currentTime", { configurable: true, value: 1800 });
+    fireEvent.pause(video);
+
+    // The seek settled but no frame is decoded yet: still nothing presented.
+    Object.defineProperty(video, "seeking", { configurable: true, value: false });
+    Object.defineProperty(video, "readyState", {
+      configurable: true,
+      value: HTMLMediaElement.HAVE_METADATA,
+    });
+    fireEvent.timeUpdate(video);
+    fireEvent.pause(video);
+    expect(graphql).not.toHaveBeenCalled();
+
+    Object.defineProperty(video, "readyState", {
+      configurable: true,
+      value: HTMLMediaElement.HAVE_ENOUGH_DATA,
+    });
+    Object.defineProperty(video, "currentTime", { configurable: true, value: 30.2 });
+    fireEvent.pause(video);
+    await waitFor(() => expect(graphql).toHaveBeenCalled());
+    const positions = vi
+      .mocked(graphql)
+      .mock.calls.map((call) => (call[1] as { positionSeconds: number }).positionSeconds);
+    expect(positions).not.toContain(1800);
+    expect(positions.at(-1)).toBe(30);
   });
 
   it("coalesces progress storms to one request and delivers the latest final progress", async () => {
@@ -450,6 +549,60 @@ describe("usePlayer", () => {
     expect(pending.requests).toHaveLength(1);
   });
 
+  it.each(["media change", "unmount"])(
+    "delivers the finish report queued at ended across a %s (CORE-1143)",
+    async (teardown) => {
+      const pending = capturePendingProgress();
+      const view = render(<Harness mediaID="media-alpha" />);
+      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+
+      const video = screen.getByTestId("player") as HTMLVideoElement;
+      Object.defineProperty(video, "duration", { configurable: true, value: 120 });
+      Object.defineProperty(video, "currentTime", { configurable: true, value: 100 });
+      fireEvent.pause(video);
+      Object.defineProperty(video, "currentTime", { configurable: true, value: 120 });
+      fireEvent.ended(video);
+      expect(pending.requests).toHaveLength(1);
+
+      // Auto-advance navigates while the periodic report is still in flight.
+      if (teardown === "media change") view.rerender(<Harness mediaID="media-beta" />);
+      if (teardown === "unmount") view.unmount();
+
+      await waitFor(() => expect(pending.requests).toHaveLength(2));
+      expect(pending.requests[0].signal.aborted).toBe(true);
+      expect(pending.requests[1].variables).toMatchObject({
+        mediaID: "media-alpha",
+        positionSeconds: 120,
+        finished: true,
+      });
+      expect(pending.requests[1].signal.aborted).toBe(false);
+      expect(pending.maxActive()).toBe(1);
+      pending.requests[1].resolve();
+      await waitFor(() => expect(pending.active()).toBe(0));
+      expect(pending.requests).toHaveLength(2);
+    },
+  );
+
+  it("still aborts a retiring finish report when the identity epoch ends", async () => {
+    const identity = new AbortController();
+    setIdentityEpochSignal(identity.signal);
+    const pending = capturePendingProgress();
+    const view = render(<Harness mediaID="media-alpha" />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+
+    const video = screen.getByTestId("player") as HTMLVideoElement;
+    Object.defineProperty(video, "duration", { configurable: true, value: 120 });
+    Object.defineProperty(video, "currentTime", { configurable: true, value: 120 });
+    fireEvent.ended(video);
+    view.unmount();
+    expect(pending.requests).toHaveLength(1);
+    expect(pending.requests[0].signal.aborted).toBe(false);
+
+    identity.abort();
+    await waitFor(() => expect(pending.requests[0].signal.aborted).toBe(true));
+    expect(pending.active()).toBe(0);
+  });
+
   it("aborts Profile-scoped progress when the identity epoch ends", async () => {
     const identity = new AbortController();
     setIdentityEpochSignal(identity.signal);
@@ -508,7 +661,7 @@ describe("usePlayer", () => {
 
     await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
 
-    expect(fetchPlaybackInfo).toHaveBeenCalledWith("media-alpha");
+    expect(fetchPlaybackInfo).toHaveBeenCalledWith("media-alpha", undefined);
     const video = screen.getByTestId("player");
     expect(video).toHaveAttribute("src", "/api/media/direct/token");
     fireEvent.canPlay(video);
@@ -717,41 +870,142 @@ describe("usePlayer", () => {
     },
   );
 
+  it("offers Back when playback-info answers 404", async () => {
+    vi.mocked(fetchPlaybackInfo).mockRejectedValueOnce(
+      new ApiError("not found", 404, { error: "media unavailable" }),
+    );
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("message"));
+    expect(screen.getByTestId("message")).toHaveTextContent("media not available");
+    expect(screen.getByTestId("action")).toHaveTextContent("back");
+    expect(resetIdentityEpoch).not.toHaveBeenCalled();
+  });
+
+  it("shows the server's reason with Try again for other playback-info HTTP errors (CORE-1146)", async () => {
+    vi.mocked(fetchPlaybackInfo).mockRejectedValueOnce(
+      new ApiError("server error", 500, { error: "playback info unavailable" }),
+    );
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("message"));
+    expect(screen.getByTestId("message")).toHaveTextContent("playback unavailable");
+    expect(screen.getByTestId("detail")).toHaveTextContent("playback info unavailable");
+    expect(screen.getByTestId("action")).toHaveTextContent("retry");
+  });
+
+  it("maps an unavailable decision's reason to its copy and action (CORE-1146)", async () => {
+    vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce({
+      decision: "unavailable",
+      reason: "media-unavailable",
+    });
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("message"));
+    expect(screen.getByTestId("message")).toHaveTextContent("media not available");
+    expect(screen.getByTestId("action")).toHaveTextContent("back");
+  });
+
+  it("waits for the network when playback-info cannot be reached offline, then starts on 'online' (CORE-1362)", async () => {
+    const onLine = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    vi.mocked(fetchPlaybackInfo).mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("waiting-for-network")).toHaveTextContent("yes"));
+    expect(screen.getByTestId("phase")).not.toHaveTextContent("message");
+    expect(fetchPlaybackInfo).toHaveBeenCalledTimes(1);
+
+    onLine.mockReturnValue(true);
+    act(() => {
+      window.dispatchEvent(new Event("online"));
+    });
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    expect(fetchPlaybackInfo).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId("waiting-for-network")).toHaveTextContent("no");
+  });
+
+  it("reports an unreachable server with Try again while online", async () => {
+    vi.mocked(fetchPlaybackInfo).mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("message"));
+    expect(screen.getByTestId("message")).toHaveTextContent("server unreachable");
+    expect(screen.getByTestId("action")).toHaveTextContent("retry");
+  });
+
   it.each([403, 410])(
-    "turns a reveal-terminal %i HLS error into the terminal player state immediately, without a token refresh",
+    "renegotiates a %i stream refusal through playback-info instead of going terminal (CORE-1359)",
     async (status) => {
       vi.mocked(Hls.isSupported).mockReturnValue(true);
-      vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce({
-        decision: "transcode",
-        streams: [{ kind: "hls", url: "/api/media/hls/token/master.m3u8" }],
-      });
+      vi.mocked(fetchPlaybackInfo)
+        .mockResolvedValueOnce({
+          decision: "transcode",
+          streams: [{ kind: "hls", url: "/api/media/hls/token/master.m3u8" }],
+        })
+        .mockResolvedValueOnce({
+          decision: "transcode",
+          streams: [{ kind: "hls", url: "/api/media/hls/token2/master.m3u8" }],
+        });
 
       render(<Harness />);
       await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
-      // The revealed manifest is addressable while the reveal holds…
-      expect(screen.getByTestId("stream-url")).toHaveTextContent(
-        "/api/media/hls/token/master.m3u8",
-      );
-      expect(fakeHlsInstances).toHaveLength(1);
+      const video = screen.getByTestId("player") as HTMLVideoElement;
+      video.currentTime = 42;
       const callsBeforeError = vi.mocked(fetchPlaybackInfo).mock.calls.length;
 
-      await expectEpochReset(() => {
-        fakeHlsInstances[0].emitError({ fatal: true, response: { code: status } });
-      });
+      // A 410 on stream bytes is an evicted stream session, not an ended reveal.
+      fakeHlsInstances[0].emitError({ fatal: true, response: { code: status } });
 
-      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("terminal"));
-      expect(screen.getByTestId("message")).toHaveTextContent("terminal unavailable");
-      // …and is gone once it goes terminal: the session that minted it is retired,
-      // so the pre-terminal stream URL, its playback document and its live hls.js
-      // session must not survive as replayable state.
-      expect(screen.getByTestId("stream-url")).toBeEmptyDOMElement();
-      expect(screen.getByTestId("info")).toHaveTextContent("none");
-      expect(screen.getByTestId("decision")).toBeEmptyDOMElement();
-      expect(fakeHlsInstances[0].destroyed()).toBe(true);
-      // 403/410 mean relocked/hidden, not a stale token — never worth a refresh.
-      expect(vi.mocked(fetchPlaybackInfo).mock.calls.length).toBe(callsBeforeError);
+      await waitFor(() =>
+        expect(screen.getByTestId("stream-url")).toHaveTextContent(
+          "/api/media/hls/token2/master.m3u8",
+        ),
+      );
+      expect(vi.mocked(fetchPlaybackInfo).mock.calls.length).toBe(callsBeforeError + 1);
+      expect(fakeHlsInstances[0].sources).toContain("/api/media/hls/token2/master.m3u8");
+      expect(fakeHlsInstances[0].config.startPosition).toBe(42);
+      expect(fakeHlsInstances[0].destroyed()).toBe(false);
+      expect(screen.getByTestId("phase")).toHaveTextContent("playing");
+      expect(resetIdentityEpoch).not.toHaveBeenCalled();
     },
   );
+
+  it("shares one playback-info refresh between concurrent stream refusals", async () => {
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+    let resolveRefresh: (info: Awaited<ReturnType<typeof fetchPlaybackInfo>>) => void = () => {};
+    vi.mocked(fetchPlaybackInfo)
+      .mockResolvedValueOnce({
+        decision: "transcode",
+        streams: [{ kind: "hls", url: "/api/media/hls/token/master.m3u8" }],
+      })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveRefresh = resolve;
+          }),
+      );
+
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    const callsBeforeError = vi.mocked(fetchPlaybackInfo).mock.calls.length;
+
+    // hls.js reports each refused segment and playlist request on its own.
+    act(() => {
+      fakeHlsInstances[0].emitError({ fatal: false, response: { code: 401 } });
+      fakeHlsInstances[0].emitError({ fatal: true, response: { code: 401 } });
+      fakeHlsInstances[0].emitError({ fatal: true, networkDetails: { status: 401 } });
+    });
+    expect(vi.mocked(fetchPlaybackInfo).mock.calls.length).toBe(callsBeforeError + 1);
+    expect(screen.getByTestId("recovering")).toHaveTextContent("yes");
+
+    await act(async () => {
+      resolveRefresh({
+        decision: "transcode",
+        streams: [{ kind: "hls", url: "/api/media/hls/token2/master.m3u8" }],
+      });
+    });
+    expect(fakeHlsInstances[0].sources).toEqual([
+      "/api/media/hls/token/master.m3u8",
+      "/api/media/hls/token2/master.m3u8",
+    ]);
+    expect(screen.getByTestId("phase")).toHaveTextContent("playing");
+    expect(resetIdentityEpoch).not.toHaveBeenCalled();
+  });
 
   it("treats a first mid-playback 401 as a stale stream token: refreshes playback info and resumes at the same position instead of going terminal", async () => {
     vi.mocked(Hls.isSupported).mockReturnValue(true);
@@ -793,7 +1047,35 @@ describe("usePlayer", () => {
     expect(video.currentTime).toBe(87);
   });
 
-  it("goes reveal-terminal on a second 401 after the refreshed stream token also expires", async () => {
+  it("keeps the declared next item, so Up Next survives a stream-token refresh (CORE-1143)", async () => {
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+    let call = 0;
+    vi.mocked(fetchPlaybackInfo).mockImplementation(async (_mediaID, nextMediaID) => {
+      call += 1;
+      return {
+        decision: "transcode",
+        streams: [{ kind: "hls", url: `/api/media/hls/token${call}/master.m3u8` }],
+        // The server names a next item only when the request declares one.
+        ...(nextMediaID ? { next: { mediaID: nextMediaID } } : {}),
+      };
+    });
+
+    render(<Harness nextMediaID="media-next" />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    expect(screen.getByTestId("up-next")).toHaveTextContent("media-next");
+
+    fakeHlsInstances[0].emitError({ fatal: true, networkDetails: { status: 401 } });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("stream-url")).toHaveTextContent(
+        "/api/media/hls/token2/master.m3u8",
+      ),
+    );
+    expect(fetchPlaybackInfo).toHaveBeenLastCalledWith("media-alpha", "media-next");
+    expect(screen.getByTestId("up-next")).toHaveTextContent("media-next");
+  });
+
+  it("offers Try again, not the terminal card, on a second refusal before playback progresses", async () => {
     vi.mocked(Hls.isSupported).mockReturnValue(true);
     vi.mocked(fetchPlaybackInfo)
       .mockResolvedValueOnce({
@@ -809,27 +1091,44 @@ describe("usePlayer", () => {
     await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
 
     const callsBeforeFirstError = vi.mocked(fetchPlaybackInfo).mock.calls.length;
-    fakeHlsInstances[0].emitError({ fatal: true, response: { code: 401 } });
-    await waitFor(() =>
-      expect(vi.mocked(fetchPlaybackInfo).mock.calls.length).toBe(callsBeforeFirstError + 1),
-    );
+    fakeHlsInstances[0].emitError({ fatal: true, response: { code: 410 } });
     await waitFor(() =>
       expect(screen.getByTestId("stream-url")).toHaveTextContent(
         "/api/media/hls/token2/master.m3u8",
       ),
     );
+    expect(vi.mocked(fetchPlaybackInfo).mock.calls.length).toBe(callsBeforeFirstError + 1);
 
-    const callsBeforeSecondError = vi.mocked(fetchPlaybackInfo).mock.calls.length;
-    await expectEpochReset(() => {
-      fakeHlsInstances[0].emitError({ fatal: true, response: { code: 401 } });
+    act(() => fakeHlsInstances[0].emitError({ fatal: true, response: { code: 410 } }));
+
+    expect(screen.getByTestId("phase")).toHaveTextContent("message");
+    expect(screen.getByTestId("message")).toHaveTextContent("playback failed");
+    expect(screen.getByTestId("action")).toHaveTextContent("retry");
+    expect(fakeHlsInstances[0].destroyed()).toBe(true);
+    expect(resetIdentityEpoch).not.toHaveBeenCalled();
+    // One renegotiation per stretch without progress.
+    expect(vi.mocked(fetchPlaybackInfo).mock.calls.length).toBe(callsBeforeFirstError + 1);
+  });
+
+  it("renegotiates again after buffered progress", async () => {
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+    let call = 0;
+    vi.mocked(fetchPlaybackInfo).mockImplementation(async () => {
+      call += 1;
+      return {
+        decision: "transcode",
+        streams: [{ kind: "hls", url: `/api/media/hls/token${call}/master.m3u8` }],
+      };
     });
 
-    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("terminal"));
-    expect(screen.getByTestId("message")).toHaveTextContent("terminal unavailable");
-    expect(screen.getByTestId("stream-url")).toBeEmptyDOMElement();
-    expect(screen.getByTestId("info")).toHaveTextContent("none");
-    // Exactly one refresh attempt total — the second 401 does not retry again.
-    expect(vi.mocked(fetchPlaybackInfo).mock.calls.length).toBe(callsBeforeSecondError);
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    fakeHlsInstances[0].emitError({ fatal: true, response: { code: 410 } });
+    await waitFor(() => expect(screen.getByTestId("stream-url")).toHaveTextContent("token2"));
+    act(() => fakeHlsInstances[0].emitFragBuffered());
+    fakeHlsInstances[0].emitError({ fatal: true, response: { code: 410 } });
+    await waitFor(() => expect(screen.getByTestId("stream-url")).toHaveTextContent("token3"));
+    expect(screen.getByTestId("phase")).toHaveTextContent("playing");
   });
 
   it("goes reveal-terminal when the playback-info refresh itself fails", async () => {
@@ -854,6 +1153,45 @@ describe("usePlayer", () => {
     expect(screen.getByTestId("info")).toHaveTextContent("none");
   });
 
+  it("offers Try again when the playback-info refresh cannot reach the server", async () => {
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+    vi.mocked(fetchPlaybackInfo)
+      .mockResolvedValueOnce({
+        decision: "transcode",
+        streams: [{ kind: "hls", url: "/api/media/hls/token/master.m3u8" }],
+      })
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    fakeHlsInstances[0].emitError({ fatal: true, response: { code: 401 } });
+
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("message"));
+    expect(screen.getByTestId("message")).toHaveTextContent("server unreachable");
+    expect(screen.getByTestId("action")).toHaveTextContent("retry");
+    expect(screen.getByTestId("terminal-flag")).toHaveTextContent("no");
+    expect(resetIdentityEpoch).not.toHaveBeenCalled();
+  });
+
+  it("shows the server's reason when the playback-info refresh fails with a server error", async () => {
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+    vi.mocked(fetchPlaybackInfo)
+      .mockResolvedValueOnce({
+        decision: "transcode",
+        streams: [{ kind: "hls", url: "/api/media/hls/token/master.m3u8" }],
+      })
+      .mockRejectedValueOnce(new ApiError("failed", 500, { error: "playback info unavailable" }));
+
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    fakeHlsInstances[0].emitError({ fatal: true, response: { code: 410 } });
+
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("message"));
+    expect(screen.getByTestId("message")).toHaveTextContent("playback unavailable");
+    expect(screen.getByTestId("detail")).toHaveTextContent("playback info unavailable");
+    expect(resetIdentityEpoch).not.toHaveBeenCalled();
+  });
+
   it("never loads a direct-play file into hls.js when the refreshed info lost its HLS stream", async () => {
     vi.mocked(Hls.isSupported).mockReturnValue(true);
     vi.mocked(fetchPlaybackInfo)
@@ -869,13 +1207,32 @@ describe("usePlayer", () => {
     render(<Harness />);
     await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
 
-    await expectEpochReset(() => {
-      fakeHlsInstances[0].emitError({ fatal: true, response: { code: 401 } });
-    });
+    fakeHlsInstances[0].emitError({ fatal: true, response: { code: 401 } });
 
-    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("terminal"));
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("message"));
+    expect(screen.getByTestId("message")).toHaveTextContent("playback failed");
+    expect(screen.getByTestId("action")).toHaveTextContent("retry");
     expect(fakeHlsInstances[0].sources).not.toContain("/api/media/direct/token2");
-    expect(screen.getByTestId("stream-url")).toBeEmptyDOMElement();
+    expect(fakeHlsInstances[0].destroyed()).toBe(true);
+    expect(resetIdentityEpoch).not.toHaveBeenCalled();
+  });
+
+  it("maps an unavailable refresh to the reason's copy and action", async () => {
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+    vi.mocked(fetchPlaybackInfo)
+      .mockResolvedValueOnce({
+        decision: "transcode",
+        streams: [{ kind: "hls", url: "/api/media/hls/token/master.m3u8" }],
+      })
+      .mockResolvedValueOnce({ decision: "unavailable", reason: "stream-limit-reached" });
+
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    fakeHlsInstances[0].emitError({ fatal: true, response: { code: 410 } });
+
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("message"));
+    expect(screen.getByTestId("message")).toHaveTextContent("stream limit reached");
+    expect(screen.getByTestId("action")).toHaveTextContent("retry");
   });
 
   // feature:hls-error-recovery
@@ -1037,8 +1394,10 @@ describe("usePlayer", () => {
         fireEvent.click(screen.getByText("switch-hls"));
         await waitFor(() => expect(fakeHlsInstances).toHaveLength(1));
         const hls = fakeHlsInstances[0];
+        // hls.js orders levels ascending: 480p is level 0, 720p is level 1.
+        hls.tracks.levels = [{ height: 480 }, { height: 720 }];
         hls.emit("manifestParsed");
-        expect(hls.tracks.currentLevel).toBe(0);
+        expect(hls.tracks.currentLevel).toBe(1);
         hls.tracks.currentLevel = choice;
         hls.emitError({ fatal: true, response: { code: 401 } });
         await waitFor(() => expect(hls.sources).toHaveLength(2));
@@ -1047,8 +1406,35 @@ describe("usePlayer", () => {
       }
 
       it("keeps a later manual rendition instead of restoring the first pick", async () => {
-        const hls = await pickThenChooseThenRefresh(1);
-        expect(hls.tracks.currentLevel).toBe(1);
+        // The first pick (720p) is level 1; the later choice is level 0.
+        const hls = await pickThenChooseThenRefresh(0);
+        expect(hls.tracks.currentLevel).toBe(0);
+      });
+
+      it("pins the picked rendition, not its list position, in hls.js's ascending levels", async () => {
+        vi.mocked(Hls.isSupported).mockReturnValue(true);
+        vi.mocked(fetchPlaybackInfo).mockResolvedValue({
+          ...inventory,
+          streams: [
+            inventory.streams[0],
+            {
+              ...inventory.streams[1],
+              renditions: [
+                { id: "1080", height: 1080 },
+                { id: "720", height: 720 },
+              ],
+            },
+          ],
+        });
+        render(<Harness />);
+        await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+        fireEvent.click(screen.getByText("switch-hls"));
+        await waitFor(() => expect(fakeHlsInstances).toHaveLength(1));
+        const hls = fakeHlsInstances[0];
+        hls.tracks.levels = [{ height: 720 }, { height: 1080 }];
+        hls.emit("manifestParsed");
+        // The harness picks 720p: level 0 here, though it is list position 1.
+        expect(hls.tracks.currentLevel).toBe(0);
       });
 
       it("keeps Auto instead of restoring the first pick", async () => {
@@ -1084,6 +1470,18 @@ describe("usePlayer", () => {
         hls.emit("manifestParsed");
         return hls;
       }
+
+      it("applies the latest rendition picked before the manifest parsed", async () => {
+        const hls = await pickThenChooseBeforeParse(-1);
+        // Back on a fresh load: picks made with no levels yet are held for the parse.
+        hls.tracks.currentLevel = -1;
+        selectHlsRendition(hls.tracks as unknown as Hls, { id: "1080", height: 1080 });
+        selectHlsRendition(hls.tracks as unknown as Hls, { id: "480", height: 480 });
+        expect(hls.tracks.currentLevel).toBe(-1);
+        hls.tracks.levels = [{ height: 480 }, { height: 1080 }];
+        hls.emit("manifestParsed");
+        expect(hls.tracks.currentLevel).toBe(0);
+      });
 
       it("keeps Auto instead of restoring the pending pick", async () => {
         const hls = await pickThenChooseBeforeParse(-1);
@@ -1148,35 +1546,119 @@ describe("usePlayer", () => {
         return video;
       }
 
-      it("goes reveal-terminal when the probe shows a relock", async () => {
-        const fetchSpy = vi
-          .spyOn(globalThis, "fetch")
-          .mockResolvedValue(new Response("", { status: 403 }));
+      it.each([401, 410])(
+        "renegotiates and reloads at the playhead when the probe shows a %i refusal",
+        async (status) => {
+          const fetchSpy = vi
+            .spyOn(globalThis, "fetch")
+            .mockResolvedValue(new Response("", { status }));
+          vi.mocked(fetchPlaybackInfo)
+            .mockResolvedValueOnce({
+              decision: "direct-play",
+              streams: [{ kind: "direct-play", url: "/api/media/direct/token" }],
+            })
+            .mockResolvedValueOnce({
+              decision: "direct-play",
+              streams: [{ kind: "direct-play", url: "/api/media/direct/token2" }],
+            });
+          render(<Harness />);
+          await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+          const video = screen.getByTestId("player") as HTMLVideoElement;
+          video.currentTime = 33;
+          failNetwork();
+          expect(fetchSpy).toHaveBeenCalledWith(
+            "/api/media/direct/token",
+            expect.objectContaining({ headers: { Range: "bytes=0-0" } }),
+          );
+          await waitFor(() =>
+            expect(screen.getByTestId("stream-url")).toHaveTextContent("/api/media/direct/token2"),
+          );
+          expect(video.getAttribute("src")).toBe("/api/media/direct/token2");
+          video.currentTime = 0;
+          fireEvent.loadedMetadata(video);
+          expect(video.currentTime).toBe(33);
+          expect(screen.getByTestId("phase")).toHaveTextContent("playing");
+          expect(resetIdentityEpoch).not.toHaveBeenCalled();
+        },
+      );
+
+      it("goes reveal-terminal only when playback-info itself answers the refusal", async () => {
+        vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 403 }));
+        vi.mocked(fetchPlaybackInfo)
+          .mockResolvedValueOnce({
+            decision: "direct-play",
+            streams: [{ kind: "direct-play", url: "/api/media/direct/token" }],
+          })
+          .mockRejectedValueOnce(new ApiError("relocked", 403));
         render(<Harness />);
         await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
         await expectEpochReset(() => {
           failNetwork();
         });
-        expect(fetchSpy).toHaveBeenCalledWith(
-          "/api/media/direct/token",
-          expect.objectContaining({ headers: { Range: "bytes=0-0" } }),
-        );
         await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("terminal"));
         expect(screen.getByTestId("terminal-flag")).toHaveTextContent("yes");
       });
 
-      it("reports a generic failure when the probe is not a relock", async () => {
+      it("reloads at the playhead on a 1/2/4 s backoff, then reports failure", async () => {
         vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 500 }));
         render(<Harness />);
         await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
-        failNetwork();
-        await waitFor(() =>
-          expect(screen.getByTestId("message")).toHaveTextContent("playback failed"),
-        );
-        expect(resetIdentityEpoch).not.toHaveBeenCalled();
+        const video = screen.getByTestId("player") as HTMLVideoElement;
+        video.currentTime = 12;
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+        try {
+          for (const delay of [1000, 2000, 4000]) {
+            const loads = vi.mocked(HTMLMediaElement.prototype.load).mock.calls.length;
+            await act(async () => {
+              failNetwork();
+            });
+            await waitFor(() => expect(screen.getByTestId("recovering")).toHaveTextContent("yes"));
+            await act(() => vi.advanceTimersByTimeAsync(delay - 50));
+            expect(vi.mocked(HTMLMediaElement.prototype.load).mock.calls.length).toBe(loads);
+            await act(() => vi.advanceTimersByTimeAsync(50));
+            // The reload re-binds the same stream and seeks back to the playhead.
+            expect(vi.mocked(HTMLMediaElement.prototype.load).mock.calls.length).toBe(loads + 1);
+            expect(video.getAttribute("src")).toBe("/api/media/direct/token");
+            video.currentTime = 0;
+            fireEvent.loadedMetadata(video);
+            expect(video.currentTime).toBe(12);
+            expect(screen.getByTestId("phase")).toHaveTextContent("playing");
+          }
+          await act(async () => {
+            failNetwork();
+          });
+          await waitFor(() =>
+            expect(screen.getByTestId("message")).toHaveTextContent("playback failed"),
+          );
+          expect(screen.getByTestId("recovering")).toHaveTextContent("no");
+          expect(resetIdentityEpoch).not.toHaveBeenCalled();
+        } finally {
+          vi.useRealTimers();
+        }
       });
 
-      it("reports a generic failure when the probe hangs past its timeout", async () => {
+      it("refills the backoff budget once playback resumes", async () => {
+        vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 500 }));
+        render(<Harness />);
+        await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+        try {
+          for (let round = 0; round < 5; round += 1) {
+            await act(async () => {
+              failNetwork();
+            });
+            await waitFor(() => expect(screen.getByTestId("recovering")).toHaveTextContent("yes"));
+            await act(() => vi.advanceTimersByTimeAsync(1000));
+            fireEvent.playing(screen.getByTestId("player"));
+            expect(screen.getByTestId("recovering")).toHaveTextContent("no");
+          }
+          expect(screen.getByTestId("phase")).toHaveTextContent("playing");
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it("retries rather than failing when the probe hangs past its timeout", async () => {
         vi.useFakeTimers({ shouldAdvanceTime: true });
         try {
           vi.spyOn(globalThis, "fetch").mockImplementation(
@@ -1190,25 +1672,39 @@ describe("usePlayer", () => {
           render(<Harness />);
           await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
           failNetwork();
-          await vi.advanceTimersByTimeAsync(5001);
-          await waitFor(() =>
-            expect(screen.getByTestId("message")).toHaveTextContent("playback failed"),
-          );
+          await act(() => vi.advanceTimersByTimeAsync(5001));
+          expect(screen.getByTestId("recovering")).toHaveTextContent("yes");
+          expect(screen.getByTestId("phase")).toHaveTextContent("playing");
           expect(resetIdentityEpoch).not.toHaveBeenCalled();
         } finally {
           vi.useRealTimers();
         }
       });
 
-      it("reports a generic failure when the probe itself fails", async () => {
-        vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("offline"));
+      it("waits for the network instead of probing while offline (CORE-1362)", async () => {
+        const fetchSpy = vi.spyOn(globalThis, "fetch");
         render(<Harness />);
         await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
-        failNetwork();
-        await waitFor(() =>
-          expect(screen.getByTestId("message")).toHaveTextContent("playback failed"),
-        );
-        expect(resetIdentityEpoch).not.toHaveBeenCalled();
+        const video = screen.getByTestId("player") as HTMLVideoElement;
+        video.currentTime = 20;
+        act(() => {
+          window.dispatchEvent(new Event("offline"));
+        });
+        expect(screen.getByTestId("waiting-for-network")).toHaveTextContent("yes");
+        const loads = vi.mocked(HTMLMediaElement.prototype.load).mock.calls.length;
+        act(() => {
+          failNetwork();
+        });
+        expect(fetchSpy).not.toHaveBeenCalled();
+        expect(vi.mocked(HTMLMediaElement.prototype.load).mock.calls.length).toBe(loads);
+        act(() => {
+          window.dispatchEvent(new Event("online"));
+        });
+        expect(screen.getByTestId("waiting-for-network")).toHaveTextContent("no");
+        expect(vi.mocked(HTMLMediaElement.prototype.load).mock.calls.length).toBe(loads + 1);
+        video.currentTime = 0;
+        fireEvent.loadedMetadata(video);
+        expect(video.currentTime).toBe(20);
       });
     });
   });
@@ -1247,6 +1743,31 @@ describe("usePlayer", () => {
       }
     });
 
+    it("waits out a 503 at the playhead instead of moving it (CORE-0044)", async () => {
+      const hls = await renderHlsPlaying();
+      const video = screen.getByTestId("player") as HTMLVideoElement;
+      const sets: number[] = [];
+      Object.defineProperty(video, "currentTime", {
+        configurable: true,
+        get: () => 600,
+        set: (value: number) => sets.push(value),
+      });
+      vi.useFakeTimers();
+      try {
+        act(() => hls.emitError({ ...networkError, response: { code: 503 } }));
+        expect(screen.getByTestId("recovering")).toHaveTextContent("yes");
+        await act(() => vi.advanceTimersByTimeAsync(1000));
+        expect(hls.startLoad).toHaveBeenCalledTimes(1);
+        // Reload from where hls.js stopped (no argument), never a later position.
+        expect(hls.startLoad.mock.calls[0]).toEqual([]);
+        expect(sets).toEqual([]);
+        expect(hls.destroyed()).toBe(false);
+        expect(screen.getByTestId("phase")).toHaveTextContent("playing");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("destroys hls.js and reports failure after four consecutive fatal network errors", async () => {
       const hls = await renderHlsPlaying();
       vi.useFakeTimers();
@@ -1267,6 +1788,97 @@ describe("usePlayer", () => {
       }
     });
 
+    it("does not refill the budget when a recovery only re-buffers the same fragment", async () => {
+      const hls = await renderHlsPlaying();
+      const firstFragment = { start: 0, duration: 4 };
+      act(() => hls.emitFragBuffered(firstFragment));
+      vi.useFakeTimers();
+      try {
+        for (const delay of [1000, 2000, 4000]) {
+          act(() => hls.emitError(networkError));
+          await act(() => vi.advanceTimersByTimeAsync(delay));
+          // The reload buffers the fragment already played, then fails on the next.
+          act(() => hls.emitFragBuffered(firstFragment));
+        }
+        expect(screen.getByTestId("recovering")).toHaveTextContent("yes");
+        act(() => hls.emitError(networkError));
+        expect(hls.destroyed()).toBe(true);
+        expect(screen.getByTestId("message")).toHaveTextContent("playback failed");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    describe("a source that ends early (fragment 404)", () => {
+      const fragmentMissing = {
+        fatal: false,
+        type: "networkError",
+        details: "fragLoadError",
+        response: { code: 404 },
+        frag: { start: 4, duration: 4 },
+      };
+      function bufferUntil(video: HTMLVideoElement, end: number) {
+        Object.defineProperty(video, "buffered", {
+          configurable: true,
+          value: { length: 1, start: () => 0, end: () => end },
+        });
+      }
+
+      it("stops loading, plays what is buffered, then says why at the cut", async () => {
+        const hls = await renderHlsPlaying();
+        const video = screen.getByTestId("player") as HTMLVideoElement;
+        bufferUntil(video, 4);
+        video.currentTime = 2;
+        act(() => hls.emitError(fragmentMissing));
+        expect(hls.stopLoad).toHaveBeenCalledTimes(1);
+        expect(hls.startLoad).not.toHaveBeenCalled();
+        expect(screen.getByTestId("phase")).toHaveTextContent("playing");
+        // The level fallback's later errors change nothing.
+        act(() => hls.emitError({ ...fragmentMissing, fatal: true }));
+        expect(screen.getByTestId("phase")).toHaveTextContent("playing");
+        video.currentTime = 3.9;
+        act(() => {
+          fireEvent.waiting(video);
+        });
+        expect(hls.destroyed()).toBe(true);
+        expect(screen.getByTestId("phase")).toHaveTextContent("message");
+        expect(screen.getByTestId("message")).toHaveTextContent("source ends early");
+      });
+
+      it("explains at once when the playhead is already at the cut", async () => {
+        const hls = await renderHlsPlaying();
+        const video = screen.getByTestId("player") as HTMLVideoElement;
+        bufferUntil(video, 4);
+        video.currentTime = 3.8;
+        act(() => hls.emitError(fragmentMissing));
+        expect(screen.getByTestId("message")).toHaveTextContent("source ends early");
+      });
+
+      it("loads again after a seek back before the cut, and explains after a seek past it", async () => {
+        const hls = await renderHlsPlaying();
+        const video = screen.getByTestId("player") as HTMLVideoElement;
+        bufferUntil(video, 4);
+        video.currentTime = 2;
+        act(() => hls.emitError(fragmentMissing));
+        video.currentTime = 1;
+        act(() => {
+          fireEvent.seeking(video);
+        });
+        expect(hls.startLoad).toHaveBeenCalledWith(1);
+        // Loading again: an empty buffer is not the cut.
+        bufferUntil(video, 0);
+        act(() => {
+          fireEvent.waiting(video);
+        });
+        expect(screen.getByTestId("phase")).toHaveTextContent("playing");
+        video.currentTime = 90;
+        act(() => {
+          fireEvent.seeking(video);
+        });
+        expect(screen.getByTestId("message")).toHaveTextContent("source ends early");
+      });
+    });
+
     it("recovers a fatal media error through recoverMediaError, then with an audio codec swap", async () => {
       const hls = await renderHlsPlaying();
       const mediaError = { fatal: true, type: "mediaError" };
@@ -1282,14 +1894,18 @@ describe("usePlayer", () => {
       expect(screen.getByTestId("phase")).toHaveTextContent("message");
     });
 
-    it("keeps a reveal-terminal refusal terminal even when it is typed as a network error", async () => {
+    it("renegotiates a 410 refusal even when it is typed as a network error, without spending the budget", async () => {
       const hls = await renderHlsPlaying();
-      await expectEpochReset(() => {
-        hls.emitError({ ...networkError, response: { code: 410 } });
+      vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce({
+        decision: "transcode",
+        streams: [{ kind: "hls", url: "/api/media/hls/token2/master.m3u8" }],
       });
-      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("terminal"));
+      hls.emitError({ ...networkError, response: { code: 410 } });
+      await waitFor(() => expect(hls.sources).toContain("/api/media/hls/token2/master.m3u8"));
       expect(hls.startLoad).not.toHaveBeenCalled();
-      expect(hls.destroyed()).toBe(true);
+      expect(hls.destroyed()).toBe(false);
+      expect(screen.getByTestId("phase")).toHaveTextContent("playing");
+      expect(resetIdentityEpoch).not.toHaveBeenCalled();
     });
 
     it("routes a fatal 401 network error to the token refresh without spending the in-place budget", async () => {
@@ -1307,6 +1923,9 @@ describe("usePlayer", () => {
       );
       expect(fetchPlaybackInfo).toHaveBeenCalledTimes(loadsBeforeError + 1);
       expect(screen.getByTestId("phase")).toHaveTextContent("playing");
+      // Reconnecting until the fresh stream buffers.
+      expect(screen.getByTestId("recovering")).toHaveTextContent("yes");
+      act(() => hls.emitFragBuffered());
       expect(screen.getByTestId("recovering")).toHaveTextContent("no");
       expect(resetIdentityEpoch).not.toHaveBeenCalled();
       vi.useFakeTimers();
@@ -1326,6 +1945,75 @@ describe("usePlayer", () => {
       }
     });
 
+    it("waits for the network without spending the budget while offline, then resumes on 'online' (CORE-1362)", async () => {
+      const hls = await renderHlsPlaying();
+      vi.useFakeTimers();
+      try {
+        act(() => {
+          window.dispatchEvent(new Event("offline"));
+        });
+        expect(screen.getByTestId("waiting-for-network")).toHaveTextContent("yes");
+        // Any number of offline faults never exhausts the budget.
+        for (let i = 0; i < 6; i += 1) act(() => hls.emitError(networkError));
+        await act(() => vi.advanceTimersByTimeAsync(10_000));
+        expect(hls.startLoad).not.toHaveBeenCalled();
+        expect(hls.destroyed()).toBe(false);
+        expect(screen.getByTestId("phase")).toHaveTextContent("playing");
+        expect(screen.getByTestId("recovering")).toHaveTextContent("no");
+
+        act(() => {
+          window.dispatchEvent(new Event("online"));
+        });
+        expect(screen.getByTestId("waiting-for-network")).toHaveTextContent("no");
+        expect(hls.startLoad).toHaveBeenCalledTimes(1);
+        expect(screen.getByTestId("recovering")).toHaveTextContent("yes");
+        // The full budget is still there.
+        for (const delay of [1000, 2000, 4000]) {
+          act(() => hls.emitError(networkError));
+          expect(hls.destroyed()).toBe(false);
+          await act(() => vi.advanceTimersByTimeAsync(delay));
+        }
+        expect(hls.startLoad).toHaveBeenCalledTimes(4);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("restarts a starving load at the playhead on 'online' without waiting out hls.js's own retry backoff", async () => {
+      const hls = await renderHlsPlaying();
+      const video = screen.getByTestId("player") as HTMLVideoElement;
+      video.currentTime = 30;
+      act(() => {
+        window.dispatchEvent(new Event("offline"));
+      });
+      // No fatal error: hls.js is retrying the fragment on its own timer.
+      act(() => {
+        window.dispatchEvent(new Event("online"));
+      });
+      expect(screen.getByTestId("waiting-for-network")).toHaveTextContent("no");
+      expect(hls.startLoad).toHaveBeenCalledTimes(1);
+      expect(hls.startLoad).toHaveBeenCalledWith(30);
+    });
+
+    it("parks a pending backoff retry when the network drops during the wait", async () => {
+      const hls = await renderHlsPlaying();
+      vi.useFakeTimers();
+      try {
+        act(() => hls.emitError(networkError));
+        act(() => {
+          window.dispatchEvent(new Event("offline"));
+        });
+        await act(() => vi.advanceTimersByTimeAsync(1000));
+        expect(hls.startLoad).not.toHaveBeenCalled();
+        act(() => {
+          window.dispatchEvent(new Event("online"));
+        });
+        expect(hls.startLoad).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("re-runs the load for the same media when retry is invoked from the message state", async () => {
       const hls = await renderHlsPlaying();
       act(() => hls.emitError({ fatal: true, type: "otherError" }));
@@ -1335,6 +2023,18 @@ describe("usePlayer", () => {
       await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
       expect(fetchPlaybackInfo).toHaveBeenCalledTimes(loads + 1);
       expect(fakeHlsInstances).toHaveLength(2);
+    });
+
+    it("resumes Try again at the last presented position (CORE-1364)", async () => {
+      const hls = await renderHlsPlaying();
+      const video = screen.getByTestId("player") as HTMLVideoElement;
+      video.currentTime = 64;
+      fireEvent.timeUpdate(video);
+      act(() => hls.emitError({ fatal: true, type: "otherError" }));
+      expect(screen.getByTestId("phase")).toHaveTextContent("message");
+      fireEvent.click(screen.getByRole("button", { name: "retry" }));
+      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+      expect(fakeHlsInstances[1].config.startPosition).toBe(64);
     });
   });
 });

@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router";
+import "@fontsource-variable/instrument-sans/wght.css";
 import "./styles/global.css";
 import { ShellErrorBoundary } from "@/components/chrome/ErrorBoundary";
 import { I18nProvider } from "@/lib/i18n";

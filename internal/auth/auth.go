@@ -59,7 +59,11 @@ var adminBackoff = store.AuthBackoff{
 	MaxDelay:     adminAttemptWindow,
 }
 
-// ErrAdminLocked means admin re-auth attempts for this session exceeded the
+// AdminBackoff returns the admin re-auth backoff curve, for other lanes that
+// check the admin password (admin-password sign-in, CORE-1106).
+func AdminBackoff() store.AuthBackoff { return adminBackoff }
+
+// ErrAdminLocked means admin re-auth attempts for this Profile exceeded the
 // short-window limit; the caller must back off.
 var ErrAdminLocked = errors.New("admin re-auth attempts throttled")
 
@@ -153,6 +157,10 @@ type Service struct {
 	// owner and password checks and before the window is written. Test seam
 	// for the ownership-transfer race; nil in production.
 	beforeAdminGrant func()
+	// beforeModeWrite, when non-nil, runs in ChangeSignInSecurityMode after
+	// the owner and password checks and before the mode is written. Test
+	// seam for the ownership-transfer race; nil in production.
+	beforeModeWrite func()
 }
 
 // NewService creates an auth service.
@@ -530,7 +538,11 @@ func (s *Service) AuthenticateIntegrationByName(ctx context.Context, name, crede
 
 	credentialErr := profileErr
 	if credentialErr == nil && setup {
-		credentialErr = s.store.VerifyAdminPassword(ctx, credential)
+		// The admin KDF runs inside the process-wide bound; a busy refusal
+		// is one more uniform failure.
+		credentialErr = withAdminKDFSlot(ctx, func() error {
+			return verifyAdminPasswordKDF(ctx, s.store, credential)
+		})
 	}
 	if credentialErr == nil && !setup {
 		credentialErr = s.store.VerifyProfileEntryPIN(ctx, profile.ID, credential)
@@ -676,7 +688,7 @@ func (s *Service) RevokeIntegrationSession(ctx context.Context, token string) er
 // admin password and, on success, opens the short-lived Admin Session window.
 // The session must already resolve to an adult Profile —
 // PINs/managed Profiles never grant admin, and a non-adult caller cannot open
-// the window even with the right password. Throttled per session
+// the window even with the right password. Throttled per Profile
 // and audited (success and failure) without ever recording the password.
 //
 // The returned time is the window's end; every Console-op read re-derives
@@ -687,7 +699,7 @@ func (s *Service) BeginAdminSession(ctx context.Context, scope Scope, password s
 		return time.Time{}, errors.New("session is required")
 	}
 	now := s.now()
-	attemptKey := "session:" + string(scope.SessionID)
+	attemptKey := adminAttemptKey(scope)
 	lockedUntil, err := s.store.AuthBackoffUntil(ctx, adminAttemptAction, attemptKey, now, adminBackoff)
 	if err != nil {
 		return time.Time{}, err
@@ -696,41 +708,8 @@ func (s *Service) BeginAdminSession(ctx context.Context, scope Scope, password s
 		NoteRefusal(ctx, refusalOperationAdminSession, RefusalAdminLocked, true)
 		return time.Time{}, ErrAdminLocked
 	}
-	// Admin is an adult-Profile tier: a managed Profile has no admin path, so
-	// reject before spending the KDF or burning a verify attempt against it.
-	if scope.Profile != store.ProfileAdult {
-		s.recordAdminAttempt(ctx, attemptKey, now, false)
-		s.auditAdmin(ctx, scope, now, store.ActivityAdminLoginDenied)
-		NoteRefusal(ctx, refusalOperationAdminSession, RefusalAdminPasswordRejected, true)
-		return time.Time{}, ErrAdminPassword
-	}
-	// Admin is restricted to the designated owner Profile.
-	// Lockout-safety fallback: a server with no owner designated — e.g. one
-	// upgraded across migration 0069 — admits any adult Profile exactly as
-	// before, so an upgrade can never brick Admin access. A non-owner adult is
-	// rejected with ErrAdminPassword (the same error as a bad password), so the
-	// owner identity is never an oracle.
-	ownerDesignated, err := s.store.OwnerDesignated(ctx)
-	if err != nil {
+	if err := s.verifyAdminReauth(ctx, scope, password, attemptKey, now); err != nil {
 		return time.Time{}, err
-	}
-	if ownerDesignated {
-		isOwner, oerr := s.store.ProfileIsOwner(ctx, scope.ProfileID)
-		if oerr != nil {
-			return time.Time{}, oerr
-		}
-		if !isOwner {
-			s.recordAdminAttempt(ctx, attemptKey, now, false)
-			s.auditAdmin(ctx, scope, now, store.ActivityAdminLoginDenied)
-			NoteRefusal(ctx, refusalOperationAdminSession, RefusalAdminPasswordRejected, true)
-			return time.Time{}, ErrAdminPassword
-		}
-	}
-	if verr := s.store.VerifyAdminPassword(ctx, password); verr != nil {
-		s.recordAdminAttempt(ctx, attemptKey, now, false)
-		s.auditAdmin(ctx, scope, now, store.ActivityAdminLoginDenied)
-		NoteRefusal(ctx, refusalOperationAdminSession, RefusalAdminPasswordRejected, true)
-		return time.Time{}, ErrAdminPassword
 	}
 	until := now.Add(adminSessionTTL).UTC()
 	if s.beforeAdminGrant != nil {
@@ -744,13 +723,132 @@ func (s *Service) BeginAdminSession(ctx context.Context, scope Scope, password s
 		return time.Time{}, err
 	}
 	if !granted {
-		s.recordAdminAttempt(ctx, attemptKey, now, false)
+		// The failure was counted when the attempt was reserved.
 		s.auditAdmin(ctx, scope, now, store.ActivityAdminLoginDenied)
 		return time.Time{}, ErrAdminPassword
 	}
 	s.recordAdminAttempt(ctx, attemptKey, now, true)
 	s.auditAdmin(ctx, scope, now, store.ActivityAdminLogin)
 	return until, nil
+}
+
+// OpenAdminSession opens the Admin Session window with the admin password. With
+// createFirst set and no admin password on the server, the password is instead
+// chosen as the first one (CORE-1132: an owner who finished setup without a
+// password has nothing to unlock with); see createFirstAdminPassword. In every
+// other case it is BeginAdminSession, so createFirst can never replace a
+// password and a server that has one answers exactly as an ordinary unlock.
+func (s *Service) OpenAdminSession(ctx context.Context, scope Scope, password string, createFirst bool) (time.Time, error) {
+	if createFirst {
+		set, err := s.store.AdminPasswordSet(ctx)
+		if err != nil {
+			return time.Time{}, err
+		}
+		if !set {
+			until, handled, err := s.createFirstAdminPassword(ctx, scope, password)
+			if handled || err != nil {
+				return until, err
+			}
+		}
+	}
+	return s.BeginAdminSession(ctx, scope, password)
+}
+
+// createFirstAdminPassword stores the first admin password and opens the
+// window for the caller. The caller must be an adult owner (or, with no owner
+// designated, any adult) on a Manager Device; the store re-checks that, and
+// that no password exists, in the write's transaction. The attempt counts on
+// the same Profile lane as an unlock, so it is throttled with them, and every
+// outcome is audited without the password. handled is false only when a
+// password appeared first (a racing set), which the caller then treats as an
+// ordinary unlock; every refusal is ErrAdminPassword or ErrAdminLocked.
+func (s *Service) createFirstAdminPassword(ctx context.Context, scope Scope, password string) (until time.Time, handled bool, err error) {
+	if scope.SessionID == "" {
+		return time.Time{}, true, errors.New("session is required")
+	}
+	if strings.TrimSpace(password) == "" {
+		return time.Time{}, true, store.ValidationError("admin password is required")
+	}
+	now := s.now()
+	attemptKey := adminAttemptKey(scope)
+	lockedUntil, err := s.store.AuthBackoffUntil(ctx, adminAttemptAction, attemptKey, now, adminBackoff)
+	if err != nil {
+		return time.Time{}, true, err
+	}
+	if now.Before(lockedUntil) {
+		NoteRefusal(ctx, refusalOperationAdminSession, RefusalAdminLocked, true)
+		return time.Time{}, true, ErrAdminLocked
+	}
+	refuse := func() (time.Time, bool, error) {
+		s.auditAdmin(ctx, scope, now, store.ActivityAdminLoginDenied)
+		NoteRefusal(ctx, refusalOperationAdminSession, RefusalAdminPasswordRejected, true)
+		return time.Time{}, true, ErrAdminPassword
+	}
+	deny := func() (time.Time, bool, error) {
+		s.recordAdminAttempt(ctx, attemptKey, now, false)
+		return refuse()
+	}
+	// Refuse callers that can never qualify before spending the KDF, counting
+	// the attempt, so a non-owner cannot make the server hash for free.
+	if scope.Profile != store.ProfileAdult || scope.DeviceRole != store.DeviceRoleManager {
+		return deny()
+	}
+	ownerDesignated, err := s.store.OwnerDesignated(ctx)
+	if err != nil {
+		return time.Time{}, true, err
+	}
+	if ownerDesignated {
+		isOwner, oerr := s.store.ProfileIsOwner(ctx, scope.ProfileID)
+		if oerr != nil {
+			return time.Time{}, true, oerr
+		}
+		if !isOwner {
+			return deny()
+		}
+	}
+	until = now.Add(adminSessionTTL).UTC()
+	// The hash runs inside the process-wide KDF bound and the attempt is
+	// reserved before it, exactly as CheckAdminPassword does for an unlock, so
+	// parallel requests cannot all pass the throttle before any is counted.
+	var created bool
+	err = withAdminKDFSlot(ctx, func() error {
+		locked, rerr := s.store.ReserveAuthAttempt(ctx, adminAttemptAction, []string{attemptKey}, now.UTC(), adminBackoff)
+		if rerr != nil {
+			return rerr
+		}
+		if !locked.IsZero() {
+			return ErrAdminLocked
+		}
+		var serr error
+		created, serr = s.store.CreateFirstAdminPassword(ctx, scope.SessionID, scope.ProfileID, password, now, until)
+		return serr
+	})
+	switch {
+	case errors.Is(err, ErrAdminLocked):
+		NoteRefusal(ctx, refusalOperationAdminSession, RefusalAdminLocked, true)
+		return time.Time{}, true, ErrAdminLocked
+	case errors.Is(err, ErrAdminBusy):
+		// No slot: refused like a wrong password, not counted.
+		return refuse()
+	case err != nil:
+		return time.Time{}, true, err
+	}
+	if !created {
+		// Either the caller no longer qualifies or a password appeared first;
+		// the attempt was counted when it was reserved. Only the second is an
+		// ordinary unlock; tell them apart without leaking either.
+		set, err := s.store.AdminPasswordSet(ctx)
+		if err != nil {
+			return time.Time{}, true, err
+		}
+		if set {
+			return time.Time{}, false, nil
+		}
+		return refuse()
+	}
+	s.recordAdminAttempt(ctx, attemptKey, now, true)
+	s.auditAdmin(ctx, scope, now, store.ActivityAdminPasswordSet)
+	return until, true, nil
 }
 
 // EndAdminSession clears the caller's Admin Session window immediately
@@ -762,6 +860,15 @@ func (s *Service) EndAdminSession(ctx context.Context, scope Scope) error {
 	return s.store.SetSessionAdminUntil(ctx, scope.SessionID, time.Time{})
 }
 
+// adminAttemptKey keys the admin re-auth lane by Profile, not session:
+// renewal mints a new session ID on demand and a Manager can mint pairing
+// codes for new Devices, so a session or device key would let a holder of a
+// Manager browser's credentials reset the limit. Only the owner (or, with no
+// owner, an adult) can pass, so the Profile is the account under attack.
+func adminAttemptKey(scope Scope) string {
+	return "profile:" + string(scope.ProfileID)
+}
+
 func (s *Service) recordAdminAttempt(ctx context.Context, key string, now time.Time, success bool) {
 	_ = s.store.RecordAuthAttempt(ctx, store.AuthAttempt{
 		OccurredAt: now.UTC(),
@@ -769,6 +876,135 @@ func (s *Service) recordAdminAttempt(ctx context.Context, key string, now time.T
 		Key:        key,
 		Success:    success,
 	})
+}
+
+// verifyAdminReauth runs the admin re-auth checks shared by every path that
+// takes the admin password from a signed-in session: an adult Profile, the
+// designated owner, and the password itself. Each refusal is recorded on the
+// caller's attempt lane, audited and returned as ErrAdminPassword; a lane
+// locked by a parallel attempt returns ErrAdminLocked. A nil return has
+// counted a failure that the caller clears by recording success.
+func (s *Service) verifyAdminReauth(ctx context.Context, scope Scope, password, attemptKey string, now time.Time) error {
+	// Admin is an adult-Profile tier: a managed Profile has no admin path, so
+	// reject before spending the KDF or burning a verify attempt against it.
+	if scope.Profile != store.ProfileAdult {
+		s.recordAdminAttempt(ctx, attemptKey, now, false)
+		s.auditAdmin(ctx, scope, now, store.ActivityAdminLoginDenied)
+		NoteRefusal(ctx, refusalOperationAdminSession, RefusalAdminPasswordRejected, true)
+		return ErrAdminPassword
+	}
+	// Admin is restricted to the designated owner Profile.
+	// Lockout-safety fallback: a server with no owner designated — e.g. one
+	// upgraded across migration 0069 — admits any adult Profile exactly as
+	// before, so an upgrade can never brick Admin access. A non-owner adult is
+	// rejected with ErrAdminPassword (the same error as a bad password), so the
+	// owner identity is never an oracle.
+	ownerDesignated, err := s.store.OwnerDesignated(ctx)
+	if err != nil {
+		return err
+	}
+	if ownerDesignated {
+		isOwner, oerr := s.store.ProfileIsOwner(ctx, scope.ProfileID)
+		if oerr != nil {
+			return oerr
+		}
+		if !isOwner {
+			s.recordAdminAttempt(ctx, attemptKey, now, false)
+			s.auditAdmin(ctx, scope, now, store.ActivityAdminLoginDenied)
+			NoteRefusal(ctx, refusalOperationAdminSession, RefusalAdminPasswordRejected, true)
+			return ErrAdminPassword
+		}
+	}
+	// The KDF runs inside the process-wide bound, and the attempt is counted
+	// before it runs, so parallel guesses cannot outrun the lane.
+	err = CheckAdminPassword(ctx, s.store, AdminPasswordAttempt{
+		Action: adminAttemptAction,
+		Keys:   []string{attemptKey},
+		At:     now,
+	}, password)
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, ErrAdminLocked):
+		NoteRefusal(ctx, refusalOperationAdminSession, RefusalAdminLocked, true)
+		return ErrAdminLocked
+	case errors.Is(err, ErrAdminBusy):
+		// No slot: refused like a wrong password, not counted.
+		s.auditAdmin(ctx, scope, now, store.ActivityAdminLoginDenied)
+		NoteRefusal(ctx, refusalOperationAdminSession, RefusalAdminLocked, true)
+		return ErrAdminPassword
+	case errors.Is(err, store.ErrAdminPasswordMismatch), errors.Is(err, store.ErrNoAdminPassword):
+		// Already counted when the attempt was reserved.
+		s.auditAdmin(ctx, scope, now, store.ActivityAdminLoginDenied)
+		NoteRefusal(ctx, refusalOperationAdminSession, RefusalAdminPasswordRejected, true)
+		return ErrAdminPassword
+	}
+	return err
+}
+
+// ErrNotManager means the caller's Device is not a Manager.
+var ErrNotManager = errors.New("a manager device is required")
+
+// ChangeSignInSecurityMode switches the server between Home and Strict sign-in
+// security (ADR-0007, CORE-1110). It needs a Manager Device and the admin
+// password in the same request. A wrong or missing password is refused,
+// throttled and audited exactly like an admin re-auth on the same Profile
+// lane. A change is audited with the old and new mode, never the password, and
+// the replaced mode is returned.
+func (s *Service) ChangeSignInSecurityMode(ctx context.Context, scope Scope, mode store.SignInSecurityMode, password string) (store.SignInSecurityMode, error) {
+	if scope.SessionID == "" {
+		return "", errors.New("session is required")
+	}
+	if mode == "" {
+		return "", store.ValidationError("securityMode must be home or strict")
+	}
+	mode, err := store.ParseSignInSecurityMode(string(mode))
+	if err != nil {
+		return "", err
+	}
+	if scope.DeviceRole != store.DeviceRoleManager {
+		return "", ErrNotManager
+	}
+	now := s.now()
+	attemptKey := adminAttemptKey(scope)
+	lockedUntil, err := s.store.AuthBackoffUntil(ctx, adminAttemptAction, attemptKey, now, adminBackoff)
+	if err != nil {
+		return "", err
+	}
+	if now.Before(lockedUntil) {
+		NoteRefusal(ctx, refusalOperationAdminSession, RefusalAdminLocked, true)
+		return "", ErrAdminLocked
+	}
+	if err := s.verifyAdminReauth(ctx, scope, password, attemptKey, now); err != nil {
+		return "", err
+	}
+	if s.beforeModeWrite != nil {
+		s.beforeModeWrite()
+	}
+	// As in BeginAdminSession, the owner and Manager checks may be stale
+	// after the KDF, so the store re-checks them in the write's transaction
+	// and a lost race is denied like a non-owner.
+	old, changed, err := s.store.SetSignInSecurityModeAsOwner(ctx, scope.SessionID, scope.ProfileID, mode, now)
+	if err != nil {
+		return "", err
+	}
+	if !changed {
+		// The failure was counted when the attempt was reserved.
+		s.auditAdmin(ctx, scope, now, store.ActivityAdminLoginDenied)
+		NoteRefusal(ctx, refusalOperationAdminSession, RefusalAdminPasswordRejected, true)
+		return "", ErrAdminPassword
+	}
+	s.recordAdminAttempt(ctx, attemptKey, now, true)
+	_ = s.store.AppendActivity(ctx, store.ActivityEntry{
+		OccurredAt: now.UTC(),
+		Action:     store.ActivitySignInSecurityMode,
+		SessionID:  scope.SessionID,
+		DeviceID:   scope.DeviceID,
+		ProfileID:  scope.ProfileID,
+		TargetType: "signin_security_mode",
+		TargetID:   string(old) + "->" + string(mode),
+	})
+	return old, nil
 }
 
 func (s *Service) auditAdmin(ctx context.Context, scope Scope, now time.Time, action string) {

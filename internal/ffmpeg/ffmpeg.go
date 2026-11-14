@@ -24,6 +24,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 )
 
 //go:embed ffmpeg.pin
@@ -1781,33 +1783,153 @@ func (r Rendition) burnInArgs(burnIndex int) []string {
 	return out
 }
 
+// hlsStderrTailBytes bounds the stderr an HLS process keeps for its exit
+// diagnostic. The encoders run at -v error, so a few KB holds the last errors
+// without letting a chatty failure grow server memory.
+const hlsStderrTailBytes = 4 << 10
+
+// hlsStderrWaitDelay bounds how long Wait lets a stray descendant holding the
+// stderr pipe delay the reap once the leader has exited.
+const hlsStderrWaitDelay = time.Second
+
 // HLSProcess is a running HLS transcode owned by its caller.
 type HLSProcess struct {
 	cmd     *exec.Cmd
 	wait    sync.Once
 	kill    sync.Once
 	waitErr error
+	// stopRequested records that the owner asked for this exit (Stop or context
+	// cancellation), so a supervisor can tell an expected kill from a crash.
+	stopRequested atomic.Bool
+	stderr        lockedTail
+	// progress parses the -progress stream on stdout when the argv asked for
+	// one; progressedAt is the last advance of the encoder's output time as an
+	// offset from started, 0 until the first advance. The offset keeps the
+	// monotonic clock reading, so a wall-clock jump cannot fake a stall.
+	progress        progressWriter
+	started         time.Time
+	progressedAt    atomic.Int64
+	reportsProgress bool
+}
+
+// hlsProgressLineBytes bounds a partial -progress line kept between writes;
+// real lines are a few dozen bytes, so anything longer is discarded.
+const hlsProgressLineBytes = 4 << 10
+
+// progressWriter consumes ffmpeg's -progress key=value stream and reports each
+// increase of out_time_us. Anything else in the stream is ignored.
+type progressWriter struct {
+	mu      sync.Mutex
+	line    []byte
+	lastOut int64
+	advance func()
+}
+
+func (w *progressWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for _, b := range p {
+		if b != '\n' {
+			if len(w.line) < hlsProgressLineBytes {
+				w.line = append(w.line, b)
+			}
+			continue
+		}
+		w.parseLine(string(w.line))
+		w.line = w.line[:0]
+	}
+	return len(p), nil
+}
+
+func (w *progressWriter) parseLine(line string) {
+	value, ok := strings.CutPrefix(strings.TrimSpace(line), "out_time_us=")
+	if !ok {
+		return
+	}
+	out, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || out <= w.lastOut {
+		return // N/A before the first frame, or no forward motion
+	}
+	w.lastOut = out
+	if w.advance != nil {
+		w.advance()
+	}
+}
+
+// requestsProgress reports whether argv asks ffmpeg to write its -progress
+// stream to stdout, the stream ProgressedAt is computed from.
+func requestsProgress(args []string) bool {
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "-progress" && args[i+1] == "pipe:1" {
+			return true
+		}
+	}
+	return false
+}
+
+// lockedTail is a goroutine-safe tailBuffer: exec's copy goroutine writes
+// while a supervisor may read the tail.
+type lockedTail struct {
+	mu   sync.Mutex
+	tail tailBuffer
+}
+
+func (l *lockedTail) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.tail.Write(p)
+}
+
+func (l *lockedTail) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.tail.String()
 }
 
 func newHLSProcess(cmd *exec.Cmd) *HLSProcess {
-	return &HLSProcess{cmd: cmd}
+	p := &HLSProcess{cmd: cmd}
+	p.stderr.tail.limit = hlsStderrTailBytes
+	return p
 }
 
 // startHLSProcess is the single lifecycle boundary for every long-running HLS
 // process. Context cancellation and Stop share one process-group kill path;
-// concurrent Wait calls share exactly one exec.Cmd.Wait call.
+// concurrent Wait calls share exactly one exec.Cmd.Wait call. Unless the
+// caller already routed stderr, its bounded tail is kept for StderrTail.
 func startHLSProcess(cmd *exec.Cmd) (*HLSProcess, error) {
 	applySysProcAttr(cmd)
 	configureProcessGroup(cmd)
 	p := newHLSProcess(cmd)
 	cmd.Cancel = func() error {
+		p.stopRequested.Store(true)
 		p.killTree()
 		return nil
 	}
+	if cmd.Stderr == nil {
+		cmd.Stderr = &p.stderr
+		cmd.WaitDelay = hlsStderrWaitDelay
+	}
+	reportsProgress := cmd.Stdout == nil && requestsProgress(cmd.Args)
+	if reportsProgress {
+		p.progress.advance = func() { p.progressedAt.Store(int64(time.Since(p.started))) }
+		cmd.Stdout = &p.progress
+		cmd.WaitDelay = hlsStderrWaitDelay
+	}
+	p.started = time.Now()
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
+	p.reportsProgress = reportsProgress
 	return p, nil
+}
+
+// StartHLSCommand starts an already-built command under the same HLS process
+// lifecycle the Runner's starters use; cmd must come from exec.CommandContext.
+// It is the seam for a Transcoder that
+// builds its own command (test fakes standing in for ffmpeg); production
+// starters build the hardened ffmpeg command themselves.
+func StartHLSCommand(cmd *exec.Cmd) (*HLSProcess, error) {
+	return startHLSProcess(cmd)
 }
 
 func (p *HLSProcess) killTree() {
@@ -1838,8 +1960,50 @@ func (p *HLSProcess) Stop() {
 	if p == nil || p.cmd == nil || p.cmd.Process == nil {
 		return
 	}
+	p.stopRequested.Store(true)
 	p.killTree()
 	_ = p.Wait()
+}
+
+// Kill terminates the process tree without marking the exit as requested, so
+// a supervisor that kills a wedged encoder still sees a failed run. It does not
+// reap; the owner's Wait does.
+func (p *HLSProcess) Kill() {
+	if p == nil || p.cmd == nil || p.cmd.Process == nil {
+		return
+	}
+	p.killTree()
+}
+
+// ReportsProgress reports whether the process writes ffmpeg's -progress stream,
+// which is what makes ProgressedAt meaningful.
+func (p *HLSProcess) ReportsProgress() bool {
+	return p != nil && p.reportsProgress
+}
+
+// ProgressedAt returns when the encoder's output time last advanced, or its
+// start time before the first advance. It only moves when ReportsProgress.
+func (p *HLSProcess) ProgressedAt() time.Time {
+	if p == nil {
+		return time.Time{}
+	}
+	return p.started.Add(time.Duration(p.progressedAt.Load()))
+}
+
+// StopRequested reports whether the owner asked this process to exit (Stop or
+// context cancellation). An exit without it is the encoder's own: end of input
+// when Wait returns nil, a crash or an outside kill otherwise.
+func (p *HLSProcess) StopRequested() bool {
+	return p != nil && p.stopRequested.Load()
+}
+
+// StderrTail returns the last few KB the process wrote to stderr. It is
+// complete once Wait has returned.
+func (p *HLSProcess) StderrTail() string {
+	if p == nil {
+		return ""
+	}
+	return strings.TrimSpace(p.stderr.String())
 }
 
 // StartHLS launches an H.264/AAC HLS transcode of src into dir, writing
@@ -1893,10 +2057,18 @@ func (r *Runner) startHLS(ctx context.Context, src, dir string, rendition Rendit
 	return process, nil
 }
 
+// hlsProgressArgs asks ffmpeg for its machine-readable progress stream on
+// stdout, which the HLS process turns into ProgressedAt so a supervisor can
+// tell a hung encoder from a slow one.
+func hlsProgressArgs() []string {
+	return []string{"-progress", "pipe:1"}
+}
+
 func hlsArgs(src, dir string, rendition Rendition) []string {
 	args := []string{
 		"-v", "error",
 	}
+	args = append(args, hlsProgressArgs()...)
 	args = append(args, rendition.inputArgs()...)
 	args = append(args, inputProtocolArgs()...)
 	args = append(args,
@@ -1965,8 +2137,9 @@ func (r *Runner) StartHLSSegments(ctx context.Context, src, dir string, startSeg
 	offset := startSegment * segmentSeconds
 	args := []string{
 		"-v", "error",
-		"-ss", strconv.Itoa(offset),
 	}
+	args = append(args, hlsProgressArgs()...)
+	args = append(args, "-ss", strconv.Itoa(offset))
 	args = append(args, rendition.inputArgs()...)
 	args = append(args, inputProtocolArgs()...)
 	args = append(args,
@@ -2052,7 +2225,9 @@ func parseProbe(data []byte, path string) (Probe, error) {
 	for _, stream := range doc.Streams {
 		switch stream.CodecType {
 		case "video":
-			if probe.VideoCodec == "" {
+			// Embedded cover art (attached_pic) is an mjpeg/png "video" stream;
+			// it never makes a track a video (CORE-1143).
+			if probe.VideoCodec == "" && stream.Disposition["attached_pic"] != 1 {
 				probe.VideoCodec = stream.CodecName
 				probe.HasVideo = true
 				probe.VideoWidth = stream.Width

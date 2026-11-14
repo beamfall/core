@@ -1,7 +1,6 @@
-import { Plug } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
-  DataTable,
   EmptyState,
   ErrorState,
   Fieldset,
@@ -19,7 +18,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import { TableCell, TableRow } from "@/components/ui/table";
+import { Advanced, useShowAdvanced } from "@/lib/advancedSettings";
 import { graphql } from "@/lib/api";
 import { displayString } from "@/lib/display";
 import {
@@ -29,7 +28,6 @@ import {
   type PluginActivationInfo,
   type PluginConfigFieldInfo,
   type PluginPermissionInfo,
-  type PluginScraperInfo,
   type PluginStatusInfo,
   setPluginActive,
   setPluginConfig,
@@ -38,6 +36,8 @@ import {
   validateScraperCredential,
 } from "@/lib/graphql";
 import { useDisplayLocale, useT } from "@/lib/i18n";
+import { groupProviderKeys, keyNeeded, type ProviderKey } from "@/lib/providerKeys";
+import { cn } from "@/lib/utils";
 import type { StringKey } from "@/strings";
 import { ConfirmButton } from "../ConfirmButton";
 import { Section } from "../Section";
@@ -130,9 +130,15 @@ function provenanceChip(provenance: string, t: ReturnType<typeof useT>): ReactNo
   );
 }
 
-function trustBadge(trustState: string, t: ReturnType<typeof useT>): ReactNode {
+// A Trusted plugin's badge is Advanced detail; a warning (unsigned, tampered,
+// revoked) always shows (CORE-1117).
+function trustBadge(
+  trustState: string,
+  t: ReturnType<typeof useT>,
+  showAdvanced: boolean,
+): ReactNode {
   if (trustState === "Trusted") {
-    return <StatusChip tone="green">{t("pluginTrustTrusted")}</StatusChip>;
+    return showAdvanced ? <StatusChip tone="green">{t("pluginTrustTrusted")}</StatusChip> : null;
   }
   if (trustState === "Unsigned") {
     return <StatusChip tone="neutral">{t("pluginTrustUnsigned")}</StatusChip>;
@@ -146,14 +152,15 @@ function trustBadge(trustState: string, t: ReturnType<typeof useT>): ReactNode {
       <summary className="cursor-pointer list-none">
         <StatusChip tone="red">{t("pluginTrustVerificationFailed")}</StatusChip>
       </summary>
-      <span className="mt-1 block text-xs text-[var(--red-500)]">{t(detail)}</span>
+      <span className="mt-1 block text-xs text-[var(--state-danger)]">{t(detail)}</span>
     </details>
   );
 }
 
-// Plugins (ADR-0013 / ADR-0003): the installed plugins with their activation
-// state. Activation rides setPluginActive, which returns the full config — we
-// fold the result back in so the toggle reflects the server truth.
+// Plugins (ADR-0013 / ADR-0003, CORE-1115): one compact card per installed
+// plugin. The header carries activation and standing; provider keys (scraper
+// credentials grouped by AuthRef) sit directly under it so a missing key is
+// never buried; everything else lives behind a Details toggle.
 export function Plugins() {
   const t = useT();
   const displayLocale = useDisplayLocale();
@@ -161,8 +168,6 @@ export function Plugins() {
   const { data, loading, failed, refresh, replace } = useAsync((signal) =>
     fetchConsoleConfigWithStanding(signal, previousPlugins.current),
   );
-  const [credentialInputs, setCredentialInputs] = useState<Record<string, string>>({});
-  const [pendingCredential, setPendingCredential] = useState("");
   const [actionFailed, setActionFailed] = useState(false);
   const plugins = data?.plugins ?? [];
   useEffect(() => {
@@ -170,26 +175,6 @@ export function Plugins() {
   }, [plugins]);
   const pluginStandingUnavailable = data?.pluginStandingUnavailable ?? false;
   const hasUnrecognizedTrust = plugins.some((plugin) => plugin.trustState === "Unrecognized");
-  const scrapers = useMemo(
-    () =>
-      plugins.flatMap((plugin) =>
-        (plugin.scrapers ?? []).map((scraper) => ({
-          ...scraper,
-          pluginName: displayString(plugin.displayName, displayLocale),
-        })),
-      ),
-    [displayLocale, plugins],
-  );
-  const credentialRefs = useMemo(() => {
-    const grouped = new Map<string, PluginScraperInfo[]>();
-    for (const scraper of scrapers) {
-      if (!scraper.authRef) continue;
-      const rows = grouped.get(scraper.authRef) ?? [];
-      rows.push(scraper);
-      grouped.set(scraper.authRef, rows);
-    }
-    return [...grouped.entries()];
-  }, [scrapers]);
 
   async function publishMutation(
     mutation: () => Promise<Awaited<ReturnType<typeof fetchConsoleConfig>>>,
@@ -209,36 +194,15 @@ export function Plugins() {
     await publishMutation(() => uninstallPluginData(pluginID));
   }
 
-  async function saveCredential(authRef: string) {
-    const secret = credentialInputs[authRef] ?? "";
-    if (!secret.trim()) return;
-    await credentialAction(authRef, async () => {
-      await setScraperCredential(authRef, secret);
-      setCredentialInputs((current) => ({ ...current, [authRef]: "" }));
-    });
-  }
-
-  async function validateCredential(authRef: string) {
-    await credentialAction(authRef, () => validateScraperCredential(authRef));
-  }
-
-  async function disableCredential(authRef: string) {
-    await credentialAction(authRef, async () => {
-      await disableScraperCredential(authRef);
-      setCredentialInputs((current) => ({ ...current, [authRef]: "" }));
-    });
-  }
-
-  async function credentialAction(authRef: string, action: () => Promise<unknown>) {
-    setPendingCredential(authRef);
+  async function credentialAction(action: () => Promise<unknown>): Promise<boolean> {
     setActionFailed(false);
     try {
       await action();
       await refresh();
+      return true;
     } catch {
       setActionFailed(true);
-    } finally {
-      setPendingCredential("");
+      return false;
     }
   }
 
@@ -252,18 +216,20 @@ export function Plugins() {
 
   return (
     <Section heading="consoleConfigPlugins">
-      {loading ? (
+      {loading && !data ? (
+        // Only the first load shows a skeleton. A later refresh keeps the cards
+        // mounted, so it cannot discard a typed key or an unsaved config draft.
         <Skeleton className="h-32 w-full" />
       ) : failed ? (
         <ErrorState message="consoleConfigUnavailable" />
       ) : plugins.length === 0 ? (
-        <EmptyState message="none" icon={Plug} />
+        <EmptyState message="none" />
       ) : (
         <>
           {pluginStandingUnavailable && (
             <div
               role="alert"
-              className="rounded-md border border-[var(--amber-500)]/45 bg-[var(--amber-500)]/10 px-3 py-2 text-sm"
+              className="rounded-xl border border-[var(--state-warning)]/45 bg-[var(--state-warning)]/10 px-3 py-2 text-sm"
             >
               {t("pluginTrustUnavailable")}
             </div>
@@ -271,163 +237,29 @@ export function Plugins() {
           {hasUnrecognizedTrust && (
             <div
               role="status"
-              className="rounded-md border border-[var(--amber-500)]/45 bg-[var(--amber-500)]/10 px-3 py-2 text-sm"
+              className="rounded-xl border border-[var(--state-warning)]/45 bg-[var(--state-warning)]/10 px-3 py-2 text-sm"
             >
               {t("pluginTrustRefreshServer")}
             </div>
           )}
-          <div className="console-card console-card-pad space-y-3">
-            {plugins.map((p) => {
-              const builtIn = BUILT_IN_PLUGIN_IDS.has(p.id);
-              return (
-                <div key={p.id} className="console-control-row">
-                  <div className="min-w-0 flex flex-wrap items-center gap-2">
-                    <span className="console-control-label font-medium">
-                      {displayString(p.displayName, displayLocale)}
-                    </span>
-                    {provenanceChip(p.provenance, t)}
-                    {trustBadge(p.trustState, t)}
-                    {p.active ? (
-                      <StatusChip tone="green">{t("consoleConfigActive")}</StatusChip>
-                    ) : (
-                      <StatusChip tone="neutral">{t("consoleConfigInactive")}</StatusChip>
-                    )}
-                  </div>
-                  <div
-                    className="flex shrink-0 items-center gap-2"
-                    title={builtIn ? "Built-in plugins cannot be disabled." : undefined}
-                  >
-                    <Switch
-                      checked={p.active}
-                      disabled={builtIn}
-                      onCheckedChange={builtIn ? undefined : (c) => void toggle(p.id, c)}
-                      aria-label={displayString(p.displayName, displayLocale)}
-                    />
-                  </div>
-                </div>
-              );
-            })}
+          <div className="grid gap-3">
+            {plugins.map((p) => (
+              <PluginCard
+                key={p.id}
+                plugin={p}
+                displayLocale={displayLocale}
+                onToggle={(active) => toggle(p.id, active)}
+                onCredential={credentialAction}
+                onSaveConfig={saveConfig}
+                onRunAction={runAction}
+                onUninstall={() => uninstall(p.id)}
+              />
+            ))}
           </div>
         </>
       )}
-      {!loading &&
-        !failed &&
-        plugins.map((p) => (
-          <PluginDetail
-            key={`detail-${p.id}`}
-            plugin={p}
-            displayLocale={displayLocale}
-            onSaveConfig={saveConfig}
-            onRunAction={runAction}
-            onDeactivate={() => toggle(p.id, false)}
-            onUninstall={() => uninstall(p.id)}
-          />
-        ))}
-      {!loading && !failed && scrapers.length > 0 && (
-        <DataTable
-          columns={[
-            { key: "plugin", label: t("consoleScraperPlugin") },
-            { key: "endpoint", label: t("consoleScraperEndpoint") },
-            { key: "credential", label: t("consoleScraperCredential") },
-            { key: "state", label: t("consoleScraperState") },
-          ]}
-        >
-          {scrapers.map((scraper) => (
-            <TableRow key={`${scraper.pluginID}:${scraper.scraperID}`}>
-              <TableCell className="font-medium">{scraper.pluginName}</TableCell>
-              <TableCell>
-                <div className="grid gap-1">
-                  <span>{scraper.displayName || scraper.scraperID}</span>
-                  <span className="font-mono text-xs text-muted-foreground">
-                    {scraper.endpoint}
-                  </span>
-                </div>
-              </TableCell>
-              <TableCell>
-                {scraper.credentialRequired ? (
-                  <div className="grid gap-1 text-xs">
-                    <span>
-                      {t("consoleScraperAuthRef")}: {scraper.authRef}
-                    </span>
-                    <span className="text-muted-foreground">
-                      {t("consoleScraperAuthStyle")}: {scraper.authStyle}
-                    </span>
-                  </div>
-                ) : (
-                  t("consoleScraperNotRequired")
-                )}
-              </TableCell>
-              <TableCell>{credentialStatus(scraper, t)}</TableCell>
-            </TableRow>
-          ))}
-        </DataTable>
-      )}
-      {!loading && !failed && credentialRefs.length > 0 && (
-        <DataTable
-          columns={[
-            { key: "authRef", label: t("consoleScraperAuthRef") },
-            { key: "scope", label: t("consoleScraperScope") },
-            { key: "secret", label: t("consoleScraperCredential") },
-            { key: "actions", label: "", numeric: true },
-          ]}
-        >
-          {credentialRefs.map(([authRef, rows]) => {
-            const pending = pendingCredential === authRef;
-            return (
-              <TableRow key={authRef}>
-                <TableCell className="font-mono text-xs">{authRef}</TableCell>
-                <TableCell>{rows.map((row) => row.scraperID).join(", ")}</TableCell>
-                <TableCell>
-                  <Input
-                    type="password"
-                    value={credentialInputs[authRef] ?? ""}
-                    placeholder={t("consoleScraperSecret")}
-                    aria-label={`${t("consoleScraperSecret")} ${authRef}`}
-                    onChange={(event) =>
-                      setCredentialInputs((current) => ({
-                        ...current,
-                        [authRef]: event.target.value,
-                      }))
-                    }
-                  />
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex flex-wrap justify-end gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={pending || !(credentialInputs[authRef] ?? "").trim()}
-                      onClick={() => void saveCredential(authRef)}
-                    >
-                      {t("consoleScraperSave")}
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={pending}
-                      onClick={() => void validateCredential(authRef)}
-                    >
-                      {t("consoleScraperValidate")}
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={pending}
-                      onClick={() => void disableCredential(authRef)}
-                    >
-                      {t("consoleScraperDisable")}
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </DataTable>
-      )}
       {actionFailed && (
-        <p role="status" className="text-sm text-[var(--red-500)]">
+        <p role="status" className="text-sm text-[var(--state-danger)]">
           {t("consoleScraperActionFailed")}
         </p>
       )}
@@ -435,39 +267,244 @@ export function Plugins() {
   );
 }
 
-function credentialStatus(scraper: PluginScraperInfo, t: ReturnType<typeof useT>) {
-  const labels: Record<string, string> = {
-    configured: t("consoleScraperConfigured"),
-    missing: t("consoleScraperMissing"),
-    unavailable: t("consoleScraperUnavailable"),
-    invalid: t("consoleScraperInvalid"),
-    unreadable: t("consoleScraperUnreadable"),
-    "not-required": t("consoleScraperNotRequired"),
-  };
-  const tones: Record<string, "neutral" | "green" | "amber" | "red"> = {
-    configured: "green",
-    missing: "amber",
-    unavailable: "neutral",
-    invalid: "red",
-    unreadable: "red",
-    "not-required": "neutral",
-  };
-  const status = scraper.credentialStatus || "unavailable";
-  return <StatusChip tone={tones[status] ?? "neutral"}>{labels[status] ?? status}</StatusChip>;
+const KEY_STATUS: Record<string, { label: StringKey; tone: StatusTone }> = {
+  configured: { label: "consoleScraperConfigured", tone: "green" },
+  missing: { label: "consoleScraperMissing", tone: "amber" },
+  unavailable: { label: "consoleScraperUnavailable", tone: "neutral" },
+  invalid: { label: "consoleScraperInvalid", tone: "red" },
+  unreadable: { label: "consoleScraperUnreadable", tone: "red" },
+  "not-required": { label: "consoleScraperNotRequired", tone: "neutral" },
+};
+
+function keyStatusChip(status: string, t: ReturnType<typeof useT>) {
+  const entry = KEY_STATUS[status];
+  return <StatusChip tone={entry?.tone ?? "neutral"}>{entry ? t(entry.label) : status}</StatusChip>;
+}
+
+const CARD =
+  "rounded-[var(--radius-surface)] border border-[var(--border-subtle)] bg-[var(--bg-surface)]";
+const KEY_INPUT = "h-10 rounded-xl";
+
+function PluginCard({
+  plugin,
+  displayLocale,
+  onToggle,
+  onCredential,
+  onSaveConfig,
+  onRunAction,
+  onUninstall,
+}: {
+  plugin: PluginWithStanding;
+  displayLocale: string;
+  onToggle: (active: boolean) => Promise<void>;
+  onCredential: (action: () => Promise<unknown>) => Promise<boolean>;
+  onSaveConfig: (
+    pluginID: string,
+    values: Record<string, string>,
+    clear: string[],
+  ) => Promise<void>;
+  onRunAction: (pluginID: string, actionID: string) => Promise<void>;
+  onUninstall: () => Promise<void>;
+}) {
+  const t = useT();
+  const showAdvanced = useShowAdvanced();
+  const [expanded, setExpanded] = useState(false);
+  const name = displayString(plugin.displayName, displayLocale);
+  const builtIn = BUILT_IN_PLUGIN_IDS.has(plugin.id);
+  const keys = useMemo(() => groupProviderKeys(plugin.scrapers ?? []), [plugin.scrapers]);
+  const missingKey = keys.some(keyNeeded);
+  const detailsID = `plugin-details-${plugin.id}`;
+  const provenance = showAdvanced ? provenanceChip(plugin.provenance, t) : null;
+  const trust = trustBadge(plugin.trustState, t, showAdvanced);
+  // Normal Details hold the control policy, config and status; with none of
+  // those the toggle would open an empty panel, so it is left out.
+  const hasDetails =
+    showAdvanced ||
+    Boolean(plugin.controlPolicy) ||
+    (plugin.config ?? []).length > 0 ||
+    (plugin.status ?? []).length > 0;
+
+  return (
+    <article className={CARD} aria-label={name}>
+      <div className="console-control-row console-plugin-head">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="min-w-0 space-y-1">
+            <div className="break-words text-[15px] font-semibold">{name}</div>
+            {(provenance || trust || missingKey) && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {provenance}
+                {trust}
+                {missingKey && <StatusChip tone="amber">{t("pluginKeyNeeded")}</StatusChip>}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {hasDetails && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              aria-expanded={expanded}
+              aria-controls={detailsID}
+              aria-label={t("pluginDetailsToggle", { name })}
+              onClick={() => setExpanded((open) => !open)}
+            >
+              {t("pluginDetails")}
+              <ChevronDown
+                aria-hidden
+                className={cn("size-4 transition-transform", expanded && "rotate-180")}
+              />
+            </Button>
+          )}
+          <div title={builtIn ? "Built-in plugins cannot be disabled." : undefined}>
+            <Switch
+              checked={plugin.active}
+              disabled={builtIn}
+              onCheckedChange={builtIn ? undefined : (c) => void onToggle(c)}
+              aria-label={name}
+            />
+          </div>
+        </div>
+      </div>
+
+      {keys.length > 0 && (
+        <div className="border-t border-[var(--border-subtle)] px-4 pt-3">
+          <h3 className="m-0 text-sm font-semibold">{t("pluginKeysHeading")}</h3>
+          {missingKey && (
+            <p className="m-0 mt-1 text-dense leading-snug text-muted-foreground">
+              {t("pluginKeysLead")}
+            </p>
+          )}
+          <div className="divide-y divide-[var(--border-subtle)]">
+            {keys.map((key) => (
+              <ProviderKeyRow key={key.authRef} providerKey={key} onCredential={onCredential} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Collapsed Details stay mounted and hidden, so closing them keeps an
+          unsaved config draft instead of restoring the saved values. */}
+      <div
+        id={detailsID}
+        hidden={!expanded}
+        className="space-y-4 border-t border-[var(--border-subtle)] px-4 py-4"
+      >
+        {plugin.controlPolicy && (
+          <p className="m-0 text-[12px] text-muted-foreground">
+            {t("pluginControlPolicy", { policy: plugin.controlPolicy })}
+          </p>
+        )}
+        <PluginDetail
+          plugin={plugin}
+          displayLocale={displayLocale}
+          onSaveConfig={onSaveConfig}
+          onRunAction={onRunAction}
+        />
+        <Advanced>
+          <PluginLifecycle
+            plugin={plugin}
+            displayLocale={displayLocale}
+            onUninstall={onUninstall}
+          />
+        </Advanced>
+      </div>
+    </article>
+  );
+}
+
+// ProviderKeyRow: one AuthRef-scoped credential. The secret is write-only —
+// the field never shows a stored value, only the server-reported status.
+function ProviderKeyRow({
+  providerKey,
+  onCredential,
+}: {
+  providerKey: ProviderKey;
+  onCredential: (action: () => Promise<unknown>) => Promise<boolean>;
+}) {
+  const t = useT();
+  const [secret, setSecret] = useState("");
+  const [pending, setPending] = useState(false);
+  const { authRef, label, hosts, status } = providerKey;
+  const configured = status === "configured";
+
+  async function run(action: () => Promise<unknown>, clear: boolean) {
+    setPending(true);
+    const ok = await onCredential(action);
+    if (ok && clear) setSecret("");
+    setPending(false);
+  }
+
+  return (
+    <div className="py-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-sm font-medium">{label}</div>
+          <div className="text-xs text-muted-foreground">
+            {t("pluginKeySentTo", { hosts: hosts.join(", ") })}
+          </div>
+        </div>
+        {keyStatusChip(status, t)}
+      </div>
+      <form
+        className="mt-2.5 flex flex-wrap items-center gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (secret.trim()) void run(() => setScraperCredential(authRef, secret), true);
+        }}
+      >
+        <Input
+          type="password"
+          autoComplete="off"
+          value={secret}
+          className={cn(KEY_INPUT, "min-w-0 flex-1 basis-56")}
+          placeholder={t(configured ? "pluginKeyReplacePlaceholder" : "pluginKeyPlaceholder")}
+          aria-label={t("pluginKeyField", { provider: label })}
+          onChange={(event) => setSecret(event.target.value)}
+        />
+        <Button type="submit" size="sm" className="px-4" disabled={pending || !secret.trim()}>
+          {t("consoleScraperSave")}
+        </Button>
+        {status !== "missing" && (
+          <>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={pending}
+              onClick={() => void run(() => validateScraperCredential(authRef), false)}
+            >
+              {t("consoleScraperValidate")}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={pending}
+              onClick={() => void run(() => disableScraperCredential(authRef), true)}
+            >
+              {t("consoleScraperDisable")}
+            </Button>
+          </>
+        )}
+      </form>
+    </div>
+  );
 }
 
 // PluginDetail (WEB-5I / ADR-0003 §Plugin, ADR-0013 §5): the operator surface
-// beyond bare activation. Four blocks, each driven by the consoleConfig
-// substrate: editable typed (non-secret) config saved through setPluginConfig,
-// the Core-owned permission inventory, runtime/declaration status rows, and the
-// server-declared Action Descriptors rendered as trusted, risk-tinted controls.
+// beyond bare activation, shown when a card's Details are open. Four blocks,
+// each driven by the consoleConfig substrate: editable typed (non-secret)
+// config saved through setPluginConfig, the Core-owned permission inventory,
+// runtime/declaration status rows, and the server-declared Action Descriptors
+// rendered as trusted, risk-tinted controls. Declaration-free plugins render
+// only the lifecycle block (in PluginCard).
 function PluginDetail({
   plugin,
   displayLocale,
   onSaveConfig,
   onRunAction,
-  onDeactivate,
-  onUninstall,
 }: {
   plugin: PluginActivationInfo;
   displayLocale: string;
@@ -477,122 +514,96 @@ function PluginDetail({
     clear: string[],
   ) => Promise<void>;
   onRunAction: (pluginID: string, actionID: string) => Promise<void>;
-  onDeactivate: () => Promise<void>;
-  onUninstall: () => Promise<void>;
 }) {
   const t = useT();
+  const showAdvanced = useShowAdvanced();
   const config = plugin.config ?? [];
   const permissions = plugin.permissions ?? [];
   const status = plugin.status ?? [];
   const actions = plugin.actions ?? [];
 
-  // The Lifecycle fieldset (Deactivate / Uninstall) renders for every plugin —
-  // a plugin can store Entity data without declaring any config/permissions/
-  // status/actions, and that is exactly the data Uninstall purges. The other
-  // four fieldsets render only when the plugin declares them.
   const hasDeclarations =
     config.length > 0 || permissions.length > 0 || status.length > 0 || actions.length > 0;
+  if (!hasDeclarations) return null;
 
-  const name = displayString(plugin.displayName, displayLocale);
-
+  // Normal shows the config and status a plugin declares; the permission
+  // inventory and actions are Advanced, and Advanced also shows empty blocks.
   return (
-    <div className="console-card console-card-pad space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div className="space-y-0.5">
-          <h3 className="text-[14px] font-semibold leading-snug">{name}</h3>
-          {plugin.controlPolicy && (
-            <p className="text-[12px] text-muted-foreground">
-              {t("pluginControlPolicy", { policy: plugin.controlPolicy })}
-            </p>
-          )}
-        </div>
-        {plugin.active ? (
-          <StatusChip tone="green">{t("consoleConfigActive")}</StatusChip>
-        ) : (
-          <StatusChip tone="neutral">{t("consoleConfigInactive")}</StatusChip>
-        )}
-      </div>
-
-      {hasDeclarations && (
-        <>
-          <PluginConfigEditor
-            plugin={plugin}
-            fields={config}
-            displayLocale={displayLocale}
-            onSave={onSaveConfig}
-          />
-
-          <Fieldset title="pluginPermissionsHeading" help="pluginPermissionsLead">
-            {permissions.length === 0 ? (
-              <p className="console-control-help">{t("pluginPermissionsEmpty")}</p>
-            ) : (
-              <div className="space-y-2">
-                {permissions.map((perm) => (
-                  <PermissionRow key={perm.kind} permission={perm} displayLocale={displayLocale} />
-                ))}
-              </div>
-            )}
-          </Fieldset>
-
-          <Fieldset title="pluginStatusHeading">
-            {status.length === 0 ? (
-              <p className="console-control-help">{t("pluginStatusEmpty")}</p>
-            ) : (
-              <div className="space-y-2">
-                {status.map((row) => (
-                  <StatusRow key={row.id} status={row} displayLocale={displayLocale} />
-                ))}
-              </div>
-            )}
-          </Fieldset>
-
-          <Fieldset title="pluginActionsHeading" help="pluginActionsLead">
-            {actions.length === 0 ? (
-              <p className="console-control-help">{t("pluginActionsEmpty")}</p>
-            ) : (
-              <div className="space-y-2">
-                {actions.map((action) => (
-                  <ActionRow
-                    key={action.id}
-                    pluginID={plugin.id}
-                    action={action}
-                    active={plugin.active}
-                    displayLocale={displayLocale}
-                    onRun={onRunAction}
-                  />
-                ))}
-              </div>
-            )}
-          </Fieldset>
-        </>
+    <>
+      {(showAdvanced || config.length > 0) && (
+        <PluginConfigEditor
+          plugin={plugin}
+          fields={config}
+          displayLocale={displayLocale}
+          onSave={onSaveConfig}
+        />
       )}
 
-      <PluginLifecycle
-        plugin={plugin}
-        displayLocale={displayLocale}
-        onDeactivate={onDeactivate}
-        onUninstall={onUninstall}
-      />
-    </div>
+      {showAdvanced && (
+        <Fieldset title="pluginPermissionsHeading" help="pluginPermissionsLead">
+          {permissions.length === 0 ? (
+            <p className="console-control-help">{t("pluginPermissionsEmpty")}</p>
+          ) : (
+            <div className="space-y-2">
+              {permissions.map((perm) => (
+                <PermissionRow key={perm.kind} permission={perm} displayLocale={displayLocale} />
+              ))}
+            </div>
+          )}
+        </Fieldset>
+      )}
+
+      {(showAdvanced || status.length > 0) && (
+        <Fieldset title="pluginStatusHeading">
+          {status.length === 0 ? (
+            <p className="console-control-help">{t("pluginStatusEmpty")}</p>
+          ) : (
+            <div className="space-y-2">
+              {status.map((row) => (
+                <StatusRow key={row.id} status={row} displayLocale={displayLocale} />
+              ))}
+            </div>
+          )}
+        </Fieldset>
+      )}
+
+      {showAdvanced && (
+        <Fieldset title="pluginActionsHeading" help="pluginActionsLead">
+          {actions.length === 0 ? (
+            <p className="console-control-help">{t("pluginActionsEmpty")}</p>
+          ) : (
+            <div className="space-y-2">
+              {actions.map((action) => (
+                <ActionRow
+                  key={action.id}
+                  pluginID={plugin.id}
+                  action={action}
+                  active={plugin.active}
+                  displayLocale={displayLocale}
+                  onRun={onRunAction}
+                />
+              ))}
+            </div>
+          )}
+        </Fieldset>
+      )}
+    </>
   );
 }
 
-// PluginLifecycle (PANEL-8 / ADR-0104): the two distinct lifecycle operations.
-// Deactivate is reversible and preserves stored data (it reuses the activation
-// toggle's path). Uninstall is the explicit, operator-confirmed purge — the
-// only path that permanently removes the plugin's stored Entity data — so it
-// routes through ConfirmButton (HARD invariant #6) and names the irreversibility
-// in the dialog. Deactivate is a no-op when already inactive; Uninstall remains
-// available for inactive plugins because their stored data can still be purged.
+// PluginLifecycle (PANEL-8 / ADR-0104): Uninstall, the explicit,
+// operator-confirmed purge — the only path that permanently removes the
+// plugin's stored Entity data — so it routes through ConfirmButton (HARD
+// invariant #6) and names the irreversibility in the dialog. It remains
+// available for inactive plugins because their stored data can still be
+// purged. Reversible deactivation is the card's switch alone (CORE-1117).
 function PluginLifecycle({
   plugin,
   displayLocale,
-  onDeactivate,
   onUninstall,
 }: {
   plugin: PluginActivationInfo;
   displayLocale: string;
-  onDeactivate: () => Promise<void>;
   onUninstall: () => Promise<void>;
 }) {
   const t = useT();
@@ -612,43 +623,15 @@ function PluginLifecycle({
     }
   }
 
-  async function deactivate() {
-    setBusy(true);
-    setFailed(false);
-    try {
-      await onDeactivate();
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <Fieldset title="pluginLifecycleHeading" help="pluginLifecycleLead">
       <div className="space-y-2">
         <div className="console-control-row">
           <div className="min-w-0">
-            <div className="console-control-label">{t("pluginDeactivate")}</div>
-            <p className="console-control-help">{t("pluginDeactivateHelp")}</p>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <StatusChip tone="neutral">{t("pluginLifecycleReversible")}</StatusChip>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={!plugin.active || busy}
-              onClick={() => void deactivate()}
-            >
-              {t("pluginDeactivate")}
-            </Button>
-          </div>
-        </div>
-        <div className="console-control-row">
-          <div className="min-w-0">
             <div className="console-control-label">{t("pluginUninstall")}</div>
             <p className="console-control-help">{t("pluginUninstallHelp")}</p>
             {failed && (
-              <p role="status" className="text-xs text-[var(--red-500)]">
+              <p role="status" className="text-xs text-[var(--state-danger)]">
                 {t("pluginUninstallFailed")}
               </p>
             )}
@@ -749,12 +732,15 @@ function PluginConfigEditor({
           )}
           <div className="flex items-center justify-end gap-3">
             {saved && (
-              <span role="status" className="text-xs text-[var(--green-500)]">
+              <span
+                role="status"
+                className="text-xs text-[var(--state-success,var(--state-direct))]"
+              >
                 {t("pluginConfigSaved")}
               </span>
             )}
             {failed && (
-              <span role="status" className="text-xs text-[var(--red-500)]">
+              <span role="status" className="text-xs text-[var(--state-danger)]">
                 {t("pluginConfigFailed")}
               </span>
             )}
@@ -837,7 +823,7 @@ function ConfigField({
       <div className="min-w-0">
         <div className="console-control-label">
           {label}
-          {field.required && <span className="ml-1 text-[var(--amber-500)]">*</span>}
+          {field.required && <span className="ml-1 text-[var(--state-warning)]">*</span>}
         </div>
         {help && <p className="console-control-help">{help}</p>}
       </div>

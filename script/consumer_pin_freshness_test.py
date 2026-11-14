@@ -428,6 +428,75 @@ def control_diff_guard(root: Path) -> None:
         )
 
 
+
+def git(repo: Path, *args: str) -> str:
+    completed = subprocess.run(
+        ["git", "-C", str(repo), "-c", "user.name=fixture", "-c", "user.email=fixture@invalid",
+         "-c", "commit.gpgsign=false", *args],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return completed.stdout.strip()
+
+
+def commit_file(repo: Path, rel: str, message: str) -> None:
+    path = repo / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(message + "\n", encoding="utf-8")
+    git(repo, "add", rel)
+    git(repo, "commit", "-q", "-m", message)
+
+
+def control_stale_local_main(root: Path) -> None:
+    """CORE-1299: a local main behind origin/main must not widen the diff.
+
+    The shared checkout's local main lags origin/main because lanes land by PR.
+    A web-only lane cut from origin/main must see only its own change, not the
+    contract-source commits origin/main gained after local main's tip.
+    """
+    repo = root / "producer"
+    (repo / "script").mkdir(parents=True)
+    for name in ("consumer-pin-freshness.py", "sha256-manifest.py", "consumer-pin-obligations.json"):
+        shutil.copy2(CORE / "script" / name, repo / "script" / name)
+    git(repo, "init", "-q", "-b", "main")
+    git(repo, "add", "script")
+    git(repo, "commit", "-q", "-m", "base")
+    # origin/main gains a contract-source commit the stale local main never saw.
+    git(repo, "checkout", "-q", "-b", "upstream")
+    commit_file(repo, "internal/server/landed.go", "landed elsewhere by PR")
+    git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    git(repo, "checkout", "-q", "-b", "lane")
+    commit_file(repo, "internal/web/app/golden.png", "web-only lane change")
+    git(repo, "branch", "-q", "-D", "upstream")
+
+    def check(**extra: str):
+        env = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": str(root), **extra}
+        return subprocess.run(
+            [sys.executable, str(repo / "script" / "consumer-pin-freshness.py")],
+            capture_output=True, text=True, env=env, check=False,
+        )
+
+    default = check()
+    expect(
+        "stale local main: default base is origin/main, web-only lane not triggered",
+        default.returncode == 0 and "not triggered" in default.stdout,
+        default.stdout + default.stderr,
+    )
+    stale = check(BEAMFALL_PIN_FRESHNESS_BASE="main")
+    expect(
+        "stale local main: explicit base=main still sees main's own commits (control)",
+        "not triggered" not in stale.stdout and "producer=" in stale.stdout,
+        stale.stdout + stale.stderr,
+    )
+    git(repo, "update-ref", "-d", "refs/remotes/origin/main")
+    fallback = check()
+    expect(
+        "no origin/main: falls back to local main and says so",
+        "not triggered" not in fallback.stdout and "no origin/main ref" in fallback.stderr,
+        fallback.stdout + fallback.stderr,
+    )
+
 CONTROLS = [
     control_all_current,
     control_corpus_registry_covers_all_files,
@@ -443,6 +512,7 @@ CONTROLS = [
     control_manifest_drives_consumer_name,
     control_declared_owner_probe_cannot_be_masked,
     control_diff_guard,
+    control_stale_local_main,
 ]
 
 

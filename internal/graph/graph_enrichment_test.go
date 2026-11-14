@@ -236,6 +236,22 @@ func TestSearchModeKeywordAndFallback(t *testing.T) {
 		t.Fatalf("items = %#v, want at least one keyword item", resp.Items)
 	}
 
+	// Rows describe themselves for display: Library, class and year (CORE-1191).
+	data, errs = post(t, handler,
+		`{"query":"query S($query:String!){ searchResult(query:$query){ items { id libraryID libraryTitle year mediaClass entityKind } } }","variables":{"query":"Keyworded"}}`,
+		authorizeViewer)
+	if len(errs) != 0 {
+		t.Fatalf("searchResult row detail errors = %#v", errs)
+	}
+	mustUnmarshal(t, data["searchResult"], &resp)
+	if len(resp.Items) == 0 {
+		t.Fatal("row detail query returned no items")
+	}
+	row := resp.Items[0]
+	if row.LibraryID != "library-local" || row.LibraryTitle == "" || row.MediaClass != "video" || row.EntityKind != "" {
+		t.Errorf("row detail = %+v, want library-local with a title and media class video", row)
+	}
+
 	// Explicit semantic with no populated index never falls back to keyword.
 	data, errs = post(t, handler,
 		`{"query":"query S($query:String!,$mode:SearchMode){ searchResult(query:$query,mode:$mode){ mode items { id } } }","variables":{"query":"Keyworded","mode":"semantic"}}`,

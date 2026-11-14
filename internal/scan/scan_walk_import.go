@@ -58,7 +58,7 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 		}
 		parsedFields = parserMediaFields(s.parser, path, parseProbe)
 		if parsedOK {
-			imported.Title = parsed.Title
+			imported.Title = parsedMediaTitle(s.parser, path, parseProbe, parsed.Title)
 			imported.Year = parsed.Year
 		}
 	}
@@ -89,6 +89,9 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 			return err
 		}
 	}
+	if err := s.retryAutoIdentify(path, media.ID, stored.ContentFingerprint, parsed); err != nil {
+		return err
+	}
 	if _, stale := s.backfillStale[media.ID]; stale && s.metadataHydrator != nil && s.prober != nil {
 		if media.Class == store.MediaClassImage {
 			if err := s.hydrateMetadata(media, path, nil); err != nil {
@@ -107,6 +110,29 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 		return err
 	}
 	return s.ctx.Err()
+}
+
+// retryAutoIdentify gives an unchanged file another auto-identify pass when it
+// was never identified: no identification or manual field writes and no row in
+// the Unmatched queue. That is the state a failed attempt leaves (a missing
+// provider credential, a network error), and without this a rescan's fast path
+// would never revisit it. Pinned matches are left alone inside AutoIdentify.
+func (s *scanWalkState) retryAutoIdentify(path string, mediaID store.MediaID, fingerprint string, parsed ParsedMedia) error {
+	if s.identifier == nil || s.libraryPluginID == "" {
+		return nil
+	}
+	curated, err := s.st.MediaHasCuratedFields(s.ctx, mediaID)
+	if err != nil || curated {
+		return err
+	}
+	queued, err := s.st.IsUnmatched(s.ctx, mediaID)
+	if err != nil || queued {
+		return err
+	}
+	if err := s.identifier.AutoIdentify(s.ctx, mediaID, s.libraryPluginID, fingerprint, parsed); err != nil {
+		slog.Warn("scan: auto-identify retry failed", "path", path, "media", string(mediaID), "error", err.Error())
+	}
+	return nil
 }
 
 func (s *scanWalkState) consumeFullTask(task *workerTask) error {
@@ -175,7 +201,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 		}
 		parsedFields = parserMediaFields(s.parser, path, parseProbe)
 		if parsedOK {
-			imported.Title = parsed.Title
+			imported.Title = parsedMediaTitle(s.parser, path, parseProbe, parsed.Title)
 			imported.Year = parsed.Year
 		}
 	}

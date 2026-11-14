@@ -12,7 +12,7 @@ import (
 
 func openSeeded(t *testing.T) *Store {
 	t.Helper()
-	st, err := Open(context.Background(), t.TempDir(), Options{SeedDevelopmentData: true})
+	st, err := Open(context.Background(), migratedDataDir(t), Options{SeedDevelopmentData: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +229,7 @@ func TestDirectorySourceReturnsNoCatalogMedia(t *testing.T) {
 // shuffle from coincidence, which the two-row development seed cannot.
 func openDemo(t *testing.T) *Store {
 	t.Helper()
-	st, err := Open(context.Background(), t.TempDir(), Options{SeedProfile: SeedProfileDemo})
+	st, err := Open(context.Background(), migratedDataDir(t), Options{SeedProfile: SeedProfileDemo})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1032,7 +1032,7 @@ func TestEnrollDeviceRejectsUnknownProfile(t *testing.T) {
 }
 
 func TestClosedStoreReturnsErrClosed(t *testing.T) {
-	st, err := Open(context.Background(), t.TempDir(), Options{SeedDevelopmentData: true})
+	st, err := Open(context.Background(), migratedDataDir(t), Options{SeedDevelopmentData: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1749,7 +1749,7 @@ func TestBootstrapOwnerRollsBackInjectedEnrollFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	device, session := bootstrapEnrollment("first")
-	if _, err := st.BootstrapOwner(ctx, "Owner", device, session); err == nil {
+	if _, err := st.BootstrapOwner(ctx, "Owner", device, session, ""); err == nil {
 		t.Fatal("BootstrapOwner succeeded through an injected session failure")
 	}
 	for _, table := range []string{"profile", "device", "auth_session"} {
@@ -1776,7 +1776,7 @@ func TestBootstrapOwnerRollsBackInjectedEnrollFailure(t *testing.T) {
 		t.Fatalf("FirstRunSetupComplete after restart = (%v, %v), want (false, nil)", complete, err)
 	}
 	device, session = bootstrapEnrollment("retry")
-	profile, err := st.BootstrapOwner(ctx, "Owner", device, session)
+	profile, err := st.BootstrapOwner(ctx, "Owner", device, session, "")
 	if err != nil {
 		t.Fatalf("BootstrapOwner after restart: %v", err)
 	}
@@ -1811,7 +1811,7 @@ func TestBootstrapOwnerReusesPartialOwner(t *testing.T) {
 	open := LibraryFilter{Revealed: true, AllLibraries: true}
 	t.Run("designated owner without device", func(t *testing.T) {
 		ctx := context.Background()
-		st, err := Open(ctx, t.TempDir(), Options{})
+		st, err := Open(ctx, migratedDataDir(t), Options{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1827,7 +1827,7 @@ func TestBootstrapOwnerReusesPartialOwner(t *testing.T) {
 			t.Fatalf("FirstRunSetupComplete with partial owner = (%v, %v), want (false, nil)", complete, err)
 		}
 		device, session := bootstrapEnrollment("one")
-		profile, err := st.BootstrapOwner(ctx, "Alice", device, session)
+		profile, err := st.BootstrapOwner(ctx, "Alice", device, session, "")
 		if err != nil {
 			t.Fatalf("BootstrapOwner: %v", err)
 		}
@@ -1840,7 +1840,7 @@ func TestBootstrapOwnerReusesPartialOwner(t *testing.T) {
 	})
 	t.Run("undesignated adult without device", func(t *testing.T) {
 		ctx := context.Background()
-		st, err := Open(ctx, t.TempDir(), Options{})
+		st, err := Open(ctx, migratedDataDir(t), Options{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1850,7 +1850,7 @@ func TestBootstrapOwnerReusesPartialOwner(t *testing.T) {
 			t.Fatal(err)
 		}
 		device, session := bootstrapEnrollment("one")
-		profile, err := st.BootstrapOwner(ctx, "Owner", device, session)
+		profile, err := st.BootstrapOwner(ctx, "Owner", device, session, "")
 		if err != nil {
 			t.Fatalf("BootstrapOwner: %v", err)
 		}
@@ -1863,14 +1863,14 @@ func TestBootstrapOwnerReusesPartialOwner(t *testing.T) {
 	})
 	t.Run("enrolled devices create a new owner", func(t *testing.T) {
 		ctx := context.Background()
-		st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true})
+		st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true})
 		if err != nil {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = st.Close() })
 		before := countRows(t, st, "profile")
 		device, session := bootstrapEnrollment("one")
-		profile, err := st.BootstrapOwner(ctx, "Fresh Owner", device, session)
+		profile, err := st.BootstrapOwner(ctx, "Fresh Owner", device, session, "")
 		if err != nil {
 			t.Fatalf("BootstrapOwner: %v", err)
 		}

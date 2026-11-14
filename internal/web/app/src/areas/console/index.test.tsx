@@ -1,24 +1,32 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setAdvancedSettings } from "@/lib/advancedSettings";
 import { fetchSetupState } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
 import { CONSOLE_IA_PLACEMENTS, ConsoleArea } from ".";
-import { AdvancedDisclosure } from "./Section";
 
 vi.mock("@/components/chrome/AppShell", () => ({
   AppShell: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 vi.mock("@/lib/register", () => ({ useRegister: vi.fn() }));
 vi.mock("@/lib/session", () => ({ useSession: vi.fn() }));
-vi.mock("@/lib/graphql", () => ({ fetchSetupState: vi.fn() }));
+vi.mock("@/lib/graphql", () => ({
+  fetchSetupState: vi.fn(),
+  fetchLibraries: vi.fn().mockResolvedValue([]),
+  fetchUnmatchedQueue: vi.fn().mockResolvedValue([]),
+  fetchConsoleConfig: vi.fn().mockResolvedValue({ plugins: [] }),
+  fetchWatcherStatus: vi.fn().mockResolvedValue([]),
+}));
 vi.mock("./AdminGate", () => ({
-  AdminGate: ({ children }: { children: ReactNode }) => <>{children}</>,
+  AdminGate: ({ children }: { children: ReactNode | ((lock: () => void) => ReactNode) }) => (
+    <>{typeof children === "function" ? children(() => {}) : children}</>
+  ),
 }));
 
 vi.mock("./sections/SetupChecklist", () => ({
@@ -32,13 +40,20 @@ vi.mock("./sections/Capabilities", () => ({
 }));
 vi.mock("./sections/AccessAdmin", () => ({
   AccessAdmin: () => <div>access-panel</div>,
+  ScheduleAdmin: () => <div>schedule-panel</div>,
 }));
 vi.mock("./sections/Operations", () => ({
-  Operations: () => <div>operations-panel</div>,
+  UpdateAwareness: () => <div>update-awareness-panel</div>,
 }));
 vi.mock("./sections/OperationsControls", () => ({
   OperationsControls: () => <div>operations-controls-panel</div>,
 }));
+vi.mock("./sections/Dashboard", () => ({
+  HostGraphs: () => <div>host-graphs-panel</div>,
+  LiveSessionCount: () => <span>live-count</span>,
+  LiveSessions: () => <div>live-sessions-panel</div>,
+}));
+vi.mock("./sections/PlayHistory", () => ({ PlayHistory: () => <div>play-history-panel</div> }));
 vi.mock("./sections/Health", () => ({ Health: () => <div>health-panel</div> }));
 vi.mock("./sections/PlaybackCache", () => ({
   PlaybackCache: () => <div>playback-cache-panel</div>,
@@ -47,14 +62,10 @@ vi.mock("./sections/RemoteAccess", () => ({
   RemoteAccess: ({ suppressDispatchSurfaces = false }: { suppressDispatchSurfaces?: boolean }) => (
     <div>
       <div>remote-status</div>
-      {!suppressDispatchSurfaces && (
-        <>
-          <div>qbittorrent-panel</div>
-          <div>migration-panel</div>
-        </>
-      )}
+      {!suppressDispatchSurfaces && <div>qbittorrent-panel</div>}
     </div>
   ),
+  MigrationWizard: () => <div>migration-panel</div>,
 }));
 vi.mock("./sections/ApiCredentials", () => ({
   ApiCredentials: () => <div>api-panel</div>,
@@ -115,9 +126,14 @@ beforeEach(() => {
 
 afterEach(() => {
   delete window.beamfallHost;
+  localStorage.clear();
+  setAdvancedSettings(false);
 });
 
 describe("ConsoleArea App Store host firewall", () => {
+  // The full Console, Advanced destinations included, so the firewall is what removes them.
+  beforeEach(() => setAdvancedSettings(true));
+
   it("removes app-store-firewalled routes and dispatch surfaces for iPad App Store hosts", () => {
     setHost("ipad-manager-app-store");
 
@@ -126,7 +142,7 @@ describe("ConsoleArea App Store host firewall", () => {
     expect(screen.getByText("remote-status")).toBeVisible();
     expect(screen.queryByRole("link", { name: "Capabilities" })).toBeNull();
     expect(screen.queryByText("qbittorrent-panel")).toBeNull();
-    expect(screen.queryByText("migration-panel")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Migration" })).toBeNull();
   });
 
   it("keeps the full Console for direct-distribution macOS hosts", () => {
@@ -135,16 +151,16 @@ describe("ConsoleArea App Store host firewall", () => {
     renderConsole("/console/remote");
 
     expect(screen.getByRole("link", { name: "Capabilities" })).toBeVisible();
-    expect(screen.getByText("qbittorrent-panel")).toBeVisible();
-    expect(screen.getByText("migration-panel")).toBeVisible();
+    expect(screen.getByText("qbittorrent-panel")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Migration" })).toBeInTheDocument();
   });
 
   it("keeps the full Console for browser hosts with no native bridge", () => {
     renderConsole("/console/remote");
 
     expect(screen.getByRole("link", { name: "Capabilities" })).toBeVisible();
-    expect(screen.getByText("qbittorrent-panel")).toBeVisible();
-    expect(screen.getByText("migration-panel")).toBeVisible();
+    expect(screen.getByText("qbittorrent-panel")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Migration" })).toBeInTheDocument();
   });
 
   it("does not render the capabilities route for iPad App Store hosts", async () => {
@@ -152,7 +168,7 @@ describe("ConsoleArea App Store host firewall", () => {
 
     const { container } = renderConsole("/console/capabilities");
 
-    await screen.findByText("Server");
+    await screen.findByRole("heading", { name: "Common tasks" });
     expect(screen.queryByText("capabilities-panel")).toBeNull();
     expect(container.textContent).not.toMatch(/qBittorrent|Capabilities/i);
   });
@@ -173,24 +189,98 @@ describe("Console backups route", () => {
   });
 });
 
+const ADVANCED_RAIL = [
+  "Activity",
+  "Capabilities",
+  "Layout & Navigation",
+  "API tokens",
+  "Retention rules",
+];
+
 describe("Console IA conformance", () => {
-  it("renders the fixed grouped rail with Maintain collapsed by default", async () => {
+  it("renders the fixed grouped rail with expert destinations left to Advanced", async () => {
     renderConsole("/console");
 
-    await screen.findByText("Server");
+    await screen.findByRole("heading", { name: "Common tasks" });
     const nav = screen.getByRole("navigation", { name: "Console" });
     expect(
       Array.from(nav.querySelectorAll(".console-nav-group-label")).map((n) => n.textContent),
     ).toEqual(["Overview", "Monitor", "Library", "Access", "Maintain"]);
     expect(within(nav).getByText("Operations")).toBeVisible();
+    expect(within(nav).getByRole("link", { name: "Backups" })).toBeVisible();
     expect(within(nav).queryByRole("link", { name: "Server Config" })).toBeNull();
-    expect(within(nav).getByText("Maintain").closest("details")).not.toHaveAttribute("open");
+    for (const label of ADVANCED_RAIL) {
+      expect(within(nav).queryByRole("link", { name: label })).toBeNull();
+    }
+  });
+
+  it("shows every destination once the Advanced switch is on (CORE-1117)", async () => {
+    const user = userEvent.setup();
+    renderConsole("/console");
+
+    await screen.findByRole("heading", { name: "Common tasks" });
+    const nav = screen.getByRole("navigation", { name: "Console" });
+    await user.click(within(nav).getByRole("switch", { name: "Show advanced settings" }));
+    for (const label of ADVANCED_RAIL) {
+      expect(within(nav).getByRole("link", { name: label })).toBeVisible();
+    }
+
+    act(() => setAdvancedSettings(false));
+    expect(within(nav).queryByRole("link", { name: "API tokens" })).toBeNull();
+  });
+
+  it("keeps an Advanced destination in the rail while it is the current page", async () => {
+    renderConsole("/console/retention");
+
+    const nav = screen.getByRole("navigation", { name: "Console" });
+    expect(within(nav).getByRole("link", { name: "Retention rules" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(within(nav).queryByRole("link", { name: "API tokens" })).toBeNull();
+  });
+
+  it("keeps the unlocked status and Lock action outside the folding phone menu", async () => {
+    renderConsole("/console");
+
+    await screen.findByRole("heading", { name: "Common tasks" });
+    const nav = screen.getByRole("navigation", { name: "Console" });
+    const lock = within(nav).getByRole("button", { name: "Lock Console" });
+    expect(lock.closest(".console-session-bar")).not.toBeNull();
+    expect(lock.closest(".section-menu-body")).toBeNull();
+    const advanced = within(nav).getByRole("switch", { name: "Show advanced settings" });
+    expect(advanced.closest(".section-menu-body")).toBeNull();
+  });
+
+  it("gives sessions, updates and migration one destination each", async () => {
+    const { unmount } = renderConsole("/console/sessions");
+    expect(await screen.findByText("live-sessions-panel")).toBeVisible();
+    expect(screen.queryByText("update-awareness-panel")).toBeNull();
+    unmount();
+
+    const updates = renderConsole("/console/updates");
+    expect(await screen.findByText("update-awareness-panel")).toBeVisible();
+    expect(screen.queryByText("live-sessions-panel")).toBeNull();
+    updates.unmount();
+
+    renderConsole("/console/remote");
+    expect(await screen.findByText("remote-status")).toBeVisible();
+    expect(screen.queryByText("migration-panel")).toBeNull();
   });
 
   it("renders Overview status, triage, and first-run regions with queue deep links", async () => {
     renderConsole("/console");
 
-    expect(await screen.findByText("Server")).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Common tasks" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Rescan all libraries" })).toBeVisible();
+    expect(screen.getByRole("link", { name: /Fix unmatched items/ })).toHaveAttribute(
+      "href",
+      "/manage/unmatched",
+    );
+    expect(screen.getByRole("link", { name: /Provider keys/ })).toHaveAttribute(
+      "href",
+      "/console/plugins",
+    );
     expect(screen.getByRole("heading", { name: "Needs attention" })).toBeVisible();
     expect(screen.getByRole("link", { name: /Create or connect a Library/i })).toHaveAttribute(
       "href",
@@ -216,30 +306,6 @@ describe("Console IA conformance", () => {
 
     expect(await screen.findByText("Nothing needs attention.")).toBeVisible();
     expect(screen.queryByRole("alert")).toBeNull();
-  });
-
-  it("keeps group and in-panel Advanced disclosures keyboard-operable", async () => {
-    const user = userEvent.setup();
-    const { unmount } = renderConsole("/console/config");
-
-    const maintain = screen.getByText("Maintain");
-    expect(maintain.closest("details")).not.toHaveAttribute("open");
-    await user.click(maintain);
-    expect(maintain.closest("details")).toHaveAttribute("open");
-
-    unmount();
-    render(
-      <I18nProvider>
-        <AdvancedDisclosure>
-          <button>probe</button>
-        </AdvancedDisclosure>
-      </I18nProvider>,
-    );
-
-    const advanced = screen.getByText("Advanced");
-    expect(advanced.closest("details")).not.toHaveAttribute("open");
-    await user.click(advanced);
-    expect(advanced.closest("details")).toHaveAttribute("open");
   });
 
   it("maps every Console IA child surface exactly once", () => {

@@ -37,25 +37,25 @@ afterEach(() => {
 });
 
 describe("PlayerTransport", () => {
-  it("keeps the approved meta, primary, seek, and auxiliary hierarchy", () => {
+  it("keeps the meta, seek, and single transport row hierarchy (CORE-1141)", () => {
     render(<Harness />);
 
     const title = screen.getByRole("heading", { name: "Long Weekend" });
     expect(screen.getByText("Direct play")).toHaveClass("bf-route-summary");
-    const primary = screen.getByRole("button", { name: "Back 10s" }).closest(".bf-controls");
     const seek = screen.getByRole("slider", { name: "Playback position" }).closest(".bf-scrub-row");
-    const auxiliary = screen.getByRole("slider", { name: "Volume" }).closest(".bf-controls");
+    const row = screen.getByRole("button", { name: "Back 10s" }).closest(".bf-transport-row");
+    const primary = screen
+      .getByRole("button", { name: "Back 10s" })
+      .closest<HTMLElement>(".bf-primary-controls");
 
-    if (!primary || !seek || !auxiliary) throw new Error("player hierarchy groups are missing");
-    expect(primary).toHaveClass("bf-primary-controls");
-    expect(auxiliary).toHaveClass("bf-aux-controls");
-    expect(title.compareDocumentPosition(primary) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+    if (!seek || !row || !primary) throw new Error("player hierarchy groups are missing");
+    expect(row).toContainElement(primary);
+    expect(row).toContainElement(screen.getByRole("slider", { name: "Volume" }));
+    expect(row).toContainElement(screen.getByRole("button", { name: "Settings" }));
+    expect(title.compareDocumentPosition(seek) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
-    expect(primary.compareDocumentPosition(seek) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    );
-    expect(seek.compareDocumentPosition(auxiliary) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+    expect(seek.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
   });
@@ -188,6 +188,7 @@ describe("PlayerTransport", () => {
     const { video } = renderHarnessVideo({ volume: 0.4, playbackRate: 1 });
     const user = userEvent.setup();
     const volume = screen.getByRole("slider", { name: "Volume" });
+    await user.click(screen.getByRole("button", { name: "Settings" }));
     const speed = screen.getByRole("combobox", { name: "Playback speed" });
 
     expect(volume).toHaveAttribute("aria-valuetext", "40% volume");
@@ -392,7 +393,7 @@ describe("PlayerTransport", () => {
     const { container } = render(<Harness onShare={vi.fn()} />);
 
     const icons = [...container.querySelectorAll<HTMLButtonElement>("button.is-icon")];
-    // back, play/pause, forward, previous/next chapter, fullscreen, mute, PiP, share, info
+    // back, play/pause, forward, previous/next chapter, mute, share, settings, PiP, fullscreen
     expect(icons).toHaveLength(10);
     for (const button of icons) {
       expect(button.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
@@ -404,19 +405,94 @@ describe("PlayerTransport", () => {
     }
   });
 
+  const settingsLabel = {
+    en: "Settings",
+    fr: "Réglages",
+    de: "Einstellungen",
+    es: "Ajustes",
+    pt: "Configurações",
+  } as const;
+
   it.each([
     ["en", "Volume", "Playback speed", "Picture in Picture"],
     ["fr", "Volume", "Vitesse de lecture", "Image dans l’image"],
     ["de", "Lautstärke", "Wiedergabegeschwindigkeit", "Bild-in-Bild"],
     ["es", "Volumen", "Velocidad de reproducción", "Imagen en imagen"],
     ["pt", "Volume", "Velocidade de reprodução", "Imagem em imagem"],
-  ] as const)("localizes accessible player controls for %s", (locale, volume, speed, pip) => {
+  ] as const)("localizes accessible player controls for %s", async (locale, volume, speed, pip) => {
     render(<Harness locale={locale} />);
 
     expect(screen.getByRole("slider", { name: volume })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: settingsLabel[locale] }));
     expect(screen.getByRole("combobox", { name: speed })).toBeVisible();
     expect(screen.getByRole("button", { name: pip })).toBeVisible();
   });
+  it("previews a scrubber drag and seeks once on release (CORE-1360)", () => {
+    const { video } = renderHarnessVideo({ currentTime: 10, duration: 100 });
+    const seeks: number[] = [];
+    let time = 10;
+    Object.defineProperty(video, "currentTime", {
+      configurable: true,
+      get: () => time,
+      set: (value: number) => {
+        time = value;
+        seeks.push(value);
+      },
+    });
+    const scrubber = screen.getByRole("slider", { name: "Playback position" });
+    const control = scrubber.closest(".bf-slider-control") as HTMLElement;
+    mockStageRect(control);
+
+    fireMouse(control, "pointerdown", 20);
+    fireMouse(document, "pointermove", 40);
+    fireMouse(document, "pointermove", 60);
+    expect(seeks).toEqual([]);
+    expect(scrubber).toHaveAttribute("aria-valuetext", expect.stringContaining("1 minute"));
+    expect(screen.getAllByText("1:00").length).toBeGreaterThan(0);
+    // Playback moving on underneath does not pull the previewed thumb back.
+    fireEvent.timeUpdate(video);
+    expect(scrubber).toHaveAttribute("aria-valuetext", expect.stringContaining("1 minute"));
+
+    fireMouse(document, "pointerup", 60);
+    expect(seeks).toEqual([60]);
+  });
+
+  it("seeks on a touch tap of the scrubber (CORE-1360)", () => {
+    const { video } = renderHarnessVideo({ currentTime: 10, duration: 100 });
+    const seeks: number[] = [];
+    let time = 10;
+    Object.defineProperty(video, "currentTime", {
+      configurable: true,
+      get: () => time,
+      set: (value: number) => {
+        time = value;
+        seeks.push(value);
+      },
+    });
+    const scrubber = screen.getByRole("slider", { name: "Playback position" });
+    const control = scrubber.closest(".bf-slider-control") as HTMLElement;
+    mockStageRect(control);
+    const touch = { identifier: 0, clientX: 20, clientY: 5 };
+
+    // A finger fires touchstart and pointerdown at the same spot; the slider
+    // skips its own commit for that pair, so the release must still seek.
+    fireEvent.touchStart(control, { changedTouches: [touch], touches: [touch] });
+    fireTouch(control, "pointerdown", { pointerId: 2, clientX: 20, clientY: 5 });
+    fireTouch(control, "pointerup", { pointerId: 2, clientX: 20, clientY: 5 });
+    fireEvent.touchEnd(control, { changedTouches: [touch], touches: [] });
+    expect(seeks).toEqual([20]);
+  });
+
+  it("seeks straight away on scrubber keyboard steps (CORE-1360)", () => {
+    const { video } = renderHarnessVideo({ currentTime: 50, duration: 100 });
+    const scrubber = screen.getByRole("slider", { name: "Playback position" });
+
+    fireEvent.keyDown(scrubber, { key: "ArrowRight" });
+    expect(video.currentTime).toBe(55);
+    fireEvent.keyDown(scrubber, { key: "End" });
+    expect(video.currentTime).toBe(100);
+  });
+
   it("routes keyboard seeks through the configured skip interval", () => {
     render(<Harness skipInterval={30} />);
     const video = screen.getByTestId("video") as HTMLVideoElement;
@@ -433,7 +509,7 @@ describe("PlayerTransport", () => {
   it("reports the menu closed when the transport unmounts", async () => {
     const onMenuOpenChange = vi.fn();
     const view = render(<Harness onMenuOpenChange={onMenuOpenChange} />);
-    await userEvent.click(screen.getByRole("button", { name: "Playback details" }));
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
     await waitFor(() => expect(onMenuOpenChange).toHaveBeenLastCalledWith(true));
 
     view.unmount();
@@ -553,4 +629,24 @@ function fireTouch(
 function tap(target: Element, clientX: number, pointerId: number) {
   fireTouch(target, "pointerdown", { pointerId, clientX, clientY: 50 });
   fireTouch(target, "pointerup", { pointerId, clientX, clientY: 50 });
+}
+
+function fireMouse(
+  target: Element | Document,
+  type: "pointerdown" | "pointermove" | "pointerup",
+  clientX: number,
+) {
+  const event = new MouseEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    button: 0,
+    buttons: type === "pointerup" ? 0 : 1,
+    clientX,
+    clientY: 5,
+  });
+  Object.defineProperties(event, {
+    pointerId: { value: 1 },
+    pointerType: { value: "mouse" },
+  });
+  fireEvent(target, event);
 }

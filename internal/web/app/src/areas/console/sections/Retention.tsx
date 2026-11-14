@@ -1,4 +1,4 @@
-import { Clock, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useState } from "react";
 import { DataTable, EmptyState, ErrorState } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
@@ -97,7 +97,7 @@ export function Retention() {
       {loading && <Skeleton className="h-32 w-full" />}
       {failed && <ErrorState message="retentionRulesLoadError" />}
       {!loading && !failed && data && data.length === 0 && (
-        <EmptyState message="retentionRulesEmpty" icon={Clock} />
+        <EmptyState message="retentionRulesEmpty" />
       )}
       {!loading && !failed && data && data.length > 0 && (
         <DataTable

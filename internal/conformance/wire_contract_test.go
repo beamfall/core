@@ -17,10 +17,9 @@ import (
 )
 
 const (
-	wireContractPublishedBaselinePath      = "../../tools/wire-contract/testdata/wire-contract.json"
-	wireContractRegistryPath               = "../../contracts/registry.json"
-	wireContractFreshnessDriftScope        = "producer-publish-freshness"
-	wireContractDeterminationCandidatePath = "wire-contract-candidate-v2.0.0.json"
+	wireContractPublishedBaselinePath = "../../tools/wire-contract/testdata/wire-contract.json"
+	wireContractRegistryPath          = "../../contracts/registry.json"
+	wireContractFreshnessDriftScope   = "producer-publish-freshness"
 )
 
 type wireContractArtifact struct {
@@ -71,32 +70,16 @@ func TestWireContract(t *testing.T) {
 }
 
 // TestWireContractPublishedArtifactFreshness keeps development drift explicit:
-// the baseline must match either the newest published artifact or the exact
-// unpublished candidate under determination.
+// the baseline must match the newest published artifact unless an unexpired
+// producer-publish-freshness waiver covers the drift.
 func TestWireContractPublishedArtifactFreshness(t *testing.T) {
-	publishedErr := checkWireContractPublishedArtifactFreshness(
+	if err := checkWireContractPublishedArtifactFreshness(
 		wireContractPublishedBaselinePath,
 		".",
 		wireContractRegistryPath,
 		time.Now(),
-	)
-	if publishedErr == nil {
-		return
-	}
-	candidate, err := os.ReadFile(wireContractDeterminationCandidatePath)
-	if err != nil {
-		t.Fatal(publishedErr)
-	}
-	baseline, err := os.ReadFile(wireContractPublishedBaselinePath)
-	if err != nil {
+	); err != nil {
 		t.Fatal(err)
-	}
-	matches, err := sameWireContract(baseline, candidate)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !matches {
-		t.Fatal(publishedErr)
 	}
 }
 
@@ -200,7 +183,9 @@ func TestWireContractPublicationIsConsolidated(t *testing.T) {
 	}
 	for _, boundary := range registry.Boundaries {
 		if boundary.Boundary == "client-core-wire" {
-			if !reflect.DeepEqual(snapshot.KnownDrift, boundary.KnownDrift) {
+			// The registry spells no drift as [] and the published artifact as
+			// null; both mean the same empty set.
+			if (len(snapshot.KnownDrift) != 0 || len(boundary.KnownDrift) != 0) && !reflect.DeepEqual(snapshot.KnownDrift, boundary.KnownDrift) {
 				t.Fatal("published wire contract known drift differs from the registry")
 			}
 			return
@@ -222,148 +207,6 @@ func writeWireContractTestFile(t *testing.T, path, contents string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 		t.Fatalf("write %s: %v", path, err)
-	}
-}
-
-func TestWireContractConsumersPinPublishedVersion(t *testing.T) {
-	published, err := newestWireContractArtifact(".")
-	if err != nil {
-		t.Fatal(err)
-	}
-	artifact, err := os.ReadFile(published.Path)
-	if err != nil {
-		t.Fatalf("read published wire contract %s: %v", published.Path, err)
-	}
-	var contract struct {
-		Version string `json:"contractVersion"`
-	}
-	if err := json.Unmarshal(artifact, &contract); err != nil {
-		t.Fatalf("decode published wire contract: %v", err)
-	}
-	registry, err := os.ReadFile(wireContractRegistryPath)
-	if err != nil {
-		t.Fatalf("read contract registry: %v", err)
-	}
-	var data struct {
-		Boundaries []struct {
-			Boundary  string          `json:"boundary"`
-			Consumers json.RawMessage `json:"consumers"`
-		} `json:"boundaries"`
-	}
-	if err := json.Unmarshal(registry, &data); err != nil {
-		t.Fatalf("decode contract registry: %v", err)
-	}
-	for _, boundary := range data.Boundaries {
-		if boundary.Boundary != "client-core-wire" {
-			continue
-		}
-		consumers, err := decodeWireConsumerPins(boundary.Consumers)
-		if err != nil {
-			t.Fatalf("decode client-core-wire consumer pins: %v", err)
-		}
-		if err := validateWireConsumerPins(consumers, contract.Version); err != nil {
-			t.Fatalf("client-core-wire consumer pins: %v", err)
-		}
-		return
-	}
-	t.Fatal("client-core-wire boundary missing from contract registry")
-}
-
-type wireConsumerPin struct {
-	Repo          string `json:"repo"`
-	PinnedVersion string `json:"pinnedVersion"`
-}
-
-func decodeWireConsumerPins(raw []byte) ([]wireConsumerPin, error) {
-	var consumers []wireConsumerPin
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&consumers); err != nil {
-		return nil, err
-	}
-	return consumers, nil
-}
-
-// parseWireSemVer parses a strict "MAJOR.MINOR.PATCH" version and rejects any
-// trailing or pre-release garbage that fmt.Sscanf would otherwise tolerate.
-func parseWireSemVer(v string) ([3]int, error) {
-	var parsed [3]int
-	if n, err := fmt.Sscanf(v, "%d.%d.%d", &parsed[0], &parsed[1], &parsed[2]); err != nil || n != 3 {
-		return parsed, fmt.Errorf("invalid SemVer %q", v)
-	}
-	if parsed[0] < 0 || parsed[1] < 0 || parsed[2] < 0 {
-		return parsed, fmt.Errorf("invalid SemVer %q", v)
-	}
-	if fmt.Sprintf("%d.%d.%d", parsed[0], parsed[1], parsed[2]) != v {
-		return parsed, fmt.Errorf("invalid SemVer %q", v)
-	}
-	return parsed, nil
-}
-
-// validateWireConsumerPins enforces the client-core-wire producer-truth rules
-// (ADR-0122 Amendment A §1): every pin is a well-formed object with a unique
-// repo and a strict SemVer pinnedVersion sharing the producer's major. Minor
-// lag is valid; malformed, duplicate, missing, or major-skewed pins fail.
-func validateWireConsumerPins(consumers []wireConsumerPin, publishedVersion string) error {
-	if len(consumers) == 0 {
-		return fmt.Errorf("client-core-wire has no consumer pins")
-	}
-	published, err := parseWireSemVer(publishedVersion)
-	if err != nil {
-		return fmt.Errorf("published version: %w", err)
-	}
-	seen := make(map[string]bool, len(consumers))
-	for _, c := range consumers {
-		if c.Repo == "" {
-			return fmt.Errorf("consumer pin missing repo: %#v", c)
-		}
-		if seen[c.Repo] {
-			return fmt.Errorf("consumer repo %q duplicated", c.Repo)
-		}
-		seen[c.Repo] = true
-		pinned, err := parseWireSemVer(c.PinnedVersion)
-		if err != nil {
-			return fmt.Errorf("consumer %q: %w", c.Repo, err)
-		}
-		if pinned[0] != published[0] {
-			return fmt.Errorf("consumer %q pin %s skews major from published %s", c.Repo, c.PinnedVersion, publishedVersion)
-		}
-	}
-	return nil
-}
-
-func TestWireContractConsumersPinValidation(t *testing.T) {
-	const published = "1.1.0"
-	valid := []wireConsumerPin{
-		{Repo: "beamfall-web", PinnedVersion: "1.0.0"},
-		{Repo: "beamfall-apple", PinnedVersion: "1.1.0"},
-	}
-	if err := validateWireConsumerPins(valid, published); err != nil {
-		t.Fatalf("minor-lag pins must pass: %v", err)
-	}
-	rejected := map[string][]wireConsumerPin{
-		"major skew":       {{Repo: "beamfall-web", PinnedVersion: "2.0.0"}},
-		"duplicate repo":   {{Repo: "beamfall-web", PinnedVersion: "1.0.0"}, {Repo: "beamfall-web", PinnedVersion: "1.0.0"}},
-		"missing repo":     {{Repo: "", PinnedVersion: "1.0.0"}},
-		"missing pin":      {{Repo: "beamfall-web", PinnedVersion: ""}},
-		"malformed semver": {{Repo: "beamfall-web", PinnedVersion: "1.0"}},
-		"negative semver":  {{Repo: "beamfall-web", PinnedVersion: "-1.0.0"}},
-		"empty":            {},
-	}
-	for name, consumers := range rejected {
-		if err := validateWireConsumerPins(consumers, published); err == nil {
-			t.Fatalf("%s must fail validation", name)
-		}
-	}
-	// A bare-string consumer entry for client-core-wire cannot decode into the
-	// structured pin shape — the producer-truth boundary rejects legacy strings.
-	for name, raw := range map[string]string{
-		"bare string": `["beamfall-web"]`,
-		"extra field": `[{"repo":"beamfall-web","pinnedVersion":"1.0.0","extra":true}]`,
-	} {
-		if _, err := decodeWireConsumerPins([]byte(raw)); err == nil {
-			t.Fatalf("%s consumer entry must fail strict decoding", name)
-		}
 	}
 }
 

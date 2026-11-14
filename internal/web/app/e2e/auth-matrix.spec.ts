@@ -1,6 +1,7 @@
 import { join } from "node:path";
-import { type Browser, expect, type Page, test } from "@playwright/test";
 import { collectFatalErrors, harnessAuthDir, harnessState } from "./lib/spec";
+import { type Browser, expect, markProfilePicked, type Page, test } from "./lib/test";
+import { coverUiStates } from "./lib/ui-state-coverage";
 
 const authDir = harnessAuthDir();
 const MANAGED_VIEWER_STATE = join(authDir, "managed-viewer.json");
@@ -12,6 +13,7 @@ async function rolePage(
   storageState: string,
 ): Promise<{ page: Page; close: () => Promise<void> }> {
   const context = await browser.newContext({ storageState });
+  await markProfilePicked(context);
   const page = await context.newPage();
   return { page, close: () => context.close() };
 }
@@ -19,7 +21,7 @@ async function rolePage(
 test.describe("auth matrix", () => {
   const { baseURL } = harnessState();
 
-  test("managed viewer is denied access to Manage and Console", async ({ browser }) => {
+  test("managed viewer is denied access to Manage and Console", async ({ browser }, testInfo) => {
     const { page, close } = await rolePage(browser, MANAGED_VIEWER_STATE);
     try {
       const errors = collectFatalErrors(page);
@@ -38,12 +40,13 @@ test.describe("auth matrix", () => {
       await expect(page.getByRole("navigation", { name: "Console" })).toHaveCount(0);
 
       expect(errors, errors.join("\n")).toEqual([]);
+      coverUiStates(testInfo, "area:manage@role:managed", "area:console@role:managed");
     } finally {
       await close();
     }
   });
 
-  test("managed manager is denied access to Manage and Console", async ({ browser }) => {
+  test("managed manager is denied access to Manage and Console", async ({ browser }, testInfo) => {
     const { page, close } = await rolePage(browser, MANAGED_MANAGER_STATE);
     try {
       const errors = collectFatalErrors(page);
@@ -62,6 +65,7 @@ test.describe("auth matrix", () => {
       await expect(page.getByRole("navigation", { name: "Console" })).toHaveCount(0);
 
       expect(errors, errors.join("\n")).toEqual([]);
+      coverUiStates(testInfo, "area:manage@role:managed", "area:console@role:managed");
     } finally {
       await close();
     }
@@ -69,7 +73,7 @@ test.describe("auth matrix", () => {
 
   test("adult non-owner reaches Console gate but cannot unlock Admin Session", async ({
     browser,
-  }) => {
+  }, testInfo) => {
     const { page, close } = await rolePage(browser, NON_OWNER_VIEWER_STATE);
     try {
       const errors = collectFatalErrors(page);
@@ -84,6 +88,7 @@ test.describe("auth matrix", () => {
       await expect(page.getByRole("navigation", { name: "Console" })).toHaveCount(0);
 
       expect(errors, errors.join("\n")).toEqual([]);
+      coverUiStates(testInfo, "area:console@role:adult-non-owner");
     } finally {
       await close();
     }

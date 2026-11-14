@@ -1,17 +1,56 @@
-import { Bell } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { Bell, LayoutDashboard, Menu } from "lucide-react";
+import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
-import { SignOutButton } from "@/areas/enroll";
+import { ServerActivity } from "@/components/beamfall/ServerActivity";
 import { Badge } from "@/components/ui/badge";
 import { getBeamfallHost } from "@/lib/beamfallHost";
-import { displayString } from "@/lib/display";
 import { fetchNotifications } from "@/lib/graphql";
-import { useDisplayLocale, useT } from "@/lib/i18n";
+import { useT } from "@/lib/i18n";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
+import { AccountMenu } from "./AccountMenu";
+import { LibrarySidebar } from "./LibrarySidebar";
 import "./chrome.css";
 
 const NOTIFICATION_BADGE_LIMIT = 100;
+const PHONE_QUERY = "(max-width: 760px)";
+const SIDEBAR_PREF = "beamfall.sidebarCollapsed";
+
+// The desktop collapse choice is a per-browser convenience: storage may be
+// unavailable (private window), so every access falls back silently.
+function readCollapsedPref(): boolean {
+  try {
+    const stored = window.localStorage.getItem(SIDEBAR_PREF);
+    if (stored != null) return stored === "1";
+  } catch {
+    // fall through to the width default
+  }
+  return (
+    typeof window.matchMedia === "function" && window.matchMedia("(max-width: 1100px)").matches
+  );
+}
+
+function writeCollapsedPref(collapsed: boolean) {
+  try {
+    window.localStorage.setItem(SIDEBAR_PREF, collapsed ? "1" : "0");
+  } catch {
+    // a convenience only
+  }
+}
+
+function usePhoneLayout(): boolean {
+  const [phone, setPhone] = useState(
+    () => typeof window.matchMedia === "function" && window.matchMedia(PHONE_QUERY).matches,
+  );
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const query = window.matchMedia(PHONE_QUERY);
+    const onChange = () => setPhone(query.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+  return phone;
+}
 
 // The shared app chrome (ADR-0007): a register-aware header + content slot in
 // the Cinema Dark / Workbench design language. Device Role and Reveal state are
@@ -23,16 +62,60 @@ export function AppShell({
   actions,
 }: {
   children: ReactNode;
-  /** Optional area-specific header actions (right cluster). */
+  /** Optional area-specific header actions, rendered before the icons (the Viewer search). */
   actions?: ReactNode;
 }) {
   const t = useT();
-  const displayLocale = useDisplayLocale();
   const location = useLocation();
   const { register } = useRegister();
   const { session, manifest, isManager, revealed, needsEnroll } = useSession();
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const beamfallHost = getBeamfallHost();
+  const sidebarId = useId();
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const phone = usePhoneLayout();
+  const [collapsed, setCollapsed] = useState(readCollapsedPref);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const hasSidebar = register === "viewer" && !!manifest && manifest.navigation.length > 0;
+  // The Console is reached by an Admin Session, which the server grants to the
+  // adult owner Profile whatever the Device Role (auth.BeginAdminSession). The
+  // Profile kind is the eligibility the client can see, so the link follows it
+  // and an owner on a viewer-role Device still gets a way in.
+  const canOpenConsole = session?.profile === "adult";
+
+  // The phone drawer closes on navigation, on Escape, and when the layout
+  // grows past phone width. Escape pressed inside the drawer hands focus back
+  // to the menu button: the link it was pressed on is about to be hidden and
+  // inert.
+  useEffect(() => {
+    setDrawerOpen(false);
+  }, [location.pathname]);
+  useEffect(() => {
+    if (!phone) setDrawerOpen(false);
+  }, [phone]);
+  useEffect(() => {
+    if (!drawerOpen) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      setDrawerOpen(false);
+      if (document.getElementById(sidebarId)?.contains(document.activeElement)) {
+        menuButton.current?.focus();
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [drawerOpen, sidebarId]);
+
+  function toggleSidebar() {
+    if (phone) {
+      setDrawerOpen((open) => !open);
+      return;
+    }
+    setCollapsed((was) => {
+      writeCollapsedPref(!was);
+      return !was;
+    });
+  }
 
   const refreshUnreadNotifications = useCallback(async () => {
     if (register !== "viewer" || !session || needsEnroll) {
@@ -81,6 +164,11 @@ export function AppShell({
     return "";
   })();
 
+  const unreadLabel =
+    unreadNotifications >= NOTIFICATION_BADGE_LIMIT
+      ? `${NOTIFICATION_BADGE_LIMIT}+`
+      : unreadNotifications;
+
   if (beamfallHost) {
     return <main className="bf-main px-4 py-6">{children}</main>;
   }
@@ -88,84 +176,103 @@ export function AppShell({
   return (
     <div className="bf-shell min-h-screen text-foreground">
       <header className={"bf-header" + (revealed ? " is-revealed" : "")}>
+        {hasSidebar && (
+          <button
+            ref={menuButton}
+            type="button"
+            className="bf-icon-button bf-menu-button"
+            aria-label={t("navLabel")}
+            aria-controls={sidebarId}
+            aria-expanded={phone ? drawerOpen : !collapsed}
+            onClick={toggleSidebar}
+          >
+            <Menu aria-hidden className="size-5" />
+          </button>
+        )}
         <Link to="/" className="bf-brand" aria-label={t("brand")}>
           <span aria-hidden className="bf-mark" />
           <span aria-hidden className="bf-wordmark" />
         </Link>
 
-        {register === "viewer" && manifest && manifest.navigation.length > 0 && (
-          <nav aria-label={t("navLabel")} className="bf-nav">
-            {manifest.navigation.map((node) => (
-              <Link
-                key={node.id}
-                to={`/n/${node.id}`}
-                aria-current={node.id === activeNodeId ? "page" : undefined}
-                className={"bf-nav-link" + (node.id === activeNodeId ? " is-active" : "")}
-              >
-                {displayString(node.title, displayLocale)}
-              </Link>
-            ))}
-          </nav>
-        )}
-
         <div className="bf-actions">
+          {actions}
           {revealed && (
             <Badge variant="outline" className="bf-chip-revealed">
               {t("revealed")}
             </Badge>
           )}
-          {isManager && (
-            <Badge variant="secondary" className="bf-chip-role">
-              {t("managerRole")}
-            </Badge>
-          )}
-          {isManager && (
-            <Link to="/manage" className="bf-action-link">
-              {t("manage")}
+          {isManager && <ServerActivity />}
+          {canOpenConsole && (
+            <Link
+              to="/console"
+              className={
+                "bf-icon-button" + (location.pathname.startsWith("/console") ? " is-active" : "")
+              }
+            >
+              <LayoutDashboard aria-hidden className="size-[18px]" />
+              <span className="bf-icon-label">{t("consoleHeading")}</span>
             </Link>
           )}
           {register === "viewer" && session && !needsEnroll && (
             <Link
               to="/notifications"
               className={
-                "bf-notification-link" +
-                (location.pathname === "/notifications" ? " is-active" : "")
+                "bf-icon-button" + (location.pathname === "/notifications" ? " is-active" : "")
               }
-              aria-label={t("notificationsUnreadAria", {
-                count:
-                  unreadNotifications >= NOTIFICATION_BADGE_LIMIT
-                    ? `${NOTIFICATION_BADGE_LIMIT}+`
-                    : unreadNotifications,
-              })}
+              aria-label={t("notificationsUnreadAria", { count: unreadLabel })}
+              title={t("notifications")}
             >
-              <Bell aria-hidden className="size-4" />
-              <span className="bf-notification-label">{t("notifications")}</span>
+              <Bell aria-hidden className="size-[18px]" />
               {unreadNotifications > 0 && (
                 <span className="bf-notification-count" aria-hidden>
-                  {unreadNotifications >= NOTIFICATION_BADGE_LIMIT
-                    ? `${NOTIFICATION_BADGE_LIMIT}+`
-                    : unreadNotifications}
+                  {unreadLabel}
                 </span>
               )}
             </Link>
           )}
-          {actions}
-          {session && <SignOutButton />}
+          {session && <AccountMenu />}
         </div>
       </header>
 
-      {needsEnroll && (
-        <div role="status" className="bf-banner">
-          {t("enrollLead")}
-        </div>
-      )}
+      <div className="bf-body">
+        {hasSidebar && manifest && (
+          <>
+            <LibrarySidebar
+              id={sidebarId}
+              navigation={manifest.navigation}
+              libraries={manifest.libraries}
+              activeNodeId={activeNodeId}
+              collapsed={collapsed}
+              drawer={phone}
+              open={drawerOpen}
+              onNavigate={() => setDrawerOpen(false)}
+            />
+            {phone && drawerOpen && (
+              <button
+                type="button"
+                tabIndex={-1}
+                aria-hidden
+                className="bf-sidebar-scrim"
+                onClick={() => setDrawerOpen(false)}
+              />
+            )}
+          </>
+        )}
+        <div className="bf-content">
+          {needsEnroll && (
+            <div role="status" className="bf-banner">
+              {t("enrollLead")}
+            </div>
+          )}
 
-      <main className="bf-main px-4 py-6">{children}</main>
-      <footer className="bf-source-footer">
-        <a href="/source" target="_blank" rel="noreferrer noopener">
-          {t("coreSourceOffer")}
-        </a>
-      </footer>
+          <main className="bf-main px-4 py-6">{children}</main>
+          <footer className="bf-source-footer">
+            <a href="/source" target="_blank" rel="noreferrer noopener">
+              {t("coreSourceOffer")}
+            </a>
+          </footer>
+        </div>
+      </div>
     </div>
   );
 }

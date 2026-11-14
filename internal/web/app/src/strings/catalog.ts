@@ -5,13 +5,16 @@ import { collectionMarkerStrings } from "./collections-markers";
 import { consoleAccessStrings } from "./console-access";
 import { consoleOperationsStrings } from "./console-operations";
 import { customizationStrings } from "./customization";
+import { itemActionStrings } from "./item-actions";
 import { libraryHealthStrings } from "./library-health";
 import { libraryOperationsStrings } from "./library-operations";
 import { managedFileStrings } from "./managed-files";
 import { metadataManagementStrings } from "./metadata-management";
 import { migrationStrings } from "./migration";
 import { onboardingStrings } from "./onboarding";
+import { pathPickerStrings } from "./path-picker";
 import { playbackStrings } from "./playback";
+import { playerRecoveryStrings } from "./player-recovery";
 import { pluginStrings } from "./plugins";
 import { powerToolStrings } from "./power-tools";
 import { profileSearchStrings } from "./profile-search";
@@ -21,10 +24,12 @@ import { sessionUpdateStrings } from "./sessions-updates";
 import { setupStrings } from "./setup";
 import { sharedStateStrings } from "./shared-states";
 import { viewerAccountStrings } from "./viewer-account";
+import { whosWatchingStrings } from "./whos-watching";
 
 export const en = {
   ...appShellStrings.en,
   ...libraryOperationsStrings.en,
+  ...pathPickerStrings.en,
   ...consoleAccessStrings.en,
   ...libraryHealthStrings.en,
   ...consoleOperationsStrings.en,
@@ -33,6 +38,7 @@ export const en = {
   ...backupRetentionStrings.en,
   ...sharedStateStrings.en,
   ...viewerAccountStrings.en,
+  ...whosWatchingStrings.en,
   ...remoteAccessStrings.en,
   ...pluginStrings.en,
   ...sessionUpdateStrings.en,
@@ -46,11 +52,14 @@ export const en = {
   ...collectionMarkerStrings.en,
   ...profileSearchStrings.en,
   ...powerToolStrings.en,
+  ...itemActionStrings.en,
+  ...playerRecoveryStrings.en,
 } as const;
 
 export const fr = {
   ...appShellStrings.fr,
   ...libraryOperationsStrings.fr,
+  ...pathPickerStrings.fr,
   ...consoleAccessStrings.fr,
   ...libraryHealthStrings.fr,
   ...consoleOperationsStrings.fr,
@@ -59,6 +68,7 @@ export const fr = {
   ...backupRetentionStrings.fr,
   ...sharedStateStrings.fr,
   ...viewerAccountStrings.fr,
+  ...whosWatchingStrings.fr,
   ...remoteAccessStrings.fr,
   ...pluginStrings.fr,
   ...sessionUpdateStrings.fr,
@@ -72,11 +82,14 @@ export const fr = {
   ...collectionMarkerStrings.fr,
   ...profileSearchStrings.fr,
   ...powerToolStrings.fr,
+  ...itemActionStrings.fr,
+  ...playerRecoveryStrings.fr,
 } as const;
 
 export const de = {
   ...appShellStrings.de,
   ...libraryOperationsStrings.de,
+  ...pathPickerStrings.de,
   ...consoleAccessStrings.de,
   ...libraryHealthStrings.de,
   ...consoleOperationsStrings.de,
@@ -85,6 +98,7 @@ export const de = {
   ...backupRetentionStrings.de,
   ...sharedStateStrings.de,
   ...viewerAccountStrings.de,
+  ...whosWatchingStrings.de,
   ...remoteAccessStrings.de,
   ...pluginStrings.de,
   ...sessionUpdateStrings.de,
@@ -98,11 +112,14 @@ export const de = {
   ...collectionMarkerStrings.de,
   ...profileSearchStrings.de,
   ...powerToolStrings.de,
+  ...itemActionStrings.de,
+  ...playerRecoveryStrings.de,
 } as const;
 
 export const es = {
   ...appShellStrings.es,
   ...libraryOperationsStrings.es,
+  ...pathPickerStrings.es,
   ...consoleAccessStrings.es,
   ...libraryHealthStrings.es,
   ...consoleOperationsStrings.es,
@@ -111,6 +128,7 @@ export const es = {
   ...backupRetentionStrings.es,
   ...sharedStateStrings.es,
   ...viewerAccountStrings.es,
+  ...whosWatchingStrings.es,
   ...remoteAccessStrings.es,
   ...pluginStrings.es,
   ...sessionUpdateStrings.es,
@@ -124,11 +142,14 @@ export const es = {
   ...collectionMarkerStrings.es,
   ...profileSearchStrings.es,
   ...powerToolStrings.es,
+  ...itemActionStrings.es,
+  ...playerRecoveryStrings.es,
 } as const;
 
 export const pt = {
   ...appShellStrings.pt,
   ...libraryOperationsStrings.pt,
+  ...pathPickerStrings.pt,
   ...consoleAccessStrings.pt,
   ...libraryHealthStrings.pt,
   ...consoleOperationsStrings.pt,
@@ -137,6 +158,7 @@ export const pt = {
   ...backupRetentionStrings.pt,
   ...sharedStateStrings.pt,
   ...viewerAccountStrings.pt,
+  ...whosWatchingStrings.pt,
   ...remoteAccessStrings.pt,
   ...pluginStrings.pt,
   ...sessionUpdateStrings.pt,
@@ -150,4 +172,6 @@ export const pt = {
   ...collectionMarkerStrings.pt,
   ...profileSearchStrings.pt,
   ...powerToolStrings.pt,
+  ...itemActionStrings.pt,
+  ...playerRecoveryStrings.pt,
 } as const;

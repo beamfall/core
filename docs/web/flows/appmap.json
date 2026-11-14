@@ -1,0 +1,28 @@
+{
+  "schema": "application-map-manifest/0",
+  "app": "beamfall-core-web",
+  "routers": [
+    {
+      "path": "internal/web/app/src/App.tsx",
+      "dialect": "react-router/0"
+    },
+    {
+      "path": "internal/web/app/src/areas/viewer/index.tsx",
+      "dialect": "react-router/0"
+    },
+    {
+      "path": "internal/web/app/src/areas/manage/index.tsx",
+      "dialect": "react-router/0"
+    },
+    {
+      "path": "internal/web/app/src/areas/console/index.tsx",
+      "dialect": "react-router/0"
+    }
+  ],
+  "tests": {
+    "root": "internal/web/app/e2e",
+    "specs": [
+      "internal/web/app/e2e"
+    ]
+  }
+}

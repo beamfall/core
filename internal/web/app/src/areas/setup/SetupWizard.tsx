@@ -1,42 +1,59 @@
+import {
+  Blocks,
+  Check,
+  CircleAlert,
+  CircleCheck,
+  Clapperboard,
+  Film,
+  LoaderCircle,
+  type LucideIcon,
+  Music,
+  Podcast,
+  Tv,
+} from "lucide-react";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
+import { Wordmark } from "@/areas/enroll/AuthShell";
 import beamfallLogo from "@/assets/beamfall-logo.png";
+import { CinemaBackdrop } from "@/components/beamfall/CinemaBackdrop";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { ApiError } from "@/lib/api";
+import { ApiDeadlineError, ApiError, type SignInSecurityMode } from "@/lib/api";
 import { displayString } from "@/lib/display";
-import { browseServerFolders, fetchJobs, fetchPlugins } from "@/lib/graphql";
+import { browseServerFolders, fetchJobs, fetchPlugins, setScraperCredential } from "@/lib/graphql";
 import type { FolderEntryInfo, JobInfo, PluginSummary } from "@/lib/graphql/types";
 import { useI18n } from "@/lib/i18n";
 import { jobProgressDetail, jobStatusLabel } from "@/lib/jobDisplay";
+import { keyNeeded, type ProviderKey } from "@/lib/providerKeys";
 import { cn } from "@/lib/utils";
 import type { StringKey } from "@/strings";
 import { FolderPicker } from "./FolderPicker";
+import { MigrationOffer } from "./MigrationOffer";
 import {
   activatePlugins,
   bootstrapResume,
   bootstrapSetup,
-  classifySetupError,
   configureUpdateCheck,
   createFirstLibrary,
   FirstLibraryError,
   type FirstLibraryProgress,
   LIBRARY_TYPES,
   type LibraryType,
+  loadProviderKeys,
   SetupTokenError,
   type UpdateCheckChannel,
 } from "./orchestrate";
 
-// First-run setup wizard (WEB-1, ADR-0007 §2; closed under ADR-0080). A 6-step,
+// First-run setup wizard (WEB-1, ADR-0007 §2; closed under ADR-0080). A 7-step,
 // token-gated first-run flow that ORCHESTRATES existing server mutations — it
-// never duplicates them. Faithful to the approved mockup (setup-wizard.html): a
-// brand bar, an "unlocked" banner once the token is verified, a step rail,
-// Library-type tiles, and the cinema token palette (rendered via the app's
-// shadcn semantic classes, which resolve to the same cinema theme as the
-// mockup's raw vars).
+// never duplicates them. CORE-1114 restyle: a full-bleed branded
+// backdrop (static CSS; animated effects belong in Oscillux), one centred step
+// with a segmented progress bar, selectable tiles for choices, and the cinema token
+// palette via the app's shadcn semantic classes.
 //
-// Visual step order: token → admin password → owner → plugins → Library →
+// Visual step order: token → admin password → sign-in security → owner →
+// plugins → Library →
 // first scan. Plugins are activated BEFORE the Library so the
 // Library step can offer only types backed by a plugin the operator enabled;
 // the owner profile follows the admin password. The API shape differs: we
@@ -53,6 +70,7 @@ import {
 const STEP_KEYS: StringKey[] = [
   "setupRailToken",
   "setupRailAdminPassword",
+  "setupRailSecurity",
   "setupRailProfile",
   "setupRailPlugins",
   "setupRailLibrary",
@@ -61,10 +79,16 @@ const STEP_KEYS: StringKey[] = [
 
 // Step indices, named so the step-boundary logic in onNext/render reads
 // intention rather than magic numbers.
-const STEP_PROFILE = 2;
-const STEP_PLUGINS = 3;
-const STEP_LIBRARY = 4;
-const STEP_SCAN = 5;
+const STEP_SECURITY = 2;
+const STEP_PROFILE = 3;
+const STEP_PLUGINS = 4;
+const STEP_LIBRARY = 5;
+const STEP_SCAN = 6;
+
+const SECURITY_MODES: { mode: SignInSecurityMode; label: StringKey; detail: StringKey }[] = [
+  { mode: "home", label: "setupSecurityHome", detail: "setupSecurityHomeDetail" },
+  { mode: "strict", label: "setupSecurityStrict", detail: "setupSecurityStrictDetail" },
+];
 
 const TYPE_LABEL: Record<LibraryType, StringKey> = {
   films: "setupTypeFilms",
@@ -74,10 +98,18 @@ const TYPE_LABEL: Record<LibraryType, StringKey> = {
   podcasts: "setupTypePodcasts",
 };
 
-const PLUGIN_LABEL: Record<string, StringKey> = {
-  filmtv: "setupPluginFilmTV",
-  music: "setupPluginMusic",
-  podcasts: "setupPluginPodcast",
+const TYPE_ICON: Record<LibraryType, LucideIcon> = {
+  films: Film,
+  tvshows: Tv,
+  mixed: Clapperboard,
+  music: Music,
+  podcasts: Podcast,
+};
+
+const PLUGIN_ICON: Record<string, LucideIcon> = {
+  filmtv: Clapperboard,
+  music: Music,
+  podcasts: Podcast,
 };
 
 function consumeSetupToken(): string {
@@ -94,9 +126,9 @@ function consumeSetupToken(): string {
 
 export function SetupWizard() {
   const { t, locale } = useI18n();
-  // Visual step index (0..5). The bootstrap POST fires when we leave the owner
-  // profile step (index 2) forward, because that's the first point where token
-  // + admin password + profile name are all collected.
+  // Visual step index (0..6). The bootstrap POST fires when we leave the owner
+  // profile step (index 3) forward, because that's the first point where token
+  // + admin password + security mode + profile name are all collected.
   const [step, setStep] = useState(0);
 
   // Step 1 — token (a CREDENTIAL: autoComplete=off; startup may include it
@@ -107,7 +139,10 @@ export function SetupWizard() {
   // Step 2 — admin password (CREDENTIAL: type=password).
   const [adminPassword, setAdminPassword] = useState("");
   const [adminPasswordConfirm, setAdminPasswordConfirm] = useState("");
-  // Step 5 — first Library.
+  // Sign-in security (CORE-1110): Home keeps admin-password sign-in, Strict
+  // turns it off. Sent with the bootstrap POST.
+  const [securityMode, setSecurityMode] = useState<SignInSecurityMode>("home");
+  // Step 6 — first Library.
   const [libraryType, setLibraryType] = useState<LibraryType>("films");
   const [libraryName, setLibraryName] = useState("");
   const [rootPath, setRootPath] = useState("");
@@ -121,13 +156,17 @@ export function SetupWizard() {
   const [pickerNode, setPickerNode] = useState<FolderEntryInfo | null>(null);
   const [pickerBusy, setPickerBusy] = useState(false);
   const [pickerError, setPickerError] = useState<string | null>(null);
-  // Step 3 — owner profile.
+  // Step 4 — owner profile.
   const [profileName, setProfileName] = useState(t("setupProfileDefault"));
-  // Step 4 — plugin activation.
+  // Step 5 — plugin activation.
   const [plugins, setPlugins] = useState<PluginSummary[]>([]);
   const [activePlugins, setActivePlugins] = useState<Set<string>>(new Set());
   const [updateCheckEnabled, setUpdateCheckEnabled] = useState(false);
   const [updateCheckChannel, setUpdateCheckChannel] = useState<UpdateCheckChannel>("stable");
+  // Provider keys the installed plugins' scrapers need (TMDB-style API keys),
+  // offered on the Plugins step so the owner is not sent hunting in the Console.
+  const [providerKeys, setProviderKeys] = useState<ProviderKey[]>([]);
+  const [keySecrets, setKeySecrets] = useState<Record<string, string>>({});
 
   // True once POST /api/setup has succeeded — drives the "unlocked" banner and
   // guards against re-bootstrapping when navigating back/forward.
@@ -143,11 +182,20 @@ export function SetupWizard() {
   const [probing, setProbing] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The field a validation error belongs to, so it carries aria-invalid and
+  // takes focus; null for errors that are not about one field.
+  const [errorField, setErrorField] = useState<string | null>(null);
   // When the token POST returns 401, we bounce the user back to step 1 and show
   // the invalid-token message inline there.
   const [tokenError, setTokenError] = useState<string | null>(null);
+  // True when the server says this browser needs no setup token (a LAN browser
+  // while setup is pending, CORE-1105): the wizard starts at the admin step.
+  const [tokenStepSkipped, setTokenStepSkipped] = useState(false);
+  const firstStep = tokenStepSkipped ? 1 : 0;
 
   const errorRef = useRef<HTMLParagraphElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const browseRef = useRef<HTMLButtonElement>(null);
   const tokenID = useId();
   const adminID = useId();
   const adminConfirmID = useId();
@@ -172,7 +220,12 @@ export function SetupWizard() {
       .then((resume) => {
         if (cancelled) return;
         if (!resume.alreadyBootstrapped) {
-          // Fresh server: run the wizard from the token step as normal.
+          // Fresh server: run the wizard from the token step, or from the admin
+          // step when this browser needs no token and none was handed to it.
+          if (resume.tokenRequired === false && !initialTokenRef.current) {
+            setTokenStepSkipped(true);
+            setStep(1);
+          }
           setProbing(false);
           return;
         }
@@ -205,6 +258,20 @@ export function SetupWizard() {
     };
   }, []);
 
+  // Each step remounts the form. A step with a text field autofocuses it; on
+  // the others focus would fall to <body>, so it goes to the chosen option
+  // (security) or the step heading, which screen readers then announce.
+  useEffect(() => {
+    if (probing) return;
+    const form = formRef.current;
+    if (!form || form.contains(document.activeElement)) return;
+    // The checked radio first: its fieldset legend already names the step.
+    (
+      form.querySelector<HTMLElement>("input[type=radio]:checked") ??
+      form.querySelector<HTMLElement>("[data-step-heading]")
+    )?.focus();
+  }, [step, probing]);
+
   // After the bootstrap succeeds the browser holds a MANAGER session, so load
   // the installed plugins for the activation step. On a fresh run the Film & TV
   // plugin (the most common first Library) is pre-selected so the list isn't
@@ -225,6 +292,27 @@ export function SetupWizard() {
       cancelled = true;
     };
   }, [bootstrapped, resumedFromRestart]);
+
+  // Provider keys need the Admin Session, which only a fresh run can open (a
+  // resumed run never collected the password); those owners add keys in the
+  // Console. Optional: a failure leaves the list empty and setup carries on.
+  useEffect(() => {
+    if (!bootstrapped || resumedFromRestart || !adminPassword) return;
+    let cancelled = false;
+    void loadProviderKeys(adminPassword)
+      .then((keys) => {
+        if (!cancelled) setProviderKeys(keys);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [bootstrapped, resumedFromRestart, adminPassword]);
+
+  // Keys still missing for a plugin the owner has switched on.
+  const neededKeys = providerKeys.filter(
+    (key) => keyNeeded(key) && key.pluginIDs.some((id) => activePlugins.has(id)),
+  );
 
   // The Library-type tiles offered are limited to types backed by a plugin the
   // operator just enabled. If nothing is enabled (or on a resumed run where the
@@ -261,8 +349,11 @@ export function SetupWizard() {
         }
       } catch {
         if (!cancelled) {
+          // Announced (role=alert) without stealing focus: the poll retries on
+          // its own and clears the message once the server answers.
           pollErrorAnnounced = true;
-          announceError(t("couldNotReachServer"));
+          setErrorField(null);
+          setError(t("setupScanConnectionLost"));
         }
       } finally {
         refreshing = false;
@@ -278,7 +369,29 @@ export function SetupWizard() {
 
   function announceError(message: string) {
     setError(message);
+    setErrorField(null);
     requestAnimationFrame(() => errorRef.current?.focus());
+  }
+
+  // Back on the token step the field takes focus; its alert is linked through
+  // aria-describedby, so it is read with the field.
+  function focusTokenField() {
+    requestAnimationFrame(() => document.getElementById(tokenID)?.focus());
+  }
+
+  // A validation error belongs to one field: mark it invalid and put the
+  // caret there so the fix is one keystroke away.
+  function fieldError(message: string, fieldID: string) {
+    setError(message);
+    setErrorField(fieldID);
+    requestAnimationFrame(() => document.getElementById(fieldID)?.focus());
+  }
+
+  // Server failures name the cause the browser can see and the next move.
+  function failureMessage(err: unknown): string {
+    if (err instanceof TypeError || err instanceof ApiDeadlineError) return t("setupOffline");
+    if (err instanceof ApiError && err.status === 429) return t("tooManyAttempts");
+    return t("setupFailed");
   }
 
   // Run the bootstrap once we have token + admin password + profile name.
@@ -291,6 +404,7 @@ export function SetupWizard() {
         deviceName: t("webBrowser"),
         profileName: profileName.trim() || t("setupProfileDefault"),
         adminPassword,
+        securityMode,
       });
       setBootstrapped(true);
       return true;
@@ -299,13 +413,13 @@ export function SetupWizard() {
         // Wrong/consumed token: bounce to step 1 with the inline message and
         // do NOT advance.
         setTokenError(t("setupTokenInvalid"));
+        setTokenStepSkipped(false);
         setStep(0);
+        focusTokenField();
         return false;
       }
       announceError(
-        err instanceof ApiError || err instanceof Error
-          ? t("setupFailed")
-          : t("couldNotReachServer"),
+        err instanceof ApiError && err.status === 403 ? t("setupNeedsSecure") : failureMessage(err),
       );
       return false;
     } finally {
@@ -334,17 +448,35 @@ export function SetupWizard() {
         });
       }
       await activatePlugins([...activePlugins]);
-      return true;
+      return await saveProviderKeys();
     } catch (err) {
-      announceError(
-        err instanceof ApiError || err instanceof Error
-          ? t(classifySetupError(err))
-          : t("couldNotReachServer"),
-      );
+      announceError(failureMessage(err));
       return false;
     } finally {
       setBusy(false);
     }
+  }
+
+  // Save each provider key the owner typed. Runs after activation; a key that
+  // fails keeps the owner on the step with its name so they can fix or clear it.
+  async function saveProviderKeys(): Promise<boolean> {
+    for (const key of neededKeys) {
+      const secret = keySecrets[key.authRef]?.trim();
+      if (!secret) continue;
+      try {
+        const saved = await setScraperCredential(key.authRef, secret);
+        setProviderKeys((prev) =>
+          prev.map((k) =>
+            k.authRef === key.authRef ? { ...k, status: saved.credentialStatus } : k,
+          ),
+        );
+        setKeySecrets((prev) => ({ ...prev, [key.authRef]: "" }));
+      } catch {
+        announceError(t("setupKeySaveFailed", { provider: key.label }));
+        return false;
+      }
+    }
+    return true;
   }
 
   // Create the first Library after the plugins are active. Runs on leaving the
@@ -375,17 +507,23 @@ export function SetupWizard() {
         setFirstLibraryProgress(err.progress);
         if (err.progress.rootPath) setRootPath(err.progress.rootPath);
       }
-      announceError(
-        err instanceof FirstLibraryError
-          ? err.message
-          : err instanceof ApiError || err instanceof Error
-            ? err.message
-            : t("couldNotReachServer"),
-      );
+      announceError(libraryErrorMessage(err));
       return false;
     } finally {
       setBusy(false);
     }
+  }
+
+  // The server's reason is kept (it is usually about the folder itself), framed
+  // by which half failed: creating the Library, or only starting its scan.
+  function libraryErrorMessage(err: unknown): string {
+    const cause = err instanceof FirstLibraryError ? err.cause : err;
+    if (cause instanceof TypeError || cause instanceof ApiDeadlineError) return t("setupOffline");
+    if (!(err instanceof Error)) return t("setupFailed");
+    const reason = err.message.replace(/[.\s]+$/, "");
+    return err instanceof FirstLibraryError && err.progress.rootsSet
+      ? t("setupLibraryScanFailed", { reason })
+      : t("setupLibraryCreateFailed", { reason });
   }
 
   // Final hand-off: leave the wizard so SessionProvider re-bootstraps the
@@ -396,17 +534,24 @@ export function SetupWizard() {
     window.location.assign(import.meta.env.BASE_URL);
   }
 
-  // Per-step validation; returns an inline message or null when valid.
-  function validate(current: number): string | null {
+  // Per-step validation; returns the inline message and the field it is
+  // about, or null when the step is valid.
+  function validate(current: number): { message: string; field: string } | null {
     switch (current) {
       case 0:
-        return token.trim() ? null : t("setupTokenInvalid");
+        return token.trim() || tokenStepSkipped
+          ? null
+          : { message: t("setupTokenRequired"), field: tokenID };
       case 1:
-        if (!adminPassword) return t("setupAdminPasswordRequired");
-        if (adminPassword !== adminPasswordConfirm) return t("setupAdminPasswordMismatch");
+        if (!adminPassword.trim()) {
+          return { message: t("setupAdminPasswordRequired"), field: adminID };
+        }
+        if (adminPassword !== adminPasswordConfirm) {
+          return { message: t("setupAdminPasswordMismatch"), field: adminConfirmID };
+        }
         return null;
       case STEP_LIBRARY:
-        return rootPath.trim() ? null : t("setupLibraryRootRequired");
+        return rootPath.trim() ? null : { message: t("setupLibraryRootRequired"), field: rootID };
       default:
         return null;
     }
@@ -424,14 +569,24 @@ export function SetupWizard() {
 
     const invalid = validate(step);
     if (invalid) {
-      if (step === 0) setTokenError(invalid);
-      else announceError(invalid);
+      if (step === 0) {
+        setTokenError(invalid.message);
+        focusTokenField();
+      } else fieldError(invalid.message, invalid.field);
       return;
     }
     setError(null);
 
-    // Leaving the owner profile step (2) forward is the bootstrap boundary.
+    // Leaving the owner profile step forward is the bootstrap boundary.
     if (step === STEP_PROFILE && !bootstrapped) {
+      // Every attempt consumes the in-memory token; after a failed one, ask for
+      // it again on its own step instead of posting an empty token.
+      if (!tokenStepSkipped && !token.trim()) {
+        setTokenError(t("setupTokenAgain"));
+        setStep(0);
+        focusTokenField();
+        return;
+      }
       const ok = await runBootstrap();
       if (!ok) return;
       setStep(STEP_PLUGINS);
@@ -462,34 +617,42 @@ export function SetupWizard() {
   function onBack() {
     if (busy) return;
     setError(null);
-    setStep((s) => Math.max(s - 1, 0));
+    setStep((s) => Math.max(s - 1, firstStep));
   }
 
   // Load a directory into the picker. An undefined path lists the filesystem
   // root. Failures (unreadable/missing) keep the previous view and show an
   // inline message, so the picker never dead-ends.
-  async function loadPickerFolder(path?: string) {
+  async function loadPickerFolder(path?: string): Promise<boolean> {
     setPickerBusy(true);
     setPickerError(null);
     try {
       const node = await browseServerFolders(path);
       setPickerNode(node);
+      return true;
     } catch {
       setPickerError(t("setupLibraryPickerError"));
+      return false;
     } finally {
       setPickerBusy(false);
     }
   }
 
-  function openPicker() {
+  async function openPicker() {
     // Seed from the typed path when present so the picker opens where the
-    // operator was, otherwise at the filesystem root.
-    void loadPickerFolder(rootPath.trim() || undefined);
+    // operator was. A typed path the server can't open falls back to the
+    // filesystem root with a note, so Browse never silently does nothing.
+    const seed = rootPath.trim();
+    if ((await loadPickerFolder(seed || undefined)) || !seed) return;
+    if (await loadPickerFolder(undefined)) {
+      setPickerError(t("setupLibraryPickerSeedError", { path: seed }));
+    }
   }
 
   function closePicker() {
     setPickerNode(null);
     setPickerError(null);
+    requestAnimationFrame(() => browseRef.current?.focus());
   }
 
   function usePickerFolder() {
@@ -507,83 +670,88 @@ export function SetupWizard() {
   }
 
   const isScanStep = step === STEP_SCAN;
+  const scanStopped = scanJob?.status === "failed" || scanJob?.status === "canceled";
+  // The field the current error is about, wired to aria-invalid and the alert.
+  const invalidProps = (fieldID: string) =>
+    error && errorField === fieldID ? { "aria-invalid": true, "aria-describedby": errorID } : {};
+  const scanTotal = scanJob?.progress?.total ?? 0;
+  const scanFraction =
+    scanTotal > 0 ? Math.min(1, (scanJob?.progress?.current ?? 0) / scanTotal) : null;
   const isLast = isScanStep;
 
   // Hold the body blank while the resume probe runs so a resumed server never
   // flashes the token step before bouncing forward.
   if (probing) {
-    return (
-      <main className="theme-cinema flex min-h-screen items-center justify-center bg-background p-7" />
-    );
+    return <main className="theme-cinema min-h-screen bg-background" />;
   }
 
+  // Steps the wizard actually walks: a LAN browser that skipped the token step
+  // never sees it in the progress bar.
+  const visibleSteps = STEP_KEYS.slice(firstStep);
+  const visibleIndex = step - firstStep;
+
   return (
-    <main className="theme-cinema flex min-h-screen items-center justify-center bg-background p-7">
-      <div className="w-[880px] max-w-full overflow-hidden rounded-[var(--radius-card)] border bg-card text-card-foreground">
-        {/* Brand bar */}
-        <div className="flex items-center justify-between border-b bg-muted/40 px-[18px] py-3.5">
-          <div className="flex items-center gap-2.5">
-            <img src={beamfallLogo} alt="" width={22} height={22} className="shrink-0" />
-            <span className="text-[15px] font-semibold">{t("brand")}</span>
-            <span className="text-[13px] text-muted-foreground">{t("setupBrandSuffix")}</span>
-          </div>
-          <span className="text-xs text-muted-foreground">{t("setupFreshServer")}</span>
+    <main className="theme-cinema relative isolate flex min-h-screen flex-col overflow-hidden bg-background text-foreground">
+      <CinemaBackdrop />
+
+      {/* Brand bar */}
+      <header className="flex items-center justify-between px-5 py-4 sm:px-8 sm:py-6">
+        <div className="flex items-center gap-2.5">
+          <img src={beamfallLogo} alt="" width={28} height={28} className="shrink-0" />
+          <Wordmark label={t("brand")} />
+          <span className="hidden text-sm text-muted-foreground sm:inline">
+            {t("setupBrandSuffix")}
+          </span>
         </div>
+      </header>
 
-        {/* Unlocked banner — shown once the token POST succeeds */}
-        {bootstrapped && (
-          <div className="mx-[18px] mt-3 rounded-lg border border-primary/35 bg-primary/10 px-3 py-2 text-[12.5px] text-primary">
-            {t("setupUnlockedBanner")}
-          </div>
-        )}
-
-        <div className="grid grid-cols-[220px_1fr]">
-          {/* Step rail */}
-          <nav className="border-r py-2 pl-[18px] pr-3.5">
-            <ol className="m-0 flex list-none flex-col gap-0.5 p-0">
-              {STEP_KEYS.map((key, i) => {
-                const done = i < step;
-                const cur = i === step;
-                return (
-                  <li
-                    key={key}
-                    className={cn(
-                      "flex items-center gap-2.5 rounded-lg px-2 py-2.5",
-                      cur && "border bg-muted",
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "inline-flex h-[22px] w-[22px] items-center justify-center rounded-full border text-xs text-muted-foreground",
-                        done && "border-0 bg-primary text-primary-foreground",
-                        cur && "border-0 bg-primary font-semibold text-primary-foreground",
-                      )}
-                    >
-                      {done ? "✓" : i + 1}
-                    </span>
-                    <span
-                      className={cn(
-                        "text-[13px] text-muted-foreground",
-                        cur && "font-semibold text-foreground",
-                      )}
-                    >
-                      {t(key)}
-                    </span>
-                  </li>
-                );
-              })}
+      {/* Top-aligned at a fixed offset so the card never jumps between steps. */}
+      <div className="flex flex-1 justify-center px-4 pb-12 pt-2 sm:px-8 sm:pt-[8vh]">
+        <div className="w-full max-w-[560px]">
+          {/* Progress: one segment per visible step; names stay for assistive tech. */}
+          <div className="mb-5 flex items-center gap-4">
+            <ol
+              className="m-0 flex flex-1 list-none gap-1.5 p-0"
+              aria-label={t("setupBrandSuffix")}
+            >
+              {visibleSteps.map((key, i) => (
+                <li
+                  key={key}
+                  aria-current={i === visibleIndex ? "step" : undefined}
+                  className={cn(
+                    "h-1 flex-1 rounded-full bg-white/10 transition-colors duration-200",
+                    i < visibleIndex && "bg-primary/70",
+                    i === visibleIndex && "bg-primary",
+                  )}
+                >
+                  <span className="sr-only">{t(key)}</span>
+                </li>
+              ))}
             </ol>
-          </nav>
+            <span className="shrink-0 text-dense tabular-nums text-muted-foreground">
+              {t("setupStepCount", { n: visibleIndex + 1, total: visibleSteps.length })}
+            </span>
+          </div>
 
-          {/* Active pane */}
-          <form onSubmit={onNext} className="px-[22px] pb-[22px] pt-4" noValidate>
+          {/* Unlocked banner — shown once the bootstrap POST succeeds */}
+          {bootstrapped && (
+            <div className="mb-4 flex items-center gap-2 text-dense text-primary">
+              <Check aria-hidden className="size-3.5 shrink-0" />
+              {t("setupUnlockedBanner")}
+            </div>
+          )}
+
+          <form
+            key={step}
+            ref={formRef}
+            onSubmit={onNext}
+            noValidate
+            className="animate-in fade-in motion-reduce:animate-none rounded-[14px] border border-white/10 bg-card p-5 shadow-[0_24px_60px_-28px_rgba(0,0,0,0.7)] duration-200 sm:p-8"
+          >
             {step === 0 && (
               <section>
-                <h1 className="m-0 text-lg font-semibold">{t("setupTokenTitle")}</h1>
-                <p className="mb-4 mt-0.5 text-[13px] text-muted-foreground">
-                  {t("setupTokenLead")}
-                </p>
-                <Label htmlFor={tokenID} className="mb-1.5 block text-xs">
+                <StepHeading title={t("setupTokenTitle")} lead={t("setupTokenLead")} />
+                <Label htmlFor={tokenID} className={FIELD_LABEL}>
                   {t("setupToken")}
                 </Label>
                 <Input
@@ -593,6 +761,7 @@ export function SetupWizard() {
                     setToken(e.target.value);
                     setTokenError(null);
                   }}
+                  className={cn(FIELD, "font-mono")}
                   autoComplete="off"
                   autoCapitalize="off"
                   autoCorrect="off"
@@ -608,7 +777,7 @@ export function SetupWizard() {
                     id={errorID}
                     role="alert"
                     tabIndex={-1}
-                    className="mt-2 text-sm text-destructive outline-none"
+                    className="mt-2 text-sm text-(--state-danger) outline-none"
                   >
                     {tokenError}
                   </p>
@@ -618,11 +787,11 @@ export function SetupWizard() {
 
             {step === 1 && (
               <section>
-                <h1 className="m-0 text-lg font-semibold">{t("setupAdminPasswordTitle")}</h1>
-                <p className="mb-4 mt-0.5 text-[13px] text-muted-foreground">
-                  {t("setupAdminPasswordLead")}
-                </p>
-                <Label htmlFor={adminID} className="mb-1.5 block text-xs">
+                <StepHeading
+                  title={t("setupAdminPasswordTitle")}
+                  lead={t("setupAdminPasswordLead")}
+                />
+                <Label htmlFor={adminID} className={FIELD_LABEL}>
                   {t("setupAdminPassword")}
                 </Label>
                 <Input
@@ -630,11 +799,13 @@ export function SetupWizard() {
                   type="password"
                   value={adminPassword}
                   onChange={(e) => setAdminPassword(e.target.value)}
+                  className={FIELD}
                   autoComplete="new-password"
                   required
                   autoFocus
+                  {...invalidProps(adminID)}
                 />
-                <Label htmlFor={adminConfirmID} className="mb-1.5 mt-3.5 block text-xs">
+                <Label htmlFor={adminConfirmID} className={cn(FIELD_LABEL, "mt-4")}>
                   {t("setupAdminPasswordConfirm")}
                 </Label>
                 <Input
@@ -642,54 +813,86 @@ export function SetupWizard() {
                   type="password"
                   value={adminPasswordConfirm}
                   onChange={(e) => setAdminPasswordConfirm(e.target.value)}
+                  className={FIELD}
                   autoComplete="new-password"
                   required
+                  {...invalidProps(adminConfirmID)}
                 />
               </section>
             )}
 
+            {step === STEP_SECURITY && (
+              <fieldset className="m-0 border-0 p-0">
+                <legend className="sr-only">{t("setupSecurityTitle")}</legend>
+                <StepHeading title={t("setupSecurityTitle")} lead={t("setupSecurityLead")} />
+                <div className="divide-y divide-white/10 border-y border-white/10">
+                  {SECURITY_MODES.map(({ mode, label, detail }) => (
+                    <label key={mode} className={OPTION_ROW}>
+                      <input
+                        type="radio"
+                        name="setup-security-mode"
+                        value={mode}
+                        checked={securityMode === mode}
+                        onChange={() => setSecurityMode(mode)}
+                        className={RADIO}
+                      />
+                      <span className="flex min-w-0 flex-col gap-1">
+                        <span className="flex flex-wrap items-baseline gap-x-2 text-[15px] font-medium text-foreground">
+                          {t(label)}
+                          {mode === "home" && (
+                            <span className="text-dense font-normal text-primary">
+                              {t("setupSecurityRecommended")}
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-dense leading-snug text-muted-foreground">
+                          {t(detail)}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            )}
+
             {step === STEP_LIBRARY && (
               <section>
-                <h1 className="m-0 text-lg font-semibold">{t("setupLibraryTitle")}</h1>
-                <p className="mb-4 mt-0.5 text-[13px] text-muted-foreground">
-                  {t("setupLibraryLead")}
-                </p>
-                <Label className="mb-1.5 block text-xs">{t("setupLibraryType")}</Label>
-                <div className="mb-3.5 grid grid-cols-5 gap-[7px]">
-                  {libraryTypes.map((spec) => {
-                    const sel = spec.type === libraryType;
-                    return (
-                      <button
-                        key={spec.type}
-                        type="button"
-                        onClick={() => setLibraryType(spec.type)}
-                        aria-pressed={sel}
-                        className={cn(
-                          "rounded-lg border px-[5px] py-2.5 text-center",
-                          sel && "border-[1.5px] border-primary bg-primary/10",
-                        )}
-                      >
-                        <div className="mt-[3px] text-xs font-semibold">
-                          {t(TYPE_LABEL[spec.type])}
-                        </div>
-                        <div className="text-[10px] text-muted-foreground">
-                          {t(PLUGIN_LABEL[spec.pluginID])}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-                <Label htmlFor={libNameID} className="mb-1.5 block text-xs">
-                  {t("setupLibraryName")}
-                </Label>
-                <Input
-                  id={libNameID}
-                  value={libraryName}
-                  onChange={(e) => setLibraryName(e.target.value)}
-                  placeholder={t(TYPE_LABEL[libraryType])}
-                  autoFocus
-                />
-                <Label htmlFor={rootID} className="mb-1.5 mt-3.5 block text-xs">
+                <StepHeading title={t("setupLibraryTitle")} lead={t("setupLibraryLead")} />
+                <fieldset className="m-0 mb-5 border-0 p-0">
+                  <legend className={cn(FIELD_LABEL, "p-0")}>{t("setupLibraryType")}</legend>
+                  <div className="grid grid-cols-2 gap-x-4">
+                    {libraryTypes.map((spec) => {
+                      const sel = spec.type === libraryType;
+                      const Icon = TYPE_ICON[spec.type];
+                      return (
+                        <label
+                          key={spec.type}
+                          className="flex cursor-pointer items-center gap-3 py-2"
+                        >
+                          <input
+                            type="radio"
+                            name="setup-library-type"
+                            value={spec.type}
+                            checked={sel}
+                            onChange={() => setLibraryType(spec.type)}
+                            className={cn(RADIO, "mt-0")}
+                          />
+                          <Icon
+                            aria-hidden
+                            className={cn(
+                              "size-4 shrink-0",
+                              sel ? "text-primary" : "text-muted-foreground",
+                            )}
+                          />
+                          <span className="min-w-0 text-sm leading-snug">
+                            {t(TYPE_LABEL[spec.type])}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+                <Label htmlFor={rootID} className={FIELD_LABEL}>
                   {t("setupLibraryRoot")}
                 </Label>
                 <div className="flex items-stretch gap-2">
@@ -697,15 +900,20 @@ export function SetupWizard() {
                     id={rootID}
                     value={rootPath}
                     onChange={(e) => setRootPath(e.target.value)}
-                    className="flex-1 font-mono"
-                    placeholder="/media/films"
+                    className={cn(FIELD, "min-w-0 flex-1 font-mono")}
+                    autoComplete="off"
+                    spellCheck={false}
                     required
+                    autoFocus
                     disabled={firstLibraryProgress.rootsSet}
+                    {...invalidProps(rootID)}
                   />
                   <Button
+                    ref={browseRef}
                     type="button"
                     variant="outline"
-                    onClick={openPicker}
+                    className="h-11 shrink-0 rounded-[10px] border-white/10 bg-white/[0.04] px-4"
+                    onClick={() => void openPicker()}
                     aria-expanded={pickerNode != null}
                     disabled={firstLibraryProgress.rootsSet}
                   >
@@ -713,6 +921,14 @@ export function SetupWizard() {
                   </Button>
                 </div>
 
+                {pickerNode == null && pickerError && (
+                  <p
+                    role="alert"
+                    className="mb-0 mt-2 text-dense leading-snug text-(--state-danger)"
+                  >
+                    {pickerError}
+                  </p>
+                )}
                 {pickerNode != null && (
                   <FolderPicker
                     node={pickerNode}
@@ -729,22 +945,31 @@ export function SetupWizard() {
                     }}
                   />
                 )}
+
+                <Label htmlFor={libNameID} className={cn(FIELD_LABEL, "mt-5")}>
+                  {t("setupLibraryName")}
+                </Label>
+                <Input
+                  id={libNameID}
+                  value={libraryName}
+                  onChange={(e) => setLibraryName(e.target.value)}
+                  className={FIELD}
+                  placeholder={t(TYPE_LABEL[libraryType])}
+                />
               </section>
             )}
 
             {step === STEP_PROFILE && (
               <section>
-                <h1 className="m-0 text-lg font-semibold">{t("setupProfileTitle")}</h1>
-                <p className="mb-4 mt-0.5 text-[13px] text-muted-foreground">
-                  {t("setupProfileLead")}
-                </p>
-                <Label htmlFor={profileID} className="mb-1.5 block text-xs">
+                <StepHeading title={t("setupProfileTitle")} lead={t("setupProfileLead")} />
+                <Label htmlFor={profileID} className={FIELD_LABEL}>
                   {t("setupProfileName")}
                 </Label>
                 <Input
                   id={profileID}
                   value={profileName}
                   onChange={(e) => setProfileName(e.target.value)}
+                  className={FIELD}
                   placeholder={t("setupProfileDefault")}
                   autoFocus
                 />
@@ -753,24 +978,27 @@ export function SetupWizard() {
 
             {step === STEP_PLUGINS && (
               <section>
-                <h1 className="m-0 text-lg font-semibold">{t("setupPluginsTitle")}</h1>
-                <p className="mb-4 mt-0.5 text-[13px] text-muted-foreground">
-                  {t("setupPluginsLead")}
-                </p>
+                <StepHeading title={t("setupPluginsTitle")} lead={t("setupPluginsLead")} />
                 {plugins.length === 0 ? (
-                  <p className="text-[13px] text-muted-foreground">{t("setupPluginsEmpty")}</p>
+                  <p className="text-sm text-muted-foreground">{t("setupPluginsEmpty")}</p>
                 ) : (
-                  <ul className="m-0 flex list-none flex-col gap-2 p-0">
+                  <ul className="m-0 list-none divide-y divide-white/10 border-y border-white/10 p-0">
                     {plugins.map((p) => {
                       const name = displayString(p.displayName, locale);
+                      const on = activePlugins.has(p.id);
+                      const Icon = PLUGIN_ICON[p.id] ?? Blocks;
                       return (
-                        <li
-                          key={p.id}
-                          className="flex items-center justify-between rounded-lg border px-3 py-2.5"
-                        >
-                          <span className="text-[13px]">{name}</span>
+                        <li key={p.id} className="flex items-center gap-3 py-3">
+                          <Icon
+                            aria-hidden
+                            className={cn(
+                              "size-5 shrink-0",
+                              on ? "text-primary" : "text-muted-foreground",
+                            )}
+                          />
+                          <span className="min-w-0 flex-1 text-sm font-medium">{name}</span>
                           <Switch
-                            checked={activePlugins.has(p.id)}
+                            checked={on}
                             onCheckedChange={() => togglePlugin(p.id)}
                             aria-label={name}
                           />
@@ -779,11 +1007,48 @@ export function SetupWizard() {
                     })}
                   </ul>
                 )}
-                <div className="mt-4 rounded-lg border bg-muted/25 p-3">
+                {neededKeys.length > 0 && (
+                  <div className="mt-6 border-t border-white/10 pt-5">
+                    <h2 className="m-0 text-[15px] font-semibold">{t("setupKeysTitle")}</h2>
+                    <p className="m-0 mt-1 text-dense leading-snug text-muted-foreground">
+                      {t("setupKeysLead")}
+                    </p>
+                    <div className="mt-4 grid gap-4">
+                      {neededKeys.map((key) => {
+                        const fieldId = `setup-key-${key.authRef}`;
+                        return (
+                          <div key={key.authRef}>
+                            <Label htmlFor={fieldId} className={FIELD_LABEL}>
+                              {t("pluginKeyField", { provider: key.label })}
+                            </Label>
+                            <Input
+                              id={fieldId}
+                              type="password"
+                              autoComplete="off"
+                              className={FIELD}
+                              placeholder={t("setupKeyOptional")}
+                              value={keySecrets[key.authRef] ?? ""}
+                              onChange={(e) =>
+                                setKeySecrets((prev) => ({
+                                  ...prev,
+                                  [key.authRef]: e.target.value,
+                                }))
+                              }
+                            />
+                            <p className="mb-0 mt-1.5 text-dense leading-snug text-muted-foreground">
+                              {t("pluginKeySentTo", { hosts: key.hosts.join(", ") })}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                <div className="mt-6 border-t border-white/10 pt-5">
                   <div className="flex items-start justify-between gap-4">
-                    <div className="space-y-1">
-                      <h2 className="m-0 text-[13px] font-semibold">{t("setupUpdateTitle")}</h2>
-                      <p className="m-0 text-[12px] leading-snug text-muted-foreground">
+                    <div>
+                      <h2 className="m-0 text-[15px] font-semibold">{t("setupUpdateTitle")}</h2>
+                      <p className="m-0 mt-1 text-dense leading-snug text-muted-foreground">
                         {t("setupUpdateLead")}
                       </p>
                     </div>
@@ -793,25 +1058,31 @@ export function SetupWizard() {
                       aria-label={t("setupUpdateToggle")}
                     />
                   </div>
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    {(["stable", "beta"] as const).map((channel) => (
-                      <button
-                        key={channel}
-                        type="button"
-                        disabled={!updateCheckEnabled}
-                        aria-pressed={updateCheckChannel === channel}
-                        onClick={() => setUpdateCheckChannel(channel)}
-                        className={cn(
-                          "rounded-md border px-3 py-1.5 text-xs font-medium disabled:opacity-45",
-                          updateCheckChannel === channel &&
-                            "border-primary bg-primary/10 text-primary",
-                        )}
-                      >
-                        {t(channel === "stable" ? "updateChannelStable" : "updateChannelBeta")}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="mb-0 mt-2 text-[11.5px] leading-snug text-muted-foreground">
+                  {/* Channel only matters once checks are on. */}
+                  {updateCheckEnabled && (
+                    <fieldset className="m-0 mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 border-0 p-0">
+                      <legend className="sr-only">{t("updateCheckChannel")}</legend>
+                      {(["stable", "beta"] as const).map((channel) => (
+                        <label
+                          key={channel}
+                          className="flex cursor-pointer items-center gap-2.5 py-1"
+                        >
+                          <input
+                            type="radio"
+                            name="setup-update-channel"
+                            value={channel}
+                            checked={updateCheckChannel === channel}
+                            onChange={() => setUpdateCheckChannel(channel)}
+                            className={cn(RADIO, "mt-0")}
+                          />
+                          <span className="text-sm">
+                            {t(channel === "stable" ? "updateChannelStable" : "updateChannelBeta")}
+                          </span>
+                        </label>
+                      ))}
+                    </fieldset>
+                  )}
+                  <p className="mb-0 mt-3 text-dense leading-snug text-muted-foreground">
                     {t("setupUpdateDisclosure")}
                   </p>
                 </div>
@@ -820,38 +1091,50 @@ export function SetupWizard() {
 
             {isScanStep && (
               <section>
-                <h1 className="m-0 text-lg font-semibold">{t("setupScanTitle")}</h1>
-                <p className="mb-4 mt-0.5 text-[13px] text-muted-foreground">
-                  {t("setupScanLead")}
-                </p>
-                <div className="rounded-lg border bg-muted/25 p-3">
-                  <p className="m-0 text-sm font-semibold">
-                    {t("setupScanStatus", {
-                      status: scanJob ? jobStatusLabel(scanJob.status, t) : t("jobStatusQueued"),
-                    })}
-                  </p>
-                  <p className="m-0 mt-1 text-[13px] text-muted-foreground">
-                    {scanJob && jobProgressDetail(scanJob, t)
-                      ? jobProgressDetail(scanJob, t)
-                      : t("setupScanWaiting")}
-                  </p>
+                <StepHeading title={t("setupScanTitle")} lead={t("setupScanLead")} />
+                <div className="flex items-start gap-3">
+                  {scanJob?.status === "completed" ? (
+                    <CircleCheck aria-hidden className="mt-0.5 size-5 shrink-0 text-primary" />
+                  ) : scanStopped ? (
+                    <CircleAlert
+                      aria-hidden
+                      className="mt-0.5 size-5 shrink-0 text-(--state-danger)"
+                    />
+                  ) : (
+                    <LoaderCircle
+                      aria-hidden
+                      className="mt-0.5 size-5 shrink-0 text-primary motion-safe:animate-spin"
+                    />
+                  )}
+                  <div>
+                    <p className="m-0 text-sm font-semibold">
+                      {t("setupScanStatus", {
+                        status: scanJob ? jobStatusLabel(scanJob.status, t) : t("jobStatusQueued"),
+                      })}
+                    </p>
+                    <p className="m-0 mt-0.5 text-dense text-muted-foreground">
+                      {scanJob && jobProgressDetail(scanJob, t)
+                        ? jobProgressDetail(scanJob, t)
+                        : t("setupScanWaiting")}
+                    </p>
+                  </div>
                 </div>
+                {scanStopped && (
+                  <p className="mb-0 mt-3 text-dense leading-snug text-muted-foreground">
+                    {t("setupScanStopped")}
+                  </p>
+                )}
+                {scanFraction != null && (
+                  <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/10" aria-hidden>
+                    <div
+                      className="h-full rounded-full bg-primary transition-[width] duration-200"
+                      style={{ width: `${Math.round(scanFraction * 100)}%` }}
+                    />
+                  </div>
+                )}
+                <MigrationOffer embedded />
               </section>
             )}
-
-            <div className="mt-[18px] flex items-center gap-2">
-              {step > 0 && !bootstrapped && (
-                <Button type="button" variant="outline" onClick={onBack} disabled={busy}>
-                  {t("setupBack")}
-                </Button>
-              )}
-              <Button type="submit" disabled={busy}>
-                {busy ? t("setupWorking") : isLast ? t("setupBrowseReady") : t("setupContinue")}
-              </Button>
-              <span className="ml-auto text-xs text-muted-foreground">
-                {t("setupStepCount", { n: step + 1 })}
-              </span>
-            </div>
 
             {error && step !== 0 && (
               <p
@@ -859,14 +1142,58 @@ export function SetupWizard() {
                 id={errorID}
                 role="alert"
                 tabIndex={-1}
-                className="mt-3 text-sm text-destructive outline-none"
+                className="mb-0 mt-5 text-sm text-(--state-danger) outline-none"
               >
                 {error}
               </p>
             )}
+            <div className="mt-6 flex items-center gap-2">
+              {step > firstStep && !bootstrapped && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-11 rounded-[10px] px-5"
+                  onClick={onBack}
+                  disabled={busy}
+                >
+                  {t("setupBack")}
+                </Button>
+              )}
+              <Button
+                type="submit"
+                disabled={busy}
+                className="ml-auto h-11 min-w-[148px] rounded-[10px] px-6 text-[15px] font-semibold"
+              >
+                {busy && <LoaderCircle aria-hidden className="size-4 motion-safe:animate-spin" />}
+                {busy ? t("setupWorking") : isLast ? t("setupBrowseReady") : t("setupContinue")}
+              </Button>
+            </div>
           </form>
         </div>
       </div>
     </main>
+  );
+}
+
+const FIELD = "h-11 rounded-[10px] border-white/10 bg-white/[0.04] text-[15px]";
+const FIELD_LABEL = "mb-2 block text-dense font-medium text-foreground/80";
+// Options sit directly on the card as rows split by hairlines: one surface,
+// with the native radio carrying the selection.
+const OPTION_ROW = "flex cursor-pointer items-start gap-3 py-3.5";
+const RADIO = "mt-1 size-4 shrink-0 cursor-pointer accent-[var(--accent)]";
+
+function StepHeading({ title, lead }: { title: string; lead: string }) {
+  return (
+    <div className="mb-6">
+      {/* Focus target on steps without a text field; see the step-focus effect. */}
+      <h1
+        data-step-heading
+        tabIndex={-1}
+        className="m-0 text-2xl font-semibold leading-tight tracking-tight text-balance outline-none"
+      >
+        {title}
+      </h1>
+      <p className="mb-0 mt-2 text-[15px] leading-relaxed text-muted-foreground">{lead}</p>
+    </div>
   );
 }

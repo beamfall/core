@@ -476,7 +476,7 @@ func TestRelayConnectHandshakeAndAck(t *testing.T) {
 		_ = writeRelayFrame(conn, relayFrame{Type: relayFrameAck, Ack: &relayAck{
 			Version: relayProtoVersion, CarrierID: "carrier-1", Hostnames: frame.Hello.Hostnames,
 		}})
-		s, _ := yamux.Server(conn, relayYamuxConfig())
+		s, _ := yamux.Server(conn, relayYamuxConfig(0))
 		return s, true
 	})
 
@@ -624,7 +624,7 @@ func TestRelayConnectAcceptsForwardCompatibleAckVersion(t *testing.T) {
 			return nil, false
 		}
 		_ = writeRelayFrame(conn, relayFrame{Type: relayFrameAck, Ack: &relayAck{Version: relayProtoVersion + 1, CarrierID: "carrier-1"}})
-		s, serr := yamux.Server(conn, relayYamuxConfig())
+		s, serr := yamux.Server(conn, relayYamuxConfig(0))
 		if serr != nil {
 			return nil, false
 		}
@@ -672,7 +672,7 @@ func TestRelayCarryForwardsStreamToBackend(t *testing.T) {
 			return nil, false
 		}
 		_ = writeRelayFrame(conn, relayFrame{Type: relayFrameAck, Ack: &relayAck{Version: relayProtoVersion, CarrierID: "carrier-1"}})
-		s, serr := yamux.Server(conn, relayYamuxConfig())
+		s, serr := yamux.Server(conn, relayYamuxConfig(0))
 		if serr != nil {
 			return nil, false
 		}
@@ -880,11 +880,11 @@ func TestRelayCarryLimitsConcurrentStreams(t *testing.T) {
 	}()
 
 	carrierConn, relayConn := net.Pipe()
-	carrierSession, err := yamux.Client(carrierConn, relayYamuxConfig())
+	carrierSession, err := yamux.Client(carrierConn, relayYamuxConfig(0))
 	if err != nil {
 		t.Fatal(err)
 	}
-	relaySession, err := yamux.Server(relayConn, relayYamuxConfig())
+	relaySession, err := yamux.Server(relayConn, relayYamuxConfig(0))
 	if err != nil {
 		t.Fatal(err)
 	}

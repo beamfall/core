@@ -134,6 +134,13 @@ type EntityFilter struct {
 	Name string `json:"name"`
 }
 
+// DefaultAccentColor is the theme accent served when the owner has not set
+// one: the design-system brand accent (the Cinema `--accent`, which resolves to
+// `--beam-500`). It is applied at read time, never written into the stored
+// override, so an explicit owner choice always wins. A conformance test pins
+// it to internal/web/app/src/styles/tokens.css and the web default.
+const DefaultAccentColor = "#9fd8e5"
+
 // Theme contains the small style token set controlled by the platform contract.
 type Theme struct {
 	AccentColor string `json:"accentColor"`
@@ -234,7 +241,7 @@ func (s *Service) Document(ctx context.Context, scope auth.Scope) (Document, err
 	navigation = applyNavOverride(navigation, override)
 	layouts = applyLayoutOverride(layouts, override)
 
-	accentColor := "#2F7DFF"
+	accentColor := DefaultAccentColor
 	if override.ThemeAccentColor != "" {
 		accentColor = override.ThemeAccentColor
 	}
@@ -367,6 +374,13 @@ func homeLayout() Layout {
 				Title:       plugin.LocaleString{"en": "Continue Watching", "fr": "Reprendre la lecture"},
 				ArtworkSlot: "poster",
 				Source:      SourceSpec{Kind: "continue-watching"},
+			},
+			{
+				ID:          "watchlist",
+				Kind:        "shelf",
+				Title:       plugin.LocaleString{"en": "Watchlist", "fr": "Ma liste"},
+				ArtworkSlot: "poster",
+				Source:      SourceSpec{Kind: "watchlist"},
 			},
 			{
 				ID:          "recent",

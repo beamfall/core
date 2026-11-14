@@ -146,13 +146,43 @@ func authorizeDispatchOrder(dispatch *fieldDispatchContext, order fieldDispatchO
 			authorizationRefused: true,
 		}
 	}
-	if gate&roleAdmin != 0 && !dispatch.scope.Admin {
+	if gate&roleAdmin != 0 && !dispatch.scope.Admin && !adminTokenMayRun(dispatch) {
 		return response{
 			Errors:               []graphError{{Message: "admin session required"}},
 			authorizationRefused: true,
 		}
 	}
 	return response{}
+}
+
+// adminTokenOps are the Console operations the operator CLI performs against a
+// running server (`beamfall scan`, `backup`, `token list`, `token revoke`). An
+// admin API token is minted only with data-directory access while the server is
+// stopped, so holding one is already host-operator authority; it may run exactly
+// these fields without an Admin Session. Everything else in adminFields —
+// including createApiToken, so a token can never mint another credential —
+// still requires the interactive browser Admin Session (ADR-0007 §2).
+var adminTokenOps = map[string]bool{
+	"scanlibrary":    true,
+	"runjob":         true,
+	"backup":         true,
+	"apitokens":      true,
+	"revokeapitoken": true,
+}
+
+// adminTokenMayRun reports whether the request authenticated with an admin API
+// token and every field it selects is an allowlisted CLI operation. Scoped keys
+// and sessions never qualify.
+func adminTokenMayRun(dispatch *fieldDispatchContext) bool {
+	if dispatch.scope.APITokenID == "" {
+		return false
+	}
+	for field, requested := range dispatch.fields {
+		if requested && adminFields[field] && !adminTokenOps[field] {
+			return false
+		}
+	}
+	return true
 }
 
 // fieldDispatchRuns is the single order-to-function authority. Field handlers
@@ -305,6 +335,8 @@ var fieldDispatchRuns = [...]fieldDispatchFunc{
 	143: dispatchFieldBlock143,
 	144: dispatchFieldBlock144,
 	145: dispatchFieldBlock145,
+	146: dispatchFieldBlock146,
+	147: dispatchFieldBlock147,
 }
 
 var fieldHandlerRegistry = map[string]fieldHandler{
@@ -407,6 +439,8 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"jobcancel":                          newFieldHandler("jobCancel", "jobCancel", fieldMutation, roleSession|roleAdmin, 63),
 	"jobevents":                          newFieldHandler("jobEvents", "jobEvents", fieldRead, roleSession|roleAdmin, 63),
 	"jobretry":                           newFieldHandler("jobRetry", "jobRetry", fieldMutation, roleSession|roleAdmin, 63),
+	"itemstate":                          newFieldHandler("itemState", "itemState", fieldRead, roleSession, 146),
+	"metadatacredits":                    newFieldHandler("metadataCredits", "metadataCredits", fieldRead, roleSession, 147),
 	"jobs":                               newFieldHandler("jobs", "jobs", fieldRead, roleSession|roleAdmin, 63),
 	"joingroup":                          newFieldHandler("joinGroup", "joinGroup", fieldMutation, roleSession, 132),
 	"leavegroup":                         newFieldHandler("leaveGroup", "leaveGroup", fieldMutation, roleSession, 133),
@@ -419,6 +453,9 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"linkmediarelation":                  newFieldHandler("linkMediaRelation", "linkMediaRelation", fieldMutation, roleSession|roleManager, 110),
 	"linkscrobble":                       newFieldHandler("linkScrobble", "linkScrobble", fieldMutation, roleSession, 27),
 	"livesessions":                       newFieldHandler("liveSessions", "liveSessions", fieldRead, roleSession|roleAdmin, 145),
+	"hostmetrics":                        newFieldHandler("hostMetrics", "hostMetrics", fieldRead, roleSession|roleAdmin, 145),
+	"playhistory":                        newFieldHandler("playHistory", "playHistory", fieldRead, roleSession|roleAdmin, 145),
+	"playstats":                          newFieldHandler("playStats", "playStats", fieldRead, roleSession|roleAdmin, 145),
 	"manifest":                           newAliasedFieldHandler("manifest", "navigationManifest", "manifest", fieldRead, roleSession, 4),
 	"markers":                            newFieldHandler("markers", "markers", fieldRead, roleSession, 12),
 	"marknotificationread":               newFieldHandler("markNotificationRead", "markNotificationRead", fieldMutation, roleSession, 89),
@@ -539,6 +576,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"setprofilelibraries":                newFieldHandler("setProfileLibraries", "setProfileLibraries", fieldMutation, roleSession|roleAdmin, 39),
 	"setqbittorrentingest":               newFieldHandler("setQBittorrentIngest", "setQBittorrentIngest", fieldMutation, roleSession|roleAdmin, 106),
 	"setqualitypolicy":                   newFieldHandler("setQualityPolicy", "setQualityPolicy", fieldMutation, roleSession|roleAdmin, 50),
+	"setrating":                          newFieldHandler("setRating", "setRating", fieldMutation, roleSession, 146),
 	"setretentioncandidatehold":          newFieldHandler("setRetentionCandidateHold", "setRetentionCandidateHold", fieldMutation, roleSession|roleManager, 59),
 	"setrevealpin":                       newFieldHandler("setRevealPin", "reveal", fieldMutation, roleSession|roleManager, 25),
 	"setscrapercredential":               newFieldHandler("setScraperCredential", "setScraperCredential", fieldMutation, roleSession|roleAdmin, 66),
@@ -546,10 +584,13 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"setskipdetectionenabled":            newFieldHandler("setSkipDetectionEnabled", "setSkipDetectionEnabled", fieldMutation, roleSession|roleAdmin, 78),
 	"setsubscriptionretention":           newFieldHandler("setSubscriptionRetention", "setSubscriptionRetention", fieldMutation, roleSession|roleManager, 54),
 	"settranscodeconfig":                 newFieldHandler("setTranscodeConfig", "setTranscodeConfig", fieldMutation, roleSession|roleAdmin, 69),
+	"setwatched":                         newFieldHandler("setWatched", "setWatched", fieldMutation, roleSession, 146),
+	"setwatchlisted":                     newFieldHandler("setWatchlisted", "setWatchlisted", fieldMutation, roleSession, 146),
 	"setupstate":                         newFieldHandler("setupState", "setupState", fieldRead, roleSession, 80),
 	"skipdetectionenabled":               newFieldHandler("skipDetectionEnabled", "skipDetectionEnabled", fieldRead, roleSession|roleAdmin, 78),
 	"smartcollections":                   newFieldHandler("smartCollections", "smartCollections", fieldRead, roleSession, 57),
 	"sourceitems":                        newFieldHandler("sourceItems", "sourceItems", fieldRead, roleSession, 17),
+	"libraryitems":                       newFieldHandler("libraryItems", "libraryItems", fieldRead, roleSession, 17),
 	"stationdelete":                      newFieldHandler("stationDelete", "stationDelete", fieldMutation, roleSession, 33),
 	"stationgenerate":                    newFieldHandler("stationGenerate", "stationGenerate", fieldRead, roleSession, 56),
 	"stations":                           newFieldHandler("stations", "stations", fieldRead, roleSession, 56),
@@ -890,6 +931,12 @@ func dispatchFieldBlock017(dispatch *fieldDispatchContext) response {
 	if fields["sourceitems"] {
 		items, err := h.sourceItems(ctx, scope, req)
 		if resp := resolveField(dispatch, "sourceitems", items, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["libraryitems"] {
+		result, err := h.libraryItems(ctx, scope, req)
+		if resp := resolveField(dispatch, "libraryitems", result, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}
@@ -3806,6 +3853,23 @@ func dispatchFieldBlock145(dispatch *fieldDispatchContext) response {
 	// Live sessions dashboard (ADR-0007 §4 Operations): Admin-Session-gated read
 	// of currently-active playback sessions + a kill mutation. Resolves over the
 	// existing Stream Token ledger (no new storage); see graph_livesessions.go.
+	if fields["hostmetrics"] {
+		if resp := resolveField(dispatch, "hostmetrics", h.hostMetricsInfo(), nil); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["playhistory"] {
+		plays, err := h.playHistory(ctx, scope, req)
+		if resp := resolveField(dispatch, "playhistory", plays, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["playstats"] {
+		stats, err := h.playStats(ctx, scope, req)
+		if resp := resolveField(dispatch, "playstats", stats, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
 	if fields["livesessions"] || fields["terminatesession"] || fields["revokedevice"] ||
 		fields["devices"] || fields["revokealldevices"] || fields["setdevicerole"] {
 		if fields["livesessions"] {
@@ -3843,6 +3907,58 @@ func dispatchFieldBlock145(dispatch *fieldDispatchContext) response {
 			if resp := resolveField(dispatch, "setdevicerole", result, err); len(resp.Errors) > 0 {
 				return resp
 			}
+		}
+	}
+	return response{}
+}
+
+// dispatchFieldBlock146 resolves the per-Profile item actions (CORE-1194): the
+// item-state read and the mark-watched, watchlist and rating writes.
+func dispatchFieldBlock146(dispatch *fieldDispatchContext) response {
+	h := dispatch.handler
+	ctx := dispatch.ctx
+	scope := dispatch.scope
+	req := dispatch.req
+	fields := dispatch.fields
+	if fields["itemstate"] {
+		state, err := h.itemState(ctx, scope, req)
+		if resp := resolveField(dispatch, "itemstate", state, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["setwatched"] {
+		state, err := h.setWatched(ctx, scope, req)
+		if resp := resolveField(dispatch, "setwatched", state, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["setwatchlisted"] {
+		state, err := h.setWatchlisted(ctx, scope, req)
+		if resp := resolveField(dispatch, "setwatchlisted", state, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["setrating"] {
+		state, err := h.setRating(ctx, scope, req)
+		if resp := resolveField(dispatch, "setrating", state, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	return response{}
+}
+
+// dispatchFieldBlock147 resolves the metadata credits read (CORE-1126): every
+// active plugin scraper's declared attribution, deduplicated.
+func dispatchFieldBlock147(dispatch *fieldDispatchContext) response {
+	h := dispatch.handler
+	ctx := dispatch.ctx
+	scope := dispatch.scope
+	req := dispatch.req
+	fields := dispatch.fields
+	if fields["metadatacredits"] {
+		credits, err := h.metadataCredits(ctx, scope, req)
+		if resp := resolveField(dispatch, "metadatacredits", credits, err); len(resp.Errors) > 0 {
+			return resp
 		}
 	}
 	return response{}

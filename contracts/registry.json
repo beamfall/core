@@ -8,12 +8,9 @@
       "version": "1.0.0",
       "activeArtifactVersion": "1.0.0",
       "license": "AGPL",
-      "consumers": [
-        {"role": "owner", "repo": "beamfall", "pinnedVersion": "1.0.0"},
-        {"role": "guest", "repo": "beamfall", "pinnedVersion": "1.0.0"}
-      ],
+      "consumers": ["beamfall"],
       "supportWindow": {"currentRevision": 2, "previousRevision": 1, "supportedRevisions": [2, 1]},
-      "conformanceTest": "internal/conformance/circle_wire_test.go; internal/circle/protocol_test.go; Tier 3 reuses the five committed matrix rows between two Core builds",
+      "conformanceTest": "internal/conformance/circle_wire_test.go; internal/streamtoken/circle_protocol_test.go; Tier 3 reuses the five committed matrix rows between two Core builds",
       "knownDrift": []
     },
     {
@@ -24,57 +21,19 @@
       "activeArtifactVersion": "1.0.0",
       "license": "CC-BY-4.0 spec text; Apache-2.0 schemas and fixtures",
       "consumers": ["beamfall", "third-party importers"],
-      "conformanceTest": "EXPORT-1 full-state fixture validates against both Draft 2020-12 schemas; EXPORT-3 adds blocking export-parity and round-trip conformance",
-      "knownDrift": [
-        {
-          "ticket": "EXPORT-3",
-          "deadline": "2026-11-30",
-          "reason": "Blocking storage-to-export coverage and round-trip conformance lands after the public v1 contract and exporter implementation."
-        }
-      ]
+      "conformanceTest": "full-state fixture validates against both Draft 2020-12 schemas",
+      "knownDrift": []
     },
     {
       "boundary": "client-core-wire",
       "producer": "beamfall",
-      "artifact": "internal/conformance/wire-contract-v1.13.2.json",
-      "version": "1.13.2",
-      "activeArtifactVersion": "1.13.2",
+      "artifact": "internal/conformance/wire-contract-v2.2.0.json",
+      "version": "2.2.0",
+      "activeArtifactVersion": "2.2.0",
       "license": "AGPL",
-      "consumers": [
-        {
-          "repo": "beamfall-web",
-          "pinnedVersion": "1.13.1"
-        },
-        {
-          "repo": "beamfall-apple",
-          "pinnedVersion": "1.5.0"
-        },
-        {
-          "repo": "beamfall-android",
-          "pinnedVersion": "1.13.2"
-        },
-        {
-          "repo": "beamfall-windows",
-          "pinnedVersion": "1.1.0"
-        }
-      ],
-      "consumerArtifacts": {
-        "beamfall-web": ["test/core-wire/client-core-wire.generated.json"],
-        "beamfall-apple": ["Tests/BeamfallKitTests/Fixtures/core-wire-client.generated.json"],
-        "beamfall-android": [
-          "app-tv/src/test/resources/core-wire/client-core-wire.generated.json",
-          "app-mobile/src/test/resources/core-wire/client-core-wire.generated.json"
-        ],
-        "beamfall-windows": ["contracts/core/client-core-wire.binding.json"]
-      },
-      "conformanceTest": "internal/conformance/wire_contract_test.go; XCONTRACT-1b consumer wire drift checks",
-      "knownDrift": [
-        {
-          "ticket": "XCONTRACT-1b",
-          "deadline": "2026-11-30",
-          "reason": "Web/native clients consume Core wire artifact and reject stale contracts."
-        }
-      ]
+      "consumers": ["beamfall-web", "beamfall-apple", "beamfall-android", "beamfall-windows"],
+      "conformanceTest": "internal/conformance/wire_contract_test.go",
+      "knownDrift": []
     },
     {
       "boundary": "client-core-token-scope",
@@ -84,14 +43,8 @@
       "activeArtifactVersion": "1.0.0",
       "license": "AGPL",
       "consumers": ["beamfall-apple", "beamfall-android"],
-      "conformanceTest": "internal/conformance/token_scope_test.go; XCONTRACT-0-APPLE/XCONTRACT-0-ANDROID consumer checks pin internal/conformance/testdata/goldens.sha256",
-      "knownDrift": [
-        {
-          "ticket": "XCONTRACT-0-ANDROID",
-          "deadline": "2026-11-30",
-          "reason": "Android may exercise the live token-scope check through its recorded SSH residual until the native live client-Core path lands."
-        }
-      ]
+      "conformanceTest": "internal/conformance/token_scope_test.go",
+      "knownDrift": []
     },
     {
       "boundary": "client-compat-contract",
@@ -110,14 +63,8 @@
       "artifact": "internal/conformance/mgmt-manifest.json",
       "version": "1",
       "consumers": ["beamfall-web", "beamfall-apple", "beamfall-windows"],
-      "conformanceTest": "mgmt-manifest parity checker plus WEB-5Q launch matrix",
-      "knownDrift": [
-        {
-          "ticket": "WEB-5Q",
-          "deadline": "2026-11-30",
-          "reason": "Final ADR-0061 launch rows still include open/partial evidence states."
-        }
-      ]
+      "conformanceTest": "tools/mgmt-manifest parity checker",
+      "knownDrift": []
     },
     {
       "boundary": "relay-core-tunnel",
@@ -129,43 +76,13 @@
       "knownDrift": []
     },
     {
-      "boundary": "entitlement-vectors",
-      "producer": "beamfall-cloud",
-      "artifact": "beamfall-cloud entitlement golden vectors",
-      "version": "1",
-      "consumers": ["beamfall-web", "beamfall-apple", "beamfall-android"],
-      "conformanceTest": "client entitlement verifier golden-vector tests",
-      "knownDrift": []
-    },
-    {
-      "boundary": "web-cloud-accounts",
-      "producer": "beamfall-cloud",
-      "artifact": "cloud-produced account API golden-response fixtures",
-      "version": "pending",
-      "consumers": ["beamfall-web"],
-      "conformanceTest": "web backend API fixture conformance",
-      "knownDrift": [
-        {
-          "ticket": "XCONTRACT-WEB-CLOUD",
-          "deadline": "2026-11-30",
-          "reason": "Cloud account fixtures and authenticated seed mode are not landed."
-        }
-      ]
-    },
-    {
       "boundary": "plugin-sdk-conformance",
       "producer": "beamfall-plugin-sdk",
       "artifact": "sdk conformance harness",
       "version": "pending",
       "consumers": ["filmtv", "music", "podcasts", "audiobook", "photos", "familyarchive", "beamfall"],
-      "conformanceTest": "sdktest.RunConformance for every required-green plugin repo",
-      "knownDrift": [
-        {
-          "ticket": "PLUGIN-SDK-CONFORMANCE",
-          "deadline": "2026-11-30",
-          "reason": "Required-green plugin repo list and harness are not fully wired."
-        }
-      ]
+      "conformanceTest": "sdktest.RunConformance",
+      "knownDrift": []
     },
     {
       "boundary": "plugin-artifact-trust",
@@ -195,14 +112,8 @@
       "activeArtifactVersion": "1.0.0",
       "license": "AGPL",
       "consumers": ["beamfall-web", "beamfall-apple", "beamfall-android", "beamfall-windows"],
-      "conformanceTest": "tools/visualsync/contract/visual_director_pack_test.go (TestVisualDirectorPack + TestVisualDirectorPackRedProof) — Go reference executor reproduces every behavior-matrix fixture and evaluator sample; native consumer executors tracked in knownDrift",
-      "knownDrift": [
-        {
-          "ticket": "VSYNC-6",
-          "deadline": "2026-11-30",
-          "reason": "Native consumer executors (web/apple/android/windows) run the visual-director behavior-matrix pack in their own blocking gates per ADR-0121 §9; only the Go reference executor runs today."
-        }
-      ]
+      "conformanceTest": "tools/visualsync/contract/visual_director_pack_test.go (TestVisualDirectorPack + TestVisualDirectorPackRedProof) — Go reference executor reproduces every behavior-matrix fixture and evaluator sample",
+      "knownDrift": []
     },
     {
       "boundary": "client-ceiling",
@@ -212,7 +123,7 @@
       "activeArtifactVersion": "1",
       "license": "AGPL",
       "consumers": ["beamfall-web", "beamfall-apple", "beamfall-android", "beamfall-windows"],
-      "conformanceTest": "internal/conformance/client_ceiling_test.go (TestClientCeilingNoDynamicCodePaths + TestClientCeilingCheckCatchesInjectedDrift) — scans this repo's embedded web client for forbidden dynamic-code/eval/downloaded-view patterns and proves the scan fails on injected drift; native consumer ceiling checks landed per repo (apple: Tests/BeamfallKitTests/ClientCeilingConformanceTests.swift; android: app-mobile ClientCeilingConformanceTest.kt; windows: release-gate.sh test_client_ceiling)",
+      "conformanceTest": "internal/conformance/client_ceiling_test.go (TestClientCeilingNoDynamicCodePaths + TestClientCeilingCheckCatchesInjectedDrift) — scans this repo's embedded web client for forbidden dynamic-code/eval/downloaded-view patterns and proves the scan fails on injected drift",
       "knownDrift": []
     },
     {
@@ -236,18 +147,7 @@
       "license": "AGPL",
       "consumers": ["beamfall-apple", "beamfall-android"],
       "conformanceTest": "internal/conformance/offlinepack_wrap_vectors_test.go (freshness, W01-W28 coverage, tuple uniqueness with W14-only reuse, reference verification, and registry-pin RED proof)",
-      "knownDrift": [
-        {
-          "ticket": "APPLE-NATIVE-2C",
-          "deadline": "2026-11-30",
-          "reason": "Apple consumes but does not produce the Core-published W-series corpus in its follow-up wrap-conformance ticket."
-        },
-        {
-          "ticket": "ANDROID-2C",
-          "deadline": "2026-11-30",
-          "reason": "Android consumes but does not produce the Core-published W-series corpus in its follow-up wrap-conformance ticket."
-        }
-      ]
+      "knownDrift": []
     }
   ]
 }

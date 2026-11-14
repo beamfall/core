@@ -386,6 +386,7 @@ type fakeArtwork struct {
 	calls   int
 
 	entityHas   map[store.EntityID]bool
+	inherited   map[store.EntityID]bool
 	entityIDs   []store.EntityID
 	entityData  []byte
 	entityErr   error
@@ -433,6 +434,10 @@ func (f *fakeArtwork) ImportEmbeddedPoster(_ context.Context, _ store.MediaID) (
 
 func (f *fakeArtwork) HasEntityPoster(id store.EntityID) bool {
 	return f.entityHas[id]
+}
+
+func (f *fakeArtwork) EntityPosterInherited(id store.EntityID) bool {
+	return f.inherited[id]
 }
 
 func (f *fakeArtwork) ImportEntityPoster(_ context.Context, id store.EntityID, data []byte) error {
@@ -708,15 +713,25 @@ func TestApplyDownloadsAndStoresKnownArtworkSlots(t *testing.T) {
 	engine := &fakeEngine{lookupResult: scrape.Result{
 		Fields: map[string]any{"title": "Blue Harvest"},
 		Artwork: map[string]string{
-			artwork.SlotPoster:   "https://img.example.test/p/42.jpg",
-			artwork.SlotBackdrop: "https://img.example.test/b/42.jpg",
-			artwork.SlotThumb:    "https://img.example.test/t/42.jpg",
+			artwork.SlotPoster:          "https://img.example.test/p/42.jpg",
+			artwork.SlotBackdrop:        "https://img.example.test/b/42.jpg",
+			artwork.SlotThumb:           "https://img.example.test/t/42.jpg",
+			artwork.SlotLogo:            "https://img.example.test/l/42.png",
+			artwork.SlotBanner:          "https://img.example.test/ba/42.jpg",
+			artwork.SlotClearart:        "https://img.example.test/c/42.png",
+			artwork.SlotDisc:            "https://img.example.test/d/42.png",
+			artwork.SlotContainerPoster: "https://img.example.test/sp/42.jpg",
 		},
 	}}
 	fetcher := &fakeFetcher{byURL: map[string]fetchedResource{
-		"https://img.example.test/p/42.jpg": {data: []byte("poster-bytes")},
-		"https://img.example.test/b/42.jpg": {data: []byte("backdrop-bytes")},
-		"https://img.example.test/t/42.jpg": {data: []byte("thumb-bytes")},
+		"https://img.example.test/p/42.jpg":  {data: []byte("poster-bytes")},
+		"https://img.example.test/b/42.jpg":  {data: []byte("backdrop-bytes")},
+		"https://img.example.test/t/42.jpg":  {data: []byte("thumb-bytes")},
+		"https://img.example.test/l/42.png":  {data: []byte("logo-bytes")},
+		"https://img.example.test/ba/42.jpg": {data: []byte("banner-bytes")},
+		"https://img.example.test/c/42.png":  {data: []byte("clearart-bytes")},
+		"https://img.example.test/d/42.png":  {data: []byte("disc-bytes")},
+		"https://img.example.test/sp/42.jpg": {data: []byte("container-poster-bytes")},
 	}}
 	art := &fakeArtwork{}
 	service := identify.NewService(engine, demoBundles(plugin.ScraperSpec{ID: "lookup"}), &fakeStore{})
@@ -734,9 +749,14 @@ func TestApplyDownloadsAndStoresKnownArtworkSlots(t *testing.T) {
 		imported[imp.slot] = imp.data
 	}
 	want := map[string]string{
-		artwork.SlotPoster:   "poster-bytes",
-		artwork.SlotBackdrop: "backdrop-bytes",
-		artwork.SlotThumb:    "thumb-bytes",
+		artwork.SlotPoster:          "poster-bytes",
+		artwork.SlotBackdrop:        "backdrop-bytes",
+		artwork.SlotThumb:           "thumb-bytes",
+		artwork.SlotLogo:            "logo-bytes",
+		artwork.SlotBanner:          "banner-bytes",
+		artwork.SlotClearart:        "clearart-bytes",
+		artwork.SlotDisc:            "disc-bytes",
+		artwork.SlotContainerPoster: "container-poster-bytes",
 	}
 	if len(imported) != len(want) {
 		t.Fatalf("imported slots = %#v, want %#v", imported, want)
@@ -753,7 +773,7 @@ func TestApplySkipsUnknownArtworkSlots(t *testing.T) {
 		Fields: map[string]any{"title": "Blue Harvest"},
 		Artwork: map[string]string{
 			artwork.SlotPoster: "https://img.example.test/p/42.jpg",
-			"banner":           "https://img.example.test/banner/42.jpg",
+			"portrait":         "https://img.example.test/portrait/42.jpg",
 		},
 	}}
 	fetcher := &fakeFetcher{byURL: map[string]fetchedResource{
@@ -770,7 +790,7 @@ func TestApplySkipsUnknownArtworkSlots(t *testing.T) {
 		t.Fatalf("imports = %#v, want only poster", art.imports)
 	}
 	for _, url := range fetcher.urls {
-		if url == "https://img.example.test/banner/42.jpg" {
+		if url == "https://img.example.test/portrait/42.jpg" {
 			t.Fatal("unknown artwork slot was fetched")
 		}
 	}
@@ -1149,6 +1169,35 @@ func TestApplySkipsEntityPosterWhenPresent(t *testing.T) {
 	}
 	if fetcher.calls != 1 || art.entityCalls != 1 {
 		t.Fatalf("re-apply re-fetched: fetch = %d calls, import = %d calls, want 1 each", fetcher.calls, art.entityCalls)
+	}
+}
+
+// A poster the Entity inherited from its own Media is a stand-in, not the
+// provider's artwork: identification still fetches and imports the real one.
+func TestEntityPosterReplacesInheritedPoster(t *testing.T) {
+	engine := &fakeEngine{lookupResult: hydratedLookupResultWithArtwork()}
+	entities := &fakeEntityStore{library: "lib-main"}
+	fetcher := &fakeFetcher{data: []byte("logo-bytes")}
+	art := &fakeArtwork{}
+	service := identify.NewService(engine, demoBundles(plugin.ScraperSpec{ID: "lookup"}), &fakeStore{})
+	service.SetEntities(entities)
+	service.SetArtwork(fetcher, art)
+	ctx := context.Background()
+
+	if err := service.Apply(ctx, "media-alpha", "demo", "lookup", "42"); err != nil {
+		t.Fatal(err)
+	}
+	maker := art.entityIDs[0]
+	art.entityHas = map[store.EntityID]bool{maker: true}
+	art.inherited = map[store.EntityID]bool{maker: true}
+	if err := service.Apply(ctx, "media-alpha", "demo", "lookup", "42"); err != nil {
+		t.Fatal(err)
+	}
+	if fetcher.calls != 2 || art.entityCalls != 2 {
+		t.Fatalf("inherited poster kept: fetch = %d calls, import = %d calls, want 2 each", fetcher.calls, art.entityCalls)
+	}
+	if art.entityIDs[1] != maker || string(art.entityData) != "logo-bytes" {
+		t.Fatalf("provider poster imported for %v with %q, want %q", art.entityIDs, art.entityData, maker)
 	}
 }
 

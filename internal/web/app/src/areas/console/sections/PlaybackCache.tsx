@@ -1,4 +1,4 @@
-import { Database, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { EmptyState, ErrorState, StatusChip } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
@@ -85,7 +85,7 @@ export function PlaybackCache() {
         <ErrorState message="playbackCacheUnavailable" />
       ) : !data?.configured ? (
         <div className="space-y-1">
-          <EmptyState message="playbackCacheUnconfigured" icon={Database} />
+          <EmptyState message="playbackCacheUnconfigured" />
           <p className="px-1 text-[12px] leading-snug text-muted-foreground">
             {t("playbackCacheUnconfiguredHelp")}
           </p>

@@ -1,3 +1,4 @@
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EmptyLine, ErrorLine, ManageSection, ManageTable } from "@/components/beamfall/workbench";
 import {
@@ -77,56 +78,34 @@ export function CollectionsPage() {
 
   return (
     <Tabs.Root value={tab} onValueChange={(value) => setTab(value as Tab)} className="space-y-4">
-      <ManageSection
-        title={t("collections")}
-        actions={
-          <div className="flex items-center gap-2">
-            <Tabs.List className="manage-tabs" aria-label={t("collections")}>
-              <Tabs.Tab
-                value="manual"
-                render={
-                  <Button
-                    type="button"
-                    variant={tab === "manual" ? "default" : "outline"}
-                    size="sm"
-                  />
-                }
-              >
-                {t("collectionManual")}
-              </Tabs.Tab>
-              <Tabs.Tab
-                value="smart"
-                render={
-                  <Button
-                    type="button"
-                    variant={tab === "smart" ? "default" : "outline"}
-                    size="sm"
-                  />
-                }
-              >
-                {t("collectionSmart")}
-              </Tabs.Tab>
-            </Tabs.List>
-            <Label htmlFor="collections-library" className="sr-only">
-              {t("library")}
-            </Label>
-            <Select value={libraryID} onValueChange={setLibraryID}>
-              <SelectTrigger id="collections-library" size="sm" className="w-56">
-                <SelectValue placeholder={t("library")} />
-              </SelectTrigger>
-              <SelectContent>
-                {libraries.map((lib) => (
-                  <SelectItem key={lib.id} value={lib.id}>
-                    {lib.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        }
-      >
-        <p className="manage-empty">{libraries.length === 0 ? t("noCollections") : ""}</p>
-      </ManageSection>
+      {/* A toolbar, not a card: the route already names the page, so the tabs and
+          the Library filter sit directly above the content they switch. */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Tabs.List className="manage-tabs" aria-label={t("collections")}>
+          <Tabs.Tab value="manual" className="manage-tab">
+            {t("collectionManual")}
+          </Tabs.Tab>
+          <Tabs.Tab value="smart" className="manage-tab">
+            {t("collectionSmart")}
+          </Tabs.Tab>
+        </Tabs.List>
+        <Label htmlFor="collections-library" className="sr-only">
+          {t("library")}
+        </Label>
+        <Select value={libraryID} onValueChange={setLibraryID}>
+          <SelectTrigger id="collections-library" className="w-56">
+            <SelectValue placeholder={t("library")} />
+          </SelectTrigger>
+          <SelectContent>
+            {libraries.map((lib) => (
+              <SelectItem key={lib.id} value={lib.id}>
+                {lib.title}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      {libraries.length === 0 && <p className="manage-empty">{t("noCollections")}</p>}
 
       <Tabs.Panel value="manual" className="space-y-4">
         <ManualCollections libraryID={libraryID} />
@@ -327,7 +306,7 @@ function ManualCollections({ libraryID }: { libraryID: string }) {
               {t("collectionParent")}
             </Label>
             <Select value={newParent} onValueChange={setNewParent}>
-              <SelectTrigger id="collection-parent" size="sm" className="w-52">
+              <SelectTrigger id="collection-parent" className="w-52">
                 <SelectValue placeholder={t("collectionTopLevel")} />
               </SelectTrigger>
               <SelectContent>
@@ -418,22 +397,28 @@ function CollectionRow({
       <TableCell className="manage-cell-primary">
         <div className="flex items-center gap-2">
           <span className="manage-reorder inline-flex flex-col">
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon"
+              className="size-5"
               aria-label={t("reorderUp")}
               disabled={!canMoveUp}
               onClick={onMoveUp}
             >
-              ▲
-            </button>
-            <button
+              <ChevronUp aria-hidden />
+            </Button>
+            <Button
               type="button"
+              variant="ghost"
+              size="icon"
+              className="size-5"
               aria-label={t("reorderDown")}
               disabled={!canMoveDown}
               onClick={onMoveDown}
             >
-              ▼
-            </button>
+              <ChevronDown aria-hidden />
+            </Button>
           </span>
           {collection.parentID && (
             <span aria-hidden className="text-muted-foreground">
@@ -453,9 +438,14 @@ function CollectionRow({
               className="h-7 w-44"
             />
           ) : (
-            <button type="button" className="text-left hover:underline" onClick={onSelect}>
+            <Button
+              type="button"
+              variant="link"
+              className="h-auto p-0 text-left text-[var(--text-primary)]"
+              onClick={onSelect}
+            >
               {collection.name}
-            </button>
+            </Button>
           )}
         </div>
       </TableCell>
@@ -475,7 +465,7 @@ function CollectionRow({
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button type="button" variant="destructive" size="sm">
+              <Button type="button" variant="danger" size="sm">
                 {t("collectionDelete")}
               </Button>
             </AlertDialogTrigger>
@@ -593,22 +583,28 @@ function MembersEditor({
                 <TableCell className="manage-cell-primary">
                   <div className="flex items-center gap-2">
                     <span className="manage-reorder inline-flex flex-col">
-                      <button
+                      <Button
                         type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-5"
                         aria-label={t("reorderUp")}
                         disabled={i === 0}
                         onClick={() => onMove(i, -1)}
                       >
-                        ▲
-                      </button>
-                      <button
+                        <ChevronUp aria-hidden />
+                      </Button>
+                      <Button
                         type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-5"
                         aria-label={t("reorderDown")}
                         disabled={i === members.length - 1}
                         onClick={() => onMove(i, 1)}
                       >
-                        ▼
-                      </button>
+                        <ChevronDown aria-hidden />
+                      </Button>
                     </span>
                     <span className="manage-mono">{m.mediaID}</span>
                   </div>
@@ -619,7 +615,7 @@ function MembersEditor({
                 <TableCell className="text-right">
                   <Button
                     type="button"
-                    variant="destructive"
+                    variant="danger"
                     size="sm"
                     onClick={() => onRemove(m.mediaID)}
                   >
@@ -717,18 +713,19 @@ function SmartCollections({ libraryID }: { libraryID: string }) {
               {smart.map((s) => (
                 <TableRow key={s.id} data-selected={s.id === selectedID || undefined}>
                   <TableCell className="manage-cell-primary">
-                    <button
+                    <Button
                       type="button"
-                      className="text-left hover:underline"
+                      variant="link"
+                      className="h-auto p-0 text-left text-[var(--text-primary)]"
                       onClick={() => setSelectedID(s.id)}
                     >
                       {s.name}
-                    </button>
+                    </Button>
                   </TableCell>
                   <TableCell className="text-right">
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
-                        <Button type="button" variant="destructive" size="sm">
+                        <Button type="button" variant="danger" size="sm">
                           {t("remove")}
                         </Button>
                       </AlertDialogTrigger>

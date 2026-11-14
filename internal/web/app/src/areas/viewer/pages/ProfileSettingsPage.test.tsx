@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
 import "@testing-library/jest-dom/vitest";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchClientPrefs, setClientPref } from "@/lib/graphql";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setAdvancedSettings } from "@/lib/advancedSettings";
+import { fetchClientPrefs, fetchMetadataCredits, setClientPref } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
 import { ProfileSettingsPage } from "./ProfileSettingsPage";
@@ -14,6 +15,7 @@ vi.mock("@/components/chrome/AppShell", () => ({
 
 vi.mock("@/lib/graphql", () => ({
   fetchClientPrefs: vi.fn(),
+  fetchMetadataCredits: vi.fn(),
   setClientPref: vi.fn(),
 }));
 
@@ -37,6 +39,8 @@ function deferred<T>() {
 function setProfileKind(kind: "adult" | "managed", profileID = "p1") {
   vi.mocked(useSession).mockReturnValue({
     session: { deviceRole: "manager", profileID, profile: kind, revealed: false },
+    profiles: [{ id: profileID, name: "Robin", kind }],
+    refreshProfiles: vi.fn().mockResolvedValue(undefined),
   } as unknown as ReturnType<typeof useSession>);
 }
 
@@ -45,8 +49,19 @@ beforeEach(() => {
   vi.mocked(setClientPref).mockReset();
   vi.mocked(fetchClientPrefs).mockResolvedValue([{ key: "autoskip.intro", value: "on" }]);
   vi.mocked(setClientPref).mockResolvedValue({ key: "autoskip.recap" });
+  vi.mocked(fetchMetadataCredits).mockReset();
+  vi.mocked(fetchMetadataCredits).mockResolvedValue([]);
   setProfileKind("adult");
 });
+
+afterEach(() => {
+  localStorage.clear();
+  setAdvancedSettings(false);
+});
+
+async function showAdvanced(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole("switch", { name: "Show advanced settings" }));
+}
 
 function renderPage() {
   return render(
@@ -79,6 +94,7 @@ describe("ProfileSettingsPage", () => {
   it("persists the downstream audio preference", async () => {
     const user = userEvent.setup();
     renderPage();
+    await showAdvanced(user);
 
     await user.click(await screen.findByLabelText("Audio output"));
     await user.click(await screen.findByRole("option", { name: "Surround" }));
@@ -89,6 +105,7 @@ describe("ProfileSettingsPage", () => {
   it("persists the global skip interval preference", async () => {
     const user = userEvent.setup();
     renderPage();
+    await showAdvanced(user);
 
     await user.click(await screen.findByLabelText("Skip buttons"));
     await user.click(await screen.findByRole("option", { name: "30s" }));
@@ -99,11 +116,45 @@ describe("ProfileSettingsPage", () => {
   it("labels trim silence as long-pause removal and persists the toggle", async () => {
     const user = userEvent.setup();
     renderPage();
+    await showAdvanced(user);
 
     await user.click(await screen.findByRole("switch", { name: "Remove long pauses" }));
 
     expect(screen.getByText(/Smart speed is planned separately/i)).toBeInTheDocument();
     expect(setClientPref).toHaveBeenCalledWith("playback.trim-silence", "on");
+  });
+
+  it("leaves trim silence, skip interval and audio output to Advanced at their defaults", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByRole("switch", { name: "Skip intros" });
+    expect(screen.queryByRole("switch", { name: "Remove long pauses" })).toBeNull();
+    expect(screen.queryByLabelText("Skip buttons")).toBeNull();
+    expect(screen.queryByLabelText("Audio output")).toBeNull();
+
+    await showAdvanced(user);
+    expect(screen.getByRole("switch", { name: "Remove long pauses" })).toBeVisible();
+    expect(screen.getByLabelText("Skip buttons")).toBeVisible();
+    expect(screen.getByLabelText("Audio output")).toBeVisible();
+  });
+
+  it("keeps an Advanced setting in view while it is not at its default", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchClientPrefs).mockResolvedValue([
+      { key: "playback.trim-silence", value: "on" },
+      { key: "playback.skip-interval", value: "30" },
+    ]);
+    renderPage();
+
+    const trim = await screen.findByRole("switch", { name: "Remove long pauses" });
+    expect(screen.getByLabelText("Skip buttons")).toBeVisible();
+    expect(screen.queryByLabelText("Audio output")).toBeNull();
+
+    // Turning it back to the default does not make it vanish mid-edit.
+    await user.click(trim);
+    expect(setClientPref).toHaveBeenCalledWith("playback.trim-silence", "");
+    expect(screen.getByRole("switch", { name: "Remove long pauses" })).not.toBeChecked();
   });
 
   it("shows the recommendations opt-in for an adult Profile", async () => {
@@ -133,6 +184,45 @@ describe("ProfileSettingsPage", () => {
     });
     // Reloaded canonical state after the failed write.
     expect(fetchClientPrefs).toHaveBeenCalledTimes(2);
+  });
+
+  function tones() {
+    const group = screen.getByRole("group", { name: "Colour" });
+    return Array.from(group.querySelectorAll<HTMLInputElement>("input[type=radio]"));
+  }
+
+  it("keeps a saved avatar when only the Profile list refresh fails", async () => {
+    const user = userEvent.setup();
+    const refreshProfiles = vi.fn().mockRejectedValue(new Error("offline"));
+    vi.mocked(useSession).mockReturnValue({
+      session: { deviceRole: "manager", profileID: "p1", profile: "adult", revealed: false },
+      profiles: [{ id: "p1", name: "Robin", kind: "adult" }],
+      refreshProfiles,
+    } as unknown as ReturnType<typeof useSession>);
+    renderPage();
+    await screen.findByRole("group", { name: "Colour" });
+    const target = tones().findIndex((tone) => !tone.checked);
+
+    await user.click(tones()[target]);
+
+    await waitFor(() => expect(refreshProfiles).toHaveBeenCalledTimes(1));
+    expect(setClientPref).toHaveBeenCalledWith("profile.avatar", expect.any(String));
+    expect(tones()[target]).toBeChecked();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("undoes the avatar choice and says so when the write fails", async () => {
+    const user = userEvent.setup();
+    vi.mocked(setClientPref).mockRejectedValueOnce(new Error("boom"));
+    renderPage();
+    await screen.findByRole("group", { name: "Colour" });
+    const before = tones().findIndex((tone) => tone.checked);
+    const target = tones().findIndex((tone) => !tone.checked);
+
+    await user.click(tones()[target]);
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    await waitFor(() => expect(tones()[before]).toBeChecked());
   });
 
   it("does not let a stale Profile preference load overwrite the current Profile", async () => {
@@ -166,5 +256,29 @@ describe("ProfileSettingsPage", () => {
 
     expect(screen.getByRole("switch", { name: "Skip recaps" })).toBeChecked();
     expect(screen.getByRole("switch", { name: "Skip intros" })).not.toBeChecked();
+  });
+
+  it("lists metadata credits as safe external links (CORE-1126)", async () => {
+    vi.mocked(fetchMetadataCredits).mockResolvedValue([
+      { text: { en: "Metadata provided by Fixture" }, url: "https://fixture.example.test/" },
+      { text: { en: "Data from Another fixture" }, url: "http://another.example.test/" },
+    ]);
+    renderPage();
+
+    const section = await screen.findByRole("region", { name: "Credits" });
+    const link = within(section).getByRole("link", { name: "Metadata provided by Fixture" });
+    expect(link).toHaveAttribute("href", "https://fixture.example.test/");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    expect(within(section).getByText("Data from Another fixture")).toBeInTheDocument();
+    expect(within(section).getAllByRole("link")).toHaveLength(1);
+  });
+
+  it("omits the Credits section when no plugin declares an attribution", async () => {
+    renderPage();
+
+    await screen.findByRole("switch", { name: "Skip intros" });
+    await waitFor(() => expect(fetchMetadataCredits).toHaveBeenCalled());
+    expect(screen.queryByRole("region", { name: "Credits" })).toBeNull();
   });
 });

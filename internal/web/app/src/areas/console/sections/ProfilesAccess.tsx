@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import { Advanced, useShowAdvanced } from "@/lib/advancedSettings";
 import { displayString } from "@/lib/display";
 import {
   accessGrantsForProfile,
@@ -81,7 +82,7 @@ export function ProfilesAccess() {
         <div className="console-card console-card-pad space-y-4">
           {/* Supervisor-authored policy, distinct from the managed Profile's own
               Mute (ADR-0087 §29). */}
-          <p className="text-[13px] text-muted-foreground">{t("managedPolicyFraming")}</p>
+          <p className="text-dense text-muted-foreground">{t("managedPolicyFraming")}</p>
           <div className="max-w-sm space-y-2">
             <Label>{t("accessScheduleProfileLabel")}</Label>
             <Select value={profileID} onValueChange={setProfileID}>
@@ -182,7 +183,7 @@ function LibraryGrantEditor({
   if (failed) return <ErrorState message="libraryAccessUnavailable" />;
 
   return (
-    <div className="space-y-2 border-t border-[var(--border)] pt-4">
+    <div className="space-y-2 border-t border-[var(--border-subtle)] pt-4">
       <div className="space-y-1">
         <Label className="text-xs">{t("libraryAccessHeading")}</Label>
         <p className="text-xs text-muted-foreground">{t("libraryAccessHint")}</p>
@@ -370,7 +371,7 @@ function SchedulePreview({ windows }: { windows: AccessWindowInput[] }) {
   const now = new Date();
   const next = nextTransition(windows, now.getDay(), now.getHours() * 60 + now.getMinutes());
   return (
-    <div className="space-y-1 border-t border-[var(--border)] pt-3 text-[13px] text-muted-foreground">
+    <div className="space-y-1 border-t border-[var(--border-subtle)] pt-3 text-dense text-muted-foreground">
       <p>{t("accessScheduleServerLocalNote")}</p>
       {next ? (
         <p>
@@ -398,6 +399,7 @@ function ManagedPolicyControls({ profileID, managed }: { profileID: string; mana
   const [capApplied, setCapApplied] = useState(false);
   const [preauth, setPreauth] = useState(false);
   const [busy, setBusy] = useState(false);
+  const showAdvanced = useShowAdvanced();
 
   async function applyCap(e: FormEvent) {
     e.preventDefault();
@@ -416,50 +418,55 @@ function ManagedPolicyControls({ profileID, managed }: { profileID: string; mana
     await setExtensionPreauthorization(profileID, value);
   }
 
+  // The stream cap and extension pre-authorization are Advanced (CORE-1117). The
+  // server offers no read of either, so neither can be kept in view while set.
+  if (!managed && !showAdvanced) return null;
   return (
-    <div className="space-y-4 border-t border-[var(--border)] pt-4">
-      <form onSubmit={applyCap} className="flex flex-wrap items-end gap-2">
-        <div className="space-y-1">
-          <Label htmlFor="stream-cap" className="text-xs">
-            {t("streamCapLabel")}
-          </Label>
-          <Input
-            id="stream-cap"
-            type="number"
-            min={0}
-            className="w-24"
-            value={cap}
-            placeholder="0"
-            onChange={(e) => {
-              setCap(e.target.value);
-              setCapApplied(false);
-            }}
-          />
-        </div>
-        <Button type="submit" size="sm" disabled={busy}>
-          {t("streamCapApply")}
-        </Button>
-        {capApplied && (
-          <span className="text-xs text-[var(--text-secondary)]" role="status">
-            {t("streamCapApplied")}
-          </span>
-        )}
-        <p className="w-full text-xs text-muted-foreground">{t("streamCapHint")}</p>
-      </form>
-
-      {managed && (
-        <div className="flex items-start justify-between gap-4">
+    <div className="space-y-4 border-t border-[var(--border-subtle)] pt-4">
+      <Advanced>
+        <form onSubmit={applyCap} className="flex flex-wrap items-end gap-2">
           <div className="space-y-1">
-            <Label htmlFor="extension-preauth">{t("extensionPreauthLabel")}</Label>
-            <p className="text-xs text-muted-foreground">{t("extensionPreauthHint")}</p>
+            <Label htmlFor="stream-cap" className="text-xs">
+              {t("streamCapLabel")}
+            </Label>
+            <Input
+              id="stream-cap"
+              type="number"
+              min={0}
+              className="w-24"
+              value={cap}
+              placeholder="0"
+              onChange={(e) => {
+                setCap(e.target.value);
+                setCapApplied(false);
+              }}
+            />
           </div>
-          <Switch
-            id="extension-preauth"
-            checked={preauth}
-            onCheckedChange={(v) => void togglePreauth(v)}
-          />
-        </div>
-      )}
+          <Button type="submit" size="sm" disabled={busy}>
+            {t("streamCapApply")}
+          </Button>
+          {capApplied && (
+            <span className="text-xs text-[var(--text-secondary)]" role="status">
+              {t("streamCapApplied")}
+            </span>
+          )}
+          <p className="w-full text-xs text-muted-foreground">{t("streamCapHint")}</p>
+        </form>
+
+        {managed && (
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <Label htmlFor="extension-preauth">{t("extensionPreauthLabel")}</Label>
+              <p className="text-xs text-muted-foreground">{t("extensionPreauthHint")}</p>
+            </div>
+            <Switch
+              id="extension-preauth"
+              checked={preauth}
+              onCheckedChange={(v) => void togglePreauth(v)}
+            />
+          </div>
+        )}
+      </Advanced>
 
       {managed && <AccessGrantList profileID={profileID} />}
     </div>
@@ -488,14 +495,14 @@ function AccessGrantList({ profileID }: { profileID: string }) {
 
   if (failed) {
     return (
-      <div className="border-t border-[var(--border)] pt-4">
+      <div className="border-t border-[var(--border-subtle)] pt-4">
         <p className="text-xs text-muted-foreground">{t("accessGrantsUnavailable")}</p>
       </div>
     );
   }
 
   return (
-    <div className="border-t border-[var(--border)] pt-4 space-y-2">
+    <div className="border-t border-[var(--border-subtle)] pt-4 space-y-2">
       <div className="space-y-1">
         <Label className="text-xs">{t("accessGrantsHeading")}</Label>
         <p className="text-xs text-muted-foreground">{t("accessGrantsHint")}</p>
@@ -507,7 +514,7 @@ function AccessGrantList({ profileID }: { profileID: string }) {
         data.map((grant) => (
           <div
             key={grant.mediaID}
-            className="flex items-center justify-between gap-2 rounded border border-[var(--border)] px-3 py-2"
+            className="flex items-center justify-between gap-2 rounded border border-[var(--border-subtle)] px-3 py-2"
           >
             <span className="truncate font-mono text-xs">{grant.mediaID}</span>
             <ConfirmButton

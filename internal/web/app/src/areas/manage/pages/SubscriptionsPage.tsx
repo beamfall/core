@@ -165,7 +165,7 @@ export function SubscriptionsPage() {
               {t("library")}
             </Label>
             <Select value={libraryID} onValueChange={setLibraryID}>
-              <SelectTrigger id="subscription-library" size="sm" className="w-56">
+              <SelectTrigger id="subscription-library" className="w-56">
                 <SelectValue placeholder={t("library")} />
               </SelectTrigger>
               <SelectContent>
@@ -308,7 +308,7 @@ function SubscriptionRow({
       <TableCell className="text-right">
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <Button type="button" variant="destructive" size="sm">
+            <Button type="button" variant="danger" size="sm">
               {t("remove")}
             </Button>
           </AlertDialogTrigger>

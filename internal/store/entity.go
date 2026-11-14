@@ -411,14 +411,26 @@ func (s *Store) EntitiesForMedia(ctx context.Context, mediaID MediaID, relationN
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	if _, err := s.visibleMediaSQL(ctx, mediaID, filter); err != nil {
+	// The relations live beside the Media item: in the catalog, or in an
+	// unlocked encrypted library's own database (same-library only).
+	plane, err := s.catalogPlaneForMediaLocked(ctx, mediaID)
+	if err != nil {
 		return nil, err
 	}
-	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT e.id, e.library_id, e.kind, e.title, l.is_restricted, r.attributes
+	if _, err := s.visibleMediaSQLFrom(ctx, plane.reader, mediaID, filter); err != nil {
+		return nil, err
+	}
+	// Read before the relation query: a catalog read nested inside an open
+	// catalog cursor holds two reader connections at once and can exhaust the
+	// pool under concurrent reads.
+	restricted, err := s.libraryRestrictionsLocked(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := plane.reader.QueryContext(ctx, `
+		SELECT e.id, e.library_id, e.kind, e.title, r.attributes
 		FROM entity_relation r
 		JOIN entity e ON e.id = r.from_entity_id
-		JOIN library l ON l.id = e.library_id
 		WHERE r.to_media_id = ? AND r.relation = ? AND e.trashed_at_ms IS NULL
 		ORDER BY e.title, e.id
 	`, mediaID, relationName)
@@ -429,12 +441,12 @@ func (s *Store) EntitiesForMedia(ctx context.Context, mediaID MediaID, relationN
 	related := []RelatedEntity{}
 	for rows.Next() {
 		var entity Entity
-		var restricted int
 		var attributes sql.NullString
-		if err := rows.Scan(&entity.ID, &entity.LibraryID, &entity.Kind, &entity.Title, &restricted, &attributes); err != nil {
+		if err := rows.Scan(&entity.ID, &entity.LibraryID, &entity.Kind, &entity.Title, &attributes); err != nil {
 			return nil, err
 		}
-		if !libraryVisible(Library{ID: entity.LibraryID, IsRestricted: restricted != 0}, filter) {
+		isRestricted, ok := restricted[entity.LibraryID]
+		if !ok || !libraryVisible(Library{ID: entity.LibraryID, IsRestricted: isRestricted}, filter) {
 			continue
 		}
 		item := RelatedEntity{Entity: entity}
@@ -452,7 +464,7 @@ func (s *Store) EntitiesForMedia(ctx context.Context, mediaID MediaID, relationN
 		index[related[i].Entity.ID] = i
 		ids[i] = related[i].Entity.ID
 	}
-	if err := s.loadEntityFields(ctx, ids, func(id EntityID, field EntityField) {
+	if err := s.loadEntityFieldsFrom(ctx, plane.reader, ids, func(id EntityID, field EntityField) {
 		i := index[id]
 		related[i].Entity.Fields = append(related[i].Entity.Fields, field)
 	}); err != nil {
@@ -465,6 +477,26 @@ func (s *Store) EntitiesForMedia(ctx context.Context, mediaID MediaID, relationN
 		sortEntityFields(related[i].Entity.Fields)
 	}
 	return related, nil
+}
+
+// libraryRestrictionsLocked maps every Library row, trashed or not, to its
+// restricted flag: the visibility input a catalog join on library would read.
+func (s *Store) libraryRestrictionsLocked(ctx context.Context) (map[LibraryID]bool, error) {
+	rows, err := s.catalogR.QueryContext(ctx, `SELECT id, is_restricted FROM library`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	restricted := map[LibraryID]bool{}
+	for rows.Next() {
+		var id LibraryID
+		var flag int
+		if err := rows.Scan(&id, &flag); err != nil {
+			return nil, err
+		}
+		restricted[id] = flag != 0
+	}
+	return restricted, rows.Err()
 }
 
 // MediaMembership is one generic Entity an item belongs to: the relation name

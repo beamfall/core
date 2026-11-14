@@ -52,7 +52,7 @@ export const ENTRIES = [
     fixture: "conformance:unenrolled",
     drive: "enroll",
     intent:
-      "An unenrolled browser sees only the enrollment view: a pairing-code field and device-name field with a submit affordance. No catalog, Profile, Manage, or Reveal affordance is present — nothing hints at restricted content. The device secret is never placed in JS-readable space (it rides HttpOnly cookies set by the server).",
+      "An unenrolled browser sees only the enrollment view: a pairing-code field and device-name field with a submit affordance, and a secondary owner form to sign in with the admin password (CORE-1106). No catalog, Profile, Manage, or Reveal affordance is present — nothing hints at restricted content. The device secret is never placed in JS-readable space (it rides HttpOnly cookies set by the server).",
   },
   {
     id: "web.enroll.signed-out.mobile",
@@ -65,7 +65,7 @@ export const ENTRIES = [
     fixture: "conformance:unenrolled",
     drive: "enroll",
     intent:
-      "The enrollment view reflows to a narrow viewport without truncation or horizontal scroll: pairing-code and device-name fields stack, the submit affordance stays reachable. Still no catalog/Manage/Reveal affordance.",
+      "The enrollment view reflows to a narrow viewport without truncation or horizontal scroll: pairing-code and device-name fields stack, the submit affordance and the secondary admin-password form stay reachable. Still no catalog/Manage/Reveal affordance.",
   },
   {
     id: "web.enroll.invalid-code.desktop",

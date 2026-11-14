@@ -12,7 +12,7 @@ import (
 // reads back as the old model.
 func TestLibraryBackingDefaultsScannedNotEncrypted(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true})
 	if err != nil {
 		t.Fatalf("Open returned error: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestLibraryBackingDefaultsScannedNotEncrypted(t *testing.T) {
 // and the Libraries load (ADR-0045 §2.1: orthogonal axes that compose).
 func TestSetLibraryBackingRoundTrips(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true})
 	if err != nil {
 		t.Fatalf("Open returned error: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestSetLibraryBackingRoundTrips(t *testing.T) {
 // from the operator's disk on the next scan).
 func TestPurgeExemptsCustodialLibraryMedia(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true})
+	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true})
 	if err != nil {
 		t.Fatalf("Open returned error: %v", err)
 	}

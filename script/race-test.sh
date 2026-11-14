@@ -235,14 +235,14 @@ case "$mode" in
       active_pgid=""
     }
 
-    run_race_phase() { # <write-mode> <go test arguments...>
+    run_race_command() { # <write-mode> <command...>
       local write_mode="$1" phase_status=0
       shift
       set -m
       if [ "$write_mode" = truncate ]; then
-        CGO_ENABLED=1 go test "$@" >"$json_log" &
+        CGO_ENABLED=1 "$@" >"$json_log" &
       else
-        CGO_ENABLED=1 go test "$@" >>"$json_log" &
+        CGO_ENABLED=1 "$@" >>"$json_log" &
       fi
       active_pid=$!
       active_pgid=$active_pid
@@ -254,10 +254,55 @@ case "$mode" in
       return "$phase_status"
     }
 
+    run_race_phase() { # <write-mode> <go test arguments...>
+      local write_mode="$1"
+      shift
+      run_race_command "$write_mode" go test "$@"
+    }
+
+    # The ordinary closure can overlap the promoted phase: the two cover
+    # disjoint packages and together left most of the host idle (CORE-1319).
+    # It runs in its own process group, writes its own log, and is retired
+    # with the active group on every exit path.
+    side_pid=""
+    side_pgid=""
+    start_side_phase() { # <log> <go test arguments...>
+      local log="$1"
+      shift
+      set -m
+      CGO_ENABLED=1 go test "$@" >"$log" &
+      side_pid=$!
+      side_pgid=$side_pid
+      set +m
+    }
+
+    retire_side_process_group() {
+      local saved_pid="$active_pid" saved_pgid="$active_pgid" status=0
+      active_pid="$side_pid"
+      active_pgid="$side_pgid"
+      retire_active_process_group || status=$?
+      side_pid=""
+      side_pgid=""
+      active_pid="$saved_pid"
+      active_pgid="$saved_pgid"
+      return "$status"
+    }
+
+    wait_side_phase() {
+      local phase_status=0
+      [ -n "$side_pid" ] || return 0
+      wait "$side_pid" || phase_status=$?
+      if ! retire_side_process_group; then
+        exit 70
+      fi
+      return "$phase_status"
+    }
+
     cleanup() {
       local status=$?
       trap - EXIT
       trap '' INT TERM
+      retire_side_process_group || true
       retire_active_process_group || true
       rm -rf "$work_dir"
       exit "$status"
@@ -270,6 +315,7 @@ case "$mode" in
     evidence_dir="${AGENT_EVIDENCE_DIR:-.agent-evidence}"
     evidence_file="$evidence_dir/race-short-packages.jsonl"
     discovery_evidence_file="$evidence_dir/race-short-discovery.json"
+    slowest_evidence_file="$evidence_dir/race-short-slowest-tests.jsonl"
     mkdir -p "$evidence_dir"
     parser="$work_dir/parser.py"
     cat > "$parser" <<'PY'
@@ -278,6 +324,8 @@ import sys
 
 package_order = []
 records = {}
+tests = []
+rank = {"skip": 0, "pass": 1, "fail": 2}
 for raw in sys.stdin:
     try:
         event = json.loads(raw)
@@ -291,15 +339,32 @@ for raw in sys.stdin:
     action = event.get("Action")
     if not pkg or action not in {"pass", "fail", "skip"}:
         continue
-    if event.get("Test") or event.get("Example"):
+    test = event.get("Test") or event.get("Example")
+    if test:
+        # Keep top-level test times so a slow gate names its slowest tests
+        # after the per-test stream is deleted with the work dir.
+        if "/" not in test:
+            tests.append({"package": pkg, "test": test, "status": action,
+                          "elapsed_seconds": event.get("Elapsed", 0)})
         continue
+    elapsed = event.get("Elapsed", 0)
+    cached = bool(event.get("Cached", False))
     if pkg not in records:
         package_order.append(pkg)
+    else:
+        # A promoted package reports once per shard. A failed shard stays
+        # failed, a pass outranks a skip, and the record keeps the longest
+        # shard as its wall time.
+        previous = records[pkg]
+        if rank[previous["status"]] > rank[action]:
+            action = previous["status"]
+        elapsed = max(elapsed, previous["elapsed_seconds"])
+        cached = cached and previous["cached"]
     records[pkg] = {
         "package": pkg,
         "status": action,
-        "elapsed_seconds": event.get("Elapsed", 0),
-        "cached": bool(event.get("Cached", False)),
+        "elapsed_seconds": elapsed,
+        "cached": cached,
     }
 
 with open(sys.argv[1], "w", encoding="utf-8") as f:
@@ -307,6 +372,103 @@ with open(sys.argv[1], "w", encoding="utf-8") as f:
         rec = records[pkg]
         f.write(json.dumps(rec, sort_keys=True))
         f.write("\n")
+
+if len(sys.argv) > 2:
+    tests.sort(key=lambda t: -t["elapsed_seconds"])
+    with open(sys.argv[2], "w", encoding="utf-8") as f:
+        for rec in tests[:50]:
+            f.write(json.dumps(rec, sort_keys=True))
+            f.write("\n")
+PY
+
+    # The promoted full suites are mostly serial tests, so one go test process
+    # per package leaves the host idle for the longest phase of the gate. The
+    # runner lists each package's top-level tests, deals them into shards, runs
+    # the shards as concurrent go test processes and requires a result for
+    # every listed test. A package whose tests cannot be listed runs unsharded.
+    shard_runner="$work_dir/shard-runner.py"
+    cat > "$shard_runner" <<'PY'
+import concurrent.futures
+import json
+import os
+import re
+import subprocess
+import sys
+
+shards = max(2, int(sys.argv[1]))
+jobs = max(1, int(sys.argv[2]))
+work_dir = sys.argv[3]
+packages = sys.argv[4:]
+base = ["go", "test", "-race", "-short", "-count=1", "-p", "1", "-parallel", "2",
+        "-test.timeout=3600s", "-json"]
+name_re = re.compile(r"(Test|Example|Fuzz)\w*")
+
+plan = []  # (package, names or None)
+for pkg in packages:
+    names = []
+    listed = subprocess.run(
+        ["go", "test", "-race", "-short", "-list", ".*", pkg],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if listed.returncode == 0:
+        names = [line for line in listed.stdout.splitlines()
+                 if name_re.fullmatch(line)]
+    count = min(shards, len(names))
+    if count < 2:
+        plan.append((pkg, None))
+        continue
+    for index in range(count):
+        plan.append((pkg, names[index::count]))
+
+
+def run(item):
+    index, (pkg, names) = item
+    args = list(base)
+    if names is not None:
+        args += ["-run", "^(" + "|".join(names) + ")$"]
+    args.append(pkg)
+    path = os.path.join(work_dir, "promoted-shard-%d.jsonl" % index)
+    with open(path, "wb") as out:
+        status = subprocess.run(args, stdout=out).returncode
+    return path, status
+
+
+with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
+    results = list(pool.map(run, enumerate(plan)))
+
+failed = 0
+for (pkg, names), (path, status) in zip(plan, results):
+    reported = set()
+    with open(path, encoding="utf-8", errors="replace") as shard:
+        for raw in shard:
+            sys.stdout.write(raw)
+            if names is None or status != 0:
+                continue
+            try:
+                event = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if event.get("Action") in {"pass", "fail", "skip"}:
+                reported.add(event.get("Test"))
+    if status != 0:
+        # A shard killed before its final package event leaves no verdict of
+        # its own, and a passing sibling would then record the package as
+        # passed. Write the failure for every shard that exits nonzero.
+        sys.stdout.write(json.dumps(
+            {"Action": "fail", "Package": pkg, "Elapsed": 0}) + "\n")
+        failed = status
+        continue
+    if names is not None:
+        missing = [name for name in names if name not in reported]
+        if missing:
+            sys.stderr.write(
+                "ERROR: race-test promoted shard for %s reported no result for: %s\n"
+                % (pkg, " ".join(missing)))
+            # The shard itself reported the package as passed; record the
+            # verdict the phase actually reaches.
+            sys.stdout.write(json.dumps(
+                {"Action": "fail", "Package": pkg, "Elapsed": 0}) + "\n")
+            failed = failed or 1
+sys.exit(failed)
 PY
 
     write_discovery_evidence() {
@@ -432,6 +594,20 @@ PY
     fi
     hot_pkg_count="${#hot_pkgs[@]}"
     promoted_pkg_count="${#promoted_pkgs[@]}"
+    promoted_shards="${RACE_SHORT_PROMOTED_SHARDS:-4}"
+    case "$promoted_shards" in
+      ''|*[!0-9]*) echo "ERROR: RACE_SHORT_PROMOTED_SHARDS must be a whole number" >&2; exit 2 ;;
+    esac
+    promoted_jobs="${RACE_SHORT_PROMOTED_JOBS:-}"
+    if [ -z "$promoted_jobs" ]; then
+      host_cpus="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
+      promoted_jobs=$((host_cpus / 2))
+      [ "$promoted_jobs" -ge 2 ] || promoted_jobs=2
+      [ "$promoted_jobs" -le 8 ] || promoted_jobs=8
+    fi
+    case "$promoted_jobs" in
+      ''|*[!0-9]*) echo "ERROR: RACE_SHORT_PROMOTED_JOBS must be a whole number" >&2; exit 2 ;;
+    esac
     if [ "$pkg_count" -gt 0 ]; then
       printf '%s\n' "${pkgs[@]}" >>"$runnable_log"
     fi
@@ -463,6 +639,7 @@ PY
     fi
     if [ "$promoted_pkg_count" -gt 0 ]; then
       echo "resolved promoted: go test -race -short -count=1 -p 1 -parallel 2 -test.timeout=3600s ${promoted_pkgs[*]}"
+      echo "promoted shards: up to $promoted_shards per package, $promoted_jobs at a time; every listed test must report a result"
     fi
     if [ "$hot_pkg_count" -gt 0 ]; then
       echo "resolved focused: go test -race -short -count=1 -p 4 -parallel 2 -test.timeout=600s -run $RACE_SHORT_HOT_TESTS ${hot_pkgs[*]}"
@@ -472,18 +649,35 @@ PY
     fi
     set +e
     json_log="$work_dir/go-test.jsonl"
+    ordinary_log="$work_dir/ordinary.jsonl"
     : >"$json_log"
+    : >"$ordinary_log"
     ordinary_status=0
-    if [ "$pkg_count" -gt 0 ]; then
+    overlap=0
+    if [ "$pkg_count" -gt 0 ] && [ "$promoted_pkg_count" -gt 0 ] &&
+      [ "${RACE_SHORT_OVERLAP:-1}" = 1 ]; then
+      overlap=1
+      start_side_phase "$ordinary_log" -race -short -count=1 -p 4 -parallel 2 \
+        -test.timeout=600s -json "${pkgs[@]}"
+    elif [ "$pkg_count" -gt 0 ]; then
       run_race_phase truncate -race -short -count=1 -p 4 -parallel 2 \
         -test.timeout=600s -json "${pkgs[@]}"
       ordinary_status=$?
     fi
     promoted_status=0
     if [ "$promoted_pkg_count" -gt 0 ]; then
-      run_race_phase append -race -short -count=1 -p 1 -parallel 2 \
-        -test.timeout=3600s -json "${promoted_pkgs[@]}"
+      if [ "$promoted_shards" -gt 1 ]; then
+        run_race_command append python3 "$shard_runner" "$promoted_shards" \
+          "$promoted_jobs" "$work_dir" "${promoted_pkgs[@]}"
+      else
+        run_race_phase append -race -short -count=1 -p 1 -parallel 2 \
+          -test.timeout=3600s -json "${promoted_pkgs[@]}"
+      fi
       promoted_status=$?
+    fi
+    if [ "$overlap" -eq 1 ]; then
+      wait_side_phase
+      ordinary_status=$?
     fi
     focused_status=0
     if [ "$hot_pkg_count" -gt 0 ]; then
@@ -491,7 +685,8 @@ PY
         -test.timeout=600s -run "$RACE_SHORT_HOT_TESTS" -json "${hot_pkgs[@]}"
       focused_status=$?
     fi
-    python3 "$parser" "$evidence_file" <"$json_log"
+    cat "$ordinary_log" "$json_log" | python3 "$parser" "$evidence_file" \
+      "$slowest_evidence_file"
     parser_status=$?
     set -e
     # Every phase executes so the evidence stream remains complete. The final

@@ -45,7 +45,7 @@ export default defineConfig({
   workers: renderPhase ? 1 : undefined,
   forbidOnly: !!process.env.CI,
   retries: 0,
-  reporter: [["list"]],
+  reporter: [["list"], ["./e2e/lib/progress-heartbeat-reporter.mjs"]],
   globalSetup: "./e2e/global-setup.ts",
   globalTeardown: "./e2e/global-teardown.ts",
   expect: {
@@ -129,6 +129,24 @@ export default defineConfig({
         // strict CSP correctly rejects addScriptTag unless this test context
         // explicitly bypasses CSP for the accessibility scan.
         bypassCSP: true,
+      },
+    },
+    // UI STATE INVENTORY (CORE-1305): rows of e2e/lib/ui-states.mjs no other spec covers, at
+    // desktop width and on a phone. The console storage state reaches every area.
+    {
+      name: "ui-states",
+      testMatch: /ui-states\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        storageState: join(authDir, "console.json"),
+      },
+    },
+    {
+      name: "ui-states-mobile",
+      testMatch: /ui-states\.spec\.ts/,
+      use: {
+        ...devices["Pixel 7"],
+        storageState: join(authDir, "console.json"),
       },
     },
     // AUTH MATRIX: role/profile combinations that need multiple storage states

@@ -39,6 +39,10 @@ type ConsoleConfigInfo struct {
 	//. Default true (no override → today's behavior). When false, only
 	// local-network enrollments are accepted.
 	RemoteEnrollmentEnabled bool `json:"remoteEnrollmentEnabled"`
+	// ViewerPairingCodesDisabled refuses Viewer-role pairing codes (CORE-0393):
+	// none can be minted and any already minted is refused at redemption.
+	// Default false. Manager pairing and the demo Viewer enrollment stay on.
+	ViewerPairingCodesDisabled bool `json:"viewerPairingCodesDisabled"`
 	// EventsRetentionDays is the operator-owned events.db compaction window.
 	EventsRetentionDays int `json:"eventsRetentionDays"`
 	// ObservabilityEnabled is ADR-0146's default-off OTel metrics toggle.
@@ -95,6 +99,9 @@ type PluginScraperInfo struct {
 	CredentialConfigured bool   `json:"credentialConfigured"`
 	CredentialStatus     string `json:"credentialStatus"`
 	CredentialError      string `json:"credentialError,omitempty"`
+	// Attribution is the credit the scraper's data source requires, as the
+	// plugin declares it (CORE-1126).
+	Attribution *MetadataAttributionInfo `json:"attribution,omitempty"`
 }
 
 // PluginConfigFieldInfo is one typed, non-secret plugin setting plus its
@@ -160,13 +167,14 @@ func (h *Handler) consoleConfig(ctx context.Context, _ auth.Scope, _ request) (C
 		return ConsoleConfigInfo{}, err
 	}
 	info := ConsoleConfigInfo{
-		BackgroundWorkers:       cfg.BackgroundWorkers,
-		UpdateCheckEnabled:      cfg.UpdateCheckEnabled,
-		UpdateCheckChannel:      cfg.UpdateCheckChannel,
-		RemoteEnrollmentEnabled: cfg.RemoteEnrollmentEnabled,
-		EventsRetentionDays:     cfg.EventsRetentionDays,
-		ObservabilityEnabled:    cfg.ObservabilityEnabled,
-		Plugins:                 []PluginActivationInfo{},
+		BackgroundWorkers:          cfg.BackgroundWorkers,
+		UpdateCheckEnabled:         cfg.UpdateCheckEnabled,
+		UpdateCheckChannel:         cfg.UpdateCheckChannel,
+		RemoteEnrollmentEnabled:    cfg.RemoteEnrollmentEnabled,
+		ViewerPairingCodesDisabled: cfg.ViewerPairingCodesDisabled,
+		EventsRetentionDays:        cfg.EventsRetentionDays,
+		ObservabilityEnabled:       cfg.ObservabilityEnabled,
+		Plugins:                    []PluginActivationInfo{},
 	}
 	overrides, err := h.store.PluginActivations(ctx)
 	if err != nil {
@@ -244,6 +252,10 @@ func (h *Handler) setConsoleConfig(ctx context.Context, scope auth.Scope, req re
 		patch.RemoteEnrollmentEnabled = &enabled
 		has = true
 	}
+	if disabled, ok := v.Bool("viewerPairingCodesDisabled"); ok {
+		patch.ViewerPairingCodesDisabled = &disabled
+		has = true
+	}
 	if number, ok := v.Number("eventsRetentionDays"); ok {
 		days := int(number)
 		patch.EventsRetentionDays = &days
@@ -293,6 +305,7 @@ func (h *Handler) pluginScraperInfo(pluginID string, bundle plugin.Bundle) []Plu
 			CredentialConfigured: status.configured,
 			CredentialStatus:     status.status,
 			CredentialError:      status.err,
+			Attribution:          scraperAttributionInfo(scraper),
 		})
 	}
 	return items

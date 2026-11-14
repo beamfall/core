@@ -10,7 +10,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { useT } from "@/lib/i18n";
 import type { StringKey } from "@/strings";
 
@@ -19,6 +19,7 @@ import type { StringKey } from "@/strings";
 // constraint). The label IS the action; `confirm` is the localized prompt.
 export function ConfirmButton({
   label,
+  actionLabel,
   confirm,
   onConfirm,
   variant = "destructive",
@@ -27,9 +28,11 @@ export function ConfirmButton({
   children,
 }: {
   label: ReactNode;
+  /** Confirm-dialog action text when `label` is icon-only; defaults to `label`. */
+  actionLabel?: ReactNode;
   confirm: StringKey;
   onConfirm: () => void | Promise<void>;
-  variant?: "destructive" | "outline" | "secondary" | "default";
+  variant?: "destructive" | "outline" | "secondary" | "default" | "ghost";
   size?: "sm" | "default";
   disabled?: boolean;
   /** Optional confirm-dialog body beyond the prompt (e.g. a name preview). */
@@ -52,7 +55,11 @@ export function ConfirmButton({
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
       <AlertDialogTrigger asChild>
-        <Button variant={variant} size={size} disabled={disabled}>
+        <Button
+          variant={variant === "destructive" ? "danger" : variant}
+          size={size}
+          disabled={disabled}
+        >
           {label}
         </Button>
       </AlertDialogTrigger>
@@ -66,13 +73,14 @@ export function ConfirmButton({
         <AlertDialogFooter>
           <AlertDialogCancel disabled={busy}>{t("cancel")}</AlertDialogCancel>
           <AlertDialogAction
+            className={variant === "destructive" ? buttonVariants({ variant }) : undefined}
             disabled={busy}
             onClick={(e) => {
               e.preventDefault();
               void run();
             }}
           >
-            {label}
+            {actionLabel ?? label}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

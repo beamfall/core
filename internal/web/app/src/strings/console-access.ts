@@ -17,13 +17,28 @@ export const consoleAccessStrings = {
     consoleOverviewNeedsOwner: "Create the owner Profile.",
     consoleLayoutNavigation: "Layout & Navigation",
     consoleUpdates: "Updates",
-    advanced: "Advanced",
+    showAdvancedSettings: "Show advanced settings",
     consoleLead: "Operator settings. Enter the server admin password to unlock.",
     adminPasswordLabel: "Admin password",
     adminUnlockSubmit: "Unlock Console",
+    // The Manage area's in-place unlock (CORE-1197): the same Admin Session
+    // gate as the Console, worded for a page rather than the Console.
+    manageLockedTitle: "Admin password needed",
+    manageLockedLead:
+      "This page changes server settings. Enter the server admin password to continue.",
+    manageUnlockSubmit: "Unlock",
     consoleActiveLead: "Console unlocked. The admin session is active.",
     adminLock: "Lock Console",
     adminUnlockRejected: "The admin password was not accepted.",
+    // First admin password (CORE-1132): an owner who claimed the server without
+    // choosing one sets it here and lands in the Console.
+    consoleFirstPasswordTitle: "Set an admin password",
+    consoleFirstPasswordLead:
+      "No admin password has been set yet. Choose one to protect the Console and owner-only tools, and keep it in your password manager.",
+    consoleFirstPasswordSubmit: "Set password and unlock",
+    consoleFirstPasswordMismatch: "The passwords do not match.",
+    consoleFirstPasswordRejected:
+      "The admin password could not be set. Check that this is the owner’s profile on a manager device.",
     // Reason-coded Console locked states (ADR-0085 §30) + the Admin/Reveal
     // distinction (§32).
     consoleLockedNotAdultTitle: "Console unavailable",
@@ -66,9 +81,20 @@ export const consoleAccessStrings = {
       "Réglages d’exploitation. Saisissez le mot de passe administrateur du serveur pour déverrouiller.",
     adminPasswordLabel: "Mot de passe administrateur",
     adminUnlockSubmit: "Déverrouiller la console",
+    manageLockedTitle: "Mot de passe administrateur requis",
+    manageLockedLead:
+      "Cette page modifie les réglages du serveur. Saisissez le mot de passe administrateur du serveur pour continuer.",
+    manageUnlockSubmit: "Déverrouiller",
     consoleActiveLead: "Console déverrouillée. La session administrateur est active.",
     adminLock: "Verrouiller la console",
     adminUnlockRejected: "Le mot de passe administrateur a été refusé.",
+    consoleFirstPasswordTitle: "Définir un mot de passe administrateur",
+    consoleFirstPasswordLead:
+      "Aucun mot de passe administrateur n’est défini. Choisissez-en un pour protéger la console et les outils réservés au propriétaire, et conservez-le dans votre gestionnaire de mots de passe.",
+    consoleFirstPasswordSubmit: "Définir le mot de passe et déverrouiller",
+    consoleFirstPasswordMismatch: "Les mots de passe ne correspondent pas.",
+    consoleFirstPasswordRejected:
+      "Le mot de passe administrateur n’a pas pu être défini. Vérifiez qu’il s’agit du profil du propriétaire sur un appareil gestionnaire.",
     consoleLockedNotAdultTitle: "Console indisponible",
     consoleLockedNotAdultLead:
       "Ce profil ne peut pas administrer le serveur. Passez à un profil propriétaire adulte pour gérer la console.",
@@ -110,6 +136,10 @@ export const consoleAccessStrings = {
     consoleLead: "Betriebseinstellungen. Gib das Server-Admin-Passwort ein, um zu entsperren.",
     adminPasswordLabel: "Admin-Passwort",
     adminUnlockSubmit: "Konsole entsperren",
+    manageLockedTitle: "Admin-Passwort erforderlich",
+    manageLockedLead:
+      "Diese Seite ändert Servereinstellungen. Gib das Admin-Passwort des Servers ein, um fortzufahren.",
+    manageUnlockSubmit: "Entsperren",
     consoleActiveLead: "Konsole entsperrt. Die Admin-Sitzung ist aktiv.",
     adminLock: "Konsole sperren",
     adminUnlockRejected: "Das Admin-Passwort wurde nicht akzeptiert.",
@@ -141,6 +171,10 @@ export const consoleAccessStrings = {
       "Ajustes del operador. Introduce la contraseña de administrador del servidor para desbloquear.",
     adminPasswordLabel: "Contraseña de administrador",
     adminUnlockSubmit: "Desbloquear la consola",
+    manageLockedTitle: "Se necesita la contraseña de administrador",
+    manageLockedLead:
+      "Esta página cambia ajustes del servidor. Introduce la contraseña de administrador del servidor para continuar.",
+    manageUnlockSubmit: "Desbloquear",
     consoleActiveLead: "Consola desbloqueada. La sesión de administrador está activa.",
     adminLock: "Bloquear la consola",
     adminUnlockRejected: "No se aceptó la contraseña de administrador.",
@@ -172,6 +206,10 @@ export const consoleAccessStrings = {
       "Configurações do operador. Digite a senha de administrador do servidor para desbloquear.",
     adminPasswordLabel: "Senha de administrador",
     adminUnlockSubmit: "Desbloquear o console",
+    manageLockedTitle: "Senha de administrador necessária",
+    manageLockedLead:
+      "Esta página altera configurações do servidor. Digite a senha de administrador do servidor para continuar.",
+    manageUnlockSubmit: "Desbloquear",
     consoleActiveLead: "Console desbloqueado. A sessão de administrador está ativa.",
     adminLock: "Bloquear o console",
     adminUnlockRejected: "A senha de administrador não foi aceita.",

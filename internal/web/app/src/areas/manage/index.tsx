@@ -1,10 +1,44 @@
-import { useEffect } from "react";
+import {
+  Archive,
+  Bookmark,
+  FileCog,
+  FileQuestion,
+  FolderTree,
+  ImageIcon,
+  LibraryBig,
+  ListChecks,
+  ListTodo,
+  Lock,
+  type LucideProps,
+  PanelsTopLeft,
+  PencilLine,
+  Rss,
+  Shapes,
+  ShieldAlert,
+  Sparkles,
+  Tags,
+  Trash2,
+  UserCog,
+} from "lucide-react";
+import {
+  type ComponentType,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { Navigate, NavLink, Route, Routes, useLocation } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
+import { SectionMenu } from "@/components/chrome/SectionMenu";
+import { AdvancedSettingsSwitch, useAdvancedSettings } from "@/lib/advancedSettings";
+import { setAdminUnlockHandler } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
 import type { StringKey } from "@/strings";
+import { AdminGate, type AdminGateCopy } from "../console/AdminGate";
 import "./manage.css";
 import { ArtworkPage } from "./pages/ArtworkPage";
 import { BackupExportPage } from "./pages/BackupExportPage";
@@ -37,34 +71,37 @@ import { UnmatchedPage } from "./pages/UnmatchedPage";
 // strings are introduced; the labels stay the existing localized keys.
 // A nav item labels itself either by a localized string key (`label`) or, for the
 // powertools surfaces that have no global string key yet, a literal `text`.
-type NavItem =
-  | { to: string; label: StringKey; text?: undefined }
-  | { to: string; text: string; label?: undefined };
+// `advanced` items are expert destinations the Normal view leaves out of the nav
+// (CORE-1117); their routes stay registered, so a link or bookmark still works.
+type NavItem = { to: string; icon: ComponentType<LucideProps>; advanced?: true } & (
+  | { label: StringKey; text?: undefined }
+  | { text: string; label?: undefined }
+);
 const NAV_GROUPS: NavItem[][] = [
   [
-    { to: "/manage/libraries", label: "libraries" },
-    { to: "/manage/operations", label: "jobs" },
-    { to: "/manage/convert", label: "convert" },
-    { to: "/manage/rename", label: "rename" },
-    { to: "/manage/trash", label: "trashPolicyHeading" },
-    { to: "/manage/backups", label: "backupHeading" },
-    { to: "/manage/subscriptions", label: "subscriptions" },
-    { to: "/manage/unmatched", label: "unmatchedHeading" },
+    { to: "/manage/libraries", icon: LibraryBig, label: "libraries" },
+    { to: "/manage/operations", icon: ListChecks, label: "jobs" },
+    { to: "/manage/convert", icon: FileCog, label: "convert", advanced: true },
+    { to: "/manage/rename", icon: PencilLine, label: "rename", advanced: true },
+    { to: "/manage/trash", icon: Trash2, label: "trashPolicyHeading" },
+    { to: "/manage/backups", icon: Archive, label: "backupHeading" },
+    { to: "/manage/subscriptions", icon: Rss, label: "subscriptions" },
+    { to: "/manage/unmatched", icon: FileQuestion, label: "unmatchedHeading" },
   ],
   [
-    { to: "/manage/collections", label: "collections" },
-    { to: "/manage/bulk", label: "bulkOpsHeading" },
-    { to: "/manage/tags", label: "tagsHeading" },
-    { to: "/manage/curation", label: "curationHeading" },
-    { to: "/manage/entities", label: "manageTitle" },
-    { to: "/manage/artwork", label: "artworkCandidates" },
-    { to: "/manage/markers", label: "markersHeading" },
-    { to: "/manage/field-locks", label: "fieldLocksHeading" },
-    { to: "/manage/navigation", label: "navOverrideHeading" },
+    { to: "/manage/collections", icon: FolderTree, label: "collections" },
+    { to: "/manage/bulk", icon: ListTodo, label: "bulkOpsHeading", advanced: true },
+    { to: "/manage/tags", icon: Tags, label: "tagsHeading" },
+    { to: "/manage/curation", icon: Sparkles, label: "curationHeading", advanced: true },
+    { to: "/manage/entities", icon: Shapes, label: "manageTitle" },
+    { to: "/manage/artwork", icon: ImageIcon, label: "artworkCandidates" },
+    { to: "/manage/markers", icon: Bookmark, label: "markersHeading", advanced: true },
+    { to: "/manage/field-locks", icon: Lock, label: "fieldLocksHeading", advanced: true },
+    { to: "/manage/navigation", icon: PanelsTopLeft, label: "navOverrideHeading", advanced: true },
   ],
   [
-    { to: "/manage/restrictions", label: "restrictionsTitle" },
-    { to: "/manage/profile", label: "profilesTitle" },
+    { to: "/manage/restrictions", icon: ShieldAlert, label: "restrictionsTitle" },
+    { to: "/manage/profile", icon: UserCog, label: "profilesTitle" },
   ],
 ];
 
@@ -77,11 +114,109 @@ function currentRouteLabel(pathname: string): { label?: StringKey; text?: string
   return item ?? { label: "manageTitle" };
 }
 
+// The Normal nav drops Advanced items, except the page being viewed, so a deep
+// link never lands on a page missing from its own nav, and drops any group left
+// empty. Advanced shows every group whole.
+function visibleNavGroups(advanced: boolean, pathname: string): NavItem[][] {
+  if (advanced) return NAV_GROUPS;
+  return NAV_GROUPS.map((group) =>
+    group.filter(
+      (item) => !item.advanced || pathname === item.to || pathname.startsWith(`${item.to}/`),
+    ),
+  ).filter((group) => group.length > 0);
+}
+
+const MANAGE_LOCK_COPY: AdminGateCopy = {
+  title: "manageLockedTitle",
+  lead: "manageLockedLead",
+  submit: "manageUnlockSubmit",
+};
+
+// Some Manage pages read or change server settings, which the server allows
+// only under an Admin Session (ADR-0007 §4) — a manager without one is refused
+// with "admin session required". Which operations those are is the server's
+// call, so this keeps no list: when a request the current page sent is refused
+// that way, the Console's own unlock gate is shown over the page and the
+// request waits. Unlocking sends it again, so the page loads its data, or
+// finishes the action the manager asked for, in place and with whatever they
+// had entered still there. Pages that never need an Admin Session are never
+// gated, and each page gets its own lock so leaving one abandons its prompt.
+function ManageAdminLock({ children }: { children: ReactNode }) {
+  const { pathname } = useLocation();
+  return <PageAdminLock key={pathname}>{children}</PageAdminLock>;
+}
+
+function PageAdminLock({ children }: { children: ReactNode }) {
+  // null until a request is refused. A refusal that arrives while the gate
+  // believes it is open (the session was ended elsewhere) changes the number,
+  // which mounts the gate afresh so it reads the session again.
+  const [gate, setGate] = useState<number | null>(null);
+  const [unlocked, setUnlocked] = useState(false);
+  const prompting = useRef(false);
+  const waiting = useRef<Array<(unlocked: boolean) => void>>([]);
+
+  const settle = useCallback((result: boolean) => {
+    for (const resolve of waiting.current.splice(0)) resolve(result);
+  }, []);
+
+  // A layout effect, so the handler is in place before the page's own effects
+  // send their first requests.
+  useLayoutEffect(() => {
+    let alive = true;
+    setAdminUnlockHandler(() => {
+      if (!alive) return Promise.resolve(false);
+      return new Promise<boolean>((resolve) => {
+        waiting.current.push(resolve);
+        if (prompting.current) return;
+        prompting.current = true;
+        setUnlocked(false);
+        setGate((current) => (current ?? 0) + 1);
+      });
+    });
+    return () => {
+      alive = false;
+      setAdminUnlockHandler();
+      settle(false);
+    };
+  }, [settle]);
+
+  const onUnlockedChange = useCallback(
+    (now: boolean) => {
+      prompting.current = !now;
+      setUnlocked(now);
+      if (now) settle(true);
+    },
+    [settle],
+  );
+
+  return (
+    <>
+      {gate !== null && (
+        <AdminGate key={gate} copy={MANAGE_LOCK_COPY}>
+          <AdminUnlocked onChange={onUnlockedChange} />
+        </AdminGate>
+      )}
+      {/* Kept mounted behind the prompt so nothing the manager entered is lost. */}
+      <div className={gate !== null && !unlocked ? "hidden" : "contents"}>{children}</div>
+    </>
+  );
+}
+
+/** Rendered by the gate only while its Admin Session is open. */
+function AdminUnlocked({ onChange }: { onChange: (unlocked: boolean) => void }) {
+  useEffect(() => {
+    onChange(true);
+    return () => onChange(false);
+  }, [onChange]);
+  return null;
+}
+
 export function ManageArea() {
   const { setRegister } = useRegister();
   const location = useLocation();
   const { isManager, loading, needsEnroll, session } = useSession();
   const t = useT();
+  const [advanced] = useAdvancedSettings();
   useEffect(() => setRegister("manage"), [setRegister]);
   const routeTitle = currentRouteLabel(location.pathname);
 
@@ -100,48 +235,57 @@ export function ManageArea() {
   return (
     <AppShell>
       <div className="manage-area flex flex-col gap-5 md:flex-row md:gap-6">
-        <nav aria-label={t("manageTitle")} className="manage-nav md:w-52 md:shrink-0">
-          {NAV_GROUPS.map((group, i) => (
-            <div key={i} className="manage-nav-group">
-              {group.map((item) => (
-                // NavLink sets aria-current="page" on the active <a>; the
-                // Workbench active treatment (beam left-edge marker, raised
-                // fill) keys off that attribute in manage.css — so the visual
-                // state and the assistive-tech state share one source of truth.
-                <NavLink key={item.to} to={item.to} className="manage-nav-link">
-                  {item.text ?? t(item.label)}
-                </NavLink>
-              ))}
-            </div>
-          ))}
-        </nav>
+        <SectionMenu
+          label={t("manageTitle")}
+          className="md:w-52 md:shrink-0"
+          current={routeTitle.text ?? t(routeTitle.label ?? "manageTitle")}
+          footer={<AdvancedSettingsSwitch className="manage-advanced-switch" />}
+        >
+          <div className="manage-nav">
+            {visibleNavGroups(advanced, location.pathname).map((group, i) => (
+              <div key={i} className="manage-nav-group">
+                {group.map((item) => (
+                  // NavLink sets aria-current="page" on the active <a>; the
+                  // Workbench active treatment (raised fill) keys off that attribute in manage.css — so the visual
+                  // state and the assistive-tech state share one source of truth.
+                  <NavLink key={item.to} to={item.to} className="manage-nav-link">
+                    <item.icon className="manage-nav-icon" aria-hidden />
+                    {item.text ?? t(item.label)}
+                  </NavLink>
+                ))}
+              </div>
+            ))}
+          </div>
+        </SectionMenu>
 
         <div className="min-w-0 grow">
           {/* The route's one h1; each ManageSection card title below it is an h2. */}
           <h1 className="sr-only">{routeTitle.text ?? t(routeTitle.label ?? "manageTitle")}</h1>
-          <Routes>
-            <Route index element={<Navigate to="/manage/libraries" replace />} />
-            <Route path="libraries" element={<LibrariesPage />} />
-            <Route path="operations" element={<OperationsPage />} />
-            <Route path="convert" element={<ConvertPage />} />
-            <Route path="rename" element={<RenamePage />} />
-            <Route path="trash" element={<TrashPage />} />
-            <Route path="backups" element={<BackupExportPage />} />
-            <Route path="subscriptions" element={<SubscriptionsPage />} />
-            <Route path="collections" element={<CollectionsPage />} />
-            <Route path="bulk" element={<BulkOpsPage />} />
-            <Route path="tags" element={<TagsPage />} />
-            <Route path="curation" element={<CurationPage />} />
-            <Route path="entities" element={<EntityPage />} />
-            <Route path="artwork" element={<ArtworkPage />} />
-            <Route path="markers" element={<MarkersPage />} />
-            <Route path="field-locks" element={<FieldLocksPage />} />
-            <Route path="navigation" element={<NavOverridePage />} />
-            <Route path="unmatched" element={<UnmatchedPage />} />
-            <Route path="restrictions" element={<RestrictionsPage />} />
-            <Route path="profile" element={<ProfilePage />} />
-            <Route path="*" element={<Navigate to="/manage/libraries" replace />} />
-          </Routes>
+          <ManageAdminLock>
+            <Routes>
+              <Route index element={<Navigate to="/manage/libraries" replace />} />
+              <Route path="libraries" element={<LibrariesPage />} />
+              <Route path="operations" element={<OperationsPage />} />
+              <Route path="convert" element={<ConvertPage />} />
+              <Route path="rename" element={<RenamePage />} />
+              <Route path="trash" element={<TrashPage />} />
+              <Route path="backups" element={<BackupExportPage />} />
+              <Route path="subscriptions" element={<SubscriptionsPage />} />
+              <Route path="collections" element={<CollectionsPage />} />
+              <Route path="bulk" element={<BulkOpsPage />} />
+              <Route path="tags" element={<TagsPage />} />
+              <Route path="curation" element={<CurationPage />} />
+              <Route path="entities" element={<EntityPage />} />
+              <Route path="artwork" element={<ArtworkPage />} />
+              <Route path="markers" element={<MarkersPage />} />
+              <Route path="field-locks" element={<FieldLocksPage />} />
+              <Route path="navigation" element={<NavOverridePage />} />
+              <Route path="unmatched" element={<UnmatchedPage />} />
+              <Route path="restrictions" element={<RestrictionsPage />} />
+              <Route path="profile" element={<ProfilePage />} />
+              <Route path="*" element={<Navigate to="/manage/libraries" replace />} />
+            </Routes>
+          </ManageAdminLock>
         </div>
       </div>
     </AppShell>

@@ -92,7 +92,7 @@ As of the initial public commit:
 | Server | Builds from source with the Go version in [`go.mod`](go.mod) and runs locally via `make dev-run`. |
 | CI | Being brought up. At publication the [gate workflow](.github/workflows/gate.yml) failed to parse and some date-dependent waivers had expired; the fixes are in [#3](https://github.com/beamfall/core/pull/3). Treat CI as not yet green. |
 | Cross-repo checks | Some checks need sibling Beamfall repositories that are not public. The consumer-pin and relay-vector freshness checks report a loud skip, never a pass, when the sibling checkout is absent, and the cross-repo wire-conformance check clones a consumer repository. These are meant to run in the maintainers' multi-repo workspace. |
-| Tracked drift | [`contracts/registry.json`](contracts/registry.json) lists each contract boundary with its consumers. It records nine `knownDrift` entries across eight boundaries, each with a ticket and a deadline: for example, native client executors for the visual behavior matrix, and full plugin-SDK conformance wiring. |
+| Tracked drift | [`contracts/registry.json`](contracts/registry.json) lists each contract boundary core produces or consumes, with its consumers. Consumer pins and drift records (each with a ticket and a deadline, for example native client executors for the visual behavior matrix) are kept in the private workspace registry, not here; see [the public contract registry design](docs/architecture/public-contract-registry.md). |
 | Container and NAS deployment | Templates are included, but they accept only a digest-pinned image from a release, so they become usable with the first release. |
 | Supported versions | Before the first stable release, security reports should name a `main` revision ([`SECURITY.md`](SECURITY.md)). |
 
@@ -135,7 +135,12 @@ The CLI covers day-to-day operation:
 | `beamfall token` | Manage local API tokens. |
 | `beamfall export-config` / `apply-config` | Export or apply a Console config document (background workers, plugin activation, libraries and their roots). Apply is additive and idempotent; `--data-dir` works offline while the server is stopped, for seeding libraries before first start. |
 | `beamfall reset-admin-password` | Set the local admin password while the server is stopped. |
+| `beamfall pairing-code` | Mint a one-time owner pairing code while the server is stopped, to sign a browser back in. |
 | `beamfall capabilities` / `version` | Print runtime capabilities or build metadata. |
+
+`scan`, `backup`, `token list` and `token revoke` talk to the running server with `--token`: mint one
+with `beamfall token create` while the server is stopped. The token passes the Admin Session gate for
+exactly those operations; every other Console operation still needs a browser Admin Session.
 
 ### Docker Compose (after the first release)
 
@@ -185,8 +190,9 @@ and the architecture test in `internal/conformance` disagree, the test wins.
   conformance tests rather than generated from a schema. Integrations use the stable `/v1`
   Developer API.
 - Each cross-repository wire boundary is registered in
-  [`contracts/registry.json`](contracts/registry.json) with its artifact, consumers, pinned
-  versions, conformance test, and any known drift.
+  [`contracts/registry.json`](contracts/registry.json) with its artifact, active version,
+  consumers and conformance test. Consumer pins and drift records live in the private
+  workspace registry.
 
 > Domain language: [CONTEXT.md](CONTEXT.md). This codebase has no lineage to any predecessor
 > server.
@@ -194,7 +200,9 @@ and the architecture test in `internal/conformance` disagree, the test wins.
 ### Clients
 
 Core serves its own Web UI at `/web/`: first-run setup, the Beamfall Console for
-administration, library management, and a browser player. It lives in this repository under the
+administration, library management, and a browser player. On a fresh server, open
+`http://<server-ip>:8800/web/` from a browser on the same network to finish first-run setup; no
+token is needed there. It lives in this repository under the
 same license. Native Beamfall apps are separate products and are not part of this repository.
 They talk to Core over its network API, and Core never needs them to run.
 

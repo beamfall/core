@@ -2,7 +2,15 @@ import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchFolderTree, fetchLibraries, fetchPlugins } from "@/lib/graphql";
+import { resetRescansForTest } from "@/components/beamfall/LibraryRescan";
+import {
+  fetchFolderTree,
+  fetchJobs,
+  fetchLibraries,
+  fetchPlugins,
+  scanLibrary,
+  setLibraryRoots,
+} from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { LibrariesPage } from "./LibrariesPage";
 
@@ -18,6 +26,7 @@ vi.mock("@/lib/graphql", () => ({
   createManagedFolder: vi.fn(),
   deleteManagedPath: vi.fn(),
   fetchFolderTree: vi.fn(),
+  fetchJobs: vi.fn(),
   fetchLibraries: vi.fn(),
   fetchPlugins: vi.fn(),
   moveManagedPath: vi.fn(),
@@ -31,6 +40,7 @@ vi.mock("@/lib/graphql", () => ({
 describe("LibrariesPage folder tree", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetRescansForTest();
     vi.mocked(fetchLibraries).mockResolvedValue([
       {
         id: "library-1",
@@ -75,6 +85,57 @@ describe("LibrariesPage folder tree", () => {
         },
       ],
     });
+  });
+
+  it("rescans every library from the section header", async () => {
+    vi.mocked(scanLibrary).mockResolvedValue({ id: "job-1", status: "queued" });
+    vi.mocked(fetchJobs).mockResolvedValue([]);
+    const user = userEvent.setup();
+    render(
+      <I18nProvider>
+        <LibrariesPage />
+      </I18nProvider>,
+    );
+    await user.click(await screen.findByRole("button", { name: "Rescan all libraries" }));
+    expect(scanLibrary).toHaveBeenCalledWith("library-1", "/media");
+    expect(await screen.findByRole("status", { name: "" })).toHaveTextContent("Scanning");
+  });
+
+  it("rescans the folders a save just stored, without a reload", async () => {
+    vi.mocked(fetchLibraries).mockResolvedValue([
+      {
+        id: "library-1",
+        title: "Library",
+        pluginID: null,
+        roots: [],
+        previewClips: true,
+        restricted: false,
+      },
+    ]);
+    vi.mocked(setLibraryRoots).mockResolvedValue({ id: "library-1", roots: ["/fresh"] });
+    vi.mocked(scanLibrary).mockResolvedValue({ id: "job-1", status: "queued" });
+    vi.mocked(fetchJobs).mockResolvedValue([]);
+    const { container } = render(
+      <I18nProvider>
+        <LibrariesPage />
+      </I18nProvider>,
+    );
+    const rescan = await screen.findByRole("button", { name: "Rescan library" });
+    expect(rescan).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Rescan all libraries" })).toBeDisabled();
+
+    const input = container.querySelector<HTMLInputElement>("#roots-library-1");
+    if (!input) throw new Error("roots input missing");
+    fireEvent.change(input, { target: { value: "/fresh" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(setLibraryRoots).toHaveBeenCalledWith("library-1", []));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Rescan library" })).toBeEnabled(),
+    );
+    expect(screen.getByRole("button", { name: "Rescan all libraries" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Rescan library" }));
+    await waitFor(() => expect(scanLibrary).toHaveBeenCalledWith("library-1", "/fresh"));
   });
 
   it("exposes tree a11y semantics and keyboard selection", async () => {

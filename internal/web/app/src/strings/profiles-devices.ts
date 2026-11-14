@@ -50,7 +50,7 @@ export const profileDeviceStrings = {
     deviceAddHeading: "Add a device",
     deviceAddLead:
       "Mint a one-time pairing code, then enter it on the new browser or device to enroll it.",
-    devicePairingCodeShown: "Pairing code — copy it now, then enter it on the new device.",
+    devicePairingCodeShown: "Pairing code. Copy it now, then enter it on the new device.",
     deviceMintViewer: "Viewer code",
     deviceMintManager: "Manager code",
     deviceMintManagerConfirm:
@@ -62,6 +62,13 @@ export const profileDeviceStrings = {
     remoteEnrollToggle: "Allow remote enrollment",
     remoteEnrollToggleHint:
       "When off, only devices on your local network can redeem a pairing code. Remote enrollment over a relay is refused.",
+    signinSecurityHeading: "Sign-in security",
+    signinSecurityLead:
+      "Choose whether the owner can sign a browser in with the admin password. Changing it needs the admin password.",
+    signinSecuritySave: "Change sign-in security",
+    signinSecuritySaved: "Sign-in security changed.",
+    signinSecurityNotManager: "Only a Manager device can change sign-in security.",
+    signinSecurityFailed: "Could not change sign-in security.",
   },
   fr: {
     consoleAccessGroup: "Profils et accès",

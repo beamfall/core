@@ -9,7 +9,7 @@
 // which throws ApiError (carrying .status) on a non-2xx response — callers
 // inspect that status the way the vanilla app inspects response.status.
 
-import { graphql, postJSON } from "@/lib/api";
+import { graphql, postJSON, type SignInSecurityMode } from "@/lib/api";
 import { rebindCompatibility } from "@/lib/compat";
 import type { AdminSessionInfo } from "./types";
 
@@ -43,7 +43,7 @@ export async function fetchAdminSession(signal?: AbortSignal): Promise<AdminSess
 }
 
 const VERIFY_ADMIN_SESSION_MUTATION =
-  "mutation VerifyAdminSession($password: String!) { verifyAdminSession(password: $password) { active expiresAt } }";
+  "mutation VerifyAdminSession($password: String!, $createFirst: Boolean) { verifyAdminSession(password: $password, createFirst: $createFirst) { active expiresAt } }";
 
 /** An accepted admin credential plus the outcome of the handshake after it. */
 export interface VerifiedAdminSession extends AdminSessionInfo {
@@ -55,14 +55,19 @@ export interface VerifiedAdminSession extends AdminSessionInfo {
  * VerifyAdminSession — open an Admin Session with the admin password. Rejects
  * only when the credential step itself fails; `rebind` reports the handshake
  * that follows, which the caller surfaces separately (the session is live).
+ *
+ * `createFirst` (CORE-1132) asks the server to choose `password` as the admin
+ * password when none exists yet; it never replaces one and is otherwise an
+ * ordinary unlock. Only the Console gate's set-password step passes it.
  */
 export async function verifyAdminSession(
   password: string,
   signal?: AbortSignal,
+  createFirst?: boolean,
 ): Promise<VerifiedAdminSession> {
   const data = await graphql<{ verifyAdminSession: AdminSessionInfo }>(
     VERIFY_ADMIN_SESSION_MUTATION,
-    { password },
+    createFirst ? { password, createFirst: true } : { password },
     signal,
   );
   const info = data.verifyAdminSession;
@@ -106,6 +111,51 @@ export async function enroll(code: string, deviceName: string): Promise<RebindOu
 export async function promote(code: string, signal?: AbortSignal): Promise<void> {
   await postJSON("/api/web/promote", { code }, signal);
   await rebindCompatibility();
+}
+
+/**
+ * Renew a lapsed session from this browser's device-secret cookies
+ * (POST /api/web/session/renew). Resolves true when the server issued a new
+ * session (the compatibility binding is then refreshed, best effort) and
+ * false on any refusal, so a caller can fall back to the enroll screen.
+ */
+export async function renewSession(signal?: AbortSignal): Promise<boolean> {
+  try {
+    await postJSON("/api/web/session/renew", {}, signal);
+  } catch {
+    return false;
+  }
+  await settleRebind();
+  return true;
+}
+
+/**
+ * Sign this browser in with the server admin password
+ * (POST /api/web/admin-signin). The server enrolls it as a manager device on
+ * the owner profile and sets the cookies. Rejects with an ApiError (`.status`
+ * 401 = sign-in failed, 429 = throttled, 403 = needs HTTPS or the local
+ * network) when the sign-in itself fails.
+ */
+export async function adminSignIn(password: string, deviceName: string): Promise<RebindOutcome> {
+  await postJSON("/api/web/admin-signin", { password, deviceName });
+  return settleRebind();
+}
+
+/**
+ * Switch the sign-in security mode (POST /api/web/signin-security, CORE-1110).
+ * Needs a MANAGER device and the admin password in the same request. Rejects
+ * with an ApiError (`.status` 401 = wrong password, 403 = not a manager,
+ * 429 = throttled) on failure.
+ */
+export async function setSignInSecurityMode(
+  mode: SignInSecurityMode,
+  adminPassword: string,
+): Promise<SignInSecurityMode> {
+  const data = await postJSON<{ securityMode?: string }>("/api/web/signin-security", {
+    mode,
+    adminPassword,
+  });
+  return data.securityMode === "strict" ? "strict" : "home";
 }
 
 /** Sign out: drop the session cookie (POST /api/web/logout). */

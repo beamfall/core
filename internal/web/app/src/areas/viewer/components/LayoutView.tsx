@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
+import { buttonVariants } from "@/components/ui/button";
 import type { FieldFilters, Layout, Section } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
@@ -169,11 +170,11 @@ export function LayoutView({
   }
 
   return (
-    <div ref={rootRef} style={accentVar} className="flex flex-col gap-8">
+    <div ref={rootRef} style={accentVar} className="flex flex-col gap-10">
       {connectionLost && (
         <div
           role="status"
-          className="rounded-[var(--radius-card)] border border-[oklch(78%_0.16_78_/_40%)] bg-[oklch(78%_0.16_78_/_12%)] px-3 py-2 text-sm text-[var(--text-secondary)]"
+          className="rounded-[var(--radius-field)] border border-[color-mix(in_oklab,var(--state-warning)_40%,transparent)] bg-[color-mix(in_oklab,var(--state-warning)_12%,transparent)] px-3 py-2 text-sm text-[var(--text-secondary)]"
         >
           {t("connectionLost")}
         </div>
@@ -239,11 +240,11 @@ export function LayoutView({
           {t("libraryEmptyOwnerTitle")}
         </p>
         <p className="text-sm text-[var(--text-secondary)]">{t("libraryEmptyOwnerLead")}</p>
-        <div className="flex flex-wrap gap-2">
-          <Link to="/console/libraries" className="bf-action-link">
+        <div className="mt-2 flex flex-wrap justify-center gap-2">
+          <Link to="/console/libraries" className={buttonVariants()}>
             {t("libraryEmptyStartScan")}
           </Link>
-          <Link to="/console/remote" className="bf-action-link">
+          <Link to="/console/migrate" className={buttonVariants({ variant: "outline" })}>
             {t("libraryEmptyMigrate")}
           </Link>
         </div>

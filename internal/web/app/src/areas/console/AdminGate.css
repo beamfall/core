@@ -1,0 +1,6 @@
+/* Admin gate: a calm, centered unlock surface. Its own sheet because the gate is
+   rendered by more than one area (the Console and Manage). */
+.console-gate {
+  max-width: 26rem;
+  margin: 40px auto 0;
+}

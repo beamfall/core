@@ -14,30 +14,48 @@
  *  Shared app shell — header, brand mark, nav, banner
  * ============================================================ */
 
+/* The header (CORE-1131): one quiet row in the streaming-app idiom. A menu
+ * button for the library sidebar and the brand on the left, a search field,
+ * then a short icon cluster (Activity, Console, notifications) and an avatar
+ * that opens the account menu. Libraries live in the sidebar and secondary
+ * links in the account menu, so the bar never runs out of room. */
 .bf-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
   display: flex;
   align-items: center;
-  gap: 20px;
-  padding: 10px 20px;
-  background: var(--bg-surface);
+  gap: 18px;
+  min-height: 60px;
+  padding: 10px 24px;
+  background: color-mix(in oklch, var(--bg-root) 86%, transparent);
   border-bottom: 1px solid var(--border-subtle);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
 }
 
 .bf-brand {
   display: inline-flex;
   align-items: center;
   gap: 10px;
+  flex: none;
   font-size: 15px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0;
   color: var(--text-primary);
   text-decoration: none;
   white-space: nowrap;
 }
 
+.bf-brand:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 4px;
+  border-radius: 6px;
+}
+
 .bf-mark {
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   flex: none;
   background: url("../../assets/beamfall-logo.png") center / contain no-repeat;
 }
@@ -50,91 +68,83 @@
   mask: url("/web/beamfall-wordmark.svg") center / contain no-repeat;
 }
 
-/* Nav as the tab/rail idiom: quiet labels; the active tab is marked by a
- * refined 2px beam underline + brighter text (the one sanctioned global-chrome
- * accent — "active nav"), never a filled pill. */
-.bf-nav {
+/* The menu button that opens or collapses the library sidebar. */
+.bf-menu-button {
+  flex: none;
+  margin-left: -8px;
+}
+
+/* Below the header: the library sidebar beside the page content. */
+.bf-body {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+/* A column at least one viewport tall, so the source footer sits at the
+ * bottom of short pages instead of floating under the content. */
+.bf-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   min-width: 0;
+  min-height: calc(100dvh - 60px);
 }
 
-.bf-nav-link {
-  display: inline-flex;
-  align-items: center;
-  padding: 7px 10px;
-  border-radius: var(--radius-control);
+.bf-main {
+  flex: 1 0 auto;
+  width: 100%;
+}
+
+/* The library sidebar (CORE-1131): a quiet vertical list that holds any number
+ * of libraries. The active entry is brighter on a soft beam fill. Desktop can collapse it to
+ * an icon rail; phones open it as a drawer over the page. */
+.bf-sidebar {
+  position: sticky;
+  top: 60px;
+  flex: none;
+  width: 236px;
+  height: calc(100vh - 60px);
+  height: calc(100dvh - 60px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 16px 10px 24px;
+  border-right: 1px solid var(--border-subtle);
+  background: var(--bg-root);
+  scrollbar-width: thin;
+  transition: width var(--duration-normal) var(--ease-standard);
+}
+
+.bf-sidebar.is-collapsed {
+  width: 72px;
+}
+
+.bf-side-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bf-side-heading {
+  margin: 22px 12px 6px;
   color: var(--text-muted);
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 18px;
-  text-decoration: none;
-  cursor: pointer;
-  /* The active underline rides an inset bottom box-shadow, so it sits inside the
-   * padded tab box, never shifts layout, and animates with the rest. */
-  box-shadow: inset 0 -2px 0 transparent;
-  transition:
-    color var(--duration-fast) var(--ease-standard),
-    background-color var(--duration-fast) var(--ease-standard),
-    box-shadow var(--duration-fast) var(--ease-standard);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  white-space: nowrap;
 }
 
-.bf-nav-link:hover {
-  color: var(--text-primary);
-  background: var(--night-850);
-}
-
-.bf-nav-link:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-/* Active tab: brighter text + a crisp 2px beam underline, no filled pill. */
-.bf-nav-link.is-active {
-  color: var(--text-primary);
-  background: transparent;
-  box-shadow: inset 0 -2px 0 var(--beam-500);
-}
-
-.bf-nav-link.is-active:hover {
-  background: var(--night-850);
-}
-
-/* Header action cluster: quiet links + controls, never accent. */
-.bf-actions {
+.bf-side-link {
+  position: relative;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
-  margin-left: auto;
-  min-width: 0;
-}
-
-.bf-action-link {
-  color: var(--text-muted);
-  font-size: 13px;
-  font-weight: 600;
-  text-decoration: none;
-  white-space: nowrap;
-  transition: color var(--duration-fast) var(--ease-standard);
-}
-
-.bf-action-link:hover {
-  color: var(--text-primary);
-}
-
-.bf-notification-link {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 32px;
-  padding: 6px 9px;
-  border-radius: var(--radius-control);
-  color: var(--text-muted);
-  font-size: 13px;
+  min-height: 44px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  color: var(--text-secondary);
+  font-size: 14px;
   font-weight: 600;
   line-height: 18px;
   text-decoration: none;
@@ -143,43 +153,428 @@
     background-color var(--duration-fast) var(--ease-standard);
 }
 
-.bf-notification-link:hover,
-.bf-notification-link.is-active {
+.bf-side-link:hover {
   color: var(--text-primary);
   background: var(--night-850);
 }
 
-.bf-notification-link:focus-visible {
+.bf-side-link:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.bf-side-link.is-active {
+  color: var(--text-primary);
+  background: color-mix(in oklch, var(--beam-500) 10%, transparent);
+}
+
+.bf-side-glyph,
+.bf-side-tile {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+
+.bf-side-glyph {
+  color: var(--text-muted);
+}
+
+.bf-side-link:hover .bf-side-glyph,
+.bf-side-link.is-active .bf-side-glyph {
+  color: var(--beam-500);
+}
+
+/* A library monogram: the library's initial in its own accent (or the beam),
+ * set like a glyph so the icon rail can still tell libraries apart. */
+.bf-side-tile {
+  --tile: var(--beam-500);
+  color: color-mix(in oklch, var(--tile) 75%, white);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.bf-side-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The icon rail: labels and the heading leave the layout but stay readable
+ * to assistive tech; the tooltip carries the name for pointer users. */
+.bf-sidebar.is-collapsed .bf-side-link {
+  justify-content: center;
+  padding: 6px 0;
+}
+
+.bf-sidebar.is-collapsed .bf-side-label,
+.bf-sidebar.is-collapsed .bf-side-heading {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.bf-sidebar.is-collapsed .bf-side-list + .bf-side-list,
+.bf-sidebar.is-collapsed .bf-side-heading + .bf-side-list {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.bf-sidebar-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 44;
+  border: 0;
+  background: oklch(0% 0 0 / 55%);
+  cursor: default;
+  animation: bf-scrim-in var(--duration-fast) var(--ease-standard);
+}
+
+@keyframes bf-scrim-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Phone: the sidebar is an overlay drawer that slides in from the left. */
+.bf-sidebar.is-drawer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 45;
+  width: min(300px, 84vw);
+  height: auto;
+  padding-top: 20px;
+  border-right-color: var(--border-strong);
+  background: var(--bg-surface);
+  box-shadow: 20px 0 60px -20px oklch(0% 0 0 / 70%);
+  transform: translateX(-104%);
+  visibility: hidden;
+  transition:
+    transform var(--duration-normal) var(--ease-standard),
+    visibility 0s linear var(--duration-normal);
+}
+
+.bf-sidebar.is-drawer.is-open {
+  transform: none;
+  visibility: visible;
+  transition: transform var(--duration-normal) var(--ease-standard);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bf-sidebar,
+  .bf-sidebar.is-drawer,
+  .bf-sidebar-scrim {
+    transition: none;
+    animation: none;
+  }
+}
+
+/* Right side: search plus the icon cluster, pushed to the end of the row. */
+.bf-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+/* Round icon buttons: Activity, Console, notifications, avatar. */
+.bf-icon-button {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 40px;
+  height: 40px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
+}
+
+.bf-icon-button:hover,
+.bf-icon-button.is-active {
+  color: var(--text-primary);
+  background: var(--control-bg-hover);
+}
+
+.bf-icon-button:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
+.bf-icon-button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* A revealed session's relock button carries the iris Restrictions tint. */
+.bf-icon-button.bf-reveal-open {
+  color: var(--text-primary);
+  background: oklch(67% 0.13 310 / 22%);
+  box-shadow: inset 0 0 0 1px oklch(67% 0.13 310 / 55%);
+}
+
+/* Labels that collapse to icon-only on narrow screens, keeping the name. */
+.bf-icon-label {
+  white-space: nowrap;
+}
+
 .bf-notification-count {
+  position: absolute;
+  top: 3px;
+  right: 2px;
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
+  border: 2px solid var(--bg-surface);
   border-radius: 999px;
   background: var(--beam-500);
   color: var(--night-950);
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 18px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
   text-align: center;
+  box-sizing: border-box;
+}
+
+/* Account menu: the avatar opens a glass panel of the secondary links. */
+.bf-account {
+  position: relative;
+  flex: none;
+}
+
+.bf-avatar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.bf-avatar-button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.bf-avatar-button:hover .bf-avatar,
+.bf-avatar-button[aria-expanded="true"] .bf-avatar {
+  box-shadow:
+    0 0 0 2px var(--bg-surface),
+    0 0 0 4px var(--beam-500);
+}
+
+.bf-account-panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 50;
+  width: 260px;
+  padding: 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: color-mix(in oklch, var(--bg-surface) 92%, transparent);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  box-shadow:
+    0 18px 48px oklch(0% 0 0 / 45%),
+    inset 0 1px 0 oklch(100% 0 0 / 6%);
+  animation: bf-menu-in var(--duration-fast, 150ms) var(--ease-standard, ease-out);
+}
+
+.bf-account-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px 12px;
+}
+
+.bf-account-name {
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.bf-account-role {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.bf-account-rule {
+  height: 1px;
+  margin: 6px 4px;
+  border: 0;
+  background: var(--border-subtle);
+}
+
+.bf-account-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
+}
+
+.bf-account-item svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  color: var(--text-muted);
+}
+
+.bf-account-item:hover,
+.bf-account-item:focus-visible {
+  color: var(--text-primary);
+  background: var(--night-850);
+}
+
+/* Focus is shown by the fill, which forced-colors mode drops; the transparent
+   outline is what shows there. */
+.bf-account-item:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+}
+
+.bf-account-item:hover svg,
+.bf-account-item:focus-visible svg {
+  color: var(--beam-500);
+}
+
+.bf-account-item[aria-current="page"] {
+  color: var(--text-primary);
+}
+
+/* Sign out reuses the shared button; flatten it into a menu row. */
+.bf-account-panel .bf-account-signout {
+  justify-content: flex-start;
+  height: 44px;
+  padding: 0 10px 0 40px;
+  border-radius: 10px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+@keyframes bf-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bf-account-panel {
+    animation: none;
+  }
+}
+
+/* Mid widths: the labelled buttons go icon-only before anything wraps. */
+@media (max-width: 1100px) {
+  .bf-icon-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .bf-icon-button {
+    padding: 0;
+  }
+}
+
+/* Phone: menu, brand and icons on one row; the libraries live in the drawer
+ * and the search field becomes an icon. */
+@media (max-width: 760px) {
+  .bf-header {
+    gap: 8px;
+    min-height: 56px;
+    padding: 8px 12px;
+  }
+  .bf-wordmark {
+    width: 88px;
+  }
+  .bf-actions {
+    gap: 0;
+  }
+  .bf-icon-button {
+    min-width: 40px;
+    height: 40px;
+  }
+  .bf-avatar-button {
+    width: 40px;
+    height: 40px;
+  }
+  .bf-account-panel {
+    position: fixed;
+    top: 56px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+  }
+}
+
+/* Narrow phones: the logo mark alone, so brand and icons share one row. */
+@media (max-width: 440px) {
+  .bf-wordmark {
+    display: none;
+  }
 }
 
 /* The Device Role + Reveal chips: StatusBadge idiom. Role state never borrows
  * the accent (design system accent non-use); the revealed session is the
  * sanctioned iris Restrictions tint. */
 .bf-chip-role {
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-weight: 500;
 }
 
 .bf-chip-revealed {
   border-color: oklch(67% 0.13 310 / 55%);
   background: oklch(67% 0.13 310 / 22%);
   color: var(--text-primary);
-  letter-spacing: 0.04em;
 }
 
 /* A revealed session is visually explicit: an iris keyline under the header,
@@ -232,24 +627,27 @@
 }
 
 /* ============================================================ *
- *  Cinema Dark page atmosphere (Viewer only)
- *  Quiet projector-beam glow falling through a dark room — the
- *  product metaphor as atmosphere, not clutter (design-preview).
+ *  Cinema Dark page (Viewer only)
+ *  A flat dark room: the artwork carries the colour, the chrome
+ *  stays out of its way.
  * ============================================================ */
 
 [data-register="viewer"] .bf-shell {
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 18% -4%, oklch(82% 0.145 92 / 9%), transparent 30rem),
-    radial-gradient(circle at 88% -8%, oklch(74% 0.12 218 / 7%), transparent 28rem),
-    linear-gradient(180deg, var(--bg-root), oklch(10% 0.012 255));
-  background-attachment: fixed;
+  background: var(--bg-root);
 }
 
+/* Content fills the column beside the sidebar up to a wide cap, aligned to
+ * the sidebar edge rather than floating in the middle of a large screen. */
 [data-register="viewer"] .bf-main {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 24px 20px 64px;
+  max-width: 1760px;
+  padding: 28px 32px 72px;
+}
+
+@media (max-width: 760px) {
+  [data-register="viewer"] .bf-main {
+    padding: 20px 16px 56px;
+  }
 }
 
 /* ============================================================ *
@@ -261,7 +659,7 @@
   margin: 0;
   font-size: 28px;
   line-height: 36px;
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: 0;
   color: var(--text-primary);
 }
@@ -274,13 +672,12 @@
   line-height: 22px;
 }
 
-[data-register="viewer"] .bf-eyebrow {
-  font-size: 12px;
-  line-height: 16px;
-  font-weight: 640;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-muted);
+[data-register="viewer"] .bf-field-label {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--text-secondary);
 }
 
 /* ============================================================ *
@@ -293,10 +690,10 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  margin: 0;
-  font-size: 18px;
-  line-height: 26px;
-  font-weight: 650;
+  margin: 0 0 4px;
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
   color: var(--text-primary);
 }
 
@@ -305,23 +702,21 @@
   padding: 0;
   border: 0;
   background: none;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font: inherit;
-  font-size: 12px;
-  line-height: 18px;
-  font-weight: 650;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: var(--radius-control);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
   cursor: pointer;
   transition: color var(--duration-fast) var(--ease-standard);
 }
 
 [data-register="viewer"] .bf-see-all:hover {
   color: var(--text-primary);
-}
-
-[data-register="viewer"] .bf-see-all:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-  border-radius: var(--radius-control);
 }
 
 /* Section materializes by fading to content (skeletons fade to content;
@@ -339,9 +734,9 @@
 /* Horizontal shelf rail. */
 [data-register="viewer"] .bf-shelf {
   display: flex;
-  gap: 14px;
+  gap: 18px;
   overflow-x: auto;
-  padding: 4px 4px 14px;
+  padding: 6px 4px 16px;
   scrollbar-width: thin;
   scroll-snap-type: x proximity;
 }
@@ -355,8 +750,8 @@
 [data-register="viewer"] .bf-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 14px;
-  padding: 4px;
+  gap: 24px 18px;
+  padding: 6px 4px;
 }
 
 /* List & info Sections: dense vertical stacked rows (same card contract,
@@ -374,60 +769,67 @@
  *  sits beneath the image, so layout never shifts while artwork loads.
  * ============================================================ */
 
+/* Artwork-led: the rounded poster is the card and the copy sits on the page
+ * beneath it, so a shelf reads as a row of artwork rather than of boxes. */
 [data-register="viewer"] .bf-card {
   display: flex;
   flex-direction: column;
   width: 100%;
   padding: 0;
-  border: 1px solid var(--border-subtle);
+  border: 0;
   border-radius: var(--radius-card);
-  background: oklch(22% 0.012 255);
+  background: none;
   color: var(--text-primary);
   text-align: left;
   cursor: pointer;
-  overflow: hidden;
-  transition:
-    border-color var(--duration-fast) var(--ease-standard),
-    box-shadow var(--duration-fast) var(--ease-standard),
-    transform var(--duration-fast) var(--ease-standard);
 }
 
 [data-register="viewer"] .bf-shelf .bf-card,
 [data-register="viewer"] .bf-grid .bf-card {
-  width: 150px;
+  width: 164px;
 }
 
 [data-register="viewer"] .bf-grid .bf-card {
   width: 100%;
 }
 
-[data-register="viewer"] .bf-card:hover {
-  border-color: oklch(40% 0.016 250);
-  box-shadow: 0 12px 30px oklch(7% 0.02 255 / 55%);
-  transform: translateY(-2px);
-}
-
 [data-register="viewer"] .bf-card:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-  box-shadow: 0 0 0 4px oklch(82% 0.145 92 / 18%);
+  outline: 2px solid transparent;
 }
 
-/* ArtworkFallback: an accent-tinted gradient, never a grey box. The tint
- * derives from the Library accent (--library-accent) when present, falling back
- * to the beam brand. */
+/* Hover lifts the artwork's edge; keyboard focus rings the artwork itself. */
+[data-register="viewer"] .bf-card:hover .bf-poster {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--text-primary) 14%, transparent),
+    0 10px 28px color-mix(in oklab, var(--bg-root) 60%, transparent);
+}
+
+[data-register="viewer"] .bf-card:focus-visible .bf-poster {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+/* ArtworkFallback: a surface faintly tinted by the Library accent
+ * (--library-accent) when present, with a muted glyph so a missing poster
+ * reads as intentional rather than broken. */
 [data-register="viewer"] .bf-poster {
   position: relative;
   width: 100%;
   aspect-ratio: 2 / 3;
   flex: none;
   overflow: hidden;
-  background:
-    radial-gradient(
-      circle at 74% 22%,
-      color-mix(in oklab, var(--library-accent, var(--beam-500)) 16%, transparent),
-      transparent 44%
-    ), linear-gradient(150deg, oklch(27% 0.03 248), oklch(16% 0.018 256));
+  border-radius: var(--radius-card);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--text-primary) 6%, transparent);
+  transition: box-shadow var(--duration-fast) var(--ease-standard);
+  background: color-mix(in oklab, var(--library-accent, var(--accent)) 8%, var(--bg-surface));
+}
+
+[data-register="viewer"] .bf-poster-glyph {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  color: var(--text-muted);
+  opacity: 0.6;
 }
 
 [data-register="viewer"] .bf-poster img {
@@ -447,7 +849,7 @@
   height: 100%;
   object-fit: cover;
   pointer-events: none;
-  background: oklch(7% 0.02 255);
+  background: var(--bg-root);
 }
 
 [data-register="viewer"] .bf-card:hover .bf-poster img {
@@ -457,16 +859,16 @@
 [data-register="viewer"] .bf-card-copy {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 8px 9px 10px;
+  gap: 2px;
+  padding: 10px 2px 0;
   min-width: 0;
 }
 
 [data-register="viewer"] .bf-card-title {
-  color: var(--text);
-  font-size: 13px;
-  line-height: 18px;
-  font-weight: 620;
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 19px;
+  font-weight: 600;
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -474,12 +876,219 @@
 }
 
 [data-register="viewer"] .bf-card-sub {
-  font-size: 12px;
-  line-height: 16px;
+  font-size: 13px;
+  line-height: 18px;
   color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Phone: a shelf shows two and a half posters so it reads as scrollable, and
+ * a grid packs three columns instead of two oversized ones. */
+@media (max-width: 760px) {
+  [data-register="viewer"] .bf-shelf {
+    gap: 12px;
+  }
+  [data-register="viewer"] .bf-grid {
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 20px 12px;
+  }
+  [data-register="viewer"] .bf-shelf .bf-card {
+    width: 128px;
+  }
+  [data-register="viewer"] .bf-grid .bf-card {
+    width: 100%;
+  }
+  [data-register="viewer"] .bf-card-title {
+    font-size: 13px;
+    line-height: 18px;
+  }
+  [data-register="viewer"] .bf-card-sub {
+    font-size: 12px;
+    line-height: 16px;
+  }
+}
+
+/* Card state and actions. The shell positions the More trigger over the
+ * poster as a sibling of the card button. State sits on a scrim so it reads on
+ * any artwork; the play affordance and the trigger appear on hover or focus
+ * and stay visible where there is no hover (touch). */
+[data-register="viewer"] .bf-card-shell {
+  position: relative;
+}
+
+[data-register="viewer"] .bf-card-progress {
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 2;
+  height: 4px;
+  background: color-mix(in oklab, var(--bg-root) 72%, transparent);
+}
+
+[data-register="viewer"] .bf-card-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+[data-register="viewer"] .bf-card-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-register="viewer"] .bf-card-badge-finished {
+  padding: 0;
+  background: color-mix(in oklab, var(--bg-root) 82%, transparent);
+  color: var(--text-primary);
+  border: 1px solid color-mix(in oklab, var(--text-primary) 28%, transparent);
+}
+
+[data-register="viewer"] .bf-card-play {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: color-mix(in oklab, var(--bg-root) 40%, transparent);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+  pointer-events: none;
+}
+
+[data-register="viewer"] .bf-card:hover .bf-card-play,
+[data-register="viewer"] .bf-card:focus-visible .bf-card-play {
+  opacity: 1;
+}
+
+[data-register="viewer"] .bf-card-more {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid color-mix(in oklab, var(--text-primary) 28%, transparent);
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--bg-root) 82%, transparent);
+  color: var(--text-primary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+
+/* Enlarge the hit area to 44px without growing the visual. */
+[data-register="viewer"] .bf-card-more::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+
+[data-register="viewer"] .bf-card-shell:hover .bf-card-more,
+[data-register="viewer"] .bf-card-shell:focus-within .bf-card-more,
+[data-register="viewer"] .bf-card-more[data-popup-open] {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  [data-register="viewer"] .bf-card-more {
+    opacity: 1;
+  }
+}
+
+.bf-card-menu-layer {
+  z-index: 40;
+}
+
+.bf-card-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 176px;
+  padding: 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-raised);
+  color: var(--text);
+  box-shadow: 0 18px 44px oklch(0% 0 0 / 45%);
+  /* Transparent rather than none: forced-colors mode shows it in a system color. */
+  outline: 2px solid transparent;
+}
+
+.bf-card-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 6px 10px;
+  border-radius: var(--radius-control);
+  font-size: 13px;
+  line-height: 18px;
+  cursor: pointer;
+  /* The highlight is a fill, which forced-colors mode drops; this outline shows there. */
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+}
+
+/* After the base rule, so a touch device keeps the 44px target. */
+@media (hover: none) {
+  .bf-card-menu-item {
+    min-height: 44px;
+  }
+}
+
+/* A failed card action, shown over the artwork once the menu has closed. */
+[data-register="viewer"] .bf-card-action-error {
+  position: absolute;
+  top: 40px;
+  right: 6px;
+  left: 6px;
+  z-index: 3;
+  padding: 6px 8px;
+  border-radius: var(--radius-control);
+  background: color-mix(in oklab, var(--bg-root) 92%, transparent);
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 16px;
+  pointer-events: none;
+}
+
+.bf-card-menu-item[data-disabled] {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.bf-card-menu-item[data-highlighted] {
+  background: color-mix(in oklab, var(--accent) 18%, transparent);
+}
+
+.bf-card-menu-item:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
 }
 
 /* Row geometry for list/info Sections. */
@@ -501,8 +1110,51 @@
   padding: 0;
 }
 
+/* Rows: the poster is a 48px thumb, so the play scrim is dropped, the badge
+ * shrinks onto it and the More trigger sits at the row's trailing edge. */
+[data-register="viewer"] .bf-stack .bf-card {
+  padding-right: 48px;
+}
+
+[data-register="viewer"] .bf-stack .bf-card-play {
+  display: none;
+}
+
+[data-register="viewer"] .bf-stack .bf-card-badge {
+  top: 2px;
+  left: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 10px;
+}
+
+[data-register="viewer"] .bf-stack .bf-card-more {
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
+}
+
+[data-register="viewer"] .bf-stack .bf-card {
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
 [data-register="viewer"] .bf-stack .bf-card:hover {
-  transform: none;
+  background: var(--bg-raised);
+}
+
+[data-register="viewer"] .bf-stack .bf-card:hover .bf-poster {
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--text-primary) 6%, transparent);
+}
+
+/* A row is a wide target, so focus rings the row rather than its thumb. */
+[data-register="viewer"] .bf-stack .bf-card:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+[data-register="viewer"] .bf-stack .bf-card:focus-visible .bf-poster {
+  outline-color: transparent;
 }
 
 [data-register="viewer"] .bf-stack .bf-card:hover .bf-poster img {
@@ -518,16 +1170,10 @@
   position: relative;
   width: 100%;
   aspect-ratio: 21 / 9;
-  max-height: 440px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-card);
+  max-height: 480px;
+  border-radius: var(--radius-surface);
   overflow: hidden;
-  background:
-    radial-gradient(
-      circle at 74% 22%,
-      color-mix(in oklab, var(--library-accent, var(--beam-500)) 20%, transparent),
-      transparent 55%
-    ), linear-gradient(150deg, oklch(27% 0.03 248), oklch(16% 0.018 256));
+  background: color-mix(in oklab, var(--library-accent, var(--accent)) 8%, var(--bg-surface));
 }
 
 [data-register="viewer"] .bf-hero img {
@@ -544,8 +1190,8 @@
   inset: 0;
   background: linear-gradient(
     90deg,
-    oklch(11% 0.012 255 / 92%) 0%,
-    oklch(11% 0.012 255 / 55%) 42%,
+    color-mix(in oklab, var(--bg-root) 92%, transparent) 0%,
+    color-mix(in oklab, var(--bg-root) 55%, transparent) 42%,
     transparent 78%
   );
 }
@@ -566,7 +1212,7 @@
   margin: 0;
   font-size: 40px;
   line-height: 48px;
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: 0;
   color: var(--text-primary);
 }
@@ -583,35 +1229,27 @@
   overflow: hidden;
 }
 
-/* The hero's primary action is one of the few sanctioned brand-accent
- * surfaces (design system: "selected hero actions"). */
+/* The hero's primary action is the shared large primary button; this only
+ * places it under the summary. */
 [data-register="viewer"] .bf-hero-action {
   align-self: flex-start;
   margin-top: 6px;
-  padding: 10px 20px;
-  border: 0;
-  border-radius: var(--radius-control);
-  background: var(--beam-500);
-  color: var(--night-950);
-  font: inherit;
-  font-size: 14px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: background-color var(--duration-fast) var(--ease-standard);
-}
-
-[data-register="viewer"] .bf-hero-action:hover {
-  background: var(--beam-600);
-}
-
-[data-register="viewer"] .bf-hero-action:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 3px;
 }
 
 @media (max-width: 760px) {
+  [data-register="viewer"] .bf-hero {
+    aspect-ratio: 4 / 3;
+  }
+  [data-register="viewer"] .bf-hero-scrim {
+    background: linear-gradient(
+      0deg,
+      color-mix(in oklab, var(--bg-root) 92%, transparent) 0%,
+      transparent 70%
+    );
+  }
   [data-register="viewer"] .bf-hero-copy {
     max-width: 100%;
+    padding: 20px;
   }
   [data-register="viewer"] .bf-hero-title {
     font-size: 30px;
@@ -632,9 +1270,13 @@
 }
 
 [data-register="viewer"] .bf-chip {
-  padding: 5px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
   border: 1px solid var(--border-subtle);
-  border-radius: 999px;
+  border-radius: var(--radius-field);
   background: var(--control-bg);
   color: var(--text-secondary);
   font: inherit;
@@ -652,11 +1294,6 @@
   color: var(--text-primary);
 }
 
-[data-register="viewer"] .bf-chip:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
 [data-register="viewer"] .bf-chip[aria-pressed="true"] {
   border-color: color-mix(in oklab, var(--library-accent, var(--accent)) 70%, transparent);
   background: color-mix(in oklab, var(--library-accent, var(--accent)) 18%, var(--bg-surface));
@@ -664,99 +1301,52 @@
 }
 
 /* ============================================================ *
- *  Skeletons (Viewer) — never-focusable hydration placeholders.
- *  The shimmer is motion, so reduce-motion drops it.
+ *  Skeletons (Viewer) — never-focusable hydration placeholders,
+ *  a static tone with no motion.
  * ============================================================ */
 
 [data-register="viewer"] .bf-shimmer {
-  background: linear-gradient(
-    100deg,
-    oklch(22% 0.012 255) 35%,
-    oklch(26% 0.013 253) 50%,
-    oklch(22% 0.012 255) 65%
-  );
-  background-size: 200% 100%;
-  animation: bf-shimmer 1.4s linear infinite;
+  background: var(--bg-surface);
   border-radius: var(--radius-card);
 }
 
-@keyframes bf-shimmer {
-  to {
-    background-position: -200% 0;
-  }
+[data-register="viewer"] .bf-hero.bf-shimmer {
+  border-radius: var(--radius-surface);
+}
+
+/* A skeleton card borrows the real card's width but is not a control. */
+[data-register="viewer"] .bf-shelf > div.bf-card {
+  cursor: default;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-register="viewer"] .bf-shimmer {
-    animation: none;
-  }
   [data-register="viewer"] .bf-card:hover {
     transform: none;
   }
   [data-register="viewer"] .bf-card:hover .bf-poster img {
     transform: none;
   }
+  [data-register="viewer"] .bf-card-play,
+  [data-register="viewer"] .bf-card-more {
+    transition: none;
+  }
 }
 
 /* ============================================================ *
- *  Empty state (Viewer) — calm centered surface, never a grey void.
+ *  Empty state (Viewer) — a centred quiet block: optional muted
+ *  glyph, one line, optional action.
  * ============================================================ */
 
 [data-register="viewer"] .bf-empty {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
-  margin: 72px auto 0;
-  max-width: 38rem;
-  padding: 34px 32px;
-  border: 1px solid color-mix(in oklab, var(--border-subtle) 78%, var(--beam-500));
-  border-radius: var(--radius-card);
-  background:
-    radial-gradient(
-      circle at 16% 0%,
-      color-mix(in oklab, var(--beam-500) 14%, transparent),
-      transparent 38%
-    ),
-    linear-gradient(
-      135deg,
-      color-mix(in oklab, var(--bg-raised) 62%, transparent),
-      var(--bg-surface)
-    );
-  box-shadow:
-    inset 0 1px 0 oklch(100% 0 0 / 5%),
-    0 18px 48px oklch(5% 0.014 255 / 44%);
+  margin: 96px auto 0;
+  max-width: 34rem;
+  padding: 0 16px;
+  align-items: center;
   text-align: center;
 }
 
-[data-register="viewer"] .bf-empty::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: linear-gradient(
-    115deg,
-    transparent 0 48%,
-    oklch(82% 0.145 92 / 9%) 49% 51%,
-    transparent 52% 100%
-  );
-  opacity: 0.7;
-}
-
-[data-register="viewer"] .bf-empty .bf-action-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 36px;
-  padding: 0 13px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-control);
-  background: var(--bg-raised);
-}
-
-[data-register="viewer"] .bf-empty .bf-action-link:first-child {
-  border-color: var(--beam-500);
-  background: var(--beam-500);
-  color: var(--night-950);
+[data-register="viewer"] .bf-empty-glyph {
+  color: var(--text-muted);
 }
 
 /* ============================================================ *
@@ -764,12 +1354,14 @@
  * ============================================================ */
 
 [data-register="viewer"] .bf-entity-kind {
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 16px;
-  font-weight: 640;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 22px;
+}
+
+[data-register="viewer"] .bf-entity-kind::first-letter {
   text-transform: uppercase;
-  letter-spacing: 0.06em;
 }
 
 [data-register="viewer"] .bf-metadata {
@@ -794,41 +1386,6 @@
 }
 
 /* ============================================================ *
- *  Profile cards (Viewer) — calm picker rows (ADR-0004).
- * ============================================================ */
-
-[data-register="viewer"] .bf-profile-card {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  width: 100%;
-  padding: 16px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-card);
-  background: var(--bg-raised);
-  color: var(--text-primary);
-  text-align: left;
-  cursor: pointer;
-  transition:
-    border-color var(--duration-fast) var(--ease-standard),
-    background-color var(--duration-fast) var(--ease-standard);
-}
-
-[data-register="viewer"] .bf-profile-card:hover {
-  background: var(--night-850);
-}
-
-[data-register="viewer"] .bf-profile-card:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-[data-register="viewer"] .bf-profile-card.is-current {
-  border-color: oklch(82% 0.145 92 / 45%);
-}
-
-/* ============================================================ *
  *  Player (Viewer) — dark stage, honest transport, floating chrome.
  * ============================================================ */
 
@@ -842,53 +1399,76 @@
   touch-action: pan-x;
 }
 
+/* The picture fills the whole stage (letterboxed only by its own aspect
+ * ratio), and the stage fills the window: the Back bar floats over it. */
 .bf-player-stage video {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
-  max-height: 80vh;
+  height: 100%;
+  object-fit: contain;
   background: oklch(8% 0.012 255);
 }
 
-/* Transport chrome appears fast and exits slowly enough to preserve
- * orientation (design system Player chrome rule). It is one floating glass
- * card inset from the stage edges (approved v-player mockup, CORE-0045). The
- * glass layer is a pseudo-element so the card itself never becomes the
- * containing block of the fixed gesture feedback. */
+/* Transport chrome (CORE-1141): the video is the hero. Controls sit on a
+ * gradient scrim rising from the bottom of the stage — no card. Chrome
+ * appears fast and exits slowly enough to preserve orientation (design
+ * system Player chrome rule). The overlay itself never takes pointer events;
+ * only its controls do, so taps on the picture reach the stage gestures. */
 .bf-transport {
   position: absolute;
-  inset: auto clamp(12px, 3vw, 32px) clamp(12px, 3vw, 32px);
+  inset: 0;
+  z-index: 2;
   isolation: isolate;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas:
-    "meta primary"
-    "scrub scrub"
-    "aux aux";
-  align-items: center;
-  gap: 4px 16px;
-  padding: 12px 16px;
-  color: oklch(96% 0.006 250);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  color: oklch(97% 0.005 250);
+  pointer-events: none;
 }
 
-.bf-transport::before {
-  content: "";
+.bf-transport > :not(.bf-transport-scrim, .bf-transport-layer, .bf-gesture-feedback),
+.bf-transport-layer > * {
+  pointer-events: auto;
+}
+
+.bf-transport-scrim {
+  position: absolute;
+  inset: auto 0 0;
+  z-index: -1;
+  height: min(62%, 360px);
+  background: linear-gradient(
+    to top,
+    oklch(6% 0.012 255 / 92%) 0%,
+    oklch(6% 0.012 255 / 70%) 34%,
+    oklch(6% 0.012 255 / 28%) 70%,
+    transparent 100%
+  );
+  pointer-events: none;
+}
+
+.bf-transport-layer {
   position: absolute;
   inset: 0;
-  z-index: -1;
-  border: 1px solid oklch(86% 0.02 250 / 16%);
-  border-radius: var(--radius-card);
-  background: oklch(12% 0.014 250 / 88%);
-  -webkit-backdrop-filter: blur(18px);
-  backdrop-filter: blur(18px);
+  z-index: 8;
   pointer-events: none;
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  .bf-transport::before {
-    background: oklch(12% 0.014 250);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
+  .bf-transport-scrim {
+    height: auto;
+    min-height: 168px;
+    background: oklch(8% 0.012 255);
   }
+}
+
+.bf-transport-bottom {
+  display: grid;
+  gap: 4px;
+  /* Whole-pixel insets: a fractional vw offset rasterized the controls row
+   * two ways over the video layer (CORE-1376). */
+  padding: 0 round(clamp(16px, 3vw, 40px), 1px) round(clamp(10px, 2vw, 22px), 1px);
 }
 
 .bf-route-summary {
@@ -896,23 +1476,27 @@
   font-size: 12px;
   line-height: 16px;
   font-weight: 600;
-  letter-spacing: 0.02em;
-  color: oklch(88% 0.025 250);
+  color: oklch(86% 0.02 250 / 86%);
 }
 
 .bf-player-meta {
-  grid-area: meta;
   display: grid;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
+  padding-bottom: 2px;
+  text-shadow: 0 1px 12px oklch(0% 0 0 / 55%);
 }
 
 .bf-player-meta h2 {
   margin: 0;
-  font-size: 20px;
-  line-height: 24px;
-  font-weight: 700;
-  color: oklch(98% 0.004 250);
+  overflow: hidden;
+  font-size: clamp(18px, 1.6vw + 8px, 26px);
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: oklch(99% 0.003 250);
 }
 
 .bf-route-summary.is-direct {
@@ -923,27 +1507,29 @@
   color: var(--cyan-500);
 }
 
+/* Slim scrubber: a 3px hairline that thickens on hover and keyboard focus. */
 .bf-scrub-row {
-  grid-area: scrub;
   display: grid;
-  grid-template-columns: minmax(48px, auto) minmax(0, 1fr) minmax(48px, auto);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
 }
 
 .bf-time {
+  min-width: 44px;
   font-size: 12px;
   line-height: 16px;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
-  color: oklch(90% 0.02 250);
-}
-
-.bf-time.is-end {
-  text-align: left;
+  color: oklch(92% 0.012 250 / 90%);
 }
 
 .bf-time.is-start {
   text-align: right;
+}
+
+.bf-time.is-end {
+  text-align: left;
 }
 
 .bf-scrub-wrap {
@@ -955,9 +1541,8 @@
   position: relative;
   z-index: 2;
   width: 100%;
-  min-height: 44px;
-  cursor: pointer;
-  accent-color: var(--beam-500);
+  min-height: 36px;
+  margin: 0;
   pointer-events: none;
 }
 
@@ -969,9 +1554,10 @@
   position: absolute;
   z-index: 3;
   display: flex;
-  min-height: 44px;
   align-items: center;
-  opacity: 0;
+  min-height: 36px;
+  touch-action: none;
+  cursor: pointer;
 }
 
 .bf-scrub-wrap .bf-slider-control {
@@ -979,66 +1565,98 @@
   width: 100%;
 }
 
-.bf-slider-track {
-  width: 100%;
-  height: 4px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: oklch(72% 0.02 250 / 45%);
-  transition: height var(--duration-fast) var(--ease-standard);
-}
-
-.bf-scrub-wrap:hover .bf-slider-track,
-.bf-scrub-wrap:has(.bf-slider-control:focus-within) .bf-slider-track {
-  height: 6px;
-}
-
-.bf-slider-indicator {
-  height: 100%;
-  background: var(--beam-500);
-}
-
-.bf-slider-thumb {
-  width: 16px;
-  height: 16px;
-  border: 2px solid var(--beam-500);
-  border-radius: 50%;
-  background: white;
-}
-
-/* The scrubber is drawn by the Base UI slider (thin track, round beam thumb);
- * the native range input only reserves the 44px row and stays hidden. */
-.bf-scrub-wrap .bf-slider-control {
-  opacity: 1;
-}
-
-.bf-scrub-wrap .bf-scrubber-visual {
+.bf-scrub-wrap .bf-scrubber-visual,
+.bf-volume-slider {
   visibility: hidden;
 }
 
-.bf-scrub-wrap .bf-slider-thumb {
-  width: 14px;
-  height: 14px;
-  background: var(--beam-500);
-  border-color: oklch(98% 0.004 250);
+.bf-slider-track {
+  position: relative;
+  width: 100%;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: oklch(92% 0.01 250 / 22%);
+  transition: height 160ms var(--ease-standard);
 }
 
-.bf-scrub-wrap:has(.bf-slider-control :focus-visible) .bf-slider-thumb {
+.bf-scrub-wrap:hover .bf-slider-track,
+.bf-scrub-wrap:has(:focus-visible) .bf-slider-track,
+.bf-scrub-wrap:has([data-dragging]) .bf-slider-track {
+  height: 6px;
+}
+
+.bf-slider-buffered,
+.bf-slider-hover {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.bf-slider-buffered {
+  background: oklch(92% 0.01 250 / 28%);
+}
+
+.bf-slider-hover {
+  background: oklch(98% 0.004 250 / 22%);
+}
+
+.bf-slider-indicator {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--beam-600), var(--beam-500));
+  box-shadow: 0 0 12px color-mix(in oklab, var(--beam-500) 60%, transparent);
+}
+
+.bf-slider-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--beam-500);
+  box-shadow:
+    0 0 0 3px oklch(99% 0.003 250 / 92%),
+    0 0 18px color-mix(in oklab, var(--beam-500) 70%, transparent);
+}
+
+/* The scrubber thumb keeps its box (so the slider stays visible to
+ * assistive tech and tests); the dot it paints grows in on hover/focus. */
+.bf-scrub-wrap .bf-slider-thumb {
+  background: transparent;
+  box-shadow: none;
+}
+
+.bf-scrub-wrap .bf-slider-thumb::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--beam-500);
+  box-shadow:
+    0 0 0 3px oklch(99% 0.003 250 / 92%),
+    0 0 18px color-mix(in oklab, var(--beam-500) 70%, transparent);
+  scale: 0;
+  transition: scale 160ms var(--ease-standard);
+}
+
+.bf-scrub-wrap:hover .bf-slider-thumb::after,
+.bf-scrub-wrap:has(:focus-visible) .bf-slider-thumb::after,
+.bf-scrub-wrap:has([data-dragging]) .bf-slider-thumb::after {
+  scale: 1;
+}
+
+.bf-slider-thumb:has(:focus-visible) {
   outline: 2px solid var(--focus-ring);
-  outline-offset: 3px;
+  outline-offset: 4px;
 }
 
 .bf-marker-strip {
   position: absolute;
-  inset: 50% 0 auto;
-  height: 4px;
-  transform: translateY(-50%);
+  inset: 0;
+  z-index: 2;
   pointer-events: none;
-  z-index: 4;
-}
-
-.bf-scrub-wrap:hover .bf-marker-strip {
-  height: 6px;
 }
 
 .bf-marker-tick {
@@ -1046,64 +1664,88 @@
   top: 0;
   width: 3px;
   height: 100%;
-  border-radius: 999px;
-  background: oklch(91% 0.12 95 / 85%);
+  background: oklch(8% 0.012 255 / 85%);
 }
 
 .bf-marker-range {
   position: absolute;
   top: 0;
   height: 100%;
-  border-radius: 999px;
-  background: oklch(76% 0.14 35 / 45%);
+  background: oklch(80% 0.13 60 / 55%);
 }
 
+.bf-scrub-tooltip,
 .bf-trickplay {
   position: absolute;
-  bottom: 26px;
+  bottom: 30px;
   z-index: 4;
   transform: translateX(-50%);
-  padding: 6px;
-  border-radius: var(--radius-control);
-  background: oklch(12% 0.014 250 / 94%);
-  box-shadow: 0 16px 40px oklch(0% 0 0 / 50%);
-  text-align: center;
+  border: 1px solid oklch(98% 0.004 250 / 14%);
+  background: oklch(12% 0.014 250 / 82%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  backdrop-filter: blur(16px) saturate(140%);
+  box-shadow: 0 18px 40px -12px oklch(0% 0 0 / 70%);
   pointer-events: none;
 }
 
+.bf-scrub-tooltip {
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bf-trickplay {
+  padding: 4px;
+  border-radius: 12px;
+  text-align: center;
+}
+
 .bf-trickplay-frame {
-  width: 168px;
+  width: 176px;
   aspect-ratio: 16 / 9;
-  border-radius: 6px;
+  border-radius: 8px;
   background-color: oklch(16% 0.012 250);
   background-repeat: no-repeat;
 }
 
 .bf-trickplay-time {
   display: block;
-  margin-top: 4px;
+  padding: 4px 0 2px;
   font-size: 12px;
   line-height: 16px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: oklch(90% 0.02 250);
 }
 
+@media (prefers-reduced-transparency: reduce) {
+  .bf-scrub-tooltip,
+  .bf-trickplay {
+    background: oklch(12% 0.014 250);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* One transport row: playback on the left, utilities on the right. */
 .bf-controls {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 2px;
 }
 
 .bf-primary-controls {
-  grid-area: primary;
-  justify-content: flex-end;
-  gap: 4px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 4px;
 }
 
-.bf-aux-controls {
-  grid-area: aux;
-  align-items: center;
+.bf-transport-spacer {
+  flex: 1;
 }
 
 .bf-control {
@@ -1151,32 +1793,54 @@
   outline-offset: 3px;
 }
 
-.bf-control select,
-.bf-volume-slider {
-  min-height: 44px;
-}
-
-.bf-control select:focus-visible,
-.bf-volume-control:has(.bf-slider-control:focus-within) .bf-volume-slider {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
+/* Volume: an icon button whose slider slides out on hover or focus. */
+.bf-volume {
+  display: flex;
+  align-items: center;
 }
 
 .bf-volume-control {
   position: relative;
-  gap: 8px;
+  display: flex;
+  align-items: center;
+  width: 0;
+  height: 44px;
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    width 200ms var(--ease-standard),
+    opacity 160ms var(--ease-standard);
+}
+
+.bf-volume:hover .bf-volume-control,
+.bf-volume:focus-within .bf-volume-control {
+  width: 96px;
+  opacity: 1;
 }
 
 .bf-volume-slider {
-  width: 112px;
-  accent-color: var(--beam-500);
-  pointer-events: none;
+  position: absolute;
+  width: 1px;
 }
 
 .bf-volume-control .bf-slider-control {
-  top: 0;
-  right: 14px;
-  width: 112px;
+  inset: 0 10px 0 6px;
+}
+
+.bf-volume-control .bf-slider-track {
+  height: 4px;
+}
+
+.bf-volume-control .bf-slider-indicator {
+  background: oklch(98% 0.004 250);
+  box-shadow: none;
+}
+
+.bf-volume-control .bf-slider-thumb {
+  width: 12px;
+  height: 12px;
+  background: oklch(99% 0.003 250);
+  box-shadow: 0 1px 6px oklch(0% 0 0 / 45%);
 }
 
 .bf-player-control-status:empty {
@@ -1184,38 +1848,8 @@
 }
 
 .bf-player-control-status {
-  flex-basis: 100%;
   font-size: 12px;
   color: oklch(90% 0.02 250);
-}
-
-@media (max-width: 760px) {
-  .bf-transport {
-    gap: 2px 8px;
-    padding: 10px 12px;
-  }
-
-  .bf-player-meta h2 {
-    font-size: 16px;
-    line-height: 20px;
-  }
-
-  .bf-scrub-row {
-    grid-template-columns: 40px minmax(0, 1fr) 40px;
-    gap: 8px;
-  }
-
-  .bf-aux-controls {
-    gap: 6px;
-  }
-
-  .bf-volume-slider {
-    width: 88px;
-  }
-
-  .bf-volume-control .bf-slider-control {
-    width: 88px;
-  }
 }
 
 .bf-gesture-feedback {
@@ -1227,7 +1861,7 @@
   border-radius: 999px;
   background: oklch(8% 0.012 255 / 82%);
   color: oklch(98% 0.004 250);
-  font-weight: 700;
+  font-weight: 600;
   text-align: center;
   pointer-events: none;
   animation: bf-gesture-feedback 700ms var(--ease-standard);
@@ -1274,56 +1908,86 @@
   border-color: transparent;
   background: var(--beam-500);
   color: var(--night-950);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .bf-control.is-primary:hover {
   background: var(--beam-600);
 }
 
-/* Transport controls (CORE-0045): every button keeps a 44px box (touch floor)
- * while the visible surface is a pill chip or a 40px circular disc painted by
- * ::before. Scoped to .bf-transport so the Up Next / skipped-overlay buttons
- * keep their own look. */
+/* Transport buttons (CORE-1141): a 44px touch box with no resting chrome;
+ * a glass disc and soft glow appear on hover and focus (house CORE-1114
+ * style). Scoped to .bf-transport so Up Next / skipped-overlay buttons keep
+ * their own look. */
 .bf-transport .bf-control {
   position: relative;
   isolation: isolate;
   gap: 6px;
+  min-width: 44px;
+  min-height: 44px;
   padding: 0 14px;
   border: 0;
+  border-radius: 999px;
   background: transparent;
-  font-size: 12px;
+  color: oklch(97% 0.005 250 / 92%);
+  font-size: 13px;
   line-height: 16px;
+  font-weight: 600;
+  transition: color 140ms var(--ease-standard);
 }
 
 .bf-transport .bf-control::before {
   content: "";
   position: absolute;
-  inset: 6px 0;
+  inset: 2px;
   z-index: -1;
-  border: 1px solid oklch(86% 0.02 250 / 24%);
-  border-radius: 999px;
-  background: oklch(24% 0.014 250 / 60%);
-  transition: background-color var(--duration-fast) var(--ease-standard);
+  border-radius: inherit;
+  background: oklch(98% 0.004 250 / 0%);
+  box-shadow: inset 0 0 0 1px oklch(98% 0.004 250 / 0%);
+  transition:
+    background-color 160ms var(--ease-standard),
+    box-shadow 160ms var(--ease-standard),
+    scale 160ms var(--ease-standard);
+  scale: 0.86;
 }
 
-.bf-transport .bf-control:hover:not(:disabled) {
+.bf-transport .bf-control:hover:not(:disabled),
+.bf-transport .bf-control:focus-visible,
+.bf-transport .bf-control.is-open {
   background: transparent;
+  color: oklch(99% 0.003 250);
 }
 
-.bf-transport .bf-control:hover:not(:disabled)::before {
-  background: oklch(32% 0.028 250 / 80%);
+.bf-transport .bf-control:hover:not(:disabled)::before,
+.bf-transport .bf-control:focus-visible::before,
+.bf-transport .bf-control.is-open::before {
+  background: oklch(98% 0.004 250 / 12%);
+  box-shadow:
+    inset 0 1px 0 oklch(99% 0.003 250 / 18%),
+    inset 0 0 0 1px oklch(98% 0.004 250 / 10%),
+    0 0 22px -6px color-mix(in oklab, var(--accent) 70%, transparent);
+  scale: 1;
+}
+
+.bf-transport .bf-control:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 0;
+}
+
+.bf-transport .bf-control:active:not(:disabled)::before {
+  scale: 0.92;
 }
 
 .bf-transport .bf-control:disabled {
   cursor: default;
-  opacity: 0.5;
+  opacity: 0.38;
 }
 
 .bf-transport .bf-control svg {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   flex: none;
+  stroke-width: 1.75;
 }
 
 .bf-transport .bf-control.is-icon {
@@ -1332,39 +1996,196 @@
 }
 
 .bf-transport .bf-control.is-icon::before {
-  inset: 2px;
   border-radius: 50%;
 }
 
+.bf-transport .bf-settings-button svg {
+  transition: rotate 320ms var(--ease-standard);
+}
+
+.bf-transport .bf-settings-button.is-open svg {
+  rotate: 60deg;
+}
+
+/* Seek ±N: the rotate arrow with the step count set inside it. */
+.bf-transport .bf-control.is-seek svg {
+  width: 26px;
+  height: 26px;
+  stroke-width: 1.6;
+}
+
+.bf-seek-amount {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding-top: 1px;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+/* Play/pause is the one lit control: a flat beam disc. No blurred glow: its
+ * antialiased edge rasterized two ways at fractional offsets (CORE-1376). */
 .bf-transport .bf-control.is-primary {
-  width: 48px;
-  min-width: 48px;
-  min-height: 48px;
+  width: 52px;
+  min-width: 52px;
+  min-height: 52px;
   color: var(--night-950);
 }
 
-.bf-transport .bf-control.is-primary::before {
-  inset: 0;
-  border-color: transparent;
+.bf-transport .bf-control.is-primary::before,
+.bf-transport .bf-control.is-primary:hover:not(:disabled)::before,
+.bf-transport .bf-control.is-primary:focus-visible::before {
+  inset: 2px;
   background: var(--beam-500);
+  box-shadow: none;
+  scale: 1;
+}
+
+.bf-transport .bf-control.is-primary:hover:not(:disabled) {
+  color: var(--night-950);
 }
 
 .bf-transport .bf-control.is-primary:hover:not(:disabled)::before {
-  background: var(--beam-600);
+  background: color-mix(in oklab, var(--beam-500) 88%, white);
 }
 
-.bf-transport .bf-control select {
-  padding: 0 4px;
-  border: 0;
-  color: inherit;
-  background: transparent;
-  color-scheme: dark;
-  font: inherit;
+.bf-transport .bf-control.is-primary svg {
+  width: 22px;
+  height: 22px;
+  fill: currentColor;
+  stroke-width: 1.5;
 }
 
-.bf-transport .bf-control select option {
-  color: oklch(96% 0.006 250);
-  background: oklch(20% 0.014 250);
+/* Skip intro / credits floats above the controls as a glass pill. */
+.bf-transport .bf-control.is-skip-segment {
+  align-self: flex-end;
+  margin: 0 round(clamp(16px, 3vw, 40px), 1px) 10px;
+  padding: 0 14px 0 18px;
+}
+
+.bf-transport .bf-control.is-skip-segment::before {
+  background: oklch(14% 0.014 250 / 72%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  backdrop-filter: blur(16px) saturate(140%);
+  box-shadow:
+    inset 0 1px 0 oklch(99% 0.003 250 / 16%),
+    inset 0 0 0 1px oklch(98% 0.004 250 / 18%);
+  scale: 1;
+}
+
+.bf-transport .bf-control.is-skip-segment svg {
+  width: 18px;
+  height: 18px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bf-slider-track,
+  .bf-scrub-wrap .bf-slider-thumb::after,
+  .bf-volume-control,
+  .bf-transport .bf-control,
+  .bf-transport .bf-control::before,
+  .bf-transport .bf-settings-button svg {
+    transition: none;
+  }
+}
+
+/* Phones: the play/seek cluster moves to the centre of the picture and
+ * grows. */
+@media (max-width: 640px) {
+  .bf-transport-scrim {
+    inset: 0;
+    height: auto;
+    background:
+      radial-gradient(ellipse 60% 40% at 50% 50%, oklch(6% 0.012 255 / 38%), transparent 70%),
+      linear-gradient(
+        to top,
+        oklch(6% 0.012 255 / 90%) 0%,
+        oklch(6% 0.012 255 / 30%) 40%,
+        oklch(6% 0.012 255 / 10%) 70%,
+        oklch(6% 0.012 255 / 40%) 100%
+      );
+  }
+
+  .bf-transport-bottom {
+    padding: 0 12px 8px;
+  }
+
+  /* A phone row cannot always fit every 44px utility (320px screens, or the
+   * volume slider sliding out): it scrolls sideways instead of clipping or
+   * reflowing, padded so focus rings are not cut off. */
+  .bf-controls {
+    margin: -4px -12px;
+    padding: 4px 12px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .bf-player-meta h2 {
+    font-size: 16px;
+  }
+
+  .bf-scrub-row {
+    gap: 8px;
+  }
+
+  .bf-time {
+    min-width: 38px;
+    font-size: 11px;
+  }
+
+  .bf-primary-controls {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    gap: clamp(16px, 8vw, 40px);
+    margin: 0;
+    transform: translate(-50%, -50%);
+  }
+
+  .bf-transport .bf-control.is-seek {
+    width: 56px;
+    min-height: 56px;
+  }
+
+  .bf-transport .bf-control.is-seek::before {
+    background: oklch(10% 0.012 255 / 36%);
+    scale: 1;
+  }
+
+  .bf-transport .bf-control.is-seek svg {
+    width: 30px;
+    height: 30px;
+  }
+
+  .bf-transport .bf-control.is-primary {
+    width: 68px;
+    min-width: 68px;
+    min-height: 68px;
+  }
+
+  .bf-transport .bf-control.is-primary svg {
+    width: 28px;
+    height: 28px;
+  }
+
+  .bf-transport .bf-control.is-skip-segment {
+    margin: 0 12px 6px;
+  }
+}
+
+/* Reduced transparency keeps a solid band behind the phone controls rather
+ * than the see-through full-picture scrim. */
+@media (max-width: 640px) and (prefers-reduced-transparency: reduce) {
+  .bf-transport-scrim {
+    inset: auto 0 0;
+    height: auto;
+    min-height: 168px;
+    background: oklch(8% 0.012 255);
+  }
 }
 
 /* The player top bar: a back affordance over the dark stage. */
@@ -1374,4 +2195,503 @@
   gap: 12px;
   padding: 12px 20px;
   background: oklch(8% 0.012 255);
+}
+
+/* ============================================================ *
+ *  Workbench surfaces (Console and Manage)
+ *  One flat root, one surface tone, one hairline. Cards declare
+ *  elevation once (the border), share the web surface radius and
+ *  never blur. Tokens mix from --text-primary so the same rules read
+ *  in Workbench Dark and Workbench Light.
+ * ============================================================ */
+
+[data-register="manage"] {
+  --glass-border: color-mix(in oklab, var(--text-primary) 10%, transparent);
+  --glass-border-strong: color-mix(in oklab, var(--text-primary) 16%, transparent);
+  --glass-fill: color-mix(in oklab, var(--text-primary) 3%, transparent);
+  --glass-fill-raised: color-mix(in oklab, var(--text-primary) 5%, transparent);
+  --glass-divider: color-mix(in oklab, var(--text-primary) 7%, transparent);
+  --glass-highlight: none;
+  --glass-radius: var(--radius-surface);
+}
+
+[data-register="manage"] .bf-shell {
+  background: var(--bg-root);
+}
+
+[data-register="manage"] :is(.console-card, .console-fieldset, .console-table, .manage-section) {
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-surface);
+  background: var(--glass-fill);
+  box-shadow: none;
+}
+
+[data-register="manage"] .console-fieldset-head {
+  border-color: var(--glass-divider);
+}
+
+/* Tables: hairline rows, a quiet hover, no header band. */
+[data-register="manage"] .console-table thead th,
+[data-register="manage"] .manage-table thead th {
+  background: transparent;
+  border-bottom-color: var(--glass-border);
+}
+
+[data-register="manage"] .console-table tbody td,
+[data-register="manage"] .manage-table tbody td {
+  border-bottom-color: var(--glass-divider);
+}
+
+[data-register="manage"] .manage-table tbody tr:nth-child(even) td {
+  background: transparent;
+}
+
+[data-register="manage"] .console-table tbody tr:hover,
+[data-register="manage"] .manage-table tbody tr:hover td {
+  background: var(--glass-fill);
+}
+
+[data-register="manage"] .console-table tbody tr.is-aggregate,
+[data-register="manage"] .console-table tbody tr.is-aggregate:hover {
+  background: var(--glass-fill-raised);
+}
+
+[data-register="manage"]
+  :is(.console-triage-row, .console-step, .console-control-row, .console-job-row) {
+  border-color: var(--glass-divider);
+}
+
+[data-register="manage"] .console-triage-row {
+  background: transparent;
+}
+
+[data-register="manage"] .console-triage-row:hover {
+  background: var(--glass-fill);
+}
+
+[data-register="manage"] .console-section > div:first-child h2 {
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
+}
+
+[data-register="manage"] .console-section {
+  gap: 16px;
+}
+
+[data-register="manage"] .manage-area .manage-section-title {
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 600;
+}
+
+[data-register="manage"] .manage-area .manage-section-lead {
+  font-size: 13px;
+  line-height: 20px;
+}
+
+[data-register="manage"] :is(.console-nav-link.is-active, .manage-nav-link[aria-current="page"]) {
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}
+
+/* ============================================================ *
+ *  My Data & Privacy (viewer): flat bordered panels, one stat
+ *  strip, divided lists. No glass, no icon tiles, no glows.
+ * ============================================================ */
+
+.mydata-hero {
+  padding-top: 8px;
+}
+
+.mydata-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px 22px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-surface);
+  background: var(--bg-surface);
+}
+
+.mydata-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.mydata-panel-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 24px;
+  color: var(--text-primary);
+}
+
+.mydata-panel-lead {
+  margin: 0;
+  max-width: 64ch;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--text-muted);
+}
+
+/* The counts read as one line of facts inside the panel, not a row of tiles. */
+.mydata-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 32px;
+}
+
+.mydata-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.mydata-stat-value {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 24px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.mydata-stat-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.mydata-range,
+.mydata-muted {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.mydata-subsection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.mydata-subheading {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.mydata-bar-row {
+  display: grid;
+  gap: 6px;
+}
+
+.mydata-bar {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--control-bg);
+  overflow: hidden;
+}
+
+.mydata-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.mydata-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+/* Phones: library on its own row, the two dates side by side, actions last. */
+@media (max-width: 639px) {
+  .mydata-filters {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .mydata-filters > :first-child,
+  .mydata-filters > :last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+.mydata-empty {
+  margin: 0;
+  padding: 4px 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.mydata-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.mydata-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.mydata-row[data-current] {
+  background: color-mix(in oklab, var(--accent) 7%, transparent);
+}
+
+.mydata-pill {
+  flex: none;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent);
+}
+
+.mydata-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.mydata-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.mydata-notice[data-tone="ok"] {
+  color: var(--state-direct);
+  background: color-mix(in oklab, var(--state-direct) 10%, transparent);
+}
+
+.mydata-notice[data-tone="error"] {
+  color: var(--state-danger);
+  background: color-mix(in oklab, var(--state-danger) 10%, transparent);
+}
+
+/* Over a playing stage the bar floats on a top scrim and hides with the
+ * transport when idle (CORE-1141); message/terminal states keep it in flow. */
+main:has(> .bf-player-stage) > .bf-player-bar {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 10;
+  padding-bottom: 32px;
+  background: linear-gradient(to bottom, oklch(8% 0.012 255 / 70%), transparent);
+  pointer-events: none;
+  transition: opacity 140ms var(--ease-standard);
+}
+
+main:has(> .bf-player-stage) > .bf-player-bar > * {
+  pointer-events: auto;
+}
+
+main:has(> .bf-player-stage.is-chrome-hidden) > .bf-player-bar {
+  opacity: 0;
+  transition: opacity 320ms var(--ease-standard);
+}
+
+main:has(> .bf-player-stage.is-chrome-hidden) > .bf-player-bar > * {
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  main:has(> .bf-player-stage) > .bf-player-bar {
+    transition: none;
+  }
+}
+
+/* ============================================================ *
+ *  Item actions (Viewer) — watched, watchlist and rating controls.
+ * ============================================================ */
+
+.bf-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.bf-item-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.bf-item-action svg,
+.bf-item-star svg {
+  width: 16px;
+  height: 16px;
+}
+
+.bf-item-action:hover:not(:disabled),
+.bf-item-action[aria-pressed="true"] {
+  color: var(--text-primary);
+  border-color: currentColor;
+}
+
+.bf-item-action[aria-pressed="true"] {
+  background: rgb(255 255 255 / 0.08);
+}
+
+.bf-item-rating {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  margin: 0;
+  padding: 0 4px;
+  border: 0;
+}
+
+.bf-item-star {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 36px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+
+.bf-item-star:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.bf-item-star[aria-pressed="true"] {
+  color: var(--accent);
+}
+
+.bf-item-action:disabled,
+.bf-item-rating:disabled .bf-item-star {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.bf-item-action:focus-visible,
+.bf-item-star:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.bf-item-actions-error {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+/* Viewer settings: one bordered group per section, rows divided by hairlines,
+ * rather than a separate box around every control. */
+.settings-group {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-surface);
+  background: var(--bg-surface);
+  overflow: hidden;
+}
+
+.settings-row {
+  padding: 14px 18px;
+}
+
+.settings-group > .settings-row + .settings-row {
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* Section menu (SectionMenu.tsx): an area's rail behind one button on phones,
+ * the full rail from 768px up. */
+.section-menu-toggle {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-field);
+  background: var(--control-bg);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.section-menu-toggle:hover {
+  background: var(--control-bg-hover);
+}
+
+.section-menu-toggle:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.section-menu-chevron {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.section-menu[data-open] .section-menu-chevron {
+  transform: rotate(180deg);
+}
+
+.section-menu:not([data-open]) .section-menu-body {
+  display: none;
+}
+
+.section-menu[data-open] .section-menu-body {
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-surface);
+  background: var(--bg-surface);
+}
+
+@media (min-width: 768px) {
+  .section-menu-toggle {
+    display: none;
+  }
+
+  .section-menu:not([data-open]) .section-menu-body,
+  .section-menu[data-open] .section-menu-body {
+    display: block;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+  }
 }

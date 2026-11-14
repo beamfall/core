@@ -706,3 +706,27 @@ func TestCanDirectPlayLegacyProfileUnchanged(t *testing.T) {
 		t.Fatalf("Decision = %q, want direct-play (legacy profile is unchanged)", resp.Decision)
 	}
 }
+
+// TestAudioOnlyLegacyProfileJudgedByDirectCodecs pins CORE-1143: a profile
+// without an audio envelope leaves audioDirectPlayable ungated, so an
+// audio-only item with recorded streams is still judged by DirectCodecs.
+func TestAudioOnlyLegacyProfileJudgedByDirectCodecs(t *testing.T) {
+	media := store.Media{Class: store.MediaClassAudio, Container: "flac", Codec: "flac"}
+	streams := []store.MediaFileStream{{Type: "audio", Codec: "flac", Channels: 2}}
+	legacy := CapabilityProfile{Containers: []string{"flac"}, DirectCodecs: []string{"aac", "mp3"}}
+	if canDirectPlay(media, store.MediaFile{}, streams, legacy, nil, quirkOverlay{}) {
+		t.Fatal("legacy profile without flac in DirectCodecs direct-plays a flac track")
+	}
+	legacy.DirectCodecs = append(legacy.DirectCodecs, "flac")
+	if !canDirectPlay(media, store.MediaFile{}, streams, legacy, nil, quirkOverlay{}) {
+		t.Fatal("legacy profile declaring flac in DirectCodecs cannot direct-play a flac track")
+	}
+	enveloped := CapabilityProfile{
+		Containers:  []string{"flac"},
+		VideoCodecs: []VideoCodecCap{{Codec: "h264"}},
+		AudioCodecs: []AudioCodecCap{{Codec: "flac"}},
+	}
+	if !canDirectPlay(media, store.MediaFile{}, streams, enveloped, nil, quirkOverlay{}) {
+		t.Fatal("audio envelope declaring flac cannot direct-play a flac track")
+	}
+}

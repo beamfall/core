@@ -116,7 +116,7 @@ function ApiTokens() {
           </Button>
         </form>
         {secret && <SecretBanner secret={secret} />}
-        {error && <p className="mt-2 text-sm text-[var(--red-500)]">{t(error)}</p>}
+        {error && <p className="mt-2 text-sm text-[var(--state-danger)]">{t(error)}</p>}
       </div>
 
       {loading ? (
@@ -124,7 +124,7 @@ function ApiTokens() {
       ) : failed ? (
         <ErrorState message="apiTokensUnavailable" />
       ) : tokens.length === 0 ? (
-        <EmptyState message="noAPITokens" icon={KeyRound} />
+        <EmptyState message="noAPITokens" />
       ) : (
         <DataTable
           columns={[
@@ -213,7 +213,7 @@ function ApiKeys() {
             <Input id="api-key-name" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
           <fieldset className="space-y-2">
-            <legend className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <legend className="text-sm font-semibold text-foreground">
               {t("apiKeyScopesLegend")}
             </legend>
             <div className="flex flex-wrap gap-x-5 gap-y-2">
@@ -234,7 +234,7 @@ function ApiKeys() {
           </Button>
         </form>
         {secret && <SecretBanner secret={secret} />}
-        {error && <p className="mt-2 text-sm text-[var(--red-500)]">{t(error)}</p>}
+        {error && <p className="mt-2 text-sm text-[var(--state-danger)]">{t(error)}</p>}
       </div>
 
       {loading ? (
@@ -242,7 +242,7 @@ function ApiKeys() {
       ) : failed ? (
         <ErrorState message="apiKeysUnavailable" />
       ) : keys.length === 0 ? (
-        <EmptyState message="noAPIKeys" icon={KeyRound} />
+        <EmptyState message="noAPIKeys" />
       ) : (
         <DataTable
           columns={[
