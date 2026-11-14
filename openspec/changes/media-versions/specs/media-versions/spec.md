@@ -75,7 +75,8 @@ from its path, and its own video codec, from its stream inventory, not by the Me
 
 Frame height is stored once per Media, for its first Version in label order, counting a file marked
 missing. A re-import of another Version SHALL NOT replace those facts, and a first Version that joins
-without a probe SHALL leave the frame size unknown rather than keep the previous file's.
+without a probe SHALL leave the frame size unknown rather than keep the previous file's. An unprobed
+re-import of the first Version's own file SHALL keep its frame size.
 
 #### Scenario: A rescan re-imports a later Version
 
@@ -85,8 +86,8 @@ without a probe SHALL leave the frame size unknown rather than keep the previous
 ### Requirement: An alternate Version of unknown height is transcoded
 
 When a client caps the height for a Version's video codec, playback SHALL NOT direct play or direct
-stream any Version of unknown height, including every Version beside a missing first Version, and
-SHALL transcode it instead.
+stream any Version of unknown height, including every Version beside a missing first Version and a
+Version left as the only live file of its Media, and SHALL transcode it instead.
 
 #### Scenario: 4K alternate on a 1080p-capped client
 
@@ -99,6 +100,12 @@ SHALL transcode it instead.
 - **WHEN** the 1080p first Version's file is marked missing and the same client plays the `4K`
   Version
 - **THEN** the decision is a transcode, not a direct play judged by the missing file's height
+
+#### Scenario: Only one Version is still live
+
+- **WHEN** an unprobed `4K` first Version's only sibling is marked missing and a 1080p-capped client
+  plays the item
+- **THEN** the decision is a transcode
 
 ### Requirement: Byte routes serve the chosen Version
 
