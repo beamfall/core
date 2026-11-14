@@ -93,6 +93,9 @@ func (s *Server) acceptCompatHandshake(ctx context.Context, scope auth.Scope, co
 	distribution := enrollment.Distribution
 	for range 3 {
 		policy := s.compat.snapshot()
+		if !embeddedUI {
+			s.rebindVerifiedBuild(ctx, scope, contract, enrollment, policy.Builds)
+		}
 		evaluated, err := s.deviceBuildPolicy(ctx, scope, policy)
 		if err != nil {
 			return capabilities.Record{}, capabilities.Result{}, false, err
