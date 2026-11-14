@@ -92,7 +92,7 @@ As of the initial public commit:
 | Server | Builds from source with the Go version in [`go.mod`](go.mod) and runs locally via `make dev-run`. |
 | CI | Being brought up. At publication the [gate workflow](.github/workflows/gate.yml) failed to parse and some date-dependent waivers had expired; the fixes are in [#3](https://github.com/beamfall/core/pull/3). Treat CI as not yet green. |
 | Cross-repo checks | Some checks need sibling Beamfall repositories that are not public. The consumer-pin and relay-vector freshness checks report a loud skip, never a pass, when the sibling checkout is absent, and the cross-repo wire-conformance check clones a consumer repository. These are meant to run in the maintainers' multi-repo workspace. |
-| Tracked drift | [`contracts/registry.json`](contracts/registry.json) lists each contract boundary with its consumers. It records nine `knownDrift` entries across eight boundaries, each with a ticket and a deadline: for example, native client executors for the visual behavior matrix, and full plugin-SDK conformance wiring. |
+| Tracked drift | [`contracts/registry.json`](contracts/registry.json) lists each contract boundary core produces or consumes, with its consumers. Consumer pins and drift records (each with a ticket and a deadline, for example native client executors for the visual behavior matrix) are kept in the private workspace registry, not here; see [the public contract registry design](docs/architecture/public-contract-registry.md). |
 | Container and NAS deployment | Templates are included, but they accept only a digest-pinned image from a release, so they become usable with the first release. |
 | Supported versions | Before the first stable release, security reports should name a `main` revision ([`SECURITY.md`](SECURITY.md)). |
 
@@ -190,8 +190,9 @@ and the architecture test in `internal/conformance` disagree, the test wins.
   conformance tests rather than generated from a schema. Integrations use the stable `/v1`
   Developer API.
 - Each cross-repository wire boundary is registered in
-  [`contracts/registry.json`](contracts/registry.json) with its artifact, consumers, pinned
-  versions, conformance test, and any known drift.
+  [`contracts/registry.json`](contracts/registry.json) with its artifact, active version,
+  consumers and conformance test. Consumer pins and drift records live in the private
+  workspace registry.
 
 > Domain language: [CONTEXT.md](CONTEXT.md). This codebase has no lineage to any predecessor
 > server.

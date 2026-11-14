@@ -126,10 +126,18 @@ while True:
     contract_registry.parent.mkdir()
     contract_registry.write_text(
         '{"schemaVersion":1,"boundaries":[{"boundary":"client-core-wire",'
-        '"consumers":[{"repo":"beamfall-web","pinnedVersion":"1.0.0"}]}]}\n',
+        '"consumers":["beamfall-web"]}]}\n',
         encoding="utf-8",
     )
     commit_fixture(producer)
+    # Consumer pins live in the private workspace registry, not core's (CORE-0902).
+    workspace_registry = case / "workspace" / "contracts" / "registry.json"
+    workspace_registry.parent.mkdir(parents=True)
+    workspace_registry.write_text(
+        '{"schemaVersion":1,"boundaries":[{"id":"client-core-wire",'
+        '"consumers":[{"repo":"beamfall-web","pinnedVersion":"1.0.0"}]}]}\n',
+        encoding="utf-8",
+    )
     return producer, consumer
 
 
@@ -224,6 +232,7 @@ def run_interruption_case(target: str, temp_pattern: str) -> None:
     env.update(
         {
             "BEAMFALL_CROSSREPO_FIXTURE_SUPERVISED": "1",
+            "BEAMFALL_WORKSPACE_ROOT": str(case / "workspace"),
             "BEAMFALL_CROSSREPO_PRODUCER_SOURCE": str(producer),
             "BEAMFALL_CROSSREPO_CONSUMER_SOURCE": str(consumer),
             "CROSSREPO_INTERRUPT_CHILD_PID_FILE": str(child_pid_file),
