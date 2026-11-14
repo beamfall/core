@@ -27,9 +27,9 @@
     {
       "boundary": "client-core-wire",
       "producer": "beamfall",
-      "artifact": "internal/conformance/wire-contract-v2.3.0.json",
-      "version": "2.3.0",
-      "activeArtifactVersion": "2.3.0",
+      "artifact": "internal/conformance/wire-contract-v2.4.0.json",
+      "version": "2.4.0",
+      "activeArtifactVersion": "2.4.0",
       "license": "AGPL",
       "consumers": ["beamfall-web", "beamfall-apple", "beamfall-android", "beamfall-windows"],
       "conformanceTest": "internal/conformance/wire_contract_test.go",

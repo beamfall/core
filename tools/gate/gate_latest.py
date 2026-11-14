@@ -12,6 +12,11 @@ cost a whole slot for a seconds-scale check. It takes its own repository-wide
 preflight lock and keeps its latest-wins generation apart from full gates, so a
 preflight never supersedes a full gate in the same worktree. Every lock wait is
 announced on stderr with the recorded holder, then again periodically.
+
+A full gate first queues for the machine-wide gate slot (script/gate-slot.py,
+CORE-1470), which every repository's gate shares, and holds it until its worker
+and the worker's descendants are gone. A gate already running under the slot's
+holder does not queue again, and a preflight never queues.
 """
 
 from __future__ import annotations
@@ -19,6 +24,7 @@ from __future__ import annotations
 from contextlib import ExitStack
 import errno
 import fcntl
+import importlib.util
 import os
 from pathlib import Path
 import signal
@@ -34,6 +40,7 @@ WAIT_NOTICE_SECONDS = 30.0
 ROOT = Path(__file__).resolve().parents[2]
 COORDINATOR_SUPERVISED_FLAG = "GATE_LATEST_COORDINATOR_SUPERVISED"
 CAPACITY_LOCK_FD = "BEAMFALL_GATE_CAPACITY_FD"
+MACHINE_SLOT = ROOT / "script" / "gate-slot.py"
 PROCESS_SUPERVISOR_SIGNAL_GRACE = (
     "BEAMFALL_PROCESS_SUPERVISOR_SIGNAL_GRACE_SECONDS"
 )
@@ -181,6 +188,119 @@ def acquire_if_latest(
                 )
         return True
     return False
+
+
+def machine_slot_module():
+    """script/gate-slot.py as a module, when this checkout carries it."""
+    if not MACHINE_SLOT.is_file():
+        return None
+    spec = importlib.util.spec_from_file_location("gate_slot", MACHINE_SLOT)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def take_machine_slot(
+    locks: ExitStack,
+    preflight: bool,
+    capacity_inherited: bool,
+    command: list[str],
+    generation: int,
+    generation_path: Path,
+    stopped,
+):
+    """Queue for the machine-wide gate slot ahead of repository capacity.
+
+    One full gate runs on a machine at a time across every repository
+    (CORE-1470). A preflight never queues; it only says who holds the slot.
+    Neither does a gate whose ancestor already took a repository's capacity
+    (this one's or another's) without the slot: waiting for the slot while
+    holding capacity would deadlock with a gate that holds the slot and waits
+    for that capacity.
+    Returns (False, None) when the run was cancelled or superseded while
+    queued, otherwise (True, slot), where slot is None unless this run now
+    holds the slot itself. The slot is advisory plumbing around the gate, not
+    part of its verdict: a store that cannot be used is reported and the gate
+    runs without it.
+    """
+    try:
+        gate_slot = machine_slot_module()
+        if gate_slot is None or gate_slot.reentrant() is not None:
+            return True, None
+        if preflight:
+            entries, _notes = gate_slot.snapshot()
+            if entries:
+                print(
+                    f"gate: the machine gate slot is held by {gate_slot.describe(entries[0])}; "
+                    "this preflight does not wait for it",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            return True, None
+        if capacity_inherited:
+            print(
+                "gate: repository capacity was taken before the machine gate slot; "
+                "running without waiting for the slot",
+                file=sys.stderr,
+                flush=True,
+            )
+            return True, None
+        slot = gate_slot.Slot(command, cwd=ROOT)
+        slot.join()
+        locks.callback(slot.leave)
+        started = time.monotonic()
+        last_notice, noticed_at = None, 0.0
+        while not stopped():
+            if read_generation(generation_path) != generation:
+                return False, None
+            state = slot.poll()
+            for note in state.notes:
+                print(f"gate: {note}", file=sys.stderr, flush=True)
+            if state.held:
+                if last_notice is not None:
+                    print(
+                        f"gate: run {generation} took the machine gate slot after "
+                        f"{time.monotonic() - started:.0f}s",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                return True, slot
+            notice = (state.holder["path"], state.position, state.waiting)
+            now = time.monotonic()
+            if notice != last_notice or now - noticed_at >= WAIT_NOTICE_SECONDS:
+                print(
+                    f"gate: run {generation} {gate_slot.waiting_line(state)}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                last_notice, noticed_at = notice, now
+            time.sleep(gate_slot.POLL_SECONDS)
+        return False, None
+    except (ImportError, OSError, SyntaxError) as error:
+        print(
+            f"gate: machine gate slot unusable ({error}); running without the machine slot",
+            file=sys.stderr,
+            flush=True,
+        )
+        return True, None
+
+
+def capacity_held_above() -> bool:
+    """Whether a process above this one already holds a repository capacity lock.
+
+    True for any open FD named in CAPACITY_LOCK_FD, this repository's lock or
+    another's: either way the gate must not then wait for the machine slot.
+    """
+    raw_fd = os.environ.get(CAPACITY_LOCK_FD)
+    if raw_fd is None or not raw_fd.isdecimal():
+        return False
+    try:
+        os.fstat(int(raw_fd))
+    except OSError:
+        return False
+    return True
 
 
 def inherited_capacity_lock(lock_path: Path) -> int | None:
@@ -353,6 +473,7 @@ def supervise(command: list[str]) -> int:
             capacity_path = common_dir / "beamfall-gate.capacity.lock"
             capacity_label = f"gate capacity ({capacity_path})"
             capacity_fd = inherited_capacity_lock(capacity_path)
+        capacity_inherited = not preflight and capacity_held_above()
         if capacity_fd is None:
             capacity_fd = os.open(
                 capacity_path,
@@ -361,6 +482,24 @@ def supervise(command: list[str]) -> int:
             )
         with ExitStack() as locks:
             capacity_lock = locks.enter_context(os.fdopen(capacity_fd, "a+b"))
+            proceed, machine_slot = take_machine_slot(
+                locks,
+                preflight,
+                capacity_inherited,
+                command,
+                generation,
+                generation_path,
+                lambda: bool(received_signal),
+            )
+            if not proceed:
+                if received_signal:
+                    return 128 + received_signal
+                print(
+                    f"gate: run {generation} superseded before start by run "
+                    f"{read_generation(generation_path)}",
+                    file=sys.stderr,
+                )
+                return SUPERSEDED_EXIT
             if not acquire_if_latest(
                 capacity_lock,
                 generation,
@@ -408,6 +547,8 @@ def supervise(command: list[str]) -> int:
                 environment["BEAMFALL_GATE_CAPACITY_HELD"] = "1"
             else:
                 environment[CAPACITY_LOCK_FD] = str(capacity_lock.fileno())
+            if machine_slot is not None:
+                environment["BEAMFALL_GATE_SLOT_HELD"] = str(machine_slot.path)
             process = None
             try:
                 if "GOCACHE" not in os.environ:

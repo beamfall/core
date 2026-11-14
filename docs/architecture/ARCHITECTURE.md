@@ -733,9 +733,20 @@ internal/graph/
 One endpoint `POST /api/graphql`; graph code calls store directly and applies auth/reveal
 checks in Go. Entities are served through fixed generic queries only (`entities(kind:…)`,
 `entity(id:…)`). Plugins contribute generic data and manifest declarations; they do not add
-GraphQL schema types. Errors:
+GraphQL schema types.
+
+Errors: every entry in `errors` is `{"message", "path"?, "extensions": {"code"}}` with
 `extensions.code ∈ {NOT_FOUND, FORBIDDEN, UNAUTHENTICATED, THROTTLED, INVALID, CONFLICT, INTERNAL}`
-with the ErrNotFound denial-of-existence rule of §6.
+(`path` names the failed top-level field on a partial-success read). Clients branch on the code,
+never the message. `internal/graph/error_codes.go` owns the one mapping: client errors by their
+stable message, parse and operation-selection failures to INVALID, store validation errors to
+INVALID unless their exact message is pinned (a hidden or missing Library is NOT_FOUND), any other
+failure to INTERNAL with the generic `"<field> unavailable"` message. The ErrNotFound denial-of-existence rule of §6 applies: content
+outside the caller's scope answers NOT_FOUND, exactly as missing content; FORBIDDEN is reserved for
+role, tier, session-kind and Reveal gates and never confirms that hidden content exists. The
+vocabulary and shape ship in the wire contract (`graphqlErrors`, since 2.4.0), and
+`internal/conformance` fails on any error site in `internal/graph` that leaves without a mapped
+code.
 
 Graph contract governance lives in focused graph tests plus `internal/conformance`; there is
 no generated snapshot/diff toolchain.
