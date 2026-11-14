@@ -29,7 +29,7 @@ func writeSidecar(t *testing.T, dir, name string, data []byte) string {
 
 func readSlot(t *testing.T, path string) string {
 	t.Helper()
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is a slot file under this test's t.TempDir().
 	if err != nil {
 		t.Fatal(err)
 	}

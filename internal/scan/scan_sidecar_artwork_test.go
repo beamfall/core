@@ -31,12 +31,12 @@ func (c *copyingArtworkTools) FrameGrab(_ context.Context, _ string, _ float64, 
 }
 
 func (c *copyingArtworkTools) ScaleImage(_ context.Context, src string, _ int, dst string) error {
-	in, err := os.Open(src)
+	in, err := os.Open(src) // #nosec G304 -- fake ScaleImage reads the scanner's test-owned source image.
 	if err != nil {
 		return err
 	}
 	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600) // #nosec G304 -- fake ScaleImage writes the scanner's test-owned destination.
 	if err != nil {
 		return err
 	}
@@ -76,7 +76,7 @@ func mediaIDForPath(t *testing.T, result Result, suffix string) store.MediaID {
 
 func slotBytes(t *testing.T, path string) string {
 	t.Helper()
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is an artwork slot under this test's t.TempDir().
 	if err != nil {
 		t.Fatalf("reading slot %s: %v", path, err)
 	}
