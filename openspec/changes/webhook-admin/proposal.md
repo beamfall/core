@@ -15,7 +15,7 @@ delivery or see whether deliveries succeed.
 - The Webhook Emitter always runs and reloads its endpoints when the configuration changes. With
   no enabled endpoint it does no work and makes no request.
 - Owners add, edit, enable, disable, test and remove endpoints from a new console page
-  (Automate → Webhooks). The page shows the recent delivery log and each endpoint's last result.
+  (Access → Webhooks). The page shows the recent delivery log and each endpoint's last result.
   New admin graph operations back it: `webhooks`, `setWebhook`, `deleteWebhook`, `testWebhook`
   and `setWebhookSettings`. Each mutation writes the activity log.
 - Each endpoint has a format: `generic` (the existing HMAC-signed envelope), `discord`, `slack`,
