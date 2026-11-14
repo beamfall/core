@@ -99,6 +99,9 @@ type PluginScraperInfo struct {
 	CredentialConfigured bool   `json:"credentialConfigured"`
 	CredentialStatus     string `json:"credentialStatus"`
 	CredentialError      string `json:"credentialError,omitempty"`
+	// Attribution is the credit the scraper's data source requires, as the
+	// plugin declares it (CORE-1126).
+	Attribution *MetadataAttributionInfo `json:"attribution,omitempty"`
 }
 
 // PluginConfigFieldInfo is one typed, non-secret plugin setting plus its
@@ -302,6 +305,7 @@ func (h *Handler) pluginScraperInfo(pluginID string, bundle plugin.Bundle) []Plu
 			CredentialConfigured: status.configured,
 			CredentialStatus:     status.status,
 			CredentialError:      status.err,
+			Attribution:          scraperAttributionInfo(scraper),
 		})
 	}
 	return items

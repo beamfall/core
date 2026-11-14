@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { MetadataAttributionText } from "@/components/beamfall/MetadataAttributionText";
 import { AvatarChooser, PROFILE_AVATAR_PREF_KEY } from "@/components/beamfall/profile";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Label } from "@/components/ui/label";
@@ -11,7 +12,12 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Advanced, AdvancedSettingsSwitch } from "@/lib/advancedSettings";
-import { fetchClientPrefs, setClientPref } from "@/lib/graphql";
+import {
+  fetchClientPrefs,
+  fetchMetadataCredits,
+  type MetadataAttribution,
+  setClientPref,
+} from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
 import type { StringKey } from "@/strings";
@@ -55,6 +61,7 @@ export function ProfileSettingsPage() {
   const [failed, setFailed] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [avatarError, setAvatarError] = useState(false);
+  const [credits, setCredits] = useState<MetadataAttribution[]>([]);
   const loadToken = useRef(0);
 
   const load = useCallback(async () => {
@@ -73,6 +80,15 @@ export function ProfileSettingsPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Credits are server-wide and optional: a failed read just omits the section.
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchMetadataCredits(controller.signal)
+      .then(setCredits)
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
 
   // Persist one key, optimistically reflecting it locally. A failed write
   // surfaces an error and reloads the canonical state so the UI never drifts
@@ -346,6 +362,29 @@ export function ProfileSettingsPage() {
                 <span className="text-sm text-[var(--text-muted)]">
                   {t("settingsRecommendOptInLead")}
                 </span>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {credits.length > 0 && (
+          <section className="flex flex-col gap-3" aria-labelledby="settings-credits">
+            <h2 id="settings-credits" className="bf-section-title">
+              {t("settingsCreditsHeading")}
+            </h2>
+            <div className="settings-group">
+              <div className="settings-row flex flex-col gap-2">
+                <p className="m-0 text-sm text-[var(--text-muted)]">{t("settingsCreditsLead")}</p>
+                <ul className="m-0 flex list-none flex-col gap-1 p-0 text-sm">
+                  {credits.map((credit) => (
+                    <li key={`${JSON.stringify(credit.text)}|${credit.url}`}>
+                      <MetadataAttributionText
+                        attribution={credit}
+                        className="text-[var(--text-primary)] underline underline-offset-2"
+                      />
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
           </section>

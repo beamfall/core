@@ -128,6 +128,7 @@
         "credits",
         "favorited",
         "id",
+        "metadataAttribution",
         "summary",
         "title",
         "year"
@@ -624,6 +625,7 @@
         "credits",
         "favorited",
         "id",
+        "metadataAttribution",
         "summary",
         "title",
         "year"
@@ -974,6 +976,7 @@
         "id",
         "kind",
         "kindDisplayName",
+        "relatedEntities",
         "title"
       ]
     },
@@ -1022,6 +1025,7 @@
         "credits",
         "favorited",
         "id",
+        "metadataAttribution",
         "summary",
         "title",
         "year"
@@ -1096,6 +1100,7 @@
         "credits",
         "favorited",
         "id",
+        "metadataAttribution",
         "summary",
         "title",
         "year"
@@ -1464,6 +1469,7 @@
         "credits",
         "favorited",
         "id",
+        "metadataAttribution",
         "summary",
         "title",
         "year"
@@ -1547,6 +1553,16 @@
         "affected",
         "batchID",
         "kind"
+      ]
+    },
+    {
+      "field": "metadatacredits",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "providerName",
+        "text",
+        "url"
       ]
     },
     {
@@ -2803,6 +2819,7 @@
         "credits",
         "favorited",
         "id",
+        "metadataAttribution",
         "summary",
         "title",
         "year"

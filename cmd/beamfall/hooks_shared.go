@@ -43,6 +43,7 @@ func firstPartyHooksForBundles(bundles []plugin.Bundle) app.Hooks {
 	}
 	if active[filmtv.PluginID] {
 		hooks.Parsers[filmtv.PluginID] = filmtv.New()
+		hooks.HydrationMappers[filmtv.PluginID] = newFilmTVHydrationMapper()
 		hooks.IdentifyScorers[filmtv.PluginID] = app.IdentifyScorerHook{Scorer: filmtv.NewScorer(), Threshold: filmtv.AutoApplyThreshold}
 		addFilmTVMigrationSources(&hooks)
 		hooks.ScrobbleAdapters = append(hooks.ScrobbleAdapters, app.ScrobbleAdapterHook{PluginID: filmtv.PluginID, Service: filmtv.ScrobbleServiceTrakt, Factory: filmtv.TraktScrobbleFactory})
@@ -87,6 +88,16 @@ func addFilmTVMigrationSources(hooks *app.Hooks) {
 
 func addMusicHooks(hooks *app.Hooks) {
 	hooks.HydrationMappers[music.PluginID] = musicHydrationMapper{}
+	// With no provider artwork an album shows the cover of its first track
+	// that has one, and an artist the cover of one of its albums, else of a
+	// track it appears on. Albums come first so artists see this sweep's covers.
+	hooks.EntityPosterRules = append(hooks.EntityPosterRules,
+		app.EntityPosterRule{PluginID: music.PluginID, Kind: "album", Sources: []app.EntityPosterSource{{Relation: "album-track"}}},
+		app.EntityPosterRule{PluginID: music.PluginID, Kind: "artist", Sources: []app.EntityPosterSource{
+			{Relation: "album-artist", FromKind: "album"},
+			{Relation: "appears-on"},
+		}},
+	)
 	hooks.MigrationSourceFactories[app.MigrationSourceKey{PluginID: music.PluginID, ImporterID: music.LastfmImporterID}] = func(_ []string, path string) migrate.Source { return music.NewLastfmSource(path) }
 	hooks.MigrationSourceFactories[app.MigrationSourceKey{PluginID: music.PluginID, ImporterID: music.ListenBrainzImporterID}] = func(_ []string, path string) migrate.Source { return music.NewListenBrainzSource(path) }
 	hooks.MigrationSourceFactories[app.MigrationSourceKey{PluginID: music.PluginID, ImporterID: music.NavidromeImporterID}] = func(categories []string, path string) migrate.Source {
@@ -155,6 +166,11 @@ func (musicHydrationMapper) ExternalIDSchemes() []string {
 	return []string{music.SchemeMusicBrainzRecording}
 }
 
+// EntityScopes declares that an album is scoped by its album artist.
+func (musicHydrationMapper) EntityScopes() []app.HydrationEntityScope {
+	return []app.HydrationEntityScope{{Kind: "album", Relation: "album-artist"}}
+}
+
 func (musicHydrationMapper) MapHydration(tags map[string]string, path string) app.HydrationPlan {
 	hydration := music.MapHydration(tags, path)
 	plan := app.HydrationPlan{}
@@ -218,7 +234,17 @@ func (musicHydrationMapper) MapHydration(tags map[string]string, path string) ap
 		plan.MarkComplete = true
 	}
 	if hydration.Album != "" {
-		album := app.HydrationEntity{Kind: "album", Title: hydration.Album}
+		// An album is its album artist plus its title: two artists' same-titled
+		// albums are two albums, and a compilation under one album artist is one.
+		// A track with no album artist falls back to its first credited artist.
+		albumArtist := hydration.AlbumArtist
+		for _, credit := range hydration.Credits {
+			if albumArtist != "" {
+				break
+			}
+			albumArtist = credit.Artist
+		}
+		album := app.HydrationEntity{Kind: "album", Title: hydration.Album, Scope: albumArtist}
 		if !hydration.ReleaseDate.IsZero() {
 			album.Fields = append(album.Fields, store.EntityField{Name: "release-date", Type: store.EntityFieldDate, Date: hydration.ReleaseDate.UTC()})
 		}
@@ -231,12 +257,12 @@ func (musicHydrationMapper) MapHydration(tags map[string]string, path string) ap
 			Cardinality: "one",
 			SortOrder:   musicTrackSortOrder(hydration.DiscNumber, hydration.TrackNumber),
 		})
-		if hydration.AlbumArtist != "" {
+		if albumArtist != "" {
 			plan.Relations = append(plan.Relations, app.HydrationRelation{
 				From:             album,
 				Name:             "album-artist",
 				RequiresRelation: "album-track",
-				ToEntity:         &app.HydrationEntity{Kind: "artist", Title: hydration.AlbumArtist},
+				ToEntity:         &app.HydrationEntity{Kind: "artist", Title: albumArtist},
 			})
 		}
 	}

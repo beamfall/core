@@ -435,6 +435,19 @@
   text-align: right;
 }
 
+/* A plugin-declared metadata credit under the route detail. */
+.bf-info-attribution {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: oklch(80% 0.02 250);
+}
+
+.bf-info-attribution a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 /* Subtitle styling panel rows. */
 .bf-subtitle-row {
   display: flex;

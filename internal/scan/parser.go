@@ -22,6 +22,15 @@ const (
 	DirectoryMediaFileCountMultiple = sdk.DirectoryMediaFileCountMultiple
 )
 
+// MediaTitler is an optional extension of FilenameParser for parsers whose
+// parsed title names a container rather than the file (several files share
+// it). A non-empty MediaTitle becomes the imported Media's title; the parsed
+// title still drives identification. Parsers that do not implement it, or
+// return "", keep the parsed title.
+type MediaTitler interface {
+	MediaTitle(path string, probe ParseProbe) string
+}
+
 // PartMarkerTitler is an optional extension of FilenameParser for parsers that
 // group several files into one Media's ordered Parts. It supplies the
 // human-facing navigation Marker title for one Part without adding domain

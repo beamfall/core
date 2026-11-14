@@ -119,6 +119,11 @@ type Service struct {
 	sealed    SealedPredicate
 	encrypted EncryptedPredicate
 	deriveMu  [64]derivativeLock
+	// entityRules declares which Entity kinds inherit a poster (inherit.go);
+	// entityPosterMu serializes an inherited copy against an imported Entity
+	// poster so the Entity's own artwork is never overwritten by a copy.
+	entityRules    []EntityPosterRule
+	entityPosterMu sync.Mutex
 }
 
 type derivativeLock struct {
@@ -847,6 +852,12 @@ type sweepCheckpoint struct {
 	LastID    string `json:"last_id,omitempty"`
 	Generated int    `json:"generated"`
 	Failed    int    `json:"failed"`
+	// The Entity pass that follows the Media pass of a whole-catalog sweep:
+	// the rule being swept, the last Entity visited under it, and the
+	// posters inherited so far.
+	EntityRule   int    `json:"entity_rule,omitempty"`
+	EntityLastID string `json:"entity_last_id,omitempty"`
+	Inherited    int    `json:"inherited,omitempty"`
 }
 
 const sweepJobBatchSize = 10
@@ -899,6 +910,9 @@ func NewSelectedSweepJob(mediaIDs []store.MediaID, createdAt time.Time) (store.J
 
 // SweepHandler returns the job handler that fills in missing posters,
 // checkpointing by Media ID so a preempted sweep resumes where it stopped.
+// A whole-catalog sweep then gives Entities of the declared kinds a poster
+// inherited from their sources (SetEntityPosterRules), with its own
+// checkpoint.
 func SweepHandler(service *Service) jobs.Handler {
 	return func(ctx context.Context, job store.Job) (jobs.Result, error) {
 		var payload sweepPayload
@@ -948,20 +962,27 @@ func SweepHandler(service *Service) jobs.Handler {
 				break
 			}
 		}
+		more := (pagedAll && len(ids) > processed) || (!pagedAll && processed >= sweepJobBatchSize)
+		if pagedAll && !more && ctx.Err() == nil {
+			var err error
+			if more, err = service.inheritEntityPosters(ctx, &checkpoint); err != nil {
+				return jobs.Result{}, err
+			}
+		}
 		checkpoint.Version = 1
 		data, err := json.Marshal(checkpoint)
 		if err != nil {
 			return jobs.Result{}, err
 		}
 		progress := store.JobProgress{
-			Current: int64(checkpoint.Generated),
+			Current: int64(checkpoint.Generated + checkpoint.Inherited),
 			Unit:    "posters",
 			Message: "Generating artwork",
 		}
 		if err := service.store.UpdateJobCheckpoint(ctx, job.ID, job.LeaseOwner, data, progress, time.Now().UTC()); err != nil {
 			return jobs.Result{}, err
 		}
-		if (pagedAll && len(ids) > processed) || (!pagedAll && processed >= sweepJobBatchSize) || ctx.Err() != nil {
+		if more || ctx.Err() != nil {
 			return jobs.Result{Checkpoint: data}, jobs.ErrYielded
 		}
 		return jobs.Result{}, nil
@@ -1022,8 +1043,20 @@ func (s *Service) ImportCandidateArtwork(ctx context.Context, id store.MediaID, 
 // the write path identify's entity hydration lands EntityMap ArtworkPath
 // images through. Same normalization and derivative invalidation as
 // ImportPoster.
+//
+// The imported poster is the Entity's own: it replaces an inherited copy and
+// clears the inherited mark, after which the sweep leaves it alone.
 func (s *Service) ImportEntityPoster(ctx context.Context, id store.EntityID, data []byte) error {
-	return s.importArtwork(ctx, s.EntityPosterPath(id), string(id), SlotPoster, data)
+	s.entityPosterMu.Lock()
+	defer s.entityPosterMu.Unlock()
+	dst := s.EntityPosterPath(id)
+	if err := s.importArtwork(ctx, dst, string(id), SlotPoster, data); err != nil {
+		return err
+	}
+	if err := os.Remove(inheritedMarkerPath(dst)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 // importArtwork backs the Media and Entity artwork import paths; owner is the

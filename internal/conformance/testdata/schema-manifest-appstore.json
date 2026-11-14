@@ -615,6 +615,11 @@
     "tier": "session"
   },
   {
+    "field": "metadatacredits",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "metadataexport",
     "effect": "read",
     "tier": "admin"

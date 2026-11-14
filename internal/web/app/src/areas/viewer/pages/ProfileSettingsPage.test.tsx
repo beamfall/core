@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
 import "@testing-library/jest-dom/vitest";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAdvancedSettings } from "@/lib/advancedSettings";
-import { fetchClientPrefs, setClientPref } from "@/lib/graphql";
+import { fetchClientPrefs, fetchMetadataCredits, setClientPref } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
 import { ProfileSettingsPage } from "./ProfileSettingsPage";
@@ -15,6 +15,7 @@ vi.mock("@/components/chrome/AppShell", () => ({
 
 vi.mock("@/lib/graphql", () => ({
   fetchClientPrefs: vi.fn(),
+  fetchMetadataCredits: vi.fn(),
   setClientPref: vi.fn(),
 }));
 
@@ -48,6 +49,8 @@ beforeEach(() => {
   vi.mocked(setClientPref).mockReset();
   vi.mocked(fetchClientPrefs).mockResolvedValue([{ key: "autoskip.intro", value: "on" }]);
   vi.mocked(setClientPref).mockResolvedValue({ key: "autoskip.recap" });
+  vi.mocked(fetchMetadataCredits).mockReset();
+  vi.mocked(fetchMetadataCredits).mockResolvedValue([]);
   setProfileKind("adult");
 });
 
@@ -253,5 +256,29 @@ describe("ProfileSettingsPage", () => {
 
     expect(screen.getByRole("switch", { name: "Skip recaps" })).toBeChecked();
     expect(screen.getByRole("switch", { name: "Skip intros" })).not.toBeChecked();
+  });
+
+  it("lists metadata credits as safe external links (CORE-1126)", async () => {
+    vi.mocked(fetchMetadataCredits).mockResolvedValue([
+      { text: { en: "Metadata provided by Fixture" }, url: "https://fixture.example.test/" },
+      { text: { en: "Data from Another fixture" }, url: "http://another.example.test/" },
+    ]);
+    renderPage();
+
+    const section = await screen.findByRole("region", { name: "Credits" });
+    const link = within(section).getByRole("link", { name: "Metadata provided by Fixture" });
+    expect(link).toHaveAttribute("href", "https://fixture.example.test/");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    expect(within(section).getByText("Data from Another fixture")).toBeInTheDocument();
+    expect(within(section).getAllByRole("link")).toHaveLength(1);
+  });
+
+  it("omits the Credits section when no plugin declares an attribution", async () => {
+    renderPage();
+
+    await screen.findByRole("switch", { name: "Skip intros" });
+    await waitFor(() => expect(fetchMetadataCredits).toHaveBeenCalled());
+    expect(screen.queryByRole("region", { name: "Credits" })).toBeNull();
   });
 });

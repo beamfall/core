@@ -3,8 +3,10 @@ import { useLocation, useParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isAuthRejection } from "@/lib/api";
+import { displayString } from "@/lib/display";
 import { fetchEntity, fetchMediaForEntity } from "@/lib/graphql";
 import type { EntityInfo, Layout, Section, SourceItem } from "@/lib/graphql/types";
+import { useDisplayLocale } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
 import {
   clearViewerCache,
@@ -32,7 +34,9 @@ const entityMediaCacheKey = (id: string) => `entity-media:${id}`;
 // values). When the manifest carries a detail Layout for this Entity's Kind
 // (role: "detail", matching entityKind), its Sections render through the same
 // LayoutView as browse, with entityID riding the variables for entity-media
-// Sources. Otherwise the hand-rolled mediaForEntity list renders. `kind` is a
+// Sources. Otherwise the hand-rolled mediaForEntity list renders. Related
+// Entities (either relation direction, grouped by kind) render before both,
+// so an Entity linked only to other Entities never opens empty. `kind` is a
 // plugin display label, rendered as text only (invariant #1 / #5).
 //
 // Instant paint: an entity (and its related list) already loaded for the bound
@@ -47,6 +51,7 @@ export function EntityPage() {
   const location = useLocation();
   const { manifest } = useSession();
   const identity = useViewerIdentity();
+  const displayLocale = useDisplayLocale();
   const [entity, setEntity] = useState<EntityInfo | null>(
     () => readViewerCache<EntityInfo>(identity, entityCacheKey(entityId)) ?? null,
   );
@@ -69,6 +74,8 @@ export function EntityPage() {
   const needsFallback =
     !notFound && !detailLayout && (!!kindHint || !layouts.some((l) => l.role === "detail"));
 
+  // The Entity read carries related-Entity engagement, so it reloads with it.
+  const engagementEpoch = useEngagementEpoch();
   useEffect(() => {
     if (!entityId) return;
     let alive = true;
@@ -106,11 +113,10 @@ export function EntityPage() {
       alive = false;
       controller.abort();
     };
-  }, [identity, entityId]);
+  }, [identity, entityId, engagementEpoch]);
 
   // No detail Layout for this Kind: load the hand-rolled related-Media list,
   // again whenever watched, watchlist or rating state changes under it.
-  const engagementEpoch = useEngagementEpoch();
   useEffect(() => {
     if (!entityId || !needsFallback) return;
     let alive = true;
@@ -181,6 +187,24 @@ export function EntityPage() {
               </dl>
             )}
           </header>
+
+          {entity?.relatedEntities?.map((group) => (
+            <section key={group.kind} className="bf-section flex flex-col gap-3">
+              <h2 className="bf-section-title">
+                <span>{displayString(group.kindDisplayName, displayLocale) || group.kind}</span>
+              </h2>
+              <ul className="bf-grid">
+                {group.items.map((item, index) => (
+                  <MediaItemCard
+                    key={`${item.id}-${index}`}
+                    item={item}
+                    posInSet={index + 1}
+                    setSize={group.items.length}
+                  />
+                ))}
+              </ul>
+            </section>
+          ))}
 
           {detailLayout ? (
             <LayoutView

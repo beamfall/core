@@ -366,6 +366,7 @@ export function PlayerPage() {
               state={state}
               mediaTitle={navTitle}
               mediaID={mediaId || ""}
+              metadataAttribution={media?.metadataAttribution}
               stageRef={stageRef}
               skipInterval={Number(resolvedPrefs.skipInterval)}
               showSkipInterval={showSkipInterval}
