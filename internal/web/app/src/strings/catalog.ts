@@ -22,6 +22,7 @@ import { powerToolStrings } from "./power-tools";
 import { profileSearchStrings } from "./profile-search";
 import { profileDeviceStrings } from "./profiles-devices";
 import { remoteAccessStrings } from "./remote-access";
+import { remoteControlStrings } from "./remote-control";
 import { sessionUpdateStrings } from "./sessions-updates";
 import { setupStrings } from "./setup";
 import { sharedStateStrings } from "./shared-states";
@@ -58,6 +59,7 @@ export const en = {
   ...playerRecoveryStrings.en,
   ...libraryTrashStrings.en,
   ...mediaDetailStrings.en,
+  ...remoteControlStrings.en,
 } as const;
 
 export const fr = {
@@ -90,6 +92,7 @@ export const fr = {
   ...playerRecoveryStrings.fr,
   ...libraryTrashStrings.fr,
   ...mediaDetailStrings.fr,
+  ...remoteControlStrings.fr,
 } as const;
 
 export const de = {
@@ -122,6 +125,7 @@ export const de = {
   ...playerRecoveryStrings.de,
   ...libraryTrashStrings.de,
   ...mediaDetailStrings.de,
+  ...remoteControlStrings.de,
 } as const;
 
 export const es = {
@@ -154,6 +158,7 @@ export const es = {
   ...playerRecoveryStrings.es,
   ...libraryTrashStrings.es,
   ...mediaDetailStrings.es,
+  ...remoteControlStrings.es,
 } as const;
 
 export const pt = {
@@ -186,4 +191,5 @@ export const pt = {
   ...playerRecoveryStrings.pt,
   ...libraryTrashStrings.pt,
   ...mediaDetailStrings.pt,
+  ...remoteControlStrings.pt,
 } as const;

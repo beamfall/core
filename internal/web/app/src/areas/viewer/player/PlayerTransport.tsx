@@ -45,6 +45,7 @@ import {
   formatRemainingTime,
   resolveTrickplayTile,
 } from "../lib/transport";
+import { useRemotePlayerTarget } from "../remote/remoteControl";
 import { InfoOverlay } from "./InfoOverlay";
 import { SubtitleStylePanel } from "./SubtitleStylePanel";
 import { TransportMenu } from "./TransportMenu";
@@ -85,6 +86,7 @@ export function PlayerTransport({
   onShare,
   onPreviousInQueue,
   onNextInQueue,
+  onStop,
   switchToHls,
   onMenuOpenChange,
 }: {
@@ -113,6 +115,8 @@ export function PlayerTransport({
   onPreviousInQueue?: () => void;
   /** Play the queue's next item; the control is hidden when absent. */
   onNextInQueue?: () => void;
+  /** Leaves the player when another device sends stop; without it stop only pauses. */
+  onStop?: () => void;
   /** Switches direct play to its HLS rendition stream at the current position. */
   switchToHls?: (renditionKey?: string) => SwitchResult;
   /** Reports whether any menu/overlay is open (drives auto-hide suppression). */
@@ -226,6 +230,16 @@ export function PlayerTransport({
     manualRenditionID,
     setManualRenditionID,
     onSubtitleChanged: subtitle.applySync,
+  });
+
+  // Commands from the Profile's other devices drive this player (CORE-1678).
+  useRemotePlayerTarget({
+    video: () => videoRef.current,
+    selectAudio: tracks.selectAudio,
+    selectSubtitle: tracks.selectSubtitle,
+    next: onNextInQueue,
+    previous: onPreviousInQueue,
+    stop: onStop,
   });
 
   // Mirror the live <video> time into React state so the chrome re-renders.

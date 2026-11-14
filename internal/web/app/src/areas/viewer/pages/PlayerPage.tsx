@@ -377,6 +377,7 @@ export function PlayerPage() {
               onShare={shareAt}
               onPreviousInQueue={playPrevious}
               onNextInQueue={playNext}
+              onStop={back}
               switchToHls={switchToHls}
               onMenuOpenChange={setMenuOpen}
             />

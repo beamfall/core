@@ -10,6 +10,8 @@ import { getManifest, graphql } from "@/lib/api";
 import { rebindCompatibility } from "@/lib/compat";
 import type {
   ClientPref,
+  ControlSessionResult,
+  ControlSessionVars,
   EntityFilter,
   EntityInfo,
   FieldFilters,
@@ -27,6 +29,7 @@ import type {
   NotificationInfo,
   NotificationReadResult,
   PlaybackMarker,
+  ProfileSessionInfo,
   ProfileSummary,
   ReportPlaybackResult,
   ReportPlaybackVars,
@@ -299,6 +302,31 @@ const MY_SESSIONS_QUERY =
 export async function fetchMySessions(): Promise<MySessionsInfo> {
   const data = await graphql<{ mySessions: MySessionsInfo }>(MY_SESSIONS_QUERY, {});
   return data.mySessions;
+}
+
+// --- Remote control (CORE-1678) -------------------------------------------
+
+const PROFILE_SESSIONS_QUERY =
+  "query ProfileSessions { profileSessions { sessionID deviceID deviceName deviceRole current mediaID title positionSeconds durationSeconds } }";
+
+/** ProfileSessions — the active playbacks in the bound Profile, for the remote. */
+export async function fetchProfileSessions(): Promise<ProfileSessionInfo[]> {
+  const data = await graphql<{ profileSessions: ProfileSessionInfo[] | null }>(
+    PROFILE_SESSIONS_QUERY,
+    {},
+  );
+  return data.profileSessions ?? [];
+}
+
+const CONTROL_SESSION_MUTATION =
+  "mutation ControlSession($sessionID: String!, $command: String!, $direction: String, $positionMs: Float, $volume: Int, $trackID: String, $mediaID: String, $text: String) { controlSession(sessionID: $sessionID, command: $command, direction: $direction, positionMs: $positionMs, volume: $volume, trackID: $trackID, mediaID: $mediaID, text: $text) { sessionID command } }";
+
+/** ControlSession — send one transport command to another session in the Profile. */
+export async function controlSession(vars: ControlSessionVars): Promise<ControlSessionResult> {
+  const data = await graphql<{ controlSession: ControlSessionResult }>(CONTROL_SESSION_MUTATION, {
+    ...vars,
+  });
+  return data.controlSession;
 }
 
 const NOTIFICATIONS_QUERY =
