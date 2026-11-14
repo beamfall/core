@@ -42,6 +42,12 @@ Boundaries core neither produces nor consumes (`entitlement-vectors`, `web-cloud
 leave core's registry. The workspace registry already has `web-cloud-accounts`, and gains the
 entitlement row under its existing `entitlement-money-path` boundary or a new one.
 
+Core's own pins follow the same rule. `circle-federation-wire` lists core as both `owner` and
+`guest` consumer at 1.0.0. Those pins move to the workspace registry too, and the absence test
+has no self-consumer exemption (CORE-1479, decided 2026-11-13). Its `conformanceTest` names
+`internal/circle/protocol_test.go`, which is not in the tree; the real test is
+`internal/streamtoken/circle_protocol_test.go`, and the stripped text names that.
+
 `relay-core-tunnel` (producer `beamfall-relay`, public) and `plugin-artifact-trust` (core is
 the consumer; the artifact lives in core's testdata) stay as they are.
 
@@ -78,9 +84,10 @@ New tests:
 
 ## Migration order (consumer-first, CORE-1339 rule)
 
-1. **Workspace ticket CORE-1428** (its own owner and contract review): add the consumer rows, pins,
-   `consumerArtifacts`, drift records and the entitlement row to the workspace registry. Add
-   the retention test. Run `make contracts-fmt && make gate`. This is harmless on its own,
+1. **Workspace tickets CORE-1428 and CORE-1479** (landed at workspace `1bc75c8` and `c46de2f`):
+   add the consumer rows, pins (including core's circle owner and guest pins),
+   `consumerArtifacts`, drift records and the entitlement row to the workspace registry, plus
+   the retention test (`contracts/core-0902-retention_test.js`). This is harmless on its own,
    because core still carries the same data.
 2. **Core (this ticket):** strip the core registry, update `check-contract-registry.py`,
    `check_contract_registry_test.py`, `wire_contract_test.go`, `crossrepo-conformance*.sh`
