@@ -25,6 +25,7 @@ import { remoteAccessStrings } from "./remote-access";
 import { sessionUpdateStrings } from "./sessions-updates";
 import { setupStrings } from "./setup";
 import { sharedStateStrings } from "./shared-states";
+import { subtitleAppearanceStrings } from "./subtitle-appearance";
 import { viewerAccountStrings } from "./viewer-account";
 import { webhookStrings } from "./webhooks";
 import { whosWatchingStrings } from "./whos-watching";
@@ -37,6 +38,7 @@ export const en = {
   ...libraryHealthStrings.en,
   ...consoleOperationsStrings.en,
   ...playbackStrings.en,
+  ...subtitleAppearanceStrings.en,
   ...managedFileStrings.en,
   ...backupRetentionStrings.en,
   ...sharedStateStrings.en,
@@ -70,6 +72,7 @@ export const fr = {
   ...libraryHealthStrings.fr,
   ...consoleOperationsStrings.fr,
   ...playbackStrings.fr,
+  ...subtitleAppearanceStrings.fr,
   ...managedFileStrings.fr,
   ...backupRetentionStrings.fr,
   ...sharedStateStrings.fr,
@@ -103,6 +106,7 @@ export const de = {
   ...libraryHealthStrings.de,
   ...consoleOperationsStrings.de,
   ...playbackStrings.de,
+  ...subtitleAppearanceStrings.de,
   ...managedFileStrings.de,
   ...backupRetentionStrings.de,
   ...sharedStateStrings.de,
@@ -136,6 +140,7 @@ export const es = {
   ...libraryHealthStrings.es,
   ...consoleOperationsStrings.es,
   ...playbackStrings.es,
+  ...subtitleAppearanceStrings.es,
   ...managedFileStrings.es,
   ...backupRetentionStrings.es,
   ...sharedStateStrings.es,
@@ -169,6 +174,7 @@ export const pt = {
   ...libraryHealthStrings.pt,
   ...consoleOperationsStrings.pt,
   ...playbackStrings.pt,
+  ...subtitleAppearanceStrings.pt,
   ...managedFileStrings.pt,
   ...backupRetentionStrings.pt,
   ...sharedStateStrings.pt,
