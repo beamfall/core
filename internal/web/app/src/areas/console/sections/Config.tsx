@@ -4,7 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Advanced } from "@/lib/advancedSettings";
-import { fetchTranscodeConfig, setTranscodeConfig } from "@/lib/graphql";
+import {
+  fetchConsoleConfig,
+  fetchTranscodeConfig,
+  setConsoleConfig,
+  setTranscodeConfig,
+} from "@/lib/graphql";
 import type { TranscodeConfigInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import type { StringKey } from "@/strings";
@@ -99,13 +104,48 @@ function TranscodeConfig() {
   );
 }
 
+// The Viewer pairing-code switch (CORE-0393), a Normal control saved on toggle.
+// The section heading already names the group, so the legend is for assistive
+// tech only.
+function ViewerAccessConfig() {
+  const t = useT();
+  const { data, failed, setData } = useAsync(fetchConsoleConfig);
+
+  async function onToggle(disabled: boolean) {
+    const next = await setConsoleConfig({ viewerPairingCodesDisabled: disabled });
+    setData(next);
+  }
+
+  if (failed) return <ErrorState message="consoleConfigUnavailable" />;
+
+  return (
+    <Fieldset title="consoleConfigHeading" hideTitle>
+      <ControlRow
+        label="viewerPairingCodesDisabled"
+        help="viewerPairingCodesDisabledHelp"
+        control={
+          <Switch
+            aria-label={t("viewerPairingCodesDisabled")}
+            checked={data?.viewerPairingCodesDisabled ?? false}
+            disabled={!data}
+            onCheckedChange={(v) => void onToggle(v)}
+          />
+        }
+      />
+    </Fieldset>
+  );
+}
+
 // Server configuration (ADR-0007 §4). Bootstrap config (ports, data dir,
 // secrets) is deliberately not editable here, and the background-worker pool
 // lives on Operations alone.
 export function Config() {
   return (
     <Section heading="consoleConfigHeading" lead="consoleConfigLead">
-      <TranscodeConfig />
+      <div className="space-y-6">
+        <ViewerAccessConfig />
+        <TranscodeConfig />
+      </div>
     </Section>
   );
 }

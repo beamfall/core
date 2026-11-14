@@ -732,6 +732,125 @@ func (s *Service) BeginAdminSession(ctx context.Context, scope Scope, password s
 	return until, nil
 }
 
+// OpenAdminSession opens the Admin Session window with the admin password. With
+// createFirst set and no admin password on the server, the password is instead
+// chosen as the first one (CORE-1132: an owner who finished setup without a
+// password has nothing to unlock with); see createFirstAdminPassword. In every
+// other case it is BeginAdminSession, so createFirst can never replace a
+// password and a server that has one answers exactly as an ordinary unlock.
+func (s *Service) OpenAdminSession(ctx context.Context, scope Scope, password string, createFirst bool) (time.Time, error) {
+	if createFirst {
+		set, err := s.store.AdminPasswordSet(ctx)
+		if err != nil {
+			return time.Time{}, err
+		}
+		if !set {
+			until, handled, err := s.createFirstAdminPassword(ctx, scope, password)
+			if handled || err != nil {
+				return until, err
+			}
+		}
+	}
+	return s.BeginAdminSession(ctx, scope, password)
+}
+
+// createFirstAdminPassword stores the first admin password and opens the
+// window for the caller. The caller must be an adult owner (or, with no owner
+// designated, any adult) on a Manager Device; the store re-checks that, and
+// that no password exists, in the write's transaction. The attempt counts on
+// the same Profile lane as an unlock, so it is throttled with them, and every
+// outcome is audited without the password. handled is false only when a
+// password appeared first (a racing set), which the caller then treats as an
+// ordinary unlock; every refusal is ErrAdminPassword or ErrAdminLocked.
+func (s *Service) createFirstAdminPassword(ctx context.Context, scope Scope, password string) (until time.Time, handled bool, err error) {
+	if scope.SessionID == "" {
+		return time.Time{}, true, errors.New("session is required")
+	}
+	if strings.TrimSpace(password) == "" {
+		return time.Time{}, true, store.ValidationError("admin password is required")
+	}
+	now := s.now()
+	attemptKey := adminAttemptKey(scope)
+	lockedUntil, err := s.store.AuthBackoffUntil(ctx, adminAttemptAction, attemptKey, now, adminBackoff)
+	if err != nil {
+		return time.Time{}, true, err
+	}
+	if now.Before(lockedUntil) {
+		NoteRefusal(ctx, refusalOperationAdminSession, RefusalAdminLocked, true)
+		return time.Time{}, true, ErrAdminLocked
+	}
+	refuse := func() (time.Time, bool, error) {
+		s.auditAdmin(ctx, scope, now, store.ActivityAdminLoginDenied)
+		NoteRefusal(ctx, refusalOperationAdminSession, RefusalAdminPasswordRejected, true)
+		return time.Time{}, true, ErrAdminPassword
+	}
+	deny := func() (time.Time, bool, error) {
+		s.recordAdminAttempt(ctx, attemptKey, now, false)
+		return refuse()
+	}
+	// Refuse callers that can never qualify before spending the KDF, counting
+	// the attempt, so a non-owner cannot make the server hash for free.
+	if scope.Profile != store.ProfileAdult || scope.DeviceRole != store.DeviceRoleManager {
+		return deny()
+	}
+	ownerDesignated, err := s.store.OwnerDesignated(ctx)
+	if err != nil {
+		return time.Time{}, true, err
+	}
+	if ownerDesignated {
+		isOwner, oerr := s.store.ProfileIsOwner(ctx, scope.ProfileID)
+		if oerr != nil {
+			return time.Time{}, true, oerr
+		}
+		if !isOwner {
+			return deny()
+		}
+	}
+	until = now.Add(adminSessionTTL).UTC()
+	// The hash runs inside the process-wide KDF bound and the attempt is
+	// reserved before it, exactly as CheckAdminPassword does for an unlock, so
+	// parallel requests cannot all pass the throttle before any is counted.
+	var created bool
+	err = withAdminKDFSlot(ctx, func() error {
+		locked, rerr := s.store.ReserveAuthAttempt(ctx, adminAttemptAction, []string{attemptKey}, now.UTC(), adminBackoff)
+		if rerr != nil {
+			return rerr
+		}
+		if !locked.IsZero() {
+			return ErrAdminLocked
+		}
+		var serr error
+		created, serr = s.store.CreateFirstAdminPassword(ctx, scope.SessionID, scope.ProfileID, password, now, until)
+		return serr
+	})
+	switch {
+	case errors.Is(err, ErrAdminLocked):
+		NoteRefusal(ctx, refusalOperationAdminSession, RefusalAdminLocked, true)
+		return time.Time{}, true, ErrAdminLocked
+	case errors.Is(err, ErrAdminBusy):
+		// No slot: refused like a wrong password, not counted.
+		return refuse()
+	case err != nil:
+		return time.Time{}, true, err
+	}
+	if !created {
+		// Either the caller no longer qualifies or a password appeared first;
+		// the attempt was counted when it was reserved. Only the second is an
+		// ordinary unlock; tell them apart without leaking either.
+		set, err := s.store.AdminPasswordSet(ctx)
+		if err != nil {
+			return time.Time{}, true, err
+		}
+		if set {
+			return time.Time{}, false, nil
+		}
+		return refuse()
+	}
+	s.recordAdminAttempt(ctx, attemptKey, now, true)
+	s.auditAdmin(ctx, scope, now, store.ActivityAdminPasswordSet)
+	return until, true, nil
+}
+
 // EndAdminSession clears the caller's Admin Session window immediately
 // (explicit lock, mirroring relock for Reveal). Always safe to call.
 func (s *Service) EndAdminSession(ctx context.Context, scope Scope) error {

@@ -1102,6 +1102,12 @@ export interface ConsoleConfigInfo {
   updateCheckChannel: string;
   /** Remote (off-LAN) pairing-code enrollment toggle (ADR-0081). */
   remoteEnrollmentEnabled: boolean;
+  /**
+   * Operator switch that refuses new Viewer pairing codes and the redemption of
+   * outstanding ones (CORE-0393). Manager pairing and demo enrollment are
+   * unaffected. The server always sends it; optional so older fixtures compile.
+   */
+  viewerPairingCodesDisabled?: boolean;
   /** events.db compaction retention window. */
   eventsRetentionDays: number;
   plugins: PluginActivationInfo[];

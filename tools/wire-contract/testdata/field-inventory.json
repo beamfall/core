@@ -512,7 +512,8 @@
         "plugins",
         "remoteEnrollmentEnabled",
         "updateCheckChannel",
-        "updateCheckEnabled"
+        "updateCheckEnabled",
+        "viewerPairingCodesDisabled"
       ]
     },
     {
@@ -2768,7 +2769,8 @@
         "plugins",
         "remoteEnrollmentEnabled",
         "updateCheckChannel",
-        "updateCheckEnabled"
+        "updateCheckEnabled",
+        "viewerPairingCodesDisabled"
       ]
     },
     {
@@ -2937,7 +2939,8 @@
         "plugins",
         "remoteEnrollmentEnabled",
         "updateCheckChannel",
-        "updateCheckEnabled"
+        "updateCheckEnabled",
+        "viewerPairingCodesDisabled"
       ]
     },
     {
@@ -2951,7 +2954,8 @@
         "plugins",
         "remoteEnrollmentEnabled",
         "updateCheckChannel",
-        "updateCheckEnabled"
+        "updateCheckEnabled",
+        "viewerPairingCodesDisabled"
       ]
     },
     {
@@ -3439,7 +3443,8 @@
         "plugins",
         "remoteEnrollmentEnabled",
         "updateCheckChannel",
-        "updateCheckEnabled"
+        "updateCheckEnabled",
+        "viewerPairingCodesDisabled"
       ]
     },
     {
