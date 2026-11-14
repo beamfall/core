@@ -25,12 +25,18 @@ type fakeCatalog struct {
 	latestAct  int64
 	latestSeq  int64
 	actionSeen []string
+	mediaErr   error // returned once by the next Media read
 }
 
 func (c *fakeCatalog) Media(_ context.Context, id store.MediaID, _ store.LibraryFilter) (store.Media, error) {
+	if c.mediaErr != nil {
+		err := c.mediaErr
+		c.mediaErr = nil // one-shot
+		return store.Media{}, err
+	}
 	m, ok := c.media[id]
 	if !ok {
-		return store.Media{}, errors.New("not found")
+		return store.Media{}, store.ValidationError("media not found")
 	}
 	return m, nil
 }
@@ -315,6 +321,29 @@ func TestActivityCursorAdvancesOnlyAfterDelivery(t *testing.T) {
 	}
 	if got := f.state.ActivityCursor(); got != 2 {
 		t.Fatalf("activity cursor = %d, want 2", got)
+	}
+}
+
+// A Media read that fails for an operational reason when a session ends does
+// not lose the stop: the next tick delivers it, once.
+func TestPlaybackStopRetriedAfterLookupError(t *testing.T) {
+	f := newDeriveFixture(t, []string{KindPlaybackStopped})
+	f.catalog.media["m1"] = store.Media{ID: "m1", LibraryID: "lib", Title: "First"}
+	f.catalog.sessions = []store.ActiveSession{{SessionID: "s1", MediaID: "m1", LibraryID: "lib", Title: "First"}}
+	f.tick(t, 0)
+	f.catalog.sessions = nil
+	f.catalog.mediaErr = errors.New("database is locked")
+	if _, err := f.em.tick(context.Background(), 0); err == nil {
+		t.Fatal("a failed lookup must surface as a tick error")
+	}
+	if n := len(f.doer.all()); n != 0 {
+		t.Fatalf("no stop may be sent while visibility is unknown, got %d", n)
+	}
+	f.tick(t, 0)
+	f.tick(t, 0)
+	reqs := f.doer.all()
+	if len(reqs) != 1 || decodeDerived(t, reqs[0].body).Kind != KindPlaybackStopped {
+		t.Fatalf("want exactly one retried stop, got %d requests", len(reqs))
 	}
 }
 

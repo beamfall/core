@@ -2,6 +2,7 @@ package webhook
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -269,30 +270,48 @@ func (d *deriver) playback(ctx context.Context, e *Emitter) error {
 			}
 		}
 	}
+	var lookupErr error
 	for _, key := range sortedKeys(previous) {
 		if _, ok := current[key]; ok || hidden[key] {
 			continue
 		}
-		if !d.stillVisible(ctx, previous[key]) {
+		visible, err := d.stillVisible(ctx, previous[key])
+		if err != nil {
+			// Cannot tell yet: keep the stop pending so the next tick retries
+			// it instead of losing it.
+			d.sessions[key] = previous[key]
+			lookupErr = err
+			continue
+		}
+		if !visible {
 			continue // sealed or restricted since it started: say nothing about it
 		}
 		if err := e.notify(ctx, d.playbackNotification(KindPlaybackStopped, previous[key], now)); err != nil {
 			return err
 		}
 	}
-	return nil
+	return lookupErr
 }
 
 // stillVisible reports whether a Media whose session left the live view may
 // still be named. A session in a Library sealed or restricted since playback
 // started drops out of the filtered view just as a finished one does; its stop
 // would replay the cached title, Profile and device, so it is not reported.
-func (d *deriver) stillVisible(ctx context.Context, entry playbackEntry) bool {
+// A Media the filtered read cannot find is hidden; any other read error is
+// returned so the caller can retry rather than guess.
+func (d *deriver) stillVisible(ctx context.Context, entry playbackEntry) (bool, error) {
 	if d.isSealed(entry.row.LibraryID) {
-		return false
+		return false, nil
 	}
 	m, err := d.catalog.Media(ctx, entry.row.MediaID, deriveFilter)
-	return err == nil && !d.isSealed(m.LibraryID) && strings.TrimSpace(m.Title) != ""
+	var notFound store.ValidationError
+	if errors.As(err, &notFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return !d.isSealed(m.LibraryID) && strings.TrimSpace(m.Title) != "", nil
 }
 
 func (d *deriver) playbackNotification(kind string, entry playbackEntry, at time.Time) Notification {
