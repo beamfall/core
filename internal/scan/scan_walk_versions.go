@@ -71,7 +71,10 @@ func (s *scanWalkState) attachVersion(key string, imported store.ImportMediaFile
 // seedVersionAnchors adds, once per directory, an anchor for each title a
 // previous scan cataloged there. Without it a file whose name sorts before an
 // already cataloged sibling would become its own Media, and the sibling could
-// then never join it. The stored files are parsed like walked ones.
+// then never join it. The stored files are parsed like walked ones. Each
+// title's anchor is its first Version in label order: the anchor re-imports as
+// a plain file and so refreshes the Media row's probe facts, which playback
+// reads as that first Version's.
 func (s *scanWalkState) seedVersionAnchors(dir string) error {
 	if s.versionDirsSeeded[dir] {
 		return nil
@@ -84,6 +87,12 @@ func (s *scanWalkState) seedVersionAnchors(dir string) error {
 	if err != nil {
 		return err
 	}
+	type seed struct {
+		file   store.MediaFile
+		parsed ParsedMedia
+	}
+	firsts := map[string]seed{}
+	var keys []string
 	for _, file := range files {
 		if file.PartOrdinal != 0 {
 			continue
@@ -96,7 +105,21 @@ func (s *scanWalkState) seedVersionAnchors(dir string) error {
 		if imageClassForPath(file.Path) {
 			candidate.Class = store.MediaClassImage
 		}
-		s.rememberVersionAnchor(s.versionGroupKey(candidate, parsed, parsedOK), file.MediaID, file.ContentFingerprint, parsed)
+		key := s.versionGroupKey(candidate, parsed, parsedOK)
+		if key == "" {
+			continue
+		}
+		prior, ok := firsts[key]
+		if !ok {
+			keys = append(keys, key)
+		}
+		if !ok || (file.MediaID == prior.file.MediaID && file.VersionLabel < prior.file.VersionLabel) {
+			firsts[key] = seed{file: file, parsed: parsed}
+		}
+	}
+	for _, key := range keys {
+		first := firsts[key]
+		s.rememberVersionAnchor(key, first.file.MediaID, first.file.ContentFingerprint, first.parsed)
 	}
 	return nil
 }

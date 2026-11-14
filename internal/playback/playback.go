@@ -874,10 +874,14 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	if err != nil {
 		return decision{}, err
 	}
+	// alternate marks a negotiated Version other than the first; passthrough
+	// below is barred for it while its frame height is unknown.
+	alternate := len(versions) > 0 && !versions[0].Selected
 	if len(versions) > 0 {
 		// Every rung below judges the negotiated Version by its own file facts.
-		media = versionFacts(media, file, streams)
+		media = versionFacts(media, file, streams, !alternate)
 	}
+	barred := unknownHeightBarred(media, profile, alternate)
 	// One deferred stamp covers every decision return below, like
 	// audioLanguage: the picker lists the same Versions whatever the verdict,
 	// so a viewer whose pick cannot play can still pick another.
@@ -1034,9 +1038,10 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 			overlayApplied: true,
 		}, nil
 	}
-	p7BaseLayer := !canDirectPlay(media, file, streams, profile, selectedSubtitleIndex, ov) &&
+	directPlay := !barred && canDirectPlay(media, file, streams, profile, selectedSubtitleIndex, ov)
+	p7BaseLayer := !barred && !directPlay &&
 		dolbyVisionP7BaseLayer(media, file, streams, profile, selectedSubtitleIndex, ov)
-	if canDirectPlay(media, file, streams, profile, selectedSubtitleIndex, ov) || p7BaseLayer {
+	if directPlay || p7BaseLayer {
 		grant.Target = streamtoken.TargetMediaDirect
 		token, err := s.tokens.Issue(ctx, grant)
 		if err != nil {
@@ -1108,7 +1113,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 			s.roster.SessionInWatchPartyForMedia(scope.SessionID, media.ID) {
 			var hls StreamChoice
 			var err error
-			if audioCopyEligible(media, file, streams, profile, selectedSubtitleIndex, ov) {
+			if !barred && audioCopyEligible(media, file, streams, profile, selectedSubtitleIndex, ov) {
 				// Video direct-plays; only audio needs transcode — copy the video and
 				// transcode only the audio, lighter than a re-encode.
 				hls, err = s.degradedAudioCopyChoice(ctx, grant, suffix, hlsAudio, expiresAt)
@@ -1142,7 +1147,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	// through and transcode only the audio — far cheaper than a full
 	// re-encode. Resolved as an HLS choice carrying the single audio-copy
 	// rendition.
-	if audioCopyEligible(media, file, streams, profile, selectedSubtitleIndex, ov) {
+	if !barred && audioCopyEligible(media, file, streams, profile, selectedSubtitleIndex, ov) {
 		hls, err := s.audioCopyChoice(ctx, grant, suffix, hlsAudio, expiresAt)
 		if err != nil {
 			return decision{}, err
@@ -1274,17 +1279,19 @@ func (s *Service) negotiateVersion(ctx context.Context, media store.Media, files
 			}
 		}
 	}
-	facts := func(i int) store.Media {
+	eligible := func(i int) bool {
 		if len(versions) < 2 {
-			return media
+			return directPlayEligible(media, versions[i][0], streams[i], profile, selectedSubtitleIndex, ov)
 		}
-		return versionFacts(media, versions[i][0], streams[i])
+		facts := versionFacts(media, versions[i][0], streams[i], i == 0)
+		return !unknownHeightBarred(facts, profile, i != 0) &&
+			directPlayEligible(facts, versions[i][0], streams[i], profile, selectedSubtitleIndex, ov)
 	}
-	if !selected && !directPlayEligible(facts(0), versions[0][0], streams[0], profile, selectedSubtitleIndex, ov) {
+	if !selected && !eligible(0) {
 		// Look for a Version whose primary Part the client can play as-is (or whose
 		// P7 HDR10 base layer plays), preferring it over a transcoding default.
-		for i, version := range versions {
-			if directPlayEligible(facts(i), version[0], streams[i], profile, selectedSubtitleIndex, ov) {
+		for i := range versions {
+			if eligible(i) {
 				chosen = i
 				break
 			}

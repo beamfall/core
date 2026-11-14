@@ -52,11 +52,14 @@ func versionInfos(mediaID store.MediaID, versions [][]store.MediaFile, streams [
 }
 
 // versionFacts returns the Media facts a Version is judged by. The Media row
-// holds one file's probe facts, so with several Versions each one is judged by
-// what is known per file instead: its container from its own path, the way a
-// scan names it, and its video codec from its own stream inventory. Frame size
-// and duration are not stored per file, so they stay the row's.
-func versionFacts(media store.Media, file store.MediaFile, streams []store.MediaFileStream) store.Media {
+// holds the first Version's probe facts (the store keeps it so), so with
+// several Versions each one is judged by what is known per file instead: its
+// container from its own path, the way a scan names it, and its video codec
+// from its own stream inventory. Frame size is not stored per file, so only
+// the first Version keeps the row's; any other Version's frame size is unknown
+// (zero), which keeps the ladder from advertising rungs the file may not reach
+// and lets unknownHeightBarred hold it off passthrough. Duration stays the row's.
+func versionFacts(media store.Media, file store.MediaFile, streams []store.MediaFileStream, first bool) store.Media {
 	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(file.Path)), ".")
 	if ext == "" {
 		ext = "file"
@@ -65,5 +68,23 @@ func versionFacts(media store.Media, file store.MediaFile, streams []store.Media
 	if video, ok := primaryVideoStream(streams); ok && video.Codec != "" {
 		media.Codec = video.Codec
 	}
+	if !first {
+		media.VideoWidth, media.VideoHeight = 0, 0
+	}
 	return media
+}
+
+// unknownHeightBarred reports whether a Version other than the first must not
+// pass its video through (direct play or direct stream) because its frame
+// height is unknown while the client caps height for its codec. A legacy
+// single-file Media with no probed height still passes, as before; a non-first
+// Version's height is never stored, so a 4K alternate would otherwise slip past
+// a 1080p ceiling. With no ceiling for the codec the height cannot refuse, so
+// nothing is barred.
+func unknownHeightBarred(media store.Media, profile CapabilityProfile, alternate bool) bool {
+	if !alternate || media.VideoHeight > 0 || media.Class == store.MediaClassAudio || len(profile.VideoCodecs) == 0 {
+		return false
+	}
+	codecCap, ok := videoCodecCap(profile.VideoCodecs, media.Codec)
+	return ok && codecCap.MaxHeight > 0
 }

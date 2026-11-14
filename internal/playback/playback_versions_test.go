@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -53,6 +54,18 @@ func addVersionFile(t *testing.T, st *store.Store, mediaID store.MediaID, name, 
 	}
 }
 
+// heightUncapped returns profile without per-codec height ceilings. A Version
+// other than the first has no stored frame height, so under a ceiling it is
+// held off passthrough (unknownHeightBarred); tests of what else decides a
+// Version use this to leave height out of the question.
+func heightUncapped(profile CapabilityProfile) CapabilityProfile {
+	profile.VideoCodecs = slices.Clone(profile.VideoCodecs)
+	for i := range profile.VideoCodecs {
+		profile.VideoCodecs[i].MaxHeight = 0
+	}
+	return profile
+}
+
 // TestNegotiateBestVersionDirectPlays guards the load-bearing behaviour: when a
 // Media has two Versions whose per-stream inventory differs — a Dolby-Vision
 // encode the client cannot direct play and an SDR encode it can — playback must
@@ -79,9 +92,21 @@ func TestNegotiateBestVersionDirectPlays(t *testing.T) {
 	addVersion(t, st, mediaID, "fp-v-sdr-0", "sdr", 0, sdrStreams)
 	addVersion(t, st, mediaID, "fp-v-sdr-1", "sdr", 1, sdrStreams)
 
-	resp, err := service.Info(context.Background(), scope, InfoRequest{
+	// Under a height ceiling the SDR Version's unknown frame height holds it off
+	// direct play; the negotiation itself is shown with height left out.
+	capped, err := service.Info(context.Background(), scope, InfoRequest{
 		MediaID:           string(mediaID),
 		CapabilityProfile: main10_1080p,
+	})
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	if capped.Decision == "direct-play" {
+		t.Fatalf("capped Decision = direct-play, want the SDR Version's unknown height to bar it")
+	}
+	resp, err := service.Info(context.Background(), scope, InfoRequest{
+		MediaID:           string(mediaID),
+		CapabilityProfile: heightUncapped(main10_1080p),
 	})
 	if err != nil {
 		t.Fatalf("Info: %v", err)
@@ -218,7 +243,7 @@ func TestInfoListsVersionsAndHonoursSelection(t *testing.T) {
 		t.Helper()
 		resp, err := service.Info(context.Background(), scope, InfoRequest{
 			MediaID:           string(mediaID),
-			CapabilityProfile: main10_1080p,
+			CapabilityProfile: heightUncapped(main10_1080p),
 			SelectedVersion:   selected,
 		})
 		if err != nil {
@@ -323,7 +348,7 @@ func TestVersionJudgedByItsOwnFileFacts(t *testing.T) {
 		{Index: 0, Type: "video", Codec: "av1", Profile: "Main"},
 		audioStream(1, "eac3", 6),
 	})
-	mkvOnly := main10_1080p
+	mkvOnly := heightUncapped(main10_1080p)
 	mkvOnly.Containers = []string{"mkv"}
 	info := func(label string, profile CapabilityProfile) InfoResponse {
 		t.Helper()
@@ -348,10 +373,66 @@ func TestVersionJudgedByItsOwnFileFacts(t *testing.T) {
 	if resp := info("Remux", mkvOnly); resp.Decision == "direct-play" {
 		t.Fatalf("MP4 Version to an MKV-only client = direct-play, want it judged by its own container")
 	}
-	if resp := info("Remux", main10_1080p); resp.Decision != "direct-play" {
+	if resp := info("Remux", heightUncapped(main10_1080p)); resp.Decision != "direct-play" {
 		t.Fatalf("MP4 Version to an MP4 client = %s (%s), want direct-play", resp.Decision, resp.Reason)
 	}
 	if resp := info("AV1", main10_1080p); resp.Decision == "direct-play" {
 		t.Fatalf("AV1 Version to a client without AV1 = direct-play, want it judged by its own codec")
+	}
+}
+
+// TestAlternateWithUnknownHeightTranscodes guards the fail-safe for a frame
+// height playback cannot know: a 4K HEVC Version beside a 1080p first Version
+// has no stored height of its own, so a client capped at 1080p gets a
+// transcode of it, never direct play or direct stream, while the first
+// Version, whose height the row holds, still direct-plays.
+func TestAlternateWithUnknownHeightTranscodes(t *testing.T) {
+	service, st, scope := capabilityTestService(t)
+	hevc := []store.MediaFileStream{
+		{Index: 0, Type: "video", Codec: "hevc", Profile: "Main 10"},
+		audioStream(1, "eac3", 6),
+	}
+	anchorPath := filepath.Join(t.TempDir(), "Night Harbor.mkv")
+	if err := os.WriteFile(anchorPath, []byte("beamfall bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	anchor, _, err := st.ImportMediaFile(context.Background(), store.ImportMediaFile{
+		LibraryID: "library-local", Path: anchorPath, Title: "Night Harbor",
+		Container: "mkv", Codec: "hevc", Class: store.MediaClassVideo,
+		ContentFingerprint: "fp-height-1080", DurationSecondsHint: 120,
+		VideoWidthHint: 1920, VideoHeightHint: 1080, Streams: hevc,
+	})
+	if err != nil {
+		t.Fatalf("ImportMediaFile: %v", err)
+	}
+	mediaID := anchor.ID
+	addVersionFile(t, st, mediaID, "Night Harbor - 4K.mkv", "fp-height-4k", "4K", 0, hevc)
+	addVersionFile(t, st, mediaID, "Night Harbor - 4K TrueHD.mkv", "fp-height-4k-truehd", "4K TrueHD", 0, []store.MediaFileStream{
+		{Index: 0, Type: "video", Codec: "hevc", Profile: "Main 10"},
+		audioStream(1, "truehd", 8),
+	})
+	info := func(label string, profile CapabilityProfile) InfoResponse {
+		t.Helper()
+		resp, err := service.Info(context.Background(), scope, InfoRequest{
+			MediaID:           string(mediaID),
+			CapabilityProfile: profile,
+			SelectedVersion:   versionID(mediaID, label),
+		})
+		if err != nil {
+			t.Fatalf("Info(%q): %v", label, err)
+		}
+		return resp
+	}
+	if resp := info("", main10_1080p); resp.Decision != "direct-play" {
+		t.Fatalf("1080p first Version = %s (%s), want direct-play", resp.Decision, resp.Reason)
+	}
+	if resp := info("4K", main10_1080p); resp.Decision != "transcode" {
+		t.Fatalf("4K Version to a 1080p-capped client = %s (%s), want transcode", resp.Decision, resp.Reason)
+	}
+	if resp := info("4K TrueHD", main10_1080p); resp.Decision != "transcode" {
+		t.Fatalf("4K Version needing only an audio transcode = %s (%s), want a full transcode, not direct stream", resp.Decision, resp.Reason)
+	}
+	if resp := info("4K", heightUncapped(main10_1080p)); resp.Decision != "direct-play" {
+		t.Fatalf("4K Version to a client without a height ceiling = %s (%s), want direct-play", resp.Decision, resp.Reason)
 	}
 }

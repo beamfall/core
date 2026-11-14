@@ -168,14 +168,18 @@ func TestImportMediaFileVersionUnlabelledTakesDefaultSlot(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	extendedPath := filepath.Join(root, "Coastline (1998) - Extended.mkv")
-	media, anchor, err := st.ImportMediaFile(ctx, versionImport("library-local", extendedPath, "Coastline"))
+	extended := versionImport("library-local", extendedPath, "Coastline")
+	extended.VideoWidthHint, extended.VideoHeightHint, extended.DurationSecondsHint = 3840, 2160, 140
+	media, anchor, err := st.ImportMediaFile(ctx, extended)
 	if err != nil {
 		t.Fatal(err)
 	}
 	plainPath := filepath.Join(root, "Coastline (1998).mkv")
+	plain := versionImport("library-local", plainPath, "Coastline")
+	plain.Codec, plain.VideoWidthHint, plain.VideoHeightHint, plain.DurationSecondsHint = "h264", 1920, 1080, 120
 	if _, err := st.ImportMediaFileVersion(ctx, MediaVersionImport{
 		MediaID:           media.ID,
-		File:              versionImport("library-local", plainPath, "Coastline"),
+		File:              plain,
 		AnchorFingerprint: anchor.ContentFingerprint,
 		AnchorLabel:       "Extended",
 	}); err != nil {
@@ -188,6 +192,15 @@ func TestImportMediaFileVersionUnlabelledTakesDefaultSlot(t *testing.T) {
 	primary, err := st.PrimaryMediaFile(ctx, media.ID, LibraryFilter{AllowedIDs: []LibraryID{"library-local"}})
 	if err != nil || filepath.Base(primary.Path) != filepath.Base(plainPath) {
 		t.Fatalf("primary = %+v, %v; want the unlabelled file", primary, err)
+	}
+	// The row now describes the first Version, the unlabelled file, which
+	// playback judges by the row.
+	row, err := st.Media(ctx, media.ID, LibraryFilter{AllowedIDs: []LibraryID{"library-local"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row.Codec != "h264" || row.VideoWidth != 1920 || row.VideoHeight != 1080 || row.DurationSeconds != 120 {
+		t.Fatalf("row facts = %s %dx%d %vs, want the unlabelled file's h264 1920x1080 120s", row.Codec, row.VideoWidth, row.VideoHeight, row.DurationSeconds)
 	}
 }
 

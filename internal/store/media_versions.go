@@ -180,10 +180,42 @@ func importMediaFileVersionSQL(ctx context.Context, plane catalogPlane, req Medi
 			return MediaFile{}, err
 		}
 	}
+	if err := refreshFirstVersionFactsTx(ctx, tx, req.MediaID, imported); err != nil {
+		return MediaFile{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return MediaFile{}, err
 	}
 	return file, nil
+}
+
+// refreshFirstVersionFactsTx copies the attached file's probe facts onto the
+// Media row when that file now holds the Media's first Version (label order,
+// part 0). Frame size and duration are stored only on the row, so playback
+// judges the first Version by the row and treats every other Version's frame
+// size as unknown; this keeps the row describing that first Version.
+func refreshFirstVersionFactsTx(ctx context.Context, tx *sql.Tx, mediaID MediaID, imported ImportMediaFile) error {
+	var first string
+	err := tx.QueryRowContext(ctx, `
+		SELECT content_fingerprint FROM media_file
+		WHERE media_id = ? AND part_ordinal = 0 AND missing_at_ms IS NULL
+		ORDER BY version_label LIMIT 1
+	`, mediaID).Scan(&first)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil || first != imported.ContentFingerprint {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `
+		UPDATE media SET
+		  duration_seconds = ?, container = ?, codec = ?,
+		  video_width = CASE WHEN ? > 0 THEN ? ELSE video_width END,
+		  video_height = CASE WHEN ? > 0 THEN ? ELSE video_height END
+		WHERE id = ?
+	`, max(0, imported.DurationSecondsHint), imported.Container, imported.Codec,
+		imported.VideoWidthHint, imported.VideoWidthHint, imported.VideoHeightHint, imported.VideoHeightHint, mediaID)
+	return err
 }
 
 // insertMediaFileVersionTx inserts new bytes at file's (Version, part 0) slot.
