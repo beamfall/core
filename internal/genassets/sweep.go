@@ -78,8 +78,6 @@ func SweepHandler(service *Service) jobs.Handler {
 				service.GeneratePreviewClip,
 				service.GenerateWaveform,
 				service.GenerateSilenceMap,
-				service.GenerateBeatGrid,
-				service.GenerateSyncLanes,
 				service.GenerateLoudness,
 				service.GenerateImageEnrich,
 			} {
