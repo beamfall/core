@@ -14,8 +14,8 @@ belongs to private repositories:
 - `conformanceTest` text that names test files in private repos.
 
 The superseded wire artifacts `internal/conformance/wire-contract-v1.2.0.json` through
-`v1.15.0.json` each embed one drift record (`XCONTRACT-1b`, deadline `2026-11-30`). The active
-artifact `wire-contract-v2.0.0.json` and `tools/wire-contract/testdata/wire-contract.json`
+`v1.15.0.json` each embed one drift record (`XCONTRACT-1b`, deadline `2026-11-30`). The
+artifacts `wire-contract-v2.0.0.json` (pinned by every client consumer) and `wire-contract-v2.1.0.json` (active since core `43bbe3ea`), plus `tools/wire-contract/testdata/wire-contract.json`,
 carry `knownDrift: null` and are already clean.
 
 This material is low sensitivity: repo names, ticket ids and dates, with no credentials or
@@ -46,10 +46,10 @@ entitlement row under its existing `entitlement-money-path` boundary or a new on
 the consumer; the artifact lives in core's testdata) stay as they are.
 
 Superseded wire artifacts v1.2.0–v1.15.0 are immutable published identities, so their bytes
-are not rewritten. Nothing pins them: every consumer pins 2.0.0, and
+are not rewritten. Nothing pins them: every client consumer pins 2.0.0 (the active artifact is 2.1.0, a permitted minor skew), and
 `newestWireContractArtifact` reads only the newest file. They move out of the public tree into
 `core-private/` as preserved originals for provenance and rollback. `v1.0.0` and `v1.1.0` hold
-no bookkeeping and stay. The active 2.0.0 artifact and its byte pins do not change, so no fresh
+no bookkeeping and stay. The pinned 2.0.0 and active 2.1.0 artifacts and their byte pins do not change, so no fresh
 artifact identity is needed.
 
 ## Checks: where each one runs after the change
@@ -72,7 +72,7 @@ New tests:
 - **Retention (workspace):** every consumer pin, `consumerArtifacts` path and drift record
   removed from core exists in the workspace registry with the same values. The workspace
   ticket writes this test, and it runs under the workspace contract gate.
-- **Equivalence:** the 2.0.0 wire artifact, `tools/wire-contract/testdata/*` and
+- **Equivalence:** the 2.0.0 and 2.1.0 wire artifacts, `tools/wire-contract/testdata/*` and
   `plugin-trust/v1` keep their SHA-256 values byte for byte. Structural schema equivalence
   holds trivially because no artifact bytes change.
 
