@@ -461,6 +461,28 @@ class ProcessSupervisorTokenTest(unittest.TestCase):
                 ([], False),
             )
 
+    def test_leak_reparented_to_preexisting_foreign_subreaper_stays_indeterminate(self) -> None:
+        # Root subreaper 204 (WSL's /init, PID > 1) predates the run. Our
+        # unreadable leak 400 is reparented straight to it: no new process of
+        # another user lies between them, so nothing proves a peer (CORE-1564).
+        uid_matches = {204: False, 400: None}
+        identities = {204: (204, 10), 400: (400, 30)}
+        with mock.patch.object(
+            PROCESS_SUPERVISOR, "all_process_ids", return_value=[204, 400]
+        ), mock.patch.object(
+            PROCESS_SUPERVISOR, "process_matches_effective_uid", side_effect=uid_matches.get
+        ), mock.patch.object(
+            PROCESS_SUPERVISOR, "process_has_token", return_value=None
+        ), mock.patch.object(
+            PROCESS_SUPERVISOR, "process_parent_id", side_effect={400: 204, 204: 1}.get
+        ), mock.patch.object(
+            PROCESS_SUPERVISOR, "process_identity", side_effect=identities.get
+        ), mock.patch("os.getsid", return_value=999):
+            self.assertEqual(
+                PROCESS_SUPERVISOR.owned_process_ids(100, "c" * 48, frozenset({(204, 10)})),
+                ([], True),
+            )
+
     def test_unreadable_owned_descendant_remains_indeterminate(self) -> None:
         protected = frozenset({(150, 1)})
         with mock.patch.object(
