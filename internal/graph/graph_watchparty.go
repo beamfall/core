@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
@@ -281,6 +282,12 @@ func (h *Handler) acceptWatchParty(ctx context.Context, scope auth.Scope, req re
 	g, err := h.conductor.Party(partyID)
 	if err != nil {
 		return AcceptWatchPartyResult{}, partyClientError(err)
+	}
+	// An uninvited Profile learns nothing about the party's content (§6): the
+	// invite is checked before the Reveal intersection. conductor.Accept
+	// re-checks it atomically below.
+	if !slices.Contains(g.Invitees(), scope.ProfileID) {
+		return AcceptWatchPartyResult{}, partyClientError(conductor.ErrNoInvite)
 	}
 	// The Reveal intersection: the accepting session must be able
 	// to Reveal the party's content with ITS OWN filter. h.store.Media returns

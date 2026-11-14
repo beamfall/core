@@ -850,6 +850,16 @@ func TestWatchPartyOraclePrevention(t *testing.T) {
 	if len(errs) == 0 || !strings.Contains(errs[0].Message, "unknown invite") {
 		t.Fatalf("oracle-prevention: uninvited accept errors = %#v, want unknown-invite", errs)
 	}
+
+	// Oracle vector 3: uninvited session on RESTRICTED content. The invite is
+	// checked before the Reveal intersection, so an uninvited managed session
+	// learns nothing about the party's content: "unknown invite", never the
+	// "not visible to your profile" answer reserved for invitees.
+	hidden := createParty(t, h, "media-archive", false, authorizeRevealed)
+	_, errs = post(t, h, acceptBody(hidden.PartyID), authorizeManaged)
+	if len(errs) == 0 || errs[0].Message != "unknown invite" {
+		t.Fatalf("oracle-prevention: uninvited restricted accept errors = %#v, want unknown-invite", errs)
+	}
 }
 
 // TestWatchPartyRevealIntersectionRecomputedOnJoin is the ADR-0111 §2 acceptance

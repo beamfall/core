@@ -4,7 +4,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUNNER="$ROOT/script/run-with-evidence.sh"
 CAPACITY="$ROOT/script/gate-capacity.py"
+SLOT="$ROOT/script/gate-slot.py"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/run-with-evidence-test.XXXXXX")"
+# The machine gate slot these runs take is a private one, not the real queue.
+export BEAMFALL_GATE_SLOT_DIR="$TMP/slot"
+unset BEAMFALL_GATE_SLOT_HELD BEAMFALL_GATE_SLOT_NOWAIT
 TEST_PIDS=""
 
 cleanup() {
@@ -100,3 +104,93 @@ wait "$gate_pid" || fail "queued gate failed after capacity was released"
 [ -e "$gate_started" ] || fail "queued gate did not run after capacity was released"
 
 echo "PASS run-with-evidence gate capacity routing"
+
+# The machine gate slot comes before repository capacity: a wrapped gate that
+# waits for the slot must leave capacity free for the gate that holds the slot.
+slot_started="$TMP/slot-started"
+slot_release="$TMP/slot-release"
+mkfifo "$slot_release"
+(
+  cd "$TMP"
+  exec python3 "$SLOT" -- sh -c \
+    'touch "$1"; IFS= read -r _ <"$2"' sh "$slot_started" "$slot_release"
+) 2>"$TMP/slot-holder.stderr" &
+slot_pid=$!
+TEST_PIDS="$TEST_PIDS $slot_pid"
+wait_for_path "$slot_started" || fail "slot holder did not start"
+
+slot_gate_started="$TMP/slot-gate-started"
+(
+  cd "$repo"
+  export AGENT_EVIDENCE_DIR="$TMP/slot-gate-evidence"
+  export FAKE_CAPACITY="$CAPACITY"
+  export FAKE_GATE_STARTED="$slot_gate_started"
+  export PATH="$fake_bin:$PATH"
+  exec "$RUNNER" --label slot-gate -- make gate
+) >"$TMP/slot-gate.stdout" 2>"$TMP/slot-gate.stderr" &
+slot_gate_pid=$!
+TEST_PIDS="$TEST_PIDS $slot_gate_pid"
+
+queued() {
+  find "$BEAMFALL_GATE_SLOT_DIR/queue" -name '*.json' 2>/dev/null | wc -l | tr -d ' '
+}
+deadline=$((SECONDS + 10))
+while [ "$(queued)" != 2 ]; do
+  [ "$SECONDS" -lt "$deadline" ] || fail "wrapped gate did not queue for the machine gate slot"
+  sleep 0.02
+done
+for _ in $(seq 1 20); do
+  [ ! -e "$slot_gate_started" ] || fail "wrapped gate overlapped the slot holder"
+  if python3 "$CAPACITY" --held "$repo"; then
+    fail "wrapped gate held repository capacity while it waited for the slot"
+  fi
+  kill -0 "$slot_gate_pid" 2>/dev/null || fail "queued gate exited before the slot was released"
+  sleep 0.02
+done
+
+printf 'release\n' >"$slot_release"
+wait "$slot_pid" || fail "slot holder failed"
+wait "$slot_gate_pid" || fail "queued gate failed after the slot was released"
+[ -e "$slot_gate_started" ] || fail "queued gate did not run after the slot was released"
+
+echo "PASS run-with-evidence takes the machine gate slot before capacity"
+
+# A caller that already holds repository capacity must not queue for the slot
+# with it: the wrapped gate runs at once, next to the slot holder.
+busy_started="$TMP/busy-started"
+busy_release="$TMP/busy-release"
+mkfifo "$busy_release"
+(
+  cd "$TMP"
+  exec python3 "$SLOT" -- sh -c \
+    'touch "$1"; IFS= read -r _ <"$2"' sh "$busy_started" "$busy_release"
+) 2>"$TMP/busy-holder.stderr" &
+busy_pid=$!
+TEST_PIDS="$TEST_PIDS $busy_pid"
+wait_for_path "$busy_started" || fail "second slot holder did not start"
+
+inherited_started="$TMP/inherited-started"
+(
+  cd "$repo"
+  export AGENT_EVIDENCE_DIR="$TMP/inherited-evidence"
+  export FAKE_CAPACITY="$CAPACITY"
+  export FAKE_GATE_STARTED="$inherited_started"
+  export PATH="$fake_bin:$PATH"
+  exec python3 "$CAPACITY" -- "$RUNNER" --label inherited-gate -- make gate
+) >"$TMP/inherited.stdout" 2>"$TMP/inherited.stderr" &
+inherited_pid=$!
+TEST_PIDS="$TEST_PIDS $inherited_pid"
+deadline=$((SECONDS + 10))
+while kill -0 "$inherited_pid" 2>/dev/null; do
+  [ "$SECONDS" -lt "$deadline" ] || fail "gate under inherited capacity waited for the slot"
+  sleep 0.02
+done
+wait "$inherited_pid" || fail "gate under inherited capacity failed: $(cat "$TMP/inherited.stderr")"
+[ -e "$inherited_started" ] || fail "gate under inherited capacity did not run"
+[ "$(queued)" = 1 ] || fail "gate under inherited capacity joined the slot queue"
+kill -0 "$busy_pid" 2>/dev/null || fail "slot holder ended before the gate under inherited capacity"
+
+printf 'release\n' >"$busy_release"
+wait "$busy_pid" || fail "second slot holder failed"
+
+echo "PASS run-with-evidence does not queue for the slot under inherited capacity"

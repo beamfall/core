@@ -18,7 +18,7 @@ trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/default-home"
 export HOME="$TMP/default-home"
 
-python3 - "$ROOT/tools/gate/gate.sh" "$TMP/steps.sh" <<'PY'
+python3 - "$ROOT/tools/gate/gate.sh" "$TMP/steps.sh" "$TMP/bound-steps.sh" <<'PY'
 from pathlib import Path
 import re
 import sys
@@ -26,15 +26,19 @@ import sys
 text = Path(sys.argv[1]).read_text()
 start = text.index("gate_signal_group() {")
 end = text.index("\nchanged_paths() {")
-Path(sys.argv[2]).write_text(
-    "#!/usr/bin/env bash\nset -euo pipefail\nexport GATE_PROCESS_GROUP_OWNED=1\n"
-    + text[start:end]
-    + '\nrun_step "$@"\n'
+prelude = "#!/usr/bin/env bash\nset -euo pipefail\nexport GATE_PROCESS_GROUP_OWNED=1\n" + text[start:end]
+Path(sys.argv[2]).write_text(prelude + '\nrun_step "$@"\n')
+# The same gate with one step declared mode-bound, to prove such a step is
+# never shared between the preflight and the full gate.
+Path(sys.argv[3]).write_text(
+    prelude
+    + '\ngate_step_reuse_mode_bound() { [ "$1" = "compile budget manifest selftest" ]; }\n'
+    + 'run_step "$@"\n'
 )
 
 # Every listed step must be a real gate step: a renamed step silently loses
 # reuse, and a stale name here would hide that.
-policy = text[text.index("gate_step_reuse_policy() {"):text.index("gate_step_reuse_enabled() {")]
+policy = text[text.index("gate_step_reuse_policy() {"):text.index("gate_step_reuse_mode_bound() {")]
 listed = re.findall(r'"([^"]+)"(?=[|)])', policy)
 if len(listed) < 5:
     raise SystemExit(f"step reuse list could not be read: {listed}")
@@ -43,11 +47,32 @@ for name in listed:
     if f'"{name}" ' not in body:
         raise SystemExit(f"step reuse lists a step the gate does not run: {name}")
 for never in ("fuzz", "vulnerability check", "secret scan (Core + present siblings; best-effort)",
-              "ADR-0122 cross-repo wire conformance", "playback transcode latency budgets"):
+              "ADR-0122 cross-repo wire conformance", "playback transcode latency budgets",
+              "client DRM/EME invariant", "App Store firewall static gate", "mutation policy history"):
     if never in listed:
         raise SystemExit(f"step must never be reused: {never}")
+# A mode-bound step keeps the lane in its key; one that is not on the reuse
+# list would be a declaration with no effect.
+bound = text[text.index("gate_step_reuse_mode_bound() {"):text.index("gate_step_reuse_enabled() {")]
+for name in re.findall(r'"([^"]+)"(?=[|)])', bound):
+    if name not in listed:
+        raise SystemExit(f"mode-bound step is not on the reuse list: {name}")
 PY
-chmod +x "$TMP/steps.sh"
+chmod +x "$TMP/steps.sh" "$TMP/bound-steps.sh"
+
+# Preflight passes are shared with the full gate because nothing a step runs
+# reads GATE_PREFLIGHT. A new reader is either dispatch, which belongs in this
+# list, or a step that now differs between the lanes, which belongs in
+# gate_step_reuse_mode_bound first.
+if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  readers="$(git -C "$ROOT" grep -l GATE_PREFLIGHT -- . ':!docs' ':!openspec' ':!*.md' |
+    grep -Ev '^(Makefile|tools/gate/(gate-entry\.sh|gate\.sh|gate_latest\.py)|.*_test\.(sh|py))$' || true)"
+  if [ -n "$readers" ]; then
+    echo "step reuse: GATE_PREFLIGHT is read outside the gate's dispatch:" >&2
+    printf '%s\n' "$readers" >&2
+    exit 1
+  fi
+fi
 
 REPO="$TMP/repo"
 mkdir "$REPO"
@@ -70,7 +95,7 @@ step() {  # step <name> [command...]; default command appends one line to $COUNT
   [ "$#" -gt 0 ] || set -- bash -c 'echo ran >>"$1"' _ "$COUNT"
   RUN_ID=$((RUN_ID + 1))
   local status=0
-  (cd "$REPO" && GATE_RUN_ID="run-$RUN_ID" AGENT_EVIDENCE_DIR="$TMP/evidence" "$TMP/steps.sh" "$name" "$@") \
+  (cd "$REPO" && GATE_RUN_ID="run-$RUN_ID" AGENT_EVIDENCE_DIR="$TMP/evidence" "${STEPS:-$TMP/steps.sh}" "$name" "$@") \
     >"$TMP/out" 2>"$TMP/err" || status=$?
   # The gate's EXIT trap can turn a shell abort into status 0 (bash 3.2 reports
   # $? as 0 after a `set -u` failure), so the status alone cannot prove the
@@ -162,7 +187,9 @@ tamper "expired record" 's/^passed_at=.*/passed_at=1000/'
 tamper "future-dated record" 's/^passed_at=.*/passed_at=99999999999/'
 tamper "record for another key" 's/^key=.*/key=0000/'
 tamper "non-pass record" 's/^status=pass/status=fail/'
-tamper "unknown record format" '1s/.*/gate-step-reuse-record\/2/'
+tamper "unknown record format" '1s/.*/gate-step-reuse-record\/3/'
+tamper "record from before the lane was recorded" '1s/.*/gate-step-reuse-record\/1/'
+tamper "record without the lane that passed" '/^kind=/d'
 : >"$record"
 before="$(runs)"; step "go vet"; expect_ran "$((before + 1))" "empty record"
 before="$(runs)"; GATE_STEP_REUSE_MAX_AGE_S=nope step "go vet"; expect_ran "$((before + 1))" "unparseable age limit"
@@ -189,13 +216,75 @@ git -C "$REPO" checkout -q -- tracked.txt
 before="$(runs)"
 step "support script tests"; step "support script tests"
 expect_ran "$((before + 1))" "support script tests on identical inputs"
-step "secret scan selftest"; step "secret scan selftest"
+step "gofmt"; step "gofmt"
 expect_ran "$((before + 3))" "an unlisted step"
 mkdir -p "$TMP/pybin"
 printf '#!/bin/sh\n[ "$1" = --version ] && { echo "Python 0.0.0"; exit 0; }\nexec %s "$@"\n' "$(command -v python3)" >"$TMP/pybin/python3"
 chmod +x "$TMP/pybin/python3"
 PATH="$TMP/pybin:$PATH" step "support script tests"
 expect_ran "$((before + 4))" "a different python3"
+
+# A preflight pass is reused by the full gate, and a full-gate pass by a
+# preflight: the lane is not an input, and neither are the variables that only
+# say which coordinator lock or machine slot the run holds. The reuse line and
+# its evidence row name the run that passed and its lane.
+last_row() {  # <want-status> <want-kind> <text the command must carry>
+  python3 - "$TMP/evidence/gate-runs.jsonl" "$@" <<'PY'
+import json
+import sys
+
+row = json.loads(open(sys.argv[1], encoding="utf-8").read().splitlines()[-1])
+status, kind, needle = sys.argv[2:]
+if row["status"] != status or row["kind"] != kind or needle not in row["command"]:
+    raise SystemExit(f"want status={status} kind={kind} command with {needle!r}, got {row}")
+PY
+}
+printf 'lanes\n' >>"$REPO/tracked.txt"
+before="$(runs)"
+GATE_PREFLIGHT=1 BEAMFALL_GATE_CAPACITY_HELD=1 step "support script tests"
+preflight_run="run-$RUN_ID"
+expect_ran "$((before + 1))" "preflight runs the step"
+BEAMFALL_GATE_CAPACITY_HELD=1 BEAMFALL_GATE_CAPACITY_FD=9 BEAMFALL_GATE_SLOT_HELD="$TMP/slot" \
+  step "support script tests"
+expect_ran "$((before + 1))" "full gate after a preflight pass"
+grep -q "^REUSE support script tests (run=$preflight_run kind=make-gate-preflight " "$TMP/out" ||
+  { echo "full gate did not name the preflight run it reused" >&2; cat "$TMP/out" >&2; exit 1; }
+last_row reuse make-gate "run=$preflight_run kind=make-gate-preflight "
+step "golangci-lint (staticcheck + gosec)"
+gate_run="run-$RUN_ID"
+GATE_PREFLIGHT=1 step "golangci-lint (staticcheck + gosec)"
+expect_ran "$((before + 2))" "preflight after a full-gate pass"
+grep -q "^REUSE golangci-lint (staticcheck + gosec) (run=$gate_run kind=make-gate " "$TMP/out" ||
+  { echo "preflight did not name the gate run it reused" >&2; cat "$TMP/out" >&2; exit 1; }
+last_row reuse make-gate-preflight "run=$gate_run kind=make-gate "
+
+# A step that runs a different command in the preflight than in the full gate
+# shares nothing: the command is part of the key in both lanes.
+narrow=(bash -c 'echo ran >>"$1"; : preflight variant' _ "$COUNT")
+before="$(runs)"
+GATE_PREFLIGHT=1 step "gate scope selftest" "${narrow[@]}"
+step "gate scope selftest"
+expect_ran "$((before + 2))" "a different command in the full gate than in the preflight"
+! grep -q REUSE "$TMP/out" || { echo "full gate reused a pass for another command" >&2; exit 1; }
+GATE_PREFLIGHT=1 step "gate scope selftest" "${narrow[@]}"
+step "gate scope selftest"
+expect_ran "$((before + 2))" "each command is still reused for itself"
+
+# A step declared mode-bound checks less in the preflight under the same
+# command text, so its pass stays inside the lane that produced it.
+before="$(runs)"
+GATE_PREFLIGHT=1 STEPS="$TMP/bound-steps.sh" step "compile budget manifest selftest"
+STEPS="$TMP/bound-steps.sh" step "compile budget manifest selftest"
+expect_ran "$((before + 2))" "a mode-bound step after a preflight pass"
+! grep -q REUSE "$TMP/out" || { echo "full gate reused a mode-bound preflight pass" >&2; exit 1; }
+STEPS="$TMP/bound-steps.sh" step "compile budget manifest selftest"
+GATE_PREFLIGHT=1 STEPS="$TMP/bound-steps.sh" step "compile budget manifest selftest"
+expect_ran "$((before + 2))" "a mode-bound step is reused inside its own lane"
+# The declaration is per step: the same gate still shares every other step.
+GATE_PREFLIGHT=1 STEPS="$TMP/bound-steps.sh" step "secret scan selftest"
+STEPS="$TMP/bound-steps.sh" step "secret scan selftest"
+expect_ran "$((before + 3))" "an unbound step beside a mode-bound one"
+git -C "$REPO" checkout -q -- tracked.txt
 
 # race-short selects packages from the diff base, so the base is part of its key.
 before="$(runs)"
@@ -244,6 +333,22 @@ expect_ran "$((before + 5))" "web app build with the bundle missing"
 step "go build"
 expect_ran "$((before + 5))" "go build once the same bundle is back"
 
+# A source-only step never reads the bundle, so a preflight pass made before
+# the bundle existed is still good once the gate has built one. A step that
+# embeds the bundle runs.
+rm -rf "$REPO/internal"
+before="$(runs)"
+GATE_PREFLIGHT=1 step "gate scope selftest"; step "go build"
+expect_ran "$((before + 2))" "first runs with no bundle"
+mkdir -p "$BUNDLE"
+printf fresh >"$BUNDLE/index.html"
+step "gate scope selftest"
+expect_ran "$((before + 2))" "a source-only step after the bundle is built"
+grep -q '^REUSE gate scope selftest (run=[^ ]* kind=make-gate-preflight ' "$TMP/out" ||
+  { echo "source-only step did not reuse the preflight pass" >&2; cat "$TMP/out" >&2; exit 1; }
+step "go build"
+expect_ran "$((before + 3))" "go build over a bundle it never saw"
+
 # Inputs outside the worktree that cannot be content-addressed stop reuse.
 before="$(runs)"
 RELAY_VECTORS_PATH="$TMP/vectors.json" step "go build"
@@ -267,6 +372,33 @@ expect_ran "$((before + 4))" "an empty node_modules is not an input"
 printf '{}\n' >"$REPO/internal/web/app/node_modules/.package-lock.json"
 step "go build"
 expect_ran "$((before + 5))" "a different installed dependency set"
+step "gate scope selftest"
+expect_ran "$((before + 5))" "a source-only step ignores the installed dependency set"
+
+# Two listed steps ask git what is tracked and staged, so staging or unstaging
+# a path is an input change for them even though the worktree is byte-identical.
+# A source-only step does not care, and the real index is only ever read.
+AGPL="AGPL forbidden-symbol gate"
+printf 'staged\n' >"$REPO/staged.txt"
+before="$(runs)"
+step "$AGPL"; step "$AGPL"
+expect_ran "$((before + 1))" "an index-reading step on identical inputs"
+step "gate scope selftest"
+expect_ran "$((before + 2))" "a source-only step with a new untracked file"
+git -C "$REPO" add staged.txt
+index_before="$(git -C "$REPO" hash-object .git/index)"
+step "$AGPL"
+expect_ran "$((before + 3))" "an index-reading step after staging a file"
+[ "$(git -C "$REPO" hash-object .git/index)" = "$index_before" ] ||
+  { echo "step reuse rewrote the real index" >&2; exit 1; }
+step "gate scope selftest"
+expect_ran "$((before + 3))" "staging alone is not an input to a source-only step"
+git -C "$REPO" rm -q --cached staged.txt
+step "$AGPL"
+expect_ran "$((before + 3))" "unstaging returns to the state that already passed"
+step "secret scan selftest"; step "secret scan selftest"
+expect_ran "$((before + 4))" "the secret-scan selftest is an index-reading step"
+rm -f "$REPO/staged.txt"
 
 # The web E2E step keys the browsers in Playwright's registry directory for
 # this host, and runs whenever that directory cannot be established; other

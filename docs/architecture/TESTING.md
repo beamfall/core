@@ -259,16 +259,67 @@ additionally runs `tools/gate/gate.sh --selftest`, which feeds the runner a deli
 non-matching `-run` pattern and asserts the non-vacuity check trips — the tripwire is
 itself tripwired.
 
-**Step reuse.** In normal mode the gate skips a build, vet, lint, test, web or support-selftest step when the same
+**Step reuse.** In normal mode the gate skips a build, vet, lint, test, web or selftest step when the same
 step already passed for identical inputs: the step command, the gate mode, the content of the whole
 worktree (tracked and untracked, minus ignored files), the built web bundle, the installed web
-dependencies, the toolchain and the gate-relevant environment. An active `go.work` or a set
-`RELAY_VECTORS_PATH` stops all reuse. The output shows `REUSE <step>` and the evidence file gets a `reuse` row naming the
-run that produced the pass. Any change to those inputs runs the step. Release mode never reuses,
-`GATE_STEP_REUSE=0` turns reuse off, and steps that depend on state outside the worktree (the
-vulnerability check, the secret scan, cross-repository conformance, fuzzing, performance budgets)
-always run. Records are local, under the common git directory in `gate-step-reuse/`, and expire
+dependencies, the toolchain and the gate-relevant environment. Steps that read only source (the
+support, gate-scope and compile-budget selftests and `golangci-lint`) leave the bundle, the installed
+dependencies and the browsers out, and the two that ask git what is staged (the secret-scan selftest
+and the AGPL symbol gate) add the index. An active `go.work` or a set `RELAY_VECTORS_PATH` stops all
+reuse. The output shows `REUSE <step>` and the evidence file gets a `reuse` row naming the run that
+produced the pass and its lane. Any change to those inputs runs the step.
+
+`make gate-preflight` and `make gate` share passes in both directions (CORE-1569): every preflight
+step runs the same command in the full gate, so a gate that follows a green preflight of the same
+tree reuses the preflight's listed steps instead of running them again. The environment is part of
+the key, so the two must run with the same one. `corvint-tasks gate run` passes the gate a reduced
+environment; a preflight meant to feed it runs as `env -u NODE_USE_SYSTEM_CA make gate-preflight`,
+or with whatever else the shell sets that the gate policy does not pass through. A step whose
+preflight variant ever checks less than its full-gate run is declared in
+`gate_step_reuse_mode_bound` and is then never shared between the two.
+
+Release mode never reuses, `GATE_STEP_REUSE=0` turns reuse off, and steps that depend on state
+outside the worktree (the vulnerability check, the secret scan, the client DRM and App Store
+firewall checks, the mutation policy history, cross-repository conformance, fuzzing, performance
+budgets) always run; the comment above `gate_step_reuse_policy` in `tools/gate/gate.sh` gives the
+reason for each. Records are local, under the common git directory in `gate-step-reuse/`, and expire
 after seven days. `tools/gate/gate_step_reuse_test.sh` proves these rules.
+
+**Machine gate slot.** One full gate runs at a time per user on a machine, across every repository
+and worktree. `make gate` queues for the slot in `script/gate-slot.py` before it does any work and
+runs when the gates that arrived before it have ended. While it waits it prints who holds the slot
+(repository, branch, head, pid, elapsed time, command) and its own place in the queue.
+`python3 script/gate-slot.py --status` shows the same from any shell, and `--no-wait` or
+`BEAMFALL_GATE_SLOT_NOWAIT=1` exits 69 with `GATE_SLOT_BUSY` instead of queueing. The queue lives
+in `~/.beamfall/gate-slot` (`BEAMFALL_GATE_SLOT_DIR` moves it). An entry counts only while its
+process is alive, checked by pid and start time, so a killed gate frees the slot with no timeout to
+tune and a slow gate is never evicted. A preflight does not queue: it prints the holder and runs.
+
+A command that wraps a gate takes the slot around the whole thing, and the gate inside finds the
+holder among its ancestors and does not queue again. Use this form when the wrapper has a timeout,
+so that the wait happens before the clock starts:
+
+```sh
+python3 script/gate-slot.py -- corvint-tasks gate run --gate gate ...
+```
+
+The slot follows the wrapping command's process. If that process is killed outright while the gate
+under it keeps running, the slot frees before that gate ends; stop the gate too.
+
+The slot always comes before repository capacity. `script/run-with-evidence.sh -- make gate` takes
+the slot first and capacity second. A gate that starts under a process which already holds a
+capacity lock (this repository's or another's) but not the slot does not queue: it says so and
+runs, because waiting there would deadlock with a gate that holds the slot and waits for that
+capacity. The evidence wrapper follows the same rule when its caller brought a capacity lock.
+
+Two limits are known. Killing the gate coordinator outright (SIGKILL) frees the slot at once, while
+its supervisor still takes a few seconds to stop the worker tree, so a gate in another repository
+can start during that cleanup. And a preflight never queues, so a Mac preflight can still run next
+to a gate; run core preflights on wsl.
+
+Other repositories share the slot by starting their gate through core's script
+(`python3 <core>/script/gate-slot.py -- make gate`). `script/gate_slot_test.py` proves the order,
+the refusal, the reclaim of a dead holder and the coordinator's use of the slot.
 
 **Workspace root.** The consumer pin freshness and cross-repository conformance steps need the
 private multi-repo workspace: the directory that holds `workspace-repos.json` and

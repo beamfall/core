@@ -31118,6 +31118,57 @@
       ]
     }
   },
+  "graphqlErrors": {
+    "error": {
+      "type": "object",
+      "fields": [
+        {
+          "name": "message",
+          "shape": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "path",
+          "shape": {
+            "type": "array",
+            "element": {
+              "type": "string"
+            },
+            "optional": true
+          }
+        },
+        {
+          "name": "extensions",
+          "shape": {
+            "type": "object",
+            "fields": [
+              {
+                "name": "code",
+                "shape": {
+                  "type": "string"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "codes": [
+      "NOT_FOUND",
+      "FORBIDDEN",
+      "UNAUTHENTICATED",
+      "THROTTLED",
+      "INVALID",
+      "CONFLICT",
+      "INTERNAL"
+    ],
+    "notes": [
+      "Every entry in a GraphQL response's errors array carries extensions.code from the closed vocabulary in codes. Clients branch on the code, never on the message text; growing the vocabulary is a deliberate wire-contract change.",
+      "Denial of existence (ARCHITECTURE §6): content outside the caller's Library or Reveal scope answers NOT_FOUND, exactly as content that does not exist. FORBIDDEN means a role, tier, session-kind or Reveal gate refused an authenticated caller; it never confirms that hidden content exists.",
+      "UNAUTHENTICATED means no valid session or device credential; THROTTLED means attempt limiting refused the request and it may be retried later; INVALID means the request or an argument is malformed; CONFLICT means the target's current state does not allow the operation; INTERNAL means a server-side failure; its message is generic (the failed field name followed by \"unavailable\") and the cause stays in the server log."
+    ]
+  },
   "compatibility": {
     "versioning": "semantic-versioning",
     "incompatibleChange": "publish a new contract version; never overwrite an existing artifact",

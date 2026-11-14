@@ -45,6 +45,14 @@ type PlaybackInfoContract struct {
 	StreamToken WireShape `json:"streamToken"`
 }
 
+// GraphQLErrorsContract publishes the shape of one GraphQL errors[] entry and
+// the closed extensions.code vocabulary (ARCHITECTURE §7, CORE-0053).
+type GraphQLErrorsContract struct {
+	Error WireShape `json:"error"`
+	Codes []string  `json:"codes"`
+	Notes []string  `json:"notes,omitempty"`
+}
+
 type WireShape struct {
 	Type     string      `json:"type"`
 	Fields   []WireField `json:"fields,omitempty"`
@@ -115,6 +123,22 @@ func playbackInfoNotes() []string {
 		"selectedSubtitleTrack.track.kind is the closed vocabulary muxed|sidecar. Reflection publishes it as a generic string, so the vocabulary is enumerated here; growing it is a deliberate wire-contract change.",
 		"subtitlesUnavailableReason is free text and is INDEPENDENT of decision. Subtitles being unavailable never degrades the whole-media decision verdict (direct-play|direct-stream|precomputed-rendition|transcode|unavailable). Absent/empty means subtitles are not known to be unavailable.",
 		"systemSurfaceDisclosure.metadataAllowed is server-authoritative for the response Media. It is true only when the Media metadata is visible to every Profile with Reveal off. Missing fields, unknown snapshot versions, and false mean clients must use generic system-surface metadata.",
+	}
+}
+
+func buildGraphQLErrorsContract() GraphQLErrorsContract {
+	codes := make([]string, 0, len(graph.ErrorCodes()))
+	for _, code := range graph.ErrorCodes() {
+		codes = append(codes, string(code))
+	}
+	return GraphQLErrorsContract{
+		Error: shapeOf(reflect.TypeOf(graph.GraphQLErrorWire{})),
+		Codes: codes,
+		Notes: []string{
+			"Every entry in a GraphQL response's errors array carries extensions.code from the closed vocabulary in codes. Clients branch on the code, never on the message text; growing the vocabulary is a deliberate wire-contract change.",
+			"Denial of existence (ARCHITECTURE §6): content outside the caller's Library or Reveal scope answers NOT_FOUND, exactly as content that does not exist. FORBIDDEN means a role, tier, session-kind or Reveal gate refused an authenticated caller; it never confirms that hidden content exists.",
+			"UNAUTHENTICATED means no valid session or device credential; THROTTLED means attempt limiting refused the request and it may be retried later; INVALID means the request or an argument is malformed; CONFLICT means the target's current state does not allow the operation; INTERNAL means a server-side failure; its message is generic (the failed field name followed by \"unavailable\") and the cause stays in the server log.",
+		},
 	}
 }
 
