@@ -181,7 +181,7 @@ func TestBootstrapOwnerGrantsUngrantedLibrary(t *testing.T) {
 		t.Fatalf("CreateUngrantedLibraryWithRoots returned error: %v", err)
 	}
 	device, session := bootstrapEnrollment("seeded")
-	owner, err := st.BootstrapOwner(ctx, "Owner", device, session)
+	owner, err := st.BootstrapOwner(ctx, "Owner", device, session, SignInSecurityHome)
 	if err != nil {
 		t.Fatalf("BootstrapOwner returned error: %v", err)
 	}

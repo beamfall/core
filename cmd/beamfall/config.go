@@ -627,8 +627,8 @@ func validateConfigLibraries(libraries []configLibraryDocItem) error {
 		seen[lib.key()] = true
 		roots := make(map[string]bool, len(lib.Roots))
 		for _, root := range lib.Roots {
-			if !filepath.IsAbs(root) || filepath.Clean(root) != root {
-				return fmt.Errorf("library %q: root %q must be an absolute, clean path", lib.Title, root)
+			if !filepath.IsAbs(root) || filepath.Clean(root) != root || strings.TrimSpace(root) != root {
+				return fmt.Errorf("library %q: root %q must be an absolute, clean path with no surrounding whitespace", lib.Title, root)
 			}
 			if roots[root] {
 				return fmt.Errorf("library %q: duplicate root %q", lib.Title, root)

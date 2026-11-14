@@ -235,6 +235,7 @@ func TestParseConfigDocumentRejectsInvalidLibraries(t *testing.T) {
 		"relative root":     libraryDoc("2", libraryEntry("M", "music", "media/music")),
 		"unclean root":      libraryDoc("2", libraryEntry("M", "music", "/media/../music")),
 		"trailing slash":    libraryDoc("2", libraryEntry("M", "music", "/media/music/")),
+		"padded root":       libraryDoc("2", libraryEntry("M", "music", "/media/music ")),
 		"duplicate root":    libraryDoc("2", libraryEntry("M", "music", "/m", "/m")),
 		"duplicate library": libraryDoc("2", libraryEntry("M", "music"), libraryEntry("M", "music")),
 		"empty title":       libraryDoc("2", libraryEntry(" ", "music")),
