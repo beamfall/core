@@ -100,10 +100,14 @@ count_lines() {
 }
 
 assert_counts() {
-  local npm_ci="$1" browser_install="$2" catalog_runs="$3"
-  [[ "$(count_lines "$FAKE_NPM_CI_LOG")" == "$npm_ci" ]]
-  [[ "$(count_lines "$FAKE_PLAYWRIGHT_INSTALL_LOG")" == "$browser_install" ]]
-  [[ "$(count_lines "$FAKE_NPM_RUN_LOG")" == "$catalog_runs" ]]
+  # Explicit `|| fail`: bash 3.2 (macOS) does not apply errexit to a failing
+  # `[[ ]]`, which once let wrong browser-install counts pass there.
+  local expected="$1 $2 $3" actual
+  actual="$(count_lines "$FAKE_NPM_CI_LOG") $(count_lines "$FAKE_PLAYWRIGHT_INSTALL_LOG") $(count_lines "$FAKE_NPM_RUN_LOG")"
+  [[ "$actual" == "$expected" ]] || {
+    echo "counts (npm ci, playwright install, catalog runs): expected $expected, got $actual" >&2
+    exit 1
+  }
 }
 
 run_catalog
@@ -129,33 +133,35 @@ printf '%s\n' 11.17.0 >"$FAKE_NPM_VERSION_FILE"
 run_catalog
 assert_counts 4 4 5
 
+# npm ci restores the locked Playwright version, so the browser inputs are
+# unchanged and Chromium is not reinstalled.
 printf '{"version":"0.0.0"}\n' >"$CATALOG/node_modules/playwright/package.json"
 run_catalog
-assert_counts 5 5 6
+assert_counts 5 4 6
 
 printf '{"browsers":[{"name":"chromium","revision":"1254"}]}\n' \
   >"$CATALOG/node_modules/playwright-core/browsers.json"
 run_catalog
-assert_counts 5 6 7
+assert_counts 5 5 7
 
 rm "$FAKE_BROWSER_PATH"
 run_catalog
-assert_counts 5 7 8
+assert_counts 5 6 8
 
 printf '#!/usr/bin/env bash\nexit 1\n' >"$FAKE_BROWSER_PATH"
 chmod +x "$FAKE_BROWSER_PATH"
 run_catalog
-assert_counts 5 8 9
+assert_counts 5 7 9
 
 rm -f "$CATALOG/node_modules/.cache/beamfall-ui-catalog/"*.sha256
 BEAMFALL_SKIP_NPM_CI=1 BEAMFALL_SKIP_PLAYWRIGHT_INSTALL=1 run_catalog
-assert_counts 5 8 10
+assert_counts 5 7 10
 
 printf '%s\n' v24.20.0 >"$FAKE_NODE_VERSION_FILE"
 if BEAMFALL_SKIP_NPM_CI=1 BEAMFALL_SKIP_PLAYWRIGHT_INSTALL=1 run_catalog 2>/dev/null; then
   echo "skip flags accepted changed stamped inputs" >&2
   exit 1
 fi
-assert_counts 5 8 10
+assert_counts 5 7 10
 
 echo "ui catalog bootstrap tests: passed"
