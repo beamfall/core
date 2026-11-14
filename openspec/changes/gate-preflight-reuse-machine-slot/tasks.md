@@ -31,4 +31,5 @@
       `openspec validate --all --strict`
 - [ ] 3.2 wsl preflight, then one Mac preflight and the binding gate on the same head; record the
       before and after seconds on CORE-1569
-- [ ] 3.3 File the adoption tickets for the other repositories
+- [x] 3.3 File the adoption tickets for the other repositories (CORE-1581 to CORE-1591, CORE-1593,
+      CORE-1594)
