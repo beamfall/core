@@ -385,10 +385,12 @@ type Sessions struct {
 	// run, so they still count against the cap.
 	stopping int
 	// starting counts ensureRung starts running with mu released. Close waits
-	// for it to reach zero so no start outlives it with a process it spawned.
+	// for it and stopping to reach zero so no encoder, lease or directory
+	// outlives it.
 	starting int
-	// startsIdle, when non-nil, is closed when starting drops to zero.
-	startsIdle chan struct{}
+	// offLockIdle, when non-nil, is closed when starting and stopping both
+	// drop to zero.
+	offLockIdle chan struct{}
 }
 
 // sessionTeardown is the slow half of removing a session: stopping its FFmpeg
@@ -419,18 +421,19 @@ func (s *Sessions) runTeardowns(teardowns []sessionTeardown) {
 		if t.counted {
 			s.mu.Lock()
 			s.stopping--
+			s.wakeCloseLocked()
 			s.mu.Unlock()
 		}
 	}
 }
 
-// finishStartLocked records the end of an off-lock ensureRung start and wakes
-// Close once none remain. Callers hold mu.
-func (s *Sessions) finishStartLocked() {
-	s.starting--
-	if s.starting == 0 && s.startsIdle != nil {
-		close(s.startsIdle)
-		s.startsIdle = nil
+// wakeCloseLocked wakes a waiting Close once no start or teardown is running
+// with mu released. Call it after decrementing starting or stopping. Callers
+// hold mu.
+func (s *Sessions) wakeCloseLocked() {
+	if s.starting == 0 && s.stopping == 0 && s.offLockIdle != nil {
+		close(s.offLockIdle)
+		s.offLockIdle = nil
 	}
 }
 
@@ -600,6 +603,12 @@ func (s *Sessions) preemptableLocked(key SessionKey, priority Priority) *Session
 	var oldest time.Time
 	for other, session := range s.sessions {
 		if other == key || !session.holdsTranscodeLocked() {
+			continue
+		}
+		if session.startPending {
+			// Its encoder start runs with mu released and may still be stopping
+			// the process it replaces, which a teardown could not wait for, so
+			// the newcomer would launch while that process still held the slot.
 			continue
 		}
 		idle := session.lastAccess.Before(cutoff)
@@ -1283,10 +1292,12 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 		s.mu.Lock()
 		s.releaseTranscodeLease(session)
 		s.stopping--
-		s.finishStartLocked()
+		s.starting--
+		s.wakeCloseLocked()
 		return nil, ErrSessionEvicted
 	}
-	s.finishStartLocked()
+	s.starting--
+	s.wakeCloseLocked()
 	if err != nil {
 		// Launch failed: this session holds no live process, so release its
 		// transcode lease. This is the rollback for a fresh start and the teardown
@@ -1624,8 +1635,9 @@ func (s *Sessions) PurgeOrphanedTranscodeDirs() error {
 }
 
 // Close stops every running transcode and removes its working directory. It
-// also waits for encoder starts running with the lock released: each sees its
-// session gone and stops what it spawned.
+// also waits for encoder starts and teardowns running with the lock released
+// (a start sees its session gone and stops what it spawned), so no encoder,
+// lease or directory outlives it.
 func (s *Sessions) Close() {
 	s.mu.Lock()
 	var teardowns []sessionTeardown
@@ -1636,14 +1648,14 @@ func (s *Sessions) Close() {
 	s.runTeardowns(teardowns)
 	for {
 		s.mu.Lock()
-		if s.starting == 0 {
+		if s.starting == 0 && s.stopping == 0 {
 			s.mu.Unlock()
 			return
 		}
-		if s.startsIdle == nil {
-			s.startsIdle = make(chan struct{})
+		if s.offLockIdle == nil {
+			s.offLockIdle = make(chan struct{})
 		}
-		idle := s.startsIdle
+		idle := s.offLockIdle
 		s.mu.Unlock()
 		<-idle
 	}

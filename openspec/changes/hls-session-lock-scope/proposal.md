@@ -28,4 +28,7 @@ is slow to exit stalls playback server-wide.
 - If the session is evicted while the lock is released, the start stops what it spawned,
   removes the directory again, releases the lease and slot, and fails with the session-evicted
   error.
-- Shutdown waits for starts running with the lock released, so no encoder outlives it.
+- A session whose start is running with the lock released cannot be preempted, since its
+  teardown could not wait for the encoder it is replacing to exit.
+- Shutdown waits for starts and teardowns running with the lock released, so no encoder, lease
+  or directory outlives it.

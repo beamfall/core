@@ -2536,3 +2536,96 @@ func (d *dirlessSpawn) StartHLSSegments(ctx context.Context, src, dir string, st
 	}
 	return d.fakeTranscoder.StartHLSSegments(ctx, src, dir, startSegment, segmentSeconds, rendition)
 }
+
+// TestCloseWaitsForADetachedTeardown covers shutdown racing a teardown that
+// runs after the lock is released: Close must not return while another
+// caller's teardown is still stopping an encoder it holds a lease for.
+func TestCloseWaitsForADetachedTeardown(t *testing.T) {
+	t.Parallel()
+	g := governor.New()
+	sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
+	sessions.SetGovernor(g)
+	slow := newSlowStop(sessions)
+	defer slow.unblock()
+	key := SessionKey{SessionID: "session-terminated-at-shutdown", MediaID: "media-alpha"}
+
+	if _, err := filePath720(sessions, key, "720p/seg00000.m4s"); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	dir := registeredSession(t, sessions, key).dir
+	slow.armed.Store(true)
+	go sessions.TerminateSession(key.SessionID)
+	slow.waitEntered(t)
+
+	closed := make(chan struct{})
+	go func() {
+		sessions.Close()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+		t.Fatal("Close returned while a teardown was still stopping an encoder")
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	slow.unblock()
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close did not return after the teardown finished")
+	}
+	if got := g.ActiveTranscodes(); got != 0 {
+		t.Fatalf("ActiveTranscodes after Close = %d, want 0", got)
+	}
+	if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("session directory after Close: stat err = %v, want not-exist", err)
+	}
+}
+
+// TestPendingStartIsNotPreempted covers preemption during an off-lock encoder
+// replacement: the replacing session cannot be torn down by a preemptor,
+// because its teardown could not wait for the replaced encoder to exit and the
+// preemptor would launch over the cap.
+func TestPendingStartIsNotPreempted(t *testing.T) {
+	t.Parallel()
+	g := governor.New()
+	transcoder := &fakeTranscoder{}
+	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions.SetGovernor(g)
+	sessions.SetTranscodeCap(1)
+	defer sessions.Close()
+	slow := newSlowStop(sessions)
+	defer slow.unblock()
+	keyA := SessionKey{SessionID: "session-replacing", MediaID: "media-alpha"}
+	keyB := SessionKey{SessionID: "session-foreground", MediaID: "media-beta"}
+
+	if _, err := filePath720(sessions, keyA, "720p/seg00000.m4s"); err != nil {
+		t.Fatalf("session A start: %v", err)
+	}
+	slow.armed.Store(true)
+	seeked := make(chan error, 1)
+	go func() {
+		_, err := filePath720(sessions, keyA, "720p/seg00020.m4s")
+		seeked <- err
+	}()
+	slow.waitEntered(t)
+
+	finishesWhileBlocked(t, "foreground session B's refused request", func() error {
+		if _, err := filePath720Priority(sessions, keyB, PriorityForeground, "720p/seg00000.m4s"); !errors.Is(err, ErrTranscodeCapacity) {
+			return fmt.Errorf("err = %v, want ErrTranscodeCapacity while A is replacing its encoder", err)
+		}
+		return nil
+	})
+	if got := g.ActiveTranscodes(); got != 1 {
+		t.Fatalf("ActiveTranscodes during A's replacement = %d, want 1", got)
+	}
+
+	slow.unblock()
+	if err := <-seeked; err != nil {
+		t.Fatalf("session A's far seek: %v", err)
+	}
+	// With A's replacement running, B now preempts it as usual.
+	if _, err := filePath720Priority(sessions, keyB, PriorityForeground, "720p/seg00000.m4s"); err != nil {
+		t.Fatalf("foreground session B after A's replacement: %v", err)
+	}
+}
