@@ -18,6 +18,11 @@ no consumer repo name is hardcoded in the checker or obligation registry.
 Policy (mirrors BEAMFALL_REQUIRE_CORE on the consumer side, with the roles
 inverted -- here the producer is present and a consumer may be absent):
   * stale artifact          -> hard failure, always
+  * consumer ahead          -> advisory (CORE-1442): the consumer's copy is a
+                               pending core publication on another ref, this
+                               branch leaves the producer artifact unchanged,
+                               and the window is younger than
+                               BEAMFALL_PIN_AHEAD_MAX_DAYS (default 3); else stale
   * registry/producer error -> hard failure, always
   * consumer repo absent    -> reported SKIPPED, never counted as a pass;
                                advisory by default, hard failure under
@@ -39,17 +44,26 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import runpy
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 FRESH = "FRESH"
 STALE = "STALE"
+AHEAD = "AHEAD"
 SKIPPED = "SKIPPED"
 ERROR = "ERROR"
+
+# CORE-1442: how long a consumers-first window may stay open. A consumer whose copy
+# matches a pending core publication on another ref is reported AHEAD (advisory)
+# only while that publication is younger than this; after that it is STALE again,
+# so a stalled core pin turns the gate red instead of being waived forever.
+AHEAD_MAX_DAYS_DEFAULT = 3
 
 WORKSPACE_MANIFEST = "workspace-repos.json"
 
@@ -90,7 +104,29 @@ def workspace_root(start: Path) -> Path | None:
     for candidate in [start, *start.parents]:
         if (candidate / WORKSPACE_MANIFEST).is_file():
             return candidate
+    # A linked worktree outside the workspace (corvint-tasks `gate run` strips
+    # BEAMFALL_WORKSPACE_ROOT, CORE-1473) still shares the main checkout's .git,
+    # so look above that checkout too, as secret-scan.py does.
+    main_checkout = git_main_checkout(start)
+    if main_checkout is not None:
+        for candidate in [main_checkout, *main_checkout.parents]:
+            if (candidate / WORKSPACE_MANIFEST).is_file():
+                return candidate
     return None
+
+
+def git_main_checkout(start: Path) -> Path | None:
+    """Main checkout owning start's git common dir, or None outside git."""
+    result = subprocess.run(
+        ["git", "-C", str(start), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    common = Path(result.stdout.strip())
+    if result.returncode != 0 or common.name != ".git":
+        return None
+    return common.parent
 
 
 def manifest_repositories(root: Path) -> list[dict]:
@@ -175,9 +211,95 @@ def touches_contract_source(paths: set[str], prefixes: list[str]) -> bool:
     return any(path.startswith(prefix) for path in paths for prefix in prefixes)
 
 
-def check_byte_copies(obligation: dict, producer: Path, consumer: Path) -> list[str]:
-    """One finding per producer/consumer pair that is not byte-identical."""
+def git_blob_id(data: bytes) -> str:
+    """The object id git gives these bytes as a blob."""
+    return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
+
+
+@dataclass
+class AheadContext:
+    """What the consumer-ahead classification needs to know about the producer."""
+
+    producer: Path
+    merge_base: str | None
+    now: float
+    max_days: float
+
+
+def producer_changed(ctx: AheadContext, rel: str, current: bytes) -> bool:
+    """True when this branch changes the producer artifact (or that is unprovable)."""
+    if ctx.merge_base is None:
+        return True
+    at_base = run_git(ctx.producer, ["rev-parse", "--verify", "--quiet", f"{ctx.merge_base}:{rel}"])
+    return at_base is None or at_base != git_blob_id(current)
+
+
+def pending_publication(ctx: AheadContext, rel: str, data: bytes) -> tuple[str, str, float] | None:
+    """(ref, commit, age_days) of a core publication of these bytes that is not on HEAD.
+
+    None when the bytes are already in HEAD's history of the artifact (the consumer
+    is behind) or appear on no branch or remote-tracking ref (the consumer copy is
+    simply wrong). Stashes and other refs are not publications.
+    """
+    blob = git_blob_id(data)
+    head = run_git(ctx.producer, ["log", "--format=", "--raw", "--no-abbrev", "HEAD", "--", rel])
+    if head is None:
+        return None
+    if any(len(line.split()) >= 4 and line.split()[3] == blob for line in head.splitlines()):
+        return None
+    log = run_git(
+        ctx.producer,
+        ["log", "--branches", "--remotes", "--format=commit %H %ct", "--raw", "--no-abbrev", "--", rel],
+    )
+    if log is None:
+        return None
+    commit = when = None
+    for line in log.splitlines():
+        if line.startswith("commit "):
+            _, commit, when = line.split()
+        elif commit and len(line.split()) >= 4 and line.split()[3] == blob:
+            refs = run_git(
+                ctx.producer,
+                ["for-each-ref", "--contains", commit, "--format=%(refname)", "refs/remotes", "refs/heads"],
+            )
+            # Ancestry alone is not publication: the ref's tip must still carry the bytes,
+            # or a branch that moved on (or reverted) would excuse a superseded pin.
+            for ref in (refs or "").splitlines():
+                tip = run_git(ctx.producer, ["rev-parse", "--verify", "--quiet", f"{ref}:{rel}"])
+                if tip == blob:
+                    return ref, commit, (ctx.now - int(when)) / 86400
+            return None
+    return None
+
+
+def classify_drift(
+    ctx: AheadContext | None, rel: str, current: bytes, vendored: bytes
+) -> tuple[str, str]:
+    """(status, detail) for one drifted copy: AHEAD only for a young pending publication."""
+    if ctx is None or producer_changed(ctx, rel, current):
+        return STALE, ""
+    pending = pending_publication(ctx, rel, vendored)
+    if pending is None:
+        return STALE, ""
+    ref, commit, age = pending
+    if age > ctx.max_days:
+        return STALE, (
+            f"; it matches the pending core publication on {ref} ({commit[:12]}), but that "
+            f"consumers-first window has been open {age:.1f} days (> {ctx.max_days:g}): "
+            "land the core pin"
+        )
+    return AHEAD, (
+        f"; consumer ahead: it matches the pending core publication on {ref} "
+        f"({commit[:12]}, {age:.1f} days old) and this branch leaves {rel} unchanged"
+    )
+
+
+def check_byte_copies(
+    obligation: dict, producer: Path, consumer: Path, ctx: AheadContext | None = None
+) -> tuple[list[str], list[str]]:
+    """(blocking, advisory) findings, one per producer/consumer pair that differs."""
     findings: list[str] = []
+    advisories: list[str] = []
     for pair in obligation.get("byteCopies", []):
         producer_file = producer / pair["producer"]
         consumer_file = consumer / pair["consumer"]
@@ -187,11 +309,12 @@ def check_byte_copies(obligation: dict, producer: Path, consumer: Path) -> list[
         if not consumer_file.is_file():
             findings.append(f"vendored copy absent: {pair['consumer']}")
             continue
-        if producer_file.read_bytes() != consumer_file.read_bytes():
-            findings.append(
-                f"byte drift: {pair['consumer']} no longer matches {pair['producer']}"
-            )
-    return findings
+        current, vendored = producer_file.read_bytes(), consumer_file.read_bytes()
+        if current != vendored:
+            status, detail = classify_drift(ctx, pair["producer"], current, vendored)
+            line = f"byte drift: {pair['consumer']} no longer matches {pair['producer']}{detail}"
+            (advisories if status == AHEAD else findings).append(line)
+    return findings, advisories
 
 
 def check_digest_manifest(obligation: dict, producer: Path, consumer: Path) -> list[str]:
@@ -264,19 +387,60 @@ def unverifiable(obligation: dict, consumer_repo: str, reason: str) -> Result:
 
 
 def evaluate(
-    obligation: dict, producer: Path, consumer_repo: str, consumer: Path
+    obligation: dict,
+    producer: Path,
+    consumer_repo: str,
+    consumer: Path,
+    ctx: AheadContext | None = None,
 ) -> Result:
-    """Verdict for one obligation against the producer tree as it stands now."""
+    """Verdict for one obligation against the producer tree as it stands now.
+
+    A consumer ahead of this branch (CORE-1442) is advisory only when every drifted
+    byte copy is ahead and no digest manifest disagrees for any other reason.
+    """
     result = result_for(obligation, consumer_repo, FRESH)
-    findings = check_byte_copies(obligation, producer, consumer)
-    findings += check_digest_manifest(obligation, producer, consumer)
+    findings, advisories = check_byte_copies(obligation, producer, consumer, ctx)
+    digest = check_digest_manifest(obligation, producer, consumer)
+    if advisories and not findings:
+        ahead_keys = ahead_digest_keys(obligation, consumer, advisories)
+        digest = [line for line in digest if not any(f" for {key}," in line for key in ahead_keys)]
+    findings += digest
     if findings:
         result.status = STALE
-        result.findings = findings
+        result.findings = findings + advisories
+    elif advisories:
+        result.status = AHEAD
+        result.findings = advisories
     return result
 
 
-def workspace_results(registry: dict, producer: Path, workspace: Path) -> list[Result]:
+def ahead_digest_keys(obligation: dict, consumer: Path, advisories: list[str]) -> set[str]:
+    """Digest-manifest keys whose recorded digest is that of an ahead byte copy."""
+    spec = obligation.get("digestManifest")
+    if not spec:
+        return set()
+    manifest_file = consumer / spec["consumer"]
+    parser = DIGEST_PARSERS.get(spec["format"])
+    if parser is None or not manifest_file.is_file():
+        return set()
+    try:
+        recorded = parser(manifest_file.read_text(encoding="utf-8"))
+    except ValueError:
+        return set()
+    prefix = spec["producerDir"].rstrip("/") + "/"
+    keys: set[str] = set()
+    for pair in obligation.get("byteCopies", []):
+        key = pair["producer"].removeprefix(prefix)
+        ahead = any(line.startswith(f"byte drift: {pair['consumer']} ") for line in advisories)
+        vendored = consumer / pair["consumer"]
+        if ahead and key in recorded and vendored.is_file() and sha256_of(vendored) == recorded[key]:
+            keys.add(key)
+    return keys
+
+
+def workspace_results(
+    registry: dict, producer: Path, workspace: Path, ctx: AheadContext | None = None
+) -> list[Result]:
     """Resolve obligation owners by iterating workspace-repos.json entries."""
     obligations = registry["obligations"]
     obligations_by_id = {obligation["id"]: obligation for obligation in obligations}
@@ -331,7 +495,7 @@ def workspace_results(registry: dict, producer: Path, workspace: Path) -> list[R
                     )
                 )
                 continue
-            results.append(evaluate(obligation, producer, entry["name"], consumer))
+            results.append(evaluate(obligation, producer, entry["name"], consumer, ctx))
 
     for child in workspace.iterdir():
         if not child.is_dir() or child.name in known:
@@ -390,6 +554,11 @@ def emit(results: list[Result]) -> None:
             print(f"            - {finding}")
         if result.status in (STALE, SKIPPED, ERROR):
             print(f"            refresh: {result.refresh}")
+        if result.status == AHEAD:
+            print(
+                "            advisory: land the matching core publication; the gate turns "
+                "red if the window outlives BEAMFALL_PIN_AHEAD_MAX_DAYS"
+            )
 
 
 def verdict(results: list[Result], require_consumers: bool) -> int:
@@ -415,6 +584,15 @@ def verdict(results: list[Result], require_consumers: bool) -> int:
             "skipped (consumer repo absent), "
             f"{len(results) - len(skipped)} verified fresh. Skipped is not a pass; "
             "set BEAMFALL_REQUIRE_CONSUMERS=1 to make absence a hard failure."
+        )
+        return 0
+    ahead = [r for r in results if r.status == AHEAD]
+    if ahead:
+        print(
+            f"consumer-pin-freshness: PASS with {len(ahead)} ADVISORY — "
+            f"{', '.join(sorted({r.consumer_repo for r in ahead}))} vendor(s) a pending core "
+            "publication this branch does not change; "
+            f"{len(results) - len(ahead)} obligation(s) fresh."
         )
         return 0
     print(f"consumer-pin-freshness: PASS — all {len(results)} obligation(s) fresh.")
@@ -463,6 +641,24 @@ def resolve_changed(args: argparse.Namespace, producer: Path) -> set[str] | None
     return changed_paths(producer, base) if base else None
 
 
+def ahead_context(args: argparse.Namespace, producer: Path) -> AheadContext | None:
+    """Context for the consumer-ahead classification; None disables it (fail closed)."""
+    raw = os.environ.get("BEAMFALL_PIN_AHEAD_MAX_DAYS", str(AHEAD_MAX_DAYS_DEFAULT))
+    try:
+        max_days = float(raw)
+        if not math.isfinite(max_days):
+            raise ValueError(raw)
+    except ValueError:
+        print(f"consumer-pin-freshness: ignoring malformed BEAMFALL_PIN_AHEAD_MAX_DAYS={raw!r}", file=sys.stderr)
+        max_days = float(AHEAD_MAX_DAYS_DEFAULT)
+    if max_days <= 0:
+        return None
+    base = args.base or default_base(producer)
+    merge_base = run_git(producer, ["merge-base", base, "HEAD"]) if base else None
+    now = float(os.environ.get("BEAMFALL_PIN_AHEAD_NOW") or time.time())
+    return AheadContext(producer=producer, merge_base=merge_base, now=now, max_days=max_days)
+
+
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
     producer = core_root()
@@ -493,7 +689,7 @@ def main(argv: list[str]) -> int:
             for obligation in registry["obligations"]
         ]
     else:
-        results = workspace_results(registry, producer, workspace)
+        results = workspace_results(registry, producer, workspace, ahead_context(args, producer))
     emit(results)
     return verdict(results, os.environ.get("BEAMFALL_REQUIRE_CONSUMERS") == "1")
 

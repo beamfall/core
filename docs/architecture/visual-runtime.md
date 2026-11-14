@@ -58,6 +58,18 @@ The reference DSP contract is fixed for v1:
 - Cadence follows the hop and is variable/gap-tolerant. Producers flag stalls and gaps instead of
   inventing continuous frames.
 
+Every host produces these frames with the pinned Oscillux DSP running **behaviour version 1**,
+which matches the Go reference in `tools/visualsync/contract` and the vectors in
+`internal/conformance/testdata/visualsync/` within the contract tolerances. Oscillux also ships behaviour version 2, its own
+revision: triangular band weights with a decimated bass analysis, normalised onset detectors and a
+cheaper hop. Version 2 is not `audio-frame.v1` and is not used. A host selects version 1
+explicitly, either through the ABI-1 `oscillux_dsp_config_default` / `oscillux_dsp_create`, or
+with `behavior_version = OSCILLUX_DSP_BEHAVIOR_V1` in `OscilluxDspVersionedConfig` (npm
+`DspConfig.behaviorVersion = 1`, Java `Dsp(config)` with the ABI-1 default). It never relies on
+`oscillux_dsp_versioned_config_default` or the npm `DspConfig` default, both of which select
+version 2. Adopting version 2 would need an `audio-frame.v2` contract with its own vectors and a
+coordinated repin of every host; it is not part of release 1.0.
+
 Normative platform tap rules:
 
 - Android taps the app-owned decoded PCM before `AudioTrack`; the system `Visualizer` API is not a

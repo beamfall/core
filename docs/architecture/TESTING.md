@@ -270,6 +270,22 @@ vulnerability check, the secret scan, cross-repository conformance, fuzzing, per
 always run. Records are local, under the common git directory in `gate-step-reuse/`, and expire
 after seven days. `tools/gate/gate_step_reuse_test.sh` proves these rules.
 
+**Workspace root.** The consumer pin freshness and cross-repository conformance steps need the
+private multi-repo workspace: the directory that holds `workspace-repos.json` and
+`contracts/registry.json`. They find it in this order:
+
+1. `BEAMFALL_WORKSPACE_ROOT`, when it is set.
+2. The nearest ancestor of the checkout that holds the manifest.
+3. The nearest directory holding the manifest at or above the main checkout that owns the git
+   common directory.
+
+Step 3 covers linked worktrees outside the workspace. It matters because `corvint-tasks gate run`
+does not pass `BEAMFALL_WORKSPACE_ROOT` through. The supported layout is a core checkout inside
+the workspace, with gate worktrees either under it or anywhere else linked to that checkout. A
+standalone public clone has no workspace. Its cross-repository steps fail closed or skip, as
+each step documents. `script/consumer_pin_freshness_test.py` and
+`script/crossrepo-conformance_pin_test.sh` prove the linked-worktree case.
+
 Agent tooling stays thin (frozen constraint 6): the gate runner invokes the conformance
 package (`TestArch`, `TestVocab`, and the three wire-snapshot drift tests above) rather than
 re-implementing those checks.
