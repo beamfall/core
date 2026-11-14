@@ -29,6 +29,7 @@ function fakeVideo() {
     pause: vi.fn(),
     play: vi.fn(() => Promise.resolve()),
     currentTime: 0,
+    readyState: 4,
     volume: 1,
     muted: false,
   } as unknown as HTMLVideoElement & { pause: ReturnType<typeof vi.fn> };
@@ -103,6 +104,15 @@ describe("applyPlayerCommand", () => {
     expect(video.muted).toBe(true);
     expect(applyPlayerCommand({ command: "unmute" }, t)).toBe(true);
     expect(video.muted).toBe(false);
+  });
+
+  it("seeks after the player's opening seek when metadata has not loaded", () => {
+    const video = document.createElement("video");
+    const t: RemotePlayerTarget = { video: () => video };
+    expect(applyPlayerCommand({ command: "seek", positionMs: 300_000 }, t)).toBe(true);
+    video.currentTime = 120; // the player's resume seek on metadata
+    video.dispatchEvent(new Event("loadedmetadata"));
+    expect(video.currentTime).toBe(300);
   });
 
   it("steps the queue by direction and reports a missing step", () => {

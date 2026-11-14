@@ -150,10 +150,15 @@ export function applyPlayerCommand(
       step?.();
       return Boolean(step);
     }
-    case "seek":
+    case "seek": {
       if (!video || command.positionMs === undefined) return false;
-      video.currentTime = command.positionMs / 1000;
+      const at = command.positionMs / 1000;
+      // Before metadata the player's own opening seek is still to come; seek
+      // after it so the newer position wins.
+      if (video.readyState >= HTMLMediaElement.HAVE_METADATA) video.currentTime = at;
+      else video.addEventListener("loadedmetadata", () => (video.currentTime = at), { once: true });
       return true;
+    }
     case "set-volume":
       if (!video || command.volume === undefined) return false;
       video.volume = Math.max(0, Math.min(100, command.volume)) / 100;

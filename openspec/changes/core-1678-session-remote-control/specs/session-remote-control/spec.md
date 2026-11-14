@@ -165,3 +165,8 @@ again. A transport command sent while the player sets up SHALL apply once it is 
 
 - **WHEN** a web player that is still setting up is sent `pause` and then `set-volume`
 - **THEN** it applies both, in order, once it is ready, and stays paused
+
+#### Scenario: Seek during setup
+
+- **WHEN** a web player opening at a resume point is sent `seek` before its metadata loads
+- **THEN** it ends at the sent position, not the resume point

@@ -479,8 +479,11 @@ export function usePlayer(
       identitySignal?.addEventListener("abort", stopForIdentityChange, { once: true });
     }
     const msg = messagesRef.current;
-    // A pause sent from another device while this load sets up holds autoplay.
+    // A pause sent from another device while this load sets up holds its own
+    // starts until playback is started (here or remotely); after that, reloads
+    // (recovery, a renewed token) keep their own choice.
     const setupStartedAt = Date.now();
+    let startedSinceSetup = false;
     setState(emptyState());
     const retryFrom = retryFromRef.current?.mediaID === mediaID ? retryFromRef.current.position : 0;
     retryFromRef.current = null;
@@ -628,7 +631,10 @@ export function usePlayer(
           lastPositionRef.current = video.currentTime;
         }
       };
-      videoListeners.push(["playing", onPlaying], ["timeupdate", onTimeUpdate]);
+      const onPlay = () => {
+        startedSinceSetup = true;
+      };
+      videoListeners.push(["playing", onPlaying], ["timeupdate", onTimeUpdate], ["play", onPlay]);
       for (const [type, listener] of videoListeners) video.addEventListener(type, listener);
 
       // HLS streams (server transcode and direct-stream audio-copy) need the
@@ -735,8 +741,7 @@ export function usePlayer(
         const useHlsJs = engine === "hlsjs";
         const streamURL = target.url ?? "";
         const shouldPlay = () =>
-          options.play &&
-          !(video.played.length === 0 && remoteHoldsAutoplay(mediaID, setupStartedAt));
+          options.play && (startedSinceSetup || !remoteHoldsAutoplay(mediaID, setupStartedAt));
         // hls.js takes the resume point as its startPosition and loads (and
         // seeks to) it directly; only the native <video src> route seeks on
         // metadata, so a resumed HLS session never fetches from 0 first.
