@@ -799,16 +799,16 @@ func TestAuthStyleLoginBearerSecretFields(t *testing.T) {
 			FieldMap:       map[string]string{"title": "data.name"},
 		}
 	}
-	creds := staticCredentials{"tokensource-pin": "1234", "tokensource-key": "s3cret"}
+	creds := staticCredentials{"tokensource-pin": "1234", "tokensource-extra": "extra-value"}
 
 	t.Run("multi-field", func(t *testing.T) {
 		engine := New(WithInsecureLoopback(), WithCredentials(creds))
-		login := &plugin.LoginSpec{Path: "/login", SecretField: "pin", SecretFields: map[string]string{"apikey": "tokensource-key"}, TokenPath: "data.token"}
+		login := &plugin.LoginSpec{Path: "/login", SecretField: "pin", SecretFields: map[string]string{"tenant": "tokensource-extra"}, TokenPath: "data.token"}
 		if _, err := engine.Lookup(context.Background(), spec(login), "9"); err != nil {
 			t.Fatal(err)
 		}
-		if len(got) != 2 || got["pin"] != "1234" || got["apikey"] != "s3cret" {
-			t.Fatalf("login body = %v, want pin and apikey", got)
+		if len(got) != 2 || got["pin"] != "1234" || got["tenant"] != "extra-value" {
+			t.Fatalf("login body = %v, want pin and tenant", got)
 		}
 	})
 	t.Run("single-field", func(t *testing.T) {
@@ -824,9 +824,9 @@ func TestAuthStyleLoginBearerSecretFields(t *testing.T) {
 	t.Run("missing extra secret fails closed", func(t *testing.T) {
 		before := logins
 		engine := New(WithInsecureLoopback(), WithCredentials(staticCredentials{"tokensource-pin": "1234"}))
-		login := &plugin.LoginSpec{Path: "/login", SecretField: "pin", SecretFields: map[string]string{"apikey": "tokensource-key"}, TokenPath: "data.token"}
+		login := &plugin.LoginSpec{Path: "/login", SecretField: "pin", SecretFields: map[string]string{"tenant": "tokensource-extra"}, TokenPath: "data.token"}
 		_, err := engine.Lookup(context.Background(), spec(login), "9")
-		if err == nil || !strings.Contains(err.Error(), "tokensource-key") {
+		if err == nil || !strings.Contains(err.Error(), "tokensource-extra") {
 			t.Fatalf("err = %v, want a missing-credential error naming the ref", err)
 		}
 		if logins != before {
