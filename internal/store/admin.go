@@ -7,8 +7,10 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -20,6 +22,28 @@ var ErrNoAdminPassword = errors.New("no admin password set")
 
 // ErrAdminPasswordMismatch means the supplied admin password did not verify.
 var ErrAdminPasswordMismatch = errors.New("admin password mismatch")
+
+// MinAdminPasswordLength is the fewest characters (Unicode code points) a new
+// admin password may have (CORE-1601). It is enforced only where a password is
+// set, never on verify, so an older shorter password keeps working until it is
+// next changed.
+const MinAdminPasswordLength = 8
+
+// ErrAdminPasswordTooShort is the one client-safe refusal for a new admin
+// password below MinAdminPasswordLength.
+var ErrAdminPasswordTooShort = ValidationError("Admin password must be at least " + strconv.Itoa(MinAdminPasswordLength) + " characters.")
+
+// validateNewAdminPassword applies the rules every new admin password must meet,
+// whatever path sets it (setup, Console, reset command, environment).
+func validateNewAdminPassword(password string) error {
+	if strings.TrimSpace(password) == "" {
+		return ValidationError("admin password is required")
+	}
+	if utf8.RuneCountInString(password) < MinAdminPasswordLength {
+		return ErrAdminPasswordTooShort
+	}
+	return nil
+}
 
 // adminCredentialID is the single-row key: one server, one admin password
 // (ADR-0007 §4 — household appliance, not enterprise).
@@ -70,8 +94,8 @@ func seedAdminCredentialTx(ctx context.Context, tx *sql.Tx, password string, sal
 // filesystem-local caller; setting at first run is this call
 // against an empty table. The plaintext password never leaves this function.
 func (s *Store) SetAdminPassword(ctx context.Context, password string, now time.Time) error {
-	if strings.TrimSpace(password) == "" {
-		return ValidationError("admin password is required")
+	if err := validateNewAdminPassword(password); err != nil {
+		return err
 	}
 	salt := make([]byte, revealSaltLen)
 	if _, err := rand.Read(salt); err != nil {
@@ -116,8 +140,8 @@ func (s *Store) CreateFirstAdminPassword(ctx context.Context, session SessionID,
 	if session == "" || profile == "" {
 		return false, ValidationError("session and profile are required")
 	}
-	if strings.TrimSpace(password) == "" {
-		return false, ValidationError("admin password is required")
+	if err := validateNewAdminPassword(password); err != nil {
+		return false, err
 	}
 	salt := make([]byte, revealSaltLen)
 	if _, err := rand.Read(salt); err != nil {

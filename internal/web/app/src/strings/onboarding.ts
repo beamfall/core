@@ -20,6 +20,13 @@ export const onboardingStrings = {
     setupChecklistResume: "Resume",
     setupChecklistRerun: "Re-run from start",
     setupChecklistDiscard: "Discard & finish later",
+    // Library folder health (CORE-1606).
+    libraryRootMissing: "Folder not found",
+    libraryRootUnreadable: "Can't read folder",
+    libraryRootAttention: "{library}: {path}",
+    libraryRootFixHint: "Remove this folder and add the right one below.",
+    firstScanBlocked: "Can't scan {path}: {reason}.",
+    firstScanFixFolder: "Fix the folder",
     // Pairing-code entry on the enroll and promote pages (CORE-1117).
     pairingCodeRequired: "Enter the pairing code to continue.",
     pairingCodeRejectedHint:

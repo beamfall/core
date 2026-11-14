@@ -46,7 +46,7 @@ export const whosWatchingStrings = {
     avatarToneSilver: "Silver",
     signInLead:
       "This browser isn't connected to the server yet. There's no account to create: you connect it once with a pairing code.",
-    signInCodeHint: "A code works once and expires after a few minutes.",
+    signInCodeHint: "A code works once and expires 10 minutes after it's made.",
     signInDeviceNameHint:
       "Shown in the server's device list so the owner can tell this browser apart.",
     signInWhereTitle: "Where do I get a pairing code?",
@@ -98,7 +98,7 @@ export const whosWatchingStrings = {
     avatarToneSilver: "Argent",
     signInLead:
       "Ce navigateur n'est pas encore connecté au serveur. Aucun compte à créer : vous le connectez une seule fois avec un code de jumelage.",
-    signInCodeHint: "Un code ne sert qu'une fois et expire au bout de quelques minutes.",
+    signInCodeHint: "Un code ne sert qu'une fois et expire 10 minutes après sa création.",
     signInDeviceNameHint:
       "Affiché dans la liste des appareils du serveur pour que le propriétaire reconnaisse ce navigateur.",
     signInWhereTitle: "Où trouver un code de jumelage ?",
@@ -149,7 +149,7 @@ export const whosWatchingStrings = {
     avatarToneSilver: "Silber",
     signInLead:
       "Dieser Browser ist noch nicht mit dem Server verbunden. Du brauchst kein Konto: Du verbindest ihn einmalig mit einem Kopplungscode.",
-    signInCodeHint: "Ein Code gilt nur einmal und läuft nach wenigen Minuten ab.",
+    signInCodeHint: "Ein Code gilt nur einmal und läuft 10 Minuten nach dem Erstellen ab.",
     signInDeviceNameHint:
       "Erscheint in der Geräteliste des Servers, damit der Besitzer diesen Browser erkennt.",
     signInWhereTitle: "Woher bekomme ich einen Kopplungscode?",
@@ -200,7 +200,7 @@ export const whosWatchingStrings = {
     avatarToneSilver: "Plata",
     signInLead:
       "Este navegador aún no está conectado al servidor. No hay que crear ninguna cuenta: lo conectas una sola vez con un código de emparejamiento.",
-    signInCodeHint: "Un código sirve una sola vez y caduca a los pocos minutos.",
+    signInCodeHint: "Un código sirve una sola vez y caduca 10 minutos después de crearse.",
     signInDeviceNameHint:
       "Aparece en la lista de dispositivos del servidor para que el propietario reconozca este navegador.",
     signInWhereTitle: "¿Dónde consigo un código de emparejamiento?",
@@ -251,7 +251,7 @@ export const whosWatchingStrings = {
     avatarToneSilver: "Prata",
     signInLead:
       "Este navegador ainda não está conectado ao servidor. Não é preciso criar conta: você o conecta uma única vez com um código de pareamento.",
-    signInCodeHint: "Um código funciona uma vez e expira em poucos minutos.",
+    signInCodeHint: "Um código funciona uma vez e expira 10 minutos depois de criado.",
     signInDeviceNameHint:
       "Aparece na lista de dispositivos do servidor para o proprietário reconhecer este navegador.",
     signInWhereTitle: "Onde consigo um código de pareamento?",

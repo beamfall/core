@@ -2193,6 +2193,11 @@ func (h *Handler) createLibrary(ctx context.Context, scope auth.Scope, req reque
 			return LibraryInfo{}, clientError("unknown family scope")
 		}
 	}
+	// Refuse a folder the server cannot use before anything is created, so a
+	// bad path leaves no half-made Library behind (CORE-1598).
+	if err := store.CheckLibraryRoots(roots); err != nil {
+		return LibraryInfo{}, err
+	}
 	library, err := h.store.CreateLibraryWithRoots(ctx, title, restricted, pluginID, scope.ProfileID, roots, familyScope)
 	if err != nil {
 		return LibraryInfo{}, err
@@ -2300,6 +2305,13 @@ func (h *Handler) setLibraryRoots(ctx context.Context, scope auth.Scope, req req
 	}
 	if !ok {
 		return LibraryInfo{}, clientError("roots is required")
+	}
+	saved, err := h.store.LibraryRoots(ctx, store.LibraryID(libraryID))
+	if err != nil {
+		return LibraryInfo{}, err
+	}
+	if err := store.CheckAddedLibraryRoots(saved, roots); err != nil {
+		return LibraryInfo{}, err
 	}
 	if err := h.store.SetLibraryRoots(ctx, store.LibraryID(libraryID), roots); err != nil {
 		return LibraryInfo{}, err

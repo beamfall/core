@@ -62,7 +62,7 @@ beforeEach(() => {
   vi.mocked(setConsoleConfig).mockResolvedValue({ ...config, remoteEnrollmentEnabled: false });
   vi.mocked(mintPairingCode).mockResolvedValue({
     code: "PAIR1234",
-    expiresAt: "2026-06-20T00:00:00Z",
+    expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
   });
   vi.mocked(setDeviceRole).mockResolvedValue({
     ...devices[1],
@@ -136,6 +136,64 @@ describe("Devices (ADR-0081 administration)", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: /manager code/i }));
     await waitFor(() => expect(mintPairingCode).toHaveBeenCalledWith("manager"));
     expect(await screen.findByText("PAIR1234")).toBeInTheDocument();
+    expect(screen.getByText(/^Manager pairing code\./)).toBeInTheDocument();
+  });
+
+  it("shows the code's role, time left and the enroll address, and copies a link carrying the code in the fragment", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    renderDevices();
+    await screen.findByText("My Browser");
+    await userEvent.click(screen.getByRole("button", { name: /viewer code/i }));
+
+    expect(await screen.findByText(/^Viewer pairing code\./)).toBeInTheDocument();
+    expect(screen.getByRole("timer")).toHaveTextContent(/^Expires in (10:00|9:[0-5]\d)$/);
+    const enrollURL = `${window.location.origin}/enroll`;
+    expect(screen.getByText(enrollURL)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Copy link" }));
+    expect(writeText).toHaveBeenCalledWith(`${enrollURL}#code=PAIR1234`);
+    expect(writeText.mock.calls[0][0]).not.toContain("?");
+    expect(screen.queryByRole("textbox", { name: "Link with the pairing code" })).toBeNull();
+  });
+
+  it.each([
+    ["is missing", undefined],
+    ["refuses", { writeText: vi.fn().mockRejectedValue(new Error("NotAllowedError")) }],
+  ])(
+    "reveals the link selected in a read-only field when the clipboard %s (CORE-1607)",
+    async (_label, clipboard) => {
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: clipboard });
+      const log = vi.spyOn(console, "log");
+      renderDevices();
+      await screen.findByText("My Browser");
+      await userEvent.click(screen.getByRole("button", { name: /viewer code/i }));
+      await userEvent.click(await screen.findByRole("button", { name: "Copy link" }));
+
+      const link = `${window.location.origin}/enroll#code=PAIR1234`;
+      const field = await screen.findByRole("textbox", { name: "Link with the pairing code" });
+      expect(field).toHaveValue(link);
+      expect(field).toHaveAttribute("readonly");
+      expect(field).toHaveAccessibleDescription(/press Ctrl\+C or ⌘C/);
+      await waitFor(() => expect(field).toHaveFocus());
+      const input = field as HTMLInputElement;
+      expect([input.selectionStart, input.selectionEnd]).toEqual([0, link.length]);
+      expect(link).not.toContain("?");
+      expect(log).not.toHaveBeenCalledWith(expect.stringContaining("PAIR1234"));
+      log.mockRestore();
+    },
+  );
+
+  it("says when a minted code has expired instead of showing it", async () => {
+    vi.mocked(mintPairingCode).mockResolvedValue({
+      code: "PAIR1234",
+      expiresAt: new Date(Date.now() - 1000).toISOString(),
+    });
+    renderDevices();
+    await screen.findByText("My Browser");
+    await userEvent.click(screen.getByRole("button", { name: /viewer code/i }));
+
+    expect(await screen.findByText(/This code has expired/)).toBeInTheDocument();
+    expect(screen.queryByText("PAIR1234")).not.toBeInTheDocument();
   });
 
   it("persists the remote-enrollment toggle", async () => {

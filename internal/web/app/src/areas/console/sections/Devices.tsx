@@ -1,7 +1,8 @@
-import { Copy, MonitorSmartphone, Plus } from "lucide-react";
-import { useState } from "react";
+import { Copy, Link2, MonitorSmartphone, Plus } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
 import { DataTable, EmptyState, ErrorState, StatusChip } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { TableCell, TableRow } from "@/components/ui/table";
@@ -30,15 +31,75 @@ import { useAsync } from "../useAsync";
 // throughout. The pairing code is a CREDENTIAL: shown once for the operator to
 // copy, never persisted in component state beyond the session and never logged.
 
+type DeviceRole = "viewer" | "manager";
+type MintedCode = PairingCode & { role: DeviceRole };
+
+// Whole seconds left until `expiresAt`, ticking once a second; never negative.
+function secondsUntil(deadline: number): number {
+  return Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+}
+
+function useSecondsLeft(expiresAt: string): number {
+  const deadline = Date.parse(expiresAt);
+  const [seconds, setSeconds] = useState(() => secondsUntil(deadline));
+  useEffect(() => {
+    setSeconds(secondsUntil(deadline));
+    const timer = window.setInterval(() => setSeconds(secondsUntil(deadline)), 1000);
+    return () => window.clearInterval(timer);
+  }, [deadline]);
+  return Number.isNaN(deadline) ? 0 : seconds;
+}
+
 // The freshly minted pairing-code banner — shown once so the operator can copy
-// it before navigating away (the server does not re-issue the same code).
-function PairingCodeBanner({ code }: { code: PairingCode }) {
+// it before navigating away (the server does not re-issue the same code). It
+// says which role the code grants, how long it has left (codes last 10
+// minutes) and where to enter it (CORE-1607). The copied link carries the code
+// in the URL fragment, which browsers never send to the server; the address
+// shown on screen leaves it out so it can be typed by hand. Where the Clipboard
+// API is missing (a plain-HTTP LAN address) or refuses, Copy link reveals the
+// whole link in a read-only field with its text selected, to copy by hand.
+function PairingCodeBanner({ code }: { code: MintedCode }) {
   const t = useT();
+  const seconds = useSecondsLeft(code.expiresAt);
+  const enrollURL = `${window.location.origin}${import.meta.env.BASE_URL}enroll`;
+  const enrollLink = `${enrollURL}#code=${encodeURIComponent(code.code)}`;
+  const roleLabel = t(code.role === "manager" ? "deviceRoleManager" : "deviceRoleViewer");
+  const [manualLink, setManualLink] = useState(false);
+  const linkFieldRef = useRef<HTMLInputElement>(null);
+  const linkHintID = useId();
+  useEffect(() => {
+    if (!manualLink) return;
+    linkFieldRef.current?.focus();
+    linkFieldRef.current?.select();
+  }, [manualLink]);
+
+  async function copyLink() {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("clipboard unavailable");
+      await navigator.clipboard.writeText(enrollLink);
+      setManualLink(false);
+    } catch {
+      setManualLink(true);
+      linkFieldRef.current?.select();
+    }
+  }
+
+  if (seconds === 0) {
+    return (
+      <div className="console-secret">
+        <p className="console-secret-lead">
+          <MonitorSmartphone className="console-nav-icon" aria-hidden />
+          {t("deviceCodeExpired")}
+        </p>
+      </div>
+    );
+  }
+  const time = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
   return (
     <div className="console-secret">
       <p className="console-secret-lead">
         <MonitorSmartphone className="console-nav-icon" aria-hidden />
-        {t("devicePairingCodeShown")}
+        {t("deviceCodeShownFor", { role: roleLabel })}
       </p>
       <div className="console-secret-row">
         <code className="console-secret-value">{code.code}</code>
@@ -51,6 +112,35 @@ function PairingCodeBanner({ code }: { code: PairingCode }) {
           {t("copy")}
         </Button>
       </div>
+      <p className="mt-2 text-[12px] leading-snug text-muted-foreground" role="timer">
+        {t("deviceCodeExpiresIn", { time })}
+      </p>
+      <p className="mt-3 text-[12px] leading-snug text-muted-foreground">{t("deviceCodeOpenAt")}</p>
+      <div className="console-secret-row">
+        <code className="console-secret-value text-[13px] tracking-normal break-all">
+          {enrollURL}
+        </code>
+        <Button variant="outline" size="sm" onClick={() => void copyLink()}>
+          <Link2 className="console-nav-icon" aria-hidden />
+          {t("deviceCodeCopyLink")}
+        </Button>
+      </div>
+      {manualLink && (
+        <div className="mt-2">
+          <Input
+            ref={linkFieldRef}
+            readOnly
+            value={enrollLink}
+            aria-label={t("deviceCodeLinkField")}
+            aria-describedby={linkHintID}
+            onFocus={(e) => e.currentTarget.select()}
+            className="h-9 font-mono text-[13px]"
+          />
+          <p id={linkHintID} className="mt-1.5 text-[12px] leading-snug text-muted-foreground">
+            {t("deviceCodeLinkCopyHint")}
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -59,13 +149,13 @@ export function Devices() {
   const t = useT();
   const devices = useAsync(fetchDevices);
   const config = useAsync(fetchConsoleConfig);
-  const [minted, setMinted] = useState<PairingCode | null>(null);
+  const [minted, setMinted] = useState<MintedCode | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function mint(role: "viewer" | "manager") {
+  async function mint(role: DeviceRole) {
     setBusy(true);
     try {
-      setMinted(await mintPairingCode(role));
+      setMinted({ ...(await mintPairingCode(role)), role });
     } finally {
       setBusy(false);
     }
@@ -170,7 +260,7 @@ export function Devices() {
       </Section>
 
       <Section heading="deviceAddHeading" lead="deviceAddLead">
-        {minted && <PairingCodeBanner code={minted} />}
+        {minted && <PairingCodeBanner key={minted.code} code={minted} />}
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button variant="outline" disabled={busy} onClick={() => void mint("viewer")}>
             <Plus className="console-nav-icon" aria-hidden />

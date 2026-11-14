@@ -551,6 +551,9 @@ func (s *Service) SetAssets(assets AssetsLocator) {
 // (the default) counts zero active streams.
 func (s *Service) SetSessions(sessions *Sessions) {
 	s.sessions = sessions
+	if sessions != nil && s.store != nil {
+		sessions.SetKeyframeStore(s.store) // probe each audio-copy source once (CORE-0021)
+	}
 }
 
 // SetPartyRoster wires the Watch-Party membership oracle so a

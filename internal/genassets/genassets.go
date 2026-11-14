@@ -231,7 +231,7 @@ func (s *Service) assetDir(fingerprint string) string {
 
 // PurgeFingerprint removes a content fingerprint's entire generated-asset
 // directory — trickplay manifest + sprite sheets, preview clip, marker thumbs,
-// waveform/loudness/silence/beatgrid/sync-lanes analyses, and image-enrich JSON —
+// waveform/loudness/silence analyses, and image-enrich JSON —
 // through the same assetDir keying every generator writes to, so the purge cannot
 // drift from the layout. It is the reconcile hook for the Encrypted-Library
 // crash-recovery sweep (ADR-0045 §reconcile, ENCPRIV-10d): generation is
@@ -316,7 +316,7 @@ var (
 // anything else (including traversal attempts) is an unknown asset.
 func validAssetName(name string) bool {
 	return name == ManifestName || name == PreviewClipName || name == WaveformName ||
-		name == SilenceMapName || name == BeatGridName || name == SyncLanesName || name == ImageEnrichName ||
+		name == SilenceMapName || name == ImageEnrichName ||
 		name == LoudnessName ||
 		sheetNameRe.MatchString(name) || markerNameRe.MatchString(name)
 }

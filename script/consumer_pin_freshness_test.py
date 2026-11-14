@@ -387,6 +387,31 @@ def control_unknown_consumer_repo(root: Path) -> None:
     )
 
 
+def control_worktree_of_listed_repo_is_not_unlisted(root: Path) -> None:
+    """CORE-1811: a lane worktree of a listed consumer at the workspace root is
+    not an unlisted consumer; a separate repository there still is."""
+    build_workspace(root)
+    listed = consumer_name(REGISTRY["obligations"][0])
+    git(root / listed, "init", "-q")
+    git(root / listed, "add", "-A")
+    git(root / listed, "commit", "-q", "-m", "base")
+    git(root / listed, "worktree", "add", "-q", "--detach", str(root / f".wt-{listed}"))
+    completed = run_check(root, "--all")
+    expect(
+        "linked worktree of a listed consumer at the workspace root -> not reported",
+        completed.returncode == 0 and f".wt-{listed}" not in completed.stdout + completed.stderr,
+        completed.stdout + completed.stderr,
+    )
+    clone = root / f".clone-{listed}"
+    git(root, "clone", "-q", str(root / listed), str(clone))
+    expect_red(
+        "separate repository with a consumer probe at the workspace root -> RED",
+        run_check(root, "--all"),
+        clone.name,
+        WORKSPACE_MANIFEST,
+    )
+
+
 def control_manifest_drives_consumer_name(root: Path) -> None:
     build_workspace(root)
     obligation = obligation_by_id("apple-ui-wire-contract-pin")
@@ -636,6 +661,7 @@ CONTROLS = [
     control_no_workspace_manifest,
     control_linked_worktree_outside_workspace,
     control_unknown_consumer_repo,
+    control_worktree_of_listed_repo_is_not_unlisted,
     control_manifest_drives_consumer_name,
     control_declared_owner_probe_cannot_be_masked,
     control_diff_guard,

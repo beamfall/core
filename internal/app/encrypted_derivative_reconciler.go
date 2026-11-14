@@ -32,7 +32,7 @@ import (
 //
 //   - artwork     — per-Media dir {dataDir}/artwork/<mediaID>/ (all slots+buckets)
 //   - generated   — per-fingerprint dir {dataDir}/generated/<fp>/ (trickplay,
-//     preview, marker thumbs, waveform/loudness/silence/beatgrid/sync-lanes,
+//     preview, marker thumbs, waveform/loudness/silence,
 //     image-enrich)
 //   - subtitles   — per-fingerprint sidecars {dataDir}/subtitles/<fp>.<idx>.vtt
 //   - playback    — per-Media precomputed HLS renditions

@@ -212,6 +212,9 @@ type hlsSession struct {
 	// StreamShape.Adjust). durationSeconds, segments and the source end are
 	// then on the adjusted output timeline.
 	adjust ffmpeg.AudioAdjust
+	// timeline lays out the audio-copy rung's segments at the source's own
+	// keyframes (CORE-0021); nil keeps the uniform grid.
+	timeline *keyframeTimeline
 	// currentRung is the rendition the live FFmpeg process encodes; "" until
 	// the first segment request starts one (one rendition per live session,
 	// ADR-0010 §8 — switching rungs replaces the process).
@@ -272,13 +275,13 @@ type hlsSession struct {
 	// crashRestarts holds the start times of recent crash restarts, bounding
 	// them to encoderRestartBudget per encoderRestartWindow.
 	crashRestarts []time.Time
-	// sourceEndSeconds is an upper bound on where the source's media ends,
-	// known once an encoder hit end of input early or produced a segment with
-	// no media (a truncated file whose probed duration overstates it). It only
+	// sourceEnd is an upper bound on where the source's media ends, known
+	// once an encoder hit end of input early or produced a segment with no
+	// media (a truncated file whose probed duration overstates it). It only
 	// ever lowers. Segments starting at or after it are refused as
 	// ErrSourceEnded instead of being encoded as empty segments.
-	sourceEndSeconds int
-	sourceEndKnown   bool
+	sourceEnd      time.Duration
+	sourceEndKnown bool
 	// resumeSeconds is where playback info resumed the viewer, as a source
 	// position. The session's first encoder starts at the segment containing
 	// it, so a resume spawns FFmpeg once instead of starting at 0 for init.mp4
@@ -304,21 +307,46 @@ func (h *hlsSession) takeRestartLocked(now time.Time) bool {
 	return true
 }
 
-// noteSourceEndLocked lowers the known source end to seconds, reporting
-// whether it changed (so each new fact is logged once).
-func (h *hlsSession) noteSourceEndLocked(seconds int) bool {
-	if h.sourceEndKnown && seconds >= h.sourceEndSeconds {
+// noteSourceEndLocked lowers the known source end to at, reporting whether it
+// changed (so each new fact is logged once).
+func (h *hlsSession) noteSourceEndLocked(at time.Duration) bool {
+	if h.sourceEndKnown && at >= h.sourceEnd {
 		return false
 	}
-	h.sourceEndSeconds = seconds
+	h.sourceEnd = at
 	h.sourceEndKnown = true
 	return true
 }
 
 // beyondSourceEndLocked reports whether a segment starts at or past the known
 // source end.
-func (h *hlsSession) beyondSourceEndLocked(segment, segSeconds int) bool {
-	return h.sourceEndKnown && segment*segSeconds >= h.sourceEndSeconds
+func (h *hlsSession) beyondSourceEndLocked(rung Rung, segment int) bool {
+	return h.sourceEndKnown && h.segmentStart(rung, segment) >= h.sourceEnd
+}
+
+// keyframeTimeline returns the session's keyframe layout for rung, or nil
+// when rung uses the uniform segment grid.
+func (h *hlsSession) keyframeTimeline(rung Rung) *keyframeTimeline {
+	if rung.CopyVideo {
+		return h.timeline
+	}
+	return nil
+}
+
+// segmentCount is how many segments rung's playlist lists.
+func (h *hlsSession) segmentCount(rung Rung) int {
+	if t := h.keyframeTimeline(rung); t != nil {
+		return t.segmentCount()
+	}
+	return segmentCount(h.durationSeconds, rungSegmentSeconds(rung))
+}
+
+// segmentStart is where rung's segment begins on the source timeline.
+func (h *hlsSession) segmentStart(rung Rung, segment int) time.Duration {
+	if t := h.keyframeTimeline(rung); t != nil {
+		return t.segmentStart(segment)
+	}
+	return time.Duration(segment*rungSegmentSeconds(rung)) * time.Second
 }
 
 func (h *hlsSession) rung(id string) (Rung, bool) {
@@ -414,6 +442,9 @@ type Sessions struct {
 	// offLockIdle, when non-nil, is closed when starting, stopping and
 	// detached all drop to zero.
 	offLockIdle chan struct{}
+
+	// keyframes holds audio-copy keyframe timelines; it has its own lock.
+	keyframes keyframeCache
 }
 
 // sessionTeardown is the slow half of removing a session: stopping its FFmpeg
@@ -859,7 +890,15 @@ func (s *Sessions) FilePathShaped(ctx context.Context, key SessionKey, src strin
 	if err != nil {
 		return "", err
 	}
-	session, err := s.session(key, src, durationSeconds, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, picture, shape.Adjust, priority)
+	// The keyframe timeline lays out the copied-video rung, which a composed
+	// picture or an audio adjustment replaces with a single encoded rung.
+	var timeline *keyframeTimeline
+	if audioCopy && durationSeconds > 0 && picture == nil && shape.Adjust.IsZero() {
+		if timeline, err = s.copyVideoTimeline(ctx, key, src); err != nil {
+			return "", err
+		}
+	}
+	session, err := s.session(key, src, durationSeconds, timeline, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, picture, shape.Adjust, priority)
 	if err != nil {
 		return "", err
 	}
@@ -898,10 +937,10 @@ func (s *Sessions) FilePathShaped(ctx context.Context, key SessionKey, src strin
 		match := segmentName.FindStringSubmatch(file)
 		segment, _ = strconv.Atoi(match[1])
 		isSegment = true
-		if session.durationSeconds > 0 && segment >= segmentCount(session.durationSeconds, rungSegmentSeconds(rung)) {
+		if session.durationSeconds > 0 && segment >= session.segmentCount(rung) {
 			return "", errors.New("unknown stream file")
 		}
-		if s.beyondSourceEnd(session, segment, rungSegmentSeconds(rung)) {
+		if s.beyondSourceEnd(session, rung, segment) {
 			return "", ErrSourceEnded // known short source: never encode an empty segment
 		}
 		if run, err = s.ensureRung(ctx, key, session, rung, segment, path); err != nil {
@@ -914,7 +953,7 @@ func (s *Sessions) FilePathShaped(ctx context.Context, key SessionKey, src strin
 	if isSegment && segmentLacksMedia(path) {
 		// FFmpeg started past the real end of a truncated source writes a
 		// segment with no media; serving it as playable would stall the player.
-		s.noteSourceEnd(key, session, rung, segment*rungSegmentSeconds(rung), "")
+		s.noteSourceEnd(key, session, rung, segment, "")
 		return "", ErrSourceEnded
 	}
 	if file != "index.m3u8" {
@@ -953,7 +992,7 @@ func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *
 			}
 			run = nil // replaced by another request's encoder: keep waiting
 		case exitEndOfInput:
-			if isSegment && s.beyondSourceEnd(session, segment, rungSegmentSeconds(rung)) {
+			if isSegment && s.beyondSourceEnd(session, rung, segment) {
 				return ErrSourceEnded
 			}
 			return errEncoderEnded
@@ -1033,30 +1072,30 @@ func segmentWrittenSince(rungDir string, base int, since time.Time) bool {
 
 // beyondSourceEnd reports whether segment starts past the session's known
 // source end.
-func (s *Sessions) beyondSourceEnd(session *hlsSession, segment, segSeconds int) bool {
+func (s *Sessions) beyondSourceEnd(session *hlsSession, rung Rung, segment int) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return session.beyondSourceEndLocked(segment, segSeconds)
+	return session.beyondSourceEndLocked(rung, segment)
 }
 
-// noteSourceEnd records that the source has no media from seconds on and logs
-// it once per new (lower) bound.
-func (s *Sessions) noteSourceEnd(key SessionKey, session *hlsSession, rung Rung, seconds int, stderr string) {
+// noteSourceEnd records that the source has no media from rung's segment on
+// and logs it once per new (lower) bound.
+func (s *Sessions) noteSourceEnd(key SessionKey, session *hlsSession, rung Rung, segment int, stderr string) {
 	s.mu.Lock()
-	lowered := s.liveLocked(key, session) && session.noteSourceEndLocked(seconds)
+	lowered := s.liveLocked(key, session) && session.noteSourceEndLocked(session.segmentStart(rung, segment))
 	s.mu.Unlock()
 	if lowered {
-		logSourceEnd(key, session, rung, seconds, stderr)
+		logSourceEnd(key, session, rung, segment, stderr)
 	}
 }
 
-func logSourceEnd(key SessionKey, session *hlsSession, rung Rung, seconds int, stderr string) {
+func logSourceEnd(key SessionKey, session *hlsSession, rung Rung, segment int, stderr string) {
 	slog.Warn("media source ends before its probed duration; refusing segments past the end",
 		"media", key.MediaID,
 		"session_dir", filepath.Base(session.dir),
 		"rung", rung.ID,
-		"source_end_seconds", seconds,
-		"source_end_segment", seconds/rungSegmentSeconds(rung),
+		"source_end_seconds", session.segmentStart(rung, segment).Seconds(),
+		"source_end_segment", segment,
 		"probed_duration_seconds", session.durationSeconds,
 		"stderr", stderr)
 }
@@ -1100,7 +1139,7 @@ func (s *Sessions) transcodeLatencyBudget(session *hlsSession, path string) time
 // non-zero adjust stretches durationSeconds (a source duration) onto the
 // adjusted output timeline and, without a picture, offers the single
 // audio-only rung.
-func (s *Sessions) session(key SessionKey, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, picture *ComposedPicture, adjust ffmpeg.AudioAdjust, priority Priority) (*hlsSession, error) {
+func (s *Sessions) session(key SessionKey, src string, durationSeconds int, timeline *keyframeTimeline, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, picture *ComposedPicture, adjust ffmpeg.AudioAdjust, priority Priority) (*hlsSession, error) {
 	var teardowns []sessionTeardown
 	s.mu.Lock()
 	defer func() {
@@ -1119,7 +1158,7 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds, videoWid
 	}
 	durationSeconds = adjust.OutputSeconds(durationSeconds)
 	if existing, ok := s.sessions[key]; ok {
-		if existing.src != src || existing.durationSeconds != durationSeconds || existing.degraded != degraded || !rungsEqual(existing.rungs, requestedRungs) || existing.sourceVideo != sourceVideo || existing.burnSubtitleIndex != burnSubtitleIndex || !audioProfilesEqual(existing.audioProfile, audioProfile) || !equalOptionalInt(existing.audioStreamIndex, audioStreamIndex) || (existing.composed != nil) != (picture != nil) || existing.adjust != adjust {
+		if existing.src != src || existing.durationSeconds != durationSeconds || existing.timeline != timeline || existing.degraded != degraded || !rungsEqual(existing.rungs, requestedRungs) || existing.sourceVideo != sourceVideo || existing.burnSubtitleIndex != burnSubtitleIndex || !audioProfilesEqual(existing.audioProfile, audioProfile) || !equalOptionalInt(existing.audioStreamIndex, audioStreamIndex) || (existing.composed != nil) != (picture != nil) || existing.adjust != adjust {
 			teardowns = append(teardowns, *s.removeLocked(key)) // mode-shaping changed; old artifacts are incompatible
 		} else {
 			// A position noted while this session ran was kept only for a
@@ -1138,6 +1177,7 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds, videoWid
 		dir:               dir,
 		src:               src,
 		durationSeconds:   durationSeconds,
+		timeline:          timeline,
 		rungs:             requestedRungs,
 		audioProfile:      audioProfile,
 		audioStreamIndex:  audioStreamIndex,
@@ -1154,7 +1194,7 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds, videoWid
 			session.resumeSeconds = hint.seconds
 		}
 	}
-	err := writeSessionPlaylists(dir, requestedRungs, durationSeconds)
+	err := writeSessionPlaylists(dir, requestedRungs, durationSeconds, timeline)
 	if err == nil && picture != nil {
 		session.composed = picture
 		session.picture, err = writeLivePicture(filepath.Join(dir, ComposedRungID), *picture)
@@ -1217,8 +1257,9 @@ func rungsEqual(left, right []Rung) bool {
 
 // writeSessionPlaylists lays out the session directory: the master playlist,
 // one subdirectory per rung, and (for known durations) the synthesized VOD
-// playlist each variant serves before a single segment exists.
-func writeSessionPlaylists(dir string, rungs []Rung, durationSeconds int) error {
+// playlist each variant serves before a single segment exists. The audio-copy
+// rung's playlist follows timeline when there is one.
+func writeSessionPlaylists(dir string, rungs []Rung, durationSeconds int, timeline *keyframeTimeline) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
@@ -1231,7 +1272,11 @@ func writeSessionPlaylists(dir string, rungs []Rung, durationSeconds int) error 
 			return err
 		}
 		if durationSeconds > 0 {
-			if err := os.WriteFile(filepath.Join(rungDir, "index.m3u8"), []byte(vodPlaylist(durationSeconds, rungSegmentSeconds(rung))), 0o600); err != nil {
+			playlist := vodPlaylist(durationSeconds, rungSegmentSeconds(rung))
+			if rung.CopyVideo && timeline != nil {
+				playlist = timeline.playlist()
+			}
+			if err := os.WriteFile(filepath.Join(rungDir, "index.m3u8"), []byte(playlist), 0o600); err != nil {
 				return err
 			}
 		}
@@ -1340,7 +1385,11 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	procCtx := context.WithoutCancel(ctx)
 	var proc *ffmpeg.HLSProcess
 	var err error
-	if session.durationSeconds > 0 {
+	if t := session.keyframeTimeline(rung); t != nil && session.durationSeconds > 0 {
+		// Copied video restarts at segment's keyframe, stamped with that
+		// keyframe's real time, so the media matches the playlist (CORE-0021).
+		proc, err = s.transcoder.(keyframeTranscoder).StartHLSKeyframeSegments(procCtx, session.src, rungDir, segment, t.segmentStart(segment), session.rendition(rung))
+	} else if session.durationSeconds > 0 {
 		proc, err = s.transcoder.StartHLSSegments(procCtx, session.src, rungDir, segment, rungSegmentSeconds(rung), session.rendition(rung))
 	} else {
 		proc, err = s.transcoder.StartHLS(procCtx, session.src, rungDir, session.rendition(rung))
@@ -1402,9 +1451,11 @@ func (session *hlsSession) resumeSegmentLocked(rung Rung) int {
 	if session.resumeSeconds <= 0 || session.durationSeconds <= 0 {
 		return 0
 	}
-	segSeconds := rungSegmentSeconds(rung)
-	segment := session.adjust.OutputPosition(session.resumeSeconds) / segSeconds
-	if segment >= segmentCount(session.durationSeconds, segSeconds) || session.beyondSourceEndLocked(segment, segSeconds) {
+	segment := session.adjust.OutputPosition(session.resumeSeconds) / rungSegmentSeconds(rung)
+	if t := session.keyframeTimeline(rung); t != nil {
+		segment = t.segmentAt(time.Duration(session.resumeSeconds) * time.Second)
+	}
+	if segment >= session.segmentCount(rung) || session.beyondSourceEndLocked(rung, segment) {
 		return 0
 	}
 	return segment
@@ -1493,16 +1544,15 @@ func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoder
 		}
 		// Filesystem reads stay off-lock, as with ensureRung's frontier scan.
 		rungDir := filepath.Join(session.dir, rung.ID)
-		segSeconds := rungSegmentSeconds(rung)
 		frontier := scanFrontier(rungDir, base)
-		sourceEnd := -1
+		sourceEnd := -1 // the first segment with no media, when the source ends early
 		if outcome == exitEndOfInput && session.durationSeconds > 0 {
 			last := frontier
 			for last >= base && segmentLacksMedia(filepath.Join(rungDir, fmt.Sprintf("seg%05d.m4s", last))) {
 				last--
 			}
-			if end := last + 1; end < segmentCount(session.durationSeconds, segSeconds) {
-				sourceEnd = end * segSeconds
+			if end := last + 1; end < session.segmentCount(rung) {
+				sourceEnd = end
 			}
 		}
 
@@ -1515,7 +1565,7 @@ func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoder
 			session.lastCrashed = outcome == exitCrashed || outcome == exitStalled
 			s.releaseTranscodeLease(session)
 		}
-		lowered := live && sourceEnd >= 0 && session.noteSourceEndLocked(sourceEnd)
+		lowered := live && sourceEnd >= 0 && session.noteSourceEndLocked(session.segmentStart(rung, sourceEnd))
 		s.mu.Unlock()
 
 		stderr := run.proc.StderrTail()

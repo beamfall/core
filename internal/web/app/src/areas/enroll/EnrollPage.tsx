@@ -1,4 +1,4 @@
-import { ArrowRight, ChevronRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,7 @@ import {
   FormFeedback,
   normalizePairingCode,
 } from "./AuthShell";
+import { defaultDeviceName } from "./deviceName";
 import { PairingCodeHelp } from "./PairingCodeHelp";
 
 // First contact (ADR-0007 §2): a browser enrolls as a VIEWER device with a
@@ -37,6 +38,11 @@ import { PairingCodeHelp } from "./PairingCodeHelp";
 // The page also has to answer "what is a pairing code and where do I get one?"
 // for someone who has never seen this server (CORE-1196): PairingCodeHelp says
 // so in plain words under the form.
+//
+// Console › Devices hands out a link of the form /web/enroll#code=XXXX
+// (CORE-1607). The code rides in the fragment, which browsers never send to the
+// server or put in Referer, and it is wiped from the address bar as soon as it
+// has been read.
 export function EnrollPage() {
   const t = useT();
   const codeID = useId();
@@ -46,7 +52,7 @@ export function EnrollPage() {
   const deviceNameHintID = useId();
   const errorRef = useRef<HTMLParagraphElement>(null);
   const codeRef = useRef<HTMLInputElement>(null);
-  const [code, setCode] = useState("");
+  const [code, setCode] = useState(readCodeFromHash);
   const [deviceName, setDeviceName] = useState("");
   const [error, setError] = useState<string | null>(null);
   // True after the server refused the code: the hint then says why codes fail.
@@ -57,6 +63,18 @@ export function EnrollPage() {
   // admin-password sign-in, so the form stays hidden; it also stays hidden
   // until the probe settles so it never flashes on a Strict server.
   const [securityMode, setSecurityMode] = useState<SignInSecurityMode | null>(null);
+
+  useEffect(() => {
+    if (/(^#|&)code=/.test(window.location.hash)) {
+      window.history.replaceState(
+        window.history.state,
+        "",
+        window.location.pathname + window.location.search,
+      );
+    }
+  }, []);
+
+  const fallbackName = defaultDeviceName(t);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,10 +96,9 @@ export function EnrollPage() {
     setBusy(true);
     setError(null);
     try {
-      // The code is already normalized as typed; fall back to the localized
-      // "Web Browser" device name when the operator leaves it blank, exactly
-      // as the vanilla enroll form does.
-      const rebind = await enroll(code, deviceName.trim() || t("webBrowser"));
+      // The code is already normalized as typed; a blank device name falls
+      // back to one that tells this browser apart ("Chrome on macOS").
+      const rebind = await enroll(code, deviceName.trim() || fallbackName);
       // Success: reload to BASE_URL so SessionProvider re-bootstraps the
       // now-enrolled session (the vanilla app calls init(); the React app
       // re-runs the whole spine from a fresh load). A failed rebind is its own
@@ -148,7 +165,7 @@ export function EnrollPage() {
             value={deviceName}
             onChange={(e) => setDeviceName(e.target.value)}
             className={FIELD}
-            placeholder={t("webBrowser")}
+            placeholder={fallbackName}
             autoComplete="off"
             aria-describedby={deviceNameHintID}
           />
@@ -166,9 +183,12 @@ export function EnrollPage() {
           <ArrowRight aria-hidden className="size-4" />
         </Button>
       </form>
+      {securityMode === "home" && (
+        <AdminSignInForm deviceName={deviceName.trim() || fallbackName} />
+      )}
+      {securityMode === "strict" && <StrictRecoveryHint />}
       <div className="mt-7 border-t border-white/10 pt-6">
         <PairingCodeHelp />
-        {securityMode === "home" && <AdminSignInForm deviceName={deviceName} />}
       </div>
     </AuthShell>
   );
@@ -179,13 +199,22 @@ export function EnrollPage() {
 // profile. Every refusal is the same 401, so the message never says whether
 // the password was wrong or sign-in is unavailable. The password is never
 // logged or echoed.
+//
+// It is a visible secondary action right under the code form (CORE-1608), so
+// an owner without a pairing code finds it without scrolling; the password
+// field opens in place.
 function AdminSignInForm({ deviceName }: { deviceName: string }) {
   const t = useT();
   const passwordID = useId();
   const errorID = useId();
   const errorRef = useRef<HTMLParagraphElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const [open, setOpen] = useState(false);
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Set when the server refused a hostname a LAN browser addressed (CORE-1600):
+  // the address to reopen Beamfall at, or "" when the server offered none.
+  const [lanUrl, setLanUrl] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -194,59 +223,116 @@ function AdminSignInForm({ deviceName }: { deviceName: string }) {
     if (busy) return;
     setBusy(true);
     setError(null);
+    setLanUrl(null);
     try {
-      const rebind = await adminSignIn(password, deviceName.trim() || t("webBrowser"));
+      const rebind = await adminSignIn(password, deviceName);
       setStatus(rebind === "bound" ? t("enrollConnected") : t("enrollHandshakeIncomplete"));
       window.location.assign(import.meta.env.BASE_URL);
     } catch (err) {
-      setError(adminSignInErrorMessage(err, t));
+      const lan = lanHostnameRefusal(err);
+      setLanUrl(lan);
+      setError(lan === null ? adminSignInErrorMessage(err, t) : t("adminSignInUseIPAddress"));
       setPassword("");
       setBusy(false);
       requestAnimationFrame(() => errorRef.current?.focus());
     }
   }
 
-  // Owner recovery is the rare path, so it sits behind a disclosure; a failed
-  // attempt keeps it open because the open state lives on the element.
   return (
-    <details className="group mt-5">
-      <summary className="-mx-1 flex cursor-pointer list-none items-center gap-1.5 rounded-md px-1 py-1 text-sm font-medium text-foreground/90 transition-colors duration-150 hover:text-foreground [&::-webkit-details-marker]:hidden">
-        <ChevronRight
-          aria-hidden
-          className="size-4 text-muted-foreground transition-transform duration-150 group-open:rotate-90"
-        />
-        {t("adminSignInTitle")}
-      </summary>
-      <form onSubmit={onSubmit} className="mt-3 space-y-4" noValidate>
-        <p className="m-0 text-sm leading-relaxed text-muted-foreground">{t("adminSignInLead")}</p>
-        <div>
-          <Label htmlFor={passwordID} className={FIELD_LABEL}>
-            {t("adminPasswordLabel")}
-          </Label>
-          <Input
-            id={passwordID}
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className={FIELD}
-            autoComplete="current-password"
-            required
-            aria-invalid={error != null}
-            aria-describedby={error ? errorID : undefined}
-          />
-        </div>
-        <FormFeedback status={status} error={error} errorID={errorID} errorRef={errorRef} />
+    <div className="mt-5">
+      <p className="m-0 mb-5 flex items-center gap-3 text-xs uppercase tracking-wide text-muted-foreground before:h-px before:flex-1 before:bg-white/10 after:h-px after:flex-1 after:bg-white/10">
+        {t("adminSignInOr")}
+      </p>
+      {!open ? (
         <Button
-          type="submit"
+          type="button"
           variant="outline"
-          disabled={busy || password === ""}
+          onClick={() => {
+            setOpen(true);
+            requestAnimationFrame(() => passwordRef.current?.focus());
+          }}
           className="h-11 w-full rounded-[10px] border-white/15 bg-transparent text-[15px] font-semibold hover:bg-white/[0.06]"
         >
-          {t("adminSignIn")}
+          {t("adminSignInTitle")}
         </Button>
-      </form>
-    </details>
+      ) : (
+        <form onSubmit={onSubmit} className="space-y-4" noValidate>
+          <p className="m-0 text-sm leading-relaxed text-muted-foreground">
+            {t("adminSignInLead")}
+          </p>
+          <div>
+            <Label htmlFor={passwordID} className={FIELD_LABEL}>
+              {t("adminPasswordLabel")}
+            </Label>
+            <Input
+              id={passwordID}
+              ref={passwordRef}
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className={FIELD}
+              autoComplete="current-password"
+              required
+              aria-invalid={error != null}
+              aria-describedby={error ? errorID : undefined}
+            />
+          </div>
+          <FormFeedback status={status} error={error} errorID={errorID} errorRef={errorRef} />
+          {lanUrl && (
+            <p className="m-0 text-sm">
+              <a href={lanUrl} className="font-medium underline underline-offset-2">
+                {t("adminSignInOpenAddress", { url: lanUrl })}
+              </a>
+            </p>
+          )}
+          <Button
+            type="submit"
+            variant="outline"
+            disabled={busy || password === ""}
+            className="h-11 w-full rounded-[10px] border-white/15 bg-transparent text-[15px] font-semibold hover:bg-white/[0.06]"
+          >
+            {t("adminSignIn")}
+          </Button>
+        </form>
+      )}
+    </div>
   );
+}
+
+// Strict mode has no password fallback (CORE-1110), so a locked-out owner is
+// told the one way back in: mint a code on the server itself (CORE-1608).
+function StrictRecoveryHint() {
+  const t = useT();
+  return (
+    <p className="m-0 mt-5 text-sm leading-relaxed text-muted-foreground">
+      {t("strictRecoveryHint")}{" "}
+      <code className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[13px] text-foreground">
+        beamfall pairing-code
+      </code>
+    </p>
+  );
+}
+
+// The CORE-1600 refusal: 403 with code lan_hostname_not_allowed. Returns the
+// first offered address ("" when none was offered), or null for any other
+// error. Only a plain http(s) URL is ever used as a link target.
+export function lanHostnameRefusal(err: unknown): string | null {
+  if (!(err instanceof ApiError) || err.status !== 403) return null;
+  const payload = err.payload as { code?: unknown; lanUrls?: unknown } | undefined;
+  if (payload?.code !== "lan_hostname_not_allowed") return null;
+  const first = Array.isArray(payload.lanUrls) ? payload.lanUrls[0] : undefined;
+  if (typeof first !== "string") return "";
+  try {
+    const url = new URL(first);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.href : "";
+  } catch {
+    return "";
+  }
+}
+
+function readCodeFromHash(): string {
+  const fragment = window.location.hash.replace(/^#/, "");
+  return normalizePairingCode(new URLSearchParams(fragment).get("code") ?? "").slice(0, 32);
 }
 
 // Shared by enroll and promote. The server never says whether a refused code

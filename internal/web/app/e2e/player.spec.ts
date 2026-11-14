@@ -329,14 +329,21 @@ test("visual parity covers every migrated player widget state", async ({
   const reset = subtitleDialog.getByRole("button", { name: "Reset" });
   await reset.focus();
   await expect(reset).toBeFocused();
+  // Subtitle choices persist in the server-side Profile (CORE-1681), so a run that already
+  // chose Large/Solid below (the other project, or a repeat) leaves them set. Reset from the
+  // keyboard, so no hover state, to capture the defaults every time (CORE-1814).
+  await page.keyboard.press("Enter");
+  const size = subtitleDialog.getByRole("combobox", { name: "Size" });
+  const background = subtitleDialog.getByRole("combobox", { name: "Background" });
+  await expect(size).toHaveValue("1");
+  await expect(background).toHaveValue("dark");
+  await expect(reset).toBeFocused();
   await expectVisualParity(page, testInfo, "player-subtitle-dialog-open-focused");
 
-  const size = subtitleDialog.getByRole("combobox", { name: "Size" });
   await openSharedSelectState(page, size, "Large");
   await expectVisualParity(page, testInfo, "player-subtitle-size-open-focused-selected");
   await closeSharedSelectPopup(page);
 
-  const background = subtitleDialog.getByRole("combobox", { name: "Background" });
   await openSharedSelectState(page, background, "Solid");
   await expectVisualParity(page, testInfo, "player-subtitle-background-open-focused-selected");
   await closeSharedSelectPopup(page);

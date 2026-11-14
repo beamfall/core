@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -144,7 +145,7 @@ func composedHLSArgs(audioSrc, dir string, picture ComposedPicture, rendition Re
 func composedSegmentArgs(audioSrc, dir string, picture ComposedPicture, startSegment, segmentSeconds int, rendition Rendition) []string {
 	args := append([]string{"-v", "error"}, hlsProgressArgs()...)
 	args = append(args, composedEncodeArgs(audioSrc, picture, rendition, startSegment*segmentSeconds, segmentSeconds)...)
-	return append(args, segmentMuxArgs(dir, startSegment, segmentSeconds)...)
+	return append(args, segmentMuxArgs(dir, startSegment, strconv.Itoa(startSegment*segmentSeconds), strconv.Itoa(segmentSeconds))...)
 }
 
 // composedEncodeArgs is the composition recipe the precomputed and live
