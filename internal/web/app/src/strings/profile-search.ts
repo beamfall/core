@@ -15,6 +15,11 @@ export const profileSearchStrings = {
     settingsTrimSilenceLead:
       "Skips long silent gaps between segments when a silence map is available. Smart speed is planned separately.",
     settingsSkipIntervalLabel: "Skip buttons",
+    settingsStillWatchingLabel: "Ask if anyone is still watching",
+    settingsStillWatchingLead:
+      "After this many items in a row start on their own, pause and ask before the next one.",
+    settingsStillWatchingNever: "Never",
+    settingsStillWatchingAfter: "{count, plural, one {After # item} other {After # items}}",
     settingsDownstreamAudioLabel: "Audio output",
     settingsDownstreamAudioLead:
       "Choose stereo for TV speakers, or surround when your browser routes audio to a receiver.",
@@ -97,6 +102,11 @@ export const profileSearchStrings = {
     settingsReduceMotion: "Réduire les animations",
     settingsReduceMotionLead: "Limiter les animations non essentielles dans l’application.",
     settingsRecommendHeading: "Recommandations",
+    settingsStillWatchingLabel: "Demander si quelqu’un regarde encore",
+    settingsStillWatchingLead:
+      "Après ce nombre d’éléments lancés automatiquement à la suite, mettre en pause et demander avant le suivant.",
+    settingsStillWatchingNever: "Jamais",
+    settingsStillWatchingAfter: "{count, plural, one {Après # élément} other {Après # éléments}}",
     settingsRecommendOptIn: "Recommandations personnalisées",
     settingsRecommendOptInLead:
       "Permettre à la recherche en mode recommandation d’utiliser l’activité de ce profil.",

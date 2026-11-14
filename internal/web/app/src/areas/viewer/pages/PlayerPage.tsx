@@ -15,16 +15,19 @@ import {
   skipIntervalOverrideKey,
   skipIntervalOverrideValue,
 } from "../lib/preferences";
+import { noteAutoAdvance } from "../lib/stillWatching";
 import { type PlayQueueItem, queueNeighbours, readPlayerNavState } from "../lib/watchQueue";
 import { AudioStage } from "../player/AudioStage";
 import { PlayerTransport } from "../player/PlayerTransport";
 import { SkippedOverlay } from "../player/SkippedOverlay";
+import { StillWatchingPrompt } from "../player/StillWatchingPrompt";
 import { UpNextCard } from "../player/UpNextCard";
 import { useAutoSkip } from "../player/useAutoSkip";
 import { useChromeAutoHide } from "../player/useChromeAutoHide";
 import { useMediaLoading } from "../player/useMediaLoading";
 import { useMediaSession } from "../player/useMediaSession";
 import { usePlayer } from "../player/usePlayer";
+import { useStillWatching } from "../player/useStillWatching";
 import { useUpNext } from "../player/useUpNext";
 
 // The player (/watch/:mediaId), ported from the vanilla play() + player view
@@ -171,10 +174,22 @@ export function PlayerPage() {
 
   // Audio moves straight on to the next item when one ends (no countdown card,
   // which suits a film or an episode, not a track).
+  // "Are you still watching?" (CORE-1689): after the Profile's run of
+  // countdown-started items, the prompt takes the place of the next autoplay.
+  // The audio path has no countdown, so it never counts or asks.
+  const stillWatching = useStillWatching({
+    videoRef,
+    mediaID: mediaId || "",
+    after: resolvedPrefs.stillWatchingAfter,
+    next: state.info?.next,
+    enabled: !isAudio,
+    onContinue: advanceToNext,
+  });
   const upNext = useUpNext({
     videoRef,
-    next: isAudio ? null : state.info?.next,
+    next: isAudio || stillWatching.armed || stillWatching.prompting ? null : state.info?.next,
     onAdvance: advanceToNext,
+    onAutoAdvance: (next) => noteAutoAdvance(next.mediaID),
   });
   useEffect(() => {
     const video = videoRef.current;
@@ -185,7 +200,7 @@ export function PlayerPage() {
 
   // The card's appearance reveals chrome once; the card itself stays visible
   // and clickable regardless of auto-hide (player-deferred.css).
-  const upNextVisible = upNext.visible;
+  const upNextVisible = upNext.visible || stillWatching.prompting;
   useEffect(() => {
     if (upNextVisible) reveal();
   }, [upNextVisible, reveal]);
@@ -387,6 +402,13 @@ export function PlayerPage() {
               countdown={upNext.countdown}
               onPlay={upNext.advance}
               onDismiss={upNext.dismiss}
+            />
+          )}
+          {playing && stillWatching.prompting && (
+            <StillWatchingPrompt
+              title={stillWatching.title}
+              onContinue={stillWatching.continueWatching}
+              onStop={stillWatching.stop}
             />
           )}
           {playing && autoSkip.skipped && (

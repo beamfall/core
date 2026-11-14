@@ -38,6 +38,7 @@ Generated machine-readable API references live beside the API reference as `llms
 - [Design-system contract](design-system.md)
 - [Per-surface design contracts](design/)
 - [Accessibility contract](design/accessibility-contract.md)
+- [Still-watching prompt](still-watching/README.md) (every client)
 
 ## Contribute
 
