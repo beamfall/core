@@ -16,7 +16,7 @@ import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
 import type { StringKey } from "@/strings";
 import { useEngagementEpoch } from "../actions";
-import { LibraryLetterRail } from "../components/LibraryLetterRail";
+import { LibraryLetterRail, letterRailInitial } from "../components/LibraryLetterRail";
 import { MediaItemCard } from "../components/MediaItemCard";
 import { RevealControls } from "../components/RevealControls";
 import {
@@ -142,7 +142,7 @@ function LibraryBrowse({
   // The item a letter jump is heading for, settled (and focused, when asked)
   // once its card renders.
   const pendingJumpRef = useRef<{ offset: number; focus: boolean } | null>(null);
-  const [, setLoadedTick] = useState(0);
+  const [loadedTick, setLoadedTick] = useState(0);
   const [retryTick, setRetryTick] = useState(0);
 
   const loadPage = useCallback(
@@ -297,7 +297,17 @@ function LibraryBrowse({
         window.scrollY + LETTER_JUMP_HEADER_CLEARANCE,
         listColumns,
       );
-      const at = letters.findLast((entry) => entry.offset <= index) ?? letters[0];
+      // The loaded item there names its own initial: "#" can hold titles at
+      // both ends of the order, so the first offsets are not ranges. Before
+      // its page lands, the last letter starting at or above it stands in.
+      const item = pagesRef.current.get(Math.floor(index / LIBRARY_BROWSE_PAGE))?.[
+        index % LIBRARY_BROWSE_PAGE
+      ];
+      const initial = item ? letterRailInitial(item.title) : null;
+      const at =
+        letters.find((entry) => entry.letter === initial && entry.offset <= index) ??
+        letters.findLast((entry) => entry.offset <= index) ??
+        letters[0];
       setCurrentLetter(at.letter);
     };
     const onScroll = () => {
@@ -309,7 +319,8 @@ function LibraryBrowse({
       if (frame) window.cancelAnimationFrame(frame);
       window.removeEventListener("scroll", onScroll);
     };
-  }, [showLetterRail, letters, listColumns]);
+    // loadedTick: re-read once the page at the top of the grid arrives.
+  }, [showLetterRail, letters, listColumns, loadedTick]);
 
   function update(patch: Partial<LibraryBrowseState>) {
     setSearchParams(browseStateParams({ ...state, ...patch }), { replace: true });

@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { notifyEngagementChanged } from "../actions/engagementSync";
+import { letterRailInitial } from "../components/LibraryLetterRail";
 import { fetchLibraryItems, type LibraryItemsRequest } from "../lib/libraryBrowse";
 import { LibraryBrowsePage } from "./LibraryBrowsePage";
 
@@ -357,10 +358,9 @@ describe("Library browse", () => {
       await user.click(trigger);
       const sheet = await screen.findByRole("dialog", { name: "Jump to letter" });
       expect(sheet).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "B, no titles" })).toHaveAttribute(
-        "aria-disabled",
-        "true",
-      );
+      const empty = screen.getByRole("button", { name: "B, no titles" });
+      expect(empty).toHaveAttribute("aria-disabled", "true");
+      expect(empty).toHaveAttribute("tabindex", "-1");
       await user.click(screen.getByRole("button", { name: "I, 895 titles" }));
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
       await waitFor(() => expect(screen.getByRole("button", { name: "Item 5" })).toHaveFocus());
@@ -368,6 +368,33 @@ describe("Library browse", () => {
       window.matchMedia = matchMedia;
       scrollTo.mockRestore();
     }
+  });
+
+  it("uses the sheet where the viewport is too short for the rail, and returns focus on cancel (CORE-1685)", async () => {
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
+    const innerHeight = window.innerHeight;
+    window.innerHeight = 400;
+    const user = userEvent.setup();
+    try {
+      renderBrowse("/n/films/all");
+
+      const trigger = await screen.findByRole("button", { name: "Jump to letter" });
+      await user.click(trigger);
+      await screen.findByRole("dialog", { name: "Jump to letter" });
+      await user.keyboard("{Escape}");
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      await waitFor(() => expect(trigger).toHaveFocus());
+    } finally {
+      window.innerHeight = innerHeight;
+    }
+  });
+
+  it("derives a title's rail initial as the server does (CORE-1685)", () => {
+    expect(letterRailInitial("apple")).toBe("A");
+    expect(letterRailInitial("été")).toBe("É");
+    expect(letterRailInitial("3 days")).toBe("#");
+    expect(letterRailInitial("~tilde")).toBe("#");
+    expect(letterRailInitial("")).toBe("#");
   });
 
   it("offers no letter rail on a short list (CORE-1685)", async () => {

@@ -57,13 +57,19 @@ function readCardHeight(grid: HTMLElement): number {
   return tallest;
 }
 
-// The grid's column count, row pitch and page-space top, from the same live
+// The tallest card each windowed grid has measured, which its spacer rows
+// use. The jump helpers read it too, so a jump lands on the row the window
+// will render rather than on one computed from the cards now in view.
+const retainedCardHeight = new WeakMap<HTMLElement, number>();
+
+// The grid's column count, row pitch and page-space top, from the same
 // geometry the window uses. Rows not yet measured use the fallback height.
 function gridGeometry(grid: HTMLElement, fixedColumns?: number) {
   const gap = readGap(grid);
+  const cardHeight = Math.max(retainedCardHeight.get(grid) ?? 0, readCardHeight(grid));
   return {
     columns: fixedColumns ?? readColumns(grid, gap),
-    rowHeight: (readCardHeight(grid) || VIRTUAL_GRID_FALLBACK_ROW_HEIGHT) + gap,
+    rowHeight: (cardHeight || VIRTUAL_GRID_FALLBACK_ROW_HEIGHT) + gap,
     top: grid.getBoundingClientRect().top + window.scrollY,
   };
 }
@@ -117,6 +123,7 @@ export function useVirtualGrid({
     const gap = readGap(grid);
     const columns = fixedColumns ?? readColumns(grid, gap);
     cardHeightRef.current = Math.max(cardHeightRef.current, readCardHeight(grid));
+    retainedCardHeight.set(grid, cardHeightRef.current);
     const rowHeight = (cardHeightRef.current || VIRTUAL_GRID_FALLBACK_ROW_HEIGHT) + gap;
     const totalRows = Math.ceil(itemCount / columns);
 
@@ -151,6 +158,7 @@ export function useVirtualGrid({
   useEffect(() => {
     if (!enabled) {
       cardHeightRef.current = 0;
+      if (gridRef.current) retainedCardHeight.delete(gridRef.current);
       setWindowState(null);
       return;
     }
@@ -170,7 +178,7 @@ export function useVirtualGrid({
       window.removeEventListener("scroll", recompute);
       window.removeEventListener("resize", recompute);
     };
-  }, [enabled, compute]);
+  }, [enabled, compute, gridRef]);
 
   return enabled ? windowState : null;
 }

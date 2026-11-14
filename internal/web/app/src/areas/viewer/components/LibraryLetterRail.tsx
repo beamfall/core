@@ -13,19 +13,37 @@ import type { LibraryItemsLetter } from "../lib/libraryBrowse";
 export const LETTER_RAIL_OTHER = "#";
 const BASE_LETTERS = [LETTER_RAIL_OTHER, ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"];
 
-// Below 360px wide, or too short for 27 letters at 16px each, the rail is too
-// cramped to hit, so a "Jump to" control opens a sheet of letters instead.
-const CRAMPED_QUERY = "(max-width: 359px), (max-height: 519px)";
+// Below 360px wide, or where the rail's height cannot hold every letter at
+// 16px (chrome.css .bf-letter-rail), the rail is too cramped to hit, so a
+// "Jump to" control opens a sheet of letters instead.
+const NARROW_QUERY = "(max-width: 359px)";
+const RAIL_LETTER_HEIGHT = 16;
+const RAIL_PADDING = 12;
+const RAIL_MAX_HEIGHT = 560;
+const RAIL_VIEWPORT_CLEARANCE = 84;
 
-function subscribeCramped(onChange: () => void): () => void {
-  if (typeof window.matchMedia !== "function") return () => {};
-  const query = window.matchMedia(CRAMPED_QUERY);
-  query.addEventListener("change", onChange);
-  return () => query.removeEventListener("change", onChange);
+function subscribeViewport(onChange: () => void): () => void {
+  window.addEventListener("resize", onChange);
+  const query = typeof window.matchMedia === "function" ? window.matchMedia(NARROW_QUERY) : null;
+  query?.addEventListener("change", onChange);
+  return () => {
+    window.removeEventListener("resize", onChange);
+    query?.removeEventListener("change", onChange);
+  };
 }
 
-function isCramped(): boolean {
-  return typeof window.matchMedia === "function" && window.matchMedia(CRAMPED_QUERY).matches;
+function isNarrow(): boolean {
+  return typeof window.matchMedia === "function" && window.matchMedia(NARROW_QUERY).matches;
+}
+
+function viewportHeight(): number {
+  return window.innerHeight;
+}
+
+/** The rail initial of a title, as the server derives it: an upper-cased first letter, else "#". */
+export function letterRailInitial(title: string): string {
+  const first = [...title][0] ?? "";
+  return /^\p{L}$/u.test(first) ? first.toUpperCase() : LETTER_RAIL_OTHER;
 }
 
 /** The rail's letters: "#", A to Z, then any other initial the result holds. */
@@ -56,7 +74,8 @@ export function LibraryLetterRail({
   onJump: (offset: number, focusItem: boolean) => void;
 }) {
   const t = useT();
-  const cramped = useSyncExternalStore(subscribeCramped, isCramped, () => false);
+  const narrow = useSyncExternalStore(subscribeViewport, isNarrow, () => false);
+  const height = useSyncExternalStore(subscribeViewport, viewportHeight, () => 0);
   const [selected, setSelected] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
   const [bubble, setBubble] = useState<{ letter: string; top: number } | null>(null);
@@ -67,11 +86,17 @@ export function LibraryLetterRail({
   const pressRef = useRef<string | null>(null);
   const scrubbingRef = useRef(false);
   const scrubLetterRef = useRef<string | null>(null);
+  // A pick in the sheet hands focus to the item; any other close returns it
+  // to the trigger.
+  const pickedRef = useRef(false);
 
   const byLetter = new Map(letters.map((entry) => [entry.letter, entry]));
   const all = letterRailLetters(letters);
   const enabled = all.filter((letter) => byLetter.has(letter));
   if (enabled.length === 0) return null;
+  const railHeight = Math.min(height - RAIL_VIEWPORT_CLEARANCE, RAIL_MAX_HEIGHT);
+  const cramped =
+    narrow || (height > 0 && all.length * RAIL_LETTER_HEIGHT + RAIL_PADDING > railHeight);
 
   const tabStop =
     selected && byLetter.has(selected)
@@ -164,6 +189,12 @@ export function LibraryLetterRail({
 
   function onPointerMove(event: PointerEvent<HTMLElement>) {
     if (pressRef.current === null) return;
+    // Released outside the rail before a scrub captured the pointer: the
+    // press is over, so a later hover must not start a scrub.
+    if ((event.buttons & 1) === 0) {
+      endPress(false);
+      return;
+    }
     const letter = letterAt(event.clientY);
     if (!letter) return;
     if (!scrubbingRef.current) {
@@ -198,12 +229,15 @@ export function LibraryLetterRail({
           className="bf-letter-rail-trigger"
           aria-label={t("libraryLetterRailLabel")}
           aria-haspopup="dialog"
-          onClick={() => setSheetOpen(true)}
+          onClick={() => {
+            pickedRef.current = false;
+            setSheetOpen(true);
+          }}
         >
           {t("libraryLetterTrigger")}
         </button>
         <Dialog open={sheetOpen} onOpenChange={setSheetOpen}>
-          <DialogContent finalFocus={false}>
+          <DialogContent finalFocus={() => !pickedRef.current}>
             <DialogHeader>
               <DialogTitle>{t("libraryLetterRailLabel")}</DialogTitle>
             </DialogHeader>
@@ -213,9 +247,11 @@ export function LibraryLetterRail({
                   <button
                     type="button"
                     aria-disabled={byLetter.has(letter) ? undefined : true}
+                    tabIndex={byLetter.has(letter) ? undefined : -1}
                     aria-label={label(letter)}
                     onClick={() => {
                       if (!byLetter.has(letter)) return;
+                      pickedRef.current = true;
                       setSheetOpen(false);
                       jump(letter, true);
                     }}
