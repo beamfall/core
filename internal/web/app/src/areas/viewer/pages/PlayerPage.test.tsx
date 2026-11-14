@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, type NavigateFunction, Route, Routes, useNavigate } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setIdentityEpochSignal } from "@/lib/api";
 import {
@@ -46,6 +46,7 @@ function playerState(overrides: Partial<PlayerState>): PlayerState {
     hlsActive: false,
     recovering: false,
     tracksVersion: 0,
+    mediaID: "media-alpha",
     ...overrides,
   };
 }
@@ -607,6 +608,50 @@ describe("PlayerPage karaoke key and tempo controls", () => {
     const group = screen.getByRole("group", { name: "Key and tempo" });
     expect(up).toHaveFocus();
     expect(within(group).getByRole("status")).toHaveTextContent(/not applied/i);
+  });
+
+  it("does not carry a karaoke song's controls to the next Media", async () => {
+    const karaokeState = playerState({ phase: "playing", info: karaokeInfo });
+    let current = karaokeState;
+    vi.mocked(usePlayer).mockImplementation(() => ({
+      videoRef: { current: null },
+      hlsRef: { current: null },
+      state: current,
+      retry: vi.fn(),
+      switchToHls: vi.fn(() => false as const),
+      adjustment: DEFAULT_ADJUSTMENT,
+      adjust: vi.fn(),
+    }));
+    let navigate: NavigateFunction | undefined;
+    function Navigator() {
+      navigate = useNavigate();
+      return null;
+    }
+    const tree = () => (
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/watch/media-alpha"]}>
+          <Navigator />
+          <Routes>
+            <Route path="/watch/:mediaId" element={<PlayerPage />} />
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>
+    );
+    const view = render(tree());
+    await screen.findByRole("group", { name: "Key and tempo" });
+
+    // The new route renders first with the karaoke song's playback state.
+    await act(async () => navigate?.("/watch/media-beta"));
+    expect(screen.queryByRole("group", { name: "Key and tempo" })).not.toBeInTheDocument();
+
+    // Then an ordinary track loads for it.
+    current = playerState({
+      phase: "playing",
+      mediaID: "media-beta",
+      info: { mediaClass: "audio", reason: "direct-play", streams: [] } as unknown as PlaybackInfo,
+    });
+    view.rerender(tree());
+    expect(screen.queryByRole("group", { name: "Key and tempo" })).not.toBeInTheDocument();
   });
 
   it("clamps to the advertised range and keeps the control at its limit focusable", async () => {

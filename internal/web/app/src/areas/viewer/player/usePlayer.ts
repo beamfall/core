@@ -46,6 +46,10 @@ export interface PlayerState {
   /** A reveal-terminal block (relocked/hidden/expired) — offers a Back affordance. */
   terminal: boolean;
   info: PlaybackInfo | null;
+  /** The Media that info came from. Right after a route change the page renders
+   *  once with the previous Media's state, so info describes another Media
+   *  whenever this differs from the one asked for. */
+  mediaID?: string;
   /** The stream the engine is playing now. */
   stream: PlaybackStream | null;
   /** The whole stream inventory of the playback info (direct play plus the
@@ -1081,6 +1085,7 @@ export function usePlayer(
         message: "",
         terminal: false,
         info,
+        mediaID,
         stream,
         streams: info.streams ?? [],
         decision,

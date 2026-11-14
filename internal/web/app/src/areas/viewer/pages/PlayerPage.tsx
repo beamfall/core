@@ -125,10 +125,11 @@ export function PlayerPage() {
   // Once a Media is established as a karaoke song it stays one until the Media
   // changes: a declined key or tempo change can come back as bare audio, and
   // dropping the verdict then would unmount the focused controls and the
-  // "Not applied" notice.
+  // "Not applied" notice. Only info loaded for this Media counts: the first
+  // render after a route change still carries the previous Media's info.
   const karaokeRef = useRef<{ mediaID: string; karaoke: boolean } | null>(null);
   const established = karaokeRef.current?.mediaID === (mediaId || "") && karaokeRef.current.karaoke;
-  if (state.info && !established) {
+  if (state.info && state.mediaID === (mediaId || "") && !established) {
     karaokeRef.current = {
       mediaID: mediaId || "",
       karaoke: state.info.mediaClass === "audio" && isComposedPictureServed(state.info),
