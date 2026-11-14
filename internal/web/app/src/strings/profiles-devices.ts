@@ -61,6 +61,9 @@ export const profileDeviceStrings = {
     deviceCodeExpired: "This code has expired. Make a new one below.",
     deviceCodeOpenAt: "On the new device, open:",
     deviceCodeCopyLink: "Copy link",
+    deviceCodeLinkField: "Link with the pairing code",
+    deviceCodeLinkCopyHint:
+      "This browser can't copy here. The link is selected: press Ctrl+C or ⌘C, or copy it by hand.",
     remoteEnrollHeading: "Remote enrollment",
     remoteEnrollLead: "Control whether devices can enroll from outside your local network.",
     remoteEnrollToggle: "Allow remote enrollment",

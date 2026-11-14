@@ -1,7 +1,8 @@
 import { Copy, Link2, MonitorSmartphone, Plus } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { DataTable, EmptyState, ErrorState, StatusChip } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { TableCell, TableRow } from "@/components/ui/table";
@@ -54,12 +55,35 @@ function useSecondsLeft(expiresAt: string): number {
 // says which role the code grants, how long it has left (codes last 10
 // minutes) and where to enter it (CORE-1607). The copied link carries the code
 // in the URL fragment, which browsers never send to the server; the address
-// shown on screen leaves it out so it can be typed by hand.
+// shown on screen leaves it out so it can be typed by hand. Where the Clipboard
+// API is missing (a plain-HTTP LAN address) or refuses, Copy link reveals the
+// whole link in a read-only field with its text selected, to copy by hand.
 function PairingCodeBanner({ code }: { code: MintedCode }) {
   const t = useT();
   const seconds = useSecondsLeft(code.expiresAt);
   const enrollURL = `${window.location.origin}${import.meta.env.BASE_URL}enroll`;
+  const enrollLink = `${enrollURL}#code=${encodeURIComponent(code.code)}`;
   const roleLabel = t(code.role === "manager" ? "deviceRoleManager" : "deviceRoleViewer");
+  const [manualLink, setManualLink] = useState(false);
+  const linkFieldRef = useRef<HTMLInputElement>(null);
+  const linkHintID = useId();
+  useEffect(() => {
+    if (!manualLink) return;
+    linkFieldRef.current?.focus();
+    linkFieldRef.current?.select();
+  }, [manualLink]);
+
+  async function copyLink() {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("clipboard unavailable");
+      await navigator.clipboard.writeText(enrollLink);
+      setManualLink(false);
+    } catch {
+      setManualLink(true);
+      linkFieldRef.current?.select();
+    }
+  }
+
   if (seconds === 0) {
     return (
       <div className="console-secret">
@@ -96,19 +120,27 @@ function PairingCodeBanner({ code }: { code: MintedCode }) {
         <code className="console-secret-value text-[13px] tracking-normal break-all">
           {enrollURL}
         </code>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() =>
-            void navigator.clipboard?.writeText(
-              `${enrollURL}#code=${encodeURIComponent(code.code)}`,
-            )
-          }
-        >
+        <Button variant="outline" size="sm" onClick={() => void copyLink()}>
           <Link2 className="console-nav-icon" aria-hidden />
           {t("deviceCodeCopyLink")}
         </Button>
       </div>
+      {manualLink && (
+        <div className="mt-2">
+          <Input
+            ref={linkFieldRef}
+            readOnly
+            value={enrollLink}
+            aria-label={t("deviceCodeLinkField")}
+            aria-describedby={linkHintID}
+            onFocus={(e) => e.currentTarget.select()}
+            className="h-9 font-mono text-[13px]"
+          />
+          <p id={linkHintID} className="mt-1.5 text-[12px] leading-snug text-muted-foreground">
+            {t("deviceCodeLinkCopyHint")}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

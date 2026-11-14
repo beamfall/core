@@ -153,7 +153,35 @@ describe("Devices (ADR-0081 administration)", () => {
     await userEvent.click(screen.getByRole("button", { name: "Copy link" }));
     expect(writeText).toHaveBeenCalledWith(`${enrollURL}#code=PAIR1234`);
     expect(writeText.mock.calls[0][0]).not.toContain("?");
+    expect(screen.queryByRole("textbox", { name: "Link with the pairing code" })).toBeNull();
   });
+
+  it.each([
+    ["is missing", undefined],
+    ["refuses", { writeText: vi.fn().mockRejectedValue(new Error("NotAllowedError")) }],
+  ])(
+    "reveals the link selected in a read-only field when the clipboard %s (CORE-1607)",
+    async (_label, clipboard) => {
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: clipboard });
+      const log = vi.spyOn(console, "log");
+      renderDevices();
+      await screen.findByText("My Browser");
+      await userEvent.click(screen.getByRole("button", { name: /viewer code/i }));
+      await userEvent.click(await screen.findByRole("button", { name: "Copy link" }));
+
+      const link = `${window.location.origin}/enroll#code=PAIR1234`;
+      const field = await screen.findByRole("textbox", { name: "Link with the pairing code" });
+      expect(field).toHaveValue(link);
+      expect(field).toHaveAttribute("readonly");
+      expect(field).toHaveAccessibleDescription(/press Ctrl\+C or ⌘C/);
+      await waitFor(() => expect(field).toHaveFocus());
+      const input = field as HTMLInputElement;
+      expect([input.selectionStart, input.selectionEnd]).toEqual([0, link.length]);
+      expect(link).not.toContain("?");
+      expect(log).not.toHaveBeenCalledWith(expect.stringContaining("PAIR1234"));
+      log.mockRestore();
+    },
+  );
 
   it("says when a minted code has expired instead of showing it", async () => {
     vi.mocked(mintPairingCode).mockResolvedValue({

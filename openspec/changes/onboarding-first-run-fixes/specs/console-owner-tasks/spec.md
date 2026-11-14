@@ -29,6 +29,13 @@ submit it. An expired code SHALL be replaced by a message to make a new one.
 - **WHEN** the owner copies the link for a minted code
 - **THEN** the link is the enroll address followed by `#code=` and the code, with no query string
 
+#### Scenario: Clipboard unavailable
+
+- **WHEN** the owner copies the link where the browser's clipboard is unavailable or refuses, such as
+  a plain-HTTP LAN address
+- **THEN** the full link, code fragment included, is shown selected in a read-only field with a hint
+  to copy it
+
 #### Scenario: Link opened
 
 - **WHEN** the enroll page loads with a `#code=` fragment
