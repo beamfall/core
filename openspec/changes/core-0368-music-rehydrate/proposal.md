@@ -26,6 +26,10 @@ fingerprint to the hook and has no write path that replaces values, so that deci
     import record. Tag values replace earlier tag or filename values. Values from an operator
     or a manual edit win (ADR-0072), and so does a field the operator locked.
   - Both write cases record the current fingerprint.
-- Not in this change: the music plugin composition in `cmd/beamfall` still has to implement the
-  optional interface by delegating to `music.HydratedFingerprintField` and
-  `music.DecideHydrationWrite`. That file is outside this attempt's declared scope.
+  - If the field locks cannot be read, the write drops to absent-only and the recorded fingerprint
+    stays, so a later scan retries the replace.
+- The music plugin composition in `cmd/beamfall` implements the optional interface by delegating
+  to `music.HydratedFingerprintField` and `music.DecideHydrationWrite`.
+- Not in this change: Media identity continuity. New bytes at one path derive a new
+  content-fingerprint Media ID, so a full-scan re-tag lands on a fresh Media and a lock or manual
+  edit stays on the old one.

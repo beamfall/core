@@ -42,3 +42,9 @@ or a manual edit) and any field the operator locked (ADR-0072).
 - **WHEN** a Media's title was last written by a manual edit and the seam re-hydrates that Media
   with a new fingerprint
 - **THEN** the manually edited title is kept
+
+#### Scenario: Unreadable locks fail closed
+
+- **WHEN** the seam would replace a Media's fields but cannot read that Media's field locks
+- **THEN** it writes only absent fields and keeps the recorded fingerprint, so a later scan
+  retries the replace
