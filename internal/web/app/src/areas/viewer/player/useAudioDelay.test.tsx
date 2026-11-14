@@ -5,15 +5,22 @@ import { writeSync } from "./playbackSync";
 import { audioDelayRoutable, browserPlaysNativeHls, useAudioDelay } from "./useAudioDelay";
 
 const setValueAtTime = vi.fn();
-const createMediaElementSource = vi.fn(() => ({ connect: vi.fn() }));
+const createMediaElementSource = vi.fn(() => ({ connect: vi.fn(), disconnect: vi.fn() }));
 
 class FakeAudioContext {
   state = "running";
   currentTime = 0;
   destination = {};
   resume = vi.fn(async () => {});
+  suspend = vi.fn(async () => {
+    this.state = "suspended";
+  });
   createMediaElementSource = createMediaElementSource;
-  createDelay = vi.fn(() => ({ connect: vi.fn(), delayTime: { setValueAtTime } }));
+  createDelay = vi.fn(() => ({
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+    delayTime: { value: 0, setValueAtTime },
+  }));
 }
 
 beforeEach(() => {
@@ -27,9 +34,11 @@ afterEach(() => {
   window.localStorage.clear();
 });
 
-function video(src: string) {
+// A playing element: the hook leaves the graph alone while the element is paused.
+function video(src: string, paused = false) {
   const element = document.createElement("video");
   element.src = src;
+  Object.defineProperty(element, "paused", { configurable: true, get: () => paused });
   return element;
 }
 
@@ -124,5 +133,29 @@ describe("useAudioDelay", () => {
       element.dispatchEvent(new Event("play"));
     });
     expect(context.resume).toHaveBeenCalled();
+  });
+
+  it("holds the delay line while paused and flushes it on seek", () => {
+    let paused = false;
+    const element = video("/api/media/m1/stream");
+    Object.defineProperty(element, "paused", { configurable: true, get: () => paused });
+    const { result } = render(element, "m5");
+    act(() => result.current.nudgeAudioDelay(0.5));
+    const context = createMediaElementSource.mock.contexts[0] as FakeAudioContext;
+    paused = true;
+    act(() => {
+      element.dispatchEvent(new Event("pause"));
+    });
+    expect(context.suspend).toHaveBeenCalled();
+    context.resume.mockClear();
+    act(() => {
+      document.dispatchEvent(new Event("pointerdown"));
+    });
+    expect(context.resume).not.toHaveBeenCalled();
+    const delays = context.createDelay.mock.calls.length;
+    act(() => {
+      element.dispatchEvent(new Event("seeking"));
+    });
+    expect(context.createDelay.mock.calls.length).toBe(delays + 1);
   });
 });

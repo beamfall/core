@@ -13,7 +13,22 @@ import { engineFor } from "./usePlayer";
 
 interface DelayGraph {
   context: AudioContext;
+  source: MediaElementAudioSourceNode | null;
   delay: DelayNode | null;
+}
+
+// Swaps in an empty delay line so sound buffered before a seek is not played
+// over the new position.
+function flushDelay(graph: DelayGraph) {
+  const { context, source, delay } = graph;
+  if (!source || !delay) return;
+  const fresh = context.createDelay(AUDIO_DELAY_LIMIT);
+  fresh.delayTime.setValueAtTime(delay.delayTime.value, context.currentTime);
+  source.disconnect();
+  delay.disconnect();
+  source.connect(fresh);
+  fresh.connect(context.destination);
+  graph.delay = fresh;
 }
 
 // One graph per element: createMediaElementSource may only be called once.
@@ -93,10 +108,14 @@ export function useAudioDelay({
       if (seconds === 0 || !audioDelayRoutable(video, nativeHlsRef.current)) return;
       const Ctor = audioContextCtor();
       if (!Ctor) return;
-      graph = { context: new Ctor(), delay: null };
+      graph = { context: new Ctor(), source: null, delay: null };
       graphs.set(video, graph);
     }
     const { context } = graph;
+    // A paused element leaves the context suspended, so the delay line holds
+    // the sound it buffered instead of playing it under a frozen picture; play
+    // resumes it (and the buffered sound) in step with the picture.
+    if (video.paused) return;
     if (context.state !== "running") {
       // Autoplay policy: resume needs a user gesture. Retried on play and on
       // the next interaction; until then the element plays undelayed.
@@ -114,6 +133,7 @@ export function useAudioDelay({
       const delay = context.createDelay(AUDIO_DELAY_LIMIT);
       source.connect(delay);
       delay.connect(context.destination);
+      graph.source = source;
       graph.delay = delay;
     }
     graph.delay.delayTime.setValueAtTime(seconds, context.currentTime);
@@ -136,14 +156,26 @@ export function useAudioDelay({
     const retry = () => {
       if (delayRef.current > 0 || graphs.has(video)) apply();
     };
+    const hold = () => {
+      const graph = graphs.get(video);
+      if (graph?.context.state === "running") void graph.context.suspend().catch(() => {});
+    };
+    const flush = () => {
+      const graph = graphs.get(video);
+      if (graph) flushDelay(graph);
+    };
     video.addEventListener("play", retry);
     video.addEventListener("loadedmetadata", retry);
+    video.addEventListener("pause", hold);
+    video.addEventListener("seeking", flush);
     document.addEventListener("pointerdown", retry);
     document.addEventListener("keydown", retry);
     retry();
     return () => {
       video.removeEventListener("play", retry);
       video.removeEventListener("loadedmetadata", retry);
+      video.removeEventListener("pause", hold);
+      video.removeEventListener("seeking", flush);
       document.removeEventListener("pointerdown", retry);
       document.removeEventListener("keydown", retry);
     };
