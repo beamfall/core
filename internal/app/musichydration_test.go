@@ -110,6 +110,7 @@ func testArchiveHydrationBundle() plugin.Bundle {
 type fakeHydrationStore struct {
 	fields    map[store.MediaID][]store.MediaField
 	locked    map[string]bool
+	lockErr   error
 	writes    int
 	entities  map[store.EntityID]store.Entity
 	relations []store.EntityRelation
@@ -162,6 +163,9 @@ func (f *fakeHydrationStore) MediaFields(_ context.Context, id store.MediaID, _ 
 }
 
 func (f *fakeHydrationStore) MediaFieldLocks(context.Context, store.MediaID, store.LibraryFilter) ([]store.MediaFieldLock, error) {
+	if f.lockErr != nil {
+		return nil, f.lockErr
+	}
 	locks := []store.MediaFieldLock{}
 	for field, locked := range f.locked {
 		locks = append(locks, store.MediaFieldLock{Field: field, Locked: locked})
@@ -975,6 +979,24 @@ func (r *rendezvousHydrationStore) InsertMediaFieldsIfAbsent(ctx context.Context
 	return r.inner.InsertMediaFieldsIfAbsent(ctx, id, fields)
 }
 
+func (r *rendezvousHydrationStore) UpsertMediaFieldsWithSource(ctx context.Context, id store.MediaID, fields []store.MediaField, source store.MutationSource) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.inner.UpsertMediaFieldsWithSource(ctx, id, fields, source)
+}
+
+func (r *rendezvousHydrationStore) MediaFields(ctx context.Context, id store.MediaID, filter store.LibraryFilter) ([]store.MediaField, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.inner.MediaFields(ctx, id, filter)
+}
+
+func (r *rendezvousHydrationStore) MediaFieldLocks(ctx context.Context, id store.MediaID, filter store.LibraryFilter) ([]store.MediaFieldLock, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.inner.MediaFieldLocks(ctx, id, filter)
+}
+
 func (r *rendezvousHydrationStore) UpsertEntity(ctx context.Context, entity store.Entity) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -1149,6 +1171,14 @@ func TestHydrateMetadataKeyedOnContentFingerprint(t *testing.T) {
 	hydrateWithFingerprint(t, adapter, "fp-3", map[string]string{"title": "Three", "album": "Third"})
 	if text("title") != "Two" || text("album") != "Third" {
 		t.Fatalf("locked replace: title %q album %q, want locked title kept and album replaced", text("title"), text("album"))
+	}
+
+	// Unreadable locks fail closed: no field is replaced and the recorded
+	// fingerprint stays, so a later scan retries the replace.
+	st.locked, st.lockErr = nil, errors.New("locks unreadable")
+	hydrateWithFingerprint(t, adapter, "fp-4", map[string]string{"title": "Four", "album": "Fourth"})
+	if text("title") != "Two" || text("album") != "Third" || text(testHydrationFingerprintField) != "fp-3" {
+		t.Fatalf("lock-read failure: title %q album %q fingerprint %q, want nothing replaced", text("title"), text("album"), text(testHydrationFingerprintField))
 	}
 }
 

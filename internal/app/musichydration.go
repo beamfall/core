@@ -186,6 +186,16 @@ func (a *hydrationAdapter) HydrateMetadata(ctx context.Context, input scanpkg.Me
 	if write == HydrationWriteSkip {
 		return nil
 	}
+	var locked map[string]bool
+	if write == HydrationWriteReplace {
+		if locked, err = a.lockedFields(ctx, input.MediaID); err != nil {
+			// Fail closed for the locks: without them a replace could clobber a
+			// locked field, so only absent fields are written and the recorded
+			// fingerprint stays, leaving the replace to a later scan.
+			slog.Warn("hydration: field locks unreadable, writing absent fields only", "media", input.MediaID, "error", err)
+			write = HydrationWriteFresh
+		}
+	}
 	plan := a.mapper.MapHydration(input.Metadata, input.Path)
 	if plan.Empty() {
 		return nil
@@ -198,7 +208,7 @@ func (a *hydrationAdapter) HydrateMetadata(ctx context.Context, input scanpkg.Me
 	if validated.Empty() {
 		return nil
 	}
-	if err := a.writeMediaFields(ctx, input.MediaID, validated, marker, write); err != nil {
+	if err := a.writeMediaFields(ctx, input.MediaID, validated, marker, write, locked); err != nil {
 		return err
 	}
 	if err := a.writeRelations(ctx, input.MediaID, input.LibraryID, validated.Relations); err != nil {
@@ -236,7 +246,7 @@ func (a *hydrationAdapter) decideWrite(ctx context.Context, input scanpkg.Metada
 	if declaredType, ok := a.declaredMediaFields[a.fingerprintField]; a.fingerprintField == "" || !ok || declaredType != string(store.EntityFieldText) {
 		return HydrationWriteFresh, fmt.Errorf("hydration fingerprint field %q is not a declared text field", a.fingerprintField)
 	}
-	fields, err := a.store.MediaFields(ctx, input.MediaID, store.LibraryFilter{AllLibraries: true})
+	fields, err := a.store.MediaFields(ctx, input.MediaID, metadataLibraryFilter)
 	if err != nil {
 		return HydrationWriteFresh, err
 	}
@@ -454,7 +464,7 @@ func (a *hydrationAdapter) validateEntity(entity HydrationEntity) error {
 // import record — so tag values replace earlier tag or filename values while
 // operator and manual values keep winning in canWriteFieldTx, and fields the
 // operator locked (ADR-0072) are left out.
-func (a *hydrationAdapter) writeMediaFields(ctx context.Context, mediaID store.MediaID, validated HydrationPlan, marker string, write HydrationWrite) error {
+func (a *hydrationAdapter) writeMediaFields(ctx context.Context, mediaID store.MediaID, validated HydrationPlan, marker string, write HydrationWrite, locked map[string]bool) error {
 	fields := append([]store.MediaField(nil), validated.MediaFields...)
 	if validated.MarkComplete {
 		fields = append(fields, store.MediaField{Name: marker, Type: store.EntityFieldFlag, Flag: true})
@@ -465,16 +475,21 @@ func (a *hydrationAdapter) writeMediaFields(ctx context.Context, mediaID store.M
 	if write != HydrationWriteReplace {
 		return a.store.InsertMediaFieldsIfAbsent(ctx, mediaID, fields)
 	}
-	fields, err := a.withoutLockedFields(ctx, mediaID, fields)
-	if err != nil {
-		return err
+	kept := fields[:0]
+	for _, field := range fields {
+		if !locked[field.Name] {
+			kept = append(kept, field)
+		}
 	}
-	return a.store.UpsertMediaFieldsWithSource(ctx, mediaID, fields, store.MutationSourceScan)
+	if len(kept) == 0 {
+		return nil
+	}
+	return a.store.UpsertMediaFieldsWithSource(ctx, mediaID, kept, store.MutationSourceScan)
 }
 
-// withoutLockedFields drops the fields whose source-precedence lock is set.
-func (a *hydrationAdapter) withoutLockedFields(ctx context.Context, mediaID store.MediaID, fields []store.MediaField) ([]store.MediaField, error) {
-	locks, err := a.store.MediaFieldLocks(ctx, mediaID, store.LibraryFilter{AllLibraries: true})
+// lockedFields reads the Media's source-precedence locks (ADR-0072).
+func (a *hydrationAdapter) lockedFields(ctx context.Context, mediaID store.MediaID) (map[string]bool, error) {
+	locks, err := a.store.MediaFieldLocks(ctx, mediaID, metadataLibraryFilter)
 	if err != nil {
 		return nil, err
 	}
@@ -484,13 +499,7 @@ func (a *hydrationAdapter) withoutLockedFields(ctx context.Context, mediaID stor
 			locked[lock.Field] = true
 		}
 	}
-	kept := fields[:0]
-	for _, field := range fields {
-		if !locked[field.Name] {
-			kept = append(kept, field)
-		}
-	}
-	return kept, nil
+	return locked, nil
 }
 
 // writeRelations writes one plan's relations. A scoped Entity's id is resolved
