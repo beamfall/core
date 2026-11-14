@@ -1,16 +1,4 @@
-import {
-  Blocks,
-  Check,
-  CircleAlert,
-  CircleCheck,
-  Clapperboard,
-  Film,
-  LoaderCircle,
-  type LucideIcon,
-  Music,
-  Podcast,
-  Tv,
-} from "lucide-react";
+import { Check, CircleAlert, CircleCheck, LoaderCircle } from "lucide-react";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { Wordmark } from "@/areas/enroll/AuthShell";
 import beamfallLogo from "@/assets/beamfall-logo.png";
@@ -25,6 +13,7 @@ import { browseServerFolders, fetchJobs, fetchPlugins, setScraperCredential } fr
 import type { FolderEntryInfo, JobInfo, PluginSummary } from "@/lib/graphql/types";
 import { useI18n } from "@/lib/i18n";
 import { jobProgressDetail, jobStatusLabel } from "@/lib/jobDisplay";
+import { libraryTypeOptions, pluginIcon } from "@/lib/libraryTypes";
 import { keyNeeded, type ProviderKey } from "@/lib/providerKeys";
 import { cn } from "@/lib/utils";
 import type { StringKey } from "@/strings";
@@ -38,8 +27,6 @@ import {
   createFirstLibrary,
   FirstLibraryError,
   type FirstLibraryProgress,
-  LIBRARY_TYPES,
-  type LibraryType,
   loadProviderKeys,
   SetupTokenError,
   type UpdateCheckChannel,
@@ -90,28 +77,6 @@ const SECURITY_MODES: { mode: SignInSecurityMode; label: StringKey; detail: Stri
   { mode: "strict", label: "setupSecurityStrict", detail: "setupSecurityStrictDetail" },
 ];
 
-const TYPE_LABEL: Record<LibraryType, StringKey> = {
-  films: "setupTypeFilms",
-  tvshows: "setupTypeTVShows",
-  mixed: "setupTypeMixed",
-  music: "setupTypeMusic",
-  podcasts: "setupTypePodcasts",
-};
-
-const TYPE_ICON: Record<LibraryType, LucideIcon> = {
-  films: Film,
-  tvshows: Tv,
-  mixed: Clapperboard,
-  music: Music,
-  podcasts: Podcast,
-};
-
-const PLUGIN_ICON: Record<string, LucideIcon> = {
-  filmtv: Clapperboard,
-  music: Music,
-  podcasts: Podcast,
-};
-
 function consumeSetupToken(): string {
   if (typeof window === "undefined") return "";
 
@@ -143,7 +108,7 @@ export function SetupWizard() {
   // turns it off. Sent with the bootstrap POST.
   const [securityMode, setSecurityMode] = useState<SignInSecurityMode>("home");
   // Step 6 — first Library.
-  const [libraryType, setLibraryType] = useState<LibraryType>("films");
+  const [libraryType, setLibraryType] = useState("filmtv/films");
   const [libraryName, setLibraryName] = useState("");
   const [rootPath, setRootPath] = useState("");
   const [scanJob, setScanJob] = useState<JobInfo | null>(null);
@@ -317,14 +282,17 @@ export function SetupWizard() {
   // The Library-type tiles offered are limited to types backed by a plugin the
   // operator just enabled. If nothing is enabled (or on a resumed run where the
   // local selection is empty), fall back to all types so the step stays usable.
-  const enabledTypes = LIBRARY_TYPES.filter((s) => activePlugins.has(s.pluginID));
-  const libraryTypes = enabledTypes.length > 0 ? enabledTypes : LIBRARY_TYPES;
+  // The types come from the shared list Console uses too (CORE-1156).
+  const allTypes = libraryTypeOptions(plugins, t, locale);
+  const enabledTypes = allTypes.filter((s) => activePlugins.has(s.pluginID));
+  const libraryTypes = enabledTypes.length > 0 ? enabledTypes : allTypes;
+  const selectedType = libraryTypes.find((s) => s.key === libraryType);
 
   // Keep the selected type valid as the enabled set changes (e.g. the operator
   // disables the plugin behind the current selection).
   useEffect(() => {
-    if (!libraryTypes.some((s) => s.type === libraryType)) {
-      setLibraryType(libraryTypes[0].type);
+    if (libraryTypes.length > 0 && !libraryTypes.some((s) => s.key === libraryType)) {
+      setLibraryType(libraryTypes[0].key);
     }
   }, [libraryTypes, libraryType]);
 
@@ -488,9 +456,11 @@ export function SetupWizard() {
     setBusy(true);
     setError(null);
     try {
+      if (!selectedType) throw new Error(t("setupPluginsEmpty"));
       const scan = await createFirstLibrary({
-        title: libraryName.trim() || t(TYPE_LABEL[libraryType]),
-        type: libraryType,
+        title: libraryName.trim() || selectedType.label,
+        pluginID: selectedType.pluginID,
+        familyScope: selectedType.familyScope,
         rootPath: rootPath.trim(),
         progress: firstLibraryProgress,
       });
@@ -860,21 +830,24 @@ export function SetupWizard() {
                 <StepHeading title={t("setupLibraryTitle")} lead={t("setupLibraryLead")} />
                 <fieldset className="m-0 mb-5 border-0 p-0">
                   <legend className={cn(FIELD_LABEL, "p-0")}>{t("setupLibraryType")}</legend>
+                  {libraryTypes.length === 0 && (
+                    <p className="m-0 text-sm text-muted-foreground">{t("setupPluginsEmpty")}</p>
+                  )}
                   <div className="grid grid-cols-2 gap-x-4">
                     {libraryTypes.map((spec) => {
-                      const sel = spec.type === libraryType;
-                      const Icon = TYPE_ICON[spec.type];
+                      const sel = spec.key === libraryType;
+                      const Icon = spec.icon;
                       return (
                         <label
-                          key={spec.type}
+                          key={spec.key}
                           className="flex cursor-pointer items-center gap-3 py-2"
                         >
                           <input
                             type="radio"
                             name="setup-library-type"
-                            value={spec.type}
+                            value={spec.key}
                             checked={sel}
-                            onChange={() => setLibraryType(spec.type)}
+                            onChange={() => setLibraryType(spec.key)}
                             className={cn(RADIO, "mt-0")}
                           />
                           <Icon
@@ -884,9 +857,7 @@ export function SetupWizard() {
                               sel ? "text-primary" : "text-muted-foreground",
                             )}
                           />
-                          <span className="min-w-0 text-sm leading-snug">
-                            {t(TYPE_LABEL[spec.type])}
-                          </span>
+                          <span className="min-w-0 text-sm leading-snug">{spec.label}</span>
                         </label>
                       );
                     })}
@@ -954,7 +925,7 @@ export function SetupWizard() {
                   value={libraryName}
                   onChange={(e) => setLibraryName(e.target.value)}
                   className={FIELD}
-                  placeholder={t(TYPE_LABEL[libraryType])}
+                  placeholder={selectedType?.label}
                 />
               </section>
             )}
@@ -986,7 +957,7 @@ export function SetupWizard() {
                     {plugins.map((p) => {
                       const name = displayString(p.displayName, locale);
                       const on = activePlugins.has(p.id);
-                      const Icon = PLUGIN_ICON[p.id] ?? Blocks;
+                      const Icon = pluginIcon(p.id);
                       return (
                         <li key={p.id} className="flex items-center gap-3 py-3">
                           <Icon

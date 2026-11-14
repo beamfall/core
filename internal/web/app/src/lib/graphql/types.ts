@@ -42,6 +42,8 @@ export interface LibrarySummary {
   previewClips: boolean;
   /** "#RRGGBB" plugin Library accent; omitted when none. */
   accent?: string;
+  /** Library icon name from the fixed vocabulary (see lib/libraryIcons). */
+  icon?: string;
 }
 
 /** An allowlisted navigation entry (manifest.NavigationNode). */
@@ -510,6 +512,34 @@ export interface LibraryInfo {
   previewClips: boolean;
   restricted: boolean;
   roots?: string[];
+  /** The icon clients draw: the owner's choice, else the default. */
+  icon?: string;
+  /** The owner's own choice; absent while the Library uses its default. */
+  iconChoice?: string;
+  /** The icon the Library gets when the owner has not chosen one. */
+  defaultIcon?: string;
+}
+
+/**
+ * A deleted Library waiting in "Recently deleted" (graph.TrashedLibraryInfo).
+ * trashedAt and purgeAfter are RFC 3339 times. A Library that is not purgeable
+ * (a Custodial one) has no purgeAfter: the server keeps it until it is restored.
+ */
+export interface TrashedLibraryInfo {
+  id: string;
+  title: string;
+  trashedAt: string;
+  mediaCount: number;
+  purgeable: boolean;
+  purgeAfter?: string | null;
+}
+
+/** What a permanent Library delete removed (graph.LibraryPurgeResult). */
+export interface LibraryPurgeResult {
+  libraryID: string;
+  title: string;
+  mediaRemoved: number;
+  entitiesRemoved: number;
 }
 
 /** The setLibraryPreviewClips result. */

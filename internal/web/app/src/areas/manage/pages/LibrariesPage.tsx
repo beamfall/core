@@ -44,6 +44,7 @@ import type {
   PluginSummary,
 } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
+import { requestManifestRefresh } from "@/lib/manifestRefresh";
 
 const NONE = "__none__";
 
@@ -114,6 +115,7 @@ export function LibrariesPage() {
     setError("");
     try {
       await createLibrary(title, newPlugin === NONE ? null : newPlugin);
+      requestManifestRefresh();
       setNewTitle("");
       setNewPlugin(NONE);
       await load();

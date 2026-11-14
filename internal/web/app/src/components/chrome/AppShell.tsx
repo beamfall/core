@@ -1,18 +1,18 @@
 import { Bell, LayoutDashboard, Menu } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { ServerActivity } from "@/components/beamfall/ServerActivity";
+import { Dialog as DialogPrimitive } from "@/components/ui/astryx-primitives";
 import { Badge } from "@/components/ui/badge";
 import { getBeamfallHost } from "@/lib/beamfallHost";
-import { fetchNotifications } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
 import { AccountMenu } from "./AccountMenu";
 import { LibrarySidebar } from "./LibrarySidebar";
+import { NOTIFICATION_BADGE_LIMIT, useUnreadNotifications } from "./unreadNotifications";
 import "./chrome.css";
 
-const NOTIFICATION_BADGE_LIMIT = 100;
 const PHONE_QUERY = "(max-width: 760px)";
 const SIDEBAR_PREF = "beamfall.sidebarCollapsed";
 
@@ -69,13 +69,19 @@ export function AppShell({
   const location = useLocation();
   const { register } = useRegister();
   const { session, manifest, isManager, revealed, needsEnroll } = useSession();
-  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  // Cached across remounts: every route mounts its own AppShell, and the bell
+  // must not refetch the inbox on each navigation.
+  const unreadNotifications = useUnreadNotifications(
+    register === "viewer" && session && !needsEnroll
+      ? `${session.profileID}:${session.revealed ? "revealed" : "locked"}`
+      : null,
+  );
   const beamfallHost = getBeamfallHost();
   const sidebarId = useId();
-  const menuButton = useRef<HTMLButtonElement>(null);
   const phone = usePhoneLayout();
   const [collapsed, setCollapsed] = useState(readCollapsedPref);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
   const hasSidebar = register === "viewer" && !!manifest && manifest.navigation.length > 0;
   // The Console is reached by an Admin Session, which the server grants to the
   // adult owner Profile whatever the Device Role (auth.BeginAdminSession). The
@@ -83,29 +89,16 @@ export function AppShell({
   // and an owner on a viewer-role Device still gets a way in.
   const canOpenConsole = session?.profile === "adult";
 
-  // The phone drawer closes on navigation, on Escape, and when the layout
-  // grows past phone width. Escape pressed inside the drawer hands focus back
-  // to the menu button: the link it was pressed on is about to be hidden and
-  // inert.
+  // The phone drawer is a modal dialog: the dialog primitive moves focus in,
+  // traps it, closes on Escape or a press outside, and hands focus back to the
+  // menu button. It also closes on navigation and when the layout grows past
+  // phone width.
   useEffect(() => {
     setDrawerOpen(false);
   }, [location.pathname]);
   useEffect(() => {
     if (!phone) setDrawerOpen(false);
   }, [phone]);
-  useEffect(() => {
-    if (!drawerOpen) return;
-    function onKey(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
-      setDrawerOpen(false);
-      if (document.getElementById(sidebarId)?.contains(document.activeElement)) {
-        menuButton.current?.focus();
-      }
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [drawerOpen, sidebarId]);
-
   function toggleSidebar() {
     if (phone) {
       setDrawerOpen((open) => !open);
@@ -116,41 +109,6 @@ export function AppShell({
       return !was;
     });
   }
-
-  const refreshUnreadNotifications = useCallback(async () => {
-    if (register !== "viewer" || !session || needsEnroll) {
-      setUnreadNotifications(0);
-      return;
-    }
-    try {
-      const rows = await fetchNotifications({
-        unreadOnly: true,
-        limit: NOTIFICATION_BADGE_LIMIT,
-      });
-      setUnreadNotifications(rows.length);
-    } catch {
-      setUnreadNotifications(0);
-    }
-  }, [needsEnroll, register, session]);
-
-  useEffect(() => {
-    void refreshUnreadNotifications();
-  }, [refreshUnreadNotifications]);
-
-  useEffect(() => {
-    function refreshIfForeground() {
-      if (document.visibilityState === "hidden") return;
-      void refreshUnreadNotifications();
-    }
-    window.addEventListener("focus", refreshIfForeground);
-    window.addEventListener("beamfall:notifications-changed", refreshIfForeground);
-    document.addEventListener("visibilitychange", refreshIfForeground);
-    return () => {
-      window.removeEventListener("focus", refreshIfForeground);
-      window.removeEventListener("beamfall:notifications-changed", refreshIfForeground);
-      document.removeEventListener("visibilitychange", refreshIfForeground);
-    };
-  }, [refreshUnreadNotifications]);
 
   // The active nav tab: a manifest node whose route matches the current path.
   // Home ("/") is the aggregate first layout node; "/n/:id" binds the named one.
@@ -178,11 +136,12 @@ export function AppShell({
       <header className={"bf-header" + (revealed ? " is-revealed" : "")}>
         {hasSidebar && (
           <button
-            ref={menuButton}
+            ref={menuButtonRef}
             type="button"
             className="bf-icon-button bf-menu-button"
             aria-label={t("navLabel")}
-            aria-controls={sidebarId}
+            aria-haspopup={phone ? "dialog" : undefined}
+            aria-controls={!phone || drawerOpen ? sidebarId : undefined}
             aria-expanded={phone ? drawerOpen : !collapsed}
             onClick={toggleSidebar}
           >
@@ -235,29 +194,40 @@ export function AppShell({
       </header>
 
       <div className="bf-body">
-        {hasSidebar && manifest && (
-          <>
+        {hasSidebar &&
+          manifest &&
+          (phone ? (
+            <DialogPrimitive.Root open={drawerOpen} onOpenChange={setDrawerOpen}>
+              <DialogPrimitive.Portal>
+                <DialogPrimitive.Backdrop className="bf-sidebar-scrim" />
+                <DialogPrimitive.Popup
+                  aria-label={t("navLabel")}
+                  finalFocus={menuButtonRef}
+                  render={
+                    <LibrarySidebar
+                      id={sidebarId}
+                      navigation={manifest.navigation}
+                      libraries={manifest.libraries}
+                      activeNodeId={activeNodeId}
+                      collapsed={false}
+                      drawer
+                      onNavigate={() => setDrawerOpen(false)}
+                    />
+                  }
+                />
+              </DialogPrimitive.Portal>
+            </DialogPrimitive.Root>
+          ) : (
             <LibrarySidebar
               id={sidebarId}
               navigation={manifest.navigation}
               libraries={manifest.libraries}
               activeNodeId={activeNodeId}
               collapsed={collapsed}
-              drawer={phone}
-              open={drawerOpen}
+              drawer={false}
               onNavigate={() => setDrawerOpen(false)}
             />
-            {phone && drawerOpen && (
-              <button
-                type="button"
-                tabIndex={-1}
-                aria-hidden
-                className="bf-sidebar-scrim"
-                onClick={() => setDrawerOpen(false)}
-              />
-            )}
-          </>
-        )}
+          ))}
         <div className="bf-content">
           {needsEnroll && (
             <div role="status" className="bf-banner">

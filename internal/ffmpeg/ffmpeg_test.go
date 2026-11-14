@@ -82,6 +82,56 @@ func TestNumericParsingBoundaries(t *testing.T) {
 	}
 }
 
+// An attached picture is cover art, not video: a tagged audio file must stay
+// audio-only, and a real video stream must win whatever the stream order.
+// The first document is ffprobe 8's output for an MP3 with an ID3 cover.
+func TestParseProbeAttachedPictureIsNotVideo(t *testing.T) {
+	tests := []struct {
+		name       string
+		json       string
+		hasVideo   bool
+		videoCodec string
+		width      int
+		artwork    int
+	}{
+		{
+			name: "audio with embedded cover",
+			json: `{"streams": [
+				{"index": 0, "codec_type": "audio", "codec_name": "mp3", "disposition": {"default": 0, "attached_pic": 0}},
+				{"index": 1, "codec_type": "video", "codec_name": "mjpeg", "width": 600, "height": 600, "disposition": {"default": 0, "attached_pic": 1}}
+			], "format": {"format_name": "mp3", "duration": "1.044898"}}`,
+			artwork: 1,
+		},
+		{
+			name: "cover listed before the real video",
+			json: `{"streams": [
+				{"index": 0, "codec_type": "video", "codec_name": "png", "width": 600, "height": 900, "disposition": {"attached_pic": 1}},
+				{"index": 1, "codec_type": "video", "codec_name": "hevc", "width": 3840, "height": 2160, "disposition": {"default": 1}},
+				{"index": 2, "codec_type": "audio", "codec_name": "eac3"}
+			], "format": {"format_name": "matroska,webm", "duration": "60"}}`,
+			hasVideo: true, videoCodec: "hevc", width: 3840, artwork: 0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			probe, err := parseProbe([]byte(tt.json), "/media/source")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if probe.HasVideo != tt.hasVideo || probe.VideoCodec != tt.videoCodec || probe.VideoWidth != tt.width {
+				t.Fatalf("HasVideo=%v VideoCodec=%q VideoWidth=%d, want %v %q %d",
+					probe.HasVideo, probe.VideoCodec, probe.VideoWidth, tt.hasVideo, tt.videoCodec, tt.width)
+			}
+			if probe.AudioCodec == "" {
+				t.Fatal("audio codec was not recorded")
+			}
+			if probe.embeddedArtworkStream != tt.artwork {
+				t.Fatalf("embedded artwork stream = %d, want %d", probe.embeddedArtworkStream, tt.artwork)
+			}
+		})
+	}
+}
+
 func TestParseProbeAttachedPicture(t *testing.T) {
 	probe, err := parseProbe([]byte(`{
 		"streams": [

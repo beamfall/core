@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1299,4 +1300,106 @@ func TestNoOpScrobbleRerunPreservesAppliedRunProvenance(t *testing.T) {
 	if advanced.PlayCount != 5 || advanced.ImportRunID != "run-C" {
 		t.Fatalf("advancing re-run = {count=%d run=%q}, want {5 run-C}", advanced.PlayCount, advanced.ImportRunID)
 	}
+}
+
+// TestEngagementShelvesFillPagesAfterFiltering pins the page-fill contract for
+// the events-DB-backed shelves: catalog-side filtering (library scope, reveal,
+// Extras) happens BEFORE the page window is cut, so rows hidden from the caller
+// that sort ahead of visible ones neither shorten a page nor make paging skip
+// or repeat. The hidden rows outnumber one filter chunk so the fill crosses
+// chunk boundaries.
+func TestEngagementShelvesFillPagesAfterFiltering(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	const profile = ProfileID("profile-shelf-fill")
+	target, err := st.CreateLibrary(ctx, "Shelf Target", false, "", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := st.CreateLibrary(ctx, "Shelf Other", false, "", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	restricted, err := st.CreateLibrary(ctx, "Shelf Restricted", true, "", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	importMedia := func(lib LibraryID, name string, extra bool) MediaID {
+		t.Helper()
+		m, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+			LibraryID: lib, Path: "/shelf/" + name + ".mkv", Title: name, Container: "mkv", Codec: "h264",
+			ContentFingerprint: "shelf-" + name, DurationSecondsHint: 600, Extra: extra,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return m.ID
+	}
+	// rank orders rows: a higher rank sorts first on every shelf (newer
+	// updated/last-played instant, more plays).
+	rank := 0
+	seed := func(id MediaID) {
+		t.Helper()
+		rank++
+		if _, err := st.eventsW.ExecContext(ctx, `
+			INSERT INTO playback_progress (profile_id, media_id, position_seconds, duration_seconds, watched, updated_at_ms, play_count, last_played_at_ms)
+			VALUES (?, ?, 60, 600, 0, ?, ?, ?)
+		`, profile, id, int64(1_000_000+rank), rank, int64(1_000_000+rank)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var visible []MediaID // in shelf order: most recent / most played first
+	for i := 0; i < 7; i++ {
+		id := importMedia(target.ID, "visible-"+strconv.Itoa(i), false)
+		seed(id)
+		visible = append([]MediaID{id}, visible...)
+	}
+	var otherIDs []MediaID
+	for i := 0; i < 100; i++ {
+		seed(importMedia(target.ID, "extra-"+strconv.Itoa(i), true))
+		seed(importMedia(restricted.ID, "hidden-"+strconv.Itoa(i), false))
+		id := importMedia(other.ID, "other-"+strconv.Itoa(i), false)
+		seed(id)
+		otherIDs = append([]MediaID{id}, otherIDs...)
+	}
+	unrevealed := LibraryFilter{AllLibraries: true}
+	for _, kind := range []string{"continue-watching", "recently-played", "most-played"} {
+		t.Run(kind, func(t *testing.T) {
+			var paged []MediaID
+			for _, tc := range []struct{ offset, want int }{{0, 3}, {3, 3}, {6, 1}, {9, 0}} {
+				page, err := st.SourceItems(ctx, unrevealed, SourceQuery{Kind: kind, ProfileID: profile, LibraryID: target.ID, Limit: 3, Offset: tc.offset})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(page) != tc.want {
+					t.Fatalf("offset %d: got %d items %v, want %d", tc.offset, len(page), page, tc.want)
+				}
+				for _, item := range page {
+					paged = append(paged, MediaID(item.ID))
+				}
+			}
+			if strings.Join(mediaIDStrings(paged), ",") != strings.Join(mediaIDStrings(visible), ",") {
+				t.Fatalf("paged %v, want every visible item once in shelf order %v", paged, visible)
+			}
+
+			// Unscoped and unrevealed: other-library rows count, restricted and
+			// Extras rows still never do, and a full page crosses chunk bounds.
+			all, err := st.SourceItems(ctx, unrevealed, SourceQuery{Kind: kind, ProfileID: profile, Limit: 200})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := append(append([]MediaID{}, otherIDs...), visible...)
+			if strings.Join(mediaIDStrings(sourceItemIDs(all)), ",") != strings.Join(mediaIDStrings(want), ",") {
+				t.Fatalf("unscoped shelf = %d items, want the %d other-library then visible items in order", len(all), len(want))
+			}
+		})
+	}
+}
+
+func mediaIDStrings(ids []MediaID) []string {
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = string(id)
+	}
+	return out
 }

@@ -46,6 +46,43 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("SetupChecklist (Seam B funnel spine)", () => {
+  it("never asks for a next step beside the all-set footer", async () => {
+    vi.mocked(fetchSetupState).mockResolvedValue(complete);
+    vi.mocked(fetchSourceItems).mockResolvedValue([
+      { id: "m1", kind: "media", title: "x", artworkSlots: [] },
+    ] as never);
+
+    renderChecklist();
+
+    expect(await screen.findByText(/you're all set/i)).toBeInTheDocument();
+    // Migrating and adding a device are optional, not outstanding work.
+    expect(screen.getByRole("link", { name: /migrate from another server/i })).toHaveTextContent(
+      "Optional",
+    );
+    expect(screen.getByRole("link", { name: /add a device or browser/i })).toHaveTextContent(
+      "Optional",
+    );
+    expect(screen.queryByText("Next step")).toBeNull();
+    expect(screen.queryByText(/leaks no secret/i)).toBeNull();
+  });
+
+  it("marks only the unfinished required steps as the next step", async () => {
+    vi.mocked(fetchSetupState).mockResolvedValue({
+      ...complete,
+      hasLibrary: false,
+      complete: false,
+    });
+    vi.mocked(fetchSourceItems).mockResolvedValue([]);
+
+    renderChecklist();
+
+    expect(await screen.findByRole("link", { name: /start your first scan/i })).toHaveTextContent(
+      "Next step",
+    );
+    expect(screen.getAllByText("Next step")).toHaveLength(1);
+    expect(screen.getAllByText("Optional")).toHaveLength(2);
+  });
+
   it("renders each spine item as a deep-link to its owning station", async () => {
     vi.mocked(fetchSetupState).mockResolvedValue(complete);
     vi.mocked(fetchSourceItems).mockResolvedValue([

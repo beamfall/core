@@ -42,4 +42,30 @@ describe("Hero entity navigation", () => {
     const state = JSON.parse(screen.getByTestId("state").textContent || "null");
     expect(readEntityPreview(state, "viewer-1", "e1")).toEqual({ title: "Show", kind: "series" });
   });
+
+  it("prioritises the hero artwork with a high-DPI srcset", () => {
+    const section = { title: "Featured" } as unknown as Section;
+    const item = {
+      id: "m1",
+      kind: "media",
+      title: "Film",
+      artworkSlots: { backdrop: "/art/backdrop.jpg" },
+    } as unknown as SourceItem;
+    const { container } = render(
+      <I18nProvider>
+        <MemoryRouter>
+          <Hero section={section} item={item} />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    const img = container.querySelector("img");
+    expect(img).toHaveAttribute("src", "/art/backdrop.jpg?bucket=w1280");
+    expect(img).toHaveAttribute(
+      "srcset",
+      "/art/backdrop.jpg?bucket=w640 640w, /art/backdrop.jpg?bucket=w1280 1280w",
+    );
+    expect(img).toHaveAttribute("sizes", "100vw");
+    expect(img).toHaveAttribute("fetchpriority", "high");
+  });
 });

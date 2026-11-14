@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -169,6 +170,7 @@ type Engine struct {
 type cachedToken struct {
 	token   string
 	expires time.Time
+	refs    []string // every AuthRef the login exchange sent
 }
 
 type requestClock interface {
@@ -788,16 +790,16 @@ func (e *Engine) CredentialAvailable(ref string) bool {
 
 // InvalidateCredential drops every cached login-bearer token derived from one
 // AuthRef. Credential rotation/disable is AuthRef-scoped; a shared ref can feed
-// multiple scraper endpoints, so delete all endpoint+ref cache entries.
+// multiple scraper endpoints, and a login can send several refs (the AuthRef
+// plus its SecretFields), so delete every token whose exchange used ref.
 func (e *Engine) InvalidateCredential(ref string) {
 	if ref == "" {
 		return
 	}
-	suffix := "\x00" + ref
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	for key := range e.tokens {
-		if strings.HasSuffix(key, suffix) {
+	for key, cached := range e.tokens {
+		if slices.Contains(cached.refs, ref) {
 			delete(e.tokens, key)
 		}
 	}
@@ -852,8 +854,9 @@ func (e *Engine) authorizer(ctx context.Context, spec plugin.ScraperSpec) (func(
 }
 
 // loginToken runs (or reuses) the declarative login-bearer exchange: POST
-// {SecretField: secret} as JSON to Endpoint+Login.Path, read the token at
-// Login.TokenPath. Tokens are cached per endpoint+AuthRef for loginTokenTTL.
+// {SecretField: secret} plus one key per Login.SecretFields entry as JSON to
+// Endpoint+Login.Path, read the token at Login.TokenPath. Tokens are cached
+// per endpoint+AuthRef for loginTokenTTL.
 func (e *Engine) loginToken(ctx context.Context, spec plugin.ScraperSpec, secret string) (string, error) {
 	if spec.Login == nil {
 		return "", fmt.Errorf("scrape: scraper %q uses login-bearer without a Login declaration", spec.ID)
@@ -866,6 +869,7 @@ func (e *Engine) loginToken(ctx context.Context, spec plugin.ScraperSpec, secret
 		return cached.token, nil
 	}
 	fields := map[string]string{spec.Login.SecretField: secret}
+	refs := []string{spec.AuthRef}
 	// SecretFields adds further body keys, each resolved like the scraper's own
 	// AuthRef; a missing one fails the exchange rather than logging in without it.
 	for field, ref := range spec.Login.SecretFields {
@@ -874,6 +878,7 @@ func (e *Engine) loginToken(ctx context.Context, spec plugin.ScraperSpec, secret
 			return "", fmt.Errorf("scrape: scraper %q login field %q: resolving credential %q: %w", spec.ID, field, ref, err)
 		}
 		fields[field] = extra
+		refs = append(refs, ref)
 	}
 	payload, err := json.Marshal(fields)
 	if err != nil {
@@ -886,11 +891,11 @@ func (e *Engine) loginToken(ctx context.Context, spec plugin.ScraperSpec, secret
 	}
 	// The exchange itself carries no authorizer — the secret travels in the
 	// body — and passes the same SSRF gate and caps as every request.
-	body, err := e.fetch(ctx, http.MethodPost, spec.Endpoint+spec.Login.Path, bytes.NewReader(payload), "application/json", nil)
+	response, err := e.fetch(ctx, http.MethodPost, spec.Endpoint+spec.Login.Path, bytes.NewReader(payload), "application/json", nil)
 	if err != nil {
 		return "", err
 	}
-	root, err := decodeJSON(body)
+	root, err := decodeJSON(response)
 	if err != nil {
 		return "", fmt.Errorf("scrape: scraper %q login: %w", spec.ID, err)
 	}
@@ -899,7 +904,7 @@ func (e *Engine) loginToken(ctx context.Context, spec plugin.ScraperSpec, secret
 		return "", fmt.Errorf("scrape: scraper %q login response has no token at %q", spec.ID, spec.Login.TokenPath)
 	}
 	e.mu.Lock()
-	e.tokens[key] = cachedToken{token: token, expires: e.clock.Now().Add(loginTokenTTL)}
+	e.tokens[key] = cachedToken{token: token, expires: e.clock.Now().Add(loginTokenTTL), refs: refs}
 	e.mu.Unlock()
 	return token, nil
 }

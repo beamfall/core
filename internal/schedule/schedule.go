@@ -82,6 +82,15 @@ func (s *Service) Register(spec Spec) {
 	s.specs[store.ScheduleID(spec.ID)] = spec
 }
 
+// Unregister withdraws a schedule's declaration. The next Reconcile marks its
+// row orphaned, which stops it firing while keeping the owner's trigger and
+// enabled choice for a later Register.
+func (s *Service) Unregister(id store.ScheduleID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.specs, id)
+}
+
 func (s *Service) Reconcile(ctx context.Context, now time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

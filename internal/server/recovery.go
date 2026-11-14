@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"path"
 	"runtime/debug"
 	"strings"
+	"time"
 )
 
 // recoverPanics keeps a broken handler from taking down its serving goroutine
@@ -149,6 +151,8 @@ type trackedResponseWriter struct {
 	committed bool
 	// status is the final status sent, set once the response commits.
 	status int
+	// committedAt is when the response started (its header was committed).
+	committedAt time.Time
 }
 
 func (w *trackedResponseWriter) WriteHeader(status int) {
@@ -165,11 +169,37 @@ func (w *trackedResponseWriter) Write(p []byte) (int, error) {
 	return w.ResponseWriter.Write(p)
 }
 
+// ReadFrom keeps the underlying writer's io.ReaderFrom reachable through the
+// wrapper, so http.ServeContent's copy still takes the sendfile path for
+// direct play instead of a userspace buffer loop.
+func (w *trackedResponseWriter) ReadFrom(src io.Reader) (int64, error) {
+	w.commit(http.StatusOK)
+	return readFrom(w.ResponseWriter, src)
+}
+
+// readFrom copies src into w through w's own io.ReaderFrom when it has one.
+func readFrom(w http.ResponseWriter, src io.Reader) (int64, error) {
+	if rf, ok := w.(io.ReaderFrom); ok {
+		return rf.ReadFrom(src)
+	}
+	return io.Copy(w, src)
+}
+
 func (w *trackedResponseWriter) commit(status int) {
 	if !w.committed {
 		w.status = status
+		w.committedAt = time.Now()
 	}
 	w.committed = true
+}
+
+// firstByte reports how long after started the response began, or elapsed for
+// a handler that returned without writing (net/http commits it then).
+func (w *trackedResponseWriter) firstByte(started time.Time, elapsed time.Duration) time.Duration {
+	if w.committedAt.IsZero() {
+		return elapsed
+	}
+	return w.committedAt.Sub(started)
 }
 
 // statusCode reports the status the response carried: 200 when the handler

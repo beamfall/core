@@ -20,9 +20,13 @@ awk '/^changed_paths\(\)/,/^\}/' "$ROOT/tools/gate/gate.sh" >> "$FUNCS"
 awk '/^configure_race_short_scope\(\)/,/^\}/' "$ROOT/tools/gate/gate.sh" >> "$FUNCS"
 awk '/^scope_matches\(\)/,/^\}/' "$ROOT/tools/gate/gate.sh" >> "$FUNCS"
 awk '/^run_scoped_step\(\)/,/^\}/' "$ROOT/tools/gate/gate.sh" >> "$FUNCS"
+awk '/^docker_daemon_available\(\)/,/^\}/' "$ROOT/tools/gate/gate.sh" >> "$FUNCS"
+awk '/^run_docker_step\(\)/,/^\}/' "$ROOT/tools/gate/gate.sh" >> "$FUNCS"
+awk '/^tonemap_docker_precondition\(\)/,/^\}/' "$ROOT/tools/gate/gate.sh" >> "$FUNCS"
 grep -q 'gate_release_mode()' "$FUNCS" && grep -q 'changed_paths()' "$FUNCS" \
   && grep -q 'configure_race_short_scope()' "$FUNCS" && grep -q 'scope_matches()' "$FUNCS" \
-  && grep -q 'run_scoped_step()' "$FUNCS" \
+  && grep -q 'run_scoped_step()' "$FUNCS" && grep -q 'run_docker_step()' "$FUNCS" \
+  && grep -q 'docker_daemon_available()' "$FUNCS" && grep -q 'tonemap_docker_precondition()' "$FUNCS" \
   || { echo "gate_scope_test: could not extract functions from gate.sh" >&2; exit 1; }
 grep -Fq 'run_scoped_step "support script tests" script ' "$ROOT/tools/gate/gate.sh" \
   && grep -Fq 'python3 script/check_contract_registry_test.py' "$ROOT/tools/gate/gate.sh" \
@@ -31,6 +35,8 @@ grep -Fq 'run_scoped_step "ADR-0122 cross-repo wire conformance" contract make c
   || { echo "gate_scope_test: cross-repo contract lane missing from required gate" >&2; exit 1; }
 grep -Fq 'run_scoped_step "web UI E2E smoke (pre-gate)" webe2e make web-ui-e2e-smoke' "$ROOT/tools/gate/gate.sh" \
   || { echo "gate_scope_test: the web UI E2E smoke step must use webe2e scope" >&2; exit 1; }
+grep -Fq 'run_docker_step "pinned FFmpeg tone-map conformance" tonemap make ffmpeg-tonemap-conforming' "$ROOT/tools/gate/gate.sh" \
+  || { echo "gate_scope_test: the FFmpeg tone-map step must use the CORE-0947 Docker skip contract" >&2; exit 1; }
 # CORE-0977: the browser smoke rebuilds its own web/server inputs, so a second
 # pass on the same head only repeats ~3-4 min of identical work. Exactly one.
 smoke_steps="$(grep -Ec '^[[:space:]]*run[a-z_]*step .*make web-ui-e2e-smoke([[:space:]]|$)' "$ROOT/tools/gate/gate.sh" || true)"
@@ -97,6 +103,7 @@ import re
 patterns = (
     re.compile(r'^run_step "([^"$]+)" (.+)$'),
     re.compile(r'^run_scoped_step "([^"$]+)" \S+ (.+)$'),
+    re.compile(r'^run_docker_step "([^"$]+)" \S+ (.+)$'),
     re.compile(r'^start_parallel_step \S+ "([^"$]+)" (.+)$'),
 )
 inventory = []
@@ -788,6 +795,77 @@ if (
 ); then
   fail "uncovered input matched image scope"
 fi
+
+# CORE-0947: the tone-map step needs a Docker daemon. With one it always runs;
+# without one it skips only when the diff provably cannot reach it, and the skip
+# is recorded as a scope skip (refused in release mode by gate_metric).
+tonemap_dispatch() {  # tonemap_dispatch <docker:yes|no> <changed path|""> [GATE_MODE]
+  local docker="$1" candidate="$2" mode="${3:-normal}"
+  (
+    cd "$REPO"
+    . "$FUNCS"
+    export GATE_MODE="$mode"
+    changed_paths() { [ -z "$candidate" ] || printf '%s\n' "$candidate"; }
+    docker_daemon_available() { [ "$docker" = yes ]; }
+    run_step() { printf 'RUN\t%s\n' "$1"; }
+    gate_metric() { printf 'METRIC\t%s\t%s\t%s\n' "$1" "$2" "$5"; }
+    run_docker_step "pinned FFmpeg tone-map conformance" tonemap make ffmpeg-tonemap-conforming
+  )
+}
+tonemap_step="pinned FFmpeg tone-map conformance"
+for candidate in "" docs/note.md internal/store/embeddings.go internal/ffmpeg/tonemap.go; do
+  [ "$(tonemap_dispatch yes "$candidate")" = $'RUN\t'"$tonemap_step" ] \
+    || fail "tone-map step must always run with a Docker daemon: ${candidate:-<no diff>}"
+done
+for candidate in internal/ffmpeg/tonemap.go internal/ffmpeg/ffmpeg.lock internal/ffmpeg/testdata/x.json \
+  go.mod go.sum tools/gate/ffmpeg-tonemap-conforming.sh; do
+  [ "$(tonemap_dispatch no "$candidate")" = $'RUN\t'"$tonemap_step" ] \
+    || fail "tone-map input must still run (and fail closed) without Docker: $candidate"
+done
+for candidate in "" docs/note.md internal/store/embeddings.go internal/playback/x.go \
+  tools/gate/gate.sh Makefile; do
+  output="$(tonemap_dispatch no "$candidate")"
+  grep -Fqx $'METRIC\t'"$tonemap_step"$'\tskip\tscope:tonemap:no-docker-daemon' <<<"$output" \
+    || fail "unrelated change without Docker did not record scope SKIP evidence: ${candidate:-<no diff>}"
+  grep -q "^SKIP $tonemap_step elapsed_s=0 (no Docker daemon" <<<"$output" \
+    || fail "unrelated change without Docker did not log the Docker SKIP: ${candidate:-<no diff>}"
+  if grep -q '^RUN' <<<"$output"; then fail "unrelated change without Docker ran the tone-map step"; fi
+done
+[ "$(tonemap_dispatch no "" release)" = $'RUN\t'"$tonemap_step" ] \
+  || fail "release mode must run the tone-map step even without Docker"
+# The early precondition fails only when the tail step would run without Docker.
+tonemap_precondition() {  # tonemap_precondition <docker:yes|no> <changed path|""> [GATE_MODE]
+  local docker="$1" candidate="$2" mode="${3:-normal}"
+  (
+    cd "$REPO"
+    . "$FUNCS"
+    export GATE_MODE="$mode"
+    changed_paths() { [ -z "$candidate" ] || printf '%s\n' "$candidate"; }
+    docker_daemon_available() { [ "$docker" = yes ]; }
+    tonemap_docker_precondition
+  ) >"$TMP/tonemap-precondition.log" 2>&1
+}
+tonemap_precondition yes internal/ffmpeg/tonemap.go || fail "precondition failed with a Docker daemon"
+tonemap_precondition no docs/note.md || fail "precondition failed for a change the tone-map step skips"
+tonemap_precondition no "" || fail "precondition failed on a clean tree without Docker"
+if tonemap_precondition no internal/ffmpeg/tonemap.go; then
+  fail "precondition passed for a tone-map input without Docker"
+fi
+grep -q 'Fix: start a Docker daemon' "$TMP/tonemap-precondition.log" \
+  || fail "precondition failure does not name the fix"
+if tonemap_precondition no "" release; then
+  fail "precondition passed a release gate without Docker"
+fi
+# The scope above is sound only while the conformance binary is built from
+# internal/ffmpeg alone: any other in-module package in its closure must be
+# added to the tonemap scope.
+tonemap_closure="$(cd "$ROOT" && GOWORK=off GOFLAGS=-mod=mod go list -deps -test \
+  -f '{{if not .Standard}}{{.ImportPath}}{{end}}' ./internal/ffmpeg)" \
+  || fail "could not list the internal/ffmpeg test closure"
+tonemap_foreign="$(grep '^github.com/beamfall/core/' <<<"$tonemap_closure" \
+  | grep -Ev '^github.com/beamfall/core/internal/ffmpeg( |\.test$|$)' || true)"
+[ -z "$tonemap_foreign" ] \
+  || fail "internal/ffmpeg test closure left the tonemap scope; extend it: $tonemap_foreign"
 
 # 1) clean tree at main: no changes -> scoped lane skips.
 if probe script; then fail "clean tree at main must not match script scope"; fi

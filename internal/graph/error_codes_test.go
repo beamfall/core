@@ -2,6 +2,7 @@ package graph
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -157,7 +158,7 @@ func TestGraphFailCodesByErrorKind(t *testing.T) {
 		{err: store.ValidationError("unknown segment kind intro"), code: ErrorCodeInvalid},
 		{err: errors.New("disk on fire"), code: ErrorCodeInternal, message: "mediaFields unavailable"},
 	} {
-		got := newGraphError(errorCode(tc.err), graphFailMessage("mediaFields", tc.err))
+		got := newGraphError(errorCode(tc.err), graphFailMessage(context.Background(), "mediaFields", tc.err))
 		if got.Extensions.Code != tc.code {
 			t.Errorf("errorCode(%v) = %s, want %s", tc.err, got.Extensions.Code, tc.code)
 		}

@@ -778,3 +778,49 @@ func (m *memoryStore) mustSchedule(id store.ScheduleID) store.Schedule {
 	}
 	return row
 }
+
+func TestUnregisterStopsScheduleUntilRegisteredAgain(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st := newMemoryStore()
+	service := NewService(st)
+	spec := Spec{ID: "scan:library-films", JobKind: "scan", DefaultTrigger: Every(1, Hours), BuildJobs: oneJob("scan")}
+	service.Register(spec)
+	start := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+	if err := service.Reconcile(ctx, start); err != nil {
+		t.Fatal(err)
+	}
+	edited := Every(2, Hours)
+	if _, err := service.Update(ctx, "scan:library-films", &edited, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	service.Unregister("scan:library-films")
+	if err := service.Reconcile(ctx, start); err != nil {
+		t.Fatal(err)
+	}
+	if !st.mustSchedule("scan:library-films").Orphaned {
+		t.Fatal("unregistered schedule not marked orphaned")
+	}
+	if err := service.Tick(ctx, start.Add(24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(st.enqueued); got != 0 {
+		t.Fatalf("enqueued after Unregister = %d, want 0", got)
+	}
+
+	service.Register(spec)
+	if err := service.Reconcile(ctx, start.Add(24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	returned := st.mustSchedule("scan:library-films")
+	if returned.Orphaned || returned.Trigger.N != 2 {
+		t.Fatalf("re-registered schedule = %#v, want live with the edited trigger", returned)
+	}
+	if err := service.Tick(ctx, start.Add(24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(st.enqueued); got != 1 {
+		t.Fatalf("enqueued after re-Register = %d, want 1", got)
+	}
+}

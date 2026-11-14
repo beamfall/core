@@ -508,8 +508,11 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	skipDetection := configureSkipDetectionJobs(cfg.DataDir, st, ffmpegRunner, jobRegistry, resourceGovernor, jobWake, logger)
 	// Manual identification uses the hardened scrape engine. Local image
 	// metadata is plugin hook code, wired below by Library plugin ID.
+	// Scraper credentials: the owner's saved secrets, then any defaults an
+	// official build bundled (BundledCredentials).
+	scraperCredentials := withBundledCredentials(secretFiles{dir: filepath.Join(cfg.DataDir, "secrets")}, BundledCredentials)
 	scrapeEngine := scrape.New(
-		scrape.WithCredentials(secretFiles{dir: filepath.Join(cfg.DataDir, "secrets")}),
+		scrape.WithCredentials(scraperCredentials),
 		scrape.WithConfigSource(st),
 	)
 	// Compiled filename-parser hooks, keyed by active plugin ID.
@@ -1082,7 +1085,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		ArtworkCandidateFetcher:      scrapeEngine,
 		ArtworkCandidateImporter:     artworkService,
 		ScanObserver:                 scanObserverAdapter{service: watcherService},
-		LibraryMutationObserver:      libraryMutationObserver{store: st, watcher: watcherService, schedule: scheduleService, logger: logger},
+		LibraryMutationObserver:      libraryMutationObserver{store: st, watcher: watcherService, schedule: scheduleService, artwork: artworkService, wake: jobWake, logger: logger},
 		ScheduleUpdater:              scheduleService,
 		JobRunner:                    jobRegistry,
 		PlaybackCache:                graphPlaybackCache,
@@ -1090,7 +1093,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		FeedSearcher:                 graphFeedSearcher,
 		AssetSweep:                   func(ctx context.Context) { enqueueAssetSweep(ctx, st, logger, jobWake) },
 		SubscriptionSecrets:          secretFiles{dir: filepath.Join(cfg.DataDir, "secrets")},
-		ScraperCredentialStore:       secretFiles{dir: filepath.Join(cfg.DataDir, "secrets")},
+		ScraperCredentialStore:       scraperCredentials,
 		ScraperCredentialInvalidator: scrapeEngine,
 		PushRegistrar:                graphPushRegistrar,
 		Conductor:                    conductorRegistry,
@@ -1867,6 +1870,11 @@ func (a *App) Run(ctx context.Context) error {
 		for _, lanURL := range lanURLs {
 			fmt.Fprintf(os.Stdout, "Beamfall first-run setup from this network (no token needed): %s\n", lanURL)
 		}
+		// A bridged container's interface addresses are not the host's, so also
+		// say which address to use from another device (CORE-1097).
+		if hint := remoteSetupHint(scheme, listener.Addr().String()); hint != "" {
+			fmt.Fprintf(os.Stdout, "Beamfall first-run setup from another device (no token needed): open %s\n", hint)
+		}
 		a.logger.Info(
 			"=== Beamfall first-run setup ===",
 			"setupURL", firstRunSetupURLRedacted(scheme, listener.Addr().String()),
@@ -2379,6 +2387,20 @@ func runRetentionPurge(ctx context.Context, st *store.Store, art *artwork.Servic
 		logger.Info("trash purge skipped")
 	} else if purged > 0 {
 		logger.Info("trash purged", "media", purged)
+	}
+	// Deleted Libraries share the trashed-Media window and rules (CORE-1201):
+	// records and generated artwork go, the owner's files never do.
+	if purged, skipped, err := st.SweepPurgeTrashedLibrariesBefore(ctx, time.Now().UTC().Add(-store.TrashRetention)); trashDisabledConfirmationRequired(skipped, err) {
+		logger.Info("deleted library purge skipped: confirmation required", "reason", "trash disabled", "skips", st.TrashDisabledSweepSkips())
+	} else {
+		// A failure part-way still reports the Libraries that did go.
+		for _, purge := range purged {
+			removePurgedLibraryArtwork(art, logger, purge)
+			logger.Info("deleted library purged", "library", string(purge.LibraryID), "media", len(purge.MediaIDs), "entities", len(purge.EntityIDs))
+		}
+		if err != nil {
+			logger.Warn("deleted library purge failed", "libraries", len(purged), "error", err)
+		}
 	}
 	if purged, skipped, err := st.SweepManagedFileTrash(ctx, time.Now().UTC()); trashDisabledConfirmationRequired(skipped, err) {
 		logger.Info("managed file trash purge skipped: confirmation required", "reason", "trash disabled", "skips", st.TrashDisabledSweepSkips())
@@ -3812,6 +3834,8 @@ type libraryMutationObserver struct {
 	store    *store.Store
 	watcher  *watcher.Service
 	schedule *schedulepkg.Service
+	artwork  *artwork.Service
+	wake     *jobWake
 	logger   *slog.Logger
 }
 
@@ -3831,6 +3855,82 @@ func (o libraryMutationObserver) LibraryRootsChanged(ctx context.Context, librar
 	}
 	for _, root := range roots {
 		_ = o.watcher.Observe(libraryID, root)
+	}
+}
+
+// LibraryDeleted stops everything that would keep working on a Library nobody
+// can see: its folders are no longer watched and its scan schedule is orphaned,
+// which keeps the owner's trigger for a later restore but stops it firing. A
+// restart reaches the same state, since neither is set up for a deleted Library.
+func (o libraryMutationObserver) LibraryDeleted(ctx context.Context, libraryID store.LibraryID) {
+	if o.watcher != nil {
+		if err := o.watcher.Forget(libraryID); err != nil {
+			o.logger.Warn("watcher stop after library delete failed", "library", string(libraryID), "error", err)
+		}
+	}
+	if o.schedule != nil {
+		o.schedule.Unregister(schedulepkg.ScanScheduleID(libraryID))
+		if err := o.schedule.Reconcile(ctx, time.Now().UTC()); err != nil {
+			o.logger.Warn("schedule reconcile after library delete failed", "library", string(libraryID), "error", err)
+		}
+	}
+}
+
+// LibraryRestored resumes the scan schedule and the folder watch, then queues
+// a scan of every root: nothing watched the folders while the Library was
+// deleted, so the catalog may be behind the disk.
+func (o libraryMutationObserver) LibraryRestored(ctx context.Context, libraryID store.LibraryID) {
+	if o.schedule != nil {
+		o.schedule.Register(scanScheduleSpec(o.store, libraryID))
+		if err := o.schedule.Reconcile(ctx, time.Now().UTC()); err != nil {
+			o.logger.Warn("schedule reconcile after library restore failed", "library", string(libraryID), "error", err)
+		}
+	}
+	roots, err := o.store.LibraryRoots(ctx, libraryID)
+	if err != nil {
+		o.logger.Warn("library roots unavailable after restore", "library", string(libraryID), "error", err)
+		return
+	}
+	o.LibraryRootsChanged(ctx, libraryID, roots)
+	for _, root := range roots {
+		enqueueScanJob(ctx, o.store, o.logger, o.wake, libraryID, root)
+	}
+}
+
+// LibraryPurged removes what the catalog purge cannot reach: the generated
+// artwork of the removed Media and entities, and the scheduler's cached copy
+// of the removed scan schedule.
+func (o libraryMutationObserver) LibraryPurged(ctx context.Context, purge store.LibraryPurge) {
+	// A Library is purged only after it was deleted, so these are already
+	// stopped unless the delete happened before this process learned to stop
+	// them; repeating both is harmless.
+	if o.watcher != nil {
+		_ = o.watcher.Forget(purge.LibraryID)
+	}
+	if o.schedule != nil {
+		o.schedule.Unregister(schedulepkg.ScanScheduleID(purge.LibraryID))
+		if err := o.schedule.Reload(ctx); err != nil {
+			o.logger.Warn("schedule reload after library purge failed", "library", string(purge.LibraryID), "error", err)
+		}
+	}
+	removePurgedLibraryArtwork(o.artwork, o.logger, purge)
+}
+
+// removePurgedLibraryArtwork deletes the server-generated artwork of a purged
+// Library's Media and entities. It never touches a Library root folder.
+func removePurgedLibraryArtwork(art *artwork.Service, logger *slog.Logger, purge store.LibraryPurge) {
+	if art == nil {
+		return
+	}
+	for _, id := range purge.MediaIDs {
+		if err := art.PurgeMediaArtwork(id); err != nil {
+			logger.Warn("purged library media artwork removal failed", "library", string(purge.LibraryID), "media", string(id), "error", err)
+		}
+	}
+	for _, id := range purge.EntityIDs {
+		if err := art.RemoveEntityArtwork(id); err != nil {
+			logger.Warn("purged library entity artwork removal failed", "library", string(purge.LibraryID), "entity", string(id), "error", err)
+		}
 	}
 }
 

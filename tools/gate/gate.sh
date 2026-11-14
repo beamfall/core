@@ -335,6 +335,27 @@ gate_rss_sample_session_kb() {  # gate_rss_sample_session_kb <sid> -> summed RSS
   printf '%s' "$sum"
 }
 
+# macOS `ps -o sess=` prints 0 for every process, so a session sum there is the
+# whole host's RSS. The full-run recorder falls back to the process tree rooted
+# at the gate shell instead (descendants that reparent away are not counted).
+gate_rss_sample_tree_kb() {  # gate_rss_sample_tree_kb <root-pid> -> summed RSS in KB, or 0
+  local root="$1" sum
+  sum="$(ps -ax -o pid=,ppid=,rss= 2>/dev/null | awk -v root="$root" '
+    { pid[NR] = $1; ppid[NR] = $2; rss[NR] = $3 }
+    END {
+      tree[root] = 1
+      do {
+        grew = 0
+        for (i = 1; i <= NR; i++)
+          if (!(pid[i] in tree) && (ppid[i] in tree)) { tree[pid[i]] = 1; grew = 1 }
+      } while (grew)
+      for (i = 1; i <= NR; i++) if (pid[i] in tree) s += rss[i]
+      print s + 0
+    }')" || sum=0
+  case "$sum" in ''|*[!0-9]*) sum=0 ;; esac
+  printf '%s' "$sum"
+}
+
 # Starts a background sampler that polls a process group (or, for the full-gate
 # recorder, the whole supervised session) every 0.2s and tracks the
 # running maximum in a file (renamed in atomically, so a cross-process reader
@@ -363,13 +384,13 @@ gate_rss_track_start() {  # gate_rss_track_start <target> <pid_var> <file_var> [
   (
     set +e
     peak=0
-    while { [ "$scope" = session ] || gate_group_alive "$target"; } \
+    while { [ "$scope" != group ] || gate_group_alive "$target"; } \
       && { [ -z "$stopfile" ] || [ ! -s "$stopfile" ]; }; do
-      if [ "$scope" = session ]; then
-        cur="$(gate_rss_sample_session_kb "$target")"
-      else
-        cur="$(gate_rss_sample_kb "$target")"
-      fi
+      case "$scope" in
+        session) cur="$(gate_rss_sample_session_kb "$target")" ;;
+        tree) cur="$(gate_rss_sample_tree_kb "$target")" ;;
+        *) cur="$(gate_rss_sample_kb "$target")" ;;
+      esac
       [ "$cur" -gt "$peak" ] 2>/dev/null && peak="$cur"
       printf '%s' "$peak" >"$outfile.partial" 2>/dev/null
       mv -f "$outfile.partial" "$outfile" 2>/dev/null
@@ -504,17 +525,22 @@ PY
 }
 
 gate_full_rss_start() {
-  local sid tracker_pid="" tracker_file=""
+  local sid tracker_pid="" tracker_file="" target scope=session
   sid="$(ps -o sess= -p "$$" 2>/dev/null | tr -d ' ')"
   [ -n "$sid" ] || {
     echo "ERROR gate cannot resolve its session for full-run RSS measurement" >&2
     return 1
   }
+  target="$sid"
+  if [ "$sid" = 0 ]; then
+    scope=tree
+    target="$$"
+  fi
   read -r GATE_HOST_PHYSICAL_KB GATE_HOST_AVAILABLE_KB GATE_HOST_SWAP_TOTAL_KB \
     < <(gate_host_memory_snapshot)
   GATE_FULL_RSS_STOP_FILE="$(mktemp)"
-  gate_rss_track_start "$sid" tracker_pid tracker_file \
-    "" "$GATE_FULL_RSS_STOP_FILE" session
+  gate_rss_track_start "$target" tracker_pid tracker_file \
+    "" "$GATE_FULL_RSS_STOP_FILE" "$scope"
   GATE_FULL_RSS_TRACKER_PID="$tracker_pid"
   GATE_FULL_RSS_FILE="$tracker_file"
   GATE_FULL_STARTED_NS="$(gate_monotonic_ns)"
@@ -1282,6 +1308,12 @@ scope_matches() {
       contract:contracts/*|contract:internal/conformance/*|contract:internal/graph/*|contract:tools/wire-contract/*) return 0 ;;
       contract:Makefile|contract:testing/release-gates/gate-commands.tsv|contract:script/crossrepo-conformance.sh|contract:script/crossrepo-conformance_test.sh|contract:script/crossrepo-conformance_pin_test.sh|contract:script/crossrepo-conformance_interrupt_test.py) return 0 ;;
       contract:tools/gate/gate.sh|contract:tools/gate/gate_scope_test.sh) return 0 ;;
+      # CORE-0947: the tone-map conformance binary is built from internal/ffmpeg
+      # alone (gate_scope_test.sh proves its module closure), so only these
+      # inputs can change its verdict. Dispatch itself (run_docker_step) is
+      # covered by gate_scope_test.sh, so gate.sh edits stay gateable without
+      # Docker.
+      tonemap:internal/ffmpeg/*|tonemap:go.mod|tonemap:go.sum|tonemap:tools/gate/ffmpeg-tonemap-conforming.sh) return 0 ;;
     esac
   done <<<"$paths"
   return 1
@@ -1295,6 +1327,51 @@ run_scoped_step() {
   else
     gate_metric "$name" skip 0 0 "scope:$scope"
     echo "SKIP $name elapsed_s=0 (no $scope changes)"
+  fi
+}
+
+# CORE-0947: skip contract for steps that need a reachable Docker daemon. With
+# a daemon the step always runs. Without one (a Linux gate host with no Docker,
+# say) it SKIPs only when the diff provably cannot reach it; a change inside its
+# scope, an unprovable diff range or release mode still runs the step, which
+# then fails closed naming the missing daemon. The skip is recorded as a scope
+# skip, so gate_metric refuses it in release mode.
+docker_daemon_available() {
+  command -v docker >/dev/null 2>&1 || return 1
+  timeout 30 docker info >/dev/null 2>&1
+}
+
+# CORE-0947: fail within seconds, at the start of the gate and in preflight,
+# when the tail tone-map step would need a Docker daemon that is not there.
+tonemap_docker_precondition() {
+  if docker_daemon_available; then
+    echo "tone-map Docker precondition: daemon reachable; the pinned FFmpeg tone-map step will run"
+    return 0
+  fi
+  if ! scope_matches tonemap; then
+    echo "tone-map Docker precondition: no Docker daemon, but this change cannot reach the tone-map inputs; the step will SKIP"
+    return 0
+  fi
+  cat >&2 <<'MSG'
+tone-map Docker precondition: no reachable Docker daemon, and this run needs the
+pinned FFmpeg tone-map conformance step (the change touches its inputs, the diff
+range is unprovable, or this is a release gate). The step runs the pinned
+bookworm FFmpeg in a container (internal/ffmpeg/ffmpeg.lock).
+Fix: start a Docker daemon and rerun. macOS with colima: `colima start`, then
+`docker context use colima` or export DOCKER_HOST=unix://$HOME/.colima/default/docker.sock.
+Linux: start dockerd (or gate this change on a host that has one).
+MSG
+  return 1
+}
+
+run_docker_step() {
+  local name="$1" scope="$2"
+  shift 2
+  if docker_daemon_available || scope_matches "$scope"; then
+    run_step "$name" "$@"
+  else
+    gate_metric "$name" skip 0 0 "scope:$scope:no-docker-daemon"
+    echo "SKIP $name elapsed_s=0 (no Docker daemon and no $scope changes; run on a Docker host to exercise it)"
   fi
 }
 
@@ -1349,6 +1426,7 @@ run_gate_preflight_steps() {
   preflight_step "release workflow pins check" make release-workflow-pins-check
   preflight_step "contract registry check" python3 script/check-contract-registry.py
   preflight_step "quarantine manifest" script/check-quarantine.sh
+  preflight_step "tone-map Docker precondition" tonemap_docker_precondition
   preflight_step "gate fixture guard selftest" python3 script/gate_fixture_guard_test.py
   preflight_step "API docs drift selftest" python3 script/check_api_docs_test.py
   preflight_step "API docs drift" python3 script/check-api-docs.py
@@ -1443,6 +1521,7 @@ fi
 # expiresAt (unbounded quarantine is prohibited); also fails if entry count
 # exceeds the hard cap. Runs first so a stale quarantine is caught before tests.
 run_step "quarantine manifest" script/check-quarantine.sh
+run_step "tone-map Docker precondition" tonemap_docker_precondition
 run_step "gate fixture guard selftest" python3 script/gate_fixture_guard_test.py
 run_step "API docs drift selftest" python3 script/check_api_docs_test.py
 run_step "API docs drift" python3 script/check-api-docs.py
@@ -1510,7 +1589,7 @@ run_step "go test + line-coverage ratchet" go run ./cmd/covratchet -floor testin
 # Real-encoder wall-clock SLOs run only after mandatory parallel work drains;
 # coverage still exercises the deterministic budget classification above.
 run_step "playback transcode latency budgets" env BEAMFALL_PERF=1 BEAMFALL_PERF_LOAD_WORKERS=1 GOMAXPROCS=2 go test ./internal/playback -run '^Test(TranscodeLatencyBudgetsOnReferenceClip|InjectedPlaybackLatencyRegressionReds)$' -v -count=1 -timeout 45s
-run_step "pinned FFmpeg tone-map conformance" make ffmpeg-tonemap-conforming
+run_docker_step "pinned FFmpeg tone-map conformance" tonemap make ffmpeg-tonemap-conforming
 
 # The script-scoped orchestration suites are process-heavy. Keep them in the
 # serial tail: overlapping roadmap fixtures with race-short previously made

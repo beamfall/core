@@ -61,12 +61,12 @@ func newStreamClient(t *testing.T) *http.Client {
 
 // TestEventStreamKeepaliveBoundStaysUnder15s pins the production constants: a
 // keepalive is due once the stream has been silent for eventKeepaliveInterval
-// and is written at the next poll, so the longest silent gap is the interval
-// plus one poll.
+// and the stream wakes to write it then, so the interval itself must leave
+// room under the 15 s bound.
 func TestEventStreamKeepaliveBoundStaysUnder15s(t *testing.T) {
 	// feature:sse-events
-	if gap := eventKeepaliveInterval + eventPollInterval; gap > 15*time.Second {
-		t.Fatalf("worst-case idle gap = %v, want <= 15s", gap)
+	if eventKeepaliveInterval > 12*time.Second {
+		t.Fatalf("keepalive interval = %v, want headroom under 15s", eventKeepaliveInterval)
 	}
 }
 
@@ -243,31 +243,91 @@ func serveStreamFor(t *testing.T, srv *Server, d time.Duration, during func()) s
 	return rec.Body.String()
 }
 
-// TestEventStreamIdlePollReadsStoreAtMostOnce proves an idle poll costs one
-// store read: the outbox read, with no Scope re-derivation and no Media or
-// Library lookups. Before CORE-0729 every poll re-derived the Scope.
-func TestEventStreamIdlePollReadsStoreAtMostOnce(t *testing.T) {
+// TestEventStreamIdleDoesNotPollStore proves an idle stream reads the outbox
+// once, when it opens, and then waits for the store's commit signal: no
+// further outbox reads, no Scope re-derivation and no Media or Library lookups
+// (CORE-1158). Before, every stream read the outbox four times a second.
+func TestEventStreamIdleDoesNotPollStore(t *testing.T) {
 	// feature:sse-events
 	srv, st := newTestServerWithStore(t)
 	counting := &countingEventStore{EventStore: st}
 	srv.SetEvents(counting)
 	scopes := countScopes(srv)
 
-	window := 1200 * time.Millisecond
-	serveStreamFor(t, srv, window, nil)
+	serveStreamFor(t, srv, 1200*time.Millisecond, nil)
 
-	polls := counting.outbox.Load()
-	if polls < 3 {
-		t.Fatalf("outbox polls = %d over %v, want several", polls, window)
-	}
-	if max := int64(window/eventPollInterval) + 1; polls > max {
-		t.Fatalf("outbox polls = %d, want at most one per tick (%d)", polls, max)
+	if polls := counting.outbox.Load(); polls != 1 {
+		t.Fatalf("outbox reads = %d over an idle 1.2s, want 1 (the opening backlog read)", polls)
 	}
 	if got := counting.media.Load() + counting.library.Load(); got != 0 {
 		t.Fatalf("idle stream made %d Media/Library reads, want 0", got)
 	}
 	if got := scopes.Load(); got != 1 {
 		t.Fatalf("Scope derivations = %d, want 1 (the handshake only)", got)
+	}
+}
+
+// TestEventStreamDeliversOnCommitSignal proves an event appended while the
+// stream is idle is delivered at once: the fallback read is 30 s away, so a
+// prompt delivery can only come from the commit signal.
+func TestEventStreamDeliversOnCommitSignal(t *testing.T) {
+	// feature:sse-events
+	srv, st := newTestServerWithStore(t)
+	httpSrv := httptest.NewServer(srv)
+	defer httpSrv.Close()
+
+	status, lines, cancel := openTestStream(t, newStreamClient(t), httpSrv.URL, authorizeViewer)
+	defer cancel()
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	time.Sleep(100 * time.Millisecond) // let the stream drain its empty backlog and wait
+	const want = "event: job.queued"
+	for i := range 2 {
+		sent := time.Now()
+		if _, err := st.EnqueueJob(context.Background(), store.Job{Kind: "scan", CreatedAt: sent}); err != nil {
+			t.Fatalf("enqueue job %d: %v", i, err)
+		}
+		deadline := time.After(2 * time.Second)
+		for got := false; !got; {
+			select {
+			case line, ok := <-lines:
+				if !ok {
+					t.Fatalf("stream closed before %q", want)
+				}
+				got = line == want
+			case <-deadline:
+				t.Fatalf("%q not delivered within 2s of its commit", want)
+			}
+		}
+		if elapsed := time.Since(sent); elapsed > time.Second {
+			t.Fatalf("%q delivered %v after its commit, want it on the commit signal", want, elapsed)
+		}
+	}
+}
+
+// silentEventStore never signals a commit: it stands in for a writer in
+// another process, whose events only the fallback read can find.
+type silentEventStore struct{ EventStore }
+
+func (silentEventStore) EventOutboxChanged() <-chan struct{} { return nil }
+
+// TestEventStreamFallbackReadFindsUnsignalledEvent proves an event whose
+// writer could not signal is still delivered, by the slow fallback read.
+func TestEventStreamFallbackReadFindsUnsignalledEvent(t *testing.T) {
+	// feature:sse-events
+	srv, st := newTestServerWithStore(t)
+	srv.SetEvents(silentEventStore{st})
+	srv.eventStreams.fallback = 200 * time.Millisecond
+
+	body := serveStreamFor(t, srv, 900*time.Millisecond, func() {
+		time.Sleep(100 * time.Millisecond)
+		if _, err := st.EnqueueJob(context.Background(), store.Job{Kind: "scan", CreatedAt: time.Now()}); err != nil {
+			t.Errorf("enqueue job: %v", err)
+		}
+	})
+	if !strings.Contains(body, "event: job.queued") {
+		t.Fatalf("fallback read did not deliver the unsignalled event:\n%s", body)
 	}
 }
 
@@ -339,7 +399,7 @@ func TestEventStreamIdleRecheckEndsRevokedStream(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("idle stream still open 3s after revocation")
 	}
-	if elapsed := time.Since(revokedAt); elapsed > 300*time.Millisecond+2*eventPollInterval+500*time.Millisecond {
+	if elapsed := time.Since(revokedAt); elapsed > 300*time.Millisecond+500*time.Millisecond {
 		t.Fatalf("revoked idle stream ended after %v", elapsed)
 	}
 	if srv.eventStreams.openStreams() != 0 {

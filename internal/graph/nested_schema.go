@@ -103,6 +103,7 @@ var resultTypes = map[string]any{
 	"engagementcounter":      EngagementCounterResult{},
 	"profilesessions":        ProfileSessionInfo{},
 	"libraryhealth":          LibraryHealthInfo{},
+	"trashedlibraries":       TrashedLibraryInfo{},
 	"libraryhealthitems":     HealthItemInfo{},
 	"libraryduplicategroups": DuplicateGroupInfo{},
 	"metadataexport":         MetadataExportInfo{},
@@ -259,6 +260,8 @@ var resultTypes = map[string]any{
 	"setlibraryrestricted":               LibraryInfo{},
 	"setqualitypolicy":                   QualityPolicyInfo{},
 	"deletelibrary":                      deleteLibraryResult{},
+	"restorelibrary":                     restoreLibraryResult{},
+	"purgelibrary":                       LibraryPurgeResult{},
 	"scanlibrary":                        JobInfo{},
 	"addsubscription":                    SubscriptionInfo{},
 	"removesubscription":                 SubscriptionInfo{},
@@ -464,6 +467,11 @@ type deleteMyPackTokensResult struct{}
 // so reflecting over it yields an empty selection set, which is exactly the
 // nested shape clients may request (none).
 type deleteLibraryResult struct{}
+
+// restoreLibraryResult models the boolean-leaf Library restore mutation
+// (CORE-1201): execute() assigns data["restoreLibrary"] = true, so like
+// deleteLibraryResult it carries no nested fields.
+type restoreLibraryResult struct{}
 
 // registerImportSourceResult models the scalar-result import-token mutation
 // (apple ADR-0003 §3, POWERTOOLS-6B): execute() assigns data["registerImportSource"]

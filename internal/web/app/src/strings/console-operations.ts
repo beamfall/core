@@ -134,6 +134,11 @@ export const consoleOperationsStrings = {
     never: "Never",
     active: "Active",
     revoked: "Revoked",
+    deleteLibraryFilesKept:
+      "Your media files stay on disk. Nothing in the library's folders is deleted or changed.",
+    libraryDeleted: "Deleted “{library}”. Its media files are still on disk.",
+    libraryControlName: "{control}: {library}",
+    setupChecklistOptional: "Optional",
   },
   fr: {
     ...updateSafetyStrings,
@@ -142,6 +147,12 @@ export const consoleOperationsStrings = {
     never: "Jamais",
     active: "Actif",
     revoked: "Révoqué",
+    deleteLibraryFilesKept:
+      "Vos fichiers multimédias restent sur le disque. Rien n’est supprimé ni modifié dans les dossiers de la bibliothèque.",
+    libraryDeleted:
+      "« {library} » a été supprimée. Ses fichiers multimédias sont toujours sur le disque.",
+    libraryControlName: "{control} : {library}",
+    setupChecklistOptional: "Facultatif",
   },
   de: {
     ...updateSafetyStrings,
@@ -150,6 +161,12 @@ export const consoleOperationsStrings = {
     never: "Nie",
     active: "Aktiv",
     revoked: "Widerrufen",
+    deleteLibraryFilesKept:
+      "Die Mediendateien bleiben auf dem Datenträger. In den Ordnern der Bibliothek wird nichts gelöscht oder geändert.",
+    libraryDeleted:
+      "„{library}“ wurde gelöscht. Die Mediendateien liegen weiterhin auf dem Datenträger.",
+    libraryControlName: "{control}: {library}",
+    setupChecklistOptional: "Optional",
   },
   es: {
     ...updateSafetyStrings,
@@ -158,6 +175,11 @@ export const consoleOperationsStrings = {
     never: "Nunca",
     active: "Activo",
     revoked: "Revocado",
+    deleteLibraryFilesKept:
+      "Tus archivos multimedia permanecen en el disco. No se elimina ni se modifica nada en las carpetas de la biblioteca.",
+    libraryDeleted: "Se eliminó «{library}». Sus archivos multimedia siguen en el disco.",
+    libraryControlName: "{control}: {library}",
+    setupChecklistOptional: "Opcional",
   },
   pt: {
     ...updateSafetyStrings,
@@ -166,5 +188,10 @@ export const consoleOperationsStrings = {
     never: "Nunca",
     active: "Ativo",
     revoked: "Revogado",
+    deleteLibraryFilesKept:
+      "Seus arquivos de mídia permanecem no disco. Nada é excluído nem alterado nas pastas da biblioteca.",
+    libraryDeleted: "“{library}” foi excluída. Os arquivos de mídia continuam no disco.",
+    libraryControlName: "{control}: {library}",
+    setupChecklistOptional: "Opcional",
   },
 } as const;

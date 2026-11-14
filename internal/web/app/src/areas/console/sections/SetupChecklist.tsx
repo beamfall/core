@@ -19,8 +19,12 @@ import { useAsync } from "../useAsync";
 // "Done" is NOT "setup green" — it is FIRST SUCCESSFUL BROWSE (funnel §2). So
 // when every setup step is complete but the library still has no browsable
 // content, the footer keeps pointing forward (scan / migrate) instead of
-// declaring the funnel finished. Reading this state leaks no secret — only
-// whether each step finished and whether any content is browsable.
+// declaring the funnel finished. The state carries only whether each step
+// finished and whether any content is browsable.
+//
+// Migrating and adding a device are optional and have no completion flag, so
+// they read "Optional", never "Next step": the list must not ask for more work
+// underneath a footer that says the server is all set.
 
 // Each spine item: a setup-step boolean derived from SetupState, a deep-link to
 // the Console/app station that completes it, and its label. The destinations
@@ -30,6 +34,8 @@ interface SpineItem {
   label: StringKey;
   to: string;
   done: (s: SetupState) => boolean;
+  /** Never required for a first browse; shown as "Optional" until done. */
+  optional?: boolean;
 }
 
 const SPINE: SpineItem[] = [
@@ -44,13 +50,15 @@ const SPINE: SpineItem[] = [
     // Migration is optional and has no SetupState flag; it is always offered as
     // a forward step (the operator skipped it at Seam A, or never had a source).
     done: () => false,
+    optional: true,
   },
   {
     label: "setupChecklistEnroll",
     to: "/promote",
-    // Enrollment has no SetupState flag either; always an available next step
+    // Enrollment has no SetupState flag either; always available
     // (this is where the operator learns pairing exists — funnel §5).
     done: () => false,
+    optional: true,
   },
   {
     label: "setupChecklistProfiles",
@@ -152,9 +160,13 @@ export function SetupChecklist() {
                     {done ? <Check className="h-3.5 w-3.5" /> : i + 1}
                   </span>
                   <span className="console-step-label">{t(item.label)}</span>
-                  <StatusChip tone={done ? "green" : "amber"}>
-                    {t(done ? "setupChecklistDone" : "setupChecklistNext")}
-                  </StatusChip>
+                  {done ? (
+                    <StatusChip tone="green">{t("setupChecklistDone")}</StatusChip>
+                  ) : item.optional ? (
+                    <StatusChip tone="neutral">{t("setupChecklistOptional")}</StatusChip>
+                  ) : (
+                    <StatusChip tone="amber">{t("setupChecklistNext")}</StatusChip>
+                  )}
                 </Link>
               );
             })}

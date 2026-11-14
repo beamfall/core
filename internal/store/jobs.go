@@ -256,7 +256,7 @@ func (s *Store) AppendJobEvent(ctx context.Context, id JobID, typ string, payloa
 	if err := appendJobEventSQL(ctx, tx, id, now, typ, string(payload)); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return s.commitOutboxTx(tx)
 }
 
 func (s *Store) ClaimNextJob(ctx context.Context, workerID string, classes []JobClass, now time.Time) (Job, error) {
@@ -669,7 +669,7 @@ func (s *Store) enqueueJobSQL(ctx context.Context, job Job) (Job, error) {
 	if err != nil {
 		return Job{}, err
 	}
-	return job, tx.Commit()
+	return job, s.commitOutboxTx(tx)
 }
 
 // enqueueJobTx inserts a normalized new job inside the caller's transaction,
@@ -833,7 +833,7 @@ func (s *Store) claimNextJobSQL(ctx context.Context, workerID string, classes []
 	job.Attempts++
 	job.UpdatedAt = now
 	job.StartedAt = startedAt
-	if err := tx.Commit(); err != nil {
+	if err := s.commitOutboxTx(tx); err != nil {
 		return Job{}, err
 	}
 	return job, nil
@@ -892,7 +892,7 @@ func (s *Store) updateJobCheckpointSQL(ctx context.Context, id JobID, leaseOwner
 	if err := appendJobEventSQL(ctx, tx, id, now, "progress", `{"type":"progress"}`); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return s.commitOutboxTx(tx)
 }
 
 func (s *Store) yieldJobSQL(ctx context.Context, id JobID, leaseOwner string, checkpoint []byte, hasCheckpoint bool, runAfter time.Time, now time.Time) error {
@@ -923,7 +923,7 @@ func (s *Store) yieldJobSQL(ctx context.Context, id JobID, leaseOwner string, ch
 	if err := appendJobEventSQL(ctx, tx, id, now, "yielded", `{"status":"yielded"}`); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return s.commitOutboxTx(tx)
 }
 
 func (s *Store) finishJobSQL(ctx context.Context, id JobID, leaseOwner string, status JobStatus, message string, now time.Time) error {
@@ -943,7 +943,7 @@ func (s *Store) finishJobSQL(ctx context.Context, id JobID, leaseOwner string, s
 	if err := appendJobEventSQL(ctx, tx, id, now, string(status), `{"status":"`+string(status)+`"}`); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return s.commitOutboxTx(tx)
 }
 
 func (s *Store) cancelJobSQL(ctx context.Context, id JobID, now time.Time) error {
@@ -963,7 +963,7 @@ func (s *Store) cancelJobSQL(ctx context.Context, id JobID, now time.Time) error
 	if err := appendJobEventSQL(ctx, tx, id, now, "canceled", `{"status":"canceled"}`); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return s.commitOutboxTx(tx)
 }
 
 func (s *Store) resumeInterruptedJobsSQL(ctx context.Context, now time.Time) (int, error) {
@@ -1021,7 +1021,7 @@ func (s *Store) yieldRunningJobsSQL(ctx context.Context, predicate string, now t
 			return 0, err
 		}
 	}
-	if err := tx.Commit(); err != nil {
+	if err := s.commitOutboxTx(tx); err != nil {
 		return 0, err
 	}
 	return int(affected), nil

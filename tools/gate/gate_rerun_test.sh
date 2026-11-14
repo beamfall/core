@@ -284,8 +284,11 @@ gate_full_rss_stop 0
 PY
 chmod +x "$TMP/full-rss-test.sh"
 full_rss_rc=0
+# A fresh session keeps the session-scoped sum to the harness alone, so the
+# upper bound below catches a sampler that counts the whole host (CORE-1553).
 AGENT_EVIDENCE_DIR="$TMP/full-rss-evidence" \
   env -u GATE_PREFLIGHT \
+  python3 -c 'import subprocess, sys; sys.exit(subprocess.call(sys.argv[1:], start_new_session=True))' \
   "$TMP/full-rss-test.sh" >"$TMP/full-rss-out" 2>"$TMP/full-rss-err" || full_rss_rc=$?
 [ "$full_rss_rc" -eq 0 ] || {
   cat "$TMP/full-rss-out" "$TMP/full-rss-err" >&2
@@ -305,6 +308,8 @@ def is_full_gate_record(record):
 full = json.load(open(sys.argv[1], encoding="utf-8"))
 if not is_full_gate_record(full):
     raise SystemExit(f"full-gate peak RSS was not recorded: {full}")
+if full["peak_rss_kb"] > 1024 * 1024:
+    raise SystemExit(f"full-gate peak RSS counted processes outside the gate: {full}")
 kind_mismatch = {**full, "kind": "make-gate-preflight"}
 if is_full_gate_record(kind_mismatch):
     raise SystemExit(f"preflight peak RSS was accepted as full-gate evidence: {kind_mismatch}")

@@ -490,62 +490,130 @@ func (s *Store) continueWatchingSQL(ctx context.Context, profileID ProfileID, fi
 // is here, in the single shared projection, so both the shelf and the filter
 // drop channel plays by construction.
 func (s *Store) inProgressItemsSQL(ctx context.Context, profileID ProfileID, filter LibraryFilter, limit, offset int) ([]SourceItem, error) {
-	rows, err := s.eventsR.QueryContext(ctx, `
-		SELECT media_id, position_seconds, duration_seconds
-		FROM playback_progress
-		WHERE profile_id = ? AND watched = 0 AND position_seconds >= ? AND channel_context = 0
-		ORDER BY updated_at_ms DESC
-		LIMIT ? OFFSET ?
-	`, profileID, resumeFloorSeconds, limit, offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
 	type progressRow struct {
 		mediaID         MediaID
 		positionSeconds int
 		durationSeconds int
 	}
-	var candidates []progressRow
+	return s.filteredEngagementPage(ctx, `
+		SELECT media_id, position_seconds, duration_seconds
+		FROM playback_progress
+		WHERE profile_id = ? AND watched = 0 AND position_seconds >= ? AND channel_context = 0
+		ORDER BY updated_at_ms DESC, media_id
+	`, []any{profileID, resumeFloorSeconds}, filter, limit, offset,
+		func(rows *sql.Rows) (MediaID, func(Media) SourceItem, error) {
+			var row progressRow
+			if err := rows.Scan(&row.mediaID, &row.positionSeconds, &row.durationSeconds); err != nil {
+				return "", nil, err
+			}
+			return row.mediaID, func(media Media) SourceItem {
+				return SourceItem{
+					ID:      media.ID,
+					Kind:    "media",
+					Title:   media.Title,
+					Summary: remainingSummary(row.positionSeconds, row.durationSeconds),
+				}
+			}, nil
+		})
+}
+
+// engagementFilterBatch is how many events-DB candidates one catalog-side
+// visibility/Extras check resolves at a time while a shelf page fills.
+const engagementFilterBatch = 256
+
+// filteredEngagementPage returns the [offset, offset+limit) window of an
+// engagement shelf AFTER catalog-side filtering. The engagement projection lives
+// in the events database and visibility (library scope, reveal, certification,
+// trash) and the Extras flag live in the catalog, so the filters cannot ride in
+// the events SQL; applying LIMIT/OFFSET there and filtering afterwards returned
+// short or empty library-scoped pages and made paging skip rows.
+//
+// Instead the ordered candidate query runs once, without LIMIT/OFFSET, and is
+// consumed in engagementFilterBatch chunks: each chunk is filtered with one
+// visibleMediaBatchSQL and one extraMediaIDsSQL call, admitted rows are counted
+// against offset (which is a position in the FILTERED sequence) and collected
+// until the page is full, and the cursor is closed as soon as it is — so a full
+// page reads only as many candidates as it needs, a short page means the source
+// is exhausted, and memory stays bounded by one chunk plus the page. One
+// statement is one SQLite read snapshot, so a page never skips or repeats a row
+// within itself; with the deterministic ORDER BY (media_id tiebreak) successive
+// offsets tile the filtered sequence exactly. limit < 0 means unbounded (the
+// SQLite LIMIT -1 convention callers relied on); limit == 0 returns nothing.
+//
+// query must select media_id first; scan reads one row and returns its Media ID
+// with a builder that renders the SourceItem from the visible Media.
+func (s *Store) filteredEngagementPage(ctx context.Context, query string, args []any, filter LibraryFilter, limit, offset int, scan func(*sql.Rows) (MediaID, func(Media) SourceItem, error)) ([]SourceItem, error) {
+	items := []SourceItem{}
+	if limit == 0 {
+		return items, nil
+	}
+	offset = max(offset, 0)
+	rows, err := s.eventsR.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type candidate struct {
+		id    MediaID
+		build func(Media) SourceItem
+	}
+	batch := make([]candidate, 0, engagementFilterBatch)
+	skipped := 0
+	// flush filters the buffered chunk and reports whether the page is full.
+	flush := func() (bool, error) {
+		if len(batch) == 0 {
+			return false, nil
+		}
+		ids := make([]MediaID, len(batch))
+		for i := range batch {
+			ids[i] = batch[i].id
+		}
+		visible, err := s.visibleMediaBatchSQL(ctx, ids, filter)
+		if err != nil {
+			return false, err
+		}
+		extras, err := s.extraMediaIDsSQL(ctx, ids)
+		if err != nil {
+			return false, err
+		}
+		for _, c := range batch {
+			media, ok := visible[c.id]
+			if !ok || extras[c.id] {
+				// Hidden, deleted or out-of-scope Media never reaches the wire;
+				// Extras are excluded from engagement shelves by default (ADR-0009 §3).
+				continue
+			}
+			if skipped < offset {
+				skipped++
+				continue
+			}
+			items = append(items, c.build(media))
+			if limit > 0 && len(items) >= limit {
+				return true, nil
+			}
+		}
+		batch = batch[:0]
+		return false, nil
+	}
 	for rows.Next() {
-		var row progressRow
-		if err := rows.Scan(&row.mediaID, &row.positionSeconds, &row.durationSeconds); err != nil {
+		id, build, err := scan(rows)
+		if err != nil {
 			return nil, err
 		}
-		candidates = append(candidates, row)
+		batch = append(batch, candidate{id: id, build: build})
+		if len(batch) < engagementFilterBatch {
+			continue
+		}
+		if full, err := flush(); err != nil || full {
+			return items, err
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-
-	ids := make([]MediaID, len(candidates))
-	for i := range candidates {
-		ids[i] = candidates[i].mediaID
-	}
-	visible, err := s.visibleMediaBatchSQL(ctx, ids, filter)
-	if err != nil {
+	if _, err := flush(); err != nil {
 		return nil, err
-	}
-	extras, err := s.extraMediaIDsSQL(ctx, ids)
-	if err != nil {
-		return nil, err
-	}
-
-	items := []SourceItem{}
-	for _, candidate := range candidates {
-		media, ok := visible[candidate.mediaID]
-		if !ok {
-			continue // hidden or deleted media never reaches the wire
-		}
-		if extras[candidate.mediaID] {
-			continue // Extras excluded by default (ADR-0009 §3)
-		}
-		items = append(items, SourceItem{
-			ID:      media.ID,
-			Kind:    "media",
-			Title:   media.Title,
-			Summary: remainingSummary(candidate.positionSeconds, candidate.durationSeconds),
-		})
 	}
 	return items, nil
 }
@@ -874,68 +942,25 @@ func (s *Store) nextUpSQL(ctx context.Context, profileID ProfileID, filter Libra
 // visibleMediaSQL per row — eliminating the N+1 that caused one catalog round-
 // trip per played item.
 func (s *Store) playedItemsSQL(ctx context.Context, profileID ProfileID, filter LibraryFilter, orderBy string, limit, offset int) ([]SourceItem, error) {
-	rows, err := s.eventsR.QueryContext(ctx, `
+	return s.filteredEngagementPage(ctx, `
 		SELECT media_id, play_count
 		FROM playback_progress
 		WHERE profile_id = ? AND play_count > 0
-		ORDER BY `+orderBy+`
-		LIMIT ? OFFSET ?
-	`, profileID, limit, offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	type playedRow struct {
-		mediaID   MediaID
-		playCount int
-	}
-	var candidates []playedRow
-	for rows.Next() {
-		var row playedRow
-		if err := rows.Scan(&row.mediaID, &row.playCount); err != nil {
-			return nil, err
-		}
-		candidates = append(candidates, row)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	if len(candidates) == 0 {
-		return []SourceItem{}, nil
-	}
-	ids := make([]MediaID, len(candidates))
-	for i, c := range candidates {
-		ids[i] = c.mediaID
-	}
-	visible, err := s.visibleMediaBatchSQL(ctx, ids, filter)
-	if err != nil {
-		return nil, err
-	}
-	extras, err := s.extraMediaIDsSQL(ctx, ids)
-	if err != nil {
-		return nil, err
-	}
-	items := make([]SourceItem, 0, len(candidates))
-	for _, candidate := range candidates {
-		media, ok := visible[candidate.mediaID]
-		if !ok {
-			continue
-		}
-		if extras[candidate.mediaID] {
-			continue // Extras excluded from recently/most-played by default (ADR-0009 §3)
-		}
-		summary := "1 play"
-		if candidate.playCount != 1 {
-			summary = strconv.Itoa(candidate.playCount) + " plays"
-		}
-		items = append(items, SourceItem{
-			ID:      media.ID,
-			Kind:    "media",
-			Title:   media.Title,
-			Summary: summary,
+		ORDER BY `+orderBy, []any{profileID}, filter, limit, offset,
+		func(rows *sql.Rows) (MediaID, func(Media) SourceItem, error) {
+			var mediaID MediaID
+			var playCount int
+			if err := rows.Scan(&mediaID, &playCount); err != nil {
+				return "", nil, err
+			}
+			return mediaID, func(media Media) SourceItem {
+				summary := "1 play"
+				if playCount != 1 {
+					summary = strconv.Itoa(playCount) + " plays"
+				}
+				return SourceItem{ID: media.ID, Kind: "media", Title: media.Title, Summary: summary}
+			}, nil
 		})
-	}
-	return items, nil
 }
 
 // ListeningStats is the Profile-scoped playback rollup for music-style summary

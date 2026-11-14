@@ -187,7 +187,12 @@ INNER
 )
 PY
 chmod +x "$TMP/gate-supervisor-fixture.sh"
-BEAMFALL_GATE_CAPACITY_HELD=1 GATE_PROCESS_SUPERVISED=0 \
+# The fixture is gate.sh's own preamble copied out of the repo, so its
+# GATE_ROOT is not a checkout: mark the fixture guard as already held (as
+# gate_rerun_test.sh does) or a standalone run would exec a missing
+# $GATE_ROOT/script/gate-fixture-guard.py. Inside `make gate` the guard exports
+# this anyway (CORE-1011).
+BEAMFALL_GATE_FIXTURE_GUARDED=1 BEAMFALL_GATE_CAPACITY_HELD=1 GATE_PROCESS_SUPERVISED=0 \
   GATE_PROCESS_SUPERVISOR="$ROOT/script/test-process-supervisor.py" \
   "$TMP/gate-supervisor-fixture.sh" "$TMP/gate-supervisor-daemon.pid" \
   >"$TMP/gate-supervisor.out" 2>&1 &
@@ -198,6 +203,7 @@ for _ in $(seq 1 200); do
 done
 [ -s "$TMP/gate-supervisor-daemon.pid" ] || {
   echo "production gate supervisor fixture did not start its daemon" >&2
+  cat "$TMP/gate-supervisor.out" >&2 || true
   kill -KILL "$gate_supervisor_pid" 2>/dev/null || true
   wait "$gate_supervisor_pid" 2>/dev/null || true
   exit 1
