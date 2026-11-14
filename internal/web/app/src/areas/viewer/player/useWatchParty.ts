@@ -151,9 +151,10 @@ export function useWatchParty({
 
   // Track the viewer's input, so a media event can be told apart from autoplay
   // and from the echo of a correction. A scrubber drag seeks on release, so the
-  // release counts too. OS media controls mark it through useMediaSession.
+  // release counts too: pointerup, or touchend when the browser cancelled the
+  // pointer stream mid-drag. OS media controls mark it through useMediaSession.
   useEffect(() => {
-    const events = ["pointerdown", "pointerup", "keydown"] as const;
+    const events = ["pointerdown", "pointerup", "touchend", "keydown"] as const;
     for (const name of events) window.addEventListener(name, markViewerIntent, true);
     return () => {
       for (const name of events) window.removeEventListener(name, markViewerIntent, true);

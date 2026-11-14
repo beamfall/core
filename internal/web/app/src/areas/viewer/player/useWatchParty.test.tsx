@@ -116,6 +116,23 @@ describe("useWatchParty local transport", () => {
     view.unmount();
   });
 
+  it("sends a long touch scrub that ends in touchend after a pointer cancel", () => {
+    party = activeParty({ item: "m1", positionMS: 0, presentAtMS: 0, paused: true });
+    const video = new FakeVideo();
+    let now = 10_000;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const view = mount(video);
+    now += 100;
+    fireEvent.pointerDown(document.body);
+    fireEvent.pointerCancel(document.body);
+    now += 3000;
+    fireEvent.touchEnd(document.body);
+    video.currentTime = 20;
+    video.dispatchEvent(new Event("seeked"));
+    expect(sendPartyTransport).toHaveBeenCalledWith("m1", 20_000, true);
+    view.unmount();
+  });
+
   it("sends a play from the OS media controls", () => {
     party = activeParty({ item: "m1", positionMS: 0, presentAtMS: 0, paused: true });
     const video = new FakeVideo();
