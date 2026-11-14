@@ -22,4 +22,4 @@ gate to catch it.
 - A conformance test enumerates every error site in `internal/graph` and fails when one has no
   code or a client error message is not mapped.
 - The client-core-wire contract gains a `graphqlErrors` section with the error shape and the
-  code vocabulary, published as minor version 2.2.0. Consumer repins are follow-up work.
+  code vocabulary, published as minor version 2.4.0. Consumer repins are follow-up work.

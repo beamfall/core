@@ -742,7 +742,7 @@ INVALID unless their exact message is pinned (a hidden or missing Library is NOT
 failure to INTERNAL with the generic `"<field> unavailable"` message. The ErrNotFound denial-of-existence rule of §6 applies: content
 outside the caller's scope answers NOT_FOUND, exactly as missing content; FORBIDDEN is reserved for
 role, tier, session-kind and Reveal gates and never confirms that hidden content exists. The
-vocabulary and shape ship in the wire contract (`graphqlErrors`, since 2.2.0), and
+vocabulary and shape ship in the wire contract (`graphqlErrors`, since 2.4.0), and
 `internal/conformance` fails on any error site in `internal/graph` that leaves without a mapped
 code.
 
