@@ -125,7 +125,7 @@ describe("useStillWatching", () => {
     expect(view.result.current.prompting).toBe(false);
   });
 
-  it("resets the run on a tap or a key", () => {
+  it("resets the run on a tap, a key or a bare click", () => {
     autoplayRun(["1", "2", "3", "4"]);
     const { view } = setup();
     expect(view.result.current.armed).toBe(true);
@@ -137,6 +137,13 @@ describe("useStillWatching", () => {
     autoplayRun(["4", "5", "6", "7"]);
     act(() => {
       fireEvent.pointerDown(window);
+    });
+    expect(stillWatchingStreak()).toBe(0);
+
+    // Assistive technology activates controls with a click and no pointerdown.
+    autoplayRun(["7", "8", "9", "10"]);
+    act(() => {
+      fireEvent.click(window);
     });
     expect(stillWatchingStreak()).toBe(0);
   });

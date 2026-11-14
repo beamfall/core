@@ -57,14 +57,14 @@ export function useStillWatching({
     return () => noteItemLeft(mediaID);
   }, [mediaID]);
 
-  // Any input in the player is a sign someone is there.
+  // Any input in the player is a sign someone is there. Assistive technology
+  // can activate a control with a bare click, so clicks count too.
   useEffect(() => {
     const onInput = () => resetStillWatching();
-    window.addEventListener("pointerdown", onInput, true);
-    window.addEventListener("keydown", onInput, true);
+    const events = ["pointerdown", "keydown", "click"] as const;
+    for (const type of events) window.addEventListener(type, onInput, true);
     return () => {
-      window.removeEventListener("pointerdown", onInput, true);
-      window.removeEventListener("keydown", onInput, true);
+      for (const type of events) window.removeEventListener(type, onInput, true);
     };
   }, []);
 
