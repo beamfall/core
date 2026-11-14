@@ -261,9 +261,11 @@ func (g FFmpegPrecomputeGenerator) precomputeComposedHLS(ctx context.Context, ru
 // composedChoice is playbackInfo's composed-picture branch: for an audio Media
 // whose plugin describes a picture, a video-capable client gets the Ready
 // composed rendition matching the current picture instead of the bare audio.
-// With none Ready, and transcodeRefusal empty (policy and capacity admit a
-// live stream), it answers a live composed stream instead (live=true) and
-// queues the precomputed rendition for the next play. It answers ok=false —
+// With none Ready, transcodeRefusal empty (policy and capacity admit a live
+// stream), a composed shape within the client and quirk limits, and an FFmpeg
+// build that can run the picture's recipe, it answers a live composed stream
+// instead (live=true) and queues the precomputed rendition for the next play.
+// It answers ok=false —
 // leaving the ladder untouched — whenever any condition fails, including a
 // composer error: playback never breaks because a picture could not be
 // resolved. A grant carrying a pitch shift or tempo change skips the
@@ -276,7 +278,8 @@ func (s *Service) composedChoice(ctx context.Context, scope auth.Scope, grant st
 	if err != nil {
 		return StreamChoice{}, false, false, err
 	}
-	canLive := transcodeRefusal == "" && s.sessions != nil
+	liveRung, shapeFits := liveComposedRung(profile, ov)
+	canLive := transcodeRefusal == "" && s.sessions != nil && shapeFits
 	// Only resolve the picture (which reads sidecars) when it could be used:
 	// a composed rendition might match, or a live stream could be offered.
 	if !hasComposedRendition(renditions, file.ContentFingerprint) && !canLive {
@@ -301,10 +304,12 @@ func (s *Service) composedChoice(ctx context.Context, scope auth.Scope, grant st
 		choice, err := s.precomputedStreamChoice(ctx, grant, suffix, rendition, expiresAt)
 		return choice, false, err == nil, err
 	}
-	if !canLive {
+	// A build that cannot run the recipe (no libass for timed text) would turn
+	// a song that plays as audio into a failing stream, so it keeps the audio.
+	if !canLive || !composedRecipeSupported(picture.TimedText != "") {
 		return StreamChoice{}, false, false, nil
 	}
-	choice, err = s.liveComposedChoice(ctx, grant, suffix, wantedAudio, expiresAt)
+	choice, err = s.liveComposedChoice(ctx, grant, suffix, wantedAudio, liveRung, expiresAt)
 	if err != nil {
 		return StreamChoice{}, false, false, err
 	}
@@ -315,17 +320,18 @@ func (s *Service) composedChoice(ctx context.Context, scope auth.Scope, grant st
 }
 
 // liveComposedChoice mints the live composed-picture HLS stream: the grant
-// carries ComposedPicture, so the byte layer opens a session with the single
-// composed rung under the ordinary transcode session limits.
-func (s *Service) liveComposedChoice(ctx context.Context, grant streamtoken.Grant, suffix string, audio ffmpeg.AudioProfile, expiresAt time.Time) (StreamChoice, error) {
+// carries ComposedPicture, and the chosen shape as its client height ceiling,
+// so the byte layer opens a session with that single composed rung under the
+// ordinary transcode session limits.
+func (s *Service) liveComposedChoice(ctx context.Context, grant streamtoken.Grant, suffix string, audio ffmpeg.AudioProfile, rung Rung, expiresAt time.Time) (StreamChoice, error) {
 	grant.Target = streamtoken.TargetMediaHLS
 	grant = withHLSAudioGrant(grant, audio)
+	grant = withHLSLadderGrant(grant, ladderCaps{ClientMaxHeight: rung.Height})
 	grant.ComposedPicture = true
 	token, err := s.tokens.Issue(ctx, grant)
 	if err != nil {
 		return StreamChoice{}, err
 	}
-	rung := composedLiveRung()
 	return StreamChoice{
 		ID:         "composed-" + suffix,
 		Kind:       "hls",
@@ -334,6 +340,35 @@ func (s *Service) liveComposedChoice(ctx context.Context, grant streamtoken.Gran
 		ExpiresAt:  expiresAt.Format(time.RFC3339),
 		Renditions: []RenditionInfo{{ID: rung.ID, Height: rung.Height, Bandwidth: rung.Bandwidth}},
 	}, nil
+}
+
+// composedRecipeSupported reports whether the resolved FFmpeg build can run the
+// composition recipe for a timed-text (true) or graphics (false) picture. It is
+// a variable so a test can state the build it means instead of inheriting the
+// FFmpeg on the developer's PATH, like toneMapSupported.
+var composedRecipeSupported = ffmpeg.ComposedRecipeSupported
+
+// liveComposedRung is the live composed shape a client may be sent: H.264 that
+// no matched quirk denies, under the same limits the cached composed path
+// applies (composedRenditionCompatible) — the client's declared H.264 maximum
+// height and bitrate, and the quirk height and bitrate caps. ok is false when
+// no composed shape fits.
+func liveComposedRung(profile CapabilityProfile, ov quirkOverlay) (Rung, bool) {
+	if ov.deniesVideoCodec(composedCodec) {
+		return Rung{}, false
+	}
+	maxHeight, maxBitrate := 0, ov.MaxBitrate
+	if len(profile.VideoCodecs) > 0 {
+		cap, ok := videoCodecCap(profile.VideoCodecs, composedCodec)
+		if !ok {
+			return Rung{}, false
+		}
+		maxHeight = cap.MaxHeight
+		maxBitrate = minNonZero(maxBitrate, cap.MaxBitrate)
+	} else {
+		maxHeight = clientLadderCeiling(profile)
+	}
+	return composedLiveRungWithin(minNonZero(maxHeight, ov.MaxHeight), maxBitrate)
 }
 
 // composedDemandPriority is the job priority of a composed render queued by a

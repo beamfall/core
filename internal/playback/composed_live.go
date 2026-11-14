@@ -88,14 +88,46 @@ func writeLivePicture(rungDir string, picture ComposedPicture) (*ffmpeg.Composed
 	return &ffmpeg.ComposedPicture{TimedTextPath: path}, nil
 }
 
-// composedLiveRung is the single rung of a composed-picture session, matching
-// the precomputed composed rendition's shape.
-func composedLiveRung() Rung {
+// composedLiveRungs is the closed vocabulary of live composed shapes, best
+// first. The 720p shape matches the precomputed composed rendition; the smaller
+// ones serve a client or quirk height or bitrate limit with the same picture
+// scaled down (ffmpeg.ComposedCanvas).
+var composedLiveRungs = []Rung{
+	composedRung(composedHeight, composedBandwidth),
+	composedRung(480, 1_000_000),
+	composedRung(360, 600_000),
+}
+
+func composedRung(height, bandwidth int) Rung {
+	width, height := ffmpeg.ComposedCanvas(height)
 	return Rung{
 		ID:        ComposedRungID,
-		Height:    composedHeight,
-		Width:     composedHeight * 16 / 9,
-		VideoKbps: composedBandwidth / 1000,
-		Bandwidth: composedBandwidth,
+		Height:    height,
+		Width:     width,
+		VideoKbps: bandwidth / 1000,
+		Bandwidth: bandwidth,
 	}
+}
+
+// composedLiveRungWithin is the best live composed shape no taller than
+// maxHeight (0 = no height limit) and with a peak bandwidth no higher than
+// maxBitrate (0 = no bitrate limit). ok is false when none fits.
+func composedLiveRungWithin(maxHeight, maxBitrate int) (Rung, bool) {
+	for _, rung := range composedLiveRungs {
+		if (maxHeight > 0 && rung.Height > maxHeight) || (maxBitrate > 0 && rung.Bandwidth > maxBitrate) {
+			continue
+		}
+		return rung, true
+	}
+	return Rung{}, false
+}
+
+// composedLiveRung is the single rung of a composed-picture session: the shape
+// decided at mint, which the grant carries as its client height ceiling.
+func composedLiveRung(caps ladderCaps) (Rung, error) {
+	rung, ok := composedLiveRungWithin(caps.ClientMaxHeight, 0)
+	if !ok {
+		return Rung{}, ErrComposedPictureUnavailable
+	}
+	return rung, nil
 }

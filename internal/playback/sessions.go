@@ -1109,7 +1109,11 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds, videoWid
 	}()
 	requestedRungs := rungsForSession(videoWidth, videoHeight, audioCopy, degraded, caps)
 	if picture != nil {
-		requestedRungs = []Rung{composedLiveRung()}
+		rung, err := composedLiveRung(caps)
+		if err != nil {
+			return nil, err
+		}
+		requestedRungs = []Rung{rung}
 	} else if !adjust.IsZero() {
 		requestedRungs = []Rung{adjustedAudioRung()}
 	}

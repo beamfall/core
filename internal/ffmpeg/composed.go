@@ -9,8 +9,10 @@ import (
 	"strings"
 )
 
-// Composed-picture canvas: the fixed 720p frame a composed rendition is drawn
-// on (ADR-0057 precomputed renditions; see ComposedPicture).
+// Composed-picture canvas: the 720p frame a composed rendition is drawn on
+// (ADR-0057 precomputed renditions; see ComposedPicture). A live composed
+// stream under a client or quirk height limit draws a smaller canvas of the
+// same shape (see ComposedCanvas).
 const (
 	composedWidth  = 1280
 	composedHeight = 720
@@ -19,6 +21,23 @@ const (
 	// 1000x720 keeps a 300x216 graphics frame's shape (25:18) to the pixel.
 	composedGraphicsWidth = 1000
 )
+
+// ComposedCanvas is the canvas a composed rendition of the given height is
+// drawn on: 16:9 at that height, with even dimensions for yuv420p. A height of
+// zero or above the 720p canvas draws the 720p canvas, so a composed encode
+// never upscales.
+func ComposedCanvas(height int) (width, canvasHeight int) {
+	if height <= 0 || height > composedHeight {
+		height = composedHeight
+	}
+	height -= height % 2
+	return evenRound(float64(height) * composedWidth / composedHeight), height
+}
+
+// evenRound rounds to the nearest even integer.
+func evenRound(value float64) int {
+	return 2 * int(value/2+0.5)
+}
 
 // ErrComposedPictureOutsideConfinement reports a picture input outside the
 // encode's confinement: a graphics track not beside the audio source, or a
@@ -149,11 +168,12 @@ func composedEncodeArgs(audioSrc string, picture ComposedPicture, rendition Rend
 	// source time and its frames are stamped at output time.
 	tempo := rendition.adjust.tempo()
 	source := formatSeconds(rendition.adjust.SourceSeconds(float64(startSeconds)))
+	width, height := ComposedCanvas(rendition.Height)
 	if picture.GraphicsPath != "" {
 		args = append(args, "-i", picture.GraphicsPath)
 		filters = []string{
-			fmt.Sprintf("scale=%d:%d:flags=neighbor", composedGraphicsWidth, composedHeight),
-			fmt.Sprintf("pad=%d:%d:(ow-iw)/2:0", composedWidth, composedHeight),
+			fmt.Sprintf("scale=%d:%d:flags=neighbor", evenRound(float64(composedGraphicsWidth*height)/composedHeight), height),
+			fmt.Sprintf("pad=%d:%d:(ow-iw)/2:0", width, height),
 			fmt.Sprintf("fps=%d", composedFPS),
 			"tpad=stop=-1:stop_mode=clone",
 		}
@@ -166,7 +186,7 @@ func composedEncodeArgs(audioSrc string, picture ComposedPicture, rendition Rend
 			filters = append(filters, "trim=start="+source, "setpts=PTS-STARTPTS")
 		}
 	} else {
-		args = append(args, "-f", "lavfi", "-i", fmt.Sprintf("color=c=black:s=%dx%d:r=%d", composedWidth, composedHeight, composedFPS))
+		args = append(args, "-f", "lavfi", "-i", fmt.Sprintf("color=c=black:s=%dx%d:r=%d", width, height, composedFPS))
 		switch {
 		case tempo != 1:
 			filters = append(filters, fmt.Sprintf("setpts=PTS*%s+%s/TB", formatFactor(tempo), source))

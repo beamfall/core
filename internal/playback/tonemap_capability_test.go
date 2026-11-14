@@ -7,7 +7,8 @@ import (
 	"github.com/beamfall/core/internal/ffmpeg"
 )
 
-// TestMain pins the FFmpeg tone-map capability for this package's tests.
+// TestMain pins the FFmpeg tone-map and composed-recipe capabilities for this
+// package's tests.
 //
 // FullTranscodeRefusal fails closed: an HDR source on a build that cannot run
 // Beamfall's tone-map chain is refused rather than offered a transcode that
@@ -15,9 +16,11 @@ import (
 // happens to sit on the runner's PATH, which is not what negotiation tests are
 // about — they assert what playbackInfo decides GIVEN a capability. So the
 // package default is "conforming build", and the tests that are about the
-// capability itself state the other case explicitly via withToneMapSupport.
+// capability itself state the other case explicitly via withToneMapSupport
+// or withComposedRecipeSupport.
 func TestMain(m *testing.M) {
 	toneMapSupported = func() bool { return true }
+	composedRecipeSupported = func(bool) bool { return true }
 	os.Exit(m.Run())
 }
 
