@@ -22,8 +22,8 @@ forgot the value on reload, and there was no audio delay control at all.
 - **Audio delay**: a new "Audio sync" settings row and panel route the element's sound through a Web
   Audio delay line (0 to +5 s, the same steps and reset). A browser cannot play sound early, so the
   web range starts at zero and the panel says so. Routes whose sound Web Audio cannot carry (a
-  cross-origin source without CORS, or an item that could play through the browser's own HLS engine,
-  which plays silent through a media element source) disable the control with a note instead of
+  cross-origin source without CORS, or a browser that plays HLS through its own engine, Safari, where a
+  media element source goes silent and would stay attached for the next item) disable the control with a note instead of
   pretending. Audio-only items do not show the row.
 - **Persistence**: both values persist on the device per Profile and Media, so a fix holds the next
   time the same item plays, including from Up Next. The server's per-Profile sidecar nudge

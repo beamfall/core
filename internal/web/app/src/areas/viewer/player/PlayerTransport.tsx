@@ -229,7 +229,6 @@ export function PlayerTransport({
     profileID,
     mediaID,
     stream: state.stream,
-    streams: state.streams,
   });
   // Audio-only items have nothing to line the sound up with.
   const audioSyncAvailable = state.info?.mediaClass !== "audio";

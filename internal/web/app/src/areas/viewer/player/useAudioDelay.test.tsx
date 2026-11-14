@@ -2,7 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlaybackStream } from "../lib/playback";
 import { writeSync } from "./playbackSync";
-import { audioDelayRoutable, playsNativeHls, useAudioDelay } from "./useAudioDelay";
+import { audioDelayRoutable, browserPlaysNativeHls, useAudioDelay } from "./useAudioDelay";
 
 const setValueAtTime = vi.fn();
 const createMediaElementSource = vi.fn(() => ({ connect: vi.fn() }));
@@ -34,7 +34,6 @@ function video(src: string) {
 }
 
 const direct: PlaybackStream = { kind: "direct-play", url: "/api/media/m1/stream" };
-const hls: PlaybackStream = { kind: "hls", url: "/api/media/m1/master.m3u8" };
 
 describe("audioDelayRoutable", () => {
   it("accepts same-origin and MSE sources only", () => {
@@ -50,23 +49,22 @@ describe("audioDelayRoutable", () => {
   });
 });
 
-describe("playsNativeHls", () => {
-  it("is true when an HLS stream would play through the browser's engine", () => {
+describe("browserPlaysNativeHls", () => {
+  it("follows the browser's HLS engine, not the item", () => {
     const element = video("/api/media/m1/stream");
+    expect(browserPlaysNativeHls(element)).toBe(false);
     element.canPlayType = () => "maybe";
-    expect(playsNativeHls(element, [direct, hls])).toBe(true);
-    expect(playsNativeHls(element, [direct])).toBe(false);
+    expect(browserPlaysNativeHls(element)).toBe(true);
   });
 });
 
-function render(element: HTMLVideoElement, mediaID = "m1", streams: PlaybackStream[] = [direct]) {
+function render(element: HTMLVideoElement, mediaID = "m1", stream: PlaybackStream = direct) {
   return renderHook(() =>
     useAudioDelay({
       videoRef: { current: element },
       profileID: "p1",
       mediaID,
-      stream: direct,
-      streams,
+      stream,
     }),
   );
 }
@@ -105,12 +103,26 @@ describe("useAudioDelay", () => {
     expect(result.current.audioDelay).toBe(0);
   });
 
-  it("is unsupported where the item could play native HLS", () => {
+  it("is unsupported on a browser that plays HLS natively, even for direct play", () => {
     const element = video("/api/media/m1/stream");
     element.canPlayType = () => "maybe";
-    const { result } = render(element, "m1", [direct, hls]);
+    const { result } = render(element, "m1", direct);
     expect(result.current.audioDelaySupported).toBe(false);
     act(() => result.current.nudgeAudioDelay(0.5));
     expect(createMediaElementSource).not.toHaveBeenCalled();
+  });
+
+  it("resumes an existing graph after an interruption even at zero delay", () => {
+    const element = video("/api/media/m1/stream");
+    const { result } = render(element, "m4");
+    act(() => result.current.nudgeAudioDelay(0.5));
+    act(() => result.current.resetAudioDelay());
+    const context = createMediaElementSource.mock.contexts[0] as FakeAudioContext;
+    context.state = "suspended";
+    context.resume.mockClear();
+    act(() => {
+      element.dispatchEvent(new Event("play"));
+    });
+    expect(context.resume).toHaveBeenCalled();
   });
 });

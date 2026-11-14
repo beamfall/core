@@ -49,17 +49,15 @@ export function audioDelayRoutable(video: HTMLMediaElement | null, nativeHls = f
 }
 
 /**
- * True when any HLS stream of the item would play through the browser's own
- * engine. The element can switch to the HLS sibling mid-playback (a quality step
- * down), and a source node cannot be removed once made, so a native-HLS browser
- * never routes the element at all rather than going silent after the switch.
+ * True when this browser plays HLS through its own engine. A source node cannot
+ * be removed once made, and the same element outlives the item: it can switch to
+ * an HLS sibling mid-playback (a quality step down) or play the next queued item
+ * over HLS, and either would then go silent. So a native-HLS browser never routes
+ * the element at all, whatever the current item carries.
  */
-export function playsNativeHls(
-  video: HTMLVideoElement | null,
-  streams: (PlaybackStream | null | undefined)[],
-): boolean {
+export function browserPlaysNativeHls(video: HTMLVideoElement | null): boolean {
   if (!video) return false;
-  return streams.some((stream) => stream?.kind === "hls" && engineFor(video, stream) === "native");
+  return engineFor(video, { kind: "hls", url: "" } as PlaybackStream) === "native";
 }
 
 export function useAudioDelay({
@@ -67,15 +65,12 @@ export function useAudioDelay({
   profileID = "",
   mediaID = "",
   stream,
-  streams,
 }: {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   profileID?: string;
   mediaID?: string;
   /** The stream playing now; a change re-checks routability. */
   stream: PlaybackStream | null;
-  /** The item's whole stream inventory (the HLS sibling it may switch to). */
-  streams?: PlaybackStream[];
 }) {
   const [audioDelay, setAudioDelay] = useState(() => readSync(profileID, mediaID).audioDelay);
   const [supported, setSupported] = useState(false);
@@ -83,7 +78,7 @@ export function useAudioDelay({
   delayRef.current = audioDelay;
   const keyRef = useRef({ profileID, mediaID });
   keyRef.current = { profileID, mediaID };
-  const nativeHls = playsNativeHls(videoRef.current, [stream, ...(streams ?? [])]);
+  const nativeHls = browserPlaysNativeHls(videoRef.current);
   const nativeHlsRef = useRef(nativeHls);
   nativeHlsRef.current = nativeHls;
 
@@ -136,8 +131,10 @@ export function useAudioDelay({
     const video = videoRef.current;
     setSupported(audioDelayRoutable(video, nativeHls));
     if (!video) return;
+    // An existing graph carries the element's sound even at zero delay, so it
+    // must be resumed after an interruption however the delay is set.
     const retry = () => {
-      if (delayRef.current > 0) apply();
+      if (delayRef.current > 0 || graphs.has(video)) apply();
     };
     video.addEventListener("play", retry);
     video.addEventListener("loadedmetadata", retry);

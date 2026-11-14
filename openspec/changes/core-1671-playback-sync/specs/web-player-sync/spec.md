@@ -41,8 +41,13 @@ without going silent, the control SHALL be disabled with a note saying so.
 
 #### Scenario: Route that cannot carry the delay
 
-- **WHEN** the item could play through the browser's own HLS engine
+- **WHEN** the browser plays HLS through its own engine, even for a direct-play item
 - **THEN** the audio sync control is disabled and says the delay is unavailable on this route
+
+#### Scenario: Recovering after an interruption at zero delay
+
+- **WHEN** the viewer set a delay, reset it to zero, and the browser then suspends audio
+- **THEN** the next play or interaction resumes the sound
 
 ### Requirement: Sync values persist per Profile and Media
 
