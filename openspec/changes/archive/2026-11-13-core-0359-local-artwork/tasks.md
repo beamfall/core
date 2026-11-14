@@ -15,6 +15,6 @@
 
 ## 3. Follow-ups
 
-- [ ] 3.1 Implement the container Entity resolver in identification
-- [ ] 3.2 Wire the manual artwork picker to `ImportManualArtwork`
-- [ ] 3.3 Exclude sidecar images from Media admission and the estimate walk
+- [x] 3.1 Implement the container Entity resolver in identification — deferred to CORE-1488
+- [x] 3.2 Wire the manual artwork picker to `ImportManualArtwork` — deferred to CORE-1489
+- [x] 3.3 Exclude sidecar images from Media admission and the estimate walk — deferred to CORE-0043
