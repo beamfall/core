@@ -196,32 +196,42 @@ export function restartInPlace(
   return true;
 }
 
-// The last event this tab applied: its id and issue time. A remounted viewer
-// subscribes without a cursor and is sent recent events again; without this,
-// leaving and returning to the viewer would replay a play-media sent a moment
-// ago. It is kept in sessionStorage too, so a reload in the same tab does not
-// replay it. Ids alone are not enough: restoring an older backup rewinds the
-// event sequence, so an event is fresh when its id is higher OR it was issued
-// later than the last one applied.
+// The events this tab applied. A remounted viewer subscribes without a cursor
+// and is sent recent events again; without this, leaving and returning to the
+// viewer would replay a play-media sent a moment ago. It is kept in
+// sessionStorage too, so a reload in the same tab does not replay it.
+//
+// Two records together decide. The recent applied events themselves (id and
+// issue time) catch an exact replay, whatever order ids and issue times came
+// in: concurrent commands take their issue time before they are written, so a
+// higher id can carry an earlier time. A watermark, the highest id and the
+// latest issue time applied, drops an older event this tab never saw. An event
+// is fresh unless it is in the recent set or both its id and its issue time
+// are at or below the watermark, so a server restored from an older backup
+// (lower ids, later times) is still obeyed.
 const APPLIED_KEY = "bf.remote.appliedEvent";
-interface AppliedEvent {
+const APPLIED_RECENT_LIMIT = 64;
+interface AppliedEvents {
   id: number;
   at: number;
+  recent: string[];
 }
-let applied: AppliedEvent | null | undefined;
+let applied: AppliedEvents | null | undefined;
 
-function readApplied(): AppliedEvent | null {
+function readApplied(): AppliedEvents | null {
   if (applied === undefined) {
     applied = null;
     try {
       const stored = JSON.parse(window.sessionStorage.getItem(APPLIED_KEY) ?? "null") as unknown;
-      if (
-        stored !== null &&
-        typeof stored === "object" &&
-        Number.isSafeInteger((stored as AppliedEvent).id) &&
-        Number.isFinite((stored as AppliedEvent).at)
-      ) {
-        applied = { id: (stored as AppliedEvent).id, at: (stored as AppliedEvent).at };
+      if (stored !== null && typeof stored === "object") {
+        const { id, at, recent } = stored as Partial<AppliedEvents>;
+        if (Number.isSafeInteger(id) && Number.isFinite(at) && Array.isArray(recent)) {
+          applied = {
+            id: id as number,
+            at: at as number,
+            recent: recent.filter((key): key is string => typeof key === "string"),
+          };
+        }
       }
     } catch {
       // Storage is unavailable or holds junk; the in-memory record still applies.
@@ -238,9 +248,16 @@ function readApplied(): AppliedEvent | null {
 export function claimControlEvent(eventID: string, occurredAt: number): boolean {
   const id = Number(eventID);
   if (!eventID || !Number.isSafeInteger(id) || id <= 0) return true;
+  const key = `${id}@${occurredAt}`;
   const last = readApplied();
-  if (last && id <= last.id && occurredAt <= last.at) return false;
-  applied = { id, at: occurredAt };
+  if (last && (last.recent.includes(key) || (id <= last.id && occurredAt <= last.at))) {
+    return false;
+  }
+  applied = {
+    id: Math.max(id, last?.id ?? id),
+    at: Math.max(occurredAt, last?.at ?? occurredAt),
+    recent: [...(last?.recent ?? []), key].slice(-APPLIED_RECENT_LIMIT),
+  };
   try {
     window.sessionStorage.setItem(APPLIED_KEY, JSON.stringify(applied));
   } catch {
@@ -249,14 +266,52 @@ export function claimControlEvent(eventID: string, occurredAt: number): boolean 
   return true;
 }
 
-/** Test seam: forgets the applied-event watermark. */
+/** Test seam: forgets the applied events. */
 export function resetAppliedControlEvents(): void {
   applied = undefined;
+  pendingCommand = null;
   try {
     window.sessionStorage.removeItem(APPLIED_KEY);
   } catch {
     // Storage is unavailable.
   }
+}
+
+// A transport command that arrived while no player was registered: one is
+// still setting up (after a play-media, the player unmounts its transport
+// until the new playback is ready). The next player to register applies it if
+// it is still recent and anchored to that player's Media. Only the latest
+// command is kept.
+const PENDING_COMMAND_MS = 15_000;
+const HOLD_PAUSE_MS = 10_000;
+let pendingCommand: { command: SessionControlCommand; at: number } | null = null;
+
+/**
+ * Drives the registered player with a transport command, or keeps the command
+ * for the next player to register when none is.
+ */
+export function deliverPlayerCommand(command: SessionControlCommand): void {
+  const player = remotePlayerTarget();
+  if (player) {
+    pendingCommand = null;
+    applyPlayerCommand(command, player);
+    return;
+  }
+  pendingCommand = { command, at: Date.now() };
+}
+
+function applyPendingCommand(target: RemotePlayerTarget): void {
+  const held = pendingCommand;
+  pendingCommand = null;
+  if (!held || Date.now() - held.at > PENDING_COMMAND_MS) return;
+  if (!applyPlayerCommand(held.command, target) || held.command.command !== "pause") return;
+  // The player starts itself once it can play, which is after it registers:
+  // keep a queued pause through that first start.
+  const video = target.video();
+  if (!video) return;
+  const hold = () => video.pause();
+  video.addEventListener("play", hold, { once: true });
+  window.setTimeout(() => video.removeEventListener("play", hold), HOLD_PAUSE_MS);
 }
 
 // One player runs per tab; the last one mounted is the one commands reach.
@@ -273,6 +328,7 @@ export function useRemotePlayerTarget(target: RemotePlayerTarget): void {
   latest.current = target;
   useEffect(() => {
     active = latest;
+    applyPendingCommand(latest.current);
     return () => {
       if (active === latest) active = null;
     };

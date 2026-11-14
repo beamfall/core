@@ -213,4 +213,24 @@ describe("claimControlEvent", () => {
     expect(claimControlEvent("101", 2_000)).toBe(false);
     expect(claimControlEvent("102", 2_100)).toBe(true);
   });
+
+  it("drops replays of events whose ids and issue times disagree in order", () => {
+    resetAppliedControlEvents();
+    expect(claimControlEvent("41", 2_000)).toBe(true);
+    expect(claimControlEvent("42", 1_000)).toBe(true);
+    expect(claimControlEvent("41", 2_000)).toBe(false);
+    expect(claimControlEvent("42", 1_000)).toBe(false);
+  });
+
+  it("remembers applied events across a reload of the tab", () => {
+    resetAppliedControlEvents();
+    expect(claimControlEvent("41", 2_000)).toBe(true);
+    expect(claimControlEvent("42", 1_000)).toBe(true);
+    const stored = window.sessionStorage.getItem("bf.remote.appliedEvent");
+    resetAppliedControlEvents();
+    window.sessionStorage.setItem("bf.remote.appliedEvent", stored ?? "");
+    expect(claimControlEvent("42", 1_000)).toBe(false);
+    expect(claimControlEvent("41", 2_000)).toBe(false);
+    expect(claimControlEvent("43", 2_100)).toBe(true);
+  });
 });

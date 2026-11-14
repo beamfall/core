@@ -139,7 +139,7 @@ player.
 The web receiver SHALL apply each event at most once, accepting a later event when its id is higher
 or it was issued later, so a server restored from backup is still obeyed. A `play-media` for the
 Media already playing SHALL set the player up afresh at the requested position and report progress
-again.
+again. A transport command sent while the player sets up SHALL apply once it is ready.
 
 #### Scenario: Restart finished Media
 
@@ -155,3 +155,8 @@ again.
 
 - **WHEN** a web viewer remounts and is sent a `play-media` event it already applied
 - **THEN** it does not start playback again
+
+#### Scenario: Command during setup
+
+- **WHEN** a web player that is still setting up after a `play-media` is sent `pause` for that Media
+- **THEN** it applies the pause once it is ready and does not start playing on its own

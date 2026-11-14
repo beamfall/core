@@ -4,8 +4,8 @@ import { useNavigate } from "react-router";
 import { fetchMySessions } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
 import {
-  applyPlayerCommand,
   claimControlEvent,
+  deliverPlayerCommand,
   parseSessionControlFrame,
   remotePlayerTarget,
   restartInPlace,
@@ -76,8 +76,8 @@ export function useRemoteReceiver(profileID: string): RemoteReceiver {
             navigate(`/watch/${encodeURIComponent(command.mediaID)}${at}`);
           } else if (command.command === "display-message" && command.text) {
             setMessage(command.text);
-          } else if (player) {
-            applyPlayerCommand(command, player);
+          } else {
+            deliverPlayerCommand(command);
           }
         })
         .catch(() => {});

@@ -91,6 +91,39 @@ describe("useRemoteReceiver", () => {
     expect(fetchMySessions).toHaveBeenCalledOnce();
   });
 
+  it("holds a pause sent while the player is setting up until it registers", async () => {
+    const { result } = renderHook(() => useRemoteReceiver("p1"), { wrapper });
+    act(() =>
+      result.current.onEvent(control("session-a", { command: "pause", mediaID: "m1" }, "7")),
+    );
+    await waitFor(() => expect(fetchMySessions).toHaveBeenCalledOnce());
+    await act(async () => {});
+
+    const video = document.createElement("video");
+    const pause = vi.spyOn(video, "pause").mockImplementation(() => {});
+    renderHook(() => useRemotePlayerTarget({ video: () => video, mediaID: "m1" }), { wrapper });
+    expect(pause).toHaveBeenCalledOnce();
+    // The player's own first start after setup is paused again.
+    video.dispatchEvent(new Event("play"));
+    expect(pause).toHaveBeenCalledTimes(2);
+    video.dispatchEvent(new Event("play"));
+    expect(pause).toHaveBeenCalledTimes(2);
+  });
+
+  it("drops a held command for a player on other Media", async () => {
+    const { result } = renderHook(() => useRemoteReceiver("p1"), { wrapper });
+    act(() =>
+      result.current.onEvent(control("session-a", { command: "pause", mediaID: "m1" }, "8")),
+    );
+    await waitFor(() => expect(fetchMySessions).toHaveBeenCalledOnce());
+    await act(async () => {});
+
+    const pause = vi.fn();
+    const video = { pause } as unknown as HTMLVideoElement;
+    renderHook(() => useRemotePlayerTarget({ video: () => video, mediaID: "m2" }), { wrapper });
+    expect(pause).not.toHaveBeenCalled();
+  });
+
   it("opens the player for play-media at the requested position", async () => {
     const { result } = renderHook(() => useRemoteReceiver("p1"), { wrapper });
     act(() =>
