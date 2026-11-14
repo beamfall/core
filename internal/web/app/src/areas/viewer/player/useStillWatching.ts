@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { PlaybackNext } from "../lib/playback";
 import {
+  noteItemLeft,
   noteItemStarted,
   resetStillWatching,
   shouldAskStillWatching,
@@ -50,8 +51,10 @@ export function useStillWatching({
   onContinueRef.current = onContinue;
 
   useEffect(() => {
-    if (mediaID) noteItemStarted(mediaID);
     setPrompting(false);
+    if (!mediaID) return;
+    noteItemStarted(mediaID);
+    return () => noteItemLeft(mediaID);
   }, [mediaID]);
 
   // Any input in the player is a sign someone is there.

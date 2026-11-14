@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import type { PlaybackNext } from "../lib/playback";
+import { resetStillWatching } from "../lib/stillWatching";
 
 // Browser Media Session API integration (ADR-0084 §43). The Media Session is a
 // *surface, not authority*: it MIRRORS the player's transport state to the OS
@@ -87,18 +88,29 @@ export function useMediaSession({
       }
     };
 
-    safeSet("play", () => void video.play().catch(() => {}));
-    safeSet("pause", () => video.pause());
+    // An OS transport control is viewer input, so it ends the autoplay run
+    // (CORE-1689); next and previous start another item, which ends it anyway.
+    safeSet("play", () => {
+      resetStillWatching();
+      void video.play().catch(() => {});
+    });
+    safeSet("pause", () => {
+      resetStillWatching();
+      video.pause();
+    });
     safeSet("seekbackward", (details) => {
+      resetStillWatching();
       const step = details?.seekOffset ?? SEEK_STEP_SECONDS;
       video.currentTime = Math.max(0, video.currentTime - step);
     });
     safeSet("seekforward", (details) => {
+      resetStillWatching();
       const step = details?.seekOffset ?? SEEK_STEP_SECONDS;
       const end = Number.isFinite(video.duration) ? video.duration : Infinity;
       video.currentTime = Math.min(end, video.currentTime + step);
     });
     safeSet("seekto", (details) => {
+      resetStillWatching();
       if (details?.seekTime != null) video.currentTime = details.seekTime;
     });
     // nexttrack only when the server pre-minted a next item; the advance is

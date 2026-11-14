@@ -94,11 +94,10 @@ function downstreamAudio(map: Map<string, string>): DownstreamAudioMode {
 
 /** Parse the stillwatching.after value: 0 for "off", 1..10, else the default. */
 export function parseStillWatchingAfter(raw: string | undefined): number {
-  const value = (raw ?? "").trim();
-  if (value === STILL_WATCHING_OFF) return 0;
-  if (!/^\d{1,2}$/.test(value)) return STILL_WATCHING_DEFAULT;
-  const n = Number(value);
-  return n >= 1 && n <= STILL_WATCHING_MAX ? n : STILL_WATCHING_DEFAULT;
+  if (raw === STILL_WATCHING_OFF) return 0;
+  // Exactly "1".."10": no whitespace, sign or leading zero, as every client parses it.
+  if (raw === undefined || !/^(10|[1-9])$/.test(raw)) return STILL_WATCHING_DEFAULT;
+  return Number(raw);
 }
 
 function speed(map: Map<string, string>): PlaybackSpeed {

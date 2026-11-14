@@ -14,6 +14,9 @@ let autoStartedID: string | null = null;
 // The item the player last reported, so a repeated report (a re-render or a
 // development double effect) is not mistaken for a new start.
 let currentID: string | null = null;
+// Players showing currentID right now. When it drops to zero and stays there,
+// the viewer left, so opening the same item again is a fresh start.
+let mounted = 0;
 const listeners = new Set<Listener>();
 
 function emit(): void {
@@ -43,11 +46,28 @@ export function noteAutoAdvance(nextID: string): void {
 
 /** The player loaded `mediaID`; unless the countdown started it, the run ends. */
 export function noteItemStarted(mediaID: string): void {
-  if (mediaID === currentID) return;
+  if (mediaID === currentID) {
+    mounted += 1;
+    return;
+  }
+  mounted = 1;
   currentID = mediaID;
   const auto = autoStartedID !== null && autoStartedID === mediaID;
   autoStartedID = null;
   if (!auto) set(0);
+}
+
+/**
+ * The player showing `mediaID` went away. The check waits a microtask so a
+ * development double effect (unmount and remount in one commit) still counts as
+ * the same start; after a real exit, reopening the same item resets the run.
+ */
+export function noteItemLeft(mediaID: string): void {
+  if (mediaID !== currentID) return;
+  mounted = Math.max(0, mounted - 1);
+  queueMicrotask(() => {
+    if (mounted === 0 && currentID === mediaID) currentID = null;
+  });
 }
 
 /** Viewer input (a tap, click or key) or Continue on the prompt. */
@@ -60,6 +80,7 @@ export function resetStillWatching(): void {
 export function clearStillWatchingForTest(): void {
   autoStartedID = null;
   currentID = null;
+  mounted = 0;
   set(0);
 }
 

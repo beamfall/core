@@ -23,6 +23,8 @@ never acts on it.
 | | `off` | Never ask |
 | | absent, empty or anything else | The default, **3** |
 
+Parsing is exact: `" 2"`, `"02"`, `"+2"` and `"OFF"` are malformed and mean 3.
+
 The web Profile settings page edits it. Every client reads the same value, so
 one change applies on every device the Profile uses.
 
@@ -34,7 +36,9 @@ one change applies on every device the Profile uses.
 - **Input resets it.** The streak returns to 0 when the viewer starts
   something themselves (picks an item, presses Play Now on Up Next, presses
   Continue on the prompt) or touches the player in any way: a tap, click,
-  key, remote button, seek, pause or skip.
+  key, remote button, seek, pause or skip, including the operating system's
+  media controls (lock screen, media keys, headset buttons). Leaving the
+  player and opening the same item again counts as starting it yourself.
 - **The prompt.** When an item ends, a next item is queued, and the streak has
   reached N, the player does not start the next item. Playback stays stopped
   and the player shows:

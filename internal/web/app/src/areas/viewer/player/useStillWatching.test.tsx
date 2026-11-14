@@ -7,6 +7,7 @@ import type { PlaybackNext } from "../lib/playback";
 import {
   clearStillWatchingForTest,
   noteAutoAdvance,
+  noteItemLeft,
   noteItemStarted,
   stillWatchingStreak,
 } from "../lib/stillWatching";
@@ -62,6 +63,21 @@ describe("still-watching streak", () => {
     noteItemStarted("4");
     expect(stillWatchingStreak()).toBe(3);
     noteItemStarted("9");
+    expect(stillWatchingStreak()).toBe(0);
+  });
+  it("keeps the run across a development double effect on the same item", async () => {
+    autoplayRun(["1", "2"]);
+    noteItemLeft("2");
+    noteItemStarted("2");
+    await Promise.resolve();
+    expect(stillWatchingStreak()).toBe(1);
+  });
+
+  it("ends the run when the viewer leaves and reopens the same item", async () => {
+    autoplayRun(["1", "2", "3"]);
+    noteItemLeft("3");
+    await Promise.resolve();
+    noteItemStarted("3");
     expect(stillWatchingStreak()).toBe(0);
   });
 });

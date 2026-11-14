@@ -111,7 +111,21 @@ describe("parseStillWatchingAfter", () => {
     expect(parseStillWatchingAfter("1")).toBe(1);
     expect(parseStillWatchingAfter("10")).toBe(10);
     expect(parseStillWatchingAfter("off")).toBe(0);
-    for (const raw of [undefined, "", "0", "11", "-1", "2.5", "on", "03x"]) {
+    for (const raw of [
+      undefined,
+      "",
+      "0",
+      "11",
+      "-1",
+      "2.5",
+      "on",
+      "03x",
+      "01",
+      " 2",
+      "+3",
+      " off ",
+      "OFF",
+    ]) {
       expect(parseStillWatchingAfter(raw)).toBe(STILL_WATCHING_DEFAULT);
     }
   });

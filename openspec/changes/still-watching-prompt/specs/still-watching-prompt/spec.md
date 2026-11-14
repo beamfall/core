@@ -18,7 +18,7 @@ SHALL treat an absent or malformed value as 3.
 
 #### Scenario: Malformed value
 
-- **WHEN** a Profile's `stillwatching.after` is `0`, `11` or not a number
+- **WHEN** a Profile's `stillwatching.after` is `0`, `11`, `02`, ` 2` or not a number
 - **THEN** the player treats it as 3
 
 ### Requirement: Autoplay streak
