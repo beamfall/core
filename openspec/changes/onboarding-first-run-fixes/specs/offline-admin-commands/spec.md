@@ -13,9 +13,16 @@ no Beamfall database, creating nothing there.
 
 #### Scenario: Empty or foreign database file
 
-- **WHEN** the directory's `db/catalog.db` is empty, is not SQLite, or has no Beamfall migration
-  ledger
-- **THEN** the command refuses it after a read-only check and leaves every file unchanged
+- **WHEN** the directory's `db/catalog.db` is empty, is not SQLite, or is an SQLite database (WAL
+  mode included) whose migration ledger does not record Beamfall's first catalog migration
+- **THEN** the command refuses it after a read-only check that creates no file (no `-wal` or
+  `-shm`) and leaves every file unchanged
+
+#### Scenario: Server already running on the directory
+
+- **WHEN** the command runs beside a server whose catalog still holds its migration ledger only in
+  the WAL
+- **THEN** the read-only check recognises the catalog without changing any of its files
 
 #### Scenario: Relative data directory
 

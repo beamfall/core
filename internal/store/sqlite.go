@@ -14,6 +14,7 @@ import (
 	"image/jpeg"
 	_ "image/png"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/url"
 	"os"
@@ -271,9 +272,20 @@ func requireExistingDataDir(ctx context.Context, dataDir string) error {
 const sqliteFileHeader = "SQLite format 3\x00"
 
 // isBeamfallCatalog reports whether path is an SQLite database whose
-// schema_migrations ledger records at least one applied migration. It checks
-// the file header itself first, so an empty or foreign file never reaches
-// SQLite, and then opens the database read-only.
+// schema_migrations ledger records the first catalog migration with the
+// checksum the migrator itself recorded for it, which a foreign database does
+// not have by accident. It checks the file header itself first, so an empty or
+// foreign file never reaches SQLite.
+//
+// The probe creates and writes no file (CORE-1599). With no -wal beside the
+// database it opens the file immutable, reading only the main file and taking
+// no locks: opening a WAL-mode database any other way creates its -wal and
+// -shm. When a -wal and a -shm are both present, another process may hold the
+// database open with committed data still in the WAL (a server started on a
+// fresh data dir has its whole ledger there), so it reads through them with
+// the -shm opened read-only. A database that changes while it is probed may be
+// misread, which refuses it, and a -wal the owner deletes between the check and
+// the open can leave an empty -wal behind.
 func isBeamfallCatalog(ctx context.Context, path string) bool {
 	f, err := os.Open(path) // #nosec G304 -- path is db/catalog.db under the data directory the operator named
 	if err != nil {
@@ -285,14 +297,23 @@ func isBeamfallCatalog(ctx context.Context, path string) bool {
 	if err != nil || string(header) != sqliteFileHeader {
 		return false
 	}
-	db, err := sql.Open("sqlite", (&url.URL{Scheme: "file", Path: path, RawQuery: "mode=ro"}).String())
+	query := "mode=ro&immutable=1"
+	wal, _ := pathExists(path + "-wal")
+	shm, _ := pathExists(path + "-shm")
+	if wal && shm {
+		query = "mode=ro&readonly_shm=1"
+	}
+	db, err := sql.Open("sqlite", (&url.URL{Scheme: "file", Path: path, RawQuery: query}).String())
 	if err != nil {
 		return false
 	}
 	defer db.Close()
-	var applied int
-	err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations`).Scan(&applied)
-	return err == nil && applied > 0
+	first, err := fs.ReadFile(catalogMigrations, "migrate/catalog/0001_initial.sql")
+	if err != nil {
+		return false
+	}
+	checksum, err := migrationChecksumInDB(ctx, db, "0001_initial.sql")
+	return err == nil && checksum == migrationChecksum(first)
 }
 
 func (opts Options) resolvedSeedProfile() SeedProfile {

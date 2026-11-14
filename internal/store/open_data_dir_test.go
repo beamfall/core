@@ -1,15 +1,18 @@
 package store
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -82,27 +85,21 @@ func TestOpenFreshDataDirLogsOneMigrationLine(t *testing.T) {
 
 // TestOpenRequireExistingRefusesForeignCatalog covers CORE-1599: a catalog.db
 // that is empty, is not SQLite, or is some other SQLite database is not
-// Beamfall data, and refusing it must leave every byte on disk as it was.
+// Beamfall data, and refusing it must leave every byte on disk as it was. A
+// schema_migrations table alone does not make a Beamfall catalog: it must
+// record the first catalog migration with the checksum the migrator records.
 func TestOpenRequireExistingRefusesForeignCatalog(t *testing.T) {
-	foreignSQLite := filepath.Join(t.TempDir(), "foreign.db")
-	db, err := sql.Open("sqlite", foreignSQLite)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`CREATE TABLE notes (body TEXT); INSERT INTO notes VALUES ('hello')`); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
-	foreignBytes, err := os.ReadFile(foreignSQLite) // #nosec G304 -- path is beneath a test-owned temporary directory
-	if err != nil {
-		t.Fatal(err)
-	}
+	foreignBytes := sqliteFixture(t, `CREATE TABLE notes (body TEXT); INSERT INTO notes VALUES ('hello')`)
+	foreignLedger := sqliteFixture(t, `CREATE TABLE schema_migrations (version INTEGER); INSERT INTO schema_migrations VALUES (1), (2)`)
+	wrongChecksum := sqliteFixture(t, `
+		CREATE TABLE schema_migrations (name TEXT PRIMARY KEY, checksum TEXT NOT NULL, applied_at INTEGER NOT NULL);
+		INSERT INTO schema_migrations VALUES ('0001_initial.sql', 'not-the-beamfall-checksum', 0)`)
 	for name, content := range map[string][]byte{
-		"empty":          nil,
-		"text":           []byte("not a database\n"),
-		"foreign sqlite": foreignBytes,
+		"empty":                     nil,
+		"text":                      []byte("not a database\n"),
+		"foreign sqlite":            foreignBytes,
+		"foreign schema_migrations": foreignLedger,
+		"wrong first checksum":      wrongChecksum,
 	} {
 		t.Run(name, func(t *testing.T) {
 			dataDir := t.TempDir()
@@ -149,4 +146,154 @@ func snapshotTree(t *testing.T, root string) string {
 		t.Fatal(err)
 	}
 	return b.String()
+}
+
+// sqliteFixture returns the bytes of a closed SQLite database built by sqlText.
+func sqliteFixture(t *testing.T, sqlText string) []byte {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "fixture.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(sqlText); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path) // #nosec G304 -- path is beneath a test-owned temporary directory
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+// TestOpenRequireExistingRefusesForeignWALDatabase covers CORE-1599: probing a
+// WAL-mode database used to create its -wal and -shm before refusing it. The
+// probe must leave the directory listing and every byte unchanged, whether the
+// database is closed or another process holds it open with data in its WAL.
+func TestOpenRequireExistingRefusesForeignWALDatabase(t *testing.T) {
+	for _, holdOpen := range []bool{false, true} {
+		t.Run(fmt.Sprintf("held open %v", holdOpen), func(t *testing.T) {
+			dataDir := t.TempDir()
+			catalog := filepath.Join(dataDir, "db", "catalog.db")
+			if err := os.MkdirAll(filepath.Dir(catalog), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if holdOpen {
+				release := holdInOtherProcess(t, "wal", catalog)
+				defer release()
+			} else {
+				db, err := sql.Open("sqlite", catalog)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := db.Exec(foreignWALFixtureSQL); err != nil {
+					t.Fatal(err)
+				}
+				if err := db.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before := snapshotTree(t, dataDir)
+			if holdOpen != strings.Contains(before, "catalog.db-wal") {
+				t.Fatalf("fixture -wal presence is not %v:\n%s", holdOpen, before)
+			}
+			_, err := Open(context.Background(), dataDir, Options{RequireExisting: true})
+			if !errors.Is(err, ErrNoDataDir) {
+				t.Fatalf("Open error = %v, want ErrNoDataDir", err)
+			}
+			if after := snapshotTree(t, dataDir); after != before {
+				t.Fatalf("refused Open changed the data dir:\nbefore:\n%s\nafter:\n%s", before, after)
+			}
+		})
+	}
+}
+
+const (
+	foreignWALFixtureSQL = `PRAGMA journal_mode = WAL; PRAGMA wal_autocheckpoint = 0;
+		CREATE TABLE notes (body TEXT); INSERT INTO notes VALUES ('hello')`
+	holdDatabaseEnv = "BEAMFALL_TEST_HOLD_DATABASE"
+)
+
+// holdInOtherProcess keeps a database open in a child process until the
+// returned release is called: kind "wal" builds a foreign WAL-mode database at
+// path with its data still in the WAL, and kind "store" opens a Beamfall store
+// on the data dir path. A second process matters: SQLite shares one -shm
+// mapping between the connections of a process.
+func holdInOtherProcess(t *testing.T, kind, path string) (release func()) {
+	t.Helper()
+	cmd := exec.Command(os.Args[0], "-test.run=^TestHelperHoldDatabase$") // #nosec G204 G702 -- re-runs this test binary
+	cmd.Env = append(os.Environ(), holdDatabaseEnv+"="+kind+":"+path)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	release = func() {
+		_ = stdin.Close()
+		_ = cmd.Wait()
+	}
+	line, err := bufio.NewReader(stdout).ReadString('\n')
+	if err != nil || line != "ready\n" {
+		release()
+		t.Fatalf("holder process said %q, %v", line, err)
+	}
+	return release
+}
+
+// TestHelperHoldDatabase is the child process of holdInOtherProcess; it does
+// nothing in a normal test run.
+func TestHelperHoldDatabase(t *testing.T) {
+	kind, path, ok := strings.Cut(os.Getenv(holdDatabaseEnv), ":")
+	switch {
+	case !ok:
+		return
+	case kind == "store":
+		st, err := Open(context.Background(), path, Options{Logger: slog.New(slog.DiscardHandler)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer st.Close()
+	default:
+		db, err := sql.Open("sqlite", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		db.SetMaxOpenConns(1)
+		defer db.Close()
+		if _, err := db.Exec(foreignWALFixtureSQL); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fmt.Println("ready")
+	_, _ = io.Copy(io.Discard, os.Stdin)
+}
+
+// TestRequireExistingAcceptsCatalogOfRunningServer covers CORE-1599: a server
+// started on a fresh data dir keeps its whole migration ledger in the catalog
+// WAL until a checkpoint, and an offline command run beside it must still
+// recognise the catalog without changing any of its files.
+func TestRequireExistingAcceptsCatalogOfRunningServer(t *testing.T) {
+	dataDir := t.TempDir()
+	release := holdInOtherProcess(t, "store", dataDir)
+	defer release()
+	dbDir := filepath.Join(dataDir, "db")
+	before := snapshotTree(t, dbDir)
+	if !strings.Contains(before, "catalog.db-wal") {
+		t.Fatalf("running server holds no catalog -wal:\n%s", before)
+	}
+	if err := requireExistingDataDir(context.Background(), dataDir); err != nil {
+		t.Fatalf("requireExistingDataDir on a running server's data dir: %v", err)
+	}
+	if after := snapshotTree(t, dbDir); after != before {
+		t.Fatalf("probe changed the running server's database files:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
 }
