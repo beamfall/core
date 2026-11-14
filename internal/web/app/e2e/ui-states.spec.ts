@@ -44,6 +44,10 @@ async function routeFreshSetup(page: Page): Promise<void> {
 // The seeded library's node. Home and Ambient are nodes too, but /all needs a library behind it.
 async function libraryNodeHref(page: Page): Promise<string> {
   await page.goto("/web/");
+  // On a phone the navigation is a dialog that mounts its links only while open.
+  if ((page.viewportSize()?.width ?? Infinity) <= 760) {
+    await page.getByRole("button", { name: "Navigation" }).click();
+  }
   const link = page.locator('a[href*="/n/library-"]').first();
   await link.waitFor({ state: "attached" });
   const href = await link.getAttribute("href");
