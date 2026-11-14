@@ -190,4 +190,17 @@ describe("useAudioDelay", () => {
     });
     expect(context.suspend).toHaveBeenCalled();
   });
+
+  it("lets the delayed tail play out when the element ends", () => {
+    const element = video("/api/media/m1/stream");
+    const { result } = render(element, "m7");
+    act(() => result.current.nudgeAudioDelay(0.5));
+    const context = createMediaElementSource.mock.contexts[0] as FakeAudioContext;
+    Object.defineProperty(element, "paused", { configurable: true, get: () => true });
+    Object.defineProperty(element, "ended", { configurable: true, get: () => true });
+    act(() => {
+      element.dispatchEvent(new Event("pause"));
+    });
+    expect(context.suspend).not.toHaveBeenCalled();
+  });
 });

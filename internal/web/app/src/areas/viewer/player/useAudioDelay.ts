@@ -122,7 +122,7 @@ export function useAudioDelay({
       void context.resume().then(
         () => {
           // A pause can land while the resume is in flight; settle on its state.
-          if (video.paused) void context.suspend().catch(() => {});
+          if (video.paused && !video.ended) void context.suspend().catch(() => {});
           else if (context.state === "running") apply();
         },
         () => {},
@@ -159,6 +159,9 @@ export function useAudioDelay({
       if (delayRef.current > 0 || graphs.has(video)) apply();
     };
     const hold = () => {
+      // The element also pauses when it reaches the end; let the delayed tail
+      // play out rather than freezing it.
+      if (video.ended) return;
       const graph = graphs.get(video);
       // Suspend even when the context does not report "running" yet: a resume
       // may still be pending, and the context applies the calls in order.
