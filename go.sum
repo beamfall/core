@@ -18,6 +18,8 @@ github.com/beamfall/plugin-podcasts v0.1.5 h1:S1sX8MVOPM5gCykKFRJgyrNJD5E2eNKnvB
 github.com/beamfall/plugin-podcasts v0.1.5/go.mod h1:2HJTnSGT1TZ3QYblzSvUPhnDBSwYR83coDPugV6JY/Y=
 github.com/beamfall/plugin-sdk v0.3.4 h1:7vR7DeZZSAs4hYXOeeTEvFBcO4pCGqNVU+R3FTJtXqs=
 github.com/beamfall/plugin-sdk v0.3.4/go.mod h1:CFm3zZHYmW1KlV82+yNAJnnMLopqh1P9S0B61OalQXQ=
+github.com/beamfall/plugin-sdk v0.3.5-0.20261114204001-bb407fc2a787 h1:USXM2X86X4eF89/gHFEzfr6ACK+z5T5ZxsCOltBr41o=
+github.com/beamfall/plugin-sdk v0.3.5-0.20261114204001-bb407fc2a787/go.mod h1:CFm3zZHYmW1KlV82+yNAJnnMLopqh1P9S0B61OalQXQ=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/brutella/dnssd v1.2.14 h1:qLpTnRTm5peo2jA30hqMIbCuWn8x3sFg3e9o9ODOobw=
