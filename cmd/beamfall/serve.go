@@ -30,11 +30,28 @@ func serve(ctx context.Context, args []string) error {
 	// empty so a test binary never re-execs itself.
 	cfg.FFmpegHardeningShimPath = ffmpeg.DefaultShimPath()
 	cfg.IntegrationWorkerHardeningShimPath = integrationhost.DefaultShimPath()
-	beamfall, err := app.New(ctx, cfg, slog.Default(), firstPartyBundles(), firstPartyHooks())
+	beamfall, release, err := startServer(ctx, cfg)
 	if err != nil {
 		return err
 	}
+	defer release()
 	return beamfall.Run(ctx)
+}
+
+// startServer takes the data directory's server lock, which offline commands
+// probe before writing, and builds the server. The caller runs the server and
+// then calls release.
+func startServer(ctx context.Context, cfg config.Config) (*app.App, func(), error) {
+	release, err := lockServeDataDir(cfg.DataDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	beamfall, err := app.New(ctx, cfg, slog.Default(), firstPartyBundles(), firstPartyHooks())
+	if err != nil {
+		release()
+		return nil, nil, err
+	}
+	return beamfall, release, nil
 }
 
 func newOperatorLogger(w io.Writer, level slog.Level) *slog.Logger {

@@ -253,9 +253,7 @@ func TestRunBackupRequiresDestination(t *testing.T) {
 
 func TestRestoreCommandRefusesServerLock(t *testing.T) {
 	dataDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dataDir, "server.lock"), []byte("running\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	holdServerLockForTest(t, dataDir)
 	err := restore(context.Background(), []string{
 		"--manifest", filepath.Join(t.TempDir(), "manifest.json"),
 		"--data-dir", dataDir,
@@ -528,9 +526,7 @@ func TestResetAdminPasswordCanOverwriteExisting(t *testing.T) {
 
 func TestResetAdminPasswordRefusesServerLock(t *testing.T) {
 	dataDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dataDir, "server.lock"), []byte("running\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	holdServerLockForTest(t, dataDir)
 	err := resetAdminPassword(context.Background(), []string{
 		"--data-dir", dataDir,
 		"--password", "secret",
@@ -577,9 +573,7 @@ func TestRunTokenCreateBootstrapsOffline(t *testing.T) {
 
 func TestRunTokenCreateRefusesServerLock(t *testing.T) {
 	dataDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dataDir, "server.lock"), []byte("running\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	holdServerLockForTest(t, dataDir)
 	var out bytes.Buffer
 
 	err := tokenCommand(context.Background(), []string{"create", "--data-dir", dataDir, "--name", "admin"}, &out)
