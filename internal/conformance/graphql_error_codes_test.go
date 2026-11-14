@@ -73,10 +73,24 @@ func TestGraphQLErrorSitesCarryCodes(t *testing.T) {
 		ast.Inspect(file, func(n ast.Node) bool {
 			switch node := n.(type) {
 			case *ast.CompositeLit:
-				if ident, ok := node.Type.(*ast.Ident); ok && ident.Name == "graphError" {
+				checkLiteral := func(lit *ast.CompositeLit) {
 					sites++
-					if !compositeSetsKey(node, "Extensions") {
-						fail(node, "graphError literal without Extensions; build it with newGraphError")
+					if !compositeSetsKey(lit, "Extensions") {
+						fail(lit, "graphError literal without Extensions; build it with newGraphError")
+					}
+				}
+				if ident, ok := node.Type.(*ast.Ident); ok && ident.Name == "graphError" {
+					checkLiteral(node)
+				}
+				// []graphError{{Message: "x"}}: the inner literals carry no
+				// type of their own in the AST.
+				if arr, ok := node.Type.(*ast.ArrayType); ok {
+					if elt, ok := arr.Elt.(*ast.Ident); ok && elt.Name == "graphError" {
+						for _, e := range node.Elts {
+							if inner, ok := e.(*ast.CompositeLit); ok && inner.Type == nil {
+								checkLiteral(inner)
+							}
+						}
 					}
 				}
 			case *ast.CallExpr:

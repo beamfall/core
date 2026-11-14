@@ -166,3 +166,17 @@ func TestGraphFailCodesByErrorKind(t *testing.T) {
 		}
 	}
 }
+
+// TestStoreValidationNotFoundAndRewrappedInvalid pins two §7 rules: a store
+// validation error naming a missing record is NOT_FOUND, and re-wrapped store
+// or push text for a closed vocabulary is INVALID, not NOT_FOUND.
+func TestStoreValidationNotFoundAndRewrappedInvalid(t *testing.T) {
+	if got := errorCode(store.ValidationError("media not found")); got != ErrorCodeNotFound {
+		t.Errorf("media not found = %s, want NOT_FOUND", got)
+	}
+	for _, msg := range []string{"unknown API scope: bogus", "unknown push platform"} {
+		if got := errorCode(clientError(msg)); got != ErrorCodeInvalid {
+			t.Errorf("%q = %s, want INVALID", msg, got)
+		}
+	}
+}

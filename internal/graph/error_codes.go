@@ -30,7 +30,9 @@ const (
 	// operation (already resolved, already provisioned, needs confirmation).
 	ErrorCodeConflict ErrorCode = "CONFLICT"
 	// ErrorCodeInternal: a server-side failure or a capability this server
-	// does not provide. The message is generic; details stay in the log.
+	// does not provide. An unclassified failure carries the generic
+	// "<field> unavailable" message and keeps its details in the log; a
+	// capability the server lacks keeps its stable client message.
 	ErrorCodeInternal ErrorCode = "INTERNAL"
 )
 
@@ -75,6 +77,10 @@ func errorCode(err error) ErrorCode {
 		if code, ok := clientErrorCodes[string(ve)]; ok {
 			return code
 		}
+		// A record the argument names that is missing (e.g. "media not found").
+		if strings.HasSuffix(string(ve), "not found") {
+			return ErrorCodeNotFound
+		}
 		return ErrorCodeInvalid
 	default:
 		return ErrorCodeInternal
@@ -95,7 +101,9 @@ var clientErrorCodes = map[string]ErrorCode{
 	"unknown profile": ErrorCodeNotFound,
 
 	// "unknown <value>" for a closed vocabulary is a bad argument, not a
-	// missing record.
+	// missing record. Resolvers re-wrap store and push validation text into a
+	// clientError, so these are pinned here as well as by the store rules.
+	"unknown push platform":               ErrorCodeInvalid,
 	"unknown artwork slot":                ErrorCodeInvalid,
 	"unknown delete scope":                ErrorCodeInvalid,
 	"unknown engagement kind":             ErrorCodeInvalid,
@@ -186,6 +194,8 @@ var clientErrorRules = []clientErrorRule{
 	{code: ErrorCodeNotFound, suffix: "not found"},
 	// An unknown field in the query text is a malformed request.
 	{code: ErrorCodeInvalid, prefix: "unknown top-level field"},
+	// The createApiKey resolver re-wraps the store's validation text.
+	{code: ErrorCodeInvalid, prefix: "unknown API scope"},
 	{code: ErrorCodeNotFound, prefix: "unknown "},
 	{code: ErrorCodeForbidden, prefix: "a session "},
 	{code: ErrorCodeForbidden, prefix: "a profile session "},
