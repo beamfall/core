@@ -2,6 +2,7 @@ import { renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { SUBTITLE_APPEARANCE_DEFAULTS, type SubtitleAppearance } from "../lib/subtitleAppearance";
 import {
+  cueLinePercent,
   placeCue,
   subtitleEdgeShadow,
   subtitleStageVars,
@@ -61,6 +62,18 @@ describe("subtitle appearance styling (CORE-1681)", () => {
     expect(cue.line).toBe(20);
     placeCue(cue, "auto");
     expect([cue.line, cue.snapToLines, cue.lineAlign]).toEqual(["auto", true, "start"]);
+  });
+
+  it("raises the cue by its estimated height where lineAlign is unsupported", () => {
+    // 640x360 at size 1: an 18px font on a 1.3 line-height is 6.5% of the height.
+    expect(cueLinePercent(640, 360, "1")).toBeCloseTo(6.5);
+    expect(cueLinePercent(0, 0, "1")).toBe(0);
+    const cue = { ...fakeCue(), text: "first line\nsecond line" } as unknown as VTTCue;
+    placeCue(cue, "50", 6.5);
+    expect(cue.line).toBeCloseTo(37);
+    expect(cue.snapToLines).toBe(false);
+    placeCue(cue, "10", 50);
+    expect(cue.line).toBe(0);
   });
 
   it("applies the look to the stage and places loaded and newly active cues", () => {

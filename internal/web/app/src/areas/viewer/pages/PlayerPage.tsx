@@ -251,11 +251,20 @@ export function PlayerPage() {
     return () => controller.abort();
   }, [mediaId]);
 
+  // Keys written while the read is in flight keep their local value: the read
+  // may predate the write.
+  const editedPrefKeys = useRef(new Set<string>());
   useEffect(() => {
     let current = true;
+    editedPrefKeys.current = new Set();
     void fetchClientPrefs()
       .then((prefs) => {
-        if (current) setClientPrefs(prefs);
+        if (!current) return;
+        const edited = editedPrefKeys.current;
+        setClientPrefs((local) => [
+          ...prefs.filter((pref) => !edited.has(pref.key)),
+          ...local.filter((pref) => edited.has(pref.key)),
+        ]);
       })
       .catch(() => {});
     return () => {
@@ -277,13 +286,18 @@ export function PlayerPage() {
   );
 
   // Subtitle appearance roams with the Profile (subtitle.* keys, CORE-1681).
+  // Writes go out one at a time so a slow earlier write cannot land last.
+  const prefWrites = useRef<Promise<unknown>>(Promise.resolve());
   const storePrefs = useCallback((entries: ClientPref[]) => {
     const keys = new Set(entries.map((entry) => entry.key));
+    for (const key of keys) editedPrefKeys.current.add(key);
     setClientPrefs((prefs) => [
       ...prefs.filter((pref) => !keys.has(pref.key)),
       ...entries.filter((entry) => entry.value),
     ]);
-    for (const { key, value } of entries) void setClientPref(key, value).catch(() => {});
+    for (const { key, value } of entries) {
+      prefWrites.current = prefWrites.current.then(() => setClientPref(key, value)).catch(() => {});
+    }
   }, []);
   const setSubtitleAppearance = useCallback(
     (field: SubtitleAppearanceField, value: string) =>
@@ -292,14 +306,10 @@ export function PlayerPage() {
       ]),
     [storePrefs],
   );
+  // Reset clears every key, including any the Profile read has not returned yet.
   const resetSubtitleAppearance = useCallback(
-    () =>
-      storePrefs(
-        Object.values(SUBTITLE_APPEARANCE_KEYS)
-          .filter((key) => clientPrefs.some((pref) => pref.key === key))
-          .map((key) => ({ key, value: "" })),
-      ),
-    [storePrefs, clientPrefs],
+    () => storePrefs(Object.values(SUBTITLE_APPEARANCE_KEYS).map((key) => ({ key, value: "" }))),
+    [storePrefs],
   );
 
   const shareAt = useCallback(
