@@ -506,6 +506,13 @@ func (s *rootState) recoverOverflow() {
 	s.logger.Log(s.ctx, level, "live watch event queue overflowed; rescanning root", "library", string(s.key.libraryID), "root", s.key.root)
 	go func() {
 		for {
+			// A directory removed and recreated while events were lost keeps
+			// its old path in watched although the kernel released its
+			// watch, so forget the set and re-arm the whole tree. Adding an
+			// already-armed directory again is harmless.
+			s.mu.Lock()
+			s.watched = map[string]struct{}{}
+			s.mu.Unlock()
 			if err := s.addTree(s.key.root); err != nil {
 				s.logger.Debug("overflow re-arm walk failed", "library", string(s.key.libraryID), "root", s.key.root, "reason", err)
 			}

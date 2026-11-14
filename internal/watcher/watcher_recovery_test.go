@@ -544,3 +544,39 @@ func TestOverflowDuringRecoveryWalkIsRemembered(t *testing.T) {
 		return !state.rearming && !state.rearmAgain
 	})
 }
+
+func TestOverflowRearmsDirectoryRecreatedWhileEventsWereLost(t *testing.T) {
+	root := t.TempDir()
+	child := filepath.Join(root, "replaced")
+	if err := os.Mkdir(child, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	factory := newBackendFactory()
+	enqueue, scans := scanRecorder()
+	service := NewService(Options{Debounce: time.Millisecond, NewWatcher: factory.newWatcher, EnqueueScan: enqueue})
+	t.Cleanup(func() { _ = service.Close() })
+
+	if status := service.Observe("library-local", root); !status.Active {
+		t.Fatalf("initial watch: %+v", status)
+	}
+	be := waitBackend(t, factory.madeCh)
+	if !be.hasAdded(child) {
+		t.Fatal("fixture: child was never armed")
+	}
+	// The kernel released the removed directory's watch and its Remove event
+	// was lost; the directory then came back.
+	if err := os.Remove(child); err != nil {
+		t.Fatal(err)
+	}
+	be.mu.Lock()
+	delete(be.added, child)
+	be.mu.Unlock()
+	if err := os.Mkdir(child, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	be.errs <- fsnotify.ErrEventOverflow
+	waitScan(t, scans, "overflow recovery completed")
+	if !be.hasAdded(child) {
+		t.Fatal("recreated directory was not re-armed after overflow")
+	}
+}
