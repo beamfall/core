@@ -1956,6 +1956,17 @@
       ]
     },
     {
+      "field": "purgelibrary",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "entitiesRemoved",
+        "libraryID",
+        "mediaRemoved",
+        "title"
+      ]
+    },
+    {
       "field": "purgetrash",
       "effect": "write",
       "tier": "admin",
@@ -2306,6 +2317,11 @@
         "trashedAt",
         "updatedAt"
       ]
+    },
+    {
+      "field": "restorelibrary",
+      "effect": "write",
+      "tier": "admin"
     },
     {
       "field": "restoremanagedpath",
@@ -3407,6 +3423,19 @@
         "item",
         "positionMS",
         "presentAtMS"
+      ]
+    },
+    {
+      "field": "trashedlibraries",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "id",
+        "mediaCount",
+        "purgeAfter",
+        "purgeable",
+        "title",
+        "trashedAt"
       ]
     },
     {

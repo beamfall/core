@@ -234,6 +234,10 @@
       "effect": "write"
     },
     {
+      "field": "purgelibrary",
+      "effect": "write"
+    },
+    {
       "field": "purgetrash",
       "effect": "write"
     },
@@ -256,6 +260,10 @@
     {
       "field": "remoteaccess",
       "effect": "read"
+    },
+    {
+      "field": "restorelibrary",
+      "effect": "write"
     },
     {
       "field": "retentionrules",
@@ -416,6 +424,10 @@
     {
       "field": "transferprofileowner",
       "effect": "write"
+    },
+    {
+      "field": "trashedlibraries",
+      "effect": "read"
     },
     {
       "field": "uninstallplugindata",

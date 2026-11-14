@@ -8,7 +8,7 @@
 - [x] 4. App: observer stops watcher and schedule at delete, resumes and rescans at restore, removes
   generated artwork at purge; retention sweep purges libraries past `TrashRetention`
 - [x] 5. Go tests: store, graph, watcher, schedule, and the delete-stops / restore-resumes proof
-- [ ] 6. Dispatcher registration, admin-field guard and nested schema entries; conformance and
+- [x] 6. Dispatcher registration, admin-field guard and nested schema entries; conformance and
   wire-contract goldens regenerated with `make regen-wire-goldens`
 - [x] 7. Web: named `TrashedLibraries`, `RestoreLibrary`, `PurgeLibrary` operations
 - [x] 8. Web: "Recently deleted" group, Restore, confirmed "Delete permanently", Undo after delete,

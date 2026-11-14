@@ -4888,6 +4888,7 @@ var queryFields = map[string]bool{
 	"engagementcounter":      true, // ADULT-1 (ADR-0027 D1): own per-Profile engagement counter (count + history)
 	"profilesessions":        true,
 	"libraryhealth":          true,
+	"trashedlibraries":       true, // CORE-1201: deleted Libraries that can still be restored
 	"libraryhealthitems":     true,
 	"libraryduplicategroups": true,
 	"metadataexport":         true,
@@ -5036,6 +5037,8 @@ var mutationFields = map[string]bool{
 	"setlibraryrestricted":               true,
 	"setqualitypolicy":                   true,
 	"deletelibrary":                      true,
+	"restorelibrary":                     true,
+	"purgelibrary":                       true,
 	"scanlibrary":                        true,
 	"addsubscription":                    true,
 	"removesubscription":                 true,
@@ -5183,6 +5186,9 @@ var adminFields = map[string]bool{
 	"qualitypolicy":          true,
 	"setqualitypolicy":       true,
 	"deletelibrary":          true,
+	"trashedlibraries":       true, // CORE-1201: list, restore and permanently remove deleted Libraries
+	"restorelibrary":         true,
+	"purgelibrary":           true,
 	"scanlibrary":            true,
 	// Authorized native→server import transport (apple ADR-0003 §1/§3,
 	// POWERTOOLS-6B): the Admin Session tier the loopback bearer authenticates as

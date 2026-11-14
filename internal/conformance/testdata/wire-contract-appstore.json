@@ -763,6 +763,11 @@
       "tier": "admin"
     },
     {
+      "field": "purgelibrary",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
       "field": "purgetrash",
       "effect": "write",
       "tier": "admin"
@@ -896,6 +901,11 @@
       "field": "restorecollection",
       "effect": "write",
       "tier": "session"
+    },
+    {
+      "field": "restorelibrary",
+      "effect": "write",
+      "tier": "admin"
     },
     {
       "field": "restoremanagedpath",
@@ -1296,6 +1306,11 @@
       "field": "transitiongroup",
       "effect": "write",
       "tier": "session"
+    },
+    {
+      "field": "trashedlibraries",
+      "effect": "read",
+      "tier": "admin"
     },
     {
       "field": "trashedmarkers",
@@ -14177,6 +14192,28 @@
       ]
     },
     {
+      "field": "purgelibrary",
+      "kind": "object",
+      "children": [
+        {
+          "name": "entitiesRemoved",
+          "kind": "scalar"
+        },
+        {
+          "name": "libraryID",
+          "kind": "scalar"
+        },
+        {
+          "name": "mediaRemoved",
+          "kind": "scalar"
+        },
+        {
+          "name": "title",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
       "field": "purgetrash",
       "kind": "object",
       "children": [
@@ -15379,6 +15416,10 @@
           "optional": true
         }
       ]
+    },
+    {
+      "field": "restorelibrary",
+      "kind": "object"
     },
     {
       "field": "restoremanagedpath",
@@ -24591,6 +24632,36 @@
       ]
     },
     {
+      "field": "trashedlibraries",
+      "kind": "object",
+      "children": [
+        {
+          "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "mediaCount",
+          "kind": "scalar"
+        },
+        {
+          "name": "purgeAfter",
+          "kind": "scalar"
+        },
+        {
+          "name": "purgeable",
+          "kind": "scalar"
+        },
+        {
+          "name": "title",
+          "kind": "scalar"
+        },
+        {
+          "name": "trashedAt",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
       "field": "trashedmarkers",
       "kind": "object",
       "children": [
@@ -28187,6 +28258,10 @@
         "effect": "write"
       },
       {
+        "field": "purgelibrary",
+        "effect": "write"
+      },
+      {
         "field": "purgetrash",
         "effect": "write"
       },
@@ -28205,6 +28280,10 @@
       {
         "field": "remoteaccess",
         "effect": "read"
+      },
+      {
+        "field": "restorelibrary",
+        "effect": "write"
       },
       {
         "field": "retentionrules",
@@ -28349,6 +28428,10 @@
       {
         "field": "transferprofileowner",
         "effect": "write"
+      },
+      {
+        "field": "trashedlibraries",
+        "effect": "read"
       },
       {
         "field": "uninstallplugindata",

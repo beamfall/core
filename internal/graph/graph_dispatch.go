@@ -337,6 +337,7 @@ var fieldDispatchRuns = [...]fieldDispatchFunc{
 	145: dispatchFieldBlock145,
 	146: dispatchFieldBlock146,
 	147: dispatchFieldBlock147,
+	148: dispatchFieldBlock148,
 }
 
 var fieldHandlerRegistry = map[string]fieldHandler{
@@ -495,6 +496,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"profilesessions":                    newFieldHandler("profileSessions", "profileSessions", fieldRead, roleSession, 129),
 	"provisionencryptedlibrary":          newFieldHandler("provisionEncryptedLibrary", "provisionEncryptedLibrary", fieldMutation, roleSession|roleAdmin, 107),
 	"purgetrash":                         newFieldHandler("purgeTrash", "purgeTrash", fieldMutation, roleSession|roleManager|roleAdmin, 35),
+	"purgelibrary":                       newFieldHandler("purgeLibrary", "purgeLibrary", fieldMutation, roleSession|roleAdmin, 148),
 	"qbittorrentingest":                  newFieldHandler("qbittorrentIngest", "qbittorrentIngest", fieldRead, roleSession|roleAdmin, 106),
 	"qualitypolicy":                      newFieldHandler("qualityPolicy", "qualityPolicy", fieldRead, roleSession|roleAdmin, 50),
 	"queueadd":                           newFieldHandler("queueAdd", "queue", fieldMutation, roleSession, 30),
@@ -524,6 +526,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"restoremanagedpath":                 newFieldHandler("restoreManagedPath", "restoreManagedPath", fieldMutation, roleSession|roleManager, 110),
 	"restoremarker":                      newFieldHandler("restoreMarker", "restoreMarker", fieldMutation, roleSession|roleManager, 14),
 	"restoremedia":                       newFieldHandler("restoreMedia", "restoreMedia", fieldMutation, roleSession|roleManager, 35),
+	"restorelibrary":                     newFieldHandler("restoreLibrary", "restoreLibrary", fieldMutation, roleSession|roleAdmin, 148),
 	"restorenavoverride":                 newFieldHandler("restoreNavOverride", "restoreNavOverride", fieldMutation, roleSession|roleManager, 62),
 	"restoretag":                         newFieldHandler("restoreTag", "restoreTag", fieldMutation, roleSession|roleManager, 36),
 	"retentionrules":                     newFieldHandler("retentionRules", "retentionRules", fieldRead, roleSession|roleAdmin, 58),
@@ -607,6 +610,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"transitiongroup":                    newFieldHandler("transitionGroup", "transitionGroup", fieldMutation, roleSession, 134),
 	"trashedmarkers":                     newFieldHandler("trashedMarkers", "markers", fieldRead, roleSession|roleManager, 13),
 	"trashlist":                          newFieldHandler("trashList", "trash", fieldRead, roleSession|roleManager, 35),
+	"trashedlibraries":                   newFieldHandler("trashedLibraries", "trashedLibraries", fieldRead, roleSession|roleAdmin, 148),
 	"trashmedia":                         newFieldHandler("trashMedia", "trashMedia", fieldMutation, roleSession|roleManager, 35),
 	"unassigntag":                        newFieldHandler("unassignTag", "unassignTag", fieldMutation, roleSession|roleManager, 36),
 	"undobatch":                          newFieldHandler("undoBatch", "undoBatch", fieldMutation, roleSession|roleManager, 110),
@@ -3958,6 +3962,36 @@ func dispatchFieldBlock147(dispatch *fieldDispatchContext) response {
 	if fields["metadatacredits"] {
 		credits, err := h.metadataCredits(ctx, scope, req)
 		if resp := resolveField(dispatch, "metadatacredits", credits, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	return response{}
+}
+
+// dispatchFieldBlock148 resolves the deleted-Library reads and mutations
+// (CORE-1201): list what can still be restored, restore one, or permanently
+// remove one that is already deleted.
+func dispatchFieldBlock148(dispatch *fieldDispatchContext) response {
+	h := dispatch.handler
+	ctx := dispatch.ctx
+	scope := dispatch.scope
+	req := dispatch.req
+	fields := dispatch.fields
+	if fields["trashedlibraries"] {
+		list, err := h.trashedLibraries(ctx, scope)
+		if resp := resolveField(dispatch, "trashedlibraries", list, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["restorelibrary"] {
+		err := h.restoreLibrary(ctx, scope, req)
+		if resp := resolveField(dispatch, "restorelibrary", true, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["purgelibrary"] {
+		result, err := h.purgeLibrary(ctx, scope, req)
+		if resp := resolveField(dispatch, "purgelibrary", result, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}
