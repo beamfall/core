@@ -43,8 +43,9 @@ function viewportHeight(): number {
 /**
  * The rail letter that holds a title at or before `index`. The server keys a
  * letter by upper-casing the title's first rune under Go's simple mapping,
- * which JavaScript does not expose, so a title matches its letter exactly or
- * case-insensitively rather than by re-deriving the key here.
+ * which JavaScript does not expose, so a title matches its letter exactly,
+ * then by single-rune upper case (dotless "ı" to "I"), then by lower case
+ * ("ᾀ" under "ᾈ", where JavaScript's full upper case gives two runes).
  */
 export function letterRailOwner(
   letters: LibraryItemsLetter[],
@@ -54,9 +55,11 @@ export function letterRailOwner(
   const first = [...title][0] ?? "";
   const started = letters.filter((entry) => entry.offset <= index);
   if (!/^\p{L}$/u.test(first)) return started.find((entry) => entry.letter === LETTER_RAIL_OTHER);
+  const upper = first.toUpperCase();
   const lower = first.toLowerCase();
   return (
     started.find((entry) => entry.letter === first) ??
+    started.find((entry) => entry.letter === upper) ??
     started.find((entry) => entry.letter.toLowerCase() === lower)
   );
 }

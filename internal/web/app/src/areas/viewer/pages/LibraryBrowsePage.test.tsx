@@ -396,6 +396,7 @@ describe("Library browse", () => {
       { letter: "ß", offset: 3, count: 1 },
       { letter: "ẞ", offset: 4, count: 1 },
       { letter: "ᾈ", offset: 5, count: 1 },
+      { letter: "I", offset: 6, count: 2 },
     ];
     const owner = (title: string, index: number) => letterRailOwner(letters, title, index)?.letter;
     expect(owner("3 days", 0)).toBe("#");
@@ -406,6 +407,9 @@ describe("Library browse", () => {
     expect(owner("ßalpha", 3)).toBe("ß");
     expect(owner("ẞbeta", 4)).toBe("ẞ");
     expect(owner("ᾀgamma", 5)).toBe("ᾈ");
+    // Go upper-cases the dotless "ı" to "I", whose lower case is "i".
+    expect(owner("India", 6)).toBe("I");
+    expect(owner("ıdelta", 7)).toBe("I");
     // A letter that starts below the index does not hold it yet.
     expect(owner("apple", 1)).toBeUndefined();
   });
