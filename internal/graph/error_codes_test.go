@@ -181,3 +181,19 @@ func TestStoreValidationNotFoundAndRewrappedInvalid(t *testing.T) {
 		}
 	}
 }
+
+// TestRequestValueNeverReadsAsServerFailure: a request value quoted into a
+// validation message stays INVALID even when it spells "unavailable", while
+// the server's own capability messages stay INTERNAL.
+func TestRequestValueNeverReadsAsServerFailure(t *testing.T) {
+	for msg, want := range map[string]ErrorCode{
+		`ceiling "unavailable" is not on the plugin's certification scale`: ErrorCodeInvalid,
+		"offline packs unavailable":                                        ErrorCodeInternal,
+		"verified active plugin manifest is unavailable":                   ErrorCodeInternal,
+		"plugin actions are unavailable on this server":                    ErrorCodeInternal,
+	} {
+		if got := errorCode(clientError(msg)); got != want {
+			t.Errorf("%q = %s, want %s", msg, got, want)
+		}
+	}
+}

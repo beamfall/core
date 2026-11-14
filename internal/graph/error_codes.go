@@ -205,7 +205,6 @@ var clientErrorRules = []clientErrorRule{
 	{code: ErrorCodeForbidden, prefix: "reveal required to "},
 	{code: ErrorCodeForbidden, prefix: "reveal PIN required to "},
 	{code: ErrorCodeForbidden, prefix: "permission ", suffix: " is not approved"},
-	{code: ErrorCodeInternal, contains: "unavailable"},
 	{code: ErrorCodeInvalid, suffix: " required"},
 	{code: ErrorCodeInvalid, contains: " is required "},
 	{code: ErrorCodeInvalid, contains: " are required "},
@@ -224,6 +223,11 @@ var clientErrorRules = []clientErrorRule{
 	{code: ErrorCodeInvalid, prefix: "field ", suffix: " has an unknown type"},
 	{code: ErrorCodeInvalid, prefix: "conflicting selections for response key "},
 	{code: ErrorCodeInvalid, prefix: "filters["},
+	// A capability or dependency this server lacks. Anchored on the message's
+	// end and checked last, so a request value quoted into an INVALID message
+	// (e.g. ceiling "unavailable") never reads as a server failure.
+	{code: ErrorCodeInternal, suffix: " unavailable"},
+	{code: ErrorCodeInternal, suffix: " unavailable on this server"},
 }
 
 // ClientErrorCode is the one mapping from a client error's stable message to
