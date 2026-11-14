@@ -1164,6 +1164,35 @@ describe("SessionProvider identity-epoch fetch lifecycle", () => {
     expect(screen.getByTestId("roster")).toHaveTextContent("p2-current-epoch");
   });
 
+  it("applies only the latest of two overlapping manifest re-reads", async () => {
+    vi.mocked(fetchCurrentSession).mockResolvedValue(p1Session);
+    render(
+      <SessionProvider>
+        <Probe />
+      </SessionProvider>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("manifest")).toHaveTextContent("p1-revealed-epoch-home"),
+    );
+
+    // Delete, then Undo: the first re-read resolves after the second.
+    const first = deferred<NavigationManifest>();
+    const second = deferred<NavigationManifest>();
+    vi.mocked(fetchManifest).mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    act(() => requestManifestRefresh());
+    act(() => requestManifestRefresh());
+    await act(async () => {
+      second.resolve(manifestFixture("p1-second", p1Session, "2026-06-24T00:06:00Z"));
+      await second.promise;
+    });
+    expect(screen.getByTestId("manifest")).toHaveTextContent("p1-second-home");
+    await act(async () => {
+      first.resolve(manifestFixture("p1-first", p1Session, "2026-06-24T00:05:00Z"));
+      await first.promise;
+    });
+    expect(screen.getByTestId("manifest")).toHaveTextContent("p1-second-home");
+  });
+
   it("re-reads the manifest inside the epoch on request without clearing session state", async () => {
     vi.mocked(fetchCurrentSession).mockResolvedValue(p1Session);
     const user = userEvent.setup();

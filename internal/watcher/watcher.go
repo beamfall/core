@@ -159,6 +159,9 @@ type rootState struct {
 	startedAt time.Time
 	// rearming is set while an overflow recovery walk is in flight.
 	rearming bool
+	// rearmAgain records an overflow that arrived during a recovery walk, which
+	// may have lost a Create the walk already passed; the walk repeats once.
+	rearmAgain bool
 }
 
 // NewService creates a watcher service. A nil logger defaults to slog.Default().
@@ -481,7 +484,12 @@ func (s *rootState) fail(backend Backend, err error) {
 // At most one recovery walk runs at a time so the event loop keeps draining.
 func (s *rootState) recoverOverflow() {
 	s.mu.Lock()
-	if s.closed || s.rearming {
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
+	if s.rearming {
+		s.rearmAgain = true
 		s.mu.Unlock()
 		return
 	}
@@ -497,13 +505,20 @@ func (s *rootState) recoverOverflow() {
 	s.mu.Unlock()
 	s.logger.Log(s.ctx, level, "live watch event queue overflowed; rescanning root", "library", string(s.key.libraryID), "root", s.key.root)
 	go func() {
-		defer func() {
+		for {
+			if err := s.addTree(s.key.root); err != nil {
+				s.logger.Debug("overflow re-arm walk failed", "library", string(s.key.libraryID), "root", s.key.root, "reason", err)
+			}
 			s.mu.Lock()
-			s.rearming = false
+			again := s.rearmAgain && !s.closed
+			s.rearmAgain = false
+			if !again {
+				s.rearming = false
+			}
 			s.mu.Unlock()
-		}()
-		if err := s.addTree(s.key.root); err != nil {
-			s.logger.Debug("overflow re-arm walk failed", "library", string(s.key.libraryID), "root", s.key.root, "reason", err)
+			if !again {
+				break
+			}
 		}
 		s.trigger()
 	}()

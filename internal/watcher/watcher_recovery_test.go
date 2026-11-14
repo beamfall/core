@@ -505,3 +505,42 @@ func TestRepeatedOverflowLogsOncePerInterval(t *testing.T) {
 		}
 	}
 }
+
+func TestOverflowDuringRecoveryWalkIsRemembered(t *testing.T) {
+	// An overflow that lands while a recovery walk is running may have lost a
+	// Create the walk already passed, so it must schedule one more walk rather
+	// than be dropped.
+	root := t.TempDir()
+	factory := newBackendFactory()
+	enqueue, scans := scanRecorder()
+	service := NewService(Options{Debounce: time.Millisecond, NewWatcher: factory.newWatcher, EnqueueScan: enqueue})
+	t.Cleanup(func() { _ = service.Close() })
+
+	service.Observe("library-local", root)
+	waitBackend(t, factory.madeCh)
+	state := rootStateFor(t, service, "library-local", root)
+
+	state.mu.Lock()
+	state.rearming = true // a walk is "in flight"
+	state.mu.Unlock()
+	state.recoverOverflow()
+	state.mu.Lock()
+	again := state.rearmAgain
+	state.mu.Unlock()
+	if !again {
+		t.Fatal("overflow during a recovery walk was dropped; want a repeat walk recorded")
+	}
+
+	// Run the loop for real: a repeat request is consumed and recovery ends.
+	state.mu.Lock()
+	state.rearming = false
+	state.rearmAgain = false
+	state.mu.Unlock()
+	state.recoverOverflow()
+	waitScan(t, scans, "recovery rescan")
+	waitFor(t, "recovery walk finished", func() bool {
+		state.mu.Lock()
+		defer state.mu.Unlock()
+		return !state.rearming && !state.rearmAgain
+	})
+}

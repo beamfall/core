@@ -98,8 +98,11 @@ describe("Library browse", () => {
     await user.click(screen.getByRole("button", { name: "Sort direction: Descending" }));
     expect(screen.getByTestId("where")).toHaveTextContent("/n/films/all?sort=year");
 
+    // Posters open the detail page; only list rows play on activation.
+    expect(document.querySelector(".bf-card-play")).toBeNull();
     await user.click(screen.getByRole("button", { name: "List" }));
     expect(screen.getByRole("list", { name: "Films" })).toHaveClass("bf-stack");
+    expect(document.querySelector(".bf-card-play")).not.toBeNull();
     expect(window.localStorage.getItem("beamfall.libraryView.lib")).toBe("list");
   });
 

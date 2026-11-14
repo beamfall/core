@@ -5,8 +5,8 @@
 The server SHALL offer the admin query `trashedLibraries`, available only inside an open Admin
 Session. It SHALL return every soft-deleted Library the caller's scope may see, newest deletion
 first, each with its id, title, the time it was deleted, the number of Media items it holds, whether
-it can be purged, and the time the retention sweep will purge it. A Custodial Library SHALL be
-reported as not purgeable and with no purge time. A restricted Library SHALL be listed only for a
+it can be purged, and the time the retention sweep will purge it. A Library that cannot be purged SHALL
+have no purge time. A restricted Library SHALL be listed only for a
 revealed scope.
 
 #### Scenario: A deleted library is listed with its item count
@@ -63,7 +63,7 @@ root folders again, SHALL run its scan schedule again, and SHALL queue a scan of
 
 The server SHALL offer the admin mutation `purgeLibrary(libraryID, confirm)`, available only inside
 an open Admin Session. It SHALL refuse unless `confirm` is `true`, unless the Library is already
-deleted, and when the Library is Custodial. When it succeeds it SHALL write a `library.purge`
+deleted, and when the Library cannot be purged. When it succeeds it SHALL write a `library.purge`
 activity record and SHALL return the Library's id and title and the number of Media items and
 entities removed.
 
@@ -83,6 +83,13 @@ entities removed.
 
 - **WHEN** an admin calls `purgeLibrary` with `confirm: true` for a Library that is not deleted
 - **THEN** the mutation returns an error and the Library and its Media are unchanged
+
+#### Scenario: An encrypted Library cannot be purged
+
+- **WHEN** an admin calls `purgeLibrary` with `confirm: true` for a deleted encrypted Library, whose
+  catalog lives in a separate database that a purge does not remove
+- **THEN** the mutation returns an error, the retention sweep leaves it alone, and it stays listed
+  as not purgeable
 
 #### Scenario: A Custodial Library cannot be purged
 
@@ -111,7 +118,7 @@ SHALL NOT delete, move or modify any file under the Library's root folders.
 
 The retention sweep SHALL purge every Library deleted longer ago than `TrashRetention`, the same
 window used for trashed Media, with the same effect and activity record as `purgeLibrary`. It SHALL
-NOT purge a Custodial Library. While trash is disabled it SHALL purge nothing and SHALL report that
+NOT purge a Library that cannot be purged, nor one deleted again after the sweep chose it. While trash is disabled it SHALL purge nothing and SHALL report that
 confirmation is required.
 
 #### Scenario: A library past retention is purged

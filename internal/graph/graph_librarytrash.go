@@ -16,7 +16,8 @@ type TrashedLibraryInfo struct {
 	// MediaCount is the number of Media a restore brings back.
 	MediaCount int `json:"mediaCount"`
 	// Purgeable is false for a Custodial Library, which holds the only copy of
-	// its media and is therefore never removed permanently.
+	// its media, and for an encrypted one, whose private catalog a purge does
+	// not remove; neither is removed permanently.
 	Purgeable bool `json:"purgeable"`
 	// PurgeAfter is when the retention sweep removes the Library; empty when it
 	// is not Purgeable.

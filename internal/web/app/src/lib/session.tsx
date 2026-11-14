@@ -120,6 +120,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // overwrite the new epoch's state (its AbortSignal has already fired), and
   // no previous-epoch data is left on screen while the next epoch loads.
   const controllerRef = useRef<AbortController | null>(null);
+  const refreshSeqRef = useRef(0);
 
   const beginEpoch = useCallback(() => {
     controllerRef.current?.abort();
@@ -260,9 +261,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setManifestRefresher(() => {
       const signal = controllerRef.current?.signal;
       if (!signal || signal.aborted) return;
+      // Only the latest request may apply: a slow earlier read must not
+      // overwrite the manifest a later write (delete, then Undo) refreshed.
+      refreshSeqRef.current += 1;
+      const seq = refreshSeqRef.current;
       fetchManifest(signal).then(
         (next) => {
-          if (!signal.aborted) setManifest((current) => (current ? next : current));
+          if (!signal.aborted && seq === refreshSeqRef.current) {
+            setManifest((current) => (current ? next : current));
+          }
         },
         () => {},
       );

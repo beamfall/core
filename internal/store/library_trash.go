@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"log/slog"
+	"math"
 	"time"
 )
 
@@ -20,9 +21,11 @@ type TrashedLibrary struct {
 
 // Purgeable reports whether the Library may ever be purged. A Custodial Library
 // holds the only copy of its bytes (ADR-0045 §2.1), so it stays restorable
-// until an owner restores it, exactly as its trashed Media does.
+// until an owner restores it, exactly as its trashed Media does. An encrypted
+// Library keeps its catalog in a separate database that a purge does not yet
+// remove, so it is restorable only too.
 func (t TrashedLibrary) Purgeable() bool {
-	return !t.Library.Custodial
+	return !t.Library.Custodial && !t.Library.Encrypted
 }
 
 // PurgeAfter is when the retention sweep removes the Library. ok is false when
@@ -132,7 +135,7 @@ func (s *Store) RestoreLibrary(ctx context.Context, id LibraryID) error {
 // profile grants, root-folder records, scan schedule and every row that hangs
 // off them, then the engagement history of the removed Media. It refuses a
 // Library that is not already deleted, so one call can never take a live
-// Library to an unrecoverable state, and it refuses a Custodial Library.
+// Library to an unrecoverable state, and it refuses a Custodial or encrypted Library.
 //
 // It only ever deletes database rows. The files under the Library's root
 // folders are never opened, moved or removed; a new Library pointed at the same
@@ -150,20 +153,25 @@ func (s *Store) PurgeLibrary(ctx context.Context, id LibraryID) (LibraryPurge, e
 	if err := s.guardLocked(); err != nil {
 		return LibraryPurge{}, err
 	}
-	return s.purgeLibraryLocked(ctx, id)
+	return s.purgeLibraryLocked(ctx, id, math.MaxInt64)
 }
 
-func (s *Store) purgeLibraryLocked(ctx context.Context, id LibraryID) (LibraryPurge, error) {
+// purgeLibraryLocked removes a Library that was deleted before trashedBeforeMs
+// (math.MaxInt64 for no bound). The bound is checked inside the transaction so
+// the retention sweep cannot purge a Library an admin restored and deleted again
+// after the sweep chose its candidates.
+func (s *Store) purgeLibraryLocked(ctx context.Context, id LibraryID, trashedBeforeMs int64) (LibraryPurge, error) {
 	tx, err := s.catalogW.BeginTx(ctx, nil)
 	if err != nil {
 		return LibraryPurge{}, err
 	}
 	defer tx.Rollback()
 	purge := LibraryPurge{LibraryID: id}
-	var custodial int
+	var custodial, encrypted int
 	err = tx.QueryRowContext(ctx,
-		`SELECT title, is_restricted, custodial FROM library WHERE id = ? AND trashed_at_ms IS NOT NULL`, id).
-		Scan(&purge.Title, &purge.Restricted, &custodial)
+		`SELECT title, is_restricted, custodial, encrypted FROM library
+		 WHERE id = ? AND trashed_at_ms IS NOT NULL AND trashed_at_ms < ?`, id, trashedBeforeMs).
+		Scan(&purge.Title, &purge.Restricted, &custodial, &encrypted)
 	if errors.Is(err, sql.ErrNoRows) {
 		return LibraryPurge{}, ValidationError("library not found or not deleted")
 	}
@@ -172,6 +180,11 @@ func (s *Store) purgeLibraryLocked(ctx context.Context, id LibraryID) (LibraryPu
 	}
 	if custodial != 0 {
 		return LibraryPurge{}, ValidationError("this library stores the only copy of its media and cannot be removed permanently")
+	}
+	if encrypted != 0 {
+		// An Encrypted Library keeps its catalog in its own database, which this
+		// purge does not reach; removing the row would orphan that data.
+		return LibraryPurge{}, ValidationError("an encrypted library cannot be removed permanently")
 	}
 	if purge.MediaIDs, err = queryIDs[MediaID](ctx, tx, `SELECT id FROM media WHERE library_id = ? ORDER BY id`, id); err != nil {
 		return LibraryPurge{}, err
@@ -236,13 +249,13 @@ func (s *Store) SweepPurgeTrashedLibrariesBefore(ctx context.Context, cutoff tim
 	}
 	ids, err := queryIDs[LibraryID](ctx, s.catalogR, `
 		SELECT id FROM library
-		WHERE trashed_at_ms IS NOT NULL AND trashed_at_ms < ? AND custodial = 0
+		WHERE trashed_at_ms IS NOT NULL AND trashed_at_ms < ? AND custodial = 0 AND encrypted = 0
 		ORDER BY trashed_at_ms, rowid`, timeToMillis(cutoff))
 	if err != nil {
 		return nil, false, err
 	}
 	for _, id := range ids {
-		purge, err := s.purgeLibraryLocked(ctx, id)
+		purge, err := s.purgeLibraryLocked(ctx, id, timeToMillis(cutoff))
 		var restored ValidationError
 		if errors.As(err, &restored) {
 			// Restored (or purged by hand) since the selection above.

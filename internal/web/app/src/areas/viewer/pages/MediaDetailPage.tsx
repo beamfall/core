@@ -193,7 +193,7 @@ export function MediaDetailPage() {
             </div>
           )}
           <div className="bf-detail-panel">
-            <DetailPoster url={poster} />
+            <DetailPoster key={poster} url={poster} />
             <div className="bf-detail-copy">
               <h1 id={TITLE_ID} className="bf-page-title">
                 {title}
