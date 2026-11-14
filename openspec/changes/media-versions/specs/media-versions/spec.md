@@ -49,24 +49,27 @@ playbackInfo SHALL report `versions` when the Media has two or more Versions, ea
 `id`, its stored `label`, its primary video codec, its HDR format and whether it was `selected`.
 When the request carries a `selectedVersion` that names one of the Media's Versions, the decision
 SHALL use that Version even if it needs a transcode. An unknown `selectedVersion` SHALL be ignored.
-A single-Version Media's response SHALL NOT carry `versions`. With two or more Versions, each
-Version SHALL be judged by its own container, named from its path, and its own video codec, from
-its stream inventory.
+A single-Version Media's response SHALL NOT carry `versions`.
 
 #### Scenario: Client selects a Version
 
 - **WHEN** a client requests playbackInfo with the `id` of the `4K` Version
 - **THEN** the response marks that Version `selected` and its streams play that file
 
-#### Scenario: Version in another container
-
-- **WHEN** an MKV-only client selects a Version stored as MP4
-- **THEN** that Version is not offered as direct play
-
 #### Scenario: Unknown selection
 
 - **WHEN** `selectedVersion` names no Version of the Media
 - **THEN** the decision is the one made without a selection
+
+### Requirement: Each Version is judged by its own file facts
+
+When a Media has two or more Versions, playback SHALL judge each Version by its own container, named
+from its path, and its own video codec, from its stream inventory, not by the Media row's.
+
+#### Scenario: Version in another container
+
+- **WHEN** an MKV-only client selects a Version stored as MP4
+- **THEN** that Version is not offered as direct play
 
 ### Requirement: Byte routes serve the chosen Version
 
