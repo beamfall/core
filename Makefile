@@ -70,9 +70,17 @@ crossrepo-conformance-interrupt-test:
 image-buildability-check:
 	@tools/gate/image-buildability.sh
 
+# The second pass lints the linux build (CORE-1474): the merge gate runs on
+# macOS, so `//go:build linux` files such as the confinement layer would
+# otherwise never be linted, and Linux is the production server target. Each
+# GOOS keeps its own cache dir so the passes do not evict each other.
 lint:
 	@GOLANGCI_LINT_CACHE="$${TMPDIR:-/tmp}/beamfall-golangci-lint-$$(basename "$$PWD")" \
 		golangci-lint run --allow-serial-runners ./...
+	@if [ "$$(go env GOOS)" != linux ]; then \
+		GOOS=linux GOLANGCI_LINT_CACHE="$${TMPDIR:-/tmp}/beamfall-golangci-lint-$$(basename "$$PWD")-linux" \
+			golangci-lint run --allow-serial-runners ./...; \
+	fi
 
 gate-race: race-short race-prove
 
