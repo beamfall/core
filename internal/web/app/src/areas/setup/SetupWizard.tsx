@@ -1,4 +1,4 @@
-import { Check, CircleAlert, CircleCheck, LoaderCircle } from "lucide-react";
+import { Check, CircleAlert, CircleCheck, Eye, EyeOff, LoaderCircle } from "lucide-react";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { Wordmark } from "@/areas/enroll/AuthShell";
 import beamfallLogo from "@/assets/beamfall-logo.png";
@@ -28,6 +28,8 @@ import {
   FirstLibraryError,
   type FirstLibraryProgress,
   loadProviderKeys,
+  loadSavedPluginChoices,
+  MIN_ADMIN_PASSWORD_LENGTH,
   SetupTokenError,
   type UpdateCheckChannel,
 } from "./orchestrate";
@@ -54,8 +56,10 @@ import {
 // server restart mid-setup), the token/admin/owner steps are skipped and the
 // wizard resumes at the first incomplete provisioning step.
 
-const STEP_KEYS: StringKey[] = [
-  "setupRailToken",
+// The steps the progress bar counts. The token step (index 0) is a gate in
+// front of them, not one of them, so the total is the same whether a browser
+// sees it, skips it on the LAN, or resumes after a reload (CORE-1604).
+const RAIL_KEYS: StringKey[] = [
   "setupRailAdminPassword",
   "setupRailSecurity",
   "setupRailProfile",
@@ -71,6 +75,31 @@ const STEP_PROFILE = 3;
 const STEP_PLUGINS = 4;
 const STEP_LIBRARY = 5;
 const STEP_SCAN = 6;
+
+// Which provisioning step a reload should return to. Only the step name is
+// kept, never a secret; the server stays the source of truth for what exists.
+const RESUME_STEP_KEY = "beamfall.setup.resumeStep";
+
+function rememberResumeStep(value: "library") {
+  try {
+    window.sessionStorage.setItem(RESUME_STEP_KEY, value);
+  } catch {
+    // Storage blocked: a reload resumes at the plugin step instead.
+  }
+}
+
+function rememberedResumeStep(): string | null {
+  try {
+    return window.sessionStorage.getItem(RESUME_STEP_KEY);
+  } catch {
+    return null;
+  }
+}
+
+// The GraphQL catch-all names the field that failed ("scanLibrary
+// unavailable"), and a few transport messages are internal too. None of them
+// is shown to the owner.
+const INTERNAL_ERROR = /^[a-z][A-Za-z]* unavailable$|graphql|admin session required/i;
 
 const SECURITY_MODES: { mode: SignInSecurityMode; label: StringKey; detail: StringKey }[] = [
   { mode: "home", label: "setupSecurityHome", detail: "setupSecurityHomeDetail" },
@@ -104,6 +133,7 @@ export function SetupWizard() {
   // Step 2 — admin password (CREDENTIAL: type=password).
   const [adminPassword, setAdminPassword] = useState("");
   const [adminPasswordConfirm, setAdminPasswordConfirm] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   // Sign-in security (CORE-1110): Home keeps admin-password sign-in, Strict
   // turns it off. Sent with the bootstrap POST.
   const [securityMode, setSecurityMode] = useState<SignInSecurityMode>("home");
@@ -157,6 +187,8 @@ export function SetupWizard() {
   // while setup is pending, CORE-1105): the wizard starts at the admin step.
   const [tokenStepSkipped, setTokenStepSkipped] = useState(false);
   const firstStep = tokenStepSkipped ? 1 : 0;
+  // A same-network address that needs no token, offered on the token step.
+  const [lanUrl, setLanUrl] = useState<string | null>(null);
 
   const errorRef = useRef<HTMLParagraphElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -164,6 +196,8 @@ export function SetupWizard() {
   const tokenID = useId();
   const adminID = useId();
   const adminConfirmID = useId();
+  const adminHintID = useId();
+  const securityHeadingID = useId();
   const libNameID = useId();
   const rootID = useId();
   const profileID = useId();
@@ -191,6 +225,7 @@ export function SetupWizard() {
             setTokenStepSkipped(true);
             setStep(1);
           }
+          setLanUrl(resume.lanUrls?.[0] ?? null);
           setProbing(false);
           return;
         }
@@ -204,11 +239,15 @@ export function SetupWizard() {
           window.location.assign(import.meta.env.BASE_URL);
           return;
         }
-        // Resume at the first incomplete provisioning step: plugins if they
-        // were not activated yet, otherwise the Library step.
+        // Resume at the first incomplete provisioning step: the Library step
+        // once a Library exists or the plugin step was finished in this tab,
+        // otherwise the plugin step, which shows the saved choices.
         setBootstrapped(true);
         setResumedFromRestart(true);
-        setStep(resume.state && !resume.state.pluginsActivated ? STEP_PLUGINS : STEP_LIBRARY);
+        const pluginsDone =
+          resume.state?.pluginsActivated !== false &&
+          (resume.firstLibraryProgress != null || rememberedResumeStep() === "library");
+        setStep(pluginsDone ? STEP_LIBRARY : STEP_PLUGINS);
         setProbing(false);
       })
       .catch(() => {
@@ -240,19 +279,40 @@ export function SetupWizard() {
   // After the bootstrap succeeds the browser holds a MANAGER session, so load
   // the installed plugins for the activation step. On a fresh run the Film & TV
   // plugin (the most common first Library) is pre-selected so the list isn't
-  // all-off; on a resumed run we leave the selection empty (the operator's real
-  // choices are already on the server) and let the Library step fall back to
-  // all types.
+  // all-off. A resumed run reads the saved choices from the server, so the
+  // switches and the Library types match what was saved (CORE-1604); if that
+  // read is refused it shows the installed plugins as the server treats them,
+  // all on.
   useEffect(() => {
     if (!bootstrapped) return;
     let cancelled = false;
-    void fetchPlugins().then((list) => {
-      if (cancelled) return;
-      setPlugins(list);
-      if (!resumedFromRestart && list.some((p) => p.id === "filmtv")) {
-        setActivePlugins((prev) => (prev.has("filmtv") ? prev : new Set(prev).add("filmtv")));
-      }
-    });
+    if (resumedFromRestart) {
+      void loadSavedPluginChoices()
+        .then((saved) => {
+          if (cancelled) return;
+          setPlugins(saved.plugins);
+          setActivePlugins(saved.active);
+          setUpdateCheckEnabled(saved.updateCheckEnabled);
+          setUpdateCheckChannel(saved.updateCheckChannel);
+          setProviderKeys(saved.providerKeys);
+        })
+        .catch(() =>
+          fetchPlugins().then((list) => {
+            if (cancelled) return;
+            setPlugins(list);
+            setActivePlugins(new Set(list.map((p) => p.id)));
+          }),
+        )
+        .catch(() => {});
+    } else {
+      void fetchPlugins().then((list) => {
+        if (cancelled) return;
+        setPlugins(list);
+        if (list.some((p) => p.id === "filmtv")) {
+          setActivePlugins((prev) => (prev.has("filmtv") ? prev : new Set(prev).add("filmtv")));
+        }
+      });
+    }
     return () => {
       cancelled = true;
     };
@@ -280,8 +340,8 @@ export function SetupWizard() {
   );
 
   // The Library-type tiles offered are limited to types backed by a plugin the
-  // operator just enabled. If nothing is enabled (or on a resumed run where the
-  // local selection is empty), fall back to all types so the step stays usable.
+  // operator enabled. If nothing is enabled, fall back to all types so the step
+  // stays usable.
   // The types come from the shared list Console uses too (CORE-1156).
   const allTypes = libraryTypeOptions(plugins, t, locale);
   const enabledTypes = allTypes.filter((s) => activePlugins.has(s.pluginID));
@@ -377,6 +437,16 @@ export function SetupWizard() {
       setBootstrapped(true);
       return true;
     } catch (err) {
+      if (
+        err instanceof ApiError &&
+        err.status === 400 &&
+        /at least \d+ characters/.test(err.message)
+      ) {
+        // An older or stricter server refused the password: back to its step.
+        setStep(1);
+        fieldError(t("setupAdminPasswordTooShort"), adminID);
+        return false;
+      }
       if (err instanceof SetupTokenError) {
         // Wrong/consumed token: bounce to step 1 with the inline message and
         // do NOT advance.
@@ -404,18 +474,18 @@ export function SetupWizard() {
     setBusy(true);
     setError(null);
     try {
-      // The update-check toggle is Admin-Session-gated on the admin password.
-      // On a resumed (restart) run the password was never collected this
-      // session, so skip it — the preference stays at the server default and is
-      // reconfigurable later in the Console (it is an optional step).
-      if (!resumedFromRestart) {
-        await configureUpdateCheck({
-          adminPassword,
-          enabled: updateCheckEnabled,
-          channel: updateCheckChannel,
-        });
-      }
-      await activatePlugins([...activePlugins]);
+      // The update-check toggle is Admin-Session-gated. A fresh run verifies
+      // with the password it just collected; a resumed run has none and uses
+      // the window the first run opened.
+      await configureUpdateCheck({
+        adminPassword,
+        enabled: updateCheckEnabled,
+        channel: updateCheckChannel,
+      });
+      await activatePlugins(
+        plugins.filter((p) => activePlugins.has(p.id)).map((p) => p.id),
+        plugins.filter((p) => !activePlugins.has(p.id)).map((p) => p.id),
+      );
       return await saveProviderKeys();
     } catch (err) {
       announceError(failureMessage(err));
@@ -464,7 +534,11 @@ export function SetupWizard() {
         rootPath: rootPath.trim(),
         progress: firstLibraryProgress,
       });
-      setFirstLibraryProgress({ libraryID: scan.libraryID, rootsSet: true });
+      setFirstLibraryProgress({
+        libraryID: scan.libraryID,
+        rootsSet: true,
+        rootPath: rootPath.trim(),
+      });
       setScanJob({
         id: scan.scanJobID,
         kind: "scan",
@@ -473,27 +547,26 @@ export function SetupWizard() {
       });
       return true;
     } catch (err) {
-      if (err instanceof FirstLibraryError) {
-        setFirstLibraryProgress(err.progress);
-        if (err.progress.rootPath) setRootPath(err.progress.rootPath);
-      }
-      announceError(libraryErrorMessage(err));
+      if (err instanceof FirstLibraryError) setFirstLibraryProgress(err.progress);
+      // The folder stays editable: fix the path and press Continue again.
+      fieldError(libraryErrorMessage(err), rootID);
       return false;
     } finally {
       setBusy(false);
     }
   }
 
-  // The server's reason is kept (it is usually about the folder itself), framed
-  // by which half failed: creating the Library, or only starting its scan.
+  // The server's folder check names the path and what is wrong with it
+  // (CORE-1598), so that reason is shown as it is. Internal messages are not.
   function libraryErrorMessage(err: unknown): string {
     const cause = err instanceof FirstLibraryError ? err.cause : err;
     if (cause instanceof TypeError || cause instanceof ApiDeadlineError) return t("setupOffline");
-    if (!(err instanceof Error)) return t("setupFailed");
-    const reason = err.message.replace(/[.\s]+$/, "");
-    return err instanceof FirstLibraryError && err.progress.rootsSet
-      ? t("setupLibraryScanFailed", { reason })
-      : t("setupLibraryCreateFailed", { reason });
+    if (err instanceof FirstLibraryError && err.scanFailed) return t("setupLibraryScanFailed");
+    const reason = err instanceof Error ? err.message.trim() : "";
+    if (!reason || INTERNAL_ERROR.test(reason)) return t("setupLibraryCreateFailedGeneric");
+    return t("setupLibraryCreateFailed", {
+      reason: /[.!?]$/.test(reason) ? reason : `${reason}.`,
+    });
   }
 
   // Final hand-off: leave the wizard so SessionProvider re-bootstraps the
@@ -515,6 +588,10 @@ export function SetupWizard() {
       case 1:
         if (!adminPassword.trim()) {
           return { message: t("setupAdminPasswordRequired"), field: adminID };
+        }
+        // Counted in characters, as the server counts them.
+        if ([...adminPassword].length < MIN_ADMIN_PASSWORD_LENGTH) {
+          return { message: t("setupAdminPasswordTooShort"), field: adminID };
         }
         if (adminPassword !== adminPasswordConfirm) {
           return { message: t("setupAdminPasswordMismatch"), field: adminConfirmID };
@@ -568,6 +645,7 @@ export function SetupWizard() {
     if (step === STEP_PLUGINS) {
       const ok = await runPluginActivation();
       if (!ok) return;
+      rememberResumeStep("library");
       setStep(STEP_LIBRARY);
       return;
     }
@@ -581,7 +659,7 @@ export function SetupWizard() {
       return;
     }
 
-    setStep((s) => Math.min(s + 1, STEP_KEYS.length - 1));
+    setStep((s) => Math.min(s + 1, STEP_SCAN));
   }
 
   function onBack() {
@@ -655,10 +733,9 @@ export function SetupWizard() {
     return <main className="theme-cinema min-h-screen bg-background" />;
   }
 
-  // Steps the wizard actually walks: a LAN browser that skipped the token step
-  // never sees it in the progress bar.
-  const visibleSteps = STEP_KEYS.slice(firstStep);
-  const visibleIndex = step - firstStep;
+  // The token step is not counted, so on it no segment is current and no
+  // count shows; every later step reads "Step n of 6".
+  const visibleIndex = step - 1;
 
   return (
     <main className="theme-cinema relative isolate flex min-h-screen flex-col overflow-hidden bg-background text-foreground">
@@ -684,7 +761,7 @@ export function SetupWizard() {
               className="m-0 flex flex-1 list-none gap-1.5 p-0"
               aria-label={t("setupBrandSuffix")}
             >
-              {visibleSteps.map((key, i) => (
+              {RAIL_KEYS.map((key, i) => (
                 <li
                   key={key}
                   aria-current={i === visibleIndex ? "step" : undefined}
@@ -698,9 +775,11 @@ export function SetupWizard() {
                 </li>
               ))}
             </ol>
-            <span className="shrink-0 text-dense tabular-nums text-muted-foreground">
-              {t("setupStepCount", { n: visibleIndex + 1, total: visibleSteps.length })}
-            </span>
+            {visibleIndex >= 0 && (
+              <span className="shrink-0 text-dense tabular-nums text-muted-foreground">
+                {t("setupStepCount", { n: visibleIndex + 1, total: RAIL_KEYS.length })}
+              </span>
+            )}
           </div>
 
           {/* Unlocked banner — shown once the bootstrap POST succeeds */}
@@ -752,6 +831,13 @@ export function SetupWizard() {
                     {tokenError}
                   </p>
                 )}
+                {lanUrl && (
+                  <p className="mb-0 mt-4 text-dense leading-snug text-muted-foreground">
+                    <a href={lanUrl} className="text-primary underline-offset-4 hover:underline">
+                      {t("setupTokenLanLink", { url: lanUrl })}
+                    </a>
+                  </p>
+                )}
               </section>
             )}
 
@@ -764,23 +850,45 @@ export function SetupWizard() {
                 <Label htmlFor={adminID} className={FIELD_LABEL}>
                   {t("setupAdminPassword")}
                 </Label>
-                <Input
-                  id={adminID}
-                  type="password"
-                  value={adminPassword}
-                  onChange={(e) => setAdminPassword(e.target.value)}
-                  className={FIELD}
-                  autoComplete="new-password"
-                  required
-                  autoFocus
-                  {...invalidProps(adminID)}
-                />
+                <div className="flex items-stretch gap-2">
+                  <Input
+                    id={adminID}
+                    type={showPassword ? "text" : "password"}
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                    className={cn(FIELD, "min-w-0 flex-1")}
+                    autoComplete="new-password"
+                    required
+                    autoFocus
+                    {...invalidProps(adminID)}
+                    aria-describedby={
+                      error && errorField === adminID ? `${adminHintID} ${errorID}` : adminHintID
+                    }
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-11 shrink-0 rounded-[10px] border-white/10 bg-white/[0.04] px-3"
+                    onClick={() => setShowPassword((v) => !v)}
+                    aria-pressed={showPassword}
+                    aria-label={t(showPassword ? "setupPasswordHide" : "setupPasswordShow")}
+                  >
+                    {showPassword ? (
+                      <EyeOff aria-hidden className="size-4" />
+                    ) : (
+                      <Eye aria-hidden className="size-4" />
+                    )}
+                  </Button>
+                </div>
+                <p id={adminHintID} className="mb-0 mt-1.5 text-dense text-muted-foreground">
+                  {t("setupAdminPasswordHint")}
+                </p>
                 <Label htmlFor={adminConfirmID} className={cn(FIELD_LABEL, "mt-4")}>
                   {t("setupAdminPasswordConfirm")}
                 </Label>
                 <Input
                   id={adminConfirmID}
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   value={adminPasswordConfirm}
                   onChange={(e) => setAdminPasswordConfirm(e.target.value)}
                   className={FIELD}
@@ -792,9 +900,12 @@ export function SetupWizard() {
             )}
 
             {step === STEP_SECURITY && (
-              <fieldset className="m-0 border-0 p-0">
-                <legend className="sr-only">{t("setupSecurityTitle")}</legend>
-                <StepHeading title={t("setupSecurityTitle")} lead={t("setupSecurityLead")} />
+              <fieldset className="m-0 border-0 p-0" aria-labelledby={securityHeadingID}>
+                <StepHeading
+                  id={securityHeadingID}
+                  title={t("setupSecurityTitle")}
+                  lead={t("setupSecurityLead")}
+                />
                 <div className="divide-y divide-white/10 border-y border-white/10">
                   {SECURITY_MODES.map(({ mode, label, detail }) => (
                     <label key={mode} className={OPTION_ROW}>
@@ -805,9 +916,14 @@ export function SetupWizard() {
                         checked={securityMode === mode}
                         onChange={() => setSecurityMode(mode)}
                         className={RADIO}
+                        aria-labelledby={`${securityHeadingID}-${mode}`}
+                        aria-describedby={`${securityHeadingID}-${mode}-detail`}
                       />
                       <span className="flex min-w-0 flex-col gap-1">
-                        <span className="flex flex-wrap items-baseline gap-x-2 text-[15px] font-medium text-foreground">
+                        <span
+                          id={`${securityHeadingID}-${mode}`}
+                          className="flex flex-wrap items-baseline gap-x-2 text-[15px] font-medium text-foreground"
+                        >
                           {t(label)}
                           {mode === "home" && (
                             <span className="text-dense font-normal text-primary">
@@ -815,7 +931,10 @@ export function SetupWizard() {
                             </span>
                           )}
                         </span>
-                        <span className="text-dense leading-snug text-muted-foreground">
+                        <span
+                          id={`${securityHeadingID}-${mode}-detail`}
+                          className="text-dense leading-snug text-muted-foreground"
+                        >
                           {t(detail)}
                         </span>
                       </span>
@@ -849,6 +968,7 @@ export function SetupWizard() {
                             checked={sel}
                             onChange={() => setLibraryType(spec.key)}
                             className={cn(RADIO, "mt-0")}
+                            aria-label={spec.label}
                           />
                           <Icon
                             aria-hidden
@@ -876,7 +996,6 @@ export function SetupWizard() {
                     spellCheck={false}
                     required
                     autoFocus
-                    disabled={firstLibraryProgress.rootsSet}
                     {...invalidProps(rootID)}
                   />
                   <Button
@@ -886,7 +1005,6 @@ export function SetupWizard() {
                     className="h-11 shrink-0 rounded-[10px] border-white/10 bg-white/[0.04] px-4"
                     onClick={() => void openPicker()}
                     aria-expanded={pickerNode != null}
-                    disabled={firstLibraryProgress.rootsSet}
                   >
                     {t("setupLibraryBrowse")}
                   </Button>
@@ -1045,6 +1163,9 @@ export function SetupWizard() {
                             checked={updateCheckChannel === channel}
                             onChange={() => setUpdateCheckChannel(channel)}
                             className={cn(RADIO, "mt-0")}
+                            aria-label={t(
+                              channel === "stable" ? "updateChannelStable" : "updateChannelBeta",
+                            )}
                           />
                           <span className="text-sm">
                             {t(channel === "stable" ? "updateChannelStable" : "updateChannelBeta")}
@@ -1153,11 +1274,12 @@ const FIELD_LABEL = "mb-2 block text-dense font-medium text-foreground/80";
 const OPTION_ROW = "flex cursor-pointer items-start gap-3 py-3.5";
 const RADIO = "mt-1 size-4 shrink-0 cursor-pointer accent-[var(--accent)]";
 
-function StepHeading({ title, lead }: { title: string; lead: string }) {
+function StepHeading({ id, title, lead }: { id?: string; title: string; lead: string }) {
   return (
     <div className="mb-6">
       {/* Focus target on steps without a text field; see the step-focus effect. */}
       <h1
+        id={id}
         data-step-heading
         tabIndex={-1}
         className="m-0 text-2xl font-semibold leading-tight tracking-tight text-balance outline-none"

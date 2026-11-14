@@ -83,6 +83,29 @@ describe("SetupChecklist (Seam B funnel spine)", () => {
     expect(screen.getAllByText("Optional")).toHaveLength(2);
   });
 
+  it("keeps the first scan open while a Library exists but nothing was found (CORE-1606)", async () => {
+    vi.mocked(fetchSetupState).mockResolvedValue(complete);
+    vi.mocked(fetchSourceItems).mockResolvedValue([]);
+
+    renderChecklist();
+
+    const scan = await screen.findByRole("link", { name: /start your first scan/i });
+    await waitFor(() => expect(scan).toHaveTextContent("Next step"));
+    expect(scan).not.toHaveTextContent("Done");
+  });
+
+  it("does not number some steps and check others", async () => {
+    vi.mocked(fetchSetupState).mockResolvedValue({ ...complete, hasOwnerProfile: false });
+    vi.mocked(fetchSourceItems).mockResolvedValue([]);
+
+    const { container } = renderChecklist();
+
+    await screen.findByRole("link", { name: /start your first scan/i });
+    for (const index of container.querySelectorAll(".console-step-index")) {
+      expect(index.textContent).toBe("");
+    }
+  });
+
   it("renders each spine item as a deep-link to its owning station", async () => {
     vi.mocked(fetchSetupState).mockResolvedValue(complete);
     vi.mocked(fetchSourceItems).mockResolvedValue([

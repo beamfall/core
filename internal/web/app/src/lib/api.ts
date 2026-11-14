@@ -388,21 +388,40 @@ export async function fetchSetupStatus(): Promise<{
   required: boolean;
   tokenRequired: boolean;
   securityMode: SignInSecurityMode | null;
+  /** Server addresses on this browser's network that need no setup token (CORE-1600). */
+  lanUrls?: string[];
 }> {
   try {
     const data = await getJSON<{
       required?: boolean;
       tokenRequired?: boolean;
       securityMode?: string;
+      lanUrls?: unknown;
     }>("/api/setup");
+    const lanUrls = httpURLs(data.lanUrls);
     return {
       required: data.required === true,
       tokenRequired: data.tokenRequired !== false,
       securityMode: data.securityMode === "strict" ? "strict" : "home",
+      ...(lanUrls.length > 0 && { lanUrls }),
     };
   } catch {
     return { required: false, tokenRequired: true, securityMode: null };
   }
+}
+
+// Keeps only plain http(s) URLs, so a server-offered address is safe as a link.
+function httpURLs(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (typeof item !== "string") return [];
+    try {
+      const url = new URL(item);
+      return url.protocol === "http:" || url.protocol === "https:" ? [url.href] : [];
+    } catch {
+      return [];
+    }
+  });
 }
 
 /** Fetch the Navigation Manifest (the Viewer's nav + layout document). */

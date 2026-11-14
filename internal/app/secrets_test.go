@@ -351,6 +351,25 @@ func TestFirstRunSetupURL(t *testing.T) {
 	}
 }
 
+// TestWriteFirstRunSetupBlock covers CORE-1603: the block is set apart by blank
+// lines and puts the token-free LAN address before the tokened loopback URL.
+func TestWriteFirstRunSetupBlock(t *testing.T) {
+	var buf bytes.Buffer
+	writeFirstRunSetupBlock(&buf, "http", "[::]:8800", "tok", []string{"http://192.168.1.20:8800/web/"})
+	want := "\nBeamfall first-run setup\n" +
+		"  From this network (no token needed): http://192.168.1.20:8800/web/\n" +
+		"  From another device: open http://<this server's address>:8800/web/ (no token needed)\n" +
+		"  On this machine: http://127.0.0.1:8800/web/setup?token=tok\n\n"
+	if buf.String() != want {
+		t.Fatalf("setup block = %q, want %q", buf.String(), want)
+	}
+	buf.Reset()
+	writeFirstRunSetupBlock(&buf, "http", "127.0.0.1:9000", "tok", nil)
+	if want := "\nBeamfall first-run setup\n  On this machine: http://127.0.0.1:9000/web/setup?token=tok\n\n"; buf.String() != want {
+		t.Fatalf("loopback setup block = %q, want %q", buf.String(), want)
+	}
+}
+
 // TestFirstRunSetupLogRedactsToken asserts the structured setup log line carries
 // no token value. The tokened URL is for the operator console only;
 // the slog record must match what Serve emits — the redacted URL — and must not

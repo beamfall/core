@@ -55,7 +55,7 @@ func workflowOverrides() map[string]bool {
 		return nil
 	}
 	ctx := context.Background()
-	st, err := store.Open(ctx, cfg.DataDir, store.Options{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	st, err := store.Open(ctx, cfg.DataDir, store.Options{Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), RequireExisting: true})
 	if err != nil {
 		return nil
 	}

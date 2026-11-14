@@ -50,13 +50,17 @@ export const profileDeviceStrings = {
     deviceAddHeading: "Add a device",
     deviceAddLead:
       "Mint a one-time pairing code, then enter it on the new browser or device to enroll it.",
-    devicePairingCodeShown: "Pairing code. Copy it now, then enter it on the new device.",
     deviceMintViewer: "Viewer code",
     deviceMintManager: "Manager code",
     deviceMintManagerConfirm:
       "Mint a manager pairing code? Whoever redeems it can manage this server, not just watch. Share it carefully.",
-    deviceMintHint:
-      "Pairing codes are short-lived and single-use. Enter the code at /enroll on the new device.",
+    deviceMintHint: "Each code works once and expires 10 minutes after it's made.",
+    // The minted-code panel (CORE-1607).
+    deviceCodeShownFor: "{role} pairing code. Copy it now, then enter it on the new device.",
+    deviceCodeExpiresIn: "Expires in {time}",
+    deviceCodeExpired: "This code has expired. Make a new one below.",
+    deviceCodeOpenAt: "On the new device, open:",
+    deviceCodeCopyLink: "Copy link",
     remoteEnrollHeading: "Remote enrollment",
     remoteEnrollLead: "Control whether devices can enroll from outside your local network.",
     remoteEnrollToggle: "Allow remote enrollment",
@@ -69,6 +73,10 @@ export const profileDeviceStrings = {
     signinSecuritySaved: "Sign-in security changed.",
     signinSecurityNotManager: "Only a Manager device can change sign-in security.",
     signinSecurityFailed: "Could not change sign-in security.",
+    signinSecurityStrictConfirmTitle: "Switch to Strict?",
+    signinSecurityStrictConfirmBody:
+      "The admin password will no longer sign a browser in. If you are ever locked out, get a pairing code by running this on the server:",
+    signinSecurityStrictConfirm: "Switch to Strict",
   },
   fr: {
     consoleAccessGroup: "Profils et accès",

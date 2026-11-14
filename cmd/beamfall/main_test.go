@@ -471,8 +471,23 @@ func TestRunScanRequiresTokenWithoutLeakingIt(t *testing.T) {
 	}
 }
 
-func TestResetAdminPasswordSetsAndVerifies(t *testing.T) {
+// existingDataDir returns a data directory that already holds a Beamfall store,
+// as offline commands that need an existing server require (CORE-1599).
+func existingDataDir(t *testing.T) string {
+	t.Helper()
 	dataDir := t.TempDir()
+	st, err := store.Open(context.Background(), dataDir, store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return dataDir
+}
+
+func TestResetAdminPasswordSetsAndVerifies(t *testing.T) {
+	dataDir := existingDataDir(t)
 	var out bytes.Buffer
 
 	if err := resetAdminPassword(context.Background(), []string{
@@ -521,6 +536,35 @@ func TestResetAdminPasswordCanOverwriteExisting(t *testing.T) {
 	}
 	if err := st2.VerifyAdminPassword(context.Background(), "old-password"); err == nil {
 		t.Fatal("old password still verified after reset")
+	}
+}
+
+// TestResetAdminPasswordDataDirResolution covers CORE-1599: a relative or
+// default data dir opens the existing store, and a path with no Beamfall data
+// is refused without creating anything.
+func TestResetAdminPasswordDataDirResolution(t *testing.T) {
+	t.Setenv("BEAMFALL_DATA_DIR", "")
+	parent := t.TempDir()
+	t.Chdir(parent)
+	for _, dir := range []string{"data-a", ".beamfall"} {
+		st, err := store.Open(context.Background(), filepath.Join(parent, dir), store.Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = st.Close()
+	}
+	for _, args := range [][]string{{"--data-dir", "data-a"}, nil} {
+		if err := resetAdminPassword(context.Background(), append(args, "--password", "password-1"), nil); err != nil {
+			t.Fatalf("reset-admin-password %v: %v", args, err)
+		}
+	}
+	missing := filepath.Join(parent, "typo")
+	err := resetAdminPassword(context.Background(), []string{"--data-dir", missing, "--password", "pw"}, nil)
+	if err == nil || !strings.Contains(err.Error(), "no Beamfall data in "+missing) {
+		t.Fatalf("error = %v, want no Beamfall data naming %s", err, missing)
+	}
+	if _, statErr := os.Stat(missing); !os.IsNotExist(statErr) {
+		t.Fatalf("missing data dir was created: %v", statErr)
 	}
 }
 

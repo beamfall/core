@@ -9,7 +9,7 @@
   <Privileged>false</Privileged>
   <Support>https://github.com/beamfall/core/issues</Support>
   <Project>https://github.com/beamfall/core</Project>
-  <Overview>Beamfall Core media server. Media mounts are read-only. Before a release digest is published, build the image locally and override Repository: see packaging/unraid/README.md in the source repository. Icon and CA metadata are placeholders until branding assets are published.</Overview>
+  <Overview>Beamfall Core media server. Media mounts are read-only. First-run setup: the setup URLs, including the one-time setup token, are the last lines of the container log once the server is listening; a browser on the local network needs no token. Before a release digest is published, build the image locally and override Repository: see packaging/unraid/README.md in the source repository. Icon and CA metadata are placeholders until branding assets are published.</Overview>
   <Category>MediaServer:Video MediaServer:Music</Category>
   <WebUI>http://[IP]:[PORT:8800]/</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/beamfall/core/main/packaging/unraid/beamfall-core.xml</TemplateURL>

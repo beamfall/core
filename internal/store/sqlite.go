@@ -70,7 +70,17 @@ type Options struct {
 	// catalog-identity authoring and engagement-projection writes — it
 	// index-pushes its locally-identified index instead (ADR-0123 decision 2/3).
 	Role serverrole.Role
+	// RequireExisting refuses to open a data directory that holds no Beamfall
+	// database, and creates nothing there (CORE-1599). Offline commands that
+	// only make sense against an existing server (pairing-code,
+	// reset-admin-password, the capabilities overrides) set it so a mistyped --data-dir is
+	// reported instead of silently becoming a new, empty server.
+	RequireExisting bool
 }
+
+// ErrNoDataDir is returned by Open with Options.RequireExisting when the data
+// directory holds no Beamfall database.
+var ErrNoDataDir = errors.New("no Beamfall data")
 
 // SeedProfile selects an optional boot-time catalog seed.
 type SeedProfile string
@@ -111,6 +121,18 @@ const AcceptanceSeedVersion = "acceptance-2"
 func Open(ctx context.Context, dataDir string, opts Options) (*Store, error) {
 	if dataDir == "" {
 		return nil, errors.New("data-dir is required")
+	}
+	// SQLite opens a file: URI built from this path, and a relative path there
+	// parses as a URI authority ("invalid uri authority"), so resolve it against
+	// the working directory first (CORE-1599). Absolute paths are unchanged.
+	dataDir, err := filepath.Abs(dataDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data-dir: %w", err)
+	}
+	if opts.RequireExisting {
+		if err := requireExistingDataDir(dataDir); err != nil {
+			return nil, err
+		}
 	}
 	if err := guardDataDirPlacement(dataDir, opts.AllowNetworkDataDir); err != nil {
 		return nil, err
@@ -172,13 +194,20 @@ func Open(ctx context.Context, dataDir string, opts Options) (*Store, error) {
 		return nil, err
 	}
 
-	if err := migrate(ctx, logger, st.catalogW, catalogPath, "catalog", catalogMigrations, "migrate/catalog", backupDir); err != nil {
+	catalogApplied, err := migrateCounted(ctx, logger, st.catalogW, catalogPath, "catalog", catalogMigrations, "migrate/catalog", backupDir)
+	if err != nil {
 		_ = st.Close()
 		return nil, err
 	}
-	if err := migrate(ctx, logger, st.eventsW, eventsPath, "events", eventsMigrations, "migrate/events", backupDir); err != nil {
+	eventsApplied, err := migrateCounted(ctx, logger, st.eventsW, eventsPath, "events", eventsMigrations, "migrate/events", backupDir)
+	if err != nil {
 		_ = st.Close()
 		return nil, err
+	}
+	// One summary line rather than one per migration (CORE-1603): a fresh
+	// install applies well over a hundred, burying the first-run setup URL.
+	if catalogApplied+eventsApplied > 0 {
+		logger.InfoContext(ctx, "applied migrations", "catalog", catalogApplied, "events", eventsApplied)
 	}
 	if profile := opts.resolvedSeedProfile(); profile != "" {
 		if err := st.seedData(ctx, profile); err != nil {
@@ -208,6 +237,24 @@ func Open(ctx context.Context, dataDir string, opts Options) (*Store, error) {
 	}
 	logger.InfoContext(ctx, "store opened", "dataDir", dataDir)
 	return st, nil
+}
+
+// requireExistingDataDir reports ErrNoDataDir unless dataDir holds a catalog
+// database or an interrupted restore publish that Open will recover.
+func requireExistingDataDir(dataDir string) error {
+	for _, path := range []string{
+		filepath.Join(dataDir, "db", "catalog.db"),
+		filepath.Join(dataDir, restorePublishTransactionName),
+	} {
+		_, err := os.Stat(path)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return fmt.Errorf("%w in %s", ErrNoDataDir, dataDir)
 }
 
 func (opts Options) resolvedSeedProfile() SeedProfile {

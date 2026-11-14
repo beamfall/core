@@ -33,7 +33,8 @@ import { useAsync } from "../useAsync";
 interface SpineItem {
   label: StringKey;
   to: string;
-  done: (s: SetupState) => boolean;
+  /** browsable: at least one catalog item exists, so a scan has found a file. */
+  done: (s: SetupState, browsable: boolean) => boolean;
   /** Never required for a first browse; shown as "Optional" until done. */
   optional?: boolean;
 }
@@ -42,7 +43,9 @@ const SPINE: SpineItem[] = [
   {
     label: "setupChecklistScan",
     to: "/console/libraries",
-    done: (s) => s.hasLibrary,
+    // A Library alone is not a scan (CORE-1606): Done only once a completed
+    // scan has put at least one file in the catalog.
+    done: (s, browsable) => s.hasLibrary && browsable,
   },
   {
     label: "setupChecklistMigrate",
@@ -70,7 +73,7 @@ const SPINE: SpineItem[] = [
 // The "complete-but-empty" probe: after setup is green, ask the catalog for a
 // single browsable item. Zero items means no first value yet, so the footer
 // must keep guiding forward. Respects Reveal/access exactly like normal browse.
-async function fetchHasBrowsableContent(signal?: AbortSignal): Promise<boolean> {
+export async function fetchHasBrowsableContent(signal?: AbortSignal): Promise<boolean> {
   const items = await fetchSourceItems(
     {
       kind: "",
@@ -85,6 +88,12 @@ async function fetchHasBrowsableContent(signal?: AbortSignal): Promise<boolean> 
     signal,
   );
   return items.length > 0;
+}
+
+/** True while any required checklist step is still open (Overview puts it first then). */
+export function firstValueOpen(state: SetupState | null, browsable: boolean | null): boolean {
+  if (!state) return true;
+  return SPINE.some((item) => !item.optional && !item.done(state, browsable === true));
 }
 
 const dismissedMigrationResumeKey = "beamfall:onboarding:dismissed-migration-resume";
@@ -148,8 +157,8 @@ export function SetupChecklist() {
       ) : (
         <div className="space-y-3">
           <div className="console-card">
-            {SPINE.map((item, i) => {
-              const done = item.done(data);
+            {SPINE.map((item) => {
+              const done = item.done(data, browse.data === true);
               return (
                 <Link
                   key={item.label}
@@ -157,7 +166,7 @@ export function SetupChecklist() {
                   className={`console-step${done ? " is-done" : ""}`}
                 >
                   <span className="console-step-index" aria-hidden>
-                    {done ? <Check className="h-3.5 w-3.5" /> : i + 1}
+                    {done && <Check className="h-3.5 w-3.5" />}
                   </span>
                   <span className="console-step-label">{t(item.label)}</span>
                   {done ? (

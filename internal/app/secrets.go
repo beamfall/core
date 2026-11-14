@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/url"
@@ -71,7 +72,9 @@ func bootstrapAdminPassword(ctx context.Context, st *store.Store, logger *slog.L
 		return nil
 	}
 	if err := st.SetAdminPassword(ctx, password, time.Now().UTC()); err != nil {
-		return err
+		// Name the variable: a refused value (too short, say) otherwise reads
+		// as an unexplained startup failure.
+		return fmt.Errorf("BEAMFALL_ADMIN_PASSWORD: %w", err)
 	}
 	logger.Info("admin password set from BEAMFALL_ADMIN_PASSWORD (first-run bootstrap)")
 	return nil
@@ -101,6 +104,25 @@ func bootstrapSetupToken(ctx context.Context, st *store.Store, svc *pairing.Serv
 	token := hex.EncodeToString(raw[:])
 	svc.SetBootstrapToken(token)
 	return token, nil
+}
+
+// writeFirstRunSetupBlock prints the first-run setup addresses to the operator
+// console, set apart by blank lines (CORE-1603). The token-free LAN addresses
+// come first because they are what an owner on another device opens; the
+// tokened loopback URL only works on the server itself. SEC-LOG-1: w is the
+// console (stdout), never a structured log, since the URL carries the token.
+func writeFirstRunSetupBlock(w io.Writer, scheme, listenAddr, token string, lanURLs []string) {
+	_, _ = fmt.Fprint(w, "\nBeamfall first-run setup\n")
+	for _, lanURL := range lanURLs {
+		_, _ = fmt.Fprintf(w, "  From this network (no token needed): %s\n", lanURL)
+	}
+	// A bridged container's interface addresses are not the host's, so also
+	// say which address to use from another device, or that a loopback bind
+	// in a container cannot be reached from it at all (CORE-1097).
+	if hint := remoteSetupHint(scheme, listenAddr); hint != "" {
+		_, _ = fmt.Fprintf(w, "  From another device: %s\n", hint)
+	}
+	_, _ = fmt.Fprintf(w, "  On this machine: %s\n\n", firstRunSetupURL(scheme, listenAddr, token))
 }
 
 func firstRunSetupURL(scheme, listenAddr, token string) string {
