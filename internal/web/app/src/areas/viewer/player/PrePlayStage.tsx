@@ -1,4 +1,3 @@
-import Hls from "hls.js";
 import { useEffect, useRef, useState } from "react";
 import type { PrePlayItem } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
@@ -9,10 +8,20 @@ import { fetchPrePlayStream } from "../lib/prePlay";
 // title starts, cinema-mode style. Skip moves to the next item, Skip all
 // starts the title. Pre-play items report no progress, and an item that
 // cannot play is passed over rather than blocking the title.
+//
+// Only direct-play streams play here. An HLS stream would start a server
+// transcode keyed to this session and the clip, and the web client has no way
+// to stop it on Skip: it would hold one of the Profile's concurrent streams
+// until the idle reaper ran, so the title itself could hit
+// stream-limit-reached. An item that would need a transcode is passed over.
+//
+// When the browser refuses autoplay, the native controls appear so the
+// viewer can start the item, instead of the stage waiting on nothing.
 export function PrePlayStage({ items, onDone }: { items: PrePlayItem[]; onDone: () => void }) {
   const t = useT();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [index, setIndex] = useState(0);
+  const [needsGesture, setNeedsGesture] = useState(false);
   const item = items[index];
 
   useEffect(() => {
@@ -23,38 +32,26 @@ export function PrePlayStage({ items, onDone }: { items: PrePlayItem[]; onDone: 
     const video = videoRef.current;
     if (!item || !video) return;
     let cancelled = false;
-    let hls: Hls | null = null;
+    setNeedsGesture(false);
     const advance = () => {
       if (!cancelled) setIndex((current) => current + 1);
     };
     fetchPrePlayStream(item.mediaID)
       .then((stream) => {
         if (cancelled) return;
-        if (!stream?.url) {
+        if (!stream?.url || stream.kind !== "direct-play") {
           advance();
           return;
         }
-        const nativeHLS = video.canPlayType("application/vnd.apple.mpegurl");
-        const isApple = navigator.vendor === "Apple Computer, Inc.";
-        if (stream.kind === "hls" && Hls.isSupported() && !(nativeHLS && isApple)) {
-          hls = new Hls();
-          hls.on(Hls.Events.ERROR, (_event, data) => {
-            if (data.fatal) advance();
-          });
-          hls.loadSource(stream.url);
-          hls.attachMedia(video);
-        } else if (stream.kind === "hls" && !nativeHLS) {
-          advance();
-          return;
-        } else {
-          video.src = stream.url;
-        }
-        void video.play()?.catch(() => {});
+        video.src = stream.url;
+        const started = video.play();
+        started?.catch(() => {
+          if (!cancelled) setNeedsGesture(true);
+        });
       })
       .catch(advance);
     return () => {
       cancelled = true;
-      hls?.destroy();
       video.removeAttribute("src");
       video.load?.();
     };
@@ -68,6 +65,7 @@ export function PrePlayStage({ items, onDone }: { items: PrePlayItem[]; onDone: 
         className="h-full w-full flex-1 bg-black"
         playsInline
         autoPlay
+        controls={needsGesture}
         onEnded={() => setIndex((current) => current + 1)}
         onError={() => setIndex((current) => current + 1)}
       />

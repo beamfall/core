@@ -59,3 +59,14 @@ for pre-play items.
 
 - **WHEN** the viewer chooses "Skip all" during a pre-play item
 - **THEN** the feature starts at once
+
+#### Scenario: Item needing a transcode
+
+- **WHEN** a pre-play item's playback decision is a server transcode rather than direct play
+- **THEN** the web player passes over it, so pre-play never holds one of the Profile's concurrent
+  streams that the feature then needs
+
+#### Scenario: Autoplay refused
+
+- **WHEN** the browser refuses to start a pre-play item without a user gesture
+- **THEN** the player shows playback controls for that item instead of stalling
