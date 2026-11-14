@@ -101,6 +101,11 @@ func parseKnownProxyEntry(entry string) (netip.Prefix, error) {
 	if err != nil {
 		return netip.Prefix{}, fmt.Errorf("known proxy %q must be an address or CIDR: %w", entry, err)
 	}
+	if addr.Zone() != "" {
+		// A zone names an interface, which a prefix cannot carry; dropping it
+		// would trust the same address on every interface.
+		return netip.Prefix{}, fmt.Errorf("known proxy %q must be an address or CIDR without an IPv6 zone", entry)
+	}
 	addr = addr.Unmap()
 	return netip.PrefixFrom(addr, addr.BitLen()), nil
 }

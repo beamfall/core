@@ -243,6 +243,8 @@ func TestParseKnownProxiesRejectsBadEntries(t *testing.T) {
 		{name: "garbage", value: "10.0.0.2, not-an-ip", wantEntry: `"not-an-ip"`, wantText: "must be an address or CIDR"},
 		{name: "bad CIDR", value: "10.0.0.0/99", wantEntry: `"10.0.0.0/99"`, wantText: "must be an address or CIDR"},
 		{name: "address with port", value: "10.0.0.2:8080", wantEntry: `"10.0.0.2:8080"`, wantText: "must be an address or CIDR"},
+		{name: "zoned IPv6 address", value: "fe80::1%eth0", wantEntry: `"fe80::1%eth0"`, wantText: "without an IPv6 zone"},
+		{name: "zoned IPv6 CIDR", value: "fe80::1%eth0/128", wantEntry: `"fe80::1%eth0/128"`, wantText: "must be an address or CIDR"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
