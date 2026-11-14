@@ -259,8 +259,20 @@ func (c *CausationCap) Admit(workerID string, token Token, action string) error 
 // caller can restamp its rows: a key never names rows of two mutations, and a
 // chain can never pick up another chain's remaining budget. The ledger and the
 // worker's share of it are checked before any budget is spent and fail closed
-// when full.
+// when full. The rows are taken to be stamped at admission; a caller that
+// stamps them later uses AdmitWithDescendantsAt.
 func (c *CausationCap) AdmitWithDescendants(workerID string, token Token, action string, descendants []string) error {
+	return c.AdmitWithDescendantsAt(workerID, token, action, descendants, time.Time{})
+}
+
+// AdmitWithDescendantsAt is AdmitWithDescendants for rows the seam stamps with
+// stampedAt, which may be later than admission (a caller that restamps after a
+// collision). A delivered row with no binding gets a fresh root started at its
+// stamp, so each binding lasts until that root would be expired: the later of
+// admission and stampedAt, plus ChainLifetime and 1 ms for a store that rounds
+// the stamp up. A restamped row therefore never yields a usable root after its
+// chain expires.
+func (c *CausationCap) AdmitWithDescendantsAt(workerID string, token Token, action string, descendants []string, stampedAt time.Time) error {
 	now := c.now().UTC()
 	chainID, expiresAt, validationErr := c.validateToken(token, now)
 
@@ -312,8 +324,13 @@ func (c *CausationCap) AdmitWithDescendants(workerID string, token Token, action
 	}
 	// A descendant row is delivered after the mutation; its entry outlives the
 	// row's own fresh-root lifetime, after which a re-minted root is expired.
+	rootedAt := now
+	if stampedAt.After(rootedAt) {
+		rootedAt = stampedAt.UTC()
+	}
+	bindingExpiresAt := rootedAt.Add(c.limits.ChainLifetime + time.Millisecond)
 	for key := range keys {
-		c.descendants[key] = descendant{token: token, workerID: workerID, expiresAt: now.Add(c.limits.ChainLifetime)}
+		c.descendants[key] = descendant{token: token, workerID: workerID, expiresAt: bindingExpiresAt}
 	}
 	if len(keys) > 0 {
 		c.workerDescendants[workerID] += len(keys)

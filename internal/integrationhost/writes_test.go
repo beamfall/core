@@ -62,6 +62,8 @@ type fakeWrites struct {
 	reads    int
 	// stamped is the time each outbox-emitting seam was told to stamp its rows.
 	stamped []time.Time
+	// metadataErr, when set, fails BulkEditApply before it writes anything.
+	metadataErr error
 }
 
 func newFakeWrites() *fakeWrites {
@@ -82,6 +84,9 @@ func newFakeWrites() *fakeWrites {
 }
 
 func (f *fakeWrites) BulkEditApply(_ context.Context, ids []store.MediaID, _ []store.MediaField, _ store.LibraryFilter, now time.Time) (store.BulkOpBatch, error) {
+	if f.metadataErr != nil {
+		return store.BulkOpBatch{}, f.metadataErr
+	}
 	f.metadata = append(f.metadata, ids)
 	f.stamped = append(f.stamped, now)
 	return store.BulkOpBatch{ID: "batch-1", Kind: "edit", Affected: len(ids)}, nil
@@ -640,6 +645,52 @@ func TestRefusedWritesHoldNoDescendantReservation(t *testing.T) {
 	}
 	// The worker's one-key share is still free.
 	if _, err := h.WriteMetadata(ctx, []string{"m-1"}, fields); err != nil {
+		t.Fatalf("a valid write was refused after refused calls: %v", err)
+	}
+}
+
+// Codex review of CORE-1695: a metadata write the store would refuse is
+// refused before audit and admission, and a seam failure releases the rows'
+// bindings, so neither holds the worker's share of the descendant ledger.
+func TestRefusedMetadataHoldsNoDescendantReservation(t *testing.T) {
+	stamp := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+	limits := causation.DefaultLimits()
+	limits.MaxDescendantsPerWorker = 1
+	limits.WorkerActions = 1000
+	limits.GlobalActions = 1000
+	cap := causation.NewCausationCap(limits, func() time.Time { return stamp })
+	token, err := cap.TokenFor("outbox:writes", stamp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := causation.WithToken(context.Background(), token)
+	writes := newFakeWrites()
+	audit := &recordingAudit{}
+	h := NewHost("p", writes.deps(audit, cap),
+		fixedGrants{grants: map[string][]Grant{"p": {approvedBound("p", PermWriteMetadata)}}},
+		func() time.Time { return stamp })
+	var zero time.Time
+	for name, fields := range map[string][]MetadataField{
+		"empty name":     {{Type: "text", Text: "x"}},
+		"duplicate name": {{Name: "n", Type: "flag"}, {Name: "n", Type: "flag"}},
+		"zero date":      {{Name: "d", Type: "date", Date: &zero}},
+	} {
+		if _, err := h.WriteMetadata(ctx, []string{"m-1"}, fields); err == nil {
+			t.Fatalf("%s: write accepted", name)
+		}
+	}
+	if len(audit.entries) != 0 || writes.writeCount() != 0 {
+		t.Fatalf("invalid fields reached audit (%d rows) or the seam (%d writes)", len(audit.entries), writes.writeCount())
+	}
+	writes.metadataErr = errors.New("store refused the edit")
+	if _, err := h.WriteMetadata(ctx, []string{"m-1"}, []MetadataField{{Name: "n", Type: "flag"}}); err == nil {
+		t.Fatal("a failing seam reported success")
+	}
+	if got := cap.Inherited(descendantKey(store.OutboxAggregateMedia, "m-1", stamp)); got != "" {
+		t.Fatal("a write whose seam failed kept its descendant binding")
+	}
+	writes.metadataErr = nil
+	if _, err := h.WriteMetadata(ctx, []string{"m-1"}, []MetadataField{{Name: "n", Type: "flag"}}); err != nil {
 		t.Fatalf("a valid write was refused after refused calls: %v", err)
 	}
 }

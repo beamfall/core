@@ -238,9 +238,9 @@ func TestAdmitWithDescendantsBindsRowsToTheChain(t *testing.T) {
 	if got := cap.chains[mustChainID(t, cap, other, now)].actions; got != 0 {
 		t.Fatalf("a collision spent %d actions of the other chain", got)
 	}
-	now = now.Add(DefaultLimits().ChainLifetime)
+	now = now.Add(DefaultLimits().ChainLifetime + time.Millisecond)
 	if got := cap.Inherited("b"); got != "" {
-		t.Fatalf("Inherited(b) after the chain lifetime = %q, want empty", got)
+		t.Fatalf("Inherited(b) after the binding's window = %q, want empty", got)
 	}
 }
 
@@ -291,7 +291,7 @@ func TestAdmitWithDescendantsBoundsEachWorkersShare(t *testing.T) {
 		t.Fatalf("another worker was denied by the greedy worker's share: %v", err)
 	}
 	// Expiry returns the share.
-	now = now.Add(limits.ChainLifetime)
+	now = now.Add(limits.ChainLifetime + time.Millisecond)
 	fresh, err := cap.TokenFor("fresh", now)
 	if err != nil {
 		t.Fatal(err)
@@ -340,4 +340,42 @@ func mustChainID(t *testing.T, cap *CausationCap, token Token, now time.Time) [s
 		t.Fatal(err)
 	}
 	return id
+}
+
+// Codex review of CORE-1695: a row stamped after admission (a restamp after a
+// collision) keeps its binding until a fresh root started at its stamp would
+// be expired, so it never regains budget once its chain has expired.
+func TestRestampedDescendantNeverYieldsALiveRoot(t *testing.T) {
+	admittedAt := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+	now := admittedAt
+	limits := DefaultLimits()
+	cap := NewCausationCap(limits, func() time.Time { return now })
+	token, err := cap.TokenFor("root", admittedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stampedAt := admittedAt.Add(5 * time.Millisecond)
+	if err := cap.AdmitWithDescendantsAt("w", token, "write", []string{"row"}, stampedAt); err != nil {
+		t.Fatal(err)
+	}
+	// The chain has expired, but a root re-minted from the row would not have.
+	now = admittedAt.Add(limits.ChainLifetime + time.Millisecond)
+	if err := cap.Admit("w", token, "write"); !errors.Is(err, ErrChainExpired) {
+		t.Fatalf("original chain: err = %v, want %v", err, ErrChainExpired)
+	}
+	if got := cap.Inherited("row"); got != token {
+		t.Fatalf("row inherited %q before its fresh root expired, want the spent chain %q", got, token)
+	}
+	// Once the binding lapses, the root a delivery would mint is already expired.
+	now = stampedAt.Add(limits.ChainLifetime + time.Millisecond)
+	if got := cap.Inherited("row"); got != "" {
+		t.Fatalf("binding outlived its window: %q", got)
+	}
+	root, err := cap.TokenFor("outbox:1", stampedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cap.Admit("w", root, "write"); !errors.Is(err, ErrChainExpired) {
+		t.Fatalf("re-minted root: err = %v, want %v", err, ErrChainExpired)
+	}
 }

@@ -47,6 +47,8 @@ type ScopeReader interface {
 }
 
 // MetadataWriter applies an undoable field edit (write-metadata permission).
+// It appends its media.updated rows only when it returns no error; the Host
+// releases the rows' causation bindings on an error.
 type MetadataWriter interface {
 	BulkEditApply(ctx context.Context, ids []store.MediaID, fields []store.MediaField, filter store.LibraryFilter, now time.Time) (store.BulkOpBatch, error)
 }
@@ -67,7 +69,9 @@ type ArtworkWriter interface {
 // (write-watch-state). The composition root adapts the engagement write and
 // the client invalidation, which it stamps with now: the Host binds that
 // invalidation row (aggregate invalidation, the Profile's id, now) to the
-// caller's causation chain. It notifies no other watched-state observers.
+// caller's causation chain, and releases that binding when SetWatched returns
+// an error, so the invalidation is appended only on success. It notifies no
+// other watched-state observers.
 type WatchStateWriter interface {
 	SetWatched(ctx context.Context, profileID store.ProfileID, mediaID store.MediaID, watched bool, filter store.LibraryFilter, now time.Time) error
 }
@@ -152,7 +156,8 @@ func (h *Host) scopedCall(ctx context.Context, kind string, seamWired bool) (sco
 // given time. Each key must be unbound, so on a collision with a row of another
 // mutation the stamp moves 1 ms later and admission is asked again. It returns
 // the stamp the seam must use and a release that unbinds the rows when the call
-// stops before its seam runs.
+// stops before its seam runs or the seam fails (a seam appends its rows only
+// when it succeeds).
 func (h *Host) admitWrite(ctx context.Context, method string, keysAt func(time.Time) []string) (time.Time, func(), error) {
 	if h.deps.Causation == nil {
 		return time.Time{}, nil, fmt.Errorf("%w: %s containment unavailable", ErrPermissionDenied, method)
@@ -161,7 +166,7 @@ func (h *Host) admitWrite(ctx context.Context, method string, keysAt func(time.T
 	now := h.now().UTC()
 	for attempt := 0; ; attempt++ {
 		keys := keysAt(now)
-		err := h.deps.Causation.AdmitWithDescendants(h.pluginID, token, method, keys)
+		err := h.deps.Causation.AdmitWithDescendantsAt(h.pluginID, token, method, keys, now)
 		if err == nil {
 			return now, func() { h.deps.Causation.ReleaseDescendants(token, keys) }, nil
 		}
@@ -240,12 +245,22 @@ func metadataFields(raw []MetadataField) ([]store.MediaField, error) {
 		return nil, fmt.Errorf("integrationhost: too many metadata fields (%d > %d)", len(raw), maxMetadataFields)
 	}
 	fields := make([]store.MediaField, 0, len(raw))
+	names := make(map[string]struct{}, len(raw))
 	for _, f := range raw {
+		// Mirror the store's checks so a deterministic refusal happens before
+		// audit and admission rather than inside the seam.
+		if f.Name == "" {
+			return nil, errors.New("integrationhost: metadata field name is required")
+		}
+		if _, dup := names[f.Name]; dup {
+			return nil, fmt.Errorf("integrationhost: duplicate metadata field %q", f.Name)
+		}
+		names[f.Name] = struct{}{}
 		field := store.MediaField{Name: f.Name, Type: store.EntityFieldType(f.Type), Text: f.Text, Number: f.Number, Flag: f.Flag}
 		switch field.Type {
 		case store.EntityFieldText, store.EntityFieldURL, store.EntityFieldNumber, store.EntityFieldFlag:
 		case store.EntityFieldDate:
-			if f.Date == nil {
+			if f.Date == nil || f.Date.IsZero() {
 				return nil, fmt.Errorf("integrationhost: date field %q has no date", f.Name)
 			}
 			field.Date = f.Date.UTC()
@@ -290,7 +305,11 @@ func (h *Host) WriteMetadata(ctx context.Context, rawIDs []string, rawFields []M
 	if err := h.auditThenWrite(ctx, store.ActivityPluginMetadataWrite, sc, library, release); err != nil {
 		return store.BulkOpBatch{}, err
 	}
-	return h.deps.Metadata.BulkEditApply(ctx, ids, fields, sc.filter, now)
+	batch, err := h.deps.Metadata.BulkEditApply(ctx, ids, fields, sc.filter, now)
+	if err != nil {
+		release()
+	}
+	return batch, err
 }
 
 // CreateCollection creates a top-level collection in a Library the grant
@@ -403,7 +422,11 @@ func (h *Host) SetWatched(ctx context.Context, mediaID string, watched bool) err
 	if err := h.auditThenWrite(ctx, store.ActivityPluginWatchStateWrite, sc, library, release); err != nil {
 		return err
 	}
-	return h.deps.WatchState.SetWatched(ctx, sc.profile, store.MediaID(mediaID), watched, sc.filter, now)
+	if err := h.deps.WatchState.SetWatched(ctx, sc.profile, store.MediaID(mediaID), watched, sc.filter, now); err != nil {
+		release()
+		return err
+	}
+	return nil
 }
 
 // ReadPlaybackState reads the grant's bound Profile's progress for one visible
