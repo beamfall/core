@@ -16,13 +16,21 @@ included. The event-stream Profile gate SHALL stay unchanged.
 
 A Watch Party SHALL move to another Media only if every member's own session can see it. A move to
 a Media hidden from any member SHALL be refused, and no `group.sync` event SHALL be written for it.
-Each party's transitions and rosters SHALL reach every member in the same order.
+An invitee SHALL be able to accept only if their session can see both the party's content and the
+Media it is on now. Each party's transitions, accepts and rosters SHALL reach every member in the
+same order.
 
 #### Scenario: Host picks a title a member cannot see
 
 - **WHEN** the host moves the party to a Media in a Library hidden from another member's Profile
 - **THEN** the move is refused, the party stays on its current Media and no member receives a
   `transition` event
+
+#### Scenario: Invitee cannot see the title now playing
+
+- **WHEN** the host has moved the party to a Media hidden from an invitee's Profile and the
+  invitee accepts
+- **THEN** the accept is refused and no `roster` event is written
 
 ### Requirement: Watch Party timeline can be paused
 
@@ -81,7 +89,9 @@ While in a party, the web viewer SHALL follow play, pause and seek from the sync
 correct its own drift: re-seek beyond 500 ms, adjust the playback rate slightly below that. It
 SHALL show the current drift. A host's transport actions SHALL drive the party, and a member's
 SHALL be sent as transport requests. Only media events that follow the viewer's own input SHALL
-be sent; autoplay and the viewer's own drift corrections SHALL NOT.
+be sent; autoplay and the viewer's own drift corrections SHALL NOT. The viewer's input includes
+the in-page controls, the release of a scrubber drag and the OS media controls. A `roster` event
+that describes the timeline the viewer already follows SHALL NOT interrupt its playback.
 
 #### Scenario: Host pauses
 

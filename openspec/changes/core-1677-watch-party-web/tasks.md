@@ -9,5 +9,7 @@
 - [x] 7. Strings in every shipped locale
 - [x] 7a. Review fixes: refuse a title some member cannot see; serialize party fan-out; stale
   store responses and races; transport only from viewer input; Go tests and vitest
+- [x] 7b. Second review: accept checks the current title under the party lock; rosters do not
+  re-anchor a playing viewer; scrubber release and OS media controls count as input; tests
 - [ ] 8. `openspec validate --all --strict`; wsl preflight; `make gate` on the landing head
 - [ ] 9. `openspec archive core-1677-watch-party-web` after landing, before completing the ticket
