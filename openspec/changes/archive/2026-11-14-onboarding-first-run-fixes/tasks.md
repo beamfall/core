@@ -16,5 +16,5 @@
 ## 3. Verify and close
 
 - [x] 3.1 Focused Go and web tests for each item
-- [ ] 3.2 Run `make gate`
-- [ ] 3.3 Run `openspec archive onboarding-first-run-fixes` after landing, before completing the tickets
+- [x] 3.2 Run `make gate`
+- [x] 3.3 Run `openspec archive onboarding-first-run-fixes` after landing, before completing the tickets
