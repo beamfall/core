@@ -1,4 +1,13 @@
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -50,6 +59,9 @@ export function SignInSecurity() {
   // loadAttempt re-runs the probe.
   const [loadFailed, setLoadFailed] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
+  // Home to Strict removes password sign-in, so a locked-out owner's only way
+  // back is a pairing code minted on the server (CORE-1608). Confirm first.
+  const [confirmStrict, setConfirmStrict] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,9 +80,17 @@ export function SignInSecurity() {
     };
   }, [loadAttempt]);
 
-  async function onSubmit(e: FormEvent) {
+  function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (busy || !password) return;
+    if (current === "home" && selected === "strict") {
+      setConfirmStrict(true);
+      return;
+    }
+    void apply();
+  }
+
+  async function apply() {
     setBusy(true);
     setError(null);
     setSaved(false);
@@ -169,6 +189,28 @@ export function SignInSecurity() {
           </p>
         )}
       </form>
+      <AlertDialog open={confirmStrict} onOpenChange={setConfirmStrict}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("signinSecurityStrictConfirmTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("signinSecurityStrictConfirmBody")} <code>beamfall pairing-code</code>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
+            <Button
+              type="button"
+              onClick={() => {
+                setConfirmStrict(false);
+                void apply();
+              }}
+            >
+              {t("signinSecurityStrictConfirm")}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Section>
   );
 }

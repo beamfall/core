@@ -8,6 +8,7 @@ import {
   configureUpdateCheck,
   createFirstLibrary,
   FirstLibraryError,
+  loadSavedPluginChoices,
   SetupTokenError,
 } from "./orchestrate";
 
@@ -110,7 +111,7 @@ describe("bootstrapSetup", () => {
 });
 
 describe("createFirstLibrary", () => {
-  it("calls createLibrary with the correct familyScope per tile, then setLibraryRoots and scanLibrary", async () => {
+  it("creates the Library with its root in one call, then starts the scan (CORE-1598)", async () => {
     respond = (rec) => {
       const q = String(rec.body.query ?? "");
       if (q.includes("CreateLibrary"))
@@ -145,24 +146,20 @@ describe("createFirstLibrary", () => {
       scanStatus: "queued",
     });
 
-    // Three GraphQL requests in order: createLibrary, setLibraryRoots, scanLibrary.
-    expect(recorded).toHaveLength(3);
+    // Two GraphQL requests in order: createLibrary (with its root, so the
+    // server checks the folder before creating anything), then scanLibrary.
+    expect(recorded).toHaveLength(2);
     expect(recorded[0].url).toBe("/api/graphql");
     expect(String(recorded[0].body.query)).toContain("createLibrary");
     expect(recorded[0].body.variables).toMatchObject({
       title: "TV Shows",
       pluginID: "filmtv",
       familyScope: "tvshows",
-    });
-
-    expect(String(recorded[1].body.query)).toContain("setLibraryRoots");
-    expect(recorded[1].body.variables).toMatchObject({
-      libraryID: "lib1",
       roots: ["/media/tv"],
     });
 
-    expect(String(recorded[2].body.query)).toContain("scanLibrary");
-    expect(recorded[2].body.variables).toMatchObject({
+    expect(String(recorded[1].body.query)).toContain("scanLibrary");
+    expect(recorded[1].body.variables).toMatchObject({
       libraryID: "lib1",
       root: "/media/tv",
     });
@@ -202,40 +199,41 @@ describe("createFirstLibrary", () => {
     expect(vars.familyScope).toBeUndefined();
   });
 
-  it("retries roots and scan without creating a second Library after roots fail", async () => {
-    let rootsAttempts = 0;
+  it("creates nothing when the server refuses the folder, then creates once with the fixed path", async () => {
+    let createAttempts = 0;
     respond = (rec) => {
       const q = String(rec.body.query ?? "");
+      if (q.includes("CreateLibrary") && createAttempts++ === 0) {
+        return {
+          status: 200,
+          json: { errors: [{ message: "The folder /flims doesn't exist on the server." }] },
+        };
+      }
       if (q.includes("CreateLibrary")) {
         return { status: 200, json: { data: { createLibrary: { id: "lib1" } } } };
       }
-      if (q.includes("SetLibraryRoots") && rootsAttempts++ === 0) {
-        return { status: 200, json: { errors: [{ message: "root is not readable" }] } };
-      }
-      if (q.includes("SetLibraryRoots")) {
-        return { status: 200, json: { data: { setLibraryRoots: { id: "lib1" } } } };
-      }
-      return {
-        status: 200,
-        json: { data: { scanLibrary: { id: "scan1", status: "queued" } } },
-      };
+      return { status: 200, json: { data: { scanLibrary: { id: "scan1", status: "queued" } } } };
     };
 
-    let progress = { rootsSet: false };
+    let progress: FirstLibraryError["progress"] = { rootsSet: false };
     try {
       await createFirstLibrary({
         title: "Films",
         pluginID: "filmtv",
         familyScope: "films",
-        rootPath: "/films",
+        rootPath: "/flims",
         progress,
       });
-      expect.unreachable("roots failure should reject");
+      expect.unreachable("a refused folder should reject");
     } catch (err) {
       expect(err).toBeInstanceOf(FirstLibraryError);
-      expect((err as FirstLibraryError).message).toBe("root is not readable");
+      expect((err as FirstLibraryError).message).toBe(
+        "The folder /flims doesn't exist on the server.",
+      );
+      expect((err as FirstLibraryError).scanFailed).toBe(false);
       progress = (err as FirstLibraryError).progress;
     }
+    expect(progress).toEqual({ rootsSet: false });
 
     await createFirstLibrary({
       title: "Films",
@@ -244,18 +242,15 @@ describe("createFirstLibrary", () => {
       rootPath: "/films",
       progress,
     });
-    expect(recorded.filter((rec) => String(rec.body.query).includes("CreateLibrary"))).toHaveLength(
-      1,
-    );
-    expect(
-      recorded.filter((rec) => String(rec.body.query).includes("SetLibraryRoots")),
-    ).toHaveLength(2);
+    const creates = recorded.filter((rec) => String(rec.body.query).includes("CreateLibrary"));
+    expect(creates).toHaveLength(2);
+    expect(creates[1].body.variables).toMatchObject({ roots: ["/films"] });
     expect(recorded.filter((rec) => String(rec.body.query).includes("ScanLibrary"))).toHaveLength(
       1,
     );
   });
 
-  it("retries only the scan after scanLibrary fails", async () => {
+  it("retries only the scan after scanLibrary fails, and flags the scan as the failure", async () => {
     let scanAttempts = 0;
     respond = (rec) => {
       const q = String(rec.body.query ?? "");
@@ -264,14 +259,14 @@ describe("createFirstLibrary", () => {
       if (q.includes("SetLibraryRoots"))
         return { status: 200, json: { data: { setLibraryRoots: { id: "lib1" } } } };
       if (scanAttempts++ === 0)
-        return { status: 200, json: { errors: [{ message: "scan queue unavailable" }] } };
+        return { status: 200, json: { errors: [{ message: "scanLibrary unavailable" }] } };
       return {
         status: 200,
         json: { data: { scanLibrary: { id: "scan1", status: "queued" } } },
       };
     };
 
-    let progress = { rootsSet: false };
+    let progress: FirstLibraryError["progress"] = { rootsSet: false };
     try {
       await createFirstLibrary({
         title: "Films",
@@ -281,8 +276,10 @@ describe("createFirstLibrary", () => {
         progress,
       });
     } catch (err) {
+      expect((err as FirstLibraryError).scanFailed).toBe(true);
       progress = (err as FirstLibraryError).progress;
     }
+    expect(progress).toEqual({ libraryID: "lib1", rootsSet: true, rootPath: "/films" });
     await createFirstLibrary({
       title: "Films",
       pluginID: "filmtv",
@@ -296,10 +293,36 @@ describe("createFirstLibrary", () => {
     );
     expect(
       recorded.filter((rec) => String(rec.body.query).includes("SetLibraryRoots")),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
     expect(recorded.filter((rec) => String(rec.body.query).includes("ScanLibrary"))).toHaveLength(
       2,
     );
+  });
+
+  it("updates the existing Library's root when the path is corrected after a failed scan", async () => {
+    respond = (rec) => {
+      const q = String(rec.body.query ?? "");
+      if (q.includes("SetLibraryRoots"))
+        return { status: 200, json: { data: { setLibraryRoots: { id: "lib1" } } } };
+      return { status: 200, json: { data: { scanLibrary: { id: "scan1", status: "queued" } } } };
+    };
+
+    await createFirstLibrary({
+      title: "Films",
+      pluginID: "filmtv",
+      familyScope: "films",
+      rootPath: "/media/films",
+      progress: { libraryID: "lib1", rootsSet: true, rootPath: "/films" },
+    });
+
+    expect(recorded.map((rec) => String(rec.body.query).match(/mutation (\w+)/)?.[1])).toEqual([
+      "SetLibraryRoots",
+      "ScanLibrary",
+    ]);
+    expect(recorded[0].body.variables).toMatchObject({
+      libraryID: "lib1",
+      roots: ["/media/films"],
+    });
   });
 });
 
@@ -316,6 +339,52 @@ describe("activatePlugins", () => {
     expect(String(recorded[0].body.query)).toContain("setPluginActive");
     expect(recorded[0].body.variables).toMatchObject({ pluginID: "filmtv", active: true });
     expect(recorded[1].body.variables).toMatchObject({ pluginID: "music", active: true });
+  });
+
+  it("saves plugins the owner switched off as inactive (CORE-1604)", async () => {
+    respond = () => ({
+      status: 200,
+      json: { data: { setPluginActive: { backgroundWorkers: 0, plugins: [] } } },
+    });
+
+    await activatePlugins(["music"], ["filmtv"]);
+
+    expect(recorded.map((rec) => rec.body.variables)).toEqual([
+      { pluginID: "music", active: true },
+      { pluginID: "filmtv", active: false },
+    ]);
+  });
+});
+
+describe("loadSavedPluginChoices", () => {
+  it("reads which plugins are on and the update settings from Console config (CORE-1604)", async () => {
+    respond = () => ({
+      status: 200,
+      json: {
+        data: {
+          consoleConfig: {
+            backgroundWorkers: 4,
+            updateCheckEnabled: true,
+            updateCheckChannel: "beta",
+            plugins: [
+              { id: "filmtv", displayName: "Film & TV", active: false, scrapers: [] },
+              { id: "music", displayName: "Music", active: true, scrapers: [] },
+            ],
+          },
+        },
+      },
+    });
+
+    const saved = await loadSavedPluginChoices();
+
+    expect(saved.plugins).toEqual([
+      { id: "filmtv", displayName: "Film & TV" },
+      { id: "music", displayName: "Music" },
+    ]);
+    expect([...saved.active]).toEqual(["music"]);
+    expect(saved.updateCheckEnabled).toBe(true);
+    expect(saved.updateCheckChannel).toBe("beta");
+    expect(saved.providerKeys).toEqual([]);
   });
 });
 
@@ -370,6 +439,21 @@ describe("configureUpdateCheck", () => {
 });
 
 describe("bootstrapResume", () => {
+  it("passes through the server's http LAN addresses and drops anything else (CORE-1600)", async () => {
+    respond = () => ({
+      status: 200,
+      json: {
+        required: true,
+        tokenRequired: true,
+        lanUrls: ["http://192.168.1.10:8800/web/setup", "javascript:alert(1)", 7],
+      },
+    });
+
+    const resume = await bootstrapResume();
+
+    expect(resume.lanUrls).toEqual(["http://192.168.1.10:8800/web/setup"]);
+  });
+
   it("reports that a LAN browser needs no setup token", async () => {
     respond = () => ({ status: 200, json: { required: true, tokenRequired: false } });
 

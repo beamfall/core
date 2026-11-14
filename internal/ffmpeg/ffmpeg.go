@@ -2134,6 +2134,43 @@ func hlsMuxArgs(dir string) []string {
 // (only the elst offset differs, which players ignore per the above), so the
 // map a client already fetched stays valid.
 func (r *Runner) StartHLSSegments(ctx context.Context, src, dir string, startSegment, segmentSeconds int, rendition Rendition) (*HLSProcess, error) {
+	offset := strconv.Itoa(startSegment * segmentSeconds)
+	var forceKeyframes []string
+	// Forced keyframes align segment boundaries for the re-encode path. A
+	// copied video stream keeps its source GOP structure, so the encoder-only
+	// -force_key_frames is omitted in audio-only mode (it would be ignored on
+	// the copied stream anyway).
+	if !rendition.CopyVideo {
+		forceKeyframes = []string{"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", segmentSeconds)}
+	}
+	return r.startHLSSegmentProcess(ctx, src, dir, startSegment, offset, strconv.Itoa(segmentSeconds), forceKeyframes, rendition)
+}
+
+// keyframeSegmentHLSTime is the -hls_time for keyframe-aligned segmenting. The
+// hls muxer cuts at the first keyframe whose elapsed time reaches
+// hls_time*segment_number, so with a uniform target the cut points depend on
+// where a restart began. A target below any GOP length makes every keyframe a
+// cut, so each segment is exactly one source GOP whatever the start.
+const keyframeSegmentHLSTime = "0.001"
+
+// StartHLSKeyframeSegments segments a copied video stream at its own keyframes,
+// one segment per source GOP, beginning at startSegment whose first keyframe is
+// presented at start (a time from a KeyframeIndex, relative to the container
+// start). The input -ss and -output_ts_offset are both exactly start, so the
+// copied keyframe that begins startSegment is stamped at its real time and the
+// transcoded audio is trimmed to the same instant. Only copy-video renditions
+// are accepted: a re-encode has no source GOP to follow.
+func (r *Runner) StartHLSKeyframeSegments(ctx context.Context, src, dir string, startSegment int, start time.Duration, rendition Rendition) (*HLSProcess, error) {
+	if !rendition.CopyVideo {
+		return nil, errors.New("ffmpeg: keyframe-aligned segments need a copied video stream")
+	}
+	if startSegment < 0 || start < 0 {
+		return nil, fmt.Errorf("ffmpeg: invalid keyframe segment start %d at %v", startSegment, start)
+	}
+	return r.startHLSSegmentProcess(ctx, src, dir, startSegment, formatMicros(start), keyframeSegmentHLSTime, nil, rendition)
+}
+
+func (r *Runner) startHLSSegmentProcess(ctx context.Context, src, dir string, startSegment int, offset, hlsTime string, forceKeyframes []string, rendition Rendition) (*HLSProcess, error) {
 	if err := checkPath(src); err != nil {
 		return nil, err
 	}
@@ -2149,31 +2186,24 @@ func (r *Runner) StartHLSSegments(ctx context.Context, src, dir string, startSeg
 	if err != nil {
 		return nil, fmt.Errorf("ffmpeg is not available: %w", err)
 	}
-	offset := startSegment * segmentSeconds
 	args := []string{
 		"-v", "error",
 	}
 	args = append(args, hlsProgressArgs()...)
-	args = append(args, "-ss", strconv.Itoa(offset))
+	args = append(args, "-ss", offset)
 	args = append(args, rendition.inputArgs()...)
 	args = append(args, inputProtocolArgs()...)
 	args = append(args,
 		"-i", src,
 	)
 	args = append(args, rendition.videoArgs()...)
-	// Forced keyframes align segment boundaries for the re-encode path. A
-	// copied video stream keeps its source GOP structure, so the encoder-only
-	// -force_key_frames is omitted in audio-only mode (it would be ignored on
-	// the copied stream anyway).
-	if !rendition.CopyVideo {
-		args = append(args, "-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", segmentSeconds))
-	}
+	args = append(args, forceKeyframes...)
 	args = append(args, rendition.args()...)
 	args = append(args, rendition.audioArgs()...)
 	args = append(args,
-		"-output_ts_offset", strconv.Itoa(offset),
+		"-output_ts_offset", offset,
 		"-f", "hls",
-		"-hls_time", strconv.Itoa(segmentSeconds),
+		"-hls_time", hlsTime,
 		"-hls_list_size", "0",
 		"-hls_flags", "temp_file",
 		"-hls_segment_type", "fmp4",

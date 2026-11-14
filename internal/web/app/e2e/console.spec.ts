@@ -252,7 +252,9 @@ test.describe("console", () => {
         .locator('[data-slot="table-cell"]:first-child')
         .filter({ hasText: new RegExp(`^${name}`) })
         .locator("..");
-    const currentDeviceRow = deviceRows.first();
+    // Rows are ordered by device name, so a browser enrolled by an earlier test
+    // ("Chrome on Windows") can sort above the seeded manager: select it by name.
+    const currentDeviceRow = deviceRow("E2E manager").first();
     const tvRow = deviceRow("TV");
     const revokedRow = deviceRow("Revoked");
     await expect(tvRow).toHaveCount(1);

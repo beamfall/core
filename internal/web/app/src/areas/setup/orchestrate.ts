@@ -10,7 +10,7 @@ import {
   setPluginActive,
   verifyAdminSession,
 } from "@/lib/graphql";
-import type { SetupState } from "@/lib/graphql/types";
+import type { PluginSummary, SetupState } from "@/lib/graphql/types";
 import { groupProviderKeys, type ProviderKey } from "@/lib/providerKeys";
 import type { StringKey } from "@/strings";
 
@@ -31,6 +31,14 @@ import type { StringKey } from "@/strings";
 // body and are never logged or echoed.
 
 export type UpdateCheckChannel = "stable" | "beta";
+
+/**
+ * The fewest characters a new admin password may have. Mirrors
+ * store.MinAdminPasswordLength, which the server enforces on every path that
+ * sets a password (CORE-1601); the browser checks first so the rule shows
+ * before a round trip.
+ */
+export const MIN_ADMIN_PASSWORD_LENGTH = 8;
 
 /** What `POST /api/setup` returns on success (graph bootstrap result). */
 export interface SetupBootstrapResult {
@@ -54,13 +62,16 @@ export interface FirstLibraryProgress {
 
 export class FirstLibraryError extends Error {
   readonly progress: FirstLibraryProgress;
+  /** True when the Library and its folder are saved and only the first scan failed. */
+  readonly scanFailed: boolean;
 
-  constructor(cause: unknown, progress: FirstLibraryProgress) {
+  constructor(cause: unknown, progress: FirstLibraryProgress, scanFailed = false) {
     super(cause instanceof Error ? cause.message : "Something went wrong. Please try again.", {
       cause,
     });
     this.name = "FirstLibraryError";
     this.progress = progress;
+    this.scanFailed = scanFailed;
   }
 }
 
@@ -103,9 +114,12 @@ export async function bootstrapSetup(input: {
 
 /**
  * Create the first Library from the chosen media type (a plugin and, for a
- * plugin with family scopes, one scope; see lib/libraryTypes), then set its
- * single root.
- * Returns the created Library id.
+ * plugin with family scopes, one scope; see lib/libraryTypes) with its single
+ * root, in one call, then start its first scan. The server checks the folder
+ * before it creates anything (CORE-1598), so a bad path leaves no Library
+ * behind. When a Library already exists (an earlier attempt whose scan failed,
+ * or a rootless one found on resume), a new or corrected path updates its root
+ * instead of creating a second Library.
  */
 export async function createFirstLibrary(input: {
   title: string;
@@ -115,27 +129,70 @@ export async function createFirstLibrary(input: {
   progress?: FirstLibraryProgress;
 }): Promise<FirstLibraryResult> {
   let progress: FirstLibraryProgress = { ...(input.progress ?? { rootsSet: false }) };
+  let scanning = false;
   try {
-    const libraryID =
-      progress.libraryID ??
-      (await createLibrary(input.title, input.pluginID, input.familyScope ?? undefined)).id;
-    progress = { ...progress, libraryID };
-    if (!progress.rootsSet) {
+    let libraryID = progress.libraryID;
+    if (!libraryID) {
+      libraryID = (
+        await createLibrary(input.title, input.pluginID, input.familyScope ?? undefined, [
+          input.rootPath,
+        ])
+      ).id;
+      progress = { libraryID, rootsSet: true, rootPath: input.rootPath };
+    } else if (!progress.rootsSet || progress.rootPath !== input.rootPath) {
       await setLibraryRoots(libraryID, [input.rootPath]);
       progress = { libraryID, rootsSet: true, rootPath: input.rootPath };
     }
-    const scan = await scanLibrary(libraryID, progress.rootPath ?? input.rootPath);
+    scanning = true;
+    const scan = await scanLibrary(libraryID, input.rootPath);
     return { libraryID, scanJobID: scan.id, scanStatus: scan.status };
   } catch (err) {
-    throw new FirstLibraryError(err, { ...progress });
+    throw new FirstLibraryError(err, { ...progress }, scanning);
   }
 }
 
-/** Activate each chosen plugin in turn (setPluginActive, ADR-0007 step 5). */
-export async function activatePlugins(pluginIDs: string[]): Promise<void> {
+/**
+ * Save the plugin choices (setPluginActive, ADR-0007 step 5): each chosen
+ * plugin on, and each one the owner switched off saved as off. Installed
+ * plugins are on by default, so an unsaved "off" would come back after a
+ * reload (CORE-1604).
+ */
+export async function activatePlugins(
+  pluginIDs: string[],
+  inactivePluginIDs: string[] = [],
+): Promise<void> {
   for (const pluginID of pluginIDs) {
     await setPluginActive(pluginID, true);
   }
+  for (const pluginID of inactivePluginIDs) {
+    await setPluginActive(pluginID, false);
+  }
+}
+
+/** The plugin choices and Console settings saved on the server, read on resume. */
+export interface SavedPluginChoices {
+  plugins: PluginSummary[];
+  active: Set<string>;
+  updateCheckEnabled: boolean;
+  updateCheckChannel: UpdateCheckChannel;
+  providerKeys: ProviderKey[];
+}
+
+/**
+ * Read the saved plugin choices so a resumed wizard shows the server's state,
+ * not a guess (CORE-1604). Console config needs the Admin Session the first
+ * run opened; once that has lapsed this throws and the caller falls back to
+ * the installed plugin list.
+ */
+export async function loadSavedPluginChoices(): Promise<SavedPluginChoices> {
+  const config = await fetchConsoleConfig();
+  return {
+    plugins: config.plugins.map((p) => ({ id: p.id, displayName: p.displayName })),
+    active: new Set(config.plugins.filter((p) => p.active).map((p) => p.id)),
+    updateCheckEnabled: config.updateCheckEnabled,
+    updateCheckChannel: config.updateCheckChannel === "beta" ? "beta" : "stable",
+    providerKeys: groupProviderKeys(config.plugins.flatMap((p) => p.scrapers ?? [])),
+  };
 }
 
 /**
@@ -152,14 +209,16 @@ export async function loadProviderKeys(adminPassword: string): Promise<ProviderK
 /**
  * Persist the setup wizard's update-awareness choice. `setConsoleConfig` is an
  * Admin-Session-gated Console operation, so first-run setup verifies that gate
- * with the password the operator just created.
+ * with the password the operator just created. A resumed run has no password
+ * (it is never kept across a reload) and relies on the window the first run
+ * opened.
  */
 export async function configureUpdateCheck(input: {
   adminPassword: string;
   enabled: boolean;
   channel: UpdateCheckChannel;
 }): Promise<void> {
-  await verifyAdminSession(input.adminPassword);
+  if (input.adminPassword) await verifyAdminSession(input.adminPassword);
   await setConsoleConfig({
     updateCheckEnabled: input.enabled,
     updateCheckChannel: input.channel,
@@ -183,6 +242,8 @@ export interface SetupResume {
   state: SetupState | null;
   /** Partially-created first Library state that must survive a reload. */
   firstLibraryProgress?: FirstLibraryProgress;
+  /** Addresses on the server's network that need no setup token (CORE-1600). */
+  lanUrls?: string[];
 }
 
 /**
@@ -199,8 +260,10 @@ export interface SetupResume {
  * rather than surfacing an unhandled error (Gate-A LOW).
  */
 export async function bootstrapResume(): Promise<SetupResume> {
-  const { required, tokenRequired } = await fetchSetupStatus();
-  if (required) return { alreadyBootstrapped: false, state: null, tokenRequired };
+  const { required, tokenRequired, lanUrls } = await fetchSetupStatus();
+  if (required) {
+    return { alreadyBootstrapped: false, state: null, tokenRequired, ...(lanUrls && { lanUrls }) };
+  }
   try {
     const state = await fetchSetupState();
     if (state.hasLibrary) {

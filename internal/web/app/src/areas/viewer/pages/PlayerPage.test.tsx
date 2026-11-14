@@ -331,6 +331,93 @@ describe("PlayerPage audio items (CORE-1143)", () => {
   });
 });
 
+describe("PlayerPage class-narrowed queue (CORE-1490, CORE-1309)", () => {
+  beforeEach(() => {
+    vi.mocked(usePlayer).mockReset();
+    vi.mocked(PlayerTransport).mockClear();
+  });
+
+  const audioInfo = (next?: { mediaID: string; mediaClass: string }) =>
+    ({ mediaClass: "audio", ...(next ? { next } : {}) }) as PlayerState["info"];
+  const lastTransportProps = () => vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0];
+  const lastPlayedID = () => vi.mocked(usePlayer).mock.calls.at(-1)?.[0];
+
+  it("steps only through tracks of a mixed queue whose rows report their class", async () => {
+    renderPlayer(playerState({ phase: "playing", info: audioInfo() }), {
+      title: "Alpha",
+      queue: [
+        { id: "media-prev", title: "Before", mediaClass: "audio" },
+        { id: "media-v1", title: "Film", mediaClass: "video" },
+        { id: "media-alpha", title: "Alpha", mediaClass: "audio" },
+        { id: "media-v2", title: "Clip", mediaClass: "video" },
+        { id: "media-next", title: "After", mediaClass: "audio" },
+      ],
+      queueIdentity: "viewer-1",
+    });
+    expect(screen.getByText("2 of 3")).toBeInTheDocument();
+    expect(vi.mocked(usePlayer).mock.calls.at(-1)?.[3]).toBe("media-next");
+
+    act(() => lastTransportProps()?.onNextInQueue?.());
+    await waitFor(() => expect(lastPlayedID()).toBe("media-next"));
+    // The narrowed queue travels with it: the videos stay out.
+    expect(screen.getByText("3 of 3")).toBeInTheDocument();
+  });
+
+  it("drops the declared next item once playback-info reports it is a video", async () => {
+    renderPlayer(
+      playerState({
+        phase: "playing",
+        info: audioInfo({ mediaID: "media-v1", mediaClass: "video" }),
+      }),
+      {
+        title: "Alpha",
+        queue: [
+          { id: "media-alpha", title: "Alpha" },
+          { id: "media-v1", title: "Film" },
+          { id: "media-t2", title: "Second" },
+        ],
+        queueIdentity: "viewer-1",
+      },
+    );
+    expect(await screen.findByText("1 of 2")).toBeInTheDocument();
+
+    act(() => lastTransportProps()?.onNextInQueue?.());
+    await waitFor(() => expect(lastPlayedID()).toBe("media-t2"));
+    expect(screen.getByText("2 of 2")).toBeInTheDocument();
+  });
+
+  it("shows the audio stage while loading when the queue entry is a track", () => {
+    renderPlayer(playerState({ phase: "loading" }), {
+      title: "Alpha",
+      queue: [
+        { id: "media-alpha", title: "Alpha", mediaClass: "audio" },
+        { id: "media-v1", title: "Film", mediaClass: "video" },
+      ],
+      queueIdentity: "viewer-1",
+    });
+    const stage = document.querySelector(".bf-audio-stage");
+    expect(stage).not.toBeNull();
+    expect(stage).toHaveTextContent("Alpha");
+    expect(stage?.querySelector("[data-visualizer-slot]")).not.toBeNull();
+    // Only the track remains, so there is no "1 of 2" and no next to declare.
+    expect(vi.mocked(usePlayer).mock.calls.at(-1)?.[3]).toBe("");
+  });
+
+  it("keeps the video stage while loading a video or an item of unknown class", () => {
+    renderPlayer(playerState({ phase: "loading" }), {
+      title: "Alpha",
+      queue: [
+        { id: "media-alpha", title: "Alpha", mediaClass: "video" },
+        { id: "media-t1", title: "Track" },
+      ],
+      queueIdentity: "viewer-1",
+    });
+    expect(document.querySelector(".bf-audio-stage")).toBeNull();
+    // An entry of unknown class stays queued.
+    expect(vi.mocked(usePlayer).mock.calls.at(-1)?.[3]).toBe("media-t1");
+  });
+});
+
 describe("PlayerPage Back", () => {
   function renderAt(entries: string[]) {
     vi.mocked(usePlayer).mockReturnValue({

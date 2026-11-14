@@ -43,13 +43,11 @@ afterEach(() => {
 });
 
 describe("LayoutView empty-as-activation", () => {
-  it("offers Start-scan / Migrate activation links to the owner/manager", () => {
+  it("offers Start-scan / Migrate activation to the owner/manager", () => {
     renderEmpty(true);
 
-    expect(screen.getByRole("link", { name: /start first scan/i })).toHaveAttribute(
-      "href",
-      "/console/libraries",
-    );
+    // Start first scan scans the existing Library in place (CORE-1606).
+    expect(screen.getByRole("button", { name: /start first scan/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /migrate a library/i })).toHaveAttribute(
       "href",
       "/console/migrate",
@@ -62,7 +60,7 @@ describe("LayoutView empty-as-activation", () => {
     // The original inert copy, and crucially NO activation links that could
     // betray hidden content on a Reveal-filtered or managed-profile surface.
     expect(screen.getByText(/nothing to show in this library yet/i)).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /start first scan/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /start first scan/i })).toBeNull();
     expect(screen.queryByRole("link", { name: /migrate/i })).toBeNull();
   });
 
@@ -85,7 +83,7 @@ describe("LayoutView empty-as-activation", () => {
     );
 
     expect(await screen.findByRole("button", { name: /try again/i })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /start first scan/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /start first scan/i })).toBeNull();
     expect(screen.queryByRole("link", { name: /migrate/i })).toBeNull();
   });
 
@@ -101,7 +99,7 @@ describe("LayoutView empty-as-activation", () => {
     );
 
     expect(screen.getByText(/could not reach the server/i)).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /start first scan/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /start first scan/i })).toBeNull();
     await userEvent.setup().click(screen.getByRole("button", { name: /try again/i }));
     expect(refresh).toHaveBeenCalledTimes(1);
   });

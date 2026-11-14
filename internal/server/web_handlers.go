@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -143,11 +144,22 @@ func (s *Server) setupFirstRun(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.pairing.Bootstrap(r.Context(), req)
 	if err != nil {
 		notePairingRefusal(r, refusalOperationSetup, err)
+		var invalid store.ValidationError
 		switch {
+		case errors.As(err, &invalid):
+			// Client-safe rule text, e.g. the admin password minimum (CORE-1601).
+			writeError(w, r, http.StatusBadRequest, invalid.Error())
 		case errors.Is(err, pairing.ErrThrottled):
 			writeError(w, r, http.StatusTooManyRequests, "setup attempts throttled")
 		case errors.Is(err, pairing.ErrSetupTokenInvalid):
 			writeError(w, r, http.StatusUnauthorized, "setup token invalid or already used")
+		case errors.Is(err, pairing.ErrSetupTokenMissing) && requestIsLAN(r) && s.pairing.SetupRequired():
+			// The refusal and its status stand; only the explanation changes
+			// (CORE-1600). A LAN source whose only fault is the missing token
+			// was denied the LAN claim by the hostname rule, so it gets the same
+			// code and addresses as the GET /api/setup probe.
+			writeCodedError(w, http.StatusBadRequest, "Open Beamfall by its IP address to finish setup without the setup token.",
+				lanHostnameNotAllowed, requestLANURLs(r))
 		case errors.Is(err, pairing.ErrInvalidRequest):
 			writeError(w, r, http.StatusBadRequest, "invalid setup request")
 		default:
@@ -178,11 +190,20 @@ func (s *Server) setupRequired(w http.ResponseWriter, r *http.Request) {
 		writeErrorCause(w, r, http.StatusInternalServerError, "setup status unavailable", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	tokenRequired := required && !lanSetupClaim(r)
+	body := map[string]any{
 		"required":      required,
-		"tokenRequired": required && !lanSetupClaim(r),
+		"tokenRequired": tokenRequired,
 		"securityMode":  string(mode),
-	})
+	}
+	// A LAN browser that addressed a rebindable hostname is told the IP
+	// address it can claim this server at instead (CORE-1600).
+	if tokenRequired {
+		if urls := requestLANURLs(r); len(urls) > 0 {
+			body["lanUrls"] = urls
+		}
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 // lanSetupClaim reports whether a first-run setup request may omit the setup
@@ -204,8 +225,83 @@ func rejectRebindablePlainHTTPSignIn(w http.ResponseWriter, r *http.Request) boo
 	if requestIsHTTPS(r) || lanSetupClaim(r) {
 		return false
 	}
+	if requestIsLAN(r) {
+		// The refusal stands; only the explanation changes (CORE-1600). A LAN
+		// browser that addressed a hostname is told which IP addresses this
+		// server answers on, so the owner can sign in by address instead.
+		writeCodedError(w, http.StatusForbidden, "Open Beamfall by its IP address to sign in with the admin password.",
+			lanHostnameNotAllowed, requestLANURLs(r))
+		return true
+	}
 	writeError(w, r, http.StatusForbidden, "secure connection or LAN required")
 	return true
+}
+
+// lanHostnameNotAllowed is the machine-readable code a LAN browser receives
+// when it addressed a rebindable hostname over plain HTTP (CORE-1600).
+const lanHostnameNotAllowed = "lan_hostname_not_allowed"
+
+// writeCodedError is writeError plus a stable code and the LAN addresses the
+// browser can reopen Beamfall at. lanUrls is always present, possibly empty,
+// so clients can rely on its shape.
+func writeCodedError(w http.ResponseWriter, status int, msg, code string, lanURLs []string) {
+	if lanURLs == nil {
+		lanURLs = []string{}
+	}
+	writeJSON(w, status, map[string]any{"error": msg, "code": code, "lanUrls": lanURLs})
+}
+
+// requestLANURLs returns the plain-HTTP web address of the listener that
+// accepted this connection, when the browser can reach it directly. It is
+// derived from the connection's own local address, so it only ever names an
+// address the server is listening on. Nothing is offered over TLS, through a
+// proxy or relay, or when the source is not on the same subnet as that address
+// (a container bridge address, say, that the browser cannot reach).
+func requestLANURLs(r *http.Request) []string {
+	if requestIsHTTPS(r) || !requestIsLAN(r) || requestWasForwarded(r) {
+		return nil
+	}
+	if resolution, ok := ProxyResolutionFromRequest(r); ok && resolution.ViaKnownProxy {
+		return nil
+	}
+	local, _ := r.Context().Value(http.LocalAddrContextKey).(net.Addr)
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil
+	}
+	return lanURLsFor(local, net.ParseIP(host), addrs)
+}
+
+// lanURLsFor is requestLANURLs' pure core: local is the accepted connection's
+// local address, source the browser's address, and addrs the host's interface
+// addresses.
+func lanURLsFor(local net.Addr, source net.IP, addrs []net.Addr) []string {
+	tcp, ok := local.(*net.TCPAddr)
+	if !ok || tcp == nil || source == nil {
+		return nil
+	}
+	ip := tcp.IP
+	if v4 := ip.To4(); v4 != nil {
+		ip = v4
+	}
+	if v4 := source.To4(); v4 != nil {
+		source = v4
+	}
+	if ip.IsUnspecified() || ip.IsLinkLocalUnicast() || tcp.Zone != "" {
+		return nil
+	}
+	for _, addr := range addrs {
+		subnet, ok := addr.(*net.IPNet)
+		if !ok || !subnet.IP.Equal(ip) || !subnet.Contains(source) {
+			continue
+		}
+		return []string{"http://" + net.JoinHostPort(ip.String(), strconv.Itoa(tcp.Port)) + "/web/"}
+	}
+	return nil
 }
 
 func setupHostResistsRebinding(hostport string) bool {
@@ -345,7 +441,12 @@ func (s *Server) renewWebSession(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := s.pairing.RenewSession(r.Context(), req)
 	if err != nil {
-		notePairingRefusal(r, refusalOperationSessionRenew, err)
+		// A browser that presents no device credential is anonymous, not a
+		// refused credential: every first page load tries renewal (CORE-1603).
+		// Throttling is still recorded, whoever caused it.
+		if req.DeviceID != "" || req.DeviceSecret != "" || errors.Is(err, pairing.ErrThrottled) {
+			notePairingRefusal(r, refusalOperationSessionRenew, err)
+		}
 		switch {
 		case errors.Is(err, pairing.ErrThrottled):
 			writeError(w, r, http.StatusTooManyRequests, "renewal attempts throttled")
