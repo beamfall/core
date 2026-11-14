@@ -23,7 +23,17 @@ type Report struct {
 	manifestError      error
 }
 
+// ReleaseVersion and ReleaseCommit are set at link time by the release
+// pipeline and the repo Dockerfile:
+//
+//	-X github.com/beamfall/core/internal/capabilities.ReleaseVersion=<version>
+//	-X github.com/beamfall/core/internal/capabilities.ReleaseCommit=<git commit>
+//
+// ReleaseCommit exists for builds without VCS metadata (a Docker build context
+// excludes .git, so debug.ReadBuildInfo has no vcs.revision); an empty value
+// falls back to that revision, then to "development".
 var ReleaseVersion = "development"
+var ReleaseCommit string
 var SourceOfferURL string
 
 // Current reports the build identity plus the *default* runtime capability state
@@ -77,6 +87,9 @@ func (r Report) Validate() error {
 }
 
 func detectCommit() string {
+	if commit := strings.TrimSpace(ReleaseCommit); commit != "" {
+		return commit
+	}
 	if info, ok := debug.ReadBuildInfo(); ok {
 		for _, setting := range info.Settings {
 			if setting.Key == "vcs.revision" && setting.Value != "" {
