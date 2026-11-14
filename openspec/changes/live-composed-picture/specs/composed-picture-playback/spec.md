@@ -33,7 +33,8 @@ policy and capacity admit a stream.
 
 A live composed stream SHALL be encoded at the largest composed shape (720p, 480p or 360p) whose
 height and peak bandwidth fit the client's declared H.264 limits and any matched quirk caps, with
-the picture scaled to it. When a quirk denies H.264 or no shape fits, the decision SHALL NOT
+the picture scaled to it. A shape's peak bandwidth SHALL be its video maxrate plus the audio and mux
+allowance the transcode ladder reserves, and SHALL be what the stream advertises. When a quirk denies H.264 or no shape fits, the decision SHALL NOT
 compose a picture and the audio SHALL play as before.
 
 #### Scenario: Client height ceiling
@@ -47,6 +48,12 @@ compose a picture and the audio SHALL play as before.
 - **WHEN** a matched quirk caps the client at 360 pixels
 - **THEN** the live composed stream is 360 pixels high
 
+#### Scenario: Bitrate budget includes the audio
+
+- **WHEN** a client declares an H.264 maximum bitrate equal to the 360p shape's video maxrate alone
+- **THEN** no composed shape fits, because each shape's budget also carries the audio and mux
+  allowance
+
 #### Scenario: No composed shape fits
 
 - **WHEN** the client's or quirk's limits exclude every composed shape, or a quirk denies H.264
@@ -55,16 +62,25 @@ compose a picture and the audio SHALL play as before.
 ### Requirement: A live composed picture needs a capable FFmpeg
 
 Before offering a live composed stream, the server SHALL check that the resolved FFmpeg build
-provides every filter and encoder the picture's composition recipe needs (for timed text, the
-libass `ass` filter), caching the answer per FFmpeg binary. When one is missing, the decision SHALL
-NOT compose a picture and the audio SHALL play as before; the server SHALL NOT substitute a picture
-without the timed text.
+provides every filter and encoder the encode command names, video and audio alike, caching the
+listing per FFmpeg binary. A build missing a requested adjustment's filters SHALL decline the
+adjustment. When one is missing, the decision SHALL NOT compose a picture and the audio SHALL play as before, never a picture without the timed text.
 
 #### Scenario: FFmpeg without libass
 
 - **WHEN** a song whose plugin supplies a timed-text document has no Ready composed rendition and
   the FFmpeg build has no `ass` filter
 - **THEN** the decision does not compose a picture and the audio plays as before
+
+#### Scenario: FFmpeg without the AAC encoder
+
+- **WHEN** the FFmpeg build has no encoder for the stream's audio codec
+- **THEN** the decision does not compose a picture and the audio plays as before
+
+#### Scenario: FFmpeg without the adjustment filters
+
+- **WHEN** a pitch shift or tempo change is requested and the FFmpeg build lacks a filter it needs
+- **THEN** the adjustment is declined and the song plays unadjusted
 
 #### Scenario: Ready rendition needs no live encode
 

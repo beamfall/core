@@ -7,8 +7,8 @@ import (
 	"github.com/beamfall/core/internal/ffmpeg"
 )
 
-// TestMain pins the FFmpeg tone-map and composed-recipe capabilities for this
-// package's tests.
+// TestMain pins the FFmpeg tone-map, composed-recipe and audio-adjustment
+// capabilities for this package's tests.
 //
 // FullTranscodeRefusal fails closed: an HDR source on a build that cannot run
 // Beamfall's tone-map chain is refused rather than offered a transcode that
@@ -20,7 +20,8 @@ import (
 // or withComposedRecipeSupport.
 func TestMain(m *testing.M) {
 	toneMapSupported = func() bool { return true }
-	composedRecipeSupported = func(bool) bool { return true }
+	composedRecipeSupported = func(bool, ffmpeg.Rendition) bool { return true }
+	audioAdjustSupported = func(ffmpeg.Rendition) bool { return true }
 	os.Exit(m.Run())
 }
 

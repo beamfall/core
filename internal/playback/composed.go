@@ -304,9 +304,10 @@ func (s *Service) composedChoice(ctx context.Context, scope auth.Scope, grant st
 		choice, err := s.precomputedStreamChoice(ctx, grant, suffix, rendition, expiresAt)
 		return choice, false, err == nil, err
 	}
-	// A build that cannot run the recipe (no libass for timed text) would turn
-	// a song that plays as audio into a failing stream, so it keeps the audio.
-	if !canLive || !composedRecipeSupported(picture.TimedText != "") {
+	// A build that cannot run the recipe (no libass for timed text, no AAC
+	// encoder) would turn a song that plays as audio into a failing stream, so
+	// it keeps the audio.
+	if !canLive || !composedRecipeSupported(picture.TimedText != "", composedLiveRendition(liveRung, wantedAudio, grantAudioAdjust(grant))) {
 		return StreamChoice{}, false, false, nil
 	}
 	choice, err = s.liveComposedChoice(ctx, grant, suffix, wantedAudio, liveRung, expiresAt)
@@ -343,16 +344,30 @@ func (s *Service) liveComposedChoice(ctx context.Context, grant streamtoken.Gran
 }
 
 // composedRecipeSupported reports whether the resolved FFmpeg build can run the
-// composition recipe for a timed-text (true) or graphics (false) picture. It is
-// a variable so a test can state the build it means instead of inheriting the
-// FFmpeg on the developer's PATH, like toneMapSupported.
+// live composed encode of a timed-text (true) or graphics (false) picture with
+// a rendition. It is a variable so a test can state the build it means instead
+// of inheriting the FFmpeg on the developer's PATH, like toneMapSupported.
 var composedRecipeSupported = ffmpeg.ComposedRecipeSupported
+
+// composedLiveRendition is the rendition a live composed session encodes for
+// rung, audio and adjust: the fields hlsSession.rendition fills that decide
+// which filters and encoders the command names.
+func composedLiveRendition(rung Rung, audio ffmpeg.AudioProfile, adjust ffmpeg.AudioAdjust) ffmpeg.Rendition {
+	return ffmpeg.Rendition{
+		Height:        rung.Height,
+		VideoKbps:     rung.VideoKbps,
+		AudioCodec:    audio.Codec,
+		AudioChannels: audio.Channels,
+		AudioGainDB:   audio.GainDB,
+	}.WithAudioAdjust(adjust)
+}
 
 // liveComposedRung is the live composed shape a client may be sent: H.264 that
 // no matched quirk denies, under the same limits the cached composed path
 // applies (composedRenditionCompatible) — the client's declared H.264 maximum
-// height and bitrate, and the quirk height and bitrate caps. ok is false when
-// no composed shape fits.
+// height and bitrate, and the quirk height and bitrate caps, each bitrate held
+// against the rung's whole stream rate (video plus the audio and mux
+// allowance). ok is false when no composed shape fits.
 func liveComposedRung(profile CapabilityProfile, ov quirkOverlay) (Rung, bool) {
 	if ov.deniesVideoCodec(composedCodec) {
 		return Rung{}, false

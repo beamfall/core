@@ -1009,7 +1009,10 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	// live composed picture when one applies, otherwise an audio-only stream.
 	// It needs an audio Media with audio and a transcode the policy and
 	// capacity admit; otherwise the item plays unadjusted.
-	if !adjust.IsZero() && media.Class == store.MediaClassAudio && sourceHasAudio && transcodeRefusal == "" && s.sessions != nil {
+	// A build without the adjustment's filters (or the audio encoder) declines
+	// the adjustment rather than offer a stream that fails to start.
+	if !adjust.IsZero() && media.Class == store.MediaClassAudio && sourceHasAudio && transcodeRefusal == "" && s.sessions != nil &&
+		audioAdjustSupported(adjustedAudioRendition(hlsAudio, adjust)) {
 		grant = withAudioAdjustGrant(grant, adjust)
 	} else {
 		adjust = ffmpeg.AudioAdjust{}

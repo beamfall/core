@@ -5,31 +5,26 @@ import (
 	"errors"
 	"io"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 )
 
 // Composed-picture capability: a live composed stream is offered only when the
-// resolved FFmpeg build has every filter and encoder the composition recipe
-// (composedEncodeArgs) names. A build without libass, for one, has no `ass`
-// filter, so a timed-text picture would fail at filter-graph parse and turn a
-// song that plays as audio into a failing stream.
+// resolved FFmpeg build has every filter and encoder the composition command
+// names. A build without libass, for one, has no `ass` filter, so a timed-text
+// picture would fail at filter-graph parse and turn a song that plays as audio
+// into a failing stream; a build without the AAC encoder or the pitch and tempo
+// filters fails the same way on the audio side.
 //
-// Unlike the tone-map probe, listing is enough here: the recipe's filters take
-// fixed options Beamfall controls, so a filter that is present parses them. The
-// answer is kept in memory per resolved binary identity, like the tone-map
-// verdict, so a BYO-FFmpeg swap under a running server is noticed.
-
-// composedGraphicsFilters, composedTimedTextFilters and composedEncoders are
-// what composedEncodeArgs emits for each picture kind, over every start-offset
-// and tempo branch (TestComposedRecipeRequirementsCoverEveryBranch holds the
-// lists to the recipe).
-var (
-	composedGraphicsFilters  = []string{"scale", "pad", "fps", "tpad", "trim", "setpts", "format"}
-	composedTimedTextFilters = []string{"color", "setpts", "ass", "format"}
-	composedEncoders         = []string{"libx264"}
-)
+// The requirements are read off the argv the encode would run
+// (argvRequirements over composedEncodeArgs and Rendition.audioArgs), so they
+// cannot drift from the recipe. Unlike the tone-map probe, listing is enough:
+// the recipe's filters take fixed options Beamfall controls, so a filter that
+// is present parses them. The listing is kept in memory per resolved binary
+// identity, like the tone-map verdict, so a BYO-FFmpeg swap under a running
+// server is noticed.
 
 // capabilities is the set of filters and encoders an FFmpeg build lists.
 type capabilities struct {
@@ -37,26 +32,98 @@ type capabilities struct {
 	Encoders map[string]bool
 }
 
-// missingForComposed names the filters and encoders the composition recipe
-// for one picture kind needs that the build lacks, in recipe order. Empty means
-// the build can compose it.
-func (c capabilities) missingForComposed(timedText bool) []string {
-	filters := composedGraphicsFilters
-	if timedText {
-		filters = composedTimedTextFilters
-	}
+// missingFor names the filters and encoders args runs that the build lacks, in
+// argv order. Empty means the build can run the command.
+func (c capabilities) missingFor(args []string) []string {
+	filters, encoders := argvRequirements(args)
 	var missing []string
 	for _, name := range filters {
 		if !c.Filters[name] {
 			missing = append(missing, "filter "+name)
 		}
 	}
-	for _, name := range composedEncoders {
+	for _, name := range encoders {
 		if !c.Encoders[name] {
 			missing = append(missing, "encoder "+name)
 		}
 	}
 	return missing
+}
+
+// argvRequirements reads the filters and encoders an FFmpeg argv names: every
+// filter of each -vf and -af chain, the source filter of a lavfi input, and
+// each -c:v and -c:a encoder other than copy. Each name appears once.
+func argvRequirements(args []string) (filters, encoders []string) {
+	add := func(list []string, name string) []string {
+		if name == "" || slices.Contains(list, name) {
+			return list
+		}
+		return append(list, name)
+	}
+	for i := 0; i+1 < len(args); i++ {
+		value := args[i+1]
+		switch args[i] {
+		case "-vf", "-af":
+			for _, filter := range splitFilterChain(value) {
+				filters = add(filters, filterName(filter))
+			}
+		case "-f":
+			if value == "lavfi" && i+3 < len(args) && args[i+2] == "-i" {
+				filters = add(filters, filterName(args[i+3]))
+			}
+		case "-c:v", "-c:a":
+			if value != "copy" {
+				encoders = add(encoders, value)
+			}
+		}
+	}
+	return filters, encoders
+}
+
+// filterName is the name of one filter in a chain: everything before its
+// options.
+func filterName(filter string) string {
+	name, _, _ := strings.Cut(filter, "=")
+	return strings.TrimSpace(name)
+}
+
+// splitFilterChain splits a filter chain on the commas between filters,
+// leaving backslash-escaped commas inside option values (escapeFilterValue)
+// alone.
+func splitFilterChain(chain string) []string {
+	var out []string
+	var current strings.Builder
+	escaped := false
+	for _, r := range chain {
+		switch {
+		case escaped:
+			escaped = false
+		case r == '\\':
+			escaped = true
+		case r == ',':
+			out = append(out, current.String())
+			current.Reset()
+			continue
+		}
+		current.WriteRune(r)
+	}
+	return append(out, current.String())
+}
+
+// composedRecipeArgv is every command a live composed session of this picture
+// kind and rendition can run: the encode from the start and from a later
+// segment (a seek), which take different filter branches. The picture paths are
+// placeholders; only the names the argv carries matter.
+func composedRecipeArgv(timedText bool, rendition Rendition) [][]string {
+	picture := ComposedPicture{GraphicsPath: "/composed/picture.cdg"}
+	if timedText {
+		picture = ComposedPicture{TimedTextPath: "/composed/picture.ass"}
+	}
+	const segmentSeconds = 4
+	return [][]string{
+		composedEncodeArgs("/composed/audio", picture, rendition, 0, segmentSeconds),
+		composedEncodeArgs("/composed/audio", picture, rendition, segmentSeconds, segmentSeconds),
+	}
 }
 
 // parseComponentList reads the names out of `ffmpeg -filters` or `ffmpeg
@@ -138,7 +205,7 @@ var (
 
 // capabilitiesForCurrentBuild lists the resolved binary's filters and encoders
 // on first use and keeps the answer in memory, keyed by the binary's identity.
-// A failed listing is kept too (and fails closed in missingForComposed): an
+// A failed listing is kept too (and fails closed in the exported checks): an
 // unresolvable binary keys its own bucket, and a changed binary a new one.
 func capabilitiesForCurrentBuild() (capabilities, error) {
 	key := currentFFmpegIdentityKey()
@@ -155,12 +222,33 @@ func capabilitiesForCurrentBuild() (capabilities, error) {
 	return entry.caps, entry.err
 }
 
-// ComposedRecipeSupported reports whether the resolved FFmpeg build can run the
-// composition recipe for a graphics picture (timedText false) or a timed-text
-// picture (timedText true). A build whose components cannot be listed cannot.
+// ComposedRecipeSupported reports whether the resolved FFmpeg build has every
+// filter and encoder a live composed encode of a graphics picture (timedText
+// false) or a timed-text picture (timedText true) runs with this rendition's
+// shape, audio and adjustment. A build whose components cannot be listed
+// cannot.
 //
 //io:ignore — in-memory capability check after a one-shot listing, not a server I/O journey.
-func ComposedRecipeSupported(timedText bool) bool {
+func ComposedRecipeSupported(timedText bool, rendition Rendition) bool {
 	caps, err := capabilitiesForCurrentBuild()
-	return err == nil && len(caps.missingForComposed(timedText)) == 0
+	if err != nil {
+		return false
+	}
+	for _, args := range composedRecipeArgv(timedText, rendition) {
+		if len(caps.missingFor(args)) > 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// AudioAdjustSupported reports whether the resolved FFmpeg build has every
+// audio filter and the encoder the audio encode of this rendition runs, its
+// pitch and tempo adjustment included. A build whose components cannot be
+// listed cannot.
+//
+//io:ignore — in-memory capability check after a one-shot listing, not a server I/O journey.
+func AudioAdjustSupported(rendition Rendition) bool {
+	caps, err := capabilitiesForCurrentBuild()
+	return err == nil && len(caps.missingFor(rendition.audioArgs())) == 0
 }

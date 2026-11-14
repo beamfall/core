@@ -10,3 +10,6 @@
       none fits
 - [x] 7. Offer live composition only when the FFmpeg build has the recipe's filters and encoders
       (cached per binary); audio otherwise
+- [x] 8. Read the capability requirements off the emitted argv, audio encoder and pitch and tempo
+      filters included; decline an adjustment the build cannot run; budget each live shape as its
+      video maxrate plus the ladder's 256 kbps audio and mux allowance

@@ -89,23 +89,28 @@ func writeLivePicture(rungDir string, picture ComposedPicture) (*ffmpeg.Composed
 }
 
 // composedLiveRungs is the closed vocabulary of live composed shapes, best
-// first. The 720p shape matches the precomputed composed rendition; the smaller
-// ones serve a client or quirk height or bitrate limit with the same picture
-// scaled down (ffmpeg.ComposedCanvas).
+// first, each named by its video maxrate. The 720p shape encodes at the
+// precomputed composed rendition's maxrate; the smaller ones serve a client or
+// quirk height or bitrate limit with the same picture scaled down
+// (ffmpeg.ComposedCanvas).
 var composedLiveRungs = []Rung{
-	composedRung(composedHeight, composedBandwidth),
-	composedRung(480, 1_000_000),
-	composedRung(360, 600_000),
+	composedRung(composedHeight, composedBandwidth/1000),
+	composedRung(480, 1000),
+	composedRung(360, 600),
 }
 
-func composedRung(height, bandwidth int) Rung {
+// composedRung is one live composed shape. Its Bandwidth is the whole peak
+// stream rate, video plus the stereo-AAC-and-mux allowance the transcode
+// ladder reserves (bandwidthFor), so a bitrate limit is held against what is
+// actually sent and the video maxrate never takes the audio's share.
+func composedRung(height, videoKbps int) Rung {
 	width, height := ffmpeg.ComposedCanvas(height)
 	return Rung{
 		ID:        ComposedRungID,
 		Height:    height,
 		Width:     width,
-		VideoKbps: bandwidth / 1000,
-		Bandwidth: bandwidth,
+		VideoKbps: videoKbps,
+		Bandwidth: bandwidthFor(videoKbps),
 	}
 }
 

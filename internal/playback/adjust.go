@@ -63,6 +63,17 @@ func withAudioAdjustGrant(grant streamtoken.Grant, adjust ffmpeg.AudioAdjust) st
 	return grant
 }
 
+// audioAdjustSupported reports whether the resolved FFmpeg build can run the
+// audio encode of an adjusted rendition. It is a variable so a test can state
+// the build it means, like composedRecipeSupported.
+var audioAdjustSupported = ffmpeg.AudioAdjustSupported
+
+// adjustedAudioRendition is the audio side of an adjusted encode: what decides
+// the audio filters and encoder the command names.
+func adjustedAudioRendition(audio ffmpeg.AudioProfile, adjust ffmpeg.AudioAdjust) ffmpeg.Rendition {
+	return ffmpeg.Rendition{AudioCodec: audio.Codec, AudioChannels: audio.Channels, AudioGainDB: audio.GainDB}.WithAudioAdjust(adjust)
+}
+
 // grantAudioAdjust reads the adjustment a stream grant carries.
 func grantAudioAdjust(grant streamtoken.Grant) ffmpeg.AudioAdjust {
 	return ffmpeg.AudioAdjust{PitchSemitones: grant.PitchShiftSemitones, Tempo: grant.Tempo}
