@@ -59,7 +59,7 @@ Use normal repo-local CLI and shell tools.
 
 ## Corvint context
 
-Before editing, read `corvint context "<task>"` or `corvint impact <path>...`; before choosing tests,
+Before editing, read `corvint context --path <path>` or `corvint impact <path>...`; before choosing tests,
 run `corvint affected --base <origin/main sha>`; `corvint test --base <sha>` runs that set with the
 commands declared in `.github/cishards/test-commands.json`. **Iterate** with `make gate-affected
 [BASE=<sha>]`: that `corvint test` set (a `FALLBACK` prints its reason and runs the full Go suite),
