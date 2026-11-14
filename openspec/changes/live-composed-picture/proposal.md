@@ -24,11 +24,13 @@ the first play of a newly added song never shows its picture.
   live transcode. Precompute and live share one FFmpeg composition recipe.
 - **Server, precompute**: after a live composed play the Media's composed rendition is queued at
   raised priority, so the next play is precomputed.
-- **Wire contract**: the stream grant shape gains `composedPicture`; published as a new minor
-  version.
+- **Stream grant**: the signed grant gains `composedPicture` (optional, additive). Clients treat
+  the Stream Token as opaque; the grant shape is published in the wire contract's `streamToken`
+  section, so the committed wire goldens are regenerated.
 
 ## Impact
 
 - Code: `internal/playback`, `internal/ffmpeg`, `internal/streamtoken`, `internal/mediahttp`,
-  `internal/app`.
-- Wire contract: additive, minor version. Clients need no change to benefit.
+  `internal/store` (raise a queued job's priority), `internal/app`.
+- Wire contract: additive optional `streamToken.composedPicture`. Clients need no change to
+  benefit.

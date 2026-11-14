@@ -232,3 +232,125 @@ func TestStartBackgroundComposedHLSRealEncode(t *testing.T) {
 		})
 	}
 }
+
+func TestComposedSegmentArgsStartOffsetGraphics(t *testing.T) {
+	args := composedSegmentArgs("/lib/song.mp3", "/scratch/s/composed", ComposedPicture{GraphicsPath: "/lib/song.cdg"}, 3, 4, Rendition{VideoKbps: 1500})
+	if got, want := argAfter(args, "-vf"), "scale=1000:720:flags=neighbor,pad=1280:720:(ow-iw)/2:0,fps=30,tpad=stop=-1:stop_mode=clone,trim=start=12,setpts=PTS-STARTPTS,format=yuv420p"; got != want {
+		t.Fatalf("-vf = %q\nwant %q", got, want)
+	}
+	// The graphics input is never seeked (it is drawn incrementally); the
+	// audio input is, and the output timestamps land on the absolute position.
+	picture := slices.Index(args, "/lib/song.cdg")
+	audio := slices.Index(args, "/lib/song.mp3")
+	seek := slices.Index(args, "-ss")
+	if seek < picture || seek > audio || args[seek+1] != "12" {
+		t.Fatalf("only the audio input may seek, to 12s: %q", args)
+	}
+	for _, want := range [][]string{
+		{"-output_ts_offset", "12"}, {"-start_number", "3"}, {"-progress", "pipe:1"},
+		{"-force_key_frames", "expr:gte(t,n_forced*4)"}, {"-map", "1:a:0"},
+	} {
+		if !containsPair(args, want[0], want[1]) {
+			t.Errorf("missing %q %q in %q", want[0], want[1], args)
+		}
+	}
+	if args[len(args)-1] != "/scratch/s/composed/live.m3u8" {
+		t.Fatalf("live encode writes the unserved live playlist: %q", args)
+	}
+}
+
+func TestComposedSegmentArgsStartOffsetTimedText(t *testing.T) {
+	args := composedSegmentArgs("/lib/song.ogg", "/scratch/s/composed", ComposedPicture{TimedTextPath: "/scratch/s/composed/picture.ass"}, 2, 4, Rendition{})
+	if got, want := argAfter(args, "-vf"), "setpts=PTS+8/TB,ass=filename=/scratch/s/composed/picture.ass,setpts=PTS-STARTPTS,format=yuv420p"; got != want {
+		t.Fatalf("-vf = %q\nwant %q", got, want)
+	}
+	if !containsPair(args, "-ss", "8") || !containsPair(args, "-output_ts_offset", "8") {
+		t.Fatalf("audio seek and output offset must both be 8s: %q", args)
+	}
+}
+
+func TestComposedSegmentArgsFromStartMatchPrecomputedRecipe(t *testing.T) {
+	picture := ComposedPicture{GraphicsPath: "/lib/song.cdg"}
+	live := composedSegmentArgs("/lib/song.mp3", "/d", picture, 0, 4, Rendition{VideoKbps: 1500})
+	precomputed := composedHLSArgs("/lib/song.mp3", "/d", picture, Rendition{VideoKbps: 1500})
+	if argAfter(live, "-vf") != argAfter(precomputed, "-vf") || slices.Contains(live, "-ss") {
+		t.Fatalf("a live encode from the start must draw exactly the precomputed picture:\nlive %q\nprecomputed %q", live, precomputed)
+	}
+}
+
+func TestStartHLSSegmentsRefusesComposedPictureOutsideConfinement(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "lib", "song.mp3")
+	out := filepath.Join(root, "out")
+	elsewhere := filepath.Join(root, "elsewhere")
+	for _, dir := range []string{filepath.Dir(src), out, elsewhere} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	text := filepath.Join(elsewhere, "picture.ass")
+	for _, file := range []string{src, text} {
+		if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rendition := Rendition{}.WithComposedPicture(ComposedPicture{TimedTextPath: text})
+	if _, err := New().StartHLSSegments(context.Background(), src, out, 0, 4, rendition); !errors.Is(err, ErrComposedPictureOutsideConfinement) {
+		t.Fatalf("StartHLSSegments = %v, want ErrComposedPictureOutsideConfinement", err)
+	}
+}
+
+// TestStartHLSSegmentsComposedRealEncodeFromOffset proves the live recipe's
+// start-offset filter graph is accepted by FFmpeg and yields the remainder of
+// the song, picture and audio both, for each picture kind.
+func TestStartHLSSegmentsComposedRealEncodeFromOffset(t *testing.T) {
+	requireComposeCapableFFmpeg(t)
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	if err := os.MkdirAll(src, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	audio := filepath.Join(src, "song.mp3")
+	synthesizeAudio(t, audio)
+	graphics := filepath.Join(src, "song.cdg")
+	if err := os.WriteFile(graphics, graphicsTrack(6), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	const ass = "[Script Info]\nScriptType: v4.00+\nPlayResX: 1280\nPlayResY: 720\n\n[Events]\n" +
+		"Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n" +
+		"Dialogue: 0,0:00:04.50,0:00:05.50,Default,,0,0,0,,Line\n"
+	for name, compose := range map[string]func(dir string) ComposedPicture{
+		"graphics": func(string) ComposedPicture { return ComposedPicture{GraphicsPath: graphics} },
+		"timed text": func(dir string) ComposedPicture {
+			path := filepath.Join(dir, "picture.ass")
+			if err := os.WriteFile(path, []byte(ass), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			return ComposedPicture{TimedTextPath: path}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := filepath.Join(root, strings.ReplaceAll(name, " ", "-"))
+			if err := os.MkdirAll(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			rendition := Rendition{Height: 720, VideoKbps: 1500, AudioCodec: "aac", AudioChannels: 2}.WithComposedPicture(compose(dir))
+			proc, err := New().StartHLSSegments(context.Background(), audio, dir, 1, 4, rendition)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := proc.Wait(); err != nil {
+				t.Fatalf("encode: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(dir, "seg00001.m4s")); err != nil {
+				t.Fatalf("first live segment must be numbered from the start segment: %v", err)
+			}
+			probe := probeHLS(t, filepath.Join(dir, "live.m3u8"))
+			for _, want := range []string{"codec_name=h264|codec_type=video|width=1280|height=720", "codec_name=aac|codec_type=audio"} {
+				if !strings.Contains(probe, want) {
+					t.Errorf("probe missing %q:\n%s", want, probe)
+				}
+			}
+		})
+	}
+}

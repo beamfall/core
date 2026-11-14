@@ -464,6 +464,7 @@ type Service struct {
 	sealed          SealedPredicate
 	quirks          QuirkDB
 	composer        PictureComposer
+	composedCache   string
 	observed        observations
 }
 
@@ -986,14 +987,20 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	// The reason makes that explicit in playbackInfo; the stream is a normal
 	// direct-play of the file bytes.
 	// Composed picture: an audio Media whose plugin describes a
-	// picture plays as its precomputed composed video on a video-capable
-	// client — ahead of direct play, which would lose the picture.
-	if composed, ok, err := s.composedChoice(ctx, scope, grant, suffix, media, file, profile, hlsAudio, expiresAt, ov); err != nil {
+	// picture plays as its composed video on a video-capable client — ahead
+	// of direct play, which would lose the picture. A Ready precomputed
+	// rendition is served as is; otherwise the picture is composed live when
+	// the transcode policy and capacity admit it.
+	if composed, live, ok, err := s.composedChoice(ctx, scope, grant, suffix, media, file, profile, hlsAudio, expiresAt, ov, transcodeRefusal); err != nil {
 		return decision{}, err
 	} else if ok {
+		verdict := "precomputed-rendition"
+		if live {
+			verdict = "transcode"
+		}
 		return decision{
 			media:          media,
-			verdict:        "precomputed-rendition",
+			verdict:        verdict,
 			reason:         "composed-picture",
 			streams:        []StreamChoice{composed},
 			timeline:       timeline,

@@ -173,7 +173,13 @@ type Grant struct {
 	// normal HLS Stream Token and reveal scope first; this field only selects
 	// which disposable cache directory to serve after authorization succeeds.
 	PlaybackRenditionID store.PlaybackRenditionID `json:"playbackRenditionID,omitempty"`
-	ExpiresAt           time.Time                 `json:"expiresAt"`
+	// ComposedPicture asks the byte layer for a live composed-picture session:
+	// one rung drawing the Media's composed picture over its audio, decided at
+	// mint because no precomputed composed rendition was Ready. Meaningful only
+	// for TargetMediaHLS. Omitted when false, so tokens without it are
+	// byte-identical to tokens minted before this field existed.
+	ComposedPicture bool      `json:"composedPicture,omitempty"`
+	ExpiresAt       time.Time `json:"expiresAt"`
 }
 
 // HasResolvedProfileCapability reports whether the grant carries a capability

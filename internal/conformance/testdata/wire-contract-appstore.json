@@ -30236,6 +30236,13 @@
           }
         },
         {
+          "name": "composedPicture",
+          "shape": {
+            "type": "boolean",
+            "optional": true
+          }
+        },
+        {
           "name": "expiresAt",
           "shape": {
             "type": "timestamp"

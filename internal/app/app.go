@@ -695,6 +695,13 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	hlsSessions.SetTranscodeCap(cfg.TranscodeCap)
 	playbackInfo.SetSessions(hlsSessions)
 	playbackInfo.SetPictureComposer(composers.playbackComposer())
+	// Live composed picture: the byte layer resolves the picture a grant's
+	// ComposedPicture names, and a live play queues the precomputed rendition
+	// (only with a cache budget; with none, admission refuses every render).
+	hlsSessions.SetPictureComposer(composers.generationComposer())
+	if cfg.PlaybackCacheBudgetBytes > 0 {
+		playbackInfo.SetComposedCacheRoot(precomputeCacheRoot)
+	}
 	playbackInfo.SetAssets(playbackAssetsLocator{assetService})
 	// Opaque selected-file selector (ADR-0098 area 2): minted from the same root
 	// Stream Token key under a domain-separated derivation, so playbackInfo

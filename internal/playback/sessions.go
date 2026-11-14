@@ -203,6 +203,11 @@ type hlsSession struct {
 	audioStreamIndex  *int
 	sourceVideo       VideoSignal
 	burnSubtitleIndex int
+	// composed, when set, is the composed picture the session's single rung
+	// draws over the source's audio (see StreamShape.ComposedPicture), and
+	// picture is its encoder input as laid out in the session directory.
+	composed *ComposedPicture
+	picture  *ffmpeg.ComposedPicture
 	// currentRung is the rendition the live FFmpeg process encodes; "" until
 	// the first segment request starts one (one rendition per live session,
 	// ADR-0010 §8 — switching rungs replaces the process).
@@ -346,6 +351,9 @@ func (h *hlsSession) rendition(rung Rung) ffmpeg.Rendition {
 	if h.burnSubtitleIndex >= 0 {
 		rendition = rendition.WithBurnSubtitle(h.burnSubtitleIndex)
 	}
+	if h.picture != nil {
+		rendition = rendition.WithComposedPicture(*h.picture)
+	}
 	return rendition
 }
 
@@ -368,6 +376,9 @@ type Sessions struct {
 	nextID   int
 	cap      int
 	governor *governor.Governor
+	// composer resolves the picture of a composed-picture session (see
+	// SetPictureComposer); nil refuses such sessions.
+	composer GenerationComposer
 	// waitWindow, when positive, replaces the latency budgets as the length of
 	// one artifact wait window. Tests set it so a slow-encoder scenario runs in
 	// milliseconds instead of whole budgets.
@@ -828,11 +839,21 @@ func (s *Sessions) FilePathPriorityWithBurnSubtitleAudioLadder(ctx context.Conte
 }
 
 func (s *Sessions) FilePathPriorityWithBurnSubtitleAudioLadderMap(ctx context.Context, key SessionKey, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, priority Priority, name string) (string, error) {
+	return s.FilePathShaped(ctx, key, src, durationSeconds, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, StreamShape{}, priority, name)
+}
+
+// FilePathShaped is FilePathPriorityWithBurnSubtitleAudioLadderMap with the
+// grant's StreamShape, which can reshape the session beyond its ladder.
+func (s *Sessions) FilePathShaped(ctx context.Context, key SessionKey, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, shape StreamShape, priority Priority, name string) (string, error) {
 	if caps.HEVC && !s.SupportsTranscodeCodec("hevc") {
 		caps.HEVC = false
 		caps.HEVCMaxHeight = 0
 	}
-	session, err := s.session(key, src, durationSeconds, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, priority)
+	picture, err := s.livePicture(ctx, key, src, shape)
+	if err != nil {
+		return "", err
+	}
+	session, err := s.session(key, src, durationSeconds, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, picture, priority)
 	if err != nil {
 		return "", err
 	}
@@ -1070,7 +1091,7 @@ func (s *Sessions) transcodeLatencyBudget(session *hlsSession, path string) time
 // control runs at real encode start. audioCopy seeds the single audio-copy
 // rung in place of the resolution ladder, so the master and
 // served rendition copy the source video and transcode only the audio.
-func (s *Sessions) session(key SessionKey, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, priority Priority) (*hlsSession, error) {
+func (s *Sessions) session(key SessionKey, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, picture *ComposedPicture, priority Priority) (*hlsSession, error) {
 	var teardowns []sessionTeardown
 	s.mu.Lock()
 	defer func() {
@@ -1078,8 +1099,11 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds, videoWid
 		s.runTeardowns(teardowns)
 	}()
 	requestedRungs := rungsForSession(videoWidth, videoHeight, audioCopy, degraded, caps)
+	if picture != nil {
+		requestedRungs = []Rung{composedLiveRung()}
+	}
 	if existing, ok := s.sessions[key]; ok {
-		if existing.src != src || existing.durationSeconds != durationSeconds || existing.degraded != degraded || !rungsEqual(existing.rungs, requestedRungs) || existing.sourceVideo != sourceVideo || existing.burnSubtitleIndex != burnSubtitleIndex || !audioProfilesEqual(existing.audioProfile, audioProfile) || !equalOptionalInt(existing.audioStreamIndex, audioStreamIndex) {
+		if existing.src != src || existing.durationSeconds != durationSeconds || existing.degraded != degraded || !rungsEqual(existing.rungs, requestedRungs) || existing.sourceVideo != sourceVideo || existing.burnSubtitleIndex != burnSubtitleIndex || !audioProfilesEqual(existing.audioProfile, audioProfile) || !equalOptionalInt(existing.audioStreamIndex, audioStreamIndex) || (existing.composed != nil) != (picture != nil) {
 			teardowns = append(teardowns, *s.removeLocked(key)) // mode-shaping changed; old artifacts are incompatible
 		} else {
 			existing.lastAccess = s.now()
@@ -1110,7 +1134,12 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds, videoWid
 			session.resumeSeconds = hint.seconds
 		}
 	}
-	if err := writeSessionPlaylists(dir, requestedRungs, durationSeconds); err != nil {
+	err := writeSessionPlaylists(dir, requestedRungs, durationSeconds)
+	if err == nil && picture != nil {
+		session.composed = picture
+		session.picture, err = writeLivePicture(filepath.Join(dir, ComposedRungID), *picture)
+	}
+	if err != nil {
 		teardowns = append(teardowns, sessionTeardown{dir: dir})
 		s.detached++
 		return nil, err

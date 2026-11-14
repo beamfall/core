@@ -1228,6 +1228,23 @@ type Rendition struct {
 	// 2026-07-26 D4 requires a *separately verified* per-transfer-class verdict
 	// before a tone-map may run on a device. "" is the software chain.
 	toneMapAccel HWAccel
+	// picture, when set, replaces the source's video with a composed picture
+	// (see WithComposedPicture). The zero value composes nothing.
+	picture ComposedPicture
+}
+
+// WithComposedPicture returns a copy whose segment encode draws picture over
+// the source's audio instead of transcoding the source's video (the live form
+// of a composed rendition). The source's own video, burn-in and copy settings
+// do not apply to such an encode.
+func (r Rendition) WithComposedPicture(picture ComposedPicture) Rendition {
+	r.picture = picture
+	return r
+}
+
+// Picture reports the composed picture this rendition draws, if any.
+func (r Rendition) Picture() (ComposedPicture, bool) {
+	return r.picture, r.picture != ComposedPicture{}
 }
 
 // WithBurnSubtitle returns a copy of the rendition that burns the subtitle at
@@ -2140,6 +2157,9 @@ func (r *Runner) StartHLSSegments(ctx context.Context, src, dir string, startSeg
 	if err := checkPath(dir); err != nil {
 		return nil, err
 	}
+	if picture, ok := rendition.Picture(); ok {
+		return r.startComposedHLSSegments(ctx, src, dir, picture, startSegment, segmentSeconds, rendition)
+	}
 	if reason := rendition.ToneMapRefusal(); reason != "" {
 		return nil, errors.New("ffmpeg: " + reason)
 	}
@@ -2170,8 +2190,22 @@ func (r *Runner) StartHLSSegments(ctx context.Context, src, dir string, startSeg
 	}
 	args = append(args, rendition.args()...)
 	args = append(args, rendition.audioArgs()...)
-	args = append(args,
-		"-output_ts_offset", strconv.Itoa(offset),
+	args = append(args, segmentMuxArgs(dir, startSegment, segmentSeconds)...)
+	conf := dirConfinement(src, dir)
+	cmd := r.hardenedCommand(ctx, ffmpegPath, conf.ReadOnly, conf.ReadWrite, args)
+	process, err := startHLSProcess(cmd)
+	if err != nil {
+		return nil, fmt.Errorf("starting ffmpeg transcode: %w", err)
+	}
+	return process, nil
+}
+
+// segmentMuxArgs is the numbered-segment muxer tail StartHLSSegments
+// documents: timestamps offset to the absolute position, fMP4 segments
+// numbered from startSegment, and an unserved live.m3u8.
+func segmentMuxArgs(dir string, startSegment, segmentSeconds int) []string {
+	return []string{
+		"-output_ts_offset", strconv.Itoa(startSegment * segmentSeconds),
 		"-f", "hls",
 		"-hls_time", strconv.Itoa(segmentSeconds),
 		"-hls_list_size", "0",
@@ -2181,14 +2215,7 @@ func (r *Runner) StartHLSSegments(ctx context.Context, src, dir string, startSeg
 		"-hls_segment_filename", filepath.Join(dir, "seg%05d.m4s"),
 		"-start_number", strconv.Itoa(startSegment),
 		"--", filepath.Join(dir, "live.m3u8"),
-	)
-	conf := dirConfinement(src, dir)
-	cmd := r.hardenedCommand(ctx, ffmpegPath, conf.ReadOnly, conf.ReadWrite, args)
-	process, err := startHLSProcess(cmd)
-	if err != nil {
-		return nil, fmt.Errorf("starting ffmpeg transcode: %w", err)
 	}
-	return process, nil
 }
 
 type probeDocument struct {

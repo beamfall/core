@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -51,23 +52,8 @@ func (p ComposedPicture) validate() error {
 // document must therefore be inside dir, and a graphics track beside the
 // source (checked after resolving symlinks).
 func (r *Runner) StartBackgroundComposedHLS(ctx context.Context, audioSrc, dir string, picture ComposedPicture, rendition Rendition) (*HLSProcess, error) {
-	if err := picture.validate(); err != nil {
+	if err := checkComposedInputs(audioSrc, dir, picture); err != nil {
 		return nil, err
-	}
-	for _, path := range []string{audioSrc, dir, picture.GraphicsPath, picture.TimedTextPath} {
-		if err := checkPath(path); err != nil {
-			return nil, err
-		}
-	}
-	if picture.GraphicsPath != "" {
-		if err := inDirectory(picture.GraphicsPath, filepath.Dir(audioSrc)); err != nil {
-			return nil, err
-		}
-	}
-	if picture.TimedTextPath != "" {
-		if err := inDirectory(picture.TimedTextPath, dir); err != nil {
-			return nil, err
-		}
 	}
 	ffmpegPath, err := exec.LookPath("ffmpeg")
 	if err != nil {
@@ -81,14 +67,82 @@ func (r *Runner) StartBackgroundComposedHLS(ctx context.Context, audioSrc, dir s
 	return process, nil
 }
 
-// composedHLSArgs builds the composed encode: input 0 is the picture, input 1
-// the audio source. The picture is software-encoded (a flat canvas is cheap,
-// and composition never needs a hardware path), the audio goes through the
-// rendition's normal audio recipe, and the audio's length decides the output's:
-// a graphics track goes quiet for long stretches, so its last frame is held.
+// startComposedHLSSegments is StartHLSSegments for a rendition that carries a
+// composed picture: the live form of a composed rendition, encoded from
+// startSegment into the same numbered-segment layout as every live transcode,
+// under the same confinement rules as the precomputed encode.
+func (r *Runner) startComposedHLSSegments(ctx context.Context, audioSrc, dir string, picture ComposedPicture, startSegment, segmentSeconds int, rendition Rendition) (*HLSProcess, error) {
+	if err := checkComposedInputs(audioSrc, dir, picture); err != nil {
+		return nil, err
+	}
+	ffmpegPath, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		return nil, fmt.Errorf("ffmpeg is not available: %w", err)
+	}
+	conf := dirConfinement(audioSrc, dir)
+	cmd := r.hardenedCommand(ctx, ffmpegPath, conf.ReadOnly, conf.ReadWrite, composedSegmentArgs(audioSrc, dir, picture, startSegment, segmentSeconds, rendition))
+	process, err := startHLSProcess(cmd)
+	if err != nil {
+		return nil, fmt.Errorf("starting ffmpeg composed transcode: %w", err)
+	}
+	return process, nil
+}
+
+// checkComposedInputs refuses a composed encode whose inputs fall outside its
+// confinement: the source's directory is read-only and dir read-write, so a
+// timed-text document must be inside dir and a graphics track beside the
+// source (checked after resolving symlinks).
+func checkComposedInputs(audioSrc, dir string, picture ComposedPicture) error {
+	if err := picture.validate(); err != nil {
+		return err
+	}
+	for _, path := range []string{audioSrc, dir, picture.GraphicsPath, picture.TimedTextPath} {
+		if err := checkPath(path); err != nil {
+			return err
+		}
+	}
+	if picture.GraphicsPath != "" {
+		if err := inDirectory(picture.GraphicsPath, filepath.Dir(audioSrc)); err != nil {
+			return err
+		}
+	}
+	if picture.TimedTextPath != "" {
+		if err := inDirectory(picture.TimedTextPath, dir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// composedHLSArgs builds the precomputed composed encode of the whole source
+// into the event-playlist layout StartBackgroundHLS writes.
 func composedHLSArgs(audioSrc, dir string, picture ComposedPicture, rendition Rendition) []string {
-	args := []string{"-v", "error"}
-	var filters []string
+	args := append([]string{"-v", "error"}, composedEncodeArgs(audioSrc, picture, rendition, 0, 4)...)
+	return append(args, hlsMuxArgs(dir)...)
+}
+
+// composedSegmentArgs builds the live composed encode from startSegment, with
+// the progress stream and numbered-segment muxer every live transcode uses.
+func composedSegmentArgs(audioSrc, dir string, picture ComposedPicture, startSegment, segmentSeconds int, rendition Rendition) []string {
+	args := append([]string{"-v", "error"}, hlsProgressArgs()...)
+	args = append(args, composedEncodeArgs(audioSrc, picture, rendition, startSegment*segmentSeconds, segmentSeconds)...)
+	return append(args, segmentMuxArgs(dir, startSegment, segmentSeconds)...)
+}
+
+// composedEncodeArgs is the composition recipe the precomputed and live
+// encodes share: input 0 is the picture, input 1 the audio source. The picture
+// is software-encoded (a flat canvas is cheap, and composition never needs a
+// hardware path), the audio goes through the rendition's normal audio recipe,
+// and the audio's length decides the output's: a graphics track goes quiet for
+// long stretches, so its last frame is held.
+//
+// A positive startSeconds starts the output at that source position. The audio
+// input seeks there. A graphics track is drawn incrementally, so it is decoded
+// from its start and trimmed rather than seeked; a timed-text canvas instead
+// has its clock advanced so libass renders the text due at that position. The
+// picture's timestamps then restart at zero, beside the seeked audio's.
+func composedEncodeArgs(audioSrc string, picture ComposedPicture, rendition Rendition, startSeconds, segmentSeconds int) []string {
+	var args, filters []string
 	if picture.GraphicsPath != "" {
 		args = append(args, "-i", picture.GraphicsPath)
 		filters = []string{
@@ -97,24 +151,35 @@ func composedHLSArgs(audioSrc, dir string, picture ComposedPicture, rendition Re
 			fmt.Sprintf("fps=%d", composedFPS),
 			"tpad=stop=-1:stop_mode=clone",
 		}
+		if startSeconds > 0 {
+			filters = append(filters, fmt.Sprintf("trim=start=%d", startSeconds), "setpts=PTS-STARTPTS")
+		}
 	} else {
 		args = append(args, "-f", "lavfi", "-i", fmt.Sprintf("color=c=black:s=%dx%d:r=%d", composedWidth, composedHeight, composedFPS))
-		filters = []string{"ass=filename=" + escapeFilterValue(picture.TimedTextPath)}
+		if startSeconds > 0 {
+			filters = append(filters, fmt.Sprintf("setpts=PTS+%d/TB", startSeconds))
+		}
+		filters = append(filters, "ass=filename="+escapeFilterValue(picture.TimedTextPath))
+		if startSeconds > 0 {
+			filters = append(filters, "setpts=PTS-STARTPTS")
+		}
 	}
 	filters = append(filters, "format=yuv420p")
+	if startSeconds > 0 {
+		args = append(args, "-ss", strconv.Itoa(startSeconds))
+	}
 	args = append(args, inputProtocolArgs()...)
 	args = append(args, "-i", audioSrc,
 		"-map", "0:v:0", "-map", "1:a:0",
 		"-vf", strings.Join(filters, ","),
 		"-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
-		"-force_key_frames", "expr:gte(t,n_forced*4)",
+		"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", segmentSeconds),
 	)
 	if rendition.VideoKbps > 0 {
 		args = append(args, "-maxrate", fmt.Sprintf("%dk", rendition.VideoKbps), "-bufsize", fmt.Sprintf("%dk", 2*rendition.VideoKbps))
 	}
 	args = append(args, rendition.audioArgs()...)
-	args = append(args, "-shortest")
-	return append(args, hlsMuxArgs(dir)...)
+	return append(args, "-shortest")
 }
 
 // escapeFilterValue makes an arbitrary string safe as one filter option value

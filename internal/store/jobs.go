@@ -216,6 +216,26 @@ func (s *Store) ListJobs(ctx context.Context, statuses ...JobStatus) ([]Job, err
 	return s.listJobsSQL(ctx, statuses...)
 }
 
+// RaiseQueuedJobPriority raises a job still waiting to run (queued or
+// yielded) to at least priority, so a demand-driven request can move a job an
+// earlier trigger already queued ahead of its peers. A job that is running or
+// finished, or already at or above priority, is left unchanged.
+func (s *Store) RaiseQueuedJobPriority(ctx context.Context, id JobID, priority int) error {
+	if id == "" {
+		return errors.New("job ID is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	_, err := s.eventsW.ExecContext(ctx, `
+		UPDATE job SET priority = ?
+		WHERE id = ? AND status IN ('queued', 'yielded') AND priority < ?`,
+		priority, id, priority)
+	return err
+}
+
 func (s *Store) ListJobEvents(ctx context.Context, id JobID) ([]JobEvent, error) {
 	if id == "" {
 		return nil, errors.New("job ID is required")
