@@ -161,6 +161,11 @@ export function SetupWizard() {
   // Provider keys the installed plugins' scrapers need (TMDB-style API keys),
   // offered on the Plugins step so the owner is not sent hunting in the Console.
   const [providerKeys, setProviderKeys] = useState<ProviderKey[]>([]);
+  // A resumed run reads the saved plugin choices from the server. Until that
+  // read succeeds the activation state is unknown and the Plugins step cannot
+  // save (CORE-1604): saving a guess would overwrite the owner's choices.
+  const [savedChoices, setSavedChoices] = useState<"loading" | "ready" | "failed">("ready");
+  const [savedChoicesAttempt, setSavedChoicesAttempt] = useState(0);
   const [keySecrets, setKeySecrets] = useState<Record<string, string>>({});
 
   // True once POST /api/setup has succeeded — drives the "unlocked" banner and
@@ -280,13 +285,16 @@ export function SetupWizard() {
   // the installed plugins for the activation step. On a fresh run the Film & TV
   // plugin (the most common first Library) is pre-selected so the list isn't
   // all-off. A resumed run reads the saved choices from the server, so the
-  // switches and the Library types match what was saved (CORE-1604); if that
-  // read is refused it shows the installed plugins as the server treats them,
-  // all on.
+  // switches and the Library types match what was saved (CORE-1604). If that
+  // read fails the activation state stays unknown: the Plugins step shows an
+  // error with Retry and cannot save, and the Library step offers every
+  // installed type, as it does when nothing is enabled.
+  // savedChoicesAttempt re-runs the read when the owner presses Retry.
   useEffect(() => {
     if (!bootstrapped) return;
     let cancelled = false;
     if (resumedFromRestart) {
+      setSavedChoices("loading");
       void loadSavedPluginChoices()
         .then((saved) => {
           if (cancelled) return;
@@ -295,14 +303,16 @@ export function SetupWizard() {
           setUpdateCheckEnabled(saved.updateCheckEnabled);
           setUpdateCheckChannel(saved.updateCheckChannel);
           setProviderKeys(saved.providerKeys);
+          setSavedChoices("ready");
         })
-        .catch(() =>
-          fetchPlugins().then((list) => {
-            if (cancelled) return;
-            setPlugins(list);
-            setActivePlugins(new Set(list.map((p) => p.id)));
-          }),
-        )
+        .catch(() => {
+          if (cancelled) return;
+          setSavedChoices("failed");
+          setActivePlugins(new Set());
+          return fetchPlugins().then((list) => {
+            if (!cancelled) setPlugins(list);
+          });
+        })
         .catch(() => {});
     } else {
       void fetchPlugins().then((list) => {
@@ -316,7 +326,7 @@ export function SetupWizard() {
     return () => {
       cancelled = true;
     };
-  }, [bootstrapped, resumedFromRestart]);
+  }, [bootstrapped, resumedFromRestart, savedChoicesAttempt]);
 
   // Provider keys need the Admin Session, which only a fresh run can open (a
   // resumed run never collected the password); those owners add keys in the
@@ -643,6 +653,7 @@ export function SetupWizard() {
     // Leaving the plugin step activates the chosen plugins (+ update-check),
     // then advances to the Library step.
     if (step === STEP_PLUGINS) {
+      if (savedChoices !== "ready") return;
       const ok = await runPluginActivation();
       if (!ok) return;
       rememberResumeStep("library");
@@ -1068,7 +1079,22 @@ export function SetupWizard() {
             {step === STEP_PLUGINS && (
               <section>
                 <StepHeading title={t("setupPluginsTitle")} lead={t("setupPluginsLead")} />
-                {plugins.length === 0 ? (
+                {savedChoices === "failed" && (
+                  <div className="flex items-center gap-3">
+                    <p role="alert" className="m-0 flex-1 text-sm text-(--state-danger)">
+                      {t("setupPluginsLoadFailed")}
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-9 rounded-[10px] px-4"
+                      onClick={() => setSavedChoicesAttempt((n) => n + 1)}
+                    >
+                      {t("setupPluginsRetry")}
+                    </Button>
+                  </div>
+                )}
+                {savedChoices !== "ready" ? null : plugins.length === 0 ? (
                   <p className="text-sm text-muted-foreground">{t("setupPluginsEmpty")}</p>
                 ) : (
                   <ul className="m-0 list-none divide-y divide-white/10 border-y border-white/10 p-0">
@@ -1133,51 +1159,55 @@ export function SetupWizard() {
                     </div>
                   </div>
                 )}
-                <div className="mt-6 border-t border-white/10 pt-5">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <h2 className="m-0 text-[15px] font-semibold">{t("setupUpdateTitle")}</h2>
-                      <p className="m-0 mt-1 text-dense leading-snug text-muted-foreground">
-                        {t("setupUpdateLead")}
-                      </p>
+                {savedChoices === "ready" && (
+                  <div className="mt-6 border-t border-white/10 pt-5">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <h2 className="m-0 text-[15px] font-semibold">{t("setupUpdateTitle")}</h2>
+                        <p className="m-0 mt-1 text-dense leading-snug text-muted-foreground">
+                          {t("setupUpdateLead")}
+                        </p>
+                      </div>
+                      <Switch
+                        checked={updateCheckEnabled}
+                        onCheckedChange={setUpdateCheckEnabled}
+                        aria-label={t("setupUpdateToggle")}
+                      />
                     </div>
-                    <Switch
-                      checked={updateCheckEnabled}
-                      onCheckedChange={setUpdateCheckEnabled}
-                      aria-label={t("setupUpdateToggle")}
-                    />
+                    {/* Channel only matters once checks are on. */}
+                    {updateCheckEnabled && (
+                      <fieldset className="m-0 mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 border-0 p-0">
+                        <legend className="sr-only">{t("updateCheckChannel")}</legend>
+                        {(["stable", "beta"] as const).map((channel) => (
+                          <label
+                            key={channel}
+                            className="flex cursor-pointer items-center gap-2.5 py-1"
+                          >
+                            <input
+                              type="radio"
+                              name="setup-update-channel"
+                              value={channel}
+                              checked={updateCheckChannel === channel}
+                              onChange={() => setUpdateCheckChannel(channel)}
+                              className={cn(RADIO, "mt-0")}
+                              aria-label={t(
+                                channel === "stable" ? "updateChannelStable" : "updateChannelBeta",
+                              )}
+                            />
+                            <span className="text-sm">
+                              {t(
+                                channel === "stable" ? "updateChannelStable" : "updateChannelBeta",
+                              )}
+                            </span>
+                          </label>
+                        ))}
+                      </fieldset>
+                    )}
+                    <p className="mb-0 mt-3 text-dense leading-snug text-muted-foreground">
+                      {t("setupUpdateDisclosure")}
+                    </p>
                   </div>
-                  {/* Channel only matters once checks are on. */}
-                  {updateCheckEnabled && (
-                    <fieldset className="m-0 mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 border-0 p-0">
-                      <legend className="sr-only">{t("updateCheckChannel")}</legend>
-                      {(["stable", "beta"] as const).map((channel) => (
-                        <label
-                          key={channel}
-                          className="flex cursor-pointer items-center gap-2.5 py-1"
-                        >
-                          <input
-                            type="radio"
-                            name="setup-update-channel"
-                            value={channel}
-                            checked={updateCheckChannel === channel}
-                            onChange={() => setUpdateCheckChannel(channel)}
-                            className={cn(RADIO, "mt-0")}
-                            aria-label={t(
-                              channel === "stable" ? "updateChannelStable" : "updateChannelBeta",
-                            )}
-                          />
-                          <span className="text-sm">
-                            {t(channel === "stable" ? "updateChannelStable" : "updateChannelBeta")}
-                          </span>
-                        </label>
-                      ))}
-                    </fieldset>
-                  )}
-                  <p className="mb-0 mt-3 text-dense leading-snug text-muted-foreground">
-                    {t("setupUpdateDisclosure")}
-                  </p>
-                </div>
+                )}
               </section>
             )}
 
@@ -1253,7 +1283,7 @@ export function SetupWizard() {
               )}
               <Button
                 type="submit"
-                disabled={busy}
+                disabled={busy || (step === STEP_PLUGINS && savedChoices !== "ready")}
                 className="ml-auto h-11 min-w-[148px] rounded-[10px] px-6 text-[15px] font-semibold"
               >
                 {busy && <LoaderCircle aria-hidden className="size-4 motion-safe:animate-spin" />}

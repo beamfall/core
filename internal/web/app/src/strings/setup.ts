@@ -74,6 +74,9 @@ export const setupStrings = {
     setupPluginsLead:
       "Each plugin teaches Beamfall a kind of media. Turn on what you have; change it any time.",
     setupPluginsEmpty: "No plugins are installed.",
+    setupPluginsLoadFailed:
+      "Couldn't load the plugin choices saved on the server, so they can't be changed yet.",
+    setupPluginsRetry: "Try again",
     setupKeysTitle: "Metadata provider keys",
     setupKeysLead:
       "Titles, details and artwork come from providers that ask for a free API key. Paste one now or add it later in Console › Plugins.",

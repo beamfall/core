@@ -62,7 +62,8 @@ beforeEach(() => {
   mocks.loadProviderKeys.mockResolvedValue([]);
   mocks.fetchImporters.mockResolvedValue([]);
   // By default the saved choices can't be read (the Admin Session lapsed), so
-  // a resumed wizard shows every installed plugin as on, as the server does.
+  // a resumed wizard's activation state is unknown and the Library step offers
+  // every installed type.
   mocks.loadSavedPluginChoices.mockRejectedValue(new ApiError("admin session required", 403));
 });
 
@@ -873,6 +874,44 @@ describe("SetupWizard resume (CORE-1604)", () => {
     expect(screen.getByText("Step 5 of 6")).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Music" })).toBeInTheDocument();
     expect(screen.queryByRole("radio", { name: "Films" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the Plugins step from saving until the saved choices load, with Retry", async () => {
+    const saved = {
+      plugins: FIRST_PARTY_PLUGINS,
+      active: new Set(["music"]),
+      updateCheckEnabled: false,
+      updateCheckChannel: "stable",
+      providerKeys: [],
+    };
+    mocks.loadSavedPluginChoices.mockRejectedValue(new ApiError("unavailable", 503));
+    const user = userEvent.setup();
+    renderSetupWizard();
+
+    expect(
+      await screen.findByText(
+        "Couldn't load the plugin choices saved on the server, so they can't be changed yet.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "Film & TV" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "Check for updates" })).not.toBeInTheDocument();
+    const continueButton = screen.getByRole("button", { name: "Continue" });
+    expect(continueButton).toBeDisabled();
+    await user.click(continueButton);
+    expect(mocks.activatePlugins).not.toHaveBeenCalled();
+    expect(mocks.configureUpdateCheck).not.toHaveBeenCalled();
+
+    mocks.loadSavedPluginChoices.mockResolvedValue(saved);
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(screen.getByRole("switch", { name: "Music" })).toBeChecked());
+    expect(screen.getByRole("switch", { name: "Film & TV" })).not.toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() =>
+      expect(mocks.activatePlugins).toHaveBeenCalledWith(
+        ["music"],
+        ["filmtv", "photos", "karaoke"],
+      ),
+    );
   });
 
   it("resumes at First library with types that match the enabled plugins", async () => {

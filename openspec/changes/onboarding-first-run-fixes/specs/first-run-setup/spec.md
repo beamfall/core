@@ -38,6 +38,12 @@ choices the server has saved.
 - **WHEN** the owner switches a plugin off, continues, and reloads the page
 - **THEN** the step count is unchanged and the plugin remains off
 
+#### Scenario: Saved choices cannot be read after a reload
+
+- **WHEN** the reloaded wizard cannot read the saved plugin choices
+- **THEN** the Plugins step shows an error with a Retry control and cannot save until the saved
+  choices have loaded
+
 ### Requirement: First-run startup output ends with one setup block
 
 On first run the server SHALL print the setup address(es) as one block after the rest of startup
