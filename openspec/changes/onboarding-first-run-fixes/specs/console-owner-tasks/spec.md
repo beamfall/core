@@ -2,8 +2,9 @@
 
 ### Requirement: Library folder and first-scan health are reported
 
-The Console SHALL NOT mark the Library step of the first-value checklist done until a completed scan
-has put at least one item in the catalog. A Library whose folder is missing or unreadable SHALL be
+The Console SHALL NOT mark the Library step of the first-value checklist done until the catalog has
+browsable content that a completed scan brought in or that came with no scan on record, and its
+Refresh SHALL reload everything the checklist shows. A Library whose folder is missing or unreadable SHALL be
 marked on its card and listed on Overview as needing attention, with the checklist first until first
 value is reached. A failure to check a folder (offline, locked) SHALL report nothing.
 
@@ -19,9 +20,19 @@ value is reached. A failure to check a folder (offline, locked) SHALL report not
 
 #### Scenario: Scan added items but did not complete
 
-- **WHEN** a scan added items to the catalog and then failed or was canceled, and no scan has
-  completed
+- **WHEN** a scan added items to the catalog and then failed or was canceled, and no scan that
+  brought files in has completed (an earlier completed scan that found nothing does not count)
 - **THEN** the checklist step is not Done and the checklist does not say setup is finished
+
+#### Scenario: Content with no scan on record
+
+- **WHEN** the catalog has browsable content and the job list holds no scan
+- **THEN** the checklist step is Done
+
+#### Scenario: Scan finishes after the checklist loaded
+
+- **WHEN** a scan completes with files after the checklist was shown and the owner presses Refresh
+- **THEN** the checklist step shows Done
 
 ### Requirement: The Add a device panel says how to use the code
 

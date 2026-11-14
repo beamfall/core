@@ -15,14 +15,18 @@ vi.mock("@/lib/graphql", () => ({
   retryJob: vi.fn(),
 }));
 
-function scanJob(status: string): JobInfo {
+// A completed scan's progress counts the files it brought in; the default
+// stands for a scan that found some.
+function scanJob(status: string, files = 3): JobInfo {
   return {
-    id: `scan-${status}`,
+    id: `scan-${status}-${files}`,
     kind: "scan",
     status,
-    progress: { current: 0, total: 0, unit: "" },
+    progress: { current: files, total: files, unit: "files" },
   } as JobInfo;
 }
+
+const oneItem = [{ id: "m1", kind: "media", title: "x", artworkSlots: [] }] as never;
 
 const complete: SetupState = {
   adminPasswordSet: true,
@@ -133,6 +137,73 @@ describe("SetupChecklist (Seam B funnel spine)", () => {
 
     const scan = await screen.findByRole("link", { name: /start your first scan/i });
     await waitFor(() => expect(scan).toHaveTextContent("Done"));
+  });
+
+  it("keeps the first scan open when a completed scan found nothing and a later failed scan left items (CORE-1606)", async () => {
+    vi.mocked(fetchSetupState).mockResolvedValue(complete);
+    vi.mocked(fetchSourceItems).mockResolvedValue(oneItem);
+    vi.mocked(fetchJobs).mockResolvedValue([scanJob("failed"), scanJob("completed", 0)]);
+
+    renderChecklist();
+
+    const scan = await screen.findByRole("link", { name: /start your first scan/i });
+    await waitFor(() => expect(vi.mocked(fetchJobs)).toHaveBeenCalled());
+    await waitFor(() => expect(scan).toHaveTextContent("Next step"));
+    expect(scan).not.toHaveTextContent("Done");
+    expect(screen.queryByText(/you're all set/i)).toBeNull();
+  });
+
+  it("marks the first scan Done when content came in with no scan on record (restore or import)", async () => {
+    vi.mocked(fetchSetupState).mockResolvedValue(complete);
+    vi.mocked(fetchSourceItems).mockResolvedValue(oneItem);
+    vi.mocked(fetchJobs).mockResolvedValue([
+      {
+        id: "migration-1",
+        kind: "migration",
+        status: "completed",
+        progress: { current: 12, total: 12, unit: "items" },
+      },
+    ]);
+
+    renderChecklist();
+
+    const scan = await screen.findByRole("link", { name: /start your first scan/i });
+    await waitFor(() => expect(scan).toHaveTextContent("Done"));
+    expect(screen.getByText(/you're all set/i)).toBeInTheDocument();
+  });
+
+  it("does not mark the first scan Done while the job list cannot load", async () => {
+    vi.mocked(fetchSetupState).mockResolvedValue(complete);
+    vi.mocked(fetchSourceItems).mockResolvedValue(oneItem);
+    vi.mocked(fetchJobs).mockRejectedValue(new Error("offline"));
+
+    renderChecklist();
+
+    const scan = await screen.findByRole("link", { name: /start your first scan/i });
+    await waitFor(() => expect(vi.mocked(fetchJobs)).toHaveBeenCalled());
+    await waitFor(() => expect(scan).toHaveTextContent("Next step"));
+  });
+
+  it("Refresh reloads the scan jobs, so a scan that finished after the page opened shows Done (CORE-1606)", async () => {
+    vi.mocked(fetchSetupState).mockResolvedValue(complete);
+    vi.mocked(fetchSourceItems).mockResolvedValue(oneItem);
+    vi.mocked(fetchJobs).mockResolvedValueOnce([scanJob("running", 0)]);
+
+    renderChecklist();
+
+    const scan = await screen.findByRole("link", { name: /start your first scan/i });
+    await waitFor(() => expect(scan).toHaveTextContent("Next step"));
+
+    vi.mocked(fetchJobs).mockResolvedValue([scanJob("completed")]);
+    await userEvent.click(screen.getByRole("button", { name: /refresh/i }));
+
+    // The list re-renders while setup state reloads, so look the step up again.
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: /start your first scan/i })).toHaveTextContent(
+        "Done",
+      ),
+    );
+    expect(screen.getByText(/you're all set/i)).toBeInTheDocument();
   });
 
   it("does not number some steps and check others", async () => {

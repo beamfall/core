@@ -33,8 +33,14 @@ import { useAsync } from "../useAsync";
 interface FirstValueProgress {
   /** At least one catalog item is browsable. */
   browsable: boolean;
-  /** At least one scan job finished with status "completed". */
-  scanCompleted: boolean;
+  /**
+   * The browsable content came from a finished route: a scan job completed
+   * having brought files in (a completed scan's progress counts the files it
+   * imported), or jobs loaded with no scan on record, so the content arrived
+   * some other way (a restore or an import). An empty completed scan beside a
+   * failed one that left items is neither.
+   */
+  contentLanded: boolean;
 }
 
 interface SpineItem {
@@ -49,10 +55,12 @@ const SPINE: SpineItem[] = [
   {
     label: "setupChecklistScan",
     to: "/console/libraries",
-    // A Library alone is not a scan (CORE-1606): Done only once a scan has
-    // completed and the catalog holds at least one file. A scan that added
-    // some items and then failed or was canceled is not Done.
-    done: (s, p) => s.hasLibrary && p.browsable && p.scanCompleted,
+    // A Library alone is not a scan (CORE-1606): Done only once a completed
+    // scan brought files in and the catalog holds browsable content. A scan
+    // that added some items and then failed or was canceled is not Done, even
+    // beside an earlier completed scan that found nothing. Content that came
+    // in with no scan on record is Done: the step is about getting content in.
+    done: (s, p) => s.hasLibrary && p.browsable && p.contentLanded,
   },
   {
     label: "setupChecklistMigrate",
@@ -98,9 +106,14 @@ export async function fetchHasBrowsableContent(signal?: AbortSignal): Promise<bo
 }
 
 function firstValueProgress(browsable: boolean | null, jobs: JobInfo[] | null): FirstValueProgress {
+  const scans = (jobs ?? []).filter((job) => job.kind === "scan");
+  const scanBroughtFiles = scans.some(
+    (job) => job.status === "completed" && job.progress.current > 0,
+  );
   return {
     browsable: browsable === true,
-    scanCompleted: (jobs ?? []).some((job) => job.kind === "scan" && job.status === "completed"),
+    // Jobs that failed to load are unknown, never "no scan on record".
+    contentLanded: scanBroughtFiles || (jobs !== null && scans.length === 0),
   };
 }
 
@@ -143,12 +156,13 @@ export function SetupChecklist() {
   const resume = migrationResumeJob(jobs.data ?? []);
   const progress = firstValueProgress(browse.data, jobs.data);
 
-  // "Done = first successful browse." Setup-green with content and a completed
-  // scan → finished; otherwise (no browsable content, no completed scan, or a
-  // probe still loading / failed) → keep guiding toward first value.
+  // "Done = first successful browse." Setup-green with content that landed
+  // (see FirstValueProgress) → finished; otherwise (no browsable content, only
+  // an unfinished scan behind it, or a probe still loading / failed) → keep
+  // guiding toward first value.
   function footerMessage(): string {
     if (!data?.complete) return t("setupIncomplete");
-    if (progress.browsable && progress.scanCompleted) return t("setupChecklistFirstValue");
+    if (progress.browsable && progress.contentLanded) return t("setupChecklistFirstValue");
     return t("setupChecklistEmptyNextStep");
   }
 
@@ -161,8 +175,10 @@ export function SetupChecklist() {
           variant="outline"
           size="sm"
           onClick={() => {
+            // Reload everything the steps and footer are derived from.
             void refresh();
             void browse.refresh();
+            void jobs.refresh();
           }}
         >
           <RefreshCw className="console-nav-icon" aria-hidden />
