@@ -559,6 +559,46 @@ fi
 echo "secret-scan_test: RED-PROOF non-ignored untracked working-tree credential rejected"
 rm -f "$CORE/untracked-leak.txt"
 
+# CORE-1408: an untracked nested repository (git lists it as one directory
+# entry) is skipped and reported, ordinary untracked files are still scanned,
+# and an unreadable untracked regular file still fails.
+git init -q "$CORE/nested-lane"
+printf 'nested\n' >"$CORE/nested-lane/README"
+git -C "$CORE/nested-lane" add README
+git -C "$CORE/nested-lane" -c user.name=t -c user.email=t@example.invalid commit -q -m nested
+printf 'token = "%s"\n' "$seeded_value" >"$CORE/untracked-beside-nested.txt"
+if BEAMFALL_WORKSPACE_ROOT="$WORKSPACE" "$CORE/tools/gate/secret-scan.py" \
+  >"$TMP/nested-repo.out" 2>"$TMP/nested-repo.err"; then
+  fail "untracked file beside a nested repository was not scanned"
+fi
+grep -Fq 'beamfall:untracked-beside-nested.txt:1 rule=provider-github value=[REDACTED]' \
+  "$TMP/nested-repo.err" || fail "untracked file beside a nested repository was not scanned"
+grep -Fq 'secret-scan: SKIP beamfall untracked nested repository nested-lane/' \
+  "$TMP/nested-repo.err" || fail "untracked nested repository was not reported as skipped"
+if grep -Fq 'Is a directory' "$TMP/nested-repo.err"; then
+  fail "untracked nested repository failed the scan"
+fi
+rm -f "$CORE/untracked-beside-nested.txt"
+ln -s "$CORE/nested-lane" "$CORE/nested-lane-link"
+if ! BEAMFALL_WORKSPACE_ROOT="$WORKSPACE" "$CORE/tools/gate/secret-scan.py" \
+  >"$TMP/nested-clean.out" 2>"$TMP/nested-clean.err"; then
+  cat "$TMP/nested-clean.err" >&2
+  fail "untracked nested repository or directory symlink failed the scan"
+fi
+echo "secret-scan_test: GREEN-PROOF untracked nested repository skipped and reported, directory symlink scanned as its target, sibling untracked file still scanned"
+printf 'plain\n' >"$CORE/unreadable-untracked.txt"
+chmod 000 "$CORE/unreadable-untracked.txt"
+if BEAMFALL_WORKSPACE_ROOT="$WORKSPACE" "$CORE/tools/gate/secret-scan.py" \
+  >"$TMP/unreadable.out" 2>"$TMP/unreadable.err"; then
+  chmod 600 "$CORE/unreadable-untracked.txt"
+  fail "unreadable untracked regular file passed the scan"
+fi
+chmod 600 "$CORE/unreadable-untracked.txt"
+grep -Fq 'cannot read untracked file unreadable-untracked.txt' "$TMP/unreadable.err" \
+  || fail "unreadable untracked regular file failed for the wrong reason"
+echo "secret-scan_test: RED-PROOF unreadable untracked regular file still fails the scan"
+rm -rf "$CORE/nested-lane" "$CORE/nested-lane-link" "$CORE/unreadable-untracked.txt"
+
 printf '\0embedded %s suffix\0' "$seeded_value" >"$CORE/embedded.bin"
 git -C "$CORE" add embedded.bin
 if BEAMFALL_WORKSPACE_ROOT="$WORKSPACE" "$CORE/tools/gate/secret-scan.py" \
