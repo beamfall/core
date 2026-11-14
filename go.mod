@@ -6,12 +6,12 @@ require (
 	github.com/beamfall/plugin-audiobook v0.1.5
 	github.com/beamfall/plugin-enrichment v0.1.0
 	github.com/beamfall/plugin-familyarchive v0.1.5
-	github.com/beamfall/plugin-filmtv v0.1.7
+	github.com/beamfall/plugin-filmtv v0.1.8-0.20261114210809-ee31f58442cf
 	github.com/beamfall/plugin-karaoke v0.1.1
 	github.com/beamfall/plugin-music v0.1.6
 	github.com/beamfall/plugin-photos v0.1.5
 	github.com/beamfall/plugin-podcasts v0.1.5
-	github.com/beamfall/plugin-sdk v0.3.4
+	github.com/beamfall/plugin-sdk v0.3.5-0.20261114204621-c7ee1b8de1c1
 	github.com/brutella/dnssd v1.2.14
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/hashicorp/yamux v0.1.2
