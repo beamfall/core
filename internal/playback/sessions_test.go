@@ -2582,6 +2582,64 @@ func TestCloseWaitsForADetachedTeardown(t *testing.T) {
 	}
 }
 
+// TestCloseWaitsForADirectoryOnlyTeardown covers a teardown with no encoder
+// to stop: Close must still wait for another caller's removal of the session's
+// directory, so cached segments never outlive shutdown.
+func TestCloseWaitsForADirectoryOnlyTeardown(t *testing.T) {
+	t.Parallel()
+	sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	defer unblock()
+	sessions.removeDir = func(dir string) error {
+		select {
+		case entered <- struct{}{}:
+			<-release
+		default:
+		}
+		return os.RemoveAll(dir)
+	}
+	key := SessionKey{SessionID: "session-without-encoder", MediaID: "media-alpha"}
+
+	if _, err := filePath720(sessions, key, "master.m3u8"); err != nil {
+		t.Fatalf("master.m3u8: %v", err)
+	}
+	session := registeredSession(t, sessions, key)
+	if session.proc != nil {
+		t.Fatal("master.m3u8 started an encoder; this test needs a session without one")
+	}
+	dir := session.dir
+	go sessions.TerminateSession(key.SessionID)
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("TerminateSession never removed the session directory")
+	}
+
+	closed := make(chan struct{})
+	go func() {
+		sessions.Close()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+		t.Fatal("Close returned while a teardown was still removing a directory")
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	unblock()
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close did not return after the teardown finished")
+	}
+	if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("session directory after Close: stat err = %v, want not-exist", err)
+	}
+}
+
 // TestPendingStartIsNotPreempted covers preemption during an off-lock encoder
 // replacement: the replacing session cannot be torn down by a preemptor,
 // because its teardown could not wait for the replaced encoder to exit and the

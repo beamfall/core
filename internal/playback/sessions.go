@@ -380,23 +380,30 @@ type Sessions struct {
 	// stopEncoder, when set, replaces (*ffmpeg.HLSProcess).Stop. Tests set it
 	// to a slow Stop.
 	stopEncoder func(*ffmpeg.HLSProcess)
+	// removeDir, when set, replaces os.RemoveAll in runTeardowns. Tests set it
+	// to a slow removal.
+	removeDir func(string) error
 	// stopping counts encoders removed from the map whose teardown has not yet
 	// stopped them (or whose off-lock start has not yet given up). They still
 	// run, so they still count against the cap.
 	stopping int
-	// starting counts ensureRung starts running with mu released. Close waits
-	// for it and stopping to reach zero so no encoder, lease or directory
-	// outlives it.
+	// starting counts ensureRung starts running with mu released.
 	starting int
-	// offLockIdle, when non-nil, is closed when starting and stopping both
-	// drop to zero.
+	// detached counts sessionTeardowns handed out under mu that runTeardowns
+	// has not finished, including ones that only remove a directory. Close
+	// waits for starting, stopping and detached to reach zero so no encoder,
+	// lease or directory outlives it.
+	detached int
+	// offLockIdle, when non-nil, is closed when starting, stopping and
+	// detached all drop to zero.
 	offLockIdle chan struct{}
 }
 
 // sessionTeardown is the slow half of removing a session: stopping its FFmpeg
 // process (which waits for the exit) and deleting its working directory. A
 // caller collects it under s.mu and runs it after releasing the lock, so one
-// slow teardown never stalls requests for every other session.
+// slow teardown never stalls requests for every other session. Whoever builds
+// one under mu adds it to s.detached; runTeardowns takes it back out.
 type sessionTeardown struct {
 	proc *ffmpeg.HLSProcess
 	dir  string
@@ -413,28 +420,39 @@ func (s *Sessions) runTeardowns(teardowns []sessionTeardown) {
 	for _, t := range teardowns {
 		s.stop(t.proc)
 		if t.dir != "" {
-			_ = os.RemoveAll(t.dir)
+			if s.removeDir != nil {
+				_ = s.removeDir(t.dir)
+			} else {
+				_ = os.RemoveAll(t.dir)
+			}
 		}
 		if t.lease != nil {
 			t.lease.Release()
 		}
+		s.mu.Lock()
 		if t.counted {
-			s.mu.Lock()
 			s.stopping--
-			s.wakeCloseLocked()
-			s.mu.Unlock()
 		}
+		s.detached--
+		s.wakeCloseLocked()
+		s.mu.Unlock()
 	}
 }
 
 // wakeCloseLocked wakes a waiting Close once no start or teardown is running
-// with mu released. Call it after decrementing starting or stopping. Callers
-// hold mu.
+// with mu released. Call it after decrementing starting, stopping or detached.
+// Callers hold mu.
 func (s *Sessions) wakeCloseLocked() {
-	if s.starting == 0 && s.stopping == 0 && s.offLockIdle != nil {
+	if s.offLockIdleLocked() && s.offLockIdle != nil {
 		close(s.offLockIdle)
 		s.offLockIdle = nil
 	}
+}
+
+// offLockIdleLocked reports whether no encoder start or teardown is running
+// with mu released. Callers hold mu.
+func (s *Sessions) offLockIdleLocked() bool {
+	return s.starting == 0 && s.stopping == 0 && s.detached == 0
 }
 
 // stop stops proc and waits for it to exit. Call it without s.mu held.
@@ -661,6 +679,7 @@ func (s *Sessions) removeLocked(key SessionKey) *sessionTeardown {
 		return nil
 	}
 	teardown := &sessionTeardown{proc: session.proc, dir: session.dir}
+	s.detached++
 	switch {
 	case session.proc != nil:
 		// The process keeps running until the teardown stops it, so the
@@ -1093,6 +1112,7 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds, videoWid
 	}
 	if err := writeSessionPlaylists(dir, requestedRungs, durationSeconds); err != nil {
 		teardowns = append(teardowns, sessionTeardown{dir: dir})
+		s.detached++
 		return nil, err
 	}
 	s.sessions[key] = session
@@ -1648,7 +1668,7 @@ func (s *Sessions) Close() {
 	s.runTeardowns(teardowns)
 	for {
 		s.mu.Lock()
-		if s.starting == 0 && s.stopping == 0 {
+		if s.offLockIdleLocked() {
 			s.mu.Unlock()
 			return
 		}
