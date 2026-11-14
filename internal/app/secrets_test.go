@@ -464,7 +464,16 @@ func TestSecretFilesMoveSecretRefusesUnsafeOrDriftedState(t *testing.T) {
 	})
 }
 
+// pinContainer fixes runningInContainer for one test.
+func pinContainer(t *testing.T, contained bool) {
+	t.Helper()
+	previous := runningInContainer
+	runningInContainer = func() bool { return contained }
+	t.Cleanup(func() { runningInContainer = previous })
+}
+
 func TestLANSetupURLs(t *testing.T) {
+	pinContainer(t, false)
 	cidr := func(s string) net.Addr {
 		ip, ipNet, err := net.ParseCIDR(s)
 		if err != nil {
@@ -488,13 +497,48 @@ func TestLANSetupURLs(t *testing.T) {
 }
 
 func TestRemoteSetupHint(t *testing.T) {
-	if got, want := remoteSetupHint("http", "0.0.0.0:8800"), "http://<this server's address>:8800/web/"; got != want {
+	pinContainer(t, false)
+	if got, want := remoteSetupHint("http", "0.0.0.0:8800"), "open http://<this server's address>:8800/web/ (no token needed)"; got != want {
 		t.Fatalf("wildcard bind = %q, want %q", got, want)
 	}
-	if got := remoteSetupHint("https", "[::]:443"); got != "https://<this server's address>:443/web/" {
+	if got := remoteSetupHint("https", "[::]:443"); got != "open https://<this server's address>:443/web/ (no token needed)" {
 		t.Fatalf("IPv6 wildcard bind = %q", got)
 	}
 	if got := remoteSetupHint("http", "192.168.4.3:8800"); got != "" {
 		t.Fatalf("specific bind = %q, want none", got)
+	}
+	if got := remoteSetupHint("http", "127.0.0.1:8800"); got != "" {
+		t.Fatalf("loopback bind outside a container = %q, want none", got)
+	}
+}
+
+// TestSetupHintsInContainer (CORE-1097): a container's interface addresses are
+// unreachable from the LAN (the Unraid bridge-network report), so a wildcard
+// bind in a container lists none of them and names the Docker host address to
+// substitute, and a loopback bind in a container says it is unreachable and how
+// to fix it. None of the hints carries a token.
+func TestSetupHintsInContainer(t *testing.T) {
+	bridge := &net.IPNet{IP: net.IPv4(172, 17, 0, 2), Mask: net.CIDRMask(16, 32)}
+	loopback := &net.IPNet{IP: net.IPv4(127, 0, 0, 1), Mask: net.CIDRMask(8, 32)}
+	pinContainer(t, true)
+
+	if got := lanSetupURLs("http", "0.0.0.0:8800", []net.Addr{loopback, bridge}); got != nil {
+		t.Fatalf("container wildcard bind listed %q, want no container addresses", got)
+	}
+	wildcard := remoteSetupHint("http", "0.0.0.0:8800")
+	if !strings.Contains(wildcard, "http://<docker-host-address>:<published-port>/web/") || !strings.Contains(wildcard, "8800") {
+		t.Fatalf("container wildcard bind = %q, want the Docker host substitution hint", wildcard)
+	}
+	loop := remoteSetupHint("http", "127.0.0.1:8800")
+	if !strings.Contains(loop, "unreachable") || !strings.Contains(loop, "BEAMFALL_ADDR=0.0.0.0:8800") {
+		t.Fatalf("container loopback bind = %q, want the unreachable hint", loop)
+	}
+	if got := remoteSetupHint("http", "192.168.4.3:8800"); got != "" {
+		t.Fatalf("container specific-address bind = %q, want none", got)
+	}
+	for _, hint := range []string{wildcard, loop} {
+		if strings.Contains(hint, "token=") {
+			t.Fatalf("setup hint carries a token: %q", hint)
+		}
 	}
 }
