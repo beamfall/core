@@ -2679,18 +2679,29 @@ func (s *Store) MediaFilesForMedia(ctx context.Context, id MediaID, filter Libra
 // the first Version in label order (part 0), counting files marked missing.
 // Frame size is stored only on the row, so playback trusts it for this file
 // alone. While that file is missing every live Version is judged as one of
-// unknown frame size.
-func (s *Store) MediaFactsFingerprint(ctx context.Context, id MediaID) (string, error) {
+// unknown frame size. versioned reports whether the Media holds two or more
+// Versions, counting missing files, so playback keeps treating it as
+// multi-Version while only one Version is live.
+func (s *Store) MediaFactsFingerprint(ctx context.Context, id MediaID) (fingerprint string, versioned bool, err error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
-		return "", err
+		return "", false, err
 	}
 	plane, err := s.catalogPlaneForMediaLocked(ctx, id)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
-	return firstVersionFingerprintSQL(ctx, plane.reader, id)
+	if fingerprint, err = firstVersionFingerprintSQL(ctx, plane.reader, id); err != nil {
+		return "", false, err
+	}
+	var labels int
+	if err := plane.reader.QueryRowContext(ctx,
+		"SELECT COUNT(DISTINCT version_label) FROM media_file WHERE media_id = ? AND part_ordinal = 0", id,
+	).Scan(&labels); err != nil {
+		return "", false, err
+	}
+	return fingerprint, labels > 1, nil
 }
 
 // MediaFilesForLibrary returns every live file in a Library, unfiltered. This

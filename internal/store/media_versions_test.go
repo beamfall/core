@@ -254,7 +254,7 @@ func TestMediaRowKeepsFirstVersionFacts(t *testing.T) {
 	if _, err := st.catalogW.ExecContext(ctx, `UPDATE media_file SET missing_at_ms = 1 WHERE content_fingerprint = ?`, plain.ContentFingerprint); err != nil {
 		t.Fatal(err)
 	}
-	if fp, err := st.MediaFactsFingerprint(ctx, media.ID); err != nil || fp != plain.ContentFingerprint {
+	if fp, _, err := st.MediaFactsFingerprint(ctx, media.ID); err != nil || fp != plain.ContentFingerprint {
 		t.Fatalf("MediaFactsFingerprint with the first file missing = %q, %v; want the missing first file %q", fp, err, plain.ContentFingerprint)
 	}
 	wantRow("with the first Version's file missing")
@@ -281,7 +281,7 @@ func TestImportMediaFileVersionWithoutProbeKeepsDuration(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if fp, err := st.MediaFactsFingerprint(ctx, media.ID); err != nil || fp != uhd.ContentFingerprint {
+	if fp, _, err := st.MediaFactsFingerprint(ctx, media.ID); err != nil || fp != uhd.ContentFingerprint {
 		t.Fatalf("MediaFactsFingerprint = %q, %v; want the 4K file, first in label order", fp, err)
 	}
 	row, err := st.Media(ctx, media.ID, LibraryFilter{AllowedIDs: []LibraryID{"library-local"}})
@@ -290,6 +290,45 @@ func TestImportMediaFileVersionWithoutProbeKeepsDuration(t *testing.T) {
 	}
 	if row.DurationSeconds != 140 || row.VideoWidth != 0 || row.VideoHeight != 0 {
 		t.Fatalf("row after a probe-less first Version = %dx%d %vs, want unknown frame size and the known 140s", row.VideoWidth, row.VideoHeight, row.DurationSeconds)
+	}
+}
+
+// TestImportMediaFileVersionUnprobedRefreshKeepsFrameSize: re-importing the
+// first Version's own bytes without a probe keeps the frame size the row holds
+// for it.
+func TestImportMediaFileVersionUnprobedRefreshKeepsFrameSize(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	extended := versionImport("library-local", filepath.Join(root, "Night Harbor (2001) - Extended.mkv"), "Night Harbor")
+	extended.VideoWidthHint, extended.VideoHeightHint, extended.DurationSecondsHint = 1920, 1080, 140
+	media, anchor, err := st.ImportMediaFile(ctx, extended)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uhd := versionImport("library-local", filepath.Join(root, "Night Harbor (2001) - 4K.mkv"), "Night Harbor")
+	uhd.VideoWidthHint, uhd.VideoHeightHint, uhd.DurationSecondsHint = 3840, 2160, 141
+	if _, err := st.ImportMediaFileVersion(ctx, MediaVersionImport{
+		MediaID: media.ID, File: uhd, Label: "4K", AnchorFingerprint: anchor.ContentFingerprint, AnchorLabel: "Extended",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	unprobed := uhd
+	unprobed.VideoWidthHint, unprobed.VideoHeightHint, unprobed.DurationSecondsHint = 0, 0, 0
+	if _, err := st.ImportMediaFileVersion(ctx, MediaVersionImport{
+		MediaID: media.ID, File: unprobed, Label: "4K", AnchorFingerprint: anchor.ContentFingerprint,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	row, err := st.Media(ctx, media.ID, LibraryFilter{AllowedIDs: []LibraryID{"library-local"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row.VideoWidth != 3840 || row.VideoHeight != 2160 || row.DurationSeconds != 141 {
+		t.Fatalf("row after an unprobed refresh of the first Version = %dx%d %vs, want 3840x2160 141s", row.VideoWidth, row.VideoHeight, row.DurationSeconds)
+	}
+	if _, versioned, err := st.MediaFactsFingerprint(ctx, media.ID); err != nil || !versioned {
+		t.Fatalf("MediaFactsFingerprint versioned = %v, %v; want true for two Versions", versioned, err)
 	}
 }
 

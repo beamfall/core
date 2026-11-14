@@ -536,4 +536,15 @@ func TestUnprobedFirstVersionIsGuarded(t *testing.T) {
 	}); err != nil || resp.Decision == "direct-play" {
 		t.Fatalf("Extended Version (row no longer describes it) = %s, %v; want it held off direct play", resp.Decision, err)
 	}
+	// With the Extended file missing, the 4K file is the only live Version and
+	// playbackInfo lists no Versions; the Media is still multi-Version, so the
+	// guard holds.
+	if err := st.MarkMissingMediaFilesNotSeenSince(context.Background(), "library-local", extendedPath, time.Now().Add(time.Hour)); err != nil {
+		t.Fatalf("MarkMissingMediaFilesNotSeenSince: %v", err)
+	}
+	if resp, err := service.Info(context.Background(), scope, InfoRequest{
+		MediaID: string(anchor.ID), CapabilityProfile: main10_1080p,
+	}); err != nil || resp.Decision != "transcode" {
+		t.Fatalf("unprobed 4K first Version, its sibling missing = %s, %v; want transcode", resp.Decision, err)
+	}
 }

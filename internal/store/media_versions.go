@@ -106,6 +106,12 @@ func importMediaFileVersionSQL(ctx context.Context, plane catalogPlane, req Medi
 	}
 	defer tx.Rollback()
 
+	// The first Version before this import: an unprobed refresh of that same
+	// file keeps the frame size the row already holds for it.
+	priorFirst, err := firstVersionFingerprintSQL(ctx, tx, req.MediaID)
+	if err != nil {
+		return MediaFile{}, err
+	}
 	var libraryID LibraryID
 	err = tx.QueryRowContext(ctx, "SELECT library_id FROM media WHERE id = ?", req.MediaID).Scan(&libraryID)
 	if errors.Is(err, sql.ErrNoRows) || (err == nil && libraryID != req.File.LibraryID) {
@@ -180,7 +186,7 @@ func importMediaFileVersionSQL(ctx context.Context, plane catalogPlane, req Medi
 			return MediaFile{}, err
 		}
 	}
-	if err := refreshFirstVersionFactsTx(ctx, tx, req.MediaID, imported); err != nil {
+	if err := refreshFirstVersionFactsTx(ctx, tx, req.MediaID, imported, priorFirst); err != nil {
 		return MediaFile{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -194,22 +200,27 @@ func importMediaFileVersionSQL(ctx context.Context, plane catalogPlane, req Medi
 // part 0, counting missing files). Frame size and duration are stored only on
 // the row, so playback judges the first Version by the row and treats every
 // other Version's frame size as unknown; this keeps the row describing that
-// first Version. Frame size always follows the new file, zero when it was not
-// probed, so the row never claims the previous file's height for it; an
-// unprobed duration keeps the title's known one.
-func refreshFirstVersionFactsTx(ctx context.Context, tx *sql.Tx, mediaID MediaID, imported ImportMediaFile) error {
+// first Version. A file that newly becomes first sets the frame size to its
+// own, zero when it was not probed, so the row never claims the previous
+// file's height for it. An unprobed refresh of the file that was already
+// first (priorFirst) keeps the frame size, and an unprobed duration keeps the
+// title's known one.
+func refreshFirstVersionFactsTx(ctx context.Context, tx *sql.Tx, mediaID MediaID, imported ImportMediaFile, priorFirst string) error {
 	first, err := firstVersionFingerprintSQL(ctx, tx, mediaID)
 	if err != nil || first != imported.ContentFingerprint {
 		return err
 	}
+	width, height := max(imported.VideoWidthHint, 0), max(imported.VideoHeightHint, 0)
+	keepFrame := priorFirst == first && width == 0 && height == 0
 	_, err = tx.ExecContext(ctx, `
 		UPDATE media SET
 		  container = ?, codec = ?,
 		  duration_seconds = CASE WHEN ? > 0 THEN ? ELSE duration_seconds END,
-		  video_width = ?, video_height = ?
+		  video_width = CASE WHEN ? THEN video_width ELSE ? END,
+		  video_height = CASE WHEN ? THEN video_height ELSE ? END
 		WHERE id = ?
 	`, imported.Container, imported.Codec, imported.DurationSecondsHint, imported.DurationSecondsHint,
-		max(imported.VideoWidthHint, 0), max(imported.VideoHeightHint, 0), mediaID)
+		keepFrame, width, keepFrame, height, mediaID)
 	return err
 }
 

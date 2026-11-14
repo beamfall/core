@@ -870,7 +870,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	if media.Class == store.MediaClassImage {
 		return s.imageDecision(ctx, scope, media, files, suffix)
 	}
-	factsFingerprint, err := s.store.MediaFactsFingerprint(ctx, media.ID)
+	factsFingerprint, versioned, err := s.store.MediaFactsFingerprint(ctx, media.ID)
 	if err != nil {
 		return decision{}, err
 	}
@@ -881,13 +881,14 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	// alternate marks a negotiated file other than the one the Media row's
 	// frame size describes (the first Version, which may be missing). Under a
 	// height ceiling, passthrough below is barred for it, or for any Version
-	// of a multi-Version Media, while its frame height is unknown.
+	// of a multi-Version Media (counting missing Versions, so the guard holds
+	// while only one is live), while its frame height is unknown.
 	alternate := file.ContentFingerprint != factsFingerprint
 	if len(versions) > 0 || alternate {
 		// Every rung below judges the negotiated Version by its own file facts.
 		media = versionFacts(media, file, streams, !alternate)
 	}
-	barred := unknownHeightBarred(media, profile, alternate || len(versions) > 0)
+	barred := unknownHeightBarred(media, profile, alternate || versioned || len(versions) > 0)
 	// One deferred stamp covers every decision return below, like
 	// audioLanguage: the picker lists the same Versions whatever the verdict,
 	// so a viewer whose pick cannot play can still pick another.
