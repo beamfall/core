@@ -312,26 +312,14 @@ func (h *Handler) acceptWatchParty(ctx context.Context, scope auth.Scope, req re
 	// to Reveal the party's content with ITS OWN filter. h.store.Media returns
 	// "media not found" when the filter cannot see it, so a managed or unrevealed
 	// session is rejected with an explicit reason — never a silent exclusion.
-	content := g.Content()
-	if _, err := h.store.Media(ctx, content, scope.LibraryFilter()); err != nil {
-		return AcceptWatchPartyResult{}, clientError("cannot join: this party's content is not visible to your profile")
-	}
 	member := conductor.Member{
 		SessionID:     scope.SessionID,
 		DeviceID:      scope.DeviceID,
 		ClockOffset:   time.Duration(int64Var(req, "clockOffsetMS")) * time.Millisecond,
 		RenderLatency: time.Duration(int64Var(req, "renderLatencyMS")) * time.Millisecond,
 	}
-	if err := h.conductor.Accept(partyID, scope.ProfileID, member); err != nil {
-		return AcceptWatchPartyResult{}, partyClientError(err)
-	}
-	// Late-join sync (§2.5 step 5): hand back the live anchor so the joiner lands
-	// on the canonical position.
-	anchor, err := h.conductor.PartyAnchor(partyID)
+	anchor, err := h.acceptPartyMember(ctx, g, scope, member)
 	if err != nil {
-		return AcceptWatchPartyResult{}, partyClientError(err)
-	}
-	if err := h.broadcastPartyRoster(ctx, partyID); err != nil {
 		return AcceptWatchPartyResult{}, err
 	}
 	if err := h.logActivity(ctx, scope, store.ActivityGroupControl, "watch-party", partyID, ""); err != nil {
@@ -343,7 +331,7 @@ func (h *Handler) acceptWatchParty(ctx context.Context, scope auth.Scope, req re
 	// (it still joins — the party stays whole). Advisory; a direct-playing client
 	// is unaffected. The authoritative per-member decision is its own playbackInfo.
 	degraded := h.transcodeAdmission != nil &&
-		!h.transcodeAdmission.CanAdmitSession(scope.SessionID, content)
+		!h.transcodeAdmission.CanAdmitSession(scope.SessionID, g.Content())
 	return AcceptWatchPartyResult{
 		PartyID:     partyID,
 		Item:        string(anchor.Item),
@@ -673,16 +661,55 @@ func (h *Handler) broadcastPartyTransition(ctx context.Context, partyID string, 
 	return nil
 }
 
+// acceptPartyMember joins member to the party and broadcasts the new roster.
+// It holds partyMu across the Reveal check, the join and the broadcast, so no
+// transition to another title can slip between them (partyTransition checks
+// the members it sees). It returns the live anchor for late-join sync (§2.5
+// step 5).
+func (h *Handler) acceptPartyMember(ctx context.Context, g *conductor.Group, scope auth.Scope, member conductor.Member) (conductor.Transition, error) {
+	h.partyMu.Lock()
+	defer h.partyMu.Unlock()
+	// The Reveal intersection: the accepting session must be able to Reveal the
+	// party's content, and the title it is on now, with ITS OWN filter.
+	// h.store.Media returns "media not found" when the filter cannot see it, so
+	// a managed or unrevealed session is rejected with an explicit reason —
+	// never a silent exclusion.
+	anchor, err := h.conductor.PartyAnchor(g.ID)
+	if err != nil {
+		return conductor.Transition{}, partyClientError(err)
+	}
+	for _, item := range []store.MediaID{g.Content(), anchor.Item} {
+		if _, err := h.store.Media(ctx, item, scope.LibraryFilter()); err != nil {
+			return conductor.Transition{}, clientError("cannot join: this party's content is not visible to your profile")
+		}
+	}
+	if err := h.conductor.Accept(g.ID, scope.ProfileID, member); err != nil {
+		return conductor.Transition{}, partyClientError(err)
+	}
+	if anchor, err = h.conductor.PartyAnchor(g.ID); err != nil {
+		return conductor.Transition{}, partyClientError(err)
+	}
+	if err := h.broadcastPartyRosterLocked(ctx, g.ID); err != nil {
+		return conductor.Transition{}, err
+	}
+	return anchor, nil
+}
+
 // broadcastPartyRoster writes the party's membership snapshot and current
 // anchor to every member Profile, so a member who joined from an invite sees
 // who is watching and lands on the live timeline. Display names only (ADR-0111
 // §1), sorted for a stable order.
 func (h *Handler) broadcastPartyRoster(ctx context.Context, partyID string) error {
+	h.partyMu.Lock()
+	defer h.partyMu.Unlock()
+	return h.broadcastPartyRosterLocked(ctx, partyID)
+}
+
+// broadcastPartyRosterLocked is broadcastPartyRoster for a caller holding partyMu.
+func (h *Handler) broadcastPartyRosterLocked(ctx context.Context, partyID string) error {
 	if h.store == nil {
 		return nil
 	}
-	h.partyMu.Lock()
-	defer h.partyMu.Unlock()
 	g, err := h.conductor.Party(partyID)
 	if err != nil {
 		return partyClientError(err)

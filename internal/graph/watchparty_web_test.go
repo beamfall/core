@@ -184,3 +184,27 @@ func TestWatchPartyRefusesTitleSomeMemberCannotSee(t *testing.T) {
 		t.Fatalf("party anchor = %v, %v; want it still on media-alpha", anchor.Item, err)
 	}
 }
+
+// feature:watch-party
+func TestWatchPartyAcceptRefusedWhenCurrentTitleHidden(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	st := storetest.Open(t)
+	h := newConductorHandler(st, now)
+
+	// A revealed host forms on a title everyone can see, then moves alone to a
+	// restricted one before inviting.
+	party := createParty(t, h, "media-alpha", false, authorizeRevealed)
+	if _, errs := post(t, h, pausedTransportBody(party.PartyID, "media-archive", 0, true), authorizeRevealed); len(errs) != 0 {
+		t.Fatalf("host-only move errors = %#v", errs)
+	}
+	if _, errs := post(t, h, inviteBody(party.PartyID, "Managed"), authorizeRevealed); len(errs) != 0 {
+		t.Fatalf("invite errors = %#v", errs)
+	}
+	cursor := lastSeq(t, st)
+	if _, errs := post(t, h, acceptBody(party.PartyID), authorizeManaged); len(errs) == 0 {
+		t.Fatal("accept onto a title hidden from the joiner succeeded")
+	}
+	if rows := partySyncRows(t, st, party.PartyID, cursor, store.GroupSignalRoster); len(rows) != 0 {
+		t.Fatalf("refused accept still broadcast %d roster rows", len(rows))
+	}
+}

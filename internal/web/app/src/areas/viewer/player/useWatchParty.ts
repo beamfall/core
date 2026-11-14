@@ -1,4 +1,5 @@
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
+import { lastViewerIntent, markViewerIntent } from "./viewerIntent";
 import {
   getWatchParty,
   leaveParty,
@@ -24,7 +25,7 @@ import {
 const SYNC_INTERVAL_MS = 250;
 /**
  * A media event counts as the viewer's own only within this long of their
- * pointer or key input, and only if no correction came after that input.
+ * input, and only if no correction came after that input.
  */
 const INTENT_WINDOW_MS = 1500;
 
@@ -64,10 +65,9 @@ export function useWatchParty({
   const [driftMS, setDriftMS] = useState<number | null>(null);
   const [playback, setPlayback] = useState<WatchPartyPlayback>("off");
   const [needsTap, setNeedsTap] = useState(false);
-  // performance.now() of the viewer's last input in this player, and of the
-  // last correction. Input from before the player mounted (the notification's
-  // Join click) is not counted.
-  const lastInput = useRef(Number.NEGATIVE_INFINITY);
+  // performance.now() of the player's mount and of its last correction. Input
+  // from before the mount (the notification's Join click) is not counted.
+  const mountedAt = useRef(performance.now());
   const lastCorrection = useRef(Number.NEGATIVE_INFINITY);
   const mediaIdRef = useRef(mediaId);
   mediaIdRef.current = mediaId;
@@ -150,16 +150,13 @@ export function useWatchParty({
   }, [active, timeline, sync, videoRef]);
 
   // Track the viewer's input, so a media event can be told apart from autoplay
-  // and from the echo of a correction.
+  // and from the echo of a correction. A scrubber drag seeks on release, so the
+  // release counts too. OS media controls mark it through useMediaSession.
   useEffect(() => {
-    const onInput = () => {
-      lastInput.current = performance.now();
-    };
-    window.addEventListener("pointerdown", onInput, true);
-    window.addEventListener("keydown", onInput, true);
+    const events = ["pointerdown", "pointerup", "keydown"] as const;
+    for (const name of events) window.addEventListener(name, markViewerIntent, true);
     return () => {
-      window.removeEventListener("pointerdown", onInput, true);
-      window.removeEventListener("keydown", onInput, true);
+      for (const name of events) window.removeEventListener(name, markViewerIntent, true);
     };
   }, []);
 
@@ -170,8 +167,14 @@ export function useWatchParty({
     const video = videoRef.current;
     if (!active || !attached || !video) return;
     const onLocal = (event: Event) => {
-      const input = lastInput.current;
-      if (performance.now() - input > INTENT_WINDOW_MS || input < lastCorrection.current) return;
+      const input = lastViewerIntent();
+      if (
+        input < mountedAt.current ||
+        performance.now() - input > INTENT_WINDOW_MS ||
+        input < lastCorrection.current
+      ) {
+        return;
+      }
       const s = getWatchParty();
       const tl = s.timeline;
       if (s.status !== "active" || !tl || tl.item !== mediaIdRef.current) return;

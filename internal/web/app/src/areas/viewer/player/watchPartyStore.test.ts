@@ -289,6 +289,53 @@ describe("races", () => {
     }
   });
 
+  it("keeps a playing timeline that a roster only re-states", async () => {
+    vi.mocked(acceptWatchParty).mockImplementation(async () => {
+      deliver({
+        groupID: "p1",
+        signal: "transition",
+        item: "m1",
+        positionMS: 1000,
+        presentAtMS: 5000,
+        paused: false,
+      });
+      return { partyID: "p1", item: "m1", positionMS: 1000, presentAtMS: 5000 };
+    });
+    await joinWatchParty("p1");
+    const playing = getWatchParty().timeline;
+
+    // Someone joins at server time 9000: the roster carries the same timeline,
+    // anchored afresh 2 s ahead.
+    deliver({
+      groupID: "p1",
+      signal: "roster",
+      item: "m1",
+      positionMS: 8000,
+      presentAtMS: 12_000,
+      paused: false,
+      members: ["Guest", "Host", "Late"],
+    });
+    expect(getWatchParty().timeline).toBe(playing);
+    expect(getWatchParty().members).toEqual(["Guest", "Host", "Late"]);
+
+    // A roster that disagrees (a pause the stream has not shown) still moves it.
+    deliver({
+      groupID: "p1",
+      signal: "roster",
+      item: "m1",
+      positionMS: 9000,
+      presentAtMS: 13_000,
+      paused: true,
+      members: ["Guest", "Host", "Late"],
+    });
+    expect(getWatchParty().timeline).toEqual({
+      item: "m1",
+      positionMS: 9000,
+      presentAtMS: 13_000,
+      paused: true,
+    });
+  });
+
   it("keeps a transition that arrived before the accept returned", async () => {
     vi.mocked(acceptWatchParty).mockImplementation(async () => {
       deliver({ groupID: "p1", signal: "roster", item: "m1", paused: false, members: ["Host"] });

@@ -10,7 +10,13 @@ import {
   type WatchPartyInfo,
   watchPartyTransport,
 } from "@/lib/graphql";
-import { type GroupSyncFrame, type PartyTimeline, parseGroupSync } from "./watchPartySync";
+import {
+  expectedPositionMS,
+  type GroupSyncFrame,
+  IN_SYNC_MS,
+  type PartyTimeline,
+  parseGroupSync,
+} from "./watchPartySync";
 
 // The web viewer's one Watch Party (CORE-1677). It lives outside React so the
 // party, its clock offset and its group.sync subscription survive the jump
@@ -92,6 +98,18 @@ function timelineOf(frame: GroupSyncFrame): PartyTimeline {
   };
 }
 
+// A roster re-states the live anchor with a fresh present time. When it
+// describes the timeline this viewer already follows, keep the current one:
+// adopting the new present time would hold a playing viewer for the pre-buffer.
+function sameTimeline(current: PartyTimeline | null, frame: GroupSyncFrame): boolean {
+  return (
+    current !== null &&
+    current.item === frame.item &&
+    current.paused === frame.paused &&
+    Math.abs(expectedPositionMS(current, frame.presentAtMS) - frame.positionMS) <= IN_SYNC_MS
+  );
+}
+
 function applyFrame(frame: GroupSyncFrame): void {
   if (!state.partyID || frame.groupID !== state.partyID) return;
   // A nudge carries only the server's suggested rate; the player measures and
@@ -99,7 +117,7 @@ function applyFrame(frame: GroupSyncFrame): void {
   // in stream order, so each one is the timeline.
   if (frame.signal === "nudge") return;
   const patch: Partial<WatchPartyState> = {};
-  if (frame.item) {
+  if (frame.item && !(frame.signal === "roster" && sameTimeline(state.timeline, frame))) {
     patch.timeline = timelineOf(frame);
     timelineFrames++;
   }

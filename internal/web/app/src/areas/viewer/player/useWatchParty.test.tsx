@@ -1,6 +1,7 @@
 import { fireEvent, renderHook } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useWatchParty } from "./useWatchParty";
+import { markViewerIntent } from "./viewerIntent";
 import { sendPartyTransport, type WatchPartyState } from "./watchPartyStore";
 
 let party: WatchPartyState;
@@ -57,6 +58,10 @@ describe("useWatchParty local transport", () => {
     vi.mocked(sendPartyTransport).mockClear();
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("ignores the browser's autoplay on a paused join, even right after the Join click", () => {
     party = activeParty({ item: "m1", positionMS: 0, presentAtMS: 0, paused: true });
     const video = new FakeVideo();
@@ -91,6 +96,34 @@ describe("useWatchParty local transport", () => {
     video.currentTime = 30;
     video.dispatchEvent(new Event("seeked"));
     expect(sendPartyTransport).toHaveBeenCalledWith("m1", 30_000, true);
+    view.unmount();
+  });
+
+  it("sends a scrubber drag that outlasts the intent window, on release", () => {
+    party = activeParty({ item: "m1", positionMS: 0, presentAtMS: 0, paused: true });
+    const video = new FakeVideo();
+    let now = 10_000;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const view = mount(video);
+    now += 100;
+    fireEvent.pointerDown(document.body);
+    // The viewer drags for three seconds, then lets go.
+    now += 3000;
+    fireEvent.pointerUp(document.body);
+    video.currentTime = 45;
+    video.dispatchEvent(new Event("seeked"));
+    expect(sendPartyTransport).toHaveBeenCalledWith("m1", 45_000, true);
+    view.unmount();
+  });
+
+  it("sends a play from the OS media controls", () => {
+    party = activeParty({ item: "m1", positionMS: 0, presentAtMS: 0, paused: true });
+    const video = new FakeVideo();
+    const view = mount(video);
+    // useMediaSession's play handler marks the intent, then plays.
+    markViewerIntent();
+    video.play();
+    expect(sendPartyTransport).toHaveBeenCalledWith("m1", 0, false);
     view.unmount();
   });
 });
