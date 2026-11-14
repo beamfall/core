@@ -1,4 +1,3 @@
-import { Lock } from "lucide-react";
 import {
   type FormEvent,
   type ReactNode,
@@ -46,14 +45,13 @@ export interface AdminGateCopy {
 
 export function AdminGate({
   children,
-  sessionBar,
   copy,
 }: {
-  children: ReactNode;
+  /** The unlocked surface; a function receives the lock action so the area
+   * can place the session status inside its own layout. */
+  children: ReactNode | ((lock: () => void) => ReactNode);
   /** Replaces the Console wording; the unlock flow itself is unchanged. */
   copy?: AdminGateCopy;
-  /** Slot for the active-session bar, rendered by the area shell when active. */
-  sessionBar?: (lock: () => void) => ReactNode;
 }) {
   const t = useT();
   const { session } = useSession();
@@ -268,12 +266,7 @@ export function AdminGate({
     );
   }
 
-  return (
-    <>
-      {sessionBar?.(lock)}
-      {children}
-    </>
-  );
+  return <>{typeof children === "function" ? children(lock) : children}</>;
 }
 
 // The reason-coded locked surface. A managed Profile sees the not-adult reason
@@ -322,9 +315,6 @@ function LockedCard({
     <div className="console-gate">
       <Card>
         <CardHeader>
-          <div className="console-gate-mark" aria-hidden>
-            <Lock className="h-4 w-4" />
-          </div>
           <CardTitle>{t(titleKey)}</CardTitle>
           <CardDescription>{t(leadKey)}</CardDescription>
         </CardHeader>
@@ -355,12 +345,12 @@ function LockedCard({
                 </div>
               )}
               {mismatch && (
-                <p role="alert" className="text-sm text-[var(--red-500)]">
+                <p role="alert" className="text-sm text-[var(--state-danger)]">
                   {t("consoleFirstPasswordMismatch")}
                 </p>
               )}
               {rejected && (
-                <p role="alert" className="text-sm text-[var(--red-500)]">
+                <p role="alert" className="text-sm text-[var(--state-danger)]">
                   {t(firstPassword ? "consoleFirstPasswordRejected" : "adminUnlockRejected")}
                 </p>
               )}

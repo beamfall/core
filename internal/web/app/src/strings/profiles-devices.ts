@@ -50,7 +50,7 @@ export const profileDeviceStrings = {
     deviceAddHeading: "Add a device",
     deviceAddLead:
       "Mint a one-time pairing code, then enter it on the new browser or device to enroll it.",
-    devicePairingCodeShown: "Pairing code — copy it now, then enter it on the new device.",
+    devicePairingCodeShown: "Pairing code. Copy it now, then enter it on the new device.",
     deviceMintViewer: "Viewer code",
     deviceMintManager: "Manager code",
     deviceMintManagerConfirm:

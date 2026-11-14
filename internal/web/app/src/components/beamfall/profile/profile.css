@@ -1,6 +1,6 @@
 /* Profile avatars and the "Who's watching?" picker (CORE-1196).
  * Tones come from the brand ramps; the glyph sits on them in ink so every
- * tone keeps its contrast in both registers. Glows are static. */
+ * tone keeps its contrast in both registers. Flat fills, no gloss or glow. */
 
 .bf-avatar {
   --avatar-tone: var(--mist-500);
@@ -12,16 +12,12 @@
   width: var(--avatar-size);
   height: var(--avatar-size);
   border-radius: 28%;
-  background:
-    radial-gradient(120% 120% at 30% 20%, rgb(255 255 255 / 28%), transparent 55%),
-    var(--avatar-tone);
+  background: var(--avatar-tone);
   color: var(--ink-950);
   font-size: calc(var(--avatar-size) * 0.44);
   font-weight: 700;
   line-height: 1;
-  box-shadow:
-    inset 0 0 0 1px rgb(255 255 255 / 22%),
-    0 0 0 1px rgb(0 0 0 / 18%);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 14%);
   user-select: none;
 }
 
@@ -75,40 +71,28 @@
   width: 100%;
   padding: 16px 8px;
   border: 1px solid transparent;
-  border-radius: var(--radius-card, 16px);
+  border-radius: var(--radius-surface);
   background: transparent;
   color: inherit;
   text-align: center;
   cursor: pointer;
-  transition:
-    background-color 150ms ease,
-    border-color 150ms ease;
+  transition: background-color var(--duration-fast) var(--ease-standard);
 }
 
 .bf-who-tile .bf-avatar {
   transition:
-    transform 150ms ease,
-    box-shadow 150ms ease;
+    transform var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
 }
 
 .bf-who-tile:hover,
 .bf-who-tile:focus-visible {
-  border-color: var(--color-glass-border, rgb(255 255 255 / 12%));
-  background: var(--color-glass, rgb(255 255 255 / 5%));
+  background: var(--control-bg-hover);
 }
 
 .bf-who-tile:hover .bf-avatar,
 .bf-who-tile:focus-visible .bf-avatar {
-  transform: translateY(-2px) scale(1.04);
-  box-shadow:
-    inset 0 0 0 1px rgb(255 255 255 / 30%),
-    0 0 0 3px color-mix(in oklab, var(--avatar-tone) 55%, transparent),
-    0 12px 40px -8px color-mix(in oklab, var(--avatar-tone) 70%, transparent);
-}
-
-.bf-who-tile:focus-visible {
-  outline: 2px solid var(--focus-ring, currentColor);
-  outline-offset: 2px;
+  transform: translateY(-2px);
 }
 
 .bf-who-tile:disabled {
@@ -118,8 +102,8 @@
 
 .bf-who-tile.is-current .bf-avatar {
   box-shadow:
-    inset 0 0 0 1px rgb(255 255 255 / 30%),
-    0 0 0 3px color-mix(in oklab, var(--avatar-tone) 70%, transparent);
+    0 0 0 3px var(--bg-root),
+    0 0 0 5px var(--text-primary);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -153,6 +137,17 @@
 .bf-avatar-option:has(input:focus-visible) {
   outline: 2px solid var(--focus-ring, currentColor);
   outline-offset: 2px;
+}
+
+/* Picture options sit on a neutral surface; only the chosen one (and the
+ * preview) carries the tone, so the grid never reads as a wall of colour. */
+.bf-avatar-option--picture:not(:has(input:checked)) .bf-avatar {
+  background: var(--bg-raised, rgb(255 255 255 / 6%));
+  color: var(--text-secondary, currentColor);
+}
+
+.bf-avatar-option--picture:not(:has(input:checked)):hover .bf-avatar {
+  color: var(--text-primary, currentColor);
 }
 
 /* A plain colour swatch: the tone with no glyph. */

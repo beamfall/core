@@ -1,4 +1,3 @@
-import { Eye, FolderSync, ListTodo } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   ErrorLine,
@@ -81,7 +80,7 @@ export function BulkOpsPage() {
 
   return (
     <div className="space-y-4">
-      <ManageSection title={t("bulkOpsHeading")} icon={ListTodo} lead={t("bulkOpsLead")}>
+      <ManageSection title={t("bulkOpsHeading")} lead={t("bulkOpsLead")}>
         {batch && (
           <div className="mb-2 flex items-center gap-3">
             <StatusBadge state="green">
@@ -163,7 +162,7 @@ function BulkEditSection({
   const count = changes?.length ?? 0;
 
   return (
-    <ManageSection title={t("bulkEditPreviewHeading")} icon={Eye}>
+    <ManageSection title={t("bulkEditPreviewHeading")}>
       <div className="space-y-3">
         <div className="space-y-1">
           <Label htmlFor="bulk-edit-ids">{t("bulkEditMediaIDs")}</Label>
@@ -295,7 +294,7 @@ function OrganizeSection({
   const count = changes?.length ?? 0;
 
   return (
-    <ManageSection title={t("organizeHeading")} icon={FolderSync}>
+    <ManageSection title={t("organizeHeading")}>
       <div className="space-y-3">
         <div className="flex flex-wrap items-end gap-3">
           <div className="space-y-1">

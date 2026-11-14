@@ -10,7 +10,7 @@ export const collectionMarkerStrings = {
     collectionName: "Name",
     newCollectionName: "New Collection name",
     collectionParent: "Parent",
-    collectionTopLevel: "— Top level —",
+    collectionTopLevel: "Top level",
     create: "Create",
     collectionDelete: "Delete",
     collectionMembers: "Members",
@@ -26,7 +26,7 @@ export const collectionMarkerStrings = {
     smartCollectionHeading: "Smart Collection",
     sourceExpr: "Source expression",
     sortExpr: "Sort expression",
-    sourceExprHelp: "The match criteria — a generic field/op/value tree the server evaluates.",
+    sourceExprHelp: "The match criteria, a generic field/op/value tree the server evaluates.",
     sortExprHelp:
       "Round-tripped independently of the Source so reordering never rewrites the match.",
     saveSource: "Save Source",
@@ -67,7 +67,7 @@ export const collectionMarkerStrings = {
     markersDeleteFailed: "Could not delete this marker.",
     markersBulkHeading: "Bulk on selection",
     markersBulkLead:
-      "Retag or delete the selected markers. Delete is soft — rows route to trash and stay restorable.",
+      "Retag or delete the selected markers. Delete is soft: rows route to trash and stay restorable.",
     markersSelectedCount: "{count} selected",
     markersRetagMode: "Retag mode",
     markersRetagAdd: "Add",

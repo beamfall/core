@@ -4,6 +4,9 @@ import type * as React from "react";
 
 import { cn } from "@/lib/utils";
 
+// Focus is the one global ring (global.css `:focus-visible`: 2px focus-ring
+// outline, 2px offset); primitives add no second box-shadow ring.
+//
 // `all 150ms, opacity 0s` — Tailwind's `transition-all` defaults, with opacity
 // pinned to snap. `transition-all` tweened the `disabled:opacity-50` dim on BOTH
 // edges, so a button that had just become enabled sat at a fractional opacity
@@ -13,24 +16,30 @@ import { cn } from "@/lib/utils";
 // and failed the ADR-0100 color-contrast gate. Opacity now snaps, so a button is
 // either disabled-and-skipped or fully opaque; every other property still eases.
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium [transition:all_150ms_cubic-bezier(0.4,0,0.2,1),opacity_0s] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 aria-invalid:border-destructive",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium [transition:all_150ms_cubic-bezier(0.4,0,0.2,1),opacity_0s] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 aria-invalid:border-destructive",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground shadow-xs hover:bg-primary/90",
-        destructive:
-          "bg-destructive text-destructive-foreground shadow-xs hover:bg-destructive/90 focus-visible:ring-destructive/20",
-        outline:
-          "border border-input bg-background shadow-xs hover:bg-accent hover:text-accent-foreground",
-        secondary: "bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/80",
+        default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+        outline: "border border-input bg-transparent hover:bg-accent hover:text-accent-foreground",
+        // A destructive trigger that does not shout: repeated per-row actions
+        // (Revoke, Remove) read as text in the danger hue. The confirm step
+        // that actually destroys keeps the filled `destructive` variant.
+        danger:
+          "border border-input bg-transparent text-destructive hover:border-destructive/50 hover:bg-destructive/10",
+        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {
-        default: "h-9 px-4 py-2 has-[>svg]:px-3",
-        sm: "h-8 rounded-md gap-1.5 px-3 has-[>svg]:px-2.5",
-        lg: "h-10 rounded-md px-6 has-[>svg]:px-4",
-        icon: "size-9",
+        // One control height across the app: buttons sit at the same 40px as
+        // Input and SelectTrigger, so a field and its action align in a row.
+        default: "h-10 px-4 has-[>svg]:px-3",
+        sm: "h-8 gap-1.5 px-3 has-[>svg]:px-2.5",
+        lg: "h-11 px-6 has-[>svg]:px-4",
+        icon: "size-10",
+        "icon-sm": "size-8",
       },
     },
     defaultVariants: {

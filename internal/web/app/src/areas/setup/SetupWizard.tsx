@@ -1,31 +1,25 @@
 import {
   Blocks,
   Check,
+  CircleAlert,
+  CircleCheck,
   Clapperboard,
   Film,
-  FolderOpen,
-  House,
-  KeyRound,
   LoaderCircle,
-  LockKeyhole,
   type LucideIcon,
   Music,
   Podcast,
-  ScanSearch,
-  ShieldCheck,
-  Sparkles,
   Tv,
-  UserRound,
 } from "lucide-react";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
+import { Wordmark } from "@/areas/enroll/AuthShell";
 import beamfallLogo from "@/assets/beamfall-logo.png";
 import { CinemaBackdrop } from "@/components/beamfall/CinemaBackdrop";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { ApiError, type SignInSecurityMode } from "@/lib/api";
+import { ApiDeadlineError, ApiError, type SignInSecurityMode } from "@/lib/api";
 import { displayString } from "@/lib/display";
 import { browseServerFolders, fetchJobs, fetchPlugins, setScraperCredential } from "@/lib/graphql";
 import type { FolderEntryInfo, JobInfo, PluginSummary } from "@/lib/graphql/types";
@@ -35,11 +29,11 @@ import { keyNeeded, type ProviderKey } from "@/lib/providerKeys";
 import { cn } from "@/lib/utils";
 import type { StringKey } from "@/strings";
 import { FolderPicker } from "./FolderPicker";
+import { MigrationOffer } from "./MigrationOffer";
 import {
   activatePlugins,
   bootstrapResume,
   bootstrapSetup,
-  classifySetupError,
   configureUpdateCheck,
   createFirstLibrary,
   FirstLibraryError,
@@ -55,7 +49,7 @@ import {
 // token-gated first-run flow that ORCHESTRATES existing server mutations — it
 // never duplicates them. CORE-1114 restyle: a full-bleed branded
 // backdrop (static CSS; animated effects belong in Oscillux), one centred step
-// with a segmented progress bar, icon tiles for choices, and the cinema token
+// with a segmented progress bar, selectable tiles for choices, and the cinema token
 // palette via the app's shadcn semantic classes.
 //
 // Visual step order: token → admin password → sign-in security → owner →
@@ -116,12 +110,6 @@ const PLUGIN_ICON: Record<string, LucideIcon> = {
   filmtv: Clapperboard,
   music: Music,
   podcasts: Podcast,
-};
-
-const PLUGIN_LABEL: Record<string, StringKey> = {
-  filmtv: "setupPluginFilmTV",
-  music: "setupPluginMusic",
-  podcasts: "setupPluginPodcast",
 };
 
 function consumeSetupToken(): string {
@@ -194,6 +182,9 @@ export function SetupWizard() {
   const [probing, setProbing] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The field a validation error belongs to, so it carries aria-invalid and
+  // takes focus; null for errors that are not about one field.
+  const [errorField, setErrorField] = useState<string | null>(null);
   // When the token POST returns 401, we bounce the user back to step 1 and show
   // the invalid-token message inline there.
   const [tokenError, setTokenError] = useState<string | null>(null);
@@ -203,6 +194,8 @@ export function SetupWizard() {
   const firstStep = tokenStepSkipped ? 1 : 0;
 
   const errorRef = useRef<HTMLParagraphElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const browseRef = useRef<HTMLButtonElement>(null);
   const tokenID = useId();
   const adminID = useId();
   const adminConfirmID = useId();
@@ -264,6 +257,20 @@ export function SetupWizard() {
       cancelled = true;
     };
   }, []);
+
+  // Each step remounts the form. A step with a text field autofocuses it; on
+  // the others focus would fall to <body>, so it goes to the chosen option
+  // (security) or the step heading, which screen readers then announce.
+  useEffect(() => {
+    if (probing) return;
+    const form = formRef.current;
+    if (!form || form.contains(document.activeElement)) return;
+    // The checked radio first: its fieldset legend already names the step.
+    (
+      form.querySelector<HTMLElement>("input[type=radio]:checked") ??
+      form.querySelector<HTMLElement>("[data-step-heading]")
+    )?.focus();
+  }, [step, probing]);
 
   // After the bootstrap succeeds the browser holds a MANAGER session, so load
   // the installed plugins for the activation step. On a fresh run the Film & TV
@@ -342,8 +349,11 @@ export function SetupWizard() {
         }
       } catch {
         if (!cancelled) {
+          // Announced (role=alert) without stealing focus: the poll retries on
+          // its own and clears the message once the server answers.
           pollErrorAnnounced = true;
-          announceError(t("couldNotReachServer"));
+          setErrorField(null);
+          setError(t("setupScanConnectionLost"));
         }
       } finally {
         refreshing = false;
@@ -359,7 +369,29 @@ export function SetupWizard() {
 
   function announceError(message: string) {
     setError(message);
+    setErrorField(null);
     requestAnimationFrame(() => errorRef.current?.focus());
+  }
+
+  // Back on the token step the field takes focus; its alert is linked through
+  // aria-describedby, so it is read with the field.
+  function focusTokenField() {
+    requestAnimationFrame(() => document.getElementById(tokenID)?.focus());
+  }
+
+  // A validation error belongs to one field: mark it invalid and put the
+  // caret there so the fix is one keystroke away.
+  function fieldError(message: string, fieldID: string) {
+    setError(message);
+    setErrorField(fieldID);
+    requestAnimationFrame(() => document.getElementById(fieldID)?.focus());
+  }
+
+  // Server failures name the cause the browser can see and the next move.
+  function failureMessage(err: unknown): string {
+    if (err instanceof TypeError || err instanceof ApiDeadlineError) return t("setupOffline");
+    if (err instanceof ApiError && err.status === 429) return t("tooManyAttempts");
+    return t("setupFailed");
   }
 
   // Run the bootstrap once we have token + admin password + profile name.
@@ -383,12 +415,11 @@ export function SetupWizard() {
         setTokenError(t("setupTokenInvalid"));
         setTokenStepSkipped(false);
         setStep(0);
+        focusTokenField();
         return false;
       }
       announceError(
-        err instanceof ApiError || err instanceof Error
-          ? t("setupFailed")
-          : t("couldNotReachServer"),
+        err instanceof ApiError && err.status === 403 ? t("setupNeedsSecure") : failureMessage(err),
       );
       return false;
     } finally {
@@ -419,11 +450,7 @@ export function SetupWizard() {
       await activatePlugins([...activePlugins]);
       return await saveProviderKeys();
     } catch (err) {
-      announceError(
-        err instanceof ApiError || err instanceof Error
-          ? t(classifySetupError(err))
-          : t("couldNotReachServer"),
-      );
+      announceError(failureMessage(err));
       return false;
     } finally {
       setBusy(false);
@@ -480,17 +507,23 @@ export function SetupWizard() {
         setFirstLibraryProgress(err.progress);
         if (err.progress.rootPath) setRootPath(err.progress.rootPath);
       }
-      announceError(
-        err instanceof FirstLibraryError
-          ? err.message
-          : err instanceof ApiError || err instanceof Error
-            ? err.message
-            : t("couldNotReachServer"),
-      );
+      announceError(libraryErrorMessage(err));
       return false;
     } finally {
       setBusy(false);
     }
+  }
+
+  // The server's reason is kept (it is usually about the folder itself), framed
+  // by which half failed: creating the Library, or only starting its scan.
+  function libraryErrorMessage(err: unknown): string {
+    const cause = err instanceof FirstLibraryError ? err.cause : err;
+    if (cause instanceof TypeError || cause instanceof ApiDeadlineError) return t("setupOffline");
+    if (!(err instanceof Error)) return t("setupFailed");
+    const reason = err.message.replace(/[.\s]+$/, "");
+    return err instanceof FirstLibraryError && err.progress.rootsSet
+      ? t("setupLibraryScanFailed", { reason })
+      : t("setupLibraryCreateFailed", { reason });
   }
 
   // Final hand-off: leave the wizard so SessionProvider re-bootstraps the
@@ -501,17 +534,24 @@ export function SetupWizard() {
     window.location.assign(import.meta.env.BASE_URL);
   }
 
-  // Per-step validation; returns an inline message or null when valid.
-  function validate(current: number): string | null {
+  // Per-step validation; returns the inline message and the field it is
+  // about, or null when the step is valid.
+  function validate(current: number): { message: string; field: string } | null {
     switch (current) {
       case 0:
-        return token.trim() || tokenStepSkipped ? null : t("setupTokenInvalid");
+        return token.trim() || tokenStepSkipped
+          ? null
+          : { message: t("setupTokenRequired"), field: tokenID };
       case 1:
-        if (!adminPassword) return t("setupAdminPasswordRequired");
-        if (adminPassword !== adminPasswordConfirm) return t("setupAdminPasswordMismatch");
+        if (!adminPassword.trim()) {
+          return { message: t("setupAdminPasswordRequired"), field: adminID };
+        }
+        if (adminPassword !== adminPasswordConfirm) {
+          return { message: t("setupAdminPasswordMismatch"), field: adminConfirmID };
+        }
         return null;
       case STEP_LIBRARY:
-        return rootPath.trim() ? null : t("setupLibraryRootRequired");
+        return rootPath.trim() ? null : { message: t("setupLibraryRootRequired"), field: rootID };
       default:
         return null;
     }
@@ -529,14 +569,24 @@ export function SetupWizard() {
 
     const invalid = validate(step);
     if (invalid) {
-      if (step === 0) setTokenError(invalid);
-      else announceError(invalid);
+      if (step === 0) {
+        setTokenError(invalid.message);
+        focusTokenField();
+      } else fieldError(invalid.message, invalid.field);
       return;
     }
     setError(null);
 
     // Leaving the owner profile step forward is the bootstrap boundary.
     if (step === STEP_PROFILE && !bootstrapped) {
+      // Every attempt consumes the in-memory token; after a failed one, ask for
+      // it again on its own step instead of posting an empty token.
+      if (!tokenStepSkipped && !token.trim()) {
+        setTokenError(t("setupTokenAgain"));
+        setStep(0);
+        focusTokenField();
+        return;
+      }
       const ok = await runBootstrap();
       if (!ok) return;
       setStep(STEP_PLUGINS);
@@ -573,28 +623,36 @@ export function SetupWizard() {
   // Load a directory into the picker. An undefined path lists the filesystem
   // root. Failures (unreadable/missing) keep the previous view and show an
   // inline message, so the picker never dead-ends.
-  async function loadPickerFolder(path?: string) {
+  async function loadPickerFolder(path?: string): Promise<boolean> {
     setPickerBusy(true);
     setPickerError(null);
     try {
       const node = await browseServerFolders(path);
       setPickerNode(node);
+      return true;
     } catch {
       setPickerError(t("setupLibraryPickerError"));
+      return false;
     } finally {
       setPickerBusy(false);
     }
   }
 
-  function openPicker() {
+  async function openPicker() {
     // Seed from the typed path when present so the picker opens where the
-    // operator was, otherwise at the filesystem root.
-    void loadPickerFolder(rootPath.trim() || undefined);
+    // operator was. A typed path the server can't open falls back to the
+    // filesystem root with a note, so Browse never silently does nothing.
+    const seed = rootPath.trim();
+    if ((await loadPickerFolder(seed || undefined)) || !seed) return;
+    if (await loadPickerFolder(undefined)) {
+      setPickerError(t("setupLibraryPickerSeedError", { path: seed }));
+    }
   }
 
   function closePicker() {
     setPickerNode(null);
     setPickerError(null);
+    requestAnimationFrame(() => browseRef.current?.focus());
   }
 
   function usePickerFolder() {
@@ -612,6 +670,13 @@ export function SetupWizard() {
   }
 
   const isScanStep = step === STEP_SCAN;
+  const scanStopped = scanJob?.status === "failed" || scanJob?.status === "canceled";
+  // The field the current error is about, wired to aria-invalid and the alert.
+  const invalidProps = (fieldID: string) =>
+    error && errorField === fieldID ? { "aria-invalid": true, "aria-describedby": errorID } : {};
+  const scanTotal = scanJob?.progress?.total ?? 0;
+  const scanFraction =
+    scanTotal > 0 ? Math.min(1, (scanJob?.progress?.current ?? 0) / scanTotal) : null;
   const isLast = isScanStep;
 
   // Hold the body blank while the resume probe runs so a resumed server never
@@ -633,45 +698,44 @@ export function SetupWizard() {
       <header className="flex items-center justify-between px-5 py-4 sm:px-8 sm:py-6">
         <div className="flex items-center gap-2.5">
           <img src={beamfallLogo} alt="" width={28} height={28} className="shrink-0" />
-          <span className="text-base font-semibold tracking-tight">{t("brand")}</span>
+          <Wordmark label={t("brand")} />
           <span className="hidden text-sm text-muted-foreground sm:inline">
             {t("setupBrandSuffix")}
           </span>
         </div>
-        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-muted-foreground backdrop-blur">
-          {t("setupFreshServer")}
-        </span>
       </header>
 
-      <div className="flex flex-1 items-start justify-center px-4 pb-10 pt-2 sm:items-center sm:px-8 sm:pt-0">
-        <div className="w-full max-w-[600px]">
+      {/* Top-aligned at a fixed offset so the card never jumps between steps. */}
+      <div className="flex flex-1 justify-center px-4 pb-12 pt-2 sm:px-8 sm:pt-[8vh]">
+        <div className="w-full max-w-[560px]">
           {/* Progress: one segment per visible step; names stay for assistive tech. */}
-          <ol className="m-0 mb-6 flex list-none gap-1.5 p-0" aria-label={t("setupBrandSuffix")}>
-            {visibleSteps.map((key, i) => (
-              <li
-                key={key}
-                aria-current={i === visibleIndex ? "step" : undefined}
-                className={cn(
-                  "h-1 flex-1 rounded-full bg-white/10 transition-colors duration-500",
-                  i < visibleIndex && "bg-primary/70",
-                  i === visibleIndex && "bg-primary shadow-[0_0_12px_var(--accent)]",
-                )}
-              >
-                <span className="sr-only">{t(key)}</span>
-              </li>
-            ))}
-          </ol>
-
-          <div className="mb-3 flex items-center justify-between text-xs font-medium uppercase tracking-[0.14em]">
-            <span className="text-primary">{t(STEP_KEYS[step])}</span>
-            <span className="text-muted-foreground">
+          <div className="mb-5 flex items-center gap-4">
+            <ol
+              className="m-0 flex flex-1 list-none gap-1.5 p-0"
+              aria-label={t("setupBrandSuffix")}
+            >
+              {visibleSteps.map((key, i) => (
+                <li
+                  key={key}
+                  aria-current={i === visibleIndex ? "step" : undefined}
+                  className={cn(
+                    "h-1 flex-1 rounded-full bg-white/10 transition-colors duration-200",
+                    i < visibleIndex && "bg-primary/70",
+                    i === visibleIndex && "bg-primary",
+                  )}
+                >
+                  <span className="sr-only">{t(key)}</span>
+                </li>
+              ))}
+            </ol>
+            <span className="shrink-0 text-dense tabular-nums text-muted-foreground">
               {t("setupStepCount", { n: visibleIndex + 1, total: visibleSteps.length })}
             </span>
           </div>
 
           {/* Unlocked banner — shown once the bootstrap POST succeeds */}
           {bootstrapped && (
-            <div className="mb-4 flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3.5 py-1.5 text-[12.5px] text-primary">
+            <div className="mb-4 flex items-center gap-2 text-dense text-primary">
               <Check aria-hidden className="size-3.5 shrink-0" />
               {t("setupUnlockedBanner")}
             </div>
@@ -679,17 +743,14 @@ export function SetupWizard() {
 
           <form
             key={step}
+            ref={formRef}
             onSubmit={onNext}
             noValidate
-            className="animate-in fade-in slide-in-from-bottom-2 rounded-2xl border border-white/10 bg-card/70 p-5 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.7)] backdrop-blur-xl duration-300 sm:p-8"
+            className="animate-in fade-in motion-reduce:animate-none rounded-[14px] border border-white/10 bg-card p-5 shadow-[0_24px_60px_-28px_rgba(0,0,0,0.7)] duration-200 sm:p-8"
           >
             {step === 0 && (
               <section>
-                <StepHeading
-                  icon={KeyRound}
-                  title={t("setupTokenTitle")}
-                  lead={t("setupTokenLead")}
-                />
+                <StepHeading title={t("setupTokenTitle")} lead={t("setupTokenLead")} />
                 <Label htmlFor={tokenID} className={FIELD_LABEL}>
                   {t("setupToken")}
                 </Label>
@@ -700,7 +761,7 @@ export function SetupWizard() {
                     setToken(e.target.value);
                     setTokenError(null);
                   }}
-                  className={cn(FIELD, "font-mono tracking-wider")}
+                  className={cn(FIELD, "font-mono")}
                   autoComplete="off"
                   autoCapitalize="off"
                   autoCorrect="off"
@@ -716,7 +777,7 @@ export function SetupWizard() {
                     id={errorID}
                     role="alert"
                     tabIndex={-1}
-                    className="mt-2 text-sm text-destructive outline-none"
+                    className="mt-2 text-sm text-(--state-danger) outline-none"
                   >
                     {tokenError}
                   </p>
@@ -727,7 +788,6 @@ export function SetupWizard() {
             {step === 1 && (
               <section>
                 <StepHeading
-                  icon={LockKeyhole}
                   title={t("setupAdminPasswordTitle")}
                   lead={t("setupAdminPasswordLead")}
                 />
@@ -743,6 +803,7 @@ export function SetupWizard() {
                   autoComplete="new-password"
                   required
                   autoFocus
+                  {...invalidProps(adminID)}
                 />
                 <Label htmlFor={adminConfirmID} className={cn(FIELD_LABEL, "mt-4")}>
                   {t("setupAdminPasswordConfirm")}
@@ -755,6 +816,7 @@ export function SetupWizard() {
                   className={FIELD}
                   autoComplete="new-password"
                   required
+                  {...invalidProps(adminConfirmID)}
                 />
               </section>
             )}
@@ -762,106 +824,75 @@ export function SetupWizard() {
             {step === STEP_SECURITY && (
               <fieldset className="m-0 border-0 p-0">
                 <legend className="sr-only">{t("setupSecurityTitle")}</legend>
-                <StepHeading
-                  icon={ShieldCheck}
-                  title={t("setupSecurityTitle")}
-                  lead={t("setupSecurityLead")}
-                />
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {SECURITY_MODES.map(({ mode, label, detail }) => {
-                    const Icon = mode === "home" ? House : LockKeyhole;
-                    const sel = securityMode === mode;
-                    return (
-                      <label
-                        key={mode}
-                        className={cn(
-                          TILE,
-                          "items-start gap-2 p-4 text-left",
-                          sel && TILE_SELECTED,
-                        )}
-                      >
-                        <span className="flex w-full items-center justify-between">
-                          <Icon
-                            aria-hidden
-                            className={cn("size-5", sel ? "text-primary" : "text-muted-foreground")}
-                          />
-                          <input
-                            type="radio"
-                            name="setup-security-mode"
-                            value={mode}
-                            checked={sel}
-                            onChange={() => setSecurityMode(mode)}
-                            className="size-4 accent-[var(--accent)]"
-                          />
-                        </span>
-                        <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <StepHeading title={t("setupSecurityTitle")} lead={t("setupSecurityLead")} />
+                <div className="divide-y divide-white/10 border-y border-white/10">
+                  {SECURITY_MODES.map(({ mode, label, detail }) => (
+                    <label key={mode} className={OPTION_ROW}>
+                      <input
+                        type="radio"
+                        name="setup-security-mode"
+                        value={mode}
+                        checked={securityMode === mode}
+                        onChange={() => setSecurityMode(mode)}
+                        className={RADIO}
+                      />
+                      <span className="flex min-w-0 flex-col gap-1">
+                        <span className="flex flex-wrap items-baseline gap-x-2 text-[15px] font-medium text-foreground">
                           {t(label)}
                           {mode === "home" && (
-                            <Badge variant="outline" className="border-primary/40 text-primary">
+                            <span className="text-dense font-normal text-primary">
                               {t("setupSecurityRecommended")}
-                            </Badge>
+                            </span>
                           )}
                         </span>
-                        <span className="text-xs leading-relaxed text-muted-foreground">
+                        <span className="text-dense leading-snug text-muted-foreground">
                           {t(detail)}
                         </span>
-                      </label>
-                    );
-                  })}
+                      </span>
+                    </label>
+                  ))}
                 </div>
               </fieldset>
             )}
 
             {step === STEP_LIBRARY && (
               <section>
-                <StepHeading
-                  icon={FolderOpen}
-                  title={t("setupLibraryTitle")}
-                  lead={t("setupLibraryLead")}
-                />
-                <Label className={FIELD_LABEL}>{t("setupLibraryType")}</Label>
-                <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-5">
-                  {libraryTypes.map((spec) => {
-                    const sel = spec.type === libraryType;
-                    const Icon = TYPE_ICON[spec.type];
-                    return (
-                      <button
-                        key={spec.type}
-                        type="button"
-                        onClick={() => setLibraryType(spec.type)}
-                        aria-pressed={sel}
-                        className={cn(
-                          TILE,
-                          "items-center gap-1.5 px-2 py-3.5 text-center",
-                          sel && TILE_SELECTED,
-                        )}
-                      >
-                        <Icon
-                          aria-hidden
-                          className={cn("size-6", sel ? "text-primary" : "text-muted-foreground")}
-                        />
-                        <span className="text-[13px] font-semibold">
-                          {t(TYPE_LABEL[spec.type])}
-                        </span>
-                        <span className="text-[10.5px] text-muted-foreground">
-                          {t(PLUGIN_LABEL[spec.pluginID])}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <Label htmlFor={libNameID} className={FIELD_LABEL}>
-                  {t("setupLibraryName")}
-                </Label>
-                <Input
-                  id={libNameID}
-                  value={libraryName}
-                  onChange={(e) => setLibraryName(e.target.value)}
-                  className={FIELD}
-                  placeholder={t(TYPE_LABEL[libraryType])}
-                  autoFocus
-                />
-                <Label htmlFor={rootID} className={cn(FIELD_LABEL, "mt-4")}>
+                <StepHeading title={t("setupLibraryTitle")} lead={t("setupLibraryLead")} />
+                <fieldset className="m-0 mb-5 border-0 p-0">
+                  <legend className={cn(FIELD_LABEL, "p-0")}>{t("setupLibraryType")}</legend>
+                  <div className="grid grid-cols-2 gap-x-4">
+                    {libraryTypes.map((spec) => {
+                      const sel = spec.type === libraryType;
+                      const Icon = TYPE_ICON[spec.type];
+                      return (
+                        <label
+                          key={spec.type}
+                          className="flex cursor-pointer items-center gap-3 py-2"
+                        >
+                          <input
+                            type="radio"
+                            name="setup-library-type"
+                            value={spec.type}
+                            checked={sel}
+                            onChange={() => setLibraryType(spec.type)}
+                            className={cn(RADIO, "mt-0")}
+                          />
+                          <Icon
+                            aria-hidden
+                            className={cn(
+                              "size-4 shrink-0",
+                              sel ? "text-primary" : "text-muted-foreground",
+                            )}
+                          />
+                          <span className="min-w-0 text-sm leading-snug">
+                            {t(TYPE_LABEL[spec.type])}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+                <Label htmlFor={rootID} className={FIELD_LABEL}>
                   {t("setupLibraryRoot")}
                 </Label>
                 <div className="flex items-stretch gap-2">
@@ -869,16 +900,20 @@ export function SetupWizard() {
                     id={rootID}
                     value={rootPath}
                     onChange={(e) => setRootPath(e.target.value)}
-                    className={cn(FIELD, "flex-1 font-mono")}
-                    placeholder="/media/films"
+                    className={cn(FIELD, "min-w-0 flex-1 font-mono")}
+                    autoComplete="off"
+                    spellCheck={false}
                     required
+                    autoFocus
                     disabled={firstLibraryProgress.rootsSet}
+                    {...invalidProps(rootID)}
                   />
                   <Button
+                    ref={browseRef}
                     type="button"
                     variant="outline"
-                    className="h-11 rounded-xl"
-                    onClick={openPicker}
+                    className="h-11 shrink-0 rounded-[10px] border-white/10 bg-white/[0.04] px-4"
+                    onClick={() => void openPicker()}
                     aria-expanded={pickerNode != null}
                     disabled={firstLibraryProgress.rootsSet}
                   >
@@ -886,6 +921,14 @@ export function SetupWizard() {
                   </Button>
                 </div>
 
+                {pickerNode == null && pickerError && (
+                  <p
+                    role="alert"
+                    className="mb-0 mt-2 text-dense leading-snug text-(--state-danger)"
+                  >
+                    {pickerError}
+                  </p>
+                )}
                 {pickerNode != null && (
                   <FolderPicker
                     node={pickerNode}
@@ -902,16 +945,23 @@ export function SetupWizard() {
                     }}
                   />
                 )}
+
+                <Label htmlFor={libNameID} className={cn(FIELD_LABEL, "mt-5")}>
+                  {t("setupLibraryName")}
+                </Label>
+                <Input
+                  id={libNameID}
+                  value={libraryName}
+                  onChange={(e) => setLibraryName(e.target.value)}
+                  className={FIELD}
+                  placeholder={t(TYPE_LABEL[libraryType])}
+                />
               </section>
             )}
 
             {step === STEP_PROFILE && (
               <section>
-                <StepHeading
-                  icon={UserRound}
-                  title={t("setupProfileTitle")}
-                  lead={t("setupProfileLead")}
-                />
+                <StepHeading title={t("setupProfileTitle")} lead={t("setupProfileLead")} />
                 <Label htmlFor={profileID} className={FIELD_LABEL}>
                   {t("setupProfileName")}
                 </Label>
@@ -928,28 +978,17 @@ export function SetupWizard() {
 
             {step === STEP_PLUGINS && (
               <section>
-                <StepHeading
-                  icon={Blocks}
-                  title={t("setupPluginsTitle")}
-                  lead={t("setupPluginsLead")}
-                />
+                <StepHeading title={t("setupPluginsTitle")} lead={t("setupPluginsLead")} />
                 {plugins.length === 0 ? (
                   <p className="text-sm text-muted-foreground">{t("setupPluginsEmpty")}</p>
                 ) : (
-                  <ul className="m-0 grid list-none gap-2 p-0 sm:grid-cols-2">
+                  <ul className="m-0 list-none divide-y divide-white/10 border-y border-white/10 p-0">
                     {plugins.map((p) => {
                       const name = displayString(p.displayName, locale);
                       const on = activePlugins.has(p.id);
                       const Icon = PLUGIN_ICON[p.id] ?? Blocks;
                       return (
-                        <li
-                          key={p.id}
-                          className={cn(
-                            TILE,
-                            "flex-row items-center gap-3 px-3.5 py-3",
-                            on && TILE_SELECTED,
-                          )}
-                        >
+                        <li key={p.id} className="flex items-center gap-3 py-3">
                           <Icon
                             aria-hidden
                             className={cn(
@@ -957,7 +996,7 @@ export function SetupWizard() {
                               on ? "text-primary" : "text-muted-foreground",
                             )}
                           />
-                          <span className="flex-1 text-sm font-medium">{name}</span>
+                          <span className="min-w-0 flex-1 text-sm font-medium">{name}</span>
                           <Switch
                             checked={on}
                             onCheckedChange={() => togglePlugin(p.id)}
@@ -969,17 +1008,12 @@ export function SetupWizard() {
                   </ul>
                 )}
                 {neededKeys.length > 0 && (
-                  <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                    <div className="flex items-start gap-3">
-                      <KeyRound aria-hidden className="mt-0.5 size-4 shrink-0 text-primary" />
-                      <div className="space-y-1">
-                        <h2 className="m-0 text-sm font-semibold">{t("setupKeysTitle")}</h2>
-                        <p className="m-0 text-[12.5px] leading-snug text-muted-foreground">
-                          {t("setupKeysLead")}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="mt-3 grid gap-3">
+                  <div className="mt-6 border-t border-white/10 pt-5">
+                    <h2 className="m-0 text-[15px] font-semibold">{t("setupKeysTitle")}</h2>
+                    <p className="m-0 mt-1 text-dense leading-snug text-muted-foreground">
+                      {t("setupKeysLead")}
+                    </p>
+                    <div className="mt-4 grid gap-4">
                       {neededKeys.map((key) => {
                         const fieldId = `setup-key-${key.authRef}`;
                         return (
@@ -1001,7 +1035,7 @@ export function SetupWizard() {
                                 }))
                               }
                             />
-                            <p className="mb-0 mt-1.5 text-[11.5px] leading-snug text-muted-foreground">
+                            <p className="mb-0 mt-1.5 text-dense leading-snug text-muted-foreground">
                               {t("pluginKeySentTo", { hosts: key.hosts.join(", ") })}
                             </p>
                           </div>
@@ -1010,11 +1044,11 @@ export function SetupWizard() {
                     </div>
                   </div>
                 )}
-                <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                <div className="mt-6 border-t border-white/10 pt-5">
                   <div className="flex items-start justify-between gap-4">
-                    <div className="space-y-1">
-                      <h2 className="m-0 text-sm font-semibold">{t("setupUpdateTitle")}</h2>
-                      <p className="m-0 text-[12.5px] leading-snug text-muted-foreground">
+                    <div>
+                      <h2 className="m-0 text-[15px] font-semibold">{t("setupUpdateTitle")}</h2>
+                      <p className="m-0 mt-1 text-dense leading-snug text-muted-foreground">
                         {t("setupUpdateLead")}
                       </p>
                     </div>
@@ -1024,25 +1058,31 @@ export function SetupWizard() {
                       aria-label={t("setupUpdateToggle")}
                     />
                   </div>
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    {(["stable", "beta"] as const).map((channel) => (
-                      <button
-                        key={channel}
-                        type="button"
-                        disabled={!updateCheckEnabled}
-                        aria-pressed={updateCheckChannel === channel}
-                        onClick={() => setUpdateCheckChannel(channel)}
-                        className={cn(
-                          "rounded-full border border-white/10 px-3.5 py-1.5 text-xs font-medium transition-colors disabled:opacity-45",
-                          updateCheckChannel === channel &&
-                            "border-primary bg-primary/10 text-primary",
-                        )}
-                      >
-                        {t(channel === "stable" ? "updateChannelStable" : "updateChannelBeta")}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="mb-0 mt-2.5 text-[11.5px] leading-snug text-muted-foreground">
+                  {/* Channel only matters once checks are on. */}
+                  {updateCheckEnabled && (
+                    <fieldset className="m-0 mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 border-0 p-0">
+                      <legend className="sr-only">{t("updateCheckChannel")}</legend>
+                      {(["stable", "beta"] as const).map((channel) => (
+                        <label
+                          key={channel}
+                          className="flex cursor-pointer items-center gap-2.5 py-1"
+                        >
+                          <input
+                            type="radio"
+                            name="setup-update-channel"
+                            value={channel}
+                            checked={updateCheckChannel === channel}
+                            onChange={() => setUpdateCheckChannel(channel)}
+                            className={cn(RADIO, "mt-0")}
+                          />
+                          <span className="text-sm">
+                            {t(channel === "stable" ? "updateChannelStable" : "updateChannelBeta")}
+                          </span>
+                        </label>
+                      ))}
+                    </fieldset>
+                  )}
+                  <p className="mb-0 mt-3 text-dense leading-snug text-muted-foreground">
                     {t("setupUpdateDisclosure")}
                   </p>
                 </div>
@@ -1051,38 +1091,68 @@ export function SetupWizard() {
 
             {isScanStep && (
               <section>
-                <StepHeading
-                  icon={ScanSearch}
-                  title={t("setupScanTitle")}
-                  lead={t("setupScanLead")}
-                />
-                <div className="flex items-center gap-3.5 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                  <span className="relative flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/15">
-                    <span className="absolute inset-0 animate-ping rounded-full bg-primary/20 motion-reduce:hidden" />
-                    <Sparkles aria-hidden className="size-5 text-primary" />
-                  </span>
+                <StepHeading title={t("setupScanTitle")} lead={t("setupScanLead")} />
+                <div className="flex items-start gap-3">
+                  {scanJob?.status === "completed" ? (
+                    <CircleCheck aria-hidden className="mt-0.5 size-5 shrink-0 text-primary" />
+                  ) : scanStopped ? (
+                    <CircleAlert
+                      aria-hidden
+                      className="mt-0.5 size-5 shrink-0 text-(--state-danger)"
+                    />
+                  ) : (
+                    <LoaderCircle
+                      aria-hidden
+                      className="mt-0.5 size-5 shrink-0 text-primary motion-safe:animate-spin"
+                    />
+                  )}
                   <div>
                     <p className="m-0 text-sm font-semibold">
                       {t("setupScanStatus", {
                         status: scanJob ? jobStatusLabel(scanJob.status, t) : t("jobStatusQueued"),
                       })}
                     </p>
-                    <p className="m-0 mt-0.5 text-[13px] text-muted-foreground">
+                    <p className="m-0 mt-0.5 text-dense text-muted-foreground">
                       {scanJob && jobProgressDetail(scanJob, t)
                         ? jobProgressDetail(scanJob, t)
                         : t("setupScanWaiting")}
                     </p>
                   </div>
                 </div>
+                {scanStopped && (
+                  <p className="mb-0 mt-3 text-dense leading-snug text-muted-foreground">
+                    {t("setupScanStopped")}
+                  </p>
+                )}
+                {scanFraction != null && (
+                  <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/10" aria-hidden>
+                    <div
+                      className="h-full rounded-full bg-primary transition-[width] duration-200"
+                      style={{ width: `${Math.round(scanFraction * 100)}%` }}
+                    />
+                  </div>
+                )}
+                <MigrationOffer embedded />
               </section>
             )}
 
-            <div className="mt-7 flex items-center gap-2">
+            {error && step !== 0 && (
+              <p
+                ref={errorRef}
+                id={errorID}
+                role="alert"
+                tabIndex={-1}
+                className="mb-0 mt-5 text-sm text-(--state-danger) outline-none"
+              >
+                {error}
+              </p>
+            )}
+            <div className="mt-6 flex items-center gap-2">
               {step > firstStep && !bootstrapped && (
                 <Button
                   type="button"
                   variant="ghost"
-                  className="h-11 rounded-full px-5"
+                  className="h-11 rounded-[10px] px-5"
                   onClick={onBack}
                   disabled={busy}
                 >
@@ -1092,24 +1162,12 @@ export function SetupWizard() {
               <Button
                 type="submit"
                 disabled={busy}
-                className="ml-auto h-11 min-w-[148px] rounded-full px-6 text-[15px] font-semibold shadow-[0_8px_30px_-8px_var(--accent)]"
+                className="ml-auto h-11 min-w-[148px] rounded-[10px] px-6 text-[15px] font-semibold"
               >
-                {busy && <LoaderCircle aria-hidden className="size-4 animate-spin" />}
+                {busy && <LoaderCircle aria-hidden className="size-4 motion-safe:animate-spin" />}
                 {busy ? t("setupWorking") : isLast ? t("setupBrowseReady") : t("setupContinue")}
               </Button>
             </div>
-
-            {error && step !== 0 && (
-              <p
-                ref={errorRef}
-                id={errorID}
-                role="alert"
-                tabIndex={-1}
-                className="mt-3 text-sm text-destructive outline-none"
-              >
-                {error}
-              </p>
-            )}
           </form>
         </div>
       </div>
@@ -1117,33 +1175,25 @@ export function SetupWizard() {
   );
 }
 
-const FIELD = "h-11 rounded-xl border-white/10 bg-white/[0.04] text-[15px]";
-const FIELD_LABEL = "mb-2 block text-[13px] font-medium text-foreground/80";
-const TILE =
-  "flex flex-col rounded-xl border border-white/10 bg-white/[0.03] transition-all duration-200 hover:border-white/25 hover:bg-white/[0.06] cursor-pointer";
-const TILE_SELECTED =
-  "border-primary bg-primary/10 shadow-[0_0_0_1px_var(--accent),0_10px_30px_-12px_var(--accent)] hover:border-primary hover:bg-primary/10";
+const FIELD = "h-11 rounded-[10px] border-white/10 bg-white/[0.04] text-[15px]";
+const FIELD_LABEL = "mb-2 block text-dense font-medium text-foreground/80";
+// Options sit directly on the card as rows split by hairlines: one surface,
+// with the native radio carrying the selection.
+const OPTION_ROW = "flex cursor-pointer items-start gap-3 py-3.5";
+const RADIO = "mt-1 size-4 shrink-0 cursor-pointer accent-[var(--accent)]";
 
-function StepHeading({
-  icon: Icon,
-  title,
-  lead,
-}: {
-  icon: LucideIcon;
-  title: string;
-  lead: string;
-}) {
+function StepHeading({ title, lead }: { title: string; lead: string }) {
   return (
-    <div className="mb-6 flex gap-4">
-      <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary ring-1 ring-primary/25">
-        <Icon aria-hidden className="size-5" />
-      </span>
-      <div>
-        <h1 className="m-0 text-2xl font-semibold tracking-tight sm:text-[28px] sm:leading-tight">
-          {title}
-        </h1>
-        <p className="mb-0 mt-1.5 text-sm leading-relaxed text-muted-foreground">{lead}</p>
-      </div>
+    <div className="mb-6">
+      {/* Focus target on steps without a text field; see the step-focus effect. */}
+      <h1
+        data-step-heading
+        tabIndex={-1}
+        className="m-0 text-2xl font-semibold leading-tight tracking-tight text-balance outline-none"
+      >
+        {title}
+      </h1>
+      <p className="mb-0 mt-2 text-[15px] leading-relaxed text-muted-foreground">{lead}</p>
     </div>
   );
 }

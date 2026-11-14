@@ -4,7 +4,6 @@ import { type Location, useLocation, useNavigate } from "react-router";
 import { SignOutButton } from "@/areas/enroll";
 import beamfallLogo from "@/assets/beamfall-logo.png";
 import { markProfilePicked, ProfileAvatar } from "@/components/beamfall/profile";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -163,13 +162,13 @@ export function ProfilePickerPage() {
                         <span className="max-w-full text-base font-semibold [overflow-wrap:anywhere]">
                           {profile.name}
                         </span>
-                        <span className="flex min-h-[22px] flex-wrap items-center justify-center gap-1.5">
-                          {current && <Badge variant="outline">{t("whosWatchingCurrent")}</Badge>}
-                          {profile.kind === "managed" && (
-                            <Badge variant="secondary">{t("managed")}</Badge>
+                        <span className="flex min-h-[18px] flex-wrap items-center justify-center gap-x-2 text-xs text-muted-foreground">
+                          {current && (
+                            <span className="text-[var(--accent)]">{t("whosWatchingCurrent")}</span>
                           )}
+                          {profile.kind === "managed" && <span>{t("managed")}</span>}
                           {needsPin && (
-                            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                            <span className="inline-flex items-center gap-1">
                               <Lock aria-hidden className="size-3" />
                               {t("whosWatchingPinNeeded")}
                             </span>

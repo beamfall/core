@@ -1,18 +1,11 @@
 import "@testing-library/jest-dom/vitest";
 import { existsSync } from "node:fs";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { EventStreamState } from "@/lib/api";
-import {
-  fetchConsoleConfig,
-  fetchJobs,
-  fetchLiveSessions,
-  fetchUpdateStatus,
-  setConsoleConfig,
-} from "@/lib/graphql";
+import { fetchConsoleConfig, fetchUpdateStatus, setConsoleConfig } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
-import { Operations } from "./Operations";
+import { UpdateAwareness } from "./Operations";
 
 // jsdom has no ResizeObserver; the Radix Switch (via react-use-size) needs one.
 class ResizeObserverStub {
@@ -25,24 +18,7 @@ globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObse
 vi.mock("@/lib/graphql", () => ({
   fetchConsoleConfig: vi.fn(),
   fetchUpdateStatus: vi.fn(),
-  fetchJobs: vi.fn(),
-  fetchLiveSessions: vi.fn(),
   setConsoleConfig: vi.fn(),
-  terminateSession: vi.fn(),
-}));
-
-// Capture every onState observer the page wires so a test can drive the SSE
-// lifecycle (live / reconnecting / paused) without a real EventSource.
-let stateObservers: ((s: EventStreamState) => void)[] = [];
-vi.mock("@/lib/api", () => ({
-  subscribeEvents: (
-    _onEvent: unknown,
-    _onError: unknown,
-    onState?: (s: EventStreamState) => void,
-  ) => {
-    if (onState) stateObservers.push(onState);
-    return () => {};
-  },
 }));
 
 const config = {
@@ -61,82 +37,25 @@ const updateStatus = {
   latestVersion: "v1.6",
   updateAvailable: true,
 };
-const jobs = [
-  {
-    id: "job-1",
-    kind: "scan",
-    status: "running",
-    progress: { current: 64, total: 100, unit: "pct" },
-  },
-  {
-    id: "job-2",
-    kind: "generation",
-    status: "yielded",
-    progress: { current: 18, total: 100, unit: "pct" },
-  },
-];
-
 beforeEach(() => {
   vi.clearAllMocks();
-  stateObservers = [];
   vi.mocked(fetchConsoleConfig).mockResolvedValue(config);
   vi.mocked(fetchUpdateStatus).mockResolvedValue(updateStatus);
-  vi.mocked(fetchJobs).mockResolvedValue(jobs);
-  vi.mocked(fetchLiveSessions).mockResolvedValue([]);
   vi.mocked(setConsoleConfig).mockResolvedValue(config);
 });
 
-function renderOps() {
+function renderUpdates() {
   return render(
     <I18nProvider>
-      <Operations />
+      <UpdateAwareness />
     </I18nProvider>,
   );
 }
 
-function drive(s: EventStreamState) {
-  act(() => stateObservers.forEach((o) => o(s)));
-}
-
-describe("Operations jobs-live", () => {
-  it("renders the live-status indicator (pulsing) once the stream opens; no refresh button on the live path", async () => {
-    renderOps();
-    await screen.findByText("Scan");
-    // Before any state event, the indicator is absent (connecting).
-    expect(screen.queryByText("Live")).toBeNull();
-    drive("live");
-    expect(await screen.findByText("Live")).toBeVisible();
-    // The live path exposes no manual refresh button (honest, never-silent).
-    expect(screen.queryByRole("button", { name: /refresh now/i })).toBeNull();
-  });
-
-  it("shows reconnecting on a transport error and the paused refresh fallback after retries exhaust", async () => {
-    renderOps();
-    await screen.findByText("Scan");
-    drive("live");
-    drive("reconnecting");
-    expect(await screen.findByText("Reconnecting…")).toBeVisible();
-    // Three consecutive errors with no re-open => paused, surfacing the manual
-    // refresh fallback (mockup State 3).
-    drive("reconnecting");
-    drive("reconnecting");
-    drive("reconnecting");
-    expect(await screen.findByRole("button", { name: /refresh now/i })).toBeVisible();
-  });
-
-  it("renders jobs as flat job-rows with a progress bar, not a data table", async () => {
-    const { container } = renderOps();
-    await screen.findByText("Scan");
-    expect(container.querySelectorAll(".console-job-row").length).toBe(2);
-    // The yielded job's bar carries the warn tint.
-    expect(container.querySelector(".console-jbar i.warn")).not.toBeNull();
-    // No DataTable is used for the jobs panel.
-    expect(container.querySelector(".console-job-list table")).toBeNull();
-  });
-
+describe("UpdateAwareness channel", () => {
   it("offers the update channel as a segmented Stable/Beta toggle", async () => {
     const user = userEvent.setup();
-    renderOps();
+    renderUpdates();
     // The segmented group with both options is present (not a Select listbox).
     const group = await screen.findByRole("group", { name: "Release channel" });
     const beta = screen.getByRole("button", { name: "Beta", pressed: false });
@@ -152,7 +71,7 @@ describe("Operations jobs-live", () => {
 // indistinguishable on the wire from a current server (same empty latest
 // version, same updateAvailable=false). These cases pin the three outcomes to
 // three different renderings.
-describe("Operations update-check state", () => {
+describe("UpdateAwareness update-check state", () => {
   it("renders a failed check distinctly from an up-to-date one", async () => {
     vi.mocked(fetchUpdateStatus).mockResolvedValue({
       state: "unavailable",
@@ -162,7 +81,7 @@ describe("Operations update-check state", () => {
       latestVersion: "",
       updateAvailable: false,
     });
-    renderOps();
+    renderUpdates();
 
     expect(await screen.findByText("Check failed")).toBeVisible();
     expect(screen.getByRole("status")).toHaveTextContent(/could not reach a verified/i);
@@ -178,7 +97,7 @@ describe("Operations update-check state", () => {
       latestVersion: "v1.6",
       updateAvailable: false,
     });
-    renderOps();
+    renderUpdates();
 
     expect(await screen.findByText("Up to date")).toBeVisible();
     expect(screen.queryByText("Check failed")).toBeNull();
@@ -194,7 +113,7 @@ describe("Operations update-check state", () => {
       latestVersion: "",
       updateAvailable: false,
     });
-    renderOps();
+    renderUpdates();
 
     expect(await screen.findByText("Check failed")).toBeVisible();
     expect(screen.queryByText("Up to date")).toBeNull();
@@ -215,7 +134,7 @@ describe("Operations update-check state", () => {
         latestVersion: state === "upToDate" ? "v1.6" : "",
         updateAvailable: false,
       });
-      renderOps();
+      renderUpdates();
 
       expect(await screen.findByText(label)).toBeVisible();
       expect(screen.queryByText(/migration impact/i)).toBeNull();
@@ -231,7 +150,7 @@ describe("Operations update-check state", () => {
         ...updateStatus,
         channel,
       });
-      const { container } = renderOps();
+      const { container } = renderUpdates();
 
       const warning = await screen.findByRole("status", {
         name: "Migration caution for available Core update",
@@ -266,7 +185,7 @@ describe("Operations update-check state", () => {
   );
 
   it("keeps the three recovery artifact classes explicit and non-interchangeable", async () => {
-    const { container } = renderOps();
+    const { container } = renderUpdates();
 
     await screen.findByRole("status", {
       name: "Migration caution for available Core update",
@@ -282,7 +201,7 @@ describe("Operations update-check state", () => {
 
   it("provides focusable backup and offline rollback guidance with a valid canonical document link", async () => {
     const user = userEvent.setup();
-    renderOps();
+    renderUpdates();
 
     const warning = await screen.findByRole("status", {
       name: "Migration caution for available Core update",

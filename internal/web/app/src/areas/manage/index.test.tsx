@@ -3,7 +3,8 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { type ReactNode, useEffect } from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setAdvancedSettings } from "@/lib/advancedSettings";
 import { createLibrary, fetchLibraries, fetchPlugins } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { ManageArea } from ".";
@@ -205,6 +206,13 @@ describe("Manage navigation", () => {
     };
     vi.mocked(fetchLibraries).mockResolvedValue([]);
     vi.mocked(fetchPlugins).mockResolvedValue([]);
+    // Every destination is in the nav once Advanced is on (CORE-1117).
+    setAdvancedSettings(true);
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    setAdvancedSettings(false);
   });
 
   it.each(MANAGE_NAV)("lands on %s from every Manage route", async (label, expectedPath) => {
@@ -243,5 +251,58 @@ describe("Manage navigation", () => {
     expect(Math.max(...paths.map((path) => path.length))).toBeLessThanOrEqual(
       "/manage/not-a-route".length,
     );
+  });
+});
+
+describe("Manage navigation in the Normal view (CORE-1117)", () => {
+  const ADVANCED_NAV = [
+    "Convert",
+    "Rename",
+    "Bulk edit & file operations",
+    "Curation",
+    "Markers",
+    "Field locks",
+    "Navigation",
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sessionState.current = {
+      isManager: true,
+      loading: false,
+      needsEnroll: false,
+      session: { deviceRole: "manager", profile: "adult", profileID: "p1" },
+    };
+    vi.mocked(fetchLibraries).mockResolvedValue([]);
+    vi.mocked(fetchPlugins).mockResolvedValue([]);
+    localStorage.clear();
+    setAdvancedSettings(false);
+  });
+
+  it("leaves expert destinations out until the switch is on", async () => {
+    const user = userEvent.setup();
+    render(manageRouter("/manage/libraries", []));
+
+    expect(screen.getByRole("link", { name: "Libraries" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Restrictions" })).toBeVisible();
+    for (const label of ADVANCED_NAV) {
+      expect(screen.queryByRole("link", { name: label })).toBeNull();
+    }
+
+    await user.click(screen.getByRole("switch", { name: "Show advanced settings" }));
+    for (const label of ADVANCED_NAV) {
+      expect(screen.getByRole("link", { name: label })).toBeVisible();
+    }
+    expect(localStorage.getItem("beamfall.settings.advanced")).toBe("1");
+  });
+
+  it("keeps an Advanced page in the nav while it is the page being viewed", () => {
+    render(manageRouter("/manage/field-locks", []));
+
+    expect(screen.getByRole("link", { name: "Field locks" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.queryByRole("link", { name: "Markers" })).toBeNull();
   });
 });

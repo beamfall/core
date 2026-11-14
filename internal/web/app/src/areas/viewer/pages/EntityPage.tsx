@@ -154,9 +154,12 @@ export function EntityPage() {
   return (
     <AppShell actions={<ViewerActions />}>
       {loading && !entity && !previewTitle && (
-        <div className="flex flex-col gap-3">
-          <Skeleton className="h-8 w-64" />
-          <Skeleton className="h-4 w-40" />
+        <div aria-hidden className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1">
+            <Skeleton className="bf-shimmer h-9 w-72 max-w-full" />
+            <Skeleton className="bf-shimmer h-[22px] w-28" />
+          </div>
+          <Skeleton className="bf-shimmer h-10 w-80 max-w-full" />
         </div>
       )}
       {/* fetchEntity returns null for an inaccessible OR a missing entity (the
@@ -166,13 +169,15 @@ export function EntityPage() {
       {notFound && !loading && <NotAvailable />}
       {!notFound && (entity || previewTitle) && (
         <div className="flex flex-col gap-8">
-          <header className="flex flex-col gap-3">
-            {kindHint && <span className="bf-entity-kind">{kindHint}</span>}
-            <h1 className="bf-page-title">{entity?.title ?? previewTitle}</h1>
-            {!entity && <Skeleton aria-hidden className="h-4 w-40" />}
+          <header className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1">
+              <h1 className="bf-page-title">{entity?.title ?? previewTitle}</h1>
+              {kindHint && <p className="bf-entity-kind">{kindHint}</p>}
+            </div>
+            {!entity && <Skeleton aria-hidden className="bf-shimmer h-10 w-80 max-w-full" />}
             {entity && <ItemActions target={{ entityID: entityId }} />}
             {entity && entity.fields.length > 0 && (
-              <dl className="bf-metadata mt-2">
+              <dl className="bf-metadata">
                 {entity.fields.map((field, i) => (
                   <div key={`${field.name}-${i}`} className="contents">
                     <dt>{field.name}</dt>

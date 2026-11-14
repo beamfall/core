@@ -1,6 +1,4 @@
-import { Inbox, type LucideProps } from "lucide-react";
-import type { ComponentType, ReactNode } from "react";
-import { Badge } from "@/components/ui/badge";
+import type { ReactNode } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -49,7 +47,18 @@ export function StatusChip({
 
 export type BadgeState = "neutral" | "green" | "amber" | "red" | "cyan" | "restricted" | "revealed";
 
-// Manage status badge: data-state selects the tone in manage.css.
+const BADGE_TONE: Record<BadgeState, StatusTone> = {
+  neutral: "neutral",
+  green: "green",
+  amber: "amber",
+  red: "red",
+  cyan: "cyan",
+  restricted: "iris",
+  revealed: "iris",
+};
+
+// Manage status: the same dot-and-text idiom as StatusChip, so Console and
+// Manage read status one way. data-state stays as the stable hook.
 export function StatusBadge({
   state = "neutral",
   className,
@@ -60,9 +69,14 @@ export function StatusBadge({
   children: ReactNode;
 }) {
   return (
-    <Badge variant="secondary" data-state={state} className={cn("manage-badge", className)}>
+    <span
+      data-slot="status-badge"
+      data-state={state}
+      className={cn("status-chip", TONE_CLASS[BADGE_TONE[state]], className)}
+    >
+      <span className="status-chip-dot" aria-hidden />
       {children}
-    </Badge>
+    </span>
   );
 }
 
@@ -111,32 +125,19 @@ export function ManageTable({ className, children }: { className?: string; child
   return <Table className={cn("manage-table", className)}>{children}</Table>;
 }
 
-export function EmptyState({
-  message,
-  icon: Icon = Inbox,
-}: {
-  message: StringKey;
-  icon?: ComponentType<LucideProps>;
-}) {
+// An empty collection is a quiet sentence where the content would be, not a
+// boxed illustration: the section heading already says what is missing.
+export function EmptyState({ message }: { message: StringKey }) {
   const t = useT();
-  return (
-    <div className="console-card">
-      <div className="console-empty">
-        <Icon className="console-empty-icon" aria-hidden />
-        <span className="console-empty-line">{t(message)}</span>
-      </div>
-    </div>
-  );
+  return <p className="console-empty console-empty-line">{t(message)}</p>;
 }
 
 export function ErrorState({ message }: { message: StringKey }) {
   const t = useT();
   return (
-    <div className="console-card">
-      <p role="alert" className="console-empty console-empty-line text-[var(--red-500)]">
-        {t(message)}
-      </p>
-    </div>
+    <p role="alert" className="console-empty console-empty-line text-[var(--state-danger)]">
+      {t(message)}
+    </p>
   );
 }
 
@@ -238,32 +239,22 @@ export function ControlRow({
 export function ManageSection({
   title,
   lead,
-  icon: Icon,
   actions,
   children,
 }: {
   title: string;
   lead?: string;
-  /** A generic glyph for the house-style icon tile beside the title. */
-  icon?: ComponentType<LucideProps>;
   actions?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <Card className="manage-section">
       <CardHeader className="manage-section-header flex flex-row items-start justify-between gap-2">
-        <div className="flex min-w-0 items-start gap-3">
-          {Icon && (
-            <span className="house-icon-tile" aria-hidden>
-              <Icon className="size-[18px]" />
-            </span>
-          )}
-          <div className="min-w-0 space-y-0.5">
-            <CardTitle role="heading" aria-level={2} className="manage-section-title">
-              {title}
-            </CardTitle>
-            {lead && <CardDescription className="manage-section-lead">{lead}</CardDescription>}
-          </div>
+        <div className="min-w-0 space-y-1">
+          <CardTitle role="heading" aria-level={2} className="manage-section-title">
+            {title}
+          </CardTitle>
+          {lead && <CardDescription className="manage-section-lead">{lead}</CardDescription>}
         </div>
         {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
       </CardHeader>

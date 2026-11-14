@@ -1,7 +1,8 @@
 import "@testing-library/jest-dom/vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setAdvancedSettings } from "@/lib/advancedSettings";
 import {
   accessGrantsForProfile,
   fetchAccessSchedule,
@@ -33,6 +34,8 @@ vi.mock("@/lib/graphql", () => ({
 vi.mock("@/lib/session", () => ({ useSession: vi.fn() }));
 
 beforeEach(() => {
+  // The stream cap and extension pre-auth are Advanced (CORE-1117).
+  setAdvancedSettings(true);
   if (!Element.prototype.hasPointerCapture) Element.prototype.hasPointerCapture = () => false;
   if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
   vi.clearAllMocks();
@@ -113,6 +116,11 @@ async function pickProfile(name: string) {
   await user.click(await screen.findByRole("option", { name }));
   return user;
 }
+
+afterEach(() => {
+  localStorage.clear();
+  setAdvancedSettings(false);
+});
 
 describe("ProfilesAccess managed-Profile policy", () => {
   it("saves access windows through setAccessSchedule", async () => {
@@ -253,5 +261,24 @@ describe("ProfilesAccess managed-Profile policy", () => {
     // The Console fetch path threads its abort signal through to the fetcher,
     // so the query carries (profileID, signal) — not the profileID alone.
     expect(accessGrantsForProfile).toHaveBeenCalledWith("p2", expect.any(AbortSignal));
+  });
+});
+
+describe("ProfilesAccess in the Normal view (CORE-1117)", () => {
+  beforeEach(() => setAdvancedSettings(false));
+
+  it("keeps a managed Profile's Library access but leaves the stream cap to Advanced", async () => {
+    await pickProfile("Kid");
+
+    expect(await screen.findByRole("button", { name: "Save library access" })).toBeVisible();
+    expect(screen.queryByLabelText("Concurrent streams")).toBeNull();
+    expect(screen.queryByRole("switch", { name: "Pre-authorize extension requests" })).toBeNull();
+  });
+
+  it("shows an adult Profile's Library access without the Advanced stream cap", async () => {
+    await pickProfile("Owner");
+
+    expect(await screen.findByRole("button", { name: "Save library access" })).toBeVisible();
+    expect(screen.queryByLabelText("Concurrent streams")).toBeNull();
   });
 });

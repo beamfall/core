@@ -1,5 +1,7 @@
+import { Play } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router";
+import { buttonVariants } from "@/components/ui/button";
 import { displayString } from "@/lib/display";
 import type { Section, SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
@@ -10,10 +12,10 @@ import { rememberRenderFocus } from "../lib/renderFocus";
 
 // Hero Section, ported from the vanilla buildHero (app.js): one prominent
 // featured item (the Source's first item) — a wide full-bleed frame with a
-// backdrop-or-poster image behind a text-safe scrim, an eyebrow (the Section
+// backdrop-or-poster image behind a text-safe scrim, a visually hidden label (the Section
 // title), a Display-size title, an optional summary, and exactly one focusable
 // primary action (no autoplay). Absent artwork leaves the accent-tinted
-// fallback gradient (never a grey box).
+// surface fallback.
 export function Hero({
   section,
   item,
@@ -57,7 +59,7 @@ export function Hero({
         )}
         <div aria-hidden className="bf-hero-scrim" />
         <div className="bf-hero-copy">
-          <span className="bf-eyebrow">{displayString(section.title, displayLocale)}</span>
+          <span className="sr-only">{displayString(section.title, displayLocale)}</span>
           <h2 className="bf-hero-title">{item.title}</h2>
           {item.summary && <p className="bf-hero-summary">{item.summary}</p>}
           <button
@@ -76,8 +78,9 @@ export function Hero({
             data-focus-navigation={navigationID}
             data-focus-section={navigationID ? section.id : undefined}
             data-focus-id={navigationID ? item.id : undefined}
-            className="bf-hero-action"
+            className={`${buttonVariants({ size: "lg" })} bf-hero-action`}
           >
+            {isMedia && <Play aria-hidden fill="currentColor" />}
             {isMedia ? t("play") : t("open")}
           </button>
         </div>

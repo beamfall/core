@@ -1,3 +1,4 @@
+import { ArrowDown, ArrowUp, ChevronLeft, LayoutGrid, List, Play, Shuffle, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate, useParams, useSearchParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
@@ -369,31 +370,40 @@ function LibraryBrowse({
         </>
       }
     >
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-col gap-5">
+        <div className="flex flex-col items-start gap-1">
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
+            className="-ml-2"
             onClick={() => navigate(`/n/${encodeURIComponent(nodeID)}`)}
           >
+            <ChevronLeft aria-hidden />
             {t("back")}
           </Button>
-          <h1 className="bf-page-title">{heading}</h1>
-          <p role="status" className="text-sm text-[var(--text-muted)]">
-            {total === null ? t("loading") : t("libraryBrowseCount", { count: total })}
-          </p>
-          <div className="ml-auto flex flex-wrap items-center gap-2">
-            <Button size="sm" disabled={!itemCount || starting} onClick={() => void play(false)}>
-              {t("libraryBrowsePlayAll")}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!itemCount || starting}
-              onClick={() => void play(true)}
-            >
-              {t("libraryBrowseShuffle")}
-            </Button>
+          <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-3">
+            <h1 className="bf-page-title">{heading}</h1>
+            <p role="status" className="text-sm text-[var(--text-muted)]">
+              {total === null
+                ? failed
+                  ? ""
+                  : t("loading")
+                : t("libraryBrowseCount", { count: total })}
+            </p>
+            <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
+              <Button disabled={!itemCount || starting} onClick={() => void play(false)}>
+                <Play aria-hidden fill="currentColor" />
+                {t("libraryBrowsePlayAll")}
+              </Button>
+              <Button
+                variant="outline"
+                disabled={!itemCount || starting}
+                onClick={() => void play(true)}
+              >
+                <Shuffle aria-hidden />
+                {t("libraryBrowseShuffle")}
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -415,7 +425,7 @@ function LibraryBrowse({
             })}
             onClick={() => update({ direction: state.direction === "asc" ? "desc" : "asc" })}
           >
-            <span aria-hidden="true">{state.direction === "asc" ? "↑" : "↓"}</span>{" "}
+            {state.direction === "asc" ? <ArrowUp aria-hidden /> : <ArrowDown aria-hidden />}
             {t(state.direction === "asc" ? "libraryBrowseAscending" : "libraryBrowseDescending")}
           </Button>
           <BrowseSelect
@@ -503,6 +513,7 @@ function LibraryBrowse({
               aria-pressed={viewMode === "grid"}
               onClick={() => chooseViewMode("grid")}
             >
+              <LayoutGrid aria-hidden className="size-4" />
               {t("libraryBrowseViewGrid")}
             </button>
             <button
@@ -511,6 +522,7 @@ function LibraryBrowse({
               aria-pressed={viewMode === "list"}
               onClick={() => chooseViewMode("list")}
             >
+              <List aria-hidden className="size-4" />
               {t("libraryBrowseViewList")}
             </button>
           </div>
@@ -526,7 +538,8 @@ function LibraryBrowse({
                   aria-label={t("libraryBrowseRemoveFilter", { filter: filter.label })}
                   onClick={() => update(filter.clear)}
                 >
-                  {filter.label} <span aria-hidden="true">×</span>
+                  {filter.label}
+                  <X aria-hidden className="size-3.5" />
                 </button>
               </li>
             ))}
@@ -541,17 +554,24 @@ function LibraryBrowse({
         )}
 
         {failed && (
-          <div role="alert" className="flex items-center gap-3">
-            <p className="text-sm text-[var(--text-muted)]">{t("libraryBrowseLoadFailed")}</p>
-            <Button variant="outline" size="sm" onClick={() => setRetryTick((tick) => tick + 1)}>
+          <div role="alert" className="bf-empty flex flex-col gap-3">
+            <p className="text-sm text-[var(--text-secondary)]">{t("libraryBrowseLoadFailed")}</p>
+            <Button variant="outline" onClick={() => setRetryTick((tick) => tick + 1)}>
               {t("jobRetryAction")}
             </Button>
           </div>
         )}
         {total === 0 && !failed && (
-          <p className="text-sm text-[var(--text-muted)]">
-            {t(activeFilters.length ? "libraryBrowseNoMatches" : "libraryEmptyLead")}
-          </p>
+          <div role="status" className="bf-empty flex flex-col gap-3">
+            <p className="text-sm text-[var(--text-secondary)]">
+              {t(activeFilters.length ? "libraryBrowseNoMatches" : "libraryEmptyLead")}
+            </p>
+            {activeFilters.length > 0 && (
+              <Button variant="outline" onClick={() => update(clearAll)}>
+                {t("libraryBrowseClearFilters")}
+              </Button>
+            )}
+          </div>
         )}
 
         <ul
@@ -584,7 +604,7 @@ function BrowseSelect({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="bf-eyebrow">
+      <label htmlFor={id} className="bf-field-label">
         {label}
       </label>
       <Select value={value} onValueChange={onChange}>

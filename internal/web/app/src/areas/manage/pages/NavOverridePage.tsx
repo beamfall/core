@@ -1,4 +1,3 @@
-import { History, Palette, PanelsTopLeft, Rows3 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   EmptyLine,
@@ -182,7 +181,6 @@ export function NavOverridePage() {
     <div className="space-y-4">
       <ManageSection
         title={t("navOverrideHeading")}
-        icon={PanelsTopLeft}
         lead={t("navOverrideLead")}
         actions={
           <div className="flex items-center gap-2">
@@ -362,7 +360,6 @@ function ThemePanel({
   return (
     <ManageSection
       title={t("navOverrideThemeHeading")}
-      icon={Palette}
       lead={t("navOverrideThemeLead")}
       actions={
         override.themeAccentColor ? (
@@ -477,7 +474,6 @@ function SectionsPanel({
   return (
     <ManageSection
       title={t("navOverrideSectionsHeading")}
-      icon={Rows3}
       lead={t("navOverrideSectionsLead")}
       actions={
         layouts.length > 0 ? (
@@ -579,7 +575,6 @@ function HistoryPanel({
   return (
     <ManageSection
       title={t("navOverrideHistoryHeading")}
-      icon={History}
       lead={t("navOverrideHistoryLead")}
       actions={
         <Button

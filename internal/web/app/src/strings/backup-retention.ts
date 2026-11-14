@@ -32,7 +32,7 @@ export const backupRetentionStrings = {
     // MIGREV-3 — Backup panel: history + verify + manifest + restore assistant.
     backupHistoryHeading: "Backup history",
     backupHistoryLead:
-      "The run record of the backup sets written to this destination — when each ran, its size, and its last integrity verify status. Enter a destination and load its history, or run a backup to publish a new set.",
+      "The run record of the backup sets written to this destination: when each ran, its size, and its last integrity verify status. Enter a destination and load its history, or run a backup to publish a new set.",
     backupHistoryLoad: "Load history",
     backupHistoryLoading: "Loading…",
     backupHistoryEmpty: "No backup sets under this destination yet.",
@@ -49,7 +49,7 @@ export const backupRetentionStrings = {
     backupVerifyFailed: "Failed",
     backupVerifyNotRun: "Not verified",
     backupVerifyPassBanner:
-      "Integrity check passed. All files present and every content hash matches the manifest — this set is safe to restore.",
+      "Integrity check passed. All files present and every content hash matches the manifest. This set is safe to restore.",
     backupVerifyFailBanner:
       "Integrity check failed. This set is incomplete or was modified after capture and cannot be trusted for restore.",
     backupManifestHeading: "Manifest detail",
@@ -74,7 +74,7 @@ export const backupRetentionStrings = {
     exportExportedAt: "Exported at",
     trashPolicyHeading: "Trash policy",
     trashPolicyLead:
-      "The server-side retention window. Browse retained deleted Media and restore any row; destruction is recoverable by default.",
+      "Deleted items wait here until the retention window ends. Restore any of them before then.",
     trashRetainedCount: "{count} retained",
     purgeHeading: "Purge retained Trash",
     purgeBeforeLabel: "Purge items trashed before",
@@ -99,7 +99,7 @@ export const backupRetentionStrings = {
     retentionRuleTargetLibraryIDPlaceholder: "Target library ID",
     activityUndoHeading: "Activity",
     activityUndoLead:
-      "The append-only operator feed. Reversible actions jump to the Trash table where Restore lives; irreversible actions carry no undo.",
+      "Recent changes on this server. Undo opens the item in Trash so you can restore it.",
     activityUndo: "Undo",
     activityNoUndo: "No undo",
   },

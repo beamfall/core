@@ -1,4 +1,4 @@
-import { ChevronDown, KeyRound, Plug } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   EmptyState,
@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { Advanced, useShowAdvanced } from "@/lib/advancedSettings";
 import { graphql } from "@/lib/api";
 import { displayString } from "@/lib/display";
 import {
@@ -129,9 +130,15 @@ function provenanceChip(provenance: string, t: ReturnType<typeof useT>): ReactNo
   );
 }
 
-function trustBadge(trustState: string, t: ReturnType<typeof useT>): ReactNode {
+// A Trusted plugin's badge is Advanced detail; a warning (unsigned, tampered,
+// revoked) always shows (CORE-1117).
+function trustBadge(
+  trustState: string,
+  t: ReturnType<typeof useT>,
+  showAdvanced: boolean,
+): ReactNode {
   if (trustState === "Trusted") {
-    return <StatusChip tone="green">{t("pluginTrustTrusted")}</StatusChip>;
+    return showAdvanced ? <StatusChip tone="green">{t("pluginTrustTrusted")}</StatusChip> : null;
   }
   if (trustState === "Unsigned") {
     return <StatusChip tone="neutral">{t("pluginTrustUnsigned")}</StatusChip>;
@@ -145,7 +152,7 @@ function trustBadge(trustState: string, t: ReturnType<typeof useT>): ReactNode {
       <summary className="cursor-pointer list-none">
         <StatusChip tone="red">{t("pluginTrustVerificationFailed")}</StatusChip>
       </summary>
-      <span className="mt-1 block text-xs text-[var(--red-500)]">{t(detail)}</span>
+      <span className="mt-1 block text-xs text-[var(--state-danger)]">{t(detail)}</span>
     </details>
   );
 }
@@ -208,7 +215,7 @@ export function Plugins() {
   }
 
   return (
-    <Section heading="consoleConfigPlugins" icon={Plug}>
+    <Section heading="consoleConfigPlugins">
       {loading && !data ? (
         // Only the first load shows a skeleton. A later refresh keeps the cards
         // mounted, so it cannot discard a typed key or an unsaved config draft.
@@ -216,13 +223,13 @@ export function Plugins() {
       ) : failed ? (
         <ErrorState message="consoleConfigUnavailable" />
       ) : plugins.length === 0 ? (
-        <EmptyState message="none" icon={Plug} />
+        <EmptyState message="none" />
       ) : (
         <>
           {pluginStandingUnavailable && (
             <div
               role="alert"
-              className="rounded-xl border border-[var(--amber-500)]/45 bg-[var(--amber-500)]/10 px-3 py-2 text-sm"
+              className="rounded-xl border border-[var(--state-warning)]/45 bg-[var(--state-warning)]/10 px-3 py-2 text-sm"
             >
               {t("pluginTrustUnavailable")}
             </div>
@@ -230,7 +237,7 @@ export function Plugins() {
           {hasUnrecognizedTrust && (
             <div
               role="status"
-              className="rounded-xl border border-[var(--amber-500)]/45 bg-[var(--amber-500)]/10 px-3 py-2 text-sm"
+              className="rounded-xl border border-[var(--state-warning)]/45 bg-[var(--state-warning)]/10 px-3 py-2 text-sm"
             >
               {t("pluginTrustRefreshServer")}
             </div>
@@ -245,7 +252,6 @@ export function Plugins() {
                 onCredential={credentialAction}
                 onSaveConfig={saveConfig}
                 onRunAction={runAction}
-                onDeactivate={() => toggle(p.id, false)}
                 onUninstall={() => uninstall(p.id)}
               />
             ))}
@@ -253,7 +259,7 @@ export function Plugins() {
         </>
       )}
       {actionFailed && (
-        <p role="status" className="text-sm text-[var(--red-500)]">
+        <p role="status" className="text-sm text-[var(--state-danger)]">
           {t("consoleScraperActionFailed")}
         </p>
       )}
@@ -275,8 +281,9 @@ function keyStatusChip(status: string, t: ReturnType<typeof useT>) {
   return <StatusChip tone={entry?.tone ?? "neutral"}>{entry ? t(entry.label) : status}</StatusChip>;
 }
 
-const CARD = "rounded-2xl border border-white/10 bg-card/70 backdrop-blur-xl";
-const KEY_INPUT = "h-10 rounded-xl border-white/10 bg-white/[0.04]";
+const CARD =
+  "rounded-[var(--radius-surface)] border border-[var(--border-subtle)] bg-[var(--bg-surface)]";
+const KEY_INPUT = "h-10 rounded-xl";
 
 function PluginCard({
   plugin,
@@ -285,7 +292,6 @@ function PluginCard({
   onCredential,
   onSaveConfig,
   onRunAction,
-  onDeactivate,
   onUninstall,
 }: {
   plugin: PluginWithStanding;
@@ -298,65 +304,59 @@ function PluginCard({
     clear: string[],
   ) => Promise<void>;
   onRunAction: (pluginID: string, actionID: string) => Promise<void>;
-  onDeactivate: () => Promise<void>;
   onUninstall: () => Promise<void>;
 }) {
   const t = useT();
+  const showAdvanced = useShowAdvanced();
   const [expanded, setExpanded] = useState(false);
   const name = displayString(plugin.displayName, displayLocale);
   const builtIn = BUILT_IN_PLUGIN_IDS.has(plugin.id);
   const keys = useMemo(() => groupProviderKeys(plugin.scrapers ?? []), [plugin.scrapers]);
   const missingKey = keys.some(keyNeeded);
   const detailsID = `plugin-details-${plugin.id}`;
+  const provenance = showAdvanced ? provenanceChip(plugin.provenance, t) : null;
+  const trust = trustBadge(plugin.trustState, t, showAdvanced);
+  // Normal Details hold the control policy, config and status; with none of
+  // those the toggle would open an empty panel, so it is left out.
+  const hasDetails =
+    showAdvanced ||
+    Boolean(plugin.controlPolicy) ||
+    (plugin.config ?? []).length > 0 ||
+    (plugin.status ?? []).length > 0;
 
   return (
     <article className={CARD} aria-label={name}>
-      <div className="console-control-row px-4 py-3">
+      <div className="console-control-row console-plugin-head">
         <div className="flex min-w-0 items-center gap-3">
-          <span
-            aria-hidden
-            className={cn(
-              "grid size-10 shrink-0 place-items-center rounded-xl",
-              plugin.active
-                ? "bg-primary/15 text-primary"
-                : "bg-white/[0.05] text-muted-foreground",
-            )}
-          >
-            <Plug className="size-5" />
-          </span>
           <div className="min-w-0 space-y-1">
-            <div className="console-control-label break-words text-[15px] font-semibold">
-              {name}
-            </div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {provenanceChip(plugin.provenance, t)}
-              {trustBadge(plugin.trustState, t)}
-              {plugin.active ? (
-                <StatusChip tone="green">{t("consoleConfigActive")}</StatusChip>
-              ) : (
-                <StatusChip tone="neutral">{t("consoleConfigInactive")}</StatusChip>
-              )}
-              {missingKey && <StatusChip tone="amber">{t("pluginKeyNeeded")}</StatusChip>}
-            </div>
+            <div className="break-words text-[15px] font-semibold">{name}</div>
+            {(provenance || trust || missingKey) && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {provenance}
+                {trust}
+                {missingKey && <StatusChip tone="amber">{t("pluginKeyNeeded")}</StatusChip>}
+              </div>
+            )}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className="rounded-full"
-            aria-expanded={expanded}
-            aria-controls={detailsID}
-            aria-label={t("pluginDetailsToggle", { name })}
-            onClick={() => setExpanded((open) => !open)}
-          >
-            {t("pluginDetails")}
-            <ChevronDown
-              aria-hidden
-              className={cn("size-4 transition-transform", expanded && "rotate-180")}
-            />
-          </Button>
+          {hasDetails && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              aria-expanded={expanded}
+              aria-controls={detailsID}
+              aria-label={t("pluginDetailsToggle", { name })}
+              onClick={() => setExpanded((open) => !open)}
+            >
+              {t("pluginDetails")}
+              <ChevronDown
+                aria-hidden
+                className={cn("size-4 transition-transform", expanded && "rotate-180")}
+              />
+            </Button>
+          )}
           <div title={builtIn ? "Built-in plugins cannot be disabled." : undefined}>
             <Switch
               checked={plugin.active}
@@ -369,17 +369,14 @@ function PluginCard({
       </div>
 
       {keys.length > 0 && (
-        <div className="space-y-2 border-t border-white/[0.06] px-4 py-3">
-          <div className="flex items-center gap-2">
-            <KeyRound aria-hidden className="size-4 text-muted-foreground" />
-            <h3 className="m-0 text-[13px] font-semibold">{t("pluginKeysHeading")}</h3>
-          </div>
+        <div className="border-t border-[var(--border-subtle)] px-4 pt-3">
+          <h3 className="m-0 text-sm font-semibold">{t("pluginKeysHeading")}</h3>
           {missingKey && (
-            <p className="m-0 text-[12.5px] leading-snug text-muted-foreground">
+            <p className="m-0 mt-1 text-dense leading-snug text-muted-foreground">
               {t("pluginKeysLead")}
             </p>
           )}
-          <div className="grid gap-2">
+          <div className="divide-y divide-[var(--border-subtle)]">
             {keys.map((key) => (
               <ProviderKeyRow key={key.authRef} providerKey={key} onCredential={onCredential} />
             ))}
@@ -392,7 +389,7 @@ function PluginCard({
       <div
         id={detailsID}
         hidden={!expanded}
-        className="space-y-4 border-t border-white/[0.06] px-4 py-4"
+        className="space-y-4 border-t border-[var(--border-subtle)] px-4 py-4"
       >
         {plugin.controlPolicy && (
           <p className="m-0 text-[12px] text-muted-foreground">
@@ -405,12 +402,13 @@ function PluginCard({
           onSaveConfig={onSaveConfig}
           onRunAction={onRunAction}
         />
-        <PluginLifecycle
-          plugin={plugin}
-          displayLocale={displayLocale}
-          onDeactivate={onDeactivate}
-          onUninstall={onUninstall}
-        />
+        <Advanced>
+          <PluginLifecycle
+            plugin={plugin}
+            displayLocale={displayLocale}
+            onUninstall={onUninstall}
+          />
+        </Advanced>
       </div>
     </article>
   );
@@ -439,13 +437,12 @@ function ProviderKeyRow({
   }
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+    <div className="py-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <div className="text-sm font-medium">{label}</div>
-          <div className="text-[11.5px] text-muted-foreground">
+          <div className="text-xs text-muted-foreground">
             {t("pluginKeySentTo", { hosts: hosts.join(", ") })}
-            <span className="ml-1.5 font-mono opacity-70">{authRef}</span>
           </div>
         </div>
         {keyStatusChip(status, t)}
@@ -466,12 +463,7 @@ function ProviderKeyRow({
           aria-label={t("pluginKeyField", { provider: label })}
           onChange={(event) => setSecret(event.target.value)}
         />
-        <Button
-          type="submit"
-          size="sm"
-          className="rounded-full px-4"
-          disabled={pending || !secret.trim()}
-        >
+        <Button type="submit" size="sm" className="px-4" disabled={pending || !secret.trim()}>
           {t("consoleScraperSave")}
         </Button>
         {status !== "missing" && (
@@ -480,7 +472,6 @@ function ProviderKeyRow({
               type="button"
               size="sm"
               variant="ghost"
-              className="rounded-full"
               disabled={pending}
               onClick={() => void run(() => validateScraperCredential(authRef), false)}
             >
@@ -490,7 +481,6 @@ function ProviderKeyRow({
               type="button"
               size="sm"
               variant="ghost"
-              className="rounded-full"
               disabled={pending}
               onClick={() => void run(() => disableScraperCredential(authRef), true)}
             >
@@ -526,6 +516,7 @@ function PluginDetail({
   onRunAction: (pluginID: string, actionID: string) => Promise<void>;
 }) {
   const t = useT();
+  const showAdvanced = useShowAdvanced();
   const config = plugin.config ?? [];
   const permissions = plugin.permissions ?? [];
   const status = plugin.status ?? [];
@@ -535,77 +526,84 @@ function PluginDetail({
     config.length > 0 || permissions.length > 0 || status.length > 0 || actions.length > 0;
   if (!hasDeclarations) return null;
 
+  // Normal shows the config and status a plugin declares; the permission
+  // inventory and actions are Advanced, and Advanced also shows empty blocks.
   return (
     <>
-      <PluginConfigEditor
-        plugin={plugin}
-        fields={config}
-        displayLocale={displayLocale}
-        onSave={onSaveConfig}
-      />
+      {(showAdvanced || config.length > 0) && (
+        <PluginConfigEditor
+          plugin={plugin}
+          fields={config}
+          displayLocale={displayLocale}
+          onSave={onSaveConfig}
+        />
+      )}
 
-      <Fieldset title="pluginPermissionsHeading" help="pluginPermissionsLead">
-        {permissions.length === 0 ? (
-          <p className="console-control-help">{t("pluginPermissionsEmpty")}</p>
-        ) : (
-          <div className="space-y-2">
-            {permissions.map((perm) => (
-              <PermissionRow key={perm.kind} permission={perm} displayLocale={displayLocale} />
-            ))}
-          </div>
-        )}
-      </Fieldset>
+      {showAdvanced && (
+        <Fieldset title="pluginPermissionsHeading" help="pluginPermissionsLead">
+          {permissions.length === 0 ? (
+            <p className="console-control-help">{t("pluginPermissionsEmpty")}</p>
+          ) : (
+            <div className="space-y-2">
+              {permissions.map((perm) => (
+                <PermissionRow key={perm.kind} permission={perm} displayLocale={displayLocale} />
+              ))}
+            </div>
+          )}
+        </Fieldset>
+      )}
 
-      <Fieldset title="pluginStatusHeading">
-        {status.length === 0 ? (
-          <p className="console-control-help">{t("pluginStatusEmpty")}</p>
-        ) : (
-          <div className="space-y-2">
-            {status.map((row) => (
-              <StatusRow key={row.id} status={row} displayLocale={displayLocale} />
-            ))}
-          </div>
-        )}
-      </Fieldset>
+      {(showAdvanced || status.length > 0) && (
+        <Fieldset title="pluginStatusHeading">
+          {status.length === 0 ? (
+            <p className="console-control-help">{t("pluginStatusEmpty")}</p>
+          ) : (
+            <div className="space-y-2">
+              {status.map((row) => (
+                <StatusRow key={row.id} status={row} displayLocale={displayLocale} />
+              ))}
+            </div>
+          )}
+        </Fieldset>
+      )}
 
-      <Fieldset title="pluginActionsHeading" help="pluginActionsLead">
-        {actions.length === 0 ? (
-          <p className="console-control-help">{t("pluginActionsEmpty")}</p>
-        ) : (
-          <div className="space-y-2">
-            {actions.map((action) => (
-              <ActionRow
-                key={action.id}
-                pluginID={plugin.id}
-                action={action}
-                active={plugin.active}
-                displayLocale={displayLocale}
-                onRun={onRunAction}
-              />
-            ))}
-          </div>
-        )}
-      </Fieldset>
+      {showAdvanced && (
+        <Fieldset title="pluginActionsHeading" help="pluginActionsLead">
+          {actions.length === 0 ? (
+            <p className="console-control-help">{t("pluginActionsEmpty")}</p>
+          ) : (
+            <div className="space-y-2">
+              {actions.map((action) => (
+                <ActionRow
+                  key={action.id}
+                  pluginID={plugin.id}
+                  action={action}
+                  active={plugin.active}
+                  displayLocale={displayLocale}
+                  onRun={onRunAction}
+                />
+              ))}
+            </div>
+          )}
+        </Fieldset>
+      )}
     </>
   );
 }
 
-// PluginLifecycle (PANEL-8 / ADR-0104): the two distinct lifecycle operations.
-// Deactivate is reversible and preserves stored data (it reuses the activation
-// toggle's path). Uninstall is the explicit, operator-confirmed purge — the
-// only path that permanently removes the plugin's stored Entity data — so it
-// routes through ConfirmButton (HARD invariant #6) and names the irreversibility
-// in the dialog. Deactivate is a no-op when already inactive; Uninstall remains
-// available for inactive plugins because their stored data can still be purged.
+// PluginLifecycle (PANEL-8 / ADR-0104): Uninstall, the explicit,
+// operator-confirmed purge — the only path that permanently removes the
+// plugin's stored Entity data — so it routes through ConfirmButton (HARD
+// invariant #6) and names the irreversibility in the dialog. It remains
+// available for inactive plugins because their stored data can still be
+// purged. Reversible deactivation is the card's switch alone (CORE-1117).
 function PluginLifecycle({
   plugin,
   displayLocale,
-  onDeactivate,
   onUninstall,
 }: {
   plugin: PluginActivationInfo;
   displayLocale: string;
-  onDeactivate: () => Promise<void>;
   onUninstall: () => Promise<void>;
 }) {
   const t = useT();
@@ -625,43 +623,15 @@ function PluginLifecycle({
     }
   }
 
-  async function deactivate() {
-    setBusy(true);
-    setFailed(false);
-    try {
-      await onDeactivate();
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <Fieldset title="pluginLifecycleHeading" help="pluginLifecycleLead">
       <div className="space-y-2">
         <div className="console-control-row">
           <div className="min-w-0">
-            <div className="console-control-label">{t("pluginDeactivate")}</div>
-            <p className="console-control-help">{t("pluginDeactivateHelp")}</p>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <StatusChip tone="neutral">{t("pluginLifecycleReversible")}</StatusChip>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={!plugin.active || busy}
-              onClick={() => void deactivate()}
-            >
-              {t("pluginDeactivate")}
-            </Button>
-          </div>
-        </div>
-        <div className="console-control-row">
-          <div className="min-w-0">
             <div className="console-control-label">{t("pluginUninstall")}</div>
             <p className="console-control-help">{t("pluginUninstallHelp")}</p>
             {failed && (
-              <p role="status" className="text-xs text-[var(--red-500)]">
+              <p role="status" className="text-xs text-[var(--state-danger)]">
                 {t("pluginUninstallFailed")}
               </p>
             )}
@@ -762,12 +732,15 @@ function PluginConfigEditor({
           )}
           <div className="flex items-center justify-end gap-3">
             {saved && (
-              <span role="status" className="text-xs text-[var(--green-500)]">
+              <span
+                role="status"
+                className="text-xs text-[var(--state-success,var(--state-direct))]"
+              >
                 {t("pluginConfigSaved")}
               </span>
             )}
             {failed && (
-              <span role="status" className="text-xs text-[var(--red-500)]">
+              <span role="status" className="text-xs text-[var(--state-danger)]">
                 {t("pluginConfigFailed")}
               </span>
             )}
@@ -850,7 +823,7 @@ function ConfigField({
       <div className="min-w-0">
         <div className="console-control-label">
           {label}
-          {field.required && <span className="ml-1 text-[var(--amber-500)]">*</span>}
+          {field.required && <span className="ml-1 text-[var(--state-warning)]">*</span>}
         </div>
         {help && <p className="console-control-help">{help}</p>}
       </div>
