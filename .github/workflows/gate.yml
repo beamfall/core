@@ -32,12 +32,14 @@ jobs:
           cache-dependency-path: internal/web/app/package-lock.json
       - name: check trust documents
         run: sh .github/check-trust-docs.sh
-      # make gate runs vuln-check (govulncheck) and the FFmpeg tests, which
-      # refuse to skip when ffmpeg is missing.
+      # make gate runs vuln-check (govulncheck) and the FFmpeg unit tests, which
+      # refuse to skip when ffmpeg is missing. The runner's own ffmpeg is enough
+      # for those; the pinned jellyfin build is checked by the gate's
+      # ffmpeg-tonemap-conforming step in a debian:bookworm container.
       - name: install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
-      - name: install locked ffmpeg
-        run: bash script/ci-install-ffmpeg.sh
+      - name: install ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends ffmpeg
       - name: make gate
         run: make gate
 
@@ -51,8 +53,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: install locked ffmpeg
-        run: bash script/ci-install-ffmpeg.sh
+      - name: install ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends ffmpeg
       - name: make gate-race
         run: make gate-race
 
