@@ -110,6 +110,32 @@ describe("usePlayerShortcuts (CORE-1682)", () => {
     expect(video.currentTime).toBeCloseTo(30);
   });
 
+  it("steps by the frame interval the browser presents", () => {
+    const callbacks: VideoFrameRequestCallback[] = [];
+    const proto = HTMLVideoElement.prototype as Partial<HTMLVideoElement>;
+    proto.requestVideoFrameCallback = (callback) => callbacks.push(callback);
+    proto.cancelVideoFrameCallback = () => {};
+    try {
+      const { unmount, video } = setup({}, { currentTime: 10, paused: false });
+      const present = (mediaTime: number, presentedFrames: number) => {
+        const callback = callbacks.shift();
+        callback?.(0, { mediaTime, presentedFrames } as VideoFrameCallbackMetadata);
+      };
+      // Playing at 24 fps, then a dropped frame that must not stretch the step.
+      present(10, 100);
+      present(10 + 1 / 24, 101);
+      present(10 + 3 / 24, 102);
+      Object.defineProperty(video, "paused", { configurable: true, value: true });
+      video.currentTime = 10 + 3 / 24;
+      press(".");
+      expect(video.currentTime).toBeCloseTo(10 + 4 / 24 + 1 / 48);
+      unmount();
+    } finally {
+      Reflect.deleteProperty(proto, "requestVideoFrameCallback");
+      Reflect.deleteProperty(proto, "cancelVideoFrameCallback");
+    }
+  });
+
   it("moves between chapters with Page Up and Page Down", () => {
     const markers: PlaybackMarker[] = [
       { startSeconds: 0, segmentKind: "chapter", title: "Opening" },

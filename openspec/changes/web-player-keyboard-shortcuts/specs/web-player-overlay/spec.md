@@ -29,7 +29,9 @@ the duration. Up and down arrows, M and F keep changing volume, muting and fulls
 ### Requirement: Speed and frame step shortcuts
 
 `<` and `>` SHALL step the playback speed down and up through the speed menu's values. Comma and
-period SHALL step one frame back and forward while paused, and do nothing while playing.
+period SHALL step one frame back and forward while paused, and do nothing while playing. The frame
+interval SHALL be measured from the frames the browser presents during playback; where it cannot
+be measured the step is 1/30 s.
 
 #### Scenario: Speed up
 

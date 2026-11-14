@@ -37,7 +37,7 @@ export interface ResolvedShortcut {
 
 /** Seconds J and L jump, whatever the skip-button interval is. */
 export const JUMP_SECONDS = 10;
-/** One frame at 30 fps: the wire carries no frame rate, and 1/30 s is the common step. */
+/** The frame step until one is measured: the wire carries no frame rate, and 1/30 s is common. */
 export const FRAME_SECONDS = 1 / 30;
 
 const UNSHIFTED: Record<string, ShortcutAction> = {
@@ -109,7 +109,7 @@ export const SHORTCUT_SHEET: ReadonlyArray<{ keys: string[]; label: ShortcutLabe
   { keys: ["0", "9"], label: "shortcutSeekPercent" },
   { keys: [",", "."], label: "shortcutFrameStep" },
   { keys: ["<", ">"], label: "shortcutSpeed" },
-  { keys: ["↑", "↓"], label: "shortcutVolume" },
+  { keys: ["↓", "↑"], label: "shortcutVolume" },
   { keys: ["M"], label: "shortcutMute" },
   { keys: ["F"], label: "shortcutFullscreen" },
   { keys: ["C"], label: "shortcutSubtitlesToggle" },
@@ -119,6 +119,28 @@ export const SHORTCUT_SHEET: ReadonlyArray<{ keys: string[]; label: ShortcutLabe
   { keys: ["⇧P", "⇧N"], label: "shortcutQueueItem" },
   { keys: ["?"], label: "shortcutHelp" },
 ];
+
+/** Frame timing measured from presented frames; null until observed. */
+export interface FrameClock {
+  /** Seconds between consecutive frames. */
+  frame: number | null;
+  /** Media time of the frame on screen. */
+  mediaTime: number | null;
+}
+
+/**
+ * Where a one-frame step lands: the middle of the neighbouring frame, so
+ * rounding at a frame boundary cannot leave the picture unchanged. Without a
+ * current frame timestamp it steps `currentTime` by the frame (or 1/30 s).
+ */
+export function frameStepTarget(clock: FrameClock, currentTime: number, direction: -1 | 1) {
+  const frame = clock.frame ?? FRAME_SECONDS;
+  const shown = clock.mediaTime;
+  if (shown === null || Math.abs(shown - currentTime) > frame) {
+    return currentTime + direction * frame;
+  }
+  return shown + direction * frame + frame / 2;
+}
 
 /** The next speed in `speeds` (ascending) from `current`, or null at the end. */
 export function stepSpeed(speeds: readonly number[], current: number, direction: -1 | 1) {

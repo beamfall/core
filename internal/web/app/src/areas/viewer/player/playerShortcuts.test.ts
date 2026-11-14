@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  FRAME_SECONDS,
+  frameStepTarget,
   nextTrackId,
   resolvePlayerShortcut,
   SHORTCUT_SHEET,
@@ -98,5 +100,18 @@ describe("track helpers", () => {
     expect(subtitleToggleId(subs("off"), null)).toBe("0");
     expect(subtitleToggleId(subs("off"), "9")).toBe("0");
     expect(subtitleToggleId([{ id: "off", selected: true, disabled: false }], null)).toBeNull();
+  });
+});
+
+describe("frameStepTarget", () => {
+  it("lands mid-way into the neighbouring measured frame", () => {
+    const clock = { frame: 1 / 24, mediaTime: 10 };
+    expect(frameStepTarget(clock, 10.01, 1)).toBeCloseTo(10 + 1 / 24 + 1 / 48);
+    expect(frameStepTarget(clock, 10.01, -1)).toBeCloseTo(10 - 1 / 24 + 1 / 48);
+  });
+
+  it("steps the playhead itself when the shown frame is unknown or stale", () => {
+    expect(frameStepTarget({ frame: null, mediaTime: null }, 5, 1)).toBeCloseTo(5 + FRAME_SECONDS);
+    expect(frameStepTarget({ frame: 1 / 60, mediaTime: 2 }, 5, -1)).toBeCloseTo(5 - 1 / 60);
   });
 });

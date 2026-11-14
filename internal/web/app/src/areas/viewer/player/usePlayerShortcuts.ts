@@ -2,7 +2,8 @@ import { useEffect, useRef } from "react";
 import type { PlaybackMarker } from "@/lib/graphql/types";
 import { chapterSeekTarget } from "../lib/transport";
 import {
-  FRAME_SECONDS,
+  type FrameClock,
+  frameStepTarget,
   JUMP_SECONDS,
   nextTrackId,
   type ResolvedShortcut,
@@ -51,6 +52,7 @@ export function usePlayerShortcuts(handlers: PlayerShortcutHandlers) {
   const lastSubtitleRef = useRef<string | null>(null);
   const shown = handlers.subtitleOptions.find((option) => option.selected && option.id !== "off");
   if (shown) lastSubtitleRef.current = shown.id;
+  const frameClock = useFrameClock(handlers.videoRef);
 
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
@@ -58,17 +60,55 @@ export function usePlayerShortcuts(handlers: PlayerShortcutHandlers) {
       const shortcut = resolvePlayerShortcut(event);
       if (!shortcut) return;
       event.preventDefault();
-      apply(shortcut, handlersRef.current, lastSubtitleRef);
+      apply(shortcut, handlersRef.current, lastSubtitleRef, frameClock.current);
     };
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
-  }, []);
+  }, [frameClock]);
+}
+
+// Frame timing from the frames the browser presents (requestVideoFrameCallback):
+// the media-time step between consecutive frames while playing steadily at 1x,
+// the smallest seen since the source last changed, and the timestamp of the
+// frame on screen. Browsers without frame callbacks fall back to 1/30 s.
+function useFrameClock(videoRef: React.RefObject<HTMLVideoElement | null>) {
+  const clock = useRef<FrameClock>({ frame: null, mediaTime: null });
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || typeof video.requestVideoFrameCallback !== "function") return;
+    let last: VideoFrameCallbackMetadata | null = null;
+    let handle = 0;
+    const reset = () => {
+      clock.current = { frame: null, mediaTime: null };
+      last = null;
+    };
+    const onFrame: VideoFrameRequestCallback = (_now, meta) => {
+      const steady = !video.paused && !video.seeking && video.playbackRate === 1;
+      if (steady && last && meta.presentedFrames === last.presentedFrames + 1) {
+        const step = meta.mediaTime - last.mediaTime;
+        if (step > 1 / 240 && step < 1 / 10 && step < (clock.current.frame ?? Infinity)) {
+          clock.current.frame = step;
+        }
+      }
+      last = meta;
+      clock.current.mediaTime = meta.mediaTime;
+      handle = video.requestVideoFrameCallback(onFrame);
+    };
+    handle = video.requestVideoFrameCallback(onFrame);
+    video.addEventListener("emptied", reset);
+    return () => {
+      video.cancelVideoFrameCallback(handle);
+      video.removeEventListener("emptied", reset);
+    };
+  }, [videoRef]);
+  return clock;
 }
 
 function apply(
   shortcut: ResolvedShortcut,
   h: PlayerShortcutHandlers,
   lastSubtitleRef: React.RefObject<string | null>,
+  frameClock: FrameClock,
 ) {
   const video = h.videoRef.current;
   const seekTo = (seconds: number | null) => {
@@ -97,7 +137,11 @@ function apply(
       return h.toggleFullscreen();
     case "frameBack":
     case "frameForward":
-      if (video?.paused) h.seekBy(shortcut.action === "frameBack" ? -FRAME_SECONDS : FRAME_SECONDS);
+      if (video?.paused) {
+        seekTo(
+          frameStepTarget(frameClock, video.currentTime, shortcut.action === "frameBack" ? -1 : 1),
+        );
+      }
       return;
     case "slower":
     case "faster": {
