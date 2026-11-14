@@ -123,6 +123,7 @@ func TestRoutesAreRecorded(t *testing.T) {
 		{Method: http.MethodGet, Pattern: "/v1/libraries", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodGet, Pattern: "/v1/libraries/{libraryID}/media", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodGet, Pattern: "/v1/media/{mediaID}", RevealClass: reveal.ContentJSON},
+		{Method: http.MethodGet, Pattern: "/v1/media", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodPost, Pattern: "/v1/media/{mediaID}/playback-info", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodPut, Pattern: "/v1/media/{mediaID}/progress", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodGet, Pattern: "/v1/sessions", RevealClass: reveal.ContentJSON},

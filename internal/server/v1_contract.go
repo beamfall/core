@@ -103,7 +103,8 @@ type V1SSEFrameField struct {
 var v1RouteContracts = []V1RouteContract{
 	{OperationID: "listLibraries", Method: http.MethodGet, Pattern: "/v1/libraries", Scope: store.ScopeReadCatalog, Credentials: v1KeyOrDevice, RevealClass: reveal.ContentJSON, Response: jsonMessage[v1LibrariesResponse](), ListBounds: []V1ListBound{cursorListBound("libraries")}},
 	{OperationID: "listLibraryMedia", Method: http.MethodGet, Pattern: "/v1/libraries/{libraryID}/media", Scope: store.ScopeReadCatalog, Credentials: v1KeyOrDevice, RevealClass: reveal.ContentJSON, Response: jsonMessage[v1LibraryMediaResponse](), ListBounds: []V1ListBound{cursorListBound("media")}},
-	{OperationID: "getMedia", Method: http.MethodGet, Pattern: "/v1/media/{mediaID}", Scope: store.ScopeReadCatalog, Credentials: v1KeyOrDevice, RevealClass: reveal.ContentJSON, Response: jsonMessage[v1MediaItem]()},
+	{OperationID: "getMedia", Method: http.MethodGet, Pattern: "/v1/media/{mediaID}", Scope: store.ScopeReadCatalog, Credentials: v1KeyOrDevice, RevealClass: reveal.ContentJSON, Response: jsonMessage[v1MediaDetail](), ListBounds: []V1ListBound{{Field: "externalIDs", MaxItems: v1ExternalIDLimit}}},
+	{OperationID: "lookupMediaByExternalID", Method: http.MethodGet, Pattern: "/v1/media", Scope: store.ScopeReadCatalog, Credentials: v1KeyOrDevice, RevealClass: reveal.ContentJSON, Response: jsonMessage[v1MediaLookupResponse](), ListBounds: []V1ListBound{{Field: "media", MaxItems: v1ExternalIDLookupLimit}, {Field: "media.externalIDs", MaxItems: v1ExternalIDLimit}}},
 	{OperationID: "getPlaybackInfo", Method: http.MethodPost, Pattern: "/v1/media/{mediaID}/playback-info", Credentials: v1DeviceOnly, RevealClass: reveal.ContentJSON, Request: jsonMessage[v1PlaybackInfoRequest](), Response: jsonMessage[v1PlaybackInfoResponse](), ListBounds: []V1ListBound{
 		{Field: "streams", MaxItems: v1PlaybackStreamLimit},
 		{Field: "streams.renditions", MaxItems: v1PlaybackRenditionLimit},

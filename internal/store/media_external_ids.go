@@ -14,6 +14,10 @@ type MediaExternalID struct {
 }
 
 // AddMediaExternalID attaches an external identifier to Media idempotently.
+// A newly attached identifier announces media.updated, so a subscriber waiting
+// for an identifier (a request tool watching for one it asked for) sees it even
+// when hydration attaches it after the scan's media.created. Re-attaching an
+// identifier the Media already carries is a silent no-op.
 func (s *Store) AddMediaExternalID(ctx context.Context, mediaID MediaID, scheme string, value string) error {
 	scheme = strings.TrimSpace(scheme)
 	value = strings.TrimSpace(value)
@@ -31,11 +35,17 @@ func (s *Store) AddMediaExternalID(ctx context.Context, mediaID MediaID, scheme 
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	_, err := s.catalogW.ExecContext(ctx, `
+	result, err := s.catalogW.ExecContext(ctx, `
 		INSERT OR IGNORE INTO media_external_id(media_id, scheme, value)
 		VALUES (?, ?, ?)
 	`, mediaID, scheme, value)
-	return err
+	if err != nil {
+		return err
+	}
+	if inserted, err := result.RowsAffected(); err == nil && inserted > 0 {
+		s.emitMediaUpdated(ctx, mediaID)
+	}
+	return nil
 }
 
 // MediaExternalIDs returns external identifiers for one Media item in stable
@@ -68,6 +78,54 @@ func (s *Store) MediaExternalIDs(ctx context.Context, mediaID MediaID) ([]MediaE
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
+}
+
+// MediaExternalIDsBatch returns external identifiers for many Media items in
+// one read, keyed by Media ID, each slice in stable scheme/value order. Media
+// with no identifiers are absent from the map. Callers apply visibility before
+// asking: this read does not filter.
+func (s *Store) MediaExternalIDsBatch(ctx context.Context, mediaIDs []MediaID) (map[MediaID][]MediaExternalID, error) {
+	out := make(map[MediaID][]MediaExternalID, len(mediaIDs))
+	if len(mediaIDs) == 0 {
+		return out, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	for start := 0; start < len(mediaIDs); start += bulkWriteChunkSize {
+		chunk := mediaIDs[start:min(start+bulkWriteChunkSize, len(mediaIDs))]
+		args := make([]any, len(chunk))
+		for i, id := range chunk {
+			args[i] = id
+		}
+		// #nosec G202 -- only generated placeholders are interpolated; IDs are bound args.
+		rows, err := s.catalogR.QueryContext(ctx, `
+			SELECT media_id, scheme, value
+			FROM media_external_id
+			WHERE media_id IN (`+sqlPlaceholders(len(chunk))+`)
+			ORDER BY media_id, scheme, value
+		`, args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var mediaID MediaID
+			var id MediaExternalID
+			if err := rows.Scan(&mediaID, &id.Scheme, &id.Value); err != nil {
+				_ = rows.Close()
+				return nil, err
+			}
+			out[mediaID] = append(out[mediaID], id)
+		}
+		err = rows.Err()
+		_ = rows.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 // MediaIDsByExternalID looks up all Media rows carrying scheme/value. The

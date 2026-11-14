@@ -65,9 +65,19 @@
           "title": { "type": "string" },
           "summary": { "type": "string" },
           "year": { "type": "integer" },
-          "durationSeconds": { "type": "integer" }
+          "durationSeconds": { "type": "integer" },
+          "externalIDs": { "type": "array", "maxItems": 32, "items": { "$ref": "#/components/schemas/ExternalID" }, "description": "Identifiers other systems use for this Media, attached by plugins during import or hydration. Omitted when there are none." }
         },
         "required": ["id", "libraryID", "title"]
+      },
+      "ExternalID": {
+        "type": "object",
+        "description": "One identifier another system uses for a Media. The scheme vocabulary is open: core names no scheme; plugins and integrations agree on them.",
+        "properties": {
+          "scheme": { "type": "string", "pattern": "^[a-z0-9.-]+$" },
+          "value": { "type": "string" }
+        },
+        "required": ["scheme", "value"]
       },
       "Session": {
         "type": "object",
@@ -332,6 +342,38 @@
             }
           },
           "400": { "description": "libraryID missing.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/v1/media": {
+      "get": {
+        "operationId": "lookupMediaByExternalID",
+        "summary": "Find the Media carrying an external identifier.",
+        "description": "Requires the `read-catalog` scope. Answers whether an item another system knows by `scheme`/`value` is in the library. Reveal-filtered: Media the key cannot see are dropped, so an empty list never says whether hidden Media carry the identifier. An identifier normally names one Media; duplicate imports can share one until a dedupe pass resolves them.",
+        "x-required-scope": "read-catalog",
+        "security": [{ "scopedKey": ["read-catalog"] }],
+        "parameters": [
+          { "name": "scheme", "in": "query", "required": true, "schema": { "type": "string", "pattern": "^[a-z0-9.-]+$" }, "description": "Identifier scheme, as plugins attach it." },
+          { "name": "value", "in": "query", "required": true, "schema": { "type": "string" }, "description": "Identifier value within the scheme." }
+        ],
+        "responses": {
+          "200": {
+            "description": "The visible Media carrying the identifier; empty when none do.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "media": { "type": "array", "maxItems": 20, "items": { "$ref": "#/components/schemas/MediaDetail" } }
+                  },
+                  "required": ["media"]
+                }
+              }
+            }
+          },
+          "400": { "description": "scheme or value missing, or scheme malformed.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" }
         }

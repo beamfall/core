@@ -18,6 +18,7 @@ restating it.
 
 - [Developer API documentation](api/README.md)
 - [Home-automation examples](api/home-automation.md)
+- [Request-tool integration](api/request-tools.md)
 - [GraphQL and package architecture](architecture/ARCHITECTURE.md)
 - [Plugin SDK and authoring documentation](https://github.com/beamfall/plugin-sdk)
 - [Writing a scraper](plugins/writing-a-scraper.md)
