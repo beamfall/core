@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api";
 import {
   fetchPlaybackInfo,
+  hasPicture,
+  isComposedPictureServed,
   serverErrorReason,
   UNAVAILABLE_REASONS,
   type UnavailableReasonMessages,
@@ -155,5 +157,26 @@ describe("serverErrorReason", () => {
     ["a non-ApiError", new Error("boom")],
   ])("is empty for %s", (_label, err) => {
     expect(serverErrorReason(err)).toBe("");
+  });
+});
+
+describe("hasPicture (CORE-1656)", () => {
+  it("is true for video and for unknown info", () => {
+    expect(hasPicture({ mediaClass: "video" })).toBe(true);
+    expect(hasPicture(null)).toBe(true);
+  });
+  it("is false for plain audio", () => {
+    expect(hasPicture({ mediaClass: "audio", streams: [{ kind: "direct-play" }] })).toBe(false);
+    expect(hasPicture({ mediaClass: "audio", reason: "requires-transcode" })).toBe(false);
+  });
+  it("is true for audio served as a composed picture", () => {
+    expect(hasPicture({ mediaClass: "audio", reason: " composed-picture " })).toBe(true);
+    expect(
+      hasPicture({
+        mediaClass: "audio",
+        streams: [{ renditions: [{ id: "composed", height: 720 }] }],
+      }),
+    ).toBe(true);
+    expect(isComposedPictureServed({ streams: [{ renditions: [{ height: 0 }] }] })).toBe(false);
   });
 });

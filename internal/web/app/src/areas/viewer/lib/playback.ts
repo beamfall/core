@@ -205,3 +205,24 @@ export async function fetchPreviewInfo(mediaID: string): Promise<PreviewInfo> {
 }
 
 export { ApiError };
+
+/** The playback-info `reason` the server leaves on a composed-picture decision (ADR-0057). */
+export const COMPOSED_PICTURE_REASON = "composed-picture";
+
+/**
+ * Whether an audio item is served as a composed picture (CD+G graphics or lyrics
+ * as H.264 video). Mirrors the Apple and Android kits: the decision reason, or,
+ * where it is absent (the next-item decision), any stream rendition with a
+ * picture height, since a bare audio stream advertises none.
+ */
+export function isComposedPictureServed(
+  info: Pick<PlaybackInfo, "reason" | "streams"> | null | undefined,
+): boolean {
+  if (info?.reason?.trim() === COMPOSED_PICTURE_REASON) return true;
+  return !!info?.streams?.some((s) => s.renditions?.some((r) => (r.height ?? 0) > 0));
+}
+
+/** Whether the player surface has a picture: any non-audio item, or a composed-picture audio one. */
+export function hasPicture(info: PlaybackInfo | null | undefined): boolean {
+  return info?.mediaClass !== "audio" || isComposedPictureServed(info);
+}

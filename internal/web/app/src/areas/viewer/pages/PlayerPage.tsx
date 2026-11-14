@@ -8,7 +8,7 @@ import { fetchClientPrefs, fetchMedia, setClientPref } from "@/lib/graphql";
 import type { ClientPref, GenericMediaInfo } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
-import type { PlaybackNext } from "../lib/playback";
+import { hasPicture, type PlaybackNext } from "../lib/playback";
 import { previousInPlayQueue } from "../lib/playQueue";
 import {
   resolvePreferences,
@@ -382,7 +382,7 @@ export function PlayerPage() {
         >
           {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
           <video ref={videoRef} playsInline controls={false} poster={videoPoster || undefined} />
-          {isAudio && (
+          {isAudio && !hasPicture(state.info) && (
             <AudioStage
               title={navTitle}
               artworkURL={artworkURL}

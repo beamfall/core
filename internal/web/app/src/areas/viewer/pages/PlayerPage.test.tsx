@@ -267,6 +267,18 @@ describe("PlayerPage audio items (CORE-1143)", () => {
     { id: "media-next", title: "After" },
   ];
 
+  it("shows the video surface, not the artwork stage, for a composed-picture audio item (CORE-1656)", () => {
+    renderPlayer(
+      playerState({
+        phase: "playing",
+        info: { mediaClass: "audio", reason: "composed-picture" } as PlayerState["info"],
+      }),
+      { title: "Alpha" },
+    );
+    expect(document.querySelector(".bf-audio-stage")).toBeNull();
+    expect(document.querySelector("video")).not.toBeNull();
+  });
+
   it("shows artwork, title and credits for an audio item, and declares the queue's next item", async () => {
     vi.mocked(fetchMedia).mockResolvedValueOnce({
       id: "media-alpha",
