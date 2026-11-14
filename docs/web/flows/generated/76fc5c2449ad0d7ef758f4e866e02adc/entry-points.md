@@ -1,6 +1,6 @@
 # Player audio and subtitle tracks, subtitle styling — entry-points
 
-Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b828643dd5c6faa76b01b863be588faa -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.

@@ -1,6 +1,6 @@
 # Player up\-next countdown and play queue navigation — entities
 
-Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a7785ba5f6c9915e82f14133e06e92cd -->
 Runtime entities and persistence effects are unresolved; lexical calls are listed separately\.

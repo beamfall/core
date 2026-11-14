@@ -1,6 +1,6 @@
 # Shared workbench widgets: status chips, tables, forms, server path picker — technical-deep-dive
 
-Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:d39938af0f67ff2fed90c069627f07f3 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.

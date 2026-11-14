@@ -1,6 +1,6 @@
 # Viewer home and node browse: manifest layout, sections, hero — entry-points
 
-Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:648a011af40de2d306fe5b55a29239ff -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.

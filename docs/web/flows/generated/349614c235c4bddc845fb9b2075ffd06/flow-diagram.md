@@ -1,6 +1,6 @@
 # Console play history: filters, history table and rankings — flow-diagram
 
-Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1c42c21ee8caeaea6f5f5e8a17af475b -->
 Static source inventory only; sequence and runtime ordering are unresolved\.

@@ -1,6 +1,6 @@
 # Console area shell: route table, section nav, host firewall, session bar — exceptions
 
-Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:c49ba88642ec8f12b7439f134e25f925 -->
 Error reachability, rescue behavior and completeness are unresolved\.

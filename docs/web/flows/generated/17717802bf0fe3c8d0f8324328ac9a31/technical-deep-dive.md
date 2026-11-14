@@ -1,6 +1,6 @@
 # Viewer media card: preview dwell, state overlay, card menu, artwork — technical-deep-dive
 
-Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:f6a1a02e978d19d7f184542fae2cea9e -->
 Declared members are listed below; generated call observations do not establish executed behavior\.

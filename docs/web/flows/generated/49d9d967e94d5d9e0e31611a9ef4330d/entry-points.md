@@ -1,6 +1,6 @@
 # UI primitives: button, dialog, alert dialog, select, table, tabs, tree and form controls — entry-points
 
-Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:e0db298ee5f2663efec12d74f17a9fd4 -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.

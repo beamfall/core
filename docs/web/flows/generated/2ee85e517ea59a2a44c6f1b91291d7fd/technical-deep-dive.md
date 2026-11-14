@@ -1,6 +1,6 @@
 # Manage artwork slots and candidates — technical-deep-dive
 
-Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:54128c7a95e6c297734be98b13d6f6aa -->
 Declared members are listed below; generated call observations do not establish executed behavior\.

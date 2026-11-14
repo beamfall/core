@@ -1,6 +1,6 @@
 # Viewer Profile settings: preferences toggles and avatar — technical-deep-dive
 
-Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:38285d02add8fefb2d6836755806024e -->
 Declared members are listed below; generated call observations do not establish executed behavior\.

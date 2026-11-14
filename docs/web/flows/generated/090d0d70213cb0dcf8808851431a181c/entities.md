@@ -1,6 +1,6 @@
 # Promote an enrolled browser to a manager device — entities
 
-Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:aac7f5059bcfe70a0e01d64e2113b852 -->
 Runtime entities and persistence effects are unresolved; lexical calls are listed separately\.

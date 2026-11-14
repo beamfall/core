@@ -1,6 +1,6 @@
 # Manage trash: restore, purge and reversible activity — technical-deep-dive
 
-Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:17c9749ef4e9f802099d4b5d6a99c8c1 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.

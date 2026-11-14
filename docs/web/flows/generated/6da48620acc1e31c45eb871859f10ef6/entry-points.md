@@ -1,6 +1,6 @@
 # Console access: library grants, rating ceilings, access schedules, managed policy — entry-points
 
-Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b457388dee701b3b77c92fa7d2a27004 -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.

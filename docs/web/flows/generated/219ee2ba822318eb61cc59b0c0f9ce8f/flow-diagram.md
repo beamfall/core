@@ -1,6 +1,6 @@
 # Viewer header live search with keyboard shortcut — flow-diagram
 
-Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:e71473953fa4f9ba274a6c9c0a4133b8 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.

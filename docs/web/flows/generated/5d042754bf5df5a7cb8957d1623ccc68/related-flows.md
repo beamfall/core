@@ -1,6 +1,6 @@
 # First\-run setup wizard shell: token intake, step navigation — related-flows
 
-Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:7b374a44cfb68c6e2231db43dbf5b627 -->
 Relations are static lexical candidates; computed dispatch remains unresolved\.

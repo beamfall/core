@@ -1,6 +1,6 @@
 # Viewer media card: preview dwell, state overlay, card menu, artwork — entry-points
 
-Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b0f1f34ea67e775e06d1c6e583254ced -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.

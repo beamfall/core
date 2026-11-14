@@ -1,6 +1,6 @@
 # Console overview: owner tasks, setup checklist, needs\-attention queue — exceptions
 
-Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:2c315a471e92e00e1c825fa0394dc1f4 -->
 Error reachability, rescue behavior and completeness are unresolved\.

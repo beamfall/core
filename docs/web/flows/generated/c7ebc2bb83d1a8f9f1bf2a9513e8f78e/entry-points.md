@@ -1,6 +1,6 @@
 # Console plugins: standing, lifecycle, config editor, provider keys — entry-points
 
-Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b1fe1792a7fc924e542ee199a60679ec -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.

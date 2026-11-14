@@ -1,6 +1,6 @@
 # Console API tokens and keys: scopes, create, revoke, one\-time secret — exceptions
 
-Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:94e2c0709ea0c754ce70f3fc5fee5836 -->
 Error reachability, rescue behavior and completeness are unresolved\.

@@ -1,6 +1,6 @@
 # Playback engine: playback\-info, capability probe, HLS selection and recovery, progress reports — readme
 
-Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:e49c5863b9f98fc8eb9070186ea8823d -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -13,6 +13,8 @@ Security summaries: not collected; absence is not a clean security finding.
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
 - Declared inventory flows: structural and lexical relations between flows are not derived\.
+
+- Declared inventory members that do not resolve are listed in generation\.json inventory\.flows\[\]\.unresolved and in their flow README\.
 
 - Gitlinks are opaque superproject identities; their contents are not inspected\.
 
@@ -28,4 +30,6 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow player\.playback\-engine: 131 resolved, 0 unresolved members.
+Declared inventory flow player\.playback\-engine: 130 resolved, 1 unresolved members.
+
+- Unresolved member internal/web/app/src/areas/viewer/player/usePlayer\.ts onTimeUpdate: symbol declaration is ambiguous in this path at this revision.

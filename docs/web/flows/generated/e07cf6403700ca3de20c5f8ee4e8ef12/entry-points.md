@@ -1,6 +1,6 @@
 # Manage subscriptions and retention kinds — entry-points
 
-Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:bce0df995bf732ff78dc3f98616f88d1 -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.

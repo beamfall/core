@@ -29,10 +29,10 @@ follow-up, not a merge blocker. The record was generated at the revision recorde
 version 6 (member declarations of every kind, and the JSX fragment mask fix); run it with an
 older generator and members go unresolved.
 
-Summary at that revision: 88 flows, all generated; 2,387 declared members, all resolved; 717
-in-scope declarations unassigned: 675 in unit tests, e2e specs and test setup, 14 in the
-Playwright config and the Vite service-worker plugin, and 28 small internal helpers no flow
-names. The application map has 44 screens and 0 edges.
+Summary at that revision: 88 flows, all generated; 2,387 declared members, 2,386 resolved and
+1 unresolved; 719 in-scope declarations unassigned: 676 in unit tests, e2e specs and test setup,
+14 in the Playwright config and the Vite service-worker plugin, and 29 small internal helpers no
+flow names. The application map has 44 screens and 0 edges.
 
 ## Flows
 
@@ -128,7 +128,7 @@ status** counts the flow's members that resolved and did not resolve (see
 | `viewer.item-actions` | Viewer item actions: mark watched, watchlist, rating, engagement sync | `(cards, entity, player)` | `ItemActions.tsx#ItemActions` | `ItemState` `SetRating` `SetWatched` `SetWatchlisted` `/api/events` | none | generated (26 resolved) | [page](generated/f94cdbb556a0c2d845053c71bd808b53/README.md) |
 | `viewer.reveal` | Viewer reveal and relock of restricted content | `/, /n/:nodeId/all` | `RevealControls.tsx#RevealControls` | `Relock` `Reveal` | none | generated (7 resolved) | [page](generated/4c275a3142cb19d221f107631a2a5676/README.md) |
 | `player.page` | Player route: lazy load, timestamp links, info overlay, audio stage | `/watch/:mediaId` | `PlayerPage.tsx#PlayerPage` | `ClientPrefs` `Media` `SetClientPref` | player, viewer, ui-states, a11y-browser | generated (18 resolved) | [page](generated/d950458d8d21d8cd6527c9e9982e3442/README.md) |
-| `player.playback-engine` | Playback engine: playback-info, capability probe, HLS selection and recovery, progress reports | `/watch/:mediaId` | `usePlayer.ts#usePlayer` | `ClientPrefs` `PlaybackMarkers` `ReportPlayback` `/api/media` `/api/playback-info` `/api/preview-info` | player, viewer, browser-compat | generated (131 resolved) | [page](generated/46257443cc4779e98ed53945e66575df/README.md) |
+| `player.playback-engine` | Playback engine: playback-info, capability probe, HLS selection and recovery, progress reports | `/watch/:mediaId` | `usePlayer.ts#usePlayer` | `ClientPrefs` `PlaybackMarkers` `ReportPlayback` `/api/media` `/api/playback-info` `/api/preview-info` | player, viewer, browser-compat | generated (130 resolved, 1 unresolved) | [page](generated/46257443cc4779e98ed53945e66575df/README.md) |
 | `player.transport` | Player transport: seek bar, trickplay, markers, chapters, renditions, touch gestures | `/watch/:mediaId` | `PlayerTransport.tsx#PlayerTransport` | — | player | generated (78 resolved) | [page](generated/a70344430ef38f9301f230a048332cc9/README.md) |
 | `player.tracks-subtitles` | Player audio and subtitle tracks, subtitle styling | `/watch/:mediaId` | `useLiveTracks.ts#useLiveTracks` | — | player | generated (25 resolved) | [page](generated/76fc5c2449ad0d7ef758f4e866e02adc/README.md) |
 | `player.auto-skip` | Player auto-skip of intro/credits segments with skipped toast | `/watch/:mediaId` | `useAutoSkip.ts#useAutoSkip` | — | player | generated (14 resolved) | [page](generated/8b6155e6a01c76a0e008a4cabdb52b2d/README.md) |
@@ -218,7 +218,9 @@ which no UI calls.
   `internal/web/app` alone.
 - **Resolution is lexical.** Every declared member resolves to its declaration (functions,
   constants, interfaces, type aliases, `let` bindings and classes), but Corvint reads source text
-  only: entry dispatch, callers and runtime behaviour are not established.
+  only: entry dispatch, callers and runtime behaviour are not established. A name declared
+  twice in one file is ambiguous and stays unresolved: `player.playback-engine` names
+  `usePlayer.ts#onTimeUpdate`, which now has two local declarations in different listeners.
 - **Application map (experimental AMAP-V0).** Of the 44 screens, 8 are abstract layout or splat
   routes. These limits apply:
   - The console section routes are built by mapping the `GROUPS` array into `<Route>` elements.

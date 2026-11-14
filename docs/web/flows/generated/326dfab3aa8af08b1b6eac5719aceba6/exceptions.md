@@ -1,6 +1,6 @@
 # Shell and per\-area error boundaries with reload panel — exceptions
 
-Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:f18e2edfef6e434f6c02454121b84d32 -->
 Error reachability, rescue behavior and completeness are unresolved\.

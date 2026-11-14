@@ -1,6 +1,6 @@
 # Playback engine: playback\-info, capability probe, HLS selection and recovery, progress reports — functional-overview
 
-Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:ab5e259be927c11685ac672b6ac99359 -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
@@ -10,7 +10,7 @@ Source: internal/web/app/src/areas/viewer/lib/capabilityProfile\.ts:85; symbol: 
 <!-- flowdocs:paragraph:12641fed49f4a4bb5252d7ce09a78e7d -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
 
-Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:1199; symbol: ; span SHA256: 77742d207bbd659d3ba9ac64202afe93df5e3227e7fcf896d58c6f08d94458f6.
+Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:1217; symbol: ; span SHA256: 77742d207bbd659d3ba9ac64202afe93df5e3227e7fcf896d58c6f08d94458f6.
 
 | Variation inventory | Runtime coverage | Denominator rule |
 | --- | --- | --- |

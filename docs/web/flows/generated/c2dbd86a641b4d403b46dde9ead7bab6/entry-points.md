@@ -1,6 +1,6 @@
 # Shared workbench widgets: status chips, tables, forms, server path picker — entry-points
 
-Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:c05de68b31945d08616de7c9abf1d628 -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.

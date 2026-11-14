@@ -1,6 +1,6 @@
 # Viewer Profile settings: preferences toggles and avatar — related-flows
 
-Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b884b56cf467fd18c0d3e888e9886dc0 -->
 Relations are static lexical candidates; computed dispatch remains unresolved\.

@@ -1,6 +1,6 @@
 # Unreached code: unmounted modules and GraphQL operations no UI calls — exceptions
 
-Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:70ac05f507c9278e71a9630ff9d2b420 -->
 Error reachability, rescue behavior and completeness are unresolved\.

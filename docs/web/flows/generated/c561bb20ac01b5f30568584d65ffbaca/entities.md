@@ -1,6 +1,6 @@
 # Console live sessions: update awareness, jobs, live sessions and host graphs — entities
 
-Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:3f1941b51c6e3716d10080646c77ce37 -->
 Runtime entities and persistence effects are unresolved; lexical calls are listed separately\.

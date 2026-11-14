@@ -1,6 +1,6 @@
 # Native app\-store host bridge: host messages, open in native player — entities
 
-Source revision: d658ad5b71dcb67da0ae540d6d5ff80ca8efefd5. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:0bc8d1e93da30843c7b5e141e5e54565 -->
 Runtime entities and persistence effects are unresolved; lexical calls are listed separately\.
