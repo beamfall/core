@@ -1,11 +1,11 @@
 # Create a Media from an unmatched record and upload artwork — flow-diagram
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:807561dd4a10701ef7f48396cf60ca6c -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/manage/pages/unmatched/CreateMediaForm\.tsx:69; symbol: CreateMediaForm; span SHA256: d1340d4fbdb580f067e835013aa42d8fc5cce53aa928502f6fbc3005a09aa114.
+Source: internal/web/app/src/areas/manage/pages/unmatched/CreateMediaForm\.tsx:14; symbol: ARTWORK\_SLOT; span SHA256: 8e67075a8aab38f7bf5c9b674127821fdd38583d97555893a5165ab87cc49be3.
 
 ```mermaid
 sequenceDiagram
@@ -26,6 +26,7 @@ sequenceDiagram
     Note over S,U: Source contains call Number at line 53 - order unresolved
     Note over S,U: Source contains call Date at line 54 - order unresolved
     Note over S,U: Source contains call getFullYear at line 54 - order unresolved
+    Note over S,U: Source contains call test at line 55 - order unresolved
     Note over S,U: Source contains call getIdentityEpochSignal at line 111 - order unresolved
     Note over S,U: Source contains call async at line 118 - order unresolved
     Note over S,U: Source contains call captureGeneration at line 119 - order unresolved

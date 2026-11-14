@@ -1,9 +1,9 @@
 # Viewer who&\#39;s\-watching Profile picker with PIN prompt — related-flows
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:ef8d454655dea35931ba3fa75877f43f -->
 Relations are static lexical candidates; computed dispatch remains unresolved\.
 
-Source: internal/web/app/src/areas/viewer/pages/ProfilePickerPage\.tsx:191; symbol: PinPrompt; span SHA256: 1dda62597ac88864cf9511f76713d3e612a47bf892ca7532a29fd3361e7657ce.
+Source: internal/web/app/src/areas/viewer/pages/ProfilePickerPage\.tsx:34; symbol: FAILURE\_MESSAGE; span SHA256: 822692c2083b855cb446429b0cac5e2c35adc7232f3248ea84920ddc133b8873.
 

@@ -1,16 +1,14 @@
 # Console access: create and manage Profiles — readme
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:20c76d071e98c9d47d0c6092a0cb6e14 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/console/sections/AccessAdmin\.tsx:6; symbol: AccessAdmin; span SHA256: c16358ed09362a9e222e69940c34cbc673fdce2e160503341857566a3346f415.
+Source: internal/web/app/src/areas/console/sections/AccessAdmin\.tsx:7; symbol: AccessAdmin; span SHA256: c16358ed09362a9e222e69940c34cbc673fdce2e160503341857566a3346f415.
 
 
 Security summaries: not collected; absence is not a clean security finding.
-
-- A declared inventory flow with no resolved member is reported, not generated\.
 
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
@@ -32,12 +30,4 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow console\.access\.profiles: 10 resolved, 4 unresolved members.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts CREATE\_PROFILE\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts DISABLE\_PROFILE\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts PROFILES\_ADMIN\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts UPDATE\_PROFILE\_MUTATION: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow console\.access\.profiles: 14 resolved, 0 unresolved members.

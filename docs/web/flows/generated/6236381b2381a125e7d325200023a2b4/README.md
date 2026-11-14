@@ -1,16 +1,14 @@
 # Manage area shell: route table, nav groups, admin lock — readme
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:e8c7e0f6bf87f0ae539c7c124132625e -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/manage/index\.tsx:190; symbol: AdminUnlocked; span SHA256: 2fbb9c781a0203abe431258f0a69e258cc97a537c32fb8a006ec511fe1ae2a91.
+Source: internal/web/app/src/areas/manage/index\.tsx:206; symbol: AdminUnlocked; span SHA256: 2fbb9c781a0203abe431258f0a69e258cc97a537c32fb8a006ec511fe1ae2a91.
 
 
 Security summaries: not collected; absence is not a clean security finding.
-
-- A declared inventory flow with no resolved member is reported, not generated\.
 
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
@@ -32,10 +30,4 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow manage\.shell: 6 resolved, 3 unresolved members.
-
-- Unresolved member internal/web/app/src/areas/manage/index\.tsx MANAGE\_LOCK\_COPY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/manage/index\.tsx NAV\_GROUPS: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/manage/index\.tsx NavItem: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow manage\.shell: 9 resolved, 0 unresolved members.

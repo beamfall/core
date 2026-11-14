@@ -1,6 +1,6 @@
 # Viewer item actions: mark watched, watchlist, rating, engagement sync — readme
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:55c97324ec6863a4932e44fcaea9a64e -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -9,8 +9,6 @@ Source: internal/web/app/src/areas/viewer/actions/ItemActions\.tsx:14; symbol: I
 
 
 Security summaries: not collected; absence is not a clean security finding.
-
-- A declared inventory flow with no resolved member is reported, not generated\.
 
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
@@ -32,28 +30,4 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow viewer\.item\-actions: 14 resolved, 12 unresolved members.
-
-- Unresolved member internal/web/app/src/areas/viewer/actions/ItemActions\.tsx STARS: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/actions/engagementSync\.ts ENGAGEMENT\_CHANGED: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/actions/engagementSync\.ts FULL\_REFRESH\_KIND: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/actions/engagementSync\.ts INVALIDATE\_KIND: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/actions/engagementSync\.ts epoch: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/actions/engagementSync\.ts listeners: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/actions/useItemActions\.ts ItemActions: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts ITEM\_STATE\_FIELDS: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts ITEM\_STATE\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts SET\_RATING\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts SET\_WATCHED\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts SET\_WATCHLISTED\_MUTATION: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow viewer\.item\-actions: 26 resolved, 0 unresolved members.

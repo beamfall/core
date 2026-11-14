@@ -1,6 +1,6 @@
 # App shell chrome: header, library sidebar, account menu, phone layout — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1d9fa88dbb23c673f79fccc995bb9f88 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -11,6 +11,21 @@ Source: internal/web/app/src/components/chrome/AccountMenu\.tsx:13; symbol: Acco
 Declared member: source declares AccountMenu; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/components/chrome/AccountMenu\.tsx:13; symbol: AccountMenu; span SHA256: 3ae2d92653644346e79885513d786afc911035dc3291892385bd9270402e1e95.
+
+<!-- flowdocs:paragraph:195471a429542bdad77297e79705d6fc -->
+Declared member: source declares NOTIFICATION\_BADGE\_LIMIT; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/components/chrome/AppShell\.tsx:15; symbol: NOTIFICATION\_BADGE\_LIMIT; span SHA256: f3dc40158807bbde6128ab892e8968ed6d4e168370fc5fd87fd442530b9a29a0.
+
+<!-- flowdocs:paragraph:246452ee1fceebecaa54069e24eb5465 -->
+Declared member: source declares PHONE\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/components/chrome/AppShell\.tsx:16; symbol: PHONE\_QUERY; span SHA256: 9c9c6dcc46a8aec82c1040034c0f531f7f552ce57fa97663403ddc0faf7b008c.
+
+<!-- flowdocs:paragraph:4003c54c7df61b0ff3494cb6bbdc7421 -->
+Declared member: source declares SIDEBAR\_PREF; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/components/chrome/AppShell\.tsx:17; symbol: SIDEBAR\_PREF; span SHA256: 9fe4788013ab3c88e258834738001b117ee5aa8b1852ca2bec161e56d120245e.
 
 <!-- flowdocs:paragraph:fb763993d0ad18f187ece3bd59a4062a -->
 Declared member: source declares readCollapsedPref; membership is caller\-declared, not runtime evidence\.
@@ -37,10 +52,15 @@ Declared member: source declares LibrarySidebar; membership is caller\-declared,
 
 Source: internal/web/app/src/components/chrome/LibrarySidebar\.tsx:14; symbol: LibrarySidebar; span SHA256: bbde04f773c1472c988914c991e3c936f6b9d07c8f4cbf35d718b1a8629b43e9.
 
+<!-- flowdocs:paragraph:a9bdfa803fcdb1dc8dafe9edf983783d -->
+Declared member: source declares NOTIFICATIONS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/viewer\.ts:304; symbol: NOTIFICATIONS\_QUERY; span SHA256: 48f864b136a6195b56f78c000ac11aed646227a6365d92dd62ee8674bf2060dc.
+
 <!-- flowdocs:paragraph:7caaa5040a8dd8f10b43ffde97d07a18 -->
 Declared member: source declares fetchNotifications; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:295; symbol: fetchNotifications; span SHA256: 52a9f16f6ba71634a431d2d4cd55c72ed0a6170c0ff5fc557280bfa07dd85daf.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:308; symbol: fetchNotifications; span SHA256: 52a9f16f6ba71634a431d2d4cd55c72ed0a6170c0ff5fc557280bfa07dd85daf.
 
 <!-- flowdocs:paragraph:02a7e9ba330e7a95d704a8ad36117907 -->
 Declared member: source declares current; membership is caller\-declared, not runtime evidence\.

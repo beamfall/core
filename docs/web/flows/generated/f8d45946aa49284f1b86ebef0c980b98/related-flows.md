@@ -1,9 +1,9 @@
 # Viewer My Data / privacy: summary, event log, sessions, stream tokens, export — related-flows
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:18744d7e00e33c03594d68af6963df9d -->
 Relations are static lexical candidates; computed dispatch remains unresolved\.
 
-Source: internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx:558; symbol: EventRow; span SHA256: b90d5000e023b772fdb15c1217e4d50e131eb6efd7cd377e76d3b883a15554b1.
+Source: internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx:46; symbol: ALL\_LIBRARIES; span SHA256: eb3f07ba74a0fc603288f92ab1ebcf39cb6f259d1a28387ee36024bb03f48ee7.
 

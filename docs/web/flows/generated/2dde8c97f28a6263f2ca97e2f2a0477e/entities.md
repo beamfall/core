@@ -1,6 +1,6 @@
 # Viewer entity detail page and not\-available state — entities
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:227932836c4b23a82ed1521c8e5aa4d3 -->
 Runtime entities and persistence effects are unresolved; lexical calls are listed separately\.

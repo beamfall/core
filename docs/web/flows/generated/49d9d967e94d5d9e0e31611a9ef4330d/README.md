@@ -1,6 +1,6 @@
 # UI primitives: button, dialog, alert dialog, select, table, tabs, tree and form controls — readme
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a62cf7877104e2f26507afb47f30d4ce -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -9,8 +9,6 @@ Source: internal/web/app/src/components/ui/alert\-dialog\.tsx:6; symbol: AlertDi
 
 
 Security summaries: not collected; absence is not a clean security finding.
-
-- A declared inventory flow with no resolved member is reported, not generated\.
 
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
@@ -32,28 +30,4 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow shared\.ui\-primitives: 61 resolved, 12 unresolved members.
-
-- Unresolved member internal/web/app/src/components/ui/alert\-dialog\.tsx AlertDialogTriggerProps: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/ui/badge\.tsx badgeVariants: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/ui/button\.tsx buttonVariants: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/ui/dialog\.tsx DialogTriggerProps: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/ui/select\.tsx SelectFocusContext: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/ui/select\.tsx SelectProps: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/ui/tabs\.tsx Tabs: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/ui/tabs\.tsx focusModality: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/ui/tree\.tsx Tree: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/ui/tree\.tsx TreeItemProps: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/ui/tree\.tsx TreeRootProps: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/components/ui/tree\.tsx treeNavigation: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow shared\.ui\-primitives: 73 resolved, 0 unresolved members.

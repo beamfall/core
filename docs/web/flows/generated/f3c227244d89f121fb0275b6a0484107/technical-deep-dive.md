@@ -1,6 +1,6 @@
 # Console library health: dimensions, drilldowns, bulk remediation — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:4398a0f1203e64e54fe148caa22c16fb -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -12,6 +12,16 @@ Declared member: source declares CountCell; membership is caller\-declared, not 
 
 Source: internal/web/app/src/areas/console/sections/Health\.tsx:89; symbol: CountCell; span SHA256: 7755a284d71063c1849828a63924ea2de0812913970f2d5dc57e5a2ff7667eda.
 
+<!-- flowdocs:paragraph:57266c98fc5541dd3419674abc698cd7 -->
+Declared member: source declares DIMENSIONS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Health\.tsx:25; symbol: DIMENSIONS; span SHA256: 1c17c28df251dd8f80651e5dea7117f50ea8a4f781549e9c9f77998eb228d49c.
+
+<!-- flowdocs:paragraph:22b0ea84e330b6af8ae4ad295da370ea -->
+Declared member: source declares DrillTarget; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/Health\.tsx:123; symbol: DrillTarget; span SHA256: b8d7f96fc4b22d841f8f73d8645fae7eab4ff7b1660c1f867dc2f964829a2935.
+
 <!-- flowdocs:paragraph:4d066c54262e233d6d75f423b495aae8 -->
 Declared member: source declares HealthDrillPanel; membership is caller\-declared, not runtime evidence\.
 
@@ -22,30 +32,45 @@ Declared member: source declares aggregateCounts; membership is caller\-declared
 
 Source: internal/web/app/src/areas/console/sections/Health\.tsx:77; symbol: aggregateCounts; span SHA256: 7e0dfa68a6bb9572a0a562d9d5fb58b2a524f2713ae7fedbea50435c151b98b9.
 
+<!-- flowdocs:paragraph:4ac3dcf8ebcd53b8329993a9b0208691 -->
+Declared member: source declares DUPLICATE\_GROUPS\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1199; symbol: DUPLICATE\_GROUPS\_QUERY; span SHA256: fab44620a458ca7573a37a4cc5329d21a578434b8e45ce3e320c2ac940b6dfcf.
+
+<!-- flowdocs:paragraph:f0beb3416306e63bdaa3d32b9e51100e -->
+Declared member: source declares HEALTH\_DRILLDOWN\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1182; symbol: HEALTH\_DRILLDOWN\_QUERY; span SHA256: a2b280a9fd1d570d7f2ad096a6ebdb30697e78198ac3af2380c89dd3c3a6d828.
+
+<!-- flowdocs:paragraph:40bebc2e60c41f0d58ff6ee546319637 -->
+Declared member: source declares LIBRARY\_HEALTH\_QUERY; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1156; symbol: LIBRARY\_HEALTH\_QUERY; span SHA256: 213b190658a5665ea86a4f4f5d83a5ff49bda67700c234f21e7d00cf7cadf697.
+
 <!-- flowdocs:paragraph:631d58e21a94a1d5e2a62d9a57e8ab26 -->
 Declared member: source declares fetchDuplicateGroups; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:1192; symbol: fetchDuplicateGroups; span SHA256: cbb5b7ac583a0fa213a38add128b4f4fb469317803e80fd59424622e8eed5fc3.
+Source: internal/web/app/src/lib/graphql/manage\.ts:1203; symbol: fetchDuplicateGroups; span SHA256: cbb5b7ac583a0fa213a38add128b4f4fb469317803e80fd59424622e8eed5fc3.
 
 <!-- flowdocs:paragraph:662056c9a7d9443224119ed29442a9d8 -->
 Declared member: source declares fetchHealthDrilldown; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:1175; symbol: fetchHealthDrilldown; span SHA256: 147ca8967a53c32fa1f098e1aca51f8cb819dae2f3a54dc4fd93f36997fb5e4f.
+Source: internal/web/app/src/lib/graphql/manage\.ts:1186; symbol: fetchHealthDrilldown; span SHA256: 147ca8967a53c32fa1f098e1aca51f8cb819dae2f3a54dc4fd93f36997fb5e4f.
 
 <!-- flowdocs:paragraph:9782b25f93175560692c81f1d34ec792 -->
 Declared member: source declares fetchLibraryHealth; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:1148; symbol: fetchLibraryHealth; span SHA256: c640d95e7ad2948b1c9a0ed627d9a0ec3059ab81c4ef5b9bfd02dd076b466f8a.
+Source: internal/web/app/src/lib/graphql/manage\.ts:1159; symbol: fetchLibraryHealth; span SHA256: c640d95e7ad2948b1c9a0ed627d9a0ec3059ab81c4ef5b9bfd02dd076b466f8a.
 
 <!-- flowdocs:paragraph:f6ac28e706f55fcdebdf185a5250787c -->
 Declared member: source declares runHealthBulkOp; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:1162; symbol: runHealthBulkOp; span SHA256: 5b2bd8d001a8cec8ecc203b0b9673fa95c3e2d8374c0838d20ac83edf21abc11.
+Source: internal/web/app/src/lib/graphql/manage\.ts:1173; symbol: runHealthBulkOp; span SHA256: 5b2bd8d001a8cec8ecc203b0b9673fa95c3e2d8374c0838d20ac83edf21abc11.
 
 <!-- flowdocs:paragraph:523bd06ccde9e6330bc881a7e9be2d40 -->
 Declared member: source declares runHealthBulkOpSelected; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:1208; symbol: runHealthBulkOpSelected; span SHA256: 1e89a7e6ef9bef0872cd9ce33ce2b8c6a2718e17c7b592a5f2d12041e1decd1c.
+Source: internal/web/app/src/lib/graphql/manage\.ts:1219; symbol: runHealthBulkOpSelected; span SHA256: 1e89a7e6ef9bef0872cd9ce33ce2b8c6a2718e17c7b592a5f2d12041e1decd1c.
 
 <!-- flowdocs:paragraph:81672dfecfd89d0bfa4c628f711e4757 -->
 Declared member: source declares closeDrill; membership is caller\-declared, not runtime evidence\.

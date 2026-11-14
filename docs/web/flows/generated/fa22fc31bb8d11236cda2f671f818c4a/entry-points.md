@@ -1,11 +1,11 @@
 # Player up\-next countdown and play queue navigation — entry-points
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:4b7768acd6d193d61e1d35932990bb8f -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.
 
-Source: internal/web/app/src/areas/viewer/lib/playQueue\.ts:38; symbol: activeQueue; span SHA256: 156d08e1411f0c5295a544e371ec2c766c57837a66aeabe9536310216fb87ab8.
+Source: internal/web/app/src/areas/viewer/lib/playQueue\.ts:16; symbol: MAX\_STEPS\_BACK; span SHA256: 817b0ee1a34dbed2e1b5495a55e80bacc4b4be912abf2b780cc1001ca19a2637.
 
 <!-- flowdocs:paragraph:be916e0b14819f8a4f4a14de09c47986 -->
 Declared entry point: source declares useUpNext; entry dispatch and callers are unresolved\.

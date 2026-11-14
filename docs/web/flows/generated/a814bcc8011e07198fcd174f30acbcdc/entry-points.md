@@ -1,11 +1,11 @@
 # Display helpers: activity, job, provider\-key and string formatting — entry-points
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:6afc535507229116c97540ae21fb15cb -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.
 
-Source: internal/web/app/src/lib/activityDisplay\.ts:361; symbol: activityMatches; span SHA256: 113e44e9fddc15a969da1011a31c3a677e172f0203f442c713e8836baa7e2ad8.
+Source: internal/web/app/src/lib/activityDisplay\.ts:21; symbol: ACTIVITY\_CATEGORIES; span SHA256: eac40266b552fe415dff37fe55c4034cb547a3cb05938089f1fdae6993192545.
 
 <!-- flowdocs:paragraph:3f22514aba30cc375e96a554602f4946 -->
 Declared entry point: source declares jobStatusLabel; entry dispatch and callers are unresolved\.

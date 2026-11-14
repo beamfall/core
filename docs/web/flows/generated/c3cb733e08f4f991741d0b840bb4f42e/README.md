@@ -1,16 +1,14 @@
 # Manage entities — readme
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1455d0e45d8c7c731348e033015031b3 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/manage/pages/EntityPage\.tsx:24; symbol: EntityPage; span SHA256: 397517278d0181aa246f1fee6658b0eb41f983aa5dc7b254ae00d382ea6d7ad6.
+Source: internal/web/app/src/areas/manage/pages/EntityPage\.tsx:23; symbol: EntityPage; span SHA256: 397517278d0181aa246f1fee6658b0eb41f983aa5dc7b254ae00d382ea6d7ad6.
 
 
 Security summaries: not collected; absence is not a clean security finding.
-
-- A declared inventory flow with no resolved member is reported, not generated\.
 
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
@@ -32,6 +30,4 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow manage\.entities: 3 resolved, 1 unresolved members.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts ENTITY\_QUERY: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow manage\.entities: 4 resolved, 0 unresolved members.

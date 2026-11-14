@@ -1,11 +1,31 @@
 # Native app\-store host bridge: host messages, open in native player — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:869ecaf575aba9940cc5540d0eb05398 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/lib/beamfallHost\.ts:59; symbol: getBeamfallHost; span SHA256: 28f1c7291b785b4f820dda3e6f6585e500042d93b42b9fc7c780d15edca7253b.
+Source: internal/web/app/src/lib/beamfallHost\.ts:9; symbol: BeamfallHost; span SHA256: 24f509a1866fc546236c869936714236b211761800ec4d286d8c0ca7aea18835.
+
+<!-- flowdocs:paragraph:3d1afa32643622c3a23f4dfc1058b63b -->
+Declared member: source declares BeamfallHost; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/beamfallHost\.ts:9; symbol: BeamfallHost; span SHA256: 24f509a1866fc546236c869936714236b211761800ec4d286d8c0ca7aea18835.
+
+<!-- flowdocs:paragraph:2c40e33aac2e7a2c2229b90e6d09c8e0 -->
+Declared member: source declares BeamfallHostBridge; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/beamfallHost\.ts:4; symbol: BeamfallHostBridge; span SHA256: bbe48aedd4f02c9a6e618c61cb2789305f699f364da7c5cef83b64832223e5d1.
+
+<!-- flowdocs:paragraph:d8a41ee5ae165ccd0027250c1a1efab2 -->
+Declared member: source declares BeamfallHostMessage; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/beamfallHost\.ts:17; symbol: BeamfallHostMessage; span SHA256: b8b601ae8a55febb004279a112de297ac13cb4c9361a313452f5487324e4fb23.
+
+<!-- flowdocs:paragraph:b8328bf4a4c7fa22aa77f116c6ec2db6 -->
+Declared member: source declares OPEN\_IN\_NATIVE\_PLAYER; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/beamfallHost\.ts:77; symbol: OPEN\_IN\_NATIVE\_PLAYER; span SHA256: b664dd93a1959661bee445c93c1bfc3d453f483e184991d1f678a3166b189447.
 
 <!-- flowdocs:paragraph:60cd3aa2b32fda1393e0e7d6f270297d -->
 Declared member: source declares isBeamfallAppStoreHost; membership is caller\-declared, not runtime evidence\.

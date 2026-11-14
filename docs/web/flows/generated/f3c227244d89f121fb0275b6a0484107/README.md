@@ -1,6 +1,6 @@
 # Console library health: dimensions, drilldowns, bulk remediation — readme
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:43eb1f8c903d5cacc74a7ae5c15ebffd -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -9,8 +9,6 @@ Source: internal/web/app/src/areas/console/sections/Health\.tsx:89; symbol: Coun
 
 
 Security summaries: not collected; absence is not a clean security finding.
-
-- A declared inventory flow with no resolved member is reported, not generated\.
 
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
@@ -32,14 +30,4 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow console\.health: 17 resolved, 5 unresolved members.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Health\.tsx DIMENSIONS: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/Health\.tsx DrillTarget: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts DUPLICATE\_GROUPS\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts HEALTH\_DRILLDOWN\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts LIBRARY\_HEALTH\_QUERY: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow console\.health: 22 resolved, 0 unresolved members.

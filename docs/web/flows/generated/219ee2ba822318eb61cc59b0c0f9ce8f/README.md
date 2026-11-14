@@ -1,16 +1,14 @@
 # Viewer header live search with keyboard shortcut — readme
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:821d361349ab4aa479ebe39f3ec5f003 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/viewer/components/HeaderSearch\.tsx:39; symbol: HeaderSearch; span SHA256: 8e28e7eccaffdb70393af1409ee4e596b0d984cbf0a110ea4257b7f0946e26c2.
+Source: internal/web/app/src/areas/viewer/components/HeaderSearch\.tsx:24; symbol: Cell; span SHA256: 3b7bbd9317fb2ac063f6d5a3e62b50b6060e672f1448364128bed90693a799f7.
 
 
 Security summaries: not collected; absence is not a clean security finding.
-
-- A declared inventory flow with no resolved member is reported, not generated\.
 
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
@@ -32,18 +30,4 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow viewer\.header\-search: 12 resolved, 7 unresolved members.
-
-- Unresolved member internal/web/app/src/areas/viewer/components/HeaderSearch\.tsx Cell: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/components/HeaderSearch\.tsx CellGroup: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/useLiveSearch\.ts LiveSearch: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/useLiveSearch\.ts NOTHING: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/useLiveSearch\.ts SEARCH\_DEBOUNCE\_MS: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/useLiveSearch\.ts Settled: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts SEARCH\_RESULT\_QUERY: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow viewer\.header\-search: 19 resolved, 0 unresolved members.

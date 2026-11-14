@@ -1,16 +1,14 @@
 # Console API tokens and keys: scopes, create, revoke, one\-time secret — readme
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:151edfaff19325261a39adb4bcd0157c -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/console/sections/ApiCredentials\.tsx:293; symbol: ApiCredentials; span SHA256: b24c879471c66833e48c191aa9d6810b01f9d37491ed40287fcaef8f8135d587.
+Source: internal/web/app/src/areas/console/sections/ApiCredentials\.tsx:34; symbol: API\_SCOPE\_LABELS; span SHA256: ff2b726eff11658140fc63668c837d96b0b9923876a2c2de81700c20a04bfbfb.
 
 
 Security summaries: not collected; absence is not a clean security finding.
-
-- A declared inventory flow with no resolved member is reported, not generated\.
 
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
@@ -32,20 +30,4 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow console\.api\-credentials: 13 resolved, 8 unresolved members.
-
-- Unresolved member internal/web/app/src/areas/console/sections/ApiCredentials\.tsx API\_SCOPE\_LABELS: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/console/sections/ApiCredentials\.tsx SCOPES: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts API\_KEYS\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts API\_TOKENS\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts CREATE\_API\_KEY\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts CREATE\_API\_TOKEN\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts REVOKE\_API\_KEY\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/console\.ts REVOKE\_API\_TOKEN\_MUTATION: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow console\.api\-credentials: 21 resolved, 0 unresolved members.

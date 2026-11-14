@@ -1,16 +1,14 @@
 # Viewer Profile settings: preferences toggles and avatar — readme
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:168c54b8d1b9b2f08fe46ecf22475536 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/viewer/lib/preferences\.ts:71; symbol: bool; span SHA256: c70cba4d32e3c85a1f4452e3eea1cfc0c2b6a55bcca22f5723f03b8b0706fdc9.
+Source: internal/web/app/src/areas/viewer/lib/preferences\.ts:55; symbol: DOWNSTREAM\_AUDIO\_DEFAULT; span SHA256: 3771a4b3ebde3d18b22a870949ce024390336f24c946805d4f2275fab532ccc4.
 
 
 Security summaries: not collected; absence is not a clean security finding.
-
-- A declared inventory flow with no resolved member is reported, not generated\.
 
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
@@ -32,34 +30,4 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow viewer\.profile\-settings: 17 resolved, 15 unresolved members.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/preferences\.ts DOWNSTREAM\_AUDIO\_DEFAULT: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/preferences\.ts DOWNSTREAM\_AUDIO\_MODES: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/preferences\.ts DownstreamAudioMode: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/preferences\.ts PLAYBACK\_SPEEDS: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/preferences\.ts PLAYBACK\_SPEED\_DEFAULT: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/preferences\.ts PREF\_KEYS: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/preferences\.ts PREF\_ON: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/preferences\.ts PlaybackSpeed: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/preferences\.ts PrefKey: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/preferences\.ts SKIP\_INTERVALS: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/preferences\.ts SKIP\_INTERVAL\_DEFAULT: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/preferences\.ts SkipInterval: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/preferences\.ts ViewerPreferences: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts CLIENT\_PREFS\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts SET\_CLIENT\_PREF\_MUTATION: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow viewer\.profile\-settings: 32 resolved, 0 unresolved members.

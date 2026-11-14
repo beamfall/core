@@ -1,16 +1,14 @@
 # Console access: sign\-in security mode — readme
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:622386efc24fcfb3ed7e76b8834f45c3 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/console/sections/SignInSecurity\.tsx:39; symbol: SignInSecurity; span SHA256: 9ce4bc07ef045f54e6245a77ffc3dd156e88e0d66377414910b20080e97fb951.
+Source: internal/web/app/src/areas/console/sections/SignInSecurity\.tsx:18; symbol: MODES; span SHA256: 90e6161f267e5263014b4b349fff23872e6b22df4a24310a8031f8712616117d.
 
 
 Security summaries: not collected; absence is not a clean security finding.
-
-- A declared inventory flow with no resolved member is reported, not generated\.
 
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
@@ -32,6 +30,4 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow console\.access\.sign\-in\-security: 4 resolved, 1 unresolved members.
-
-- Unresolved member internal/web/app/src/areas/console/sections/SignInSecurity\.tsx MODES: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow console\.access\.sign\-in\-security: 5 resolved, 0 unresolved members.

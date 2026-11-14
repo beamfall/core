@@ -1,11 +1,16 @@
 # Localization: locale resolution, ICU formatting and string catalogs — functional-overview
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:56a5827af161283911873be83d81cf55 -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
 
-Source: internal/web/app/src/lib/i18n\.tsx:231; symbol: I18nProvider; span SHA256: bc8286cce6e090a1c7b6445fc9e39dff33a84f01f997f60efdea408ac65ea981.
+Source: internal/web/app/src/lib/i18n\.tsx:15; symbol: I18nContext; span SHA256: e413313dc92cbee6475688aa909676d74886583ba788af61ad034122f678f598.
+
+<!-- flowdocs:paragraph:f966c3a6914681ca20ba7c70e01b81ee -->
+Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
+
+Source: internal/web/app/src/lib/i18n\.tsx:12; symbol: ; span SHA256: e8a27602ee561f502094da27b940b0e87c9cc5da72e46de401ad024afc9d0a2f.
 
 <!-- flowdocs:paragraph:da49ab24215400fad9d70020eeba8523 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.

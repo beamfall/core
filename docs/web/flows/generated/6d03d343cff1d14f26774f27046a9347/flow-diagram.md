@@ -1,11 +1,11 @@
 # Viewer Profile settings: preferences toggles and avatar — flow-diagram
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a97b335f727dff65e293f397bab4d272 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/viewer/lib/preferences\.ts:71; symbol: bool; span SHA256: c70cba4d32e3c85a1f4452e3eea1cfc0c2b6a55bcca22f5723f03b8b0706fdc9.
+Source: internal/web/app/src/areas/viewer/lib/preferences\.ts:55; symbol: DOWNSTREAM\_AUDIO\_DEFAULT; span SHA256: 3771a4b3ebde3d18b22a870949ce024390336f24c946805d4f2275fab532ccc4.
 
 ```mermaid
 sequenceDiagram
@@ -35,15 +35,15 @@ sequenceDiagram
     Note over S,U: Source contains call includes in internal/web/app/src/areas/viewer/lib/preferences.ts at line 106 - order unresolved
     Note over S,U: Source contains call get in internal/web/app/src/areas/viewer/lib/preferences.ts at line 83 - order unresolved
     Note over S,U: Source contains call includes in internal/web/app/src/areas/viewer/lib/preferences.ts at line 84 - order unresolved
-    Note over S,U: Source contains call useT in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 41 - order unresolved
-    Note over S,U: Source contains call useSession in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 42 - order unresolved
-    Note over S,U: Source contains call find in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 44 - order unresolved
-    Note over S,U: Source contains call useState in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 48 - order unresolved
-    Note over S,U: Source contains call useState in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 49 - order unresolved
-    Note over S,U: Source contains call useState in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 50 - order unresolved
-    Note over S,U: Source contains call useRef in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 51 - order unresolved
-    Note over S,U: Source contains call useT in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 342 - order unresolved
-    Note over S,U: Source contains call t in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 346 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 54 - order unresolved
+    Note over S,U: Source contains call useSession in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 55 - order unresolved
+    Note over S,U: Source contains call find in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 57 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 61 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 62 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 63 - order unresolved
+    Note over S,U: Source contains call useRef in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 65 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 408 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 412 - order unresolved
     Note over S,U: Source contains call useT in internal/web/app/src/components/beamfall/profile/AvatarChooser.tsx at line 26 - order unresolved
     Note over S,U: Source contains call useId in internal/web/app/src/components/beamfall/profile/AvatarChooser.tsx at line 27 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/components/beamfall/profile/AvatarChooser.tsx at line 28 - order unresolved
@@ -54,8 +54,8 @@ sequenceDiagram
     Note over S,U: Source contains call useEffect in internal/web/app/src/components/beamfall/profile/AvatarChooser.tsx at line 47 - order unresolved
     Note over S,U: Source contains call resolveAvatar in internal/web/app/src/components/beamfall/profile/AvatarChooser.tsx at line 48 - order unresolved
     Note over S,U: Source contains call setChoice in internal/web/app/src/components/beamfall/profile/AvatarChooser.tsx at line 49 - order unresolved
-    Note over S,U: Source contains call useCallback in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 53 - order unresolved
-    Note over S,U: Source contains call async in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 53 - order unresolved
+    Note over S,U: Source contains call useCallback in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 67 - order unresolved
+    Note over S,U: Source contains call async in internal/web/app/src/areas/viewer/pages/ProfileSettingsPage.tsx at line 67 - order unresolved
     Note over S,U: Source contains call onSave in internal/web/app/src/components/beamfall/profile/AvatarChooser.tsx at line 60 - order unresolved
     Note over S,U: Source contains call avatarToken in internal/web/app/src/components/beamfall/profile/AvatarChooser.tsx at line 60 - order unresolved
     Note over S,U: Source contains call setChoice in internal/web/app/src/components/beamfall/profile/AvatarChooser.tsx at line 63 - order unresolved

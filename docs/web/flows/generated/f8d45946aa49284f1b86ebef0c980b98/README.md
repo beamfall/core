@@ -1,16 +1,14 @@
 # Viewer My Data / privacy: summary, event log, sessions, stream tokens, export — readme
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:c859223843fae170d260c4183da73cf5 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx:558; symbol: EventRow; span SHA256: b90d5000e023b772fdb15c1217e4d50e131eb6efd7cd377e76d3b883a15554b1.
+Source: internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx:46; symbol: ALL\_LIBRARIES; span SHA256: eb3f07ba74a0fc603288f92ab1ebcf39cb6f259d1a28387ee36024bb03f48ee7.
 
 
 Security summaries: not collected; absence is not a clean security finding.
-
-- A declared inventory flow with no resolved member is reported, not generated\.
 
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
@@ -32,18 +30,4 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow viewer\.my\-data: 23 resolved, 7 unresolved members.
-
-- Unresolved member internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx ALL\_LIBRARIES: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx MY\_DATA\_LOG\_PAGE\_SIZE: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts DELETE\_MY\_ENGAGEMENT\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts MY\_DATA\_SUMMARY\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts MY\_ENGAGEMENT\_LOG\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts MY\_ENGAGEMENT\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts MY\_SESSIONS\_QUERY: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow viewer\.my\-data: 30 resolved, 0 unresolved members.

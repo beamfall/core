@@ -1,6 +1,6 @@
 # Viewer home and node browse: manifest layout, sections, hero — entry-points
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:648a011af40de2d306fe5b55a29239ff -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.
@@ -10,5 +10,5 @@ Source: internal/web/app/src/areas/viewer/components/FilterBar\.tsx:11; symbol: 
 <!-- flowdocs:paragraph:c403dae6e10db1fad4cb6fea5f80c64b -->
 Declared entry point: source declares BrowsePage; entry dispatch and callers are unresolved\.
 
-Source: internal/web/app/src/areas/viewer/pages/BrowsePage\.tsx:18; symbol: BrowsePage; span SHA256: 6a0afa8d1b6505d675fcd1362f018c8ec1ca80c725491f74976ac0b310ccb302.
+Source: internal/web/app/src/areas/viewer/pages/BrowsePage\.tsx:20; symbol: BrowsePage; span SHA256: 6a0afa8d1b6505d675fcd1362f018c8ec1ca80c725491f74976ac0b310ccb302.
 

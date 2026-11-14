@@ -1,11 +1,11 @@
 # Console admin gate: locked reasons and unlock — functional-overview
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:e6cea650af266a72a0afc657ff77524b -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
 
-Source: internal/web/app/src/areas/console/AdminGate\.tsx:42; symbol: AdminGate; span SHA256: 7fec3f21e920c5b6baebe521f9c0721935304bf74d69e13ad72c3a8769272c45.
+Source: internal/web/app/src/areas/console/AdminGate\.tsx:46; symbol: AdminGate; span SHA256: 7fec3f21e920c5b6baebe521f9c0721935304bf74d69e13ad72c3a8769272c45.
 
 <!-- flowdocs:paragraph:e38551c982d365121132beac445dd91e -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
@@ -15,7 +15,7 @@ Source: internal/web/app/src/areas/console/lib/lockReason\.ts:51; symbol: ; span
 <!-- flowdocs:paragraph:9f9253be67fbd006662a67d82358a224 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
 
-Source: internal/web/app/src/lib/graphql/auth\.ts:76; symbol: ; span SHA256: 4ee3d8497d06e82a98de946da060f09c88687949557d97077c0ae75fe3f3216d.
+Source: internal/web/app/src/lib/graphql/auth\.ts:81; symbol: ; span SHA256: 4ee3d8497d06e82a98de946da060f09c88687949557d97077c0ae75fe3f3216d.
 
 <!-- flowdocs:paragraph:71e0ca89d0aa7794620a1c4c9f9f8a72 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
