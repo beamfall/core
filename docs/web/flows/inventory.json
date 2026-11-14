@@ -3050,15 +3050,15 @@
           "symbol": "EnrollPage"
         },
         {
-          "path": "internal/web/app/src/areas/enroll/EnrollPage.tsx",
-          "symbol": "FIELD"
+          "path": "internal/web/app/src/areas/enroll/AuthShell.tsx",
+          "symbol": "AUTH_FIELD"
         },
         {
-          "path": "internal/web/app/src/areas/enroll/EnrollPage.tsx",
-          "symbol": "FIELD_LABEL"
+          "path": "internal/web/app/src/areas/enroll/AuthShell.tsx",
+          "symbol": "AUTH_FIELD_LABEL"
         },
         {
-          "path": "internal/web/app/src/areas/enroll/EnrollPage.tsx",
+          "path": "internal/web/app/src/areas/enroll/AuthShell.tsx",
           "symbol": "FormFeedback"
         },
         {
