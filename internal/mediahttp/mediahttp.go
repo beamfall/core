@@ -1034,7 +1034,7 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "segment does not exist", http.StatusNotFound)
 			return
 		}
-		slog.Error("hls serve failed", "error", err.Error())
+		logHLSServeFailure(r.Context(), err)
 		http.Error(w, "stream unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -1572,4 +1572,16 @@ func (h *Handler) mediaLibrary(ctx context.Context, libraryID store.LibraryID, f
 		}
 	}
 	return store.Library{}, errors.New("library unavailable")
+}
+
+// logHLSServeFailure records a failed HLS request. A player that disconnects
+// mid-request (seek, tab close, quality switch) cancels the request context;
+// that is normal client behaviour, so it logs at debug. Real failures stay at
+// error so they remain visible to operators.
+func logHLSServeFailure(ctx context.Context, err error) {
+	if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
+		slog.DebugContext(ctx, "hls request ended by client", "error", err.Error())
+		return
+	}
+	slog.ErrorContext(ctx, "hls serve failed", "error", err.Error())
 }
