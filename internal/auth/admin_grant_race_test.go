@@ -143,8 +143,7 @@ func TestBeginAdminSessionLostRaceNotesRefusal(t *testing.T) {
 	ctx := context.Background()
 	st := storetest.Open(t)
 	now := time.Unix(2_650_000, 0).UTC()
-	const password = "right-password-core-1087"
-	if err := st.SetAdminPassword(ctx, password, now); err != nil {
+	if err := st.SetAdminPassword(ctx, "right-password", now); err != nil {
 		t.Fatal(err)
 	}
 	service := NewServiceWithClock(st, func() time.Time { return now })
@@ -163,7 +162,7 @@ func TestBeginAdminSessionLostRaceNotesRefusal(t *testing.T) {
 
 	// Control: a won race notes nothing, so the note below is the lost race's.
 	okCtx := WithRefusalNote(ctx)
-	if _, err := service.BeginAdminSession(okCtx, scope, password); err != nil {
+	if _, err := service.BeginAdminSession(okCtx, scope, "right-password"); err != nil {
 		t.Fatalf("control BeginAdminSession: %v", err)
 	}
 	if refusal, ok := RefusalFromContext(okCtx); ok {
@@ -176,7 +175,7 @@ func TestBeginAdminSessionLostRaceNotesRefusal(t *testing.T) {
 		}
 	}
 	noteCtx := WithRefusalNote(ctx)
-	if _, err := service.BeginAdminSession(noteCtx, scope, password); err != ErrAdminPassword {
+	if _, err := service.BeginAdminSession(noteCtx, scope, "right-password"); err != ErrAdminPassword {
 		t.Fatalf("BeginAdminSession err = %v, want ErrAdminPassword after losing the race", err)
 	}
 	refusal, ok := RefusalFromContext(noteCtx)
@@ -185,7 +184,7 @@ func TestBeginAdminSessionLostRaceNotesRefusal(t *testing.T) {
 		t.Fatalf("lost-race refusal = (%+v, %v), want (%+v, true)", refusal, ok, want)
 	}
 	for _, field := range []string{refusal.Operation, string(refusal.Reason)} {
-		if strings.Contains(field, password) || strings.Contains(field, string(scope.SessionID)) {
+		if strings.Contains(field, "right-password") || strings.Contains(field, string(scope.SessionID)) {
 			t.Fatalf("refusal note carries secret material: %+v", refusal)
 		}
 	}
