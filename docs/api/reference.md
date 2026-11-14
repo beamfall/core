@@ -112,14 +112,14 @@ Issue a transport command to an active playback session.
 
 Required scope: `playback-control`
 
-Requires the `playback-control` scope. Publishes one closed-vocabulary transport command (`pause`, `resume`, `skip-media`, `skip-track`) to the target session's event channel; success means the command was authorized and published, not that the target device has applied it. A Profile-bound key can control only its own Profile's reveal-visible active sessions. An admin-scoped key (no Profile binding) can control reveal-visible active sessions across Profiles, matching ADR-0040's operator-created all-session automation key model. Missing, cross-Profile, inactive, and reveal-hidden targets all resolve to 404.
+Requires the `playback-control` scope. Publishes one argument-free transport command (`pause`, `resume`, `stop`, `skip-media`, `skip-track`, `mute`, `unmute`; a skip moves to the next item) to the target session's event channel. Verbs that need arguments (`seek`, `set-volume`, track selection, `play-media`, `display-message`, a previous-direction skip) are available through GraphQL `controlSession` and answer 400 here; success means the command was authorized and published, not that the target device has applied it. A Profile-bound key can control only its own Profile's reveal-visible active sessions. An admin-scoped key (no Profile binding) can control reveal-visible active sessions across Profiles, matching ADR-0040's operator-created all-session automation key model. Missing, cross-Profile, inactive, and reveal-hidden targets all resolve to 404.
 
 **Request body** (`application/json`)
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `sessionID` | string | yes |  |
-| `command` | string (`pause`, `resume`, `skip-media`, `skip-track`) | yes |  |
+| `command` | string (`pause`, `resume`, `stop`, `skip-media`, `skip-track`, `mute`, `unmute`) | yes |  |
 
 **Responses**
 
@@ -281,14 +281,14 @@ A closed-vocabulary transport command for one active playback session. Target an
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `sessionID` | string | yes |  |
-| `command` | string (`pause`, `resume`, `skip-media`, `skip-track`) | yes |  |
+| `command` | string (`pause`, `resume`, `stop`, `skip-media`, `skip-track`, `mute`, `unmute`) | yes |  |
 
 ### PlaybackControlResponse
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `sessionID` | string | yes |  |
-| `command` | string (`pause`, `resume`, `skip-media`, `skip-track`) | yes |  |
+| `command` | string (`pause`, `resume`, `stop`, `skip-media`, `skip-track`, `mute`, `unmute`) | yes |  |
 
 ### ScanRequest
 

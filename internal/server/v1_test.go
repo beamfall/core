@@ -453,7 +453,7 @@ func TestV1PlaybackControlRequiresScopeAndCredential(t *testing.T) {
 }
 
 func TestV1PlaybackControlPublishesTransportCommand(t *testing.T) {
-	for _, command := range []string{"pause", "resume", "skip-media", "skip-track"} {
+	for _, command := range []string{"pause", "resume", "stop", "skip-media", "skip-track", "mute", "unmute"} {
 		t.Run(command, func(t *testing.T) {
 			srv, st := newTestServerWithStore(t)
 			ctx := context.Background()
@@ -549,7 +549,19 @@ func TestV1PlaybackControlRejectsInvalidOrUnavailableTargets(t *testing.T) {
 		},
 		{
 			name: "unknown command",
+			body: `{"sessionID":"session-default","command":"teleport"}`,
+			want: http.StatusBadRequest,
+		},
+		{
+			// The /v1 body carries no arguments, so argument-bearing verbs
+			// (CORE-1678) are a 400 naming the missing argument.
+			name: "seek without position",
 			body: `{"sessionID":"session-default","command":"seek"}`,
+			want: http.StatusBadRequest,
+		},
+		{
+			name: "play-media without media",
+			body: `{"sessionID":"session-default","command":"play-media"}`,
 			want: http.StatusBadRequest,
 		},
 		{
