@@ -1,4 +1,3 @@
-import { ShieldAlert } from "lucide-react";
 import { useState } from "react";
 import { ErrorLine, ManageSection, StatusBadge } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
@@ -54,7 +53,6 @@ export function RestrictionsPage() {
   return (
     <ManageSection
       title={t("restrictionsTitle")}
-      icon={ShieldAlert}
       lead={t("restrictionsLead")}
       actions={revealed ? <StatusBadge state="revealed">{t("revealed")}</StatusBadge> : undefined}
     >

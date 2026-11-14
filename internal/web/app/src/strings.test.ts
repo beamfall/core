@@ -16,38 +16,41 @@ const PARTIAL_CATALOGS: Record<Locale, Partial<StringTable>> = { en, fr, de, es,
 // who's-watching copy; merged with CORE-1106 admin-password sign-in keys, CORE-1110 sign-in
 // security keys, CORE-1114 setup wizard copy, CORE-1115 provider-key copy, CORE-1131 rescan and
 // account-menu copy and CORE-1142 folder-picker copy; updated for the CORE-1146, CORE-1362 and
-// CORE-1363 player recovery copy, the CORE-1342 source-ends-early copy and the CORE-1132
-// first admin password copy, the CORE-0393 Viewer pairing-code switch copy and the CORE-1126
-// metadata credits copy.
-const BASE_SERIALIZED_LENGTH = 451_434;
-const BASE_REGISTRY_SHA256 = "296ededa8b98f2be97cd6db2bf8eef8d2ef19e0d64dd4a0f68fb78427f3b999c";
-const BASE_KEY_ORDER_SHA256 = "9c75ef21f8ccee8478b4576d873fec7a2a019a76abb57c886ce8529cca7bd138";
-const BASE_PLACEHOLDER_SHA256 = "782ff5a1cd98e210086c59f4ea572a3e3410c26f71d08dad87b5f8c2f7a90c91";
+// CORE-1363 player recovery copy, the CORE-1342 source-ends-early copy and the CORE-1117 copy cleanup
+// and orphan-key removal; updated for the setup/enroll redesign copy tightening and removal of
+// the orphaned setupFreshServer and setupPlugin* keys; merged with the Normal/Advanced settings copy and the setup and pairing error copy, dropping the orphaned pairingCodeManagerOnly, enrollmentFailed and promotionFailed keys; merged with
+// the CORE-1132 first admin password copy and the CORE-0393 Viewer pairing-code switch copy;
+// merged with the CORE-1126 metadata credits copy, the CORE-1171 delete-library copy and the CORE-1117 design-system
+// copy (settings modes, onboarding, viewer browse and detail).
+const BASE_SERIALIZED_LENGTH = 460_372;
+const BASE_REGISTRY_SHA256 = "abb4baecdf8ae5441989adcdb97c80f322d0f9c4be87921c878737153af91cd7";
+const BASE_KEY_ORDER_SHA256 = "223ccb422eb58c04f36507c6696d81a1e11d70e55b9c3e97ff6d943278fa7ce7";
+const BASE_PLACEHOLDER_SHA256 = "a5f99362cb82f7e33d76946cb561f8b5779d7ec7725905e5af4156714636e648";
 const BASE_CATALOGS = {
   en: {
-    partialCount: 1_722,
-    partialSha256: "e8675c89486afd1de63a1c3ebc1a3b13ff3356fc1a5db993474f259ae117efcb",
-    resolvedSha256: "34a2fe93d4e54dbe924b4c94a550d0c6c2b35c4460455fa17ed619a7e38a1e3d",
+    partialCount: 1_729,
+    partialSha256: "86721c216fda6bc79c027ace1f8ad46525908b25c3ba5c22022f9baa007d65fe",
+    resolvedSha256: "fb11bfcb0891d2427a4b39038ffcb8f46f39f90dfed05a95b0ef4dd4d20ba2b6",
   },
   fr: {
-    partialCount: 798,
-    partialSha256: "78ec94dc6e42cabf906d9f58d4e283bd3f99fbe54ae95b4c308251682c86307b",
-    resolvedSha256: "2f1bfb5abc684d9ad149855de80fdec228e5c6e85d12b15c5bbecf2bb6379803",
+    partialCount: 804,
+    partialSha256: "d798500c08958877393be4e35155ac9578201e8761575d27c03a6f154ef1711f",
+    resolvedSha256: "c18e31d2b966c99f8b93eacb67c10435e40c11fd7758691fe7176fe304dc3160",
   },
   de: {
-    partialCount: 692,
-    partialSha256: "a9dba218377688fedb2ae78e68b37a3d8392abebd6cf9576f40fd5f5161bcb0d",
-    resolvedSha256: "588aeedf822bb36e8ede86fc1d0a70a96112b9d45ba2de9ee4117f90dc68fbe5",
+    partialCount: 698,
+    partialSha256: "2414ec0b9afc8a070dde7ee65ca535924f7f0ffc9fad161de125376ac377d5f6",
+    resolvedSha256: "c2d9ef9351bd1bc6dcdd644427df6fbd09d0c35fdd176808e3d3fc149f40508e",
   },
   es: {
-    partialCount: 692,
-    partialSha256: "7bcead143a953ed2582920d38829a117f6b87383081e2481a3cf7342e0e7edb5",
-    resolvedSha256: "40385c443bf148cad60cd9f69faef9c24c9e5b172a8c59ca43823014dd52673d",
+    partialCount: 698,
+    partialSha256: "9fbd030fb905d12112e9bc2a855f36f2d09d96746e6640b7b5ff15e50f840db8",
+    resolvedSha256: "178502a9a764999d0bae997b4aeea794f9fe1a2a9f62dac7c428df5aecaed2fa",
   },
   pt: {
-    partialCount: 692,
-    partialSha256: "8ca798169a311cd1c8a07729cdbc4a8c3f61769d7c58ae185f8df27d6d0f2fef",
-    resolvedSha256: "813df22ebada2522ee72d62fe75f8ffc27f677767da08ad496667a20a6cbb2b9",
+    partialCount: 698,
+    partialSha256: "a55fb7393f22a9f00192b75a4d8dadcc2f6d6118b22b2a51f0feb6ccc7de0eb4",
+    resolvedSha256: "3c9a52fb077943ee6506444603ea2024383e327250185349f4b1a213808df40f",
   },
 } as const satisfies Record<
   Locale,

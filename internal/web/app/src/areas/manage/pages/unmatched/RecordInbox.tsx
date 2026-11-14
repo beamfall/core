@@ -1,4 +1,3 @@
-import { FileQuestion } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { EmptyLine, ErrorLine, ManageSection } from "@/components/beamfall/workbench";
 import { Badge } from "@/components/ui/badge";
@@ -52,11 +51,7 @@ export function RecordInbox({ libraryID }: { libraryID: string }) {
 
   if (error) {
     return (
-      <ManageSection
-        title={t("unmatchedHeading")}
-        icon={FileQuestion}
-        lead={t("unmatchedCreateLead")}
-      >
+      <ManageSection title={t("unmatchedHeading")} lead={t("unmatchedCreateLead")}>
         <ErrorLine message={error} />
       </ManageSection>
     );
@@ -64,11 +59,7 @@ export function RecordInbox({ libraryID }: { libraryID: string }) {
   if (records.length === 0) return null;
 
   return (
-    <ManageSection
-      title={t("unmatchedHeading")}
-      icon={FileQuestion}
-      lead={t("unmatchedCreateLead")}
-    >
+    <ManageSection title={t("unmatchedHeading")} lead={t("unmatchedCreateLead")}>
       {notice && <p className="mb-2 text-sm text-muted-foreground">{notice}</p>}
       <div className="grid gap-3 xl:grid-cols-[minmax(260px,1fr)_minmax(320px,1.2fr)]">
         <ul className="divide-y rounded-md border border-border bg-card">

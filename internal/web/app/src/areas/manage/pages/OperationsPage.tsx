@@ -1,4 +1,3 @@
-import { CalendarClock, ListChecks, Radar } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import {
   EmptyLine,
@@ -86,7 +85,6 @@ function JobsSection() {
   return (
     <ManageSection
       title={t("jobs")}
-      icon={ListChecks}
       actions={
         <Button type="button" variant="outline" size="sm" onClick={load}>
           {t("refresh")}
@@ -177,7 +175,6 @@ function SchedulesSection() {
   return (
     <ManageSection
       title={t("schedules")}
-      icon={CalendarClock}
       actions={
         <Button type="button" variant="outline" size="sm" onClick={load}>
           {t("refresh")}
@@ -244,7 +241,7 @@ function ScheduleRow({
 
       <div className="mt-2 flex flex-wrap items-end gap-2">
         <Select value={kind} onValueChange={(v) => setKind(v as TriggerKind)}>
-          <SelectTrigger size="sm" className="w-32" aria-label={t("triggerKind")}>
+          <SelectTrigger className="w-32" aria-label={t("triggerKind")}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -267,7 +264,7 @@ function ScheduleRow({
               value={fields.unit}
               onValueChange={(v) => setField("unit", v as "minutes" | "hours")}
             >
-              <SelectTrigger size="sm" className="w-28" aria-label={t("scheduleUnit")}>
+              <SelectTrigger className="w-28" aria-label={t("scheduleUnit")}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -283,7 +280,7 @@ function ScheduleRow({
             value={String(fields.weekday)}
             onValueChange={(v) => setField("weekday", Number(v))}
           >
-            <SelectTrigger size="sm" className="w-32" aria-label={t("weekday")}>
+            <SelectTrigger className="w-32" aria-label={t("weekday")}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -376,7 +373,6 @@ function WatcherSection() {
   return (
     <ManageSection
       title={t("watcherStatusHeading")}
-      icon={Radar}
       lead={t("watcherStatusLead")}
       actions={
         <Button type="button" variant="outline" size="sm" onClick={load}>

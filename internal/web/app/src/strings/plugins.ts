@@ -4,12 +4,9 @@ export const pluginStrings = {
     consoleConfigLead:
       "Operational runtime settings and plugin activation. Bootstrap config (ports, data dir, secrets) is not editable here.",
     consoleConfigBackgroundWorkers: "Background workers",
-    consoleConfigSave: "Save",
     consoleConfigPlugins: "Plugins",
     consoleConfigActivate: "Activate",
     consoleConfigDeactivate: "Deactivate",
-    consoleConfigActive: "Active",
-    consoleConfigInactive: "Inactive",
     consoleConfigUnavailable: "Could not load server configuration.",
     pluginProvenanceFirstParty: "First-party",
     pluginProvenanceThirdParty: "Third-party",
@@ -77,13 +74,9 @@ export const pluginStrings = {
     pluginLifecycleHeading: "Lifecycle",
     pluginLifecycleLead:
       "Deactivate is reversible and preserves stored data; uninstall permanently purges it.",
-    pluginDeactivate: "Deactivate",
-    pluginDeactivateHelp:
-      "Hide this plugin and stop it running. Its stored items are preserved; reactivating restores them unchanged.",
-    pluginLifecycleReversible: "Reversible",
     pluginUninstall: "Uninstall (purge data)",
     pluginUninstallHelp:
-      "Permanently remove every item this plugin stored, then leave it deactivated. Irreversible — purged items are not routed to Trash, but are re-derivable by re-scraping.",
+      "Permanently remove every item this plugin stored, then leave it deactivated. Irreversible. Purged items are not routed to Trash, but are re-derivable by re-scraping.",
     pluginLifecycleIrreversible: "Irreversible",
     pluginUninstallConfirm: "Uninstall this plugin and purge its data?",
     pluginUninstallConfirmBody:
@@ -95,12 +88,9 @@ export const pluginStrings = {
     consoleConfigLead:
       "Paramètres d'exécution et activation des modules. La configuration d'amorçage (ports, dossier de données, secrets) n'est pas modifiable ici.",
     consoleConfigBackgroundWorkers: "Processus en arrière-plan",
-    consoleConfigSave: "Enregistrer",
     consoleConfigPlugins: "Modules",
     consoleConfigActivate: "Activer",
     consoleConfigDeactivate: "Désactiver",
-    consoleConfigActive: "Actif",
-    consoleConfigInactive: "Inactif",
     consoleConfigUnavailable: "Impossible de charger la configuration du serveur.",
     pluginProvenanceFirstParty: "Développé par Beamfall",
     pluginProvenanceThirdParty: "Tierce partie",
@@ -126,10 +116,9 @@ export const pluginStrings = {
     pluginLifecycleHeading: "Cycle de vie",
     pluginLifecycleLead:
       "La désactivation est réversible et conserve les données stockées; la désinstallation les purge définitivement.",
-    pluginLifecycleReversible: "Réversible",
     pluginUninstall: "Désinstaller (purger les données)",
     pluginUninstallHelp:
-      "Supprime définitivement chaque élément stocké par ce module, puis le laisse désactivé. Cette action est irréversible — les éléments purgés ne sont pas envoyés dans la corbeille, mais peuvent être recréés par une nouvelle extraction.",
+      "Supprime définitivement chaque élément stocké par ce module, puis le laisse désactivé. Cette action est irréversible. Les éléments purgés ne sont pas envoyés dans la corbeille, mais peuvent être recréés par une nouvelle extraction.",
     pluginLifecycleIrreversible: "Irréversible",
     pluginUninstallConfirm: "Désinstaller ce module et purger ses données?",
     pluginUninstallConfirmBody:
@@ -141,12 +130,9 @@ export const pluginStrings = {
     consoleConfigLead:
       "Betriebseinstellungen zur Laufzeit und Plugin-Aktivierung. Die Bootstrap-Konfiguration (Ports, Datenverzeichnis, Geheimnisse) ist hier nicht bearbeitbar.",
     consoleConfigBackgroundWorkers: "Hintergrundprozesse",
-    consoleConfigSave: "Speichern",
     consoleConfigPlugins: "Plugins",
     consoleConfigActivate: "Aktivieren",
     consoleConfigDeactivate: "Deaktivieren",
-    consoleConfigActive: "Aktiv",
-    consoleConfigInactive: "Inaktiv",
     consoleConfigUnavailable: "Serverkonfiguration konnte nicht geladen werden.",
     pluginProvenanceFirstParty: "Von Beamfall",
     pluginProvenanceThirdParty: "Drittanbieter",
@@ -175,12 +161,9 @@ export const pluginStrings = {
     consoleConfigLead:
       "Ajustes operativos en tiempo de ejecución y activación de complementos. La configuración de arranque (puertos, directorio de datos, secretos) no se edita aquí.",
     consoleConfigBackgroundWorkers: "Procesos en segundo plano",
-    consoleConfigSave: "Guardar",
     consoleConfigPlugins: "Complementos",
     consoleConfigActivate: "Activar",
     consoleConfigDeactivate: "Desactivar",
-    consoleConfigActive: "Activo",
-    consoleConfigInactive: "Inactivo",
     consoleConfigUnavailable: "No se pudo cargar la configuración del servidor.",
     pluginProvenanceFirstParty: "De Beamfall",
     pluginProvenanceThirdParty: "De terceros",
@@ -209,12 +192,9 @@ export const pluginStrings = {
     consoleConfigLead:
       "Configurações operacionais de tempo de execução e ativação de plugins. A configuração de inicialização (portas, diretório de dados, segredos) não é editável aqui.",
     consoleConfigBackgroundWorkers: "Processos em segundo plano",
-    consoleConfigSave: "Salvar",
     consoleConfigPlugins: "Plugins",
     consoleConfigActivate: "Ativar",
     consoleConfigDeactivate: "Desativar",
-    consoleConfigActive: "Ativo",
-    consoleConfigInactive: "Inativo",
     consoleConfigUnavailable: "Não foi possível carregar a configuração do servidor.",
     pluginProvenanceFirstParty: "Da Beamfall",
     pluginProvenanceThirdParty: "De terceiros",

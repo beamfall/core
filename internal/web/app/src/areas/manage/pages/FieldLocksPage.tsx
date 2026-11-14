@@ -1,4 +1,3 @@
-import { Lock } from "lucide-react";
 import { useState } from "react";
 import {
   EmptyLine,
@@ -59,7 +58,7 @@ export function FieldLocksPage() {
   };
 
   return (
-    <ManageSection title={t("fieldLocksHeading")} icon={Lock} lead={t("fieldLocksLead")}>
+    <ManageSection title={t("fieldLocksHeading")} lead={t("fieldLocksLead")}>
       <div className="flex items-end gap-3">
         <div className="space-y-1">
           <Label htmlFor="field-locks-media">{t("fieldLocksMediaLabel")}</Label>

@@ -1,7 +1,7 @@
 # relay-carrier-flow-control Specification
 
 ## Purpose
-Keep the core remote-access client's yamux flow control in parity with the relay: a 4 MiB default per-stream receive window, an operator-configurable override bounded to the yamux range, and a 30-second stream close timeout, so relayed streams are not throttled by the default 256 KiB window on high-latency links.
+Keep the relay carrier's yamux flow-control window matched on both ends of the tunnel, so a slow reader on one side backpressures the other instead of stalling or dropping streams.
 
 ## Requirements
 

@@ -66,7 +66,7 @@ export const customizationStrings = {
     navOverrideCustomAccent: "Custom accent",
     navOverrideSectionsHeading: "Layout sections",
     navOverrideSectionsLead:
-      "Compose the Section list within one Layout — hide a Section or reorder them. Applies only to the selected Layout.",
+      "Compose the Section list within one Layout: hide a Section or reorder them. Applies only to the selected Layout.",
     navOverrideLayout: "Layout",
     navOverrideNoSections: "This Layout has no sections.",
     navOverrideHistoryHeading: "History",

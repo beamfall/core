@@ -60,7 +60,7 @@ describe("SetupChecklist (Seam B funnel spine)", () => {
     expect(scan).toHaveAttribute("href", "/console/libraries");
     expect(screen.getByRole("link", { name: /migrate from another server/i })).toHaveAttribute(
       "href",
-      "/console/remote",
+      "/console/migrate",
     );
     expect(screen.getByRole("link", { name: /add a device or browser/i })).toHaveAttribute(
       "href",

@@ -1,26 +1,14 @@
-import type { LucideProps } from "lucide-react";
 import {
   AlertCircle,
-  BarChart3,
-  CalendarRange,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Download,
-  Eye,
   Filter,
-  Heart,
-  History,
-  KeyRound,
-  LibraryBig,
-  ListPlus,
-  MonitorSmartphone,
-  Play,
   RefreshCw,
-  ShieldCheck,
   Trash2,
 } from "lucide-react";
-import type { ComponentType, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
@@ -207,9 +195,6 @@ export function MyDataPage() {
     <AppShell actions={<ViewerActions />}>
       <div className="mydata mx-auto flex max-w-4xl flex-col gap-6">
         <header className="mydata-hero">
-          <span className="house-icon-tile mydata-hero-tile" aria-hidden>
-            <ShieldCheck className="size-6" />
-          </span>
           <div className="flex min-w-0 flex-col gap-1.5">
             <h1 className="bf-page-title">{t("myDataTitle")}</h1>
             <p className="bf-lead max-w-2xl">{t("myDataLead")}</p>
@@ -237,7 +222,6 @@ export function MyDataPage() {
         />
 
         <Panel
-          icon={MonitorSmartphone}
           heading={t("myDataSessionsHeading")}
           actions={
             <Button variant="outline" size="sm" onClick={refresh}>
@@ -257,10 +241,7 @@ export function MyDataPage() {
             </ul>
           )}
           <div className="mydata-subsection">
-            <h3 className="mydata-subheading">
-              <KeyRound className="size-3.5" aria-hidden />
-              {t("myDataTokensHeading")}
-            </h3>
+            <h3 className="mydata-subheading">{t("myDataTokensHeading")}</h3>
             {tokens.length === 0 ? (
               <p className="mydata-muted">{t("myDataTokensEmpty")}</p>
             ) : (
@@ -274,7 +255,7 @@ export function MyDataPage() {
         </Panel>
 
         <div className="grid gap-6 md:grid-cols-2">
-          <Panel icon={Download} heading={t("myDataExportHeading")} lead={t("myDataExportLead")}>
+          <Panel heading={t("myDataExportHeading")} lead={t("myDataExportLead")}>
             <div className="mt-auto flex flex-col gap-3">
               <div>
                 <Button onClick={onExport}>
@@ -287,15 +268,10 @@ export function MyDataPage() {
             </div>
           </Panel>
 
-          <Panel
-            icon={Trash2}
-            tone="danger"
-            heading={t("myDataDeleteHeading")}
-            lead={t("myDataDeleteLead")}
-          >
+          <Panel heading={t("myDataDeleteHeading")} lead={t("myDataDeleteLead")}>
             <div className="mt-auto flex flex-col gap-3">
               <div>
-                <Button variant="destructive" onClick={onDeleteAll}>
+                <Button variant="danger" onClick={onDeleteAll}>
                   <Trash2 className="size-4" aria-hidden />
                   {t("myDataDeleteAll")}
                 </Button>
@@ -310,29 +286,22 @@ export function MyDataPage() {
   );
 }
 
-// Panel is one glass card in the setup house style: an icon tile, a heading
-// with an optional lead, an optional action cluster, and the body.
+// Panel is one bordered surface: a heading with an optional lead, an optional
+// action cluster, and the body.
 function Panel({
-  icon: Icon,
   heading,
   lead,
   actions,
-  tone,
   children,
 }: {
-  icon: ComponentType<LucideProps>;
   heading: string;
   lead?: string;
   actions?: ReactNode;
-  tone?: "danger";
   children: ReactNode;
 }) {
   return (
-    <section className="mydata-panel" data-tone={tone}>
+    <section className="mydata-panel">
       <div className="mydata-panel-head">
-        <span className="house-icon-tile mydata-tile" aria-hidden>
-          <Icon className="size-[18px]" />
-        </span>
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <h2 className="mydata-panel-title">{heading}</h2>
           {lead && <p className="mydata-panel-lead">{lead}</p>}
@@ -364,32 +333,30 @@ function SummarySection({
   error: string | null;
 }) {
   const t = useT();
-  const stats: { label: string; value: number; icon: ComponentType<LucideProps> }[] = summary
+  const stats: { label: string; value: number }[] = summary
     ? [
-        { label: t("myDataSummaryPlays"), value: summary.plays, icon: Play },
-        { label: t("myDataSummaryWatched"), value: summary.watched, icon: Eye },
-        { label: t("myDataSummaryFavorites"), value: summary.favorites, icon: Heart },
-        { label: t("myDataSummaryQueue"), value: summary.queueEntries, icon: ListPlus },
-        { label: t("myDataSummaryLibraries"), value: summary.libraryCount, icon: LibraryBig },
+        { label: t("myDataSummaryPlays"), value: summary.plays },
+        { label: t("myDataSummaryWatched"), value: summary.watched },
+        { label: t("myDataSummaryFavorites"), value: summary.favorites },
+        { label: t("myDataSummaryQueue"), value: summary.queueEntries },
+        { label: t("myDataSummaryLibraries"), value: summary.libraryCount },
       ]
     : [];
   const maxPlays = Math.max(1, ...(summary?.libraryBreakdown.map((b) => b.plays) ?? []));
   return (
-    <Panel icon={BarChart3} heading={t("myDataSummaryHeading")} lead={t("myDataSummaryLead")}>
+    <Panel heading={t("myDataSummaryHeading")} lead={t("myDataSummaryLead")}>
       {error && <Notice tone="error">{error}</Notice>}
       {summary && (
         <>
           <div className="mydata-stats">
             {stats.map((s) => (
               <div key={s.label} className="mydata-stat">
-                <s.icon className="mydata-stat-icon" aria-hidden />
                 <span className="mydata-stat-value">{s.value.toLocaleString()}</span>
                 <span className="mydata-stat-label">{s.label}</span>
               </div>
             ))}
           </div>
           <p className="mydata-range">
-            <CalendarRange className="size-4 shrink-0" aria-hidden />
             {summary.firstActivity && summary.lastActivity
               ? t("myDataSummaryRange", {
                   first: formatDate(summary.firstActivity),
@@ -466,7 +433,7 @@ function LogSection({
   const hasPrev = offset > 0;
   const hasNext = offset + pageSize < total;
   return (
-    <Panel icon={History} heading={t("myDataLogHeading")} lead={t("myDataLogLead")}>
+    <Panel heading={t("myDataLogHeading")} lead={t("myDataLogLead")}>
       <div className="mydata-filters">
         <div className="flex min-w-0 flex-col gap-1.5">
           <Label htmlFor="mydata-log-library">{t("myDataLogFilterLibrary")}</Label>
@@ -518,12 +485,7 @@ function LogSection({
       {error && <Notice tone="error">{error}</Notice>}
 
       {events.length === 0 ? (
-        <div className="mydata-empty">
-          <span className="mydata-empty-icon" aria-hidden>
-            <History className="size-[18px]" />
-          </span>
-          <p>{t("myDataLogEmpty")}</p>
-        </div>
+        <p className="mydata-empty">{t("myDataLogEmpty")}</p>
       ) : (
         <ul className="mydata-list">
           {events.map((ev, i) => (
@@ -557,17 +519,14 @@ function LogSection({
 
 function EventRow({ event }: { event: MyEngagementEvent }) {
   const t = useT();
-  const [kindLabel, Icon] =
+  const kindLabel =
     event.kind === "play"
-      ? [t("myDataLogKindPlay"), Play]
+      ? t("myDataLogKindPlay")
       : event.kind === "favorite"
-        ? [t("myDataLogKindFavorite"), Heart]
-        : [t("myDataLogKindQueue"), ListPlus];
+        ? t("myDataLogKindFavorite")
+        : t("myDataLogKindQueue");
   return (
     <li className="mydata-row">
-      <span className="mydata-row-icon" aria-hidden>
-        <Icon className="size-4" />
-      </span>
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="break-words text-sm text-[var(--text-primary)]">
           {kindLabel} · {event.mediaID}
@@ -589,9 +548,6 @@ function SessionRow({ session }: { session: MySessionInfo }) {
   if (expires) parts.push(`${t("expires")} ${expires}`);
   return (
     <li className="mydata-row" data-current={session.current || undefined}>
-      <span className="mydata-row-icon" aria-hidden>
-        <MonitorSmartphone className="size-4" />
-      </span>
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="break-words text-sm font-medium text-[var(--text-primary)]">
           {session.deviceName || session.deviceID || session.id}
@@ -610,9 +566,6 @@ function TokenRow({ token }: { token: MyStreamTokenInfo }) {
   const expires = formatDateTime(token.expiresAt);
   return (
     <li className="mydata-row">
-      <span className="mydata-row-icon" aria-hidden>
-        <KeyRound className="size-4" />
-      </span>
       <span className="min-w-0 flex-1 break-words text-sm text-[var(--text-primary)]">
         {token.targetKind || ""}
       </span>

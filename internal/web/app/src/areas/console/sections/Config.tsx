@@ -1,10 +1,9 @@
-import { Cpu, ServerCog } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import { ControlRow, ErrorState, Fieldset } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import { Advanced } from "@/lib/advancedSettings";
 import {
   fetchConsoleConfig,
   fetchTranscodeConfig,
@@ -13,83 +12,23 @@ import {
 } from "@/lib/graphql";
 import type { TranscodeConfigInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
-import { AdvancedDisclosure, Section } from "../Section";
+import type { StringKey } from "@/strings";
+import { Section } from "../Section";
 import { useAsync } from "../useAsync";
 
-// Server configuration (ADR-0013): the background-worker pool size and the
-// Viewer pairing-code switch (CORE-0393). Bootstrap config (ports, data dir,
-// secrets) is deliberately not editable here.
-function ServerConfig() {
-  const t = useT();
-  const { data, failed, setData } = useAsync(fetchConsoleConfig);
-  const [workers, setWorkers] = useState("");
-  const savedWorkers = data?.backgroundWorkers;
+type TextField = "codec" | "quality" | "device";
 
-  // Keyed on the saved count, not on data: toggling the Viewer-code switch
-  // replaces data and must not discard an unsaved worker-count edit.
-  useEffect(() => {
-    if (savedWorkers !== undefined) setWorkers(String(savedWorkers));
-  }, [savedWorkers]);
-
-  async function onSave(e: FormEvent) {
-    e.preventDefault();
-    const n = Number(workers);
-    if (!Number.isInteger(n) || n < 0) return;
-    const next = await setConsoleConfig({ backgroundWorkers: n });
-    setData(next);
-  }
-
-  // CORE-0393: saved on toggle, independent of the workers form.
-  async function onToggleViewerCodes(disabled: boolean) {
-    const next = await setConsoleConfig({ viewerPairingCodesDisabled: disabled });
-    setData(next);
-  }
-
-  return (
-    <Section heading="consoleConfigHeading" icon={ServerCog} lead="consoleConfigLead">
-      {failed ? (
-        <ErrorState message="consoleConfigUnavailable" />
-      ) : (
-        <form onSubmit={onSave}>
-          <Fieldset title="consoleConfigHeading" help="consoleConfigLead">
-            <ControlRow
-              label="consoleConfigBackgroundWorkers"
-              control={
-                <Input
-                  id="console-workers"
-                  aria-label={t("consoleConfigBackgroundWorkers")}
-                  type="number"
-                  min={0}
-                  value={workers}
-                  onChange={(e) => setWorkers(e.target.value)}
-                  className="w-24"
-                />
-              }
-            />
-            <ControlRow
-              label="viewerPairingCodesDisabled"
-              help="viewerPairingCodesDisabledHelp"
-              control={
-                <Switch
-                  aria-label={t("viewerPairingCodesDisabled")}
-                  checked={data?.viewerPairingCodesDisabled ?? false}
-                  disabled={!data}
-                  onCheckedChange={(v) => void onToggleViewerCodes(v)}
-                />
-              }
-            />
-          </Fieldset>
-          <div className="mt-3">
-            <Button type="submit">{t("consoleConfigSave")}</Button>
-          </div>
-        </form>
-      )}
-    </Section>
-  );
-}
+const TEXT_FIELDS: { field: TextField; label: StringKey }[] = [
+  { field: "codec", label: "transcodeCodec" },
+  { field: "quality", label: "transcodeQuality" },
+  { field: "device", label: "transcodeDevice" },
+];
 
 // Hardware transcoding policy (ADR-0007 §6 / ADR-0010). Empty string values
-// fall back to the server default server-side.
+// fall back to the server default server-side. The on/off switch is the Normal
+// control; codec, quality, device and the probe list are Advanced, and a field
+// that holds a value, saved or being edited, stays visible in Normal so Save
+// never submits a setting out of sight (CORE-1117).
 function TranscodeConfig() {
   const t = useT();
   const { data, failed, setData } = useAsync(fetchTranscodeConfig);
@@ -112,92 +51,101 @@ function TranscodeConfig() {
     setData(next);
   }
 
+  if (failed) return <ErrorState message="transcodeConfigUnavailable" />;
+
   return (
-    <Section heading="transcodeConfigHeading" icon={Cpu} lead="transcodeConfigLead">
-      {failed ? (
-        <ErrorState message="transcodeConfigUnavailable" />
-      ) : (
-        <form onSubmit={onSave} className="space-y-3">
-          <Fieldset title="transcodeConfigHeading" help="transcodeConfigLead">
-            <ControlRow
-              label="transcodeHardwareEnabled"
-              control={
-                <Switch
-                  aria-label={t("transcodeHardwareEnabled")}
-                  checked={form.hardwareEnabled}
-                  onCheckedChange={(c) => setForm((f) => ({ ...f, hardwareEnabled: c }))}
-                />
-              }
+    <form onSubmit={onSave} className="space-y-3">
+      <Fieldset title="transcodeConfigHeading" help="transcodeConfigLead">
+        <ControlRow
+          label="transcodeHardwareEnabled"
+          control={
+            <Switch
+              aria-label={t("transcodeHardwareEnabled")}
+              checked={form.hardwareEnabled}
+              onCheckedChange={(c) => setForm((f) => ({ ...f, hardwareEnabled: c }))}
             />
+          }
+        />
+        {TEXT_FIELDS.map(({ field, label }) => (
+          <Advanced key={field} keep={Boolean(form[field])}>
             <ControlRow
-              label="transcodeCodec"
+              label={label}
               control={
                 <Input
-                  id="tc-codec"
-                  aria-label={t("transcodeCodec")}
-                  value={form.codec}
+                  id={`tc-${field}`}
+                  aria-label={t(label)}
+                  value={form[field]}
                   placeholder={t("transcodeServerDefault")}
                   className="w-44"
-                  onChange={(e) => setForm((f) => ({ ...f, codec: e.target.value }))}
+                  onChange={(e) => setForm((f) => ({ ...f, [field]: e.target.value }))}
                 />
               }
             />
-            <ControlRow
-              label="transcodeQuality"
-              control={
-                <Input
-                  id="tc-quality"
-                  aria-label={t("transcodeQuality")}
-                  value={form.quality}
-                  placeholder={t("transcodeServerDefault")}
-                  className="w-44"
-                  onChange={(e) => setForm((f) => ({ ...f, quality: e.target.value }))}
-                />
-              }
-            />
-            <ControlRow
-              label="transcodeDevice"
-              control={
-                <Input
-                  id="tc-device"
-                  aria-label={t("transcodeDevice")}
-                  value={form.device}
-                  placeholder={t("transcodeServerDefault")}
-                  className="w-44"
-                  onChange={(e) => setForm((f) => ({ ...f, device: e.target.value }))}
-                />
-              }
-            />
-            {form.hardwareAcceleration.length > 0 ? (
-              <div className="grid gap-2 text-sm">
-                {form.hardwareAcceleration.map((probe) => (
-                  <div
-                    key={probe.accelerator}
-                    className="flex items-center justify-between gap-3 rounded border px-3 py-2"
-                  >
-                    <span className="font-mono">{probe.accelerator}</span>
-                    <span className="text-muted-foreground">{probe.status}</span>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </Fieldset>
-          <Button type="submit">{t("transcodeConfigSave")}</Button>
-        </form>
-      )}
-    </Section>
+          </Advanced>
+        ))}
+        {form.hardwareAcceleration.length > 0 ? (
+          <Advanced>
+            <div className="grid gap-2 text-sm">
+              {form.hardwareAcceleration.map((probe) => (
+                <div
+                  key={probe.accelerator}
+                  className="flex items-center justify-between gap-3 rounded border px-3 py-2"
+                >
+                  <span className="font-mono">{probe.accelerator}</span>
+                  <span className="text-muted-foreground">{probe.status}</span>
+                </div>
+              ))}
+            </div>
+          </Advanced>
+        ) : null}
+      </Fieldset>
+      <Button type="submit">{t("transcodeConfigSave")}</Button>
+    </form>
   );
 }
 
-// Identification & config (ADR-0007 §4): server runtime config + transcode policy.
+// The Viewer pairing-code switch (CORE-0393), a Normal control saved on toggle.
+// The section heading already names the group, so the legend is for assistive
+// tech only.
+function ViewerAccessConfig() {
+  const t = useT();
+  const { data, failed, setData } = useAsync(fetchConsoleConfig);
+
+  async function onToggle(disabled: boolean) {
+    const next = await setConsoleConfig({ viewerPairingCodesDisabled: disabled });
+    setData(next);
+  }
+
+  if (failed) return <ErrorState message="consoleConfigUnavailable" />;
+
+  return (
+    <Fieldset title="consoleConfigHeading" hideTitle>
+      <ControlRow
+        label="viewerPairingCodesDisabled"
+        help="viewerPairingCodesDisabledHelp"
+        control={
+          <Switch
+            aria-label={t("viewerPairingCodesDisabled")}
+            checked={data?.viewerPairingCodesDisabled ?? false}
+            disabled={!data}
+            onCheckedChange={(v) => void onToggle(v)}
+          />
+        }
+      />
+    </Fieldset>
+  );
+}
+
+// Server configuration (ADR-0007 §4). Bootstrap config (ports, data dir,
+// secrets) is deliberately not editable here, and the background-worker pool
+// lives on Operations alone.
 export function Config() {
   return (
-    <div className="space-y-8">
-      <ServerConfig />
-      <Separator />
-      <AdvancedDisclosure>
+    <Section heading="consoleConfigHeading" lead="consoleConfigLead">
+      <div className="space-y-6">
+        <ViewerAccessConfig />
         <TranscodeConfig />
-      </AdvancedDisclosure>
-    </div>
+      </div>
+    </Section>
   );
 }

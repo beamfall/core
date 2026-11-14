@@ -110,7 +110,8 @@ describe("SignInSecurity", () => {
         ),
       { timeout: 5_000 },
     );
-  });
+    // The test budget must outlast its own waits above.
+  }, 15_000);
 
   it("shows an error with a retry and offers no save when the probe fails", async () => {
     vi.mocked(fetchSetupStatus)

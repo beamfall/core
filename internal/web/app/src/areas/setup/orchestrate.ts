@@ -84,7 +84,9 @@ export class FirstLibraryError extends Error {
   readonly progress: FirstLibraryProgress;
 
   constructor(cause: unknown, progress: FirstLibraryProgress) {
-    super(cause instanceof Error ? cause.message : "Something went wrong. Please try again.");
+    super(cause instanceof Error ? cause.message : "Something went wrong. Please try again.", {
+      cause,
+    });
     this.name = "FirstLibraryError";
     this.progress = progress;
   }

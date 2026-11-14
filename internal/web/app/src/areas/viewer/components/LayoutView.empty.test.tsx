@@ -43,7 +43,7 @@ describe("LayoutView empty-as-activation", () => {
     );
     expect(screen.getByRole("link", { name: /migrate a library/i })).toHaveAttribute(
       "href",
-      "/console/remote",
+      "/console/migrate",
     );
   });
 

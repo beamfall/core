@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
@@ -132,7 +132,7 @@ export function SearchPage() {
           )}
         </form>
         {live.failed && (
-          <p className="text-sm text-[var(--red-500)]" role="alert">
+          <p className="text-sm text-[var(--state-danger)]" role="alert">
             {t("searchUnavailable")}
           </p>
         )}
@@ -146,17 +146,12 @@ export function SearchPage() {
           <SearchEmpty
             title={t("searchNoResultsFor", { query: live.resultTerm })}
             lead={t("searchNoResultsLead")}
-            action={
-              <Button type="button" variant="outline" onClick={clear}>
-                {t("searchClear")}
-              </Button>
-            }
           />
         )}
         {live.term && answered && total > 0 && (
           <section aria-labelledby="search-results-heading" className="flex flex-col gap-4">
             <div>
-              <h2 id="search-results-heading" className="text-lg font-semibold">
+              <h2 id="search-results-heading" className="sr-only">
                 {t("searchResults")}
               </h2>
               <p className="text-sm text-[var(--text-secondary)]" role="status">
@@ -165,7 +160,7 @@ export function SearchPage() {
             </div>
             {groups.map((group) => (
               <section key={group.key} aria-label={group.label} className="flex flex-col gap-2">
-                <h3 className="text-sm font-semibold text-[var(--text-secondary)]">
+                <h3 className="text-base font-semibold text-[var(--text-primary)]">
                   {group.label}
                 </h3>
                 <ul className="bf-grid">
@@ -193,12 +188,11 @@ export function SearchPage() {
 // A calm centered zero-state for the search surface — reuses the Viewer's
 // `.bf-empty` card (chrome.css, "never a grey void") so the pre-query and
 // no-matches states read as intentional rather than a floating box over black.
-function SearchEmpty({ title, lead, action }: { title: string; lead: string; action?: ReactNode }) {
+function SearchEmpty({ title, lead }: { title: string; lead: string }) {
   return (
     <div className="bf-empty flex flex-col gap-2" role="status">
       <p className="text-lg font-semibold text-[var(--text-primary)]">{title}</p>
       <p className="text-sm text-[var(--text-secondary)]">{lead}</p>
-      {action && <div className="mt-2">{action}</div>}
     </div>
   );
 }

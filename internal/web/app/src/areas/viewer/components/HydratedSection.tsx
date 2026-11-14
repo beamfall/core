@@ -144,27 +144,30 @@ export function HydratedSection({
 }
 
 // Skeleton placeholder, ported from buildSkeleton (app.js): never focusable,
-// aria-hidden. The shimmer (bf-shimmer) lives in CSS and reduce-motion drops it,
-// leaving the static tone — matching the design system's "skeletons fade to
-// content, never focusable" rule. Geometry mirrors a shelf rail so the layout
-// does not shift when real content arrives.
+// aria-hidden. The placeholder tone (bf-shimmer) is a static fill in CSS,
+// matching the design system's "skeletons fade to content, never focusable"
+// rule. It reuses the real hero and shelf classes, so the frame, card width,
+// gap and copy height match and the layout does not shift when content arrives.
 export function SectionSkeleton({ hero }: { hero: boolean }) {
   if (hero) {
     return (
       <div aria-hidden className="bf-section">
-        <Skeleton className="bf-shimmer aspect-[21/9] max-h-[440px] w-full rounded-[var(--radius-card)]" />
+        <Skeleton className="bf-hero bf-shimmer" />
       </div>
     );
   }
   return (
     <div aria-hidden className="bf-section flex flex-col gap-3">
-      <Skeleton className="bf-shimmer h-[26px] w-52" />
-      <div className="flex gap-[14px] overflow-hidden p-1">
+      <Skeleton className="bf-shimmer mb-1 h-7 w-44" />
+      <div className="bf-shelf overflow-hidden">
         {Array.from({ length: 7 }).map((_, i) => (
-          <Skeleton
-            key={i}
-            className="bf-shimmer aspect-[2/3] w-[150px] shrink-0 rounded-[var(--radius-card)]"
-          />
+          <div key={i} className="bf-card shrink-0">
+            <Skeleton className="bf-shimmer aspect-[2/3] w-full" />
+            <div className="bf-card-copy">
+              <Skeleton className="h-[19px] w-3/4 bg-[var(--bg-surface)]" />
+              <Skeleton className="h-[18px] w-1/3 bg-[var(--bg-surface)]" />
+            </div>
+          </div>
         ))}
       </div>
     </div>

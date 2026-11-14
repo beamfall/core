@@ -1,5 +1,5 @@
-import { FolderPlus, LibraryBig } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { DeleteLibraryButton } from "@/components/beamfall/LibraryDelete";
 import { RescanAllButton, RescanButton, RescanStatus } from "@/components/beamfall/LibraryRescan";
 import {
   EmptyLine,
@@ -124,11 +124,7 @@ export function LibrariesPage() {
 
   return (
     <div className="space-y-4">
-      <ManageSection
-        title={t("libraries")}
-        icon={LibraryBig}
-        actions={<RescanAllButton libraries={libraries} />}
-      >
+      <ManageSection title={t("libraries")} actions={<RescanAllButton libraries={libraries} />}>
         {!loading && libraries.length === 0 ? (
           <EmptyLine message={t("libraryEmptyTitle")} />
         ) : (
@@ -142,6 +138,7 @@ export function LibrariesPage() {
                   library={lib}
                   onTogglePreview={onTogglePreview}
                   onRootsSaved={onRootsSaved}
+                  onDeleted={() => void load()}
                   onError={setError}
                 />
               ))
@@ -151,7 +148,7 @@ export function LibrariesPage() {
         <ErrorLine message={error} />
       </ManageSection>
 
-      <ManageSection title={t("createLibrary")} icon={FolderPlus}>
+      <ManageSection title={t("createLibrary")}>
         <ManageInlineForm>
           <ManageField id="library-title" label={t("title")}>
             <Input
@@ -190,11 +187,13 @@ function LibraryRow({
   library,
   onTogglePreview,
   onRootsSaved,
+  onDeleted,
   onError,
 }: {
   library: LibraryInfo;
   onTogglePreview: (lib: LibraryInfo, enabled: boolean) => Promise<void>;
   onRootsSaved: (libraryID: string, roots: string[]) => void;
+  onDeleted: () => void;
   onError: (message: string) => void;
 }) {
   const t = useT();
@@ -382,11 +381,8 @@ function LibraryRow({
   const savedRoots = library.roots ?? [];
   const actionRow = "flex min-w-0 gap-2";
   return (
-    <article className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+    <article className="rounded-xl border border-[var(--glass-border)] bg-[var(--glass-fill)] p-4">
       <header className="flex flex-wrap items-center gap-3">
-        <span className="house-icon-tile" aria-hidden>
-          <LibraryBig className="size-[18px]" />
-        </span>
         <div className="min-w-0 flex-1">
           <h3 className="break-words text-[15px] font-semibold">{library.title}</h3>
           <p className="text-xs text-muted-foreground">
@@ -511,7 +507,7 @@ function LibraryRow({
               {t("move")}
             </Button>
           </div>
-          <div className="flex flex-wrap justify-end gap-2 border-t border-white/[0.07] pt-3">
+          <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--border-subtle)] pt-3">
             <Button
               type="button"
               variant="outline"
@@ -523,7 +519,7 @@ function LibraryRow({
             </Button>
             <Button
               type="button"
-              variant="destructive"
+              variant="danger"
               size="sm"
               disabled={busy || !selectedPath}
               onClick={onDelete}
@@ -534,17 +530,17 @@ function LibraryRow({
         </div>
       </div>
 
-      <details className="group mt-4 rounded-lg border border-white/[0.07] bg-black/20">
-        <summary className="cursor-pointer px-3 py-2 text-[13px] font-semibold">
+      <details className="group mt-4 border-t border-[var(--border-subtle)]">
+        <summary className="cursor-pointer py-2.5 text-dense font-semibold">
           {t("libraryRoots")}
         </summary>
-        <div className="space-y-2 border-t border-white/[0.07] p-3">
+        <div className="space-y-2 pb-1">
           {rootsList.length > 0 ? (
             <ul className="flex flex-col gap-1">
               {rootsList.map((root) => (
                 <li
                   key={root}
-                  className="flex min-w-0 items-center gap-2 rounded-md border border-white/[0.07] px-2 py-1"
+                  className="flex min-w-0 items-center gap-2 rounded-md border border-[var(--border-subtle)] px-2 py-1"
                 >
                   <span className="min-w-0 flex-1 break-all font-mono text-xs">{root}</span>
                   <Button
@@ -590,6 +586,9 @@ function LibraryRow({
           />
         </div>
       </details>
+      <footer className="mt-4 flex justify-end border-t border-white/[0.07] pt-3">
+        <DeleteLibraryButton library={library} onDeleted={onDeleted} />
+      </footer>
     </article>
   );
 }

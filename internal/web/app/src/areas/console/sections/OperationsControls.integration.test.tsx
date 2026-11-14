@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setAdvancedSettings } from "@/lib/advancedSettings";
 import type { NavigationManifest, SessionInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { SessionProvider, useSession } from "@/lib/session";
@@ -117,6 +118,7 @@ async function flushEffects(): Promise<void> {
 }
 
 beforeEach(() => {
+  setAdvancedSettings(true);
   class EventSourceStub {
     onerror: ((event: Event) => void) | null = null;
     onmessage: ((event: MessageEvent) => void) | null = null;
@@ -128,6 +130,8 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  localStorage.clear();
+  setAdvancedSettings(false);
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
