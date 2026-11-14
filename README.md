@@ -136,7 +136,7 @@ The CLI covers day-to-day operation:
 | `beamfall token` | Manage local API tokens. |
 | `beamfall export-config` / `apply-config` | Export or apply a Console config document. |
 | `beamfall reset-admin-password` | Set the local admin password while the server is stopped. |
-| `beamfall pairing-code` | Mint a one-time owner pairing code while the server is stopped, to sign a browser back in. |
+| `beamfall pairing-code` | Mint a one-time owner pairing code to sign a browser back in; run it on the server host while the server runs. |
 | `beamfall capabilities` / `version` | Print runtime capabilities or build metadata. |
 
 `library list`, `scan`, `backup`, `token list` and `token revoke` talk to the running server with

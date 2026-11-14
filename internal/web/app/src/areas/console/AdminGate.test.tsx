@@ -117,6 +117,23 @@ describe("AdminGate first admin password (CORE-1132)", () => {
     expect(verifyAdminSession).toHaveBeenCalledWith("first-pw", expect.anything(), true);
   });
 
+  it("shows the 8-character rule and refuses a shorter first password (CORE-1601)", async () => {
+    vi.mocked(fetchSetupState).mockResolvedValue({ adminPasswordSet: false } as never);
+    const user = userEvent.setup();
+    renderGate();
+    expect(await screen.findByText("Set an admin password")).toBeInTheDocument();
+    const password = screen.getByLabelText("Admin password");
+    expect(password).toHaveAccessibleDescription("At least 8 characters.");
+    await user.type(password, "short");
+    await user.type(screen.getByLabelText("Confirm password"), "short");
+    await user.click(screen.getByRole("button", { name: "Set password and unlock" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Admin password must be at least 8 characters.",
+    );
+    expect(password).toHaveAttribute("aria-invalid", "true");
+    expect(verifyAdminSession).not.toHaveBeenCalled();
+  });
+
   it("keeps the ordinary unlock form once a password exists, and never asks to create", async () => {
     vi.mocked(verifyAdminSession).mockResolvedValue({
       active: true,

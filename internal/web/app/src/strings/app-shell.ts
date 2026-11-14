@@ -14,6 +14,8 @@ export const appShellStrings = {
     profile: "Profile",
     promoteBrowser: "Promote this browser",
     signOut: "Sign out",
+    signOutHint:
+      "Beamfall will forget this browser. To sign in again, you'll need a new pairing code.",
     enrollTitle: "Connect this browser",
     enrollLead: "Enter a pairing code from a manager device to enroll this browser as a viewer.",
     pairingCode: "Pairing code",
@@ -25,6 +27,14 @@ export const appShellStrings = {
     adminSignIn: "Sign in",
     adminSignInFailed: "Sign-in failed.",
     adminSignInNeedsSecure: "Sign-in needs HTTPS or this server’s local network.",
+    // CORE-1600: a LAN browser that addressed the server by a hostname.
+    adminSignInUseIPAddress: "Open Beamfall by its IP address to sign in with the admin password.",
+    adminSignInOpenAddress: "Open {url}",
+    adminSignInOr: "or",
+    // CORE-1608: Strict mode has no password fallback.
+    strictRecoveryHint: "Locked out? To get a pairing code, run this on the server:",
+    // CORE-1607: default name for a browser enrolled without one.
+    deviceNameDefault: "{browser} on {os}",
     promoteTitle: "Promote this browser",
     promoteLead: "Enter a manager pairing code to promote this browser to a manager device.",
     managerPairingCode: "Manager pairing code",
@@ -35,6 +45,8 @@ export const appShellStrings = {
     profilesLead: "Choose a profile for this session.",
     restrictionsTitle: "Restrictions",
     restrictionsLead: "Enter this profile's PIN to show restricted content for this session.",
+    restrictionsNoPinHint: "A profile without a PIN can't show restricted content.",
+    revealNoPin: "This profile has no PIN, so restricted content stays hidden.",
     pin: "PIN",
     reveal: "Reveal",
     back: "Back",

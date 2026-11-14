@@ -3,7 +3,6 @@ export const setupStrings = {
     // First-run setup wizard (WEB-1, ADR-0007 §2).
     setupBrandSuffix: "Server setup",
     setupUnlockedBanner: "Server claimed. You're the owner now.",
-    setupRailToken: "Unlock",
     setupRailAdminPassword: "Admin password",
     setupRailSecurity: "Sign-in security",
     setupRailLibrary: "First library",
@@ -13,11 +12,12 @@ export const setupStrings = {
     setupStepCount: "Step {n} of {total}",
     setupTokenTitle: "Unlock with the setup token",
     setupTokenLead:
-      "Paste the one-time code from the server log. It proves you can reach the server before anyone sets an admin password.",
+      "Paste the one-time code from the server's startup output (for containers, docker logs <container>). It proves you can reach the server before anyone sets an admin password.",
     setupToken: "Setup token",
-    setupTokenRequired: "Paste the setup token from the server log to continue.",
+    setupTokenRequired: "Paste the setup token from the server's startup output to continue.",
     setupTokenInvalid:
-      "That setup token didn't work. It may be mistyped or already used; restarting the server prints a new one in its log.",
+      "That setup token didn't work. It may be mistyped or already used; restarting the server prints a new one in its startup output.",
+    setupTokenLanLink: "On the same network as the server? Open {url} to skip the token.",
     setupTokenAgain:
       "The setup token is cleared after each attempt. Paste it again to finish claiming the server.",
     setupNeedsSecure:
@@ -29,6 +29,10 @@ export const setupStrings = {
     setupAdminPasswordConfirm: "Confirm password",
     setupAdminPasswordMismatch: "The passwords don't match. Type the same password in both fields.",
     setupAdminPasswordRequired: "Enter an admin password.",
+    setupAdminPasswordHint: "At least 8 characters.",
+    setupAdminPasswordTooShort: "Admin password must be at least 8 characters.",
+    setupPasswordShow: "Show password",
+    setupPasswordHide: "Hide password",
     setupSecurityTitle: "Choose how the owner signs in",
     setupSecurityLead: "You can change this later in the Console.",
     setupSecurityHome: "Home",
@@ -44,10 +48,11 @@ export const setupStrings = {
     setupLibraryName: "Library name",
     setupLibraryRoot: "Root folder",
     setupLibraryRootRequired: "Type the folder's path on the server, or choose it with Browse.",
-    setupLibraryCreateFailed:
-      "The server couldn't set up that folder: {reason}. Check the path exists and the server can read it.",
+    setupLibraryCreateFailed: "{reason} Check the path, or choose the folder with Browse.",
+    setupLibraryCreateFailedGeneric:
+      "The server couldn't set up that folder. Check the path, or choose the folder with Browse.",
     setupLibraryScanFailed:
-      "The Library is created, but its first scan didn't start: {reason}. Continue to try the scan again.",
+      "The Library is created, but its first scan didn't start. Check the folder, then press Continue to try again.",
     setupLibraryBrowse: "Browse…",
     setupLibraryPickerUse: "Use this folder",
     setupLibraryPickerLoading: "Loading folders…",
@@ -69,6 +74,9 @@ export const setupStrings = {
     setupPluginsLead:
       "Each plugin teaches Beamfall a kind of media. Turn on what you have; change it any time.",
     setupPluginsEmpty: "No plugins are installed.",
+    setupPluginsLoadFailed:
+      "Couldn't load the plugin choices saved on the server, so they can't be changed yet.",
+    setupPluginsRetry: "Try again",
     setupKeysTitle: "Metadata provider keys",
     setupKeysLead:
       "Titles, details and artwork come from providers that ask for a free API key. Paste one now or add it later in Console › Plugins.",

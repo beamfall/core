@@ -26,7 +26,10 @@ Docker Compose spec:
    (see [Network exposure](#network-exposure-beamfall_http_bind)).
 5. Open the Web UI at `http://127.0.0.1:8800/` from the TrueNAS host (or
    through an SSH tunnel: `ssh -L 8800:127.0.0.1:8800 <truenas-host>`) and
-   finish setup in the Beamfall Console. Add further Library roots from the
+   finish setup in the Beamfall Console. The first-run setup URLs, including
+   the one-time setup token, are the last lines in the app's container
+   logs once the server is listening; a browser on the local network needs
+   no token. Add further Library roots from the
    Console — the compose file mounts one read-only media dataset by default.
    To reach the UI from other machines, see
    [Network exposure](#network-exposure-beamfall_http_bind).
