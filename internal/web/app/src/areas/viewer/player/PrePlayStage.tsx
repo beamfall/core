@@ -16,7 +16,8 @@ import { fetchPrePlayStream } from "../lib/prePlay";
 // stream-limit-reached. An item that would need a transcode is passed over.
 //
 // When the browser refuses autoplay, the native controls appear so the
-// viewer can start the item, instead of the stage waiting on nothing.
+// viewer can start the item, instead of the stage waiting on nothing. The
+// Skip bar sits below the video, never over it, so it cannot cover them.
 export function PrePlayStage({ items, onDone }: { items: PrePlayItem[]; onDone: () => void }) {
   const t = useT();
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -59,17 +60,17 @@ export function PrePlayStage({ items, onDone }: { items: PrePlayItem[]; onDone: 
 
   if (!item) return null;
   return (
-    <section className="bf-pre-play relative flex flex-1 flex-col" aria-label={t("prePlayRegion")}>
+    <section className="bf-pre-play flex flex-1 flex-col" aria-label={t("prePlayRegion")}>
       <video
         ref={videoRef}
-        className="h-full w-full flex-1 bg-black"
+        className="min-h-0 w-full flex-1 bg-black"
         playsInline
         autoPlay
         controls={needsGesture}
         onEnded={() => setIndex((current) => current + 1)}
         onError={() => setIndex((current) => current + 1)}
       />
-      <div className="absolute inset-x-0 bottom-0 flex flex-wrap items-center gap-3 bg-black/60 px-4 py-3 text-white">
+      <div className="flex flex-wrap items-center gap-3 bg-black px-4 py-3 text-white">
         <span className="min-w-0 flex-1 break-words">
           {item.label ? <span className="mr-2 text-white/70">{item.label}</span> : null}
           {item.title}
