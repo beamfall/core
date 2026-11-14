@@ -532,7 +532,7 @@ func LoadWithOutput(args []string, lookupEnv func(string) (string, bool), output
 	fs.StringVar(&cfg.Addr, "addr", cfg.Addr, "listen address")
 	fs.StringVar(&cfg.DataDir, "data-dir", cfg.DataDir, "data directory")
 	fs.StringVar(&cfg.ServerName, "server-name", cfg.ServerName, "server name advertised to clients")
-	fs.BoolVar(&cfg.PublicMetrics, "public-metrics", cfg.PublicMetrics, "allow /metrics from non-loopback clients (default false)")
+	fs.BoolVar(&cfg.PublicMetrics, "public-metrics", cfg.PublicMetrics, "serve /metrics to any caller with no scrape credential (default false)")
 	fs.BoolVar(&cfg.Discovery.Enabled, "discovery-enabled", cfg.Discovery.Enabled, "advertise this server with Bonjour/mDNS")
 	fs.BoolVar(&cfg.SeedDevelopmentData, "seed-development-data", cfg.SeedDevelopmentData, "seed deterministic development catalog and credentials")
 	fs.StringVar(&cfg.SeedProfile, "seed-profile", cfg.SeedProfile, "seed profile: development, demo, conformance, or acceptance (conformance/acceptance are test/dev-only)")

@@ -39,5 +39,6 @@ Security/incident procedures live under
 | [upgrade-test](../security/runbooks/upgrade-test.md) | Validate an upgrade before rollout |
 | [rollback](../security/runbooks/rollback.md) | Revert a bad release |
 | [incident](../security/runbooks/incident.md) | First-response for a suspected incident |
+| [lockout-and-recovery](../security/runbooks/lockout-and-recovery.md) | Admin/integration lockout, admin password reset, first-run reset, database corruption |
 | [key-lifecycle](../security/runbooks/key-lifecycle.md) | Signing/stream key rotation + compromise |
 | [relay-abuse](../security/runbooks/relay-abuse.md) | Respond to relay over-cap / abuse |
