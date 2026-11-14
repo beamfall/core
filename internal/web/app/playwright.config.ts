@@ -45,7 +45,7 @@ export default defineConfig({
   workers: renderPhase ? 1 : undefined,
   forbidOnly: !!process.env.CI,
   retries: 0,
-  reporter: [["list"]],
+  reporter: [["list"], ["./e2e/lib/progress-heartbeat-reporter.mjs"]],
   globalSetup: "./e2e/global-setup.ts",
   globalTeardown: "./e2e/global-teardown.ts",
   expect: {

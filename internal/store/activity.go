@@ -138,6 +138,9 @@ const (
 	// (CORE-1110). TargetID is "<old>-><new>"; the entry never carries the
 	// admin password that authorised it.
 	ActivitySignInSecurityMode = "signin_security.mode"
+	// ActivityAdminPasswordSet records the first admin password being chosen
+	// from the Console (CORE-1132). The entry never carries the password.
+	ActivityAdminPasswordSet = "admin.password.set"
 	// ActivityMyDataDelete records a My Data engagement deletion.
 	// The entry carries the SCOPE KIND only (in TargetType: "all" or "media")
 	// and NEVER the deleted media id — the activity log must not memorialize

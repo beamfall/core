@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net"
 	"strings"
 	"sync"
@@ -35,6 +36,10 @@ var (
 	ErrSetupTokenInvalid = errors.New("setup token invalid")
 	// ErrNoOwner means the server has no owner Profile to mint a code for.
 	ErrNoOwner = errors.New("no owner profile")
+	// ErrViewerCodesDisabled refuses minting a Viewer-role pairing code while
+	// the operator's Viewer pairing-code switch is on (CORE-0393). It wraps
+	// ErrForbidden so transports that map forbidden keep doing so.
+	ErrViewerCodesDisabled = fmt.Errorf("%w: viewer pairing codes are disabled", ErrForbidden)
 )
 
 const (
@@ -388,6 +393,9 @@ func (s *Service) CreateCode(ctx context.Context, scope auth.Scope, req CodeRequ
 	if err != nil {
 		return CodeResponse{}, err
 	}
+	if err := s.refuseDisabledViewerMint(ctx, role, scope, profileID); err != nil {
+		return CodeResponse{}, err
+	}
 	resp, err := s.mintCode(ctx, profileID, role)
 	if err != nil {
 		return CodeResponse{}, err
@@ -426,6 +434,9 @@ func (s *Service) CreateOwnerCode(ctx context.Context, deviceRole string) (CodeR
 	if err != nil {
 		return CodeResponse{}, err
 	}
+	if err := s.refuseDisabledViewerMint(ctx, role, auth.Scope{}, owner.ID); err != nil {
+		return CodeResponse{}, err
+	}
 	resp, err := s.mintCode(ctx, owner.ID, role)
 	if err != nil {
 		return CodeResponse{}, err
@@ -437,6 +448,49 @@ func (s *Service) CreateOwnerCode(ctx context.Context, deviceRole string) (CodeR
 		TargetID:   string(owner.ID),
 	})
 	return resp, nil
+}
+
+// Viewer pairing-code refusals are recorded as enroll.denied entries whose
+// target names the policy and the refused step; neither carries the code.
+const (
+	viewerCodePolicyTarget  = "pairing_policy"
+	viewerCodeMintRefused   = "viewer_pairing_codes_disabled:mint"
+	viewerCodeRedeemRefused = "viewer_pairing_codes_disabled:redeem"
+)
+
+// viewerCodesDisabled reports whether the operator has switched Viewer-role
+// pairing codes off.
+func (s *Service) viewerCodesDisabled(ctx context.Context) (bool, error) {
+	cfg, err := s.store.ConsoleConfig(ctx)
+	if err != nil {
+		return false, err
+	}
+	return cfg.ViewerPairingCodesDisabled, nil
+}
+
+// refuseDisabledViewerMint refuses a Viewer-role mint while the switch is on,
+// before any pairing-code row is written, and records the refusal.
+func (s *Service) refuseDisabledViewerMint(ctx context.Context, role store.DeviceRole, scope auth.Scope, profileID store.ProfileID) error {
+	if role != store.DeviceRoleViewer {
+		return nil
+	}
+	disabled, err := s.viewerCodesDisabled(ctx)
+	if err != nil {
+		return err
+	}
+	if !disabled {
+		return nil
+	}
+	_ = s.store.AppendActivity(ctx, store.ActivityEntry{
+		OccurredAt: s.now().UTC(),
+		Action:     store.ActivityEnrollDenied,
+		SessionID:  scope.SessionID,
+		DeviceID:   scope.DeviceID,
+		ProfileID:  profileID,
+		TargetType: viewerCodePolicyTarget,
+		TargetID:   viewerCodeMintRefused,
+	})
+	return ErrViewerCodesDisabled
 }
 
 // mintCode stores a fresh one-time code for profileID that expires in ten
@@ -522,6 +576,26 @@ func (s *Service) Enroll(ctx context.Context, req EnrollRequest) (EnrollResponse
 		if !cfg.RemoteEnrollmentEnabled {
 			_ = s.recordAttempt(ctx, attemptKey, remoteKey, now, false)
 			s.logDenied(ctx, now, store.ActivityEnrollDenied)
+			return EnrollResponse{}, ErrInvalidCode
+		}
+	}
+	// Viewer pairing-code switch (CORE-0393): a Viewer code minted before the
+	// operator switched Viewer codes off is refused with the same invalid-code
+	// answer as a bad guess, so the switch state is not observable to callers.
+	if pending.DeviceRole == store.DeviceRoleViewer {
+		disabled, err := s.viewerCodesDisabled(ctx)
+		if err != nil {
+			return EnrollResponse{}, err
+		}
+		if disabled {
+			_ = s.recordAttempt(ctx, attemptKey, remoteKey, now, false)
+			_ = s.store.AppendActivity(ctx, store.ActivityEntry{
+				OccurredAt: now.UTC(),
+				Action:     store.ActivityEnrollDenied,
+				ProfileID:  pending.ProfileID,
+				TargetType: viewerCodePolicyTarget,
+				TargetID:   viewerCodeRedeemRefused,
+			})
 			return EnrollResponse{}, ErrInvalidCode
 		}
 	}
