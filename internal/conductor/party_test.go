@@ -212,3 +212,43 @@ func TestAcceptWinsQueuedAbandonedPartyReap(t *testing.T) {
 		t.Fatalf("members after accepted race = %d, want 1", len(g.Members()))
 	}
 }
+
+// TestPartyAnchorHoldsWhilePaused covers the CORE-1677 paused timeline: a party
+// forms paused at zero on its content, a paused host transition holds the
+// anchor at its position, and a playing one advances it.
+func TestPartyAnchorHoldsWhilePaused(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	r := NewRegistryWithClock(func() time.Time { return now })
+	g := r.FormParty("profile-host", "host-session", "media-alpha", false)
+
+	now = now.Add(30 * time.Second)
+	anchor, err := r.PartyAnchor(g.ID)
+	if err != nil {
+		t.Fatalf("PartyAnchor: %v", err)
+	}
+	if anchor.Item != "media-alpha" || anchor.Position != 0 || !anchor.Paused {
+		t.Fatalf("fresh party anchor = %+v, want paused at 0 on media-alpha", anchor)
+	}
+
+	tr, _, err := r.HostTransition(g.ID, "host-session", "media-alpha", 90*time.Second, true)
+	if err != nil {
+		t.Fatalf("HostTransition paused: %v", err)
+	}
+	if !tr.Paused {
+		t.Fatal("paused transition not reported paused")
+	}
+	now = now.Add(time.Minute)
+	anchor, _ = r.PartyAnchor(g.ID)
+	if anchor.Position != 90*time.Second || !anchor.Paused || !g.Paused() {
+		t.Fatalf("paused anchor = %+v, want held at 90s", anchor)
+	}
+
+	if _, _, err := r.HostTransition(g.ID, "host-session", "media-alpha", 90*time.Second, false); err != nil {
+		t.Fatalf("HostTransition play: %v", err)
+	}
+	now = now.Add(10 * time.Second)
+	anchor, _ = r.PartyAnchor(g.ID)
+	if anchor.Position != 100*time.Second || anchor.Paused {
+		t.Fatalf("playing anchor = %+v, want 100s and playing", anchor)
+	}
+}

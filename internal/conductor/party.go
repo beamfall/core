@@ -103,6 +103,13 @@ func (g *Group) Relaxed() bool {
 	return g.relaxed
 }
 
+// Paused reports whether the Watch Party timeline is paused.
+func (g *Group) Paused() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.paused
+}
+
 // Invitees returns a snapshot of the Profiles with a pending invite.
 func (g *Group) Invitees() []store.ProfileID {
 	g.mu.Lock()
@@ -134,6 +141,11 @@ func (r *Registry) FormParty(host store.ProfileID, hostSession store.SessionID, 
 		content:   content,
 		relaxed:   relaxed,
 		invites:   map[store.ProfileID]Invite{},
+		// A party forms paused at the start of its content, so a member who
+		// joins before the host presses play lands on position zero.
+		item:   content,
+		anchor: now,
+		paused: true,
 	}
 	r.mu.Lock()
 	r.groups[g.ID] = g
@@ -234,7 +246,10 @@ func (r *Registry) Accept(id string, profile store.ProfileID, m Member) error {
 // {item, position, present_at} broadcast over the same SSE outbox, but gated on
 // the host role. Pause/resume/seek/skip all funnel through here — they differ
 // only in the item/position passed, exactly like the Ambient Group transition.
-func (r *Registry) HostTransition(id string, host store.SessionID, item store.MediaID, position time.Duration) (Transition, []Member, error) {
+//
+// paused sets the timeline's paused state: a paused transition holds every
+// member at position until the next transition.
+func (r *Registry) HostTransition(id string, host store.SessionID, item store.MediaID, position time.Duration, paused bool) (Transition, []Member, error) {
 	g, err := r.partyLookup(id)
 	if err != nil {
 		return Transition{}, nil, err
@@ -248,6 +263,7 @@ func (r *Registry) HostTransition(id string, host store.SessionID, item store.Me
 	g.item = item
 	g.position = position
 	g.anchor = now
+	g.paused = paused
 	members := make([]Member, 0, len(g.members))
 	for _, mem := range g.members {
 		members = append(members, *mem)
@@ -257,6 +273,7 @@ func (r *Registry) HostTransition(id string, host store.SessionID, item store.Me
 		Item:      item,
 		Position:  position,
 		PresentAt: now.Add(PreBufferWindow),
+		Paused:    paused,
 	}, members, nil
 }
 
@@ -340,10 +357,14 @@ func (r *Registry) PartyAnchor(id string) (Transition, error) {
 	now := r.now()
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	current := g.position + now.Sub(g.anchor)
+	current := g.position
+	if !g.paused {
+		current += now.Sub(g.anchor)
+	}
 	return Transition{
 		Item:      g.item,
 		Position:  current,
 		PresentAt: now.Add(PreBufferWindow),
+		Paused:    g.paused,
 	}, nil
 }

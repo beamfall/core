@@ -1189,6 +1189,12 @@ func loopbackRemote(remoteAddr string) bool {
 }
 
 func (s *Server) graphQL(w http.ResponseWriter, r *http.Request) {
+	// Household-only surfaces (Watch Party, CORE-0531) refuse a caller that is
+	// not on the home network; the LAN test lives here at the edge, so the
+	// graph reads only the marker.
+	if !requestIsLAN(r) {
+		r = r.WithContext(auth.WithRemoteOrigin(r.Context()))
+	}
 	s.graph.ServeHTTP(w, r)
 }
 
