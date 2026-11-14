@@ -57,6 +57,25 @@ CONSUMER_PIN="$(
 )"
 CONSUMER_SOURCE="${BEAMFALL_CROSSREPO_CONSUMER_SOURCE:-https://github.com/beamfall/web.git}"
 
+# The lane reads consumer pins from the private workspace registry (CORE-0902);
+# resolve it the same way so every run below sees one workspace.
+WORKSPACE_ROOT="${BEAMFALL_WORKSPACE_ROOT:-}"
+if [[ -z "$WORKSPACE_ROOT" ]]; then
+  dir="$ROOT"
+  while [[ "$dir" != "/" ]]; do
+    dir="$(dirname "$dir")"
+    if [[ -f "$dir/workspace-repos.json" ]]; then
+      WORKSPACE_ROOT="$dir"
+      break
+    fi
+  done
+fi
+if [[ -z "$WORKSPACE_ROOT" || ! -f "$WORKSPACE_ROOT/contracts/registry.json" ]]; then
+  echo "crossrepo-conformance_test: set BEAMFALL_WORKSPACE_ROOT to the workspace checkout holding contracts/registry.json" >&2
+  exit 1
+fi
+export BEAMFALL_WORKSPACE_ROOT="$WORKSPACE_ROOT"
+
 GREEN="$TMP/green.log"
 RED="$TMP/red.log"
 
@@ -123,15 +142,18 @@ grep -F \
   "$FIXTURE_OVERRIDE" >/dev/null
 grep -F "PASS ADR-0122 producer->consumer wire conformance" "$FIXTURE_OVERRIDE" >/dev/null
 
+PIN_WORKSPACE="$TMP/pin-coherence-workspace"
+mkdir -p "$PIN_WORKSPACE/contracts"
+cp "$WORKSPACE_ROOT/contracts/registry.json" "$PIN_WORKSPACE/contracts/registry.json"
 read -r PIN_COHERENCE_CONSUMER_VERSION PIN_COHERENCE_REGISTRY_VERSION < <(
-python3 - "$OVERRIDE_PRODUCER/contracts/registry.json" <<'PY'
+python3 - "$PIN_WORKSPACE/contracts/registry.json" <<'PY'
 import json
 import pathlib
 import sys
 
 path = pathlib.Path(sys.argv[1])
 registry = json.loads(path.read_text(encoding="utf-8"))
-boundary = next(row for row in registry["boundaries"] if row["boundary"] == "client-core-wire")
+boundary = next(row for row in registry["boundaries"] if row["id"] == "client-core-wire")
 consumer = next(row for row in boundary["consumers"] if row["repo"] == "beamfall-web")
 old_version = consumer["pinnedVersion"]
 major, minor, _ = (int(part) for part in old_version.split("."))
@@ -141,12 +163,10 @@ path.write_text(json.dumps(registry, indent=2) + "\n", encoding="utf-8")
 print(old_version, new_version)
 PY
 )
-python3 "$ROOT/script/check-contract-registry.py" \
-  --registry "$OVERRIDE_PRODUCER/contracts/registry.json" \
-  --repo-root "$OVERRIDE_PRODUCER" >/dev/null
 
 PIN_COHERENCE_RED="$TMP/pin-coherence-red.log"
 set +e
+BEAMFALL_WORKSPACE_ROOT="$PIN_WORKSPACE" \
 BEAMFALL_CROSSREPO_FIXTURE_SUPERVISED=1 \
 BEAMFALL_CROSSREPO_PRODUCER_SOURCE="$OVERRIDE_PRODUCER" \
 BEAMFALL_CROSSREPO_CONSUMER_SOURCE="$CONSUMER_SOURCE" \
@@ -159,7 +179,7 @@ if [[ "$pin_coherence_status" -eq 0 ]]; then
   cat "$PIN_COHERENCE_RED" >&2
   exit 1
 fi
-grep -F "APPLY producer tracked working-tree delta" "$PIN_COHERENCE_RED" >/dev/null
+grep -F "REGISTRY workspace path=$PIN_WORKSPACE/contracts/registry.json" "$PIN_COHERENCE_RED" >/dev/null
 if ! grep -F \
     "consumer contract version mismatch: registry_pinned_version=$PIN_COHERENCE_REGISTRY_VERSION consumer_contract_version=$PIN_COHERENCE_CONSUMER_VERSION consumer_commit=$CONSUMER_PIN" \
     "$PIN_COHERENCE_RED" >/dev/null; then

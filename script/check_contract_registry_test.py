@@ -1,25 +1,23 @@
 #!/usr/bin/env python3
 """Focused tests for script/check-contract-registry.py.
 
-Covers the ticket's four acceptance behaviors:
+Covers:
   (a) the checker passes the repo's real contracts/registry.json
   (b) a boundary missing owner/artifact/consumer fields reds it
-  (c) an expired or malformed knownDrift entry reds it
   (d) script/release-readiness-contract.sh reports registry state
   (e) the registry must describe the newest
       published internal/conformance/wire-contract-v*.json artifact
   (f) --repo-root states where those
       artifacts live; its default is the registry's grandparent
-  (g) every recorded consumer pin exactly
-      matches every vendored descriptor's committed-main artifactVersion
+  (g) CORE-0902: core's public registry holds producer facts only -- no consumer
+      pins, consumerArtifacts, knownDrift records, deadlines, cloud-only rows or
+      drift-carrying wire artifacts; those live in the workspace registry
 Fixture registries live in tempdirs; the real contracts/registry.json is only
 ever read, never written.
 """
-import hashlib
 import json
 import os
 import pathlib
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -56,10 +54,6 @@ def write_registry(tmp, data):
     return path
 
 
-def file_sha256(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
 def publish_wire_artifacts(tmp, versions):
     conformance = tmp / "internal" / "conformance"
     conformance.mkdir(parents=True, exist_ok=True)
@@ -67,112 +61,26 @@ def publish_wire_artifacts(tmp, versions):
         (conformance / f"wire-contract-v{version}.json").write_text("{}", encoding="utf-8")
 
 
-def checker_env(workspace_root=None):
+def checker_env():
+    """The checker must not depend on a workspace checkout (CORE-0902)."""
     env = os.environ.copy()
     env.pop("BEAMFALL_WORKSPACE_ROOT", None)
-    if workspace_root is not None:
-        env["BEAMFALL_WORKSPACE_ROOT"] = str(workspace_root)
     return env
 
 
-def run_checker(registry_path, today=None, repo_root=None, workspace_root=None):
+def run_checker(registry_path, repo_root=None):
     args = ["python3", str(CHECKER), "--registry", str(registry_path)]
-    if today:
-        args += ["--today", today]
     if repo_root:
         args += ["--repo-root", str(repo_root)]
-    return subprocess.run(
-        args,
-        text=True,
-        capture_output=True,
-        env=checker_env(workspace_root),
-    )
-
-
-def client_wire_boundary(data):
-    return next(
-        boundary
-        for boundary in data["boundaries"]
-        if boundary["boundary"] == "client-core-wire"
-    )
-
-
-def write_workspace_manifest(workspace, consumers, status="canonical"):
-    workspace.mkdir(parents=True, exist_ok=True)
-    repositories = [
-        {"name": consumer["repo"], "status": status}
-        for consumer in consumers
-        if consumer.get("repo")
-    ]
-    (workspace / "workspace-repos.json").write_text(
-        json.dumps({"repositories": repositories}), encoding="utf-8"
-    )
-
-
-def git(repo, *args):
-    return subprocess.run(
-        ["git", "-C", str(repo), *args],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-
-def commit_descriptor(repo, artifact, version, message="fixture descriptor"):
-    path = repo / artifact
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"artifactVersion": version}), encoding="utf-8")
-    git(repo, "add", artifact)
-    git(repo, "commit", "-m", message)
-
-
-def seed_consumer_repo(workspace, consumer, version=None, omit=()):
-    repo = workspace / consumer["repo"]
-    repo.mkdir(parents=True, exist_ok=True)
-    git(repo, "init", "-q", "-b", "main")
-    git(repo, "config", "user.email", "contract-fixture@example.invalid")
-    git(repo, "config", "user.name", "Contract Fixture")
-    committed = False
-    for artifact in consumer["artifacts"]:
-        if artifact not in omit:
-            commit_descriptor(
-                repo,
-                artifact,
-                version or consumer["pinnedVersion"],
-                f"add {artifact}",
-            )
-            committed = True
-    if not committed:
-        git(repo, "commit", "--allow-empty", "-m", "empty fixture")
-    return repo
-
-
-def seed_workspace(workspace, consumers, versions=None, consumer_artifacts=None):
-    write_workspace_manifest(workspace, consumers)
-    versions = versions or {}
-    consumer_artifacts = consumer_artifacts or {}
-    for consumer in consumers:
-        fixture_consumer = {
-            **consumer,
-            "artifacts": consumer.get("artifacts", consumer_artifacts.get(consumer["repo"], [])),
-        }
-        seed_consumer_repo(workspace, fixture_consumer, versions.get(consumer["repo"]))
+    return subprocess.run(args, text=True, capture_output=True, env=checker_env())
 
 
 def test_checker_passes_current_repo_registry():
     real_registry = ROOT / "contracts" / "registry.json"
     data = json.loads(real_registry.read_text(encoding="utf-8"))
-    with tempfile.TemporaryDirectory() as d:
-        workspace = pathlib.Path(d)
-        boundary = client_wire_boundary(data)
-        seed_workspace(
-            workspace,
-            boundary["consumers"],
-            consumer_artifacts=boundary["consumerArtifacts"],
-        )
-        proc = run_checker(real_registry, workspace_root=workspace)
-        assert proc.returncode == 0, proc.stderr
-        assert f"contract registry ok: {len(data['boundaries'])} boundaries" in proc.stdout
+    proc = run_checker(real_registry)
+    assert proc.returncode == 0, proc.stderr
+    assert f"contract registry ok: {len(data['boundaries'])} boundaries" in proc.stdout
 
 
 def test_missing_producer_artifact_consumers_red():
@@ -190,52 +98,97 @@ def test_missing_producer_artifact_consumers_red():
             assert expect in proc.stderr, f"{missing_key}: {proc.stderr!r}"
 
 
-def test_expired_known_drift_reds():
-    with tempfile.TemporaryDirectory() as d:
-        data = valid_registry()
-        data["boundaries"][0]["knownDrift"] = [
-            {"ticket": "OLD-1", "deadline": "2020-01-01", "reason": "stale waiver"}
-        ]
-        path = write_registry(pathlib.Path(d), data)
-        proc = run_checker(path, today="2026-07-07")
-        assert proc.returncode == 1, proc.stdout
-        assert "OLD-1 expired on 2020-01-01" in proc.stderr
+def assert_red(data, expect, tmp, published=None):
+    path = write_registry(tmp, data)
+    if published is not None:
+        publish_wire_artifacts(tmp, published)
+    proc = run_checker(path)
+    assert proc.returncode == 1, f"expected red for {expect!r}, got {proc.stdout}"
+    assert expect in proc.stderr, proc.stderr
 
 
-def test_malformed_known_drift_deadline_reds():
+def test_consumer_pin_objects_red():
+    """CORE-0902: consumer pins live in the workspace registry, never in core."""
     with tempfile.TemporaryDirectory() as d:
         data = valid_registry()
-        data["boundaries"][0]["knownDrift"] = [
-            {"ticket": "BAD-1", "deadline": "not-a-date", "reason": "malformed"}
-        ]
-        path = write_registry(pathlib.Path(d), data)
+        data["boundaries"][0]["consumers"] = [{"repo": "beamfall-web", "pinnedVersion": "1.0.0"}]
+        assert_red(data, "test-boundary.consumers[0].pinnedVersion is consumer bookkeeping", pathlib.Path(d))
+        data["boundaries"][0]["consumers"] = [{"repo": "beamfall-web"}]
+        assert_red(data, "consumers[0] must be a repo name string", pathlib.Path(d))
+        data["boundaries"][0]["consumers"] = ["beamfall-web", "beamfall-web"]
+        assert_red(data, "consumers must not repeat a repo", pathlib.Path(d))
+        data["boundaries"][0]["consumers"] = "beamfall-web"
+        assert_red(data, "consumers must be an array of repo names", pathlib.Path(d))
+
+
+def test_consumer_artifacts_red():
+    with tempfile.TemporaryDirectory() as d:
+        data = valid_registry()
+        data["boundaries"][0]["consumerArtifacts"] = {"beamfall-web": ["wire.json"]}
+        assert_red(data, "test-boundary.consumerArtifacts is consumer bookkeeping", pathlib.Path(d))
+
+
+def test_known_drift_must_be_empty():
+    """Drift records, and their deadlines, belong to the workspace registry."""
+    with tempfile.TemporaryDirectory() as d:
+        data = valid_registry()
+        data["boundaries"][0]["knownDrift"] = [{"ticket": "WEB-1", "reason": "lag"}]
+        assert_red(data, "test-boundary: knownDrift must be [] in core", pathlib.Path(d))
+        data["boundaries"][0]["knownDrift"] = None
+        assert_red(data, "test-boundary: knownDrift must be [] in core", pathlib.Path(d))
+
+
+def test_deadline_key_anywhere_reds():
+    with tempfile.TemporaryDirectory() as d:
+        data = valid_registry()
+        data["boundaries"][0]["knownDrift"] = [{"ticket": "WEB-1", "deadline": "2099-01-01"}]
+        assert_red(data, "test-boundary.knownDrift[0].deadline is consumer bookkeeping", pathlib.Path(d))
+        data = valid_registry()
+        data["boundaries"][0]["notes"] = {"deadline": "2099-01-01"}
+        assert_red(data, "test-boundary.notes.deadline is consumer bookkeeping", pathlib.Path(d))
+
+
+def test_private_only_producer_boundary_reds():
+    """A cloud-produced boundary core does not consume belongs to the workspace registry."""
+    with tempfile.TemporaryDirectory() as d:
+        data = valid_registry()
+        data["boundaries"][0]["producer"] = "beamfall-cloud"
+        data["boundaries"][0]["consumers"] = ["beamfall-web", "beamfall-apple"]
+        assert_red(data, "core neither produces nor consumes this beamfall-cloud boundary", pathlib.Path(d))
+        data["boundaries"][0]["consumers"] = ["beamfall"]
+        assert run_checker(write_registry(pathlib.Path(d), data)).returncode == 0
+
+
+def test_wire_artifact_with_known_drift_reds():
+    """No published wire artifact in the public tree may carry drift records."""
+    with tempfile.TemporaryDirectory() as d:
+        tmp = pathlib.Path(d)
+        path = write_wire_case(tmp, VALID_PINS, version="1.1.0", published=["1.0.0", "1.1.0"])
+        assert run_checker(path).returncode == 0
+        artifact = tmp / "internal" / "conformance" / "wire-contract-v1.0.0.json"
+        artifact.write_text(json.dumps({"knownDrift": [{"ticket": "WEB-1"}]}), encoding="utf-8")
         proc = run_checker(path)
         assert proc.returncode == 1, proc.stdout
-        assert "BAD-1 deadline must be YYYY-MM-DD" in proc.stderr
+        assert "wire-contract-v1.0.0.json: knownDrift must be null" in proc.stderr, proc.stderr
+        artifact.write_text(json.dumps({"knownDrift": None}), encoding="utf-8")
+        assert run_checker(path).returncode == 0
+
+
+def test_real_wire_artifacts_carry_no_drift():
+    for artifact in sorted((ROOT / "internal" / "conformance").glob("wire-contract-v*.json")):
+        data = json.loads(artifact.read_text(encoding="utf-8"))
+        assert data.get("knownDrift") is None, artifact.name
 
 
 def wire_registry(consumers, version="1.1.0"):
     data = valid_registry()
-    pins = []
-    consumer_artifacts = {}
-    for consumer in consumers:
-        if not isinstance(consumer, dict):
-            pins.append(consumer)
-            continue
-        pin = dict(consumer)
-        artifacts = pin.pop("artifacts", None)
-        pins.append(pin)
-        repo = pin.get("repo")
-        if repo is not None:
-            consumer_artifacts[repo] = artifacts or ["wire.json"]
     data["boundaries"][0] = {
         "boundary": "client-core-wire",
         "producer": "beamfall",
         "artifact": f"internal/conformance/wire-contract-v{version}.json",
         "version": version,
         "activeArtifactVersion": version,
-        "consumers": pins,
-        "consumerArtifacts": consumer_artifacts,
+        "consumers": list(consumers),
         "conformanceTest": "consumer wire drift checks",
         "knownDrift": [],
     }
@@ -249,30 +202,10 @@ def write_wire_case(tmp, consumers, version="1.1.0", published=None):
     return path
 
 
-VALID_PINS = [
-    {"repo": "beamfall-web", "pinnedVersion": "1.0.0", "artifacts": ["wire.json"]},
-    {"repo": "beamfall-apple", "pinnedVersion": "1.1.0", "artifacts": ["wire.json"]},
-]
+VALID_PINS = ["beamfall-web", "beamfall-apple"]
 
 
-def test_client_core_wire_minor_lag_passes():
-    with tempfile.TemporaryDirectory() as d:
-        path = write_wire_case(pathlib.Path(d), VALID_PINS)
-        proc = run_checker(path)
-        assert proc.returncode == 0, proc.stderr
-
-
-def test_major_bump_requires_coordinated_publish_and_is_documented():
-    with tempfile.TemporaryDirectory() as d:
-        path = write_wire_case(pathlib.Path(d), VALID_PINS, version="2.0.0")
-        proc = run_checker(path)
-        assert proc.returncode == 1, proc.stdout
-        assert "beamfall-web pin 1.0.0 skews major from published 2.0.0" in proc.stderr
-        assert "beamfall-apple pin 1.1.0 skews major from published 2.0.0" in proc.stderr
-        repinned = [{**consumer, "pinnedVersion": "2.0.0"} for consumer in VALID_PINS]
-        path = write_wire_case(pathlib.Path(d), repinned, version="2.0.0")
-        assert run_checker(path).returncode == 0
-
+def test_major_bump_note_is_documented():
     makefile = ROOT.joinpath("Makefile").read_text(encoding="utf-8")
     recipe = makefile.split("\npublish-wire-contract:", 1)[1].split("\n\n", 1)[0]
     note = "NOTE: before a MAJOR bump"
@@ -386,201 +319,6 @@ def test_default_repo_root_is_the_registry_grandparent():
             )
 
 
-def test_client_core_wire_strict_rejections():
-    cases = {
-        "major skew": [
-            {"repo": "beamfall-web", "pinnedVersion": "2.0.0", "artifacts": ["wire.json"]}
-        ],
-        "duplicate repo": [
-            {"repo": "beamfall-web", "pinnedVersion": "1.0.0", "artifacts": ["one.json"]},
-            {"repo": "beamfall-web", "pinnedVersion": "1.0.0", "artifacts": ["two.json"]},
-        ],
-        "missing repo": [{"pinnedVersion": "1.0.0", "artifacts": ["wire.json"]}],
-        "non-string repo": [
-            {"repo": 7, "pinnedVersion": "1.0.0", "artifacts": ["wire.json"]}
-        ],
-        "unsafe repo": [
-            {"repo": "../outside", "pinnedVersion": "1.0.0", "artifacts": ["wire.json"]}
-        ],
-        "missing pin": [{"repo": "beamfall-web", "artifacts": ["wire.json"]}],
-        "malformed semver": [
-            {"repo": "beamfall-web", "pinnedVersion": "1.0", "artifacts": ["wire.json"]}
-        ],
-        "negative semver": [
-            {"repo": "beamfall-web", "pinnedVersion": "-1.0.0", "artifacts": ["wire.json"]}
-        ],
-        "zero-padded semver": [
-            {"repo": "beamfall-web", "pinnedVersion": "01.0.0", "artifacts": ["wire.json"]}
-        ],
-        "bare string": ["beamfall-web"],
-        "extra field": [
-            {
-                "repo": "beamfall-web",
-                "pinnedVersion": "1.0.0",
-                "artifacts": ["wire.json"],
-                "extra": True,
-            }
-        ],
-    }
-    for label, consumers in cases.items():
-        with tempfile.TemporaryDirectory() as d:
-            path = write_wire_case(pathlib.Path(d), consumers)
-            proc = run_checker(path)
-            assert proc.returncode == 1, f"{label}: expected red, got {proc.stdout}"
-            assert "pinnedVersion" in proc.stderr or "consumer" in proc.stderr, f"{label}: {proc.stderr!r}"
-
-
-def test_client_core_wire_requires_artifacts_for_every_consumer():
-    with tempfile.TemporaryDirectory() as d:
-        tmp = pathlib.Path(d)
-        data = wire_registry(VALID_PINS)
-        del data["boundaries"][0]["consumerArtifacts"]["beamfall-web"]
-        path = write_registry(tmp, data)
-        publish_wire_artifacts(tmp, ["1.1.0"])
-        proc = run_checker(path, repo_root=tmp)
-        assert proc.returncode == 1, proc.stdout
-        assert "consumerArtifacts missing consumers: beamfall-web" in proc.stderr
-
-
-def test_malformed_consumer_artifacts_is_structured_red_in_workspace():
-    with tempfile.TemporaryDirectory() as d:
-        tmp = pathlib.Path(d)
-        core = tmp / "beamfall"
-        data = wire_registry(VALID_PINS)
-        data["boundaries"][0]["consumerArtifacts"] = []
-        path = write_registry(core, data)
-        publish_wire_artifacts(core, ["1.1.0"])
-        workspace = tmp / "workspace"
-        seed_workspace(workspace, VALID_PINS)
-        proc = run_checker(path, repo_root=core, workspace_root=workspace)
-        assert proc.returncode == 1, proc.stdout
-        assert "consumerArtifacts must be a non-empty object" in proc.stderr
-        assert "Traceback" not in proc.stderr
-
-
-def consumer_truth_case(tmp, artifacts=None):
-    consumer = {
-        "repo": "beamfall-web",
-        "pinnedVersion": "1.0.0",
-        "artifacts": artifacts or ["one.json", "two.json"],
-    }
-    core = tmp / "beamfall"
-    registry = write_wire_case(core, [consumer])
-    workspace = tmp / "workspace"
-    write_workspace_manifest(workspace, [consumer])
-    return consumer, core, registry, workspace
-
-
-def test_vendored_pin_divergence_reds_then_correction_passes():
-    with tempfile.TemporaryDirectory() as d:
-        consumer, core, registry, workspace = consumer_truth_case(pathlib.Path(d))
-        repo = seed_consumer_repo(workspace, consumer)
-        divergent = consumer["artifacts"][1]
-        commit_descriptor(repo, divergent, "1.1.0", "deliberate divergence")
-
-        red = run_checker(registry, repo_root=core, workspace_root=workspace)
-        assert red.returncode == 1, red.stdout
-        assert "pin '1.0.0' disagrees" in red.stderr, red.stderr
-        assert divergent in red.stderr, red.stderr
-
-        commit_descriptor(repo, divergent, "1.0.0", "correct divergence")
-        green = run_checker(registry, repo_root=core, workspace_root=workspace)
-        assert green.returncode == 0, green.stderr
-        assert "contract registry ok: 1 boundaries" in green.stdout
-
-
-def test_consumer_truth_ignores_dirty_worktree_bytes():
-    with tempfile.TemporaryDirectory() as d:
-        consumer, core, registry, workspace = consumer_truth_case(pathlib.Path(d), ["wire.json"])
-        repo = seed_consumer_repo(workspace, consumer)
-        (repo / "wire.json").write_text(
-            json.dumps({"artifactVersion": "9.9.9"}), encoding="utf-8"
-        )
-        proc = run_checker(registry, repo_root=core, workspace_root=workspace)
-        assert proc.returncode == 0, proc.stderr
-
-
-def test_consumer_truth_missing_repo_and_artifact_red():
-    with tempfile.TemporaryDirectory() as d:
-        consumer, core, registry, workspace = consumer_truth_case(pathlib.Path(d), ["wire.json"])
-        missing_repo = run_checker(registry, repo_root=core, workspace_root=workspace)
-        assert missing_repo.returncode == 1, missing_repo.stdout
-        assert "has no readable local main" in missing_repo.stderr, missing_repo.stderr
-
-        seed_consumer_repo(workspace, consumer, omit={"wire.json"})
-        missing_artifact = run_checker(registry, repo_root=core, workspace_root=workspace)
-        assert missing_artifact.returncode == 1, missing_artifact.stdout
-        assert "vendored artifact wire.json is absent on main" in missing_artifact.stderr
-
-
-def test_consumer_truth_malformed_descriptor_red():
-    with tempfile.TemporaryDirectory() as d:
-        consumer, core, registry, workspace = consumer_truth_case(pathlib.Path(d), ["wire.json"])
-        repo = seed_consumer_repo(workspace, consumer)
-        (repo / "wire.json").write_text("{", encoding="utf-8")
-        git(repo, "add", "wire.json")
-        git(repo, "commit", "-m", "malformed descriptor")
-        proc = run_checker(registry, repo_root=core, workspace_root=workspace)
-        assert proc.returncode == 1, proc.stdout
-        assert "vendored artifact wire.json is not valid JSON" in proc.stderr
-
-
-def test_consumer_truth_requires_local_main_branch():
-    with tempfile.TemporaryDirectory() as d:
-        consumer, core, registry, workspace = consumer_truth_case(pathlib.Path(d), ["wire.json"])
-        repo = seed_consumer_repo(workspace, consumer)
-        git(repo, "branch", "-m", "trunk")
-        git(repo, "tag", "main")
-        proc = run_checker(registry, repo_root=core, workspace_root=workspace)
-        assert proc.returncode == 1, proc.stdout
-        assert "has no readable local main" in proc.stderr
-
-
-def test_consumer_truth_prefers_origin_main_over_local_main():
-    # CORE-1339: a shared checkout's local main can diverge from what landed.
-    with tempfile.TemporaryDirectory() as d:
-        consumer, core, registry, workspace = consumer_truth_case(pathlib.Path(d), ["wire.json"])
-        repo = seed_consumer_repo(workspace, consumer)
-        landed = git(repo, "rev-parse", "HEAD").stdout.strip()
-        git(repo, "update-ref", "refs/remotes/origin/main", landed)
-        commit_descriptor(repo, "wire.json", "0.9.0", "unpushed local divergence")
-        green = run_checker(registry, repo_root=core, workspace_root=workspace)
-        assert green.returncode == 0, green.stderr
-
-        commit_descriptor(repo, "wire.json", "1.0.0", "local main back at the pin")
-        commit_descriptor(repo, "wire.json", "2.0.0", "landed upstream ahead of the pin")
-        ahead = git(repo, "rev-parse", "HEAD").stdout.strip()
-        git(repo, "update-ref", "refs/remotes/origin/main", ahead)
-        git(repo, "reset", "-q", "--hard", "HEAD~1")
-        red = run_checker(registry, repo_root=core, workspace_root=workspace)
-        assert red.returncode == 1, red.stdout
-        assert "pin '1.0.0' disagrees" in red.stderr, red.stderr
-
-
-def test_consumer_truth_requires_canonical_manifest_entry():
-    with tempfile.TemporaryDirectory() as d:
-        consumer, core, registry, workspace = consumer_truth_case(pathlib.Path(d), ["wire.json"])
-        write_workspace_manifest(workspace, [])
-        absent = run_checker(registry, repo_root=core, workspace_root=workspace)
-        assert absent.returncode == 1, absent.stdout
-        assert "is absent from workspace-repos.json" in absent.stderr
-
-        write_workspace_manifest(workspace, [consumer], status="transitional")
-        seed_consumer_repo(workspace, consumer)
-        proc = run_checker(registry, repo_root=core, workspace_root=workspace)
-        assert proc.returncode == 1, proc.stdout
-        assert "is not canonical in workspace-repos.json" in proc.stderr
-
-
-def test_standalone_checker_reports_consumer_truth_not_verified():
-    with tempfile.TemporaryDirectory() as d:
-        tmp = pathlib.Path(d)
-        registry = write_wire_case(tmp, VALID_PINS)
-        proc = run_checker(registry, repo_root=tmp)
-        assert proc.returncode == 0, proc.stderr
-        assert "consumer pin truth NOT VERIFIED" in proc.stdout
-
-
 def test_make_gate_runs_the_checker_unconditionally():
     """A checker nothing invokes is not a gate; the supervised body must run it
     unconditionally because its script suite is scope-gated."""
@@ -625,13 +363,6 @@ def test_wrapper_forwards_its_own_repo_root_for_a_foreign_registry_path():
     data = json.loads(real_registry.read_text(encoding="utf-8"))
     with tempfile.TemporaryDirectory() as d:
         tmp = pathlib.Path(d)
-        workspace = tmp / "workspace"
-        boundary = client_wire_boundary(data)
-        seed_workspace(
-            workspace,
-            boundary["consumers"],
-            consumer_artifacts=boundary["consumerArtifacts"],
-        )
         foreign = tmp / "test-fixtures" / "client-core-wire" / "copy-of-registry.json"
         foreign.parent.mkdir(parents=True, exist_ok=True)
         foreign.write_text(json.dumps(data), encoding="utf-8")
@@ -640,7 +371,7 @@ def test_wrapper_forwards_its_own_repo_root_for_a_foreign_registry_path():
             [str(READINESS_CONTRACT), str(foreign)],
             text=True,
             capture_output=True,
-            env=checker_env(workspace),
+            env=checker_env(),
         )
         assert proc.returncode == 0, proc.stderr
         assert "no published internal/conformance/wire-contract-v*.json" not in proc.stderr
@@ -656,29 +387,20 @@ def test_wrapper_default_behavior_is_unchanged():
     byte-identical to invoking the checker directly with no --repo-root at all --
     compared exactly, not by substring."""
     real_registry = ROOT / "contracts" / "registry.json"
-    data = json.loads(real_registry.read_text(encoding="utf-8"))
-    with tempfile.TemporaryDirectory() as d:
-        workspace = pathlib.Path(d)
-        boundary = client_wire_boundary(data)
-        seed_workspace(
-            workspace,
-            boundary["consumers"],
-            consumer_artifacts=boundary["consumerArtifacts"],
-        )
-        wrapper_proc = subprocess.run(
-            [str(READINESS_CONTRACT), str(real_registry)],
-            text=True,
-            capture_output=True,
-            env=checker_env(workspace),
-        )
-        direct_proc = run_checker(real_registry, workspace_root=workspace)
+    wrapper_proc = subprocess.run(
+        [str(READINESS_CONTRACT), str(real_registry)],
+        text=True,
+        capture_output=True,
+        env=checker_env(),
+    )
+    direct_proc = run_checker(real_registry)
 
-        assert wrapper_proc.returncode == 0
-        assert direct_proc.returncode == 0
-        assert wrapper_proc.stdout == (
-            f"-- contract registry --\n{direct_proc.stdout}PASS contract registry\n"
-        )
-        assert wrapper_proc.stderr == direct_proc.stderr
+    assert wrapper_proc.returncode == 0
+    assert direct_proc.returncode == 0
+    assert wrapper_proc.stdout == (
+        f"-- contract registry --\n{direct_proc.stdout}PASS contract registry\n"
+    )
+    assert wrapper_proc.stderr == direct_proc.stderr
 
 
 def test_explicit_repo_root_must_be_existing_directory():
@@ -702,10 +424,14 @@ def test_explicit_repo_root_must_be_existing_directory():
 if __name__ == "__main__":
     test_checker_passes_current_repo_registry()
     test_missing_producer_artifact_consumers_red()
-    test_expired_known_drift_reds()
-    test_malformed_known_drift_deadline_reds()
-    test_client_core_wire_minor_lag_passes()
-    test_major_bump_requires_coordinated_publish_and_is_documented()
+    test_consumer_pin_objects_red()
+    test_consumer_artifacts_red()
+    test_known_drift_must_be_empty()
+    test_deadline_key_anywhere_reds()
+    test_private_only_producer_boundary_reds()
+    test_wire_artifact_with_known_drift_reds()
+    test_real_wire_artifacts_carry_no_drift()
+    test_major_bump_note_is_documented()
     test_newer_published_artifact_than_registry_reds()
     test_newest_published_artifact_uses_semver_order()
     test_registry_ahead_of_published_artifacts_reds()
@@ -714,17 +440,6 @@ if __name__ == "__main__":
     test_publish_sync_rule_is_scoped_to_client_core_wire()
     test_explicit_repo_root_validates_a_registry_read_from_elsewhere()
     test_default_repo_root_is_the_registry_grandparent()
-    test_client_core_wire_strict_rejections()
-    test_client_core_wire_requires_artifacts_for_every_consumer()
-    test_malformed_consumer_artifacts_is_structured_red_in_workspace()
-    test_vendored_pin_divergence_reds_then_correction_passes()
-    test_consumer_truth_ignores_dirty_worktree_bytes()
-    test_consumer_truth_missing_repo_and_artifact_red()
-    test_consumer_truth_malformed_descriptor_red()
-    test_consumer_truth_requires_local_main_branch()
-    test_consumer_truth_prefers_origin_main_over_local_main()
-    test_consumer_truth_requires_canonical_manifest_entry()
-    test_standalone_checker_reports_consumer_truth_not_verified()
     test_make_gate_runs_the_checker_unconditionally()
     test_release_readiness_reports_registry_state()
     test_wrapper_forwards_its_own_repo_root_for_a_foreign_registry_path()

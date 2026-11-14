@@ -48,6 +48,7 @@ func (s *scanWalkState) completeFirst() error {
 }
 
 func (s *scanWalkState) queueCompletion(path string, mediaID store.MediaID, fingerprint string, derive bool) error {
+	s.applyLocalArtwork(path, mediaID)
 	completed := &completedFile{path: path, mediaID: mediaID, fingerprint: fingerprint, done: make(chan struct{})}
 	s.pendingCompletions = append(s.pendingCompletions, completed)
 	if derive && s.imageDeriver != nil {

@@ -8,7 +8,9 @@ Make media and entity cards in the web app show their type and playback state, b
 ### Requirement: Source items report the acting Profile's playback state
 
 Every operation that returns `SourceItem` for a Profile SHALL include an `engagement` object on each
-item the Profile has playback state for, and SHALL omit it otherwise.
+item the Profile has playback state for, and SHALL omit it otherwise. The server SHALL read that
+state with one Profile-scoped store query per 500 Media IDs, never one query per item, and SHALL
+never return another Profile's state.
 
 #### Scenario: Partly played item
 
@@ -35,6 +37,16 @@ item the Profile has playback state for, and SHALL omit it otherwise.
 
 - **WHEN** the request has no acting Profile
 - **THEN** no item carries `engagement`
+
+#### Scenario: Another Profile's progress
+
+- **WHEN** only a different Profile has playback state for a Media item
+- **THEN** that item carries no `engagement` for the acting Profile
+
+#### Scenario: One query per page
+
+- **WHEN** a page of up to 500 Media items is annotated
+- **THEN** one progress query is issued for the page
 
 ### Requirement: Cards have an accessible name with title, type and state
 
