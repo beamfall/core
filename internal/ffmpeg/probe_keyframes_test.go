@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/beamfall/core/internal/ffmpeg/ffmpegtest"
 )
 
 func TestParseKeyframeCSV(t *testing.T) {
@@ -112,7 +110,13 @@ func TestStartHLSKeyframeSegmentsRefusesReencode(t *testing.T) {
 // TestProbeKeyframesReadsRealGOP probes real 7s-GOP files in the two container
 // time bases that matter (MKV 1/1000, MP4 1/12800) and checks every keyframe.
 func TestProbeKeyframesReadsRealGOP(t *testing.T) {
-	ffmpegtest.Require(t)
+	// Inline rather than ffmpegtest.Require: the tone-map gate scope holds
+	// only while this package's test closure stays inside internal/ffmpeg.
+	for _, bin := range []string{"ffmpeg", "ffprobe"} {
+		if _, err := exec.LookPath(bin); err != nil {
+			t.Fatalf("%s required for this I/O test but not on PATH; run `make io-doctor`", bin)
+		}
+	}
 	dir := t.TempDir()
 	want := []time.Duration{0, 7 * time.Second, 14 * time.Second, 21 * time.Second, 28 * time.Second}
 	for _, ext := range []string{"mkv", "mp4"} {
