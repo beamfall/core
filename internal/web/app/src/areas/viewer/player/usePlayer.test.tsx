@@ -708,6 +708,31 @@ describe("usePlayer", () => {
     resetAppliedControlEvents();
   });
 
+  it("keeps a remote pause sent after playback started through a reload", async () => {
+    resetAppliedControlEvents();
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+    vi.mocked(fetchPlaybackInfo).mockResolvedValue({
+      decision: "direct-play",
+      streams: [
+        { kind: "direct-play", url: "/api/media/direct/token" },
+        { kind: "hls", url: "/api/media/hls/token/master.m3u8" },
+      ],
+    });
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    const video = screen.getByTestId("player") as HTMLVideoElement;
+    fireEvent.canPlay(video);
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledOnce();
+    fireEvent.play(video);
+
+    deliverPlayerCommand({ command: "pause", playingMediaIDs: ["media-alpha"] });
+    Object.defineProperty(video, "error", { configurable: true, value: { code: 3 } });
+    fireEvent.error(video); // decode failure fails over to HLS
+    await waitFor(() => expect(fakeHlsInstances).toHaveLength(1));
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledOnce();
+    resetAppliedControlEvents();
+  });
+
   it("honors a timestamped playback deep link over resume", async () => {
     vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce({
       decision: "direct-play",

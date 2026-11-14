@@ -116,6 +116,15 @@ function anchoredTo(command: SessionControlCommand, target: RemotePlayerTarget):
   return command.mediaID === undefined || command.mediaID === target.mediaID;
 }
 
+// A seek that waits for its player's metadata. A newer seek or a play-media
+// supersedes it, so it is kept to be cancelled.
+let deferredSeek: { video: HTMLVideoElement; listener: () => void } | null = null;
+
+function cancelDeferredSeek(): void {
+  deferredSeek?.video.removeEventListener("loadedmetadata", deferredSeek.listener);
+  deferredSeek = null;
+}
+
 /**
  * Applies a transport command to a player. Returns false when the command is
  * not a player command or the player cannot honour it (no next item, say).
@@ -155,8 +164,17 @@ export function applyPlayerCommand(
       const at = command.positionMs / 1000;
       // Before metadata the player's own opening seek is still to come; seek
       // after it so the newer position wins.
-      if (video.readyState >= HTMLMediaElement.HAVE_METADATA) video.currentTime = at;
-      else video.addEventListener("loadedmetadata", () => (video.currentTime = at), { once: true });
+      cancelDeferredSeek();
+      if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
+        video.currentTime = at;
+        return true;
+      }
+      const listener = () => {
+        deferredSeek = null;
+        video.currentTime = at;
+      };
+      deferredSeek = { video, listener };
+      video.addEventListener("loadedmetadata", listener, { once: true });
       return true;
     }
     case "set-volume":
@@ -277,6 +295,7 @@ export function resetAppliedControlEvents(): void {
   applied = undefined;
   pendingCommands = [];
   lastPlayState = null;
+  cancelDeferredSeek();
   try {
     window.sessionStorage.removeItem(APPLIED_KEY);
   } catch {
@@ -292,9 +311,11 @@ const PENDING_COMMAND_MS = 15_000;
 const PENDING_COMMAND_LIMIT = 16;
 let pendingCommands: Array<{ command: SessionControlCommand; at: number }> = [];
 
-// The last pause, resume or stop this session was sent. A player setting up
-// asks it before starting itself, so a pause sent while it loads holds.
-let lastPlayState: { command: SessionControlCommand; at: number } | null = null;
+// The last pause, resume or stop this session was sent, numbered in arrival
+// order. A player about to start itself asks whether one arrived after its
+// mark, so a pause sent while it loads holds.
+let playStateSeq = 0;
+let lastPlayState: { command: SessionControlCommand; seq: number } | null = null;
 
 /**
  * Drives the registered player with a transport command, or keeps the command
@@ -303,7 +324,8 @@ let lastPlayState: { command: SessionControlCommand; at: number } | null = null;
 export function deliverPlayerCommand(command: SessionControlCommand): void {
   const at = Date.now();
   if (command.command === "pause" || command.command === "resume" || command.command === "stop") {
-    lastPlayState = { command, at };
+    playStateSeq += 1;
+    lastPlayState = { command, seq: playStateSeq };
   }
   const player = remotePlayerTarget();
   if (player) {
@@ -316,16 +338,21 @@ export function deliverPlayerCommand(command: SessionControlCommand): void {
 /** Drops held commands: a play-media replaces whatever was sent before it. */
 export function forgetPendingPlayerCommands(): void {
   pendingCommands = [];
+  cancelDeferredSeek();
+}
+
+/** Marks the pause, resume and stop commands received so far. */
+export function remotePlayStateMark(): number {
+  return playStateSeq;
 }
 
 /**
- * Whether a player for `mediaID` that began setting up at `since` must not
- * start itself: the last pause, resume or stop sent since then was a pause or
- * stop authorized for that Media.
+ * Whether a player for `mediaID` must not start itself: the last pause, resume
+ * or stop received after `mark` was a pause or stop authorized for that Media.
  */
-export function remoteHoldsAutoplay(mediaID: string, since: number): boolean {
+export function remoteHoldsAutoplay(mediaID: string, mark: number): boolean {
   const last = lastPlayState;
-  if (!last || last.at < since) return false;
+  if (!last || last.seq <= mark) return false;
   if (last.command.command === "resume") return false;
   return anchoredTo(last.command, { video: () => null, mediaID });
 }
@@ -355,7 +382,10 @@ export function useRemotePlayerTarget(target: RemotePlayerTarget): void {
     active = latest;
     applyPendingCommands(latest.current);
     return () => {
-      if (active === latest) active = null;
+      if (active === latest) {
+        active = null;
+        cancelDeferredSeek();
+      }
     };
   }, []);
 }

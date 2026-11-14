@@ -3,9 +3,11 @@ import {
   applyPlayerCommand,
   claimControlEvent,
   deliverPlayerCommand,
+  forgetPendingPlayerCommands,
   parseSessionControlFrame,
   type RemotePlayerTarget,
   remoteHoldsAutoplay,
+  remotePlayStateMark,
   resetAppliedControlEvents,
   restartInPlace,
   STALE_AFTER_MS,
@@ -113,6 +115,20 @@ describe("applyPlayerCommand", () => {
     video.currentTime = 120; // the player's resume seek on metadata
     video.dispatchEvent(new Event("loadedmetadata"));
     expect(video.currentTime).toBe(300);
+  });
+
+  it("drops a deferred seek that a newer seek or a play-media supersedes", () => {
+    const video = document.createElement("video");
+    const t: RemotePlayerTarget = { video: () => video };
+    applyPlayerCommand({ command: "seek", positionMs: 300_000 }, t);
+    applyPlayerCommand({ command: "seek", positionMs: 200_000 }, t);
+    video.dispatchEvent(new Event("loadedmetadata"));
+    expect(video.currentTime).toBe(200);
+    applyPlayerCommand({ command: "seek", positionMs: 300_000 }, t);
+    forgetPendingPlayerCommands();
+    video.currentTime = 0; // the restart's own position
+    video.dispatchEvent(new Event("loadedmetadata"));
+    expect(video.currentTime).toBe(0);
   });
 
   it("steps the queue by direction and reports a missing step", () => {
@@ -258,12 +274,12 @@ describe("claimControlEvent", () => {
 describe("remoteHoldsAutoplay", () => {
   it("holds a player's own start after a pause or stop sent since it began setting up", () => {
     resetAppliedControlEvents();
-    const since = Date.now();
+    const since = remotePlayStateMark();
     expect(remoteHoldsAutoplay("m1", since)).toBe(false);
     deliverPlayerCommand({ command: "pause", playingMediaIDs: ["m1"] });
     expect(remoteHoldsAutoplay("m1", since)).toBe(true);
     expect(remoteHoldsAutoplay("m2", since)).toBe(false);
-    expect(remoteHoldsAutoplay("m1", since + 60_000)).toBe(false);
+    expect(remoteHoldsAutoplay("m1", remotePlayStateMark())).toBe(false);
     deliverPlayerCommand({ command: "set-volume", volume: 10 });
     expect(remoteHoldsAutoplay("m1", since)).toBe(true);
     deliverPlayerCommand({ command: "resume", playingMediaIDs: ["m1"] });

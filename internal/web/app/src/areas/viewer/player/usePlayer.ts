@@ -21,7 +21,7 @@ import {
   resumePositionFromInfo,
   type TrickplayManifest,
 } from "../lib/transport";
-import { remoteHoldsAutoplay } from "../remote/remoteControl";
+import { remoteHoldsAutoplay, remotePlayStateMark } from "../remote/remoteControl";
 import {
   freshRecoveryBudget,
   HLS_FRAG_LOAD_ERROR,
@@ -479,11 +479,10 @@ export function usePlayer(
       identitySignal?.addEventListener("abort", stopForIdentityChange, { once: true });
     }
     const msg = messagesRef.current;
-    // A pause sent from another device while this load sets up holds its own
-    // starts until playback is started (here or remotely); after that, reloads
-    // (recovery, a renewed token) keep their own choice.
-    const setupStartedAt = Date.now();
-    let startedSinceSetup = false;
+    // A pause sent from another device after this load began, or after
+    // playback last started (here or remotely), holds this load's own starts,
+    // reloads (recovery, a renewed token) included.
+    let startMark = remotePlayStateMark();
     setState(emptyState());
     const retryFrom = retryFromRef.current?.mediaID === mediaID ? retryFromRef.current.position : 0;
     retryFromRef.current = null;
@@ -632,7 +631,7 @@ export function usePlayer(
         }
       };
       const onPlay = () => {
-        startedSinceSetup = true;
+        startMark = remotePlayStateMark();
       };
       videoListeners.push(["playing", onPlaying], ["timeupdate", onTimeUpdate], ["play", onPlay]);
       for (const [type, listener] of videoListeners) video.addEventListener(type, listener);
@@ -740,8 +739,7 @@ export function usePlayer(
       ) => {
         const useHlsJs = engine === "hlsjs";
         const streamURL = target.url ?? "";
-        const shouldPlay = () =>
-          options.play && (startedSinceSetup || !remoteHoldsAutoplay(mediaID, setupStartedAt));
+        const shouldPlay = () => options.play && !remoteHoldsAutoplay(mediaID, startMark);
         // hls.js takes the resume point as its startPosition and loads (and
         // seeks to) it directly; only the native <video src> route seeks on
         // metadata, so a resumed HLS session never fetches from 0 first.

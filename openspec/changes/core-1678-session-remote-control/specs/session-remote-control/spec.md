@@ -170,3 +170,13 @@ again. A transport command sent while the player sets up SHALL apply once it is 
 
 - **WHEN** a web player opening at a resume point is sent `seek` before its metadata loads
 - **THEN** it ends at the sent position, not the resume point
+
+#### Scenario: Superseded seek during setup
+
+- **WHEN** a web player is sent `seek` before its metadata loads and then `play-media` for the same Media
+- **THEN** it starts where the `play-media` asks, not at the earlier seek
+
+#### Scenario: Pause during a reload
+
+- **WHEN** playback has started and a web player reloading its stream is sent `pause` for that Media
+- **THEN** the reloaded stream stays paused
