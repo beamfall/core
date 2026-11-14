@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -33,7 +34,7 @@ var (
 // exists yet — so it is gated at the resolver by the MANAGER role instead. An
 // empty path lists platform roots ("/", plus /Volumes/* on Darwin); a non-empty
 // path is canonicalized (abs + symlink-resolved) and listed one bounded level
-// deep. Only directories are returned, so no file names or sizes leak through
+// deep; at depth 0 it is only checked, and refused when it cannot be read. Only directories are returned, so no file names or sizes leak through
 // the picker.
 func (s *Store) BrowseServerFolders(ctx context.Context, path string, depth int) (FolderEntry, error) {
 	s.mu.RLock()
@@ -56,7 +57,28 @@ func (s *Store) BrowseServerFolders(ctx context.Context, path string, depth int)
 		}
 		return FolderEntry{}, err
 	}
-	return serverFolderEntry(canonical, depth)
+	entry, err := serverFolderEntry(canonical, depth)
+	if err != nil || depth > 0 {
+		return entry, err
+	}
+	// A depth-0 request lists nothing, so it is how a client asks whether the
+	// server can use a folder at all (Library folder health, CORE-1606). A
+	// folder that can be seen but not read must not pass for healthy; deeper
+	// requests keep it as a leaf so the picker can still move around it.
+	if !directoryReadable(canonical) {
+		return FolderEntry{}, ValidationError("folder is not readable")
+	}
+	return entry, nil
+}
+
+func directoryReadable(path string) bool {
+	dir, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = dir.Close() }()
+	_, err = dir.Readdirnames(1)
+	return err == nil || errors.Is(err, io.EOF)
 }
 
 func serverFolderRoots(depth int) (FolderEntry, error) {

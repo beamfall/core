@@ -36,7 +36,12 @@ export function FirstScanButton() {
       const scannable = libraries.filter((library) => !broken.has(library.id));
       setBlocked(problems);
       setStarted(scannable.map((library) => library.id));
-      await Promise.all(scannable.map((library) => startRescan(library.id, library.roots ?? [])));
+      const outcomes = await Promise.all(
+        scannable.map((library) => startRescan(library.id, library.roots ?? [])),
+      );
+      // A scan needs an Admin Session. When the server refuses for want of one,
+      // Console > Libraries asks for the admin password and offers the scan.
+      if (outcomes.includes("refused")) navigate("/console/libraries");
     } catch {
       navigate("/console/libraries");
     } finally {

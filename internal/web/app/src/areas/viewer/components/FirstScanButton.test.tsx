@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetRescansForTest } from "@/components/beamfall/LibraryRescan";
+import { ApiError } from "@/lib/api";
 import { browseServerFolders, fetchJobs, fetchLibraries, scanLibrary } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { FirstScanButton } from "./FirstScanButton";
@@ -66,6 +67,16 @@ describe("FirstScanButton (CORE-1606)", () => {
       "/console/libraries",
     );
     expect(scanLibrary).not.toHaveBeenCalled();
+  });
+
+  it("opens Console Libraries when the scan needs the admin password", async () => {
+    vi.mocked(fetchLibraries).mockResolvedValue([films] as never);
+    vi.mocked(scanLibrary).mockRejectedValue(new ApiError("admin session required", 403));
+    renderButton();
+
+    await userEvent.click(screen.getByRole("button", { name: "Start first scan" }));
+
+    expect(await screen.findByText("libraries-page")).toBeInTheDocument();
   });
 
   it("opens Console Libraries when there is nothing to scan yet", async () => {

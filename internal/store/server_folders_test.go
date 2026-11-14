@@ -124,3 +124,35 @@ func TestBrowseServerFoldersRejectsFilePath(t *testing.T) {
 		t.Fatalf("err = %v, want ValidationError when the path is a file", err)
 	}
 }
+
+// TestBrowseServerFoldersDepthZeroRejectsUnreadableFolder covers CORE-1606: the
+// depth-0 folder check must not pass a folder the server can see but not read,
+// while the picker (depth 1) still gets it as a leaf.
+func TestBrowseServerFoldersDepthZeroRejectsUnreadableFolder(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads every folder")
+	}
+	ctx := context.Background()
+	st := storetest.Open(t)
+	locked := filepath.Join(t.TempDir(), "locked")
+	if err := os.Mkdir(locked, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o700) })
+
+	_, err := st.BrowseServerFolders(ctx, locked, 0)
+	var verr store.ValidationError
+	if !errors.As(err, &verr) || verr.Error() != "folder is not readable" {
+		t.Fatalf("depth 0 err = %v, want ValidationError \"folder is not readable\"", err)
+	}
+	if _, err := st.BrowseServerFolders(ctx, locked, 1); err != nil {
+		t.Fatalf("depth 1 err = %v, want the unreadable folder as a leaf", err)
+	}
+	readable := t.TempDir()
+	if _, err := st.BrowseServerFolders(ctx, readable, 0); err != nil {
+		t.Fatalf("depth 0 on a readable folder: %v", err)
+	}
+}
