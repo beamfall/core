@@ -2,7 +2,8 @@ import "@testing-library/jest-dom/vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchMedia } from "@/lib/graphql";
+import { setIdentityEpochSignal } from "@/lib/api";
+import { fetchClientPrefs, fetchMedia, setClientPref } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { PlayerTransport } from "../player/PlayerTransport";
 import type { PlayerState } from "../player/usePlayer";
@@ -362,5 +363,74 @@ describe("PlayerPage Back", () => {
     renderAt(["/watch/media-alpha"]);
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.getByText("home route")).toBeInTheDocument();
+  });
+});
+
+describe("PlayerPage subtitle appearance prefs (CORE-1681)", () => {
+  beforeEach(() => {
+    vi.mocked(usePlayer).mockReset();
+    vi.mocked(setClientPref).mockReset();
+  });
+  afterEach(() => vi.mocked(fetchClientPrefs).mockResolvedValue([]));
+
+  function transportProps() {
+    const props = vi.mocked(PlayerTransport).mock.lastCall?.[0];
+    if (!props) throw new Error("PlayerTransport not rendered");
+    return props;
+  }
+
+  it("keeps a choice made before the Profile read returns", async () => {
+    let answer: (prefs: { key: string; value: string }[]) => void = () => {};
+    vi.mocked(fetchClientPrefs).mockReturnValue(new Promise((resolve) => (answer = resolve)));
+    vi.mocked(setClientPref).mockResolvedValue({ key: "" });
+    renderPlayer(playerState({ phase: "playing" }));
+    act(() => transportProps().onSubtitleAppearanceChange?.("color", "#ffff00"));
+    await act(async () =>
+      answer([
+        { key: "subtitle.color", value: "#00ff00" },
+        { key: "subtitle.font", value: "serif" },
+      ]),
+    );
+    expect(transportProps().subtitleAppearance).toMatchObject({ color: "#ffff00", font: "serif" });
+  });
+
+  it("clears every key on Reset, one write at a time", async () => {
+    let finishFirst: () => void = () => {};
+    vi.mocked(setClientPref)
+      .mockReturnValueOnce(new Promise((resolve) => (finishFirst = () => resolve({ key: "" }))))
+      .mockResolvedValue({ key: "" });
+    renderPlayer(playerState({ phase: "playing" }));
+    act(() => transportProps().onSubtitleAppearanceReset?.());
+    await waitFor(() => expect(setClientPref).toHaveBeenCalledTimes(1));
+    await act(async () => finishFirst());
+    await waitFor(() => expect(setClientPref).toHaveBeenCalledTimes(7));
+    expect(vi.mocked(setClientPref).mock.calls.map(([key, value]) => `${key}=${value}`)).toEqual([
+      "subtitle.size=",
+      "subtitle.background=",
+      "subtitle.font=",
+      "subtitle.color=",
+      "subtitle.opacity=",
+      "subtitle.edge=",
+      "subtitle.position=",
+    ]);
+  });
+
+  it("drops writes still queued when the identity epoch ends", async () => {
+    const epoch = new AbortController();
+    setIdentityEpochSignal(epoch.signal);
+    let finishFirst: () => void = () => {};
+    vi.mocked(setClientPref)
+      .mockReturnValueOnce(new Promise((resolve) => (finishFirst = () => resolve({ key: "" }))))
+      .mockResolvedValue({ key: "" });
+    try {
+      renderPlayer(playerState({ phase: "playing" }));
+      act(() => transportProps().onSubtitleAppearanceReset?.());
+      await waitFor(() => expect(setClientPref).toHaveBeenCalledTimes(1));
+      epoch.abort();
+      await act(async () => finishFirst());
+      expect(setClientPref).toHaveBeenCalledTimes(1);
+    } finally {
+      setIdentityEpochSignal();
+    }
   });
 });
