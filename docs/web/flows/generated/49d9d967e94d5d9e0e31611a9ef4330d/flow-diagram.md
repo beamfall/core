@@ -1,6 +1,6 @@
 # UI primitives: button, dialog, alert dialog, select, table, tabs, tree and form controls — flow-diagram
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:c807f657be23d446e9b8bcab2bb7d537 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -26,6 +26,8 @@ sequenceDiagram
     Note over S,U: Source contains call isValidElement in internal/web/app/src/components/ui/alert-dialog.tsx at line 18 - order unresolved
     Note over S,U: Source contains call cn in internal/web/app/src/components/ui/badge.tsx at line 35 - order unresolved
     Note over S,U: Source contains call badgeVariants in internal/web/app/src/components/ui/badge.tsx at line 35 - order unresolved
+    Note over S,U: Source contains call cva in internal/web/app/src/components/ui/badge.tsx at line 7 - order unresolved
+    Note over S,U: Source contains call cva in internal/web/app/src/components/ui/button.tsx at line 18 - order unresolved
     Note over S,U: Source contains call cn in internal/web/app/src/components/ui/card.tsx at line 9 - order unresolved
     Note over S,U: Source contains call cn in internal/web/app/src/components/ui/card.tsx at line 55 - order unresolved
     Note over S,U: Source contains call cn in internal/web/app/src/components/ui/card.tsx at line 62 - order unresolved
@@ -78,4 +80,13 @@ sequenceDiagram
     Note over S,U: Source contains call cn in internal/web/app/src/components/ui/tabs.tsx at line 21 - order unresolved
     Note over S,U: Source contains call toggleAttribute in internal/web/app/src/components/ui/tabs.tsx at line 29 - order unresolved
     Note over S,U: Source contains call cn in internal/web/app/src/components/ui/textarea.tsx at line 9 - order unresolved
+    Note over S,U: Source contains call min in internal/web/app/src/components/ui/tree.tsx at line 15 - order unresolved
+    Note over S,U: Source contains call max in internal/web/app/src/components/ui/tree.tsx at line 16 - order unresolved
+    Note over S,U: Source contains call Number in internal/web/app/src/components/ui/tree.tsx at line 18 - order unresolved
+    Note over S,U: Source contains call getAttribute in internal/web/app/src/components/ui/tree.tsx at line 18 - order unresolved
+    Note over S,U: Source contains call min in internal/web/app/src/components/ui/tree.tsx at line 20 - order unresolved
+    Note over S,U: Source contains call Number in internal/web/app/src/components/ui/tree.tsx at line 21 - order unresolved
+    Note over S,U: Source contains call getAttribute in internal/web/app/src/components/ui/tree.tsx at line 21 - order unresolved
+    Note over S,U: Source contains call Number in internal/web/app/src/components/ui/tree.tsx at line 27 - order unresolved
+    Note over S,U: Source contains call getAttribute in internal/web/app/src/components/ui/tree.tsx at line 27 - order unresolved
 ```

@@ -26,6 +26,8 @@ export const profileSearchStrings = {
     settingsRecommendHeading: "Recommendations",
     settingsRecommendOptIn: "Personalized recommendations",
     settingsRecommendOptInLead: "Allow recommend-mode search to use this profile's activity.",
+    settingsCreditsHeading: "Credits",
+    settingsCreditsLead: "Metadata on this server comes from these sources.",
     settingsManagedNote: "Some settings are managed by your operator and are not shown here.",
     settingsSaveFailed: "Could not save this preference.",
     settingsUnavailable: "Preferences are unavailable right now.",
@@ -34,7 +36,7 @@ export const profileSearchStrings = {
     searchModeKeyword: "Keyword",
     searchModeSemantic: "Semantic",
     searchModeRecommend: "Recommend",
-    searchModeFellBackToKeyword: "Semantic unavailable — showing keyword results.",
+    searchModeFellBackToKeyword: "Semantic search unavailable. Showing keyword results.",
     searchRestrictedNotice: "Some results may be hidden by your access settings.",
     // Leak-safe no-access / stale deep-link terminal surface (ADR-0083 §32).
     notAvailableTitle: "Not available",
@@ -78,6 +80,7 @@ export const profileSearchStrings = {
     libraryBrowseClearFilters: "Clear filters",
     libraryBrowseNoMatches: "Nothing in this library matches these filters.",
     libraryBrowseLoadFailed: "Could not load this library.",
+    seeAllLoadFailed: "Could not load these items.",
   },
   fr: {
     settingsTitle: "Paramètres du profil",
@@ -97,6 +100,8 @@ export const profileSearchStrings = {
     settingsRecommendOptIn: "Recommandations personnalisées",
     settingsRecommendOptInLead:
       "Permettre à la recherche en mode recommandation d’utiliser l’activité de ce profil.",
+    settingsCreditsHeading: "Crédits",
+    settingsCreditsLead: "Les métadonnées de ce serveur proviennent de ces sources.",
     settingsManagedNote:
       "Certains paramètres sont gérés par votre opérateur et ne sont pas affichés ici.",
     settingsSaveFailed: "Impossible d’enregistrer cette préférence.",
@@ -105,7 +110,8 @@ export const profileSearchStrings = {
     searchModeKeyword: "Mots-clés",
     searchModeSemantic: "Sémantique",
     searchModeRecommend: "Recommandations",
-    searchModeFellBackToKeyword: "Sémantique indisponible — résultats par mots-clés affichés.",
+    searchModeFellBackToKeyword:
+      "Recherche sémantique indisponible. Résultats par mots-clés affichés.",
     searchRestrictedNotice: "Certains résultats peuvent être masqués par vos réglages d’accès.",
     notAvailableTitle: "Non disponible",
     notAvailableLead: "Ceci n’est pas disponible pour le profil actuel.",
@@ -143,6 +149,7 @@ export const profileSearchStrings = {
     libraryBrowseClearFilters: "Effacer les filtres",
     libraryBrowseNoMatches: "Rien dans cette bibliothèque ne correspond à ces filtres.",
     libraryBrowseLoadFailed: "Impossible de charger cette bibliothèque.",
+    seeAllLoadFailed: "Impossible de charger ces éléments.",
   },
   de: {},
   es: {},

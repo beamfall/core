@@ -1,4 +1,4 @@
-import { LoaderCircle } from "lucide-react";
+import { AlertCircle, LoaderCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import { Button } from "@/components/ui/button";
@@ -297,20 +297,26 @@ export function PlayerPage() {
       </div>
 
       {state.phase === "message" || state.phase === "terminal" ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6 text-center">
-          <p className="text-[var(--red-500)]" role="alert">
-            {state.message}
-          </p>
-          {state.detail ? (
-            <p className="text-sm text-white/70">
-              {t("playbackServerReason", { reason: state.detail })}
+        <div className="flex flex-1 items-center justify-center p-6">
+          <div className="flex max-w-md flex-col items-center gap-3 text-center">
+            <AlertCircle aria-hidden className="size-7 text-[var(--state-danger)]" />
+            {navTitle ? <h2 className="m-0 text-xl font-semibold text-white">{navTitle}</h2> : null}
+            <p className="m-0 text-[15px] leading-relaxed text-white/75" role="alert">
+              {state.message}
             </p>
-          ) : null}
-          {state.terminal || state.action === "back" ? (
-            <Button onClick={back}>{t("backToBrowse")}</Button>
-          ) : (
-            <Button onClick={retry}>{t("tryAgain")}</Button>
-          )}
+            {state.detail ? (
+              <p className="m-0 text-sm text-white/55">
+                {t("playbackServerReason", { reason: state.detail })}
+              </p>
+            ) : null}
+            <div className="mt-3">
+              {state.terminal || state.action === "back" ? (
+                <Button onClick={back}>{t("backToBrowse")}</Button>
+              ) : (
+                <Button onClick={retry}>{t("tryAgain")}</Button>
+              )}
+            </div>
+          </div>
         </div>
       ) : (
         <div
@@ -360,6 +366,7 @@ export function PlayerPage() {
               state={state}
               mediaTitle={navTitle}
               mediaID={mediaId || ""}
+              metadataAttribution={media?.metadataAttribution}
               stageRef={stageRef}
               skipInterval={Number(resolvedPrefs.skipInterval)}
               showSkipInterval={showSkipInterval}

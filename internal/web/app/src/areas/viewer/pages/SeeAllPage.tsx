@@ -1,7 +1,9 @@
+import { ChevronLeft } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { displayString } from "@/lib/display";
 import type { SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
@@ -30,6 +32,7 @@ export function SeeAllPage() {
   const [items, setItems] = useState<SourceItem[]>([]);
   const [hasMore, setHasMore] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
   const offsetRef = useRef(0);
   // Bumped by every reset or reload, so a response from before it is dropped.
   const generationRef = useRef(0);
@@ -60,8 +63,9 @@ export function SeeAllPage() {
       setItems((prev) => [...prev, ...page]);
       offsetRef.current += page.length;
       setHasMore(page.length >= SEEALL_PAGE);
+      setFailed(false);
     } catch {
-      if (generationRef.current === generation) setHasMore(false);
+      if (generationRef.current === generation) setFailed(true);
     } finally {
       if (generationRef.current === generation) setBusy(false);
     }
@@ -104,6 +108,7 @@ export function SeeAllPage() {
     offsetRef.current = 0;
     setItems([]);
     setHasMore(true);
+    setFailed(false);
     void loadPage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctx?.section.id, ctx?.libraryID, ctx?.entityID]);
@@ -114,6 +119,10 @@ export function SeeAllPage() {
     void reloadShown();
   }, [engagementEpoch, reloadShown]);
 
+  const firstPageLoading = busy && items.length === 0;
+  const loadFailed = !busy && failed && items.length === 0;
+  const empty = !busy && !failed && !hasMore && items.length === 0;
+
   function goBack() {
     navigate(ctx?.returnTo || "/");
   }
@@ -122,10 +131,18 @@ export function SeeAllPage() {
     return (
       <AppShell actions={<ViewerActions />}>
         <div className="flex flex-col gap-3">
-          <Button variant="outline" size="sm" onClick={() => navigate("/")}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-2 self-start"
+            onClick={() => navigate("/")}
+          >
+            <ChevronLeft aria-hidden />
             {t("back")}
           </Button>
-          <p className="text-sm text-[var(--text-muted)]">{t("libraryEmptyLead")}</p>
+          <div className="bf-empty flex flex-col gap-2" role="status">
+            <p className="text-sm text-[var(--text-secondary)]">{t("libraryEmptyLead")}</p>
+          </div>
         </div>
       </AppShell>
     );
@@ -133,14 +150,40 @@ export function SeeAllPage() {
 
   return (
     <AppShell actions={<ViewerActions />}>
-      <div className="flex flex-col gap-4">
-        <div className="flex items-center gap-3">
-          <Button variant="outline" size="sm" onClick={goBack}>
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-col items-start gap-1">
+          <Button variant="ghost" size="sm" className="-ml-2" onClick={goBack}>
+            <ChevronLeft aria-hidden />
             {t("back")}
           </Button>
           <h1 className="bf-page-title">{displayString(ctx.section.title, displayLocale)}</h1>
         </div>
-        <ul ref={gridRef} className="bf-grid">
+        {firstPageLoading && (
+          <div aria-busy="true" className="bf-grid">
+            <span className="sr-only">{t("loading")}</span>
+            {Array.from({ length: 12 }).map((_, i) => (
+              <Skeleton key={i} aria-hidden className="bf-shimmer aspect-[2/3] w-full" />
+            ))}
+          </div>
+        )}
+        {loadFailed && (
+          <div role="alert" className="bf-empty flex flex-col gap-3">
+            <p className="text-sm text-[var(--text-secondary)]">{t("seeAllLoadFailed")}</p>
+            <Button variant="outline" className="self-start" onClick={loadPage}>
+              {t("jobRetryAction")}
+            </Button>
+          </div>
+        )}
+        {empty && (
+          <div className="bf-empty flex flex-col gap-2" role="status">
+            <p className="text-sm text-[var(--text-secondary)]">{t("libraryEmptyTitle")}</p>
+          </div>
+        )}
+        <ul
+          ref={gridRef}
+          className="bf-grid"
+          style={items.length === 0 ? { display: "none" } : undefined}
+        >
           {gridWindow && gridWindow.topPad > 0 && (
             <li
               aria-hidden
@@ -170,7 +213,7 @@ export function SeeAllPage() {
             />
           )}
         </ul>
-        {hasMore && (
+        {hasMore && items.length > 0 && (
           <div className="flex justify-center">
             <Button onClick={loadPage} disabled={busy}>
               {t("loadMore")}

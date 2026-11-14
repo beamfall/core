@@ -25,7 +25,7 @@ export const viewerAccountStrings = {
     notifications: "Notifications",
     notificationsTitle: "Notifications",
     notificationsLead:
-      "Your in-app inbox for this profile. It is reveal-filtered and refreshes when the browser returns to the foreground.",
+      "Messages for this profile. New ones show up when you come back to this tab.",
     notificationsInboxHeading: "Inbox",
     notificationsUnreadCount: "{count} unread",
     notificationsUnreadAria: "Notifications, {count} unread",
@@ -118,7 +118,7 @@ export const viewerAccountStrings = {
     notifications: "Notifications",
     notificationsTitle: "Notifications",
     notificationsLead:
-      "Votre boîte de réception intégrée pour ce profil. Elle respecte le filtrage de révélation et s’actualise lorsque le navigateur revient au premier plan.",
+      "Les messages de ce profil. Les nouveaux apparaissent quand vous revenez sur cet onglet.",
     notificationsInboxHeading: "Boîte de réception",
     notificationsUnreadCount: "{count} non lues",
     notificationsUnreadAria: "Notifications, {count} non lues",
@@ -184,7 +184,7 @@ export const viewerAccountStrings = {
     notifications: "Benachrichtigungen",
     notificationsTitle: "Benachrichtigungen",
     notificationsLead:
-      "Ihr In-App-Posteingang für dieses Profil. Er ist reveal-gefiltert und aktualisiert sich, wenn der Browser wieder in den Vordergrund kommt.",
+      "Nachrichten für dieses Profil. Neue erscheinen, wenn Sie zu diesem Tab zurückkehren.",
     notificationsInboxHeading: "Posteingang",
     notificationsUnreadCount: "{count} ungelesen",
     notificationsUnreadAria: "Benachrichtigungen, {count} ungelesen",
@@ -250,7 +250,7 @@ export const viewerAccountStrings = {
     notifications: "Notificaciones",
     notificationsTitle: "Notificaciones",
     notificationsLead:
-      "Tu bandeja de entrada en la app para este perfil. Respeta el filtro de revelación y se actualiza cuando el navegador vuelve al primer plano.",
+      "Mensajes de este perfil. Los nuevos aparecen cuando vuelves a esta pestaña.",
     notificationsInboxHeading: "Bandeja de entrada",
     notificationsUnreadCount: "{count} sin leer",
     notificationsUnreadAria: "Notificaciones, {count} sin leer",
@@ -315,8 +315,7 @@ export const viewerAccountStrings = {
     clear: "Limpar",
     notifications: "Notificações",
     notificationsTitle: "Notificações",
-    notificationsLead:
-      "Sua caixa de entrada no app para este perfil. Ela respeita o filtro de revelação e é atualizada quando o navegador volta ao primeiro plano.",
+    notificationsLead: "Mensagens deste perfil. As novas aparecem quando você volta a esta aba.",
     notificationsInboxHeading: "Caixa de entrada",
     notificationsUnreadCount: "{count} não lidas",
     notificationsUnreadAria: "Notificações, {count} não lidas",

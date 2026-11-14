@@ -117,7 +117,7 @@ export function RevealControls() {
               autoFocus
             />
           </label>
-          {error && <p className="text-sm text-[var(--red-500)]">{error}</p>}
+          {error && <p className="text-sm text-[var(--state-danger)]">{error}</p>}
           <DialogFooter>
             <Button type="submit" disabled={busy}>
               {t("reveal")}

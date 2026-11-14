@@ -1,6 +1,8 @@
 import { ChevronLeft, ChevronRight, Info } from "lucide-react";
 import { Fragment, useRef } from "react";
+import { MetadataAttributionText } from "@/components/beamfall/MetadataAttributionText";
 import { Dialog } from "@/components/ui/astryx-primitives";
+import type { MetadataAttribution } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
 import { ItemActions } from "../actions/ItemActions";
 import type { PlaybackInfo, PlaybackStream } from "../lib/playback";
@@ -21,6 +23,7 @@ export function InfoOverlay({
   hlsActive,
   open,
   onOpenChange,
+  metadataAttribution,
 }: {
   /** The current Media's title; when present it heads the overlay. */
   mediaTitle?: string;
@@ -32,6 +35,8 @@ export function InfoOverlay({
   hlsActive: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** The plugin-declared credit for this Media's metadata, when it has one. */
+  metadataAttribution?: MetadataAttribution;
 }) {
   const t = useT();
   const anchorRef = useRef<HTMLDivElement | null>(null);
@@ -82,6 +87,11 @@ export function InfoOverlay({
                 </Fragment>
               ))}
             </dl>
+            {metadataAttribution && (
+              <p className="bf-info-attribution">
+                <MetadataAttributionText attribution={metadataAttribution} />
+              </p>
+            )}
           </Dialog.Popup>
         </Dialog.Portal>
       </div>

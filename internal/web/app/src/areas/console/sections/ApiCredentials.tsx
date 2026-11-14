@@ -1,4 +1,4 @@
-import { Copy, KeyRound, KeySquare, Plus } from "lucide-react";
+import { Copy, KeyRound, Plus } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { DataTable, EmptyState, ErrorState, StatusChip } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
@@ -103,7 +103,7 @@ function ApiTokens() {
   }
 
   return (
-    <Section heading="apiTokens" icon={KeyRound} lead="apiTokensLead">
+    <Section heading="apiTokens" lead="apiTokensLead">
       <div className="console-card console-card-pad">
         <form onSubmit={onCreate} className="flex items-end gap-2">
           <div className="flex-1 space-y-1.5">
@@ -116,7 +116,7 @@ function ApiTokens() {
           </Button>
         </form>
         {secret && <SecretBanner secret={secret} />}
-        {error && <p className="mt-2 text-sm text-[var(--red-500)]">{t(error)}</p>}
+        {error && <p className="mt-2 text-sm text-[var(--state-danger)]">{t(error)}</p>}
       </div>
 
       {loading ? (
@@ -124,7 +124,7 @@ function ApiTokens() {
       ) : failed ? (
         <ErrorState message="apiTokensUnavailable" />
       ) : tokens.length === 0 ? (
-        <EmptyState message="noAPITokens" icon={KeyRound} />
+        <EmptyState message="noAPITokens" />
       ) : (
         <DataTable
           columns={[
@@ -205,7 +205,7 @@ function ApiKeys() {
   }
 
   return (
-    <Section heading="apiKeysHeading" icon={KeySquare} lead="apiKeysLead">
+    <Section heading="apiKeysHeading" lead="apiKeysLead">
       <div className="console-card console-card-pad">
         <form onSubmit={onCreate} className="space-y-3">
           <div className="max-w-sm space-y-1.5">
@@ -213,7 +213,7 @@ function ApiKeys() {
             <Input id="api-key-name" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
           <fieldset className="space-y-2">
-            <legend className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <legend className="text-sm font-semibold text-foreground">
               {t("apiKeyScopesLegend")}
             </legend>
             <div className="flex flex-wrap gap-x-5 gap-y-2">
@@ -234,7 +234,7 @@ function ApiKeys() {
           </Button>
         </form>
         {secret && <SecretBanner secret={secret} />}
-        {error && <p className="mt-2 text-sm text-[var(--red-500)]">{t(error)}</p>}
+        {error && <p className="mt-2 text-sm text-[var(--state-danger)]">{t(error)}</p>}
       </div>
 
       {loading ? (
@@ -242,7 +242,7 @@ function ApiKeys() {
       ) : failed ? (
         <ErrorState message="apiKeysUnavailable" />
       ) : keys.length === 0 ? (
-        <EmptyState message="noAPIKeys" icon={KeyRound} />
+        <EmptyState message="noAPIKeys" />
       ) : (
         <DataTable
           columns={[

@@ -8,11 +8,11 @@ export function PairingCodeHelp() {
   const t = useT();
   const titleID = useId();
   return (
-    <section aria-labelledby={titleID} className="mt-10 border-t pt-6">
-      <h2 id={titleID} className="text-lg font-semibold">
+    <section aria-labelledby={titleID}>
+      <h2 id={titleID} className="m-0 text-[15px] font-semibold">
         {t("signInWhereTitle")}
       </h2>
-      <ul className="mt-3 flex list-disc flex-col gap-3 pl-5 text-sm leading-relaxed text-muted-foreground">
+      <ul className="m-0 mt-2.5 flex list-disc flex-col gap-2 pl-5 text-sm leading-relaxed text-muted-foreground marker:text-muted-foreground/50">
         <li>
           {t("signInWhereDevice", {
             // The Console's own labels, so the directions match what is on screen.

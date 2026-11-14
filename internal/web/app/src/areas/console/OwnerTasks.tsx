@@ -1,8 +1,8 @@
 import {
   Activity,
+  ChevronRight,
   FolderPlus,
   KeyRound,
-  ListChecks,
   type LucideIcon,
   RefreshCw,
   SearchCheck,
@@ -20,43 +20,25 @@ import {
 } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
 import { groupProviderKeys, keyNeeded } from "@/lib/providerKeys";
-import { cn } from "@/lib/utils";
 import { Section } from "./Section";
 import { useAsync } from "./useAsync";
 
-// Console home task list (CORE-1131): the owner's common jobs as tiles with
-// live status, in the setup wizard's tile style (CORE-1114). Each status line
-// is best-effort; a failed read just leaves the tile without a chip.
+// Console home task list (CORE-1131): the owner's common jobs as rows with
+// live status. Each status line is best-effort; a failed read just leaves the
+// row without one.
 
-const TILE =
-  "group flex flex-col gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 transition-all duration-200";
-const LINK_TILE = `${TILE} hover:border-white/25 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary`;
-
-function TileHead({
-  icon: Icon,
-  title,
-  status,
-}: {
-  icon: LucideIcon;
-  title: string;
-  status?: ReactNode;
-}) {
+function TaskText({ title, lead }: { title: string; lead: string }) {
   return (
-    <div className="flex items-start gap-3">
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary ring-1 ring-primary/25 group-hover:shadow-[0_8px_24px_-10px_var(--accent)]">
-        <Icon aria-hidden className="size-5" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <h3 className="m-0 text-sm font-semibold">{title}</h3>
-        {status && <div className="mt-1">{status}</div>}
-      </div>
-    </div>
+    <span className="console-task-text">
+      <span className="console-task-title">{title}</span>
+      <span className="console-task-lead">{lead}</span>
+    </span>
   );
 }
 
 function TaskLink({
   to,
-  icon,
+  icon: Icon,
   title,
   lead,
   status,
@@ -68,9 +50,13 @@ function TaskLink({
   status?: ReactNode;
 }) {
   return (
-    <Link to={to} className={cn(LINK_TILE, "text-foreground no-underline")}>
-      <TileHead icon={icon} title={title} status={status} />
-      <p className="m-0 text-[12.5px] leading-snug text-muted-foreground">{lead}</p>
+    <Link to={to} className="console-task">
+      <Icon className="console-task-icon" aria-hidden />
+      <TaskText title={title} lead={lead} />
+      <span className="console-task-end">
+        {status}
+        <ChevronRight className="size-4" aria-hidden />
+      </span>
     </Link>
   );
 }
@@ -94,28 +80,26 @@ export function OwnerTasks() {
     : null;
 
   return (
-    <Section heading="ownerTasksHeading" icon={ListChecks} lead="ownerTasksLead">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <div className={TILE}>
-          <TileHead
-            icon={RefreshCw}
+    <Section heading="ownerTasksHeading" lead="ownerTasksLead">
+      <div className="console-task-list">
+        <div className="console-task">
+          <RefreshCw className="console-task-icon" aria-hidden />
+          <TaskText
             title={t("taskRescan")}
-            status={
-              scanning ? (
-                <StatusChip tone="cyan">{t("rescanScanning")}</StatusChip>
-              ) : libraries.data ? (
-                <span className="text-xs text-muted-foreground">
+            lead={allWatched ? t("autoScanAll") : t("taskRescanLead")}
+          />
+          <span className="console-task-end">
+            {scanning ? (
+              <StatusChip tone="cyan">{t("rescanScanning")}</StatusChip>
+            ) : (
+              libraries.data && (
+                <span className="hidden text-[12.5px] sm:inline">
                   {t("taskRescanCount", { count: libraries.data.length })}
                 </span>
-              ) : null
-            }
-          />
-          <p className="m-0 text-[12.5px] leading-snug text-muted-foreground">
-            {allWatched ? t("autoScanAll") : t("taskRescanLead")}
-          </p>
-          <div>
-            <RescanAllButton libraries={libraries.data ?? []} variant="default" />
-          </div>
+              )
+            )}
+            <RescanAllButton libraries={libraries.data ?? []} variant="outline" />
+          </span>
         </div>
         <TaskLink
           to="/console/libraries"

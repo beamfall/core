@@ -109,6 +109,17 @@ export async function scanLibrary(libraryID: string, root: string): Promise<Scan
   return data.scanLibrary;
 }
 
+const DELETE_LIBRARY_MUTATION =
+  "mutation DeleteLibrary($libraryID: String!) { deleteLibrary(libraryID: $libraryID) }";
+
+/**
+ * DeleteLibrary — the server's audited soft delete (Admin Session). The Library
+ * leaves every store query; media rows, history and files on disk are kept.
+ */
+export async function deleteLibrary(libraryID: string): Promise<void> {
+  await graphql<{ deleteLibrary: boolean }>(DELETE_LIBRARY_MUTATION, { libraryID });
+}
+
 const SET_LIBRARY_ROOTS_MUTATION =
   "mutation SetLibraryRoots($libraryID: String!, $roots: [String!]!) { setLibraryRoots(libraryID: $libraryID, roots: $roots) { id roots } }";
 

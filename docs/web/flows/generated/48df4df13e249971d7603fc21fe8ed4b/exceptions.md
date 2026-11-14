@@ -1,9 +1,9 @@
 # Manage navigation overrides: nodes, theme, sections, history — exceptions
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1f853f6f981b9748eb7b1bcba1901b34 -->
 Error reachability, rescue behavior and completeness are unresolved\.
 
-Source: internal/web/app/src/areas/manage/pages/NavOverridePage\.tsx:567; symbol: HistoryPanel; span SHA256: 8291c0a24af4fb1e80de0d4b18afdf18acd7d770e47d6a5ec8b6dec958044d68.
+Source: internal/web/app/src/areas/manage/pages/NavOverridePage\.tsx:54; symbol: DEFAULT\_ACCENT; span SHA256: f8d513443d51f97f7d43dbc891aa1b8152ff430a1220277997181e47c564f541.
 

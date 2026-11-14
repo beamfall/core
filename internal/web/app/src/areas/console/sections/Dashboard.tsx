@@ -1,4 +1,4 @@
-import { Monitor, RefreshCw, Users } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import {
   type PointerEvent,
   type ReactNode,
@@ -182,7 +182,6 @@ export function LiveSessions() {
   return (
     <Section
       heading="liveSessionsHeading"
-      icon={Users}
       lead="liveSessionsLead"
       actions={
         <Button variant="outline" size="sm" onClick={() => void refresh()}>
@@ -196,7 +195,7 @@ export function LiveSessions() {
       ) : failed && sessions.length === 0 ? (
         <ErrorState message="liveSessionsUnavailable" />
       ) : sessions.length === 0 ? (
-        <EmptyState message="liveSessionsEmpty" icon={Monitor} />
+        <EmptyState message="liveSessionsEmpty" />
       ) : (
         <DataTable
           columns={[
@@ -259,7 +258,10 @@ export function LiveSessionCount() {
   usePolling(refresh, SESSIONS_POLL_MS);
   const count = data?.length;
   return (
-    <StatusChip tone={count ? "green" : "neutral"}>{count === undefined ? "–" : count}</StatusChip>
+    <span className="console-status-value">
+      <span className="console-status-dot" data-tone={count ? "green" : "neutral"} aria-hidden />
+      {count === undefined ? "–" : count}
+    </span>
   );
 }
 
@@ -552,7 +554,7 @@ export function HostGraphs() {
   } else if (failed && samples.length === 0) {
     body = <ErrorState message="hostMetricsUnavailable" />;
   } else if (!newest) {
-    body = <EmptyState message="hostMetricsCollecting" icon={Monitor} />;
+    body = <EmptyState message="hostMetricsCollecting" />;
   } else {
     const cpu = samples.map((s) => (s.cpuKnown ? s.cpuPercent : null));
     const cpuKnown = cpu.some((v) => v !== null);

@@ -16,6 +16,7 @@ import type {
   GenericMediaInfo,
   ItemStateInfo,
   ItemTarget,
+  MetadataAttribution,
   MyDataDeleteResult,
   MyDataSummary,
   MyEngagementExport,
@@ -159,24 +160,36 @@ export async function fetchSourceItems(
 // --- Entity detail --------------------------------------------------------
 
 const ENTITY_QUERY =
-  "query Entity($id: String!) { entity(id: $id) { id kind title fields { name type value } } }";
+  "query Entity($id: String!) { entity(id: $id) { id kind title fields { name type value } relatedEntities { kind kindDisplayName items { id kind title summary artwork { poster } artworkSlots engagement { positionSeconds durationSeconds completed totalCount remainingCount } } } } }";
 
-/** Entity — the detail header: declared fields with server-stringified values. */
+/** Entity — the detail header (declared fields, server-stringified) and its related Entities. */
 export async function fetchEntity(id: string, signal?: AbortSignal): Promise<EntityInfo | null> {
   const data = await graphql<{ entity: EntityInfo | null }>(ENTITY_QUERY, { id }, signal);
   return data.entity ?? null;
 }
 
 const MEDIA_QUERY =
-  "query Media($id: String!) { media(id: $id) { id title artworkSlots credits { entityID title kind kindDisplayName archetype relation } } }";
+  "query Media($id: String!) { media(id: $id) { id title artworkSlots credits { entityID title kind kindDisplayName archetype relation } metadataAttribution { providerName text url } } }";
 
-/** Media — the player's now-playing read: title, artwork and linked credits. */
+/** Media — the player's now-playing read: title, artwork, linked credits and metadata credit. */
 export async function fetchMedia(
   id: string,
   signal?: AbortSignal,
 ): Promise<GenericMediaInfo | null> {
   const data = await graphql<{ media: GenericMediaInfo | null }>(MEDIA_QUERY, { id }, signal);
   return data.media ?? null;
+}
+
+const METADATA_CREDITS_QUERY = "query MetadataCredits { metadataCredits { text url } }";
+
+/** metadataCredits — every active scraper's declared credit, deduplicated. */
+export async function fetchMetadataCredits(signal?: AbortSignal): Promise<MetadataAttribution[]> {
+  const data = await graphql<{ metadataCredits: MetadataAttribution[] | null }>(
+    METADATA_CREDITS_QUERY,
+    {},
+    signal,
+  );
+  return data.metadataCredits ?? [];
 }
 
 const MEDIA_FOR_ENTITY_QUERY =

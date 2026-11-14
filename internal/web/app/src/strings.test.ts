@@ -16,37 +16,41 @@ const PARTIAL_CATALOGS: Record<Locale, Partial<StringTable>> = { en, fr, de, es,
 // who's-watching copy; merged with CORE-1106 admin-password sign-in keys, CORE-1110 sign-in
 // security keys, CORE-1114 setup wizard copy, CORE-1115 provider-key copy, CORE-1131 rescan and
 // account-menu copy and CORE-1142 folder-picker copy; updated for the CORE-1146, CORE-1362 and
-// CORE-1363 player recovery copy, the CORE-1342 source-ends-early copy and the CORE-1132
-// first admin password copy and the CORE-0393 Viewer pairing-code switch copy.
-const BASE_SERIALIZED_LENGTH = 450_881;
-const BASE_REGISTRY_SHA256 = "a8d24ef8ec959c3687f829b6a38deb6eb0d238ccd4b7395bb4ff355dda5a5f16";
-const BASE_KEY_ORDER_SHA256 = "6780cad704ea42d845fd949f41ad33d3f31ca162569d83f13df6c72ae8993f8f";
-const BASE_PLACEHOLDER_SHA256 = "782ff5a1cd98e210086c59f4ea572a3e3410c26f71d08dad87b5f8c2f7a90c91";
+// CORE-1363 player recovery copy, the CORE-1342 source-ends-early copy and the CORE-1117 copy cleanup
+// and orphan-key removal; updated for the setup/enroll redesign copy tightening and removal of
+// the orphaned setupFreshServer and setupPlugin* keys; merged with the Normal/Advanced settings copy and the setup and pairing error copy, dropping the orphaned pairingCodeManagerOnly, enrollmentFailed and promotionFailed keys; merged with
+// the CORE-1132 first admin password copy and the CORE-0393 Viewer pairing-code switch copy;
+// merged with the CORE-1126 metadata credits copy, the CORE-1171 delete-library copy and the CORE-1117 design-system
+// copy (settings modes, onboarding, viewer browse and detail).
+const BASE_SERIALIZED_LENGTH = 460_372;
+const BASE_REGISTRY_SHA256 = "abb4baecdf8ae5441989adcdb97c80f322d0f9c4be87921c878737153af91cd7";
+const BASE_KEY_ORDER_SHA256 = "223ccb422eb58c04f36507c6696d81a1e11d70e55b9c3e97ff6d943278fa7ce7";
+const BASE_PLACEHOLDER_SHA256 = "a5f99362cb82f7e33d76946cb561f8b5779d7ec7725905e5af4156714636e648";
 const BASE_CATALOGS = {
   en: {
-    partialCount: 1_720,
-    partialSha256: "e2c814d42f2a54587041ee454eea92d3fb37478df36b75ea941318ee702537d3",
-    resolvedSha256: "16894e45baf9ac5061828014f504310fcf5c4132c80621322a60a840340ba1c5",
+    partialCount: 1_729,
+    partialSha256: "86721c216fda6bc79c027ace1f8ad46525908b25c3ba5c22022f9baa007d65fe",
+    resolvedSha256: "fb11bfcb0891d2427a4b39038ffcb8f46f39f90dfed05a95b0ef4dd4d20ba2b6",
   },
   fr: {
-    partialCount: 796,
-    partialSha256: "bb5a92f55524f89ef2b5dd4396c89dc508d4de8a27ead38d89ac6eac36691854",
-    resolvedSha256: "3c209381f5ec1ac8cda0c01b98e7b2fa71841fe3831a13baa1b448d723d714c3",
+    partialCount: 804,
+    partialSha256: "d798500c08958877393be4e35155ac9578201e8761575d27c03a6f154ef1711f",
+    resolvedSha256: "c18e31d2b966c99f8b93eacb67c10435e40c11fd7758691fe7176fe304dc3160",
   },
   de: {
-    partialCount: 692,
-    partialSha256: "a9dba218377688fedb2ae78e68b37a3d8392abebd6cf9576f40fd5f5161bcb0d",
-    resolvedSha256: "1bbb03c4c11293d528823325200f19fe08775939cd5e474c6c746de556ef9dc9",
+    partialCount: 698,
+    partialSha256: "2414ec0b9afc8a070dde7ee65ca535924f7f0ffc9fad161de125376ac377d5f6",
+    resolvedSha256: "c2d9ef9351bd1bc6dcdd644427df6fbd09d0c35fdd176808e3d3fc149f40508e",
   },
   es: {
-    partialCount: 692,
-    partialSha256: "7bcead143a953ed2582920d38829a117f6b87383081e2481a3cf7342e0e7edb5",
-    resolvedSha256: "e28c1575fcdd1eb9aaf5c5591dc3b43fd598f5a8e8c1f1377453337ab962cb30",
+    partialCount: 698,
+    partialSha256: "9fbd030fb905d12112e9bc2a855f36f2d09d96746e6640b7b5ff15e50f840db8",
+    resolvedSha256: "178502a9a764999d0bae997b4aeea794f9fe1a2a9f62dac7c428df5aecaed2fa",
   },
   pt: {
-    partialCount: 692,
-    partialSha256: "8ca798169a311cd1c8a07729cdbc4a8c3f61769d7c58ae185f8df27d6d0f2fef",
-    resolvedSha256: "3112d2540386abe2b231c9931aa46cb16bfae3045c8f72854453e2d2c4d0e50d",
+    partialCount: 698,
+    partialSha256: "a55fb7393f22a9f00192b75a4d8dadcc2f6d6118b22b2a51f0feb6ccc7de0eb4",
+    resolvedSha256: "3c9a52fb077943ee6506444603ea2024383e327250185349f4b1a213808df40f",
   },
 } as const satisfies Record<
   Locale,

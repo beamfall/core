@@ -1,11 +1,11 @@
 # Manage bulk edit and organize with preview and confirm — functional-overview
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:02f2399e6bfd28049ae2660492bb1280 -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
 
-Source: internal/web/app/src/areas/manage/pages/BulkOpsPage\.tsx:107; symbol: BulkEditSection; span SHA256: 2fdd3a354bb9959f851d60892c33a2f153d82e32ddbe401be5706fc20f31eb93.
+Source: internal/web/app/src/areas/manage/pages/BulkOpsPage\.tsx:106; symbol: BulkEditSection; span SHA256: 2fdd3a354bb9959f851d60892c33a2f153d82e32ddbe401be5706fc20f31eb93.
 
 <!-- flowdocs:paragraph:a5c00058d3e84bee38557a84d9fde958 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.

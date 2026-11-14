@@ -1,16 +1,14 @@
 # Server event stream \(/api/events\) with reconnect backoff — readme
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:8c7f18cf61a94eb1af3ba6ed6e4f56a7 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/lib/eventStream\.ts:22; symbol: createEventStreamParser; span SHA256: baffc7202ec733f3e62791b18cf0f30368f40d0e8b62e1f5d36d3535af30056b.
+Source: internal/web/app/src/lib/eventStream\.ts:12; symbol: EventStreamHandlers; span SHA256: c8e518ab943975eb1d0e2f58f99e04cd4b60d99eeb877fc9e1484ff655608d7a.
 
 
 Security summaries: not collected; absence is not a clean security finding.
-
-- A declared inventory flow with no resolved member is reported, not generated\.
 
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
@@ -32,12 +30,4 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow shell\.event\-stream: 5 resolved, 4 unresolved members.
-
-- Unresolved member internal/web/app/src/lib/eventStream\.ts EventStreamHandlers: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/eventStream\.ts EventStreamState: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/eventStream\.ts FIRST\_RETRY\_MS: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/eventStream\.ts MAX\_RETRY\_MS: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow shell\.event\-stream: 9 resolved, 0 unresolved members.

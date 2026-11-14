@@ -1,6 +1,6 @@
 # UI primitives: button, dialog, alert dialog, select, table, tabs, tree and form controls — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:d6139ac7954c1d16a21e4e320c9bf0fa -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -62,10 +62,25 @@ Declared member: source declares AlertDialogTrigger; membership is caller\-decla
 
 Source: internal/web/app/src/components/ui/alert\-dialog\.tsx:14; symbol: AlertDialogTrigger; span SHA256: e0bb325bdfcb735b3030a6bf9b35514a15dee6e5c8d2b8af64988b6d0a29cede.
 
+<!-- flowdocs:paragraph:489e75af2d7b71872255ee34d8fe1244 -->
+Declared member: source declares AlertDialogTriggerProps; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/components/ui/alert\-dialog\.tsx:10; symbol: AlertDialogTriggerProps; span SHA256: 06896e7523b0007e386934ce18e47e3bd207f2dcca4168c5d738b946fff4ade1.
+
 <!-- flowdocs:paragraph:67dfa16c5fb4f5330829a1f14dacfe45 -->
 Declared member: source declares Badge; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/components/ui/badge\.tsx:26; symbol: Badge; span SHA256: 3f6ff18b3575f9e80ea02ae3222b7b2c8d5311a969a2b357f6deb433a7fad455.
+
+<!-- flowdocs:paragraph:96b156a76f02282774cc7a066ea45f31 -->
+Declared member: source declares badgeVariants; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/components/ui/badge\.tsx:7; symbol: badgeVariants; span SHA256: bd05b45d28b8f156ac0085fa7a33511754b47a0e04e7db3dfdf36adbdeee80ad.
+
+<!-- flowdocs:paragraph:649e7ccc133e2690e7ca6202c84a84fd -->
+Declared member: source declares buttonVariants; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/components/ui/button\.tsx:18; symbol: buttonVariants; span SHA256: 813405902226f0ea5aea27fc8376f68a62e61a1e73f3400f969a1f80eb594371.
 
 <!-- flowdocs:paragraph:93094596498ec1c500bf742b7d653c55 -->
 Declared member: source declares Card; membership is caller\-declared, not runtime evidence\.
@@ -157,6 +172,11 @@ Declared member: source declares DialogTrigger; membership is caller\-declared, 
 
 Source: internal/web/app/src/components/ui/dialog\.tsx:16; symbol: DialogTrigger; span SHA256: efdcee26dc0260d8b56c70cda7c7d9ee3f1159645ff6d94593b47b10da0c629c.
 
+<!-- flowdocs:paragraph:e997a398251445450045936984aebf2f -->
+Declared member: source declares DialogTriggerProps; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/components/ui/dialog\.tsx:12; symbol: DialogTriggerProps; span SHA256: bbb7f9c6c3e2a58bf0df9d042eed6c93705c7026adddab1f9858b0e54f1291dc.
+
 <!-- flowdocs:paragraph:3143b9d5c6a4e6adcf612d952d963ed6 -->
 Declared member: source declares Input; membership is caller\-declared, not runtime evidence\.
 
@@ -182,6 +202,11 @@ Declared member: source declares SelectContent; membership is caller\-declared, 
 
 Source: internal/web/app/src/components/ui/select\.tsx:122; symbol: SelectContent; span SHA256: 7c92350999e15cd1239bb7589aabb7537dda8ac4ca2383b62b8364234872be85.
 
+<!-- flowdocs:paragraph:d661d57403e4048ea2666dc256b60865 -->
+Declared member: source declares SelectFocusContext; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/components/ui/select\.tsx:16; symbol: SelectFocusContext; span SHA256: 5c2148677f6f46e93e39665e1156a632e82ea5dcef70192f4b3cb6bac964f10d.
+
 <!-- flowdocs:paragraph:049787861cc8aa6c1111629570d66963 -->
 Declared member: source declares SelectGroup; membership is caller\-declared, not runtime evidence\.
 
@@ -196,6 +221,11 @@ Source: internal/web/app/src/components/ui/select\.tsx:162; symbol: SelectItem; 
 Declared member: source declares SelectLabel; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/components/ui/select\.tsx:152; symbol: SelectLabel; span SHA256: 2229807ed34dd2a047a1d9d2e1753317a74d724448d69dbb7f724a5d54ca0bcb.
+
+<!-- flowdocs:paragraph:a9ded45b4b35e0f7213cd0243dad37f7 -->
+Declared member: source declares SelectProps; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/components/ui/select\.tsx:7; symbol: SelectProps; span SHA256: 4afd120f1de8d87ef9cd2092d879c932bee76e747895720259f26765664cee64.
 
 <!-- flowdocs:paragraph:c1fd4d18ab81c29fe9feb2c671efa66b -->
 Declared member: source declares SelectScrollDownButton; membership is caller\-declared, not runtime evidence\.
@@ -282,6 +312,11 @@ Declared member: source declares TableRow; membership is caller\-declared, not r
 
 Source: internal/web/app/src/components/ui/table\.tsx:41; symbol: TableRow; span SHA256: 895e07e87f1c14195563ef5be7d9254790f253b3e3ce5be44f9018376dc21623.
 
+<!-- flowdocs:paragraph:553495375ffea70ad3419a3f98c695e8 -->
+Declared member: source declares Tabs; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/components/ui/tabs\.tsx:40; symbol: Tabs; span SHA256: b5c45de658579071d12e79b8abe4c8cea466919ee814ec6cf98289a773797f05.
+
 <!-- flowdocs:paragraph:ba048ac144ad4c65a76c19c75303d10c -->
 Declared member: source declares TabsPanel; membership is caller\-declared, not runtime evidence\.
 
@@ -292,18 +327,43 @@ Declared member: source declares TabsTab; membership is caller\-declared, not ru
 
 Source: internal/web/app/src/components/ui/tabs\.tsx:17; symbol: TabsTab; span SHA256: ad012096956c1aacf75b0005352376b08c1edfa657b8dd7bb7a953d5a2ed5079.
 
+<!-- flowdocs:paragraph:564cc048df87ba7a0a5afdcd0c54ba7e -->
+Declared member: source declares focusModality; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/components/ui/tabs\.tsx:6; symbol: focusModality; span SHA256: a3df39724dbe08840643da5f622fe56fb50fdd42b00144c5f06cdec5ead8618a.
+
 <!-- flowdocs:paragraph:f9168beef96be96af8c8fd7852690ff0 -->
 Declared member: source declares Textarea; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/components/ui/textarea\.tsx:5; symbol: Textarea; span SHA256: 4c2ea0589d52f49436d46b85e2b5920fd65d17aae9ead7b78f33c407717cb5dc.
+
+<!-- flowdocs:paragraph:fa474b54087bc7edb8aefeb43f588bc3 -->
+Declared member: source declares Tree; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/components/ui/tree\.tsx:63; symbol: Tree; span SHA256: 8796387a554460cf8435bbe336aa0a7a5bb3257a4599f41b0b9ff50fac316a80.
 
 <!-- flowdocs:paragraph:dd61dcd7b4195b06e33029e065f4eaf1 -->
 Declared member: source declares TreeItem; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/components/ui/tree\.tsx:52; symbol: TreeItem; span SHA256: 7cabdfefa677fdf1681f689a0a2eb7d2fcfca3cf7a2949eb49d1924d77afd6a5.
 
+<!-- flowdocs:paragraph:be39c2980e39948e90e11d98e1443102 -->
+Declared member: source declares TreeItemProps; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/components/ui/tree\.tsx:50; symbol: TreeItemProps; span SHA256: 88b87d64f8beb51db0651b1e8f6d34711eb2fcac53ce6523bcc00540f28f6fd5.
+
 <!-- flowdocs:paragraph:cf3c3c1077e329f480124e2482529966 -->
 Declared member: source declares TreeRoot; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/components/ui/tree\.tsx:35; symbol: TreeRoot; span SHA256: d8b21088c01cc109d8300646e3fe2cfa1ff003b9a16207dd779458c6fefb62e7.
+
+<!-- flowdocs:paragraph:ee87bf92d64d1c979e148ab2a2e8e18f -->
+Declared member: source declares TreeRootProps; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/components/ui/tree\.tsx:33; symbol: TreeRootProps; span SHA256: 1742ad2d15c541a2ff9b46726b2c650f9af984bcddd9c06087be7be4d21d16ed.
+
+<!-- flowdocs:paragraph:fe0014e51731dbe3dba2f16bc2da7391 -->
+Declared member: source declares treeNavigation; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/components/ui/tree\.tsx:8; symbol: treeNavigation; span SHA256: 97e6ec469b6088983b9d23967bcb8263b9b319c939d82a47a5575d5352914277.
 

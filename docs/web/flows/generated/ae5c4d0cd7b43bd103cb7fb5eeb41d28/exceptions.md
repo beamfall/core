@@ -1,6 +1,6 @@
 # Admin Session unlock gate \(admin password\) reused by Console — exceptions
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:f64673d509debf916be4d94ab83e9dd4 -->
 Error reachability, rescue behavior and completeness are unresolved\.

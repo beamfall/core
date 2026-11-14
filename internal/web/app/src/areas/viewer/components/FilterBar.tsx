@@ -25,7 +25,7 @@ export function FilterBar({
   }
   return (
     <section className="bf-section flex flex-col gap-2">
-      <h2 className="bf-eyebrow">{displayString(section.title, displayLocale)}</h2>
+      <h2 className="bf-field-label">{displayString(section.title, displayLocale)}</h2>
       <div className="bf-filter-chips">
         {options.map((option, index) => {
           const pressed = selected[option.field] === option.value;

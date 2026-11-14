@@ -222,14 +222,14 @@ test.describe("UI state inventory in-page states", () => {
     await submit.click();
     await expect(page.getByText("That pairing code is not valid.")).toBeVisible();
     await submit.click();
-    await expect(
-      page.getByText("That pairing code does not grant the manager role."),
-    ).toBeVisible();
+    await expect(page.getByText("That's a viewer code", { exact: false })).toBeVisible();
     await submit.click();
     await expect(submit).toBeDisabled();
     await held;
     release();
-    await expect(page.getByText("Promotion failed. Please try again.")).toBeVisible();
+    await expect(
+      page.getByText("The server couldn't promote this browser.", { exact: false }),
+    ).toBeVisible();
     coverUiStates(
       testInfo,
       "/promote#error:invalid-401",
@@ -256,10 +256,12 @@ test.describe("UI state inventory unenrolled states", () => {
     await page.goto("/web/enroll");
     await page.getByRole("textbox", { name: "Pairing code" }).fill("AAAA-BBBB");
     await page.getByRole("button", { name: "Connect" }).click();
-    await expect(page.getByText("Enrollment failed. Please try again.")).toBeVisible();
+    await expect(
+      page.getByText("The server couldn't connect this browser.", { exact: false }),
+    ).toBeVisible();
     reply = "abort";
     await page.getByRole("button", { name: "Connect" }).click();
-    await expect(page.getByText("Could not reach the server.")).toBeVisible();
+    await expect(page.getByText("Can't reach the server.", { exact: false })).toBeVisible();
     coverUiStates(testInfo, "/enroll#error:generic", "/enroll#error:offline");
   });
 });

@@ -1,6 +1,6 @@
 # Admin Session unlock gate \(admin password\) reused by Console — flow-diagram
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:0bcd5c8419cc5762207130812a4e38b3 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -18,7 +18,7 @@ sequenceDiagram
     Note over S,U: Source contains call useId in internal/web/app/src/areas/enroll/AdminSessionGate.tsx at line 51 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/areas/enroll/AdminSessionGate.tsx at line 57 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/areas/enroll/AdminSessionGate.tsx at line 62 - order unresolved
-    Note over S,U: Source contains call rebindCompatibility in internal/web/app/src/lib/graphql/auth.ts at line 82 - order unresolved
+    Note over S,U: Source contains call rebindCompatibility in internal/web/app/src/lib/graphql/auth.ts at line 87 - order unresolved
     Note over S,U: Source contains call rebindCompatibility in internal/web/app/src/lib/graphql/auth.ts at line 28 - order unresolved
     Note over S,U: Source contains call useCallback in internal/web/app/src/areas/enroll/AdminSessionGate.tsx at line 78 - order unresolved
     Note over S,U: Source contains call async in internal/web/app/src/areas/enroll/AdminSessionGate.tsx at line 78 - order unresolved

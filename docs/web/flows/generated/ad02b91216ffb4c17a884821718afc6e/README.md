@@ -1,16 +1,14 @@
 # Viewer See\-All: paginate a Source from a shelf — readme
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:4a94757808e503d6340f422adddf049e -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/viewer/lib/seeall\.ts:19; symbol: seeAllTargetFor; span SHA256: d7464b3a3a93d673a8a38a8f1a485f9d6f8bd89a914d87e6605d6cf11f6d1e07.
+Source: internal/web/app/src/areas/viewer/lib/seeall\.ts:9; symbol: SeeAllContext; span SHA256: 921399fdb693119d57af0c253f1ee17c14f48420ced5c43e2f5ba1b72b0af4aa.
 
 
 Security summaries: not collected; absence is not a clean security finding.
-
-- A declared inventory flow with no resolved member is reported, not generated\.
 
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
@@ -32,6 +30,4 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow viewer\.see\-all: 6 resolved, 1 unresolved members.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/seeall\.ts SeeAllContext: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow viewer\.see\-all: 7 resolved, 0 unresolved members.

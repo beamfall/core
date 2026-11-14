@@ -1,11 +1,11 @@
 # Rescan a library or all libraries and follow scan state — flow-diagram
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b04e658d96258cd9a9a4a89055b5618b -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:195; symbol: RescanAllButton; span SHA256: a7b29862c74ec31c99a6ee4e6850b9b4ed7a91667f30a42bece86aad3478f852.
+Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:28; symbol: ACTIVE; span SHA256: e102279ed89eede4d9a82b5ea48e0c3014f5e434dc686556347bc33a19bc7aeb.
 
 ```mermaid
 sequenceDiagram
@@ -13,6 +13,7 @@ sequenceDiagram
     participant U as Unresolved runtime
     Note over S,U: Lexical inventory only - no witnessed order
     Note over S: Flow 21d4c394c2e983b00ddb45fdec2594fc
+    Note over S,U: Source contains call Set at line 28 - order unresolved
     Note over S,U: Source contains call useT at line 202 - order unresolved
     Note over S,U: Source contains call useAnyRescanActive at line 203 - order unresolved
     Note over S,U: Source contains call useEffect at line 204 - order unresolved

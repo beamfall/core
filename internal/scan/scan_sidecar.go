@@ -45,6 +45,7 @@ func isVobSubExt(ext string) bool {
 type sidecarDiscovery struct {
 	interactive map[string]bool
 	dirs        map[string][]os.DirEntry
+	artwork     map[string]*localArtworkDir
 }
 
 func newSidecarDiscovery(interactiveExts []string) *sidecarDiscovery {
@@ -55,20 +56,29 @@ func newSidecarDiscovery(interactiveExts []string) *sidecarDiscovery {
 	return &sidecarDiscovery{
 		interactive: interactive,
 		dirs:        map[string][]os.DirEntry{},
+		artwork:     map[string]*localArtworkDir{},
 	}
+}
+
+// entries returns a directory's entries, read once per scan. An unreadable
+// directory yields none.
+func (d *sidecarDiscovery) entries(dir string) []os.DirEntry {
+	if entries, ok := d.dirs[dir]; ok {
+		return entries
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	d.dirs[dir] = entries
+	return entries
 }
 
 func (d *sidecarDiscovery) discover(mediaPath string) []store.MediaFileSidecarCaption {
 	out := []store.MediaFileSidecarCaption{}
-	dir := filepath.Dir(mediaPath)
-	entries, ok := d.dirs[dir]
-	if !ok {
-		var err error
-		entries, err = os.ReadDir(dir)
-		if err != nil {
-			return out
-		}
-		d.dirs[dir] = entries
+	entries := d.entries(filepath.Dir(mediaPath))
+	if len(entries) == 0 {
+		return out
 	}
 	mediaStem := strings.ToLower(titleFromPath(mediaPath))
 	if mediaStem == "" {

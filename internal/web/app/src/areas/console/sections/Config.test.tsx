@@ -1,11 +1,24 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchConsoleConfig, fetchTranscodeConfig, setConsoleConfig } from "@/lib/graphql";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setAdvancedSettings } from "@/lib/advancedSettings";
+import {
+  fetchConsoleConfig,
+  fetchTranscodeConfig,
+  setConsoleConfig,
+  setTranscodeConfig,
+} from "@/lib/graphql";
 import type { ConsoleConfigInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { Config } from "./Config";
+
+vi.mock("@/lib/graphql", () => ({
+  fetchConsoleConfig: vi.fn(),
+  fetchTranscodeConfig: vi.fn(),
+  setConsoleConfig: vi.fn(),
+  setTranscodeConfig: vi.fn(),
+}));
 
 // jsdom has no ResizeObserver; the Radix Switch (via react-use-size) needs one.
 class ResizeObserverStub {
@@ -15,14 +28,16 @@ class ResizeObserverStub {
 }
 globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObserver;
 
-vi.mock("@/lib/graphql", () => ({
-  fetchConsoleConfig: vi.fn(),
-  fetchTranscodeConfig: vi.fn(),
-  setConsoleConfig: vi.fn(),
-  setTranscodeConfig: vi.fn(),
-}));
+const savedTranscode = {
+  hardwareEnabled: false,
+  codec: "",
+  quality: "",
+  device: "",
+  configuredPreference: "",
+  hardwareAcceleration: [],
+};
 
-const saved: ConsoleConfigInfo = {
+const savedConsole: ConsoleConfigInfo = {
   backgroundWorkers: 4,
   updateCheckEnabled: false,
   updateCheckChannel: "stable",
@@ -33,16 +48,17 @@ const saved: ConsoleConfigInfo = {
 };
 
 beforeEach(() => {
-  vi.mocked(fetchConsoleConfig).mockReset().mockResolvedValue(saved);
-  vi.mocked(fetchTranscodeConfig).mockReset().mockResolvedValue({
-    hardwareEnabled: false,
-    codec: "",
-    quality: "",
-    device: "",
-    configuredPreference: "",
-    hardwareAcceleration: [],
-  });
+  vi.mocked(fetchConsoleConfig).mockResolvedValue(savedConsole);
+  vi.mocked(fetchTranscodeConfig).mockResolvedValue(savedTranscode);
+});
+
+afterEach(() => {
+  cleanup();
+  setAdvancedSettings(false);
+  vi.mocked(fetchConsoleConfig).mockReset();
+  vi.mocked(fetchTranscodeConfig).mockReset();
   vi.mocked(setConsoleConfig).mockReset();
+  vi.mocked(setTranscodeConfig).mockReset();
 });
 
 function renderConfig() {
@@ -53,36 +69,42 @@ function renderConfig() {
   );
 }
 
-describe("Config server section", () => {
-  it("keeps an unsaved worker-count edit when the Viewer-code switch is toggled", async () => {
-    vi.mocked(setConsoleConfig).mockResolvedValue({ ...saved, viewerPairingCodesDisabled: true });
+describe("transcoding config", () => {
+  it("keeps an edited Advanced field visible in Normal so Save never hides it", async () => {
+    vi.mocked(setTranscodeConfig).mockImplementation(async (next) => next);
+    setAdvancedSettings(true);
     const user = userEvent.setup();
     renderConfig();
 
-    const workers = await screen.findByRole("spinbutton", { name: "Background workers" });
-    await waitFor(() => expect(workers).toHaveValue(4));
-    await user.clear(workers);
-    await user.type(workers, "9");
+    await user.type(await screen.findByRole("textbox", { name: "Codec" }), "hevc");
+    act(() => setAdvancedSettings(false));
+
+    expect(screen.getByRole("textbox", { name: "Codec" })).toHaveValue("hevc");
+    expect(screen.queryByRole("textbox", { name: "Quality" })).toBeNull();
+  });
+});
+
+describe("Viewer pairing-code switch", () => {
+  it("is a Normal control that saves on toggle without touching an unsaved transcode edit", async () => {
+    vi.mocked(setConsoleConfig).mockResolvedValue({
+      ...savedConsole,
+      viewerPairingCodesDisabled: true,
+    });
+    setAdvancedSettings(true);
+    const user = userEvent.setup();
+    renderConfig();
+
+    const codec = await screen.findByRole("textbox", { name: "Codec" });
+    await user.type(codec, "hevc");
+    act(() => setAdvancedSettings(false));
 
     const toggle = screen.getByRole("switch", { name: /Viewer pairing codes/i });
+    await waitFor(() => expect(toggle).toBeEnabled());
     await user.click(toggle);
 
     await waitFor(() => expect(toggle).toBeChecked());
     expect(setConsoleConfig).toHaveBeenCalledWith({ viewerPairingCodesDisabled: true });
-    expect(workers).toHaveValue(9);
-  });
-
-  it("shows the saved worker count after saving", async () => {
-    vi.mocked(setConsoleConfig).mockResolvedValue({ ...saved, backgroundWorkers: 7 });
-    const user = userEvent.setup();
-    renderConfig();
-
-    const workers = await screen.findByRole("spinbutton", { name: "Background workers" });
-    await waitFor(() => expect(workers).toHaveValue(4));
-    await user.clear(workers);
-    await user.type(workers, "7{Enter}");
-
-    expect(setConsoleConfig).toHaveBeenCalledWith({ backgroundWorkers: 7 });
-    await waitFor(() => expect(workers).toHaveValue(7));
+    expect(setTranscodeConfig).not.toHaveBeenCalled();
+    expect(screen.getByRole("textbox", { name: "Codec" })).toHaveValue("hevc");
   });
 });

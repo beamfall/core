@@ -1,16 +1,14 @@
 # Manage field locks — readme
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1adfdfe5bd36307c9b99d866d0f4c35e -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/manage/pages/FieldLocksPage\.tsx:33; symbol: FieldLocksPage; span SHA256: 629fe5a8e1682004ada517a9e50ed36652f52d34446b7e26053fc1b83ad6cb3b.
+Source: internal/web/app/src/areas/manage/pages/FieldLocksPage\.tsx:32; symbol: FieldLocksPage; span SHA256: 629fe5a8e1682004ada517a9e50ed36652f52d34446b7e26053fc1b83ad6cb3b.
 
 
 Security summaries: not collected; absence is not a clean security finding.
-
-- A declared inventory flow with no resolved member is reported, not generated\.
 
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
@@ -32,8 +30,4 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow manage\.field\-locks: 6 resolved, 2 unresolved members.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts MEDIA\_FIELD\_LOCKS\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts SET\_MEDIA\_FIELD\_LOCK\_MUTATION: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow manage\.field\-locks: 8 resolved, 0 unresolved members.

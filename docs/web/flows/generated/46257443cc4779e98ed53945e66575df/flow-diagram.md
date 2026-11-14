@@ -1,11 +1,11 @@
 # Playback engine: playback\-info, capability probe, HLS selection and recovery, progress reports — flow-diagram
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:9b7c9e7f9f309297afc68988b7ea478a -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/viewer/lib/capabilityProfile\.ts:110; symbol: canPlayTypeSupported; span SHA256: 8cc499193d7ce10a5d319863ac112b07794c475a5b67a2fc9dd47f55e22b99a6.
+Source: internal/web/app/src/areas/viewer/lib/capabilityProfile\.ts:85; symbol: AUDIO\_CANDIDATES; span SHA256: 94955eba6053462d874d6ccbf0bcdc13dbf76138e1a44d5d97fb0555b32e1339.
 
 ```mermaid
 sequenceDiagram
@@ -35,15 +35,15 @@ sequenceDiagram
     Note over S,U: Source contains call finiteNumber in internal/web/app/src/areas/viewer/lib/transport.ts at line 344 - order unresolved
     Note over S,U: Source contains call nextNetworkStep in internal/web/app/src/areas/viewer/player/hlsRecovery.ts at line 40 - order unresolved
     Note over S,U: Source contains call nextMediaStep in internal/web/app/src/areas/viewer/player/hlsRecovery.ts at line 41 - order unresolved
-    Note over S,U: Source contains call isArray in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1144 - order unresolved
-    Note over S,U: Source contains call findIndex in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1145 - order unresolved
-    Note over S,U: Source contains call isArray in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1152 - order unresolved
-    Note over S,U: Source contains call findIndex in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1153 - order unresolved
-    Note over S,U: Source contains call from in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1162 - order unresolved
-    Note over S,U: Source contains call Date in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1198 - order unresolved
-    Note over S,U: Source contains call isNaN in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1199 - order unresolved
-    Note over S,U: Source contains call getTime in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1199 - order unresolved
-    Note over S,U: Source contains call now in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1199 - order unresolved
+    Note over S,U: Source contains call isArray in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1162 - order unresolved
+    Note over S,U: Source contains call findIndex in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1163 - order unresolved
+    Note over S,U: Source contains call isArray in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1170 - order unresolved
+    Note over S,U: Source contains call findIndex in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1171 - order unresolved
+    Note over S,U: Source contains call from in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1180 - order unresolved
+    Note over S,U: Source contains call Date in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1216 - order unresolved
+    Note over S,U: Source contains call isNaN in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1217 - order unresolved
+    Note over S,U: Source contains call getTime in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1217 - order unresolved
+    Note over S,U: Source contains call now in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1217 - order unresolved
     Note over S,U: Source contains call start in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 235 - order unresolved
     Note over S,U: Source contains call end in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 235 - order unresolved
     Note over S,U: Source contains call sendProgress in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 133 - order unresolved
@@ -89,93 +89,93 @@ sequenceDiagram
     Note over S,U: Source contains call setBuffering in internal/web/app/src/areas/viewer/player/useMediaLoading.ts at line 47 - order unresolved
     Note over S,U: Source contains call clearTimer in internal/web/app/src/areas/viewer/player/useMediaLoading.ts at line 34 - order unresolved
     Note over S,U: Source contains call setBuffering in internal/web/app/src/areas/viewer/player/useMediaLoading.ts at line 35 - order unresolved
-    Note over S,U: Source contains call applyTrackPreferences in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 727 - order unresolved
-    Note over S,U: Source contains call bumpTracks in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 728 - order unresolved
-    Note over S,U: Source contains call setState in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 722 - order unresolved
+    Note over S,U: Source contains call applyTrackPreferences in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 742 - order unresolved
+    Note over S,U: Source contains call bumpTracks in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 743 - order unresolved
+    Note over S,U: Source contains call setState in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 737 - order unresolved
     Note over S,U: Source contains call useCallback in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 391 - order unresolved
     Note over S,U: Source contains call destroy in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 393 - order unresolved
-    Note over S,U: Source contains call clearTimeout in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 614 - order unresolved
-    Note over S,U: Source contains call destroyHls in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 617 - order unresolved
-    Note over S,U: Source contains call removeEventListener in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 618 - order unresolved
-    Note over S,U: Source contains call removeEventListener in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 619 - order unresolved
-    Note over S,U: Source contains call removeEventListener in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 621 - order unresolved
-    Note over S,U: Source contains call removeEventListener in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 623 - order unresolved
-    Note over S,U: Source contains call removeEventListener in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 625 - order unresolved
-    Note over S,U: Source contains call removeAttribute in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 632 - order unresolved
-    Note over S,U: Source contains call load in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 633 - order unresolved
-    Note over S,U: Source contains call setState in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 515 - order unresolved
-    Note over S,U: Source contains call terminalState in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 515 - order unresolved
-    Note over S,U: Source contains call resetIdentityEpoch in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 518 - order unresolved
-    Note over S,U: Source contains call destroyHls in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 741 - order unresolved
-    Note over S,U: Source contains call showMessage in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 742 - order unresolved
-    Note over S,U: Source contains call stopProgressReporting in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1111 - order unresolved
-    Note over S,U: Source contains call setWaitingForNetwork in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 494 - order unresolved
-    Note over S,U: Source contains call setWaitingForNetwork in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 498 - order unresolved
-    Note over S,U: Source contains call reportProgress in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1109 - order unresolved
-    Note over S,U: Source contains call setRecovering in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 586 - order unresolved
-    Note over S,U: Source contains call resetRecoveryBudget in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 588 - order unresolved
-    Note over S,U: Source contains call reportProgress in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1110 - order unresolved
-    Note over S,U: Source contains call showSourceEndsEarly in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 859 - order unresolved
-    Note over S,U: Source contains call startLoad in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 862 - order unresolved
-    Note over S,U: Source contains call atSourceEnd in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 853 - order unresolved
-    Note over S,U: Source contains call showSourceEndsEarly in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 853 - order unresolved
-    Note over S,U: Source contains call reloadNative in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 915 - order unresolved
-    Note over S,U: Source contains call addEventListener in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 759 - order unresolved
-    Note over S,U: Source contains call set in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 766 - order unresolved
-    Note over S,U: Source contains call loadSource in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 767 - order unresolved
-    Note over S,U: Source contains call detachEngine in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 971 - order unresolved
-    Note over S,U: Source contains call attachEngine in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 973 - order unresolved
-    Note over S,U: Source contains call detachEngine in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 647 - order unresolved
-    Note over S,U: Source contains call showMessage in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 648 - order unresolved
-    Note over S,U: Source contains call playheadPosition in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 654 - order unresolved
-    Note over S,U: Source contains call setRecovering in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 655 - order unresolved
-    Note over S,U: Source contains call fetchPlaybackInfo in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 658 - order unresolved
-    Note over S,U: Source contains call then in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 659 - order unresolved
-    Note over S,U: Source contains call streamOfKind in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 661 - order unresolved
-    Note over S,U: Source contains call detachEngine in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 664 - order unresolved
-    Note over S,U: Source contains call showUnavailable in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 665 - order unresolved
-    Note over S,U: Source contains call reload in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 670 - order unresolved
-    Note over S,U: Source contains call setState in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 674 - order unresolved
-    Note over S,U: Source contains call catch in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 681 - order unresolved
-    Note over S,U: Source contains call detachEngine in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 683 - order unresolved
-    Note over S,U: Source contains call showPlaybackInfoError in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 684 - order unresolved
-    Note over S,U: Source contains call finally in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 686 - order unresolved
-    Note over S,U: Source contains call resetRecoveryBudget in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 747 - order unresolved
-    Note over S,U: Source contains call setRecovering in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 748 - order unresolved
-    Note over S,U: Source contains call startLoad in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 749 - order unresolved
+    Note over S,U: Source contains call clearTimeout in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 629 - order unresolved
+    Note over S,U: Source contains call destroyHls in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 632 - order unresolved
+    Note over S,U: Source contains call removeEventListener in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 633 - order unresolved
+    Note over S,U: Source contains call removeEventListener in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 634 - order unresolved
+    Note over S,U: Source contains call removeEventListener in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 636 - order unresolved
+    Note over S,U: Source contains call removeEventListener in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 638 - order unresolved
+    Note over S,U: Source contains call removeEventListener in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 640 - order unresolved
+    Note over S,U: Source contains call removeAttribute in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 647 - order unresolved
+    Note over S,U: Source contains call load in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 648 - order unresolved
+    Note over S,U: Source contains call setState in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 530 - order unresolved
+    Note over S,U: Source contains call terminalState in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 530 - order unresolved
+    Note over S,U: Source contains call resetIdentityEpoch in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 533 - order unresolved
+    Note over S,U: Source contains call destroyHls in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 756 - order unresolved
+    Note over S,U: Source contains call showMessage in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 757 - order unresolved
+    Note over S,U: Source contains call stopProgressReporting in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1126 - order unresolved
+    Note over S,U: Source contains call setWaitingForNetwork in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 509 - order unresolved
+    Note over S,U: Source contains call setWaitingForNetwork in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 513 - order unresolved
+    Note over S,U: Source contains call reportProgress in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1124 - order unresolved
+    Note over S,U: Source contains call setRecovering in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 601 - order unresolved
+    Note over S,U: Source contains call resetRecoveryBudget in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 603 - order unresolved
+    Note over S,U: Source contains call reportProgress in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1125 - order unresolved
+    Note over S,U: Source contains call showSourceEndsEarly in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 874 - order unresolved
+    Note over S,U: Source contains call startLoad in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 877 - order unresolved
+    Note over S,U: Source contains call atSourceEnd in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 868 - order unresolved
+    Note over S,U: Source contains call showSourceEndsEarly in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 868 - order unresolved
+    Note over S,U: Source contains call reloadNative in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 930 - order unresolved
+    Note over S,U: Source contains call addEventListener in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 774 - order unresolved
+    Note over S,U: Source contains call set in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 781 - order unresolved
+    Note over S,U: Source contains call loadSource in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 782 - order unresolved
+    Note over S,U: Source contains call detachEngine in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 986 - order unresolved
+    Note over S,U: Source contains call attachEngine in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 988 - order unresolved
+    Note over S,U: Source contains call detachEngine in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 662 - order unresolved
+    Note over S,U: Source contains call showMessage in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 663 - order unresolved
+    Note over S,U: Source contains call playheadPosition in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 669 - order unresolved
+    Note over S,U: Source contains call setRecovering in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 670 - order unresolved
+    Note over S,U: Source contains call fetchPlaybackInfo in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 673 - order unresolved
+    Note over S,U: Source contains call then in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 674 - order unresolved
+    Note over S,U: Source contains call streamOfKind in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 676 - order unresolved
+    Note over S,U: Source contains call detachEngine in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 679 - order unresolved
+    Note over S,U: Source contains call showUnavailable in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 680 - order unresolved
+    Note over S,U: Source contains call reload in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 685 - order unresolved
+    Note over S,U: Source contains call setState in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 689 - order unresolved
+    Note over S,U: Source contains call catch in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 696 - order unresolved
+    Note over S,U: Source contains call detachEngine in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 698 - order unresolved
+    Note over S,U: Source contains call showPlaybackInfoError in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 699 - order unresolved
+    Note over S,U: Source contains call finally in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 701 - order unresolved
+    Note over S,U: Source contains call resetRecoveryBudget in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 762 - order unresolved
+    Note over S,U: Source contains call setRecovering in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 763 - order unresolved
+    Note over S,U: Source contains call startLoad in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 764 - order unresolved
     Note over S,U: Source contains call useCallback in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 386 - order unresolved
     Note over S,U: Source contains call setRetryKey in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 388 - order unresolved
-    Note over S,U: Source contains call isRevealTerminalStatus in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 527 - order unresolved
-    Note over S,U: Source contains call enterRevealTerminal in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 528 - order unresolved
-    Note over S,U: Source contains call showMessage in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 530 - order unresolved
-    Note over S,U: Source contains call showMessage in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 532 - order unresolved
-    Note over S,U: Source contains call serverErrorReason in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 532 - order unresolved
-    Note over S,U: Source contains call showMessage in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 534 - order unresolved
-    Note over S,U: Source contains call destroyHls in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 834 - order unresolved
-    Note over S,U: Source contains call showMessage in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 835 - order unresolved
-    Note over S,U: Source contains call unavailableReason in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 476 - order unresolved
-    Note over S,U: Source contains call showMessage in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 477 - order unresolved
-    Note over S,U: Source contains call fetchPlaybackMarkers in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 542 - order unresolved
-    Note over S,U: Source contains call catch in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 542 - order unresolved
-    Note over S,U: Source contains call fetchPlaybackInfo in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 545 - order unresolved
-    Note over S,U: Source contains call waitForNetwork in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 549 - order unresolved
-    Note over S,U: Source contains call start in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 549 - order unresolved
-    Note over S,U: Source contains call showPlaybackInfoError in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 552 - order unresolved
-    Note over S,U: Source contains call choosePlaybackStream in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 557 - order unresolved
-    Note over S,U: Source contains call playbackDecision in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 558 - order unresolved
-    Note over S,U: Source contains call showUnavailable in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 564 - order unresolved
-    Note over S,U: Source contains call min in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 844 - order unresolved
-    Note over S,U: Source contains call stopLoad in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 846 - order unresolved
-    Note over S,U: Source contains call setRecovering in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 847 - order unresolved
-    Note over S,U: Source contains call atSourceEnd in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 848 - order unresolved
-    Note over S,U: Source contains call showSourceEndsEarly in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 849 - order unresolved
-    Note over S,U: Source contains call stopProgressQueue in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 445 - order unresolved
-    Note over S,U: Source contains call hlsStreamOf in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 982 - order unresolved
-    Note over S,U: Source contains call engineFor in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 984 - order unresolved
-    Note over S,U: Source contains call renditionIndex in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 988 - order unresolved
-    Note over S,U: Source contains call playheadPosition in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 992 - order unresolved
-    Note over S,U: Source contains call detachEngine in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 997 - order unresolved
-    Note over S,U: Source contains call attachEngine in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 999 - order unresolved
-    Note over S,U: Source contains call setState in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1000 - order unresolved
-    Note over S,U: Source contains call setState in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 490 - order unresolved
+    Note over S,U: Source contains call isRevealTerminalStatus in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 542 - order unresolved
+    Note over S,U: Source contains call enterRevealTerminal in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 543 - order unresolved
+    Note over S,U: Source contains call showMessage in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 545 - order unresolved
+    Note over S,U: Source contains call showMessage in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 547 - order unresolved
+    Note over S,U: Source contains call serverErrorReason in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 547 - order unresolved
+    Note over S,U: Source contains call showMessage in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 549 - order unresolved
+    Note over S,U: Source contains call destroyHls in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 849 - order unresolved
+    Note over S,U: Source contains call showMessage in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 850 - order unresolved
+    Note over S,U: Source contains call unavailableReason in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 491 - order unresolved
+    Note over S,U: Source contains call showMessage in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 492 - order unresolved
+    Note over S,U: Source contains call fetchPlaybackMarkers in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 557 - order unresolved
+    Note over S,U: Source contains call catch in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 557 - order unresolved
+    Note over S,U: Source contains call fetchPlaybackInfo in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 560 - order unresolved
+    Note over S,U: Source contains call waitForNetwork in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 564 - order unresolved
+    Note over S,U: Source contains call start in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 564 - order unresolved
+    Note over S,U: Source contains call showPlaybackInfoError in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 567 - order unresolved
+    Note over S,U: Source contains call choosePlaybackStream in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 572 - order unresolved
+    Note over S,U: Source contains call playbackDecision in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 573 - order unresolved
+    Note over S,U: Source contains call showUnavailable in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 579 - order unresolved
+    Note over S,U: Source contains call min in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 859 - order unresolved
+    Note over S,U: Source contains call stopLoad in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 861 - order unresolved
+    Note over S,U: Source contains call setRecovering in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 862 - order unresolved
+    Note over S,U: Source contains call atSourceEnd in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 863 - order unresolved
+    Note over S,U: Source contains call showSourceEndsEarly in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 864 - order unresolved
+    Note over S,U: Source contains call stopProgressQueue in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 459 - order unresolved
+    Note over S,U: Source contains call hlsStreamOf in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 997 - order unresolved
+    Note over S,U: Source contains call engineFor in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 999 - order unresolved
+    Note over S,U: Source contains call renditionIndex in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1003 - order unresolved
+    Note over S,U: Source contains call playheadPosition in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1007 - order unresolved
+    Note over S,U: Source contains call detachEngine in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1012 - order unresolved
+    Note over S,U: Source contains call attachEngine in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1014 - order unresolved
+    Note over S,U: Source contains call setState in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1015 - order unresolved
+    Note over S,U: Source contains call setState in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 505 - order unresolved
 ```

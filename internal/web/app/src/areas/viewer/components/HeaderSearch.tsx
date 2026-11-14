@@ -126,7 +126,13 @@ export function HeaderSearch() {
   }
 
   return (
-    <div role="search" className="relative" ref={setAnchor}>
+    // On a phone the field rests as a search glyph and, while focused, spans
+    // the header row so the query has room.
+    <div
+      role="search"
+      className="relative max-sm:has-[input:focus]:fixed max-sm:has-[input:focus]:inset-x-3 max-sm:has-[input:focus]:top-2 max-sm:has-[input:focus]:z-50"
+      ref={setAnchor}
+    >
       <Autocomplete.Root
         items={groups}
         mode="none"
@@ -148,7 +154,7 @@ export function HeaderSearch() {
       >
         <Search
           aria-hidden="true"
-          className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-[var(--text-muted)]"
+          className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-[var(--text-secondary)]"
         />
         <Autocomplete.Input
           ref={inputRef}
@@ -158,7 +164,7 @@ export function HeaderSearch() {
           spellCheck={false}
           placeholder={t("searchPlaceholder")}
           onKeyDown={onKeyDown}
-          className="h-8 w-28 rounded-[var(--radius-control)] border border-[var(--border-subtle)] bg-[var(--bg-raised)] pr-2 pl-7 text-sm text-[var(--text-primary)] outline-none transition-[width,border-color] placeholder:text-[var(--text-muted)] focus-visible:border-[var(--beam-500)] focus-visible:ring-2 focus-visible:ring-[var(--beam-500)]/40 sm:w-48 2xl:w-56 2xl:pr-7 2xl:focus:w-72"
+          className="h-10 w-10 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-raised)] pr-2 pl-9 text-sm text-[var(--text-primary)] transition-[width,border-color] placeholder:text-transparent max-sm:focus:w-full focus:placeholder:text-[var(--text-muted)] sm:w-56 sm:placeholder:text-[var(--text-muted)] 2xl:w-64 2xl:pr-7 2xl:focus:w-80"
         />
         {!query && (
           <kbd
@@ -183,7 +189,7 @@ export function HeaderSearch() {
               >
                 {(group: CellGroup) => (
                   <Autocomplete.Group key={group.key} items={group.items}>
-                    <Autocomplete.GroupLabel className="px-3 pt-2 pb-1 text-xs font-semibold tracking-wide text-[var(--text-muted)] uppercase">
+                    <Autocomplete.GroupLabel className="px-3 pt-2 pb-1 text-xs font-medium text-[var(--text-muted)]">
                       {group.label}
                     </Autocomplete.GroupLabel>
                     {group.items
@@ -205,7 +211,7 @@ export function HeaderSearch() {
               {!hasRows && (
                 <div className="px-4 py-5 text-sm">
                   {live.failed && settled && (
-                    <p className="text-[var(--red-500)]">{t("searchUnavailable")}</p>
+                    <p className="text-[var(--state-danger)]">{t("searchUnavailable")}</p>
                   )}
                   {!live.failed && settled && (
                     <>
@@ -290,7 +296,7 @@ function ResultRow({
           aria-label={playLabel}
           onClick={() => onActivate(play)}
           onPointerEnter={preloadPlayer}
-          className="flex size-9 cursor-pointer items-center justify-center self-center rounded-full text-[var(--text-secondary)] outline-none hover:text-[var(--text-primary)] data-highlighted:bg-[var(--beam-500)] data-highlighted:text-[var(--text-on-accent,#000)]"
+          className="flex size-8 cursor-pointer items-center justify-center self-center rounded-full text-[var(--text-secondary)] outline-none hover:text-[var(--text-primary)] data-highlighted:bg-[var(--beam-500)] data-highlighted:text-primary-foreground"
         >
           <Play aria-hidden="true" className="size-4" />
         </Autocomplete.Item>

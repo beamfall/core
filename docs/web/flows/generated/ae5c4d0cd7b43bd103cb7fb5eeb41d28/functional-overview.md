@@ -1,6 +1,6 @@
 # Admin Session unlock gate \(admin password\) reused by Console — functional-overview
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:f1a03c23321a8f78e01d5aa0cf3cf9ab -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
@@ -10,7 +10,7 @@ Source: internal/web/app/src/areas/enroll/AdminSessionGate\.tsx:36; symbol: Admi
 <!-- flowdocs:paragraph:b13fc4d1a5566c91992dacfe46ebab83 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
 
-Source: internal/web/app/src/lib/graphql/auth\.ts:76; symbol: ; span SHA256: 4ee3d8497d06e82a98de946da060f09c88687949557d97077c0ae75fe3f3216d.
+Source: internal/web/app/src/lib/graphql/auth\.ts:81; symbol: ; span SHA256: 4ee3d8497d06e82a98de946da060f09c88687949557d97077c0ae75fe3f3216d.
 
 <!-- flowdocs:paragraph:63285156dd342495e029328e8caac686 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.

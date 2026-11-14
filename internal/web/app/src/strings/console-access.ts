@@ -17,7 +17,7 @@ export const consoleAccessStrings = {
     consoleOverviewNeedsOwner: "Create the owner Profile.",
     consoleLayoutNavigation: "Layout & Navigation",
     consoleUpdates: "Updates",
-    advanced: "Advanced",
+    showAdvancedSettings: "Show advanced settings",
     consoleLead: "Operator settings. Enter the server admin password to unlock.",
     adminPasswordLabel: "Admin password",
     adminUnlockSubmit: "Unlock Console",

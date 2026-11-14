@@ -1,11 +1,11 @@
 # Rescan a library or all libraries and follow scan state — functional-overview
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:5e186d02991a7ec93a0817511afa5cbc -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
 
-Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:195; symbol: RescanAllButton; span SHA256: a7b29862c74ec31c99a6ee4e6850b9b4ed7a91667f30a42bece86aad3478f852.
+Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:28; symbol: ACTIVE; span SHA256: e102279ed89eede4d9a82b5ea48e0c3014f5e434dc686556347bc33a19bc7aeb.
 
 <!-- flowdocs:paragraph:2eeac64cdc875158f9f02176e2cc6fb3 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.

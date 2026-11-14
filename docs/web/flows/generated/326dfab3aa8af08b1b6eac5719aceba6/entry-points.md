@@ -1,6 +1,6 @@
 # Shell and per\-area error boundaries with reload panel — entry-points
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:fe730b74e8f63b21cf2323f60efffa5a -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.

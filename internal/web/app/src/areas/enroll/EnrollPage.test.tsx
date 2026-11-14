@@ -90,6 +90,57 @@ describe("EnrollPage", () => {
     expect(screen.getByRole("button", { name: "Connect" })).toBeEnabled();
   });
 
+  it("tells a rejected code it may be used or expired, and selects it for retyping", async () => {
+    vi.mocked(enroll).mockRejectedValue(new ApiError("POST /api/web/enroll failed", 401));
+
+    await submit("WRONG-CODE");
+
+    expect(screen.getByText(/expires 10 minutes after it's made/)).toBeInTheDocument();
+    const field = screen.getByLabelText("Pairing code") as HTMLInputElement;
+    await act(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+    expect(field).toHaveFocus();
+    expect(field.selectionEnd! - field.selectionStart!).toBe("WRONG-CODE".length);
+  });
+
+  it("uppercases a pasted code and drops its spaces", async () => {
+    vi.mocked(enroll).mockResolvedValue("bound");
+    render(
+      <I18nProvider>
+        <EnrollPage />
+      </I18nProvider>,
+    );
+    const field = screen.getByLabelText("Pairing code");
+    await userEvent.click(field);
+    await userEvent.paste(" abcd 1234\n");
+    expect(field).toHaveValue("ABCD1234");
+    await userEvent.click(screen.getByRole("button", { name: "Connect" }));
+
+    expect(enroll).toHaveBeenCalledWith("ABCD1234", "Web Browser");
+  });
+
+  it("asks for a code instead of submitting an empty one", async () => {
+    render(
+      <I18nProvider>
+        <EnrollPage />
+      </I18nProvider>,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Connect" }));
+
+    expect(enroll).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent("Enter the pairing code to continue.");
+  });
+
+  it("separates a network failure and throttling from a wrong code", async () => {
+    vi.mocked(enroll).mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await submit("ABCD1234");
+    expect(screen.getByRole("alert")).toHaveTextContent("Can't reach the server.");
+    cleanup();
+
+    vi.mocked(enroll).mockRejectedValueOnce(new ApiError("POST /api/web/enroll failed", 429));
+    await submit("ABCD1234");
+    expect(screen.getByRole("alert")).toHaveTextContent("Too many attempts.");
+  });
+
   async function signInWithPassword(password: string) {
     render(
       <I18nProvider>

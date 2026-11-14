@@ -849,7 +849,7 @@ git -C "$REPO" checkout -q -- docs/note.md
 
 for covered in \
   contracts/registry.json \
-  internal/conformance/wire-contract-v1.8.0.json \
+  internal/conformance/wire-contract-v2.2.0.json \
   internal/graph/schema.graphqls \
   tools/wire-contract/main.go \
   script/crossrepo-conformance.sh \

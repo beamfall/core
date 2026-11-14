@@ -1,16 +1,14 @@
 # Viewer notifications inbox — readme
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:e6e4b5c722b0bf6caa1f8d816ec21be9 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/viewer/pages/NotificationsPage\.tsx:119; symbol: NotificationRow; span SHA256: b24148d2db280286c5eac686af7ff3c720a22c3f543f7c474148b109b291bb61.
+Source: internal/web/app/src/areas/viewer/pages/NotificationsPage\.tsx:11; symbol: NOTIFICATIONS\_CHANGED\_EVENT; span SHA256: 7dde5112c416d78842d0a78b8b573bc6866f08d7ac535b0bcf9c82ce0969e72c.
 
 
 Security summaries: not collected; absence is not a clean security finding.
-
-- A declared inventory flow with no resolved member is reported, not generated\.
 
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
@@ -32,14 +30,4 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow viewer\.notifications: 8 resolved, 5 unresolved members.
-
-- Unresolved member internal/web/app/src/areas/viewer/pages/NotificationsPage\.tsx NOTIFICATIONS\_CHANGED\_EVENT: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/pages/NotificationsPage\.tsx NOTIFICATION\_INBOX\_LIMIT: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/pages/NotificationsPage\.tsx TFunction: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts MARK\_NOTIFICATION\_READ\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts NOTIFICATIONS\_QUERY: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow viewer\.notifications: 13 resolved, 0 unresolved members.

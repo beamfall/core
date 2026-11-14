@@ -14,7 +14,7 @@
 # is rebuilt at HEAD and compared with map.json ignoring only its revision and
 # digest. Neither mode is wired into `make gate`.
 #
-# Needs a Corvint build whose flow generator is version 5 or later (V1-5491).
+# Needs a Corvint build whose flow generator is version 6 or later (V1-5524).
 # CORVINT_DOCS and CORVINT override the corvint-docs and corvint executables.
 set -euo pipefail
 

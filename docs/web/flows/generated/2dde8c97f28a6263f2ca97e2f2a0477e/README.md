@@ -1,6 +1,6 @@
 # Viewer entity detail page and not\-available state — readme
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:895b31a9129840196493859a58239ced -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -9,8 +9,6 @@ Source: internal/web/app/src/areas/viewer/components/NotAvailable\.tsx:12; symbo
 
 
 Security summaries: not collected; absence is not a clean security finding.
-
-- A declared inventory flow with no resolved member is reported, not generated\.
 
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
@@ -32,12 +30,4 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow viewer\.entity: 10 resolved, 4 unresolved members.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/entityPreview\.ts EntityLinkState: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/viewer/lib/entityPreview\.ts EntityPreview: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts ENTITY\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/viewer\.ts MEDIA\_FOR\_ENTITY\_QUERY: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow viewer\.entity: 14 resolved, 0 unresolved members.

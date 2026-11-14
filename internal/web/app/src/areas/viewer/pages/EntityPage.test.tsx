@@ -24,6 +24,7 @@ vi.mock("@/lib/session", () => ({
   useSession: () => ({ manifest: { layouts: mocks.layouts } }),
   useViewerIdentity: () => mocks.identity,
 }));
+vi.mock("@/lib/i18n", () => ({ useDisplayLocale: () => "en" }));
 vi.mock("@/components/chrome/AppShell", () => ({
   AppShell: ({ children }: { children: ReactNode }) => <main>{children}</main>,
 }));
@@ -198,5 +199,78 @@ describe("EntityPage instant paint", () => {
 
     expect(await screen.findByText("Related item, Finished")).toBeInTheDocument();
     expect(fetchMediaForEntity).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("EntityPage related Entities", () => {
+  const withGroups: EntityInfo = {
+    ...entity,
+    kind: "rack",
+    relatedEntities: [
+      {
+        kind: "box",
+        kindDisplayName: { en: "Boxes" },
+        items: [{ id: "e2", kind: "entity", title: "Linked box", artwork: { poster: "" } }],
+      },
+      {
+        kind: "place",
+        items: [{ id: "e3", kind: "entity", title: "Linked place", artwork: { poster: "" } }],
+      },
+    ],
+  };
+
+  it("renders each related group under its display name before the Media list", async () => {
+    vi.mocked(fetchEntity).mockResolvedValue(withGroups);
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([related]);
+
+    renderEntity();
+
+    const media = await screen.findByText("Related item");
+    expect(screen.getByRole("heading", { name: "Boxes" })).toBeInTheDocument();
+    // A group without a declared display name falls back to the kind.
+    expect(screen.getByRole("heading", { name: "place" })).toBeInTheDocument();
+    const box = screen.getByText("Linked box");
+    expect(box.compareDocumentPosition(media) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("renders related groups when the Entity has no direct Media", async () => {
+    vi.mocked(fetchEntity).mockResolvedValue(withGroups);
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([]);
+
+    renderEntity();
+
+    expect(await screen.findByText("Linked box")).toBeInTheDocument();
+    expect(screen.getByText("Linked place")).toBeInTheDocument();
+  });
+
+  it("reloads related groups when engagement changes", async () => {
+    vi.mocked(fetchEntity).mockResolvedValue(withGroups);
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([]);
+    renderEntity();
+    expect(await screen.findByText("Linked box")).toBeInTheDocument();
+
+    const [boxGroup, placeGroup] = withGroups.relatedEntities ?? [];
+    vi.mocked(fetchEntity).mockResolvedValue({
+      ...withGroups,
+      relatedEntities: [
+        { ...boxGroup, items: [{ ...boxGroup.items[0], title: "Linked box, Finished" }] },
+        placeGroup,
+      ],
+    });
+    act(() => notifyEngagementChanged());
+
+    expect(await screen.findByText("Linked box, Finished")).toBeInTheDocument();
+    expect(fetchEntity).toHaveBeenCalledTimes(2);
+  });
+
+  it("renders related groups before a detail Layout", async () => {
+    mocks.layouts = [{ id: "rack-detail", sections: [], role: "detail", entityKind: "rack" }];
+    vi.mocked(fetchEntity).mockResolvedValue(withGroups);
+
+    renderEntity();
+
+    const box = await screen.findByText("Linked box");
+    const layout = screen.getByText("detail layout rack-detail");
+    expect(box.compareDocumentPosition(layout) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

@@ -33,6 +33,7 @@ import {
 } from "react";
 import { Slider } from "@/components/ui/astryx-primitives";
 import { NativeSelect } from "@/components/ui/select";
+import type { MetadataAttribution } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
 import { SKIP_INTERVALS, type SkipInterval } from "../lib/preferences";
 import {
@@ -74,6 +75,7 @@ export function PlayerTransport({
   state,
   mediaTitle = "",
   mediaID = "",
+  metadataAttribution,
   stageRef,
   skipInterval = 10,
   showSkipInterval = "",
@@ -93,6 +95,8 @@ export function PlayerTransport({
   mediaTitle?: string;
   /** The current Media's id, for the info overlay's item actions. */
   mediaID?: string;
+  /** The current Media's plugin-declared metadata credit, for the info overlay. */
+  metadataAttribution?: MetadataAttribution;
   /** The player stage element — subtitle styling rides a CSS var/class on it. */
   stageRef: React.RefObject<HTMLElement | null>;
   /** Seconds used by the transport's back/forward skip controls. */
@@ -1014,6 +1018,7 @@ export function PlayerTransport({
                 <InfoOverlay
                   mediaTitle={mediaTitle}
                   mediaID={mediaID}
+                  metadataAttribution={metadataAttribution}
                   info={state.info}
                   stream={state.stream}
                   manualRenditionID={manualRenditionID}

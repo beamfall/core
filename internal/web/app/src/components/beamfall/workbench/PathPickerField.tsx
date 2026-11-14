@@ -314,7 +314,16 @@ export function PathPickerField({
     footNote = t(REASON_TEXT[node.reasonCode]);
 
   return (
-    <div className={cn("space-y-1", className)}>
+    // Escape closes an open browser from anywhere in the field, including Browse
+    // itself before the first listing has moved focus into the panel.
+    <div
+      className={cn("space-y-1", className)}
+      onKeyDown={(e) => {
+        if (!open || e.key !== "Escape") return;
+        e.stopPropagation();
+        close();
+      }}
+    >
       <Label htmlFor={id}>{label}</Label>
       <div className="flex flex-wrap items-center gap-2">
         <Input
@@ -330,7 +339,6 @@ export function PathPickerField({
         <Button
           ref={browseButton}
           type="button"
-          size="sm"
           variant="outline"
           disabled={disabled}
           aria-expanded={open}
@@ -350,17 +358,7 @@ export function PathPickerField({
         {actions}
       </div>
       {open && (
-        <div
-          id={panelID}
-          role="group"
-          aria-label={t("pathPickerBrowser")}
-          className="path-browser"
-          onKeyDown={(e) => {
-            if (e.key !== "Escape") return;
-            e.stopPropagation();
-            close();
-          }}
-        >
+        <div id={panelID} role="group" aria-label={t("pathPickerBrowser")} className="path-browser">
           <div className="path-browser-head">
             <button
               ref={upButton}

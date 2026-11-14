@@ -46,7 +46,7 @@ function ViewerSessionPending() {
   const t = useT();
   return (
     <AppShell>
-      <div aria-busy="true" className="flex flex-col gap-8">
+      <div aria-busy="true" className="flex flex-col gap-10">
         <span className="sr-only">{t("loading")}</span>
         <SectionSkeleton hero />
         <SectionSkeleton hero={false} />

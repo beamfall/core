@@ -1,6 +1,6 @@
 # Console area shell: route table, section nav, host firewall, session bar — functional-overview
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:f6f6921a030eab696de5076f78176919 -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
@@ -10,7 +10,7 @@ Source: internal/web/app/src/areas/console/ConfirmButton\.tsx:20; symbol: Confir
 <!-- flowdocs:paragraph:905960212f4efc9d5bbdbd3eb62349c5 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
 
-Source: internal/web/app/src/areas/console/index\.tsx:467; symbol: ; span SHA256: ab7e3d4cadea402991c55d1fe12c023780eed5e8db2741a128b8c9fc18c6c50d.
+Source: internal/web/app/src/areas/console/index\.tsx:475; symbol: ; span SHA256: ab7e3d4cadea402991c55d1fe12c023780eed5e8db2741a128b8c9fc18c6c50d.
 
 | Variation inventory | Runtime coverage | Denominator rule |
 | --- | --- | --- |

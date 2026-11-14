@@ -2663,14 +2663,6 @@
         },
         {
           "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
-          "symbol": "TILE"
-        },
-        {
-          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
-          "symbol": "TILE_SELECTED"
-        },
-        {
-          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
           "symbol": "consumeSetupToken"
         },
         {
@@ -2844,10 +2836,6 @@
         {
           "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
           "symbol": "PLUGIN_ICON"
-        },
-        {
-          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
-          "symbol": "PLUGIN_LABEL"
         },
         {
           "path": "internal/web/app/src/areas/setup/orchestrate.ts",
@@ -3059,22 +3047,18 @@
       "members": [
         {
           "path": "internal/web/app/src/areas/enroll/EnrollPage.tsx",
-          "symbol": "CardHeading"
-        },
-        {
-          "path": "internal/web/app/src/areas/enroll/EnrollPage.tsx",
           "symbol": "EnrollPage"
         },
         {
-          "path": "internal/web/app/src/areas/enroll/EnrollPage.tsx",
-          "symbol": "FIELD"
+          "path": "internal/web/app/src/areas/enroll/AuthShell.tsx",
+          "symbol": "AUTH_FIELD"
         },
         {
-          "path": "internal/web/app/src/areas/enroll/EnrollPage.tsx",
-          "symbol": "FIELD_LABEL"
+          "path": "internal/web/app/src/areas/enroll/AuthShell.tsx",
+          "symbol": "AUTH_FIELD_LABEL"
         },
         {
-          "path": "internal/web/app/src/areas/enroll/EnrollPage.tsx",
+          "path": "internal/web/app/src/areas/enroll/AuthShell.tsx",
           "symbol": "FormFeedback"
         },
         {
@@ -3256,10 +3240,6 @@
         {
           "path": "internal/web/app/src/areas/console/ConfirmButton.tsx",
           "symbol": "ConfirmButton"
-        },
-        {
-          "path": "internal/web/app/src/areas/console/Section.tsx",
-          "symbol": "AdvancedDisclosure"
         },
         {
           "path": "internal/web/app/src/areas/console/Section.tsx",
@@ -3459,23 +3439,11 @@
       "members": [
         {
           "path": "internal/web/app/src/areas/console/OwnerTasks.tsx",
-          "symbol": "LINK_TILE"
-        },
-        {
-          "path": "internal/web/app/src/areas/console/OwnerTasks.tsx",
           "symbol": "OwnerTasks"
         },
         {
           "path": "internal/web/app/src/areas/console/OwnerTasks.tsx",
-          "symbol": "TILE"
-        },
-        {
-          "path": "internal/web/app/src/areas/console/OwnerTasks.tsx",
           "symbol": "TaskLink"
-        },
-        {
-          "path": "internal/web/app/src/areas/console/OwnerTasks.tsx",
-          "symbol": "TileHead"
         },
         {
           "path": "internal/web/app/src/areas/console/index.tsx",
@@ -3591,7 +3559,7 @@
     },
     {
       "id": "console.operations",
-      "title": "Console operations and updates: resource governor, job queue and job log",
+      "title": "Console operations: resource governor, job queue and job log",
       "members": [
         {
           "path": "internal/web/app/src/areas/console/sections/OperationsControls.tsx",
@@ -3715,7 +3683,7 @@
     },
     {
       "id": "console.sessions",
-      "title": "Console live sessions: update awareness, jobs, live sessions and host graphs",
+      "title": "Console live sessions and host graphs",
       "members": [
         {
           "path": "internal/web/app/src/areas/console/sections/Dashboard.tsx",
@@ -3818,58 +3786,6 @@
           "symbol": "useWidth"
         },
         {
-          "path": "internal/web/app/src/areas/console/sections/Operations.tsx",
-          "symbol": "JobsQueue"
-        },
-        {
-          "path": "internal/web/app/src/areas/console/sections/Operations.tsx",
-          "symbol": "LiveIndicator"
-        },
-        {
-          "path": "internal/web/app/src/areas/console/sections/Operations.tsx",
-          "symbol": "Operations"
-        },
-        {
-          "path": "internal/web/app/src/areas/console/sections/Operations.tsx",
-          "symbol": "PAUSE_AFTER_ERRORS"
-        },
-        {
-          "path": "internal/web/app/src/areas/console/sections/Operations.tsx",
-          "symbol": "StreamState"
-        },
-        {
-          "path": "internal/web/app/src/areas/console/sections/Operations.tsx",
-          "symbol": "UPDATE_STATE_DISPLAY"
-        },
-        {
-          "path": "internal/web/app/src/areas/console/sections/Operations.tsx",
-          "symbol": "UpdateAvailableGuidance"
-        },
-        {
-          "path": "internal/web/app/src/areas/console/sections/Operations.tsx",
-          "symbol": "UpdateAwareness"
-        },
-        {
-          "path": "internal/web/app/src/areas/console/sections/Operations.tsx",
-          "symbol": "statusTone"
-        },
-        {
-          "path": "internal/web/app/src/areas/console/sections/Operations.tsx",
-          "symbol": "updateStateDisplay"
-        },
-        {
-          "path": "internal/web/app/src/lib/graphql/console.ts",
-          "symbol": "CONSOLE_CONFIG_FIELDS"
-        },
-        {
-          "path": "internal/web/app/src/lib/graphql/console.ts",
-          "symbol": "CONSOLE_CONFIG_QUERY"
-        },
-        {
-          "path": "internal/web/app/src/lib/graphql/console.ts",
-          "symbol": "ConsoleConfigPatch"
-        },
-        {
           "path": "internal/web/app/src/lib/graphql/console.ts",
           "symbol": "HOST_METRICS_QUERY"
         },
@@ -3879,19 +3795,7 @@
         },
         {
           "path": "internal/web/app/src/lib/graphql/console.ts",
-          "symbol": "SET_CONSOLE_CONFIG_MUTATION"
-        },
-        {
-          "path": "internal/web/app/src/lib/graphql/console.ts",
           "symbol": "TERMINATE_SESSION_MUTATION"
-        },
-        {
-          "path": "internal/web/app/src/lib/graphql/console.ts",
-          "symbol": "UPDATE_STATUS_QUERY"
-        },
-        {
-          "path": "internal/web/app/src/lib/graphql/console.ts",
-          "symbol": "fetchConsoleConfig"
         },
         {
           "path": "internal/web/app/src/lib/graphql/console.ts",
@@ -3903,23 +3807,7 @@
         },
         {
           "path": "internal/web/app/src/lib/graphql/console.ts",
-          "symbol": "fetchUpdateStatus"
-        },
-        {
-          "path": "internal/web/app/src/lib/graphql/console.ts",
-          "symbol": "setConsoleConfig"
-        },
-        {
-          "path": "internal/web/app/src/lib/graphql/console.ts",
           "symbol": "terminateSession"
-        },
-        {
-          "path": "internal/web/app/src/lib/graphql/manage.ts",
-          "symbol": "JOBS_QUERY"
-        },
-        {
-          "path": "internal/web/app/src/lib/graphql/manage.ts",
-          "symbol": "fetchJobs"
         },
         {
           "path": "internal/web/app/src/areas/console/sections/Dashboard.tsx",
@@ -3944,16 +3832,12 @@
         {
           "path": "internal/web/app/src/areas/console/sections/Dashboard.tsx",
           "symbol": "y"
-        },
-        {
-          "path": "internal/web/app/src/areas/console/sections/Operations.tsx",
-          "symbol": "onSave"
         }
       ],
       "entry_points": [
         {
-          "path": "internal/web/app/src/areas/console/sections/Operations.tsx",
-          "symbol": "Operations"
+          "path": "internal/web/app/src/areas/console/sections/Dashboard.tsx",
+          "symbol": "LiveSessions"
         }
       ]
     },
@@ -4243,10 +4127,6 @@
         },
         {
           "path": "internal/web/app/src/areas/console/sections/Libraries.tsx",
-          "symbol": "ICON_TILE"
-        },
-        {
-          "path": "internal/web/app/src/areas/console/sections/Libraries.tsx",
           "symbol": "Libraries"
         },
         {
@@ -4256,10 +4136,6 @@
         {
           "path": "internal/web/app/src/areas/console/sections/Libraries.tsx",
           "symbol": "NO_PLUGIN"
-        },
-        {
-          "path": "internal/web/app/src/areas/console/sections/Libraries.tsx",
-          "symbol": "PANEL"
         },
         {
           "path": "internal/web/app/src/areas/console/sections/Libraries.tsx",
@@ -4560,10 +4436,6 @@
         {
           "path": "internal/web/app/src/areas/console/sections/Plugins.tsx",
           "symbol": "credentialAction"
-        },
-        {
-          "path": "internal/web/app/src/areas/console/sections/Plugins.tsx",
-          "symbol": "deactivate"
         },
         {
           "path": "internal/web/app/src/areas/console/sections/Plugins.tsx",
@@ -5486,16 +5358,76 @@
       ]
     },
     {
+      "id": "console.updates",
+      "title": "Console update awareness: update check, release channel and update-available guidance",
+      "members": [
+        {
+          "path": "internal/web/app/src/areas/console/sections/Operations.tsx",
+          "symbol": "UPDATE_STATE_DISPLAY"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Operations.tsx",
+          "symbol": "UpdateAvailableGuidance"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Operations.tsx",
+          "symbol": "UpdateAwareness"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Operations.tsx",
+          "symbol": "updateStateDisplay"
+        },
+        {
+          "path": "internal/web/app/src/lib/graphql/console.ts",
+          "symbol": "CONSOLE_CONFIG_FIELDS"
+        },
+        {
+          "path": "internal/web/app/src/lib/graphql/console.ts",
+          "symbol": "CONSOLE_CONFIG_QUERY"
+        },
+        {
+          "path": "internal/web/app/src/lib/graphql/console.ts",
+          "symbol": "ConsoleConfigPatch"
+        },
+        {
+          "path": "internal/web/app/src/lib/graphql/console.ts",
+          "symbol": "SET_CONSOLE_CONFIG_MUTATION"
+        },
+        {
+          "path": "internal/web/app/src/lib/graphql/console.ts",
+          "symbol": "UPDATE_STATUS_QUERY"
+        },
+        {
+          "path": "internal/web/app/src/lib/graphql/console.ts",
+          "symbol": "fetchConsoleConfig"
+        },
+        {
+          "path": "internal/web/app/src/lib/graphql/console.ts",
+          "symbol": "fetchUpdateStatus"
+        },
+        {
+          "path": "internal/web/app/src/lib/graphql/console.ts",
+          "symbol": "setConsoleConfig"
+        },
+        {
+          "path": "internal/web/app/src/areas/console/sections/Operations.tsx",
+          "symbol": "onSave"
+        }
+      ],
+      "entry_points": [
+        {
+          "path": "internal/web/app/src/areas/console/sections/Operations.tsx",
+          "symbol": "UpdateAwareness"
+        }
+      ]
+    },
+    {
       "id": "console.config",
       "title": "Console server and transcode configuration",
       "members": [
         {
           "path": "internal/web/app/src/areas/console/sections/Config.tsx",
           "symbol": "Config"
-        },
-        {
-          "path": "internal/web/app/src/areas/console/sections/Config.tsx",
-          "symbol": "ServerConfig"
         },
         {
           "path": "internal/web/app/src/areas/console/sections/Config.tsx",

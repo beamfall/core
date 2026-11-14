@@ -336,6 +336,7 @@ var fieldDispatchRuns = [...]fieldDispatchFunc{
 	144: dispatchFieldBlock144,
 	145: dispatchFieldBlock145,
 	146: dispatchFieldBlock146,
+	147: dispatchFieldBlock147,
 }
 
 var fieldHandlerRegistry = map[string]fieldHandler{
@@ -439,6 +440,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"jobevents":                          newFieldHandler("jobEvents", "jobEvents", fieldRead, roleSession|roleAdmin, 63),
 	"jobretry":                           newFieldHandler("jobRetry", "jobRetry", fieldMutation, roleSession|roleAdmin, 63),
 	"itemstate":                          newFieldHandler("itemState", "itemState", fieldRead, roleSession, 146),
+	"metadatacredits":                    newFieldHandler("metadataCredits", "metadataCredits", fieldRead, roleSession, 147),
 	"jobs":                               newFieldHandler("jobs", "jobs", fieldRead, roleSession|roleAdmin, 63),
 	"joingroup":                          newFieldHandler("joinGroup", "joinGroup", fieldMutation, roleSession, 132),
 	"leavegroup":                         newFieldHandler("leaveGroup", "leaveGroup", fieldMutation, roleSession, 133),
@@ -3939,6 +3941,23 @@ func dispatchFieldBlock146(dispatch *fieldDispatchContext) response {
 	if fields["setrating"] {
 		state, err := h.setRating(ctx, scope, req)
 		if resp := resolveField(dispatch, "setrating", state, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	return response{}
+}
+
+// dispatchFieldBlock147 resolves the metadata credits read (CORE-1126): every
+// active plugin scraper's declared attribution, deduplicated.
+func dispatchFieldBlock147(dispatch *fieldDispatchContext) response {
+	h := dispatch.handler
+	ctx := dispatch.ctx
+	scope := dispatch.scope
+	req := dispatch.req
+	fields := dispatch.fields
+	if fields["metadatacredits"] {
+		credits, err := h.metadataCredits(ctx, scope, req)
+		if resp := resolveField(dispatch, "metadatacredits", credits, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

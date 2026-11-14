@@ -1,11 +1,11 @@
 # Session spine: compat handshake, session renewal, identity epoch, request guard — flow-diagram
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1c78e8002cd5e62eb276606e42946313 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/lib/api\.ts:368; symbol: fetchSetupRequired; span SHA256: 0d8c70a9a0132d07cd38716b208981a5a9ec35272673295f9d5c27a3b5b6c13c.
+Source: internal/web/app/src/lib/api\.ts:102; symbol: ADMIN\_SESSION\_REQUIRED; span SHA256: fc3499cc96d72c65475ea9616779522bb2676ba3c5790775fa9a1c64e87522a1.
 
 ```mermaid
 sequenceDiagram
@@ -13,6 +13,16 @@ sequenceDiagram
     participant U as Unresolved runtime
     Note over S,U: Lexical inventory only - no witnessed order
     Note over S: Flow cc107bfc4b52832e04e348aec13c10e4
+    Note over S,U: Source contains call constructor in internal/web/app/src/lib/api.ts at line 150 - order unresolved
+    Note over S,U: Source contains call super in internal/web/app/src/lib/api.ts at line 155 - order unresolved
+    Note over S,U: Source contains call constructor in internal/web/app/src/lib/api.ts at line 129 - order unresolved
+    Note over S,U: Source contains call super in internal/web/app/src/lib/api.ts at line 133 - order unresolved
+    Note over S,U: Source contains call constructor in internal/web/app/src/lib/api.ts at line 59 - order unresolved
+    Note over S,U: Source contains call super in internal/web/app/src/lib/api.ts at line 64 - order unresolved
+    Note over S,U: Source contains call constructor in internal/web/app/src/lib/api.ts at line 74 - order unresolved
+    Note over S,U: Source contains call super in internal/web/app/src/lib/api.ts at line 78 - order unresolved
+    Note over S,U: Source contains call constructor in internal/web/app/src/lib/api.ts at line 139 - order unresolved
+    Note over S,U: Source contains call super in internal/web/app/src/lib/api.ts at line 144 - order unresolved
     Note over S,U: Source contains call map in internal/web/app/src/lib/api.ts at line 124 - order unresolved
     Note over S,U: Source contains call trim in internal/web/app/src/lib/api.ts at line 124 - order unresolved
     Note over S,U: Source contains call toLowerCase in internal/web/app/src/lib/api.ts at line 124 - order unresolved
@@ -73,14 +83,14 @@ sequenceDiagram
     Note over S,U: Source contains call keys in internal/web/app/src/lib/viewerCache.ts at line 46 - order unresolved
     Note over S,U: Source contains call next in internal/web/app/src/lib/viewerCache.ts at line 46 - order unresolved
     Note over S,U: Source contains call delete in internal/web/app/src/lib/viewerCache.ts at line 48 - order unresolved
-    Note over S,U: Source contains call postJSON in internal/web/app/src/lib/graphql/auth.ts at line 107 - order unresolved
-    Note over S,U: Source contains call rebindCompatibility in internal/web/app/src/lib/graphql/auth.ts at line 108 - order unresolved
-    Note over S,U: Source contains call postJSON in internal/web/app/src/lib/graphql/auth.ts at line 119 - order unresolved
-    Note over S,U: Source contains call settleRebind in internal/web/app/src/lib/graphql/auth.ts at line 123 - order unresolved
+    Note over S,U: Source contains call postJSON in internal/web/app/src/lib/graphql/auth.ts at line 112 - order unresolved
+    Note over S,U: Source contains call rebindCompatibility in internal/web/app/src/lib/graphql/auth.ts at line 113 - order unresolved
+    Note over S,U: Source contains call postJSON in internal/web/app/src/lib/graphql/auth.ts at line 124 - order unresolved
+    Note over S,U: Source contains call settleRebind in internal/web/app/src/lib/graphql/auth.ts at line 128 - order unresolved
     Note over S,U: Source contains call rebindCompatibility in internal/web/app/src/lib/graphql/auth.ts at line 28 - order unresolved
-    Note over S,U: Source contains call signalOrCommitted in internal/web/app/src/lib/graphql/viewer.ts at line 117 - order unresolved
-    Note over S,U: Source contains call rebindCompatibility in internal/web/app/src/lib/graphql/viewer.ts at line 118 - order unresolved
-    Note over S,U: Source contains call rebindCompatibility in internal/web/app/src/lib/graphql/viewer.ts at line 107 - order unresolved
+    Note over S,U: Source contains call signalOrCommitted in internal/web/app/src/lib/graphql/viewer.ts at line 118 - order unresolved
+    Note over S,U: Source contains call rebindCompatibility in internal/web/app/src/lib/graphql/viewer.ts at line 119 - order unresolved
+    Note over S,U: Source contains call rebindCompatibility in internal/web/app/src/lib/graphql/viewer.ts at line 108 - order unresolved
     Note over S,U: Source contains call useCallback in internal/web/app/src/lib/session.tsx at line 123 - order unresolved
     Note over S,U: Source contains call abort in internal/web/app/src/lib/session.tsx at line 124 - order unresolved
     Note over S,U: Source contains call advanceCompatibilityEpoch in internal/web/app/src/lib/session.tsx at line 125 - order unresolved

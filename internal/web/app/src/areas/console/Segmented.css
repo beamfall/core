@@ -1,0 +1,36 @@
+/* The one segmented control: a small set of mutually exclusive choices (update channel, bulk tag
+   mode, marker retag mode). Its own sheet because the Console and Manage both render it. */
+.segmented {
+  display: inline-flex;
+  height: 32px;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-raised);
+}
+
+.segmented button {
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.segmented button:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.segmented button[aria-pressed="true"] {
+  background: var(--control-bg-hover);
+  color: var(--text-primary);
+}
+
+.segmented button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

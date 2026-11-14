@@ -1,11 +1,21 @@
 # Create a Media from an unmatched record and upload artwork — technical-deep-dive
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:f38bd8199afd97f58596cf10cdcb0183 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/manage/pages/unmatched/CreateMediaForm\.tsx:69; symbol: CreateMediaForm; span SHA256: d1340d4fbdb580f067e835013aa42d8fc5cce53aa928502f6fbc3005a09aa114.
+Source: internal/web/app/src/areas/manage/pages/unmatched/CreateMediaForm\.tsx:14; symbol: ARTWORK\_SLOT; span SHA256: 8e67075a8aab38f7bf5c9b674127821fdd38583d97555893a5165ab87cc49be3.
+
+<!-- flowdocs:paragraph:cdd57708b66255a0c99cc5c343d114e4 -->
+Declared member: source declares ARTWORK\_SLOT; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/pages/unmatched/CreateMediaForm\.tsx:14; symbol: ARTWORK\_SLOT; span SHA256: 8e67075a8aab38f7bf5c9b674127821fdd38583d97555893a5165ab87cc49be3.
+
+<!-- flowdocs:paragraph:f9f42ea940229563579b3545181ecb6a -->
+Declared member: source declares EARLIEST\_YEAR; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/manage/pages/unmatched/CreateMediaForm\.tsx:10; symbol: EARLIEST\_YEAR; span SHA256: afaca1d1a6b6bc10f1d217241386ca5ee90b4964ac462177b0e0b34099ed91a9.
 
 <!-- flowdocs:paragraph:28521f096bff691d74adddce66e855a3 -->
 Declared member: source declares uploadArtwork; membership is caller\-declared, not runtime evidence\.
@@ -17,10 +27,15 @@ Declared member: source declares validateYear; membership is caller\-declared, n
 
 Source: internal/web/app/src/areas/manage/pages/unmatched/CreateMediaForm\.tsx:50; symbol: validateYear; span SHA256: 8fa8548ed2b2f179f0db8c3c02fe1e506c6406cb29b3655be50d8b7d28b7586a.
 
+<!-- flowdocs:paragraph:8d523529a7da457c25325402e69239fb -->
+Declared member: source declares CREATE\_MEDIA\_FROM\_UNMATCHED\_MUTATION; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/graphql/manage\.ts:1434; symbol: CREATE\_MEDIA\_FROM\_UNMATCHED\_MUTATION; span SHA256: 0ea4be04eaf378c98208f9f633a50e5979d580b1e5bfb52ee0323f9421c83bb6.
+
 <!-- flowdocs:paragraph:f226e2d7921b459c4de455a591785e69 -->
 Declared member: source declares createMediaFromUnmatched; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:1427; symbol: createMediaFromUnmatched; span SHA256: 4c14da1f4a1dec79db89389790071ac45346c51dd51445feaaec5766625f31b2.
+Source: internal/web/app/src/lib/graphql/manage\.ts:1438; symbol: createMediaFromUnmatched; span SHA256: 4c14da1f4a1dec79db89389790071ac45346c51dd51445feaaec5766625f31b2.
 
 <!-- flowdocs:paragraph:d17d598922d6754a1d47417211cef0fe -->
 Declared member: source declares captureGeneration; membership is caller\-declared, not runtime evidence\.

@@ -1,4 +1,4 @@
-import { Check, Play } from "lucide-react";
+import { Check, Film, Play } from "lucide-react";
 import type { PointerEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
@@ -22,7 +22,7 @@ const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 // One catalog card, ported from the vanilla renderItem (app.js). Generic by
 // invariant #1: the wire entity is Media and `kind` is a plugin display
 // discriminant — a "media" item plays, anything else opens entity detail. The
-// poster sits in a fixed 2:3 frame whose accent-tinted fallback gradient shows
+// poster sits in a fixed 2:3 frame whose tinted fallback (with a muted glyph) shows
 // when artwork is absent or fails to load, so layout never shifts. Titles and
 // summaries render as React text only (invariant #5 / ADR-0012 §5).
 //
@@ -205,13 +205,15 @@ export function MediaItemCard({
         className="bf-card"
       >
         <div className="bf-poster">
-          {poster && !imageFailed && (
+          {poster && !imageFailed ? (
             <img
               alt=""
               loading="lazy"
               src={artworkBucketURL(poster, "w320")}
               onError={() => setImageFailed(true)}
             />
+          ) : (
+            <Film aria-hidden strokeWidth={1.5} className="bf-poster-glyph size-[28%]" />
           )}
           {previewClip && (
             <video

@@ -1,16 +1,14 @@
 # Manage unmatched records: inbox, fix match, suppression — readme
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:42d4f466c1cea153881a23233c4af8e4 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/manage/pages/UnmatchedPage\.tsx:40; symbol: UnmatchedPage; span SHA256: 291cd556681df34fe7de2db62444f5e8829fef17ccee656c8b5c8514585cd6ce.
+Source: internal/web/app/src/areas/manage/pages/UnmatchedPage\.tsx:39; symbol: UnmatchedPage; span SHA256: 291cd556681df34fe7de2db62444f5e8829fef17ccee656c8b5c8514585cd6ce.
 
 
 Security summaries: not collected; absence is not a clean security finding.
-
-- A declared inventory flow with no resolved member is reported, not generated\.
 
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
@@ -32,34 +30,4 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow manage\.unmatched: 31 resolved, 15 unresolved members.
-
-- Unresolved member internal/web/app/src/areas/manage/pages/unmatched/SuppressionPanel\.tsx SCOPES: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/manage/pages/unmatched/reasons\.ts REASON\_STRING\_KEYS: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts DISMISS\_UNMATCHED\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts FIX\_MATCH\_CANDIDATES\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts FIX\_MATCH\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts FIX\_MATCH\_PREVIEW\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts IDENTIFY\_LOOKUP\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts LIBRARIES\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts RESET\_UNMATCHED\_SUPPRESSION\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts SUPPRESS\_UNMATCHED\_MUTATION: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts SuppressionScope: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts SuppressionTarget: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts UNMATCHED\_QUEUE\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts UNMATCHED\_RECORDS\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts UNMATCHED\_SUPPRESSIONS\_QUERY: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow manage\.unmatched: 46 resolved, 0 unresolved members.

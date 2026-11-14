@@ -1,16 +1,14 @@
 # Setup: choose sign\-in security mode and create the owner Profile — readme
 
-Source revision: e417fb394873a04fbd27fb8d5bcbca5484c8747f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:921bc539b37646864c0e9763a6813444 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/setup/orchestrate\.ts:225; symbol: bootstrapResume; span SHA256: a688d5610f848cc6ce5b1f97c8e93be757d4d0752bc0a1a7adb7f77f261c717a.
+Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:88; symbol: SECURITY\_MODES; span SHA256: 009350b6896c002518fa268b58f8440741d9067009d6d86cabe95062b7ec28f7.
 
 
 Security summaries: not collected; absence is not a clean security finding.
-
-- A declared inventory flow with no resolved member is reported, not generated\.
 
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
@@ -32,16 +30,4 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow setup\.owner\-and\-security: 5 resolved, 6 unresolved members.
-
-- Unresolved member internal/web/app/src/areas/setup/SetupWizard\.tsx SECURITY\_MODES: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/setup/orchestrate\.ts SetupBootstrapResult: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/setup/orchestrate\.ts SetupResume: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/areas/setup/orchestrate\.ts SetupTokenError: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts LIBRARIES\_QUERY: symbol is not a supported declaration in this path at this revision.
-
-- Unresolved member internal/web/app/src/lib/graphql/manage\.ts SETUP\_STATE\_QUERY: symbol is not a supported declaration in this path at this revision.
+Declared inventory flow setup\.owner\-and\-security: 11 resolved, 0 unresolved members.
