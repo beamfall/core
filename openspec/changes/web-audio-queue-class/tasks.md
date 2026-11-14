@@ -1,10 +1,10 @@
 ## 1. Web
 
-- [ ] 1.1 Play-queue entries carry a known `mediaClass`; nav state round-trips it
-- [ ] 1.2 Narrow the player's queue to the playing item's class; learn classes from playback-info
-- [ ] 1.3 Show the audio stage while loading when the queue entry's class is audio
-- [ ] 1.4 Empty Oscillux visualizer slot in the audio stage
-- [ ] 1.5 vitest: queue narrowing rule, audio-vs-video routing, learned video next item skipped, slot
+- [x] 1.1 Play-queue entries carry a known `mediaClass`; nav state round-trips it
+- [x] 1.2 Narrow the player's queue to the playing item's class; learn classes from playback-info
+- [x] 1.3 Show the audio stage while loading when the queue entry's class is audio
+- [x] 1.4 Empty Oscillux visualizer slot in the audio stage
+- [x] 1.5 vitest: queue narrowing rule, audio-vs-video routing, learned video next item skipped, slot
 
 ## 2. Follow-ups (not in this change)
 
