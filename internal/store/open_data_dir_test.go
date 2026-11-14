@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -296,4 +297,70 @@ func TestRequireExistingAcceptsCatalogOfRunningServer(t *testing.T) {
 	if after := snapshotTree(t, dbDir); after != before {
 		t.Fatalf("probe changed the running server's database files:\nbefore:\n%s\nafter:\n%s", before, after)
 	}
+}
+
+// TestRequireExistingProbeNeverWritesBesideCatalog covers CORE-1599 for every
+// set of sidecars an owner can leave while it opens and closes the database
+// around a probe: SQLite must never get to create a -wal or -shm beside the
+// catalog. The db directory is read-only, so any attempt fails the probe, and
+// a Beamfall catalog whose ledger is only in a -wal must still be recognised.
+func TestRequireExistingProbeNeverWritesBesideCatalog(t *testing.T) {
+	for _, kind := range []string{"store", "wal"} {
+		files := heldDatabaseFiles(t, kind)
+		for _, sidecars := range [][]string{nil, {"-wal"}, {"-shm"}, {"-wal", "-shm"}} {
+			t.Run(fmt.Sprintf("%s %v", kind, sidecars), func(t *testing.T) {
+				dataDir := t.TempDir()
+				dbDir := filepath.Join(dataDir, "db")
+				if err := os.MkdirAll(dbDir, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				for _, suffix := range append([]string{""}, sidecars...) {
+					if err := os.WriteFile(filepath.Join(dbDir, "catalog.db"+suffix), files[suffix], 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := os.Chmod(dbDir, 0o500); err != nil { // #nosec G302 -- a read-only test directory
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = os.Chmod(dbDir, 0o700) }) // #nosec G302 -- restores the test directory for removal
+				before := snapshotTree(t, dbDir)
+				wantBeamfall := kind == "store" && slices.Contains(sidecars, "-wal")
+				err := requireExistingDataDir(context.Background(), dataDir)
+				if wantBeamfall && err != nil {
+					t.Fatalf("requireExistingDataDir refused a Beamfall catalog: %v", err)
+				}
+				if !wantBeamfall && !errors.Is(err, ErrNoDataDir) {
+					t.Fatalf("requireExistingDataDir error = %v, want ErrNoDataDir", err)
+				}
+				if after := snapshotTree(t, dbDir); after != before {
+					t.Fatalf("probe changed the db directory:\nbefore:\n%s\nafter:\n%s", before, after)
+				}
+			})
+		}
+	}
+}
+
+// heldDatabaseFiles returns the catalog, -wal and -shm bytes, keyed by suffix,
+// of a database held open by holdInOtherProcess.
+func heldDatabaseFiles(t *testing.T, kind string) map[string][]byte {
+	t.Helper()
+	path := t.TempDir()
+	catalog := filepath.Join(path, "db", "catalog.db")
+	if kind == "wal" {
+		if err := os.MkdirAll(filepath.Dir(catalog), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		path = catalog
+	}
+	release := holdInOtherProcess(t, kind, path)
+	defer release()
+	files := map[string][]byte{}
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		data, err := os.ReadFile(catalog + suffix) // #nosec G304 -- beneath a test-owned temporary directory
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[suffix] = data
+	}
+	return files
 }

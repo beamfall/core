@@ -22,7 +22,8 @@ no Beamfall database, creating nothing there.
 
 - **WHEN** the command runs beside a server whose catalog still holds its migration ledger only in
   the WAL
-- **THEN** the read-only check recognises the catalog without changing any of its files
+- **THEN** the read-only check recognises the catalog without creating or changing any file in its
+  directory, even if the server opens or closes the database during the check
 
 #### Scenario: Relative data directory
 
