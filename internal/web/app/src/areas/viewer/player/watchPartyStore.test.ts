@@ -105,7 +105,16 @@ describe("joinWatchParty", () => {
   it("opens the stream before accepting and takes the paused flag from the roster", async () => {
     vi.mocked(acceptWatchParty).mockImplementation(async () => {
       expect(subscribeEvents).toHaveBeenCalledTimes(1);
-      deliver({ groupID: "p1", signal: "roster", paused: false, members: ["Guest", "Host"] });
+      // The roster carries the live anchor, as the server sends it.
+      deliver({
+        groupID: "p1",
+        signal: "roster",
+        item: "m9",
+        positionMS: 3000,
+        presentAtMS: 90_000,
+        paused: false,
+        members: ["Guest", "Host"],
+      });
       return { partyID: "p1", item: "m9", positionMS: 3000, presentAtMS: 90_000 };
     });
 
@@ -248,5 +257,92 @@ describe("party actions", () => {
     expect(getWatchParty().status).toBe("idle");
     expect(unsubscribe).toHaveBeenCalled();
     expect(leaveWatchParty).toHaveBeenCalledWith("p1");
+  });
+});
+
+describe("races", () => {
+  it("lets a roster that arrives after the join settled move the timeline", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(acceptWatchParty).mockResolvedValue({
+        partyID: "p1",
+        item: "m1",
+        positionMS: 1000,
+        presentAtMS: 5000,
+      });
+      const joined = joinWatchParty("p1");
+      await vi.advanceTimersByTimeAsync(1600);
+      expect(await joined).toBe("m1");
+      expect(getWatchParty().timeline?.paused).toBe(true);
+      deliver({
+        groupID: "p1",
+        signal: "roster",
+        item: "m1",
+        positionMS: 1000,
+        presentAtMS: 5000,
+        paused: false,
+        members: ["Guest", "Host"],
+      });
+      expect(getWatchParty().timeline?.paused).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a transition that arrived before the accept returned", async () => {
+    vi.mocked(acceptWatchParty).mockImplementation(async () => {
+      deliver({ groupID: "p1", signal: "roster", item: "m1", paused: false, members: ["Host"] });
+      deliver({
+        groupID: "p1",
+        signal: "transition",
+        item: "m1",
+        positionMS: 90_000,
+        presentAtMS: 10_000,
+        paused: true,
+      });
+      return { partyID: "p1", item: "m1", positionMS: 1000, presentAtMS: 9000 };
+    });
+    await joinWatchParty("p1");
+    expect(getWatchParty().timeline).toMatchObject({ positionMS: 90_000, paused: true });
+  });
+
+  it("ends a party on the server when the host left while it was being created", async () => {
+    let finish!: (info: Awaited<ReturnType<typeof createWatchParty>>) => void;
+    vi.mocked(createWatchParty).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const starting = startWatchParty("m1");
+    await vi.waitFor(() => expect(createWatchParty).toHaveBeenCalled());
+    await leaveParty();
+    finish({ partyID: "p1", content: "m1", relaxed: true, members: [] });
+    expect(await starting).toBe(false);
+    expect(getWatchParty().status).toBe("idle");
+    expect(leaveWatchParty).toHaveBeenCalledWith("p1");
+  });
+
+  it("drops a host transport response that a stream frame overtook", async () => {
+    vi.mocked(createWatchParty).mockResolvedValue({
+      partyID: "p1",
+      content: "m1",
+      relaxed: true,
+      members: [],
+    });
+    await startWatchParty("m1");
+    vi.mocked(watchPartyTransport).mockImplementation(async () => {
+      deliver({
+        groupID: "p1",
+        signal: "transition",
+        item: "m1",
+        positionMS: 5000,
+        presentAtMS: 10_100,
+        paused: true,
+      });
+      return { item: "m1", positionMS: 5000, presentAtMS: 10_000 };
+    });
+    await sendPartyTransport("m1", 5000, false);
+    expect(getWatchParty().timeline).toMatchObject({ presentAtMS: 10_100, paused: true });
   });
 });

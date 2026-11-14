@@ -17,12 +17,16 @@ import {
 // Keeps the player's <video> on the Watch Party timeline (CORE-1677): holds it
 // paused and positioned until the shared present time, then plays, re-seeking
 // on a large drift and nudging the rate on a small one. The viewer's own play,
-// pause and seek go to the party; the corrections this hook applies do not.
+// pause and seek go to the party; the corrections this hook applies, and the
+// browser's own autoplay, do not.
 
 /** How often the drift is measured and corrected. */
 const SYNC_INTERVAL_MS = 250;
-/** Media events within this long of a correction are the correction's own echo. */
-const ECHO_WINDOW_MS = 1000;
+/**
+ * A media event counts as the viewer's own only within this long of their
+ * pointer or key input, and only if no correction came after that input.
+ */
+const INTENT_WINDOW_MS = 1500;
 
 export type WatchPartyPlayback = "off" | "waiting" | "paused" | "playing";
 
@@ -60,7 +64,11 @@ export function useWatchParty({
   const [driftMS, setDriftMS] = useState<number | null>(null);
   const [playback, setPlayback] = useState<WatchPartyPlayback>("off");
   const [needsTap, setNeedsTap] = useState(false);
-  const echoUntil = useRef(0);
+  // performance.now() of the viewer's last input in this player, and of the
+  // last correction. Input from before the player mounted (the notification's
+  // Join click) is not counted.
+  const lastInput = useRef(Number.NEGATIVE_INFINITY);
+  const lastCorrection = useRef(Number.NEGATIVE_INFINITY);
   const mediaIdRef = useRef(mediaId);
   mediaIdRef.current = mediaId;
 
@@ -68,7 +76,7 @@ export function useWatchParty({
   const timeline = party.timeline;
 
   const correct = useCallback((change: () => void) => {
-    echoUntil.current = performance.now() + ECHO_WINDOW_MS;
+    lastCorrection.current = performance.now();
     change();
   }, []);
 
@@ -141,13 +149,29 @@ export function useWatchParty({
     };
   }, [active, timeline, sync, videoRef]);
 
+  // Track the viewer's input, so a media event can be told apart from autoplay
+  // and from the echo of a correction.
+  useEffect(() => {
+    const onInput = () => {
+      lastInput.current = performance.now();
+    };
+    window.addEventListener("pointerdown", onInput, true);
+    window.addEventListener("keydown", onInput, true);
+    return () => {
+      window.removeEventListener("pointerdown", onInput, true);
+      window.removeEventListener("keydown", onInput, true);
+    };
+  }, []);
+
   // The viewer's own play, pause and seek become party transport. A media
-  // event that agrees with the timeline, or follows a correction, is ignored.
+  // event with no recent input behind it, or that agrees with the timeline, is
+  // ignored.
   useEffect(() => {
     const video = videoRef.current;
     if (!active || !attached || !video) return;
     const onLocal = (event: Event) => {
-      if (performance.now() < echoUntil.current) return;
+      const input = lastInput.current;
+      if (performance.now() - input > INTENT_WINDOW_MS || input < lastCorrection.current) return;
       const s = getWatchParty();
       const tl = s.timeline;
       if (s.status !== "active" || !tl || tl.item !== mediaIdRef.current) return;

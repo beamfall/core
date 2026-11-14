@@ -162,3 +162,25 @@ func TestWatchPartyRemoteFormAndJoinRefused(t *testing.T) {
 		t.Fatalf("home accept after remote refusal errors = %#v", errs)
 	}
 }
+
+// feature:watch-party
+func TestWatchPartyRefusesTitleSomeMemberCannotSee(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	st := storetest.Open(t)
+	h := newConductorHandler(st, now)
+	partyID := formTwoProfileParty(t, h)
+
+	// media-archive sits in a restricted Library: moving the party there would
+	// hand its id to a member whose filter hides it.
+	cursor := lastSeq(t, st)
+	if _, errs := post(t, h, pausedTransportBody(partyID, "media-archive", 0, false), authorizeViewer); len(errs) == 0 {
+		t.Fatal("transport to a title hidden from a member succeeded")
+	}
+	if rows := partyTransitionRows(t, st, partyID, cursor); len(rows) != 0 {
+		t.Fatalf("refused transport still wrote %d transition rows", len(rows))
+	}
+	anchor, err := h.conductor.PartyAnchor(partyID)
+	if err != nil || anchor.Item != "media-alpha" {
+		t.Fatalf("party anchor = %v, %v; want it still on media-alpha", anchor.Item, err)
+	}
+}

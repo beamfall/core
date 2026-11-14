@@ -58,9 +58,11 @@ const ROSTER_WAIT_MS = 1500;
 let state: WatchPartyState = IDLE;
 const listeners = new Set<() => void>();
 let closeStream: (() => void) | null = null;
-// The paused flag from a roster that arrived before the join's accept returned.
-let earlyRosterPaused: boolean | null = null;
 let rosterWaiters: Array<() => void> = [];
+// Bumped by every reset, so a start or join that a leave overtook knows it is stale.
+let generation = 0;
+// Counts timeline frames, so a host's transport response older than a frame is dropped.
+let timelineFrames = 0;
 
 function set(patch: Partial<WatchPartyState>): void {
   state = { ...state, ...patch };
@@ -81,35 +83,36 @@ export function useWatchPartyState(): WatchPartyState {
   return useSyncExternalStore(subscribe, getWatchParty, getWatchParty);
 }
 
+function timelineOf(frame: GroupSyncFrame): PartyTimeline {
+  return {
+    item: frame.item,
+    positionMS: frame.positionMS,
+    presentAtMS: frame.presentAtMS,
+    paused: frame.paused,
+  };
+}
+
 function applyFrame(frame: GroupSyncFrame): void {
-  if (frame.groupID !== state.partyID) return;
+  if (!state.partyID || frame.groupID !== state.partyID) return;
+  // A nudge carries only the server's suggested rate; the player measures and
+  // corrects its own drift. Transitions and rosters both carry the live anchor,
+  // in stream order, so each one is the timeline.
+  if (frame.signal === "nudge") return;
+  const patch: Partial<WatchPartyState> = {};
+  if (frame.item) {
+    patch.timeline = timelineOf(frame);
+    timelineFrames++;
+  }
   if (frame.signal === "roster") {
     const members = frame.members ?? state.members;
-    const patch: Partial<WatchPartyState> = {
-      members,
-      invited: state.invited.filter((name) => !members.includes(name)),
-    };
-    if (state.status === "joining") {
-      if (state.timeline) patch.timeline = { ...state.timeline, paused: frame.paused };
-      else earlyRosterPaused = frame.paused;
-    }
-    set(patch);
+    patch.members = members;
+    patch.invited = state.invited.filter((name) => !members.includes(name));
+  }
+  set(patch);
+  if (frame.signal === "roster") {
     const waiters = rosterWaiters;
     rosterWaiters = [];
     for (const wake of waiters) wake();
-    return;
-  }
-  // A nudge carries only the server's suggested rate; the player measures and
-  // corrects its own drift, so only transitions move the timeline.
-  if (frame.signal === "transition") {
-    set({
-      timeline: {
-        item: frame.item,
-        positionMS: frame.positionMS,
-        presentAtMS: frame.presentAtMS,
-        paused: frame.paused,
-      },
-    });
   }
 }
 
@@ -124,7 +127,7 @@ function openStream(): void {
 function reset(patch: Partial<WatchPartyState> = {}): void {
   closeStream?.();
   closeStream = null;
-  earlyRosterPaused = null;
+  generation++;
   const waiters = rosterWaiters;
   rosterWaiters = [];
   for (const wake of waiters) wake();
@@ -157,6 +160,7 @@ function invitedOf(info: WatchPartyInfo): string[] {
 export async function startWatchParty(content: string, positionMS = 0): Promise<boolean> {
   if (state.status !== "idle") return false;
   set({ status: "starting", error: "", errorDetail: "" });
+  const gen = generation;
   try {
     const clock = await calibrateWatchPartyClock();
     // Relaxed: anyone in the household party may play, pause or seek.
@@ -166,6 +170,11 @@ export async function startWatchParty(content: string, positionMS = 0): Promise<
       clockOffsetMS: clock.offsetMS,
       renderLatencyMS: 0,
     });
+    if (gen !== generation) {
+      // Left while the party was being created: end it on the server too.
+      await leaveWatchParty(info.partyID).catch(() => {});
+      return false;
+    }
     set({
       status: "active",
       partyID: info.partyID,
@@ -183,7 +192,7 @@ export async function startWatchParty(content: string, positionMS = 0): Promise<
     openStream();
     return true;
   } catch (err) {
-    reset(failure(err));
+    if (gen === generation) reset(failure(err));
     return false;
   }
 }
@@ -210,8 +219,8 @@ export async function joinWatchParty(partyID: string): Promise<string | null> {
     if (state.partyID === partyID && state.timeline) return state.timeline.item;
     return null;
   }
-  earlyRosterPaused = null;
   set({ status: "joining", partyID, isHost: false, error: "", errorDetail: "" });
+  const gen = generation;
   openStream();
   try {
     const clock = await calibrateWatchPartyClock();
@@ -220,23 +229,29 @@ export async function joinWatchParty(partyID: string): Promise<string | null> {
       clockOffsetMS: clock.offsetMS,
       renderLatencyMS: 0,
     });
-    if (earlyRosterPaused === null) await waitForRoster(ROSTER_WAIT_MS);
-    if (state.partyID !== partyID) return null;
+    // A frame that arrived since joining is newer than the accept's anchor
+    // (nothing reaches this Profile before it is a member); without one, wait
+    // briefly for the roster the accept triggers.
+    if (!state.timeline && gen === generation) await waitForRoster(ROSTER_WAIT_MS);
+    if (gen !== generation) {
+      await leaveWatchParty(partyID).catch(() => {});
+      return null;
+    }
     set({
       status: "active",
       offsetMS: clock.offsetMS,
-      timeline: {
+      // Without a roster yet, hold paused at the anchor: the party is most
+      // likely still waiting to start, and the roster, when it comes, moves it.
+      timeline: state.timeline ?? {
         item: anchor.item,
         positionMS: anchor.positionMS,
         presentAtMS: anchor.presentAtMS,
-        // Without a roster the party is most likely still waiting to start.
-        paused: earlyRosterPaused ?? true,
+        paused: true,
       },
     });
-    earlyRosterPaused = null;
-    return anchor.item;
+    return state.timeline?.item ?? anchor.item;
   } catch (err) {
-    reset(failure(err));
+    if (gen === generation) reset(failure(err));
     return null;
   }
 }
@@ -275,15 +290,18 @@ export async function sendPartyTransport(
   if (state.status !== "active") return;
   const partyID = state.partyID;
   const vars = { partyID, item, positionMS: Math.max(0, Math.round(positionMS)), paused };
+  const gen = generation;
+  const frames = timelineFrames;
   try {
     if (state.isHost) {
       const anchor = await watchPartyTransport(vars);
-      if (state.partyID === partyID) set({ timeline: { ...anchor, paused } });
+      // The stream's own transition may already have overtaken this response.
+      if (gen === generation && frames === timelineFrames) set({ timeline: { ...anchor, paused } });
     } else {
       await requestWatchPartyTransport(vars);
     }
   } catch (err) {
-    if (state.partyID === partyID) set(failure(err));
+    if (gen === generation) set(failure(err));
   }
 }
 

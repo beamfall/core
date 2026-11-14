@@ -376,11 +376,8 @@ func (h *Handler) watchPartyTransport(ctx context.Context, scope auth.Scope, req
 		return GroupTransitionResult{}, clientError("item is required")
 	}
 	position := time.Duration(int64Var(req, "positionMS")) * time.Millisecond
-	transition, members, err := h.conductor.HostTransition(partyID, scope.SessionID, item, position, boolVar(req, "paused"))
+	transition, err := h.partyTransition(ctx, partyID, scope.SessionID, scope.ProfileID, item, position, boolVar(req, "paused"))
 	if err != nil {
-		return GroupTransitionResult{}, partyClientError(err)
-	}
-	if err := h.broadcastPartyTransition(ctx, partyID, scope.ProfileID, members, transition); err != nil {
 		return GroupTransitionResult{}, err
 	}
 	if err := h.logActivity(ctx, scope, store.ActivityGroupControl, "watch-party", partyID, ""); err != nil {
@@ -455,11 +452,7 @@ func (h *Handler) requestWatchPartyTransport(ctx context.Context, scope auth.Sco
 	}
 	// Relaxed party: auto-approve by applying the seek on the host's behalf and
 	// broadcasting the authoritative transition (ADR-0038 §2.4 household mode).
-	transition, members, err := h.conductor.HostTransition(partyID, decision.Host, item, position, boolVar(req, "paused"))
-	if err != nil {
-		return RequestTransportResult{}, partyClientError(err)
-	}
-	if err := h.broadcastPartyTransition(ctx, partyID, scope.ProfileID, members, transition); err != nil {
+	if _, err := h.partyTransition(ctx, partyID, decision.Host, scope.ProfileID, item, position, boolVar(req, "paused")); err != nil {
 		return RequestTransportResult{}, err
 	}
 	if err := h.logActivity(ctx, scope, store.ActivityGroupControl, "watch-party", partyID, ""); err != nil {
@@ -532,11 +525,8 @@ func (h *Handler) watchPartyAutoSkip(ctx context.Context, scope auth.Scope, req 
 	// watchPartyTransport (broadcast + activity log on the timeline mutation).
 	apply := func(hostSession store.SessionID) (WatchPartyAutoSkipResult, error) {
 		// An auto-skip moves the position only; a paused party stays paused.
-		transition, members, err := h.conductor.HostTransition(partyID, hostSession, item, position, g.Paused())
+		transition, err := h.partyTransition(ctx, partyID, hostSession, scope.ProfileID, item, position, g.Paused())
 		if err != nil {
-			return WatchPartyAutoSkipResult{}, partyClientError(err)
-		}
-		if err := h.broadcastPartyTransition(ctx, partyID, scope.ProfileID, members, transition); err != nil {
 			return WatchPartyAutoSkipResult{}, err
 		}
 		if err := h.logActivity(ctx, scope, store.ActivityGroupControl, "watch-party", partyID, ""); err != nil {
@@ -603,6 +593,64 @@ func partyProfiles(members []conductor.Member, extra ...store.ProfileID) []store
 	return out
 }
 
+// partyTransition moves a party's shared timeline on hostSession's behalf and
+// broadcasts the result. Two guards hold here (CORE-1677):
+//
+//   - The Reveal intersection holds for every title, not only the one the party
+//     formed on: a move to another Media is refused unless every member's own
+//     session can see it, so the per-Profile fan-out never hands a Profile a
+//     Media id its filter hides.
+//   - partyMu serializes mutation and fan-out, so every Profile receives a
+//     party's transitions and rosters in the same order.
+func (h *Handler) partyTransition(ctx context.Context, partyID string, hostSession store.SessionID, caller store.ProfileID, item store.MediaID, position time.Duration, paused bool) (conductor.Transition, error) {
+	h.partyMu.Lock()
+	defer h.partyMu.Unlock()
+	if err := h.partyCanReveal(ctx, partyID, item); err != nil {
+		return conductor.Transition{}, err
+	}
+	transition, members, err := h.conductor.HostTransition(partyID, hostSession, item, position, paused)
+	if err != nil {
+		return conductor.Transition{}, partyClientError(err)
+	}
+	if err := h.broadcastPartyTransition(ctx, partyID, caller, members, transition); err != nil {
+		return conductor.Transition{}, err
+	}
+	return transition, nil
+}
+
+// errPartyTitleNotVisible refuses a move to a Media some member cannot see.
+var errPartyTitleNotVisible = clientError("cannot play this in the party: it is not visible to every member")
+
+// partyCanReveal checks that every member session of the party can see item
+// with its own filter. The current title passed this check (or the accept-time
+// one) already, so only a change of title is checked.
+func (h *Handler) partyCanReveal(ctx context.Context, partyID string, item store.MediaID) error {
+	anchor, err := h.conductor.PartyAnchor(partyID)
+	if err != nil {
+		return partyClientError(err)
+	}
+	if anchor.Item == item {
+		return nil
+	}
+	g, err := h.conductor.Party(partyID)
+	if err != nil {
+		return partyClientError(err)
+	}
+	if h.store == nil || h.auth == nil {
+		return errPartyTitleNotVisible
+	}
+	for _, m := range g.Members() {
+		scope, err := h.auth.Scope(ctx, m.SessionID)
+		if err != nil {
+			return errPartyTitleNotVisible
+		}
+		if _, err := h.store.Media(ctx, item, scope.LibraryFilter()); err != nil {
+			return errPartyTitleNotVisible
+		}
+	}
+	return nil
+}
+
 // broadcastPartyTransition writes a party transition to every member Profile.
 // caller is the Profile of the request that moved the timeline; it always
 // receives the row, as the single-Profile broadcastTransition did.
@@ -633,6 +681,8 @@ func (h *Handler) broadcastPartyRoster(ctx context.Context, partyID string) erro
 	if h.store == nil {
 		return nil
 	}
+	h.partyMu.Lock()
+	defer h.partyMu.Unlock()
 	g, err := h.conductor.Party(partyID)
 	if err != nil {
 		return partyClientError(err)

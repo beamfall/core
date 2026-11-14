@@ -1,0 +1,96 @@
+import { fireEvent, renderHook } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useWatchParty } from "./useWatchParty";
+import { sendPartyTransport, type WatchPartyState } from "./watchPartyStore";
+
+let party: WatchPartyState;
+
+vi.mock("./watchPartyStore", () => ({
+  getWatchParty: () => party,
+  useWatchPartyState: () => party,
+  sendPartyTransport: vi.fn(async () => {}),
+  startWatchParty: vi.fn(async () => true),
+  leaveParty: vi.fn(async () => {}),
+}));
+
+// A <video> stand-in: jsdom implements neither play() nor a settable clock.
+class FakeVideo extends EventTarget {
+  currentTime = 0;
+  paused = true;
+  readyState = 4;
+  seeking = false;
+  playbackRate = 1;
+  play() {
+    this.paused = false;
+    this.dispatchEvent(new Event("play"));
+    return Promise.resolve();
+  }
+  pause() {
+    this.paused = true;
+    this.dispatchEvent(new Event("pause"));
+  }
+}
+
+function activeParty(timeline: WatchPartyState["timeline"]): WatchPartyState {
+  return {
+    status: "active",
+    partyID: "party-1",
+    isHost: false,
+    timeline,
+    members: ["A", "B"],
+    invited: [],
+    offsetMS: 0,
+    error: "",
+    errorDetail: "",
+  };
+}
+
+function mount(video: FakeVideo) {
+  const videoRef = { current: video as unknown as HTMLVideoElement };
+  return renderHook(() =>
+    useWatchParty({ videoRef, attached: true, mediaId: "m1", onFollow: () => {} }),
+  );
+}
+
+describe("useWatchParty local transport", () => {
+  beforeEach(() => {
+    vi.mocked(sendPartyTransport).mockClear();
+  });
+
+  it("ignores the browser's autoplay on a paused join, even right after the Join click", () => {
+    party = activeParty({ item: "m1", positionMS: 0, presentAtMS: 0, paused: true });
+    const video = new FakeVideo();
+    // The notification's Join click happens before the player mounts.
+    fireEvent.pointerDown(document.body);
+    const view = mount(video);
+    video.play();
+    expect(sendPartyTransport).not.toHaveBeenCalled();
+    view.unmount();
+  });
+
+  it("sends the viewer's Play right after a corrective pause", () => {
+    party = activeParty({ item: "m1", positionMS: 0, presentAtMS: 0, paused: true });
+    const video = new FakeVideo();
+    video.paused = false;
+    // Mounting on a paused party pauses the playing video: a correction, not transport.
+    const view = mount(video);
+    expect(video.paused).toBe(true);
+    expect(sendPartyTransport).not.toHaveBeenCalled();
+    // The viewer presses Play straight after.
+    fireEvent.pointerDown(document.body);
+    video.play();
+    expect(sendPartyTransport).toHaveBeenCalledWith("m1", 0, false);
+    view.unmount();
+  });
+
+  it("sends the viewer's seek on a paused party", () => {
+    party = activeParty({ item: "m1", positionMS: 0, presentAtMS: 0, paused: true });
+    const video = new FakeVideo();
+    const view = mount(video);
+    fireEvent.keyDown(document.body, { key: "ArrowRight" });
+    video.currentTime = 30;
+    video.dispatchEvent(new Event("seeked"));
+    expect(sendPartyTransport).toHaveBeenCalledWith("m1", 30_000, true);
+    view.unmount();
+  });
+});
