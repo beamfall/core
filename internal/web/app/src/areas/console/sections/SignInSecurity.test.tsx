@@ -140,6 +140,9 @@ describe("SignInSecurity", () => {
     await switchToStrict("wrong");
     await submitStrict();
     expect(await screen.findByRole("alert")).toHaveTextContent("Too many attempts.");
+    // The refusal moves focus to the alert on the next frame; typing before
+    // that frame lands loses keystrokes to the alert under load.
+    await vi.waitFor(() => expect(screen.getByRole("alert")).toHaveFocus(), { timeout: 5_000 });
 
     await userEvent.type(screen.getByLabelText("Admin password"), "again");
     await submitStrict();
