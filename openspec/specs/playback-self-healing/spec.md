@@ -122,3 +122,83 @@ the last presented position. Before the load has presented any frame it SHALL re
 - **WHEN** the viewer seeks to a position the stream has not produced yet and pauses or leaves
   before that frame is presented
 - **THEN** the progress report carries the position presented before the seek
+
+### Requirement: A waiting request restarts a stalled encoder
+
+The live HLS session manager SHALL track each live encoder's output progress. While a request
+waits on an encoder, it SHALL kill the encoder if the encoder's output position has not advanced
+for a bounded interval. It SHALL treat the kill as an unexpected exit: the waiting request
+restarts the encoder within the existing restart bound and session budget, and fails promptly
+once they are used up. It SHALL NOT kill an encoder that no request is waiting on.
+
+#### Scenario: Encoder hangs without exiting
+
+- **WHEN** a request waits on an encoder whose output position stops advancing
+- **THEN** the encoder is killed after the stall interval and restarted at the requested segment
+
+#### Scenario: Encoder keeps hanging
+
+- **WHEN** every restarted encoder also stops advancing
+- **THEN** the request fails with a classified encoder failure once the restart bound is used up,
+  and the stall is logged
+
+### Requirement: A resumed transcode starts its encoder once
+
+When playback info resumes a viewer at a non-zero position, the live HLS session SHALL start
+its first encoder at the segment that contains that position. A request for the init segment
+SHALL reuse any encoder already running for its rendition.
+
+#### Scenario: Resume at an offset
+
+- **WHEN** a client resumes a transcode at a non-zero position and requests the init segment,
+  then the segment at that position
+- **THEN** the encoder is spawned once, at that segment
+
+### Requirement: One session's encoder churn does not stall other sessions
+
+The live HLS session manager SHALL NOT hold its global lock while it stops an encoder, waits for
+an encoder to exit, spawns an encoder or removes a session's directory.
+
+#### Scenario: Slow encoder teardown
+
+- **WHEN** one session's encoder is slow to exit while that session is torn down
+- **THEN** segment requests for other sessions are served without waiting for it, and the torn
+  down session's directory is removed once its encoder has exited
+
+#### Scenario: Slow encoder replacement
+
+- **WHEN** a far seek replaces a session's encoder and the old encoder is slow to exit
+- **THEN** other sessions' requests are served meanwhile, and the replacing session still counts
+  against the transcode cap
+
+### Requirement: Encoder work done outside the lock still counts
+
+A session whose encoder is being replaced SHALL keep its transcode slot and lease until the
+replacement starts or fails, and SHALL NOT be preempted meanwhile. A torn-down session SHALL keep
+its slot and lease until its encoder has stopped. Shutdown SHALL NOT return while an encoder start
+or teardown is still in progress.
+
+#### Scenario: Eviction during a replacement
+
+- **WHEN** a session is torn down while its encoder is being replaced
+- **THEN** the teardown does not wait for the replacement, the replacing request fails with the
+  session-evicted error, and the session's lease and directory are released
+
+#### Scenario: Slow teardown at the transcode cap
+
+- **WHEN** the transcode cap is full and a torn-down session's encoder is slow to exit
+- **THEN** a new session is refused until that encoder has stopped, and the governor keeps
+  counting it as a realtime transcode until then
+
+#### Scenario: Shutdown during a replacement
+
+- **WHEN** the server shuts down while a session's encoder is being replaced, or while another
+  teardown is still stopping an encoder
+- **THEN** shutdown returns only after those encoders have stopped and their leases and
+  directories are released
+
+#### Scenario: Preemption during a replacement
+
+- **WHEN** the transcode cap is full and a higher-priority session asks for a slot while the only
+  session holding one is replacing its encoder
+- **THEN** the higher-priority session is refused rather than launched over the cap
