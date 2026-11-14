@@ -208,6 +208,10 @@ type hlsSession struct {
 	// picture is its encoder input as laid out in the session directory.
 	composed *ComposedPicture
 	picture  *ffmpeg.ComposedPicture
+	// adjust is the pitch shift and tempo change every encode applies (see
+	// StreamShape.Adjust). durationSeconds, segments and the source end are
+	// then on the adjusted output timeline.
+	adjust ffmpeg.AudioAdjust
 	// currentRung is the rendition the live FFmpeg process encodes; "" until
 	// the first segment request starts one (one rendition per live session,
 	// ADR-0010 §8 — switching rungs replaces the process).
@@ -275,10 +279,11 @@ type hlsSession struct {
 	// ErrSourceEnded instead of being encoded as empty segments.
 	sourceEndSeconds int
 	sourceEndKnown   bool
-	// resumeSeconds is where playback info resumed the viewer. The session's
-	// first encoder starts at the segment containing it, so a resume spawns
-	// FFmpeg once instead of starting at 0 for init.mp4 and restarting at the
-	// first media request. Cleared once an encoder starts.
+	// resumeSeconds is where playback info resumed the viewer, as a source
+	// position. The session's first encoder starts at the segment containing
+	// it, so a resume spawns FFmpeg once instead of starting at 0 for init.mp4
+	// and restarting at the first media request. Cleared once an encoder
+	// starts.
 	resumeSeconds int
 }
 
@@ -343,6 +348,7 @@ func (h *hlsSession) rendition(rung Rung) ffmpeg.Rendition {
 		AudioChannels:    h.audioProfile.Channels,
 		AudioGainDB:      h.audioProfile.GainDB,
 		AudioStreamIndex: h.audioStreamIndex,
+		AudioOnly:        rung.AudioOnly,
 		ColorTransfer:    h.sourceVideo.ColorTransfer,
 		ColorPrimaries:   h.sourceVideo.ColorPrimaries,
 		DoViProfile:      h.sourceVideo.DoViProfile,
@@ -354,7 +360,7 @@ func (h *hlsSession) rendition(rung Rung) ffmpeg.Rendition {
 	if h.picture != nil {
 		rendition = rendition.WithComposedPicture(*h.picture)
 	}
-	return rendition
+	return rendition.WithAudioAdjust(h.adjust)
 }
 
 // Sessions owns the lifecycle of HLS transcode sessions:
@@ -853,7 +859,7 @@ func (s *Sessions) FilePathShaped(ctx context.Context, key SessionKey, src strin
 	if err != nil {
 		return "", err
 	}
-	session, err := s.session(key, src, durationSeconds, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, picture, priority)
+	session, err := s.session(key, src, durationSeconds, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, picture, shape.Adjust, priority)
 	if err != nil {
 		return "", err
 	}
@@ -1090,8 +1096,11 @@ func (s *Sessions) transcodeLatencyBudget(session *hlsSession, path string) time
 // FFmpeg process starts until a rung artifact is requested, so admission
 // control runs at real encode start. audioCopy seeds the single audio-copy
 // rung in place of the resolution ladder, so the master and
-// served rendition copy the source video and transcode only the audio.
-func (s *Sessions) session(key SessionKey, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, picture *ComposedPicture, priority Priority) (*hlsSession, error) {
+// served rendition copy the source video and transcode only the audio. A
+// non-zero adjust stretches durationSeconds (a source duration) onto the
+// adjusted output timeline and, without a picture, offers the single
+// audio-only rung.
+func (s *Sessions) session(key SessionKey, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, picture *ComposedPicture, adjust ffmpeg.AudioAdjust, priority Priority) (*hlsSession, error) {
 	var teardowns []sessionTeardown
 	s.mu.Lock()
 	defer func() {
@@ -1101,11 +1110,17 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds, videoWid
 	requestedRungs := rungsForSession(videoWidth, videoHeight, audioCopy, degraded, caps)
 	if picture != nil {
 		requestedRungs = []Rung{composedLiveRung()}
+	} else if !adjust.IsZero() {
+		requestedRungs = []Rung{adjustedAudioRung()}
 	}
+	durationSeconds = adjust.OutputSeconds(durationSeconds)
 	if existing, ok := s.sessions[key]; ok {
-		if existing.src != src || existing.durationSeconds != durationSeconds || existing.degraded != degraded || !rungsEqual(existing.rungs, requestedRungs) || existing.sourceVideo != sourceVideo || existing.burnSubtitleIndex != burnSubtitleIndex || !audioProfilesEqual(existing.audioProfile, audioProfile) || !equalOptionalInt(existing.audioStreamIndex, audioStreamIndex) || (existing.composed != nil) != (picture != nil) {
+		if existing.src != src || existing.durationSeconds != durationSeconds || existing.degraded != degraded || !rungsEqual(existing.rungs, requestedRungs) || existing.sourceVideo != sourceVideo || existing.burnSubtitleIndex != burnSubtitleIndex || !audioProfilesEqual(existing.audioProfile, audioProfile) || !equalOptionalInt(existing.audioStreamIndex, audioStreamIndex) || (existing.composed != nil) != (picture != nil) || existing.adjust != adjust {
 			teardowns = append(teardowns, *s.removeLocked(key)) // mode-shaping changed; old artifacts are incompatible
 		} else {
+			// A position noted while this session ran was kept only for a
+			// reshaped replacement; the unchanged session ignores it.
+			delete(s.resumeHints, key)
 			existing.lastAccess = s.now()
 			if priority > existing.priority {
 				existing.priority = priority // raise-only: earned standing is kept
@@ -1127,6 +1142,7 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds, videoWid
 		lastAccess:        s.now(),
 		priority:          priority,
 		degraded:          degraded,
+		adjust:            adjust,
 	}
 	if hint, ok := s.resumeHints[key]; ok {
 		delete(s.resumeHints, key)
@@ -1383,7 +1399,7 @@ func (session *hlsSession) resumeSegmentLocked(rung Rung) int {
 		return 0
 	}
 	segSeconds := rungSegmentSeconds(rung)
-	segment := session.resumeSeconds / segSeconds
+	segment := session.adjust.OutputPosition(session.resumeSeconds) / segSeconds
 	if segment >= segmentCount(session.durationSeconds, segSeconds) || session.beyondSourceEndLocked(segment, segSeconds) {
 		return 0
 	}
@@ -1406,6 +1422,14 @@ func (s *Sessions) NoteResumePosition(key SessionKey, seconds int) {
 		delete(s.resumeHints, key)
 		if !session.started {
 			session.resumeSeconds = max(seconds, 0)
+			return
+		}
+		// A running session keeps its encoder, but a request that reshapes
+		// it (a new pitch shift or tempo, say) replaces it: that replacement
+		// starts at this position. The next request that reuses the session
+		// unchanged drops it.
+		if seconds > 0 {
+			s.resumeHints[key] = resumeHint{seconds: seconds, at: now}
 		}
 		return
 	}

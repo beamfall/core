@@ -24,11 +24,15 @@ type StreamShape struct {
 	// that draws the Media's composed picture over its audio: the live form
 	// of a precomputed composed rendition (ADR-0057).
 	ComposedPicture bool
+	// Adjust is the pitch shift and tempo change the session encodes. A
+	// non-zero adjustment without a composed picture replaces the ladder with
+	// one audio-only rung, and stretches the session's timeline by the tempo.
+	Adjust ffmpeg.AudioAdjust
 }
 
 // StreamShapeFromGrant reads the StreamShape a stream grant carries.
 func StreamShapeFromGrant(grant streamtoken.Grant) StreamShape {
-	return StreamShape{ComposedPicture: grant.ComposedPicture}
+	return StreamShape{ComposedPicture: grant.ComposedPicture, Adjust: grantAudioAdjust(grant)}
 }
 
 // SetPictureComposer wires the resolver composed-picture sessions draw their

@@ -23,3 +23,11 @@ var (
 	// ErrNotFound because retrying can never produce the segment.
 	ErrSourceEnded = fmt.Errorf("%w: source ended before this segment", ErrNotFound)
 )
+
+// invalidRequestError is an ErrInvalidRequest whose text names the invalid
+// field. Like ErrInvalidRequest, its text is safe for the HTTP layer to return.
+type invalidRequestError string
+
+func (e invalidRequestError) Error() string { return string(e) }
+
+func (e invalidRequestError) Unwrap() error { return ErrInvalidRequest }

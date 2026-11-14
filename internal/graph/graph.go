@@ -20,6 +20,7 @@ import (
 	"github.com/beamfall/core/internal/capabilities"
 	"github.com/beamfall/core/internal/conductor"
 	"github.com/beamfall/core/internal/config"
+	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/identify"
 	"github.com/beamfall/core/internal/integrationhost"
 	"github.com/beamfall/core/internal/manifest"
@@ -36,6 +37,28 @@ import (
 type ServerInfo struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
+	// PlaybackAdjustments advertises the pitch shift and tempo ranges
+	// playback info accepts.
+	PlaybackAdjustments PlaybackAdjustmentRanges `json:"playbackAdjustments"`
+}
+
+// PlaybackAdjustmentRanges is the accepted range of each playback adjustment
+// field: a pitch shift in whole semitones and a tempo factor, both inclusive.
+type PlaybackAdjustmentRanges struct {
+	PitchShiftSemitonesMin int     `json:"pitchShiftSemitonesMin"`
+	PitchShiftSemitonesMax int     `json:"pitchShiftSemitonesMax"`
+	TempoMin               float64 `json:"tempoMin"`
+	TempoMax               float64 `json:"tempoMax"`
+}
+
+// playbackAdjustmentRanges reports the ranges the encoder accepts.
+func playbackAdjustmentRanges() PlaybackAdjustmentRanges {
+	return PlaybackAdjustmentRanges{
+		PitchShiftSemitonesMin: ffmpeg.MinPitchShiftSemitones,
+		PitchShiftSemitonesMax: ffmpeg.MaxPitchShiftSemitones,
+		TempoMin:               ffmpeg.MinTempo,
+		TempoMax:               ffmpeg.MaxTempo,
+	}
 }
 
 // serverVersion is the running server version reported by ServerInfo and used

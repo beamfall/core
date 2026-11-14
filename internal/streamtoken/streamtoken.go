@@ -178,8 +178,14 @@ type Grant struct {
 	// mint because no precomputed composed rendition was Ready. Meaningful only
 	// for TargetMediaHLS. Omitted when false, so tokens without it are
 	// byte-identical to tokens minted before this field existed.
-	ComposedPicture bool      `json:"composedPicture,omitempty"`
-	ExpiresAt       time.Time `json:"expiresAt"`
+	ComposedPicture bool `json:"composedPicture,omitempty"`
+	// PitchShiftSemitones and Tempo bind an HLS session to a playback
+	// adjustment: the audio is pitch shifted by whole semitones and played at
+	// Tempo times its recorded speed (0 means 1). Meaningful only for
+	// TargetMediaHLS; omitted when unadjusted, so other tokens are unchanged.
+	PitchShiftSemitones int       `json:"pitchShiftSemitones,omitempty"`
+	Tempo               float64   `json:"tempo,omitempty"`
+	ExpiresAt           time.Time `json:"expiresAt"`
 }
 
 // HasResolvedProfileCapability reports whether the grant carries a capability

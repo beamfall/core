@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 )
 
@@ -136,13 +135,20 @@ func composedSegmentArgs(audioSrc, dir string, picture ComposedPicture, startSeg
 // and the audio's length decides the output's: a graphics track goes quiet for
 // long stretches, so its last frame is held.
 //
-// A positive startSeconds starts the output at that source position. The audio
+// A positive startSeconds starts the output at that position (the source
+// position it plays, under an adjusted tempo). The audio
 // input seeks there. A graphics track is drawn incrementally, so it is decoded
 // from its start and trimmed rather than seeked; a timed-text canvas instead
 // has its clock advanced so libass renders the text due at that position. The
 // picture's timestamps then restart at zero, beside the seeked audio's.
 func composedEncodeArgs(audioSrc string, picture ComposedPicture, rendition Rendition, startSeconds, segmentSeconds int) []string {
 	var args, filters []string
+	// startSeconds is on the output timeline; the picture and the audio are
+	// read at the source position it plays, which an adjusted tempo scales.
+	// Under a tempo the picture is retimed with the audio: it is drawn at
+	// source time and its frames are stamped at output time.
+	tempo := rendition.adjust.tempo()
+	source := formatSeconds(rendition.adjust.SourceSeconds(float64(startSeconds)))
 	if picture.GraphicsPath != "" {
 		args = append(args, "-i", picture.GraphicsPath)
 		filters = []string{
@@ -151,22 +157,33 @@ func composedEncodeArgs(audioSrc string, picture ComposedPicture, rendition Rend
 			fmt.Sprintf("fps=%d", composedFPS),
 			"tpad=stop=-1:stop_mode=clone",
 		}
-		if startSeconds > 0 {
-			filters = append(filters, fmt.Sprintf("trim=start=%d", startSeconds), "setpts=PTS-STARTPTS")
+		switch {
+		case tempo != 1 && startSeconds > 0:
+			filters = append(filters, "trim=start="+source, "setpts=(PTS-STARTPTS)/"+formatFactor(tempo), fmt.Sprintf("fps=%d", composedFPS))
+		case tempo != 1:
+			filters = append(filters, "setpts=PTS/"+formatFactor(tempo), fmt.Sprintf("fps=%d", composedFPS))
+		case startSeconds > 0:
+			filters = append(filters, "trim=start="+source, "setpts=PTS-STARTPTS")
 		}
 	} else {
 		args = append(args, "-f", "lavfi", "-i", fmt.Sprintf("color=c=black:s=%dx%d:r=%d", composedWidth, composedHeight, composedFPS))
-		if startSeconds > 0 {
-			filters = append(filters, fmt.Sprintf("setpts=PTS+%d/TB", startSeconds))
+		switch {
+		case tempo != 1:
+			filters = append(filters, fmt.Sprintf("setpts=PTS*%s+%s/TB", formatFactor(tempo), source))
+		case startSeconds > 0:
+			filters = append(filters, fmt.Sprintf("setpts=PTS+%s/TB", source))
 		}
 		filters = append(filters, "ass=filename="+escapeFilterValue(picture.TimedTextPath))
-		if startSeconds > 0 {
+		switch {
+		case tempo != 1:
+			filters = append(filters, "setpts=(PTS-STARTPTS)/"+formatFactor(tempo))
+		case startSeconds > 0:
 			filters = append(filters, "setpts=PTS-STARTPTS")
 		}
 	}
 	filters = append(filters, "format=yuv420p")
 	if startSeconds > 0 {
-		args = append(args, "-ss", strconv.Itoa(startSeconds))
+		args = append(args, "-ss", source)
 	}
 	args = append(args, inputProtocolArgs()...)
 	args = append(args, "-i", audioSrc,

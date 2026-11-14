@@ -647,8 +647,9 @@ func dispatchFieldBlock000(dispatch *fieldDispatchContext) response {
 	fields := dispatch.fields
 	if fields["serverinfo"] {
 		setField(dispatch, "serverinfo", ServerInfo{
-			Name:    "Beamfall",
-			Version: serverVersion(),
+			Name:                "Beamfall",
+			Version:             serverVersion(),
+			PlaybackAdjustments: playbackAdjustmentRanges(),
 		})
 	}
 	return response{}

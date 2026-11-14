@@ -40,6 +40,11 @@ type InfoRequest struct {
 	// track the client selected for this playbackInfo request. Omitted means no
 	// concrete subtitle track has been selected server-side.
 	SelectedSubtitleIndex *int `json:"selectedSubtitleIndex,omitempty"`
+	// Adjustment optionally asks for a pitch shift and tempo change on an
+	// audio Media's playback. Omitted, or all defaults, changes nothing. It is
+	// validated (an out-of-range value is an invalid request) and applies to
+	// MediaID only, never to NextMediaID.
+	Adjustment *PlaybackAdjustment `json:"adjustment,omitempty"`
 }
 
 // PreviewInfoRequest asks for the card-preview Generated Asset only. It is
@@ -289,6 +294,12 @@ type InfoResponse struct {
 	// only subtitles are unavailable, so subtitle unavailability never degrades
 	// Decision. Empty/absent means subtitles are not known to be unavailable.
 	SubtitlesUnavailableReason string `json:"subtitlesUnavailableReason,omitempty"`
+	// Adjustment echoes the requested pitch shift and tempo change when the
+	// streams apply it: an audio Media served through a transcode that encodes
+	// it. Omitted when no adjustment was requested or it could not be applied
+	// (the streams then play unadjusted). Stream positions are then song
+	// positions divided by the tempo; Timeline stays in song positions.
+	Adjustment *PlaybackAdjustment `json:"adjustment,omitempty"`
 }
 
 // CaptionTrack is one caption track surfaced in playbackInfo. Sidecar tracks use
@@ -640,6 +651,9 @@ type decision struct {
 	// capacity refusal, which is the single most valuable thing a playback
 	// report can say.
 	overlayApplied bool
+	// adjustment is the pitch shift and tempo change the streams encode; zero
+	// when none was requested or it does not apply to this decision.
+	adjustment ffmpeg.AudioAdjust
 }
 
 // PartInfo is one ordered Part of the negotiated Version. Parts play
@@ -677,6 +691,13 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 	if mediaID == "" {
 		return InfoResponse{}, ErrInvalidRequest
 	}
+	var adjust ffmpeg.AudioAdjust
+	if req.Adjustment != nil {
+		if err := req.Adjustment.validate(); err != nil {
+			return InfoResponse{}, err
+		}
+		adjust = req.Adjustment.audioAdjust()
+	}
 	ctx = s.compatDecisionContext(ctx, scope)
 	// The session Profile's playback policy (transcode gate + stream cap)
 	// applies to every rung decision below.
@@ -698,7 +719,7 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 	// overlay is never written back onto it, which is what makes the
 	// monotone-restrictive rule a property of the code shape.
 	ov := s.quirks.Resolve(req.CapabilityProfile)
-	main, err := s.decide(ctx, scope, mediaID, "main", req.CapabilityProfile, policy, priority, req.SelectedSubtitleIndex, ov)
+	main, err := s.decide(ctx, scope, mediaID, "main", req.CapabilityProfile, policy, priority, req.SelectedSubtitleIndex, ov, adjust)
 	if err != nil {
 		return InfoResponse{}, err
 	}
@@ -717,6 +738,7 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 		// suppressed: a client applies them to its player regardless of which
 		// item it fetched.
 		BehaviorFlags: ov.flags,
+		Adjustment:    playbackAdjustment(main.adjustment),
 	}
 	if main.overlayApplied {
 		resp.AppliedQuirks = ov.overrideIDs
@@ -744,7 +766,7 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 		// Best-effort: any next item that cannot be served — unknown,
 		// outside the session scope, or with no playable file — is silently
 		// omitted; current playback is never affected.
-		next, nextErr := s.decide(ctx, scope, nextID, "next", req.CapabilityProfile, policy, priority, nil, ov)
+		next, nextErr := s.decide(ctx, scope, nextID, "next", req.CapabilityProfile, policy, priority, nil, ov, ffmpeg.AudioAdjust{})
 		if nextErr == nil && next.verdict != "unavailable" {
 			// Attribution tracks what the response actually carries: a next
 			// decision the payload drops would put override IDs on a body whose
@@ -823,7 +845,9 @@ func (s *Service) PreviewInfo(ctx context.Context, scope auth.Scope, req Preview
 // admission rank the transcode-refusal check uses: a foreground
 // playhead may be admitted by preempting a normal stream, so the verdict it
 // receives matches what the byte layer would actually start at that rank.
-func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix string, profile CapabilityProfile, policy store.Profile, priority Priority, selectedSubtitleIndex *int, ov quirkOverlay) (dec decision, err error) {
+// adjust is the requested pitch shift and tempo change; it applies only to an
+// audio Media served through a transcode, which it then forces.
+func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix string, profile CapabilityProfile, policy store.Profile, priority Priority, selectedSubtitleIndex *int, ov quirkOverlay, adjust ffmpeg.AudioAdjust) (dec decision, err error) {
 	media, err := s.store.Media(ctx, store.MediaID(mediaID), scope.LibraryFilter())
 	if err != nil {
 		var validation store.ValidationError
@@ -981,6 +1005,15 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 
 	sourceVideo := VideoSignalFromStreams(streams)
 	sourceHasAudio := hasAudioStream(streams)
+	// A pitch shift or tempo change forces a transcode that encodes it: the
+	// live composed picture when one applies, otherwise an audio-only stream.
+	// It needs an audio Media with audio and a transcode the policy and
+	// capacity admit; otherwise the item plays unadjusted.
+	if !adjust.IsZero() && media.Class == store.MediaClassAudio && sourceHasAudio && transcodeRefusal == "" && s.sessions != nil {
+		grant = withAudioAdjustGrant(grant, adjust)
+	} else {
+		adjust = ffmpeg.AudioAdjust{}
+	}
 	// A Dolby Vision P7 stream never satisfies canDirectPlay (no client advertises
 	// "dolby-vision-p7"), but its HDR10-compatible base layer direct-plays while the
 	// enhancement layer is dropped — the honest base-layer posture of ADR-0017 §4.
@@ -1008,6 +1041,25 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 			assets:         assets,
 			captionTracks:  captionTracks,
 			overlayApplied: true,
+			adjustment:     adjust,
+		}, nil
+	}
+	if !adjust.IsZero() {
+		adjusted, err := s.adjustedAudioChoice(ctx, grant, suffix, hlsAudio, expiresAt)
+		if err != nil {
+			return decision{}, err
+		}
+		return decision{
+			media:          media,
+			verdict:        "transcode",
+			reason:         "playback-adjustment",
+			streams:        []StreamChoice{adjusted},
+			timeline:       timeline,
+			parts:          parts,
+			assets:         assets,
+			captionTracks:  captionTracks,
+			overlayApplied: true,
+			adjustment:     adjust,
 		}, nil
 	}
 	p7BaseLayer := !canDirectPlay(media, file, streams, profile, selectedSubtitleIndex, ov) &&

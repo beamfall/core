@@ -26,6 +26,7 @@ type Rung struct {
 	VideoKbps int
 	Bandwidth int  // peak bits/s for #EXT-X-STREAM-INF BANDWIDTH
 	CopyVideo bool // true = -c:v copy + audio transcode (no video re-encode)
+	AudioOnly bool // true = audio-only encode (no video stream at all)
 }
 
 // h264LadderRungs is the software-safe rung vocabulary, best first.

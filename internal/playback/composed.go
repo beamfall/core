@@ -266,7 +266,8 @@ func (g FFmpegPrecomputeGenerator) precomputeComposedHLS(ctx context.Context, ru
 // queues the precomputed rendition for the next play. It answers ok=false —
 // leaving the ladder untouched — whenever any condition fails, including a
 // composer error: playback never breaks because a picture could not be
-// resolved.
+// resolved. A grant carrying a pitch shift or tempo change skips the
+// precomputed renditions: only the live stream can encode it.
 func (s *Service) composedChoice(ctx context.Context, scope auth.Scope, grant streamtoken.Grant, suffix string, media store.Media, file store.MediaFile, profile CapabilityProfile, wantedAudio ffmpeg.AudioProfile, expiresAt time.Time, ov quirkOverlay, transcodeRefusal string) (choice StreamChoice, live, ok bool, err error) {
 	if s.composer == nil || !composesPicture(media) || grant.BurnSubtitleIndex != 0 || !profileTakesComposedVideo(profile) {
 		return StreamChoice{}, false, false, nil
@@ -290,8 +291,11 @@ func (s *Service) composedChoice(ctx context.Context, scope auth.Scope, grant st
 		return StreamChoice{}, false, false, nil
 	}
 	want := composedRenditionID(media.ID, file.ContentFingerprint, digest)
+	// A precomputed rendition is unadjusted, so a pitch shift or tempo change
+	// is always composed live.
+	adjusted := !grantAudioAdjust(grant).IsZero()
 	for _, rendition := range renditions {
-		if rendition.ID != want || !composedRenditionCompatible(rendition, profile, wantedAudio, ov) {
+		if adjusted || rendition.ID != want || !composedRenditionCompatible(rendition, profile, wantedAudio, ov) {
 			continue
 		}
 		choice, err := s.precomputedStreamChoice(ctx, grant, suffix, rendition, expiresAt)

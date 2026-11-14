@@ -1216,6 +1216,9 @@ type Rendition struct {
 	DoViBLCompatID    int
 	SampleAspectRatio string
 	FieldOrder        string
+	// AudioOnly drops the video: the encode writes only the selected audio
+	// stream (an audio-only HLS rendition).
+	AudioOnly bool
 	// burnSubtitleIndex is the 1-based-plus-one encoding of the burn-in
 	// subtitle stream index: 0 means "no burn-in", and a value v>0 names
 	// absolute stream index v-1. This keeps the zero Rendition burn-in-free
@@ -1231,6 +1234,23 @@ type Rendition struct {
 	// picture, when set, replaces the source's video with a composed picture
 	// (see WithComposedPicture). The zero value composes nothing.
 	picture ComposedPicture
+	// adjust is the pitch shift and tempo change applied to the audio (see
+	// WithAudioAdjust). The zero value changes nothing.
+	adjust AudioAdjust
+}
+
+// WithAudioAdjust returns a copy whose audio is pitch shifted and tempo
+// changed by adjust. Segment positions are then output positions: segment N
+// starts at source position N x segment length x tempo. An adjusted encode is
+// audio-only or a composed picture; the source's own video is never retimed.
+func (r Rendition) WithAudioAdjust(adjust AudioAdjust) Rendition {
+	r.adjust = adjust
+	return r
+}
+
+// AudioAdjust reports the pitch shift and tempo change this rendition applies.
+func (r Rendition) AudioAdjust() AudioAdjust {
+	return r.adjust
 }
 
 // WithComposedPicture returns a copy whose segment encode draws picture over
@@ -1383,14 +1403,17 @@ func (r Rendition) audioArgs() []string {
 		codec = "aac"
 	}
 	if codec == "copy" {
-		return []string{"-c:a", "copy"}
+		if r.adjust.IsZero() {
+			return []string{"-c:a", "copy"}
+		}
+		codec = "aac" // an adjusted stream is re-encoded
 	}
 	channels := r.AudioChannels
 	if channels <= 0 {
 		channels = 2
 	}
 	args := []string{"-c:a", codec, "-ac", strconv.Itoa(channels)}
-	var filters []string
+	filters := r.adjust.Filters()
 	if channels <= 2 {
 		filters = append(filters, "aresample=matrix_encoding=dplii")
 	}
@@ -2163,34 +2186,18 @@ func (r *Runner) StartHLSSegments(ctx context.Context, src, dir string, startSeg
 	if reason := rendition.ToneMapRefusal(); reason != "" {
 		return nil, errors.New("ffmpeg: " + reason)
 	}
-	rendition = rendition.withHWAccel(r.hwAccel)
-	rendition = rendition.withToneMapAccel(selectRenditionToneMapBackend(rendition))
+	if !rendition.adjust.IsZero() && !rendition.AudioOnly {
+		return nil, errors.New("ffmpeg: an adjusted encode must be audio-only or a composed picture")
+	}
+	if !rendition.AudioOnly {
+		rendition = rendition.withHWAccel(r.hwAccel)
+		rendition = rendition.withToneMapAccel(selectRenditionToneMapBackend(rendition))
+	}
 	ffmpegPath, err := exec.LookPath("ffmpeg")
 	if err != nil {
 		return nil, fmt.Errorf("ffmpeg is not available: %w", err)
 	}
-	offset := startSegment * segmentSeconds
-	args := []string{
-		"-v", "error",
-	}
-	args = append(args, hlsProgressArgs()...)
-	args = append(args, "-ss", strconv.Itoa(offset))
-	args = append(args, rendition.inputArgs()...)
-	args = append(args, inputProtocolArgs()...)
-	args = append(args,
-		"-i", src,
-	)
-	args = append(args, rendition.videoArgs()...)
-	// Forced keyframes align segment boundaries for the re-encode path. A
-	// copied video stream keeps its source GOP structure, so the encoder-only
-	// -force_key_frames is omitted in audio-only mode (it would be ignored on
-	// the copied stream anyway).
-	if !rendition.CopyVideo {
-		args = append(args, "-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", segmentSeconds))
-	}
-	args = append(args, rendition.args()...)
-	args = append(args, rendition.audioArgs()...)
-	args = append(args, segmentMuxArgs(dir, startSegment, segmentSeconds)...)
+	args := hlsSegmentArgs(src, dir, startSegment, segmentSeconds, rendition)
 	conf := dirConfinement(src, dir)
 	cmd := r.hardenedCommand(ctx, ffmpegPath, conf.ReadOnly, conf.ReadWrite, args)
 	process, err := startHLSProcess(cmd)
@@ -2198,6 +2205,43 @@ func (r *Runner) StartHLSSegments(ctx context.Context, src, dir string, startSeg
 		return nil, fmt.Errorf("starting ffmpeg transcode: %w", err)
 	}
 	return process, nil
+}
+
+// hlsSegmentArgs is the StartHLSSegments command line for a rendition without
+// a composed picture. The input seek is the source position of startSegment,
+// which an adjusted tempo scales; the output timestamps stay on the output
+// timeline.
+func hlsSegmentArgs(src, dir string, startSegment, segmentSeconds int, rendition Rendition) []string {
+	offset := rendition.adjust.SourceSeconds(float64(startSegment * segmentSeconds))
+	args := []string{
+		"-v", "error",
+	}
+	args = append(args, hlsProgressArgs()...)
+	args = append(args, "-ss", formatSeconds(offset))
+	args = append(args, rendition.inputArgs()...)
+	args = append(args, inputProtocolArgs()...)
+	args = append(args,
+		"-i", src,
+	)
+	if rendition.AudioOnly {
+		audioMap := "0:a:0"
+		if rendition.AudioStreamIndex != nil {
+			audioMap = fmt.Sprintf("0:%d", *rendition.AudioStreamIndex)
+		}
+		args = append(args, "-map", audioMap)
+	} else {
+		args = append(args, rendition.videoArgs()...)
+		// Forced keyframes align segment boundaries for the re-encode path. A
+		// copied video stream keeps its source GOP structure, so the encoder-only
+		// -force_key_frames is omitted in audio-only mode (it would be ignored on
+		// the copied stream anyway).
+		if !rendition.CopyVideo {
+			args = append(args, "-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", segmentSeconds))
+		}
+		args = append(args, rendition.args()...)
+	}
+	args = append(args, rendition.audioArgs()...)
+	return append(args, segmentMuxArgs(dir, startSegment, segmentSeconds)...)
 }
 
 // segmentMuxArgs is the numbered-segment muxer tail StartHLSSegments

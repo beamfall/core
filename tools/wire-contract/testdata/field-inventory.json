@@ -2743,6 +2743,7 @@
       "tier": "public",
       "children": [
         "name",
+        "playbackAdjustments",
         "version"
       ]
     },

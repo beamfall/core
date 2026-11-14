@@ -123,6 +123,7 @@ func playbackInfoNotes() []string {
 		"selectedSubtitleTrack.track.kind is the closed vocabulary muxed|sidecar. Reflection publishes it as a generic string, so the vocabulary is enumerated here; growing it is a deliberate wire-contract change.",
 		"subtitlesUnavailableReason is free text and is INDEPENDENT of decision. Subtitles being unavailable never degrades the whole-media decision verdict (direct-play|direct-stream|precomputed-rendition|transcode|unavailable). Absent/empty means subtitles are not known to be unavailable.",
 		"systemSurfaceDisclosure.metadataAllowed is server-authoritative for the response Media. It is true only when the Media metadata is visible to every Profile with Reveal off. Missing fields, unknown snapshot versions, and false mean clients must use generic system-surface metadata.",
+		"adjustment requests a pitch shift (pitchShiftSemitones, whole semitones) and a tempo factor (tempo; 0 or omitted is 1) inside the ranges serverInfo.playbackAdjustments advertises; out-of-range values are rejected. It applies only to the main item of an audio Media when a transcode is admitted: the response echoes adjustment only when applied, and an absent response adjustment means the stream plays unadjusted. An adjusted stream runs on its own clock (stream seconds = song seconds / tempo) while timeline and reported progress stay in song seconds. Changing the adjustment mid-play is a new playback info call: report progress first, and the new stream starts at the segment holding timeline.positionSeconds.",
 	}
 }
 

@@ -15791,6 +15791,28 @@
         "kind": "scalar"
       },
       {
+        "name": "playbackAdjustments",
+        "kind": "object",
+        "children": [
+          {
+            "name": "pitchShiftSemitonesMax",
+            "kind": "scalar"
+          },
+          {
+            "name": "pitchShiftSemitonesMin",
+            "kind": "scalar"
+          },
+          {
+            "name": "tempoMax",
+            "kind": "scalar"
+          },
+          {
+            "name": "tempoMin",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
         "name": "version",
         "kind": "scalar"
       }
