@@ -733,10 +733,20 @@ func (s *Service) GenerateDerivatives(ctx context.Context, id store.MediaID) {
 
 // GeneratePoster grabs one frame from the Media item's primary file. The
 // server-internal filter sees every Library: posters for restricted media are
-// generated at rest and reveal-filtered at the serving boundary.
+// generated at rest and reveal-filtered at the serving boundary. A poster
+// locked by local artwork is kept: no embedded cover is extracted and no frame
+// is grabbed.
 func (s *Service) GeneratePoster(ctx context.Context, id store.MediaID) error {
 	if s.grabber == nil {
 		return errors.New("no frame grabber configured")
+	}
+	unlock, err := s.lockDerivative(ctx, filepath.Dir(s.PosterPath(id)))
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if s.localPosterLocked(id) {
+		return nil
 	}
 	serverFilter := store.LibraryFilter{Revealed: true, AllLibraries: true}
 	media, err := s.store.Media(ctx, id, serverFilter)
@@ -818,11 +828,23 @@ func (s *Service) ImportEmbeddedPoster(ctx context.Context, id store.MediaID) (b
 	if err != nil {
 		return false, err
 	}
+	unlock, err := s.lockDerivative(ctx, filepath.Dir(s.PosterPath(id)))
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
 	return s.importEmbeddedPoster(ctx, id, file.Path)
 }
 
+// localPosterLocked reports whether the poster slot holds locked artwork.
+func (s *Service) localPosterLocked(id store.MediaID) bool {
+	_, locked := readSlotLock(s.PosterPath(id))
+	return locked && nonEmptyRegularFile(s.PosterPath(id))
+}
+
+// importEmbeddedPoster runs with the poster directory lock held.
 func (s *Service) importEmbeddedPoster(ctx context.Context, id store.MediaID, src string) (bool, error) {
-	if s.embedded == nil {
+	if s.embedded == nil || s.localPosterLocked(id) {
 		return false, nil
 	}
 	dst := s.PosterPath(id)
@@ -999,8 +1021,14 @@ func (s *Service) ImportPoster(ctx context.Context, id store.MediaID, data []byt
 }
 
 // ImportArtwork stores fetched artwork bytes as the Media item's requested
-// slot (scraped artwork application, ADR-0009).
+// slot (scraped artwork application, ADR-0009). A slot locked by local artwork
+// is refused with a *SlotLockedError (ADR-0072), so the caller does not mark
+// its candidate applied; ImportManualArtwork is the manual-pick bypass.
 func (s *Service) ImportArtwork(ctx context.Context, id store.MediaID, slot string, data []byte) error {
+	return s.importMediaArtwork(ctx, id, slot, data, true)
+}
+
+func (s *Service) importMediaArtwork(ctx context.Context, id store.MediaID, slot string, data []byte, honourLock bool) error {
 	if !ValidSlot(slot) {
 		return fmt.Errorf("unknown artwork slot %q", slot)
 	}
@@ -1016,6 +1044,14 @@ func (s *Service) ImportArtwork(ctx context.Context, id store.MediaID, slot stri
 		return nil
 	}
 	dst := s.ArtworkPath(id, slot)
+	unlock, err := s.lockDerivative(ctx, filepath.Dir(dst))
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if lock, locked := readSlotLock(dst); honourLock && locked {
+		return &SlotLockedError{Slot: slot, Source: lock.Source}
+	}
 	if err := s.importArtwork(ctx, dst, string(id), slot, data); err != nil {
 		return err
 	}
@@ -1042,7 +1078,8 @@ func (s *Service) ImportCandidateArtwork(ctx context.Context, id store.MediaID, 
 // ImportEntityPoster stores fetched artwork bytes as the Entity's poster —
 // the write path identify's entity hydration lands EntityMap ArtworkPath
 // images through. Same normalization and derivative invalidation as
-// ImportPoster.
+// ImportPoster. A poster locked by local artwork is refused with a
+// *SlotLockedError.
 //
 // The imported poster is the Entity's own: it replaces an inherited copy and
 // clears the inherited mark, after which the sweep leaves it alone.
@@ -1050,6 +1087,14 @@ func (s *Service) ImportEntityPoster(ctx context.Context, id store.EntityID, dat
 	s.entityPosterMu.Lock()
 	defer s.entityPosterMu.Unlock()
 	dst := s.EntityPosterPath(id)
+	unlock, err := s.lockDerivative(ctx, filepath.Dir(dst))
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if lock, locked := readSlotLock(dst); locked {
+		return &SlotLockedError{Slot: SlotPoster, Source: lock.Source}
+	}
 	if err := s.importArtwork(ctx, dst, string(id), SlotPoster, data); err != nil {
 		return err
 	}

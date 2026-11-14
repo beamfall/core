@@ -41,6 +41,10 @@ type scanWalkState struct {
 	cancelDerivations   context.CancelFunc
 	derivativeWG        sync.WaitGroup
 	pendingCompletions  []*completedFile
+	localArtwork        LocalArtworkImporter
+	containerArtwork    ContainerArtworkImporter
+	containerResolver   ContainerEntityResolver
+	containerArt        map[store.EntityID]*containerArtChoice
 }
 
 func (s *scanWalkState) acquireBudget(ctx context.Context) error {
