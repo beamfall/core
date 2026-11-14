@@ -14,16 +14,17 @@
 
 ## 2. Machine-wide gate slot (CORE-1470)
 
-- [ ] 2.1 `script/gate-slot.py`: first-come queue, holder and position notices, `--no-wait`,
-      `--status`, release on exit and on INT/TERM/HUP, dead-process reclaim, re-entry
-- [ ] 2.2 Core coordinator takes the slot for a full gate and announces the holder to a preflight
-- [ ] 2.3 `script/gate_slot_test.py` in `support script tests`: two gates serialize in arrival
+- [x] 2.1 `script/gate-slot.py`: first-come queue, holder and position notices, `--no-wait`,
+      `--status`, held for the life of the command's process, a waiter leaves on INT/TERM/HUP,
+      dead-process reclaim, re-entry
+- [x] 2.2 Core coordinator takes the slot for a full gate and announces the holder to a preflight
+- [x] 2.3 `script/gate_slot_test.py` in `support script tests`: two gates serialize in arrival
       order, a stale entry is reclaimed, refusal, cancellation, re-entry, coordinator integration
-- [ ] 2.4 Document the slot in `docs/architecture/TESTING.md`
+- [x] 2.4 Document the slot in `docs/architecture/TESTING.md`
 
 ## 3. Verify and close
 
-- [ ] 3.1 Changed `tools/gate/*_test.sh`, `gate_latest_test.py`, `gate_capacity_test.py`,
+- [x] 3.1 Changed `tools/gate/*_test.sh`, `gate_latest_test.py`, `gate_capacity_test.py`,
       `openspec validate --all --strict`
 - [ ] 3.2 wsl preflight, then one Mac preflight and the binding gate on the same head; record the
       before and after seconds on CORE-1569

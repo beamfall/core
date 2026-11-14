@@ -4,8 +4,8 @@
 
 `script/gate-slot.py -- COMMAND` SHALL run COMMAND only while its caller is at the head of one
 per-user queue shared by every repository on the machine, and SHALL grant the slot in the order
-callers joined the queue. It SHALL leave the queue when COMMAND ends and when it is interrupted by
-SIGINT, SIGTERM or SIGHUP, passing the signal on to COMMAND.
+callers joined the queue. Once at the head it SHALL become COMMAND, so the slot is held for exactly
+as long as COMMAND's own process lives and COMMAND receives its signals directly.
 
 #### Scenario: Two gates
 
@@ -17,6 +17,16 @@ SIGINT, SIGTERM or SIGHUP, passing the signal on to COMMAND.
 - **WHEN** two callers queue behind a holder, one after the other
 - **THEN** the earlier caller runs first
 
+#### Scenario: Command status
+
+- **WHEN** the command a holder ran exits with a status
+- **THEN** the caller's exit status is that status and the slot is free
+
+### Requirement: An interrupted waiter leaves the queue
+
+A caller interrupted by SIGINT, SIGTERM or SIGHUP while it waits SHALL leave the queue without
+running COMMAND and exit with 128 plus the signal number.
+
 #### Scenario: Cancelled waiter
 
 - **WHEN** a waiting caller receives SIGTERM
@@ -26,8 +36,8 @@ SIGINT, SIGTERM or SIGHUP, passing the signal on to COMMAND.
 
 While it waits, a caller SHALL print the holder's repository, head, pid, elapsed time and command
 and its own position in the queue, immediately and then periodically. With `--no-wait` or
-`BEAMFALL_GATE_SLOT_NOWAIT=1` it SHALL instead leave the queue, print `GATE_SLOT_BUSY` with the
-same holder description and exit 69.
+`BEAMFALL_GATE_SLOT_NOWAIT=1` it SHALL instead stay out of the queue, print `GATE_SLOT_BUSY` with
+the same holder description and exit 69.
 
 #### Scenario: Queued caller
 

@@ -285,6 +285,31 @@ budgets) always run; the comment above `gate_step_reuse_policy` in `tools/gate/g
 reason for each. Records are local, under the common git directory in `gate-step-reuse/`, and expire
 after seven days. `tools/gate/gate_step_reuse_test.sh` proves these rules.
 
+**Machine gate slot.** One full gate runs at a time per user on a machine, across every repository
+and worktree. `make gate` queues for the slot in `script/gate-slot.py` before it does any work and
+runs when the gates that arrived before it have ended. While it waits it prints who holds the slot
+(repository, branch, head, pid, elapsed time, command) and its own place in the queue.
+`python3 script/gate-slot.py --status` shows the same from any shell, and `--no-wait` or
+`BEAMFALL_GATE_SLOT_NOWAIT=1` exits 69 with `GATE_SLOT_BUSY` instead of queueing. The queue lives
+in `~/.beamfall/gate-slot` (`BEAMFALL_GATE_SLOT_DIR` moves it). An entry counts only while its
+process is alive, checked by pid and start time, so a killed gate frees the slot with no timeout to
+tune and a slow gate is never evicted. A preflight does not queue: it prints the holder and runs.
+
+A command that wraps a gate takes the slot around the whole thing, and the gate inside finds the
+holder among its ancestors and does not queue again. Use this form when the wrapper has a timeout,
+so that the wait happens before the clock starts:
+
+```sh
+python3 script/gate-slot.py -- corvint-tasks gate run --gate gate ...
+```
+
+The slot follows the wrapping command's process. If that process is killed outright while the gate
+under it keeps running, the slot frees before that gate ends; stop the gate too.
+
+Other repositories share the slot by starting their gate through core's script
+(`python3 <core>/script/gate-slot.py -- make gate`). `script/gate_slot_test.py` proves the order,
+the refusal, the reclaim of a dead holder and the coordinator's use of the slot.
+
 **Workspace root.** The consumer pin freshness and cross-repository conformance steps need the
 private multi-repo workspace: the directory that holds `workspace-repos.json` and
 `contracts/registry.json`. They find it in this order:

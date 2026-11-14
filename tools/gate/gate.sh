@@ -1159,6 +1159,7 @@ run_support_orchestration_tests() {
     script/nightly-freshness_test.sh &&
     script/crossrepo-conformance_pin_test.sh &&
     python3 script/gate_capacity_test.py &&
+    python3 script/gate_slot_test.py &&
     python3 tools/gate/gate_latest_test.py &&
     tools/gate/web_runner_test.sh &&
     script/ui_catalog_test.sh &&
