@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -49,6 +50,11 @@ func TestAcquireServerLockCreatesPrivateFile(t *testing.T) {
 	info, err := os.Stat(filepath.Join(dataDir, serverLockName))
 	if err != nil {
 		t.Fatal(err)
+	}
+	// Windows reports synthesized permission bits, so only Unix modes carry
+	// the 0600 guarantee.
+	if runtime.GOOS == "windows" {
+		return
 	}
 	if perm := info.Mode().Perm(); perm&0o077 != 0 {
 		t.Fatalf("server.lock mode = %v, want no group or other access", perm)
