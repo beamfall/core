@@ -88,12 +88,26 @@ The web viewer SHALL let a signed-in user:
 While in a party, the web viewer SHALL follow play, pause and seek from the sync stream. It SHALL
 correct its own drift: re-seek beyond 500 ms, adjust the playback rate slightly below that. It
 SHALL show the current drift. A host's transport actions SHALL drive the party, and a member's
-SHALL be sent as transport requests. Only media events that follow the viewer's own input SHALL
-be sent; autoplay and the viewer's own drift corrections SHALL NOT. The viewer's input includes
-the in-page controls, the release of a scrubber drag and the OS media controls. A `roster` event
-that describes the timeline the viewer already follows SHALL NOT interrupt its playback.
+SHALL be sent as transport requests. A `roster` event that describes the timeline the viewer
+already follows SHALL NOT interrupt its playback.
 
 #### Scenario: Host pauses
 
 - **WHEN** the host pauses
 - **THEN** every member's player pauses at the host's position and shows its drift
+
+### Requirement: Web viewer sends only the viewer's own transport
+
+In a party, the web viewer SHALL send a play, pause or seek only when it follows the viewer's own
+input: the in-page controls, the release of a scrubber drag or the OS media controls. The
+browser's autoplay and the viewer's own drift corrections SHALL NOT be sent.
+
+#### Scenario: Autoplay on joining a paused party
+
+- **WHEN** a member joins a paused party and the browser starts playback on its own
+- **THEN** the viewer pauses again and sends no transport
+
+#### Scenario: Pause from the OS media controls
+
+- **WHEN** the viewer pauses from the lock screen or a media key
+- **THEN** the pause is sent to the party like the in-page Pause
