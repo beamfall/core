@@ -13,7 +13,9 @@ import (
 	"image"
 	"image/jpeg"
 	_ "image/png"
+	"io"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -130,7 +132,7 @@ func Open(ctx context.Context, dataDir string, opts Options) (*Store, error) {
 		return nil, fmt.Errorf("resolve data-dir: %w", err)
 	}
 	if opts.RequireExisting {
-		if err := requireExistingDataDir(dataDir); err != nil {
+		if err := requireExistingDataDir(ctx, dataDir); err != nil {
 			return nil, err
 		}
 	}
@@ -239,22 +241,58 @@ func Open(ctx context.Context, dataDir string, opts Options) (*Store, error) {
 	return st, nil
 }
 
-// requireExistingDataDir reports ErrNoDataDir unless dataDir holds a catalog
-// database or an interrupted restore publish that Open will recover.
-func requireExistingDataDir(dataDir string) error {
-	for _, path := range []string{
-		filepath.Join(dataDir, "db", "catalog.db"),
-		filepath.Join(dataDir, restorePublishTransactionName),
-	} {
-		_, err := os.Stat(path)
-		if err == nil {
-			return nil
-		}
-		if !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
+// requireExistingDataDir reports ErrNoDataDir unless dataDir holds a Beamfall
+// catalog database or an interrupted restore publish that Open will recover.
+// It only reads: a catalog.db that is empty or is not a Beamfall catalog is
+// refused before Open creates or modifies anything (CORE-1599).
+func requireExistingDataDir(ctx context.Context, dataDir string) error {
+	_, err := os.Stat(filepath.Join(dataDir, restorePublishTransactionName))
+	if err == nil {
+		return nil
 	}
-	return fmt.Errorf("%w in %s", ErrNoDataDir, dataDir)
+	if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	catalogPath := filepath.Join(dataDir, "db", "catalog.db")
+	info, err := os.Stat(catalogPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("%w in %s", ErrNoDataDir, dataDir)
+	}
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() || !isBeamfallCatalog(ctx, catalogPath) {
+		return fmt.Errorf("%w in %s: %s is empty or is not a Beamfall catalog", ErrNoDataDir, dataDir, catalogPath)
+	}
+	return nil
+}
+
+// sqliteFileHeader opens every SQLite database file.
+const sqliteFileHeader = "SQLite format 3\x00"
+
+// isBeamfallCatalog reports whether path is an SQLite database whose
+// schema_migrations ledger records at least one applied migration. It checks
+// the file header itself first, so an empty or foreign file never reaches
+// SQLite, and then opens the database read-only.
+func isBeamfallCatalog(ctx context.Context, path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	header := make([]byte, len(sqliteFileHeader))
+	_, err = io.ReadFull(f, header)
+	_ = f.Close()
+	if err != nil || string(header) != sqliteFileHeader {
+		return false
+	}
+	db, err := sql.Open("sqlite", (&url.URL{Scheme: "file", Path: path, RawQuery: "mode=ro"}).String())
+	if err != nil {
+		return false
+	}
+	defer db.Close()
+	var applied int
+	err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations`).Scan(&applied)
+	return err == nil && applied > 0
 }
 
 func (opts Options) resolvedSeedProfile() SeedProfile {

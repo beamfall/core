@@ -11,6 +11,12 @@ no Beamfall database, creating nothing there.
 - **WHEN** either command runs with a `--data-dir` that has no Beamfall database
 - **THEN** it exits with an error naming the directory and no database or files are created
 
+#### Scenario: Empty or foreign database file
+
+- **WHEN** the directory's `db/catalog.db` is empty, is not SQLite, or has no Beamfall migration
+  ledger
+- **THEN** the command refuses it after a read-only check and leaves every file unchanged
+
 #### Scenario: Relative data directory
 
 - **WHEN** the command runs with a relative `--data-dir` that holds a database

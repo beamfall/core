@@ -3,7 +3,11 @@ package store
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"database/sql"
 	"errors"
+	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -74,4 +78,75 @@ func TestOpenFreshDataDirLogsOneMigrationLine(t *testing.T) {
 	if len(migrationLines) != 1 || !strings.Contains(migrationLines[0], `msg="applied migrations"`) {
 		t.Fatalf("INFO migration lines = %q, want one applied migrations summary", migrationLines)
 	}
+}
+
+// TestOpenRequireExistingRefusesForeignCatalog covers CORE-1599: a catalog.db
+// that is empty, is not SQLite, or is some other SQLite database is not
+// Beamfall data, and refusing it must leave every byte on disk as it was.
+func TestOpenRequireExistingRefusesForeignCatalog(t *testing.T) {
+	foreignSQLite := filepath.Join(t.TempDir(), "foreign.db")
+	db, err := sql.Open("sqlite", foreignSQLite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE notes (body TEXT); INSERT INTO notes VALUES ('hello')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	foreignBytes, err := os.ReadFile(foreignSQLite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range map[string][]byte{
+		"empty":          nil,
+		"text":           []byte("not a database\n"),
+		"foreign sqlite": foreignBytes,
+	} {
+		t.Run(name, func(t *testing.T) {
+			dataDir := t.TempDir()
+			catalog := filepath.Join(dataDir, "db", "catalog.db")
+			if err := os.MkdirAll(filepath.Dir(catalog), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(catalog, content, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			before := snapshotTree(t, dataDir)
+			_, err := Open(context.Background(), dataDir, Options{RequireExisting: true})
+			if !errors.Is(err, ErrNoDataDir) || !strings.Contains(err.Error(), "not a Beamfall catalog") {
+				t.Fatalf("Open error = %v, want ErrNoDataDir naming a foreign catalog", err)
+			}
+			if after := snapshotTree(t, dataDir); after != before {
+				t.Fatalf("refused Open changed the data dir:\nbefore:\n%s\nafter:\n%s", before, after)
+			}
+		})
+	}
+}
+
+// snapshotTree lists every path under root with its size and content hash.
+func snapshotTree(t *testing.T, root string) string {
+	t.Helper()
+	var b strings.Builder
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(root, path)
+		if d.IsDir() {
+			fmt.Fprintf(&b, "%s/\n", rel)
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(&b, "%s %d %x\n", rel, len(data), sha256.Sum256(data))
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b.String()
 }
