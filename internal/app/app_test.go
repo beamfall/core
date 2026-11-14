@@ -451,12 +451,12 @@ func TestAppWiresRoutesAndSurfaces(t *testing.T) {
 	}
 	defer beamfall.Close()
 
-	// 58 = 53 plus the web session renewal, admin sign-in and sign-in security
-	// routes (CORE-1106, CORE-1110) and the /v1 playback-info and progress
-	// client routes (CORE-1694). This constant is rebase-hidden coupling:
-	// git keeps it as common context, so every lane that adds a route must bump
-	// it explicitly.
-	if got, want := len(beamfall.Routes()), 58; got != want {
+	// 59 = 53 plus the web session renewal, admin sign-in and sign-in security
+	// routes (CORE-1106, CORE-1110), the /v1 playback-info and progress
+	// client routes (CORE-1694) and the /v1 external-ID lookup (CORE-1698).
+	// This constant is rebase-hidden coupling: git keeps it as common context,
+	// so every lane that adds a route must bump it explicitly.
+	if got, want := len(beamfall.Routes()), 59; got != want {
 		t.Fatalf("len(Routes) = %d, want %d", got, want)
 	}
 	if got := len(beamfall.Surfaces().All()); got < 5 {
