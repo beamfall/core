@@ -63,6 +63,8 @@ CASE_WORKSPACE="$WORKSPACE"
 
 CASE_STATUS=0
 CASE_LOG=""
+CASE_CONSUMER_SOURCE="$CONSUMER"
+DEFAULT_CONSUMER_URL="https://github.com/beamfall/web.git"
 run_case() {
   local name="$1"
   local run_tmp="$TMP/run-$name"
@@ -70,13 +72,17 @@ run_case() {
   mkdir "$run_tmp"
   local workspace_env=(-u BEAMFALL_WORKSPACE_ROOT)
   [[ -z "$CASE_WORKSPACE" ]] || workspace_env+=("BEAMFALL_WORKSPACE_ROOT=$CASE_WORKSPACE")
+  # With no explicit source, rewrite the default remote to the local fixture so
+  # the fallback is observable without the network.
+  local source_env=(-u BEAMFALL_CROSSREPO_CONSUMER_SOURCE
+    GIT_CONFIG_COUNT=1 "GIT_CONFIG_KEY_0=url.$CONSUMER.insteadOf" "GIT_CONFIG_VALUE_0=$DEFAULT_CONSUMER_URL")
+  [[ -z "$CASE_CONSUMER_SOURCE" ]] || source_env=("BEAMFALL_CROSSREPO_CONSUMER_SOURCE=$CASE_CONSUMER_SOURCE")
   set +e
-  env "${workspace_env[@]}" \
+  env "${workspace_env[@]}" "${source_env[@]}" \
     BEAMFALL_CROSSREPO_RUNNER_SUPERVISED=1 \
     BEAMFALL_CROSSREPO_FIXTURE_SUPERVISED=1 \
     BEAMFALL_CROSSREPO_TMP="$run_tmp" \
     BEAMFALL_CROSSREPO_PRODUCER_SOURCE="$RUNNER" \
-    BEAMFALL_CROSSREPO_CONSUMER_SOURCE="$CONSUMER" \
     "$RUNNER/script/crossrepo-conformance.sh" >"$CASE_LOG" 2>&1
   CASE_STATUS=$?
   set -e
@@ -146,4 +152,27 @@ run_case linked-worktree
 grep -F "REGISTRY workspace path=$WORKSPACE/contracts/registry.json" "$CASE_LOG" >/dev/null \
   || fail_case "linked worktree did not resolve the workspace registry via the git common dir"
 
-echo "crossrepo-conformance_pin_test: OK (no-workspace/missing-registry/missing/unresolvable RED; exact pin resolved $CONSUMER_SHA against the workspace registry, also from a linked worktree outside it)"
+# A workspace sibling holding the pin is cloned locally instead of the remote;
+# one without it falls back to the default remote; an explicit source wins
+# (CORE-1550).
+CASE_CONSUMER_SOURCE=""
+git init -q "$WORKSPACE/beamfall-web"
+run_case sibling-without-pin
+[[ "$CASE_STATUS" -eq 0 ]] || fail_case "sibling without the pin did not fall back to the default remote"
+grep -F "CHECKOUT consumer sha=$CONSUMER_SHA source=$DEFAULT_CONSUMER_URL" "$CASE_LOG" >/dev/null \
+  || fail_case "sibling without the pin was used as the consumer source"
+
+rm -rf "$WORKSPACE/beamfall-web"
+git clone -q "$CONSUMER" "$WORKSPACE/beamfall-web"
+run_case sibling-with-pin
+[[ "$CASE_STATUS" -eq 0 ]] || fail_case "sibling holding the pin failed"
+grep -F "CHECKOUT consumer sha=$CONSUMER_SHA source=$WORKSPACE/beamfall-web" "$CASE_LOG" >/dev/null \
+  || fail_case "sibling holding the pin was not used as the consumer source"
+
+CASE_CONSUMER_SOURCE="$CONSUMER"
+run_case explicit-source
+[[ "$CASE_STATUS" -eq 0 ]] || fail_case "explicit consumer source failed"
+grep -F "CHECKOUT consumer sha=$CONSUMER_SHA source=$CONSUMER" "$CASE_LOG" >/dev/null \
+  || fail_case "explicit consumer source did not win over the workspace sibling"
+
+echo "crossrepo-conformance_pin_test: OK (no-workspace/missing-registry/missing/unresolvable RED; exact pin resolved $CONSUMER_SHA against the workspace registry, also from a linked worktree outside it; workspace sibling used only when it holds the pin)"

@@ -287,6 +287,14 @@ fi
 CONSUMER_PIN="$(load_consumer_pin)"
 printf 'PIN consumer repo=%s pinned_sha=%s note=%s authority=%s\n' \
   "$CONSUMER_REPO" "$CONSUMER_PIN" "$CONSUMER_PIN_NOTE" "$CONSUMER_PIN_REGISTRY"
+# The pin is an immutable SHA and the resolved SHA is asserted below, so a
+# workspace sibling that already holds it yields the same bytes as the remote
+# without a network clone (CORE-1550). An explicit source still wins.
+CONSUMER_SIBLING="$(dirname "$(dirname "$WORKSPACE_REGISTRY")")/$CONSUMER_REPO"
+if [[ -z "${BEAMFALL_CROSSREPO_CONSUMER_SOURCE:-}" ]] \
+  && git -C "$CONSUMER_SIBLING" cat-file -e "$CONSUMER_PIN^{commit}" 2>/dev/null; then
+  CONSUMER_SOURCE="$CONSUMER_SIBLING"
+fi
 checkout_repo consumer "$CONSUMER_SOURCE" "$CONSUMER_PIN" "$CONSUMER"
 RESOLVED_CONSUMER_SHA="$(git -C "$CONSUMER" rev-parse HEAD)"
 [[ "$RESOLVED_CONSUMER_SHA" == "$CONSUMER_PIN" ]] \
