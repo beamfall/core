@@ -39,6 +39,14 @@ export const PREF_KEYS = {
   // Pre-play queue opt-in and suggested-item count (CORE-1701, graph_preplay.go).
   prePlayEnabled: "preplay.enabled",
   prePlayExtras: "preplay.extras",
+  // Subtitle appearance (CORE-1681); values and defaults live in subtitleAppearance.ts.
+  subtitleSize: "subtitle.size",
+  subtitleBackground: "subtitle.background",
+  subtitleFont: "subtitle.font",
+  subtitleColor: "subtitle.color",
+  subtitleOpacity: "subtitle.opacity",
+  subtitleEdge: "subtitle.edge",
+  subtitlePosition: "subtitle.position",
 } as const;
 
 export type PrefKey = (typeof PREF_KEYS)[keyof typeof PREF_KEYS];
