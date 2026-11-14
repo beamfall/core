@@ -20,6 +20,8 @@ export const playbackStrings = {
     seekForwardSeconds: "Forward {seconds}s",
     previousChapter: "Previous chapter",
     nextChapter: "Next chapter",
+    chapters: "Chapters",
+    chapterNumber: "Chapter {number}",
     collectionSkipIntervalLabel: "Skip buttons for {title}",
     previousInQueue: "Previous",
     nextInQueue: "Next",

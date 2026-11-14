@@ -363,6 +363,84 @@
   color: oklch(78% 0.02 250);
 }
 
+/* The chapter list (CORE-1683): a thumbnail, title and start time per row;
+ * the current chapter carries the beam dot. */
+.bf-chapter-menu {
+  width: min(360px, calc(100vw - 24px));
+  max-width: min(360px, calc(100vw - 24px));
+}
+
+.bf-chapter-row {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 6px 12px 6px 30px;
+  position: relative;
+  border-radius: 10px;
+  color: oklch(96% 0.006 250);
+  font-size: 14px;
+  cursor: pointer;
+  outline: none;
+}
+
+.bf-chapter-row[data-highlighted] {
+  background: oklch(98% 0.004 250 / 9%);
+}
+
+.bf-chapter-row:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.bf-chapter-row[data-current] {
+  font-weight: 600;
+}
+
+.bf-chapter-row[data-current]::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 11px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--beam-500);
+  box-shadow: 0 0 10px var(--beam-500);
+  transform: translateY(-50%);
+}
+
+.bf-chapter-thumb {
+  flex: none;
+  width: 96px;
+  aspect-ratio: 16 / 9;
+  border-radius: 6px;
+  background-color: oklch(22% 0.012 255);
+  background-repeat: no-repeat;
+  object-fit: cover;
+}
+
+.bf-chapter-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.bf-chapter-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bf-chapter-time {
+  font-size: 12px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: oklch(78% 0.02 250);
+}
+
 /* The info overlay + subtitle-styling panel are role="dialog" surfaces holding
  * ordinary form rows; inside the settings sheet they drill in over it. */
 .bf-player-dialog {
