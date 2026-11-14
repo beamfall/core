@@ -204,11 +204,12 @@ export function restartInPlace(
 // Two records together decide. The recent applied events themselves (id and
 // issue time) catch an exact replay, whatever order ids and issue times came
 // in: concurrent commands take their issue time before they are written, so a
-// higher id can carry an earlier time. A watermark, the highest id and the
-// latest issue time applied, drops an older event this tab never saw. An event
-// is fresh unless it is in the recent set or both its id and its issue time
-// are at or below the watermark, so a server restored from an older backup
-// (lower ids, later times) is still obeyed.
+// higher id can carry an earlier time. A watermark, the id of the last event
+// applied and the latest issue time applied, drops an older event this tab
+// never saw. An event is fresh unless it is in the recent set or both its id
+// and its issue time are at or below the watermark. A server restored from an
+// older backup (lower ids, later times) is still obeyed, and because the
+// watermark then takes the restored id, so are its later events.
 const APPLIED_KEY = "bf.remote.appliedEvent";
 const APPLIED_RECENT_LIMIT = 64;
 interface AppliedEvents {
@@ -254,7 +255,7 @@ export function claimControlEvent(eventID: string, occurredAt: number): boolean 
     return false;
   }
   applied = {
-    id: Math.max(id, last?.id ?? id),
+    id,
     at: Math.max(occurredAt, last?.at ?? occurredAt),
     recent: [...(last?.recent ?? []), key].slice(-APPLIED_RECENT_LIMIT),
   };
@@ -266,10 +267,11 @@ export function claimControlEvent(eventID: string, occurredAt: number): boolean 
   return true;
 }
 
-/** Test seam: forgets the applied events. */
+/** Test seam: forgets the applied events and held commands. */
 export function resetAppliedControlEvents(): void {
   applied = undefined;
-  pendingCommand = null;
+  pendingCommands = [];
+  lastPlayState = null;
   try {
     window.sessionStorage.removeItem(APPLIED_KEY);
   } catch {
@@ -277,41 +279,59 @@ export function resetAppliedControlEvents(): void {
   }
 }
 
-// A transport command that arrived while no player was registered: one is
+// Transport commands that arrived while no player was registered: one is
 // still setting up (after a play-media, the player unmounts its transport
-// until the new playback is ready). The next player to register applies it if
-// it is still recent and anchored to that player's Media. Only the latest
-// command is kept.
+// until the new playback is ready). The next player to register applies them
+// in order, each if it is still recent and anchored to that player's Media.
 const PENDING_COMMAND_MS = 15_000;
-const HOLD_PAUSE_MS = 10_000;
-let pendingCommand: { command: SessionControlCommand; at: number } | null = null;
+const PENDING_COMMAND_LIMIT = 16;
+let pendingCommands: Array<{ command: SessionControlCommand; at: number }> = [];
+
+// The last pause, resume or stop this session was sent. A player setting up
+// asks it before starting itself, so a pause sent while it loads holds.
+let lastPlayState: { command: SessionControlCommand; at: number } | null = null;
 
 /**
  * Drives the registered player with a transport command, or keeps the command
  * for the next player to register when none is.
  */
 export function deliverPlayerCommand(command: SessionControlCommand): void {
+  const at = Date.now();
+  if (command.command === "pause" || command.command === "resume" || command.command === "stop") {
+    lastPlayState = { command, at };
+  }
   const player = remotePlayerTarget();
   if (player) {
-    pendingCommand = null;
     applyPlayerCommand(command, player);
     return;
   }
-  pendingCommand = { command, at: Date.now() };
+  pendingCommands = [...pendingCommands, { command, at }].slice(-PENDING_COMMAND_LIMIT);
 }
 
-function applyPendingCommand(target: RemotePlayerTarget): void {
-  const held = pendingCommand;
-  pendingCommand = null;
-  if (!held || Date.now() - held.at > PENDING_COMMAND_MS) return;
-  if (!applyPlayerCommand(held.command, target) || held.command.command !== "pause") return;
-  // The player starts itself once it can play, which is after it registers:
-  // keep a queued pause through that first start.
-  const video = target.video();
-  if (!video) return;
-  const hold = () => video.pause();
-  video.addEventListener("play", hold, { once: true });
-  window.setTimeout(() => video.removeEventListener("play", hold), HOLD_PAUSE_MS);
+/** Drops held commands: a play-media replaces whatever was sent before it. */
+export function forgetPendingPlayerCommands(): void {
+  pendingCommands = [];
+}
+
+/**
+ * Whether a player for `mediaID` that began setting up at `since` must not
+ * start itself: the last pause, resume or stop sent since then was a pause or
+ * stop authorized for that Media.
+ */
+export function remoteHoldsAutoplay(mediaID: string, since: number): boolean {
+  const last = lastPlayState;
+  if (!last || last.at < since) return false;
+  if (last.command.command === "resume") return false;
+  return anchoredTo(last.command, { video: () => null, mediaID });
+}
+
+function applyPendingCommands(target: RemotePlayerTarget): void {
+  const held = pendingCommands;
+  pendingCommands = [];
+  const now = Date.now();
+  for (const { command, at } of held) {
+    if (now - at <= PENDING_COMMAND_MS) applyPlayerCommand(command, target);
+  }
 }
 
 // One player runs per tab; the last one mounted is the one commands reach.
@@ -328,7 +348,7 @@ export function useRemotePlayerTarget(target: RemotePlayerTarget): void {
   latest.current = target;
   useEffect(() => {
     active = latest;
-    applyPendingCommand(latest.current);
+    applyPendingCommands(latest.current);
     return () => {
       if (active === latest) active = null;
     };

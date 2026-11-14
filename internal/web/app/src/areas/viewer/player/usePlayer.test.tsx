@@ -11,6 +11,7 @@ import {
 import { fetchPlaybackMarkers } from "@/lib/graphql";
 import type { PlaybackMarker } from "@/lib/graphql/types";
 import { ApiError, fetchPlaybackInfo } from "../lib/playback";
+import { deliverPlayerCommand, resetAppliedControlEvents } from "../remote/remoteControl";
 import { selectHlsLevel, selectHlsRendition, usePlayer } from "./usePlayer";
 
 vi.mock("@/lib/graphql", () => ({
@@ -669,6 +670,17 @@ describe("usePlayer", () => {
     expect(video).toHaveAttribute("src", "/api/media/direct/token");
     fireEvent.canPlay(video);
     expect(HTMLMediaElement.prototype.play).toHaveBeenCalledOnce();
+  });
+
+  it("does not start itself after another device paused it while it set up", async () => {
+    resetAppliedControlEvents();
+    render(<Harness />);
+    deliverPlayerCommand({ command: "pause", playingMediaIDs: ["media-alpha"] });
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    const video = screen.getByTestId("player");
+    fireEvent.canPlay(video);
+    expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+    resetAppliedControlEvents();
   });
 
   it("honors a timestamped playback deep link over resume", async () => {

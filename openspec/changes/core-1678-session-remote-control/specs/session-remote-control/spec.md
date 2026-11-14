@@ -160,3 +160,8 @@ again. A transport command sent while the player sets up SHALL apply once it is 
 
 - **WHEN** a web player that is still setting up after a `play-media` is sent `pause` for that Media
 - **THEN** it applies the pause once it is ready and does not start playing on its own
+
+#### Scenario: Several commands during setup
+
+- **WHEN** a web player that is still setting up is sent `pause` and then `set-volume`
+- **THEN** it applies both, in order, once it is ready, and stays paused

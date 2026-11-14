@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import {
   applyPlayerCommand,
   claimControlEvent,
+  deliverPlayerCommand,
   parseSessionControlFrame,
   type RemotePlayerTarget,
+  remoteHoldsAutoplay,
   resetAppliedControlEvents,
   restartInPlace,
   STALE_AFTER_MS,
@@ -214,6 +216,14 @@ describe("claimControlEvent", () => {
     expect(claimControlEvent("102", 2_100)).toBe(true);
   });
 
+  it("keeps obeying a restored server whose concurrent events disagree in order", () => {
+    resetAppliedControlEvents();
+    expect(claimControlEvent("500", 1_000)).toBe(true);
+    expect(claimControlEvent("101", 2_000)).toBe(true);
+    expect(claimControlEvent("102", 1_900)).toBe(true);
+    expect(claimControlEvent("101", 2_000)).toBe(false);
+  });
+
   it("drops replays of events whose ids and issue times disagree in order", () => {
     resetAppliedControlEvents();
     expect(claimControlEvent("41", 2_000)).toBe(true);
@@ -232,5 +242,24 @@ describe("claimControlEvent", () => {
     expect(claimControlEvent("42", 1_000)).toBe(false);
     expect(claimControlEvent("41", 2_000)).toBe(false);
     expect(claimControlEvent("43", 2_100)).toBe(true);
+  });
+});
+
+describe("remoteHoldsAutoplay", () => {
+  it("holds a player's own start after a pause or stop sent since it began setting up", () => {
+    resetAppliedControlEvents();
+    const since = Date.now();
+    expect(remoteHoldsAutoplay("m1", since)).toBe(false);
+    deliverPlayerCommand({ command: "pause", playingMediaIDs: ["m1"] });
+    expect(remoteHoldsAutoplay("m1", since)).toBe(true);
+    expect(remoteHoldsAutoplay("m2", since)).toBe(false);
+    expect(remoteHoldsAutoplay("m1", since + 60_000)).toBe(false);
+    deliverPlayerCommand({ command: "set-volume", volume: 10 });
+    expect(remoteHoldsAutoplay("m1", since)).toBe(true);
+    deliverPlayerCommand({ command: "resume", playingMediaIDs: ["m1"] });
+    expect(remoteHoldsAutoplay("m1", since)).toBe(false);
+    deliverPlayerCommand({ command: "stop", mediaID: "m1" });
+    expect(remoteHoldsAutoplay("m1", since)).toBe(true);
+    resetAppliedControlEvents();
   });
 });

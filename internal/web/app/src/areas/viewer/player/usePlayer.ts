@@ -21,6 +21,7 @@ import {
   resumePositionFromInfo,
   type TrickplayManifest,
 } from "../lib/transport";
+import { remoteHoldsAutoplay } from "../remote/remoteControl";
 import {
   freshRecoveryBudget,
   HLS_FRAG_LOAD_ERROR,
@@ -478,6 +479,8 @@ export function usePlayer(
       identitySignal?.addEventListener("abort", stopForIdentityChange, { once: true });
     }
     const msg = messagesRef.current;
+    // A pause sent from another device while this load sets up holds autoplay.
+    const setupStartedAt = Date.now();
     setState(emptyState());
     const retryFrom = retryFromRef.current?.mediaID === mediaID ? retryFromRef.current.position : 0;
     retryFromRef.current = null;
@@ -731,6 +734,9 @@ export function usePlayer(
       ) => {
         const useHlsJs = engine === "hlsjs";
         const streamURL = target.url ?? "";
+        const shouldPlay = () =>
+          options.play &&
+          !(video.played.length === 0 && remoteHoldsAutoplay(mediaID, setupStartedAt));
         // hls.js takes the resume point as its startPosition and loads (and
         // seeks to) it directly; only the native <video src> route seeks on
         // metadata, so a resumed HLS session never fetches from 0 first.
@@ -920,7 +926,7 @@ export function usePlayer(
           hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, bumpTracks);
           hls.loadSource(streamURL);
           hls.attachMedia(video);
-          if (options.play) void video.play().catch(() => {});
+          if (shouldPlay()) void video.play().catch(() => {});
         } else {
           // Fail-closed unsupported-codec state (ADR-0084 §Amendment A): the
           // native <video src> route (direct-play, direct-stream, native HLS) is
@@ -987,7 +993,7 @@ export function usePlayer(
           video.addEventListener("error", videoErrorHandler);
           video.src = streamURL;
           videoCanPlayHandler = () => {
-            if (alive && options.play) {
+            if (alive && shouldPlay()) {
               void video.play().catch(() => {});
             }
           };

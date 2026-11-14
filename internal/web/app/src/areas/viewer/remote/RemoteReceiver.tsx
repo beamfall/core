@@ -6,6 +6,7 @@ import { useT } from "@/lib/i18n";
 import {
   claimControlEvent,
   deliverPlayerCommand,
+  forgetPendingPlayerCommands,
   parseSessionControlFrame,
   remotePlayerTarget,
   restartInPlace,
@@ -67,6 +68,7 @@ export function useRemoteReceiver(profileID: string): RemoteReceiver {
           const { command } = frame;
           const player = remotePlayerTarget();
           if (command.command === "play-media" && command.mediaID) {
+            forgetPendingPlayerCommands();
             if (player && restartInPlace(command, player)) return;
             // An explicit position, zero included, overrides saved progress.
             const at =
