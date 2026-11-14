@@ -129,9 +129,7 @@ func (s *scanWalkState) retryAutoIdentify(path string, mediaID store.MediaID, fi
 	if err != nil || queued {
 		return err
 	}
-	if err := s.identifier.AutoIdentify(s.ctx, mediaID, s.libraryPluginID, fingerprint, parsed); err != nil {
-		slog.Warn("scan: auto-identify retry failed", "path", path, "media", string(mediaID), "error", err.Error())
-	}
+	s.autoIdentify(path, mediaID, fingerprint, parsed, "scan: auto-identify retry failed")
 	return nil
 }
 
@@ -241,9 +239,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 		}
 	}
 	if s.identifier != nil && s.libraryPluginID != "" {
-		if err := s.identifier.AutoIdentify(s.ctx, media.ID, s.libraryPluginID, fingerprint, parsed); err != nil {
-			slog.Warn("scan: auto-identify failed", "path", path, "media", string(media.ID), "error", err.Error())
-		}
+		s.autoIdentify(path, media.ID, fingerprint, parsed, "scan: auto-identify failed")
 	}
 	if err := s.queueCompletion(path, media.ID, fingerprint, isImage); err != nil {
 		return err

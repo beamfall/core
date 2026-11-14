@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"math"
 	"net"
@@ -83,6 +84,43 @@ type EntityResult struct {
 // in whatever store actually holds credentials.
 type CredentialSource interface {
 	Secret(ref string) (string, error)
+}
+
+// CredentialMissingError reports that a scraper needs a credential that is not
+// configured: no CredentialSource, or the source reports the secret absent
+// (fs.ErrNotExist). It carries only the AuthRef, never a secret or file path,
+// so callers can report it once as a setup hint instead of a per-request
+// filesystem error (CORE-1101). Other resolution failures (a bad file mode,
+// an empty file) stay ordinary errors.
+type CredentialMissingError struct {
+	AuthRef string
+	err     error
+}
+
+func (e *CredentialMissingError) Error() string {
+	return fmt.Sprintf("scrape: credential %q is not configured", e.AuthRef)
+}
+
+func (e *CredentialMissingError) Unwrap() error { return e.err }
+
+// MissingCredential names the absent credential ref (scan's
+// MissingCredentialError view).
+func (e *CredentialMissingError) MissingCredential() string { return e.AuthRef }
+
+// resolveCredential reads ref from source, mapping an absent secret to
+// CredentialMissingError and wrapping any other failure with context.
+func resolveCredential(source CredentialSource, ref, context string) (string, error) {
+	if source == nil {
+		return "", &CredentialMissingError{AuthRef: ref}
+	}
+	secret, err := source.Secret(ref)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", &CredentialMissingError{AuthRef: ref, err: err}
+	}
+	if err != nil {
+		return "", fmt.Errorf("scrape: %sresolving credential %q: %w", context, ref, err)
+	}
+	return secret, nil
 }
 
 // ConfigSource resolves persisted, non-secret configuration for one plugin.
@@ -813,12 +851,9 @@ func (e *Engine) authorizer(ctx context.Context, spec plugin.ScraperSpec) (func(
 	if spec.AuthRef == "" {
 		return nil, nil
 	}
-	if e.credentials == nil {
-		return nil, fmt.Errorf("scrape: spec requires credential %q but no CredentialSource is configured", spec.AuthRef)
-	}
-	secret, err := e.credentials.Secret(spec.AuthRef)
+	secret, err := resolveCredential(e.credentials, spec.AuthRef, "")
 	if err != nil {
-		return nil, fmt.Errorf("scrape: resolving credential %q: %w", spec.AuthRef, err)
+		return nil, err
 	}
 	style := spec.AuthStyle
 	if style == "" {
@@ -873,9 +908,9 @@ func (e *Engine) loginToken(ctx context.Context, spec plugin.ScraperSpec, secret
 	// SecretFields adds further body keys, each resolved like the scraper's own
 	// AuthRef; a missing one fails the exchange rather than logging in without it.
 	for field, ref := range spec.Login.SecretFields {
-		extra, err := e.credentials.Secret(ref)
+		extra, err := resolveCredential(e.credentials, ref, fmt.Sprintf("scraper %q login field %q: ", spec.ID, field))
 		if err != nil {
-			return "", fmt.Errorf("scrape: scraper %q login field %q: resolving credential %q: %w", spec.ID, field, ref, err)
+			return "", err
 		}
 		fields[field] = extra
 		refs = append(refs, ref)

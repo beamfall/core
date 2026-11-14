@@ -58,12 +58,13 @@ func marshalScanCheckpoint(checkpoint jobCheckpoint) ([]byte, error) {
 
 func (r Result) checkpoint(stage string) jobCheckpoint {
 	return jobCheckpoint{
-		Version:       1,
-		Stage:         stage,
-		LastPath:      r.LastPath,
-		FilesSeen:     r.FilesSeen,
-		TotalFiles:    r.totalFiles,
-		MediaImported: r.MediaImported,
+		Version:            1,
+		Stage:              stage,
+		LastPath:           r.LastPath,
+		FilesSeen:          r.FilesSeen,
+		TotalFiles:         r.totalFiles,
+		MediaImported:      r.MediaImported,
+		MissingCredentials: append([]string(nil), r.MissingCredentials...),
 	}
 }
 
