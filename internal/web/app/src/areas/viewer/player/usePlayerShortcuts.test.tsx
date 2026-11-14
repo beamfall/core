@@ -1,6 +1,6 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useRef } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlaybackMarker } from "@/lib/graphql/types";
 import type { MenuOption } from "./useLiveTracks";
 import { type PlayerShortcutHandlers, usePlayerShortcuts } from "./usePlayerShortcuts";
@@ -110,30 +110,68 @@ describe("usePlayerShortcuts (CORE-1682)", () => {
     expect(video.currentTime).toBeCloseTo(30);
   });
 
-  it("steps by the frame interval the browser presents", () => {
+  describe("with presented-frame timing", () => {
     const callbacks: VideoFrameRequestCallback[] = [];
     const proto = HTMLVideoElement.prototype as Partial<HTMLVideoElement>;
-    proto.requestVideoFrameCallback = (callback) => callbacks.push(callback);
-    proto.cancelVideoFrameCallback = () => {};
-    try {
-      const { unmount, video } = setup({}, { currentTime: 10, paused: false });
-      const present = (mediaTime: number, presentedFrames: number) => {
-        const callback = callbacks.shift();
-        callback?.(0, { mediaTime, presentedFrames } as VideoFrameCallbackMetadata);
-      };
+    const present = (mediaTime: number, presentedFrames: number) => {
+      const callback = callbacks.shift();
+      callback?.(0, { mediaTime, presentedFrames } as VideoFrameCallbackMetadata);
+    };
+    const pauseAt = (video: HTMLVideoElement, currentTime: number) => {
+      Object.defineProperty(video, "paused", { configurable: true, value: true });
+      video.currentTime = currentTime;
+    };
+    beforeEach(() => {
+      callbacks.length = 0;
+      proto.requestVideoFrameCallback = (callback) => callbacks.push(callback);
+      proto.cancelVideoFrameCallback = () => {};
+    });
+    afterEach(() => {
+      cleanup();
+      Reflect.deleteProperty(proto, "requestVideoFrameCallback");
+      Reflect.deleteProperty(proto, "cancelVideoFrameCallback");
+    });
+
+    it("steps by the frame interval the browser presents", () => {
+      const { video } = setup({}, { currentTime: 10, paused: false });
       // Playing at 24 fps, then a dropped frame that must not stretch the step.
       present(10, 100);
       present(10 + 1 / 24, 101);
       present(10 + 3 / 24, 102);
-      Object.defineProperty(video, "paused", { configurable: true, value: true });
-      video.currentTime = 10 + 3 / 24;
+      pauseAt(video, 10 + 3 / 24);
       press(".");
       expect(video.currentTime).toBeCloseTo(10 + 4 / 24 + 1 / 48);
-      unmount();
-    } finally {
-      Reflect.deleteProperty(proto, "requestVideoFrameCallback");
-      Reflect.deleteProperty(proto, "cancelVideoFrameCallback");
-    }
+    });
+
+    it("measures low frame rates too", () => {
+      const { video } = setup({}, { currentTime: 0, paused: false });
+      present(0, 1);
+      present(0.2, 2);
+      pauseAt(video, 0.2);
+      press(".");
+      expect(video.currentTime).toBeCloseTo(0.5);
+    });
+
+    it("steps forward from a shown frame ahead of the playhead", () => {
+      const { video } = setup({}, { currentTime: 0, paused: false });
+      present(0.7, 1);
+      present(0.7 + 1 / 120, 2);
+      present(0.725, 3);
+      pauseAt(video, 0.712065);
+      press(".");
+      expect(video.currentTime).toBeGreaterThan(0.725);
+    });
+
+    it("steps from the seek target until the seek shows its frame", () => {
+      const { video } = setup({}, { currentTime: 0, paused: false });
+      present(5, 1);
+      present(5 + 1 / 24, 2);
+      pauseAt(video, 5 + 1 / 24);
+      fireEvent(video, new Event("seeking"));
+      video.currentTime = 40;
+      press(".");
+      expect(video.currentTime).toBeCloseTo(40 + 1 / 24);
+    });
   });
 
   it("moves between chapters with Page Up and Page Down", () => {

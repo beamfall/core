@@ -70,7 +70,8 @@ export function usePlayerShortcuts(handlers: PlayerShortcutHandlers) {
 // Frame timing from the frames the browser presents (requestVideoFrameCallback):
 // the media-time step between consecutive frames while playing steadily at 1x,
 // the smallest seen since the source last changed, and the timestamp of the
-// frame on screen. Browsers without frame callbacks fall back to 1/30 s.
+// frame on screen, cleared by a seek until the seek presents its frame.
+// Browsers without frame callbacks fall back to 1/30 s.
 function useFrameClock(videoRef: React.RefObject<HTMLVideoElement | null>) {
   const clock = useRef<FrameClock>({ frame: null, mediaTime: null });
   useEffect(() => {
@@ -82,11 +83,14 @@ function useFrameClock(videoRef: React.RefObject<HTMLVideoElement | null>) {
       clock.current = { frame: null, mediaTime: null };
       last = null;
     };
+    const seeking = () => {
+      clock.current.mediaTime = null;
+    };
     const onFrame: VideoFrameRequestCallback = (_now, meta) => {
       const steady = !video.paused && !video.seeking && video.playbackRate === 1;
       if (steady && last && meta.presentedFrames === last.presentedFrames + 1) {
         const step = meta.mediaTime - last.mediaTime;
-        if (step > 1 / 240 && step < 1 / 10 && step < (clock.current.frame ?? Infinity)) {
+        if (step > 1 / 240 && step <= 1 && step < (clock.current.frame ?? Infinity)) {
           clock.current.frame = step;
         }
       }
@@ -96,9 +100,11 @@ function useFrameClock(videoRef: React.RefObject<HTMLVideoElement | null>) {
     };
     handle = video.requestVideoFrameCallback(onFrame);
     video.addEventListener("emptied", reset);
+    video.addEventListener("seeking", seeking);
     return () => {
       video.cancelVideoFrameCallback(handle);
       video.removeEventListener("emptied", reset);
+      video.removeEventListener("seeking", seeking);
     };
   }, [videoRef]);
   return clock;
@@ -138,9 +144,9 @@ function apply(
     case "frameBack":
     case "frameForward":
       if (video?.paused) {
-        seekTo(
-          frameStepTarget(frameClock, video.currentTime, shortcut.action === "frameBack" ? -1 : 1),
-        );
+        // A seek still in flight has not shown its frame yet; step from its target.
+        const clock = video.seeking ? { ...frameClock, mediaTime: null } : frameClock;
+        seekTo(frameStepTarget(clock, video.currentTime, shortcut.action === "frameBack" ? -1 : 1));
       }
       return;
     case "slower":

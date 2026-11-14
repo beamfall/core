@@ -110,8 +110,14 @@ describe("frameStepTarget", () => {
     expect(frameStepTarget(clock, 10.01, -1)).toBeCloseTo(10 - 1 / 24 + 1 / 48);
   });
 
-  it("steps the playhead itself when the shown frame is unknown or stale", () => {
+  it("steps from the shown frame even when it sits ahead of the playhead", () => {
+    // Paused at 120 fps: the playhead trails the frame on screen.
+    const target = frameStepTarget({ frame: 1 / 120, mediaTime: 0.725 }, 0.712065, 1);
+    expect(target).toBeCloseTo(0.725 + 1 / 120 + 1 / 240);
+  });
+
+  it("steps the playhead itself when no frame is shown yet", () => {
     expect(frameStepTarget({ frame: null, mediaTime: null }, 5, 1)).toBeCloseTo(5 + FRAME_SECONDS);
-    expect(frameStepTarget({ frame: 1 / 60, mediaTime: 2 }, 5, -1)).toBeCloseTo(5 - 1 / 60);
+    expect(frameStepTarget({ frame: 1 / 60, mediaTime: null }, 5, -1)).toBeCloseTo(5 - 1 / 60);
   });
 });

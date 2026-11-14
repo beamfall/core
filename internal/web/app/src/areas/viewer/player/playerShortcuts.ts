@@ -124,21 +124,20 @@ export const SHORTCUT_SHEET: ReadonlyArray<{ keys: string[]; label: ShortcutLabe
 export interface FrameClock {
   /** Seconds between consecutive frames. */
   frame: number | null;
-  /** Media time of the frame on screen. */
+  /** Media time of the frame on screen; null while a seek has not yet presented one. */
   mediaTime: number | null;
 }
 
 /**
  * Where a one-frame step lands: the middle of the neighbouring frame, so
- * rounding at a frame boundary cannot leave the picture unchanged. Without a
- * current frame timestamp it steps `currentTime` by the frame (or 1/30 s).
+ * rounding at a frame boundary cannot leave the picture unchanged. The step
+ * starts from the frame on screen, which can sit ahead of or behind
+ * `currentTime`; without one it steps `currentTime` by the frame (or 1/30 s).
  */
 export function frameStepTarget(clock: FrameClock, currentTime: number, direction: -1 | 1) {
   const frame = clock.frame ?? FRAME_SECONDS;
   const shown = clock.mediaTime;
-  if (shown === null || Math.abs(shown - currentTime) > frame) {
-    return currentTime + direction * frame;
-  }
+  if (shown === null) return currentTime + direction * frame;
   return shown + direction * frame + frame / 2;
 }
 
