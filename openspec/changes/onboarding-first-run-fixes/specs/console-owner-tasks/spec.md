@@ -17,6 +17,12 @@ value is reached. A failure to check a folder (offline, locked) SHALL report not
 - **WHEN** a Library exists but no scan has added an item
 - **THEN** the checklist step is not Done
 
+#### Scenario: Scan added items but did not complete
+
+- **WHEN** a scan added items to the catalog and then failed or was canceled, and no scan has
+  completed
+- **THEN** the checklist step is not Done and the checklist does not say setup is finished
+
 ### Requirement: The Add a device panel says how to use the code
 
 After minting a pairing code, the Devices panel SHALL show the role it grants, a countdown to its

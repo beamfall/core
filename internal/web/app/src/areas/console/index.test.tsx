@@ -18,6 +18,7 @@ vi.mock("@/lib/register", () => ({ useRegister: vi.fn() }));
 vi.mock("@/lib/session", () => ({ useSession: vi.fn() }));
 vi.mock("@/lib/graphql", () => ({
   fetchSetupState: vi.fn(),
+  fetchJobs: vi.fn().mockResolvedValue([]),
   fetchLibraries: vi.fn().mockResolvedValue([]),
   fetchUnmatchedQueue: vi.fn().mockResolvedValue([]),
   fetchConsoleConfig: vi.fn().mockResolvedValue({ plugins: [] }),

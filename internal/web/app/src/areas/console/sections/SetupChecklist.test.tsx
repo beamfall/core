@@ -15,6 +15,15 @@ vi.mock("@/lib/graphql", () => ({
   retryJob: vi.fn(),
 }));
 
+function scanJob(status: string): JobInfo {
+  return {
+    id: `scan-${status}`,
+    kind: "scan",
+    status,
+    progress: { current: 0, total: 0, unit: "" },
+  } as JobInfo;
+}
+
 const complete: SetupState = {
   adminPasswordSet: true,
   hasLibrary: true,
@@ -51,6 +60,7 @@ describe("SetupChecklist (Seam B funnel spine)", () => {
     vi.mocked(fetchSourceItems).mockResolvedValue([
       { id: "m1", kind: "media", title: "x", artworkSlots: [] },
     ] as never);
+    vi.mocked(fetchJobs).mockResolvedValue([scanJob("completed")]);
 
     renderChecklist();
 
@@ -92,6 +102,37 @@ describe("SetupChecklist (Seam B funnel spine)", () => {
     const scan = await screen.findByRole("link", { name: /start your first scan/i });
     await waitFor(() => expect(scan).toHaveTextContent("Next step"));
     expect(scan).not.toHaveTextContent("Done");
+  });
+
+  it.each(["failed", "canceled"])(
+    "keeps the first scan open when a %s scan added items but none completed (CORE-1606)",
+    async (status) => {
+      vi.mocked(fetchSetupState).mockResolvedValue(complete);
+      vi.mocked(fetchSourceItems).mockResolvedValue([
+        { id: "m1", kind: "media", title: "x", artworkSlots: [] },
+      ] as never);
+      vi.mocked(fetchJobs).mockResolvedValue([scanJob(status), scanJob("running")]);
+
+      renderChecklist();
+
+      const scan = await screen.findByRole("link", { name: /start your first scan/i });
+      await waitFor(() => expect(scan).toHaveTextContent("Next step"));
+      expect(scan).not.toHaveTextContent("Done");
+      expect(screen.queryByText(/you're all set/i)).toBeNull();
+    },
+  );
+
+  it("marks the first scan Done once a scan completed with items in the catalog", async () => {
+    vi.mocked(fetchSetupState).mockResolvedValue(complete);
+    vi.mocked(fetchSourceItems).mockResolvedValue([
+      { id: "m1", kind: "media", title: "x", artworkSlots: [] },
+    ] as never);
+    vi.mocked(fetchJobs).mockResolvedValue([scanJob("failed"), scanJob("completed")]);
+
+    renderChecklist();
+
+    const scan = await screen.findByRole("link", { name: /start your first scan/i });
+    await waitFor(() => expect(scan).toHaveTextContent("Done"));
   });
 
   it("does not number some steps and check others", async () => {
@@ -137,6 +178,7 @@ describe("SetupChecklist (Seam B funnel spine)", () => {
     vi.mocked(fetchSourceItems).mockResolvedValue([
       { id: "m1", kind: "media", title: "x", artworkSlots: [] },
     ] as never);
+    vi.mocked(fetchJobs).mockResolvedValue([scanJob("completed")]);
 
     renderChecklist();
 

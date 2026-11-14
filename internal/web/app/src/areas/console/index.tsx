@@ -32,7 +32,7 @@ import { SectionMenu } from "@/components/chrome/SectionMenu";
 import { Button } from "@/components/ui/button";
 import { AdvancedSettingsSwitch, useAdvancedSettings } from "@/lib/advancedSettings";
 import { isBeamfallAppStoreHost } from "@/lib/beamfallHost";
-import { fetchSetupState } from "@/lib/graphql";
+import { fetchJobs, fetchSetupState } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
@@ -121,9 +121,11 @@ function Overview() {
   // (CORE-1606); the checklist leads the page until first value is reached.
   const rootProblems = useAsync(fetchLibraryRootProblems).data ?? [];
   const browse = useAsync(fetchHasBrowsableContent);
-  // Decide only once both answers are in, so a set-up server's Overview does
+  const jobs = useAsync(fetchJobs);
+  // Decide only once every answer is in, so a set-up server's Overview does
   // not flash the checklist at the top and then drop it to the bottom.
-  const checklistFirst = !loading && !browse.loading && firstValueOpen(data, browse.data);
+  const checklistFirst =
+    !loading && !browse.loading && !jobs.loading && firstValueOpen(data, browse.data, jobs.data);
   const queue = [
     needsLibrary && {
       to: "/console/libraries",

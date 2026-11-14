@@ -30,11 +30,17 @@ import { useAsync } from "../useAsync";
 // the Console/app station that completes it, and its label. The destinations
 // are the live routes: Libraries (scan), MigrationWizard (migrate, /console/migrate),
 // the browser-promotion page (enroll), and Profiles & Access (profiles).
+interface FirstValueProgress {
+  /** At least one catalog item is browsable. */
+  browsable: boolean;
+  /** At least one scan job finished with status "completed". */
+  scanCompleted: boolean;
+}
+
 interface SpineItem {
   label: StringKey;
   to: string;
-  /** browsable: at least one catalog item exists, so a scan has found a file. */
-  done: (s: SetupState, browsable: boolean) => boolean;
+  done: (s: SetupState, progress: FirstValueProgress) => boolean;
   /** Never required for a first browse; shown as "Optional" until done. */
   optional?: boolean;
 }
@@ -43,9 +49,10 @@ const SPINE: SpineItem[] = [
   {
     label: "setupChecklistScan",
     to: "/console/libraries",
-    // A Library alone is not a scan (CORE-1606): Done only once a completed
-    // scan has put at least one file in the catalog.
-    done: (s, browsable) => s.hasLibrary && browsable,
+    // A Library alone is not a scan (CORE-1606): Done only once a scan has
+    // completed and the catalog holds at least one file. A scan that added
+    // some items and then failed or was canceled is not Done.
+    done: (s, p) => s.hasLibrary && p.browsable && p.scanCompleted,
   },
   {
     label: "setupChecklistMigrate",
@@ -90,10 +97,22 @@ export async function fetchHasBrowsableContent(signal?: AbortSignal): Promise<bo
   return items.length > 0;
 }
 
+function firstValueProgress(browsable: boolean | null, jobs: JobInfo[] | null): FirstValueProgress {
+  return {
+    browsable: browsable === true,
+    scanCompleted: (jobs ?? []).some((job) => job.kind === "scan" && job.status === "completed"),
+  };
+}
+
 /** True while any required checklist step is still open (Overview puts it first then). */
-export function firstValueOpen(state: SetupState | null, browsable: boolean | null): boolean {
+export function firstValueOpen(
+  state: SetupState | null,
+  browsable: boolean | null,
+  jobs: JobInfo[] | null,
+): boolean {
   if (!state) return true;
-  return SPINE.some((item) => !item.optional && !item.done(state, browsable === true));
+  const progress = firstValueProgress(browsable, jobs);
+  return SPINE.some((item) => !item.optional && !item.done(state, progress));
 }
 
 const dismissedMigrationResumeKey = "beamfall:onboarding:dismissed-migration-resume";
@@ -122,13 +141,14 @@ export function SetupChecklist() {
   // to "show forward guidance" if it cannot load (never a false "all done").
   const browse = useAsync(fetchHasBrowsableContent);
   const resume = migrationResumeJob(jobs.data ?? []);
+  const progress = firstValueProgress(browse.data, jobs.data);
 
-  // "Done = first successful browse." Setup-green with content → finished;
-  // setup-green but no browsable content (or the probe is still loading /
-  // failed) → keep guiding toward first value (scan / migrate).
+  // "Done = first successful browse." Setup-green with content and a completed
+  // scan → finished; otherwise (no browsable content, no completed scan, or a
+  // probe still loading / failed) → keep guiding toward first value.
   function footerMessage(): string {
     if (!data?.complete) return t("setupIncomplete");
-    if (browse.data === true) return t("setupChecklistFirstValue");
+    if (progress.browsable && progress.scanCompleted) return t("setupChecklistFirstValue");
     return t("setupChecklistEmptyNextStep");
   }
 
@@ -158,7 +178,7 @@ export function SetupChecklist() {
         <div className="space-y-3">
           <div className="console-card">
             {SPINE.map((item) => {
-              const done = item.done(data, browse.data === true);
+              const done = item.done(data, progress);
               return (
                 <Link
                   key={item.label}
