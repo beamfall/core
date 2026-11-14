@@ -50,6 +50,9 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 		sidecars:            newSidecarDiscovery(interactiveSidecarExts),
 		pendingCompletions:  make([]*completedFile, 0, workers),
 		containerArt:        map[store.EntityID]*containerArtChoice{},
+		localReleases:       map[localArtSlot]bool{},
+		localMatched:        map[localArtSlot]bool{},
+		startedAt:           time.Now(),
 	}
 	// Local sidecar artwork (CORE-0359) rides on the artwork service handed in
 	// as the ImageDeriver; the container seam rides on the Identifier.
@@ -122,17 +125,17 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 		})
 	}
 	if err != nil {
-		return Result{}, state.flushContainerArtworkOnYield(err)
+		return Result{}, state.flushDeferredArtworkOnYield(err)
 	}
 	if err := state.flushPendingParts(); err != nil {
-		return Result{}, state.flushContainerArtworkOnYield(err)
+		return Result{}, state.flushDeferredArtworkOnYield(err)
 	}
 	for len(state.pendingCompletions) > 0 {
 		if err := state.completeFirst(); err != nil {
-			return Result{}, state.flushContainerArtworkOnYield(err)
+			return Result{}, state.flushDeferredArtworkOnYield(err)
 		}
 	}
-	state.applyContainerArtwork()
+	state.applyDeferredArtwork()
 	if err := st.MarkMissingMediaFilesNotSeenSince(ctx, req.LibraryID, req.Root, scanStarted); err != nil {
 		return Result{}, err
 	}

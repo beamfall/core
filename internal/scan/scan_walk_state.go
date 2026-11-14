@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/beamfall/core/internal/jobs"
 	"github.com/beamfall/core/internal/store"
@@ -45,6 +46,11 @@ type scanWalkState struct {
 	containerArtwork    ContainerArtworkImporter
 	containerResolver   ContainerEntityResolver
 	containerArt        map[store.EntityID]*containerArtChoice
+	localReleases       map[localArtSlot]bool
+	localMatched        map[localArtSlot]bool
+	// startedAt is the wall-clock time this walk began, compared with lock
+	// marker file times, so it uses the real clock rather than now.
+	startedAt time.Time
 }
 
 func (s *scanWalkState) acquireBudget(ctx context.Context) error {

@@ -299,3 +299,70 @@ func TestLocalArtworkContainerPosterReleasesAtLibraryRoot(t *testing.T) {
 		t.Fatalf("container poster after removal = %q, want art kept", got)
 	}
 }
+
+func TestLocalArtworkReleasesWhenFolderSidecarStopsMatching(t *testing.T) {
+	root := t.TempDir()
+	writeScanFile(t, root, "Movie (2020)/Movie (2020).mkv", []byte("video bytes"))
+	writeScanFile(t, root, "Movie (2020)/poster.jpg", jpegBytes("folder"))
+	st := storetest.Open(t)
+	svc := artwork.NewService(st, &copyingArtworkTools{}, t.TempDir())
+
+	id := mediaIDForPath(t, scanWithArtwork(t, st, root, nil, svc), "Movie (2020).mkv")
+	if !svc.IsArtworkLocked(id, artwork.SlotPoster) {
+		t.Fatal("folder poster was not imported and locked")
+	}
+	// A second media file makes poster.jpg ambiguous; it still exists but no
+	// longer matches the first Media, so the lock goes and the art stays.
+	writeScanFile(t, root, "Movie (2020)/Sequel (2022).mkv", []byte("other video"))
+	scanWithArtwork(t, st, root, nil, svc)
+	if svc.IsArtworkLocked(id, artwork.SlotPoster) {
+		t.Fatal("lock survived although no sidecar matches the slot any more")
+	}
+	if got := slotBytes(t, svc.PosterPath(id)); got != string(jpegBytes("folder")) {
+		t.Fatalf("poster after release = %q, want art kept", got)
+	}
+}
+
+// recordingLocalArtwork records releases for the deferred-release tests.
+type recordingLocalArtwork struct {
+	released map[localArtSlot]time.Time
+}
+
+func (r *recordingLocalArtwork) ImportLocalArtwork(context.Context, store.MediaID, string, string, string) (bool, error) {
+	return false, nil
+}
+
+func (r *recordingLocalArtwork) ReleaseLocalArtwork(_ context.Context, id store.MediaID, slot string, observedAt time.Time) error {
+	r.released[localArtSlot{media: id, slot: slot}] = observedAt
+	return nil
+}
+
+func TestDeferredLocalReleaseSkipsSlotsAnotherPartMatched(t *testing.T) {
+	recorder := &recordingLocalArtwork{released: map[localArtSlot]time.Time{}}
+	started := time.Now().Add(-time.Minute)
+	s := &scanWalkState{
+		ctx:           context.Background(),
+		localArtwork:  recorder,
+		containerArt:  map[store.EntityID]*containerArtChoice{},
+		localReleases: map[localArtSlot]bool{},
+		localMatched:  map[localArtSlot]bool{},
+		startedAt:     started,
+	}
+	matched := localArtSlot{media: "media-parts", slot: artwork.SlotPoster}
+	unmatched := localArtSlot{media: "media-parts", slot: artwork.SlotBackdrop}
+	// One part of the Media found no poster, another part did.
+	s.localReleases[matched] = true
+	s.localMatched[matched] = true
+	s.localReleases[unmatched] = true
+
+	s.applyDeferredArtwork()
+	if _, ok := recorder.released[matched]; ok {
+		t.Fatal("released a slot another file of the same Media matched")
+	}
+	if got, ok := recorder.released[unmatched]; !ok || !got.Equal(started) {
+		t.Fatalf("unmatched release = %v, %v; want the walk start time", got, ok)
+	}
+	if len(s.localReleases) != 0 || len(s.localMatched) != 0 {
+		t.Fatal("deferred release state was not cleared")
+	}
+}

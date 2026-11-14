@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/beamfall/core/internal/jobs"
 	"github.com/beamfall/core/internal/store"
@@ -17,17 +18,18 @@ import (
 // slots and releases a slot's local lock when its sidecar disappears. The
 // artwork service implements it; scan discovers it on the ImageDeriver it is
 // handed, so composition needs no new wiring. root is the absolute library
-// root the sidecar must be read through.
+// root the sidecar must be read through; observedAt is when the scan began
+// looking for sidecars, so a release never undoes a newer import's lock.
 type LocalArtworkImporter interface {
 	ImportLocalArtwork(ctx context.Context, id store.MediaID, slot, root, path string) (bool, error)
-	ReleaseLocalArtwork(ctx context.Context, id store.MediaID, slot string) error
+	ReleaseLocalArtwork(ctx context.Context, id store.MediaID, slot string, observedAt time.Time) error
 }
 
 // ContainerArtworkImporter is the Entity counterpart of LocalArtworkImporter,
 // used for ordered container artwork.
 type ContainerArtworkImporter interface {
 	ImportEntityLocalArtwork(ctx context.Context, id store.EntityID, slot, root, path string) (bool, error)
-	ReleaseEntityLocalArtwork(ctx context.Context, id store.EntityID, slot string) error
+	ReleaseEntityLocalArtwork(ctx context.Context, id store.EntityID, slot string, observedAt time.Time) error
 }
 
 // ContainerEntityResolver is the optional seam that maps a Media to the ordered
@@ -231,9 +233,14 @@ func (d *sidecarDiscovery) containerArtworkIn(dir string, ordinal int) string {
 	return ""
 }
 
+// localArtSlot names one Media artwork slot for the walk's deferred releases.
+type localArtSlot struct {
+	media store.MediaID
+	slot  string
+}
+
 // containerArtChoice is the per-scan container sidecar decision for one Entity.
-// An empty path asks for a release, which the importer performs only once the
-// sidecar its lock recorded is gone.
+// An empty path asks for a release of any lock written before the scan began.
 type containerArtChoice struct {
 	path string
 }
@@ -264,21 +271,22 @@ func (s *scanWalkState) insideRoot(dir string) bool {
 // applyLocalArtwork imports or releases the local artwork of one completed
 // non-image Media. It runs on every scan, fast path included, so an edited
 // sidecar next to an unchanged media file still re-imports. A slot with no
-// candidate asks for a release, which keeps the lock while its recorded
-// sidecar still exists. Failures are logged and never fail the scan.
+// candidate is queued for release; applyDeferredArtwork releases it unless
+// another file of the same Media matched that slot in this walk. Failures are
+// logged and never fail the scan.
 func (s *scanWalkState) applyLocalArtwork(mediaPath string, mediaID store.MediaID) {
 	if s.localArtwork == nil || imageClassForPath(mediaPath) {
 		return
 	}
 	found := s.sidecars.localArtworkFor(mediaPath)
 	for _, slot := range localArtworkMediaSlots() {
+		key := localArtSlot{media: mediaID, slot: slot}
 		sidecar := found[slot]
 		if sidecar == "" {
-			if err := s.localArtwork.ReleaseLocalArtwork(s.ctx, mediaID, slot); err != nil {
-				slog.Warn("releasing local artwork failed", "media", mediaID, "slot", slot, "error", err.Error())
-			}
+			s.localReleases[key] = true
 			continue
 		}
+		s.localMatched[key] = true
 		if !stableSidecar(sidecar) {
 			continue
 		}
@@ -330,13 +338,27 @@ func (s *scanWalkState) noteContainerArtwork(mediaPath string, mediaID store.Med
 	}
 }
 
-// applyContainerArtwork writes the container sidecar decisions gathered so
-// far and clears them. It runs after the walk and before a job yields, so a
-// resumed scan does not lose the decisions of Media it will skip.
-func (s *scanWalkState) applyContainerArtwork() {
+// applyDeferredArtwork writes the local lock releases and container sidecar
+// decisions gathered so far and clears them. It runs after the walk and
+// before a job yields, so a resumed scan does not lose the decisions of Media
+// it will skip. A release removes only a lock written before the walk began
+// (the scan has seen its sidecar's directory since), so it covers a sidecar
+// that was removed, renamed or now shared by two media files, and a pending
+// marker left by an interrupted import.
+func (s *scanWalkState) applyDeferredArtwork() {
+	for key := range s.localReleases {
+		if s.localMatched[key] {
+			continue
+		}
+		if err := s.localArtwork.ReleaseLocalArtwork(s.ctx, key.media, key.slot, s.startedAt); err != nil {
+			slog.Warn("releasing local artwork failed", "media", key.media, "slot", key.slot, "error", err.Error())
+		}
+	}
+	clear(s.localReleases)
+	clear(s.localMatched)
 	for entityID, choice := range s.containerArt {
 		if choice.path == "" {
-			if err := s.containerArtwork.ReleaseEntityLocalArtwork(s.ctx, entityID, "poster"); err != nil {
+			if err := s.containerArtwork.ReleaseEntityLocalArtwork(s.ctx, entityID, "poster", s.startedAt); err != nil {
 				slog.Warn("releasing container artwork failed", "entity", entityID, "error", err.Error())
 			}
 			continue
@@ -355,11 +377,11 @@ func (s *scanWalkState) applyContainerArtwork() {
 	clear(s.containerArt)
 }
 
-// flushContainerArtworkOnYield applies the container decisions gathered so far
+// flushDeferredArtworkOnYield applies the artwork decisions gathered so far
 // when the job yields, then returns err unchanged.
-func (s *scanWalkState) flushContainerArtworkOnYield(err error) error {
+func (s *scanWalkState) flushDeferredArtworkOnYield(err error) error {
 	if errors.Is(err, jobs.ErrYielded) {
-		s.applyContainerArtwork()
+		s.applyDeferredArtwork()
 	}
 	return err
 }

@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/beamfall/core/internal/store"
 )
@@ -121,15 +122,16 @@ func (s *Service) ImportLocalArtwork(ctx context.Context, id store.MediaID, slot
 	return s.importLocal(ctx, s.ArtworkPath(id, slot), string(id), slot, root, path)
 }
 
-// ReleaseLocalArtwork removes a Media slot's local lock once the sidecar it
-// recorded is gone. A lock whose sidecar still exists is kept, so a stale
-// caller cannot unlock artwork a newer import just locked. The artwork itself
-// stays; later scrapes may replace it again.
-func (s *Service) ReleaseLocalArtwork(ctx context.Context, id store.MediaID, slot string) error {
+// ReleaseLocalArtwork removes a Media slot's local lock when no sidecar
+// matches the slot any more. observedAt is when the caller looked for
+// sidecars: a lock written at or after it is kept, so a stale caller cannot
+// unlock artwork a newer import just locked. The artwork itself stays; later
+// scrapes may replace it again.
+func (s *Service) ReleaseLocalArtwork(ctx context.Context, id store.MediaID, slot string, observedAt time.Time) error {
 	if !ValidSlot(slot) {
 		return fmt.Errorf("unknown artwork slot %q", slot)
 	}
-	return s.releaseLocal(ctx, s.ArtworkPath(id, slot))
+	return s.releaseLocal(ctx, s.ArtworkPath(id, slot), observedAt)
 }
 
 // ImportEntityLocalArtwork is ImportLocalArtwork for an Entity slot, used for
@@ -146,11 +148,11 @@ func (s *Service) ImportEntityLocalArtwork(ctx context.Context, id store.EntityI
 }
 
 // ReleaseEntityLocalArtwork is ReleaseLocalArtwork for an Entity slot.
-func (s *Service) ReleaseEntityLocalArtwork(ctx context.Context, id store.EntityID, slot string) error {
+func (s *Service) ReleaseEntityLocalArtwork(ctx context.Context, id store.EntityID, slot string, observedAt time.Time) error {
 	if !ValidSlot(slot) {
 		return fmt.Errorf("unknown artwork slot %q", slot)
 	}
-	return s.releaseLocal(ctx, s.EntityArtworkPath(id, slot))
+	return s.releaseLocal(ctx, s.EntityArtworkPath(id, slot), observedAt)
 }
 
 // entityProtected reports whether the Entity's Library is Sealed or Encrypted,
@@ -235,7 +237,7 @@ func writeSlotLock(dst string, lock slotLock) error {
 	return writeAtomicFile(lockMarkerPath(dst), marker, nil)
 }
 
-func (s *Service) releaseLocal(ctx context.Context, dst string) error {
+func (s *Service) releaseLocal(ctx context.Context, dst string, observedAt time.Time) error {
 	unlock, err := s.lockDerivative(ctx, filepath.Dir(dst))
 	if err != nil {
 		return err
@@ -245,10 +247,10 @@ func (s *Service) releaseLocal(ctx context.Context, dst string) error {
 	if !ok || current.Source != SourceLocal {
 		return nil
 	}
-	if current.Path != "" {
-		if info, err := os.Lstat(current.Path); err == nil && info.Mode().IsRegular() {
-			return nil
-		}
+	// A lock written after the caller looked for sidecars belongs to a newer
+	// import the caller never saw.
+	if info, err := os.Stat(lockMarkerPath(dst)); err == nil && !info.ModTime().Before(observedAt) {
+		return nil
 	}
 	if err := os.Remove(lockMarkerPath(dst)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err

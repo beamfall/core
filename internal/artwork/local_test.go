@@ -128,17 +128,17 @@ func TestReleaseLocalArtworkKeepsArt(t *testing.T) {
 	if _, err := svc.ImportLocalArtwork(ctx, "media-alpha", SlotBackdrop, filepath.Dir(sidecar), sidecar); err != nil {
 		t.Fatal(err)
 	}
-	// A stale release while the sidecar still exists keeps the lock.
-	if err := svc.ReleaseLocalArtwork(ctx, "media-alpha", SlotBackdrop); err != nil {
+	// A stale release, from a caller that looked before the import, keeps the
+	// lock.
+	if err := svc.ReleaseLocalArtwork(ctx, "media-alpha", SlotBackdrop, time.Now().Add(-time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 	if !svc.IsArtworkLocked("media-alpha", SlotBackdrop) {
-		t.Fatal("release unlocked a slot whose sidecar still exists")
+		t.Fatal("stale release unlocked a slot a newer import locked")
 	}
-	if err := os.Remove(sidecar); err != nil {
-		t.Fatal(err)
-	}
-	if err := svc.ReleaseLocalArtwork(ctx, "media-alpha", SlotBackdrop); err != nil {
+	// A current release removes the lock even though the recorded sidecar
+	// still exists: the caller found no sidecar matching the slot.
+	if err := svc.ReleaseLocalArtwork(ctx, "media-alpha", SlotBackdrop, time.Now().Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	if svc.IsArtworkLocked("media-alpha", SlotBackdrop) {
@@ -151,7 +151,7 @@ func TestReleaseLocalArtworkKeepsArt(t *testing.T) {
 		t.Fatalf("scrape after release = %v", err)
 	}
 	// Releasing a slot that was never locked is a no-op.
-	if err := svc.ReleaseLocalArtwork(ctx, "media-alpha", SlotThumb); err != nil {
+	if err := svc.ReleaseLocalArtwork(ctx, "media-alpha", SlotThumb, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -247,7 +247,7 @@ func TestEntityLocalArtworkLocksEntityPoster(t *testing.T) {
 	if err := os.Remove(sidecar); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.ReleaseEntityLocalArtwork(ctx, "entity-group", SlotPoster); err != nil {
+	if err := svc.ReleaseEntityLocalArtwork(ctx, "entity-group", SlotPoster, time.Now().Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.ImportEntityPoster(ctx, "entity-group", []byte("scraped")); err != nil {
