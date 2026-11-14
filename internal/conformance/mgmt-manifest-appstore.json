@@ -218,6 +218,10 @@
       "effect": "write"
     },
     {
+      "field": "preplayclips",
+      "effect": "read"
+    },
+    {
       "field": "provisionencryptedlibrary",
       "effect": "write"
     },
@@ -351,6 +355,10 @@
     },
     {
       "field": "setpluginconfig",
+      "effect": "write"
+    },
+    {
+      "field": "setpreplayclips",
       "effect": "write"
     },
     {
