@@ -152,16 +152,19 @@ function Harness({
   mediaID = "media-alpha",
   startAtSeconds = 0,
   nextMediaID,
+  selectedVersion,
 }: {
   mediaID?: string;
   startAtSeconds?: number;
   nextMediaID?: string;
+  selectedVersion?: string;
 }) {
   const { videoRef, state, retry, switchToHls } = usePlayer(
     mediaID,
     messages,
     startAtSeconds,
     nextMediaID,
+    selectedVersion,
   );
   return (
     <>
@@ -656,12 +659,18 @@ describe("usePlayer", () => {
     expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
   });
 
+  it("asks playback-info for the chosen Version (CORE-1676)", async () => {
+    render(<Harness selectedVersion="v-uhd" />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    expect(fetchPlaybackInfo).toHaveBeenCalledWith("media-alpha", undefined, "v-uhd");
+  });
+
   it("plays only the server-minted stream-token URL from playback-info", async () => {
     render(<Harness />);
 
     await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
 
-    expect(fetchPlaybackInfo).toHaveBeenCalledWith("media-alpha", undefined);
+    expect(fetchPlaybackInfo).toHaveBeenCalledWith("media-alpha", undefined, "");
     const video = screen.getByTestId("player");
     expect(video).toHaveAttribute("src", "/api/media/direct/token");
     fireEvent.canPlay(video);
@@ -1071,7 +1080,7 @@ describe("usePlayer", () => {
         "/api/media/hls/token2/master.m3u8",
       ),
     );
-    expect(fetchPlaybackInfo).toHaveBeenLastCalledWith("media-alpha", "media-next");
+    expect(fetchPlaybackInfo).toHaveBeenLastCalledWith("media-alpha", "media-next", "");
     expect(screen.getByTestId("up-next")).toHaveTextContent("media-next");
   });
 

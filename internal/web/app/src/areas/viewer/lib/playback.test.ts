@@ -91,6 +91,18 @@ describe("fetchPlaybackInfo", () => {
     await fetchPlaybackInfo("media-b");
     expect(postJSON.mock.calls[0][1]).not.toHaveProperty("nextMediaID");
   });
+
+  it("sends a remembered Version only when one is chosen (CORE-1676)", async () => {
+    await fetchPlaybackInfo("media-v", undefined, "v0123456789abcdef");
+    expect(postJSON).toHaveBeenCalledWith(
+      "/api/playback-info",
+      expect.objectContaining({ mediaID: "media-v", selectedVersion: "v0123456789abcdef" }),
+    );
+
+    postJSON.mockClear();
+    await fetchPlaybackInfo("media-v");
+    expect(postJSON.mock.calls[0][1]).not.toHaveProperty("selectedVersion");
+  });
 });
 
 describe("unavailableReason (CORE-1146)", () => {

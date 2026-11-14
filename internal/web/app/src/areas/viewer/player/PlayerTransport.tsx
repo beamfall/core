@@ -6,6 +6,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Gauge,
+  Layers,
   Maximize,
   Minimize,
   MonitorPlay,
@@ -45,9 +46,10 @@ import {
   formatRemainingTime,
   resolveTrickplayTile,
 } from "../lib/transport";
+import { versionLabel } from "../lib/versionChoice";
 import { InfoOverlay } from "./InfoOverlay";
 import { SubtitleStylePanel } from "./SubtitleStylePanel";
-import { TransportMenu } from "./TransportMenu";
+import { type MenuRow, TransportMenu } from "./TransportMenu";
 import { useLiveTracks } from "./useLiveTracks";
 import type { PlayerState, SwitchResult } from "./usePlayer";
 import { useSubtitleStyling } from "./useSubtitleStyling";
@@ -61,7 +63,7 @@ import { useSubtitleStyling } from "./useSubtitleStyling";
 // (openKey), and the open state is reported up so the player stage can
 // suppress idle auto-hide while settings or a menu is up. Every control is
 // keyboard-operable and labelled (the a11y gate).
-type OpenKey = "audio" | "subtitle" | "quality" | "info" | "subtitleStyle" | null;
+type OpenKey = "audio" | "subtitle" | "quality" | "version" | "info" | "subtitleStyle" | null;
 type GestureFeedback =
   | { kind: "seek"; side: "left" | "right"; amount: number }
   | { kind: "volume"; value: number };
@@ -86,6 +88,7 @@ export function PlayerTransport({
   onPreviousInQueue,
   onNextInQueue,
   switchToHls,
+  onSelectVersion,
   onMenuOpenChange,
 }: {
   videoRef: React.RefObject<HTMLVideoElement | null>;
@@ -115,6 +118,8 @@ export function PlayerTransport({
   onNextInQueue?: () => void;
   /** Switches direct play to its HLS rendition stream at the current position. */
   switchToHls?: (renditionKey?: string) => SwitchResult;
+  /** Plays another Version of the Media; the Version row is hidden when absent. */
+  onSelectVersion?: (versionID: string) => void;
   /** Reports whether any menu/overlay is open (drives auto-hide suppression). */
   onMenuOpenChange?: (open: boolean) => void;
 }) {
@@ -227,6 +232,16 @@ export function PlayerTransport({
     setManualRenditionID,
     onSubtitleChanged: subtitle.applySync,
   });
+
+  // The Media's Versions (CORE-1676), listed by playbackInfo only when there
+  // are two or more; the default Version takes the client's own name.
+  const versionOptions: MenuRow[] = (state.info?.versions ?? []).map((version) => ({
+    id: version.id,
+    label: versionLabel(version, t("versionDefault")),
+    selected: version.selected,
+    disabled: false,
+    reason: "",
+  }));
 
   // Mirror the live <video> time into React state so the chrome re-renders.
   useEffect(() => {
@@ -972,6 +987,22 @@ export function PlayerTransport({
                     nudgeSync={subtitle.nudgeSync}
                     reset={subtitle.reset}
                     syncSupported={subtitle.syncSupported}
+                  />
+                )}
+                {onSelectVersion && versionOptions.length > 1 && (
+                  <TransportMenu
+                    label={t("version")}
+                    ariaLabel={t("version")}
+                    icon={<Layers />}
+                    container={layerRef}
+                    side={menuSide}
+                    options={versionOptions}
+                    open={openKey === "version"}
+                    onOpenChange={(open) => setOpen("version", open)}
+                    onSelect={(id) => {
+                      closeSettings(true);
+                      onSelectVersion(id);
+                    }}
                   />
                 )}
                 <TransportMenu

@@ -56,6 +56,19 @@ export interface PlaybackNext {
   next?: PlaybackNext | null;
 }
 
+/**
+ * One Version of a Media with two or more (ADR-0009, CORE-1676). `id` is
+ * opaque and stable, sent back as `selectedVersion`; `label` "" is the default
+ * Version, which the client names.
+ */
+export interface PlaybackVersion {
+  id: string;
+  label: string;
+  videoCodec?: string;
+  hdr?: string;
+  selected: boolean;
+}
+
 /** The /api/playback-info response (ADR-0010 playbackInfo), narrowed to what the player reads. */
 export interface PlaybackInfo {
   /** "audio" | "video": the item's playback class; absent when unavailable. */
@@ -72,6 +85,8 @@ export interface PlaybackInfo {
   reason?: string;
   next?: PlaybackNext | null;
   trackPreferences?: unknown;
+  /** The Media's Versions, listed only when it has two or more. */
+  versions?: PlaybackVersion[];
 }
 
 /** The /api/preview-info response: Generated Asset URLs only, no playback streams. */
@@ -99,10 +114,13 @@ export function isRevealTerminalStatus(status: number): boolean {
  * pre-mints its stream (info.next); an unservable next item is silently
  * omitted. "" means a card queue drives playback and has no next item;
  * undefined means no card queue, so a Play all queue may name the next item.
+ * `selectedVersion` names the Version the viewer picked; the server ignores
+ * an id it does not know and chooses itself.
  */
 export async function fetchPlaybackInfo(
   mediaID: string,
   nextMediaID?: string,
+  selectedVersion?: string,
 ): Promise<PlaybackInfo> {
   // Taken before the probe: a request that resumes after a newer Play all
   // started must not be read as leaving that queue.
@@ -120,6 +138,7 @@ export async function fetchPlaybackInfo(
     mediaID,
     capabilityProfile,
     ...(next ? { nextMediaID: next } : {}),
+    ...(selectedVersion ? { selectedVersion } : {}),
   });
   // The server issues a declared next item without a title; the Play all
   // queue kept the one its listing gave, so Up Next and the next heading can

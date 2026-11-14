@@ -357,6 +357,8 @@ export function usePlayer(
   startAtSeconds = 0,
   /** A card queue's next item, declared to playback-info for a pre-minted handoff; "" when that queue has none. */
   nextMediaID?: string,
+  /** The Version id the viewer picked for this Media (CORE-1676); "" lets the server choose. */
+  selectedVersion = "",
 ) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -372,6 +374,10 @@ export function usePlayer(
   // for this mediaID and never restarts playback on its own.
   const nextMediaIDRef = useRef(nextMediaID);
   nextMediaIDRef.current = nextMediaID;
+  // Also a ref: a new pick reloads through retry(), so the reload resumes at
+  // the playhead, and a renewed token keeps the Version that is playing.
+  const selectedVersionRef = useRef(selectedVersion);
+  selectedVersionRef.current = selectedVersion;
   // Bound by the load effect once a stream is attached.
   const switchRef = useRef<((renditionKey?: string) => SwitchResult) | null>(null);
   const switchToHls = useCallback(
@@ -557,7 +563,7 @@ export function usePlayer(
       const markersRequest = fetchPlaybackMarkers(mediaID).catch((): PlaybackMarker[] => []);
       let info: PlaybackInfo;
       try {
-        info = await fetchPlaybackInfo(mediaID, nextMediaIDRef.current);
+        info = await fetchPlaybackInfo(mediaID, nextMediaIDRef.current, selectedVersionRef.current);
       } catch (err) {
         if (!alive) return;
         if (!(err instanceof ApiError) && offline) {
@@ -670,7 +676,7 @@ export function usePlayer(
         setRecovering(true);
         // The refresh replaces info, so it declares the same next item: Up Next
         // and auto-advance survive a renewed token.
-        void fetchPlaybackInfo(mediaID, nextMediaIDRef.current)
+        void fetchPlaybackInfo(mediaID, nextMediaIDRef.current, selectedVersionRef.current)
           .then((refreshed) => {
             if (!alive) return;
             const fresh = streamOfKind(refreshed, kind);

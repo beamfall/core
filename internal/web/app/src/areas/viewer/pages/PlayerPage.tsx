@@ -15,6 +15,7 @@ import {
   skipIntervalOverrideKey,
   skipIntervalOverrideValue,
 } from "../lib/preferences";
+import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import { type PlayQueueItem, queueNeighbours, readPlayerNavState } from "../lib/watchQueue";
 import { AudioStage } from "../player/AudioStage";
 import { PlayerTransport } from "../player/PlayerTransport";
@@ -44,7 +45,8 @@ export function PlayerPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { mediaId } = useParams();
-  const { revealed } = useSession();
+  const { revealed, session } = useSession();
+  const profileID = session?.profileID;
   const identity = useViewerIdentity();
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -60,6 +62,13 @@ export function PlayerPage() {
   const navTitle = navState.title || media?.title || "";
   const startAtSeconds = parseTimestampParam(new URLSearchParams(location.search).get("t"));
   const { previous: previousInQueue, next: nextInQueue } = queueNeighbours(queue, mediaId || "");
+  // The Version this profile picked for this Media (CORE-1676): a pick made in
+  // this player, else the one remembered from an earlier visit.
+  const [versionPick, setVersionPick] = useState<{ mediaID: string; id: string } | null>(null);
+  const selectedVersion =
+    versionPick && versionPick.mediaID === mediaId
+      ? versionPick.id
+      : readVersionChoice(profileID, mediaId || "");
 
   const { videoRef, hlsRef, state, retry, switchToHls } = usePlayer(
     mediaId || "",
@@ -83,6 +92,17 @@ export function PlayerPage() {
     // "" when a card queue drives playback but has nothing after this item, so
     // an earlier Play all queue is left rather than resumed.
     queue ? (nextInQueue?.id ?? "") : undefined,
+    selectedVersion,
+  );
+  // A new Version is another file: remember it, then reload at the playhead.
+  const selectVersion = useCallback(
+    (versionID: string) => {
+      if (!mediaId || versionID === selectedVersion) return;
+      writeVersionChoice(profileID, mediaId, versionID);
+      setVersionPick({ mediaID: mediaId, id: versionID });
+      retry();
+    },
+    [mediaId, profileID, selectedVersion, retry],
   );
 
   const playing = state.phase === "playing";
@@ -378,6 +398,7 @@ export function PlayerPage() {
               onPreviousInQueue={playPrevious}
               onNextInQueue={playNext}
               switchToHls={switchToHls}
+              onSelectVersion={selectVersion}
               onMenuOpenChange={setMenuOpen}
             />
           )}
