@@ -1,4 +1,4 @@
-import { ArrowLeft, RefreshCw, Stethoscope } from "lucide-react";
+import { ArrowLeft, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
 import { DataTable, EmptyState, ErrorState, StatusChip } from "@/components/beamfall/workbench";
@@ -285,7 +285,7 @@ function HealthDrillPanel({
                         key={group.items.map((item) => item.mediaID).join(":")}
                         className="space-y-1 px-3 py-2"
                       >
-                        <label className="flex cursor-pointer items-center gap-2 text-[13px] text-muted-foreground">
+                        <label className="flex cursor-pointer items-center gap-2 text-dense text-muted-foreground">
                           {canSelect ? (
                             <Checkbox
                               checked={groupChecked}
@@ -303,7 +303,7 @@ function HealthDrillPanel({
                         {group.items.slice(1).map((item) => (
                           <div
                             key={item.mediaID}
-                            className="flex items-center gap-2 pl-6 text-[13px]"
+                            className="flex items-center gap-2 pl-6 text-dense"
                           >
                             <span className="truncate">{item.title || item.mediaID}</span>
                           </div>
@@ -313,7 +313,7 @@ function HealthDrillPanel({
                   })
                 : items.map((item) => (
                     <li key={item.mediaID} className="px-3 py-2">
-                      <label className="flex cursor-pointer items-center gap-2 text-[13px]">
+                      <label className="flex cursor-pointer items-center gap-2 text-dense">
                         {canSelect && (
                           <Checkbox
                             checked={checked.has(item.mediaID)}
@@ -380,7 +380,7 @@ export function Health() {
   // When a drilldown is open, show only the drill panel.
   if (drill) {
     return (
-      <Section heading="libraryHealthHeading" icon={Stethoscope}>
+      <Section heading="libraryHealthHeading">
         <HealthDrillPanel target={drill} onBack={closeDrill} onDone={() => void drillDone()} />
       </Section>
     );
@@ -389,7 +389,6 @@ export function Health() {
   return (
     <Section
       heading="libraryHealthHeading"
-      icon={Stethoscope}
       lead="libraryHealthLead"
       actions={
         <Button variant="outline" size="sm" onClick={() => void refresh()}>

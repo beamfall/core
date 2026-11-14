@@ -31,10 +31,8 @@
 }
 
 /* ---------------------------------------------------------------------------
- * Left-nav: a dense, grouped operator rail with a beam active marker.
- * Ported in spirit from the vanilla manage nav; the active state borrows the
- * accent only as a left-edge marker (design-system §accent use: "selected
- * state, focus, and primary action"), never a full accent fill.
+ * Left-nav: a dense, grouped operator rail. The active link is carried by a
+ * raised fill alone, never a keyline or an accent stripe.
  * ------------------------------------------------------------------------- */
 .manage-nav {
   display: flex;
@@ -57,7 +55,7 @@
   border-radius: var(--radius-control);
   font-size: 13px;
   line-height: 18px;
-  font-weight: 550;
+  font-weight: 500;
   color: var(--text-muted);
   text-decoration: none;
   transition:
@@ -84,20 +82,16 @@
 
 .manage-nav-link[aria-current="page"] {
   color: var(--text-primary);
-  font-weight: 650;
+  font-weight: 600;
   background: var(--bg-raised);
 }
 
-/* The beam left-edge marker — the only accent the nav carries. */
-.manage-nav-link[aria-current="page"]::before {
-  content: "";
-  position: absolute;
-  left: 2px;
-  top: 7px;
-  bottom: 7px;
-  width: 3px;
-  border-radius: 999px;
-  background: var(--accent);
+/* The Normal/Advanced switch under the rail (CORE-1117), outside the folding
+ * phone menu so it is reachable at every width. */
+.manage-advanced-switch {
+  margin-top: var(--mg-space-3);
+  padding: var(--mg-space-3) 10px 0 12px;
+  border-top: 1px solid var(--border-subtle);
 }
 
 /* ---------------------------------------------------------------------------
@@ -108,20 +102,25 @@
 .manage-area .manage-section {
   gap: var(--mg-space-3);
   padding: var(--mg-space-3) 0;
-  border-radius: var(--radius-card);
+  border-radius: var(--radius-surface, 14px);
   border-color: var(--border-strong);
   box-shadow: none;
 }
 
 .manage-area .manage-section-header {
+  flex-wrap: wrap;
   padding: 0 var(--mg-space-3);
+}
+
+/* Header actions wrap under the title at phone width instead of running over it. */
+.manage-area .manage-section-header > * {
+  max-width: 100%;
 }
 
 .manage-area .manage-section-title {
   font-size: 13px;
   line-height: 18px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
+  font-weight: 600;
   color: var(--text-primary);
 }
 
@@ -135,58 +134,9 @@
   padding: 0 var(--mg-space-3);
 }
 
-/* ---------------------------------------------------------------------------
- * Tables: the table-like list register. Dense rows, hairline separators, subtle
- * zebra + hover, uppercase muted column heads, tabular numerals. This is the
- * single biggest visible shift from the Viewer — lists read as a workbench
- * table, not a stack of cards.
- * ------------------------------------------------------------------------- */
-.manage-area .manage-table {
-  font-size: 13px;
-  line-height: 18px;
-  border-collapse: separate;
-  border-spacing: 0;
-}
-
-.manage-area .manage-table thead th {
-  height: 30px;
-  padding: 0 var(--mg-space-2);
-  font-size: 11px;
-  line-height: 16px;
-  font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  border-bottom: 1px solid var(--border-subtle);
-  background: transparent;
-  white-space: nowrap;
-}
-
-.manage-area .manage-table tbody td {
-  height: 40px;
-  padding: 5px var(--mg-space-2);
-  vertical-align: middle;
-  border-bottom: 1px solid var(--border-subtle);
-  color: var(--text-secondary);
-}
-
-.manage-area .manage-table tbody tr:last-child td {
-  border-bottom: none;
-}
-
-/* Subtle zebra: even rows pick up the raised surface at low strength so the
- * scan-line never dominates (design-system §accent stays <10%). */
-.manage-area .manage-table tbody tr:nth-child(even) td {
-  background: color-mix(in oklab, var(--bg-raised) 32%, transparent);
-}
-
-.manage-area .manage-table tbody tr:hover td {
-  background: var(--control-bg-hover);
-}
-
 /* The primary cell (title/name) reads as the row's anchor. */
 .manage-area .manage-cell-primary {
-  font-weight: 620;
+  font-weight: 600;
   color: var(--text-primary);
   overflow-wrap: anywhere;
 }
@@ -263,8 +213,7 @@
 .manage-folder-meta {
   margin-left: auto;
   flex: 0 0 auto;
-  font-size: 10px;
-  letter-spacing: 0.04em;
+  font-size: 12px;
   color: var(--text-muted);
 }
 
@@ -328,10 +277,9 @@
   padding: 1px 8px;
   border-radius: 999px;
   border-color: transparent;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 16px;
-  font-weight: 650;
-  letter-spacing: 0.02em;
+  font-weight: 600;
   color: var(--text-primary);
   background: color-mix(in oklab, var(--border-subtle) 70%, transparent);
   font-variant-numeric: tabular-nums;
@@ -388,14 +336,10 @@
 .manage-area .manage-count {
   flex: 0 0 auto;
   min-width: 18px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: var(--bg-raised);
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 16px;
-  letter-spacing: 0.04em;
-  text-align: center;
+  text-align: right;
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
 }
@@ -406,10 +350,7 @@
  * idiom as a table, for surfaces that aren't a real <table>.
  * ------------------------------------------------------------------------- */
 .manage-area .manage-fieldrow {
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-control);
-  padding: var(--mg-space-3);
-  background: color-mix(in oklab, var(--bg-raised) 24%, transparent);
+  padding: var(--mg-space-3) 0;
 }
 
 /* ---------------------------------------------------------------------------
@@ -453,34 +394,37 @@
   vertical-align: middle;
 }
 
-.manage-area .manage-reorder button {
-  border: 0;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  line-height: 0.8;
-  font-size: 11px;
-  padding: 0 2px;
-}
-
-.manage-area .manage-reorder button:hover:not(:disabled) {
-  color: var(--text-primary);
-}
-
-.manage-area .manage-reorder button:disabled {
-  opacity: 0.3;
-  cursor: default;
-}
-
 .manage-area .manage-mono {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
   overflow-wrap: anywhere;
 }
 
+/* Underline tabs: the one tab pattern in Manage (Collections / Smart, Versions / Extras). */
 .manage-area .manage-tabs {
   display: inline-flex;
-  gap: 4px;
+  gap: var(--mg-space-4, 16px);
+}
+
+.manage-area .manage-tab {
+  height: 32px;
+  padding: 0 2px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.manage-area .manage-tab:hover {
+  color: var(--text-primary);
+}
+
+.manage-area .manage-tab[aria-selected="true"] {
+  border-bottom-color: var(--accent);
+  color: var(--text-primary);
 }
 
 .manage-area .manage-add-row {

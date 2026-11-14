@@ -110,7 +110,7 @@ describe("SearchPage mode exposure", () => {
     await user.type(screen.getByLabelText("Search"), "x");
     expect(await screen.findByText("No results for “x”")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent(
-      "No results for “x”Check the spelling or try fewer words.Clear search",
+      "No results for “x”Check the spelling or try fewer words.",
     );
     expect(screen.queryByText(/hidden by your access settings/i)).toBeNull();
   });

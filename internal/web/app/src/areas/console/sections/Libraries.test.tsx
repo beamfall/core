@@ -2,9 +2,11 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetRescansForTest } from "@/components/beamfall/LibraryRescan";
+import { setAdvancedSettings } from "@/lib/advancedSettings";
 import {
+  deleteLibrary,
   fetchFolderTree,
   fetchJobs,
   fetchLibraries,
@@ -28,6 +30,7 @@ globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObse
 vi.mock("@/lib/graphql", () => ({
   addPathPickerRoot: vi.fn(),
   createLibrary: vi.fn(),
+  deleteLibrary: vi.fn(),
   fetchFolderTree: vi.fn(),
   fetchJobs: vi.fn(),
   fetchLibraries: vi.fn(),
@@ -78,7 +81,14 @@ function pickerAnswer(path?: string): PathPickerInfo {
 }
 
 describe("Console Libraries scan", () => {
+  afterEach(() => {
+    localStorage.clear();
+    setAdvancedSettings(false);
+  });
+
   beforeEach(() => {
+    // The one-folder scan is an Advanced control (CORE-1117).
+    setAdvancedSettings(true);
     vi.clearAllMocks();
     resetRescansForTest();
     vi.mocked(fetchLibraries).mockResolvedValue([
@@ -131,8 +141,8 @@ describe("Console Libraries scan", () => {
     );
   }
 
-  async function openFolderScan(user: ReturnType<typeof userEvent.setup>) {
-    await user.click(await screen.findByText("Scan one folder"));
+  async function openFolderScan() {
+    await screen.findByText("Scan one folder");
   }
 
   it("rescans every library folder in one click and follows the jobs", async () => {
@@ -212,7 +222,7 @@ describe("Console Libraries scan", () => {
   it("offers only the Library roots and descendants", async () => {
     const user = userEvent.setup();
     renderLibraries();
-    await openFolderScan(user);
+    await openFolderScan();
 
     const picker = await screen.findByLabelText("Folder to scan");
     await waitFor(() => expect(picker).toHaveTextContent("/Volumes/library"));
@@ -231,7 +241,7 @@ describe("Console Libraries scan", () => {
     window.addEventListener("unhandledrejection", unhandled);
     vi.mocked(scanLibrary).mockRejectedValueOnce(new Error("folder is outside the library roots"));
     renderLibraries();
-    await openFolderScan(user);
+    await openFolderScan();
 
     await user.click(await screen.findByRole("button", { name: "Scan" }));
 
@@ -245,7 +255,7 @@ describe("Console Libraries scan", () => {
   it("enqueues a valid in-root scan", async () => {
     const user = userEvent.setup();
     renderLibraries();
-    await openFolderScan(user);
+    await openFolderScan();
 
     await user.click(await screen.findByRole("button", { name: "Scan" }));
 
@@ -405,6 +415,24 @@ describe("Console Libraries scan", () => {
     await user.click(screen.getByRole("button", { name: "Remove" }));
 
     await waitFor(() => expect(setLibraryRoots).toHaveBeenCalledWith("library-1", []));
+  });
+
+  it("deletes a library through the confirm dialog and reloads the list (CORE-1171)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(deleteLibrary).mockResolvedValue(undefined);
+    renderLibraries();
+
+    const card = await screen.findByRole("article", { name: "Library" });
+    vi.mocked(fetchLibraries).mockResolvedValue([]);
+    await user.click(within(card).getByRole("button", { name: "Delete library" }));
+    const dialog = screen.getByRole("alertdialog", { name: "Delete Library?" });
+    expect(deleteLibrary).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: "Delete library" }));
+
+    await waitFor(() => expect(deleteLibrary).toHaveBeenCalledWith("library-1"));
+    await waitFor(() =>
+      expect(screen.queryByRole("article", { name: "Library" })).not.toBeInTheDocument(),
+    );
   });
 });
 

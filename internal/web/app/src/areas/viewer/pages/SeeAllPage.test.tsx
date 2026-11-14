@@ -96,4 +96,27 @@ describe("See All rendering contract", () => {
       paging: { offset: 0 },
     });
   });
+
+  it("reports a failed first load with a retry instead of an empty list", async () => {
+    vi.mocked(fetchSectionItems)
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(rows.slice(0, 3));
+    const user = userEvent.setup();
+
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={[{ pathname: "/seeall/source", state: context }]}>
+          <Routes>
+            <Route path="/seeall/:sourceId" element={<SeeAllPage />} />
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not load these items.");
+    expect(screen.queryByRole("status")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    await screen.findByRole("button", { name: "Item 0" });
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
 });

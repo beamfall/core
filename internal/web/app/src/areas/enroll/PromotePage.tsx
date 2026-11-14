@@ -6,6 +6,16 @@ import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
+import { cn } from "@/lib/utils";
+import {
+  AuthHeading,
+  AuthShell,
+  AUTH_FIELD as FIELD,
+  AUTH_FIELD_LABEL as FIELD_LABEL,
+  FormFeedback,
+  normalizePairingCode,
+} from "./AuthShell";
+import { pairingCodeErrorMessage } from "./EnrollPage";
 
 // Browser→MANAGER promotion (ADR-0007 §3): redeem a MANAGER pairing code for
 // this already-enrolled device. Cookies are untouched — the Device Role changes
@@ -18,14 +28,16 @@ import { useSession } from "@/lib/session";
 // (see AdminSessionGate), not used here. The pairing code is a CREDENTIAL: never
 // logged, never echoed back into the error message. The server distinguishes
 // 401 (invalid/expired) from 403 (a valid VIEWER code that does not grant
-// MANAGER); every other failure is a generic "promotion failed".
+// MANAGER); the hint under the field says where manager codes are minted.
 export function PromotePage() {
   const t = useT();
   const navigate = useNavigate();
   const { promote } = useSession();
   const codeID = useId();
   const errorID = useId();
+  const hintID = useId();
   const errorRef = useRef<HTMLParagraphElement>(null);
+  const codeRef = useRef<HTMLInputElement>(null);
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -33,38 +45,52 @@ export function PromotePage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (busy) return;
+    if (!code) {
+      showError(t("pairingCodeRequired"));
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      await promote(code.trim());
+      await promote(code);
       navigate("/", { replace: true });
     } catch (err) {
-      const message =
-        err instanceof ApiError
-          ? err.status === 401
-            ? t("pairingCodeInvalid")
-            : err.status === 403
-              ? t("pairingCodeManagerOnly")
-              : t("promotionFailed")
-          : t("couldNotReachServer");
-      setError(message);
       setBusy(false);
-      requestAnimationFrame(() => errorRef.current?.focus());
+      showError(
+        err instanceof ApiError && err.status === 403
+          ? t("promoteNeedsManagerCode")
+          : pairingCodeErrorMessage(err, t, "promoteRetry"),
+      );
     }
     // On success we navigate away; keep the form disabled until then.
   }
 
+  // The alert announces the problem; focus returns to the code, selected.
+  function showError(message: string) {
+    setError(message);
+    requestAnimationFrame(() => {
+      codeRef.current?.focus();
+      codeRef.current?.select();
+    });
+  }
+
   return (
-    <main className="mx-auto max-w-md px-4 py-12">
-      <h1 className="text-2xl font-semibold">{t("promoteTitle")}</h1>
-      <p className="mt-2 text-sm text-muted-foreground">{t("promoteLead")}</p>
-      <form onSubmit={onSubmit} className="mt-6 space-y-4" noValidate>
-        <div className="space-y-1.5">
-          <Label htmlFor={codeID}>{t("pairingCode")}</Label>
+    <AuthShell>
+      <AuthHeading title={t("promoteTitle")} lead={t("promoteLead")} />
+      <form onSubmit={onSubmit} className="space-y-5" noValidate>
+        <div>
+          <Label htmlFor={codeID} className={FIELD_LABEL}>
+            {t("pairingCode")}
+          </Label>
           <Input
             id={codeID}
+            ref={codeRef}
+            className={cn(FIELD, "text-center font-mono text-xl tracking-[0.3em]")}
             value={code}
-            onChange={(e) => setCode(e.target.value)}
+            onChange={(e) => {
+              setCode(normalizePairingCode(e.target.value));
+              setError(null);
+            }}
             autoComplete="off"
             autoCapitalize="off"
             autoCorrect="off"
@@ -72,34 +98,36 @@ export function PromotePage() {
             autoFocus
             required
             aria-invalid={error != null}
-            aria-describedby={error ? errorID : undefined}
+            aria-describedby={error ? `${hintID} ${errorID}` : hintID}
           />
+          <p id={hintID} className="mb-0 mt-2 text-dense text-muted-foreground">
+            {t("promoteCodeHint", {
+              page: t("consoleAccessGroup"),
+              action: t("deviceAddHeading"),
+              kind: t("deviceMintManager"),
+            })}
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button type="submit" disabled={busy}>
-            {t("promote")}
-          </Button>
+        <FormFeedback error={error} errorID={errorID} errorRef={errorRef} />
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button
             type="button"
             variant="ghost"
+            className="h-11 rounded-[10px] px-5"
             disabled={busy}
             onClick={() => navigate("/", { replace: true })}
           >
             {t("cancel")}
           </Button>
-        </div>
-        {error && (
-          <p
-            ref={errorRef}
-            id={errorID}
-            role="alert"
-            tabIndex={-1}
-            className="text-sm text-destructive outline-none"
+          <Button
+            type="submit"
+            disabled={busy}
+            className="h-11 rounded-[10px] px-6 text-[15px] font-semibold sm:min-w-[140px]"
           >
-            {error}
-          </p>
-        )}
+            {t("promote")}
+          </Button>
+        </div>
       </form>
-    </main>
+    </AuthShell>
   );
 }

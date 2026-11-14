@@ -79,7 +79,6 @@ export const consoleOperationsStrings = {
     capabilitiesWorkflowGroup: "Workflow capabilities",
     capabilitiesProbeGroup: "Detected capabilities",
     capabilitiesEnabled: "Enabled",
-    capabilitiesDisabled: "Disabled",
     capabilitiesProbeAbsent: "Not detected on this host",
     capabilitiesEnableAction: "Enable",
     capabilitiesDisableAction: "Disable",
@@ -103,7 +102,7 @@ export const consoleOperationsStrings = {
     governorGenerationPaused: "Generation paused",
     governorPreempting: "Transcode preempting background",
     governorLowPower: "Low-power mode",
-    governorSettingsHeading: "Governor settings",
+    governorSettingsHeading: "Background work",
     governorBackgroundWorkers: "Background workers",
     governorBackgroundWorkersSave: "Save background workers",
     governorBackgroundWorkersHelp:

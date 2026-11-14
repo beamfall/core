@@ -1,4 +1,3 @@
-import { Plus, Rss } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   EmptyLine,
@@ -160,14 +159,13 @@ export function SubscriptionsPage() {
     <div className="space-y-4">
       <ManageSection
         title={t("subscriptions")}
-        icon={Rss}
         actions={
           <div className="space-y-1">
             <Label htmlFor="subscription-library" className="sr-only">
               {t("library")}
             </Label>
             <Select value={libraryID} onValueChange={setLibraryID}>
-              <SelectTrigger id="subscription-library" size="sm" className="w-56">
+              <SelectTrigger id="subscription-library" className="w-56">
                 <SelectValue placeholder={t("library")} />
               </SelectTrigger>
               <SelectContent>
@@ -207,7 +205,7 @@ export function SubscriptionsPage() {
         <ErrorLine message={error} />
       </ManageSection>
 
-      <ManageSection title={t("addSubscription")} icon={Plus}>
+      <ManageSection title={t("addSubscription")}>
         <ManageInlineForm>
           <ManageField id="subscription-feed" label={t("feedURL")}>
             <Input
@@ -310,7 +308,7 @@ function SubscriptionRow({
       <TableCell className="text-right">
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <Button type="button" variant="destructive" size="sm">
+            <Button type="button" variant="danger" size="sm">
               {t("remove")}
             </Button>
           </AlertDialogTrigger>

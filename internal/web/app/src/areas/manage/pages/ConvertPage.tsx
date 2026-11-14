@@ -1,4 +1,3 @@
-import { FileCog, ListOrdered } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import {
   EmptyLine,
@@ -89,12 +88,12 @@ function ConvertEnqueueSection() {
   };
 
   return (
-    <ManageSection title={t("convert")} icon={FileCog} lead={t("convertLead")}>
+    <ManageSection title={t("convert")} lead={t("convertLead")}>
       <div className="manage-fieldrow space-y-3">
         <div className="grid gap-1">
           <Label htmlFor="convert-library">{t("library")}</Label>
           <Select value={libraryID} onValueChange={setLibraryID}>
-            <SelectTrigger id="convert-library" size="sm" className="w-64">
+            <SelectTrigger id="convert-library" className="w-64">
               <SelectValue placeholder={t("library")} />
             </SelectTrigger>
             <SelectContent>
@@ -120,7 +119,7 @@ function ConvertEnqueueSection() {
         <div className="grid gap-1">
           <Label htmlFor="convert-preset">{t("convertPresetLabel")}</Label>
           <Select value={preset} onValueChange={setPreset}>
-            <SelectTrigger id="convert-preset" size="sm" className="w-64">
+            <SelectTrigger id="convert-preset" className="w-64">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -174,7 +173,6 @@ function ConvertQueueSection() {
   return (
     <ManageSection
       title={t("convertQueueTitle")}
-      icon={ListOrdered}
       actions={
         <Button type="button" variant="outline" size="sm" onClick={load}>
           {t("refresh")}

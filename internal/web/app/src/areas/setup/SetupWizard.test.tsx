@@ -3,6 +3,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "@/lib/api";
 import { I18nProvider } from "@/lib/i18n";
 import { groupProviderKeys } from "@/lib/providerKeys";
 import { FirstLibraryError } from "./orchestrate";
@@ -23,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   browseServerFolders: vi.fn(),
   configureUpdateCheck: vi.fn(),
   createFirstLibrary: vi.fn(),
+  fetchImporters: vi.fn(),
   fetchJobs: vi.fn(),
   fetchPlugins: vi.fn(),
   loadProviderKeys: vi.fn(),
@@ -34,6 +36,7 @@ vi.mock("@/lib/graphql", async () => {
   return {
     ...actual,
     browseServerFolders: mocks.browseServerFolders,
+    fetchImporters: mocks.fetchImporters,
     fetchJobs: mocks.fetchJobs,
     fetchPlugins: mocks.fetchPlugins,
     setScraperCredential: mocks.setScraperCredential,
@@ -55,6 +58,7 @@ vi.mock("./orchestrate", async () => {
 
 beforeEach(() => {
   mocks.loadProviderKeys.mockResolvedValue([]);
+  mocks.fetchImporters.mockResolvedValue([]);
 });
 
 function renderSetupWizard() {
@@ -104,6 +108,58 @@ describe("SetupWizard folder picker", () => {
       expect(screen.getByLabelText("Root folder")).toHaveValue("/");
     });
   });
+
+  it("moves focus into the picker and returns it to Browse on Escape", async () => {
+    const user = userEvent.setup();
+    renderSetupWizard();
+
+    await screen.findByRole("heading", { name: "Create your first Library" });
+    await user.click(screen.getByRole("button", { name: "Browse…" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /Media/ })).toHaveFocus());
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("button", { name: "Use this folder" })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Browse…" })).toHaveFocus());
+  });
+
+  it("opens at the top when the typed path can't be read, and says so", async () => {
+    mocks.browseServerFolders.mockRejectedValueOnce(new Error("permission denied"));
+    const user = userEvent.setup();
+    renderSetupWizard();
+
+    await screen.findByRole("heading", { name: "Create your first Library" });
+    await user.type(screen.getByLabelText("Root folder"), "/srv/locked");
+    await user.click(screen.getByRole("button", { name: "Browse…" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't open /srv/locked");
+    expect(mocks.browseServerFolders).toHaveBeenNthCalledWith(1, "/srv/locked");
+    expect(mocks.browseServerFolders).toHaveBeenNthCalledWith(2, undefined);
+    expect(screen.getByText("Media")).toBeInTheDocument();
+  });
+
+  it("explains a picker that can't open at all instead of doing nothing", async () => {
+    mocks.browseServerFolders.mockRejectedValue(new Error("permission denied"));
+    const user = userEvent.setup();
+    renderSetupWizard();
+
+    await screen.findByRole("heading", { name: "Create your first Library" });
+    await user.click(screen.getByRole("button", { name: "Browse…" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't read that folder.");
+  });
+
+  it("puts the caret in an empty root field when Continue is pressed", async () => {
+    const user = userEvent.setup();
+    renderSetupWizard();
+
+    await screen.findByRole("heading", { name: "Create your first Library" });
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Type the folder's path");
+    const root = screen.getByLabelText("Root folder");
+    await waitFor(() => expect(root).toHaveFocus());
+    expect(root).toHaveAttribute("aria-invalid", "true");
+  });
 });
 
 describe("SetupWizard first scan", () => {
@@ -150,6 +206,37 @@ describe("SetupWizard first scan", () => {
     });
     expect(await screen.findByText("214/500 files - Scanning")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Browse what's ready" })).toBeInTheDocument();
+  });
+
+  it("offers migration under the scan, with Browse what's ready as the way past it", async () => {
+    mocks.fetchImporters.mockResolvedValue([
+      { id: "plex", pluginID: "filmtv", displayName: { en: "Plex" } },
+    ]);
+    const user = userEvent.setup();
+    renderSetupWizard();
+
+    await screen.findByRole("heading", { name: "Create your first Library" });
+    await user.type(screen.getByLabelText("Root folder"), "/media/films");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(
+      await screen.findByRole("heading", { level: 2, name: "Bring your library with you" }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText("Plex")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Choose a source" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /skip for now/i })).not.toBeInTheDocument();
+  });
+
+  it("says a stopped scan can be run again from the Console", async () => {
+    mocks.fetchJobs.mockResolvedValue([{ id: "job-scan-1", kind: "scan", status: "failed" }]);
+    const user = userEvent.setup();
+    renderSetupWizard();
+
+    await screen.findByRole("heading", { name: "Create your first Library" });
+    await user.type(screen.getByLabelText("Root folder"), "/media/films");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(await screen.findByText(/The scan stopped before it finished/)).toBeInTheDocument();
   });
 
   it("shows the server error and retains partial Library progress for retry", async () => {
@@ -242,7 +329,7 @@ describe("SetupWizard first scan", () => {
     await user.type(screen.getByLabelText("Root folder"), "/media/films");
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
-    expect(await screen.findByRole("alert")).not.toBeEmptyDOMElement();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Lost contact with the server");
     expect(mocks.fetchJobs).toHaveBeenCalledTimes(1);
   });
 
@@ -347,7 +434,7 @@ describe("SetupWizard setup URL", () => {
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Something went wrong. Please try again.",
+      "The server couldn't finish this step.",
     );
     expect(view.container.textContent).not.toContain(canary);
     expect(window.location.href).not.toContain(canary);
@@ -365,6 +452,51 @@ describe("SetupWizard setup URL", () => {
     await user.click(screen.getByRole("button", { name: "Back" }));
     await user.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.getByLabelText("Setup token")).toHaveValue("");
+  });
+
+  it("asks for the token again instead of posting an empty one after a failed attempt", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, "", "/web/setup?token=ONE-USE-TOKEN");
+    mocks.bootstrapSetup.mockRejectedValue(new ApiError("POST /api/setup failed", 429));
+
+    renderSetupWizard();
+
+    await user.click(await screen.findByRole("button", { name: "Continue" }));
+    await user.type(screen.getByLabelText("Admin password"), "correct horse battery staple");
+    await user.type(screen.getByLabelText("Confirm password"), "correct horse battery staple");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Too many attempts.");
+
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Paste it again");
+    await waitFor(() => expect(screen.getByLabelText("Setup token")).toHaveFocus());
+    expect(mocks.bootstrapSetup).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a blank password, focuses the field, then focuses the chosen sign-in option", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, "", "/web/setup?token=TOKEN");
+
+    renderSetupWizard();
+
+    await user.click(await screen.findByRole("button", { name: "Continue" }));
+    const password = screen.getByLabelText("Admin password");
+    await user.type(password, "   ");
+    await user.type(screen.getByLabelText("Confirm password"), "   ");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Enter an admin password.");
+    await waitFor(() => expect(password).toHaveFocus());
+    expect(password).toHaveAttribute("aria-invalid", "true");
+
+    await user.clear(password);
+    await user.type(password, "hunter22");
+    await user.clear(screen.getByLabelText("Confirm password"));
+    await user.type(screen.getByLabelText("Confirm password"), "hunter22");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() => expect(screen.getByRole("radio", { name: /Home/ })).toHaveFocus());
   });
 
   it("clears the credential after a successful bootstrap", async () => {

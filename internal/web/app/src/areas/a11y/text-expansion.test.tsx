@@ -158,9 +158,9 @@ describe("ADR-0034 text-expansion gate — Console (Plugins)", () => {
   it("renders expanded keyed labels in full (incl. Select-bearing surface)", async () => {
     const { container } = renderExpanded(<Plugins />);
     await screen.findAllByText("Studio Metadata");
-    // The active-state chip resolves the expanded de value, present in full.
-    expect(container.textContent).toContain(STRINGS.de.consoleConfigActive);
-    expect(STRINGS.de.consoleConfigActive).toContain("⟧"); // not truncated to a prefix
+    // The section heading resolves the expanded de value, present in full.
+    expect(container.textContent).toContain(STRINGS.de.consoleConfigPlugins);
+    expect(STRINGS.de.consoleConfigPlugins).toContain("⟧"); // not truncated to a prefix
   });
 });
 
@@ -195,6 +195,11 @@ const CLIP_UTILITY =
 // 2026-11-12 (merge of CORE-1131 with CORE-1191): +2 → 28 for the header search result rows — `truncate`
 // on the title and on the detail line. Both are CSS ellipsis only; the full
 // text stays in the DOM and the row is a labelled gridcell.
+// 2026-11-13 (CORE-1117): +2 for the setup redesign — `truncate` on the
+// FolderPicker's current breadcrumb (CSS ellipsis; full name in the DOM and a
+// `title`) and `overflow-hidden` on the aria-hidden setup progress bar (no text);
+// -2 because the bulk-tag and marker-retag mode toggles moved to the shared
+// Segmented control and dropped their `overflow-hidden` wrappers. Net 28.
 const CLIP_BASELINE = 28;
 
 function tsSources(dir: string, acc: string[] = []): string[] {
