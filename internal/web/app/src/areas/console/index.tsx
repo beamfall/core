@@ -125,7 +125,10 @@ function Overview() {
   // Decide only once every answer is in, so a set-up server's Overview does
   // not flash the checklist at the top and then drop it to the bottom.
   const checklistFirst =
-    !loading && !browse.loading && !jobs.loading && firstValueOpen(data, browse.data, jobs.data);
+    !loading &&
+    !browse.loading &&
+    !jobs.loading &&
+    firstValueOpen(data, browse.data, jobs.failed ? null : jobs.data);
   const queue = [
     needsLibrary && {
       to: "/console/libraries",

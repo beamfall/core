@@ -154,7 +154,8 @@ export function SetupChecklist() {
   // to "show forward guidance" if it cannot load (never a false "all done").
   const browse = useAsync(fetchHasBrowsableContent);
   const resume = migrationResumeJob(jobs.data ?? []);
-  const progress = firstValueProgress(browse.data, jobs.data);
+  // A failed refresh keeps the last jobs it loaded; they are unknown now.
+  const progress = firstValueProgress(browse.data, jobs.failed ? null : jobs.data);
 
   // "Done = first successful browse." Setup-green with content that landed
   // (see FirstValueProgress) → finished; otherwise (no browsable content, only

@@ -206,6 +206,30 @@ describe("SetupChecklist (Seam B funnel spine)", () => {
     expect(screen.getByText(/you're all set/i)).toBeInTheDocument();
   });
 
+  it("a failed Refresh makes jobs that loaded earlier unknown, never a stale Done (CORE-1606)", async () => {
+    vi.mocked(fetchSetupState).mockResolvedValue(complete);
+    vi.mocked(fetchSourceItems).mockResolvedValue(oneItem);
+    vi.mocked(fetchJobs).mockResolvedValueOnce([]);
+
+    renderChecklist();
+
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: /start your first scan/i })).toHaveTextContent(
+        "Done",
+      ),
+    );
+
+    vi.mocked(fetchJobs).mockRejectedValue(new Error("offline"));
+    await userEvent.click(screen.getByRole("button", { name: /refresh/i }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: /start your first scan/i })).toHaveTextContent(
+        "Next step",
+      ),
+    );
+    expect(screen.queryByText(/you're all set/i)).not.toBeInTheDocument();
+  });
+
   it("does not number some steps and check others", async () => {
     vi.mocked(fetchSetupState).mockResolvedValue({ ...complete, hasOwnerProfile: false });
     vi.mocked(fetchSourceItems).mockResolvedValue([]);
