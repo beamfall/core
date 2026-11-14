@@ -499,8 +499,10 @@ func TestAudioCopyTenSecondGOPSeeksStayWithinOneSegment(t *testing.T) {
 			t.Fatalf("seek %+d playlist time: %v", offset, err)
 		}
 		mediaAt := firstVideoPacketPTS(t, filepath.Join(filepath.Dir(path), initSegmentName), path)
-		if drift := math.Abs(mediaAt - playlistAt); drift > audioCopySegmentSeconds {
-			t.Fatalf("seek %+d segment %d drift %.3fs, want <= %ds (playlist %.3f media %.3f)", offset, segment, drift, audioCopySegmentSeconds, playlistAt, mediaAt)
+		// The segments follow the source's keyframes (CORE-0021), so a restart's
+		// media starts where the playlist says, to the playlist's millisecond.
+		if drift := math.Abs(mediaAt - playlistAt); drift > keyframeDriftTolerance {
+			t.Fatalf("seek %+d segment %d drift %.6fs, want <= %.3fs (playlist %.3f media %.6f)", offset, segment, drift, keyframeDriftTolerance, playlistAt, mediaAt)
 		}
 	}
 }
@@ -1672,17 +1674,24 @@ func TestScanFrontierReadsHighestSegmentOffLock(t *testing.T) {
 
 func makeTenSecondGOPSource(t *testing.T, durationSeconds int) string {
 	t.Helper()
-	src := filepath.Join(t.TempDir(), "ten-second-gop.mp4")
+	return makeGOPSource(t, "ten-second-gop.mp4", audioCopySegmentSeconds, 1, durationSeconds)
+}
+
+// makeGOPSource synthesizes an H.264 + AAC source named name (its extension
+// picks the container) with a keyframe every gopSeconds at fps.
+func makeGOPSource(t *testing.T, name string, gopSeconds, fps, durationSeconds int) string {
+	t.Helper()
+	src := filepath.Join(t.TempDir(), name)
 	cmd := exec.Command("ffmpeg",
 		"-v", "error",
 		"-f", "lavfi",
-		"-i", fmt.Sprintf("testsrc=duration=%d:size=64x64:rate=1", durationSeconds),
+		"-i", fmt.Sprintf("testsrc=duration=%d:size=64x64:rate=%d", durationSeconds, fps),
 		"-f", "lavfi",
 		"-i", fmt.Sprintf("sine=frequency=440:duration=%d", durationSeconds),
 		"-c:v", "libx264",
 		"-preset", "ultrafast",
-		"-g", strconv.Itoa(audioCopySegmentSeconds),
-		"-keyint_min", strconv.Itoa(audioCopySegmentSeconds),
+		"-g", strconv.Itoa(gopSeconds*fps),
+		"-keyint_min", strconv.Itoa(gopSeconds*fps),
 		"-sc_threshold", "0",
 		"-pix_fmt", "yuv420p",
 		"-c:a", "aac",
@@ -1690,7 +1699,7 @@ func makeTenSecondGOPSource(t *testing.T, durationSeconds int) string {
 		"-y", src,
 	)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("synthesize 10s-GOP source: %v\n%s", err, out)
+		t.Fatalf("synthesize %ds-GOP source: %v\n%s", gopSeconds, err, out)
 	}
 	return src
 }
@@ -1718,6 +1727,13 @@ func playlistStartTime(playlist string, segment int) (float64, error) {
 
 func firstVideoPacketPTS(t *testing.T, initPath, segmentPath string) float64 {
 	t.Helper()
+	return firstPacketPTS(t, initPath, segmentPath, "v:0")
+}
+
+// firstPacketPTS is the PTS of the first packet of stream (an ffprobe stream
+// specifier) in init + segment.
+func firstPacketPTS(t *testing.T, initPath, segmentPath, stream string) float64 {
+	t.Helper()
 	combined := filepath.Join(t.TempDir(), "segment.mp4")
 	initBytes, err := os.ReadFile(initPath)
 	if err != nil {
@@ -1733,7 +1749,7 @@ func firstVideoPacketPTS(t *testing.T, initPath, segmentPath string) float64 {
 	}
 	cmd := exec.Command("ffprobe",
 		"-v", "error",
-		"-select_streams", "v:0",
+		"-select_streams", stream,
 		"-show_entries", "packet=pts_time",
 		"-of", "csv=p=0",
 		combined,
@@ -1749,7 +1765,7 @@ func firstVideoPacketPTS(t *testing.T, initPath, segmentPath string) float64 {
 			}
 		}
 	}
-	t.Fatalf("ffprobe segment produced no video packet PTS:\n%s", out)
+	t.Fatalf("ffprobe segment produced no %s packet PTS:\n%s", stream, out)
 	return 0
 }
 

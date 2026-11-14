@@ -117,7 +117,7 @@ func TestProbeKeyframesReadsRealGOP(t *testing.T) {
 	want := []time.Duration{0, 7 * time.Second, 14 * time.Second, 21 * time.Second, 28 * time.Second}
 	for _, ext := range []string{"mkv", "mp4"} {
 		src := filepath.Join(dir, "gop7."+ext)
-		gen := exec.Command("ffmpeg", "-v", "error",
+		gen := exec.Command("ffmpeg", "-v", "error", // #nosec G204 -- fixed ffmpeg arguments writing a test-owned fixture.
 			"-f", "lavfi", "-i", "testsrc=size=160x90:rate=25:duration=30",
 			"-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
 			"-g", "175", "-keyint_min", "175", "-sc_threshold", "0",
