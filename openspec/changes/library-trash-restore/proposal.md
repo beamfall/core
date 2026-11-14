@@ -84,5 +84,5 @@ Web Console:
 
 ### Modified Capabilities
 
-- `console-library-deletion`: the confirmation states that the library can be restored and where,
+- `web-library-delete`: the confirmation states that the library can be restored and where,
   instead of stating that it cannot be restored.
