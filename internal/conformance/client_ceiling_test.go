@@ -11,7 +11,8 @@ package conformance
 // (ADR-0007, internal/web/app/src) — so this file is that client's own
 // no-dynamic-code ceiling conformance test. The apple/android/web(-kit)/windows
 // consumer repos each land their own copy against this contract row
-// (PLUGMECH-7-APPLE/-ANDROID/-WEB/-WINDOWS, tracked as knownDrift until then).
+// (PLUGMECH-7-APPLE/-ANDROID/-WEB/-WINDOWS, tracked as workspace-registry
+// knownDrift until then).
 //
 // Four tests:
 //   - TestClientCeilingNoDynamicCodePaths: the forbidden-substring scan.

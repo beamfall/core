@@ -59,7 +59,8 @@ CONSUMER_REPO="beamfall-web"
 CONSUMER_SOURCE="${BEAMFALL_CROSSREPO_CONSUMER_SOURCE:-https://github.com/beamfall/web.git}"
 CONSUMER_PIN_REGISTRY="testing/release-gates/gate-commands.tsv"
 CONSUMER_PIN_NOTE="branch-main"
-CONTRACT_REGISTRY="contracts/registry.json"
+WORKSPACE_MANIFEST="workspace-repos.json"
+WORKSPACE_CONTRACT_REGISTRY="contracts/registry.json"
 CONTRACT_BOUNDARY="client-core-wire"
 CONSUMER_CONTRACT_BINDING="test/core-wire/client-core-wire.generated.json"
 INJECT_SKEW=0
@@ -96,6 +97,32 @@ fi
 
 [[ -z "${BEAMFALL_CROSSREPO_CONSUMER_REF:-}" ]] \
   || fail "runtime consumer ref overrides are forbidden; use the committed $CONSUMER_PIN_REGISTRY pin"
+
+# Consumer pins are private workspace bookkeeping, so core's public registry no
+# longer carries them (CORE-0902). The web pin is read from the workspace
+# registry: BEAMFALL_WORKSPACE_ROOT, else the nearest ancestor of this checkout
+# holding workspace-repos.json. With neither, nothing can be verified: fail closed.
+resolve_workspace_registry() {
+  local root="${BEAMFALL_WORKSPACE_ROOT:-}" dir
+  if [[ -z "$root" ]]; then
+    dir="$ROOT"
+    while [[ "$dir" != "/" ]]; do
+      dir="$(dirname "$dir")"
+      if [[ -f "$dir/$WORKSPACE_MANIFEST" ]]; then
+        root="$dir"
+        break
+      fi
+    done
+  fi
+  [[ -n "$root" ]] \
+    || fail "workspace contract registry unresolved: set BEAMFALL_WORKSPACE_ROOT to the workspace checkout holding $WORKSPACE_CONTRACT_REGISTRY (no $WORKSPACE_MANIFEST above $ROOT)"
+  [[ -f "$root/$WORKSPACE_CONTRACT_REGISTRY" ]] \
+    || fail "workspace contract registry missing: $root/$WORKSPACE_CONTRACT_REGISTRY (BEAMFALL_WORKSPACE_ROOT=${BEAMFALL_WORKSPACE_ROOT:-<unset>})"
+  printf '%s\n' "$root/$WORKSPACE_CONTRACT_REGISTRY"
+}
+
+WORKSPACE_REGISTRY="$(resolve_workspace_registry)"
+printf 'REGISTRY workspace path=%s\n' "$WORKSPACE_REGISTRY"
 
 source_ref() {
   local source="$1" requested="$2"
@@ -148,7 +175,7 @@ load_consumer_pin() {
 verify_consumer_contract_version() {
   local consumer_sha="$1"
   python3 - \
-    "$PRODUCER/$CONTRACT_REGISTRY" \
+    "$WORKSPACE_REGISTRY" \
     "$CONSUMER/$CONSUMER_CONTRACT_BINDING" \
     "$CONTRACT_BOUNDARY" \
     "$CONSUMER_REPO" \
@@ -178,13 +205,13 @@ def load_object(path_text, label):
     return value
 
 
-registry = load_object(registry_path, "registry consumer")
+registry = load_object(registry_path, "workspace registry consumer")
 boundaries = registry.get("boundaries")
 if not isinstance(boundaries, list):
     fail(f"registry consumer contract version unresolved: boundary={boundary_name} consumer_commit={consumer_commit}")
 boundary_rows = [
     row for row in boundaries
-    if isinstance(row, dict) and row.get("boundary") == boundary_name
+    if isinstance(row, dict) and row.get("id") == boundary_name
 ]
 if len(boundary_rows) != 1:
     fail(

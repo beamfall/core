@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
 import argparse
-import datetime as dt
 import json
-import os
 import pathlib
-import subprocess
 import sys
-
 
 
 def _semver(value):
@@ -22,209 +18,64 @@ def _semver(value):
     return tuple(int(part) for part in parts)
 
 
-def _wire_consumer_pin_failures(boundary):
-    """Producer-truth rules for client-core-wire (ADR-0122 Amendment A §1):
-    each consumer is an object with a unique repo, a strict SemVer
-    pinnedVersion sharing the producer's major. Minor lag is valid; malformed,
-    duplicate, missing, major-skewed, or bare-string pins fail."""
-    name = boundary.get("boundary", "")
-    published = _semver(boundary.get("version"))
-    if published is None:
-        return [f"{name}: version must be MAJOR.MINOR.PATCH"]
-    failures = []
-    seen = set()
-    for consumer in boundary.get("consumers", []):
-        if not isinstance(consumer, dict):
-            failures.append(f"{name}: consumer must be an object with repo + pinnedVersion")
-            continue
-        unknown = set(consumer) - {"repo", "pinnedVersion"}
-        if unknown:
-            failures.append(f"{name}: consumer has unknown fields: {', '.join(sorted(unknown))}")
-        repo = consumer.get("repo", "")
-        pin = consumer.get("pinnedVersion", "")
-        if not _valid_repo_name(repo):
-            failures.append(
-                f"{name}: consumer repo {repo!r} must be a safe non-empty repository name"
-            )
-        elif repo in seen:
-            failures.append(f"{name}: consumer repo {repo} duplicated")
-        else:
-            seen.add(repo)
-        pinned = _semver(pin)
-        if pinned is None:
-            failures.append(f"{name}: consumer {repo or '<missing>'} pinnedVersion {pin!r} must be MAJOR.MINOR.PATCH")
-        elif pinned[0] != published[0]:
-            failures.append(f"{name}: consumer {repo} pin {pin} skews major from published {boundary.get('version')}")
+# Boundaries the private cloud service produces for private clients. Core neither produces nor
+# consumes them, so they live only in the workspace registry (CORE-0902).
+PRIVATE_ONLY_PRODUCERS = frozenset({"beamfall-cloud"})
+CORE_REPO = "beamfall"
+FORBIDDEN_KEYS = ("pinnedVersion", "consumerArtifacts", "deadline")
+
+
+def _forbidden_key_paths(value, path):
+    """Yield every JSON path under value whose key is consumer bookkeeping."""
+    if isinstance(value, dict):
+        for key, child in value.items():
+            here = f"{path}.{key}"
+            if key in FORBIDDEN_KEYS:
+                yield here
+            yield from _forbidden_key_paths(child, here)
+    elif isinstance(value, list):
+        for i, child in enumerate(value):
+            yield from _forbidden_key_paths(child, f"{path}[{i}]")
+
+
+def _public_registry_failures(name, boundary):
+    """CORE-0902 absence rules: core's public registry records producer facts only.
+
+    Consumer pins, consumerArtifacts, drift records and deadlines belong to the private
+    workspace registry, which holds and checks them (core-0902-retention_test.js)."""
+    failures = [
+        f"{name}: {path} is consumer bookkeeping; record it in the workspace registry"
+        for path in _forbidden_key_paths(boundary, name)
+    ]
+    consumers = boundary.get("consumers")
+    if isinstance(consumers, list):
+        for i, consumer in enumerate(consumers):
+            if not isinstance(consumer, str) or not consumer.strip():
+                failures.append(f"{name}: consumers[{i}] must be a repo name string, got {consumer!r}")
+        names = [c for c in consumers if isinstance(c, str)]
+        if len(names) != len(set(names)):
+            failures.append(f"{name}: consumers must not repeat a repo")
+    elif consumers is not None:
+        failures.append(f"{name}: consumers must be an array of repo names")
+    if boundary.get("knownDrift") != []:
+        failures.append(f"{name}: knownDrift must be [] in core; drift records live in the workspace registry")
+    producer = boundary.get("producer")
+    if producer in PRIVATE_ONLY_PRODUCERS and CORE_REPO not in (consumers or []):
+        failures.append(f"{name}: core neither produces nor consumes this {producer} boundary; it belongs in the workspace registry")
     return failures
 
 
-def _valid_repo_path(value):
-    return (
-        isinstance(value, str)
-        and bool(value)
-        and not value.startswith("/")
-        and "\\" not in value
-        and ":" not in value
-        and all(part not in ("", ".", "..") for part in value.split("/"))
-    )
-
-
-def _valid_repo_name(value):
-    return (
-        isinstance(value, str)
-        and value not in ("", ".", "..")
-        and all(char.isascii() and (char.isalnum() or char in "._-") for char in value)
-    )
-
-
-def _wire_consumer_artifact_failures(boundary):
-    name = boundary.get("boundary", "")
-    consumer_artifacts = boundary.get("consumerArtifacts")
-    if not isinstance(consumer_artifacts, dict) or not consumer_artifacts:
-        return [f"{name}: consumerArtifacts must be a non-empty object"]
-
-    repos = {
-        consumer.get("repo")
-        for consumer in boundary.get("consumers", [])
-        if isinstance(consumer, dict) and _valid_repo_name(consumer.get("repo"))
-    }
+def _wire_artifact_drift_failures(repo_root):
+    """No published wire-contract artifact in the public tree may carry knownDrift."""
     failures = []
-    if set(consumer_artifacts) != repos:
-        missing = sorted(repos - set(consumer_artifacts))
-        unknown = sorted(set(consumer_artifacts) - repos)
-        if missing:
-            failures.append(f"{name}: consumerArtifacts missing consumers: {', '.join(missing)}")
-        if unknown:
-            failures.append(f"{name}: consumerArtifacts has unknown consumers: {', '.join(unknown)}")
-    for repo, artifacts in consumer_artifacts.items():
-        if not isinstance(artifacts, list) or not artifacts:
-            failures.append(f"{name}: consumer {repo} artifacts must be a non-empty array")
-            continue
-        if all(isinstance(artifact, str) for artifact in artifacts) and len(set(artifacts)) != len(artifacts):
-            failures.append(f"{name}: consumer {repo} artifacts must be unique")
-        for artifact in artifacts:
-            if not _valid_repo_path(artifact):
-                failures.append(
-                    f"{name}: consumer {repo} artifact {artifact!r} must be a repo-relative path"
-                )
-    return failures
-
-
-def _workspace_root(repo_root):
-    override = os.environ.get("BEAMFALL_WORKSPACE_ROOT")
-    if override:
-        root = pathlib.Path(override).resolve()
-        if not (root / "workspace-repos.json").is_file():
-            raise ValueError(
-                f"BEAMFALL_WORKSPACE_ROOT {override!r} has no workspace-repos.json"
-            )
-        return root
-    for candidate in (repo_root, *repo_root.parents):
-        if (candidate / "workspace-repos.json").is_file():
-            return candidate
-    return None
-
-
-def _git(repo, *args):
-    completed = subprocess.run(
-        ["git", "-C", str(repo), *args],
-        capture_output=True,
-        check=False,
-    )
-    if completed.returncode != 0:
-        detail = completed.stderr.decode("utf-8", errors="replace").strip()
-        raise ValueError(detail.splitlines()[0] if detail else "git command failed")
-    return completed.stdout
-
-
-def _consumer_main(repo_dir):
-    """Resolve the consumer's landed main: origin/main when fetched, else local main.
-
-    A shared sibling checkout's local main can lag origin or carry unpushed commits,
-    so it is not what the consumer has landed (CORE-1339). Fetch before gating.
-    """
-    for ref in ("refs/remotes/origin/main^{commit}", "refs/heads/main^{commit}"):
+    for artifact in sorted(repo_root.glob("internal/conformance/wire-contract-v*.json")):
         try:
-            return _git(repo_dir, "rev-parse", "--verify", "--quiet", ref).decode().strip()
-        except ValueError as exc:
-            last = exc
-    raise last
-
-
-def _wire_consumer_truth_failures(boundary, workspace):
-    """Cross-check recorded pins against consumer descriptors committed on main."""
-    name = boundary.get("boundary", "")
-    consumer_artifacts = boundary.get("consumerArtifacts")
-    if not isinstance(consumer_artifacts, dict):
-        return []
-    try:
-        manifest = json.loads((workspace / "workspace-repos.json").read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        return [f"{name}: cannot read workspace-repos.json: {exc}"]
-    if not isinstance(manifest, dict) or not isinstance(manifest.get("repositories"), list):
-        return [f"{name}: workspace-repos.json repositories must be an array"]
-
-    entries = {}
-    for entry in manifest.get("repositories", []):
-        if not isinstance(entry, dict) or not isinstance(entry.get("name"), str):
+            data = json.loads(artifact.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            failures.append(f"internal/conformance/{artifact.name}: unreadable: {exc}")
             continue
-        repo = entry["name"]
-        if repo in entries:
-            return [f"{name}: workspace-repos.json duplicates repo {repo}"]
-        entries[repo] = entry
-
-    failures = []
-    for consumer in boundary.get("consumers", []):
-        if not isinstance(consumer, dict):
-            continue
-        repo = consumer.get("repo")
-        artifacts = consumer_artifacts.get(repo)
-        if not _valid_repo_name(repo):
-            continue
-        if not isinstance(artifacts, list) or not artifacts:
-            continue
-        if not all(_valid_repo_path(artifact) for artifact in artifacts):
-            continue
-
-        entry = entries.get(repo)
-        if entry is None:
-            failures.append(f"{name}: consumer {repo} is absent from workspace-repos.json")
-            continue
-        if entry.get("status") != "canonical":
-            failures.append(
-                f"{name}: consumer {repo} is not canonical in workspace-repos.json"
-            )
-            continue
-
-        repo_dir = workspace / repo
-        try:
-            revision = _consumer_main(repo_dir)
-        except ValueError as exc:
-            failures.append(f"{name}: consumer {repo} has no readable local main: {exc}")
-            continue
-
-        for artifact in artifacts:
-            try:
-                raw = _git(repo_dir, "show", f"{revision}:{artifact}")
-            except ValueError as exc:
-                failures.append(
-                    f"{name}: consumer {repo} vendored artifact {artifact} is absent on main: {exc}"
-                )
-                continue
-            try:
-                descriptor = json.loads(raw.decode("utf-8"))
-            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                failures.append(
-                    f"{name}: consumer {repo} vendored artifact {artifact} is not valid JSON: {exc}"
-                )
-                continue
-            vendored = descriptor.get("artifactVersion")
-            pinned = consumer.get("pinnedVersion")
-            if vendored != pinned:
-                failures.append(
-                    f"{name}: consumer {repo} pin {pinned!r} disagrees with "
-                    f"vendored {artifact} artifactVersion {vendored!r}"
-                )
+        if isinstance(data, dict) and data.get("knownDrift") not in (None, []):
+            failures.append(f"internal/conformance/{artifact.name}: knownDrift must be null; drift records live in the workspace registry")
     return failures
 
 
@@ -281,7 +132,6 @@ def main() -> int:
         default=None,
         help="repo root holding internal/conformance/ (default: the registry's grandparent, i.e. <root>/contracts/registry.json)",
     )
-    parser.add_argument("--today", default=dt.date.today().isoformat())
     args = parser.parse_args()
 
     if args.repo_root is not None:
@@ -306,18 +156,6 @@ def main() -> int:
         print("contract registry failed:", file=sys.stderr)
         print("  - REGISTRY_SHAPE /contracts/registry.json: must be an object", file=sys.stderr)
         return 1
-    try:
-        today = dt.date.fromisoformat(args.today)
-    except ValueError:
-        print("--today must be YYYY-MM-DD", file=sys.stderr)
-        return 1
-    try:
-        workspace = _workspace_root(repo_root)
-    except ValueError as exc:
-        workspace = None
-        failures.append(str(exc))
-    consumer_truth_not_verified = workspace is None and not failures
-
     if data.get("schemaVersion") != 1:
         failures.append("schemaVersion must be 1")
 
@@ -342,34 +180,13 @@ def main() -> int:
                 failures.append(f"{name}: missing {key}")
         if not boundary.get("consumers"):
             failures.append(f"{name}: consumers must not be empty")
+        failures.extend(_public_registry_failures(name, boundary))
         if name == "client-core-wire":
-            failures.extend(_wire_consumer_pin_failures(boundary))
-            failures.extend(_wire_consumer_artifact_failures(boundary))
             failures.extend(_wire_publish_sync_failures(boundary, repo_root))
-            if workspace is not None:
-                failures.extend(_wire_consumer_truth_failures(boundary, workspace))
-        drift_records = boundary.get("knownDrift", [])
-        if not isinstance(drift_records, list):
-            failures.append(f"{name}: knownDrift must be an array")
-            drift_records = []
-        for drift in drift_records:
-            if not isinstance(drift, dict):
-                failures.append(f"{name}: knownDrift entry must be an object")
-                continue
-            ticket = drift.get("ticket", "")
-            deadline = drift.get("deadline", "")
-            if not ticket:
-                failures.append(f"{name}: knownDrift missing ticket")
-            try:
-                expires = dt.date.fromisoformat(deadline)
-            except ValueError:
-                failures.append(f"{name}: knownDrift {ticket or '<missing>'} deadline must be YYYY-MM-DD")
-                continue
-            if expires < today:
-                failures.append(f"{name}: knownDrift {ticket} expired on {deadline}")
 
     if not boundaries:
         failures.append("boundaries must not be empty")
+    failures.extend(_wire_artifact_drift_failures(repo_root))
 
     if failures:
         print("contract registry failed:", file=sys.stderr)
@@ -377,8 +194,6 @@ def main() -> int:
             print(f"  - {failure}", file=sys.stderr)
         return 1
 
-    if consumer_truth_not_verified:
-        print("contract consumer pin truth NOT VERIFIED: workspace-repos.json not found")
     print(f"contract registry ok: {len(boundaries)} boundaries")
     return 0
 

@@ -250,6 +250,25 @@ func TestInheritedEntityPosterYieldsToImportedPoster(t *testing.T) {
 	s.wantPoster("entity-box", "provider", false)
 }
 
+// Local container artwork is the Entity's own poster: it replaces an
+// inherited copy and clears the mark, so the sweep leaves it alone.
+func TestInheritedEntityPosterYieldsToLocalArtwork(t *testing.T) {
+	s := newShelf(t)
+	s.entity("entity-box", "box")
+	s.holds("entity-box", s.item("one", "cover-one"), 1)
+	s.runSweep()
+	s.wantPoster("entity-box", "cover-one", true)
+
+	sidecar := writeSidecar(t, t.TempDir(), "poster.jpg", testJPEG)
+	if changed, err := s.svc.ImportEntityLocalArtwork(context.Background(), "entity-box", SlotPoster, filepath.Dir(sidecar), sidecar); err != nil || !changed {
+		t.Fatalf("ImportEntityLocalArtwork = %v, %v; want true, nil", changed, err)
+	}
+	s.wantPoster("entity-box", string(testJPEG), false)
+
+	s.runSweep()
+	s.wantPoster("entity-box", string(testJPEG), false)
+}
+
 // A poster the provider supplied before any sweep is never replaced.
 func TestSweepKeepsImportedEntityPoster(t *testing.T) {
 	s := newShelf(t)
