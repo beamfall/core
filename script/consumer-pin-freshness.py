@@ -103,7 +103,29 @@ def workspace_root(start: Path) -> Path | None:
     for candidate in [start, *start.parents]:
         if (candidate / WORKSPACE_MANIFEST).is_file():
             return candidate
+    # A linked worktree outside the workspace (corvint-tasks `gate run` strips
+    # BEAMFALL_WORKSPACE_ROOT, CORE-1473) still shares the main checkout's .git,
+    # so look above that checkout too, as secret-scan.py does.
+    main_checkout = git_main_checkout(start)
+    if main_checkout is not None:
+        for candidate in [main_checkout, *main_checkout.parents]:
+            if (candidate / WORKSPACE_MANIFEST).is_file():
+                return candidate
     return None
+
+
+def git_main_checkout(start: Path) -> Path | None:
+    """Main checkout owning start's git common dir, or None outside git."""
+    result = subprocess.run(
+        ["git", "-C", str(start), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    common = Path(result.stdout.strip())
+    if result.returncode != 0 or common.name != ".git":
+        return None
+    return common.parent
 
 
 def manifest_repositories(root: Path) -> list[dict]:

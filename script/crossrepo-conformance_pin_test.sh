@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/beamfall-crossrepo-pin-test.XXXXXX")"
+TMP="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/beamfall-crossrepo-pin-test.XXXXXX")" && pwd -P)"
 trap 'rm -rf "$TMP"' EXIT INT TERM
 
 commit_all() {
@@ -132,4 +132,18 @@ grep -F \
   "$CASE_LOG" >/dev/null \
   || fail_case "resolved consumer SHA was not reported"
 
-echo "crossrepo-conformance_pin_test: OK (no-workspace/missing-registry/missing/unresolvable RED; exact pin resolved $CONSUMER_SHA against the workspace registry)"
+# corvint-tasks `gate run` strips BEAMFALL_WORKSPACE_ROOT and may run from a
+# linked worktree outside the workspace; the registry still resolves through
+# the main checkout's git common dir (CORE-1473).
+mkdir -p "$WORKSPACE/beamfall"
+printf '%s\n' '{"schemaVersion":1}' >"$WORKSPACE/workspace-repos.json"
+git clone -q "$RUNNER" "$WORKSPACE/beamfall/core"
+git -C "$WORKSPACE/beamfall/core" worktree add -q --detach "$TMP/outside/core-wt"
+RUNNER="$TMP/outside/core-wt"
+CASE_WORKSPACE=""
+run_case linked-worktree
+[[ "$CASE_STATUS" -eq 0 ]] || fail_case "linked worktree outside the workspace failed"
+grep -F "REGISTRY workspace path=$WORKSPACE/contracts/registry.json" "$CASE_LOG" >/dev/null \
+  || fail_case "linked worktree did not resolve the workspace registry via the git common dir"
+
+echo "crossrepo-conformance_pin_test: OK (no-workspace/missing-registry/missing/unresolvable RED; exact pin resolved $CONSUMER_SHA against the workspace registry, also from a linked worktree outside it)"

@@ -14,6 +14,8 @@ to remove, so "it passed" is never evidence on its own.
 from __future__ import annotations
 
 import json
+import os
+import runpy
 import shutil
 import subprocess
 import sys
@@ -341,6 +343,36 @@ def control_no_workspace_manifest(root: Path) -> None:
     )
 
 
+def control_linked_worktree_outside_workspace(root: Path) -> None:
+    """CORE-1473: `gate run` strips BEAMFALL_WORKSPACE_ROOT, so a linked
+    worktree outside the workspace finds it through the shared .git."""
+    workspace = root / "workspace"
+    main_checkout = workspace / "beamfall"
+    main_checkout.mkdir(parents=True)
+    (workspace / WORKSPACE_MANIFEST).write_text('{"repositories":[]}\n', encoding="utf-8")
+    git(main_checkout, "init", "-q")
+    commit_file(main_checkout, "README", "base")
+    outside = root / "elsewhere" / "core-wt"
+    git(main_checkout, "worktree", "add", "-q", "--detach", str(outside))
+    module = runpy.run_path(str(CHECK), run_name="consumer_pin_freshness")
+    saved = os.environ.pop("BEAMFALL_WORKSPACE_ROOT", None)
+    try:
+        found = module["workspace_root"](outside)
+        loose = root / "loose"
+        loose.mkdir()
+        none_found = module["workspace_root"](loose)
+    finally:
+        if saved is not None:
+            os.environ["BEAMFALL_WORKSPACE_ROOT"] = saved
+    expect(
+        "linked worktree outside the workspace resolves it via the git common dir",
+        found is not None and found.resolve() == workspace.resolve(),
+        f"found={found}",
+    )
+    expect("a non-git directory with no manifest above it resolves to None", none_found is None,
+           f"found={none_found}")
+
+
 def control_unknown_consumer_repo(root: Path) -> None:
     build_workspace(root)
     manifest = root / WORKSPACE_MANIFEST
@@ -579,6 +611,7 @@ CONTROLS = [
     control_stale_corpus_bytes,
     control_absent_consumer,
     control_no_workspace_manifest,
+    control_linked_worktree_outside_workspace,
     control_unknown_consumer_repo,
     control_manifest_drives_consumer_name,
     control_declared_owner_probe_cannot_be_masked,
