@@ -251,6 +251,15 @@ func TestStreamingCeilingExemptsAudioOnly(t *testing.T) {
 	if ov.vetoesVideoPassthrough(media, store.MediaFile{SizeBytes: ceilingSourceBytes}, streams) {
 		t.Fatal("the viewer's ceiling vetoed an audio-only item, which has no picture to scale")
 	}
+	surround := []store.MediaFileStream{audioStream(0, "flac", 6)}
+	forced := quirkOverlay{ForceTranscode: true}.withClientCeiling(2_000_000)
+	if forced.ceilingBindsAudio(media, store.MediaFile{SizeBytes: ceilingSourceBytes}, surround) {
+		t.Fatal("a ceiling downmixed an audio-only item that a device quirk transcodes")
+	}
+	video := store.Media{Class: store.MediaClassVideo, Container: "mkv", Codec: "h264", DurationSeconds: 120, VideoHeight: 1080}
+	if !forced.ceilingBindsAudio(video, store.MediaFile{SizeBytes: ceilingSourceBytes}, []store.MediaFileStream{videoStream("h264", "High", 0, ""), audioStream(1, "truehd", 8)}) {
+		t.Fatal("a ceiling-bound video transcode must hold audio to the rung's reserve")
+	}
 }
 
 func TestStreamingCeilingSeparatesFingerprints(t *testing.T) {

@@ -38,6 +38,11 @@ ceiling below the lowest rung SHALL leave the lowest rung. Audio-only items are 
 - **WHEN** a source the profile could pass lossless audio through for is transcoded under a ceiling
 - **THEN** the audio is re-encoded to stereo AAC, within the audio share each rung reserves
 
+#### Scenario: Audio-only items keep their audio
+
+- **WHEN** an audio-only item is transcoded for another reason while a ceiling is set
+- **THEN** its audio codec and channels are what they would be without the ceiling
+
 ### Requirement: The decision names the viewer ceiling only when it alone applies
 
 When the viewer's streaming ceiling is the only reason a video source was not handed over,

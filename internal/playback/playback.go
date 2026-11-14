@@ -954,7 +954,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 		}()
 	}
 	hlsAudio := hlsAudioProfile(profile, streams, loudness, loudnessOK, ov)
-	if ov.clientMaxBitrate > 0 && ov.vetoesVideoPassthrough(media, file, streams) {
+	if ov.ceilingBindsAudio(media, file, streams) {
 		hlsAudio = ceilingBoundAudio(hlsAudio)
 	}
 
@@ -1717,6 +1717,13 @@ func hlsAudioProfile(profile CapabilityProfile, streams []store.MediaFileStream,
 		audio.GainDB = &gain
 	}
 	return audio
+}
+
+// ceilingBindsAudio reports whether a video transcode runs on a ceiling-bound
+// ladder rung, whose 256 kbit/s audio reserve holds only stereo AAC.
+// Audio-only items keep their audio: the ceiling never applies to them.
+func (ov quirkOverlay) ceilingBindsAudio(media store.Media, file store.MediaFile, streams []store.MediaFileStream) bool {
+	return ov.clientMaxBitrate > 0 && !audioOnlyMedia(media, streams) && ov.vetoesVideoPassthrough(media, file, streams)
 }
 
 // ceilingBoundAudio holds a re-encoded stream's audio to stereo AAC under the
