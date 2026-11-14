@@ -7,6 +7,7 @@ import { I18nProvider } from "@/lib/i18n";
 import type { Locale } from "@/strings";
 import { PlayerTransport } from "./PlayerTransport";
 import type { PlayerState } from "./usePlayer";
+import { lastViewerIntent } from "./viewerIntent";
 
 const state: PlayerState = {
   phase: "playing",
@@ -453,8 +454,11 @@ describe("PlayerTransport", () => {
     fireEvent.timeUpdate(video);
     expect(scrubber).toHaveAttribute("aria-valuetext", expect.stringContaining("1 minute"));
 
+    const beforeRelease = performance.now();
     fireMouse(document, "pointerup", 60);
     expect(seeks).toEqual([60]);
+    // The seek marks the viewer's intent, so a Watch Party sends it however long the drag took.
+    expect(lastViewerIntent()).toBeGreaterThanOrEqual(beforeRelease);
   });
 
   it("seeks on a touch tap of the scrubber (CORE-1360)", () => {

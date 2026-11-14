@@ -99,7 +99,7 @@ describe("useWatchParty local transport", () => {
     view.unmount();
   });
 
-  it("sends a scrubber drag that outlasts the intent window, on release", () => {
+  it("sends a scrubber seek committed long after the press began", () => {
     party = activeParty({ item: "m1", positionMS: 0, presentAtMS: 0, paused: true });
     const video = new FakeVideo();
     let now = 10_000;
@@ -107,29 +107,31 @@ describe("useWatchParty local transport", () => {
     const view = mount(video);
     now += 100;
     fireEvent.pointerDown(document.body);
-    // The viewer drags for three seconds, then lets go.
+    // The viewer drags for three seconds; PlayerTransport's seek marks the intent.
     now += 3000;
-    fireEvent.pointerUp(document.body);
+    markViewerIntent();
     video.currentTime = 45;
     video.dispatchEvent(new Event("seeked"));
     expect(sendPartyTransport).toHaveBeenCalledWith("m1", 45_000, true);
     view.unmount();
   });
 
-  it("sends a long touch scrub that ends in touchend after a pointer cancel", () => {
+  it("ignores autoplay after an unrelated long touch gesture", () => {
     party = activeParty({ item: "m1", positionMS: 0, presentAtMS: 0, paused: true });
     const video = new FakeVideo();
     let now = 10_000;
     vi.spyOn(performance, "now").mockImplementation(() => now);
     const view = mount(video);
     now += 100;
+    // A long scroll: the browser cancels the pointer and the touch ends later.
     fireEvent.pointerDown(document.body);
     fireEvent.pointerCancel(document.body);
     now += 3000;
     fireEvent.touchEnd(document.body);
-    video.currentTime = 20;
-    video.dispatchEvent(new Event("seeked"));
-    expect(sendPartyTransport).toHaveBeenCalledWith("m1", 20_000, true);
+    fireEvent.pointerUp(document.body);
+    // The media becomes playable and the player autoplays.
+    video.play();
+    expect(sendPartyTransport).not.toHaveBeenCalled();
     view.unmount();
   });
 
