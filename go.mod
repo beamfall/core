@@ -11,7 +11,7 @@ require (
 	github.com/beamfall/plugin-music v0.1.6
 	github.com/beamfall/plugin-photos v0.1.5
 	github.com/beamfall/plugin-podcasts v0.1.5
-	github.com/beamfall/plugin-sdk v0.3.5-0.20261114204621-c7ee1b8de1c1
+	github.com/beamfall/plugin-sdk v0.3.5-0.20261114233328-6e4761573821
 	github.com/brutella/dnssd v1.2.14
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/hashicorp/yamux v0.1.2
