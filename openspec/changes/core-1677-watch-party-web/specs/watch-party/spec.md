@@ -99,7 +99,7 @@ already follows SHALL NOT interrupt its playback.
 ### Requirement: Web viewer sends only the viewer's own transport
 
 In a party, the web viewer SHALL send a play, pause or seek only when it follows the viewer's own
-input: the in-page controls, the release of a scrubber drag or the OS media controls. The
+input: the in-page controls, the release of a scrubber drag (pointer or touch) or the OS media controls. The
 browser's autoplay and the viewer's own drift corrections SHALL NOT be sent.
 
 #### Scenario: Autoplay on joining a paused party
