@@ -13,5 +13,5 @@
 ## 3. Verify and close
 
 - [x] 3.1 `openspec validate --all --strict`
-- [ ] 3.2 `make gate`
-- [ ] 3.3 `openspec archive first-admin-password` after landing, before completing CORE-1132
+- [x] 3.2 `make gate`
+- [x] 3.3 `openspec archive first-admin-password` after landing, before completing CORE-1132
