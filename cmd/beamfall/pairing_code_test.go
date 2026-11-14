@@ -3,8 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -80,9 +78,7 @@ func TestPairingCodeHonoursDataDirEnv(t *testing.T) {
 
 func TestPairingCodeRefusals(t *testing.T) {
 	locked, _ := ownerDataDir(t)
-	if err := os.WriteFile(filepath.Join(locked, "server.lock"), []byte("running\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	holdServerLockForTest(t, locked)
 	for _, tc := range []struct {
 		name string
 		args []string

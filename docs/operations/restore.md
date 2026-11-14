@@ -21,8 +21,10 @@ Restore is an offline host operation. The complete backup, verification, and ret
    release manifest does not describe migrations, so do not infer a match from a release number or
    filename. If the prior binary version or session cannot be proved, stop and preserve the data
    directory for recovery.
-2. Stop Beamfall and confirm the process has exited. The restore command refuses to proceed while
-   `<data-dir>/server.lock` exists; do not remove a lock belonging to a running process.
+2. Stop Beamfall and confirm the process has exited. A running server holds an exclusive lock on
+   `<data-dir>/server.lock`, and the restore command refuses to proceed while that lock is held. The
+   operating system drops the lock when the server exits or crashes, so a leftover file does not
+   block a restore and need not be removed.
 3. Select a trusted pre-migration manifest from
    `<data-dir>/backups/pre-migration/<session-id>/manifest.json`. It must identify
    `type: "pre-migration"` and `restoreInstructionsVersion: 2`. Keep the whole session directory
