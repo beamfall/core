@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchConsoleConfig, fetchTranscodeConfig, setConsoleConfig } from "@/lib/graphql";
+import type { ConsoleConfigInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { Config } from "./Config";
 
@@ -21,7 +22,15 @@ vi.mock("@/lib/graphql", () => ({
   setTranscodeConfig: vi.fn(),
 }));
 
-const saved = { backgroundWorkers: 4, viewerPairingCodesDisabled: false };
+const saved: ConsoleConfigInfo = {
+  backgroundWorkers: 4,
+  updateCheckEnabled: false,
+  updateCheckChannel: "stable",
+  remoteEnrollmentEnabled: true,
+  viewerPairingCodesDisabled: false,
+  eventsRetentionDays: 180,
+  plugins: [],
+};
 
 beforeEach(() => {
   vi.mocked(fetchConsoleConfig).mockReset().mockResolvedValue(saved);
