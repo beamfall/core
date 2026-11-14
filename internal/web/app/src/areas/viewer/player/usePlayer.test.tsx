@@ -700,8 +700,8 @@ describe("usePlayer", () => {
     fireEvent.canPlay(video);
     expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
 
-    fireEvent.play(video); // started here after the remote pause
     Object.defineProperty(video, "paused", { configurable: true, value: false });
+    fireEvent.play(video); // started here after the remote pause
     Object.defineProperty(video, "error", { configurable: true, value: { code: 3 } });
     fireEvent.error(video); // decode failure fails over to HLS
     await waitFor(() => expect(HTMLMediaElement.prototype.play).toHaveBeenCalledOnce());
@@ -723,11 +723,38 @@ describe("usePlayer", () => {
     const video = screen.getByTestId("player") as HTMLVideoElement;
     fireEvent.canPlay(video);
     expect(HTMLMediaElement.prototype.play).toHaveBeenCalledOnce();
+    Object.defineProperty(video, "paused", { configurable: true, value: false });
     fireEvent.play(video);
 
+    Object.defineProperty(video, "paused", { configurable: true, value: true });
     deliverPlayerCommand({ command: "pause", playingMediaIDs: ["media-alpha"] });
     Object.defineProperty(video, "error", { configurable: true, value: { code: 3 } });
     fireEvent.error(video); // decode failure fails over to HLS
+    await waitFor(() => expect(fakeHlsInstances).toHaveLength(1));
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledOnce();
+    resetAppliedControlEvents();
+  });
+
+  it("keeps a remote pause that lands before its autoplay's play event", async () => {
+    resetAppliedControlEvents();
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+    vi.mocked(fetchPlaybackInfo).mockResolvedValue({
+      decision: "direct-play",
+      streams: [
+        { kind: "direct-play", url: "/api/media/direct/token" },
+        { kind: "hls", url: "/api/media/hls/token/master.m3u8" },
+      ],
+    });
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    const video = screen.getByTestId("player") as HTMLVideoElement;
+    fireEvent.canPlay(video);
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledOnce();
+
+    deliverPlayerCommand({ command: "pause", playingMediaIDs: ["media-alpha"] });
+    fireEvent.play(video); // the autoplay's queued event, after the pause applied
+    Object.defineProperty(video, "error", { configurable: true, value: { code: 3 } });
+    fireEvent.error(video);
     await waitFor(() => expect(fakeHlsInstances).toHaveLength(1));
     expect(HTMLMediaElement.prototype.play).toHaveBeenCalledOnce();
     resetAppliedControlEvents();

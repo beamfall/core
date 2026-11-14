@@ -631,7 +631,9 @@ export function usePlayer(
         }
       };
       const onPlay = () => {
-        startMark = remotePlayStateMark();
+        // The play event is queued: one from before a remote pause fires after
+        // that pause has applied, and a paused element has not started.
+        if (!video.paused) startMark = remotePlayStateMark();
       };
       videoListeners.push(["playing", onPlaying], ["timeupdate", onTimeUpdate], ["play", onPlay]);
       for (const [type, listener] of videoListeners) video.addEventListener(type, listener);
