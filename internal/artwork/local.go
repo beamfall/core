@@ -136,7 +136,9 @@ func (s *Service) ReleaseLocalArtwork(ctx context.Context, id store.MediaID, slo
 
 // ImportEntityLocalArtwork is ImportLocalArtwork for an Entity slot, used for
 // ordered container artwork. The Entity's Library gates it the same way and a
-// lookup failure fails closed.
+// lookup failure fails closed. A local poster is the Entity's own, so like
+// ImportEntityPoster it clears the inherited mark and the sweep leaves it
+// alone.
 func (s *Service) ImportEntityLocalArtwork(ctx context.Context, id store.EntityID, slot, root, path string) (bool, error) {
 	if !ValidSlot(slot) {
 		return false, fmt.Errorf("unknown artwork slot %q", slot)
@@ -144,7 +146,20 @@ func (s *Service) ImportEntityLocalArtwork(ctx context.Context, id store.EntityI
 	if s.entityProtected(ctx, id) {
 		return false, nil
 	}
-	return s.importLocal(ctx, s.EntityArtworkPath(id, slot), string(id), slot, root, path)
+	dst := s.EntityArtworkPath(id, slot)
+	if slot != SlotPoster {
+		return s.importLocal(ctx, dst, string(id), slot, root, path)
+	}
+	s.entityPosterMu.Lock()
+	defer s.entityPosterMu.Unlock()
+	changed, err := s.importLocal(ctx, dst, string(id), slot, root, path)
+	if err != nil {
+		return changed, err
+	}
+	if err := os.Remove(inheritedMarkerPath(dst)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return changed, err
+	}
+	return changed, nil
 }
 
 // ReleaseEntityLocalArtwork is ReleaseLocalArtwork for an Entity slot.
