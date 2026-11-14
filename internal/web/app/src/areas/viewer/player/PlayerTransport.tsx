@@ -52,11 +52,13 @@ import {
 } from "../lib/transport";
 import { AudioSyncPanel } from "./AudioSyncPanel";
 import { InfoOverlay } from "./InfoOverlay";
+import { ShortcutHelpOverlay } from "./ShortcutHelpOverlay";
 import { SubtitleStylePanel } from "./SubtitleStylePanel";
 import { TransportMenu } from "./TransportMenu";
 import { useAudioDelay } from "./useAudioDelay";
 import { useLiveTracks } from "./useLiveTracks";
 import type { PlayerState, SwitchResult } from "./usePlayer";
+import { usePlayerShortcuts } from "./usePlayerShortcuts";
 import { useSubtitleAppearance } from "./useSubtitleAppearance";
 import { useSubtitleStyling } from "./useSubtitleStyling";
 import { markViewerIntent } from "./viewerIntent";
@@ -70,7 +72,15 @@ import { markViewerIntent } from "./viewerIntent";
 // (openKey), and the open state is reported up so the player stage can
 // suppress idle auto-hide while settings or a menu is up. Every control is
 // keyboard-operable and labelled (the a11y gate).
-type OpenKey = "audio" | "subtitle" | "quality" | "info" | "subtitleStyle" | "audioSync" | null;
+type OpenKey =
+  | "audio"
+  | "subtitle"
+  | "quality"
+  | "info"
+  | "subtitleStyle"
+  | "audioSync"
+  | "shortcuts"
+  | null;
 type GestureFeedback =
   | { kind: "seek"; side: "left" | "right"; amount: number }
   | { kind: "volume"; value: number };
@@ -476,46 +486,27 @@ export function PlayerTransport({
     setMuted(video.muted);
   }, [videoRef]);
 
-  useEffect(() => {
-    const interactive = (target: EventTarget | null) => {
-      const element = target instanceof Element ? target : document.activeElement;
-      if (!(element instanceof HTMLElement)) return false;
-      if (element.isContentEditable) return true;
-      return Boolean(
-        element.closest(
-          'button, a, input, select, textarea, menu, dialog, [role="menu"], [role="dialog"], [contenteditable]:not([contenteditable="false"])',
-        ),
-      );
-    };
-    const keydown = (event: KeyboardEvent) => {
-      if (
-        event.altKey ||
-        event.ctrlKey ||
-        event.metaKey ||
-        event.shiftKey ||
-        interactive(event.target)
-      ) {
-        return;
-      }
-      const key = event.key.toLowerCase();
-      const actions: Record<string, () => void> = {
-        " ": togglePlay,
-        k: togglePlay,
-        f: toggleFullscreen,
-        m: toggleMute,
-        arrowleft: () => seekBy(-skipInterval),
-        arrowright: () => seekBy(skipInterval),
-        arrowup: () => setVolume((videoRef.current?.volume ?? 0) + 0.05),
-        arrowdown: () => setVolume((videoRef.current?.volume ?? 0) - 0.05),
-      };
-      const action = actions[key];
-      if (!action) return;
-      event.preventDefault();
-      action();
-    };
-    window.addEventListener("keydown", keydown);
-    return () => window.removeEventListener("keydown", keydown);
-  }, [seekBy, setVolume, skipInterval, toggleFullscreen, toggleMute, togglePlay, videoRef]);
+  usePlayerShortcuts({
+    videoRef,
+    skipInterval,
+    speeds: SPEEDS,
+    markers: state.markers,
+    togglePlay,
+    toggleFullscreen,
+    toggleMute,
+    seekBy,
+    setVolume,
+    subtitleOptions: tracks.subtitleOptions,
+    audioOptions: tracks.audioOptions,
+    selectSubtitle: tracks.selectSubtitle,
+    selectAudio: tracks.selectAudio,
+    onPreviousInQueue,
+    onNextInQueue,
+    onHelp: () => {
+      setSettingsOpen(false);
+      setOpenKey("shortcuts");
+    },
+  });
 
   async function togglePictureInPicture() {
     const video = videoRef.current;
@@ -1125,6 +1116,12 @@ export function PlayerTransport({
           them) but outside the glass sheet (a backdrop-filter ancestor would
           break their fixed positioning). */}
       <div ref={layerRef} className="bf-transport-layer" />
+      <ShortcutHelpOverlay
+        open={openKey === "shortcuts"}
+        onOpenChange={(open) => setOpen("shortcuts", open)}
+        container={layerRef}
+        skipInterval={skipInterval}
+      />
     </div>
   );
 }

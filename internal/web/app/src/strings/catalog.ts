@@ -17,6 +17,7 @@ import { onboardingStrings } from "./onboarding";
 import { pathPickerStrings } from "./path-picker";
 import { playbackStrings } from "./playback";
 import { playerRecoveryStrings } from "./player-recovery";
+import { playerShortcutStrings } from "./player-shortcuts";
 import { pluginStrings } from "./plugins";
 import { powerToolStrings } from "./power-tools";
 import { profileSearchStrings } from "./profile-search";
@@ -38,6 +39,7 @@ export const en = {
   ...libraryHealthStrings.en,
   ...consoleOperationsStrings.en,
   ...playbackStrings.en,
+  ...playerShortcutStrings.en,
   ...subtitleAppearanceStrings.en,
   ...managedFileStrings.en,
   ...backupRetentionStrings.en,
@@ -72,6 +74,7 @@ export const fr = {
   ...libraryHealthStrings.fr,
   ...consoleOperationsStrings.fr,
   ...playbackStrings.fr,
+  ...playerShortcutStrings.fr,
   ...subtitleAppearanceStrings.fr,
   ...managedFileStrings.fr,
   ...backupRetentionStrings.fr,
@@ -106,6 +109,7 @@ export const de = {
   ...libraryHealthStrings.de,
   ...consoleOperationsStrings.de,
   ...playbackStrings.de,
+  ...playerShortcutStrings.de,
   ...subtitleAppearanceStrings.de,
   ...managedFileStrings.de,
   ...backupRetentionStrings.de,
@@ -140,6 +144,7 @@ export const es = {
   ...libraryHealthStrings.es,
   ...consoleOperationsStrings.es,
   ...playbackStrings.es,
+  ...playerShortcutStrings.es,
   ...subtitleAppearanceStrings.es,
   ...managedFileStrings.es,
   ...backupRetentionStrings.es,
@@ -174,6 +179,7 @@ export const pt = {
   ...libraryHealthStrings.pt,
   ...consoleOperationsStrings.pt,
   ...playbackStrings.pt,
+  ...playerShortcutStrings.pt,
   ...subtitleAppearanceStrings.pt,
   ...managedFileStrings.pt,
   ...backupRetentionStrings.pt,

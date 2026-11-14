@@ -448,6 +448,51 @@
   text-underline-offset: 2px;
 }
 
+/* The `?` keyboard shortcut sheet: centred over the stage, scrolling when short. */
+.bf-shortcut-sheet {
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  width: min(420px, calc(100% - 32px));
+  max-height: calc(100% - 32px);
+  overflow-y: auto;
+}
+
+.bf-shortcut-sheet .bf-player-dialog-head {
+  justify-content: space-between;
+  margin: -8px -8px 0 0;
+}
+
+.bf-shortcut-rows {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  gap: 8px 16px;
+  align-items: center;
+  margin: 0;
+  font-size: 13px;
+}
+
+.bf-shortcut-rows dt {
+  white-space: nowrap;
+  color: oklch(80% 0.02 250);
+}
+
+.bf-shortcut-rows dd {
+  margin: 0;
+}
+
+.bf-shortcut-rows kbd {
+  display: inline-block;
+  min-width: 1.75em;
+  padding: 1px 6px;
+  border: 1px solid oklch(98% 0.004 250 / 18%);
+  border-radius: 6px;
+  background: oklch(98% 0.004 250 / 8%);
+  font: inherit;
+  font-size: 12px;
+  text-align: center;
+  color: oklch(96% 0.006 250);
+}
+
 /* Subtitle styling panel rows. */
 .bf-subtitle-row {
   display: flex;
