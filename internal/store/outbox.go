@@ -539,8 +539,9 @@ var groupSyncSignals = map[string]bool{
 //
 // Paused accompanies a Watch Party transition or roster whose timeline holds at
 // Position. A Watch Party is cross-Profile, so the surface writes one row per
-// member Profile (each row's ProfileID is that member's); the SSE Profile gate
-// is unchanged.
+// member Profile (each row's ProfileID is that member's). The SSE stream keeps
+// its Profile gate and also reveal-filters a signal whose Item names Media, so
+// an unrevealed member session never learns a restricted item's identity.
 //
 // Time fields are server-clock Unix milliseconds — the wire-stable encoding the
 // member pairs with its calibrated clock offset; the conductor package works in
