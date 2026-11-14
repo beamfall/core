@@ -89,9 +89,8 @@ Commands:
   serve                  run the Beamfall Core server (default)
   capabilities [--version]
                          print runtime capabilities, or build metadata with --version
-  apply-config           apply a console config document (workers, plugins, libraries)
-                         from stdin; additive; --data-dir applies offline before first start
-  export-config          export a console config document; --data-dir reads offline
+  apply-config           apply a console config document from stdin
+  export-config          export a console config document
   backup                 request a server-side backup
   pairing-code           mint a one-time owner pairing code while the server is stopped
   release                release helper commands
