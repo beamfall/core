@@ -22,8 +22,8 @@ audited and approved by the owner, so these tools should run through it.
 - The kinds are added to the plugin SDK vocabulary first (`plugin-sdk`
   `openspec/changes/worker-write-permissions/`); Core's gated set must equal it.
 - Every new Host method checks, in order: verified-manifest declaration and approved grant, a wired
-  seam, an audit ledger, the causation cap (writes), the grant's Library filter, then that every
-  target is visible through that filter. The audit row is written before the change and an audit
+  seam, an audit ledger, the grant's Library filter, that every target is visible through that
+  filter, then the causation cap (writes). The audit row is written before the change and an audit
   failure aborts the call.
 - Watch-state and playback-state grants must be bound to one Profile; an all-Libraries grant is
   refused for them. Writes for other kinds follow the grant's existing Library binding.
@@ -31,7 +31,10 @@ audited and approved by the owner, so these tools should run through it.
   its seam will append (one `media.updated` row per id for metadata, the bound Profile's
   `invalidation` row for watch state) in a bounded ledger on the shared causation cap, and event
   delivery returns those rows with the write's token. A Worker reacting to its own writes therefore
-  spends one chain budget instead of starting fresh roots.
+  spends one chain budget instead of starting fresh roots. Keys (aggregate, id, millisecond) are
+  unique: a write whose key is taken is restamped 1 ms later, so two chains never share a row's
+  lineage. Each Worker may hold at most 16,384 of the ledger's 65,536 entries for the 15-minute
+  chain lifetime (about 1,000 metadata ids a minute sustained); refused calls reserve nothing.
 - New wire methods: `write-metadata`, `create-collection`, `add-collection-media`, `set-artwork`,
   `set-watched`, `read-playback-state`.
 - Activity log gains five `plugin.*` actions with Console labels.
@@ -48,7 +51,9 @@ audited and approved by the owner, so these tools should run through it.
 - Missing seam, audit ledger, causation cap, grant or approval: permission denied, nothing written.
 - A target outside the grant's Library filter: not found, nothing written or audited.
 - Locked artwork slot: the slot-locked error is returned to the Worker.
-- Descendant ledger full: the write is refused with a tracking-capacity dead letter, no budget spent.
+- Descendant ledger or the Worker's share full: the write is refused with a tracking-capacity dead
+  letter, no budget spent.
+- No free descendant key after 64 restamps: the write is refused, no budget spent.
 
 ## Acceptance
 
