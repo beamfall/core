@@ -200,7 +200,7 @@ func TestPurgeLibraryRemovesRecordsAndLeavesFilesOnDisk(t *testing.T) {
 	ctx := context.Background()
 	library, mediaID, path := trashFixtureLibrary(t, st, "Films")
 	keep, keepMediaID, _ := trashFixtureLibrary(t, st, "Keep")
-	sourceBefore, err := os.ReadFile(path)
+	sourceBefore, err := os.ReadFile(path) //nolint:gosec // G304: path is a file the test created.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +285,7 @@ func TestPurgeLibraryRemovesRecordsAndLeavesFilesOnDisk(t *testing.T) {
 	}
 
 	// The purge deletes records, never the owner's files.
-	sourceAfter, err := os.ReadFile(path)
+	sourceAfter, err := os.ReadFile(path) //nolint:gosec // G304: path is a file the test created.
 	if err != nil {
 		t.Fatalf("source file gone after purge: %v", err)
 	}

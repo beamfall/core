@@ -166,7 +166,7 @@ func TestOverflowRescansRootAndKeepsWatching(t *testing.T) {
 
 	// A directory created while events were being dropped must get armed.
 	lost := filepath.Join(root, "copied-during-overflow")
-	if err := os.Mkdir(lost, 0o755); err != nil {
+	if err := os.Mkdir(lost, 0o750); err != nil {
 		t.Fatal(err)
 	}
 	be.errs <- fsnotify.ErrEventOverflow
@@ -296,14 +296,14 @@ func TestUnreadableSubdirectoryDoesNotDisableRoot(t *testing.T) {
 	locked := filepath.Join(root, "lost+found")
 	open := filepath.Join(root, "Shows")
 	for _, dir := range []string{locked, open} {
-		if err := os.Mkdir(dir, 0o755); err != nil {
+		if err := os.Mkdir(dir, 0o750); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if err := os.Chmod(locked, 0o000); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o700) }) //nolint:gosec // G302: restores owner access so t.TempDir can be removed.
 
 	enqueue, scans := scanRecorder()
 	service := NewService(Options{Debounce: 10 * time.Millisecond, EnqueueScan: enqueue})

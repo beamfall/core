@@ -233,6 +233,7 @@ func purgeMediaRowsTx(ctx context.Context, tx *sql.Tx, selection string, args ..
 	// Delete it here — before media_file is dropped, while the fingerprint is
 	// still resolvable — so a purge does not leave a semantic-search vector of
 	// the deleted (possibly restricted) content that resurrects on rescan.
+	//nolint:gosec // G202: selection is a fixed internal SQL fragment; every value is bound as an argument.
 	if _, err := tx.ExecContext(ctx, `
 		DELETE FROM media_embedding WHERE media_fingerprint IN (
 			SELECT content_fingerprint FROM media_file WHERE media_id IN (`+selection+`)
@@ -244,10 +245,12 @@ func purgeMediaRowsTx(ctx context.Context, tx *sql.Tx, selection string, args ..
 	// re-import regenerates the same Media id, so a row left behind would attach
 	// itself to the re-imported Media.
 	for _, table := range []string{"media_file", "media_external_id", "artwork_candidate", "media_field_provenance"} {
+		//nolint:gosec // G202: table comes from a fixed list and selection is an internal SQL fragment.
 		if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE media_id IN (`+selection+`)`, args...); err != nil {
 			return 0, err
 		}
 	}
+	//nolint:gosec // G202: selection is a fixed internal SQL fragment; every value is bound as an argument.
 	result, err := tx.ExecContext(ctx, `DELETE FROM media WHERE id IN (`+selection+`)`, args...)
 	if err != nil {
 		return 0, err

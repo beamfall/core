@@ -35,7 +35,7 @@ func TestBundledCredentialsFallBackOnlyWithoutOwnerSecret(t *testing.T) {
 		t.Fatalf("Secret after clearing = %q, %v; want bundled-value", got, err)
 	}
 
-	if err := os.WriteFile(filepath.Join(dir, "project-key"), []byte("loose"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "project-key"), []byte("loose"), 0o644); err != nil { //nolint:gosec // G306: the test needs a deliberately loose key file.
 		t.Fatal(err)
 	}
 	if _, err := creds.Secret("project-key"); err == nil {

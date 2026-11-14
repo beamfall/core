@@ -698,7 +698,7 @@ func (s *rootState) close() error {
 func (s *rootState) addTree(root string) error {
 	root = filepath.Clean(root)
 	skippable := func(path string, err error) bool {
-		if filepath.Clean(path) == root || !(errors.Is(err, fs.ErrPermission) || errors.Is(err, fs.ErrNotExist)) {
+		if filepath.Clean(path) == root || (!errors.Is(err, fs.ErrPermission) && !errors.Is(err, fs.ErrNotExist)) {
 			return false
 		}
 		s.logger.Debug("skipping unwatchable directory", "library", string(s.key.libraryID), "root", s.key.root, "path", path, "reason", err)

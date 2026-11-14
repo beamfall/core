@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -781,7 +782,7 @@ func TestUndeclaredContainerStillTranscodesWhenRemuxIsNotHonest(t *testing.T) {
 	for i, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			service, st, scope := capabilityTestService(t)
-			mediaID := importProbedMedia(t, st, "fp-mkv-no-remux-"+string(rune('a'+i)), "matroska", tc.codec, 1920, 1080, tc.streams)
+			mediaID := importProbedMedia(t, st, "fp-mkv-no-remux-"+strconv.Itoa(i), "matroska", tc.codec, 1920, 1080, tc.streams)
 			resp, err := service.Info(context.Background(), scope, InfoRequest{MediaID: string(mediaID), CapabilityProfile: browserProfile})
 			if err != nil {
 				t.Fatalf("Info: %v", err)
