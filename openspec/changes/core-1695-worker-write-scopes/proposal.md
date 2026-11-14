@@ -27,6 +27,11 @@ audited and approved by the owner, so these tools should run through it.
   failure aborts the call.
 - Watch-state and playback-state grants must be bound to one Profile; an all-Libraries grant is
   refused for them. Writes for other kinds follow the grant's existing Library binding.
+- Causation lineage (ADR-0125, ARCHITECTURE.md section 4): a write's admission binds the outbox rows
+  its seam will append (one `media.updated` row per id for metadata, the bound Profile's
+  `invalidation` row for watch state) in a bounded ledger on the shared causation cap, and event
+  delivery returns those rows with the write's token. A Worker reacting to its own writes therefore
+  spends one chain budget instead of starting fresh roots.
 - New wire methods: `write-metadata`, `create-collection`, `add-collection-media`, `set-artwork`,
   `set-watched`, `read-playback-state`.
 - Activity log gains five `plugin.*` actions with Console labels.
@@ -43,6 +48,7 @@ audited and approved by the owner, so these tools should run through it.
 - Missing seam, audit ledger, causation cap, grant or approval: permission denied, nothing written.
 - A target outside the grant's Library filter: not found, nothing written or audited.
 - Locked artwork slot: the slot-locked error is returned to the Worker.
+- Descendant ledger full: the write is refused with a tracking-capacity dead letter, no budget spent.
 
 ## Acceptance
 

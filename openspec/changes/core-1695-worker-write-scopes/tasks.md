@@ -4,11 +4,13 @@
 - [ ] 1.2 Add the Host methods, seams, wire methods and audit actions with Console labels
 - [ ] 1.3 Wire the seams in `internal/app` (store, artwork service, watch-state adapter)
 - [ ] 1.4 Update the glossary permission list
+- [ ] 1.5 Bind descendant outbox rows to the caller's causation chain; add the promotion rows to ARCHITECTURE.md section 4
 
 ## 2. Prove
 
 - [ ] 2.1 Tests: vocabulary sync and dispatch coverage, denial without approval, scope, audit
 - [ ] 2.2 Sample Worker test creates a collection and sets artwork over the wire
+- [ ] 2.5 Self-chain test: a Worker's own descendant rows return its token and stop at the budget
 - [ ] 2.3 `openspec validate --all --strict` passes
 - [ ] 2.4 wsl preflight passes on the head
 

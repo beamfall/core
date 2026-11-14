@@ -43,3 +43,23 @@ to one Profile, acting on that Profile alone.
 
 - **WHEN** a `write-watch-state` or `read-playback-state` grant is the all-Libraries binding
 - **THEN** the call fails with permission denied
+
+### Requirement: Scoped Worker writes spend one causation chain with their descendants
+
+Every scoped write SHALL be admitted by the shared causation cap with a Core-issued token before
+its seam runs (ADR-0125). Admission SHALL bind each outbox row the seam will append to that token,
+and event delivery SHALL hand such a row back with the same token rather than a fresh chain root.
+The binding ledger SHALL be bounded, and a full ledger SHALL refuse the write without spending any
+budget.
+
+#### Scenario: Worker reacts to its own write
+
+- **WHEN** a Worker writes metadata or watch state and then receives the outbox row that write
+  appended
+- **THEN** the row carries the token the write spent, and a Worker that writes again on every such
+  row is refused once the chain's global budget is spent
+
+#### Scenario: Ledger full
+
+- **WHEN** binding a write's rows would exceed the ledger bound
+- **THEN** the write is refused with a tracking-capacity dead letter and its seam is not called
