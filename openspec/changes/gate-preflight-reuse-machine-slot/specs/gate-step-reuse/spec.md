@@ -60,7 +60,7 @@ The gate SHALL include in the key the built web bundle, the installed web depend
 browser and media tools the steps call, and for a diff-scoped step both ends of the diff. It SHALL
 run every step when an input outside the worktree cannot be content-addressed. A step classed as
 reading only source SHALL leave the built web bundle, the installed web dependency set and the
-browser set out of its key, and a step that reads the Git index SHALL add the staged tree.
+browser set out of its key, and a step that reads the Git index SHALL add the staged index entries.
 
 #### Scenario: Missing or different web bundle
 

@@ -2,15 +2,15 @@
 
 ## 1. Cross-mode step reuse (CORE-1569)
 
-- [ ] 1.1 Drop the preflight mode and the coordinator-entry variables from the reuse key; add the
+- [x] 1.1 Drop the preflight mode and the coordinator-entry variables from the reuse key; add the
       mode-bound predicate
-- [ ] 1.2 Add the `source` and `source+index` classes and put the six steps on the list with their
+- [x] 1.2 Add the `source` and `source+index` classes and put the six steps on the list with their
       soundness arguments; list the steps that stay unreusable with the reason
-- [ ] 1.3 Record the producing run's kind and show it in the `REUSE` line and evidence row
-- [ ] 1.4 `tools/gate/gate_step_reuse_test.sh`: preflight pass reused by the full gate and the
+- [x] 1.3 Record the producing run's kind and show it in the `REUSE` line and evidence row
+- [x] 1.4 `tools/gate/gate_step_reuse_test.sh`: preflight pass reused by the full gate and the
       reverse, a different command across modes runs, a mode-bound step is not reused across modes,
       the new classes ignore the bundle and follow the index
-- [ ] 1.5 Update `docs/architecture/TESTING.md`
+- [x] 1.5 Update `docs/architecture/TESTING.md`
 
 ## 2. Machine-wide gate slot (CORE-1470)
 

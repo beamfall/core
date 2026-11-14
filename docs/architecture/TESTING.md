@@ -259,15 +259,30 @@ additionally runs `tools/gate/gate.sh --selftest`, which feeds the runner a deli
 non-matching `-run` pattern and asserts the non-vacuity check trips — the tripwire is
 itself tripwired.
 
-**Step reuse.** In normal mode the gate skips a build, vet, lint, test, web or support-selftest step when the same
+**Step reuse.** In normal mode the gate skips a build, vet, lint, test, web or selftest step when the same
 step already passed for identical inputs: the step command, the gate mode, the content of the whole
 worktree (tracked and untracked, minus ignored files), the built web bundle, the installed web
-dependencies, the toolchain and the gate-relevant environment. An active `go.work` or a set
-`RELAY_VECTORS_PATH` stops all reuse. The output shows `REUSE <step>` and the evidence file gets a `reuse` row naming the
-run that produced the pass. Any change to those inputs runs the step. Release mode never reuses,
-`GATE_STEP_REUSE=0` turns reuse off, and steps that depend on state outside the worktree (the
-vulnerability check, the secret scan, cross-repository conformance, fuzzing, performance budgets)
-always run. Records are local, under the common git directory in `gate-step-reuse/`, and expire
+dependencies, the toolchain and the gate-relevant environment. Steps that read only source (the
+support, gate-scope and compile-budget selftests and `golangci-lint`) leave the bundle, the installed
+dependencies and the browsers out, and the two that ask git what is staged (the secret-scan selftest
+and the AGPL symbol gate) add the index. An active `go.work` or a set `RELAY_VECTORS_PATH` stops all
+reuse. The output shows `REUSE <step>` and the evidence file gets a `reuse` row naming the run that
+produced the pass and its lane. Any change to those inputs runs the step.
+
+`make gate-preflight` and `make gate` share passes in both directions (CORE-1569): every preflight
+step runs the same command in the full gate, so a gate that follows a green preflight of the same
+tree reuses the preflight's listed steps instead of running them again. The environment is part of
+the key, so the two must run with the same one. `corvint-tasks gate run` passes the gate a reduced
+environment; a preflight meant to feed it runs as `env -u NODE_USE_SYSTEM_CA make gate-preflight`,
+or with whatever else the shell sets that the gate policy does not pass through. A step whose
+preflight variant ever checks less than its full-gate run is declared in
+`gate_step_reuse_mode_bound` and is then never shared between the two.
+
+Release mode never reuses, `GATE_STEP_REUSE=0` turns reuse off, and steps that depend on state
+outside the worktree (the vulnerability check, the secret scan, the client DRM and App Store
+firewall checks, the mutation policy history, cross-repository conformance, fuzzing, performance
+budgets) always run; the comment above `gate_step_reuse_policy` in `tools/gate/gate.sh` gives the
+reason for each. Records are local, under the common git directory in `gate-step-reuse/`, and expire
 after seven days. `tools/gate/gate_step_reuse_test.sh` proves these rules.
 
 **Workspace root.** The consumer pin freshness and cross-repository conformance steps need the

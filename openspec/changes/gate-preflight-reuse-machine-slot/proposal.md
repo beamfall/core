@@ -27,7 +27,7 @@ matches preflights, and lets two sessions start in the same gap.
 - **Two new reuse classes.** `source` covers steps that read only the worktree and the toolchain,
   so the built web bundle, installed web dependencies and browser set are left out of their key and
   a preflight on a fresh worktree (no bundle yet) still feeds the gate. `source+index` adds the
-  staged tree for steps that read the Git index.
+  staged index entries for steps that read the Git index.
 - **Six more reusable steps**, each with its soundness argument in `tools/gate/gate.sh`:
   `support script tests`, `golangci-lint (staticcheck + gosec)`, `gate scope selftest` and
   `compile budget manifest selftest` as `source`; `secret scan selftest` and

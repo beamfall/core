@@ -645,31 +645,84 @@ gate_group_wrapper() {
 # the gate prints `REUSE <step>` and records a `reuse` evidence row naming the
 # run that produced the pass. Spec: openspec/specs/gate-step-reuse.
 #
-# The reuse key covers the step name, its exact command, the gate mode, the
-# toolchain, the gate-relevant environment and the content address of the WHOLE
-# worktree (tracked and untracked files, minus ignored ones). Nothing narrower
-# is sound today: Go tests in this repository read scripts, docs and fixtures
-# from all over the tree, so any tracked change is treated as an input change
-# for every step. Whatever cannot be established means the step runs.
+# The reuse key covers the step name, its exact command, the gate mode
+# (GATE_MODE), the toolchain, the gate-relevant environment and the content
+# address of the WHOLE worktree (tracked and untracked files, minus ignored
+# ones). Nothing narrower is sound today: Go tests in this repository read
+# scripts, docs and fixtures from all over the tree, so any tracked change is
+# treated as an input change for every step. Whatever cannot be established
+# means the step runs.
 #
-# Never reused: release mode, steps missing from the list below (anything that
-# reads the network, sibling checkouts, the clock, or host performance, and
-# fuzzing, whose value is the fresh run), and a step whose inputs changed while
-# it ran. Disable with GATE_STEP_REUSE=0.
+# Preflight and full gate share passes (CORE-1569). `make gate-preflight` runs
+# a subset of this gate's steps, each under the same name and with the same
+# command (rule 2 of tools/gate/gate_scope_test.sh). Nothing a step runs reads
+# GATE_PREFLIGHT: its readers are the entry prerequisites, the coordinator's
+# choice of lock, the evidence label and the dispatch at the bottom of this
+# file (tools/gate/gate_step_reuse_test.sh holds that list), so which lane ran
+# a step is not an input to it. The key therefore leaves the lane out, along with the
+# variables that only say which coordinator lock or machine slot the run
+# holds. A step whose preflight variant ever checks less under the same
+# command text belongs in gate_step_reuse_mode_bound, which puts the lane back
+# in its key.
+#
+# Never reused: release mode, steps missing from the list below, and a step
+# whose inputs changed while it ran. Disable with GATE_STEP_REUSE=0.
+#
+# Steps both lanes run that stay off the list, and why:
+#   - "secret scan (Core + present siblings; best-effort)", "client DRM/EME
+#     invariant" and "App Store firewall static gate" read the sibling client
+#     checkouts, which no key here covers;
+#   - "mutation policy history" reads git history, not only the tree;
+#   - every other preflight member took under five seconds in the preflights
+#     recorded on 2026-11-14, and a reuse lookup costs about one: listing them
+#     would save little, and a miss would pay for both. Some of them also read
+#     the host's Docker daemon or the pull request diff.
+# Also never listed: anything that reads the network, the clock or host
+# performance, and fuzzing, whose value is the fresh run.
 
-gate_step_reuse_policy() {  # <step> -> "tree" | "tree+base"; non-zero = never reused
+# <step> -> the input class its pass is bound to; non-zero = never reused.
+#   tree          worktree content, built web bundle, installed web
+#                 dependencies and Playwright browsers
+#   tree+base     as tree, plus the diff base and head trees
+#   source        worktree content only
+#   source+index  worktree content plus what is staged in the index
+gate_step_reuse_policy() {
   case "$1" in
-    "go build"|"go vet"|"golangci-lint (staticcheck + gosec)"|\
+    "go build"|"go vet"|\
     "go test -tags beamfall_appstore conformance capabilities graph"|\
     "go test + line-coverage ratchet"|"race-prove"|\
-    "web app build"|"web app typecheck + tests"|"web UI E2E smoke (pre-gate)"|\
-    "support script tests")
-      # The support selftests build their own fixtures and stub every external
-      # command; beyond the tree they depend only on the interpreters keyed below.
+    "web app build"|"web app typecheck + tests"|"web UI E2E smoke (pre-gate)")
       printf 'tree\n' ;;
     # race-short picks its packages from the diff against the merge base, so the
     # base's content is an input as well.
     "race-short") printf 'tree+base\n' ;;
+    # None of these reads the built web bundle, node_modules or a browser, so a
+    # preflight on a worktree with no bundle yet shares its pass with the gate
+    # that builds one:
+    #   - the support, gate-scope and compile-budget selftests build their own
+    #     fixture repositories and stub every external command; the only
+    #     app-dist and node_modules paths they touch are inside those fixtures;
+    #   - golangci-lint reads Go source and its config. internal/web embeds
+    #     app-dist, but the pattern is satisfied by tracked placeholder files
+    #     and lint never reads embedded content.
+    "support script tests"|"golangci-lint (staticcheck + gosec)"|\
+    "gate scope selftest"|"compile budget manifest selftest")
+      printf 'source\n' ;;
+    # These two also ask git what is tracked and staged: the AGPL gate walks
+    # `git ls-files`, and the secret-scan selftest scans this checkout's staged
+    # blobs, its index-to-worktree diff and its untracked files. Staging or
+    # unstaging a path changes their input without changing the worktree.
+    "secret scan selftest"|"AGPL forbidden-symbol gate")
+      printf 'source+index\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+# <step>: zero when `make gate-preflight` runs a narrower command than `make
+# gate` under this step name. Such a step keeps the lane in its key, so a pass
+# in one lane is never reused in the other. No step qualifies today.
+gate_step_reuse_mode_bound() {
+  case "$1" in
     *) return 1 ;;
   esac
 }
@@ -708,6 +761,17 @@ gate_step_reuse_tree() {  # content address of the worktree as it is on disk now
   rm -f "$index" "$index.lock"
   [ -n "$tree" ] || return 1
   printf '%s\n' "$tree"
+}
+
+gate_step_reuse_index() {  # content address of every entry staged in the index
+  # Mode, blob, stage and path of each entry, with no stat data, so two
+  # worktrees staging the same content agree. Unlike `git write-tree` this
+  # reads the index without refreshing it, and it also covers intent-to-add and
+  # unmerged entries, which `git ls-files` reports to the steps that walk it.
+  local entries
+  entries="$(git ls-files --stage -z 2>/dev/null | git hash-object --stdin 2>/dev/null)" || return 1
+  [ -n "$entries" ] || return 1
+  printf '%s\n' "$entries"
 }
 
 gate_step_reuse_dirhash() {  # <dir> -> content hash of an ignored directory, or "absent"
@@ -759,37 +823,47 @@ gate_step_reuse_browsers_dir() {  # -> the Playwright browser directory; non-zer
 }
 
 gate_step_reuse_material() {  # <step> <command> <policy> -> everything the key covers
-  local name="$1" rerun="$2" policy="$3" tree base="-" head="-" gowork built lock="absent" browsers
+  local name="$1" rerun="$2" policy="$3" tree base="-" head="-" gowork
+  local built="-" lock="-" browsers="-" index="-" lane="-"
   # Inputs that live outside the worktree and cannot be content-addressed here
   # make every step run: an external relay vector file, or an active go.work.
   [ -z "${RELAY_VECTORS_PATH:-}" ] || return 1
-  # The web E2E step launches a browser from this directory; when it cannot be
-  # established, that browser is an input the key cannot cover.
-  if browsers="$(gate_step_reuse_browsers_dir)"; then
-    browsers="$browsers: $(ls "$browsers" 2>/dev/null | LC_ALL=C sort | tr '\n' ' ')"
-  else
-    [ "$name" != "web UI E2E smoke (pre-gate)" ] || return 1
-    browsers="unknown"
-  fi
   gowork="$(go env GOWORK 2>/dev/null)" || return 1
   case "$gowork" in ''|off) ;; *) return 1 ;; esac
   tree="$(gate_step_reuse_tree)" || return 1
-  if [ "$policy" = "tree+base" ]; then
-    # Diff-scoped steps select work from base..head commits, not from the
-    # worktree, so both ends are part of the key.
-    [ -n "${GATE_DIFF_BASE:-}" ] || return 1
-    base="$(git rev-parse --verify "${GATE_DIFF_BASE}^{tree}" 2>/dev/null)" || return 1
-    head="$(git rev-parse --verify "${GATE_DIFF_HEAD:-HEAD}^{tree}" 2>/dev/null)" || return 1
+  case "$policy" in
+    source) ;;
+    source+index) index="$(gate_step_reuse_index)" || return 1 ;;
+    *)
+      # The web E2E step launches a browser from this directory; when it cannot
+      # be established, that browser is an input the key cannot cover.
+      if browsers="$(gate_step_reuse_browsers_dir)"; then
+        browsers="$browsers: $(ls "$browsers" 2>/dev/null | LC_ALL=C sort | tr '\n' ' ')"
+      else
+        [ "$name" != "web UI E2E smoke (pre-gate)" ] || return 1
+        browsers="unknown"
+      fi
+      if [ "$policy" = "tree+base" ]; then
+        # Diff-scoped steps select work from base..head commits, not from the
+        # worktree, so both ends are part of the key.
+        [ -n "${GATE_DIFF_BASE:-}" ] || return 1
+        base="$(git rev-parse --verify "${GATE_DIFF_BASE}^{tree}" 2>/dev/null)" || return 1
+        head="$(git rev-parse --verify "${GATE_DIFF_HEAD:-HEAD}^{tree}" 2>/dev/null)" || return 1
+      fi
+      # The built web bundle is ignored by git but embedded by the Go build, so
+      # a checkout with a missing or different bundle never shares a pass.
+      built="$(gate_step_reuse_dirhash internal/web/app-dist/production 2>/dev/null)" || return 1
+      [ -n "$built" ] || return 1
+      lock="absent"
+      if [ -f internal/web/app/node_modules/.package-lock.json ]; then
+        lock="$(git hash-object internal/web/app/node_modules/.package-lock.json 2>/dev/null)" || return 1
+      fi ;;
+  esac
+  if gate_step_reuse_mode_bound "$name"; then
+    lane="$(gate_evidence_kind)"
   fi
-  # The built web bundle is ignored by git but embedded by the Go build, so a
-  # checkout with a missing or different bundle never shares a pass.
-  built="$(gate_step_reuse_dirhash internal/web/app-dist/production 2>/dev/null)" || return 1
-  [ -n "$built" ] || return 1
-  if [ -f internal/web/app/node_modules/.package-lock.json ]; then
-    lock="$(git hash-object internal/web/app/node_modules/.package-lock.json 2>/dev/null)" || return 1
-  fi
-  printf 'gate-step-reuse/1\nstep=%s\ncommand=%s\nmode=%s\npreflight=%s\ntree=%s\nbase=%s\nhead=%s\n' \
-    "$name" "$rerun" "${GATE_MODE:-}" "${GATE_PREFLIGHT:-}" "$tree" "$base" "$head"
+  printf 'gate-step-reuse/2\nstep=%s\ncommand=%s\nmode=%s\nlane=%s\ntree=%s\nindex=%s\nbase=%s\nhead=%s\n' \
+    "$name" "$rerun" "${GATE_MODE:-}" "$lane" "$tree" "$index" "$base" "$head"
   printf 'built=%s\n' "$built"
   printf 'node_modules=%s\n' "$lock"
   printf 'npm=%s\n' "$(npm --version 2>/dev/null)"
@@ -805,8 +879,10 @@ gate_step_reuse_material() {  # <step> <command> <policy> -> everything the key 
   printf 'bash=%s\n' "$(bash --version 2>/dev/null | head -n 1)"
   printf 'git=%s\n' "$(git --version 2>/dev/null)"
   # Per-run bookkeeping is excluded; an unknown variable only ever costs a miss.
+  # So are the lane (GATE_PREFLIGHT, keyed above for a mode-bound step) and the
+  # variables that say which coordinator lock or machine slot the run holds.
   { env | LC_ALL=C grep -E '^(GO[A-Z0-9_]*|CGO_[A-Z0-9_]*|BEAMFALL_[A-Z0-9_]*|GATE_[A-Z0-9_]*|NODE_[A-Z0-9_]*|PLAYWRIGHT_[A-Z0-9_]*|CI)=' |
-    LC_ALL=C grep -Ev '^(GATE_RUN_ID|GATE_PROCESS_[A-Z0-9_]*|GATE_INHERITED_RSS_FILE|GATE_PARALLEL_RSS_[A-Za-z0-9_]*|GATE_DIFF_(BASE|HEAD)|GATE_LANE_DIR|GATE_LOG_TAIL|GATE_STEP_REUSE[A-Z0-9_]*)=' |
+    LC_ALL=C grep -Ev '^(GATE_RUN_ID|GATE_PROCESS_[A-Z0-9_]*|GATE_INHERITED_RSS_FILE|GATE_PARALLEL_RSS_[A-Za-z0-9_]*|GATE_DIFF_(BASE|HEAD)|GATE_LANE_DIR|GATE_LOG_TAIL|GATE_STEP_REUSE[A-Z0-9_]*|GATE_PREFLIGHT|BEAMFALL_GATE_CAPACITY_(FD|HELD)|BEAMFALL_GATE_SLOT_[A-Z0-9_]*)=' |
     LC_ALL=C sort; } || true
 }
 
@@ -814,7 +890,7 @@ gate_step_reuse_key() {  # stdin: material -> sha256
   python3 -c 'import hashlib, sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())'
 }
 
-gate_step_reuse_lookup() {  # <record> <key> -> "run=<id> age_s=<n> saved_s=<n>"; non-zero = run the step
+gate_step_reuse_lookup() {  # <record> <key> -> "run=<id> kind=<lane> age_s=<n> saved_s=<n>"; non-zero = run the step
   local max_age
   max_age="$(gate_step_reuse_max_age)" || return 1
   python3 - "$1" "$2" "$max_age" <<'PY'
@@ -826,7 +902,7 @@ try:
     max_age = int(max_age)
     with open(path, encoding="utf-8") as f:
         lines = f.read().splitlines()
-    if not lines or lines[0] != "gate-step-reuse-record/1":
+    if not lines or lines[0] != "gate-step-reuse-record/2":
         raise ValueError("format")
     fields = dict(line.split("=", 1) for line in lines[1:] if "=" in line)
     if fields["key"] != key or fields["status"] != "pass":
@@ -836,11 +912,13 @@ try:
         raise ValueError("age")
     saved = int(fields["elapsed_ns"]) // 1_000_000_000
     run_id = fields["run_id"]
-    if not run_id or any(c.isspace() for c in run_id):
-        raise ValueError("run")
+    kind = fields["kind"]
+    for value in (run_id, kind):
+        if not value or any(c.isspace() for c in value):
+            raise ValueError("run")
 except Exception:
     sys.exit(1)
-print(f"run={run_id} age_s={age} saved_s={saved}")
+print(f"run={run_id} kind={kind} age_s={age} saved_s={saved}")
 PY
 }
 
@@ -868,8 +946,10 @@ gate_step_reuse_record() {  # <step> <command> <policy> <material before the ste
   find "$dir" -type f -mtime +"$(( (max_age + 86399) / 86400 ))" -delete 2>/dev/null || true
   tmp="$(mktemp "$dir/.tmp.XXXXXX" 2>/dev/null)" || return 0
   {
-    printf 'gate-step-reuse-record/1\nkey=%s\nstatus=pass\npassed_at=%s\nelapsed_ns=%s\nrun_id=%s\n\n' \
-      "$key" "$(date +%s)" "$elapsed_ns" "${GATE_RUN_ID:-direct-$$}"
+    # kind names the lane that produced the pass, so a reuse line and its
+    # evidence row say whether a gate is standing on a preflight's result.
+    printf 'gate-step-reuse-record/2\nkey=%s\nstatus=pass\npassed_at=%s\nelapsed_ns=%s\nrun_id=%s\nkind=%s\n\n' \
+      "$key" "$(date +%s)" "$elapsed_ns" "${GATE_RUN_ID:-direct-$$}" "$(gate_evidence_kind)"
     printf '%s\n' "$material"
   } >"$tmp" 2>/dev/null && mv -f "$tmp" "$dir/$key" 2>/dev/null || rm -f "$tmp"
   return 0
