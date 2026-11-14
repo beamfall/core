@@ -648,7 +648,7 @@ func dispatchFieldBlock000(dispatch *fieldDispatchContext) response {
 	if fields["serverinfo"] {
 		setField(dispatch, "serverinfo", ServerInfo{
 			Name:    "Beamfall",
-			Version: serverVersionString,
+			Version: serverVersion(),
 		})
 	}
 	return response{}

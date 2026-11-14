@@ -17,6 +17,7 @@ import (
 
 	"github.com/beamfall/core/internal/artwork"
 	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/capabilities"
 	"github.com/beamfall/core/internal/conductor"
 	"github.com/beamfall/core/internal/config"
 	"github.com/beamfall/core/internal/identify"
@@ -37,12 +38,18 @@ type ServerInfo struct {
 	Version string `json:"version"`
 }
 
-// serverVersionString is the running server version reported by ServerInfo and
-// used as the comparison baseline for the opt-in version check.
-// It is the placeholder release identifier until a release pipeline injects a
-// real version; "development" is deliberately non-numeric so the version check
-// never claims an update is available against an unversioned dev build.
-const serverVersionString = "development"
+// serverVersion is the running server version reported by ServerInfo and used
+// as the comparison baseline for the opt-in version check: the release version
+// linked into the binary (capabilities.ReleaseVersion, stamped by the release
+// pipeline and the Dockerfile; CORE-1096, CORE-1532). An unstamped build
+// reports "development", which is deliberately non-numeric so the version
+// check never claims an update is available against it.
+func serverVersion() string {
+	if version := strings.TrimSpace(capabilities.ReleaseVersion); version != "" {
+		return version
+	}
+	return "development"
+}
 
 // SessionInfo describes the current server-side session scope. The track
 // preference fields mirror the session Profile so clients can pre-select

@@ -73,7 +73,7 @@ func (h *Handler) updateStatus(ctx context.Context, _ auth.Scope) (UpdateStatusI
 	}
 	current := h.serverVersion
 	if current == "" {
-		current = serverVersionString
+		current = serverVersion()
 	}
 	info := UpdateStatusInfo{
 		State:          UpdateStateUnavailable,

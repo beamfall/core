@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/beamfall/core/internal/capabilities"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 )
@@ -228,5 +229,45 @@ func TestUpdateStatusUpToDateIsDistinct(t *testing.T) {
 
 	if status := queryUpdateState(t, handler); status.State != UpdateStateUpToDate {
 		t.Fatalf("status.State = %q, want %q", status.State, UpdateStateUpToDate)
+	}
+}
+
+// TestServerVersionReadsReleaseVersion (CORE-1532): serverInfo.version and the
+// update-status fallback (no version wired with the checker) report the
+// release version linked into the binary, so a stamped build (CORE-1096)
+// identifies itself over GraphQL; an unstamped build still says development.
+func TestServerVersionReadsReleaseVersion(t *testing.T) {
+	previous := capabilities.ReleaseVersion
+	t.Cleanup(func() { capabilities.ReleaseVersion = previous })
+	st := storetest.Open(t)
+	handler := newConsoleHandler(t, st)
+	openManagerAdminSession(t, st)
+
+	versions := func() (string, string) {
+		t.Helper()
+		data, errs := post(t, handler,
+			`{"query":"query { serverInfo { version } updateStatus { currentVersion } }"}`,
+			authorizeManager)
+		if len(errs) != 0 {
+			t.Fatalf("errors = %#v", errs)
+		}
+		var info ServerInfo
+		var status UpdateStatusInfo
+		mustUnmarshal(t, data["serverInfo"], &info)
+		mustUnmarshal(t, data["updateStatus"], &status)
+		return info.Version, status.CurrentVersion
+	}
+
+	for _, tc := range []struct{ linked, want string }{
+		{"v1.0.0", "v1.0.0"},
+		{"development+src.abcdef012345", "development+src.abcdef012345"},
+		{"development", "development"},
+		{"", "development"},
+	} {
+		capabilities.ReleaseVersion = tc.linked
+		info, current := versions()
+		if info != tc.want || current != tc.want {
+			t.Errorf("ReleaseVersion %q: serverInfo.version = %q, updateStatus.currentVersion = %q, want %q", tc.linked, info, current, tc.want)
+		}
 	}
 }
