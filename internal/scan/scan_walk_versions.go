@@ -37,8 +37,19 @@ func (s *scanWalkState) versionGroupKey(imported store.ImportMediaFile, parsed P
 // or the store refuses the attach, and the caller then imports the file as
 // its own Media.
 func (s *scanWalkState) attachVersion(key string, imported store.ImportMediaFile, parsed ParsedMedia) (store.MediaID, bool, error) {
+	if key == "" {
+		return "", false, nil
+	}
 	anchor, ok := s.versionAnchors[key]
-	if key == "" || !ok {
+	if !ok {
+		if err := s.seedVersionAnchors(filepath.Dir(imported.Path)); err != nil {
+			return "", false, err
+		}
+		if anchor, ok = s.versionAnchors[key]; !ok {
+			return "", false, nil
+		}
+	}
+	if anchor.fingerprint == imported.ContentFingerprint {
 		return "", false, nil
 	}
 	_, err := s.st.ImportMediaFileVersion(s.ctx, store.MediaVersionImport{
@@ -55,6 +66,39 @@ func (s *scanWalkState) attachVersion(key string, imported store.ImportMediaFile
 		return "", false, err
 	}
 	return anchor.mediaID, true, nil
+}
+
+// seedVersionAnchors adds, once per directory, an anchor for each title a
+// previous scan cataloged there. Without it a file whose name sorts before an
+// already cataloged sibling would become its own Media, and the sibling could
+// then never join it. The stored files are parsed like walked ones.
+func (s *scanWalkState) seedVersionAnchors(dir string) error {
+	if s.versionDirsSeeded[dir] {
+		return nil
+	}
+	s.versionDirsSeeded[dir] = true
+	if s.parser == nil {
+		return nil
+	}
+	files, err := s.st.MediaFilesInDirectory(s.ctx, s.req.LibraryID, dir)
+	if err != nil {
+		return err
+	}
+	for _, file := range files {
+		if file.PartOrdinal != 0 {
+			continue
+		}
+		parsed, parsedOK, refused := s.parseFilename(file.Path, ParseProbe{})
+		if refused {
+			continue
+		}
+		candidate := store.ImportMediaFile{Path: file.Path, Extra: isExtraPath(file.Path)}
+		if imageClassForPath(file.Path) {
+			candidate.Class = store.MediaClassImage
+		}
+		s.rememberVersionAnchor(s.versionGroupKey(candidate, parsed, parsedOK), file.MediaID, file.ContentFingerprint, parsed)
+	}
+	return nil
 }
 
 // rememberVersionAnchor records the first imported file of a title.

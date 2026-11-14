@@ -938,10 +938,12 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 		Foreground:              priority == PriorityForeground,
 		ExpiresAt:               expiresAt,
 	}
-	// A Version other than the primary binds its file into every token minted
-	// from this grant, so the byte routes serve the negotiated bytes. The
-	// primary leaves it empty and the routes keep their primary-file path.
-	if file.ContentFingerprint != files[0].ContentFingerprint {
+	// A Media with several Versions binds the negotiated file into every token
+	// minted from this grant, the primary's included, so the byte routes serve
+	// exactly the bytes negotiated here. Unbound, a primary-file token would
+	// follow PrimaryMediaFile to another Version once its file went missing.
+	// A single-Version Media leaves it empty and keeps the primary-file path.
+	if len(versions) > 0 {
 		grant.FileFingerprint = file.ContentFingerprint
 	}
 	if burnSubtitleIndex := selectedBurnSubtitleIndex(streams, profile, selectedSubtitleIndex, ov); burnSubtitleIndex >= 0 {

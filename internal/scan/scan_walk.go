@@ -48,6 +48,7 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 		directoryContexts:   map[string]ParseContext{},
 		directoryPreflights: map[string]*contextualDirectoryPreflight{},
 		versionAnchors:      map[string]versionAnchor{},
+		versionDirsSeeded:   map[string]bool{},
 		sidecars:            newSidecarDiscovery(interactiveSidecarExts),
 		pendingCompletions:  make([]*completedFile, 0, workers),
 		containerArt:        map[store.EntityID]*containerArtChoice{},

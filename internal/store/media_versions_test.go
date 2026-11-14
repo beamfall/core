@@ -79,6 +79,87 @@ func TestImportMediaFileVersionGroupsFilesOfOneTitle(t *testing.T) {
 	}
 }
 
+// TestImportMediaFileVersionReplacedInPlace: new bytes at a Version's path
+// retire the old bytes first, so they take the slot the old bytes held.
+func TestImportMediaFileVersionReplacedInPlace(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	media, anchor, err := st.ImportMediaFile(ctx, versionImport("library-local", filepath.Join(root, "Night Harbor (2004) - 1080p.mkv"), "Night Harbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	uhdPath := filepath.Join(root, "Night Harbor (2004) - 4K.mkv")
+	req := MediaVersionImport{
+		MediaID:           media.ID,
+		File:              versionImport("library-local", uhdPath, "Night Harbor"),
+		Label:             "4K",
+		AnchorFingerprint: anchor.ContentFingerprint,
+		AnchorLabel:       "1080p",
+	}
+	if _, err := st.ImportMediaFileVersion(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	req.File.ContentFingerprint = HashMediaFilePath(uhdPath + "#remux")
+	replaced, err := st.ImportMediaFileVersion(ctx, req)
+	if err != nil || replaced.VersionLabel != "4K" {
+		t.Fatalf("replaced bytes = %+v, %v; want the 4K slot", replaced, err)
+	}
+	files, err := st.MediaFilesForMedia(ctx, media.ID, LibraryFilter{AllowedIDs: []LibraryID{"library-local"}})
+	if err != nil || len(files) != 2 {
+		t.Fatalf("live files = %+v, %v; want the 1080p file and the new 4K bytes", files, err)
+	}
+	for _, f := range files {
+		if f.Path == uhdPath && f.ContentFingerprint != req.File.ContentFingerprint {
+			t.Fatalf("4K slot still serves the old bytes %q", f.ContentFingerprint)
+		}
+	}
+}
+
+// TestImportMediaFileDetachesVersionCopiedToAnotherLibrary: a Version's bytes
+// scanned in another Library become a Media of their own there; the source
+// Media and its other Version stay in their Library.
+func TestImportMediaFileDetachesVersionCopiedToAnotherLibrary(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	media, anchor, err := st.ImportMediaFile(ctx, versionImport("library-local", filepath.Join(root, "Night Harbor (2004) - 1080p.mkv"), "Night Harbor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	uhd := versionImport("library-local", filepath.Join(root, "Night Harbor (2004) - 4K.mkv"), "Night Harbor")
+	if _, err := st.ImportMediaFileVersion(ctx, MediaVersionImport{
+		MediaID: media.ID, File: uhd, Label: "4K",
+		AnchorFingerprint: anchor.ContentFingerprint, AnchorLabel: "1080p",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	copied := versionImport("library-archive", filepath.Join(root, "archive", "Night Harbor (2004) - 1080p.mkv"), "Night Harbor")
+	// The anchor's own fingerprint derives the source Media's ID, so the
+	// detached Media needs another.
+	copied.ContentFingerprint = anchor.ContentFingerprint
+	moved, file, err := st.ImportMediaFile(ctx, copied)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if moved.ID == media.ID || moved.LibraryID != "library-archive" || file.VersionLabel != "" {
+		t.Fatalf("copied Version = %+v / %+v, want a new archive Media in the default slot", moved, file)
+	}
+	archived, err := st.MediaFilesForMedia(ctx, moved.ID, LibraryFilter{AllowedIDs: []LibraryID{"library-archive"}, Revealed: true})
+	if err != nil || len(archived) != 1 {
+		t.Fatalf("archive Media files = %+v, %v; want only the copied file", archived, err)
+	}
+	source, err := st.MediaFilesForMedia(ctx, media.ID, LibraryFilter{AllowedIDs: []LibraryID{"library-local"}})
+	if err != nil || len(source) != 1 || source[0].ContentFingerprint != uhd.ContentFingerprint {
+		t.Fatalf("source Media files = %+v, %v; want the 4K file left behind", source, err)
+	}
+	// A re-scan of the archive copy keeps its new Media.
+	if again, _, err := st.ImportMediaFile(ctx, copied); err != nil || again.ID != moved.ID {
+		t.Fatalf("archive re-scan = %+v, %v; want Media %s", again, err, moved.ID)
+	}
+}
+
 // TestImportMediaFileVersionUnlabelledTakesDefaultSlot: a labelled file
 // imported first moves out of the default slot when an unlabelled sibling
 // arrives, so the unlabelled file becomes the primary.
@@ -164,4 +245,27 @@ func equalLabels(got, want map[string]string) bool {
 		}
 	}
 	return true
+}
+
+// TestMediaFilesInDirectoryListsOnlyDirectChildren: files in a subdirectory or
+// in a directory whose name extends this one are left out.
+func TestMediaFilesInDirectoryListsOnlyDirectChildren(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	dir := filepath.Join(root, "Night Harbor (2004)")
+	for _, path := range []string{
+		filepath.Join(dir, "Night Harbor (2004) - 4K.mkv"),
+		filepath.Join(dir, "extras", "Night Harbor (2004) - Trailer.mkv"),
+		filepath.Join(root, "Night Harbor (2004)2", "Night Harbor (2004).mkv"),
+		filepath.Join(root, "Night Harbor (2004)-copy", "Night Harbor (2004).mkv"),
+	} {
+		if _, _, err := st.ImportMediaFile(ctx, versionImport("library-local", path, "Night Harbor")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files, err := st.MediaFilesInDirectory(ctx, "library-local", dir)
+	if err != nil || len(files) != 1 || filepath.Base(files[0].Path) != "Night Harbor (2004) - 4K.mkv" {
+		t.Fatalf("files = %+v, %v; want only the 4K file", files, err)
+	}
 }

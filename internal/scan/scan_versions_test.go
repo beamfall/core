@@ -128,3 +128,32 @@ func TestScanKeepsUnlabelledDuplicatesAndOtherDirectoriesApart(t *testing.T) {
 		t.Fatalf("result = files %d media %d, want 3 separate Media", result.FilesSeen, result.MediaImported)
 	}
 }
+
+// TestScanGroupsAnEarlierNamedFileWithACatalogedTitle: a file added beside an
+// already cataloged Version joins that Media, even when its name sorts first.
+func TestScanGroupsAnEarlierNamedFileWithACatalogedTitle(t *testing.T) {
+	root := t.TempDir()
+	writeScanFile(t, root, "Night Harbor (2004)/Night Harbor (2004) - 4K.mkv", []byte("night harbor 4k"))
+	st := storetest.Open(t)
+	libraryID, first := scanVersionLibrary(t, st, root)
+	if len(first.Files) != 1 {
+		t.Fatalf("first scan files = %+v", first.Files)
+	}
+	cataloged := first.Files[0].MediaID
+
+	writeScanFile(t, root, "Night Harbor (2004)/Night Harbor (2004) - 1080p.mkv", []byte("night harbor 1080p"))
+	again := rescanVersionLibrary(t, st, libraryID, root)
+	got := mediaVersions(t, st, libraryID, again)
+	want := map[string][2]string{
+		"Night Harbor (2004) - 1080p.mkv": {string(cataloged), "1080p"},
+		"Night Harbor (2004) - 4K.mkv":    {string(cataloged), "4K"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("versions = %v, want %v", got, want)
+	}
+	for name, w := range want {
+		if got[name] != w {
+			t.Fatalf("%s = %v, want %v (all: %v)", name, got[name], w, got)
+		}
+	}
+}

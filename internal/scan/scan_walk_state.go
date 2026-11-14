@@ -38,6 +38,7 @@ type scanWalkState struct {
 	directoryContexts   map[string]ParseContext
 	directoryPreflights map[string]*contextualDirectoryPreflight
 	versionAnchors      map[string]versionAnchor
+	versionDirsSeeded   map[string]bool
 	sidecars            *sidecarDiscovery
 	deriveCtx           context.Context
 	cancelDerivations   context.CancelFunc

@@ -257,8 +257,8 @@ func TestInfoListsVersionsAndHonoursSelection(t *testing.T) {
 	if picked.Decision != "transcode" || !picked.Versions[0].Selected || picked.Versions[1].Selected {
 		t.Fatalf("picked default = %s (%s) with %+v, want a transcode of the selected default Version", picked.Decision, picked.Reason, picked.Versions)
 	}
-	if got := grantFile(picked); got != "" {
-		t.Fatalf("primary Version token file = %q, want empty (primary file)", got)
+	if got := grantFile(picked); got != "fp-pick-dv" {
+		t.Fatalf("primary Version token file = %q, want the primary Version's own file", got)
 	}
 	if again := info(primary.ID); again.Versions[0].ID != primary.ID {
 		t.Fatalf("Version ID not stable: %q then %q", primary.ID, again.Versions[0].ID)

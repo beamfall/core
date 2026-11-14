@@ -2636,6 +2636,19 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 			return Media{}, MediaFile{}, false, err
 		}
 	}
+	// Bytes that turn up in another Library leave their Versions behind: moving
+	// the whole Media would carry its other files into a Library their viewers
+	// may not see. The file detaches into a Media of its own instead.
+	detachedFrom := MediaID("")
+	if mediaID != "" {
+		shared, err := mediaHoldsOtherFilesInAnotherLibraryTx(ctx, tx, mediaID, imported)
+		if err != nil {
+			return Media{}, MediaFile{}, false, err
+		}
+		if shared {
+			detachedFrom, mediaID = mediaID, ""
+		}
+	}
 	if mediaID == "" {
 		if plane.encrypted {
 			mediaID, err = s.allocateEncryptedMediaIDLocked(ctx)
@@ -2644,6 +2657,9 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 			}
 		} else {
 			mediaID = mediaIDForFingerprint(imported.ContentFingerprint)
+			if mediaID == detachedFrom {
+				mediaID = mediaIDForFingerprint(HashMediaFilePath(imported.ContentFingerprint + "\x00" + string(imported.LibraryID)))
+			}
 		}
 	}
 	media, created, err := upsertMediaRowForImportTx(ctx, tx, mediaID, imported, plane.encrypted)
@@ -2662,6 +2678,15 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 	}
 	if err := upsertMediaFileTx(ctx, tx, file, now); err != nil {
 		return Media{}, MediaFile{}, false, err
+	}
+	if detachedFrom != "" {
+		// A detached file is the only file of its new Media: it takes the
+		// default slot whatever Version it held before.
+		if _, err := tx.ExecContext(ctx,
+			"UPDATE media_file SET version_label = '', part_ordinal = 0 WHERE content_fingerprint = ?",
+			imported.ContentFingerprint); err != nil {
+			return Media{}, MediaFile{}, false, err
+		}
 	}
 	// Per-stream inventory: a probe full-replaces the stored
 	// inventory for this content fingerprint (re-probe = full rescan, no partial
@@ -2687,6 +2712,22 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 		return Media{}, MediaFile{}, false, err
 	}
 	return media, file, created, nil
+}
+
+// mediaHoldsOtherFilesInAnotherLibraryTx reports whether mediaID belongs to a
+// Library other than imported's and holds a live file other than imported's.
+func mediaHoldsOtherFilesInAnotherLibraryTx(ctx context.Context, tx *sql.Tx, mediaID MediaID, imported ImportMediaFile) (bool, error) {
+	var found int
+	err := tx.QueryRowContext(ctx, `
+		SELECT 1 FROM media m JOIN media_file f ON f.media_id = m.id
+		WHERE m.id = ? AND m.library_id <> ? AND f.content_fingerprint <> ? AND f.missing_at_ms IS NULL
+		LIMIT 1`,
+		mediaID, imported.LibraryID, imported.ContentFingerprint,
+	).Scan(&found)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // refuseCatalogedDuplicateTx rejects a managed admission whose content is

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode"
@@ -188,13 +189,15 @@ func importMediaFileVersionSQL(ctx context.Context, plane catalogPlane, req Medi
 // insertMediaFileVersionTx inserts new bytes at file's (Version, part 0) slot.
 // Another live file at the same path is marked missing first, as on import.
 func insertMediaFileVersionTx(ctx context.Context, tx *sql.Tx, file MediaFile, now time.Time) error {
-	if err := requireFreeVersionSlotTx(ctx, tx, file); err != nil {
-		return err
-	}
+	// Retire the file this path used to hold before checking the slot: a file
+	// replaced in place with new bytes frees the slot its old bytes held.
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE media_file SET missing_at_ms = ?
 		WHERE path = ? AND content_fingerprint <> ? AND missing_at_ms IS NULL
 	`, timeToMillis(now), file.Path, file.ContentFingerprint); err != nil {
+		return err
+	}
+	if err := requireFreeVersionSlotTx(ctx, tx, file); err != nil {
 		return err
 	}
 	_, err := tx.ExecContext(ctx, `
@@ -221,4 +224,49 @@ func requireFreeVersionSlotTx(ctx context.Context, tx *sql.Tx, file MediaFile) e
 		return nil
 	}
 	return err
+}
+
+// MediaFilesInDirectory returns the live files of libraryID that sit directly
+// inside dir, so a scan can group a new file with a title it cataloged
+// earlier. Server-internal scan read, like MediaFilesForLibrary.
+func (s *Store) MediaFilesInDirectory(ctx context.Context, libraryID LibraryID, dir string) ([]MediaFile, error) {
+	if libraryID == "" {
+		return nil, errors.New("library ID is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	// A half-open range on the path index: every path that starts with
+	// dir + separator. Deeper paths are dropped below.
+	prefix := strings.TrimSuffix(dir, string(filepath.Separator)) + string(filepath.Separator)
+	upper := prefix[:len(prefix)-1] + string(rune(filepath.Separator)+1)
+	rows, err := plane.reader.QueryContext(ctx, `
+		SELECT f.media_id, f.path, f.content_fingerprint, f.version_label, f.part_ordinal
+		FROM media_file f
+		JOIN media m ON m.id = f.media_id
+		WHERE m.library_id = ? AND m.trashed_at_ms IS NULL AND f.missing_at_ms IS NULL
+		  AND f.path >= ? AND f.path < ?
+		ORDER BY f.path, f.media_id
+	`, libraryID, prefix, upper)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var files []MediaFile
+	for rows.Next() {
+		var file MediaFile
+		if err := rows.Scan(&file.MediaID, &file.Path, &file.ContentFingerprint, &file.VersionLabel, &file.PartOrdinal); err != nil {
+			return nil, err
+		}
+		if filepath.Dir(file.Path) == filepath.Clean(dir) {
+			files = append(files, file)
+		}
+	}
+	return files, rows.Err()
 }
