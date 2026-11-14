@@ -33,6 +33,11 @@ func (s *Service) SetBuildByteBudget(bytes uint64) {
 	s.buildByteBudget = bytes
 }
 
+// SetTranscoder sets the transcoder used for non-original video qualities.
+func (s *Service) SetTranscoder(transcode Transcoder) {
+	s.transcode = transcode
+}
+
 func (s *Service) RegisterDeviceKey(ctx context.Context, enrollmentID string, publicKey, attestation []byte) error {
 	if s.attester == nil {
 		return errors.New("offline pack attestation verifier is required")

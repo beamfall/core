@@ -49,8 +49,39 @@ const TargetKindMedia = "media"
 const BuildJobKind store.JobKind = "offline-pack-build"
 
 // DefaultBuildByteBudget bounds the plaintext bytes committed by one build.
-// It is deliberately independent of the number and size of requested items.
-const DefaultBuildByteBudget uint64 = 4 << 30
+// It is deliberately independent of the number and size of requested items,
+// and sized for a multi-container video target at the default quality.
+const DefaultBuildByteBudget uint64 = 64 << 30
+
+// Download qualities a pack build accepts. Original seals each item's own
+// bytes; the others transcode video items to a bounded-height MP4 through the
+// Service's Transcoder. Audio items keep their original bytes at every quality.
+const (
+	QualityOriginal = "original"
+	QualityHigh     = "high"
+	QualityMedium   = "medium"
+	QualityLow      = "low"
+)
+
+// ErrUnknownQuality is returned for a quality outside the four named values.
+var ErrUnknownQuality = errors.New("offline pack: unknown download quality")
+
+// NormalizeQuality validates a requested quality. Empty means original.
+func NormalizeQuality(quality string) (string, error) {
+	switch quality {
+	case "", QualityOriginal:
+		return QualityOriginal, nil
+	case QualityHigh, QualityMedium, QualityLow:
+		return quality, nil
+	default:
+		return "", fmt.Errorf("%w: %q", ErrUnknownQuality, quality)
+	}
+}
+
+// Transcoder writes a transcoded copy of the plaintext source file src to dst
+// at quality (one of high, medium or low). The composition root wires it to
+// FFmpeg; nil (the default) refuses every non-original video build.
+type Transcoder func(ctx context.Context, src, dst, quality string) error
 
 // ExpireJobKind runs the server-side Offline Pack eviction/expiry sweep.
 const ExpireJobKind store.JobKind = "offline-pack-expire"
@@ -70,6 +101,13 @@ type ResolvedTarget struct {
 // (e.g. the Music plugin, via a core adapter) and register into a Service.
 type TargetResolver interface {
 	Resolve(ctx context.Context, targetRef string, filter store.LibraryFilter) (ResolvedTarget, error)
+}
+
+// ProfileTargetResolver is an optional TargetResolver extension for targets
+// that depend on the requesting Profile (for example its watch state). The
+// Service calls ResolveForProfile instead of Resolve when a resolver has it.
+type ProfileTargetResolver interface {
+	ResolveForProfile(ctx context.Context, targetRef string, profileID store.ProfileID, filter store.LibraryFilter) (ResolvedTarget, error)
 }
 
 // Store is the persistence seam the Service needs (satisfied by *store.Store).
@@ -137,6 +175,7 @@ type Service struct {
 	attester        DeviceKeyAttestationVerifier
 	packRoot        string
 	buildByteBudget uint64
+	transcode       Transcoder
 	deviceMu        sync.RWMutex
 	devices         map[string]deviceRegistration
 	// resolveContext binds each encrypted open to its immutable object identity.
@@ -170,6 +209,11 @@ type BuildPackRequest struct {
 	DevicePublicKey   []byte
 	DeviceAttestation []byte
 	SelectedVersions  map[store.MediaID]string
+	// Quality is one of the Quality values; empty means original.
+	Quality string
+	// PackID, when set, is the ID the caller already handed out for a
+	// background build. A retried job with an existing pack returns that pack.
+	PackID store.OfflinePackID
 }
 
 // BuildJobPayload is the durable payload for BuildJobKind. It carries the
@@ -190,6 +234,8 @@ type BuildJobPayload struct {
 	DevicePublicKey   []byte                          `json:"devicePublicKey"`
 	DeviceAttestation []byte                          `json:"deviceAttestation"`
 	SelectedVersions  map[store.MediaID]string        `json:"selectedVersions,omitempty"`
+	Quality           string                          `json:"quality,omitempty"`
+	PackID            store.OfflinePackID             `json:"packID,omitempty"`
 }
 
 // BuildJobPayloadFor snapshots the caller's pack authority into a job payload.
@@ -210,6 +256,8 @@ func BuildJobPayloadFor(scope auth.Scope, req BuildPackRequest) ([]byte, error) 
 		DevicePublicKey:   append([]byte(nil), req.DevicePublicKey...),
 		DeviceAttestation: append([]byte(nil), req.DeviceAttestation...),
 		SelectedVersions:  req.SelectedVersions,
+		Quality:           req.Quality,
+		PackID:            req.PackID,
 	})
 }
 
@@ -236,11 +284,13 @@ func (s *Service) HandleBuildJob(ctx context.Context, payload []byte) (store.Off
 		DevicePublicKey:   append([]byte(nil), job.DevicePublicKey...),
 		DeviceAttestation: append([]byte(nil), job.DeviceAttestation...),
 		SelectedVersions:  job.SelectedVersions,
+		Quality:           job.Quality,
+		PackID:            job.PackID,
 	})
 }
 
-// BuildPack is the server-only ADR-0157/0208 producer. It resolves an audio-only
-// target, verifies the enrolled device key attestation, selects one immutable
+// BuildPack is the server-only ADR-0157/0208 producer. It resolves an audio or
+// video target, transcodes video items when a non-original quality is asked, verifies the enrolled device key attestation, selects one immutable
 // Version per Media, seals BFOP bytes, wraps the per-revision CEK, signs the
 // manifest, and persists the authority snapshot atomically.
 func (s *Service) BuildPack(ctx context.Context, scope auth.Scope, req BuildPackRequest) (store.OfflinePack, error) {
@@ -267,6 +317,22 @@ func (s *Service) BuildPack(ctx context.Context, scope auth.Scope, req BuildPack
 	if err := s.attester.VerifyDeviceKey(ctx, string(scope.DeviceID), req.DevicePublicKey, req.DeviceAttestation); err != nil {
 		return store.OfflinePack{}, fmt.Errorf("offline pack device-key attestation: %w", err)
 	}
+	quality, err := NormalizeQuality(req.Quality)
+	if err != nil {
+		return store.OfflinePack{}, err
+	}
+	if req.PackID != "" {
+		if !ValidPackID(req.PackID) {
+			return store.OfflinePack{}, errors.New("offline pack ID is malformed")
+		}
+		existing, err := s.store.OfflinePackByID(ctx, req.PackID, scope.ProfileID)
+		if err == nil {
+			return existing, nil
+		}
+		if !errors.Is(err, store.ErrOfflinePackNotFound) {
+			return store.OfflinePack{}, err
+		}
+	}
 	now := s.now().UTC()
 	expiry, err := packExpiry(now, req.ExpiresAt)
 	if err != nil {
@@ -280,7 +346,12 @@ func (s *Service) BuildPack(ctx context.Context, scope auth.Scope, req BuildPack
 	if err != nil {
 		return store.OfflinePack{}, err
 	}
-	resolved, err := resolver.Resolve(ctx, req.TargetRef, filter)
+	var resolved ResolvedTarget
+	if profileResolver, ok := resolver.(ProfileTargetResolver); ok {
+		resolved, err = profileResolver.ResolveForProfile(ctx, req.TargetRef, scope.ProfileID, filter)
+	} else {
+		resolved, err = resolver.Resolve(ctx, req.TargetRef, filter)
+	}
 	if err != nil {
 		return store.OfflinePack{}, err
 	}
@@ -298,23 +369,27 @@ func (s *Service) BuildPack(ctx context.Context, scope auth.Scope, req BuildPack
 	if err != nil {
 		return store.OfflinePack{}, err
 	}
-	sources, bytesTotal, err := s.preflightBuildSources(ctx, resolved.MediaIDs, visible, filter, req.SelectedVersions)
-	if err != nil {
-		return store.OfflinePack{}, err
-	}
-	storageBytesTotal, err := uint64ToInt64(bytesTotal)
+	sources, err := s.preflightBuildSources(ctx, resolved.MediaIDs, visible, filter, req.SelectedVersions, quality)
 	if err != nil {
 		return store.OfflinePack{}, err
 	}
 	if len(sources) == 0 {
 		return store.OfflinePack{}, ErrEmptyTarget
 	}
-	packID, err := newOfflinePackID()
-	if err != nil {
-		return store.OfflinePack{}, err
+	packID := req.PackID
+	if packID == "" {
+		packID, err = NewPackID()
+		if err != nil {
+			return store.OfflinePack{}, err
+		}
 	}
 	packDir, err := s.packDir(packID)
 	if err != nil {
+		return store.OfflinePack{}, err
+	}
+	// A pre-assigned ID with no pack row may name the directory of a crashed
+	// earlier attempt; nothing references it, so start clean.
+	if err := os.RemoveAll(packDir); err != nil {
 		return store.OfflinePack{}, err
 	}
 	if err := os.MkdirAll(packDir, 0o700); err != nil {
@@ -326,6 +401,18 @@ func (s *Service) BuildPack(ctx context.Context, scope auth.Scope, req BuildPack
 			_ = os.RemoveAll(packDir)
 		}
 	}()
+	if err := s.transcodeSources(ctx, sources, packDir, quality); err != nil {
+		return store.OfflinePack{}, err
+	}
+	defer removeTranscodes(sources)
+	bytesTotal, err := s.checkBuildBytes(sources)
+	if err != nil {
+		return store.OfflinePack{}, err
+	}
+	storageBytesTotal, err := uint64ToInt64(bytesTotal)
+	if err != nil {
+		return store.OfflinePack{}, err
+	}
 
 	items := make([]store.OfflinePackItem, 0, len(sources))
 	manifestItems := make([]ManifestItem, 0, len(sources))

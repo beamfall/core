@@ -120,20 +120,30 @@ func TestFirstPartyMusicParserTitlesTracksFromTagsThenFilename(t *testing.T) {
 }
 
 func TestFirstPartyOfflinePackHooksHaveExactPluginAndResolverIdentities(t *testing.T) {
-	want := music.PackResolvers(nil)
+	type wantHook struct {
+		plugin string
+		inner  any
+	}
+	want := map[string]wantHook{}
+	for kind, resolver := range music.PackResolvers(nil) {
+		want[kind] = wantHook{plugin: music.PluginID, inner: resolver}
+	}
+	for kind, resolver := range filmtv.PackResolvers() {
+		want[kind] = wantHook{plugin: filmtv.PluginID, inner: resolver}
+	}
 	hooks := firstPartyHooks()
 	if len(hooks.OfflinePackResolvers) != len(want) {
 		t.Fatalf("offline-pack hooks = %d, want exactly %d", len(hooks.OfflinePackResolvers), len(want))
 	}
 	seen := map[string]bool{}
 	for _, hook := range hooks.OfflinePackResolvers {
-		if hook.PluginID != music.PluginID {
-			t.Errorf("offline-pack hook %q owner = %q, want %q", hook.Kind, hook.PluginID, music.PluginID)
-		}
-		wantResolver, ok := want[hook.Kind]
+		w, ok := want[hook.Kind]
 		if !ok {
 			t.Errorf("offline-pack hook has absent or mis-keyed kind %q", hook.Kind)
 			continue
+		}
+		if hook.PluginID != w.plugin {
+			t.Errorf("offline-pack hook %q owner = %q, want %q", hook.Kind, hook.PluginID, w.plugin)
 		}
 		if seen[hook.Kind] {
 			t.Errorf("offline-pack hook kind %q is duplicated", hook.Kind)
@@ -144,12 +154,17 @@ func TestFirstPartyOfflinePackHooksHaveExactPluginAndResolverIdentities(t *testi
 			t.Errorf("offline-pack hook %q has nil factory", hook.Kind)
 			continue
 		}
-		resolver, ok := hook.New(nil).(musicPackResolver)
-		if !ok {
-			t.Errorf("offline-pack hook %q factory returned %T, want musicPackResolver", hook.Kind, hook.New(nil))
+		var inner any
+		switch resolver := hook.New(nil).(type) {
+		case musicPackResolver:
+			inner = resolver.inner
+		case filmtvPackResolver:
+			inner = resolver.inner
+		default:
+			t.Errorf("offline-pack hook %q factory returned %T, want a plugin pack resolver adapter", hook.Kind, resolver)
 			continue
 		}
-		if gotType, wantType := reflect.TypeOf(resolver.inner), reflect.TypeOf(wantResolver); gotType != wantType {
+		if gotType, wantType := reflect.TypeOf(inner), reflect.TypeOf(w.inner); gotType != wantType {
 			t.Errorf("offline-pack hook %q resolver type = %v, want %v", hook.Kind, gotType, wantType)
 		}
 	}
