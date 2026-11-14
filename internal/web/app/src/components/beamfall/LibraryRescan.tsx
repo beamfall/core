@@ -111,10 +111,22 @@ function ensurePolling() {
 }
 
 /** Queues a scan of every folder of the library and starts following the jobs. */
-export async function startRescan(libraryID: string, roots: string[]): Promise<void> {
+/**
+ * Queues one scan per folder. Resolves "refused" when the server would not
+ * start any of them for want of an Admin Session: nothing ran and nothing is
+ * recorded as failed, so the caller can send the owner to unlock the Console.
+ */
+export async function startRescan(
+  libraryID: string,
+  roots: string[],
+): Promise<"refused" | undefined> {
   if (roots.length === 0 || ACTIVE_PHASES.has(rescanState(libraryID).phase)) return;
   setState(libraryID, { phase: "starting", jobs: [], error: "" });
   const results = await Promise.allSettled(roots.map((root) => scanLibrary(libraryID, root)));
+  if (results.every((result) => result.status === "rejected" && isAuthRejection(result.reason))) {
+    setState(libraryID, IDLE);
+    return "refused";
+  }
   const jobs: JobInfo[] = [];
   let error = "";
   for (const result of results) {

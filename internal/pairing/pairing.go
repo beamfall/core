@@ -34,6 +34,10 @@ var (
 	// ErrSetupTokenInvalid means the presented setup token is wrong, already
 	// consumed, or setup is already complete.
 	ErrSetupTokenInvalid = errors.New("setup token invalid")
+	// ErrSetupTokenMissing is the ErrInvalidRequest for a setup request that
+	// is otherwise valid but has neither a setup token nor a LAN claim, so the
+	// web handler can explain the LAN hostname rule (CORE-1600).
+	ErrSetupTokenMissing = fmt.Errorf("%w: setup token required", ErrInvalidRequest)
 	// ErrNoOwner means the server has no owner Profile to mint a code for.
 	ErrNoOwner = errors.New("no owner profile")
 	// ErrViewerCodesDisabled refuses minting a Viewer-role pairing code while
@@ -262,7 +266,7 @@ func (s *Service) Bootstrap(ctx context.Context, req SetupRequest) (SetupRespons
 		profileName = "Owner"
 	}
 	token := strings.TrimSpace(req.Token)
-	if (token == "" && !req.LANClaim) || name == "" {
+	if name == "" {
 		return SetupResponse{}, ErrInvalidRequest
 	}
 	distributionClass, err := store.NormalizeDeviceDistributionClass(store.DeviceDistributionClass(req.DistributionClass))
@@ -272,6 +276,11 @@ func (s *Service) Bootstrap(ctx context.Context, req SetupRequest) (SetupRespons
 	securityMode, err := store.ParseSignInSecurityMode(strings.TrimSpace(req.SecurityMode))
 	if err != nil {
 		return SetupResponse{}, ErrInvalidRequest
+	}
+	// Checked last of the field checks so that ErrSetupTokenMissing means the
+	// missing token is the only fault. It still matches ErrInvalidRequest.
+	if token == "" && !req.LANClaim {
+		return SetupResponse{}, ErrSetupTokenMissing
 	}
 
 	now := s.now()

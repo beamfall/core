@@ -17,13 +17,25 @@ import (
 )
 
 func migrate(ctx context.Context, logger *slog.Logger, db *sql.DB, dbPath string, name string, migrations fs.FS, dir string, backupDir string) error {
-	return migrateWithBackup(ctx, logger, db, dbPath, name, migrations, dir, backupDir, backupDatabase)
+	_, err := migrateCounted(ctx, logger, db, dbPath, name, migrations, dir, backupDir)
+	return err
+}
+
+// migrateCounted is migrate that also reports how many migrations it applied,
+// so Open can log one summary line instead of one line per migration (CORE-1603).
+func migrateCounted(ctx context.Context, logger *slog.Logger, db *sql.DB, dbPath string, name string, migrations fs.FS, dir string, backupDir string) (int, error) {
+	return migrateWithBackupCounted(ctx, logger, db, dbPath, name, migrations, dir, backupDir, backupDatabase)
 }
 
 func migrateWithBackup(ctx context.Context, logger *slog.Logger, db *sql.DB, dbPath string, name string, migrations fs.FS, dir string, backupDir string, backup func(context.Context, *slog.Logger, *sql.DB, string, string, string) error) error {
+	_, err := migrateWithBackupCounted(ctx, logger, db, dbPath, name, migrations, dir, backupDir, backup)
+	return err
+}
+
+func migrateWithBackupCounted(ctx context.Context, logger *slog.Logger, db *sql.DB, dbPath string, name string, migrations fs.FS, dir string, backupDir string, backup func(context.Context, *slog.Logger, *sql.DB, string, string, string) error) (int, error) {
 	entries, err := fs.ReadDir(migrations, dir)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 	files := make([]fs.DirEntry, 0, len(entries))
@@ -34,37 +46,44 @@ func migrateWithBackup(ctx context.Context, logger *slog.Logger, db *sql.DB, dbP
 	}
 	missing, err := missingRecordedMigration(ctx, db, files)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if missing != "" {
-		return fmt.Errorf("%s recorded migration %s is missing from the migration filesystem; migration files are append-only", name, missing)
+		return 0, fmt.Errorf("%s recorded migration %s is missing from the migration filesystem; migration files are append-only", name, missing)
 	}
 
 	version, err := userVersion(ctx, db)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if version > len(files) {
-		return fmt.Errorf("%s schema version %d is newer than this binary supports (%d)", name, version, len(files))
+		return 0, fmt.Errorf("%s schema version %d is newer than this binary supports (%d)", name, version, len(files))
 	}
 	if version < len(files) {
-		logger.InfoContext(ctx, "applying migrations", "database", name, "from", version, "to", len(files))
+		// An upgrade of existing data is worth an INFO line; a fresh database
+		// is reported once by Open's summary (CORE-1603).
+		level := slog.LevelInfo
+		if version == 0 {
+			level = slog.LevelDebug
+		}
+		logger.Log(ctx, level, "applying migrations", "database", name, "from", version, "to", len(files))
 		sessionSnapshot, err := ensureMigrationSessionSnapshot(ctx, logger, db, dbPath, name, len(files), backupDir)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		if !sessionSnapshot {
 			err = backup(ctx, logger, db, dbPath, name, backupDir)
 		}
 		if err != nil {
-			return err
+			return 0, err
 		}
 	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer tx.Rollback()
+	appliedNow := 0
 	if _, err := tx.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 		  name TEXT PRIMARY KEY,
@@ -72,57 +91,61 @@ func migrateWithBackup(ctx context.Context, logger *slog.Logger, db *sql.DB, dbP
 		  applied_at INTEGER NOT NULL
 		);
 	`); err != nil {
-		return err
+		return 0, err
 	}
 	for _, entry := range files {
 		path := filepath.Join(dir, entry.Name())
 		sqlText, err := fs.ReadFile(migrations, path)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		checksum := migrationChecksum(sqlText)
 		applied, err := migrationChecksumInDB(ctx, tx, entry.Name())
 		if err != nil {
-			return err
+			return 0, err
 		}
 		if applied != "" {
 			if applied != checksum {
 				if !acceptLegacyMigrationChecksum(name, entry.Name(), applied) {
-					return fmt.Errorf("%s migration %s checksum drift", name, entry.Name())
+					return 0, fmt.Errorf("%s migration %s checksum drift", name, entry.Name())
 				}
 			}
 			continue
 		}
 		if err := prepareMigrationCompatibility(ctx, tx, name, entry.Name()); err != nil {
-			return err
+			return 0, err
 		}
 		if _, err := tx.ExecContext(ctx, string(sqlText)); err != nil {
-			return fmt.Errorf("apply %s migration %s: %w", name, entry.Name(), err)
+			return 0, fmt.Errorf("apply %s migration %s: %w", name, entry.Name(), err)
 		}
 		if err := checkForeignKeys(ctx, tx, name, entry.Name()); err != nil {
-			return err
+			return 0, err
 		}
 		if _, err := tx.ExecContext(ctx,
 			"INSERT INTO schema_migrations(name, checksum, applied_at) VALUES (?, ?, unixepoch())",
 			entry.Name(), checksum,
 		); err != nil {
-			return err
+			return 0, err
 		}
-		logger.InfoContext(ctx, "applied migration", "database", name, "migration", entry.Name())
+		logger.DebugContext(ctx, "applied migration", "database", name, "migration", entry.Name())
+		appliedNow++
 	}
 	var appliedCount int
 	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations").Scan(&appliedCount); err != nil {
-		return err
+		return 0, err
 	}
 	// The row-count stamp is monotonic only while migration files remain
 	// append-only; missing recorded files are rejected before version checks.
 	nextVersion := max(version, appliedCount)
 	if nextVersion != version {
 		if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", nextVersion)); err != nil {
-			return err
+			return 0, err
 		}
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return appliedNow, nil
 }
 
 // checkForeignKeys asserts the database has no foreign-key violations after a
@@ -221,7 +244,14 @@ func ensureMigrationSessionSnapshot(ctx context.Context, logger *slog.Logger, db
 	if err != nil {
 		return true, err
 	}
-	logger.InfoContext(ctx, "pre-migration session snapshot written", "session", filepath.Base(finalDir), "path", finalDir)
+	// A snapshot of a brand-new, empty data dir is not news to the operator.
+	level := slog.LevelDebug
+	for _, version := range fromVersions {
+		if version > 0 {
+			level = slog.LevelInfo
+		}
+	}
+	logger.Log(ctx, level, "pre-migration session snapshot written", "session", filepath.Base(finalDir), "path", finalDir)
 	return true, nil
 }
 

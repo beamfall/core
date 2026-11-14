@@ -57,13 +57,14 @@ The admin password is reset from the host filesystem (ADR-0012 §6), never over 
 ## First-run setup
 
 Until first-run setup has completed (an adult Profile and an enrolled Device both exist), every start
-generates a new one-time setup token and prints `Beamfall first-run setup: <url>` to stdout. The
+generates a new one-time setup token and, once the listener is up, prints a `Beamfall first-run
+setup` block to stdout as the last startup output; its `On this machine: <url>` line carries the token. The
 structured log carries the same URL with the token as `REDACTED`, so read the token from the console
 or supervisor stdout, not from shipped logs. To recover a lost or already-used token
 (`setup_token_invalid`), restart the server and use the newly printed URL; the previous token stops
 working. A browser on the server's local network does not need the token: open
-`http://<server-ip>:8800/web/` (the server also prints `Beamfall first-run setup from this network (no
-token needed): <url>` for each LAN address when bound to all interfaces) and finish setup there.
+`http://<server-ip>:8800/web/` (when bound to all interfaces the block lists `From this network (no token needed): <url>` for
+each LAN address first) and finish setup there.
 Requests that reach the server from outside the local network, through the relay, or through a
 proxy that is not declared as trusted still need the token, and so does a LAN browser that opens
 the server by a DNS name other than `localhost` or a `.local` name: use the server's IP address.

@@ -22,13 +22,17 @@ import {
 } from "lucide-react";
 import { type ComponentType, type ReactElement, useEffect } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router";
+import {
+  fetchLibraryRootProblems,
+  ROOT_PROBLEM_LABEL,
+} from "@/components/beamfall/LibraryRootHealth";
 import { EmptyState, StatusChip } from "@/components/beamfall/workbench";
 import { AppShell } from "@/components/chrome/AppShell";
 import { SectionMenu } from "@/components/chrome/SectionMenu";
 import { Button } from "@/components/ui/button";
 import { AdvancedSettingsSwitch, useAdvancedSettings } from "@/lib/advancedSettings";
 import { isBeamfallAppStoreHost } from "@/lib/beamfallHost";
-import { fetchSetupState } from "@/lib/graphql";
+import { fetchJobs, fetchSetupState } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
@@ -52,7 +56,11 @@ import { PlayHistory } from "./sections/PlayHistory";
 import { Plugins } from "./sections/Plugins";
 import { MigrationWizard, RemoteAccess } from "./sections/RemoteAccess";
 import { Retention } from "./sections/Retention";
-import { SetupChecklist } from "./sections/SetupChecklist";
+import {
+  fetchHasBrowsableContent,
+  firstValueOpen,
+  SetupChecklist,
+} from "./sections/SetupChecklist";
 import { useAsync } from "./useAsync";
 import "./console.css";
 
@@ -109,6 +117,18 @@ function Overview() {
   const { data, loading } = useAsync(fetchSetupState);
   const needsLibrary = !loading && data && !data.hasLibrary;
   const needsOwner = !loading && data && !data.hasOwnerProfile;
+  // A missing or unreadable Library folder is never "nothing needs attention"
+  // (CORE-1606); the checklist leads the page until first value is reached.
+  const rootProblems = useAsync(fetchLibraryRootProblems).data ?? [];
+  const browse = useAsync(fetchHasBrowsableContent);
+  const jobs = useAsync(fetchJobs);
+  // Decide only once every answer is in, so a set-up server's Overview does
+  // not flash the checklist at the top and then drop it to the bottom.
+  const checklistFirst =
+    !loading &&
+    !browse.loading &&
+    !jobs.loading &&
+    firstValueOpen(data, browse.data, jobs.failed ? null : jobs.data);
   const queue = [
     needsLibrary && {
       to: "/console/libraries",
@@ -120,7 +140,8 @@ function Overview() {
     },
   ].filter(Boolean) as { to: string; label: StringKey }[];
 
-  const libraryState = needsLibrary ? "setupChecklistNext" : "consoleOverviewReady";
+  const libraryState =
+    needsLibrary || rootProblems.length > 0 ? "setupChecklistNext" : "consoleOverviewReady";
 
   return (
     <div className="space-y-10">
@@ -153,10 +174,22 @@ function Overview() {
       </Section>
 
       <Section heading="consoleNeedsAttentionHeading" lead="consoleNeedsAttentionLead">
-        {queue.length === 0 ? (
+        {queue.length === 0 && rootProblems.length === 0 ? (
           <EmptyState message="consoleNeedsAttentionEmpty" />
         ) : (
           <div className="console-card">
+            {rootProblems.map((problem) => (
+              <Link
+                className="console-triage-row"
+                key={`${problem.libraryID}:${problem.root}`}
+                to="/console/libraries"
+              >
+                <span className="min-w-0 break-all">
+                  {t("libraryRootAttention", { library: problem.title, path: problem.root })}
+                </span>
+                <StatusChip tone="red">{t(ROOT_PROBLEM_LABEL[problem.reason])}</StatusChip>
+              </Link>
+            ))}
             {queue.map((row) => (
               <Link className="console-triage-row" key={row.label} to={row.to}>
                 <span>{t(row.label)}</span>
@@ -167,11 +200,13 @@ function Overview() {
         )}
       </Section>
 
+      {checklistFirst && <SetupChecklist />}
+
       <OwnerTasks />
 
       <HostGraphs />
 
-      <SetupChecklist />
+      {!checklistFirst && <SetupChecklist />}
     </div>
   );
 }

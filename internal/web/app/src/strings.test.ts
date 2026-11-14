@@ -23,38 +23,41 @@ const PARTIAL_CATALOGS: Record<Locale, Partial<StringTable>> = { en, fr, de, es,
 // merged with the CORE-1126 metadata credits copy, the CORE-1171 delete-library copy and the CORE-1117 design-system
 // copy (settings modes, onboarding, viewer browse and detail); merged with the CORE-1200 Library icon
 // and setup-checklist Optional copy; merged with the CORE-1201 library restore copy; merged with
-// the CORE-1144 media detail copy; merged with the CORE-1156 add-library copy; merged with the CORE-1681 subtitle appearance copy;
-// merged with the CORE-1671 subtitle offset and audio delay copy; merged with the CORE-1682 player
-// keyboard shortcut sheet copy; merged with the CORE-1683 player chapter list copy.
-const BASE_SERIALIZED_LENGTH = 492_103;
-const BASE_REGISTRY_SHA256 = "f061e7a75cb47fecc20f47e73701007707ece1a7cea7a1db7bf70ea9dc1afb76";
-const BASE_KEY_ORDER_SHA256 = "1a56335c507995820821211918fc588156b573f15422ad5e32d6d6f6924ac30a";
-const BASE_PLACEHOLDER_SHA256 = "69478ec653ed53fb3749ba6eb028c1593f290d1e6afcb303ac4ac54ee336285f";
+// the CORE-1144 media detail copy; merged with the CORE-1156 add-library copy; merged with the CORE-1606 library folder health copy
+// and the CORE-1598 to CORE-1610 onboarding copy (setup folder errors, password rule, enroll and
+// add-a-device hints); updated for the CORE-1604 saved plugin choices retry copy and the CORE-1607
+// manual copy-link field copy; merged with the CORE-1681 subtitle appearance copy;
+// merged with the CORE-1671 subtitle offset and audio delay copy, the CORE-1682 player keyboard
+// shortcut sheet copy and the CORE-1683 player chapter list copy.
+const BASE_SERIALIZED_LENGTH = 502_145;
+const BASE_REGISTRY_SHA256 = "c8eb7bb712a8a67415977f57cdad4e4922b051a0c7a2151528bf501d27599461";
+const BASE_KEY_ORDER_SHA256 = "503a8ee60acd41d1dbda6f4f353db82993a744d0f10654e709268699c546d40d";
+const BASE_PLACEHOLDER_SHA256 = "1a7fd990df2c2b9a77906bee44527e66a227125256eea31692e84e782e1e3a6b";
 const BASE_CATALOGS = {
   en: {
-    partialCount: 1_861,
-    partialSha256: "afca382a59f4b6d1937f9bf82c0c080bfc5065e0922dc74f2999fa772e406d6b",
-    resolvedSha256: "d9385c7e4b4e3ad775c9da5ebb380c31f668edb21f2ba0b4d15697848e5976d5",
+    partialCount: 1_891,
+    partialSha256: "8923d337b7b96132aa94f91d1a53687f124bdc27c78109002aa1ceb6acc64682",
+    resolvedSha256: "675114a3ecfe21c031c94eef82172709836c7dc5e25fc8e7f03a4e5a4545495b",
   },
   fr: {
     partialCount: 925,
-    partialSha256: "303d4f07d6c2fc978dd11c515c2e048c091ca5d95c730669640618e6e73ab2c7",
-    resolvedSha256: "654d2645e6383128e9ac16e58f6bfca4708fb4c95003e9490f9a2caf625f085d",
+    partialSha256: "feca7ff4276533f00e6975ae6bf4a10d54bde7fd52e72134b617a6516a91b63b",
+    resolvedSha256: "08556a5cea29e8ec6a93b5290a79984b82e5e4ec2fb986d0ac8deea5638e05f9",
   },
   de: {
     partialCount: 819,
-    partialSha256: "25687674d1f37f3a7dfc5b5401768ef76103380503df818c282418eeeaf81e6b",
-    resolvedSha256: "5ebff5b530be5c8b577f646873a83d9bf5ef77e6129542c47ee19670fec4be3c",
+    partialSha256: "0a53d8f5838a7c07bbf96e274499e8d9de77dc2646d7f0dbc9812388395489a8",
+    resolvedSha256: "baef607cae004ce39e90e0cee27306d3ac2436efe6dc28d0a3261b371a5e29ca",
   },
   es: {
     partialCount: 819,
-    partialSha256: "b20e7bbd0b359427fe2b87bbff8c4505a32228a2bdf31f777d21a4a09a89cecd",
-    resolvedSha256: "d6466161a9d38f484bce11305fcd959c0faa074acc0dc1c998e02671e38bb050",
+    partialSha256: "dfc02746d85b209af9f2046eb24676285835342e03ff9051272c000d4efa89b4",
+    resolvedSha256: "ce3d4cfd97f5177880cf88ff04ab4c89d38872e89387c86038ad5b764a7629cb",
   },
   pt: {
     partialCount: 819,
-    partialSha256: "b541be7bdf26b3375c170aea755153f9cd818d860e26a41a6cec282cd2e35dee",
-    resolvedSha256: "6eb3b2a3d2c6011f86a176305e73f82589a430e08fe29ed46a34d1e73593c14c",
+    partialSha256: "404d2df37204eb143cd1faaa18d5af819dff9a351050dc360bafb79103d1e221",
+    resolvedSha256: "595dedaee51e02d33a7a1ed67092170d74e259798f79802ffb11833a0f532dfe",
   },
 } as const satisfies Record<
   Locale,

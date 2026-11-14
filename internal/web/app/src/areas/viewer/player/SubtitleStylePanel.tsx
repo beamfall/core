@@ -107,7 +107,7 @@ export function SubtitleStylePanel({
           <ChevronRight aria-hidden="true" className="bf-settings-chevron" />
         </Dialog.Trigger>
         <Dialog.Portal container={anchorRef}>
-          <Dialog.Popup className="bf-player-dialog">
+          <Dialog.Popup className="bf-player-dialog bf-subtitle-dialog">
             <div className="bf-player-dialog-head">
               <Dialog.Close className="bf-player-dialog-back" aria-label={t("back")}>
                 <ChevronLeft aria-hidden="true" />

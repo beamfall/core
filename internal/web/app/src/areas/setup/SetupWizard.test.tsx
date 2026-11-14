@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   fetchJobs: vi.fn(),
   fetchPlugins: vi.fn(),
   loadProviderKeys: vi.fn(),
+  loadSavedPluginChoices: vi.fn(),
   setScraperCredential: vi.fn(),
 }));
 
@@ -53,13 +54,27 @@ vi.mock("./orchestrate", async () => {
     configureUpdateCheck: mocks.configureUpdateCheck,
     createFirstLibrary: mocks.createFirstLibrary,
     loadProviderKeys: mocks.loadProviderKeys,
+    loadSavedPluginChoices: mocks.loadSavedPluginChoices,
   };
 });
 
 beforeEach(() => {
   mocks.loadProviderKeys.mockResolvedValue([]);
   mocks.fetchImporters.mockResolvedValue([]);
+  // By default the saved choices can't be read (the Admin Session lapsed), so
+  // a resumed wizard's activation state is unknown and the Library step offers
+  // every installed type.
+  mocks.loadSavedPluginChoices.mockRejectedValue(new ApiError("admin session required", 403));
 });
+
+afterEach(() => {
+  window.sessionStorage.clear();
+});
+
+// A reload after the plugin step returns to the Library step.
+function resumeAtLibraryStep() {
+  window.sessionStorage.setItem("beamfall.setup.resumeStep", "library");
+}
 
 function renderSetupWizard() {
   return render(
@@ -73,6 +88,7 @@ function renderSetupWizard() {
 
 describe("SetupWizard folder picker", () => {
   beforeEach(() => {
+    resumeAtLibraryStep();
     mocks.bootstrapResume.mockResolvedValue({
       alreadyBootstrapped: true,
       state: { complete: false, pluginsActivated: true },
@@ -171,6 +187,7 @@ const FIRST_PARTY_PLUGINS = [
 
 describe("SetupWizard first scan", () => {
   beforeEach(() => {
+    resumeAtLibraryStep();
     mocks.bootstrapResume.mockResolvedValue({
       alreadyBootstrapped: true,
       state: { complete: false, pluginsActivated: true },
@@ -319,13 +336,13 @@ describe("SetupWizard first scan", () => {
     );
   });
 
-  it("keeps the configured root fixed when retrying only the scan", async () => {
+  it("keeps the folder editable and hides the field name when only the scan fails (CORE-1598)", async () => {
     mocks.createFirstLibrary.mockRejectedValueOnce(
-      new FirstLibraryError(new Error("scan queue unavailable"), {
-        libraryID: "lib1",
-        rootsSet: true,
-        rootPath: "/media/films",
-      }),
+      new FirstLibraryError(
+        new ApiError("scanLibrary unavailable", 200),
+        { libraryID: "lib1", rootsSet: true, rootPath: "/media/films" },
+        true,
+      ),
     );
     const user = userEvent.setup();
     renderSetupWizard();
@@ -334,9 +351,11 @@ describe("SetupWizard first scan", () => {
     await user.type(screen.getByLabelText("Root folder"), "/media/films");
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("scan queue unavailable");
-    expect(screen.getByLabelText("Root folder")).toBeDisabled();
-    expect(screen.getByRole("button", { name: /^Browse/ })).toBeDisabled();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("The Library is created, but its first scan didn't start.");
+    expect(document.body).not.toHaveTextContent("scanLibrary");
+    expect(screen.getByLabelText("Root folder")).toBeEnabled();
+    expect(screen.getByRole("button", { name: /^Browse/ })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Continue" }));
     expect(mocks.createFirstLibrary).toHaveBeenNthCalledWith(
       2,
@@ -345,6 +364,71 @@ describe("SetupWizard first scan", () => {
         progress: { libraryID: "lib1", rootsSet: true, rootPath: "/media/films" },
       }),
     );
+  });
+
+  it("names a missing folder inline and updates nothing until the path is fixed (CORE-1598)", async () => {
+    mocks.createFirstLibrary
+      .mockRejectedValueOnce(
+        new FirstLibraryError(
+          new ApiError("The folder /media/flims doesn't exist on the server.", 200),
+          { rootsSet: false },
+        ),
+      )
+      .mockResolvedValueOnce({ libraryID: "lib1", scanJobID: "job-scan-1", scanStatus: "queued" });
+    const user = userEvent.setup();
+    renderSetupWizard();
+
+    await screen.findByRole("heading", { name: "Create your first Library" });
+    const root = screen.getByLabelText("Root folder");
+    await user.type(root, "/media/flims");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The folder /media/flims doesn't exist on the server. Check the path, or choose the folder with Browse.",
+    );
+    expect(root).toBeEnabled();
+    expect(root).toHaveAttribute("aria-invalid", "true");
+    await waitFor(() => expect(root).toHaveFocus());
+
+    await user.clear(root);
+    await user.type(root, "/media/films");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(mocks.createFirstLibrary).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ rootPath: "/media/films", progress: { rootsSet: false } }),
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Your library is filling up" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows plain copy, not a GraphQL field name, for an internal failure (CORE-1598)", async () => {
+    mocks.createFirstLibrary.mockRejectedValueOnce(
+      new FirstLibraryError(new ApiError("createLibrary unavailable", 200), { rootsSet: false }),
+    );
+    const user = userEvent.setup();
+    renderSetupWizard();
+
+    await screen.findByRole("heading", { name: "Create your first Library" });
+    await user.type(screen.getByLabelText("Root folder"), "/media/films");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The server couldn't set up that folder.",
+    );
+    expect(document.body).not.toHaveTextContent("createLibrary");
+  });
+
+  it("names library type radios by their visible labels (CORE-1610)", async () => {
+    renderSetupWizard();
+
+    await screen.findByRole("heading", { name: "Create your first Library" });
+    const group = screen.getByRole("group", { name: "Library type" });
+    expect(group).toBeInTheDocument();
+    expect(await screen.findByRole("radio", { name: "Films" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "TV Shows" })).toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: /filmtv/ })).not.toBeInTheDocument();
   });
 
   it("surfaces scan polling failures through the existing setup error", async () => {
@@ -739,5 +823,218 @@ describe("SetupWizard provider keys (CORE-1115)", () => {
 
     await waitFor(() => expect(mocks.activatePlugins).toHaveBeenCalled());
     expect(mocks.setScraperCredential).not.toHaveBeenCalled();
+  });
+});
+
+describe("SetupWizard resume (CORE-1604)", () => {
+  beforeEach(() => {
+    mocks.bootstrapResume.mockResolvedValue({
+      alreadyBootstrapped: true,
+      state: { complete: false, pluginsActivated: true },
+    });
+    mocks.fetchPlugins.mockResolvedValue(FIRST_PARTY_PLUGINS);
+    mocks.loadSavedPluginChoices.mockResolvedValue({
+      plugins: FIRST_PARTY_PLUGINS,
+      active: new Set(["music"]),
+      updateCheckEnabled: false,
+      updateCheckChannel: "stable",
+      providerKeys: [],
+    });
+    mocks.configureUpdateCheck.mockResolvedValue(undefined);
+    mocks.activatePlugins.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it("resumes at Plugins with the saved choices and the same step total", async () => {
+    const user = userEvent.setup();
+    renderSetupWizard();
+
+    expect(
+      await screen.findByRole("heading", { name: "Choose what Beamfall understands" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Step 4 of 6")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("switch", { name: "Music" })).toBeChecked());
+    expect(screen.getByRole("switch", { name: "Film & TV" })).not.toBeChecked();
+
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() =>
+      expect(mocks.activatePlugins).toHaveBeenCalledWith(
+        ["music"],
+        ["filmtv", "photos", "karaoke"],
+      ),
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Create your first Library" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Step 5 of 6")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Music" })).toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: "Films" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the Plugins step from saving until the saved choices load, with Retry", async () => {
+    const saved = {
+      plugins: FIRST_PARTY_PLUGINS,
+      active: new Set(["music"]),
+      updateCheckEnabled: false,
+      updateCheckChannel: "stable",
+      providerKeys: [],
+    };
+    mocks.loadSavedPluginChoices.mockRejectedValue(new ApiError("unavailable", 503));
+    const user = userEvent.setup();
+    renderSetupWizard();
+
+    expect(
+      await screen.findByText(
+        "Couldn't load the plugin choices saved on the server, so they can't be changed yet.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "Film & TV" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "Check for updates" })).not.toBeInTheDocument();
+    const continueButton = screen.getByRole("button", { name: "Continue" });
+    expect(continueButton).toBeDisabled();
+    await user.click(continueButton);
+    expect(mocks.activatePlugins).not.toHaveBeenCalled();
+    expect(mocks.configureUpdateCheck).not.toHaveBeenCalled();
+
+    mocks.loadSavedPluginChoices.mockResolvedValue(saved);
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(screen.getByRole("switch", { name: "Music" })).toBeChecked());
+    expect(screen.getByRole("switch", { name: "Film & TV" })).not.toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() =>
+      expect(mocks.activatePlugins).toHaveBeenCalledWith(
+        ["music"],
+        ["filmtv", "photos", "karaoke"],
+      ),
+    );
+  });
+
+  it("resumes at First library with types that match the enabled plugins", async () => {
+    resumeAtLibraryStep();
+    renderSetupWizard();
+
+    expect(
+      await screen.findByRole("heading", { name: "Create your first Library" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Step 5 of 6")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("radio", { name: "Music" })).toBeInTheDocument());
+    expect(screen.queryByRole("radio", { name: "Films" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: "Photos" })).not.toBeInTheDocument();
+  });
+});
+
+describe("SetupWizard first-run steps (CORE-1601, CORE-1610, CORE-1600)", () => {
+  beforeEach(() => {
+    window.history.replaceState(null, "", "/web/setup");
+    mocks.fetchPlugins.mockResolvedValue([]);
+    mocks.bootstrapResume.mockResolvedValue({
+      alreadyBootstrapped: false,
+      state: null,
+      tokenRequired: false,
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it("counts steps from the admin password, not the token", async () => {
+    mocks.bootstrapResume.mockResolvedValue({
+      alreadyBootstrapped: false,
+      state: null,
+      tokenRequired: true,
+    });
+    renderSetupWizard();
+
+    await screen.findByRole("heading", { name: "Unlock with the setup token" });
+    expect(screen.queryByText(/^Step \d+ of/)).not.toBeInTheDocument();
+  });
+
+  it("offers the LAN address on the token step when the server reports one", async () => {
+    mocks.bootstrapResume.mockResolvedValue({
+      alreadyBootstrapped: false,
+      state: null,
+      tokenRequired: true,
+      lanUrls: ["http://192.168.1.10:8800/web/setup"],
+    });
+    renderSetupWizard();
+
+    const link = await screen.findByRole("link", {
+      name: "On the same network as the server? Open http://192.168.1.10:8800/web/setup to skip the token.",
+    });
+    expect(link).toHaveAttribute("href", "http://192.168.1.10:8800/web/setup");
+  });
+
+  it("shows the 8-character rule, refuses a shorter password and toggles visibility", async () => {
+    const user = userEvent.setup();
+    renderSetupWizard();
+
+    const password = await screen.findByLabelText("Admin password");
+    expect(screen.getByText("Step 1 of 6")).toBeInTheDocument();
+    expect(password).toHaveAccessibleDescription("At least 8 characters.");
+    await user.type(password, "seven77");
+    await user.type(screen.getByLabelText("Confirm password"), "seven77");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Admin password must be at least 8 characters.",
+    );
+    expect(password).toHaveAttribute("aria-invalid", "true");
+    expect(mocks.bootstrapSetup).not.toHaveBeenCalled();
+
+    const toggle = screen.getByRole("button", { name: "Show password" });
+    expect(password).toHaveAttribute("type", "password");
+    await user.click(toggle);
+    expect(password).toHaveAttribute("type", "text");
+    expect(screen.getByLabelText("Confirm password")).toHaveAttribute("type", "text");
+    expect(screen.getByRole("button", { name: "Hide password" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("returns to the password step when the server refuses a short password", async () => {
+    mocks.bootstrapSetup.mockRejectedValueOnce(
+      new ApiError("Admin password must be at least 8 characters.", 400),
+    );
+    const user = userEvent.setup();
+    renderSetupWizard();
+
+    await user.type(await screen.findByLabelText("Admin password"), "correct horse battery staple");
+    await user.type(screen.getByLabelText("Confirm password"), "correct horse battery staple");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Admin password must be at least 8 characters.",
+    );
+    expect(screen.getByRole("heading", { name: "Set the admin password" })).toBeInTheDocument();
+  });
+
+  it("names security radios by their labels and describes them by their details", async () => {
+    const user = userEvent.setup();
+    renderSetupWizard();
+
+    await user.type(await screen.findByLabelText("Admin password"), "correct horse battery staple");
+    await user.type(screen.getByLabelText("Confirm password"), "correct horse battery staple");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    const group = await screen.findByRole("group", { name: "Choose how the owner signs in" });
+    expect(group.querySelector("legend")).toBeNull();
+    expect(screen.getAllByText("Choose how the owner signs in")).toHaveLength(1);
+    expect(screen.getByRole("radio", { name: /^Home\s*Recommended$/ })).toHaveAccessibleDescription(
+      "Sign in as the owner from any browser with the admin password.",
+    );
+    const strict = screen.getByRole("radio", { name: "Strict" });
+    expect(strict).toHaveAttribute("value", "strict");
+    expect(strict).toHaveAccessibleDescription(/.+/);
+    expect(screen.queryByRole("radio", { name: "home" })).not.toBeInTheDocument();
   });
 });

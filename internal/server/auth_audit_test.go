@@ -120,6 +120,25 @@ func TestAnonymousRequestProducesNoAuthRefusedRecord(t *testing.T) {
 	}
 }
 
+// TestAnonymousSessionRenewProducesNoAuthRefusedRecord covers CORE-1603: the
+// web app tries renewal on every anonymous page load, which is not a refusal.
+func TestAnonymousSessionRenewProducesNoAuthRefusedRecord(t *testing.T) {
+	srv := newTestServer(t)
+	logs := captureJSONLogs(t)
+	if rec := postRenew(srv, "127.0.0.1:5000", nil); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous renew status = %d, want %d: %s", rec.Code, http.StatusUnauthorized, rec.Body.String())
+	}
+	if records := logRecords(t, logs, "auth refused"); len(records) != 0 {
+		t.Fatalf("anonymous renew produced auth refused records: %v", records)
+	}
+	if rec := postRenew(srv, "127.0.0.1:5000", map[string]string{auth.DeviceCookie: "device-unknown", auth.DeviceSecretCookie: "wrong"}); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("bad-credential renew status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+	if records := logRecords(t, logs, "auth refused"); len(records) != 1 || records[0]["operation"] != "session_renew" {
+		t.Fatalf("bad-credential renew records = %v, want one session_renew", records)
+	}
+}
+
 func TestScopeRefusalIsRecordedOnlyWhenTheResponseRefuses(t *testing.T) {
 	srv := newTestServer(t)
 	logs := captureJSONLogs(t)

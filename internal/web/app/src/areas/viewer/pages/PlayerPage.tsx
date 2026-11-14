@@ -22,7 +22,13 @@ import {
   SUBTITLE_APPEARANCE_KEYS,
   type SubtitleAppearanceField,
 } from "../lib/subtitleAppearance";
-import { type PlayQueueItem, queueNeighbours, readPlayerNavState } from "../lib/watchQueue";
+import {
+  type PlayQueueItem,
+  queueNeighbours,
+  queueOfClass,
+  readPlayerNavState,
+  withQueueClasses,
+} from "../lib/watchQueue";
 import { AudioStage } from "../player/AudioStage";
 import { PlayerTransport } from "../player/PlayerTransport";
 import { SkippedOverlay } from "../player/SkippedOverlay";
@@ -65,11 +71,22 @@ export function PlayerPage() {
   // state, with the siblings it was shown with as the play queue. The media(id)
   // read below fills in the title for a deep link, plus artwork and credits.
   const navState = readPlayerNavState(location.state, identity);
-  const queue = navState.queue;
   const queueIdentity = navState.queueIdentity;
   const navTitle = navState.title || media?.title || "";
   const startAtSeconds = parseTimestampParam(new URLSearchParams(location.search).get("t"));
-  const { previous: previousInQueue, next: nextInQueue } = queueNeighbours(queue, mediaId || "");
+  // Media classes playback-info has reported (this item's and its declared
+  // next item's), by Media id (CORE-1490).
+  const [learnedClasses, setLearnedClasses] = useState<Record<string, string>>({});
+  const navQueue = navState.queue;
+  const classedQueue = useMemo(
+    () => (navQueue ? withQueueClasses(navQueue, learnedClasses) : undefined),
+    [navQueue, learnedClasses],
+  );
+  const entryClass = classedQueue?.find((item) => item.id === mediaId)?.mediaClass;
+  const declaredNextID = classedQueue
+    ? (queueNeighbours(queueOfClass(classedQueue, entryClass, mediaId || ""), mediaId || "").next
+        ?.id ?? "")
+    : undefined;
 
   const { videoRef, hlsRef, state, retry, switchToHls } = usePlayer(
     mediaId || "",
@@ -92,12 +109,47 @@ export function PlayerPage() {
     startAtSeconds,
     // "" when a card queue drives playback but has nothing after this item, so
     // an earlier Play all queue is left rather than resumed.
-    queue ? (nextInQueue?.id ?? "") : undefined,
+    declaredNextID,
   );
+
+  // The queue stays within the playing item's class (CORE-1490): a track
+  // started from a shelf that mixes tracks and videos steps only through the
+  // tracks. The narrowed queue (with what was learned) is the one carried to
+  // the next item, so a dropped entry stays dropped.
+  const playingClass = state.info?.mediaClass || entryClass;
+  const queue = useMemo(
+    () => (classedQueue ? [...queueOfClass(classedQueue, playingClass, mediaId || "")] : undefined),
+    [classedQueue, playingClass, mediaId],
+  );
+  const { previous: previousInQueue, next: nextInQueue } = queueNeighbours(queue, mediaId || "");
+  const info = state.info;
+  const mediaIdRef = useRef(mediaId);
+  mediaIdRef.current = mediaId;
+  useEffect(() => {
+    // Keyed on the info document alone: a new route renders once with the
+    // previous item's info before the engine resets, which must not be
+    // credited to the new id.
+    const id = mediaIdRef.current;
+    const learned: Record<string, string> = {};
+    if (id && info?.mediaClass) learned[id] = info.mediaClass;
+    if (info?.next?.mediaID && info.next.mediaClass) {
+      learned[info.next.mediaID] = info.next.mediaClass;
+    }
+    if (Object.keys(learned).length === 0) return;
+    setLearnedClasses((known) =>
+      Object.entries(learned).every(([key, value]) => known[key] === value)
+        ? known
+        : { ...known, ...learned },
+    );
+  }, [info]);
 
   const playing = state.phase === "playing";
   const showSpinner = useMediaLoading(videoRef, state.phase === "loading" || playing);
   const isAudio = state.info?.mediaClass === "audio";
+  // Before playback-info answers, a queue entry that reports its class already
+  // routes a track to the audio stage instead of an empty video frame
+  // (CORE-1309).
+  const showAudioStage = isAudio || (!state.info && entryClass === "audio");
   const credits = media?.credits ?? [];
   // The per-collection skip interval belongs to the item's container Entity
   // (the show, the album …), named by its title; an item with none has no row.
@@ -404,7 +456,7 @@ export function PlayerPage() {
         >
           {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
           <video ref={videoRef} playsInline controls={false} poster={videoPoster || undefined} />
-          {isAudio && (
+          {showAudioStage && (
             <AudioStage
               title={navTitle}
               artworkURL={artworkURL}

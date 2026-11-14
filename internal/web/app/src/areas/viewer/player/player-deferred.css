@@ -193,6 +193,12 @@
   box-shadow: none;
 }
 
+/* The subtitle panel has more rows than the sheet (CORE-1681), so the sheet grows to its
+ * max-height while the panel is open and the heading stays in view (CORE-1814). */
+.bf-settings:has(.bf-subtitle-dialog) {
+  height: 100vh;
+}
+
 .bf-player-dialog-head {
   display: flex;
   align-items: center;
@@ -806,6 +812,13 @@
   background-size: cover;
   filter: blur(64px) saturate(1.2);
   opacity: 0.35;
+}
+
+/* The empty slot a future Oscillux visualizer mounts into (CORE-1309); core
+ * renders nothing here. */
+.bf-audio-visualizer {
+  position: absolute;
+  inset: 0;
 }
 
 .bf-audio-card {

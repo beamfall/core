@@ -747,7 +747,7 @@ func TestMigrateEncryptedLibraryAddsMediaFileStreamDispositions(t *testing.T) {
 
 // TestOpenRoutesMigrationLogsToInjectedLogger asserts the migration runner logs
 // through Options.Logger rather than the global default: an injected buffer
-// captures the "applying migrations" line, and a quiet (io.Discard) logger
+// captures the "applied migrations" summary line, and a quiet (io.Discard) logger
 // silences it — the regression the conformance test hit.
 func TestOpenRoutesMigrationLogsToInjectedLogger(t *testing.T) {
 	var buf bytes.Buffer
@@ -757,7 +757,7 @@ func TestOpenRoutesMigrationLogsToInjectedLogger(t *testing.T) {
 		t.Fatalf("Open returned error: %v", err)
 	}
 	defer st.Close()
-	if !strings.Contains(buf.String(), "applying migrations") {
+	if !strings.Contains(buf.String(), "applied migrations") {
 		t.Fatalf("injected logger did not receive migration logs; got %q", buf.String())
 	}
 

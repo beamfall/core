@@ -12,6 +12,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
+import type { StringKey } from "@/strings";
 import { createCarriedError } from "../lib/carriedError";
 import { prepareRenderFocusRestore } from "../lib/renderFocus";
 
@@ -26,6 +27,15 @@ const revealFailure = createCarriedError();
 // The PIN goes into reveal(pin) and nowhere else — never logged or persisted,
 // and the field is cleared as soon as it is read. Error copy stays calm and
 // fixed; the throttle message does not leak security internals.
+// A profile with no PIN (or a managed profile) has no reveal path: say so
+// rather than blaming the PIN that was typed (CORE-1608).
+function revealErrorKey(err: unknown): StringKey {
+  const message = err instanceof Error ? err.message : "";
+  if (message.includes("throttled")) return "tooManyAttempts";
+  if (message.includes("no reveal path")) return "revealNoPin";
+  return "pinIncorrect";
+}
+
 export function RevealControls() {
   const t = useT();
   const { revealed, reveal, relock } = useSession();
@@ -61,11 +71,7 @@ export function RevealControls() {
         revealFailure.carry("pinIncorrect");
       }
     } catch (err) {
-      revealFailure.carry(
-        err instanceof Error && err.message.includes("throttled")
-          ? "tooManyAttempts"
-          : "pinIncorrect",
-      );
+      revealFailure.carry(revealErrorKey(err));
     } finally {
       setBusy(false);
     }
@@ -118,6 +124,7 @@ export function RevealControls() {
         <DialogHeader>
           <DialogTitle>{t("restrictionsTitle")}</DialogTitle>
           <DialogDescription>{t("restrictionsLead")}</DialogDescription>
+          <p className="m-0 text-xs text-muted-foreground">{t("restrictionsNoPinHint")}</p>
         </DialogHeader>
         <form onSubmit={onReveal} className="flex flex-col gap-3">
           <label className="flex flex-col gap-1 text-sm">

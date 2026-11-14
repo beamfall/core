@@ -95,7 +95,7 @@ Commands:
   export-config          export a console config document
   library list           list library ids and names through the running server
   backup                 request a server-side backup
-  pairing-code           mint a one-time owner pairing code while the server is stopped
+  pairing-code           mint a one-time owner pairing code to sign in a browser
   release                release helper commands
   reset-admin-password   set the local admin password while the server is stopped
   restore                restore a backup while the server is stopped
