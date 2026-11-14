@@ -3,7 +3,12 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setIdentityEpochSignal } from "@/lib/api";
-import { fetchClientPrefs, fetchMedia, fetchPlaybackAdjustmentRanges, setClientPref } from "@/lib/graphql";
+import {
+  fetchClientPrefs,
+  fetchMedia,
+  fetchPlaybackAdjustmentRanges,
+  setClientPref,
+} from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import type { PlaybackAdjustment, PlaybackInfo } from "../lib/playback";
 import { PlayerTransport } from "../player/PlayerTransport";
