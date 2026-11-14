@@ -1252,28 +1252,46 @@ func seedMediaClass(class MediaClass) MediaClass {
 	return class
 }
 
+// libraryColumns is the Library projection scanLibrary reads; it takes
+// libraryIconConfigPrefix as its one bind parameter.
+const libraryColumns = `id, title, plugin_id, is_restricted, preview_clips_enabled, ai_indexing_enabled, family_scope, custodial, encrypted,
+			COALESCE((SELECT value FROM server_config WHERE key = ? || library.id), '')`
+
+// scanLibrary reads one libraryColumns row, followed by any extra columns the
+// caller selected after them.
+func scanLibrary(rows *sql.Rows, extra ...any) (Library, error) {
+	var library Library
+	var plugin sql.NullString
+	var restricted, previewClips, aiIndexing, custodial, encrypted int
+	dest := append([]any{&library.ID, &library.Title, &plugin, &restricted, &previewClips, &aiIndexing, &library.FamilyScope, &custodial, &encrypted, &library.Icon}, extra...)
+	if err := rows.Scan(dest...); err != nil {
+		return Library{}, err
+	}
+	if plugin.Valid {
+		library.PluginID = &plugin.String
+	}
+	library.IsRestricted = restricted != 0
+	library.PreviewClips = previewClips != 0
+	library.AIIndexing = aiIndexing != 0
+	library.Custodial = custodial != 0
+	library.Encrypted = encrypted != 0
+	return library, nil
+}
+
 func loadLibraries(ctx context.Context, db *sql.DB) ([]Library, error) {
-	rows, err := db.QueryContext(ctx, "SELECT id, title, plugin_id, is_restricted, preview_clips_enabled, ai_indexing_enabled, family_scope, custodial, encrypted FROM library WHERE trashed_at_ms IS NULL ORDER BY rowid")
+	rows, err := db.QueryContext(ctx, `
+		SELECT `+libraryColumns+`
+		FROM library WHERE trashed_at_ms IS NULL ORDER BY rowid`, libraryIconConfigPrefix)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var libraries []Library
 	for rows.Next() {
-		var library Library
-		var plugin sql.NullString
-		var restricted, previewClips, aiIndexing, custodial, encrypted int
-		if err := rows.Scan(&library.ID, &library.Title, &plugin, &restricted, &previewClips, &aiIndexing, &library.FamilyScope, &custodial, &encrypted); err != nil {
+		library, err := scanLibrary(rows)
+		if err != nil {
 			return nil, err
 		}
-		if plugin.Valid {
-			library.PluginID = &plugin.String
-		}
-		library.IsRestricted = restricted != 0
-		library.PreviewClips = previewClips != 0
-		library.AIIndexing = aiIndexing != 0
-		library.Custodial = custodial != 0
-		library.Encrypted = encrypted != 0
 		libraries = append(libraries, library)
 	}
 	return libraries, rows.Err()

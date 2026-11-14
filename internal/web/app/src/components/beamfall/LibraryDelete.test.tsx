@@ -52,7 +52,7 @@ describe("DeleteLibraryButton", () => {
     expect(dialog).toHaveTextContent("every device");
     expect(dialog).toHaveTextContent("Files on disk are not touched");
     expect(dialog).toHaveTextContent("past plays stay in Play History without their titles");
-    expect(dialog).toHaveTextContent("cannot be restored yet");
+    expect(dialog).toHaveTextContent("restore it from Recently deleted");
     expect(dialog).toContainElement(document.activeElement as HTMLElement);
     expect(deleteLibrary).not.toHaveBeenCalled();
   });

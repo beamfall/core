@@ -486,3 +486,15 @@ func TestLANSetupURLs(t *testing.T) {
 		t.Fatalf("loopback bind = %v, want none", got)
 	}
 }
+
+func TestRemoteSetupHint(t *testing.T) {
+	if got, want := remoteSetupHint("http", "0.0.0.0:8800"), "http://<this server's address>:8800/web/"; got != want {
+		t.Fatalf("wildcard bind = %q, want %q", got, want)
+	}
+	if got := remoteSetupHint("https", "[::]:443"); got != "https://<this server's address>:443/web/" {
+		t.Fatalf("IPv6 wildcard bind = %q", got)
+	}
+	if got := remoteSetupHint("http", "192.168.4.3:8800"); got != "" {
+		t.Fatalf("specific bind = %q, want none", got)
+	}
+}

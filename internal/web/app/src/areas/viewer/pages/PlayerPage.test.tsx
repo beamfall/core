@@ -329,3 +329,38 @@ describe("PlayerPage audio items (CORE-1143)", () => {
     expect(props?.showSkipIntervalLabel).toBe("");
   });
 });
+
+describe("PlayerPage Back", () => {
+  function renderAt(entries: string[]) {
+    vi.mocked(usePlayer).mockReturnValue({
+      videoRef: { current: null },
+      hlsRef: { current: null },
+      state: playerState({ phase: "playing" }),
+      retry: vi.fn(),
+      switchToHls: vi.fn(() => false as const),
+    });
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={entries} initialIndex={entries.length - 1}>
+          <Routes>
+            <Route path="/" element={<p>home route</p>} />
+            <Route path="/entity/:entityId" element={<p>entity route</p>} />
+            <Route path="/watch/:mediaId" element={<PlayerPage />} />
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+  }
+
+  it("returns to the page the player was opened from", () => {
+    renderAt(["/", "/entity/e1", "/watch/media-alpha"]);
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByText("entity route")).toBeInTheDocument();
+  });
+
+  it("falls back to Browse on a deep link with no in-app history", () => {
+    renderAt(["/watch/media-alpha"]);
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByText("home route")).toBeInTheDocument();
+  });
+});

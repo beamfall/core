@@ -1,5 +1,5 @@
 import { Lock, LockOpen } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -12,7 +12,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
+import { createCarriedError } from "../lib/carriedError";
 import { prepareRenderFocusRestore } from "../lib/renderFocus";
+
+const revealFailure = createCarriedError();
 
 // The Reveal contract affordances (ADR-0004), rendered into the AppShell action
 // cluster. When relocked, a "Restrictions" control opens a PIN dialog that calls
@@ -30,10 +33,21 @@ export function RevealControls() {
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const failure = revealFailure.usePending();
+
+  // A failed Reveal is reported through revealFailure: the epoch unmounts this
+  // instance while the PIN is checked, so the dialog and its error reopen here.
+  useEffect(() => {
+    if (!failure) return;
+    revealFailure.carry(null);
+    setError(t(failure));
+    setOpen(true);
+  }, [failure, t]);
 
   async function onReveal(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    revealFailure.carry(null);
     const entered = pin;
     setPin("");
     if (!entered) return;
@@ -44,13 +58,13 @@ export function RevealControls() {
       if (ok) {
         setOpen(false);
       } else {
-        setError(t("pinIncorrect"));
+        revealFailure.carry("pinIncorrect");
       }
     } catch (err) {
-      setError(
+      revealFailure.carry(
         err instanceof Error && err.message.includes("throttled")
-          ? t("tooManyAttempts")
-          : t("pinIncorrect"),
+          ? "tooManyAttempts"
+          : "pinIncorrect",
       );
     } finally {
       setBusy(false);

@@ -102,17 +102,31 @@ fi
 # longer carries them (CORE-0902). The web pin is read from the workspace
 # registry: BEAMFALL_WORKSPACE_ROOT, else the nearest ancestor of this checkout
 # holding workspace-repos.json. With neither, nothing can be verified: fail closed.
+find_manifest_above() {
+  local dir="$1"
+  while [[ "$dir" != "/" ]]; do
+    dir="$(dirname "$dir")"
+    if [[ -f "$dir/$WORKSPACE_MANIFEST" ]]; then
+      printf '%s\n' "$dir"
+      return 0
+    fi
+  done
+  return 1
+}
+
 resolve_workspace_registry() {
-  local root="${BEAMFALL_WORKSPACE_ROOT:-}" dir
+  local root="${BEAMFALL_WORKSPACE_ROOT:-}" common
   if [[ -z "$root" ]]; then
-    dir="$ROOT"
-    while [[ "$dir" != "/" ]]; do
-      dir="$(dirname "$dir")"
-      if [[ -f "$dir/$WORKSPACE_MANIFEST" ]]; then
-        root="$dir"
-        break
-      fi
-    done
+    root="$(find_manifest_above "$ROOT")" || root=""
+  fi
+  # A linked worktree outside the workspace (corvint-tasks `gate run` strips
+  # BEAMFALL_WORKSPACE_ROOT, CORE-1473) shares the main checkout's .git, so
+  # look above that checkout too, as tools/gate/secret-scan.py does.
+  if [[ -z "$root" ]]; then
+    common="$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || common=""
+    if [[ "$(basename "$common")" == ".git" ]]; then
+      root="$(find_manifest_above "$common")" || root=""
+    fi
   fi
   [[ -n "$root" ]] \
     || fail "workspace contract registry unresolved: set BEAMFALL_WORKSPACE_ROOT to the workspace checkout holding $WORKSPACE_CONTRACT_REGISTRY (no $WORKSPACE_MANIFEST above $ROOT)"
@@ -273,6 +287,14 @@ fi
 CONSUMER_PIN="$(load_consumer_pin)"
 printf 'PIN consumer repo=%s pinned_sha=%s note=%s authority=%s\n' \
   "$CONSUMER_REPO" "$CONSUMER_PIN" "$CONSUMER_PIN_NOTE" "$CONSUMER_PIN_REGISTRY"
+# The pin is an immutable SHA and the resolved SHA is asserted below, so a
+# workspace sibling that already holds it yields the same bytes as the remote
+# without a network clone (CORE-1550). An explicit source still wins.
+CONSUMER_SIBLING="$(dirname "$(dirname "$WORKSPACE_REGISTRY")")/$CONSUMER_REPO"
+if [[ -z "${BEAMFALL_CROSSREPO_CONSUMER_SOURCE:-}" ]] \
+  && git -C "$CONSUMER_SIBLING" cat-file -e "$CONSUMER_PIN^{commit}" 2>/dev/null; then
+  CONSUMER_SOURCE="$CONSUMER_SIBLING"
+fi
 checkout_repo consumer "$CONSUMER_SOURCE" "$CONSUMER_PIN" "$CONSUMER"
 RESOLVED_CONSUMER_SHA="$(git -C "$CONSUMER" rev-parse HEAD)"
 [[ "$RESOLVED_CONSUMER_SHA" == "$CONSUMER_PIN" ]] \

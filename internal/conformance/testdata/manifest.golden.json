@@ -72,12 +72,14 @@
   ],
   "libraries": [
     {
+      "icon": "folder",
       "id": "library-local",
       "pluginID": null,
       "previewClips": true,
       "title": "Local Library"
     },
     {
+      "icon": "film",
       "id": "library-directory-discover",
       "pluginID": "starlog",
       "previewClips": true,

@@ -284,7 +284,8 @@ export function PlayerPage() {
   );
 
   function back() {
-    navigate("/");
+    if (location.key !== "default") navigate(-1);
+    else navigate("/", { replace: true });
   }
 
   return (

@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router";
-import { buttonVariants } from "@/components/ui/button";
+import { Link, useNavigationType } from "react-router";
+import { ErrorState } from "@/components/beamfall/workbench";
+import { Button, buttonVariants } from "@/components/ui/button";
 import type { FieldFilters, Layout, Section } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
 import { applyRenderFocus } from "../lib/renderFocus";
 import { MAX_RENDERED_SECTIONS, SECTION_KINDS } from "../lib/sections";
 import { FilterBar } from "./FilterBar";
-import { HydratedSection } from "./HydratedSection";
+import { HydratedSection, type SectionHydrationState } from "./HydratedSection";
 import type { SeeAllTarget } from "./SectionView";
 
 // Renders one Layout's Sections in declared order, ported from the vanilla
@@ -34,8 +35,12 @@ export function LayoutView({
   navigationID?: string;
 }) {
   const t = useT();
-  const { manifest, isManager } = useSession();
+  const { manifest, isManager, refresh } = useSession();
+  const navigationType = useNavigationType();
   const [connectionLost, setConnectionLost] = useState(false);
+  // Bumped by the failure state's retry: remounts every Section so each
+  // re-fetches, without reloading the whole session.
+  const [attempt, setAttempt] = useState(0);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const focusAppliedRef = useRef(false);
   const interactedDuringHydrationRef = useRef(false);
@@ -47,7 +52,7 @@ export function LayoutView({
   }
   const [hydration, setHydration] = useState<{
     layout: Layout | null;
-    states: Record<string, "loading" | "empty" | "visible">;
+    states: Record<string, SectionHydrationState>;
   }>({ layout, states: {} });
   // field → value selections, keyed by the filter-bar that owns them.
   const [filterSelections, setFilterSelections] = useState<Record<string, FieldFilters>>({});
@@ -69,13 +74,17 @@ export function LayoutView({
   const hydrationStates = hydration.layout === layout ? hydration.states : {};
   const allHydrated = hydratable.every((section) => {
     const state = hydrationStates[section.id];
-    return state === "empty" || state === "visible";
+    return state !== undefined && state !== "loading";
   });
   const hasVisibleSection = hydratable.some((section) => hydrationStates[section.id] === "visible");
   const aggregateEmpty = hydratable.length === 0 || (allHydrated && !hasVisibleSection);
+  // Nothing visible and at least one Section could not be reached: the page is
+  // a load failure, not an empty library (no owner "first scan" CTA).
+  const aggregateFailed =
+    aggregateEmpty && hydratable.some((section) => hydrationStates[section.id] === "failed");
 
   const updateHydrationState = useCallback(
-    (sectionID: string, state: "loading" | "empty" | "visible") => {
+    (sectionID: string, state: SectionHydrationState) => {
       setHydration((current) => ({
         layout,
         states: {
@@ -116,8 +125,12 @@ export function LayoutView({
       focusAppliedRef.current = true;
       return;
     }
-    focusAppliedRef.current = Boolean(applyRenderFocus(rootRef.current, navigationID));
-  }, [allHydrated, hasVisibleSection, navigationID]);
+    focusAppliedRef.current = Boolean(
+      applyRenderFocus(rootRef.current, navigationID, {
+        preventScroll: navigationType === "POP",
+      }),
+    );
+  }, [allHydrated, hasVisibleSection, navigationID, navigationType]);
 
   // Map each filter-bar to the index of the section it narrows: the next
   // item-bearing section that is neither a filter-bar nor a hero (buildFilterBar).
@@ -165,8 +178,19 @@ export function LayoutView({
     });
   }
 
+  // No manifest at all once the session settled means it failed to load (the
+  // session keeps a session even when the manifest fetch fails).
+  if (!layout && !manifest) {
+    return <LoadFailed onRetry={() => void refresh()} />;
+  }
   if (!layout || !renderable.length) {
     return <LibraryEmpty />;
+  }
+
+  function retrySections() {
+    setConnectionLost(false);
+    setHydration({ layout, states: {} });
+    setAttempt((n) => n + 1);
   }
 
   return (
@@ -179,7 +203,9 @@ export function LayoutView({
           {t("connectionLost")}
         </div>
       )}
-      {aggregateEmpty ? (
+      {aggregateFailed ? (
+        <LoadFailed onRetry={retrySections} />
+      ) : aggregateEmpty ? (
         <LibraryEmpty />
       ) : (
         renderable.map((section, index) => {
@@ -199,12 +225,12 @@ export function LayoutView({
           }
           return (
             <HydratedSection
-              key={section.id}
+              key={`${section.id}:${attempt}`}
               section={section}
               libraryID={libraryID}
               entityID={entityID}
               extraFilters={extraFiltersForIndex(index)}
-              seeAll={section.kind === "shelf" ? buildSeeAll?.(section) : undefined}
+              seeAll={section.kind === "hero" ? undefined : buildSeeAll?.(section)}
               onConnectionLost={() => setConnectionLost(true)}
               onHydrationStateChange={(state) => updateHydrationState(section.id, state)}
               navigationID={navigationID}
@@ -214,6 +240,17 @@ export function LayoutView({
       )}
     </div>
   );
+
+  function LoadFailed({ onRetry }: { onRetry: () => void }) {
+    return (
+      <div className="flex flex-col items-start gap-3">
+        <ErrorState message="couldNotReachServer" />
+        <Button type="button" variant="outline" onClick={onRetry}>
+          {t("tryAgain")}
+        </Button>
+      </div>
+    );
+  }
 
   // Empty-as-activation (onboarding-funnel §6). For the OWNER/manager an empty
   // browse is an activation surface: a headline + a forward action (start the

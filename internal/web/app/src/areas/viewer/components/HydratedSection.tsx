@@ -16,6 +16,11 @@ import { SectionView, type SeeAllTarget } from "./SectionView";
 
 export const SECTION_LOAD_TIMEOUT_MS = 15000;
 
+/** "failed" is a network/timeout failure with nothing cached: hidden like
+ * "empty", but reported separately so the Layout never mistakes an unreachable
+ * server for an empty library. */
+export type SectionHydrationState = "loading" | "empty" | "failed" | "visible";
+
 const SECTION_CACHE_PREFIX = "section:";
 
 /** The viewer-cache key for one hydrated slot (scoped by identity in viewerCache). */
@@ -67,7 +72,7 @@ export function HydratedSection({
   extraFilters?: FieldFilters | null;
   seeAll?: SeeAllTarget;
   onConnectionLost?: () => void;
-  onHydrationStateChange?: (state: "loading" | "empty" | "visible") => void;
+  onHydrationStateChange?: (state: SectionHydrationState) => void;
   navigationID?: string;
 }) {
   const identity = useViewerIdentity();
@@ -94,7 +99,7 @@ export function HydratedSection({
       onConnectionLost?.();
       if (cached) return;
       setItems([]);
-      onHydrationStateChange?.("empty");
+      onHydrationStateChange?.("failed");
     };
     const timeout = window.setTimeout(() => {
       if (!alive) return;

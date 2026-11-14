@@ -20,7 +20,7 @@ import (
 // deviceBus half of revocation propagation — the transcode-abort half is proven
 // in the graph package (TestRevokeDeviceAbortsTranscodesForThatDeviceOnly).
 //
-// The stream re-derives the Scope every eventPollInterval (250ms); both clients
+// The stream re-derives the Scope before it filters each batch; both clients
 // must observe the first event before revocation and the second only on the
 // unrevoked client after it. A real httptest.Server + streaming HTTP client is
 // used so the two long-lived streams run concurrently and partial output is

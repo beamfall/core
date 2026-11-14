@@ -6,7 +6,7 @@ import { displayString } from "@/lib/display";
 import type { Section, SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
-import { artworkBucketURL, artworkSlotURL } from "../lib/artwork";
+import { artworkBucketURL, artworkSlotURL, artworkSrcSet } from "../lib/artwork";
 import { entityLinkState } from "../lib/entityPreview";
 import { rememberRenderFocus } from "../lib/renderFocus";
 
@@ -53,7 +53,10 @@ export function Hero({
         {background && !imageFailed && (
           <img
             alt=""
+            fetchPriority="high"
             src={artworkBucketURL(background, "w1280")}
+            srcSet={artworkSrcSet(background, ["w640", "w1280"])}
+            sizes="100vw"
             onError={() => setImageFailed(true)}
           />
         )}

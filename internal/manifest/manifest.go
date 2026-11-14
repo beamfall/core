@@ -36,6 +36,12 @@ type LibrarySummary struct {
 	// Library has no plugin or the plugin declares none, so existing
 	// payloads keep their shape.
 	Accent string `json:"accent,omitempty"`
+	// Icon names the Library's symbol from the fixed Library icon vocabulary
+	// (store.LibraryIcons): the owner's choice, otherwise a default from the
+	// bound plugin's media classes. Always set by this server; optional on
+	// the wire so older payloads stay valid. A client draws its own
+	// placeholder for a name it does not know.
+	Icon string `json:"icon,omitempty"`
 }
 
 // NavigationNode is an allowlisted navigation entry. Title is a locale map
@@ -195,14 +201,17 @@ func (s *Service) Document(ctx context.Context, scope auth.Scope) (Document, err
 			PluginID:     library.PluginID,
 			PreviewClips: library.PreviewClips,
 		}
+		var mediaClasses []string
 		if library.PluginID != nil && s.plugins != nil {
 			if bundle, ok := s.plugins.Bundle(plugin.ID(*library.PluginID)); ok {
 				summary.Accent = bundle.Accent
+				mediaClasses = bundle.MediaClasses
 				for _, layout := range bundleLayouts(bundle) {
 					pluginLayouts[layout.ID] = layout
 				}
 			}
 		}
+		summary.Icon = library.EffectiveIcon(mediaClasses)
 		librarySummaries[i] = summary
 		layoutID := "layout-home"
 		if library.PluginID != nil && s.plugins != nil {

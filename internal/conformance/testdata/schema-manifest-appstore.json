@@ -760,6 +760,11 @@
     "tier": "admin"
   },
   {
+    "field": "purgelibrary",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
     "field": "purgetrash",
     "effect": "write",
     "tier": "admin"
@@ -893,6 +898,11 @@
     "field": "restorecollection",
     "effect": "write",
     "tier": "session"
+  },
+  {
+    "field": "restorelibrary",
+    "effect": "write",
+    "tier": "admin"
   },
   {
     "field": "restoremanagedpath",
@@ -1293,6 +1303,11 @@
     "field": "transitiongroup",
     "effect": "write",
     "tier": "session"
+  },
+  {
+    "field": "trashedlibraries",
+    "effect": "read",
+    "tier": "admin"
   },
   {
     "field": "trashedmarkers",

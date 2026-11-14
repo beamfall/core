@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -113,6 +114,11 @@ func (w *baseURLResponseWriter) WriteHeader(status int) {
 func (w *baseURLResponseWriter) Write(body []byte) (int, error) {
 	w.rewriteLocation()
 	return w.ResponseWriter.Write(body)
+}
+
+func (w *baseURLResponseWriter) ReadFrom(src io.Reader) (int64, error) {
+	w.rewriteLocation()
+	return readFrom(w.ResponseWriter, src)
 }
 
 func (w *baseURLResponseWriter) rewriteLocation() {

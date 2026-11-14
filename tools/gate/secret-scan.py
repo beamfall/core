@@ -398,7 +398,17 @@ def divergent_worktree_file_bytes(
         yield relative, data, b"\0" in data
 
 
-def untracked_worktree_file_bytes(root: Path) -> Iterator[tuple[str, bytes, bool]]:
+def untracked_worktree_file_bytes(
+    root: Path, skipped: list[str]
+) -> Iterator[tuple[str, bytes, bool]]:
+    """Yield untracked, non-ignored files.
+
+    CORE-1408: git lists an untracked nested repository or linked worktree as
+    one directory entry (trailing slash). Its contents belong to that other
+    repository, not this tree, so it is recorded in `skipped` instead of
+    failing the scan. A symlink is scanned as its target path, which is what
+    git would record. Any other unreadable entry still fails.
+    """
     result = subprocess.run(
         ["git", "-C", str(root), "ls-files", "-z", "--others", "--exclude-standard"],
         check=False,
@@ -413,8 +423,15 @@ def untracked_worktree_file_bytes(root: Path) -> Iterator[tuple[str, bytes, bool
         if not raw:
             continue
         relative = raw.decode("utf-8", "surrogateescape")
+        path = root / relative
         try:
-            data = (root / relative).read_bytes()
+            if path.is_symlink():
+                data = os.fsencode(os.readlink(path))
+            elif relative.endswith("/") or path.is_dir():
+                skipped.append(relative)
+                continue
+            else:
+                data = path.read_bytes()
         except OSError as error:
             raise RuntimeError(f"cannot read untracked file {relative}: {error}") from error
         yield relative, data, b"\0" in data
@@ -604,7 +621,8 @@ def scan_target(
                     file=sys.stderr,
                 )
                 count += 1
-        for relative, data, binary in untracked_worktree_file_bytes(root):
+        nested: list[str] = []
+        for relative, data, binary in untracked_worktree_file_bytes(root, nested):
             scanned += 1
             for line, rule in findings(label, relative, data, binary, allowlist):
                 print(
@@ -612,6 +630,11 @@ def scan_target(
                     file=sys.stderr,
                 )
                 count += 1
+        for relative in nested:
+            print(
+                f"secret-scan: SKIP {label} untracked nested repository {relative}",
+                file=sys.stderr,
+            )
     except RuntimeError as error:
         print(f"secret-scan: FAIL {label} {error}", file=sys.stderr)
         return False, False

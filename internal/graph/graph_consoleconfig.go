@@ -230,7 +230,8 @@ func (h *Handler) pluginActivationInfo(ctx context.Context, pluginID string, bun
 
 // setConsoleConfig applies a partial console-config write and returns the
 // resolved config (manager-gated in execute). Absent variables leave the stored
-// value unchanged.
+// value unchanged. A libraryIcon variable, with libraryID, instead sets or
+// clears that Library's owner-chosen icon.
 func (h *Handler) setConsoleConfig(ctx context.Context, scope auth.Scope, req request) (ConsoleConfigInfo, error) {
 	v := newVars(req)
 	var patch store.ConsoleConfigPatch
@@ -265,8 +266,20 @@ func (h *Handler) setConsoleConfig(ctx context.Context, scope auth.Scope, req re
 		patch.ObservabilityEnabled = &enabled
 		has = true
 	}
+	libraryIcon, setLibraryIcon := v.String("libraryIcon")
 	if err := v.Err(); err != nil {
 		return ConsoleConfigInfo{}, err
+	}
+	if setLibraryIcon {
+		// A Library icon is its own audited write (CORE-1200): it never rides
+		// along with other settings, so one call cannot half-apply.
+		if has {
+			return ConsoleConfigInfo{}, clientError("libraryIcon cannot be combined with other console config")
+		}
+		if err := h.setLibraryIcon(ctx, scope, trimmedVariable(req, "libraryID"), libraryIcon); err != nil {
+			return ConsoleConfigInfo{}, err
+		}
+		return h.consoleConfig(ctx, scope, req)
 	}
 	if !has {
 		return ConsoleConfigInfo{}, clientError("no console config to update")

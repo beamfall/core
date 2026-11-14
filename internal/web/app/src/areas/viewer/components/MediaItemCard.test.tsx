@@ -218,10 +218,15 @@ describe("MediaItemCard preview clip behavior", () => {
     });
     await advancePreviewTimers(PREVIEW_DWELL_MS);
 
-    expect(container.querySelector("img")).toHaveAttribute(
-      "src",
-      "/art/poster-alpha.jpg?bucket=w320",
+    const img = container.querySelector("img");
+    expect(img).toHaveAttribute("src", "/art/poster-alpha.jpg?bucket=w320");
+    expect(img).toHaveAttribute(
+      "srcset",
+      "/art/poster-alpha.jpg?bucket=w320 320w, /art/poster-alpha.jpg?bucket=w640 640w",
     );
+    expect(img).toHaveAttribute("sizes", "300px");
+    expect(img).toHaveAttribute("decoding", "async");
+    expect(img).toHaveAttribute("loading", "lazy");
     expect(previewVideo(container)).toBeNull();
     expect(fetchPreviewInfo).not.toHaveBeenCalled();
     expect(playSpy).not.toHaveBeenCalled();
@@ -294,7 +299,7 @@ describe("MediaItemCard play queue", () => {
     render(
       <I18nProvider initialLocale="en">
         <MemoryRouter>
-          <MediaItemCard item={baseItem()} queue={queue} />
+          <MediaItemCard item={baseItem()} queue={queue} playOnActivate />
           <LocationState />
         </MemoryRouter>
       </I18nProvider>,

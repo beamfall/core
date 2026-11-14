@@ -102,6 +102,9 @@ var originalScopedFields = []string{
 	"createprofile",
 	"currentsession",
 	"deletelibrary",
+	"trashedlibraries",  // CORE-1201: deleted Libraries that can still be restored
+	"restorelibrary",    // CORE-1201: bring a deleted Library back
+	"purgelibrary",      // CORE-1201: permanently remove a deleted Library
 	"deletemanagedpath", // WEB-5C (ADR-0061): manager-scoped recoverable managed file/folder delete
 	"deletemarker",
 	"deletetag",

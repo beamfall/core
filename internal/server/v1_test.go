@@ -1091,3 +1091,62 @@ func upperMethod(m string) string {
 		return m
 	}
 }
+
+// TestV1LibraryMediaCarriesYearAndDuration pins CORE-1160: a list item carries
+// the year and duration the detail read returns, and omits a value the server
+// does not know.
+func TestV1LibraryMediaCarriesYearAndDuration(t *testing.T) {
+	srv, st := newTestServerWithStore(t)
+	dated, err := st.CreateManualMedia(context.Background(), store.ManualMedia{
+		LibraryID: "library-local", Title: "Dated Media", Year: 1999,
+	})
+	if err != nil {
+		t.Fatalf("CreateManualMedia: %v", err)
+	}
+	key := mintKey(t, st, "list-fields", "profile-managed", store.ScopeReadCatalog)
+
+	rec := v1Get(t, srv, "/v1/libraries/library-local/media", key)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var list struct {
+		Media []map[string]any `json:"media"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	byID := map[string]map[string]any{}
+	for _, item := range list.Media {
+		byID[item["id"].(string)] = item
+	}
+	alpha, ok := byID["media-alpha"]
+	if !ok {
+		t.Fatalf("media-alpha missing from %s", rec.Body.String())
+	}
+	if alpha["durationSeconds"] != float64(120) {
+		t.Fatalf("media-alpha durationSeconds = %v, want 120", alpha["durationSeconds"])
+	}
+	if _, present := alpha["year"]; present {
+		t.Fatalf("media-alpha has no known year, but the item carries %v", alpha["year"])
+	}
+	if got := byID[string(dated)]["year"]; got != float64(1999) {
+		t.Fatalf("dated media year = %v, want 1999 in %s", got, rec.Body.String())
+	}
+
+	// The list and the detail read agree field for field.
+	for id, item := range byID {
+		detail := v1Get(t, srv, "/v1/media/"+id, key)
+		if detail.Code != http.StatusOK {
+			t.Fatalf("detail %s status = %d", id, detail.Code)
+		}
+		var want map[string]any
+		if err := json.Unmarshal(detail.Body.Bytes(), &want); err != nil {
+			t.Fatalf("decode detail: %v", err)
+		}
+		for _, field := range []string{"year", "durationSeconds"} {
+			if item[field] != want[field] {
+				t.Fatalf("%s %s: list = %v, detail = %v", id, field, item[field], want[field])
+			}
+		}
+	}
+}

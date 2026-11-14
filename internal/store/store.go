@@ -97,6 +97,10 @@ type Library struct {
 	// false leaves every existing Library not-encrypted. Orthogonal to
 	// Custodial; the two compose (Photo Backup = Custodial + Encrypted).
 	Encrypted bool
+	// Icon is the owner's choice from the Library icon vocabulary. Empty means
+	// no choice: the Library follows the default for its media classes (see
+	// EffectiveIcon).
+	Icon string
 }
 
 // Profile is the user-facing Profile selected by a client session.
@@ -920,6 +924,7 @@ type Store struct {
 	catalogR       *sql.DB // read pool, WAL readers
 	eventsW        *sql.DB
 	eventsR        *sql.DB
+	outbox         outboxNotifier // wakes event-outbox readers on commit
 	now            func() time.Time
 	dataDir        string
 	catalogPath    string
@@ -3320,16 +3325,19 @@ func annotateRestrictedFromPlane(ctx context.Context, db sourceItemLibraryQuerye
 	return nil
 }
 
+// mediaDurationSummary is the card line for a Media item's running time.
+// Anything shorter than a minute is given in seconds so a 44 s clip does not
+// read as "1 min"; from a minute up it is whole minutes, rounded up.
 func mediaDurationSummary(seconds int) string {
 	if seconds <= 0 {
 		return ""
 	}
+	if seconds < 60 {
+		return strconv.Itoa(seconds) + " sec"
+	}
 	minutes := seconds / 60
 	if seconds%60 != 0 {
 		minutes++
-	}
-	if minutes <= 1 {
-		return "1 min"
 	}
 	return strconv.Itoa(minutes) + " min"
 }
@@ -3535,7 +3543,11 @@ func (s *Store) createLibraryWithRoots(ctx context.Context, title string, restri
 	id := base
 	for suffix := 2; ; suffix++ {
 		var count int
-		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM library WHERE id = ?`, id).Scan(&count); err != nil {
+		// A purged Library's id stays retired (see libraryPurgedConfigPrefix).
+		if err := tx.QueryRowContext(ctx, `
+			SELECT (SELECT COUNT(*) FROM library WHERE id = ?)
+			     + (SELECT COUNT(*) FROM server_config WHERE key = ?)`,
+			id, libraryPurgedConfigPrefix+string(id)).Scan(&count); err != nil {
 			return Library{}, err
 		}
 		if count == 0 {
@@ -3587,7 +3599,8 @@ func (s *Store) createLibraryWithRoots(ctx context.Context, title string, restri
 
 // DeleteLibrary soft-deletes a Library by stamping trashed_at_ms (master #42).
 // The Library is hidden from all loadLibraries queries immediately; its media
-// rows, scan schedules, and profile grants are preserved for a future purge.
+// rows, scan schedule and profile grants are kept, so RestoreLibrary undoes it
+// until PurgeLibrary or the retention sweep removes it for good.
 // Returns an error when the library does not exist or is already trashed.
 func (s *Store) DeleteLibrary(ctx context.Context, id LibraryID) error {
 	if id == "" {

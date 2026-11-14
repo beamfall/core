@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -462,7 +464,7 @@ func webAppHandlerFS(assets fs.FS, base *url.URL) http.HandlerFunc {
 			index = rewritten
 		}
 	}
-	compressed := &gzipCache{}
+	cache := newWebAssetCache(assets, rewrittenText)
 	serveShell := func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("Content-Type", "text/html; charset=utf-8")
@@ -517,36 +519,52 @@ func webAppHandlerFS(assets fs.FS, base *url.URL) http.HandlerFunc {
 		// immutable — unless this server rewrote their bytes for a configured
 		// base path: that content depends on runtime config, and a later
 		// restart under another base would reuse the same URL.
-		if !rewritten && hashedWebAsset(rel) {
+		immutable := !rewritten && hashedWebAsset(rel)
+		switch {
+		case immutable:
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		case rewritten:
+			// Rewritten once at startup and served with a strong validator
+			// below: the browser keeps the file and revalidates it, so a
+			// repeat load costs a 304 instead of the whole bundle.
+			w.Header().Set("Cache-Control", "no-cache")
 		}
-		if compressibleWebAsset(rel) && r.Header.Get("Range") == "" && acceptsGzip(r) {
-			// Read the original only on a cache miss.
-			load := func() []byte {
-				if rewritten {
-					return body
-				}
-				b, _ := fs.ReadFile(assets, rel)
-				return b
+		asset := cache[rel]
+		if asset == nil { // not compressible: images and fonts
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+		h := w.Header()
+		h.Add("Vary", "Accept-Encoding")
+		var gz []byte
+		var etag string
+		if r.Header.Get("Range") == "" && acceptsGzip(r) {
+			gz, etag = asset.gzip()
+		}
+		// Un-hashed files (sw.js, the manifest, icons, rewritten bundles)
+		// revalidate, so each representation carries a strong validator.
+		if !immutable {
+			if gz == nil {
+				etag = asset.etag()
 			}
-			if gz, ok := compressed.get(rel, load); ok {
-				h := w.Header()
-				if contentType := mime.TypeByExtension(path.Ext(rel)); contentType != "" {
-					h.Set("Content-Type", contentType)
-				}
-				h.Set("Content-Encoding", "gzip")
-				h.Add("Vary", "Accept-Encoding")
-				h.Set("Content-Length", strconv.Itoa(len(gz)))
-				_, _ = w.Write(gz)
+			h.Set("ETag", etag)
+			if etagMatches(r.Header.Get("If-None-Match"), etag) {
+				w.WriteHeader(http.StatusNotModified)
 				return
 			}
 		}
-		if compressibleWebAsset(rel) {
-			w.Header().Add("Vary", "Accept-Encoding")
+		if gz != nil {
+			if contentType := mime.TypeByExtension(path.Ext(rel)); contentType != "" {
+				h.Set("Content-Type", contentType)
+			}
+			h.Set("Content-Encoding", "gzip")
+			h.Set("Content-Length", strconv.Itoa(len(gz)))
+			_, _ = w.Write(gz)
+			return
 		}
 		if rewritten {
 			if contentType := mime.TypeByExtension(path.Ext(rel)); contentType != "" {
-				w.Header().Set("Content-Type", contentType)
+				h.Set("Content-Type", contentType)
 			}
 			_, _ = w.Write(body)
 			return
@@ -590,29 +608,62 @@ func acceptsGzip(r *http.Request) bool {
 	return false
 }
 
-// gzipCache compresses each embedded file at most once, on first request.
-// The bundle is static, so entries never go stale.
-type gzipCache struct {
-	mu    sync.Mutex
-	files map[string][]byte
+// webAsset holds the derived forms of one compressible embedded file, each
+// computed at most once on first use. Entries are independent, so a browser's
+// parallel first requests after a restart compress different files
+// concurrently instead of queueing behind one lock. The bundle is static, so
+// entries never go stale.
+type webAsset struct {
+	etag func() string           // strong validator of the identity bytes
+	gzip func() ([]byte, string) // encoded bytes and their validator; nil on failure
 }
 
-func (c *gzipCache) get(name string, load func() []byte) ([]byte, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if gz, ok := c.files[name]; ok {
-		return gz, true
+// newWebAssetCache indexes every compressible file up front, so the map is
+// read-only while serving; load reads the served (possibly base-rewritten)
+// bytes, only on a cache miss.
+func newWebAssetCache(assets fs.FS, rewrittenText map[string][]byte) map[string]*webAsset {
+	cache := make(map[string]*webAsset)
+	_ = fs.WalkDir(assets, ".", func(name string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || !compressibleWebAsset(name) {
+			return nil
+		}
+		load := func() []byte {
+			if body, ok := rewrittenText[name]; ok {
+				return body
+			}
+			body, _ := fs.ReadFile(assets, name)
+			return body
+		}
+		cache[name] = &webAsset{
+			etag: sync.OnceValue(func() string { return strongETag(load()) }),
+			gzip: sync.OnceValues(func() ([]byte, string) {
+				var buf bytes.Buffer
+				zw, _ := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+				if _, err := zw.Write(load()); err != nil || zw.Close() != nil {
+					return nil, ""
+				}
+				return buf.Bytes(), strongETag(buf.Bytes())
+			}),
+		}
+		return nil
+	})
+	return cache
+}
+
+func strongETag(body []byte) string {
+	sum := sha256.Sum256(body)
+	return `"` + hex.EncodeToString(sum[:16]) + `"`
+}
+
+// etagMatches applies If-None-Match's weak comparison (RFC 9110 §13.1.2).
+func etagMatches(ifNoneMatch, etag string) bool {
+	for _, candidate := range strings.Split(ifNoneMatch, ",") {
+		candidate = strings.TrimPrefix(strings.TrimSpace(candidate), "W/")
+		if candidate == "*" || candidate == etag {
+			return true
+		}
 	}
-	var buf bytes.Buffer
-	zw, _ := gzip.NewWriterLevel(&buf, gzip.BestCompression)
-	if _, err := zw.Write(load()); err != nil || zw.Close() != nil {
-		return nil, false
-	}
-	if c.files == nil {
-		c.files = make(map[string][]byte)
-	}
-	c.files[name] = buf.Bytes()
-	return c.files[name], true
+	return false
 }
 
 func textWebAsset(name string) bool {
@@ -830,7 +881,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// whose Pattern the mux fills in place.
 	defer func() {
 		status := tracked.statusCode()
-		s.recordAccess(r, reqID, status, time.Since(started))
+		elapsed := time.Since(started)
+		s.recordAccess(r, reqID, status, tracked.firstByte(started, elapsed), elapsed)
 		s.recordAuthRefusal(r, reqID, status)
 	}()
 	r = s.resolveProxyRequest(r)
@@ -1455,7 +1507,22 @@ func logRequestFailure(ctx context.Context, r *http.Request, status int, message
 	if cause != nil {
 		attrs = append(attrs, "cause", cause)
 	}
+	if clientCanceled(ctx, cause) {
+		slog.DebugContext(ctx, "http request ended by client", attrs...)
+		return
+	}
 	slog.ErrorContext(ctx, "http request failed", attrs...)
+}
+
+// statusClientClosedRequest is the nginx convention for a request the client
+// abandoned before the response: recorded as 4xx, never as a server failure.
+const statusClientClosedRequest = 499
+
+// clientCanceled reports whether err is the request's own context ending —
+// the client disconnected or aborted (the web UI cancels superseded requests
+// on purpose) — rather than a server failure.
+func clientCanceled(ctx context.Context, err error) bool {
+	return ctx.Err() != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded))
 }
 
 func writeError(w http.ResponseWriter, r *http.Request, status int, message string) {
@@ -1467,6 +1534,9 @@ func writeErrorCause(w http.ResponseWriter, r *http.Request, status int, message
 		ctx := context.Background()
 		if r != nil {
 			ctx = r.Context()
+		}
+		if clientCanceled(ctx, cause) {
+			status = statusClientClosedRequest
 		}
 		logRequestFailure(ctx, r, status, message, cause)
 	}

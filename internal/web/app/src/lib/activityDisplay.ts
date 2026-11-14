@@ -154,12 +154,15 @@ export const ACTIVITY_LABELS: Record<string, ActivityLabel> = {
 
   // Library and media.
   "library.delete": label("library", "{actor} deleted {target}", "a library", "library"),
+  "library.restore": label("library", "{actor} restored {target}", "a library", "library"),
+  "library.purge": label("library", "{actor} permanently deleted {target}", "a library", "library"),
   "library.roots": label(
     "library",
     "{actor} changed the folders of {target}",
     "a library",
     "library",
   ),
+  "library.icon": label("library", "{actor} changed the icon of {target}", "a library", "library"),
   "library.preview_clips": label(
     "library",
     "{actor} changed preview clips for {target}",

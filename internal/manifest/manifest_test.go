@@ -809,3 +809,106 @@ func TestThemeAccentDefaultsAtReadTimeAndKeepsExplicitChoice(t *testing.T) {
 		}
 	}
 }
+
+// TestLibrarySummaryIcon pins CORE-1200: every Library carries an icon from
+// the fixed vocabulary. The default comes from the bound plugin's media
+// classes, a plugin-less Library gets the generic one, and the owner's choice
+// wins over both.
+func TestLibrarySummaryIcon(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := context.Background()
+	bundle := func(id string, classes ...string) plugin.Bundle {
+		return plugin.Bundle{
+			ID:           plugin.ID(id),
+			DisplayName:  plugin.L(id),
+			MediaLabel:   plugin.L("Entry"),
+			MediaClasses: classes,
+			Layouts: []plugin.LayoutSpec{
+				{ID: "home", Role: "browse", Sections: []plugin.SectionSpec{
+					{ID: "everything", Kind: "grid", Title: plugin.L("All"),
+						Source: plugin.SourceSpec{Kind: "all-items"}},
+				}},
+			},
+		}
+	}
+	registry, err := plugintest.Registry([]plugin.Bundle{
+		bundle("reels", "video"),
+		bundle("tapes", "audio"),
+		bundle("prints", "image"),
+		bundle("attic", "video", "audio", "image"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := map[string]store.LibraryID{}
+	for title, pluginID := range map[string]string{
+		"Reels": "reels", "Tapes": "tapes", "Prints": "prints", "Attic": "attic", "Chosen": "tapes",
+	} {
+		library, err := st.CreateLibrary(ctx, title, false, pluginID, "profile-default")
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids[title] = library.ID
+	}
+	if err := st.SetLibraryIcon(ctx, ids["Chosen"], store.LibraryIconHeadphones, time.Unix(1, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewService(st, func() time.Time { return time.Unix(0, 0).UTC() }, registry)
+	scope, err := auth.NewService(st).Scope(ctx, "session-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, err := service.Document(ctx, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := map[string]string{
+		string(ids["Reels"]):  store.LibraryIconFilm,
+		string(ids["Tapes"]):  store.LibraryIconNote,
+		string(ids["Prints"]): store.LibraryIconImage,
+		string(ids["Attic"]):  store.LibraryIconLayers,
+		string(ids["Chosen"]): store.LibraryIconHeadphones,
+	}
+	seen := 0
+	for _, library := range document.Libraries {
+		if !store.IsLibraryIcon(library.Icon) {
+			t.Errorf("library %s icon = %q, not in the vocabulary", library.ID, library.Icon)
+		}
+		if library.PluginID == nil {
+			if library.Icon != store.LibraryIconFolder {
+				t.Errorf("plugin-less library %s icon = %q, want %q", library.ID, library.Icon, store.LibraryIconFolder)
+			}
+			continue
+		}
+		expected, ok := want[library.ID]
+		if !ok {
+			continue
+		}
+		seen++
+		if library.Icon != expected {
+			t.Errorf("library %s icon = %q, want %q", library.ID, library.Icon, expected)
+		}
+	}
+	if seen != len(want) {
+		t.Fatalf("checked %d created libraries, want %d", seen, len(want))
+	}
+
+	// Additive on the wire: the key is "icon", and a summary without one
+	// (an older server's payload) serializes without the key.
+	wire, err := json.Marshal(LibrarySummary{ID: "l", Title: "L", Icon: store.LibraryIconFilm})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(wire), `"icon":"film"`) {
+		t.Fatalf("summary wire = %s, want icon key", wire)
+	}
+	bare, err := json.Marshal(LibrarySummary{ID: "l", Title: "L"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(bare), "icon") {
+		t.Fatalf("summary without an icon serializes the key: %s", bare)
+	}
+}

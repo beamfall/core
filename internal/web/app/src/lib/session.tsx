@@ -35,6 +35,7 @@ import {
   switchProfile as switchProfileMutation,
 } from "@/lib/graphql";
 import type { NavigationManifest, ProfileSummary, SessionInfo } from "@/lib/graphql/types";
+import { setManifestRefresher } from "@/lib/manifestRefresh";
 
 // A lapsed session renews once from the device-secret cookies before the
 // browser is shown the enroll screen (CORE-1106). Any other failure, or a
@@ -119,6 +120,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // overwrite the new epoch's state (its AbortSignal has already fired), and
   // no previous-epoch data is left on screen while the next epoch loads.
   const controllerRef = useRef<AbortController | null>(null);
+  const refreshSeqRef = useRef(0);
 
   const beginEpoch = useCallback(() => {
     controllerRef.current?.abort();
@@ -250,6 +252,30 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setIdentityEpochReset();
     };
   }, [load]);
+
+  // A manifest re-read inside the current identity epoch (see
+  // lib/manifestRefresh): no scoped state is cleared, a failure keeps the
+  // manifest already on screen, and a result that arrives after the epoch
+  // ended, or while a load has the manifest cleared, is dropped.
+  useEffect(() => {
+    setManifestRefresher(() => {
+      const signal = controllerRef.current?.signal;
+      if (!signal || signal.aborted) return;
+      // Only the latest request may apply: a slow earlier read must not
+      // overwrite the manifest a later write (delete, then Undo) refreshed.
+      refreshSeqRef.current += 1;
+      const seq = refreshSeqRef.current;
+      fetchManifest(signal).then(
+        (next) => {
+          if (!signal.aborted && seq === refreshSeqRef.current) {
+            setManifest((current) => (current ? next : current));
+          }
+        },
+        () => {},
+      );
+    });
+    return () => setManifestRefresher();
+  }, []);
 
   const reveal = useCallback(
     async (pin: string) => {

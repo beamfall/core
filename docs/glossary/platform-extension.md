@@ -378,7 +378,13 @@ _Avoid_: raw query languages in Layouts (SQL/GraphQL documents as section parame
 The tiny styling vocabulary a Plugin/Library may set: **accent color** and **Library
 icon/wordmark**. Everything else — typography, spacing, focus effects, motion — is owned by
 the client, uniform across plugins. Structure is the plugin's; style is the client's.
-_Avoid_: plugin-controlled fonts/spacing/focus behavior.
+The **Library icon** is a name from one fixed list (`film`, `tv`, `video`, `note`, `mic`,
+`broadcast`, `headphones`, `book`, `image`, `camera`, `people`, `star`, `heart`, `sparkles`,
+`layers`, `folder`), sent as the optional `icon` of each Library in the **Navigation Manifest**:
+the owner's choice from Console > Libraries, else a default from the plugin's media classes
+(`film` for video, `note` for audio, `image` for image, `layers` for several, `folder` for none).
+Clients compile in one symbol per name and keep their own tile for a name they do not know.
+_Avoid_: plugin-controlled fonts/spacing/focus behavior; icon names that name a plugin or a domain.
 
 **Core Platform**:
 The domain-agnostic base the server exposes with no Plugin active: Folder navigation, Media

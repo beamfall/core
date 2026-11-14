@@ -138,6 +138,8 @@ export function PathPickerField({
   disabled,
   className,
   inputClassName,
+  describedBy,
+  invalid,
   suppressAppStoreDownload = false,
   actions,
   selectLabel,
@@ -154,6 +156,9 @@ export function PathPickerField({
   disabled?: boolean;
   className?: string;
   inputClassName?: string;
+  /** Ids of the hint or error text that describe the path input. */
+  describedBy?: string;
+  invalid?: boolean;
   suppressAppStoreDownload?: boolean;
   /** Extra controls for the input row (the browser opens below the whole row). */
   actions?: ReactNode;
@@ -333,6 +338,8 @@ export function PathPickerField({
           spellCheck={false}
           placeholder={placeholder}
           disabled={disabled}
+          aria-describedby={describedBy}
+          aria-invalid={invalid || undefined}
           onChange={(e) => onChange(e.target.value)}
           className={inputClassName}
         />
