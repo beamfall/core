@@ -3094,13 +3094,12 @@ func (l playbackAssetsLocator) WaveformAsset(fingerprint string) (string, bool) 
 	return l.service.WaveformAsset(fingerprint)
 }
 
-func (l playbackAssetsLocator) BeatGridAsset(fingerprint string) (string, bool) {
-	return l.service.BeatGridAsset(fingerprint)
-}
+// BeatGridAsset and SyncLanesAsset keep the reserved wire fields always absent:
+// core no longer analyses beats; clients compute them on device through
+// Oscillux (ADR-0228).
+func (l playbackAssetsLocator) BeatGridAsset(string) (string, bool) { return "", false }
 
-func (l playbackAssetsLocator) SyncLanesAsset(fingerprint string) (string, bool) {
-	return l.service.SyncLanesAsset(fingerprint)
-}
+func (l playbackAssetsLocator) SyncLanesAsset(string) (string, bool) { return "", false }
 
 func (l playbackAssetsLocator) SilenceMapAsset(fingerprint string) (string, bool) {
 	return l.service.SilenceMapAsset(fingerprint)
