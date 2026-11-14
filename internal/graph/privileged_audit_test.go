@@ -235,13 +235,26 @@ func TestPrivilegedGraphQLAuditMapsBearerCredentialActors(t *testing.T) {
 			req.Header.Set("Authorization", "Bearer "+token)
 		}
 
+		// CORE-1397: an admin API token may list Libraries (the CLI discovery
+		// step), and that read is audited as a success attributed to the token;
+		// a Library mutation is still refused, and that refusal is attributed too.
 		_, errs := post(t, h, `{"query":"query { libraries { id } }"}`, authorize)
-		if len(errs) != 1 || errs[0].Message != "admin session required" {
-			t.Fatalf("libraries errors = %#v, want admin refusal", errs)
+		if len(errs) != 0 {
+			t.Fatalf("libraries errors = %#v, want token read allowed", errs)
 		}
 		wantActor := observability.AuditActor{Authenticated: true, APITokenID: string(tokenInfo.ID)}
-		if len(audit.records) != 1 || audit.records[0].Actor != wantActor {
-			t.Fatalf("audit records = %+v, want actor %+v", audit.records, wantActor)
+		if len(audit.records) != 1 || audit.records[0].Actor != wantActor ||
+			audit.records[0].Operation != "graphql:libraries" || audit.records[0].Outcome != observability.AuditSuccess {
+			t.Fatalf("audit records = %+v, want libraries success by actor %+v", audit.records, wantActor)
+		}
+		_, errs = post(t, h, `{"query":"mutation { createLibrary(title:\"x\") { id } }"}`, authorize)
+		if len(errs) != 1 || errs[0].Message != "admin session required" {
+			t.Fatalf("createLibrary errors = %#v, want admin refusal", errs)
+		}
+		last := audit.records[len(audit.records)-1]
+		if len(audit.records) < 2 || last.Actor != wantActor ||
+			last.Operation != "graphql:createlibrary" || last.Outcome != observability.AuditRefused {
+			t.Fatalf("audit records = %+v, want createLibrary refusal by actor %+v", audit.records, wantActor)
 		}
 	})
 

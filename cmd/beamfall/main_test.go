@@ -849,3 +849,56 @@ func assertServeSignalTestDescendantsRetired(t *testing.T, pids []int) {
 		}
 	}
 }
+
+// TestRunLibraryListPrintsIDsWithToken (CORE-1397): `beamfall library list`
+// reads Library ids, titles and roots with an admin API token, the discovery
+// step `scan --library-id` needs, and sends only the read-only query.
+func TestRunLibraryListPrintsIDsWithToken(t *testing.T) {
+	var gotAuth, gotQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		var body struct {
+			Query string `json:"query"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		gotQuery = body.Query
+		_, _ = w.Write([]byte(`{"data":{"libraries":[{"id":"lib-1","title":"Home Videos","roots":["/media/home"]},{"id":"lib-2","title":"Music","roots":[]}]}}`))
+	}))
+	defer server.Close()
+	var out bytes.Buffer
+
+	if err := runWithOutput(context.Background(), []string{"library", "list", "--server", server.URL, "--token", "cli-token"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if gotAuth != "Bearer cli-token" {
+		t.Fatalf("Authorization = %q, want bearer token", gotAuth)
+	}
+	if !strings.HasPrefix(gotQuery, "query ") || strings.Contains(gotQuery, "mutation") || !strings.Contains(gotQuery, "libraries") {
+		t.Fatalf("query = %q, want the read-only libraries query", gotQuery)
+	}
+	want := "id=lib-1 title=\"Home Videos\" roots=[\"/media/home\"]\nid=lib-2 title=\"Music\" roots=[]\n"
+	if out.String() != want {
+		t.Fatalf("library list output = %q, want %q", out.String(), want)
+	}
+}
+
+// TestRunLibraryCommandErrors: a missing or unknown subcommand and a missing
+// token fail before any request, without echoing a token.
+func TestRunLibraryCommandErrors(t *testing.T) {
+	t.Setenv("BEAMFALL_TOKEN", "")
+	if err := runWithOutput(context.Background(), []string{"library"}, io.Discard); err == nil || !strings.Contains(err.Error(), "library subcommand is required") {
+		t.Fatalf("bare library err = %v", err)
+	}
+	if err := runWithOutput(context.Background(), []string{"library", "delete"}, io.Discard); err == nil || !strings.Contains(err.Error(), `unknown library subcommand "delete"`) {
+		t.Fatalf("library delete err = %v", err)
+	}
+	if err := runWithOutput(context.Background(), []string{"library", "list", "--server", "http://127.0.0.1:1"}, io.Discard); err == nil || !strings.Contains(err.Error(), "API token is required") {
+		t.Fatalf("library list without token err = %v", err)
+	}
+	var help bytes.Buffer
+	if err := runWithOutput(context.Background(), []string{"--help"}, &help); err != nil || !strings.Contains(help.String(), "library list") {
+		t.Fatalf("help = %q (%v), want library list listed", help.String(), err)
+	}
+}
