@@ -82,6 +82,21 @@ type Probe struct {
 	embeddedArtworkStream int
 }
 
+// AudioWithAttachedPicture reports an audio track whose only "video" stream is
+// embedded cover art (attached_pic). Before CORE-1151 such a file was imported
+// as video; the CORE-1262 repair uses this to find and reclassify it.
+func (p Probe) AudioWithAttachedPicture() bool {
+	if p.HasVideo || p.AudioCodec == "" {
+		return false
+	}
+	for _, stream := range p.Streams {
+		if stream.AttachedPicture {
+			return true
+		}
+	}
+	return false
+}
+
 // ProbeChapter is one embedded chapter reported by ffprobe.
 type ProbeChapter struct {
 	StartSeconds float64

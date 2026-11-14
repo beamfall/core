@@ -19,6 +19,11 @@ RUN go mod download
 
 COPY cmd ./cmd
 COPY internal ./internal
+# Source identity for an unstamped build (CORE-1096): a digest of the Go
+# sources, taken before the web bundle is copied in, so two unstamped images
+# built from different trees report different versions.
+RUN mkdir -p /out && find go.mod go.sum cmd internal -type f -print0 | LC_ALL=C sort -z \
+	| xargs -0 sha256sum | sha256sum | cut -c1-12 >/out/source-id
 COPY --from=web /src/internal/web/app-dist ./internal/web/app-dist
 
 ARG TARGETOS
@@ -27,8 +32,17 @@ ARG TARGETARCH
 # `beamfall release build-catalog --manifest FILE`. Empty refuses every native
 # client as an unknown build; only the embedded web UI is known.
 ARG BEAMFALL_FIRST_PARTY_BUILDS=""
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-	go build -trimpath -ldflags="-s -w -X github.com/beamfall/core/internal/capabilities.FirstPartyBuildManifest=${BEAMFALL_FIRST_PARTY_BUILDS}" -o /out/beamfall ./cmd/beamfall
+# Build identity (CORE-1096): `docker build --build-arg BEAMFALL_VERSION=v1.2.3
+# --build-arg BEAMFALL_COMMIT=$(git rev-parse HEAD)` stamps `beamfall version`
+# and /health. The build context excludes .git, so without these the version is
+# development+src.<source digest> and the commit is "development": an unstamped
+# build is never mistaken for a release.
+ARG BEAMFALL_VERSION=""
+ARG BEAMFALL_COMMIT=""
+RUN set -eu; \
+	version="${BEAMFALL_VERSION:-development+src.$(cat /out/source-id)}"; \
+	CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+	go build -trimpath -ldflags="-s -w -X github.com/beamfall/core/internal/capabilities.ReleaseVersion=${version} -X github.com/beamfall/core/internal/capabilities.ReleaseCommit=${BEAMFALL_COMMIT} -X github.com/beamfall/core/internal/capabilities.FirstPartyBuildManifest=${BEAMFALL_FIRST_PARTY_BUILDS}" -o /out/beamfall ./cmd/beamfall
 
 FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8 AS runtime
 
@@ -80,8 +94,17 @@ RUN set -eux; \
 	mkdir -p /data /media /transcode; \
 	chown beamfall:beamfall /data /transcode
 
+# The same identity on the image (OCI annotations) and in /health's buildSHA.
+ARG BEAMFALL_VERSION=""
+ARG BEAMFALL_COMMIT=""
+LABEL org.opencontainers.image.title="Beamfall Core" \
+	org.opencontainers.image.source="https://github.com/beamfall/core" \
+	org.opencontainers.image.version="${BEAMFALL_VERSION:-development}" \
+	org.opencontainers.image.revision="${BEAMFALL_COMMIT}"
+
 ENV BEAMFALL_ADDR=0.0.0.0:8800 \
-	BEAMFALL_DATA_DIR=/data
+	BEAMFALL_DATA_DIR=/data \
+	BEAMFALL_BUILD_SHA=${BEAMFALL_COMMIT}
 
 VOLUME ["/data", "/media", "/transcode"]
 EXPOSE 8800

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"log/slog"
@@ -645,5 +646,20 @@ func TestPlaybackCacheBudgetDefaultsOnAndZeroDisables(t *testing.T) {
 	})
 	if err != nil || cfg.PlaybackCacheBudgetBytes != 0 {
 		t.Fatalf("env 0: budget = %d err %v, want 0", cfg.PlaybackCacheBudgetBytes, err)
+	}
+}
+
+// TestPublicMetricsHelpStatesNoCredential (CORE-1059): --public-metrics serves
+// /metrics to every caller with no scrape credential, so its help text must say
+// that, not the withdrawn "non-loopback clients" carve-out.
+func TestPublicMetricsHelpStatesNoCredential(t *testing.T) {
+	var help bytes.Buffer
+	_, _ = LoadWithOutput([]string{"--help"}, func(string) (string, bool) { return "", false }, &help)
+	text := help.String()
+	if !strings.Contains(text, "serve /metrics to any caller with no scrape credential (default false)") {
+		t.Fatalf("--public-metrics help does not state the credential-free behaviour:\n%s", text)
+	}
+	if strings.Contains(text, "non-loopback clients") {
+		t.Fatalf("--public-metrics help still describes the withdrawn carve-out:\n%s", text)
 	}
 }

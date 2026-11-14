@@ -185,6 +185,6 @@ func runScanJob(ctx context.Context, st *store.Store, prober Prober, grabber Fra
 		Current: int64(result.FilesSeen),
 		Total:   int64(result.totalFiles),
 		Unit:    "files",
-		Message: "Scan complete",
+		Message: missingCredentialsMessage(result.MissingCredentials),
 	}, time.Now().UTC())
 }

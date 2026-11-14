@@ -59,6 +59,62 @@ func (s *Server) bindEnrolledBuild(ctx context.Context, resp pairing.EnrollRespo
 	return s.deviceBuilds.BindDeviceBuild(ctx, device.ID, store.DeviceSurface(binding.Surface), binding.BuildID, s.compat.now())
 }
 
+// rebindVerifiedBuild records the verified build a native device now runs
+// (CORE-1393). Enrollment maps a device to the build it enrolled with, so a
+// native app update would otherwise present a build with no mapping and be
+// refused as unknown-build until the device re-paired. Devices enrolled before
+// the mapping existed have no row at all and recover the same way.
+//
+// Only a native device credential qualifies: scope.DeviceID comes from the
+// device's own authenticated session, never from the request body, and only
+// that device's row is written, so a sibling device gains nothing. The build
+// must pass EnrollmentBindingFor against the device's server-held enrollment
+// (known usable catalog record, surface including the device's pinned surface,
+// artifact digest, rollback floor, role and distribution), exactly as at
+// enrollment. The catalog's rollback floor is the downgrade bound: a device may
+// move back to an older build that is still at or above the floor, so one that
+// upgraded to a build its server cannot serve yet can reinstall the build it
+// ran before. A verified build is recorded even when the handshake is then
+// refused for another reason, so the refusal names that reason instead of
+// unknown-build. A build that does not verify leaves the mapping unchanged.
+// As at enrollment, a mapping that cannot be read or written is logged and
+// left as it was, and the handshake is then refused as an unknown build rather
+// than failed.
+func (s *Server) rebindVerifiedBuild(ctx context.Context, scope auth.Scope, contract capabilities.ClientContract, enrollment capabilities.Enrollment, catalog capabilities.BuildCatalog) {
+	if err := s.rebindVerifiedBuildOnce(ctx, scope, contract, enrollment, catalog); err != nil {
+		slog.WarnContext(ctx, "handshake build mapping failed", "device", scope.DeviceID, "surface", contract.Surface, "build", contract.BuildID, "err", err)
+	}
+}
+
+func (s *Server) rebindVerifiedBuildOnce(ctx context.Context, scope auth.Scope, contract capabilities.ClientContract, enrollment capabilities.Enrollment, catalog capabilities.BuildCatalog) error {
+	if s.deviceBuilds == nil || scope.DeviceID == "" || scope.SessionID == "" || scope.APITokenID != "" || scope.APIKeyID != "" {
+		return nil
+	}
+	contract = capabilities.NormalizeClientContract(contract)
+	surface := capabilities.Surface(contract.Surface)
+	if !capabilities.IsNativeSurface(surface) {
+		return nil
+	}
+	bindings, err := s.deviceBuilds.DeviceBuildBindings(ctx, scope.DeviceID)
+	if err != nil {
+		return err
+	}
+	for _, bound := range bindings {
+		if capabilities.Surface(bound.Surface) == surface && bound.BuildID == contract.BuildID {
+			return nil
+		}
+	}
+	binding, finding := capabilities.EnrollmentBindingFor(contract, enrollment, catalog)
+	if finding != capabilities.ProvenanceVerified {
+		return nil
+	}
+	if err := s.deviceBuilds.BindDeviceBuild(ctx, scope.DeviceID, store.DeviceSurface(binding.Surface), binding.BuildID, s.compat.now()); err != nil {
+		return err
+	}
+	slog.InfoContext(ctx, "handshake build rebound", "device", scope.DeviceID, "surface", surface, "build", binding.BuildID)
+	return nil
+}
+
 // deviceBuildPolicy returns policy with the caller's own device-to-build
 // mappings added to its build catalog for one evaluation. Only the scope's
 // device's rows are added, keyed to this scope's enrollment, so a sibling

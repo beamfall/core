@@ -130,6 +130,7 @@ The CLI covers day-to-day operation:
 | Command | What it does |
 |---|---|
 | `beamfall serve` | Run the server (the default command). |
+| `beamfall library list` | List library ids, names and roots (the ids `scan --library-id` takes). |
 | `beamfall scan` | Queue a library scan. |
 | `beamfall backup` / `beamfall restore` | Request a server-side backup; restore one while the server is stopped. |
 | `beamfall token` | Manage local API tokens. |
@@ -138,9 +139,15 @@ The CLI covers day-to-day operation:
 | `beamfall pairing-code` | Mint a one-time owner pairing code while the server is stopped, to sign a browser back in. |
 | `beamfall capabilities` / `version` | Print runtime capabilities or build metadata. |
 
-`scan`, `backup`, `token list` and `token revoke` talk to the running server with `--token`: mint one
-with `beamfall token create` while the server is stopped. The token passes the Admin Session gate for
-exactly those operations; every other Console operation still needs a browser Admin Session.
+`library list`, `scan`, `backup`, `token list` and `token revoke` talk to the running server with
+`--token`: mint one with `beamfall token create` while the server is stopped. The token passes the
+Admin Session gate for exactly those operations; every other Console operation, including any change
+to a library, still needs a browser Admin Session. To scan from the CLI, find the library first:
+
+```sh
+beamfall library list --token "$TOKEN"
+beamfall scan --token "$TOKEN" --library-id <id> --root <root>
+```
 
 ### Docker Compose (after the first release)
 

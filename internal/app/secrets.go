@@ -135,9 +135,12 @@ func setupURLHost(listenAddr string) string {
 // network can open to finish first-run setup (CORE-1105, CORE-1097). It returns
 // nothing unless the server listens on every interface; addrs are the machine's
 // interface addresses, and only non-loopback, non-link-local IPv4 ones are used.
+// Inside a container those addresses are the container's own, which a LAN
+// browser cannot reach, so it lists none and remoteSetupHint names the address
+// to substitute instead (CORE-1097).
 func lanSetupURLs(scheme, listenAddr string, addrs []net.Addr) []string {
 	host, port, err := net.SplitHostPort(listenAddr)
-	if err != nil || (host != "" && host != "0.0.0.0" && host != "::") {
+	if err != nil || !wildcardHost(host) || runningInContainer() {
 		return nil
 	}
 	var urls []string
@@ -155,16 +158,47 @@ func lanSetupURLs(scheme, listenAddr string, addrs []net.Addr) []string {
 	return urls
 }
 
-// remoteSetupHint is the token-free address pattern to open from another
-// device when the server listens on every interface (CORE-1097). Interface
-// addresses can be unreachable from the LAN, as in a bridged container, so the
-// operator substitutes the host's own address. Empty unless wildcard-bound.
+// remoteSetupHint says how to reach first-run setup from another device
+// (CORE-1097), or is empty when there is nothing to add. Interface addresses
+// can be unreachable from the LAN, as in a bridged container, so a wildcard
+// bind names the token-free pattern with the host's address to substitute; in
+// a container that is the Docker host's address and published port. A loopback
+// bind inside a container cannot be reached from outside it at all, so the
+// hint says so and how to fix it. No hint carries the setup token.
 func remoteSetupHint(scheme, listenAddr string) string {
 	host, port, err := net.SplitHostPort(listenAddr)
-	if err != nil || (host != "" && host != "0.0.0.0" && host != "::") {
+	if err != nil {
 		return ""
 	}
-	return fmt.Sprintf("%s://<this server's address>:%s/web/", scheme, port)
+	contained := runningInContainer()
+	ip := net.ParseIP(host)
+	switch {
+	case wildcardHost(host) && contained:
+		return fmt.Sprintf("open %s://<docker-host-address>:<published-port>/web/ (no token needed; use the host port published for container port %s)", scheme, port)
+	case wildcardHost(host):
+		return fmt.Sprintf("open %s://<this server's address>:%s/web/ (no token needed)", scheme, port)
+	case contained && ip != nil && ip.IsLoopback():
+		return fmt.Sprintf("unreachable: the server listens on %s inside a container; set BEAMFALL_ADDR=0.0.0.0:%s and publish the port, then open %s://<docker-host-address>:<published-port>/web/", listenAddr, port, scheme)
+	}
+	return ""
+}
+
+func wildcardHost(host string) bool {
+	return host == "" || host == "0.0.0.0" || host == "::"
+}
+
+// containerMarkers are the files Docker and Podman create in every container.
+var containerMarkers = []string{"/.dockerenv", "/run/.containerenv"}
+
+// runningInContainer reports whether the server runs inside a container; a
+// variable so tests can pin either answer.
+var runningInContainer = func() bool {
+	for _, marker := range containerMarkers {
+		if _, err := os.Stat(marker); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func configureReviewDemoEnrollment(cfgProfileID string, dataDir string, svc *pairing.Service, logger *slog.Logger) error {

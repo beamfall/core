@@ -794,7 +794,7 @@ func TestAdminAPITokenPassesOnlyCLIOps(t *testing.T) {
 	handler := newTestHandlerWithStore(st)
 	authorize := func(req *http.Request) { req.Header.Set("Authorization", "Bearer "+token) }
 
-	wantOps := []string{"apitokens", "backup", "revokeapitoken", "runjob", "scanlibrary"}
+	wantOps := []string{"apitokens", "backup", "libraries", "revokeapitoken", "runjob", "scanlibrary"}
 	if got := sortedKeys(adminTokenOps); !slices.Equal(got, wantOps) {
 		t.Fatalf("adminTokenOps = %v, want %v", got, wantOps)
 	}
@@ -848,7 +848,7 @@ func TestAdminAPITokenCLIOpsEndToEnd(t *testing.T) {
 		t.Fatalf("manager session without Admin Session errors = %#v, want admin gate", errs)
 	}
 	// Mixing a CLI op with a non-CLI Console field is refused as a whole.
-	_, errs = post(t, handler, `{"query":"query { apiTokens { id } libraries { id } }"}`, authorize)
+	_, errs = post(t, handler, `{"query":"query { apiTokens { id } consoleConfig { backgroundWorkers } }"}`, authorize)
 	if len(errs) == 0 || errs[0].Message != "admin session required" {
 		t.Fatalf("mixed request errors = %#v, want admin gate", errs)
 	}
@@ -895,6 +895,65 @@ func TestMutationFieldsSorted(t *testing.T) {
 	for _, name := range got {
 		if !mutationFields[name] {
 			t.Errorf("MutationFields() returned %q which is not in mutationFields", name)
+		}
+	}
+}
+
+// TestAdminAPITokenDiscoversLibraries (CORE-1397): `beamfall library list`
+// reads Library ids and names with an admin API token, so `scan --library-id`
+// needs no browser lookup. Reading is the only Library operation a token gets:
+// every Library mutation still answers with the Admin Session gate.
+func TestAdminAPITokenDiscoversLibraries(t *testing.T) {
+	st := storetest.Open(t)
+	library, err := st.CreateLibrary(t.Context(), "Home Videos", false, "", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, token, err := st.CreateAPIToken(t.Context(), "cli", time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := newTestHandlerWithStore(st)
+	authorize := func(req *http.Request) { req.Header.Set("Authorization", "Bearer "+token) }
+	allLibraries := store.LibraryFilter{AllLibraries: true, Revealed: true}
+	before, err := st.Libraries(t.Context(), allLibraries)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	data, errs := post(t, handler, `{"query":"query { libraries { id title } }"}`, authorize)
+	if len(errs) != 0 {
+		t.Fatalf("libraries via token errors = %#v", errs)
+	}
+	listed := string(data["libraries"])
+	if !strings.Contains(listed, string(library.ID)) || !strings.Contains(listed, "Home Videos") {
+		t.Fatalf("libraries via token = %s, want %s / Home Videos", listed, library.ID)
+	}
+
+	id := string(library.ID)
+	for name, body := range map[string]string{
+		"createLibrary":          `{"query":"mutation { createLibrary(title:\"x\") { id } }"}`,
+		"setLibraryRoots":        `{"query":"mutation { setLibraryRoots(libraryID:\"` + id + `\", roots:[\"/tmp\"]) { id } }"}`,
+		"setLibraryRestricted":   `{"query":"mutation { setLibraryRestricted(libraryID:\"` + id + `\", restricted:true) { id } }"}`,
+		"setLibraryPreviewClips": `{"query":"mutation { setLibraryPreviewClips(libraryID:\"` + id + `\", enabled:true) { id } }"}`,
+		"deleteLibrary":          `{"query":"mutation { deleteLibrary(libraryID:\"` + id + `\") { id } }"}`,
+	} {
+		_, errs := post(t, handler, body, authorize)
+		if len(errs) == 0 || errs[0].Message != "admin session required" {
+			t.Errorf("%s via token errors = %#v, want admin gate", name, errs)
+		}
+	}
+	// A manager session without an Admin Session still cannot list.
+	if _, errs := post(t, handler, `{"query":"query { libraries { id } }"}`, authorizeManager); len(errs) == 0 || errs[0].Message != "admin session required" {
+		t.Fatalf("manager session libraries errors = %#v, want admin gate", errs)
+	}
+	after, err := st.Libraries(t.Context(), allLibraries)
+	if err != nil || len(after) != len(before) {
+		t.Fatalf("libraries after refused mutations = %d (%v), want %d unchanged", len(after), err, len(before))
+	}
+	for _, l := range after {
+		if l.ID == library.ID && l.IsRestricted {
+			t.Fatalf("refused mutation changed the Library: %+v", l)
 		}
 	}
 }

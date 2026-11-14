@@ -231,6 +231,15 @@ def preexisting_indeterminate_identities(token: str) -> Optional[frozenset[Proce
         return None
     for pid in process_ids:
         if process_matches_effective_uid(pid) is False:
+            # Another user's process cannot carry our token, but it can be the
+            # ancestor of a concurrent same-UID peer: a new SSH login's
+            # unreadable sshd-session descends from the root sshd listener,
+            # which is also the gate's own ancestor when it was launched over
+            # SSH (CORE-1564). Recording it lets that lineage prove the peer.
+            # Real descendants still reach the supervised session first.
+            identity = process_identity(pid)
+            if identity is not None:
+                identities.add(identity)
             continue
         try:
             os.getsid(pid)
@@ -270,6 +279,11 @@ def descends_from_protected_process(
     """
     current = pid
     seen: set[int] = set()
+    # Another user's protected ancestor proves a peer only through a new
+    # process of another user between it and the candidate, such as a new SSH
+    # login's root sshd-session (CORE-1564). Without that hop the candidate may
+    # be our own leak reparented to a pre-existing subreaper (WSL's /init).
+    crossed_new_foreign = False
     while current > 1 and current not in seen:
         seen.add(current)
         parent = process_parent_id(current)
@@ -280,8 +294,11 @@ def descends_from_protected_process(
         identity = process_identity(parent)
         if identity is None:
             return None
+        uid_match = process_matches_effective_uid(parent)
         if identity in protected:
-            return True
+            return True if uid_match is not False or crossed_new_foreign else None
+        if uid_match is False:
+            crossed_new_foreign = True
         current = parent
     return None
 

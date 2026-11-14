@@ -31,11 +31,10 @@ request comes from earns it a scrape any more. There are exactly two ways in:
 2. set the `--public-metrics` / `BEAMFALL_PUBLIC_METRICS=true` opt-in, which serves every caller
    the proxy lets through with no credential at all.
 
-**What `--public-metrics` really does.** The flag's `--help` text still reads "allow /metrics from
-non-loopback clients". That describes the withdrawn host-local carve-out, not today's behaviour:
-with the flag set, `/metrics` answers **every** caller — loopback, LAN or relayed from the
-internet — with no credential; with it unset, every caller needs the scrape credential, loopback
-included. Read the flag as "serve /metrics with no scrape credential".
+**What `--public-metrics` really does.** As its `--help` text says, it serves `/metrics` to any
+caller with no scrape credential: with the flag set, `/metrics` answers **every** caller — loopback,
+LAN or relayed from the internet — with no credential; with it unset, every caller needs the scrape
+credential, loopback included. There is no host-local carve-out.
 
 Fix a local scraper before you upgrade:
 

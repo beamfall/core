@@ -431,6 +431,58 @@ class ProcessSupervisorTokenTest(unittest.TestCase):
                 ([], False),
             )
 
+    def test_new_ssh_login_under_preexisting_root_listener_is_a_peer(self) -> None:
+        # CORE-1564: sshd listener 204 (root) predates the run; a new login
+        # spawns root sshd-session 300 and same-UID, unreadable sshd-session 400.
+        uid_matches = {204: False, 300: False, 400: None}
+        identities = {204: (204, 10), 300: (300, 20), 400: (400, 30)}
+        with mock.patch.object(
+            PROCESS_SUPERVISOR, "all_process_ids", return_value=[204]
+        ), mock.patch.object(
+            PROCESS_SUPERVISOR, "process_matches_effective_uid", side_effect=uid_matches.get
+        ), mock.patch.object(
+            PROCESS_SUPERVISOR, "process_identity", side_effect=identities.get
+        ):
+            protected = PROCESS_SUPERVISOR.preexisting_indeterminate_identities("c" * 48)
+        self.assertEqual(protected, frozenset({(204, 10)}))
+        with mock.patch.object(
+            PROCESS_SUPERVISOR, "all_process_ids", return_value=[204, 300, 400]
+        ), mock.patch.object(
+            PROCESS_SUPERVISOR, "process_matches_effective_uid", side_effect=uid_matches.get
+        ), mock.patch.object(
+            PROCESS_SUPERVISOR, "process_has_token", return_value=None
+        ), mock.patch.object(
+            PROCESS_SUPERVISOR, "process_parent_id", side_effect={400: 300, 300: 204, 204: 1}.get
+        ), mock.patch.object(
+            PROCESS_SUPERVISOR, "process_identity", side_effect=identities.get
+        ), mock.patch("os.getsid", return_value=999):
+            self.assertEqual(
+                PROCESS_SUPERVISOR.owned_process_ids(100, "c" * 48, protected),
+                ([], False),
+            )
+
+    def test_leak_reparented_to_preexisting_foreign_subreaper_stays_indeterminate(self) -> None:
+        # Root subreaper 204 (WSL's /init, PID > 1) predates the run. Our
+        # unreadable leak 400 is reparented straight to it: no new process of
+        # another user lies between them, so nothing proves a peer (CORE-1564).
+        uid_matches = {204: False, 400: None}
+        identities = {204: (204, 10), 400: (400, 30)}
+        with mock.patch.object(
+            PROCESS_SUPERVISOR, "all_process_ids", return_value=[204, 400]
+        ), mock.patch.object(
+            PROCESS_SUPERVISOR, "process_matches_effective_uid", side_effect=uid_matches.get
+        ), mock.patch.object(
+            PROCESS_SUPERVISOR, "process_has_token", return_value=None
+        ), mock.patch.object(
+            PROCESS_SUPERVISOR, "process_parent_id", side_effect={400: 204, 204: 1}.get
+        ), mock.patch.object(
+            PROCESS_SUPERVISOR, "process_identity", side_effect=identities.get
+        ), mock.patch("os.getsid", return_value=999):
+            self.assertEqual(
+                PROCESS_SUPERVISOR.owned_process_ids(100, "c" * 48, frozenset({(204, 10)})),
+                ([], True),
+            )
+
     def test_unreadable_owned_descendant_remains_indeterminate(self) -> None:
         protected = frozenset({(150, 1)})
         with mock.patch.object(

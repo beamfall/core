@@ -156,7 +156,9 @@ func authorizeDispatchOrder(dispatch *fieldDispatchContext, order fieldDispatchO
 }
 
 // adminTokenOps are the Console operations the operator CLI performs against a
-// running server (`beamfall scan`, `backup`, `token list`, `token revoke`). An
+// running server (`beamfall scan`, `library list`, `backup`, `token list`,
+// `token revoke`). `libraries` is the read-only discovery step for `scan
+// --library-id` (CORE-1397); every Library mutation stays off this list. An
 // admin API token is minted only with data-directory access while the server is
 // stopped, so holding one is already host-operator authority; it may run exactly
 // these fields without an Admin Session. Everything else in adminFields —
@@ -164,6 +166,7 @@ func authorizeDispatchOrder(dispatch *fieldDispatchContext, order fieldDispatchO
 // still requires the interactive browser Admin Session (ADR-0007 §2).
 var adminTokenOps = map[string]bool{
 	"scanlibrary":    true,
+	"libraries":      true,
 	"runjob":         true,
 	"backup":         true,
 	"apitokens":      true,
@@ -645,7 +648,7 @@ func dispatchFieldBlock000(dispatch *fieldDispatchContext) response {
 	if fields["serverinfo"] {
 		setField(dispatch, "serverinfo", ServerInfo{
 			Name:    "Beamfall",
-			Version: serverVersionString,
+			Version: serverVersion(),
 		})
 	}
 	return response{}

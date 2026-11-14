@@ -723,8 +723,11 @@ func (s *Service) BeginAdminSession(ctx context.Context, scope Scope, password s
 		return time.Time{}, err
 	}
 	if !granted {
-		// The failure was counted when the attempt was reserved.
+		// The failure was counted when the attempt was reserved. The refusal
+		// is noted with the same reason as a non-owner (CORE-1087), so the
+		// `auth refused` record and counter see it without an ownership oracle.
 		s.auditAdmin(ctx, scope, now, store.ActivityAdminLoginDenied)
+		NoteRefusal(ctx, refusalOperationAdminSession, RefusalAdminPasswordRejected, true)
 		return time.Time{}, ErrAdminPassword
 	}
 	s.recordAdminAttempt(ctx, attemptKey, now, true)

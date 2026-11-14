@@ -944,7 +944,10 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	}
 	// The hydration backfill check reads each Library's Media, so it runs after
 	// the boot unseal; a Library still sealed is checked after its runtime unseal.
-	backfillHydration := func(ctx context.Context) { queueHydrationBackfills(ctx, st, metadataHydrators, logger) }
+	backfillHydration := func(ctx context.Context) {
+		reclassifyAttachedPictureAudio(ctx, st, ffmpegRunner, logger)
+		queueHydrationBackfills(ctx, st, metadataHydrators, logger)
+	}
 	backfillHydration(ctx)
 	// Device push-token registration: the persisting
 	// registrar replaces the old no-op seam. It is gated by the same default-off
@@ -1871,9 +1874,10 @@ func (a *App) Run(ctx context.Context) error {
 			fmt.Fprintf(os.Stdout, "Beamfall first-run setup from this network (no token needed): %s\n", lanURL)
 		}
 		// A bridged container's interface addresses are not the host's, so also
-		// say which address to use from another device (CORE-1097).
+		// say which address to use from another device, or that a loopback bind
+		// in a container cannot be reached from it at all (CORE-1097).
 		if hint := remoteSetupHint(scheme, listener.Addr().String()); hint != "" {
-			fmt.Fprintf(os.Stdout, "Beamfall first-run setup from another device (no token needed): open %s\n", hint)
+			fmt.Fprintf(os.Stdout, "Beamfall first-run setup from another device: %s\n", hint)
 		}
 		a.logger.Info(
 			"=== Beamfall first-run setup ===",

@@ -64,6 +64,8 @@ func runWithOutput(ctx context.Context, args []string, stdout io.Writer) error {
 		// Internal local inference hardening re-exec target;
 		// not an operator command — dispatched by internal/integrationhost, omitted from help.
 		return localInferenceShim(ctx, args[1:])
+	case "library":
+		return libraryCommand(ctx, args[1:], stdout)
 	case "pairing-code":
 		return pairingCodeCommand(ctx, args[1:], stdout)
 	case "release":
@@ -91,6 +93,7 @@ Commands:
                          print runtime capabilities, or build metadata with --version
   apply-config           apply a console config document from stdin
   export-config          export a console config document
+  library list           list library ids and names through the running server
   backup                 request a server-side backup
   pairing-code           mint a one-time owner pairing code while the server is stopped
   release                release helper commands
@@ -100,6 +103,56 @@ Commands:
   token                  manage local API tokens
   version                print build metadata
 `
+
+const libraryHelp = `Usage: beamfall library <command>
+
+Commands:
+  list   list library ids and names through the running server (admin API token)
+`
+
+// libraryCommand is the CLI's Library discovery step (CORE-1397): `scan
+// --library-id` needs an id, and `library list` reads it with the same admin
+// API token. It only reads; Library changes stay in the browser Console.
+func libraryCommand(ctx context.Context, args []string, stdout io.Writer) error {
+	if helpArg(args) {
+		_, err := fmt.Fprint(stdout, libraryHelp)
+		return err
+	}
+	if len(args) == 0 {
+		return fmt.Errorf("library subcommand is required\n\n%s", libraryHelp)
+	}
+	if args[0] != "list" {
+		return fmt.Errorf("unknown library subcommand %q", args[0])
+	}
+	var opts cliHTTPOptions
+	fs := commandFlagSet("beamfall library list", stdout)
+	addHTTPFlags(fs, &opts)
+	if helped, err := parseCommandFlags(fs, args[1:]); err != nil || helped {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return fmt.Errorf("unexpected argument %q", fs.Arg(0))
+	}
+	var resp struct {
+		Libraries []struct {
+			ID    string   `json:"id"`
+			Title string   `json:"title"`
+			Roots []string `json:"roots"`
+		} `json:"libraries"`
+	}
+	if err := cliGraphQL(ctx, opts, "query Libraries { libraries { id title roots } }", map[string]any{}, &resp); err != nil {
+		return err
+	}
+	if stdout == nil {
+		return nil
+	}
+	for _, library := range resp.Libraries {
+		if _, err := fmt.Fprintf(stdout, "id=%s title=%q roots=%q\n", library.ID, library.Title, library.Roots); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 func helpCommand(stdout io.Writer) error {
 	_, err := fmt.Fprint(stdout, helpText)
