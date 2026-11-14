@@ -15,4 +15,4 @@
   delete dialog copy names the restore path
 - [x] 9. Strings in en, fr, de, es and pt; `strings.test.ts` baselines
 - [x] 10. Focused vitest: list, restore, purge confirm and cancel, undo, errors
-- [ ] 11. Owner review in the running UI; `make gate` at landing; `openspec archive library-trash-restore`
+- [x] 11. Owner review in the running UI; `make gate` at landing; `openspec archive library-trash-restore`

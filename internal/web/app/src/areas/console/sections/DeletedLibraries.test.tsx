@@ -43,7 +43,7 @@ vi.mock("@/lib/graphql", () => ({
   setSkipDetectionEnabled: vi.fn(),
 }));
 
-// CORE-1201, openspec/changes/library-trash-restore.
+// CORE-1201, openspec/changes/archive/2026-11-14-library-trash-restore.
 describe("Console Libraries recently deleted", () => {
   const films = {
     id: "library-1",

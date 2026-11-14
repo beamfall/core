@@ -12,4 +12,4 @@
 - [x] 7. Console icon picker (native radio group, optimistic save settled into one write,
       rollback); in-session manifest re-read so the sidebar follows; strings in en, fr, de, es and
       pt; tests
-- [ ] 8. Owner review in the running UI; `make gate` at landing; `openspec archive library-icons`
+- [x] 8. Owner review in the running UI; `make gate` at landing; `openspec archive library-icons`
