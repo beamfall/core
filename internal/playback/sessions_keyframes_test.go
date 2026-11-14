@@ -91,15 +91,30 @@ func TestAudioCopyPlaylistFollowsSourceKeyframes(t *testing.T) {
 		key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
 		playlist := readAudioCopyPlaylist(t, sessions, key, src, duration)
 
+		index, err := ffmpeg.New().ProbeKeyframes(context.Background(), src)
+		if err != nil {
+			t.Fatal(err)
+		}
 		lengths := playlistSegmentLengths(t, playlist)
-		if len(lengths) != 9 {
-			t.Fatalf("%s: %d segments, want 9 (keyframes every 7s over 60s):\n%s", name, len(lengths), playlist)
+		if len(lengths) != 9 || len(index.Keyframes) != 9 {
+			t.Fatalf("%s: %d segments over %d keyframes, want 9 (keyframes every 7s over 60s):\n%s", name, len(lengths), len(index.Keyframes), playlist)
 		}
 		var total float64
 		for i, length := range lengths {
 			total += length
-			if i < len(lengths)-1 && length != 7 {
-				t.Fatalf("%s: segment %d lasts %.3fs, want 7.000:\n%s", name, i, length, playlist)
+			if i == len(lengths)-1 {
+				continue
+			}
+			// Segment 0 runs from 0 to the second keyframe, so it also holds
+			// the first keyframe's offset (AAC priming puts it a frame or so
+			// past 0 on some muxers and FFmpeg releases); the rest span one GOP.
+			from := 0.0
+			if i > 0 {
+				from = index.Keyframes[i].Seconds()
+			}
+			want := index.Keyframes[i+1].Seconds() - from
+			if math.Abs(length-want) > keyframeDriftTolerance+0.0005 || (i > 0 && math.Abs(length-7) > keyframeDriftTolerance+0.0005) {
+				t.Fatalf("%s: segment %d lasts %.3fs, want %.3f:\n%s", name, i, length, want, playlist)
 			}
 		}
 		probed := probeFormatDuration(t, src)
@@ -162,8 +177,17 @@ func TestAudioCopyRestartsLandOnPlaylistTimes(t *testing.T) {
 			if segment == 0 {
 				wantVideo = index.Keyframes[0].Seconds()
 			}
+			// Segment 0's encoder starts from the head of the file, where
+			// FFmpeg releases differ by up to a frame in where they place
+			// the first video packet next to primed AAC audio (8.0 shifts it
+			// to the audio's 23ms, 9.0 does not); restarts seek to a keyframe
+			// and must land on the playlist time.
+			tolerance := keyframeDriftTolerance
+			if segment == 0 {
+				tolerance = 1.0 / 25
+			}
 			videoAt := firstVideoPacketPTS(t, init, path)
-			if drift := math.Abs(videoAt - wantVideo); drift > keyframeDriftTolerance {
+			if drift := math.Abs(videoAt - wantVideo); drift > tolerance {
 				t.Fatalf("%s segment %d: video starts at %.6fs, want %.6fs (playlist %.3fs)", name, segment, videoAt, wantVideo, playlistAt)
 			}
 			// Audio starts with the segment: at the video for a restart, and

@@ -24,7 +24,10 @@ case "${1:-}" in
     final="$CORPUS/$version"
     test ! -e "$final" || { echo "fixture already exists: $final" >&2; exit 1; }
     mkdir -p "$CORPUS"
-    staging="$(mktemp -d "$CORPUS/.${version}.XXXXXX")"
+    # Stage outside the checkout: the backup manifest records its own output
+    # path, and the committed fixture must not carry the generating machine's
+    # checkout path.
+    staging="$(mktemp -d "${TMPDIR:-/tmp}/beamfall-backup-fixture.XXXXXX")"
     trap 'rm -rf "$staging"' EXIT INT TERM
     (
       cd "$ROOT"
