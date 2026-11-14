@@ -206,6 +206,24 @@ func TestBuildTranscodeFailuresLeaveNoPack(t *testing.T) {
 	}
 }
 
+func TestBuildTranscodeCancellationStaysVisible(t *testing.T) {
+	svc, authService, st, _ := newFixture(t)
+	setFixtureClass(t, st, "media-alpha", store.MediaClassVideo)
+	ctx, cancel := context.WithCancel(context.Background())
+	svc.SetTranscoder(func(context.Context, string, string, string) error {
+		cancel()
+		return errors.New("ffmpeg convert: exit status 255")
+	})
+	scope := scopeFor(t, authService, "session-default")
+	_, err := svc.BuildPack(ctx, scope, BuildPackRequest{TargetKind: TargetKindMedia, TargetRef: "media-alpha", Quality: QualityLow})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("BuildPack err = %v, want context.Canceled so the job yields", err)
+	}
+	if entries := packRootEntries(t, svc); len(entries) != 0 {
+		t.Fatalf("pack root holds %v after an interrupted build", entries)
+	}
+}
+
 func TestBuildRefusesTranscodeInEncryptedLibrary(t *testing.T) {
 	svc, authService, st, _ := newFixture(t)
 	setFixtureClass(t, st, "media-alpha", store.MediaClassVideo)

@@ -248,6 +248,49 @@ func TestCreateOfflinePackWithQualityQueuesBackgroundBuild(t *testing.T) {
 	}
 }
 
+func TestCreateOfflinePackBuildsPerSelectedVersion(t *testing.T) {
+	handler, st := newOfflinePackHandler(t)
+	ids := map[string]bool{}
+	for _, version := range []string{"Director's Cut", "Theatrical", "Theatrical"} {
+		body, err := json.Marshal(map[string]any{
+			"query": "mutation { createOfflinePack { id } }",
+			"variables": map[string]any{
+				"targetKind": "media", "targetRef": "media-alpha", "quality": "low",
+				"selectedVersions": map[string]string{"media-alpha": version},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, errs := post(t, handler, string(body), authorizeViewer)
+		if len(errs) != 0 {
+			t.Fatalf("createOfflinePack errors = %#v", errs)
+		}
+		var created struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(data["createOfflinePack"], &created); err != nil {
+			t.Fatal(err)
+		}
+		ids[created.ID] = true
+	}
+	jobs, err := st.ListJobs(t.Context(), store.JobStatusQueued)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 2 || len(jobs) != 2 {
+		t.Fatalf("pack IDs = %v, queued jobs = %d; want one build per selected version", ids, len(jobs))
+	}
+}
+
+func TestSelectedVersionsKeyIsCanonical(t *testing.T) {
+	a := selectedVersionsKey(map[store.MediaID]string{"m1": "A", "m2": "B"})
+	b := selectedVersionsKey(map[store.MediaID]string{"m2": "B", "m1": "A"})
+	if a != b || a == selectedVersionsKey(map[store.MediaID]string{"m1": "A,m2=B"}) || selectedVersionsKey(nil) != "" {
+		t.Fatalf("selectedVersionsKey not canonical or collides: %q %q", a, b)
+	}
+}
+
 func TestCreateOfflinePackRejectsUnknownQuality(t *testing.T) {
 	handler, st := newOfflinePackHandler(t)
 	body := `{"query":"mutation { createOfflinePack { id } }","variables":{"targetKind":"media","targetRef":"media-alpha","quality":"ultra"}}`

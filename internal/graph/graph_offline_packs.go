@@ -5,6 +5,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
@@ -169,7 +172,7 @@ func (h *Handler) queueOfflinePackBuild(ctx context.Context, scope auth.Scope, b
 		Class: store.JobClassBackground,
 		// The device is part of the key: a pack is sealed to one device key, so
 		// another device of the same Profile must not reuse this build.
-		DedupeKey: offlinePackBuildDedupeKey(scope.ProfileID, build.TargetKind, build.TargetRef) + "\x1f" + string(scope.DeviceID) + "\x1f" + build.Quality,
+		DedupeKey: offlinePackBuildDedupeKey(scope.ProfileID, build.TargetKind, build.TargetRef) + "\x1f" + string(scope.DeviceID) + "\x1f" + build.Quality + "\x1f" + selectedVersionsKey(build.SelectedVersions),
 		Payload:   payload,
 		CreatedAt: time.Now().UTC(),
 	})
@@ -213,6 +216,17 @@ func selectedVersionsFromVariables(req request) map[store.MediaID]string {
 		selected[store.MediaID(id)] = version
 	}
 	return selected
+}
+
+// selectedVersionsKey is a canonical form of a pack's version choices, so
+// builds of different versions of the same target never share a job.
+func selectedVersionsKey(selected map[store.MediaID]string) string {
+	parts := make([]string, 0, len(selected))
+	for id, version := range selected {
+		parts = append(parts, strconv.Quote(string(id))+"="+strconv.Quote(version))
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, ",")
 }
 
 func offlinePackBuildDedupeKey(profileID store.ProfileID, kind, ref string) string {

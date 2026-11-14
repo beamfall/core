@@ -224,6 +224,12 @@ func (s *Service) transcodeSources(ctx context.Context, sources []packBuildSourc
 		dst := filepath.Join(packDir, fmt.Sprintf("%04d.src.mp4", i))
 		if err := s.transcode(ctx, sources[i].path, dst, quality); err != nil {
 			_ = os.Remove(dst)
+			// A transcoder may flatten a cancellation into its own error. Keep
+			// shutdown and preemption visible so the job yields and reruns under
+			// the same pack ID instead of failing.
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return fmt.Errorf("offline pack transcode interrupted: %w", ctxErr)
+			}
 			return fmt.Errorf("offline pack transcode: %w", err)
 		}
 		sources[i].path = dst
