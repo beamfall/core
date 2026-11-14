@@ -64,7 +64,7 @@ A descendant row SHALL be named by a key no other admitted write holds: when a k
 bound, admission SHALL spend nothing and the Host SHALL stamp the rows 1 ms later and ask again, a
 bounded number of times. The binding ledger SHALL be bounded in total and per Worker, and a full
 ledger or share SHALL refuse the write without spending any budget. A call refused on its targets
-SHALL reserve nothing, and a call whose audit row fails SHALL release what it reserved.
+SHALL reserve nothing, and a call whose audit row or seam fails SHALL release what it reserved.
 
 #### Scenario: Two chains write one item in the same millisecond
 
@@ -80,5 +80,18 @@ SHALL reserve nothing, and a call whose audit row fails SHALL release what it re
 
 #### Scenario: Refused calls hold no reservation
 
-- **WHEN** a write is refused because a target is missing or hidden, or because its audit row fails
+- **WHEN** a write is refused because a target is missing or hidden, a metadata field the store
+  would reject (empty or duplicate name, zero date), its audit row fails, or its seam fails
 - **THEN** no descendant binding remains for it in the ledger
+
+### Requirement: A descendant binding outlives its row's fresh root
+
+A binding SHALL last until a fresh root started at its row's stamp would be expired, measured from
+the later of admission and that stamp, so a row stamped after admission never yields a usable root
+once its chain has expired.
+
+#### Scenario: Restamped row delivered after its chain expired
+
+- **WHEN** a row stamped 1 ms after admission is delivered after the writing chain has expired
+- **THEN** it returns with the expired chain's token, and once its binding lapses a root minted
+  from its stamp is already expired

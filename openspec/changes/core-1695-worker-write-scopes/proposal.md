@@ -34,7 +34,11 @@ audited and approved by the owner, so these tools should run through it.
   spends one chain budget instead of starting fresh roots. Keys (aggregate, id, millisecond) are
   unique: a write whose key is taken is restamped 1 ms later, so two chains never share a row's
   lineage. Each Worker may hold at most 16,384 of the ledger's 65,536 entries for the 15-minute
-  chain lifetime (about 1,000 metadata ids a minute sustained); refused calls reserve nothing.
+  chain lifetime (about 1,000 metadata ids a minute sustained); refused calls reserve nothing, and
+  a seam failure releases the rows (a seam appends its rows only on success). A binding lasts until
+  a fresh root started at its row's stamp would be expired, so a restamped row never yields budget
+  after its chain expires. Metadata fields the store would reject (empty or duplicate name, zero
+  date) are refused before audit.
 - New wire methods: `write-metadata`, `create-collection`, `add-collection-media`, `set-artwork`,
   `set-watched`, `read-playback-state`.
 - Activity log gains five `plugin.*` actions with Console labels.

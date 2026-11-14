@@ -13,6 +13,8 @@
 - [x] 2.5 Self-chain test: a Worker's own descendant rows return its token and stop at the budget
 - [x] 2.6 Unique descendant keys, a per-Worker ledger share, validate before admitting, release on
       audit failure (Codex review)
+- [x] 2.7 Bindings outlive a restamped row's fresh root; store-invalid metadata refused before
+      audit; seam failure releases the rows (Codex review)
 - [x] 2.3 `openspec validate --all --strict` passes
 - [ ] 2.4 wsl preflight passes on the head
 
