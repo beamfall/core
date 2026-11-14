@@ -57,6 +57,7 @@ import { useLiveTracks } from "./useLiveTracks";
 import type { PlayerState, SwitchResult } from "./usePlayer";
 import { useSubtitleAppearance } from "./useSubtitleAppearance";
 import { useSubtitleStyling } from "./useSubtitleStyling";
+import { markViewerIntent } from "./viewerIntent";
 
 // The player's control overlay (CORE-1141): a gradient scrim with the title,
 // route summary, slim scrubber (buffered range, marker strip, hover tooltip or
@@ -522,6 +523,9 @@ export function PlayerTransport({
   function setPlaybackPosition(value: number) {
     const video = videoRef.current;
     if (video && Number.isFinite(value)) {
+      // A scrub can commit long after the press that began it, so the seek
+      // itself marks the viewer's intent for a Watch Party.
+      markViewerIntent();
       video.currentTime = value;
       setCurrent(value);
     }

@@ -33,6 +33,8 @@ import { useMediaLoading } from "../player/useMediaLoading";
 import { useMediaSession } from "../player/useMediaSession";
 import { usePlayer } from "../player/usePlayer";
 import { useUpNext } from "../player/useUpNext";
+import { useWatchParty } from "../player/useWatchParty";
+import { WatchPartyPanel, WatchPartySyncIndicator } from "../player/WatchPartyPanel";
 
 // The player (/watch/:mediaId), ported from the vanilla play() + player view
 // (app.js / index.html). Negotiates playback-info, routes to direct play or
@@ -55,6 +57,7 @@ export function PlayerPage() {
   const identity = useViewerIdentity();
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [partyOpen, setPartyOpen] = useState(false);
   const [clientPrefs, setClientPrefs] = useState<ClientPref[]>([]);
   const [media, setMedia] = useState<GenericMediaInfo | null>(null);
 
@@ -126,7 +129,7 @@ export function PlayerPage() {
   const { chromeHidden, reveal } = useChromeAutoHide({
     stageRef,
     videoRef,
-    menuOpen,
+    menuOpen: menuOpen || partyOpen,
   });
 
   // Advance to another Media's watch route, carrying its title and the queue
@@ -142,6 +145,16 @@ export function PlayerPage() {
     },
     [navigate, queue, queueIdentity],
   );
+
+  // Watch Party (CORE-1677): the party moves every member's player to the
+  // title it is on and keeps the <video> on its shared timeline.
+  const followParty = useCallback((id: string) => playItem(id, ""), [playItem]);
+  const watchParty = useWatchParty({
+    videoRef,
+    attached: state.phase !== "message" && state.phase !== "terminal",
+    mediaId: mediaId || "",
+    onFollow: followParty,
+  });
 
   // Up Next auto-advance: the server-issued next Media (a queue's next item
   // when one was declared, else the server's own next-item pick).
@@ -351,6 +364,15 @@ export function PlayerPage() {
         <Button variant="outline" size="sm" onClick={back}>
           {t("back")}
         </Button>
+        {mediaId && (
+          <WatchPartyPanel
+            party={watchParty.party}
+            open={partyOpen}
+            onOpenChange={setPartyOpen}
+            onStart={watchParty.start}
+            onLeave={watchParty.leave}
+          />
+        )}
       </div>
 
       {state.phase === "message" || state.phase === "terminal" ? (
@@ -416,6 +438,12 @@ export function PlayerPage() {
               </p>
             )
           )}
+          <WatchPartySyncIndicator
+            playback={watchParty.playback}
+            driftMS={watchParty.driftMS}
+            needsTap={watchParty.needsTap}
+            onResume={watchParty.resume}
+          />
           {playing && (
             <PlayerTransport
               videoRef={videoRef}

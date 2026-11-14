@@ -3,6 +3,7 @@ import { createRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlaybackNext } from "../lib/playback";
 import { useMediaSession } from "./useMediaSession";
+import { lastViewerIntent } from "./viewerIntent";
 
 // Minimal stubs for the Media Session API surface jsdom lacks.
 type Handler = ((d?: { seekOffset?: number; seekTime?: number }) => void) | null;
@@ -110,6 +111,15 @@ describe("useMediaSession", () => {
     expect(video.play).toHaveBeenCalled();
     handlers.get("pause")?.();
     expect(video.pause).toHaveBeenCalled();
+  });
+
+  it("marks each transport intent as the viewer's own", () => {
+    setup();
+    for (const action of ["play", "pause", "seekforward", "seekbackward", "seekto"]) {
+      const before = performance.now();
+      handlers.get(action)?.({ seekOffset: 1, seekTime: 1 });
+      expect(lastViewerIntent(), action).toBeGreaterThanOrEqual(before);
+    }
   });
 
   it("keeps supported handlers when a browser rejects one action", () => {

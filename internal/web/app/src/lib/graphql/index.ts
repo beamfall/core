@@ -22,3 +22,4 @@ export * from "./console";
 export * from "./manage";
 export type * from "./types";
 export * from "./viewer";
+export * from "./watchparty";

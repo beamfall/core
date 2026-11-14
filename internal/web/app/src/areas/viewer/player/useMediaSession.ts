@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import type { PlaybackNext } from "../lib/playback";
+import { markViewerIntent } from "./viewerIntent";
 
 // Browser Media Session API integration (ADR-0084 §43). The Media Session is a
 // *surface, not authority*: it MIRRORS the player's transport state to the OS
@@ -87,18 +88,29 @@ export function useMediaSession({
       }
     };
 
-    safeSet("play", () => void video.play().catch(() => {}));
-    safeSet("pause", () => video.pause());
+    // Each transport intent is marked as the viewer's own, so a Watch Party
+    // sends it on like an in-page control.
+    safeSet("play", () => {
+      markViewerIntent();
+      void video.play().catch(() => {});
+    });
+    safeSet("pause", () => {
+      markViewerIntent();
+      video.pause();
+    });
     safeSet("seekbackward", (details) => {
+      markViewerIntent();
       const step = details?.seekOffset ?? SEEK_STEP_SECONDS;
       video.currentTime = Math.max(0, video.currentTime - step);
     });
     safeSet("seekforward", (details) => {
+      markViewerIntent();
       const step = details?.seekOffset ?? SEEK_STEP_SECONDS;
       const end = Number.isFinite(video.duration) ? video.duration : Infinity;
       video.currentTime = Math.min(end, video.currentTime + step);
     });
     safeSet("seekto", (details) => {
+      markViewerIntent();
       if (details?.seekTime != null) video.currentTime = details.seekTime;
     });
     // nexttrack only when the server pre-minted a next item; the advance is
