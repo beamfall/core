@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setIdentityEpochSignal } from "@/lib/api";
 import { fetchClientPrefs, fetchMedia, setClientPref } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { PlayerTransport } from "../player/PlayerTransport";
@@ -412,5 +413,24 @@ describe("PlayerPage subtitle appearance prefs (CORE-1681)", () => {
       "subtitle.edge=",
       "subtitle.position=",
     ]);
+  });
+
+  it("drops writes still queued when the identity epoch ends", async () => {
+    const epoch = new AbortController();
+    setIdentityEpochSignal(epoch.signal);
+    let finishFirst: () => void = () => {};
+    vi.mocked(setClientPref)
+      .mockReturnValueOnce(new Promise((resolve) => (finishFirst = () => resolve({ key: "" }))))
+      .mockResolvedValue({ key: "" });
+    try {
+      renderPlayer(playerState({ phase: "playing" }));
+      act(() => transportProps().onSubtitleAppearanceReset?.());
+      await waitFor(() => expect(setClientPref).toHaveBeenCalledTimes(1));
+      epoch.abort();
+      await act(async () => finishFirst());
+      expect(setClientPref).toHaveBeenCalledTimes(1);
+    } finally {
+      setIdentityEpochSignal();
+    }
   });
 });

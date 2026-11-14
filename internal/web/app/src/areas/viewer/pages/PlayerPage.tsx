@@ -2,6 +2,7 @@ import { AlertCircle, LoaderCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import { Button } from "@/components/ui/button";
+import { getIdentityEpochSignal } from "@/lib/api";
 import { displayString } from "@/lib/display";
 import { fetchClientPrefs, fetchMedia, setClientPref } from "@/lib/graphql";
 import type { ClientPref, GenericMediaInfo } from "@/lib/graphql/types";
@@ -251,16 +252,20 @@ export function PlayerPage() {
     return () => controller.abort();
   }, [mediaId]);
 
-  // Keys written while the read is in flight keep their local value: the read
-  // may predate the write.
-  const editedPrefKeys = useRef(new Set<string>());
+  // Keys edited in this identity epoch keep their local value over a Profile
+  // read, which may predate the write. A Profile switch starts a new epoch.
+  const editedPrefKeys = useRef({ epoch: getIdentityEpochSignal(), keys: new Set<string>() });
+  const editedKeys = useCallback(() => {
+    const epoch = getIdentityEpochSignal();
+    if (editedPrefKeys.current.epoch !== epoch) editedPrefKeys.current = { epoch, keys: new Set() };
+    return editedPrefKeys.current.keys;
+  }, []);
   useEffect(() => {
     let current = true;
-    editedPrefKeys.current = new Set();
     void fetchClientPrefs()
       .then((prefs) => {
         if (!current) return;
-        const edited = editedPrefKeys.current;
+        const edited = editedKeys();
         setClientPrefs((local) => [
           ...prefs.filter((pref) => !edited.has(pref.key)),
           ...local.filter((pref) => edited.has(pref.key)),
@@ -270,7 +275,7 @@ export function PlayerPage() {
     return () => {
       current = false;
     };
-  }, [mediaId]);
+  }, [mediaId, editedKeys]);
 
   const setShowSkipInterval = useCallback(
     (value: SkipInterval | "") => {
@@ -286,19 +291,27 @@ export function PlayerPage() {
   );
 
   // Subtitle appearance roams with the Profile (subtitle.* keys, CORE-1681).
-  // Writes go out one at a time so a slow earlier write cannot land last.
+  // Writes go out one at a time so a slow earlier write cannot land last, and
+  // a write still queued when its identity epoch ends is dropped.
   const prefWrites = useRef<Promise<unknown>>(Promise.resolve());
-  const storePrefs = useCallback((entries: ClientPref[]) => {
-    const keys = new Set(entries.map((entry) => entry.key));
-    for (const key of keys) editedPrefKeys.current.add(key);
-    setClientPrefs((prefs) => [
-      ...prefs.filter((pref) => !keys.has(pref.key)),
-      ...entries.filter((entry) => entry.value),
-    ]);
-    for (const { key, value } of entries) {
-      prefWrites.current = prefWrites.current.then(() => setClientPref(key, value)).catch(() => {});
-    }
-  }, []);
+  const storePrefs = useCallback(
+    (entries: ClientPref[]) => {
+      const keys = new Set(entries.map((entry) => entry.key));
+      const edited = editedKeys();
+      for (const key of keys) edited.add(key);
+      setClientPrefs((prefs) => [
+        ...prefs.filter((pref) => !keys.has(pref.key)),
+        ...entries.filter((entry) => entry.value),
+      ]);
+      const epoch = getIdentityEpochSignal();
+      for (const { key, value } of entries) {
+        prefWrites.current = prefWrites.current
+          .then(() => (epoch?.aborted ? undefined : setClientPref(key, value)))
+          .catch(() => {});
+      }
+    },
+    [editedKeys],
+  );
   const setSubtitleAppearance = useCallback(
     (field: SubtitleAppearanceField, value: string) =>
       storePrefs([
