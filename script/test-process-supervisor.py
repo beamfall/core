@@ -231,6 +231,15 @@ def preexisting_indeterminate_identities(token: str) -> Optional[frozenset[Proce
         return None
     for pid in process_ids:
         if process_matches_effective_uid(pid) is False:
+            # Another user's process cannot carry our token, but it can be the
+            # ancestor of a concurrent same-UID peer: a new SSH login's
+            # unreadable sshd-session descends from the root sshd listener,
+            # which is also the gate's own ancestor when it was launched over
+            # SSH (CORE-1564). Recording it lets that lineage prove the peer.
+            # Real descendants still reach the supervised session first.
+            identity = process_identity(pid)
+            if identity is not None:
+                identities.add(identity)
             continue
         try:
             os.getsid(pid)
