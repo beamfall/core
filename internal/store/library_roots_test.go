@@ -147,3 +147,45 @@ func TestCreateLibrarySeedsScanSchedule(t *testing.T) {
 		t.Fatalf("created scan schedule = %#v", schedule)
 	}
 }
+
+func TestCreateUngrantedLibraryOnlyBeforeFirstProfile(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, t.TempDir(), Options{})
+	if err != nil {
+		t.Fatalf("Open returned error: %v", err)
+	}
+	defer st.Close()
+
+	root := filepath.Join(t.TempDir(), "media")
+	if _, err := st.CreateUngrantedLibraryWithRoots(ctx, "Seeded", false, "music", []string{root}, ""); err != nil {
+		t.Fatalf("ungranted create before any profile returned error: %v", err)
+	}
+	if _, err := st.CreateProfile(ctx, "Owner", ProfileAdult, LibraryFilter{AllLibraries: true}); err != nil {
+		t.Fatalf("CreateProfile returned error: %v", err)
+	}
+	if _, err := st.CreateUngrantedLibraryWithRoots(ctx, "Late", false, "music", []string{root}, ""); err == nil {
+		t.Fatal("ungranted create succeeded after a profile exists; want refusal")
+	}
+}
+
+func TestBootstrapOwnerGrantsUngrantedLibrary(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, t.TempDir(), Options{})
+	if err != nil {
+		t.Fatalf("Open returned error: %v", err)
+	}
+	defer st.Close()
+
+	library, err := st.CreateUngrantedLibraryWithRoots(ctx, "Seeded", false, "music", []string{filepath.Join(t.TempDir(), "media")}, "")
+	if err != nil {
+		t.Fatalf("CreateUngrantedLibraryWithRoots returned error: %v", err)
+	}
+	device, session := bootstrapEnrollment("seeded")
+	owner, err := st.BootstrapOwner(ctx, "Owner", device, session, SignInSecurityHome)
+	if err != nil {
+		t.Fatalf("BootstrapOwner returned error: %v", err)
+	}
+	if len(owner.Library) != 1 || owner.Library[0] != library.ID {
+		t.Fatalf("owner library grants = %v, want [%s]", owner.Library, library.ID)
+	}
+}
