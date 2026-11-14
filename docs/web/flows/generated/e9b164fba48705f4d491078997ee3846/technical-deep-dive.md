@@ -1,6 +1,6 @@
 # Viewer home and node browse: manifest layout, sections, hero — technical-deep-dive
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:0377bd96d26f2eb150933abd096a9f4d -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -15,7 +15,7 @@ Source: internal/web/app/src/areas/viewer/components/FilterBar\.tsx:11; symbol: 
 <!-- flowdocs:paragraph:1e19bb27444ca98b4d9f975b8511886f -->
 Declared member: source declares Hero; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/components/Hero\.tsx:17; symbol: Hero; span SHA256: dbc53f2e5b19307a6ec627b8fd4e3a06f8b66197c64ded5b0afb567bffb83526.
+Source: internal/web/app/src/areas/viewer/components/Hero\.tsx:19; symbol: Hero; span SHA256: dbc53f2e5b19307a6ec627b8fd4e3a06f8b66197c64ded5b0afb567bffb83526.
 
 <!-- flowdocs:paragraph:47eb52f260aa7fb270506dfe1a123f7a -->
 Declared member: source declares HydratedSection; membership is caller\-declared, not runtime evidence\.
@@ -50,17 +50,17 @@ Source: internal/web/app/src/areas/viewer/components/HydratedSection\.tsx:22; sy
 <!-- flowdocs:paragraph:ed76b230c32f62b550c3f2620a015b1f -->
 Declared member: source declares LayoutView; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/components/LayoutView\.tsx:19; symbol: LayoutView; span SHA256: 4a5a4573442dfe073911aafa296b4834b04fb54126c387764d12e5005584c092.
+Source: internal/web/app/src/areas/viewer/components/LayoutView\.tsx:20; symbol: LayoutView; span SHA256: 4a5a4573442dfe073911aafa296b4834b04fb54126c387764d12e5005584c092.
 
 <!-- flowdocs:paragraph:6f10cf731e3611574aebe33520ecac37 -->
 Declared member: source declares SectionView; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/components/SectionView\.tsx:26; symbol: SectionView; span SHA256: 34208651d8932f4ee2050ca3cce4977abecef653d687b566f0af2b23d1e29afb.
+Source: internal/web/app/src/areas/viewer/components/SectionView\.tsx:27; symbol: SectionView; span SHA256: 34208651d8932f4ee2050ca3cce4977abecef653d687b566f0af2b23d1e29afb.
 
 <!-- flowdocs:paragraph:de78aca5572fae5b8a77e41f63626e27 -->
 Declared member: source declares SeeAllTarget; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/components/SectionView\.tsx:11; symbol: SeeAllTarget; span SHA256: 0c810949d11d19102598c6e00bb358e7c79bcc177ac3521b0cd53e1abd9ff075.
+Source: internal/web/app/src/areas/viewer/components/SectionView\.tsx:12; symbol: SeeAllTarget; span SHA256: 0c810949d11d19102598c6e00bb358e7c79bcc177ac3521b0cd53e1abd9ff075.
 
 <!-- flowdocs:paragraph:43987b002c86e7e4d9a727c1ed3c7f9a -->
 Declared member: source declares RenderFocusAnchor; membership is caller\-declared, not runtime evidence\.
@@ -130,22 +130,22 @@ Source: internal/web/app/src/areas/viewer/lib/sections\.ts:42; symbol: fetchSect
 <!-- flowdocs:paragraph:2efa480d211874c3aa74ac37ac7c718d -->
 Declared member: source declares SOURCE\_ITEMS\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:124; symbol: SOURCE\_ITEMS\_QUERY; span SHA256: 8d9143d76f0526e709ac058024b7a5ddded083c00c3ceac977a4ddb1b5576166.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:125; symbol: SOURCE\_ITEMS\_QUERY; span SHA256: 8d9143d76f0526e709ac058024b7a5ddded083c00c3ceac977a4ddb1b5576166.
 
 <!-- flowdocs:paragraph:c20d12813fe0fa7824e04fbdba77a007 -->
 Declared member: source declares SourceItemsVars; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:128; symbol: SourceItemsVars; span SHA256: 4c8db2fa81447b625909fce2e5e1042f0e94d1bc7da26ad4924c6bfed7c554f4.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:129; symbol: SourceItemsVars; span SHA256: 4c8db2fa81447b625909fce2e5e1042f0e94d1bc7da26ad4924c6bfed7c554f4.
 
 <!-- flowdocs:paragraph:46dcae7c4cc5e996ac8aab641d21e113 -->
 Declared member: source declares fetchSourceItems; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:147; symbol: fetchSourceItems; span SHA256: 9f1317f83dd3fa7438a3d9ad73edaad922c0f72c4d85858076328b5d3326f704.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:148; symbol: fetchSourceItems; span SHA256: 9f1317f83dd3fa7438a3d9ad73edaad922c0f72c4d85858076328b5d3326f704.
 
 <!-- flowdocs:paragraph:351b909a308c267a194a35761cd1260e -->
 Declared member: source declares activate; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/components/Hero\.tsx:34; symbol: activate; span SHA256: 38c7870793cb5970fbbde75bfafb1d6f9496f639866681226e5ac80a8ca17524.
+Source: internal/web/app/src/areas/viewer/components/Hero\.tsx:36; symbol: activate; span SHA256: 38c7870793cb5970fbbde75bfafb1d6f9496f639866681226e5ac80a8ca17524.
 
 <!-- flowdocs:paragraph:3acc800a53c8ccbc579884a93ba024e7 -->
 Declared member: source declares abandon; membership is caller\-declared, not runtime evidence\.
@@ -160,15 +160,15 @@ Source: internal/web/app/src/areas/viewer/components/HydratedSection\.tsx:93; sy
 <!-- flowdocs:paragraph:b64eec77c36481ec7df93d890fa521c1 -->
 Declared member: source declares markInteraction; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/components/LayoutView\.tsx:90; symbol: markInteraction; span SHA256: cc673828318d73d78aca47b2cb6930cdf5ae70f4e77ce6f1b84d351c3bdca243.
+Source: internal/web/app/src/areas/viewer/components/LayoutView\.tsx:91; symbol: markInteraction; span SHA256: cc673828318d73d78aca47b2cb6930cdf5ae70f4e77ce6f1b84d351c3bdca243.
 
 <!-- flowdocs:paragraph:d4872e5a83267c16647ae69eee1d2f9e -->
 Declared member: source declares queue; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/components/SectionView\.tsx:65; symbol: queue; span SHA256: c92288ca6a1370c46fea9a0467807c9ec6e7cb9c94f61d37f609f5c6fc2d1584.
+Source: internal/web/app/src/areas/viewer/components/SectionView\.tsx:66; symbol: queue; span SHA256: c92288ca6a1370c46fea9a0467807c9ec6e7cb9c94f61d37f609f5c6fc2d1584.
 
 <!-- flowdocs:paragraph:7d2f40251a1f1129c190260372fd0450 -->
 Declared member: source declares buildSeeAll; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/pages/BrowsePage\.tsx:41; symbol: buildSeeAll; span SHA256: 7a73770aa1de3dddcd2440bfa04ad32728cb0203ac98fa742d3d4295ecd08c79.
+Source: internal/web/app/src/areas/viewer/pages/BrowsePage\.tsx:47; symbol: buildSeeAll; span SHA256: 7a73770aa1de3dddcd2440bfa04ad32728cb0203ac98fa742d3d4295ecd08c79.
 

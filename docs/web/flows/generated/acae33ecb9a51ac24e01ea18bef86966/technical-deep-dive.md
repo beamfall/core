@@ -1,21 +1,21 @@
 # Console admin gate: locked reasons and unlock — technical-deep-dive
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:74dd4d329f220b755dd7ea86aaf6faaf -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/console/AdminGate\.tsx:42; symbol: AdminGate; span SHA256: 7fec3f21e920c5b6baebe521f9c0721935304bf74d69e13ad72c3a8769272c45.
+Source: internal/web/app/src/areas/console/AdminGate\.tsx:46; symbol: AdminGate; span SHA256: 7fec3f21e920c5b6baebe521f9c0721935304bf74d69e13ad72c3a8769272c45.
 
 <!-- flowdocs:paragraph:4f7e4cbfc91384964766754aa49cf78b -->
 Declared member: source declares AdminGateCopy; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/AdminGate\.tsx:34; symbol: AdminGateCopy; span SHA256: 04f4361231f3a7143f3d17e421bc13ce29ccd846980d0107c76d92e9118a7886.
+Source: internal/web/app/src/areas/console/AdminGate\.tsx:38; symbol: AdminGateCopy; span SHA256: 04f4361231f3a7143f3d17e421bc13ce29ccd846980d0107c76d92e9118a7886.
 
 <!-- flowdocs:paragraph:ffeeb5cd4d368c85e967d62b8b8f76ea -->
 Declared member: source declares LockedCard; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/AdminGate\.tsx:226; symbol: LockedCard; span SHA256: 154d0a7996d337f3d348e6bf261d15be6aca8befc7fdae189377ba21f1f7359e.
+Source: internal/web/app/src/areas/console/AdminGate\.tsx:278; symbol: LockedCard; span SHA256: 154d0a7996d337f3d348e6bf261d15be6aca8befc7fdae189377ba21f1f7359e.
 
 <!-- flowdocs:paragraph:b6acb80c1a7799677945a4e20b43ef80 -->
 Declared member: source declares LOCK\_REASON\_LEAD; membership is caller\-declared, not runtime evidence\.
@@ -50,7 +50,7 @@ Source: internal/web/app/src/lib/graphql/auth\.ts:37; symbol: ADMIN\_SESSION\_QU
 <!-- flowdocs:paragraph:48711a2b2899dc522f038cafaa6ff933 -->
 Declared member: source declares END\_ADMIN\_SESSION\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/auth\.ts:73; symbol: END\_ADMIN\_SESSION\_MUTATION; span SHA256: e16f9e242676d67389305fa4fef379b13b4c91d376bc5e935d74a24731b79481.
+Source: internal/web/app/src/lib/graphql/auth\.ts:78; symbol: END\_ADMIN\_SESSION\_MUTATION; span SHA256: e16f9e242676d67389305fa4fef379b13b4c91d376bc5e935d74a24731b79481.
 
 <!-- flowdocs:paragraph:be642d3a74dd3eec0dfbc594232685e0 -->
 Declared member: source declares RebindOutcome; membership is caller\-declared, not runtime evidence\.
@@ -70,7 +70,7 @@ Source: internal/web/app/src/lib/graphql/auth\.ts:49; symbol: VerifiedAdminSessi
 <!-- flowdocs:paragraph:1b507dd7a968efae5756dfbe34d92851 -->
 Declared member: source declares endAdminSession; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/auth\.ts:76; symbol: endAdminSession; span SHA256: 4ee3d8497d06e82a98de946da060f09c88687949557d97077c0ae75fe3f3216d.
+Source: internal/web/app/src/lib/graphql/auth\.ts:81; symbol: endAdminSession; span SHA256: 4ee3d8497d06e82a98de946da060f09c88687949557d97077c0ae75fe3f3216d.
 
 <!-- flowdocs:paragraph:42ca20597f0587d573698f6934c1d8e3 -->
 Declared member: source declares fetchAdminSession; membership is caller\-declared, not runtime evidence\.
@@ -85,25 +85,25 @@ Source: internal/web/app/src/lib/graphql/auth\.ts:26; symbol: settleRebind; span
 <!-- flowdocs:paragraph:e841d23b51a43a4cc966507b9ee06350 -->
 Declared member: source declares verifyAdminSession; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/auth\.ts:59; symbol: verifyAdminSession; span SHA256: f4599ac1ba9ab422871325940cd512172d342310a7c310ce60759d5045907b08.
+Source: internal/web/app/src/lib/graphql/auth\.ts:63; symbol: verifyAdminSession; span SHA256: f4599ac1ba9ab422871325940cd512172d342310a7c310ce60759d5045907b08.
 
 <!-- flowdocs:paragraph:fd500bd7e8cb5c3e47875168c93e6c3e -->
 Declared member: source declares beginRequest; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/AdminGate\.tsx:85; symbol: beginRequest; span SHA256: 9d3cf248d26566fc0f6ae341ef3f981e8fe5296a8b52517a6ef9beba2157cc2e.
+Source: internal/web/app/src/areas/console/AdminGate\.tsx:95; symbol: beginRequest; span SHA256: 9d3cf248d26566fc0f6ae341ef3f981e8fe5296a8b52517a6ef9beba2157cc2e.
 
 <!-- flowdocs:paragraph:a4888331ccca07b2f35c176d336fb6b9 -->
 Declared member: source declares invalidateRequest; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/AdminGate\.tsx:78; symbol: invalidateRequest; span SHA256: b548ce3f48cacbebf195598bd93f9a1911656ec0d6dca2b99263368fbf37c3bf.
+Source: internal/web/app/src/areas/console/AdminGate\.tsx:88; symbol: invalidateRequest; span SHA256: b548ce3f48cacbebf195598bd93f9a1911656ec0d6dca2b99263368fbf37c3bf.
 
 <!-- flowdocs:paragraph:81bdd77bf362eb35b2131de6f72337a6 -->
 Declared member: source declares lock; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/AdminGate\.tsx:175; symbol: lock; span SHA256: e01bede2263f9ba16a986748ede26ae84b276779a6662c58115eeea6f755879c.
+Source: internal/web/app/src/areas/console/AdminGate\.tsx:225; symbol: lock; span SHA256: e01bede2263f9ba16a986748ede26ae84b276779a6662c58115eeea6f755879c.
 
 <!-- flowdocs:paragraph:954a27e183f2322a5fc8df533d0410f5 -->
 Declared member: source declares onUnlock; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/AdminGate\.tsx:146; symbol: onUnlock; span SHA256: 1af32882afea6cb06eb460caef60de67db199292a98eebee2eda75a57825f43b.
+Source: internal/web/app/src/areas/console/AdminGate\.tsx:185; symbol: onUnlock; span SHA256: 1af32882afea6cb06eb460caef60de67db199292a98eebee2eda75a57825f43b.
 

@@ -1,6 +1,6 @@
 # Player auto\-skip of intro/credits segments with skipped toast — entities
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:354e2414401f4f1776394efbca3dc1fb -->
 Runtime entities and persistence effects are unresolved; lexical calls are listed separately\.

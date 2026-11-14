@@ -1,6 +1,6 @@
 # Display helpers: activity, job, provider\-key and string formatting — technical-deep-dive
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:4bd6dd8a9c0b93f2ab67bc13ffcdb4db -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -40,22 +40,22 @@ Source: internal/web/app/src/lib/activityDisplay\.ts:66; symbol: ActivityLabel; 
 <!-- flowdocs:paragraph:413db9fe24f1d79274eb6d856d26592c -->
 Declared member: source declares ActivityNames; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/activityDisplay\.ts:267; symbol: ActivityNames; span SHA256: ade1cebd4ec52f32121f0bd455d0bb6ebfd4fef128027aaadcf32afb4fc8468e.
+Source: internal/web/app/src/lib/activityDisplay\.ts:268; symbol: ActivityNames; span SHA256: ade1cebd4ec52f32121f0bd455d0bb6ebfd4fef128027aaadcf32afb4fc8468e.
 
 <!-- flowdocs:paragraph:0269d1f0c4a2ea9873d69aa14cc930f3 -->
 Declared member: source declares ActivityRow; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/activityDisplay\.ts:279; symbol: ActivityRow; span SHA256: 894219619a8cfc5da52b24152048caa2e25e93a9f60e1bb33f07c915f4347204.
+Source: internal/web/app/src/lib/activityDisplay\.ts:280; symbol: ActivityRow; span SHA256: 894219619a8cfc5da52b24152048caa2e25e93a9f60e1bb33f07c915f4347204.
 
 <!-- flowdocs:paragraph:750430794c8d8b3665ceb6687ab700d8 -->
 Declared member: source declares NO\_ACTIVITY\_NAMES; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/activityDisplay\.ts:273; symbol: NO\_ACTIVITY\_NAMES; span SHA256: 557fd1a7c6fa500ce4997dd8dbdaf674fdac1abd01044effdb1c1661ebb64872.
+Source: internal/web/app/src/lib/activityDisplay\.ts:274; symbol: NO\_ACTIVITY\_NAMES; span SHA256: 557fd1a7c6fa500ce4997dd8dbdaf674fdac1abd01044effdb1c1661ebb64872.
 
 <!-- flowdocs:paragraph:d12023142b28d033c43e0229136f2687 -->
 Declared member: source declares RELATIVE\_STEPS; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/activityDisplay\.ts:378; symbol: RELATIVE\_STEPS; span SHA256: 2460b563d05ba10823872cf9b506d3a3bd59be76cea889c2a48b0af2bd29e80d.
+Source: internal/web/app/src/lib/activityDisplay\.ts:379; symbol: RELATIVE\_STEPS; span SHA256: 2460b563d05ba10823872cf9b506d3a3bd59be76cea889c2a48b0af2bd29e80d.
 
 <!-- flowdocs:paragraph:3a10cc977bedb1f0816bbf681b6def85 -->
 Declared member: source declares TargetKind; membership is caller\-declared, not runtime evidence\.
@@ -65,37 +65,37 @@ Source: internal/web/app/src/lib/activityDisplay\.ts:64; symbol: TargetKind; spa
 <!-- flowdocs:paragraph:f8ba80f71cac53b0b393ef91a2d6c4a9 -->
 Declared member: source declares activityMatches; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/activityDisplay\.ts:361; symbol: activityMatches; span SHA256: 113e44e9fddc15a969da1011a31c3a677e172f0203f442c713e8836baa7e2ad8.
+Source: internal/web/app/src/lib/activityDisplay\.ts:362; symbol: activityMatches; span SHA256: 113e44e9fddc15a969da1011a31c3a677e172f0203f442c713e8836baa7e2ad8.
 
 <!-- flowdocs:paragraph:aa610d46891470c385589fe30981ea75 -->
 Declared member: source declares actorName; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/activityDisplay\.ts:303; symbol: actorName; span SHA256: 45661654e5f80cb4e4e5527e5fbe61397e7b8360bf4183a3a54283ae712f352b.
+Source: internal/web/app/src/lib/activityDisplay\.ts:304; symbol: actorName; span SHA256: 45661654e5f80cb4e4e5527e5fbe61397e7b8360bf4183a3a54283ae712f352b.
 
 <!-- flowdocs:paragraph:0b88e3e303a0170bc2c353c417a0689c -->
 Declared member: source declares describeActivity; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/activityDisplay\.ts:339; symbol: describeActivity; span SHA256: b36ada7b6d005db29c3b5170b2226c637a73ce126bcbdb0fb3d51027289c1509.
+Source: internal/web/app/src/lib/activityDisplay\.ts:340; symbol: describeActivity; span SHA256: b36ada7b6d005db29c3b5170b2226c637a73ce126bcbdb0fb3d51027289c1509.
 
 <!-- flowdocs:paragraph:586b3bc3c87b660d554b10e137cd7adb -->
 Declared member: source declares formatLocalTime; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/activityDisplay\.ts:399; symbol: formatLocalTime; span SHA256: d755909efadf4322a5699dbca5e68fe5c14fd70d90db4ff011d53ac4dd52fe2b.
+Source: internal/web/app/src/lib/activityDisplay\.ts:400; symbol: formatLocalTime; span SHA256: d755909efadf4322a5699dbca5e68fe5c14fd70d90db4ff011d53ac4dd52fe2b.
 
 <!-- flowdocs:paragraph:6413aa550a3a19ceb528bc248b2a90ca -->
 Declared member: source declares formatRelativeTime; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/activityDisplay\.ts:387; symbol: formatRelativeTime; span SHA256: a5d4877cd5b6e7d78b71ca9a156f47ba81a62035b47081a8ed175d26fdc4dbab.
+Source: internal/web/app/src/lib/activityDisplay\.ts:388; symbol: formatRelativeTime; span SHA256: a5d4877cd5b6e7d78b71ca9a156f47ba81a62035b47081a8ed175d26fdc4dbab.
 
 <!-- flowdocs:paragraph:51aa0024e8fe7a5daa84ab45bff9f622 -->
 Declared member: source declares formatUtcTime; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/activityDisplay\.ts:408; symbol: formatUtcTime; span SHA256: a35be715f9218283c89fcfd520f7c03a71d96b67351ddc57ecdcf344322c7bea.
+Source: internal/web/app/src/lib/activityDisplay\.ts:409; symbol: formatUtcTime; span SHA256: a35be715f9218283c89fcfd520f7c03a71d96b67351ddc57ecdcf344322c7bea.
 
 <!-- flowdocs:paragraph:acf9175c1d4b7bfa7bc1d19f20b61e39 -->
 Declared member: source declares humanizeActivityKey; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/activityDisplay\.ts:290; symbol: humanizeActivityKey; span SHA256: f37077df7956e2496da8fd1df87f8d857721e41c307571355bb56156f44686a1.
+Source: internal/web/app/src/lib/activityDisplay\.ts:291; symbol: humanizeActivityKey; span SHA256: f37077df7956e2496da8fd1df87f8d857721e41c307571355bb56156f44686a1.
 
 <!-- flowdocs:paragraph:bddee21a04aab371ce6461a054baf9f5 -->
 Declared member: source declares label; membership is caller\-declared, not runtime evidence\.
@@ -105,17 +105,17 @@ Source: internal/web/app/src/lib/activityDisplay\.ts:76; symbol: label; span SHA
 <!-- flowdocs:paragraph:12491fdb1e0688ffc8f1b77df9b2c6a5 -->
 Declared member: source declares parseActivityTime; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/activityDisplay\.ts:413; symbol: parseActivityTime; span SHA256: 660d8f0e3f55fa5c41547728ffca46596dee2896ff4917eb11791fb43d859f08.
+Source: internal/web/app/src/lib/activityDisplay\.ts:414; symbol: parseActivityTime; span SHA256: 660d8f0e3f55fa5c41547728ffca46596dee2896ff4917eb11791fb43d859f08.
 
 <!-- flowdocs:paragraph:b84eaa21a7c5399720b6fcf7c88c9fc0 -->
 Declared member: source declares sentenceCase; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/activityDisplay\.ts:299; symbol: sentenceCase; span SHA256: 397dbb30abee8e9ae42d70c7d4d5a1cf687af3c47671d1324549733f63017f38.
+Source: internal/web/app/src/lib/activityDisplay\.ts:300; symbol: sentenceCase; span SHA256: 397dbb30abee8e9ae42d70c7d4d5a1cf687af3c47671d1324549733f63017f38.
 
 <!-- flowdocs:paragraph:92911f0b9e9a1a79116514782c472c19 -->
 Declared member: source declares targetName; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/activityDisplay\.ts:311; symbol: targetName; span SHA256: babef24ec979acf67ffcaf504d30b3d3326c50079185c89f391da08f777c8f03.
+Source: internal/web/app/src/lib/activityDisplay\.ts:312; symbol: targetName; span SHA256: babef24ec979acf67ffcaf504d30b3d3326c50079185c89f391da08f777c8f03.
 
 <!-- flowdocs:paragraph:13390449790a7a5e3210b663aa60b45a -->
 Declared member: source declares displayString; membership is caller\-declared, not runtime evidence\.

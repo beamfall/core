@@ -1,6 +1,6 @@
 # Playback engine: playback\-info, capability probe, HLS selection and recovery, progress reports — technical-deep-dive
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:0dba614742002a4ca6c0bbcbdd7b4dda -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -455,22 +455,22 @@ Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:204; symbol: term
 <!-- flowdocs:paragraph:20d2efd9344ba822cc53ffeee492450b -->
 Declared member: source declares CLIENT\_PREFS\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:362; symbol: CLIENT\_PREFS\_QUERY; span SHA256: 9bacd1650b0a3e712344a1d217c82eeb1787add2a7fe4dac99cd39090e64fe99.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:375; symbol: CLIENT\_PREFS\_QUERY; span SHA256: 9bacd1650b0a3e712344a1d217c82eeb1787add2a7fe4dac99cd39090e64fe99.
 
 <!-- flowdocs:paragraph:058d7a97b937af79c41662c85c2c1b20 -->
 Declared member: source declares PLAYBACK\_MARKERS\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:269; symbol: PLAYBACK\_MARKERS\_QUERY; span SHA256: 544d5358f08fd6ae9a76cf90c961836ab9b1c6a79b27a7727786601bd8e027de.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:282; symbol: PLAYBACK\_MARKERS\_QUERY; span SHA256: 544d5358f08fd6ae9a76cf90c961836ab9b1c6a79b27a7727786601bd8e027de.
 
 <!-- flowdocs:paragraph:746ce06aa8bd3bd3837c7c6e460b4e02 -->
 Declared member: source declares fetchClientPrefs; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:365; symbol: fetchClientPrefs; span SHA256: b1c6c568bae96333d435a5619a12f1cb5955c51390dbafc6e6a29c4e8e42bd5a.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:378; symbol: fetchClientPrefs; span SHA256: b1c6c568bae96333d435a5619a12f1cb5955c51390dbafc6e6a29c4e8e42bd5a.
 
 <!-- flowdocs:paragraph:96bb1249b851799f390b67d9d0421d04 -->
 Declared member: source declares fetchPlaybackMarkers; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:273; symbol: fetchPlaybackMarkers; span SHA256: 42907473fcded61af03c4d6d88719493d434aba6a290f8f9ba73f01db77e2aa0.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:286; symbol: fetchPlaybackMarkers; span SHA256: 42907473fcded61af03c4d6d88719493d434aba6a290f8f9ba73f01db77e2aa0.
 
 <!-- flowdocs:paragraph:d8e50298ff81bf0c4ccec542dbd16134 -->
 Declared member: source declares clearTimer; membership is caller\-declared, not runtime evidence\.

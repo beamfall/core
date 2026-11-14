@@ -1,6 +1,6 @@
 # Player OS media\-session integration \(lock\-screen controls\) — technical-deep-dive
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a00d6187a8562c48a4178fb9a5402481 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.

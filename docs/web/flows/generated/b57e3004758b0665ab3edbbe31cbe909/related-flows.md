@@ -1,6 +1,6 @@
 # Native app\-store host bridge: host messages, open in native player — related-flows
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:3193710005b944c791b5a5fdcb637e02 -->
 Relations are static lexical candidates; computed dispatch remains unresolved\.

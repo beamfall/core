@@ -1,6 +1,6 @@
 # Native app\-store host bridge: host messages, open in native player — technical-deep-dive
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:869ecaf575aba9940cc5540d0eb05398 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.

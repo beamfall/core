@@ -1,6 +1,6 @@
 # UI primitives: button, dialog, alert dialog, select, table, tabs, tree and form controls — technical-deep-dive
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:d6139ac7954c1d16a21e4e320c9bf0fa -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -80,7 +80,7 @@ Source: internal/web/app/src/components/ui/badge\.tsx:7; symbol: badgeVariants; 
 <!-- flowdocs:paragraph:649e7ccc133e2690e7ca6202c84a84fd -->
 Declared member: source declares buttonVariants; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/components/ui/button\.tsx:15; symbol: buttonVariants; span SHA256: 813405902226f0ea5aea27fc8376f68a62e61a1e73f3400f969a1f80eb594371.
+Source: internal/web/app/src/components/ui/button\.tsx:18; symbol: buttonVariants; span SHA256: 813405902226f0ea5aea27fc8376f68a62e61a1e73f3400f969a1f80eb594371.
 
 <!-- flowdocs:paragraph:93094596498ec1c500bf742b7d653c55 -->
 Declared member: source declares Card; membership is caller\-declared, not runtime evidence\.

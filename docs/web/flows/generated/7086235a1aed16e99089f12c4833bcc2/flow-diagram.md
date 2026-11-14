@@ -1,6 +1,6 @@
 # Sign out of the web session — flow-diagram
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:0089f25b280d0f82c7687e665a4c36ba -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -15,7 +15,7 @@ sequenceDiagram
     Note over S: Flow 7086235a1aed16e99089f12c4833bcc2
     Note over S,U: Source contains call useT in internal/web/app/src/areas/enroll/SignOutButton.tsx at line 18 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/areas/enroll/SignOutButton.tsx at line 19 - order unresolved
-    Note over S,U: Source contains call postJSON in internal/web/app/src/lib/graphql/auth.ts at line 158 - order unresolved
+    Note over S,U: Source contains call postJSON in internal/web/app/src/lib/graphql/auth.ts at line 163 - order unresolved
     Note over S,U: Source contains call setBusy in internal/web/app/src/areas/enroll/SignOutButton.tsx at line 23 - order unresolved
     Note over S,U: Source contains call logout in internal/web/app/src/areas/enroll/SignOutButton.tsx at line 25 - order unresolved
     Note over S,U: Source contains call assign in internal/web/app/src/areas/enroll/SignOutButton.tsx at line 29 - order unresolved

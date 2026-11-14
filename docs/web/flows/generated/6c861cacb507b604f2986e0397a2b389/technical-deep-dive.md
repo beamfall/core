@@ -1,26 +1,21 @@
 # Setup: activate plugins and enter provider keys — technical-deep-dive
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:7403b0849a6cbaa4d10c56af9e017e3f -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:115; symbol: PLUGIN\_ICON; span SHA256: 05333a405746aecee5aaad7e9a91ad91fcdda7e6f1e4a8700ec73ec1f5962de8.
+Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:109; symbol: PLUGIN\_ICON; span SHA256: 05333a405746aecee5aaad7e9a91ad91fcdda7e6f1e4a8700ec73ec1f5962de8.
 
 <!-- flowdocs:paragraph:86877a8dc5f6a4b6324f532fa75cda7d -->
 Declared member: source declares PLUGIN\_ICON; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:115; symbol: PLUGIN\_ICON; span SHA256: 05333a405746aecee5aaad7e9a91ad91fcdda7e6f1e4a8700ec73ec1f5962de8.
-
-<!-- flowdocs:paragraph:bf594a87acd4f82f282650e17e0a0f4f -->
-Declared member: source declares PLUGIN\_LABEL; membership is caller\-declared, not runtime evidence\.
-
-Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:121; symbol: PLUGIN\_LABEL; span SHA256: fe6c5c61d62505db5a471a9cba344d39b349b5d82a5dfecac64198309818fe27.
+Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:109; symbol: PLUGIN\_ICON; span SHA256: 05333a405746aecee5aaad7e9a91ad91fcdda7e6f1e4a8700ec73ec1f5962de8.
 
 <!-- flowdocs:paragraph:d09ffaeac020573801eba56bda0b42b1 -->
 Declared member: source declares loadProviderKeys; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/setup/orchestrate\.ts:170; symbol: loadProviderKeys; span SHA256: 30af7489c7fc7879194cf3d993ff2bc7d3eb5c94b14c507d22a6629e5ca8b900.
+Source: internal/web/app/src/areas/setup/orchestrate\.ts:172; symbol: loadProviderKeys; span SHA256: 30af7489c7fc7879194cf3d993ff2bc7d3eb5c94b14c507d22a6629e5ca8b900.
 
 <!-- flowdocs:paragraph:05789e69c8e3bacf4f2a5a0d80c6f231 -->
 Declared member: source declares RebindOutcome; membership is caller\-declared, not runtime evidence\.
@@ -45,7 +40,7 @@ Source: internal/web/app/src/lib/graphql/auth\.ts:26; symbol: settleRebind; span
 <!-- flowdocs:paragraph:5db2712b9062e6d3672572d1bf055b9d -->
 Declared member: source declares verifyAdminSession; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/auth\.ts:59; symbol: verifyAdminSession; span SHA256: f4599ac1ba9ab422871325940cd512172d342310a7c310ce60759d5045907b08.
+Source: internal/web/app/src/lib/graphql/auth\.ts:63; symbol: verifyAdminSession; span SHA256: f4599ac1ba9ab422871325940cd512172d342310a7c310ce60759d5045907b08.
 
 <!-- flowdocs:paragraph:0a59f7b1ead7bb300bb4e9120cef9fbf -->
 Declared member: source declares CONSOLE\_CONFIG\_FIELDS; membership is caller\-declared, not runtime evidence\.

@@ -1,6 +1,6 @@
 # App routing: /web basename, area code\-splitting, initial\-route preload — entry-points
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:ec5b0a1c3f63522630dfd46e0c9328de -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.
@@ -15,5 +15,5 @@ Source: internal/web/app/src/App\.tsx:84; symbol: App; span SHA256: 85c130fae59b
 <!-- flowdocs:paragraph:2aed2fcab9f4ac2d4596cb2eceef724f -->
 Declared entry point: source declares renderOnce; entry dispatch and callers are unresolved\.
 
-Source: internal/web/app/src/main\.tsx:46; symbol: renderOnce; span SHA256: b36c7c1b26d31ffa48ceb1b73fa2b04cf2b839f587a55d61e683a9a4dac53e9a.
+Source: internal/web/app/src/main\.tsx:47; symbol: renderOnce; span SHA256: b36c7c1b26d31ffa48ceb1b73fa2b04cf2b839f587a55d61e683a9a4dac53e9a.
 

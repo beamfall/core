@@ -1,6 +1,6 @@
 # Shared workbench widgets: status chips, tables, forms, server path picker — related-flows
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:3247c6edd57c42649f03dde31cb98f68 -->
 Relations are static lexical candidates; computed dispatch remains unresolved\.

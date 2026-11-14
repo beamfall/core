@@ -1,6 +1,6 @@
 # Player route: lazy load, timestamp links, info overlay, audio stage — related-flows
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:ebcabf0e86145889a5b2fc2cf8259496 -->
 Relations are static lexical candidates; computed dispatch remains unresolved\.

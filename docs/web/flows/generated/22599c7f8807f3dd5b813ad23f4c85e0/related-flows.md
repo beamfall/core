@@ -1,6 +1,6 @@
 # Manage rename: pattern preview, batch rename managed paths, undo — related-flows
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:c47efcd653ef870bdb5e0fe0a36428dc -->
 Relations are static lexical candidates; computed dispatch remains unresolved\.

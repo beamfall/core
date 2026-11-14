@@ -1,16 +1,16 @@
 # Viewer media card: preview dwell, state overlay, card menu, artwork — technical-deep-dive
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:f6a1a02e978d19d7f184542fae2cea9e -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/viewer/components/MediaItemCard\.tsx:259; symbol: CardStateOverlay; span SHA256: 26335e262852cff9dc288f54e524fdb41d5b7de94e8e3b75867f868698d359ae.
+Source: internal/web/app/src/areas/viewer/components/MediaItemCard\.tsx:261; symbol: CardStateOverlay; span SHA256: 26335e262852cff9dc288f54e524fdb41d5b7de94e8e3b75867f868698d359ae.
 
 <!-- flowdocs:paragraph:502187467508dccd7b4def3483c6a49c -->
 Declared member: source declares CardStateOverlay; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/components/MediaItemCard\.tsx:259; symbol: CardStateOverlay; span SHA256: 26335e262852cff9dc288f54e524fdb41d5b7de94e8e3b75867f868698d359ae.
+Source: internal/web/app/src/areas/viewer/components/MediaItemCard\.tsx:261; symbol: CardStateOverlay; span SHA256: 26335e262852cff9dc288f54e524fdb41d5b7de94e8e3b75867f868698d359ae.
 
 <!-- flowdocs:paragraph:ee9405a0d26c733e5450a93f07793c06 -->
 Declared member: source declares POINTER\_PREVIEW\_QUERY; membership is caller\-declared, not runtime evidence\.
@@ -30,7 +30,7 @@ Source: internal/web/app/src/areas/viewer/components/MediaItemCard\.tsx:20; symb
 <!-- flowdocs:paragraph:4a982f5a02fbf638025b927cca115bc2 -->
 Declared member: source declares mediaQueryMatches; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/components/MediaItemCard\.tsx:289; symbol: mediaQueryMatches; span SHA256: b9cce485e052b018b4b764371502b67c43e195e789e6496c3eb5a9dbd8ce0060.
+Source: internal/web/app/src/areas/viewer/components/MediaItemCard\.tsx:291; symbol: mediaQueryMatches; span SHA256: b9cce485e052b018b4b764371502b67c43e195e789e6496c3eb5a9dbd8ce0060.
 
 <!-- flowdocs:paragraph:03bc70c2fc79cfda2f043a3d8f57be38 -->
 Declared member: source declares COPIED\_RESET\_MS; membership is caller\-declared, not runtime evidence\.

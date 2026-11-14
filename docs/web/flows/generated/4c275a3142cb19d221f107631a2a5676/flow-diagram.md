@@ -1,6 +1,6 @@
 # Viewer reveal and relock of restricted content — flow-diagram
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:155aa66bc436e5243a600319294accf5 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -18,9 +18,9 @@ sequenceDiagram
     Note over S,U: Source contains call useState in internal/web/app/src/areas/viewer/components/RevealControls.tsx at line 29 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/areas/viewer/components/RevealControls.tsx at line 30 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/areas/viewer/components/RevealControls.tsx at line 32 - order unresolved
-    Note over S,U: Source contains call signalOrCommitted in internal/web/app/src/lib/graphql/viewer.ts at line 117 - order unresolved
-    Note over S,U: Source contains call rebindCompatibility in internal/web/app/src/lib/graphql/viewer.ts at line 118 - order unresolved
-    Note over S,U: Source contains call rebindCompatibility in internal/web/app/src/lib/graphql/viewer.ts at line 107 - order unresolved
+    Note over S,U: Source contains call signalOrCommitted in internal/web/app/src/lib/graphql/viewer.ts at line 118 - order unresolved
+    Note over S,U: Source contains call rebindCompatibility in internal/web/app/src/lib/graphql/viewer.ts at line 119 - order unresolved
+    Note over S,U: Source contains call rebindCompatibility in internal/web/app/src/lib/graphql/viewer.ts at line 108 - order unresolved
     Note over S,U: Source contains call setBusy in internal/web/app/src/areas/viewer/components/RevealControls.tsx at line 61 - order unresolved
     Note over S,U: Source contains call prepareRenderFocusRestore in internal/web/app/src/areas/viewer/components/RevealControls.tsx at line 63 - order unresolved
     Note over S,U: Source contains call relock in internal/web/app/src/areas/viewer/components/RevealControls.tsx at line 64 - order unresolved

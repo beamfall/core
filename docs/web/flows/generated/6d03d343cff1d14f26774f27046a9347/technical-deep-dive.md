@@ -1,6 +1,6 @@
 # Viewer Profile settings: preferences toggles and avatar — technical-deep-dive
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:38285d02add8fefb2d6836755806024e -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -115,7 +115,7 @@ Source: internal/web/app/src/areas/viewer/lib/preferences\.ts:82; symbol: speed;
 <!-- flowdocs:paragraph:40ea2565b05b1ec04414ec35df362981 -->
 Declared member: source declares ToggleRow; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/pages/ProfileSettingsPage\.tsx:333; symbol: ToggleRow; span SHA256: c6431f8de2914fed5ab6f5dd2929005e24d1fc6ea506b9320d5ade612323f311.
+Source: internal/web/app/src/areas/viewer/pages/ProfileSettingsPage\.tsx:399; symbol: ToggleRow; span SHA256: c6431f8de2914fed5ab6f5dd2929005e24d1fc6ea506b9320d5ade612323f311.
 
 <!-- flowdocs:paragraph:b8120b3d3d595060035a86842f8fd261 -->
 Declared member: source declares AvatarChooser; membership is caller\-declared, not runtime evidence\.
@@ -125,32 +125,32 @@ Source: internal/web/app/src/components/beamfall/profile/AvatarChooser\.tsx:19; 
 <!-- flowdocs:paragraph:1cc1f1bb894d9e495160740840934d1d -->
 Declared member: source declares CLIENT\_PREFS\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:362; symbol: CLIENT\_PREFS\_QUERY; span SHA256: 9bacd1650b0a3e712344a1d217c82eeb1787add2a7fe4dac99cd39090e64fe99.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:375; symbol: CLIENT\_PREFS\_QUERY; span SHA256: 9bacd1650b0a3e712344a1d217c82eeb1787add2a7fe4dac99cd39090e64fe99.
 
 <!-- flowdocs:paragraph:970cc5def5d7899347e564739e0fd26f -->
 Declared member: source declares SET\_CLIENT\_PREF\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:370; symbol: SET\_CLIENT\_PREF\_MUTATION; span SHA256: e47826c070db48a265b316996d973df6f54760325eff3c60c8084c5923d1ff8b.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:383; symbol: SET\_CLIENT\_PREF\_MUTATION; span SHA256: e47826c070db48a265b316996d973df6f54760325eff3c60c8084c5923d1ff8b.
 
 <!-- flowdocs:paragraph:04d2c6d6f8cf75e11f662a024c0a25db -->
 Declared member: source declares fetchClientPrefs; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:365; symbol: fetchClientPrefs; span SHA256: b1c6c568bae96333d435a5619a12f1cb5955c51390dbafc6e6a29c4e8e42bd5a.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:378; symbol: fetchClientPrefs; span SHA256: b1c6c568bae96333d435a5619a12f1cb5955c51390dbafc6e6a29c4e8e42bd5a.
 
 <!-- flowdocs:paragraph:24c59177ae33b599b537915a6b9d0574 -->
 Declared member: source declares setClientPref; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:374; symbol: setClientPref; span SHA256: 0433e22579aa6ed0e538cb7bf2139e3667df7b6b770bc97276ac7a4596835753.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:387; symbol: setClientPref; span SHA256: 0433e22579aa6ed0e538cb7bf2139e3667df7b6b770bc97276ac7a4596835753.
 
 <!-- flowdocs:paragraph:92f230facd12449e70c91a0863c96766 -->
 Declared member: source declares current; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/pages/ProfileSettingsPage\.tsx:55; symbol: current; span SHA256: 1a2240e3f317813a14af2f5f48f4f6e520805ee82c8eaa9fd92a1e047cbec785.
+Source: internal/web/app/src/areas/viewer/pages/ProfileSettingsPage\.tsx:69; symbol: current; span SHA256: 1a2240e3f317813a14af2f5f48f4f6e520805ee82c8eaa9fd92a1e047cbec785.
 
 <!-- flowdocs:paragraph:b55f8eafbc93ec62694ebc195740a983 -->
 Declared member: source declares load; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/pages/ProfileSettingsPage\.tsx:53; symbol: load; span SHA256: 2f47398c6e5509cbfebc0c377dd35d4a596a68219cb223c67dd0dfbaa39fc73d.
+Source: internal/web/app/src/areas/viewer/pages/ProfileSettingsPage\.tsx:67; symbol: load; span SHA256: 2f47398c6e5509cbfebc0c377dd35d4a596a68219cb223c67dd0dfbaa39fc73d.
 
 <!-- flowdocs:paragraph:97e407b5b9f5c403a0f0bf9869ae4812 -->
 Declared member: source declares drain; membership is caller\-declared, not runtime evidence\.

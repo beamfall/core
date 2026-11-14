@@ -1,14 +1,14 @@
-# Console live sessions: update awareness, jobs, live sessions and host graphs — entry-points
+# Console live sessions and host graphs — entry-points
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:14377edbdea354d4aa300479b9292c97 -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.
 
-Source: internal/web/app/src/areas/console/sections/Dashboard\.tsx:289; symbol: CHART\_HEIGHT; span SHA256: 795a0efbd16af2c292727707936c42deca150072ae3d45c960aba52fb4eb6337.
+Source: internal/web/app/src/areas/console/sections/Dashboard\.tsx:291; symbol: CHART\_HEIGHT; span SHA256: 795a0efbd16af2c292727707936c42deca150072ae3d45c960aba52fb4eb6337.
 
-<!-- flowdocs:paragraph:a1863259e34d901a00049557bdc24256 -->
-Declared entry point: source declares Operations; entry dispatch and callers are unresolved\.
+<!-- flowdocs:paragraph:b63fde06efec1993678a85134cd146b4 -->
+Declared entry point: source declares LiveSessions; entry dispatch and callers are unresolved\.
 
-Source: internal/web/app/src/areas/console/sections/Operations\.tsx:419; symbol: Operations; span SHA256: 3439db558cde48e45646b6b030ddf78ac938b1b5e3a54e0fa40036b1606866e3.
+Source: internal/web/app/src/areas/console/sections/Dashboard\.tsx:169; symbol: LiveSessions; span SHA256: 265d914ebe86b9d292a6f05ba8bf021fa6bb15730304e3cb28cceb17ad913339.
 

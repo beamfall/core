@@ -1,6 +1,6 @@
 # Localization: locale resolution, ICU formatting and string catalogs — related-flows
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:98e01fc894cbb4caeab886ef1ce8dc74 -->
 Relations are static lexical candidates; computed dispatch remains unresolved\.

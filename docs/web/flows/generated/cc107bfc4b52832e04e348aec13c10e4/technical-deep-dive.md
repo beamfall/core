@@ -1,6 +1,6 @@
 # Session spine: compat handshake, session renewal, identity epoch, request guard — technical-deep-dive
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:8221c408ad1cbf321930b1c1e7f73535 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -485,12 +485,12 @@ Source: internal/web/app/src/lib/graphql/auth\.ts:24; symbol: RebindOutcome; spa
 <!-- flowdocs:paragraph:5af51bfd2d6f5077cd88477ca88bc46a -->
 Declared member: source declares promote; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/auth\.ts:106; symbol: promote; span SHA256: 9d0b359d06b6483ee0c803428475043118be3e7e151d44c13edfa2a57db292f5.
+Source: internal/web/app/src/lib/graphql/auth\.ts:111; symbol: promote; span SHA256: 9d0b359d06b6483ee0c803428475043118be3e7e151d44c13edfa2a57db292f5.
 
 <!-- flowdocs:paragraph:56a93abde6b8a60a1a9a769afc9b0568 -->
 Declared member: source declares renewSession; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/auth\.ts:117; symbol: renewSession; span SHA256: dada4f3a79c4557c9a58a6aaa2089ce93df77264cf68dec7513142b0cb3f3af8.
+Source: internal/web/app/src/lib/graphql/auth\.ts:122; symbol: renewSession; span SHA256: dada4f3a79c4557c9a58a6aaa2089ce93df77264cf68dec7513142b0cb3f3af8.
 
 <!-- flowdocs:paragraph:6ee9bad78e8e7bcdba806023e478cb2f -->
 Declared member: source declares settleRebind; membership is caller\-declared, not runtime evidence\.
@@ -500,57 +500,57 @@ Source: internal/web/app/src/lib/graphql/auth\.ts:26; symbol: settleRebind; span
 <!-- flowdocs:paragraph:5812972c90dda9ecdf841a4f6f0b98e8 -->
 Declared member: source declares CURRENT\_SESSION\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:50; symbol: CURRENT\_SESSION\_QUERY; span SHA256: 6904b7318110a3faea0769e9043fd5fa680c5df995c1cb078f7b63fd1b5362c5.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:51; symbol: CURRENT\_SESSION\_QUERY; span SHA256: 6904b7318110a3faea0769e9043fd5fa680c5df995c1cb078f7b63fd1b5362c5.
 
 <!-- flowdocs:paragraph:17c57cc84c7730f6e70848648d895eea -->
 Declared member: source declares PROFILES\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:70; symbol: PROFILES\_QUERY; span SHA256: afea04a7b095a38903ed99b6d38ab40e9d25ad3c5613e2a10a82f8a484955285.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:71; symbol: PROFILES\_QUERY; span SHA256: afea04a7b095a38903ed99b6d38ab40e9d25ad3c5613e2a10a82f8a484955285.
 
 <!-- flowdocs:paragraph:a678e823c0e44a880c1d59f3b3c09580 -->
 Declared member: source declares RELOCK\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:111; symbol: RELOCK\_MUTATION; span SHA256: 193527dc7c12c281cf75b85b259283560b510e894456b498ccb689d201d40645.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:112; symbol: RELOCK\_MUTATION; span SHA256: 193527dc7c12c281cf75b85b259283560b510e894456b498ccb689d201d40645.
 
 <!-- flowdocs:paragraph:a1df16db5860b57f416da90b0c14cddf -->
 Declared member: source declares REVEAL\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:102; symbol: REVEAL\_MUTATION; span SHA256: 2222933595504a0715f5d94732652dc0cc461519bee2cace01a6470529d89c70.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:103; symbol: REVEAL\_MUTATION; span SHA256: 2222933595504a0715f5d94732652dc0cc461519bee2cace01a6470529d89c70.
 
 <!-- flowdocs:paragraph:aafa1b2aa55d979c2386a231aba56995 -->
 Declared member: source declares SWITCH\_PROFILE\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:78; symbol: SWITCH\_PROFILE\_MUTATION; span SHA256: 8deacfde38957976f70ab2861be0cbbaf4c86a5566207cc62a48b60616fc73db.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:79; symbol: SWITCH\_PROFILE\_MUTATION; span SHA256: 8deacfde38957976f70ab2861be0cbbaf4c86a5566207cc62a48b60616fc73db.
 
 <!-- flowdocs:paragraph:8ba50caba0d2a6dd9cedd8fb5f5306fc -->
 Declared member: source declares fetchCurrentSession; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:54; symbol: fetchCurrentSession; span SHA256: a12963753bafa894bfb73a110eb57814fbe8e729bb07b54e6b67b9602ad96600.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:55; symbol: fetchCurrentSession; span SHA256: a12963753bafa894bfb73a110eb57814fbe8e729bb07b54e6b67b9602ad96600.
 
 <!-- flowdocs:paragraph:6c45a943c44711ab99fffc8491ecc96d -->
 Declared member: source declares fetchManifest; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:44; symbol: fetchManifest; span SHA256: f678944620d27a3653050722a184d55d9d99f3d92c8df932a8eb051fe578751e.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:45; symbol: fetchManifest; span SHA256: f678944620d27a3653050722a184d55d9d99f3d92c8df932a8eb051fe578751e.
 
 <!-- flowdocs:paragraph:e3fb9941082f5573e283d662589ddf49 -->
 Declared member: source declares fetchProfiles; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:73; symbol: fetchProfiles; span SHA256: 9858e7e681100359f6d87c1dca7279b59328c5e8c71f7f08c2787694c63e5629.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:74; symbol: fetchProfiles; span SHA256: 9858e7e681100359f6d87c1dca7279b59328c5e8c71f7f08c2787694c63e5629.
 
 <!-- flowdocs:paragraph:a95469d79c443576f493d173828e3638 -->
 Declared member: source declares relock; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:114; symbol: relock; span SHA256: dd81aadb3d4b78c941f70c445bed3b22c92ec5bc74d54430b1e343dc1d586e0a.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:115; symbol: relock; span SHA256: dd81aadb3d4b78c941f70c445bed3b22c92ec5bc74d54430b1e343dc1d586e0a.
 
 <!-- flowdocs:paragraph:10ccff90ae3cfecff423488c532daa81 -->
 Declared member: source declares reveal; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:105; symbol: reveal; span SHA256: 62950c908e55a3083fecf1f4eca9c0d94134d0568abd9a135bab7d0a06c3a60b.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:106; symbol: reveal; span SHA256: 62950c908e55a3083fecf1f4eca9c0d94134d0568abd9a135bab7d0a06c3a60b.
 
 <!-- flowdocs:paragraph:7736d442593fb7b40c8ae5ecc9cd262f -->
 Declared member: source declares switchProfile; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:86; symbol: switchProfile; span SHA256: 8af66a65bec999c2320d0ad276774537b365471d314c64bc26fe96d7f3adfb7a.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:87; symbol: switchProfile; span SHA256: 8af66a65bec999c2320d0ad276774537b365471d314c64bc26fe96d7f3adfb7a.
 
 <!-- flowdocs:paragraph:748b0203374403baab9688851ccf6113 -->
 Declared member: source declares send; membership is caller\-declared, not runtime evidence\.

@@ -1,6 +1,6 @@
 # App shell chrome: header, library sidebar, account menu, phone layout — technical-deep-dive
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1d9fa88dbb23c673f79fccc995bb9f88 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -55,12 +55,12 @@ Source: internal/web/app/src/components/chrome/LibrarySidebar\.tsx:14; symbol: L
 <!-- flowdocs:paragraph:a9bdfa803fcdb1dc8dafe9edf983783d -->
 Declared member: source declares NOTIFICATIONS\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:291; symbol: NOTIFICATIONS\_QUERY; span SHA256: 48f864b136a6195b56f78c000ac11aed646227a6365d92dd62ee8674bf2060dc.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:304; symbol: NOTIFICATIONS\_QUERY; span SHA256: 48f864b136a6195b56f78c000ac11aed646227a6365d92dd62ee8674bf2060dc.
 
 <!-- flowdocs:paragraph:7caaa5040a8dd8f10b43ffde97d07a18 -->
 Declared member: source declares fetchNotifications; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:295; symbol: fetchNotifications; span SHA256: 52a9f16f6ba71634a431d2d4cd55c72ed0a6170c0ff5fc557280bfa07dd85daf.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:308; symbol: fetchNotifications; span SHA256: 52a9f16f6ba71634a431d2d4cd55c72ed0a6170c0ff5fc557280bfa07dd85daf.
 
 <!-- flowdocs:paragraph:02a7e9ba330e7a95d704a8ad36117907 -->
 Declared member: source declares current; membership is caller\-declared, not runtime evidence\.

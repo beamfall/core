@@ -1,11 +1,11 @@
 # Console overview: owner tasks, setup checklist, needs\-attention queue — readme
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:8c4cef5259809a8bc0dc6b382d812825 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/console/OwnerTasks\.tsx:33; symbol: LINK\_TILE; span SHA256: d2e91ba24b0c8d83580d2a9972c53632963a1024b956ccff1e9a570e2c40d8c3.
+Source: internal/web/app/src/areas/console/OwnerTasks\.tsx:64; symbol: OwnerTasks; span SHA256: 0ad919b5f193d62405ffe6f8ed8bdf75a839aba68215e40ceedbd74362b07101.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -30,4 +30,4 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow console\.overview: 31 resolved, 0 unresolved members.
+Declared inventory flow console\.overview: 28 resolved, 0 unresolved members.

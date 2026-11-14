@@ -1,6 +1,6 @@
 # Rescan a library or all libraries and follow scan state — technical-deep-dive
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:834cd5a6bfc5387f771ab3575a7ed6c9 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -135,7 +135,7 @@ Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:147; symbol:
 <!-- flowdocs:paragraph:a6a16cf4be65ab69ea22affec2e73467 -->
 Declared member: source declares JOBS\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:286; symbol: JOBS\_QUERY; span SHA256: 10f1f3bacf7fbd455bf418c8503ff518f957a45ee1c80502a1ffd014086a0aad.
+Source: internal/web/app/src/lib/graphql/manage\.ts:297; symbol: JOBS\_QUERY; span SHA256: 10f1f3bacf7fbd455bf418c8503ff518f957a45ee1c80502a1ffd014086a0aad.
 
 <!-- flowdocs:paragraph:ef18a676feeea0f71878056171e9d448 -->
 Declared member: source declares SCAN\_LIBRARY\_MUTATION; membership is caller\-declared, not runtime evidence\.
@@ -145,7 +145,7 @@ Source: internal/web/app/src/lib/graphql/manage\.ts:100; symbol: SCAN\_LIBRARY\_
 <!-- flowdocs:paragraph:d94fb0b69b857ebf590cb5554c5d24f5 -->
 Declared member: source declares fetchJobs; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:290; symbol: fetchJobs; span SHA256: 84981ee21f1139b8d18ea75b74fdb61f6a726342170062d90fb00fab530ce0f4.
+Source: internal/web/app/src/lib/graphql/manage\.ts:301; symbol: fetchJobs; span SHA256: 84981ee21f1139b8d18ea75b74fdb61f6a726342170062d90fb00fab530ce0f4.
 
 <!-- flowdocs:paragraph:fce868eb06ee1378cd7cc1b9f2da7399 -->
 Declared member: source declares scanLibrary; membership is caller\-declared, not runtime evidence\.

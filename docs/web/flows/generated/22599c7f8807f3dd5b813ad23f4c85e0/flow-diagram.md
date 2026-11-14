@@ -1,6 +1,6 @@
 # Manage rename: pattern preview, batch rename managed paths, undo — flow-diagram
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a7ee900810878723a59ba48b854a0455 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -21,25 +21,25 @@ sequenceDiagram
     Note over S,U: Source contains call padStart in internal/web/app/src/areas/manage/lib/renamePattern.ts at line 54 - order unresolved
     Note over S,U: Source contains call lastIndexOf in internal/web/app/src/areas/manage/lib/renamePattern.ts at line 47 - order unresolved
     Note over S,U: Source contains call slice in internal/web/app/src/areas/manage/lib/renamePattern.ts at line 49 - order unresolved
-    Note over S,U: Source contains call onChange in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 326 - order unresolved
-    Note over S,U: Source contains call onChange in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 356 - order unresolved
-    Note over S,U: Source contains call Number in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 356 - order unresolved
-    Note over S,U: Source contains call useT in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 52 - order unresolved
+    Note over S,U: Source contains call onChange in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 324 - order unresolved
+    Note over S,U: Source contains call onChange in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 354 - order unresolved
+    Note over S,U: Source contains call Number in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 354 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 51 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 53 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 54 - order unresolved
-    Note over S,U: Source contains call useState in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 55 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 57 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 58 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 59 - order unresolved
-    Note over S,U: Source contains call useState in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 60 - order unresolved
-    Note over S,U: Source contains call useState in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 62 - order unresolved
-    Note over S,U: Source contains call useEffect in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 64 - order unresolved
-    Note over S,U: Source contains call async in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 65 - order unresolved
-    Note over S,U: Source contains call fetchLibraries in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 67 - order unresolved
-    Note over S,U: Source contains call setLibraries in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 68 - order unresolved
-    Note over S,U: Source contains call setLibraryID in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 69 - order unresolved
-    Note over S,U: Source contains call setError in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 71 - order unresolved
-    Note over S,U: Source contains call t in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 71 - order unresolved
-    Note over S,U: Source contains call useMemo in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 77 - order unresolved
-    Note over S,U: Source contains call filter in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 77 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 61 - order unresolved
+    Note over S,U: Source contains call useEffect in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 63 - order unresolved
+    Note over S,U: Source contains call async in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 64 - order unresolved
+    Note over S,U: Source contains call fetchLibraries in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 66 - order unresolved
+    Note over S,U: Source contains call setLibraries in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 67 - order unresolved
+    Note over S,U: Source contains call setLibraryID in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 68 - order unresolved
+    Note over S,U: Source contains call setError in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 70 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 70 - order unresolved
     Note over S,U: Source contains call useMemo in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 76 - order unresolved
-    Note over S,U: Source contains call previewRenames in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 76 - order unresolved
+    Note over S,U: Source contains call filter in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 76 - order unresolved
+    Note over S,U: Source contains call useMemo in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 75 - order unresolved
+    Note over S,U: Source contains call previewRenames in internal/web/app/src/areas/manage/pages/RenamePage.tsx at line 75 - order unresolved
 ```

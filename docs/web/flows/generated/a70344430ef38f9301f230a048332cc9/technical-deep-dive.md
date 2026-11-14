@@ -1,6 +1,6 @@
 # Player transport: seek bar, trickplay, markers, chapters, renditions, touch gestures — technical-deep-dive
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:ebb23304efe52dc24f2bbb0c3b2b015d -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -185,52 +185,52 @@ Source: internal/web/app/src/areas/viewer/lib/transport\.ts:115; symbol: spokenD
 <!-- flowdocs:paragraph:96db2f37609d75819a6189764de24578 -->
 Declared member: source declares GESTURE\_THRESHOLD; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:69; symbol: GESTURE\_THRESHOLD; span SHA256: 286714e1d7789ccb025511ccbadcad042044bf70eb00bec2aa1e4c6303e7ca1c.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:70; symbol: GESTURE\_THRESHOLD; span SHA256: 286714e1d7789ccb025511ccbadcad042044bf70eb00bec2aa1e4c6303e7ca1c.
 
 <!-- flowdocs:paragraph:bb58161a6a157af54df3bc5721bf7d16 -->
 Declared member: source declares GestureFeedback; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:64; symbol: GestureFeedback; span SHA256: ba159179aba9055a1d1a2ca94a2c6718e1c6c966f0a464d88e1add2c7b0344f3.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:65; symbol: GestureFeedback; span SHA256: ba159179aba9055a1d1a2ca94a2c6718e1c6c966f0a464d88e1add2c7b0344f3.
 
 <!-- flowdocs:paragraph:0d2f845ea2460c92fd4b4303ec9c00b5 -->
 Declared member: source declares NARROW\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:1086; symbol: NARROW\_QUERY; span SHA256: 924794d33787c299b2fe3f934d11818f644c41472daa681eeccd878a4e9d78a4.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:1091; symbol: NARROW\_QUERY; span SHA256: 924794d33787c299b2fe3f934d11818f644c41472daa681eeccd878a4e9d78a4.
 
 <!-- flowdocs:paragraph:67faf59cd145b971c4a859fe41c95ef6 -->
 Declared member: source declares OpenKey; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:63; symbol: OpenKey; span SHA256: 1223e7eee8e131de8fe21241fbb889447f0051ef7aaa658059e258f1bfdf7929.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:64; symbol: OpenKey; span SHA256: 1223e7eee8e131de8fe21241fbb889447f0051ef7aaa658059e258f1bfdf7929.
 
 <!-- flowdocs:paragraph:082517d9a904e0ec8e8ed5af9a99db18 -->
 Declared member: source declares SPEEDS; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:68; symbol: SPEEDS; span SHA256: c8f829f65841e16af3fa39586f3869fa543fbe9c274457e2c988986317f483ed.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:69; symbol: SPEEDS; span SHA256: c8f829f65841e16af3fa39586f3869fa543fbe9c274457e2c988986317f483ed.
 
 <!-- flowdocs:paragraph:199240c8246de9b90ffd6bd5306e001c -->
 Declared member: source declares bufferedEnd; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:1075; symbol: bufferedEnd; span SHA256: 3775c2e50cbe01be75314f8c135c5c4d9641eb6b603c7a7c9a140238281bc1ee.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:1080; symbol: bufferedEnd; span SHA256: 3775c2e50cbe01be75314f8c135c5c4d9641eb6b603c7a7c9a140238281bc1ee.
 
 <!-- flowdocs:paragraph:c46815e85d038d8a3fa73379a94354fb -->
 Declared member: source declares routeLabel; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:1114; symbol: routeLabel; span SHA256: c7d5e17a7a80c1a361c6ec9a5fa8c2e3a9da757039db7e32fea751dcab39b86f.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:1119; symbol: routeLabel; span SHA256: c7d5e17a7a80c1a361c6ec9a5fa8c2e3a9da757039db7e32fea751dcab39b86f.
 
 <!-- flowdocs:paragraph:4d9ff7fad74f949dbca772cf8a5457c3 -->
 Declared member: source declares routeStateClass; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:1108; symbol: routeStateClass; span SHA256: cc5db14a306f130c8ffe6e74aead95511bf0cbb7d2ec8687566322f4ee8833fc.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:1113; symbol: routeStateClass; span SHA256: cc5db14a306f130c8ffe6e74aead95511bf0cbb7d2ec8687566322f4ee8833fc.
 
 <!-- flowdocs:paragraph:9f6ffda5ddcbc811e688b271461084ba -->
 Declared member: source declares routeSummary; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:1123; symbol: routeSummary; span SHA256: c760fb679c60886a8363a1ca74b895a7203fa34df48d842c5682ef7aa00ca3a2.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:1128; symbol: routeSummary; span SHA256: c760fb679c60886a8363a1ca74b895a7203fa34df48d842c5682ef7aa00ca3a2.
 
 <!-- flowdocs:paragraph:1fe9f23b79192120681e494b1c36cec5 -->
 Declared member: source declares useNarrowViewport; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:1090; symbol: useNarrowViewport; span SHA256: 9ffce54c24787410382243ed0367a3baa123f9c74fea576208d6d1bc689dbd20.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:1095; symbol: useNarrowViewport; span SHA256: 9ffce54c24787410382243ed0367a3baa123f9c74fea576208d6d1bc689dbd20.
 
 <!-- flowdocs:paragraph:08cf0d7f8ee78c873ad839f33961bdf4 -->
 Declared member: source declares MenuRow; membership is caller\-declared, not runtime evidence\.
@@ -265,112 +265,112 @@ Source: internal/web/app/src/areas/viewer/lib/transport\.ts:103; symbol: two; sp
 <!-- flowdocs:paragraph:00f317e8f48fa22456eb2827f9d3f308 -->
 Declared member: source declares closeSettings; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:178; symbol: closeSettings; span SHA256: 5423756c8178e1666cb1d5ead17c20d85ca621d8ff9cbbbed5287045806ef49c.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:182; symbol: closeSettings; span SHA256: 5423756c8178e1666cb1d5ead17c20d85ca621d8ff9cbbbed5287045806ef49c.
 
 <!-- flowdocs:paragraph:111cdc54e5766450379ebfd11b0562d9 -->
 Declared member: source declares commit; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:124; symbol: commit; span SHA256: 790cac2bf6ed031db0696da939fb6301395d1d04729a0f4d93631cabdb9892a3.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:128; symbol: commit; span SHA256: 790cac2bf6ed031db0696da939fb6301395d1d04729a0f4d93631cabdb9892a3.
 
 <!-- flowdocs:paragraph:e07d0120f4f6ab98fde397ba860fa612 -->
 Declared member: source declares commitScrub; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:524; symbol: commitScrub; span SHA256: 533172880156549540cd515ff78b0947268b9dd88101d8335e996f6afaa50cc0.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:528; symbol: commitScrub; span SHA256: 533172880156549540cd515ff78b0947268b9dd88101d8335e996f6afaa50cc0.
 
 <!-- flowdocs:paragraph:7e11004a0077147731ec473185dd8203 -->
 Declared member: source declares enter; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:277; symbol: enter; span SHA256: 0ed181181e1eb2050709dc9a678ff3a6be06c8968069f28d1abae109f776466c.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:281; symbol: enter; span SHA256: 0ed181181e1eb2050709dc9a678ff3a6be06c8968069f28d1abae109f776466c.
 
 <!-- flowdocs:paragraph:c4d1d6c229a7485098f91434b5fee095 -->
 Declared member: source declares excluded; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:344; symbol: excluded; span SHA256: ee45fd88f04641fff1ce4c65fecb1096ef7e315724088b6c509826f14c4f5b66.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:348; symbol: excluded; span SHA256: ee45fd88f04641fff1ce4c65fecb1096ef7e315724088b6c509826f14c4f5b66.
 
 <!-- flowdocs:paragraph:2a163cafe1c4d1421ef3994ecbc6f57a -->
 Declared member: source declares interactive; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:435; symbol: interactive; span SHA256: 806ceefd91099d1b747eccd5b443dba7f149087c45eed17b55c9216897a4663c.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:439; symbol: interactive; span SHA256: 806ceefd91099d1b747eccd5b443dba7f149087c45eed17b55c9216897a4663c.
 
 <!-- flowdocs:paragraph:1f0a1203c11b57dd11ac044f19f4fba7 -->
 Declared member: source declares keydown; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:445; symbol: keydown; span SHA256: 702a1f2f7eec7126d22977d1fcb23492649db6674c3ed1c1915635f14f27ee11.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:449; symbol: keydown; span SHA256: 702a1f2f7eec7126d22977d1fcb23492649db6674c3ed1c1915635f14f27ee11.
 
 <!-- flowdocs:paragraph:a2831116dd82b110c4923c568e766eb8 -->
 Declared member: source declares leave; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:281; symbol: leave; span SHA256: aef3d235d73edfd321c85338039435b2a7a9040c7f448416a36ed7189ff27103.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:285; symbol: leave; span SHA256: aef3d235d73edfd321c85338039435b2a7a9040c7f448416a36ed7189ff27103.
 
 <!-- flowdocs:paragraph:3bbaefe879990bf110387bc8ea5bedaa -->
 Declared member: source declares move; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:358; symbol: move; span SHA256: 11ba43d3020171e55094238c00ad280438cf9f3ae99bae1ce26001746f50e275.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:362; symbol: move; span SHA256: 11ba43d3020171e55094238c00ad280438cf9f3ae99bae1ce26001746f50e275.
 
 <!-- flowdocs:paragraph:b1070650359afb554b4b8e26541d4d4c -->
 Declared member: source declares onScrubberKeyDown; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:502; symbol: onScrubberKeyDown; span SHA256: 7d039b913c38ef836545265f954d57ee1be53a44f60b7da1bbd9501dcf16c814.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:506; symbol: onScrubberKeyDown; span SHA256: 7d039b913c38ef836545265f954d57ee1be53a44f60b7da1bbd9501dcf16c814.
 
 <!-- flowdocs:paragraph:ba5438e567eac9fb3e1566fa65d71439 -->
 Declared member: source declares onScrubberPointerMove; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:534; symbol: onScrubberPointerMove; span SHA256: 946f57439f7eba853859bedad4adbd56f002d3b64f34fd0b4d3b5ea8d18dc365.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:538; symbol: onScrubberPointerMove; span SHA256: 946f57439f7eba853859bedad4adbd56f002d3b64f34fd0b4d3b5ea8d18dc365.
 
 <!-- flowdocs:paragraph:78c700a792617489c086eb24321f01af -->
 Declared member: source declares onScrubberValueChange; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:514; symbol: onScrubberValueChange; span SHA256: 287667d6b93594cb05faa53b7d21c7e5d43c92273c35cf0e8ed200e875bcc0d6.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:518; symbol: onScrubberValueChange; span SHA256: 287667d6b93594cb05faa53b7d21c7e5d43c92273c35cf0e8ed200e875bcc0d6.
 
 <!-- flowdocs:paragraph:349b41000d9cc8ba5731ac4785017440 -->
 Declared member: source declares previewAt; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:539; symbol: previewAt; span SHA256: 84154465543739b099132b167b6f0dce8a73fa0a1e9c83b707322b0f1f3aae21.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:543; symbol: previewAt; span SHA256: 84154465543739b099132b167b6f0dce8a73fa0a1e9c83b707322b0f1f3aae21.
 
 <!-- flowdocs:paragraph:3c8dd784f7fb1010d3e8681fbd1d141c -->
 Declared member: source declares seekTo; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:578; symbol: seekTo; span SHA256: e50e3d97a9e049458153f270c01ec3bd13295c62f924d1f5ef2666bc9330a88f.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:582; symbol: seekTo; span SHA256: e50e3d97a9e049458153f270c01ec3bd13295c62f924d1f5ef2666bc9330a88f.
 
 <!-- flowdocs:paragraph:170c1a470ff4300c2bab4138c04ed5f3 -->
 Declared member: source declares setOpen; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:205; symbol: setOpen; span SHA256: 63acf7754b2040b149a0a67014d37b5408ee630e2ddce3632b411ab3760f5add.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:209; symbol: setOpen; span SHA256: 63acf7754b2040b149a0a67014d37b5408ee630e2ddce3632b411ab3760f5add.
 
 <!-- flowdocs:paragraph:b45a7b991c0d7bfa821a1025ec1e892f -->
 Declared member: source declares setPlaybackPosition; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:494; symbol: setPlaybackPosition; span SHA256: 8aa409596810d82cd080e8e7a2aa840d25d60bf6db0b503395a81285287addf8.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:498; symbol: setPlaybackPosition; span SHA256: 8aa409596810d82cd080e8e7a2aa840d25d60bf6db0b503395a81285287addf8.
 
 <!-- flowdocs:paragraph:00630a6fb9d62e4f581e1bb434373196 -->
 Declared member: source declares showGestureFeedback; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:315; symbol: showGestureFeedback; span SHA256: c9ce689af7ab4438a56be3c0fedcf9fdb931dcf927453359aae6ef94c9f94628.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:319; symbol: showGestureFeedback; span SHA256: c9ce689af7ab4438a56be3c0fedcf9fdb931dcf927453359aae6ef94c9f94628.
 
 <!-- flowdocs:paragraph:a94344c29221bb72207a08700ea6f098 -->
 Declared member: source declares toggleFullscreen; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:417; symbol: toggleFullscreen; span SHA256: 29a6e221a83c87d5870f25df8350a9a0815c173a02ddfde2acfdd6632ed176f8.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:421; symbol: toggleFullscreen; span SHA256: 29a6e221a83c87d5870f25df8350a9a0815c173a02ddfde2acfdd6632ed176f8.
 
 <!-- flowdocs:paragraph:bd47856695e58e3cae3f83a12823a86d -->
 Declared member: source declares toggleMute; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:427; symbol: toggleMute; span SHA256: f2d825d4987ff87cb72d22b1a88333895322e74003f1947ce1716505c6e11a2c.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:431; symbol: toggleMute; span SHA256: f2d825d4987ff87cb72d22b1a88333895322e74003f1947ce1716505c6e11a2c.
 
 <!-- flowdocs:paragraph:d327344bccdffb94eabb0d0cc62d2e15 -->
 Declared member: source declares togglePictureInPicture; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:475; symbol: togglePictureInPicture; span SHA256: 9bc11bedcd77a581b0aea73e98588e8d2987ce84b32cb20f1c85b2a9a947b9eb.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:479; symbol: togglePictureInPicture; span SHA256: 9bc11bedcd77a581b0aea73e98588e8d2987ce84b32cb20f1c85b2a9a947b9eb.
 
 <!-- flowdocs:paragraph:ee94a129fceef189f0b5bd0e12e92fd5 -->
 Declared member: source declares togglePlay; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:407; symbol: togglePlay; span SHA256: aa705839858513309af932c1a19def04fc887d60d32372df911d993dd8ff1151.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:411; symbol: togglePlay; span SHA256: aa705839858513309af932c1a19def04fc887d60d32372df911d993dd8ff1151.
 
 <!-- flowdocs:paragraph:040d66103b5890e9f3f730cf0d865632 -->
 Declared member: source declares up; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:370; symbol: up; span SHA256: aedd5a13842f2040d718e960dbed2980f560a88213dc67d7cd5c8da9605fe391.
+Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:374; symbol: up; span SHA256: aedd5a13842f2040d718e960dbed2980f560a88213dc67d7cd5c8da9605fe391.
 
 <!-- flowdocs:paragraph:09f94da6e219a87e247c7bc9cd17a109 -->
 Declared member: source declares clearTimer; membership is caller\-declared, not runtime evidence\.

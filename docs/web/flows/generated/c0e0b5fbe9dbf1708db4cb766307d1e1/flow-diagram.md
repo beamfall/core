@@ -1,6 +1,6 @@
 # Manage operations: jobs, schedules, folder watcher — flow-diagram
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:32a97d2cf6162675c626e9cf9dbd73e5 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -19,22 +19,22 @@ sequenceDiagram
     Note over S,U: Source contains call toLocaleString in internal/web/app/src/areas/manage/lib/schedule.ts at line 87 - order unresolved
     Note over S,U: Source contains call String in internal/web/app/src/areas/manage/lib/schedule.ts at line 23 - order unresolved
     Note over S,U: Source contains call padStart in internal/web/app/src/areas/manage/lib/schedule.ts at line 23 - order unresolved
-    Note over S,U: Source contains call useT in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 65 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 64 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 66 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 67 - order unresolved
-    Note over S,U: Source contains call useState in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 68 - order unresolved
-    Note over S,U: Source contains call onChange in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 352 - order unresolved
-    Note over S,U: Source contains call Number in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 352 - order unresolved
-    Note over S,U: Source contains call useT in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 215 - order unresolved
-    Note over S,U: Source contains call triggerFieldsFrom in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 217 - order unresolved
-    Note over S,U: Source contains call useT in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 134 - order unresolved
-    Note over S,U: Source contains call useState in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 136 - order unresolved
-    Note over S,U: Source contains call useT in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 359 - order unresolved
-    Note over S,U: Source contains call useState in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 361 - order unresolved
-    Note over S,U: Source contains call async in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 151 - order unresolved
-    Note over S,U: Source contains call setError in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 152 - order unresolved
-    Note over S,U: Source contains call setScheduleEnabled in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 154 - order unresolved
-    Note over S,U: Source contains call setSchedules in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 155 - order unresolved
-    Note over S,U: Source contains call map in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 156 - order unresolved
-    Note over S,U: Source contains call setError in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 159 - order unresolved
-    Note over S,U: Source contains call t in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 159 - order unresolved
+    Note over S,U: Source contains call onChange in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 349 - order unresolved
+    Note over S,U: Source contains call Number in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 349 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 212 - order unresolved
+    Note over S,U: Source contains call triggerFieldsFrom in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 214 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 132 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 134 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 356 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 358 - order unresolved
+    Note over S,U: Source contains call async in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 149 - order unresolved
+    Note over S,U: Source contains call setError in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 150 - order unresolved
+    Note over S,U: Source contains call setScheduleEnabled in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 152 - order unresolved
+    Note over S,U: Source contains call setSchedules in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 153 - order unresolved
+    Note over S,U: Source contains call map in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 154 - order unresolved
+    Note over S,U: Source contains call setError in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 157 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/manage/pages/OperationsPage.tsx at line 157 - order unresolved
 ```

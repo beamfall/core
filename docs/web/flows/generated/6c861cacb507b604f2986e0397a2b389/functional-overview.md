@@ -1,11 +1,11 @@
 # Setup: activate plugins and enter provider keys — functional-overview
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:4565644ff3c035fb3b094406541e68d3 -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
 
-Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:115; symbol: PLUGIN\_ICON; span SHA256: 05333a405746aecee5aaad7e9a91ad91fcdda7e6f1e4a8700ec73ec1f5962de8.
+Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:109; symbol: PLUGIN\_ICON; span SHA256: 05333a405746aecee5aaad7e9a91ad91fcdda7e6f1e4a8700ec73ec1f5962de8.
 
 <!-- flowdocs:paragraph:15c9e15e414554481733b72f193bd426 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.

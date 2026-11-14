@@ -1,6 +1,6 @@
 # Player up\-next countdown and play queue navigation — exceptions
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b8ef906d8cc3a602dcf43566b83679a5 -->
 Error reachability, rescue behavior and completeness are unresolved\.

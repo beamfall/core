@@ -1,6 +1,6 @@
 # Display helpers: activity, job, provider\-key and string formatting — exceptions
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:9f982b0b2364c51dd1386e8a2a4b61ff -->
 Error reachability, rescue behavior and completeness are unresolved\.

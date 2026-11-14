@@ -1,6 +1,6 @@
 # Server activity indicator \(running jobs and rescans\) in the shell — flow-diagram
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:3e597afee5d80bfa22564d704454121e -->
 Static source inventory only; sequence and runtime ordering are unresolved\.

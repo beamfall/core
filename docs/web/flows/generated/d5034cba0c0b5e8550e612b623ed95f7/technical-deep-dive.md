@@ -1,36 +1,21 @@
 # Console overview: owner tasks, setup checklist, needs\-attention queue — technical-deep-dive
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a9d3753c8ca19a779b2faae40dc935c4 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/console/OwnerTasks\.tsx:33; symbol: LINK\_TILE; span SHA256: d2e91ba24b0c8d83580d2a9972c53632963a1024b956ccff1e9a570e2c40d8c3.
-
-<!-- flowdocs:paragraph:0c61c377c05491a9be8e959664d83018 -->
-Declared member: source declares LINK\_TILE; membership is caller\-declared, not runtime evidence\.
-
-Source: internal/web/app/src/areas/console/OwnerTasks\.tsx:33; symbol: LINK\_TILE; span SHA256: d2e91ba24b0c8d83580d2a9972c53632963a1024b956ccff1e9a570e2c40d8c3.
+Source: internal/web/app/src/areas/console/OwnerTasks\.tsx:64; symbol: OwnerTasks; span SHA256: 0ad919b5f193d62405ffe6f8ed8bdf75a839aba68215e40ceedbd74362b07101.
 
 <!-- flowdocs:paragraph:36bc3ca43c97f69d84459f760e11912e -->
 Declared member: source declares OwnerTasks; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/OwnerTasks\.tsx:78; symbol: OwnerTasks; span SHA256: 0ad919b5f193d62405ffe6f8ed8bdf75a839aba68215e40ceedbd74362b07101.
-
-<!-- flowdocs:paragraph:b68fd7895b7d354ded877b9103c8c7a2 -->
-Declared member: source declares TILE; membership is caller\-declared, not runtime evidence\.
-
-Source: internal/web/app/src/areas/console/OwnerTasks\.tsx:31; symbol: TILE; span SHA256: 07e5f13b4546e00b4433057c4eefe73ac5d1555d3031d5cb21e59a83ea2dec52.
+Source: internal/web/app/src/areas/console/OwnerTasks\.tsx:64; symbol: OwnerTasks; span SHA256: 0ad919b5f193d62405ffe6f8ed8bdf75a839aba68215e40ceedbd74362b07101.
 
 <!-- flowdocs:paragraph:386ac44ef8b2ab822db376854539056d -->
 Declared member: source declares TaskLink; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/OwnerTasks\.tsx:57; symbol: TaskLink; span SHA256: a9233bae5a676b82ccebeaf23ca7cd2a1d0d18af2f00c310de6d745ee1411acd.
-
-<!-- flowdocs:paragraph:4ac9af89c54998a4573a680b2a598c18 -->
-Declared member: source declares TileHead; membership is caller\-declared, not runtime evidence\.
-
-Source: internal/web/app/src/areas/console/OwnerTasks\.tsx:35; symbol: TileHead; span SHA256: 9075270ec45f3b0f5c96d18d2613dc9743f15fa3df41d897a0459c845fef16d9.
+Source: internal/web/app/src/areas/console/OwnerTasks\.tsx:39; symbol: TaskLink; span SHA256: a9233bae5a676b82ccebeaf23ca7cd2a1d0d18af2f00c310de6d745ee1411acd.
 
 <!-- flowdocs:paragraph:3667a5cddd7e081f5d37d689a267c8e9 -->
 Declared member: source declares SPINE; membership is caller\-declared, not runtime evidence\.
@@ -75,7 +60,7 @@ Source: internal/web/app/src/lib/graphql/console\.ts:63; symbol: CONSOLE\_CONFIG
 <!-- flowdocs:paragraph:f18b0d607f20ff986077aa2d2ff6dd4f -->
 Declared member: source declares JOB\_RETRY\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:257; symbol: JOB\_RETRY\_MUTATION; span SHA256: 2d02c308738e06e82a972af1acbabb50576da86a4b84f7306f3525956bd3a320.
+Source: internal/web/app/src/lib/graphql/console\.ts:258; symbol: JOB\_RETRY\_MUTATION; span SHA256: 2d02c308738e06e82a972af1acbabb50576da86a4b84f7306f3525956bd3a320.
 
 <!-- flowdocs:paragraph:5db075adfd93964bbe99cba829d3005a -->
 Declared member: source declares fetchConsoleConfig; membership is caller\-declared, not runtime evidence\.
@@ -85,12 +70,12 @@ Source: internal/web/app/src/lib/graphql/console\.ts:66; symbol: fetchConsoleCon
 <!-- flowdocs:paragraph:298bc1405b2993608f2c4ef631a146d5 -->
 Declared member: source declares retryJob; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:261; symbol: retryJob; span SHA256: 067af1a5c4cb1b3ab22e990b1845f78d5acabd803a947bd2bda7c56020c86525.
+Source: internal/web/app/src/lib/graphql/console\.ts:262; symbol: retryJob; span SHA256: 067af1a5c4cb1b3ab22e990b1845f78d5acabd803a947bd2bda7c56020c86525.
 
 <!-- flowdocs:paragraph:48d2a0f20e4ce9d1755cea501deea69c -->
 Declared member: source declares JOBS\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:286; symbol: JOBS\_QUERY; span SHA256: 10f1f3bacf7fbd455bf418c8503ff518f957a45ee1c80502a1ffd014086a0aad.
+Source: internal/web/app/src/lib/graphql/manage\.ts:297; symbol: JOBS\_QUERY; span SHA256: 10f1f3bacf7fbd455bf418c8503ff518f957a45ee1c80502a1ffd014086a0aad.
 
 <!-- flowdocs:paragraph:a3528f6fdac6746194cc202a055722a2 -->
 Declared member: source declares LIBRARIES\_QUERY; membership is caller\-declared, not runtime evidence\.
@@ -100,22 +85,22 @@ Source: internal/web/app/src/lib/graphql/manage\.ts:77; symbol: LIBRARIES\_QUERY
 <!-- flowdocs:paragraph:6da426789f84a817472a08308622c084 -->
 Declared member: source declares SETUP\_STATE\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:1577; symbol: SETUP\_STATE\_QUERY; span SHA256: cbd25ff48f1f9070420edb60a98ef01f850e2780ab1a09f2657ae95a04e4e0e4.
+Source: internal/web/app/src/lib/graphql/manage\.ts:1588; symbol: SETUP\_STATE\_QUERY; span SHA256: cbd25ff48f1f9070420edb60a98ef01f850e2780ab1a09f2657ae95a04e4e0e4.
 
 <!-- flowdocs:paragraph:c8cb6c588f312be65a7c17698a4b1168 -->
 Declared member: source declares UNMATCHED\_QUEUE\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:1305; symbol: UNMATCHED\_QUEUE\_QUERY; span SHA256: 796566d07b91fb280ee678627600eab3498e58abf293f4fc33eeb30449a2e20b.
+Source: internal/web/app/src/lib/graphql/manage\.ts:1316; symbol: UNMATCHED\_QUEUE\_QUERY; span SHA256: 796566d07b91fb280ee678627600eab3498e58abf293f4fc33eeb30449a2e20b.
 
 <!-- flowdocs:paragraph:35779b34fabd9bfd1377d8b6e3490183 -->
 Declared member: source declares WATCHER\_STATUS\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:1496; symbol: WATCHER\_STATUS\_QUERY; span SHA256: 6911b18fb97913600d6b287e68235dca706d8395c722018627fe4073f7b2aa2b.
+Source: internal/web/app/src/lib/graphql/manage\.ts:1507; symbol: WATCHER\_STATUS\_QUERY; span SHA256: 6911b18fb97913600d6b287e68235dca706d8395c722018627fe4073f7b2aa2b.
 
 <!-- flowdocs:paragraph:bb2177c19193818eff79ac6191582b16 -->
 Declared member: source declares fetchJobs; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:290; symbol: fetchJobs; span SHA256: 84981ee21f1139b8d18ea75b74fdb61f6a726342170062d90fb00fab530ce0f4.
+Source: internal/web/app/src/lib/graphql/manage\.ts:301; symbol: fetchJobs; span SHA256: 84981ee21f1139b8d18ea75b74fdb61f6a726342170062d90fb00fab530ce0f4.
 
 <!-- flowdocs:paragraph:3c7a7a459827e6908853cb1b7c9501a4 -->
 Declared member: source declares fetchLibraries; membership is caller\-declared, not runtime evidence\.
@@ -125,32 +110,32 @@ Source: internal/web/app/src/lib/graphql/manage\.ts:81; symbol: fetchLibraries; 
 <!-- flowdocs:paragraph:c56a24751777a2908852fa7ed8130e3b -->
 Declared member: source declares fetchSetupState; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:1581; symbol: fetchSetupState; span SHA256: 74e2b5caaaf82309706c1a98de69d9dd224b3e5f673e683072a96720a887507a.
+Source: internal/web/app/src/lib/graphql/manage\.ts:1592; symbol: fetchSetupState; span SHA256: 74e2b5caaaf82309706c1a98de69d9dd224b3e5f673e683072a96720a887507a.
 
 <!-- flowdocs:paragraph:7de7a74d20b5b1ef84d0546ac0e386b6 -->
 Declared member: source declares fetchUnmatchedQueue; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:1309; symbol: fetchUnmatchedQueue; span SHA256: 233cdbc927303a35f0b30e0de149daa6f9c96db5a4bee4ca26ddbdbdc3f9c245.
+Source: internal/web/app/src/lib/graphql/manage\.ts:1320; symbol: fetchUnmatchedQueue; span SHA256: 233cdbc927303a35f0b30e0de149daa6f9c96db5a4bee4ca26ddbdbdc3f9c245.
 
 <!-- flowdocs:paragraph:0fc5032ff95251181e52e81249831bf8 -->
 Declared member: source declares fetchWatcherStatus; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:1500; symbol: fetchWatcherStatus; span SHA256: b0a721ef9635281e55cb77bab61686995e42b230b9b7f0ef0d767d01e8816162.
+Source: internal/web/app/src/lib/graphql/manage\.ts:1511; symbol: fetchWatcherStatus; span SHA256: b0a721ef9635281e55cb77bab61686995e42b230b9b7f0ef0d767d01e8816162.
 
 <!-- flowdocs:paragraph:0fd25945e0011cb5c970248b4e81785b -->
 Declared member: source declares SOURCE\_ITEMS\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:124; symbol: SOURCE\_ITEMS\_QUERY; span SHA256: 8d9143d76f0526e709ac058024b7a5ddded083c00c3ceac977a4ddb1b5576166.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:125; symbol: SOURCE\_ITEMS\_QUERY; span SHA256: 8d9143d76f0526e709ac058024b7a5ddded083c00c3ceac977a4ddb1b5576166.
 
 <!-- flowdocs:paragraph:f131dff3969c1d27641104b818e5bb9e -->
 Declared member: source declares SourceItemsVars; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:128; symbol: SourceItemsVars; span SHA256: 4c8db2fa81447b625909fce2e5e1042f0e94d1bc7da26ad4924c6bfed7c554f4.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:129; symbol: SourceItemsVars; span SHA256: 4c8db2fa81447b625909fce2e5e1042f0e94d1bc7da26ad4924c6bfed7c554f4.
 
 <!-- flowdocs:paragraph:f7af41db160e514d6f6f3d8ce489f877 -->
 Declared member: source declares fetchSourceItems; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:147; symbol: fetchSourceItems; span SHA256: 9f1317f83dd3fa7438a3d9ad73edaad922c0f72c4d85858076328b5d3326f704.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:148; symbol: fetchSourceItems; span SHA256: 9f1317f83dd3fa7438a3d9ad73edaad922c0f72c4d85858076328b5d3326f704.
 
 <!-- flowdocs:paragraph:417f05c71d2b113d4047c671668d66a2 -->
 Declared member: source declares footerMessage; membership is caller\-declared, not runtime evidence\.

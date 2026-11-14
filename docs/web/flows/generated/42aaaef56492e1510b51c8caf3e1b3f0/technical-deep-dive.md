@@ -1,6 +1,6 @@
 # App routing: /web basename, area code\-splitting, initial\-route preload — technical-deep-dive
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:2896eac14fe9033e31bacbe34ee4f9df -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -70,32 +70,32 @@ Source: internal/web/app/src/lib/lazyRoute\.ts:12; symbol: lazyRoute; span SHA25
 <!-- flowdocs:paragraph:d1370612845afd6bd765e23e4137c6b4 -->
 Declared member: source declares INITIAL\_ROUTE\_WAIT\_MS; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/main\.tsx:21; symbol: INITIAL\_ROUTE\_WAIT\_MS; span SHA256: 184d2a820ab452a78fa79fbfa22f21e26da1c401521ba82079ea1bc082b8a9e2.
+Source: internal/web/app/src/main\.tsx:22; symbol: INITIAL\_ROUTE\_WAIT\_MS; span SHA256: 184d2a820ab452a78fa79fbfa22f21e26da1c401521ba82079ea1bc082b8a9e2.
 
 <!-- flowdocs:paragraph:4ca0e7be29870690f8707198c750ddcf -->
 Declared member: source declares basename; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/main\.tsx:17; symbol: basename; span SHA256: dfbd7bbd1cbf2598d23d1a5e4092538f36d4f2a65a0d3483749f30277c267e57.
+Source: internal/web/app/src/main\.tsx:18; symbol: basename; span SHA256: dfbd7bbd1cbf2598d23d1a5e4092538f36d4f2a65a0d3483749f30277c267e57.
 
 <!-- flowdocs:paragraph:6fde7fc01249ef3451f657bc1131d063 -->
 Declared member: source declares container; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/main\.tsx:12; symbol: container; span SHA256: 72f1ba5c244af571c1d2447df2e74cb1578ef4d877517c67d13e1c8e0498f5a2.
+Source: internal/web/app/src/main\.tsx:13; symbol: container; span SHA256: 72f1ba5c244af571c1d2447df2e74cb1578ef4d877517c67d13e1c8e0498f5a2.
 
 <!-- flowdocs:paragraph:10f6d3e5c4226c6ed2fc4c7cbdbcee08 -->
 Declared member: source declares pathname; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/main\.tsx:51; symbol: pathname; span SHA256: 79b4156a8da192b2e095f316e7b678d9e67033b816966f1a32eb38622e882878.
+Source: internal/web/app/src/main\.tsx:52; symbol: pathname; span SHA256: 79b4156a8da192b2e095f316e7b678d9e67033b816966f1a32eb38622e882878.
 
 <!-- flowdocs:paragraph:feaf110862c7c2957b803d361bd78971 -->
 Declared member: source declares render; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/main\.tsx:27; symbol: render; span SHA256: a8c7b442af5b8f5e71b0baee9424a5664f8c3db8aac078381867dbcec5d65a13.
+Source: internal/web/app/src/main\.tsx:28; symbol: render; span SHA256: a8c7b442af5b8f5e71b0baee9424a5664f8c3db8aac078381867dbcec5d65a13.
 
 <!-- flowdocs:paragraph:fc90478bb95da68c63ad98c18e4f23b8 -->
 Declared member: source declares rendered; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/main\.tsx:45; symbol: rendered; span SHA256: a8a3648c4efa49c6f81439945b43a75c54a76b60dd8ea2e12d47ce8c744023bc.
+Source: internal/web/app/src/main\.tsx:46; symbol: rendered; span SHA256: a8a3648c4efa49c6f81439945b43a75c54a76b60dd8ea2e12d47ce8c744023bc.
 
 <!-- flowdocs:paragraph:7d23c3b74021e25f936a0127acd27dc2 -->
 Declared member: source declares preload; membership is caller\-declared, not runtime evidence\.

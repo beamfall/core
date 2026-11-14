@@ -1,11 +1,11 @@
 # Manage unmatched records: inbox, fix match, suppression — readme
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:42d4f466c1cea153881a23233c4af8e4 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/manage/pages/UnmatchedPage\.tsx:40; symbol: UnmatchedPage; span SHA256: 291cd556681df34fe7de2db62444f5e8829fef17ccee656c8b5c8514585cd6ce.
+Source: internal/web/app/src/areas/manage/pages/UnmatchedPage\.tsx:39; symbol: UnmatchedPage; span SHA256: 291cd556681df34fe7de2db62444f5e8829fef17ccee656c8b5c8514585cd6ce.
 
 
 Security summaries: not collected; absence is not a clean security finding.

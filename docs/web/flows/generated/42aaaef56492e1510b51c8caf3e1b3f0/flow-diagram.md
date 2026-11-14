@@ -1,6 +1,6 @@
 # App routing: /web basename, area code\-splitting, initial\-route preload — flow-diagram
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:ed57e48c7b2c0e4680ad319b8db8255d -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -23,12 +23,12 @@ sequenceDiagram
     Note over S,U: Source contains call exec in internal/web/app/src/App.tsx at line 47 - order unresolved
     Note over S,U: Source contains call preload in internal/web/app/src/App.tsx at line 60 - order unresolved
     Note over S,U: Source contains call catch in internal/web/app/src/App.tsx at line 60 - order unresolved
-    Note over S,U: Source contains call replace in internal/web/app/src/main.tsx at line 17 - order unresolved
-    Note over S,U: Source contains call getElementById in internal/web/app/src/main.tsx at line 12 - order unresolved
-    Note over S,U: Source contains call slice in internal/web/app/src/main.tsx at line 51 - order unresolved
-    Note over S,U: Source contains call createRoot in internal/web/app/src/main.tsx at line 28 - order unresolved
-    Note over S,U: Source contains call render in internal/web/app/src/main.tsx at line 28 - order unresolved
-    Note over S,U: Source contains call render in internal/web/app/src/main.tsx at line 49 - order unresolved
+    Note over S,U: Source contains call replace in internal/web/app/src/main.tsx at line 18 - order unresolved
+    Note over S,U: Source contains call getElementById in internal/web/app/src/main.tsx at line 13 - order unresolved
+    Note over S,U: Source contains call slice in internal/web/app/src/main.tsx at line 52 - order unresolved
+    Note over S,U: Source contains call createRoot in internal/web/app/src/main.tsx at line 29 - order unresolved
+    Note over S,U: Source contains call render in internal/web/app/src/main.tsx at line 29 - order unresolved
+    Note over S,U: Source contains call render in internal/web/app/src/main.tsx at line 50 - order unresolved
     Note over S,U: Source contains call load in internal/web/app/src/lib/lazyRoute.ts at line 16 - order unresolved
     Note over S,U: Source contains call then in internal/web/app/src/lib/lazyRoute.ts at line 16 - order unresolved
 ```

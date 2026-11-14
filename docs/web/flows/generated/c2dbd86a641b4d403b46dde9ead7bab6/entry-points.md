@@ -1,6 +1,6 @@
 # Shared workbench widgets: status chips, tables, forms, server path picker — entry-points
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:c05de68b31945d08616de7c9abf1d628 -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.
@@ -10,5 +10,5 @@ Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:
 <!-- flowdocs:paragraph:d3a1fc9e5fd5b7500dea6cab862ec463 -->
 Declared entry point: source declares ManageSection; entry dispatch and callers are unresolved\.
 
-Source: internal/web/app/src/components/beamfall/workbench/index\.tsx:238; symbol: ManageSection; span SHA256: 0399c4240697fcdad5e31cc99e987dc0bfd6d12049af7c131ba5486e6a1b4a4a.
+Source: internal/web/app/src/components/beamfall/workbench/index\.tsx:239; symbol: ManageSection; span SHA256: 0399c4240697fcdad5e31cc99e987dc0bfd6d12049af7c131ba5486e6a1b4a4a.
 

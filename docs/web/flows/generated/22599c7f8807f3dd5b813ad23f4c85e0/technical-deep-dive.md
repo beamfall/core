@@ -1,6 +1,6 @@
 # Manage rename: pattern preview, batch rename managed paths, undo — technical-deep-dive
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:245c73ec090cd743c140186dd8802434 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -80,17 +80,17 @@ Source: internal/web/app/src/areas/manage/lib/renamePattern\.ts:46; symbol: spli
 <!-- flowdocs:paragraph:4d886de54be78c2c259f218baeebf85a -->
 Declared member: source declares Field; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/RenamePage\.tsx:309; symbol: Field; span SHA256: 6c84ad7025fca92c3a20cb8c9fde1ff9d0d68f8be943d2f2ddca44e259c8dc6d.
+Source: internal/web/app/src/areas/manage/pages/RenamePage\.tsx:307; symbol: Field; span SHA256: 6c84ad7025fca92c3a20cb8c9fde1ff9d0d68f8be943d2f2ddca44e259c8dc6d.
 
 <!-- flowdocs:paragraph:3c8d26904f9334ef0765c2c0e3a1660a -->
 Declared member: source declares NumField; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/RenamePage\.tsx:333; symbol: NumField; span SHA256: 8ad4d6a6e5984b5c622139151a90df410f3aada2e73285b4a5b899b90bc859c1.
+Source: internal/web/app/src/areas/manage/pages/RenamePage\.tsx:331; symbol: NumField; span SHA256: 8ad4d6a6e5984b5c622139151a90df410f3aada2e73285b4a5b899b90bc859c1.
 
 <!-- flowdocs:paragraph:628852ba57cbce72ce57a3d3b762b189 -->
 Declared member: source declares FOLDER\_TREE\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:977; symbol: FOLDER\_TREE\_QUERY; span SHA256: 3336a24b314258a4ae372a934c6962f39f967d30a7a96fa2656098de7a8447e7.
+Source: internal/web/app/src/lib/graphql/manage\.ts:988; symbol: FOLDER\_TREE\_QUERY; span SHA256: 3336a24b314258a4ae372a934c6962f39f967d30a7a96fa2656098de7a8447e7.
 
 <!-- flowdocs:paragraph:7b6932b49dbe46185cb5a1597204b9bd -->
 Declared member: source declares LIBRARIES\_QUERY; membership is caller\-declared, not runtime evidence\.
@@ -100,7 +100,7 @@ Source: internal/web/app/src/lib/graphql/manage\.ts:77; symbol: LIBRARIES\_QUERY
 <!-- flowdocs:paragraph:fa45330368d1156067dc35aa76841922 -->
 Declared member: source declares fetchFolderTree; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:981; symbol: fetchFolderTree; span SHA256: ab89a8c90719da008f4c10b349575bfb6f461aad353c5cc27faa71cf85dab1b5.
+Source: internal/web/app/src/lib/graphql/manage\.ts:992; symbol: fetchFolderTree; span SHA256: ab89a8c90719da008f4c10b349575bfb6f461aad353c5cc27faa71cf85dab1b5.
 
 <!-- flowdocs:paragraph:33f2d57ceee1924c49f536fcbbe5d214 -->
 Declared member: source declares fetchLibraries; membership is caller\-declared, not runtime evidence\.
@@ -110,10 +110,10 @@ Source: internal/web/app/src/lib/graphql/manage\.ts:81; symbol: fetchLibraries; 
 <!-- flowdocs:paragraph:4caf09bbd4b90dbb7df3f1c2d2740605 -->
 Declared member: source declares changeCount; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/RenamePage\.tsx:77; symbol: changeCount; span SHA256: b012d47e796442425cd1534bcf1183b66b0b1c4909e9c2ea670157c116383cc2.
+Source: internal/web/app/src/areas/manage/pages/RenamePage\.tsx:76; symbol: changeCount; span SHA256: b012d47e796442425cd1534bcf1183b66b0b1c4909e9c2ea670157c116383cc2.
 
 <!-- flowdocs:paragraph:b9f492db13e0e0c55c563a0ceab21466 -->
 Declared member: source declares previews; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/RenamePage\.tsx:76; symbol: previews; span SHA256: bc1f7a88ccd5f2c06ccc9ac74ef7211c707593f322498bed4f6133ba7da2d396.
+Source: internal/web/app/src/areas/manage/pages/RenamePage\.tsx:75; symbol: previews; span SHA256: bc1f7a88ccd5f2c06ccc9ac74ef7211c707593f322498bed4f6133ba7da2d396.
 

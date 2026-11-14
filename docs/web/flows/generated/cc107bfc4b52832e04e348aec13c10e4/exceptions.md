@@ -1,6 +1,6 @@
 # Session spine: compat handshake, session renewal, identity epoch, request guard — exceptions
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1d2bea13f9340091de9b2f2d0418f40b -->
 Error reachability, rescue behavior and completeness are unresolved\.

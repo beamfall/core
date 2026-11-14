@@ -1,6 +1,6 @@
 # Manage convert: enqueue conversion presets and watch the queue — technical-deep-dive
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1d6b2baacd23be259711b56c909eaa1a -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -50,17 +50,17 @@ Source: internal/web/app/src/areas/manage/lib/powertools\.ts:77; symbol: isUnkno
 <!-- flowdocs:paragraph:2f147e3c470148647620a3f97e5317de -->
 Declared member: source declares ConvertEnqueueSection; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/ConvertPage\.tsx:44; symbol: ConvertEnqueueSection; span SHA256: 0609dcf11f3ef5bd4f64cda3f4d937cfe2642a8fb32989c8f4120c8c9670d471.
+Source: internal/web/app/src/areas/manage/pages/ConvertPage\.tsx:43; symbol: ConvertEnqueueSection; span SHA256: 0609dcf11f3ef5bd4f64cda3f4d937cfe2642a8fb32989c8f4120c8c9670d471.
 
 <!-- flowdocs:paragraph:9de649ef8530344d4e4499d665b0f27d -->
 Declared member: source declares ConvertQueueSection; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/ConvertPage\.tsx:152; symbol: ConvertQueueSection; span SHA256: 0711156dbd2ee3cc483865a148c09c7c30cf9c3fe86ef2f3ad83db32a5c5e123.
+Source: internal/web/app/src/areas/manage/pages/ConvertPage\.tsx:151; symbol: ConvertQueueSection; span SHA256: 0711156dbd2ee3cc483865a148c09c7c30cf9c3fe86ef2f3ad83db32a5c5e123.
 
 <!-- flowdocs:paragraph:89f9cc6af7b631bfd17392edf713e1e7 -->
 Declared member: source declares JOBS\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:286; symbol: JOBS\_QUERY; span SHA256: 10f1f3bacf7fbd455bf418c8503ff518f957a45ee1c80502a1ffd014086a0aad.
+Source: internal/web/app/src/lib/graphql/manage\.ts:297; symbol: JOBS\_QUERY; span SHA256: 10f1f3bacf7fbd455bf418c8503ff518f957a45ee1c80502a1ffd014086a0aad.
 
 <!-- flowdocs:paragraph:ac0ac7e4285fc749a8fb39ceffe97cf1 -->
 Declared member: source declares LIBRARIES\_QUERY; membership is caller\-declared, not runtime evidence\.
@@ -70,7 +70,7 @@ Source: internal/web/app/src/lib/graphql/manage\.ts:77; symbol: LIBRARIES\_QUERY
 <!-- flowdocs:paragraph:1373b06e03bc02e4e234b5aad20f53db -->
 Declared member: source declares fetchJobs; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:290; symbol: fetchJobs; span SHA256: 84981ee21f1139b8d18ea75b74fdb61f6a726342170062d90fb00fab530ce0f4.
+Source: internal/web/app/src/lib/graphql/manage\.ts:301; symbol: fetchJobs; span SHA256: 84981ee21f1139b8d18ea75b74fdb61f6a726342170062d90fb00fab530ce0f4.
 
 <!-- flowdocs:paragraph:7f0cec7c620c3fd6a0dd0840726aefcc -->
 Declared member: source declares fetchLibraries; membership is caller\-declared, not runtime evidence\.
@@ -80,10 +80,10 @@ Source: internal/web/app/src/lib/graphql/manage\.ts:81; symbol: fetchLibraries; 
 <!-- flowdocs:paragraph:559a8b56f5dc7de28be9274d311e517e -->
 Declared member: source declares load; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/ConvertPage\.tsx:158; symbol: load; span SHA256: 2f47398c6e5509cbfebc0c377dd35d4a596a68219cb223c67dd0dfbaa39fc73d.
+Source: internal/web/app/src/areas/manage/pages/ConvertPage\.tsx:157; symbol: load; span SHA256: 2f47398c6e5509cbfebc0c377dd35d4a596a68219cb223c67dd0dfbaa39fc73d.
 
 <!-- flowdocs:paragraph:ef40712d22e51ca97ec60fe576d13a11 -->
 Declared member: source declares onConvert; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/ConvertPage\.tsx:67; symbol: onConvert; span SHA256: d73a74bdeb1bc0e054b55c2e7c23cf931ffdf42098146ab3d2ceddb86220ae34.
+Source: internal/web/app/src/areas/manage/pages/ConvertPage\.tsx:66; symbol: onConvert; span SHA256: d73a74bdeb1bc0e054b55c2e7c23cf931ffdf42098146ab3d2ceddb86220ae34.
 

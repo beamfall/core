@@ -1,6 +1,6 @@
 # Viewer item actions: mark watched, watchlist, rating, engagement sync — technical-deep-dive
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:e14b2e912228e27cf5b2fc0d93034757 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -90,47 +90,47 @@ Source: internal/web/app/src/areas/viewer/actions/useItemActions\.ts:35; symbol:
 <!-- flowdocs:paragraph:4327041c1829ad261e7072b80e704d3f -->
 Declared member: source declares ITEM\_STATE\_FIELDS; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:384; symbol: ITEM\_STATE\_FIELDS; span SHA256: d41d07633a1b29cb96796a7a8e2c13289e6f1e51b99769586889081c51f725ac.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:397; symbol: ITEM\_STATE\_FIELDS; span SHA256: d41d07633a1b29cb96796a7a8e2c13289e6f1e51b99769586889081c51f725ac.
 
 <!-- flowdocs:paragraph:4bb77621d53967005b481c8300d6f00c -->
 Declared member: source declares ITEM\_STATE\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:386; symbol: ITEM\_STATE\_QUERY; span SHA256: b946f075b7e812ee7db64c66094d753adcf0774e85c842450e7e5953013a16f2.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:399; symbol: ITEM\_STATE\_QUERY; span SHA256: b946f075b7e812ee7db64c66094d753adcf0774e85c842450e7e5953013a16f2.
 
 <!-- flowdocs:paragraph:c98de9df77fbce832c0696bd7c874bc1 -->
 Declared member: source declares SET\_RATING\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:422; symbol: SET\_RATING\_MUTATION; span SHA256: f75cf23f5303a560c0a71065e58afd4d7eb387f1031eaf6f5d0fe6c45917a70b.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:435; symbol: SET\_RATING\_MUTATION; span SHA256: f75cf23f5303a560c0a71065e58afd4d7eb387f1031eaf6f5d0fe6c45917a70b.
 
 <!-- flowdocs:paragraph:714bddf33674d977461eabded6b61736 -->
 Declared member: source declares SET\_WATCHED\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:397; symbol: SET\_WATCHED\_MUTATION; span SHA256: 488bb9a2c31023b72cd95b83a3270e9c41b004087a1679061ab813bcc64bf26c.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:410; symbol: SET\_WATCHED\_MUTATION; span SHA256: 488bb9a2c31023b72cd95b83a3270e9c41b004087a1679061ab813bcc64bf26c.
 
 <!-- flowdocs:paragraph:bc4ea4c434b6f066a3347f17b45fe038 -->
 Declared member: source declares SET\_WATCHLISTED\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:408; symbol: SET\_WATCHLISTED\_MUTATION; span SHA256: dc257773bff4c1481d85e26fe30ee47b79718f82b151a5be2d65818f48e063cf.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:421; symbol: SET\_WATCHLISTED\_MUTATION; span SHA256: dc257773bff4c1481d85e26fe30ee47b79718f82b151a5be2d65818f48e063cf.
 
 <!-- flowdocs:paragraph:fbeffa5c3d6e18f79d10bbf113f08d4f -->
 Declared member: source declares fetchItemState; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:389; symbol: fetchItemState; span SHA256: 541866a4d3b347c992ffda216a7b6892c5d20a0e570a2f018a38033bd11e5fb9.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:402; symbol: fetchItemState; span SHA256: 541866a4d3b347c992ffda216a7b6892c5d20a0e570a2f018a38033bd11e5fb9.
 
 <!-- flowdocs:paragraph:38fb7e7dc11a0951be4d9eda2866272d -->
 Declared member: source declares setRating; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:425; symbol: setRating; span SHA256: c49d1ec1bfde26c8a189347ef2f17c8647b91a89716eed364e8b08e0864273b8.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:438; symbol: setRating; span SHA256: c49d1ec1bfde26c8a189347ef2f17c8647b91a89716eed364e8b08e0864273b8.
 
 <!-- flowdocs:paragraph:a262586407b3830726ed43b58b93eeac -->
 Declared member: source declares setWatched; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:400; symbol: setWatched; span SHA256: b2290f00045a702b58662ec0014bafbaf78a4de40520c82744da7f99f15e6dbf.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:413; symbol: setWatched; span SHA256: b2290f00045a702b58662ec0014bafbaf78a4de40520c82744da7f99f15e6dbf.
 
 <!-- flowdocs:paragraph:11f8b042214944a2012e12e6db98ca0f -->
 Declared member: source declares setWatchlisted; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:411; symbol: setWatchlisted; span SHA256: 89fc870db5ebbd40c658e40b07832bf5cb54e2e502acaf009b5a11dfc0a564ca.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:424; symbol: setWatchlisted; span SHA256: 89fc870db5ebbd40c658e40b07832bf5cb54e2e502acaf009b5a11dfc0a564ca.
 
 <!-- flowdocs:paragraph:9cee411684d2e4aa851cd25cd6c214f0 -->
 Declared member: source declares run; membership is caller\-declared, not runtime evidence\.

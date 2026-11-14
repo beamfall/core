@@ -1,11 +1,11 @@
 # Console plugins: standing, lifecycle, config editor, provider keys — readme
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:826a68869060badccad2d3bbd0ddb1c6 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:931; symbol: ActionRow; span SHA256: 2a20e7df7d8ac823ea677063b20d2017cc11d6c03e2b7774889185c0c031b315.
+Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:904; symbol: ActionRow; span SHA256: 2a20e7df7d8ac823ea677063b20d2017cc11d6c03e2b7774889185c0c031b315.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -30,4 +30,4 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow console\.plugins: 53 resolved, 0 unresolved members.
+Declared inventory flow console\.plugins: 52 resolved, 0 unresolved members.

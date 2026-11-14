@@ -1,6 +1,6 @@
 # Admin Session unlock gate \(admin password\) reused by Console — technical-deep-dive
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:25b4d224ac5aa3cd6563469a65a8b480 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -20,7 +20,7 @@ Source: internal/web/app/src/lib/graphql/auth\.ts:37; symbol: ADMIN\_SESSION\_QU
 <!-- flowdocs:paragraph:0dc75f2ac67898578143c8fc8f73a3fc -->
 Declared member: source declares END\_ADMIN\_SESSION\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/auth\.ts:73; symbol: END\_ADMIN\_SESSION\_MUTATION; span SHA256: e16f9e242676d67389305fa4fef379b13b4c91d376bc5e935d74a24731b79481.
+Source: internal/web/app/src/lib/graphql/auth\.ts:78; symbol: END\_ADMIN\_SESSION\_MUTATION; span SHA256: e16f9e242676d67389305fa4fef379b13b4c91d376bc5e935d74a24731b79481.
 
 <!-- flowdocs:paragraph:890b4457d0fc9bbf440ce769e03270ad -->
 Declared member: source declares RebindOutcome; membership is caller\-declared, not runtime evidence\.
@@ -40,7 +40,7 @@ Source: internal/web/app/src/lib/graphql/auth\.ts:49; symbol: VerifiedAdminSessi
 <!-- flowdocs:paragraph:2aa4828a2d07bc87ee051a1626789b2f -->
 Declared member: source declares endAdminSession; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/auth\.ts:76; symbol: endAdminSession; span SHA256: 4ee3d8497d06e82a98de946da060f09c88687949557d97077c0ae75fe3f3216d.
+Source: internal/web/app/src/lib/graphql/auth\.ts:81; symbol: endAdminSession; span SHA256: 4ee3d8497d06e82a98de946da060f09c88687949557d97077c0ae75fe3f3216d.
 
 <!-- flowdocs:paragraph:d543143a692c7568c65d703976448a79 -->
 Declared member: source declares fetchAdminSession; membership is caller\-declared, not runtime evidence\.
@@ -55,7 +55,7 @@ Source: internal/web/app/src/lib/graphql/auth\.ts:26; symbol: settleRebind; span
 <!-- flowdocs:paragraph:64becf3273529055b2a17858c756dd22 -->
 Declared member: source declares verifyAdminSession; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/auth\.ts:59; symbol: verifyAdminSession; span SHA256: f4599ac1ba9ab422871325940cd512172d342310a7c310ce60759d5045907b08.
+Source: internal/web/app/src/lib/graphql/auth\.ts:63; symbol: verifyAdminSession; span SHA256: f4599ac1ba9ab422871325940cd512172d342310a7c310ce60759d5045907b08.
 
 <!-- flowdocs:paragraph:a4a82ae91435a5934cfceb672f115151 -->
 Declared member: source declares lock; membership is caller\-declared, not runtime evidence\.

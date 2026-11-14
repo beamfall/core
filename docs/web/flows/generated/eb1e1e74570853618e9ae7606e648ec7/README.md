@@ -1,11 +1,11 @@
 # Console identification and layout capabilities — readme
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a7d4a0a23006917ea9b9100552daf5bf -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/console/sections/Capabilities\.tsx:19; symbol: Capabilities; span SHA256: 32a8e7803eaa9f383ff15e6655ced66770a6b1877e806367d42975679b21d5a5.
+Source: internal/web/app/src/areas/console/sections/Capabilities\.tsx:18; symbol: Capabilities; span SHA256: 32a8e7803eaa9f383ff15e6655ced66770a6b1877e806367d42975679b21d5a5.
 
 
 Security summaries: not collected; absence is not a clean security finding.

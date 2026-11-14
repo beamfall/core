@@ -1,6 +1,6 @@
 # UI primitives: button, dialog, alert dialog, select, table, tabs, tree and form controls — flow-diagram
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:c807f657be23d446e9b8bcab2bb7d537 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -27,7 +27,7 @@ sequenceDiagram
     Note over S,U: Source contains call cn in internal/web/app/src/components/ui/badge.tsx at line 35 - order unresolved
     Note over S,U: Source contains call badgeVariants in internal/web/app/src/components/ui/badge.tsx at line 35 - order unresolved
     Note over S,U: Source contains call cva in internal/web/app/src/components/ui/badge.tsx at line 7 - order unresolved
-    Note over S,U: Source contains call cva in internal/web/app/src/components/ui/button.tsx at line 15 - order unresolved
+    Note over S,U: Source contains call cva in internal/web/app/src/components/ui/button.tsx at line 18 - order unresolved
     Note over S,U: Source contains call cn in internal/web/app/src/components/ui/card.tsx at line 9 - order unresolved
     Note over S,U: Source contains call cn in internal/web/app/src/components/ui/card.tsx at line 55 - order unresolved
     Note over S,U: Source contains call cn in internal/web/app/src/components/ui/card.tsx at line 62 - order unresolved

@@ -1,6 +1,6 @@
 # Manage rename: pattern preview, batch rename managed paths, undo — entry-points
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:499532ebee4a96d42f823f2bb7120546 -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.
@@ -10,5 +10,5 @@ Source: internal/web/app/src/areas/manage/lib/powertools\.ts:94; symbol: BATCH\_
 <!-- flowdocs:paragraph:7611551690e1ed5c6ef2787d39f321e7 -->
 Declared entry point: source declares RenamePage; entry dispatch and callers are unresolved\.
 
-Source: internal/web/app/src/areas/manage/pages/RenamePage\.tsx:51; symbol: RenamePage; span SHA256: ad7279ef34bbe090db1cd41d781c7fa0b1e7b50d93c8efdafb261a4127b3bca5.
+Source: internal/web/app/src/areas/manage/pages/RenamePage\.tsx:50; symbol: RenamePage; span SHA256: ad7279ef34bbe090db1cd41d781c7fa0b1e7b50d93c8efdafb261a4127b3bca5.
 

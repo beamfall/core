@@ -1,11 +1,11 @@
 # Manage manual and smart collections — entry-points
 
-Source revision: e2ffd915f3bda309ca8792f07724053b048ba15f. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b5d3ced693956cfecb2a4a6f3b06f0fd -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.
 
-Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:388; symbol: CollectionRow; span SHA256: 5ca5177ddfc8b2d4a18487bf9a9fd06dd63e1931236eb8f812e720300a1d9470.
+Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:364; symbol: CollectionRow; span SHA256: 5ca5177ddfc8b2d4a18487bf9a9fd06dd63e1931236eb8f812e720300a1d9470.
 
 <!-- flowdocs:paragraph:39c0400cdb652897a36fd30b7cbe6b82 -->
 Declared entry point: source declares CollectionsPage; entry dispatch and callers are unresolved\.
