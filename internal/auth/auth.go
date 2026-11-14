@@ -371,6 +371,15 @@ func (s Scope) IsScopedKey() bool {
 	return s.APIKeyID != ""
 }
 
+// IsEnrolledDeviceSession reports whether the Scope was authenticated by an
+// enrolled device Session: the credential a client app holds after pairing.
+// Scoped developer keys, admin API tokens and integration Sessions are not
+// enrolled device Sessions.
+func (s Scope) IsEnrolledDeviceSession() bool {
+	return s.SessionID != "" && s.SessionKind == store.SessionKindEnrolled &&
+		s.APIKeyID == "" && s.APITokenID == ""
+}
+
 // Scope resolves a session identifier into a Scope.
 func (s *Service) Scope(ctx context.Context, sessionID store.SessionID) (Scope, error) {
 	return s.scope(ctx, sessionID, "", "")

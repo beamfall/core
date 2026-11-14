@@ -77,6 +77,7 @@ type Server struct {
 	pushNotifications PushNotificationStore
 	v1                V1Store
 	v1ScanEnqueue     V1ScanEnqueuer
+	v1Progress        V1ProgressRecorder
 	backupEncryptor   store.BackupIngestEncryptor
 	readiness         ReadinessProvider
 	sessions          SessionCountProvider
