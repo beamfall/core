@@ -72,7 +72,7 @@ func (s *Store) BrowseServerFolders(ctx context.Context, path string, depth int)
 }
 
 func directoryReadable(path string) bool {
-	dir, err := os.Open(path)
+	dir, err := os.Open(filepath.Clean(path))
 	if err != nil {
 		return false
 	}

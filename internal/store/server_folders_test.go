@@ -138,10 +138,10 @@ func TestBrowseServerFoldersDepthZeroRejectsUnreadableFolder(t *testing.T) {
 	if err := os.Mkdir(locked, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(locked, 0o000); err != nil {
+	// The folder stays empty, so the test's temp-dir cleanup can still remove it.
+	if err := os.Chmod(locked, 0); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(locked, 0o700) })
 
 	_, err := st.BrowseServerFolders(ctx, locked, 0)
 	var verr store.ValidationError
