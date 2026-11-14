@@ -275,7 +275,7 @@ const sqliteFileHeader = "SQLite format 3\x00"
 // the file header itself first, so an empty or foreign file never reaches
 // SQLite, and then opens the database read-only.
 func isBeamfallCatalog(ctx context.Context, path string) bool {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- path is db/catalog.db under the data directory the operator named
 	if err != nil {
 		return false
 	}

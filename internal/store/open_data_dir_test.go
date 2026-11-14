@@ -95,7 +95,7 @@ func TestOpenRequireExistingRefusesForeignCatalog(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
-	foreignBytes, err := os.ReadFile(foreignSQLite)
+	foreignBytes, err := os.ReadFile(foreignSQLite) // #nosec G304 -- path is beneath a test-owned temporary directory
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func snapshotTree(t *testing.T, root string) string {
 			fmt.Fprintf(&b, "%s/\n", rel)
 			return nil
 		}
-		data, err := os.ReadFile(path)
+		data, err := os.ReadFile(path) // #nosec G304 G122 -- path is walked beneath a test-owned temporary directory
 		if err != nil {
 			return err
 		}

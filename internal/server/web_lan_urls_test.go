@@ -189,7 +189,7 @@ func TestSetupRefusedByHostnameRuleCarriesLANCode(t *testing.T) {
 			t.Fatalf("refusal carries lanUrls: %s", rec.Body.String())
 		}
 	}
-	const noToken = `{"deviceName":"Laptop","profileName":"Owner"}`
+	const noToken = `{"deviceName":"Laptop","profileName":"Owner"}` // #nosec G101 -- a setup body with no token, not a credential
 
 	t.Run("LAN source at a hostname gets the code and the listener", func(t *testing.T) {
 		srv := newTestServer(t)

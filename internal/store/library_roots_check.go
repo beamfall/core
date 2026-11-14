@@ -68,7 +68,7 @@ func checkLibraryRoot(root string) error {
 	case !info.IsDir():
 		return ValidationError(path + " is a file, not a folder.")
 	}
-	dir, err := os.Open(path)
+	dir, err := os.Open(path) // #nosec G304 -- the owner-chosen folder is only listed to prove it is readable
 	if err != nil {
 		return libraryRootUnreadable(path)
 	}
