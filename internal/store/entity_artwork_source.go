@@ -51,7 +51,7 @@ func (s *Store) EntitiesOfKindAfter(ctx context.Context, pluginID, kind string, 
 // EntityMemberMediaIDs returns one page of the Media one Entity points at
 // through a relation, ordered rows first by their sort order (the order the
 // Entity's children are shown in), skipping trashed Media and Media in any
-// other Library: a poster copied across Libraries would show one Library's
+// other Library: a poster copied across Libraries would expose one Library's
 // artwork to viewers who cannot see that Library.
 func (s *Store) EntityMemberMediaIDs(ctx context.Context, id EntityID, relation string, offset, limit int) ([]MediaID, error) {
 	if id == "" || relation == "" {
