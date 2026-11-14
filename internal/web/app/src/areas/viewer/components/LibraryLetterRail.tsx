@@ -43,7 +43,11 @@ function viewportHeight(): number {
 /** The rail initial of a title, as the server derives it: an upper-cased first letter, else "#". */
 export function letterRailInitial(title: string): string {
   const first = [...title][0] ?? "";
-  return /^\p{L}$/u.test(first) ? first.toUpperCase() : LETTER_RAIL_OTHER;
+  if (!/^\p{L}$/u.test(first)) return LETTER_RAIL_OTHER;
+  // Go upper-cases one rune at a time; a letter whose full upper case is
+  // several characters ("ß" to "SS") stays as it is there, so here too.
+  const upper = first.toUpperCase();
+  return [...upper].length === 1 ? upper : first;
 }
 
 /** The rail's letters: "#", A to Z, then any other initial the result holds. */

@@ -394,6 +394,8 @@ describe("Library browse", () => {
     expect(letterRailInitial("été")).toBe("É");
     expect(letterRailInitial("3 days")).toBe("#");
     expect(letterRailInitial("~tilde")).toBe("#");
+    // Go upper-cases rune by rune, so a letter with a multi-character upper case stays.
+    expect(letterRailInitial("ßalpha")).toBe("ß");
     expect(letterRailInitial("")).toBe("#");
   });
 

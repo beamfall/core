@@ -116,9 +116,17 @@ export function useVirtualGrid({
   // Tallest card seen while windowing. It only grows, so the spacer geometry
   // does not oscillate as rows of different heights scroll in and out.
   const cardHeightRef = useRef(0);
+  // The layout the retained height was measured in: a switch between grid
+  // and list starts the measurement over, or the spacers and jumps would
+  // keep the other layout's row height.
+  const layoutRef = useRef(fixedColumns);
   const compute = useCallback((): VirtualGridWindow | null => {
     const grid = gridRef.current;
     if (!grid || !enabled || itemCount <= 0) return null;
+    if (layoutRef.current !== fixedColumns) {
+      layoutRef.current = fixedColumns;
+      cardHeightRef.current = 0;
+    }
 
     const gap = readGap(grid);
     const columns = fixedColumns ?? readColumns(grid, gap);

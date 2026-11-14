@@ -1360,7 +1360,8 @@
 [data-register="viewer"] .bf-letter-rail button:focus-visible,
 [data-register="viewer"] .bf-letter-sheet button:focus-visible,
 [data-register="viewer"] .bf-letter-rail-trigger:focus-visible {
-  outline: none;
+  /* Transparent, so forced-colors mode still draws it in a system color. */
+  outline: 2px solid transparent;
   box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
@@ -1415,8 +1416,11 @@
   grid-template-columns: repeat(6, 36px);
   justify-content: center;
   gap: 6px;
+  /* A result with many initials scrolls inside the sheet, not off screen. */
+  max-height: calc(100dvh - 10rem);
+  overflow-y: auto;
   margin: 0;
-  padding: 0;
+  padding: 2px;
   list-style: none;
 }
 
