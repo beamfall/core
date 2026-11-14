@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/beamfall/core/internal/store"
+	"github.com/beamfall/core/internal/streamtoken"
 )
 
 // ceilingSourceBytes is a 6,000,000 bit/s source over the 120 second
@@ -93,6 +94,102 @@ func TestStreamingCeilingDecision(t *testing.T) {
 			t.Fatalf("decision = %q/%q, want transcode/requires-transcode", resp.Decision, resp.Reason)
 		}
 	})
+}
+
+// TestStreamingCeilingKeepsHEVCRungsThatFit checks that each codec takes its
+// own rung heights: a 40 Mbit/s ceiling keeps the 2160p HEVC rung (about
+// 25 Mbit/s), while a 10 Mbit/s ceiling fits no HEVC rung.
+func TestStreamingCeilingKeepsHEVCRungsThatFit(t *testing.T) {
+	cases := []struct {
+		name     string
+		ceiling  int
+		wantTop  string
+		wantHEVC int
+	}{
+		{"generous ceiling keeps 2160p HEVC", 40_000_000, "2160p-hevc", 2160},
+		{"mid ceiling keeps 1440p HEVC", 20_000_000, "1440p-hevc", 1440},
+		{"tight ceiling leaves HEVC off", 10_000_000, "1080p", 1080},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			service, st, scope := capabilityTestService(t)
+			sessions := NewSessions(&hevcCapableTranscoder{}, t.TempDir(), nil)
+			defer sessions.Close()
+			service.SetSessions(sessions)
+			mediaID := importProbedMedia(t, st, "fp-ceiling-4k", "mkv", "h264", 3840, 2160, []store.MediaFileStream{
+				videoStream("h264", "High", 0, ""),
+				audioStream(1, "aac", 2),
+			})
+			profile := CapabilityProfile{
+				Client:     "hevc-4k-tv",
+				Containers: []string{"mp4"},
+				VideoCodecs: []VideoCodecCap{
+					{Codec: "hevc", MaxHeight: 2160},
+					{Codec: "h264", MaxHeight: 1080},
+				},
+				AudioCodecs:         []AudioCodecCap{{Codec: "aac", MaxChannels: 6}},
+				MaxStreamingBitrate: tc.ceiling,
+			}
+			resp, err := service.Info(context.Background(), scope, InfoRequest{MediaID: string(mediaID), CapabilityProfile: profile})
+			if err != nil {
+				t.Fatalf("Info: %v", err)
+			}
+			rungs := resp.Streams[0].Renditions
+			if len(rungs) == 0 || rungs[0].ID != tc.wantTop {
+				t.Fatalf("renditions = %v, want %s on top", rungs, tc.wantTop)
+			}
+			for _, rung := range rungs {
+				if rung.Bandwidth > tc.ceiling {
+					t.Fatalf("rung %q at %d bit/s exceeds the %d bit/s ceiling", rung.ID, rung.Bandwidth, tc.ceiling)
+				}
+			}
+			grant, err := service.tokens.UnverifiedGrant(resp.Streams[0].Token, streamtoken.TargetMediaHLS)
+			if err != nil {
+				t.Fatalf("grant: %v", err)
+			}
+			if grant.HLSHEVCMaxHeight != tc.wantHEVC || grant.HLSClientMaxHeight != 1080 {
+				t.Fatalf("grant heights = hevc:%d h264:%d, want hevc:%d h264:1080", grant.HLSHEVCMaxHeight, grant.HLSClientMaxHeight, tc.wantHEVC)
+			}
+		})
+	}
+}
+
+// TestStreamingCeilingDoesNotMaskOtherRefusals checks that the dashboard
+// names the codec refusal, not the ceiling, when both apply.
+func TestStreamingCeilingDoesNotMaskOtherRefusals(t *testing.T) {
+	h264Only := main10_1080p
+	h264Only.VideoCodecs = []VideoCodecCap{{Codec: "h264", Profiles: []string{"High", "Main"}, MaxHeight: 1080}}
+	service, _, sessionID, mediaID := ceilingInfo(t, withCeiling(h264Only, 5_000_000), ceilingSourceBytes)
+	obs, ok := service.PlayObservation(sessionID, mediaID)
+	if !ok || obs.Reason != PlayReasonVideoCodec {
+		t.Fatalf("observation = %+v (%v), want reason %s", obs, ok, PlayReasonVideoCodec)
+	}
+}
+
+// TestStreamingCeilingLeavesCachedRenditionReason checks that a cached
+// rendition the item would have taken anyway keeps its own reason: an mkv
+// source on an mp4-only client never direct plays, ceiling or not.
+func TestStreamingCeilingLeavesCachedRenditionReason(t *testing.T) {
+	service, st, scope := capabilityTestService(t)
+	mediaID := importProbedMedia(t, st, "fp-ceiling-cached", "mkv", "h264", 1920, 1080, []store.MediaFileStream{
+		videoStream("h264", "High", 0, ""),
+		audioStream(1, "aac", 2),
+	})
+	insertReadyPlaybackRendition(t, st, mediaID, "precompute-720p", 720)
+	profile := CapabilityProfile{
+		Client:              "beamfall-test",
+		Containers:          []string{"mp4"},
+		VideoCodecs:         []VideoCodecCap{{Codec: "h264", MaxHeight: 1080}},
+		AudioCodecs:         []AudioCodecCap{{Codec: "aac", MaxChannels: 2}},
+		MaxStreamingBitrate: 40_000_000,
+	}
+	resp, err := service.Info(context.Background(), scope, InfoRequest{MediaID: string(mediaID), CapabilityProfile: profile})
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	if resp.Decision != "precomputed-rendition" || resp.Reason != "cached-rendition" {
+		t.Fatalf("decision = %q/%q, want precomputed-rendition/cached-rendition", resp.Decision, resp.Reason)
+	}
 }
 
 func TestStreamingCeilingVetoUsesKnownBitrate(t *testing.T) {

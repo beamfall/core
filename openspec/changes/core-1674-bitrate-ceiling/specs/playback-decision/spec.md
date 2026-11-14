@@ -28,6 +28,11 @@ ceiling below the lowest rung SHALL leave the lowest rung. Audio-only items are 
 - **WHEN** the ceiling is lower than the lowest transcode rung
 - **THEN** only the lowest rung is advertised
 
+#### Scenario: HEVC rungs that fit stay
+
+- **WHEN** a 2160p source is transcoded for an HEVC-capable client under a 40 Mbit/s ceiling
+- **THEN** the 2160p HEVC rung is still advertised
+
 ### Requirement: The decision names the viewer ceiling only when it alone applies
 
 When the viewer's streaming ceiling is the only reason a video source was not handed over,
@@ -43,3 +48,14 @@ would be without the ceiling.
 
 - **WHEN** the profile cannot decode the source codec and carries a ceiling
 - **THEN** the reason is `requires-transcode`
+
+#### Scenario: Cached rendition taken anyway
+
+- **WHEN** a source the profile cannot direct play has a ready cached rendition and the profile
+  carries a ceiling
+- **THEN** the reason is `cached-rendition`
+
+#### Scenario: Dashboard reason
+
+- **WHEN** the profile cannot decode the source codec and carries a ceiling
+- **THEN** the live-session dashboard names the codec, not the bitrate, as the reason

@@ -800,10 +800,34 @@ func (ov quirkOverlay) bitrateHeightCeiling() int {
 	return h264LadderRungs[len(h264LadderRungs)-1].Height
 }
 
-// heightCeiling is the single height bound the overlay imposes on the transcode
-// ladder: the tighter of the explicit cap and the bitrate cap's rung height.
+// hevcBitrateHeightCeiling is bitrateHeightCeiling for the HEVC rungs, which
+// carry more picture per bit: it returns the height of the best HEVC rung
+// whose advertised bandwidth fits under the cap. When no HEVC rung fits it
+// falls back to the H.264 answer, which is below every HEVC rung and so keeps
+// them all off the ladder.
+func (ov quirkOverlay) hevcBitrateHeightCeiling() int {
+	maxBitrate := ov.maxBitrate()
+	if maxBitrate <= 0 {
+		return 0
+	}
+	for _, rung := range hevcLadderRungs {
+		if bandwidthFor(rung.VideoKbps) <= maxBitrate {
+			return rung.Height
+		}
+	}
+	return ov.bitrateHeightCeiling()
+}
+
+// heightCeiling is the height bound the overlay imposes on the H.264 rungs of
+// the transcode ladder: the tighter of the explicit cap and the bitrate cap's
+// rung height.
 func (ov quirkOverlay) heightCeiling() int {
 	return minNonZero(ov.MaxHeight, ov.bitrateHeightCeiling())
+}
+
+// hevcHeightCeiling is heightCeiling for the HEVC rungs.
+func (ov quirkOverlay) hevcHeightCeiling() int {
+	return minNonZero(ov.MaxHeight, ov.hevcBitrateHeightCeiling())
 }
 
 // remuxPreservesHDR reports whether a container swap would carry this source's

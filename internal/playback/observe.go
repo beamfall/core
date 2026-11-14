@@ -189,20 +189,29 @@ func topRenditionBandwidth(streams []StreamChoice) int {
 
 // directPlayRefusalCause names the first gate of canDirectPlay the item
 // fails, in the order canDirectPlay applies them. It returns "" exactly when
-// canDirectPlay accepts the item.
+// canDirectPlay accepts the item. The viewer's streaming ceiling is judged
+// last: it is a bitrate refusal the viewer chose, not a device fault, and it
+// names itself only when nothing else would refuse the item.
 func directPlayRefusalCause(media store.Media, file store.MediaFile, streams []store.MediaFileStream, profile CapabilityProfile, selectedSubtitleIndex *int, ov quirkOverlay) string {
+	if cause := deviceRefusalCause(media, file, streams, profile, selectedSubtitleIndex, ov.withoutClientCeiling()); cause != "" {
+		return cause
+	}
+	if ov.vetoesVideoPassthrough(media, file, streams) {
+		return PlayReasonBitrate
+	}
+	return ""
+}
+
+// deviceRefusalCause is directPlayRefusalCause under an overlay that carries
+// no viewer ceiling.
+func deviceRefusalCause(media store.Media, file store.MediaFile, streams []store.MediaFileStream, profile CapabilityProfile, selectedSubtitleIndex *int, ov quirkOverlay) string {
 	if !slices.Contains(profile.Containers, media.Container) {
 		return PlayReasonContainer
 	}
-	if base := ov.withoutClientCeiling(); base.vetoesVideoPassthrough(media, file, streams) ||
-		base.vetoesAudioPassthrough(streams) ||
-		base.vetoesSourceContainer() {
+	if ov.vetoesVideoPassthrough(media, file, streams) ||
+		ov.vetoesAudioPassthrough(streams) ||
+		ov.vetoesSourceContainer() {
 		return PlayReasonDeviceQuirk
-	}
-	// The viewer's streaming ceiling is the only narrowing left: it is a
-	// bitrate refusal the viewer chose, not a device fault.
-	if ov.vetoesVideoPassthrough(media, file, streams) {
-		return PlayReasonBitrate
 	}
 	if audioOnlyMedia(media, streams) {
 		// A track has no picture to blame: its Media.Codec is the audio codec,

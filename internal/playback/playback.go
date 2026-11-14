@@ -1067,7 +1067,9 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 			return decision{}, err
 		} else if ok {
 			reason := "cached-rendition"
-			if bitrateCeilingForced(media, file, streams, profile, selectedSubtitleIndex, ov) {
+			// The cache is consulted before the video-copy rung, so only a
+			// direct play the ceiling refused would have beaten it.
+			if bitrateCeilingRefusedDirectPlay(media, file, streams, profile, selectedSubtitleIndex, ov) {
 				reason = bitrateCeilingReason
 			}
 			return decision{
@@ -1479,9 +1481,10 @@ func (s *Service) ladderCaps(profile CapabilityProfile, ov quirkOverlay) ladderC
 	// vocabulary is closed and fixed, so no new streamtoken.Grant field is
 	// needed: withHLSLadderGrant/LadderCapsFromGrant already round-trip both
 	// heights and the byte layer reconstructs the identical rung set.
-	ceiling := ov.heightCeiling()
-	caps.ClientMaxHeight = minNonZero(caps.ClientMaxHeight, ceiling)
-	caps.HEVCMaxHeight = minNonZero(caps.HEVCMaxHeight, ceiling)
+	// Each codec takes its own rung heights: an HEVC rung fits more picture
+	// under the same cap than the H.264 rung of that height.
+	caps.ClientMaxHeight = minNonZero(caps.ClientMaxHeight, ov.heightCeiling())
+	caps.HEVCMaxHeight = minNonZero(caps.HEVCMaxHeight, ov.hevcHeightCeiling())
 	return caps
 }
 
@@ -2130,13 +2133,20 @@ func audioNeedsRework(streams []store.MediaFileStream, profile CapabilityProfile
 // base layer, or take the video-copy rung. It is only asked once the ceilinged
 // overlay has already refused those rungs.
 func bitrateCeilingForced(media store.Media, file store.MediaFile, streams []store.MediaFileStream, profile CapabilityProfile, selectedSubtitleIndex *int, ov quirkOverlay) bool {
+	return bitrateCeilingRefusedDirectPlay(media, file, streams, profile, selectedSubtitleIndex, ov) ||
+		(ov.clientMaxBitrate > 0 && audioCopyEligible(media, file, streams, profile, selectedSubtitleIndex, ov.withoutClientCeiling()))
+}
+
+// bitrateCeilingRefusedDirectPlay reports whether, without the viewer's
+// streaming ceiling, the source would direct play or play its Dolby Vision
+// base layer.
+func bitrateCeilingRefusedDirectPlay(media store.Media, file store.MediaFile, streams []store.MediaFileStream, profile CapabilityProfile, selectedSubtitleIndex *int, ov quirkOverlay) bool {
 	if ov.clientMaxBitrate <= 0 {
 		return false
 	}
 	base := ov.withoutClientCeiling()
 	return canDirectPlay(media, file, streams, profile, selectedSubtitleIndex, base) ||
-		dolbyVisionP7BaseLayer(media, file, streams, profile, selectedSubtitleIndex, base) ||
-		audioCopyEligible(media, file, streams, profile, selectedSubtitleIndex, base)
+		dolbyVisionP7BaseLayer(media, file, streams, profile, selectedSubtitleIndex, base)
 }
 
 // audioCopyReason names the audio-copy rung honestly. When the rung was
