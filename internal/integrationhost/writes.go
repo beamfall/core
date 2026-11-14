@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/beamfall/core/internal/causation"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -16,11 +17,13 @@ import (
 // order: the verified manifest declares the kind and the owner approved the
 // grant (authorize); the method's seam and the shared Scope seam are wired; an
 // audit ledger is wired; a profile-bound kind has a grant bound to one Profile;
-// the causation cap admits the mutation and binds the outbox rows it will
-// append to the caller's chain (writes only, ADR-0125); the grant's binding
-// resolves into a Library filter. The caller then proves every target is
-// visible through that filter, writes the audit row, and only then calls the
-// seam. An audit failure aborts the call, so no write lands unrecorded.
+// the grant's binding resolves into a Library filter. The caller then proves
+// every target is visible through that filter; a write is then admitted by the
+// causation cap, which binds the outbox rows it will append to the caller's
+// chain (admitWrite, ADR-0125); the audit row is written, and only then is the
+// seam called. A rejected call reserves nothing in the cap, and an audit
+// failure aborts the call and releases its reservation, so no write lands
+// unrecorded.
 
 // ErrTargetNotFound is returned when a target media, collection or Library does
 // not exist or lies outside the grant's Library scope. The two cases are not
@@ -118,11 +121,12 @@ type scope struct {
 	profile store.ProfileID
 }
 
-// descendants names the outbox rows a mutation's seam will append, given the
-// grant's bound Profile. A read passes nil and is not admitted.
-type descendants func(profile store.ProfileID) []string
+// maxStampRetries bounds how often admitWrite restamps a write's rows after a
+// descendant-key collision; each retry stamps them 1 ms later. It exceeds one
+// worker's action window, so a worker's own burst on one item cannot run out.
+const maxStampRetries = 64
 
-func (h *Host) scopedCall(ctx context.Context, kind, method string, seamWired bool, mutation descendants) (scope, error) {
+func (h *Host) scopedCall(ctx context.Context, kind string, seamWired bool) (scope, error) {
 	grant, err := h.authorize(ctx, kind)
 	if err != nil {
 		return scope{}, err
@@ -136,16 +140,46 @@ func (h *Host) scopedCall(ctx context.Context, kind, method string, seamWired bo
 	if RequiresBoundProfile(kind) && (grant.BoundProfileID == "" || grant.AllLibraries) {
 		return scope{}, fmt.Errorf("%w: %s requires a grant bound to one Profile", ErrPermissionDenied, kind)
 	}
-	if mutation != nil {
-		if err := h.admitMutation(ctx, method, mutation(grant.BoundProfileID)...); err != nil {
-			return scope{}, err
-		}
-	}
 	filter, err := h.resolveFilter(ctx, grant)
 	if err != nil {
 		return scope{}, err
 	}
 	return scope{filter: filter, profile: grant.BoundProfileID}, nil
+}
+
+// admitWrite admits a validated scoped write through the shared causation cap.
+// keysAt names the outbox rows the seam will append when it stamps them with a
+// given time. Each key must be unbound, so on a collision with a row of another
+// mutation the stamp moves 1 ms later and admission is asked again. It returns
+// the stamp the seam must use and a release that unbinds the rows when the call
+// stops before its seam runs.
+func (h *Host) admitWrite(ctx context.Context, method string, keysAt func(time.Time) []string) (time.Time, func(), error) {
+	if h.deps.Causation == nil {
+		return time.Time{}, nil, fmt.Errorf("%w: %s containment unavailable", ErrPermissionDenied, method)
+	}
+	token := causation.TokenFromContext(ctx)
+	now := h.now().UTC()
+	for attempt := 0; ; attempt++ {
+		keys := keysAt(now)
+		err := h.deps.Causation.AdmitWithDescendants(h.pluginID, token, method, keys)
+		if err == nil {
+			return now, func() { h.deps.Causation.ReleaseDescendants(token, keys) }, nil
+		}
+		if !errors.Is(err, causation.ErrDescendantCollision) || attempt == maxStampRetries {
+			return time.Time{}, nil, err
+		}
+		now = now.Add(time.Millisecond)
+	}
+}
+
+// auditThenWrite writes the audit row for an admitted write, releasing its
+// reservation when the audit fails so the seam never runs unrecorded.
+func (h *Host) auditThenWrite(ctx context.Context, action string, sc scope, library store.LibraryID, release func()) error {
+	if err := h.auditScoped(ctx, action, sc, library); err != nil {
+		release()
+		return err
+	}
+	return nil
 }
 
 // visibleLibrary resolves every media id through the filter and returns the one
@@ -182,7 +216,7 @@ func (h *Host) auditScoped(ctx context.Context, action string, sc scope, library
 
 // noOutboxRows admits a mutation whose seam appends no outbox row: the
 // collection writes and the artwork import emit no event a Worker receives.
-func noOutboxRows(store.ProfileID) []string { return nil }
+func noOutboxRows(time.Time) []string { return nil }
 
 func mediaIDs(raw []string) ([]store.MediaID, error) {
 	if len(raw) == 0 {
@@ -234,8 +268,15 @@ func (h *Host) WriteMetadata(ctx context.Context, rawIDs []string, rawFields []M
 	if err != nil {
 		return store.BulkOpBatch{}, err
 	}
-	now := h.now().UTC()
-	sc, err := h.scopedCall(ctx, PermWriteMetadata, methodWriteMetadata, h.deps.Metadata != nil, func(store.ProfileID) []string {
+	sc, err := h.scopedCall(ctx, PermWriteMetadata, h.deps.Metadata != nil)
+	if err != nil {
+		return store.BulkOpBatch{}, err
+	}
+	library, err := h.visibleLibrary(ctx, sc, ids)
+	if err != nil {
+		return store.BulkOpBatch{}, err
+	}
+	now, release, err := h.admitWrite(ctx, methodWriteMetadata, func(now time.Time) []string {
 		// BulkEditApply appends one media.updated row per id, stamped now.
 		keys := make([]string, len(ids))
 		for i, id := range ids {
@@ -246,11 +287,7 @@ func (h *Host) WriteMetadata(ctx context.Context, rawIDs []string, rawFields []M
 	if err != nil {
 		return store.BulkOpBatch{}, err
 	}
-	library, err := h.visibleLibrary(ctx, sc, ids)
-	if err != nil {
-		return store.BulkOpBatch{}, err
-	}
-	if err := h.auditScoped(ctx, store.ActivityPluginMetadataWrite, sc, library); err != nil {
+	if err := h.auditThenWrite(ctx, store.ActivityPluginMetadataWrite, sc, library, release); err != nil {
 		return store.BulkOpBatch{}, err
 	}
 	return h.deps.Metadata.BulkEditApply(ctx, ids, fields, sc.filter, now)
@@ -263,7 +300,7 @@ func (h *Host) CreateCollection(ctx context.Context, libraryID, name string) (st
 	if name == "" || len(name) > maxCollectionNameLen {
 		return store.Collection{}, fmt.Errorf("integrationhost: collection name must be 1-%d bytes", maxCollectionNameLen)
 	}
-	sc, err := h.scopedCall(ctx, PermWriteCollections, methodCreateCollection, h.deps.Collections != nil, noOutboxRows)
+	sc, err := h.scopedCall(ctx, PermWriteCollections, h.deps.Collections != nil)
 	if err != nil {
 		return store.Collection{}, err
 	}
@@ -272,10 +309,14 @@ func (h *Host) CreateCollection(ctx context.Context, libraryID, name string) (st
 	if err != nil || !visible {
 		return store.Collection{}, ErrTargetNotFound
 	}
-	if err := h.auditScoped(ctx, store.ActivityPluginCollectionWrite, sc, library); err != nil {
+	now, release, err := h.admitWrite(ctx, methodCreateCollection, noOutboxRows)
+	if err != nil {
 		return store.Collection{}, err
 	}
-	return h.deps.Collections.CreateCollection(ctx, store.Collection{LibraryID: library, Name: name}, h.now().UTC())
+	if err := h.auditThenWrite(ctx, store.ActivityPluginCollectionWrite, sc, library, release); err != nil {
+		return store.Collection{}, err
+	}
+	return h.deps.Collections.CreateCollection(ctx, store.Collection{LibraryID: library, Name: name}, now)
 }
 
 // AddCollectionMedia adds visible media to a collection in a Library the grant
@@ -285,7 +326,7 @@ func (h *Host) AddCollectionMedia(ctx context.Context, collectionID string, rawI
 	if err != nil {
 		return store.Collection{}, err
 	}
-	sc, err := h.scopedCall(ctx, PermWriteCollections, methodAddCollectionMedia, h.deps.Collections != nil, noOutboxRows)
+	sc, err := h.scopedCall(ctx, PermWriteCollections, h.deps.Collections != nil)
 	if err != nil {
 		return store.Collection{}, err
 	}
@@ -307,10 +348,14 @@ func (h *Host) AddCollectionMedia(ctx context.Context, collectionID string, rawI
 	if library != collection.LibraryID {
 		return store.Collection{}, errors.New("integrationhost: media must be in the collection's Library")
 	}
-	if err := h.auditScoped(ctx, store.ActivityPluginCollectionWrite, sc, library); err != nil {
+	now, release, err := h.admitWrite(ctx, methodAddCollectionMedia, noOutboxRows)
+	if err != nil {
 		return store.Collection{}, err
 	}
-	return h.deps.Collections.AddCollectionMedia(ctx, collection.ID, ids, sc.filter, h.now().UTC())
+	if err := h.auditThenWrite(ctx, store.ActivityPluginCollectionWrite, sc, library, release); err != nil {
+		return store.Collection{}, err
+	}
+	return h.deps.Collections.AddCollectionMedia(ctx, collection.ID, ids, sc.filter, now)
 }
 
 // SetArtwork imports artwork into one slot of a visible media item
@@ -319,7 +364,7 @@ func (h *Host) SetArtwork(ctx context.Context, mediaID, slot string, image []byt
 	if len(image) == 0 || len(image) > maxArtworkBytes {
 		return fmt.Errorf("integrationhost: artwork must be 1-%d bytes", maxArtworkBytes)
 	}
-	sc, err := h.scopedCall(ctx, PermWriteArtwork, methodSetArtwork, h.deps.Artwork != nil, noOutboxRows)
+	sc, err := h.scopedCall(ctx, PermWriteArtwork, h.deps.Artwork != nil)
 	if err != nil {
 		return err
 	}
@@ -327,7 +372,11 @@ func (h *Host) SetArtwork(ctx context.Context, mediaID, slot string, image []byt
 	if err != nil {
 		return err
 	}
-	if err := h.auditScoped(ctx, store.ActivityPluginArtworkWrite, sc, library); err != nil {
+	_, release, err := h.admitWrite(ctx, methodSetArtwork, noOutboxRows)
+	if err != nil {
+		return err
+	}
+	if err := h.auditThenWrite(ctx, store.ActivityPluginArtworkWrite, sc, library, release); err != nil {
 		return err
 	}
 	return h.deps.Artwork.ImportArtwork(ctx, store.MediaID(mediaID), slot, image)
@@ -336,10 +385,7 @@ func (h *Host) SetArtwork(ctx context.Context, mediaID, slot string, image []byt
 // SetWatched marks one visible media item watched or unwatched for the grant's
 // bound Profile (write-watch-state, audited high-risk).
 func (h *Host) SetWatched(ctx context.Context, mediaID string, watched bool) error {
-	now := h.now().UTC()
-	sc, err := h.scopedCall(ctx, PermWriteWatchState, methodSetWatched, h.deps.WatchState != nil, func(profile store.ProfileID) []string {
-		return []string{descendantKey(store.OutboxAggregateInvalidation, string(profile), now)}
-	})
+	sc, err := h.scopedCall(ctx, PermWriteWatchState, h.deps.WatchState != nil)
 	if err != nil {
 		return err
 	}
@@ -347,7 +393,14 @@ func (h *Host) SetWatched(ctx context.Context, mediaID string, watched bool) err
 	if err != nil {
 		return err
 	}
-	if err := h.auditScoped(ctx, store.ActivityPluginWatchStateWrite, sc, library); err != nil {
+	now, release, err := h.admitWrite(ctx, methodSetWatched, func(now time.Time) []string {
+		// The adapter appends the bound Profile's invalidation row, stamped now.
+		return []string{descendantKey(store.OutboxAggregateInvalidation, string(sc.profile), now)}
+	})
+	if err != nil {
+		return err
+	}
+	if err := h.auditThenWrite(ctx, store.ActivityPluginWatchStateWrite, sc, library, release); err != nil {
 		return err
 	}
 	return h.deps.WatchState.SetWatched(ctx, sc.profile, store.MediaID(mediaID), watched, sc.filter, now)
@@ -356,7 +409,7 @@ func (h *Host) SetWatched(ctx context.Context, mediaID string, watched bool) err
 // ReadPlaybackState reads the grant's bound Profile's progress for one visible
 // media item (read-playback-state, audited high-risk).
 func (h *Host) ReadPlaybackState(ctx context.Context, mediaID string) (PlaybackState, error) {
-	sc, err := h.scopedCall(ctx, PermReadPlaybackState, methodReadPlaybackState, h.deps.Playback != nil, nil)
+	sc, err := h.scopedCall(ctx, PermReadPlaybackState, h.deps.Playback != nil)
 	if err != nil {
 		return PlaybackState{}, err
 	}

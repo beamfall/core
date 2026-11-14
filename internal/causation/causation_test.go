@@ -1,6 +1,7 @@
 package causation
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"testing"
@@ -218,11 +219,24 @@ func TestAdmitWithDescendantsBindsRowsToTheChain(t *testing.T) {
 	if got := cap.Inherited("unbound"); got != "" {
 		t.Fatalf("Inherited(unbound) = %q, want empty", got)
 	}
-	if err := cap.AdmitWithDescendants("worker", other, "write", []string{"a"}); err != nil {
-		t.Fatal(err)
+	// A bound key collides for any chain, its own included, and the refusal
+	// spends nothing and records nothing: the caller restamps and retries.
+	for _, tok := range []Token{other, token} {
+		if err := cap.AdmitWithDescendants("worker", tok, "write", []string{"c", "a"}); !errors.Is(err, ErrDescendantCollision) {
+			t.Fatalf("admit over a bound key: err = %v, want %v", err, ErrDescendantCollision)
+		}
 	}
 	if got := cap.Inherited("a"); got != token {
 		t.Fatal("a later chain rebound a descendant already bound to another chain")
+	}
+	if got := cap.Inherited("c"); got != "" {
+		t.Fatal("a colliding admission bound its other keys")
+	}
+	if snapshot := cap.DeadLetters(); len(snapshot.Records) != 0 {
+		t.Fatalf("a collision recorded dead letters: %+v", snapshot.Records)
+	}
+	if got := cap.chains[mustChainID(t, cap, other, now)].actions; got != 0 {
+		t.Fatalf("a collision spent %d actions of the other chain", got)
 	}
 	now = now.Add(DefaultLimits().ChainLifetime)
 	if got := cap.Inherited("b"); got != "" {
@@ -248,7 +262,7 @@ func TestAdmitWithDescendantsFailsClosedWhenTheLedgerIsFull(t *testing.T) {
 	}
 	// The refusal spent no budget: both actions remain.
 	for i := 0; i < 2; i++ {
-		if err := cap.AdmitWithDescendants("worker", token, "write", []string{"a"}); err != nil {
+		if err := cap.AdmitWithDescendants("worker", token, "write", []string{string(rune('a' + i))}); err != nil {
 			t.Fatalf("admit %d after refusal: %v", i, err)
 		}
 	}
@@ -256,4 +270,74 @@ func TestAdmitWithDescendantsFailsClosedWhenTheLedgerIsFull(t *testing.T) {
 	if len(snapshot.Records) != 1 || snapshot.Records[0].Reason != DeadLetterTrackingCapacity {
 		t.Fatalf("dead letters = %+v, want one tracking-capacity record", snapshot.Records)
 	}
+}
+
+func TestAdmitWithDescendantsBoundsEachWorkersShare(t *testing.T) {
+	now := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+	limits := DefaultLimits()
+	limits.MaxDescendantsPerWorker = 2
+	cap := NewCausationCap(limits, func() time.Time { return now })
+	token, err := cap.TokenFor("root", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cap.AdmitWithDescendants("greedy", token, "write", []string{"a", "b"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cap.AdmitWithDescendants("greedy", token, "write", []string{"c"}); !errors.Is(err, ErrTrackingCapacity) {
+		t.Fatalf("over-share admit: err = %v, want %v", err, ErrTrackingCapacity)
+	}
+	if err := cap.AdmitWithDescendants("other", token, "write", []string{"c", "d"}); err != nil {
+		t.Fatalf("another worker was denied by the greedy worker's share: %v", err)
+	}
+	// Expiry returns the share.
+	now = now.Add(limits.ChainLifetime)
+	fresh, err := cap.TokenFor("fresh", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cap.AdmitWithDescendants("greedy", fresh, "write", []string{"e", "f"}); err != nil {
+		t.Fatalf("share not returned after expiry: %v", err)
+	}
+}
+
+func TestReleaseDescendantsUnbindsOnlyTheChainsKeys(t *testing.T) {
+	now := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+	limits := DefaultLimits()
+	limits.MaxDescendantsPerWorker = 2
+	cap := NewCausationCap(limits, func() time.Time { return now })
+	token, err := cap.TokenFor("root", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := cap.TokenFor("other", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cap.AdmitWithDescendants("worker", token, "write", []string{"a", "b"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cap.AdmitWithDescendants("peer", other, "write", []string{"c"}); err != nil {
+		t.Fatal(err)
+	}
+	cap.ReleaseDescendants(token, []string{"a", "b", "c"})
+	if cap.Inherited("a") != "" || cap.Inherited("b") != "" {
+		t.Fatal("released keys are still bound")
+	}
+	if cap.Inherited("c") != other {
+		t.Fatal("release unbound a key bound to another chain")
+	}
+	// The released keys returned the worker's share.
+	if err := cap.AdmitWithDescendants("worker", token, "write", []string{"a", "b"}); err != nil {
+		t.Fatalf("share not returned after release: %v", err)
+	}
+}
+
+func mustChainID(t *testing.T, cap *CausationCap, token Token, now time.Time) [sha256.Size]byte {
+	t.Helper()
+	id, _, err := cap.validateToken(token, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
 }

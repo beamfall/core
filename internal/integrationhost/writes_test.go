@@ -544,3 +544,102 @@ func TestScopedWritesBindDescendantEventsToTheCallersChain(t *testing.T) {
 		t.Fatalf("self-chain spent %d actions, want %d", spent, causation.DefaultLimits().GlobalActions)
 	}
 }
+
+// Codex review of CORE-1695: a descendant key names the aggregate and the
+// millisecond, so two chains writing one item in the same millisecond must not
+// share a key, or the second chain's row would come back inside the first
+// chain's budget.
+func TestConcurrentChainsNeverShareADescendantKey(t *testing.T) {
+	writes := newFakeWrites()
+	cap, ctxA := writeCap(t)
+	tokenB, err := cap.TokenFor("outbox:other", time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctxB := causation.WithToken(context.Background(), tokenB)
+	stamp := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+	h := NewHost("p", writes.deps(&recordingAudit{}, cap),
+		fixedGrants{grants: map[string][]Grant{"p": {approvedBound("p", PermWriteMetadata)}}},
+		func() time.Time { return stamp })
+	fields := []MetadataField{{Name: "sortTitle", Type: "text", Text: "x"}}
+	if _, err := h.WriteMetadata(ctxA, []string{"m-1"}, fields); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.WriteMetadata(ctxB, []string{"m-1"}, fields); err != nil {
+		t.Fatal(err)
+	}
+	if len(writes.stamped) != 2 || !writes.stamped[1].Equal(stamp.Add(time.Millisecond)) {
+		t.Fatalf("stamped = %v, want the second write restamped 1 ms later", writes.stamped)
+	}
+	for i, want := range []causation.Token{causation.TokenFromContext(ctxA), tokenB} {
+		key := descendantKey(store.OutboxAggregateMedia, "m-1", writes.stamped[i])
+		if got := cap.Inherited(key); got != want {
+			t.Fatalf("row %d inherited %q, want its own chain %q", i, got, want)
+		}
+	}
+}
+
+func TestDescendantCollisionRetriesAreBounded(t *testing.T) {
+	writes := newFakeWrites()
+	cap, ctx := writeCap(t)
+	stamp := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+	other, err := cap.TokenFor("outbox:other", stamp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := make([]string, 0, maxStampRetries+1)
+	for i := 0; i <= maxStampRetries; i++ {
+		keys = append(keys, descendantKey(store.OutboxAggregateMedia, "m-1", stamp.Add(time.Duration(i)*time.Millisecond)))
+	}
+	if err := cap.AdmitWithDescendants("peer", other, "write", keys); err != nil {
+		t.Fatal(err)
+	}
+	h := NewHost("p", writes.deps(&recordingAudit{}, cap),
+		fixedGrants{grants: map[string][]Grant{"p": {approvedBound("p", PermWriteMetadata)}}},
+		func() time.Time { return stamp })
+	_, err = h.WriteMetadata(ctx, []string{"m-1"}, []MetadataField{{Name: "n", Type: "flag"}})
+	if !errors.Is(err, causation.ErrDescendantCollision) {
+		t.Fatalf("err = %v, want %v after the retry bound", err, causation.ErrDescendantCollision)
+	}
+	if writes.writeCount() != 0 {
+		t.Fatal("a write with no free descendant key reached its seam")
+	}
+}
+
+// Codex review of CORE-1695: a call refused on its targets or its audit row
+// holds no descendant reservation, so it cannot fill the shared ledger.
+func TestRefusedWritesHoldNoDescendantReservation(t *testing.T) {
+	stamp := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+	limits := causation.DefaultLimits()
+	limits.MaxDescendantsPerWorker = 1
+	limits.WorkerActions = 1000
+	limits.GlobalActions = 1000
+	cap := causation.NewCausationCap(limits, func() time.Time { return stamp })
+	token, err := cap.TokenFor("outbox:writes", stamp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := causation.WithToken(context.Background(), token)
+	grants := fixedGrants{grants: map[string][]Grant{"p": {approvedBound("p", PermWriteMetadata)}}}
+	clock := func() time.Time { return stamp }
+	fields := []MetadataField{{Name: "n", Type: "flag"}}
+
+	writes := newFakeWrites()
+	h := NewHost("p", writes.deps(&recordingAudit{}, cap), grants, clock)
+	failing := NewHost("p", writes.deps(failingAudit{}, cap), grants, clock)
+	for i := 0; i < 5; i++ {
+		if _, err := h.WriteMetadata(ctx, []string{"m-missing"}, fields); !errors.Is(err, ErrTargetNotFound) {
+			t.Fatalf("unknown target: err = %v, want %v", err, ErrTargetNotFound)
+		}
+		if _, err := failing.WriteMetadata(ctx, []string{"m-1"}, fields); err == nil {
+			t.Fatal("write succeeded although its audit row failed")
+		}
+	}
+	if got := cap.Inherited(descendantKey(store.OutboxAggregateMedia, "m-1", stamp)); got != "" {
+		t.Fatal("a write refused at its audit row kept its descendant binding")
+	}
+	// The worker's one-key share is still free.
+	if _, err := h.WriteMetadata(ctx, []string{"m-1"}, fields); err != nil {
+		t.Fatalf("a valid write was refused after refused calls: %v", err)
+	}
+}

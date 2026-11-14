@@ -32,6 +32,10 @@ var (
 	// ErrTrackingCapacity fails new chain or worker state closed when its
 	// bounded in-memory ledger is full.
 	ErrTrackingCapacity = errors.New("causation: tracking capacity exhausted")
+	// ErrDescendantCollision rejects an admission whose descendant key is
+	// already bound. Nothing is spent or recorded: the caller restamps its rows
+	// and asks again, so one key never names rows of two mutations.
+	ErrDescendantCollision = errors.New("causation: descendant key already bound")
 )
 
 // Token is an opaque, authenticated chain identity issued by Core. Workers may
@@ -68,6 +72,9 @@ type Limits struct {
 	// MaxTrackedDescendants bounds the descendant ledger that binds the
 	// outbox rows a mutation appends to that mutation's chain.
 	MaxTrackedDescendants int
+	// MaxDescendantsPerWorker bounds one worker's share of that ledger, so a
+	// worker can exhaust only its own share.
+	MaxDescendantsPerWorker int
 }
 
 // DefaultLimits returns the ADR-0125 containment contract.
@@ -83,7 +90,8 @@ func DefaultLimits() Limits {
 		DeadLetterWindow:   time.Minute,
 		DeadLetterCapacity: 256,
 
-		MaxTrackedDescendants: 65536,
+		MaxTrackedDescendants:   65536,
+		MaxDescendantsPerWorker: 16384,
 	}
 }
 
@@ -118,6 +126,9 @@ func normalizeLimits(limits Limits) Limits {
 	}
 	if limits.MaxTrackedDescendants <= 0 {
 		limits.MaxTrackedDescendants = defaults.MaxTrackedDescendants
+	}
+	if limits.MaxDescendantsPerWorker <= 0 {
+		limits.MaxDescendantsPerWorker = defaults.MaxDescendantsPerWorker
 	}
 	return limits
 }
@@ -162,6 +173,7 @@ type chainState struct {
 
 type descendant struct {
 	token     Token
+	workerID  string
 	expiresAt time.Time
 }
 
@@ -184,6 +196,7 @@ type CausationCap struct {
 	chains            map[[sha256.Size]byte]chainState
 	workers           map[string]workerWindow
 	descendants       map[string]descendant
+	workerDescendants map[string]int
 	deadLetters       []DeadLetter
 	deadWindowStart   time.Time
 	deadWindowRecords int
@@ -203,7 +216,8 @@ func NewCausationCap(limits Limits, now func() time.Time) *CausationCap {
 		chains:  make(map[[sha256.Size]byte]chainState),
 		workers: make(map[string]workerWindow),
 
-		descendants: make(map[string]descendant),
+		descendants:       make(map[string]descendant),
+		workerDescendants: make(map[string]int),
 	}
 	_, cap.entropyErr = rand.Read(cap.key[:])
 	return cap
@@ -240,8 +254,12 @@ func (c *CausationCap) Admit(workerID string, token Token, action string) error 
 // descendants are opaque keys naming those rows; on admission each key is
 // bound to token, so Inherited hands a worker the spent chain rather than a
 // fresh root when the row is delivered (ADR-0125: every descendant outbox event
-// retains the token). The ledger is checked before any budget is spent and
-// fails closed when full. A key already bound keeps its first chain.
+// retains the token). A key that is already bound, to any chain, is refused
+// with ErrDescendantCollision before anything is spent or recorded, so the
+// caller can restamp its rows: a key never names rows of two mutations, and a
+// chain can never pick up another chain's remaining budget. The ledger and the
+// worker's share of it are checked before any budget is spent and fail closed
+// when full.
 func (c *CausationCap) AdmitWithDescendants(workerID string, token Token, action string, descendants []string) error {
 	now := c.now().UTC()
 	chainID, expiresAt, validationErr := c.validateToken(token, now)
@@ -280,22 +298,25 @@ func (c *CausationCap) AdmitWithDescendants(workerID string, token Token, action
 		c.recordAbortLocked(now, workerID, token, action, ErrWorkerRateLimit)
 		return ErrWorkerRateLimit
 	}
-	fresh := 0
+	keys := make(map[string]struct{}, len(descendants))
 	for _, key := range descendants {
-		if _, bound := c.descendants[key]; !bound {
-			fresh++
+		if _, bound := c.descendants[key]; bound {
+			return ErrDescendantCollision
 		}
+		keys[key] = struct{}{}
 	}
-	if len(c.descendants)+fresh > c.limits.MaxTrackedDescendants {
+	if len(c.descendants)+len(keys) > c.limits.MaxTrackedDescendants ||
+		c.workerDescendants[workerID]+len(keys) > c.limits.MaxDescendantsPerWorker {
 		c.recordAbortLocked(now, workerID, token, action, ErrTrackingCapacity)
 		return ErrTrackingCapacity
 	}
 	// A descendant row is delivered after the mutation; its entry outlives the
 	// row's own fresh-root lifetime, after which a re-minted root is expired.
-	for _, key := range descendants {
-		if _, bound := c.descendants[key]; !bound {
-			c.descendants[key] = descendant{token: token, expiresAt: now.Add(c.limits.ChainLifetime)}
-		}
+	for key := range keys {
+		c.descendants[key] = descendant{token: token, workerID: workerID, expiresAt: now.Add(c.limits.ChainLifetime)}
+	}
+	if len(keys) > 0 {
+		c.workerDescendants[workerID] += len(keys)
 	}
 
 	chain.actions++
@@ -304,6 +325,29 @@ func (c *CausationCap) AdmitWithDescendants(workerID string, token Token, action
 	c.chains[chainID] = chain
 	c.workers[workerID] = window
 	return nil
+}
+
+// ReleaseDescendants unbinds keys that AdmitWithDescendants bound to token,
+// for a mutation that was admitted but stopped before its seam ran, so it will
+// append none of those rows. The spent budget is not refunded. Keys bound to
+// another chain are left alone.
+func (c *CausationCap) ReleaseDescendants(token Token, descendants []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, key := range descendants {
+		if entry, ok := c.descendants[key]; ok && entry.token == token {
+			c.deleteDescendantLocked(key, entry)
+		}
+	}
+}
+
+func (c *CausationCap) deleteDescendantLocked(key string, entry descendant) {
+	delete(c.descendants, key)
+	if c.workerDescendants[entry.workerID] <= 1 {
+		delete(c.workerDescendants, entry.workerID)
+		return
+	}
+	c.workerDescendants[entry.workerID]--
 }
 
 // Inherited returns the chain token a descendant key was bound to by
@@ -369,7 +413,7 @@ func (c *CausationCap) pruneLocked(now time.Time) {
 	}
 	for key, entry := range c.descendants {
 		if !now.Before(entry.expiresAt) {
-			delete(c.descendants, key)
+			c.deleteDescendantLocked(key, entry)
 		}
 	}
 }
