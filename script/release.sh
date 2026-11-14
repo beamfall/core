@@ -50,6 +50,20 @@ mkdir -p "${DIST}"
 
 npm --prefix "${ROOT}/internal/web/app" run build
 
+# First-party native build catalog (ADR-0063 build provenance). FIRST_PARTY_BUILDS
+# names a beamfall.first-party-builds/v1 manifest of the native client builds this
+# release ships with; it is validated and linked into the binary so a production
+# server knows those builds at boot. Without it the server knows only its own
+# embedded web UI and refuses every native client as an unknown build.
+first_party_ldflag=""
+if [ -n "${FIRST_PARTY_BUILDS:-}" ]; then
+  [ -f "${FIRST_PARTY_BUILDS}" ] || { echo "first-party build manifest not found: ${FIRST_PARTY_BUILDS}" >&2; exit 2; }
+  first_party_catalog="$(cd "${ROOT}" && go run ./cmd/beamfall release build-catalog --manifest "${FIRST_PARTY_BUILDS}")"
+  first_party_ldflag=" -X github.com/beamfall/core/internal/capabilities.FirstPartyBuildManifest=${first_party_catalog}"
+else
+  echo "WARNING: FIRST_PARTY_BUILDS unset — this release carries no first-party native build catalog and will refuse every native client (unknown-build)" >&2
+fi
+
 for target in "${targets[@]}"; do
   GOOS="${target%/*}"
   GOARCH="${target#*/}"
@@ -60,7 +74,7 @@ for target in "${targets[@]}"; do
 
   CGO_ENABLED=0 GOOS="${GOOS}" GOARCH="${GOARCH}" \
     go build -trimpath \
-      -ldflags="-s -w -X github.com/beamfall/core/internal/capabilities.ReleaseVersion=${VERSION} -X github.com/beamfall/core/internal/capabilities.SourceOfferURL=${offer_url}" \
+      -ldflags="-s -w -X github.com/beamfall/core/internal/capabilities.ReleaseVersion=${VERSION} -X github.com/beamfall/core/internal/capabilities.SourceOfferURL=${offer_url}${first_party_ldflag}" \
       -o "${work}/beamfall" ./cmd/beamfall
 
   python3 "${ROOT}/script/source-artifact.py" write \

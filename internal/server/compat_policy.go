@@ -110,8 +110,14 @@ func writeGenerationMap(h generationHash, name string, values map[string]bool) {
 	}
 }
 
-func newCompatState(buildRevision string, capabilityIDs []string) *compatState {
+// newCompatState builds the boot-time compatibility state. firstPartyBuilds is
+// the release-supplied first-party build catalog (ADR-0063 build provenance):
+// it seeds the policy's catalog so a shipped native build is server-known from
+// the first request, and it rides through every later refresh like any other
+// policy input. It carries no enrollment mappings.
+func newCompatState(buildRevision string, capabilityIDs []string, firstPartyBuilds capabilities.BuildCatalog) *compatState {
 	policy := capabilities.Policy{
+		Builds:                      firstPartyBuilds.Clone(),
 		SupportedCoreRevisions:      [2]capabilities.Revision{1, 1},
 		SupportedRenderingRevisions: [2]capabilities.Revision{1, 1},
 		RequiredRenderingStamps:     []string{"core-web-ui-v1"},

@@ -4673,6 +4673,10 @@
         {
           "name": "updateCheckEnabled",
           "kind": "scalar"
+        },
+        {
+          "name": "viewerPairingCodesDisabled",
+          "kind": "scalar"
         }
       ]
     },
@@ -18171,6 +18175,10 @@
         {
           "name": "updateCheckEnabled",
           "kind": "scalar"
+        },
+        {
+          "name": "viewerPairingCodesDisabled",
+          "kind": "scalar"
         }
       ]
     },
@@ -20312,6 +20320,10 @@
         {
           "name": "updateCheckEnabled",
           "kind": "scalar"
+        },
+        {
+          "name": "viewerPairingCodesDisabled",
+          "kind": "scalar"
         }
       ]
     },
@@ -21955,6 +21967,10 @@
         },
         {
           "name": "updateCheckEnabled",
+          "kind": "scalar"
+        },
+        {
+          "name": "viewerPairingCodesDisabled",
           "kind": "scalar"
         }
       ]
@@ -25142,6 +25158,10 @@
         },
         {
           "name": "updateCheckEnabled",
+          "kind": "scalar"
+        },
+        {
+          "name": "viewerPairingCodesDisabled",
           "kind": "scalar"
         }
       ]

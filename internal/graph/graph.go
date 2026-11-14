@@ -3047,12 +3047,15 @@ func (h *Handler) adminSession(scope auth.Scope) AdminSessionInfo {
 // the same generic client error — no signal about whether a password is set,
 // whether the Profile was eligible, or whether the lockout tripped beyond the
 // throttle message. The password arrives in a variable and is never logged.
+// With the optional createFirst variable and no admin password on the server,
+// it chooses the first password instead (CORE-1132); a server that already has
+// one treats the request as an ordinary unlock.
 func (h *Handler) verifyAdminSession(ctx context.Context, scope auth.Scope, req request) (AdminSessionInfo, error) {
 	password := stringVar(req, "password")
 	if strings.TrimSpace(password) == "" {
 		return AdminSessionInfo{}, clientError("password is required")
 	}
-	until, err := h.auth.BeginAdminSession(ctx, scope, password)
+	until, err := h.auth.OpenAdminSession(ctx, scope, password, boolVar(req, "createFirst"))
 	if err != nil {
 		if errors.Is(err, auth.ErrAdminLocked) {
 			return AdminSessionInfo{}, clientError("admin re-auth throttled")

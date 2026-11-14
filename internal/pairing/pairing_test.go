@@ -1112,3 +1112,135 @@ func managerAdminScope(t *testing.T, st *store.Store, now time.Time) auth.Scope 
 	}
 	return scope
 }
+
+// Viewer pairing-code switch (CORE-0393).
+
+func disableViewerPairingCodes(t *testing.T, st *store.Store, now time.Time) {
+	t.Helper()
+	disabled := true
+	if _, err := st.SetConsoleConfig(context.Background(),
+		store.ConsoleConfigPatch{ViewerPairingCodesDisabled: &disabled}, now); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func viewerCodeRefusals(t *testing.T, st *store.Store, step string) []store.ActivityEntry {
+	t.Helper()
+	var refusals []store.ActivityEntry
+	for _, entry := range activityEntries(t, st) {
+		if entry.Action == store.ActivityEnrollDenied && entry.TargetType == viewerCodePolicyTarget && entry.TargetID == step {
+			refusals = append(refusals, entry)
+		}
+	}
+	return refusals
+}
+
+func TestViewerPairingCodesDisabledRefusesMintWithoutWritingACode(t *testing.T) {
+	st := storetest.Open(t)
+	now := time.Unix(0, 0).UTC()
+	scope := managerAdminScope(t, st, now)
+	service := deterministicService(st, now)
+	disableViewerPairingCodes(t, st, now)
+
+	_, err := service.CreateCode(context.Background(), scope, CodeRequest{DeviceRole: string(store.DeviceRoleViewer)})
+	if !errors.Is(err, ErrViewerCodesDisabled) || !errors.Is(err, ErrForbidden) {
+		t.Fatalf("CreateCode(viewer) error = %v, want ErrViewerCodesDisabled wrapping ErrForbidden", err)
+	}
+	if _, err := st.PairingCode(context.Background(), "PAIR1234", now); !errors.Is(err, store.ErrPairingCodeInvalid) {
+		t.Fatalf("refused mint left a pairing code row: err = %v", err)
+	}
+	if err := st.SetProfileOwner(context.Background(), "profile-default"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.CreateOwnerCode(context.Background(), string(store.DeviceRoleViewer)); !errors.Is(err, ErrViewerCodesDisabled) {
+		t.Fatalf("CreateOwnerCode(viewer) error = %v, want ErrViewerCodesDisabled", err)
+	}
+	if _, err := st.PairingCode(context.Background(), "PAIR1234", now); !errors.Is(err, store.ErrPairingCodeInvalid) {
+		t.Fatalf("refused owner mint left a pairing code row: err = %v", err)
+	}
+	refusals := viewerCodeRefusals(t, st, viewerCodeMintRefused)
+	if len(refusals) != 2 {
+		t.Fatalf("mint refusals recorded = %d, want 2", len(refusals))
+	}
+	for _, entry := range activityEntries(t, st) {
+		if entry.Action == store.ActivityPairingCode {
+			t.Fatalf("refused mint recorded a pairing.code entry: %+v", entry)
+		}
+	}
+}
+
+func TestViewerPairingCodesDisabledRefusesPreSwitchRedemption(t *testing.T) {
+	st := storetest.Open(t)
+	now := time.Unix(0, 0).UTC()
+	service := deterministicService(st, now)
+	mintViewerCode(t, st, service)
+	disableViewerPairingCodes(t, st, now)
+
+	_, err := service.Enroll(context.Background(), EnrollRequest{Code: "PAIR1234", DeviceName: "TV", IsLAN: true})
+	if !errors.Is(err, ErrInvalidCode) {
+		t.Fatalf("pre-switch viewer code enroll error = %v, want ErrInvalidCode", err)
+	}
+	if _, err := st.Device(context.Background(), "device-new"); err == nil {
+		t.Fatal("refused viewer redemption still stored a Device")
+	}
+	// The answer is the same one a bad guess gets.
+	_, guessErr := service.Enroll(context.Background(), EnrollRequest{Code: "NOPE9999", DeviceName: "TV", IsLAN: true})
+	if !errors.Is(guessErr, ErrInvalidCode) || guessErr.Error() != err.Error() {
+		t.Fatalf("bad-guess error = %v, refused-viewer error = %v, want identical", guessErr, err)
+	}
+	refusals := viewerCodeRefusals(t, st, viewerCodeRedeemRefused)
+	if len(refusals) != 1 || refusals[0].ProfileID != "profile-default" {
+		t.Fatalf("redeem refusals = %+v, want one on profile-default", refusals)
+	}
+
+	// Switching Viewer codes back on lets the still-valid code redeem.
+	enabled := false
+	if _, err := st.SetConsoleConfig(context.Background(),
+		store.ConsoleConfigPatch{ViewerPairingCodesDisabled: &enabled}, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Enroll(context.Background(), EnrollRequest{Code: "PAIR1234", DeviceName: "TV", IsLAN: true}); err != nil {
+		t.Fatalf("viewer enroll after re-enabling error = %v, want success", err)
+	}
+}
+
+func TestViewerPairingCodesDisabledLeavesManagerPairingAlone(t *testing.T) {
+	st := storetest.Open(t)
+	now := time.Unix(0, 0).UTC()
+	scope := managerAdminScope(t, st, now)
+	service := deterministicService(st, now)
+	disableViewerPairingCodes(t, st, now)
+
+	if _, err := service.CreateCode(context.Background(), scope, CodeRequest{DeviceRole: string(store.DeviceRoleManager)}); err != nil {
+		t.Fatalf("CreateCode(manager) error = %v, want success", err)
+	}
+	enrolled, err := service.Enroll(context.Background(), EnrollRequest{Code: "PAIR1234", DeviceName: "Laptop", IsLAN: true})
+	if err != nil {
+		t.Fatalf("manager enroll error = %v, want success", err)
+	}
+	if enrolled.DeviceRole != string(store.DeviceRoleManager) {
+		t.Fatalf("enrolled role = %q, want manager", enrolled.DeviceRole)
+	}
+	if got := viewerCodeRefusals(t, st, viewerCodeMintRefused); len(got) != 0 {
+		t.Fatalf("manager mint recorded viewer refusals: %+v", got)
+	}
+}
+
+func TestViewerPairingCodesDisabledKeepsDemoEnrollment(t *testing.T) {
+	const key = "review-demo-key-123456"
+	st := storetest.Open(t)
+	now := time.Unix(0, 0).UTC()
+	service := deterministicService(st, now)
+	if err := service.SetDemoEnrollment(DemoEnrollment{Key: key, ProfileID: "profile-managed"}); err != nil {
+		t.Fatalf("SetDemoEnrollment: %v", err)
+	}
+	disableViewerPairingCodes(t, st, now)
+
+	enrolled, err := service.Enroll(context.Background(), EnrollRequest{Code: key, DeviceName: "Review Device", IsLAN: true})
+	if err != nil {
+		t.Fatalf("demo enroll error = %v, want success", err)
+	}
+	if enrolled.DeviceRole != string(store.DeviceRoleViewer) || enrolled.ProfileID != "profile-managed" {
+		t.Fatalf("enrolled = %+v, want viewer on profile-managed", enrolled)
+	}
+}

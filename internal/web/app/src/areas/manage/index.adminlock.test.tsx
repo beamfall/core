@@ -72,6 +72,9 @@ function installServer(adminPassword: string) {
         return jsonResponse({ data: { verifyAdminSession: { active: admin } } });
       }
       if (operation === "Tags") return jsonResponse({ data: { tags: [] } });
+      if (operation === "SetupState") {
+        return jsonResponse({ data: { setupState: { adminPasswordSet: true } } });
+      }
       if (!admin) return jsonResponse({ errors: [{ message: RAW_REFUSAL }] });
       if (operation === "Libraries") {
         return jsonResponse({

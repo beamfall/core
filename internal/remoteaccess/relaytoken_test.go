@@ -173,7 +173,7 @@ func startHelloRecordingRelay(t *testing.T, hellos chan<- *relayHello, reject fu
 		_ = writeRelayFrame(conn, relayFrame{Type: relayFrameAck, Ack: &relayAck{
 			Version: relayProtoVersion, CarrierID: frame.Hello.Hostnames[0], Hostnames: frame.Hello.Hostnames,
 		}})
-		s, serr := yamux.Server(conn, relayYamuxConfig())
+		s, serr := yamux.Server(conn, relayYamuxConfig(0))
 		if serr != nil {
 			return nil, false
 		}

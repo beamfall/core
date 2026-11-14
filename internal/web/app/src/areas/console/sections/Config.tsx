@@ -16,22 +16,32 @@ import { useT } from "@/lib/i18n";
 import { AdvancedDisclosure, Section } from "../Section";
 import { useAsync } from "../useAsync";
 
-// Server configuration (ADR-0013): the background-worker pool size. Bootstrap
-// config (ports, data dir, secrets) is deliberately not editable here.
+// Server configuration (ADR-0013): the background-worker pool size and the
+// Viewer pairing-code switch (CORE-0393). Bootstrap config (ports, data dir,
+// secrets) is deliberately not editable here.
 function ServerConfig() {
   const t = useT();
   const { data, failed, setData } = useAsync(fetchConsoleConfig);
   const [workers, setWorkers] = useState("");
+  const savedWorkers = data?.backgroundWorkers;
 
+  // Keyed on the saved count, not on data: toggling the Viewer-code switch
+  // replaces data and must not discard an unsaved worker-count edit.
   useEffect(() => {
-    if (data) setWorkers(String(data.backgroundWorkers));
-  }, [data]);
+    if (savedWorkers !== undefined) setWorkers(String(savedWorkers));
+  }, [savedWorkers]);
 
   async function onSave(e: FormEvent) {
     e.preventDefault();
     const n = Number(workers);
     if (!Number.isInteger(n) || n < 0) return;
     const next = await setConsoleConfig({ backgroundWorkers: n });
+    setData(next);
+  }
+
+  // CORE-0393: saved on toggle, independent of the workers form.
+  async function onToggleViewerCodes(disabled: boolean) {
+    const next = await setConsoleConfig({ viewerPairingCodesDisabled: disabled });
     setData(next);
   }
 
@@ -53,6 +63,18 @@ function ServerConfig() {
                   value={workers}
                   onChange={(e) => setWorkers(e.target.value)}
                   className="w-24"
+                />
+              }
+            />
+            <ControlRow
+              label="viewerPairingCodesDisabled"
+              help="viewerPairingCodesDisabledHelp"
+              control={
+                <Switch
+                  aria-label={t("viewerPairingCodesDisabled")}
+                  checked={data?.viewerPairingCodesDisabled ?? false}
+                  disabled={!data}
+                  onCheckedChange={(v) => void onToggleViewerCodes(v)}
                 />
               }
             />

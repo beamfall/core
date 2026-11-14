@@ -4445,7 +4445,11 @@ func TestSourceItemsReportArtworkPresenceHonestly(t *testing.T) {
 	handler := newTestHandlerWithStore(st)
 	// media-alpha has a stored poster; media-archive does not.
 	handler.SetArtwork(fakeArtworkLocator{media: map[store.MediaID]map[string]bool{
-		"media-alpha": {artwork.SlotPoster: true, artwork.SlotBackdrop: true},
+		"media-alpha": {
+			artwork.SlotPoster: true, artwork.SlotBackdrop: true,
+			artwork.SlotLogo: true, artwork.SlotContainerPoster: true,
+			"portrait": true, // outside Core's vocabulary: never listed
+		},
 	}})
 
 	body := []byte(`{"query":"query { sourceItems { id artwork { poster } artworkSlots } }","variables":{"kind":"recently-added"}}`)
@@ -4475,8 +4479,10 @@ func TestSourceItemsReportArtworkPresenceHonestly(t *testing.T) {
 		t.Fatalf("media-alpha artwork = %#v, want canonical versioned poster path", alpha.Artwork)
 	}
 	wantSlots := map[string]string{
-		artwork.SlotPoster:   "/api/media/artwork/media-alpha/poster?v=av1",
-		artwork.SlotBackdrop: "/api/media/artwork/media-alpha/backdrop?v=av1",
+		artwork.SlotPoster:          "/api/media/artwork/media-alpha/poster?v=av1",
+		artwork.SlotBackdrop:        "/api/media/artwork/media-alpha/backdrop?v=av1",
+		artwork.SlotLogo:            "/api/media/artwork/media-alpha/logo?v=av1",
+		artwork.SlotContainerPoster: "/api/media/artwork/media-alpha/season-poster?v=av1",
 	}
 	if !reflect.DeepEqual(alpha.ArtworkSlots, wantSlots) {
 		t.Fatalf("media-alpha artworkSlots = %#v, want %#v", alpha.ArtworkSlots, wantSlots)

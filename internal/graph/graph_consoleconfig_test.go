@@ -802,3 +802,45 @@ func TestTranscodeConfigReportsSanitizedHardwareProbe(t *testing.T) {
 		}
 	}
 }
+
+// TestSetConsoleConfigViewerPairingCodesSwitch pins CORE-0393's graph half: the
+// Viewer pairing-code switch reads false by default, a manager write persists,
+// and a fresh consoleConfig read returns it.
+func TestSetConsoleConfigViewerPairingCodesSwitch(t *testing.T) {
+	st := storetest.Open(t)
+	handler := newConsoleHandler(t, st)
+	openManagerAdminSession(t, st)
+
+	data, errs := post(t, handler, `{"query":"query { consoleConfig { viewerPairingCodesDisabled } }"}`, authorizeManager)
+	if len(errs) != 0 {
+		t.Fatalf("consoleConfig errors = %#v", errs)
+	}
+	var before ConsoleConfigInfo
+	mustUnmarshal(t, data["consoleConfig"], &before)
+	if before.ViewerPairingCodesDisabled {
+		t.Fatal("default viewerPairingCodesDisabled = true, want false")
+	}
+
+	data, errs = post(t, handler,
+		`{"query":"mutation S($viewerPairingCodesDisabled: Boolean!){ setConsoleConfig(viewerPairingCodesDisabled:$viewerPairingCodesDisabled){ viewerPairingCodesDisabled remoteEnrollmentEnabled } }","variables":{"viewerPairingCodesDisabled":true}}`,
+		authorizeManager)
+	if len(errs) != 0 {
+		t.Fatalf("setConsoleConfig errors = %#v", errs)
+	}
+	var after ConsoleConfigInfo
+	mustUnmarshal(t, data["setConsoleConfig"], &after)
+	if !after.ViewerPairingCodesDisabled {
+		t.Fatal("setConsoleConfig viewerPairingCodesDisabled = false, want true")
+	}
+	if after.RemoteEnrollmentEnabled {
+		t.Fatal("viewer switch write changed remoteEnrollmentEnabled")
+	}
+
+	stored, err := st.ConsoleConfig(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stored.ViewerPairingCodesDisabled {
+		t.Fatal("store ViewerPairingCodesDisabled = false after graph write, want true")
+	}
+}

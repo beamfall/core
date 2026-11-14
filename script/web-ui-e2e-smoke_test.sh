@@ -377,7 +377,8 @@ BEAMFALL_WEB_E2E_PUBLISH_BARRIER="${publisher_barrier}" \
   "${fixture}/script/web-ui-e2e-smoke.sh" >"${fixture}/publisher-a.stdout" \
   2>"${fixture}/publisher-a.stderr" &
 publisher_a_pid=$!
-for _ in $(seq 1 100); do
+# CORE-0941: fixture start-up waits are 60s, not 5s; under host load a fixture needs longer than 5s to start.
+for _ in $(seq 1 1200); do
   [[ -s "${publisher_barrier}.ready" ]] && break
   sleep 0.05
 done
@@ -433,7 +434,7 @@ export BEAMFALL_PROCESS_SUPERVISOR_STARTUP_BARRIER="${startup_barrier}"
 "${fixture}/script/web-ui-e2e-smoke.sh" >"${fixture}/startup.stdout" \
   2>"${fixture}/startup.stderr" &
 runner_pid=$!
-for _ in $(seq 1 100); do
+for _ in $(seq 1 1200); do
   [[ -s "${startup_barrier}.ready" ]] && break
   sleep 0.05
 done
@@ -492,7 +493,7 @@ export SMOKE_TEST_DESCENDANT_PID_FILE="${fixture}/interrupt-descendant.pid"
 "${fixture}/script/web-ui-e2e-smoke.sh" >"${fixture}/interrupt.stdout" \
   2>"${fixture}/interrupt.stderr" &
 runner_pid=$!
-for _ in $(seq 1 100); do
+for _ in $(seq 1 1200); do
   [[ -s "${SMOKE_TEST_LEADER_PID_FILE}" && -s "${SMOKE_TEST_DESCENDANT_PID_FILE}" ]] && break
   sleep 0.05
 done

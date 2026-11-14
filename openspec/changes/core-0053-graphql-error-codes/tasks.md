@@ -7,5 +7,5 @@
 ## 2. Contract
 
 - [x] 2.1 Conformance test enumerates error sites and fails on an unmapped one
-- [x] 2.2 Wire contract gains the error shape and vocabulary; publish 2.1.0 and repoint the registry
+- [x] 2.2 Wire contract gains the error shape and vocabulary; publish 2.2.0 and repoint the registry
 - [x] 2.3 ARCHITECTURE §7 states the shipped shape
