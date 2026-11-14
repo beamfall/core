@@ -15,6 +15,12 @@ import {
   skipIntervalOverrideKey,
   skipIntervalOverrideValue,
 } from "../lib/preferences";
+import {
+  encodeSubtitleAppearance,
+  resolveSubtitleAppearance,
+  SUBTITLE_APPEARANCE_KEYS,
+  type SubtitleAppearanceField,
+} from "../lib/subtitleAppearance";
 import { type PlayQueueItem, queueNeighbours, readPlayerNavState } from "../lib/watchQueue";
 import { AudioStage } from "../player/AudioStage";
 import { PlayerTransport } from "../player/PlayerTransport";
@@ -95,6 +101,7 @@ export function PlayerPage() {
   const collectionID = collection?.entityID || "";
   const resolvedPrefs = resolvePreferences(clientPrefs, collectionID);
   const showSkipInterval = collectionID ? skipIntervalOverrideValue(clientPrefs, collectionID) : "";
+  const subtitleAppearance = useMemo(() => resolveSubtitleAppearance(clientPrefs), [clientPrefs]);
   const collectionTitle = collection
     ? collection.title || displayString(collection.kindDisplayName, displayLocale)
     : "";
@@ -269,6 +276,32 @@ export function PlayerPage() {
     [collectionID],
   );
 
+  // Subtitle appearance roams with the Profile (subtitle.* keys, CORE-1681).
+  const storePrefs = useCallback((entries: ClientPref[]) => {
+    const keys = new Set(entries.map((entry) => entry.key));
+    setClientPrefs((prefs) => [
+      ...prefs.filter((pref) => !keys.has(pref.key)),
+      ...entries.filter((entry) => entry.value),
+    ]);
+    for (const { key, value } of entries) void setClientPref(key, value).catch(() => {});
+  }, []);
+  const setSubtitleAppearance = useCallback(
+    (field: SubtitleAppearanceField, value: string) =>
+      storePrefs([
+        { key: SUBTITLE_APPEARANCE_KEYS[field], value: encodeSubtitleAppearance(field, value) },
+      ]),
+    [storePrefs],
+  );
+  const resetSubtitleAppearance = useCallback(
+    () =>
+      storePrefs(
+        Object.values(SUBTITLE_APPEARANCE_KEYS)
+          .filter((key) => clientPrefs.some((pref) => pref.key === key))
+          .map((key) => ({ key, value: "" })),
+      ),
+    [storePrefs, clientPrefs],
+  );
+
   const shareAt = useCallback(
     (seconds: number) => {
       if (!mediaId) return;
@@ -374,6 +407,9 @@ export function PlayerPage() {
               showSkipIntervalLabel={showSkipIntervalLabel}
               showSkipIntervalCollection={collectionTitle}
               onShowSkipIntervalChange={setShowSkipInterval}
+              subtitleAppearance={subtitleAppearance}
+              onSubtitleAppearanceChange={setSubtitleAppearance}
+              onSubtitleAppearanceReset={resetSubtitleAppearance}
               onShare={shareAt}
               onPreviousInQueue={playPrevious}
               onNextInQueue={playNext}
