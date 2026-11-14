@@ -1,5 +1,5 @@
 import { Cast } from "lucide-react";
-import { type KeyboardEvent, useId, useState } from "react";
+import { type KeyboardEvent, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { controlSession, fetchMySessions } from "@/lib/graphql";
 import type { MySessionInfo } from "@/lib/graphql/types";
@@ -38,6 +38,14 @@ export function PlayOnButton({
   const [open, setOpen] = useState(false);
   const [devices, setDevices] = useState<MySessionInfo[]>([]);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
+  const trigger = useRef<HTMLButtonElement>(null);
+
+  // Closing the list removes the focused device button; return focus to the
+  // trigger so keyboard users are not dropped on the page body.
+  function close() {
+    setOpen(false);
+    trigger.current?.focus();
+  }
 
   function toggle() {
     if (open) {
@@ -57,7 +65,7 @@ export function PlayOnButton({
 
   async function playOn(session: MySessionInfo) {
     const device = session.deviceName || t("remoteDeviceUnnamed");
-    setOpen(false);
+    close();
     try {
       await controlSession({
         sessionID: session.id,
@@ -76,7 +84,7 @@ export function PlayOnButton({
   function onKeyDown(event: KeyboardEvent) {
     if (event.key === "Escape" && open) {
       event.stopPropagation();
-      setOpen(false);
+      close();
     }
   }
 
@@ -94,6 +102,7 @@ export function PlayOnButton({
   return (
     <div className="bf-play-on" onKeyDown={onKeyDown}>
       <Button
+        ref={trigger}
         variant="outline"
         size="sm"
         aria-label={t("playOnLabel", { title })}

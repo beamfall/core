@@ -250,6 +250,20 @@ func TestControlSessionRevealGate(t *testing.T) {
 		t.Fatalf("control error leaked the restricted media id: %#v", errs)
 	}
 
+	// A visible row for the same session does not unlock it: one hidden row
+	// makes the whole session uncontrollable, whichever row sorts first.
+	recordActive(t, st, "session-default", "profile-default", "device-tv", "media-direct", "media-alpha", false)
+	for _, command := range []string{"pause", "play-media"} {
+		vars := map[string]any{"sessionID": "session-default", "command": command}
+		if command == "play-media" {
+			vars["mediaID"] = "media-alpha"
+		}
+		_, errs = controlSessionVars(t, handler, vars, authorizeManager)
+		if len(errs) == 0 || !strings.Contains(errs[0].Message, "not controllable") {
+			t.Fatalf("unrevealed %s with a mixed-visibility session errors = %#v, want not controllable", command, errs)
+		}
+	}
+
 	// A revealed same-Profile caller (session-revealed) can control it.
 	data, errs := controlSessionPost(t, handler, "session-default", "pause", authorizeRevealed)
 	if len(errs) != 0 {

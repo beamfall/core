@@ -58,6 +58,12 @@ playback on the target.
 - **WHEN** an unrevealed device sends any verb to a same-Profile session playing restricted Media
 - **THEN** the request fails with "session not controllable" without naming the Media
 
+#### Scenario: Mixed visibility
+
+- **WHEN** a session has playback rows for both visible and restricted Media and an unrevealed
+  same-Profile device sends any verb to it
+- **THEN** the request fails with "session not controllable", whichever row is listed first
+
 ### Requirement: Play on another device
 
 `play-media` SHALL start Media on a live device session in the caller's Profile, whether or not it
@@ -91,9 +97,21 @@ others.
 
 The web app SHALL list the Profile's other active sessions with transport controls, SHALL offer
 "Play on" for an item to the Profile's other device sessions, and SHALL apply `session.control`
-events addressed to its own session to the player it is running.
+events addressed to its own session to the player it is running. The receiver SHALL apply each
+event at most once, SHALL refuse a transport command whose Media is not the one it is playing, and
+SHALL end playback on a remote `stop` without returning to an earlier player.
 
 #### Scenario: Pause from another tab
 
 - **WHEN** a second browser in the same Profile sends `pause` to a web session that is playing
 - **THEN** that web player pauses
+
+#### Scenario: Player moved on
+
+- **WHEN** a `pause` authorized for one Media reaches a web player now playing another
+- **THEN** the player ignores it
+
+#### Scenario: Viewer remounted
+
+- **WHEN** a web viewer remounts and is sent a `play-media` event it already applied
+- **THEN** it does not start playback again

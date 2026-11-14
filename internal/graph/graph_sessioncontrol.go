@@ -158,7 +158,10 @@ func (h *Handler) controlSession(ctx context.Context, scope auth.Scope, req requ
 	// Gate 2 — reveal. Applied through the CALLER's own filter: a session
 	// playing Media the caller cannot reveal comes back with its identifying
 	// fields suppressed, and is treated as not controllable (the caller never
-	// learns what restricted Media it is, nor commands it).
+	// learns what restricted Media it is, nor commands it). ActiveSessions has
+	// a row per session and Media, so every row of the target must be visible:
+	// one hidden row makes the whole session uncontrollable, whatever order the
+	// rows come back in.
 	now := time.Now().UTC()
 	active, err := h.store.ActiveSessions(ctx, now, scope.LibraryFilter())
 	if err != nil {
@@ -166,20 +169,17 @@ func (h *Handler) controlSession(ctx context.Context, scope auth.Scope, req requ
 	}
 	var activeMedia store.MediaID
 	found := false
-	visible := false
 	for _, s := range active {
 		if s.SessionID != store.SessionID(targetID) {
 			continue
 		}
-		found = true
-		if s.Title != "" { // reveal-visible: Media identity is present
-			activeMedia = s.MediaID
-			visible = true
+		if s.Title == "" { // reveal-hidden: Media identity is suppressed
+			return ControlSessionResult{}, clientError("session not controllable")
 		}
-		break
-	}
-	if found && !visible {
-		return ControlSessionResult{}, clientError("session not controllable")
+		if !found {
+			activeMedia = s.MediaID
+			found = true
+		}
 	}
 
 	// Gate 3 — what the command needs from the target.
@@ -230,10 +230,22 @@ func (h *Handler) controlSession(ctx context.Context, scope auth.Scope, req requ
 // type is a client error rather than a silent zero, so a controller never
 // seeks to 0 or mutes by accident.
 func sessionControlArgsFromVariables(req request) (store.SessionControlArgs, error) {
-	args := store.SessionControlArgs{
-		Direction: trimmedVariable(req, "direction"),
-		MediaID:   store.MediaID(trimmedVariable(req, "mediaID")),
-		Text:      strings.TrimSpace(stringVar(req, "text")),
+	var args store.SessionControlArgs
+	for _, field := range []struct {
+		name string
+		dst  func(string)
+	}{
+		{"direction", func(v string) { args.Direction = v }},
+		{"mediaID", func(v string) { args.MediaID = store.MediaID(v) }},
+		{"text", func(v string) { args.Text = v }},
+	} {
+		if raw, ok := req.Variables[field.name]; ok && raw != nil {
+			value, ok := raw.(string)
+			if !ok {
+				return store.SessionControlArgs{}, clientError(field.name + " must be a string")
+			}
+			field.dst(strings.TrimSpace(value))
+		}
 	}
 	if raw, ok := req.Variables["positionMs"]; ok && raw != nil {
 		value, ok := wholeNumber(raw)

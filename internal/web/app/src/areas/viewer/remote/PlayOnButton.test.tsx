@@ -62,6 +62,20 @@ describe("PlayOnButton", () => {
     expect(screen.queryByRole("button", { name: "Old tablet" })).not.toBeInTheDocument();
   });
 
+  it("returns focus to the trigger when the list closes", async () => {
+    renderButton();
+    const toggle = screen.getByRole("button", { name: /on another device/ });
+    await userEvent.click(toggle);
+    (await screen.findByRole("button", { name: "Lounge" })).focus();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("button", { name: "Lounge" })).not.toBeInTheDocument();
+    expect(toggle).toHaveFocus();
+
+    await userEvent.click(toggle);
+    await userEvent.click(await screen.findByRole("button", { name: "Lounge" }));
+    expect(toggle).toHaveFocus();
+  });
+
   it("sends play-media from the resume point and reports it", async () => {
     renderButton(42.5);
     await userEvent.click(screen.getByRole("button", { name: /on another device/ }));

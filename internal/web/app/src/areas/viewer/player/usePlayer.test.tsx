@@ -150,7 +150,7 @@ const messages = {
 
 function Harness({
   mediaID = "media-alpha",
-  startAtSeconds = 0,
+  startAtSeconds,
   nextMediaID,
 }: {
   mediaID?: string;

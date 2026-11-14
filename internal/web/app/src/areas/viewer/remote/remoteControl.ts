@@ -79,6 +79,8 @@ export function parseSessionControlFrame(data: unknown, now: number): SessionCon
 /** What a running player exposes so remote commands can drive it. */
 export interface RemotePlayerTarget {
   video: () => HTMLVideoElement | null;
+  /** The Media this player is playing: the anchor a transport command must name. */
+  mediaID?: string;
   /** Audio menu option id: the zero-based track index. */
   selectAudio?: (id: string) => void;
   /** Subtitle menu option id: "off" or the zero-based track index. */
@@ -96,13 +98,16 @@ function isTrackIndex(id: string | undefined): id is string {
 /**
  * Applies a transport command to a player. Returns false when the command is
  * not a player command or the player cannot honour it (no next item, say).
- * A remote trackID is the receiver's zero-based track index; an empty
- * subtitle trackID turns subtitles off.
+ * A command that names a Media was authorized against that Media, so it is
+ * refused when this player has moved on to another one. A remote trackID is
+ * the receiver's zero-based track index; an empty subtitle trackID turns
+ * subtitles off.
  */
 export function applyPlayerCommand(
   command: SessionControlCommand,
   target: RemotePlayerTarget,
 ): boolean {
+  if (command.mediaID !== undefined && command.mediaID !== target.mediaID) return false;
   const video = target.video();
   switch (command.command) {
     case "pause":
@@ -152,6 +157,70 @@ export function applyPlayerCommand(
       return true;
     default:
       return false;
+  }
+}
+
+/**
+ * Applies play-media in place when the player is already on that Media: seeks
+ * to the requested position, if any, and plays. False when it must navigate.
+ */
+export function restartInPlace(
+  command: SessionControlCommand,
+  target: RemotePlayerTarget,
+): boolean {
+  if (!command.mediaID || command.mediaID !== target.mediaID) return false;
+  const video = target.video();
+  if (!video) return false;
+  if (command.positionMs !== undefined) video.currentTime = command.positionMs / 1000;
+  void video.play()?.catch(() => {});
+  return true;
+}
+
+// The highest event id this tab has applied. A remounted viewer subscribes
+// without a cursor and is sent recent events again; without this, leaving and
+// returning to the viewer would replay a play-media sent a moment ago. It is
+// kept in sessionStorage too, so a reload in the same tab does not replay it.
+const APPLIED_KEY = "bf.remote.appliedEventID";
+let appliedThrough: number | null = null;
+
+function readApplied(): number {
+  if (appliedThrough === null) {
+    let stored = 0;
+    try {
+      stored = Number(window.sessionStorage.getItem(APPLIED_KEY)) || 0;
+    } catch {
+      // Storage is unavailable; the in-memory watermark still applies.
+    }
+    appliedThrough = stored;
+  }
+  return appliedThrough;
+}
+
+/**
+ * Records an SSE event id as applied. False when it was already applied, so
+ * the caller drops the replay. A frame without a numeric id cannot be tracked
+ * and is accepted (the staleness window still bounds it).
+ */
+export function claimControlEvent(eventID: string): boolean {
+  const id = Number(eventID);
+  if (!eventID || !Number.isSafeInteger(id) || id <= 0) return true;
+  if (id <= readApplied()) return false;
+  appliedThrough = id;
+  try {
+    window.sessionStorage.setItem(APPLIED_KEY, String(id));
+  } catch {
+    // Storage is unavailable; the in-memory watermark still applies.
+  }
+  return true;
+}
+
+/** Test seam: forgets the applied-event watermark. */
+export function resetAppliedControlEvents(): void {
+  appliedThrough = null;
+  try {
+    window.sessionStorage.removeItem(APPLIED_KEY);
+  } catch {
+    // Storage is unavailable.
   }
 }
 

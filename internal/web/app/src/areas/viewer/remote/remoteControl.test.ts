@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   applyPlayerCommand,
+  claimControlEvent,
   parseSessionControlFrame,
   type RemotePlayerTarget,
+  resetAppliedControlEvents,
+  restartInPlace,
   STALE_AFTER_MS,
 } from "./remoteControl";
 
@@ -138,7 +141,44 @@ describe("applyPlayerCommand", () => {
     expect(applyPlayerCommand({ command: "play-media", mediaID: "m" }, t)).toBe(false);
   });
 
+  it("refuses a command authorized for another Media", () => {
+    const { video, target: t } = target({ mediaID: "media-b" });
+    expect(applyPlayerCommand({ command: "pause", mediaID: "media-a" }, t)).toBe(false);
+    expect(applyPlayerCommand({ command: "seek", mediaID: "media-a", positionMs: 1 }, t)).toBe(
+      false,
+    );
+    expect(video.pause).not.toHaveBeenCalled();
+    expect(applyPlayerCommand({ command: "pause", mediaID: "media-b" }, t)).toBe(true);
+    expect(video.pause).toHaveBeenCalledOnce();
+  });
+
   it("does nothing without a video element", () => {
     expect(applyPlayerCommand({ command: "pause" }, { video: () => null })).toBe(false);
+  });
+});
+
+describe("restartInPlace", () => {
+  it("seeks and plays when the player is already on that Media", () => {
+    const video = fakeVideo();
+    video.currentTime = 300;
+    const t: RemotePlayerTarget = { video: () => video, mediaID: "m1" };
+    expect(restartInPlace({ command: "play-media", mediaID: "m1", positionMs: 0 }, t)).toBe(true);
+    expect(video.currentTime).toBe(0);
+    expect(video.play).toHaveBeenCalledOnce();
+    expect(restartInPlace({ command: "play-media", mediaID: "m2" }, t)).toBe(false);
+  });
+});
+
+describe("claimControlEvent", () => {
+  it("applies each event id once and accepts frames without one", () => {
+    resetAppliedControlEvents();
+    expect(claimControlEvent("41")).toBe(true);
+    expect(claimControlEvent("41")).toBe(false);
+    expect(claimControlEvent("40")).toBe(false);
+    expect(claimControlEvent("42")).toBe(true);
+    expect(claimControlEvent("")).toBe(true);
+    expect(claimControlEvent("not-a-number")).toBe(true);
+    resetAppliedControlEvents();
+    expect(claimControlEvent("41")).toBe(true);
   });
 });

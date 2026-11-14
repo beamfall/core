@@ -87,6 +87,7 @@ export function PlayerTransport({
   onPreviousInQueue,
   onNextInQueue,
   onStop,
+  onRemoteStop,
   switchToHls,
   onMenuOpenChange,
 }: {
@@ -117,6 +118,8 @@ export function PlayerTransport({
   onNextInQueue?: () => void;
   /** Leaves the player when another device sends stop; without it stop only pauses. */
   onStop?: () => void;
+  /** Stop requested by another device; falls back to onStop. */
+  onRemoteStop?: () => void;
   /** Switches direct play to its HLS rendition stream at the current position. */
   switchToHls?: (renditionKey?: string) => SwitchResult;
   /** Reports whether any menu/overlay is open (drives auto-hide suppression). */
@@ -235,11 +238,12 @@ export function PlayerTransport({
   // Commands from the Profile's other devices drive this player (CORE-1678).
   useRemotePlayerTarget({
     video: () => videoRef.current,
+    mediaID,
     selectAudio: tracks.selectAudio,
     selectSubtitle: tracks.selectSubtitle,
     next: onNextInQueue,
     previous: onPreviousInQueue,
-    stop: onStop,
+    stop: onRemoteStop ?? onStop,
   });
 
   // Mirror the live <video> time into React state so the chrome re-renders.

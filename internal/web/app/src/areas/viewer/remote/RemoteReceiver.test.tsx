@@ -7,12 +7,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchMySessions } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { RemoteMessage, useRemoteReceiver } from "./RemoteReceiver";
-import { useRemotePlayerTarget } from "./remoteControl";
+import { resetAppliedControlEvents, useRemotePlayerTarget } from "./remoteControl";
 
 vi.mock("@/lib/graphql", () => ({ fetchMySessions: vi.fn() }));
 
-function control(target: string, payload: Record<string, unknown>) {
+function control(target: string, payload: Record<string, unknown>, lastEventId = "") {
   return new MessageEvent("session.control", {
+    lastEventId,
     data: JSON.stringify({
       kind: "session.control",
       aggregateType: "session",
@@ -41,6 +42,7 @@ function wrapper({ children }: { children: ReactNode }) {
 
 beforeEach(() => {
   path = "";
+  resetAppliedControlEvents();
   vi.mocked(fetchMySessions)
     .mockReset()
     .mockResolvedValue({
@@ -92,6 +94,62 @@ describe("useRemoteReceiver", () => {
       ),
     );
     await waitFor(() => expect(path).toBe("/watch/m%2F1?t=5"));
+  });
+
+  it("starts from an explicit zero instead of saved progress", async () => {
+    const { result } = renderHook(() => useRemoteReceiver("p1"), { wrapper });
+    act(() =>
+      result.current.onEvent(
+        control("session-a", { command: "play-media", mediaID: "m1", positionMs: 0 }),
+      ),
+    );
+    await waitFor(() => expect(path).toBe("/watch/m1?t=0"));
+  });
+
+  it("restarts in place when the player is already on that Media", async () => {
+    const play = vi.fn(() => Promise.resolve());
+    const video = { play, currentTime: 120 } as unknown as HTMLVideoElement;
+    renderHook(() => useRemotePlayerTarget({ video: () => video, mediaID: "m1" }), { wrapper });
+    const { result } = renderHook(() => useRemoteReceiver("p1"), { wrapper });
+    act(() =>
+      result.current.onEvent(
+        control("session-a", { command: "play-media", mediaID: "m1", positionMs: 5_000 }),
+      ),
+    );
+    await waitFor(() => expect(play).toHaveBeenCalledOnce());
+    expect(video.currentTime).toBe(5);
+    expect(path).toBe("/");
+  });
+
+  it("does not replay an event it already applied", async () => {
+    const first = renderHook(() => useRemoteReceiver("p1"), { wrapper });
+    act(() =>
+      first.result.current.onEvent(
+        control("session-a", { command: "display-message", text: "Once" }, "7"),
+      ),
+    );
+    await waitFor(() => expect(first.result.current.message).toBe("Once"));
+    first.unmount();
+
+    // A remounted viewer is sent the same event again: it is dropped.
+    const second = renderHook(() => useRemoteReceiver("p1"), { wrapper });
+    act(() =>
+      second.result.current.onEvent(
+        control("session-a", { command: "display-message", text: "Once" }, "7"),
+      ),
+    );
+    await waitFor(() => expect(fetchMySessions).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(second.result.current.message).toBeNull();
+
+    act(() =>
+      second.result.current.onEvent(
+        control("session-a", { command: "display-message", text: "Next" }, "8"),
+      ),
+    );
+    await waitFor(() => expect(second.result.current.message).toBe("Next"));
   });
 
   it("shows a display-message until it is dismissed", async () => {

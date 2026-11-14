@@ -5,8 +5,10 @@ import { fetchMySessions } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
 import {
   applyPlayerCommand,
+  claimControlEvent,
   parseSessionControlFrame,
   remotePlayerTarget,
+  restartInPlace,
   SESSION_CONTROL_KIND,
 } from "./remoteControl";
 import "./remote.css";
@@ -56,18 +58,21 @@ export function useRemoteReceiver(profileID: string): RemoteReceiver {
       if (!frame) return;
       void resolveOwnSession()
         .then((own) => {
-          if (!own || frame.target !== own) return;
+          if (!own || frame.target !== own || !claimControlEvent(event.lastEventId)) return;
           const { command } = frame;
+          const player = remotePlayerTarget();
           if (command.command === "play-media" && command.mediaID) {
-            const seconds = Math.floor((command.positionMs ?? 0) / 1000);
-            navigate(
-              `/watch/${encodeURIComponent(command.mediaID)}${seconds > 0 ? `?t=${seconds}` : ""}`,
-            );
+            if (player && restartInPlace(command, player)) return;
+            // An explicit position, zero included, overrides saved progress.
+            const at =
+              command.positionMs === undefined
+                ? ""
+                : `?t=${Math.max(0, Math.floor(command.positionMs / 1000))}`;
+            navigate(`/watch/${encodeURIComponent(command.mediaID)}${at}`);
           } else if (command.command === "display-message" && command.text) {
             setMessage(command.text);
-          } else {
-            const player = remotePlayerTarget();
-            if (player) applyPlayerCommand(command, player);
+          } else if (player) {
+            applyPlayerCommand(command, player);
           }
         })
         .catch(() => {});

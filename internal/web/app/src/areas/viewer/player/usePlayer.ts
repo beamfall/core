@@ -354,7 +354,8 @@ export function usePlayer(
     /** The stream stops before the item's end: the file is truncated or damaged. */
     sourceEndsEarly?: string;
   } & UnavailableReasonMessages,
-  startAtSeconds = 0,
+  /** Where to open, in seconds; undefined resumes from saved progress. */
+  startAtSeconds?: number,
   /** A card queue's next item, declared to playback-info for a pre-minted handoff; "" when that queue has none. */
   nextMediaID?: string,
 ) {
@@ -1029,7 +1030,7 @@ export function usePlayer(
       const opening =
         retryFrom > 0
           ? retryFrom
-          : startAtSeconds > 0
+          : startAtSeconds !== undefined
             ? startAtSeconds
             : resumePositionFromInfo(info);
       attachEngine(stream, initialEngine, opening, { play: true });
