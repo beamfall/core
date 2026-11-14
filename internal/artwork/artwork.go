@@ -124,8 +124,8 @@ type Service struct {
 	// poster so the Entity's own artwork is never overwritten by a copy.
 	entityRules    []EntityPosterRule
 	entityPosterMu sync.Mutex
-	versions  versionCache
-	failed    scaleFailures
+	versions       versionCache
+	failed         scaleFailures
 }
 
 type derivativeLock struct {
