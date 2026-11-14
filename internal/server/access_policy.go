@@ -29,6 +29,9 @@ func applyAccessPolicy(w http.ResponseWriter, r *http.Request, class AccessClass
 		writeError(w, r, http.StatusForbidden, "route access policy unavailable")
 		return false
 	}
+	if policy.noStore {
+		w.Header().Set("Cache-Control", "no-store")
+	}
 	if !applyCORS(w, r, policy) {
 		return false
 	}
@@ -50,7 +53,7 @@ func requestHasCredential(r *http.Request) bool {
 	if strings.TrimSpace(r.Header.Get("Authorization")) != "" {
 		return true
 	}
-	if strings.TrimSpace(r.Header.Get("X-Beamfall-Session")) != "" {
+	if strings.TrimSpace(r.Header.Get(auth.SessionHeader)) != "" {
 		return true
 	}
 	_, err := r.Cookie(auth.SessionCookie)
@@ -73,7 +76,13 @@ func applyCORS(w http.ResponseWriter, r *http.Request, policy accessPolicy) bool
 	}
 	if policy.allowCrossOrigin {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		setCORSPreflightHeaders(w, r)
+		if r.Method == http.MethodOptions {
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", strings.Join([]string{
+				auth.CSRFHeader, "Content-Type", "Authorization",
+				auth.SessionHeader, auth.DeviceHeader, auth.DeviceSecretHeader,
+			}, ", "))
+		}
 		return true
 	}
 	if policy.allowTokenByteCrossOrigin && tokenByteGETPath(r) {

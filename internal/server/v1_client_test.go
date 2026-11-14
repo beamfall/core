@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/playback"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -70,8 +72,13 @@ func TestV1ClientRoutesAcceptOnlyEnrolledDeviceSessions(t *testing.T) {
 func TestV1CatalogReadsAcceptDeviceSessions(t *testing.T) {
 	srv := newTestServer(t)
 	for _, path := range []string{"/v1/libraries", "/v1/libraries/library-local/media", "/v1/media/media-alpha"} {
-		if rec := v1DeviceRequest(t, srv, http.MethodGet, path, "", "", authorizeManaged); rec.Code != http.StatusOK {
+		rec := v1DeviceRequest(t, srv, http.MethodGet, path, "", "", authorizeManaged)
+		if rec.Code != http.StatusOK {
 			t.Errorf("device session GET %s = %d, want 200: %s", path, rec.Code, rec.Body.String())
+		}
+		// Shared caches do not key on the header credential.
+		if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+			t.Errorf("GET %s Cache-Control = %q, want no-store", path, got)
 		}
 	}
 	if rec := v1DeviceRequest(t, srv, http.MethodGet, "/v1/media/media-archive", "", "", authorizeManaged); rec.Code != http.StatusNotFound {
@@ -192,12 +199,54 @@ func TestV1ReportProgressRejectsHiddenAndNegativeReports(t *testing.T) {
 	if _, ok, err := st.PlaybackProgressFor(ctx, "profile-default", "media-archive"); err != nil || ok {
 		t.Errorf("hidden media progress stored: ok=%v err=%v, want nothing written", ok, err)
 	}
-	for _, body := range []string{`{"positionSeconds":-1}`, `{"positionSeconds":1,"durationSeconds":-1}`, `{"positionSeconds":1,"eventTimeMS":-1}`} {
+	for _, body := range []string{`{}`, `{"positionSeconds":null}`, `{"positionSeconds":-1}`, `{"positionSeconds":1,"durationSeconds":-1}`, `{"positionSeconds":1,"eventTimeMS":-1}`} {
 		if rec := v1DeviceRequest(t, srv, http.MethodPut, "/v1/media/media-alpha/progress", body, "", authorizeViewer); rec.Code != http.StatusBadRequest {
 			t.Errorf("progress %s = %d, want 400: %s", body, rec.Code, rec.Body.String())
 		}
 	}
 	if _, ok, err := st.PlaybackProgressFor(ctx, "profile-default", "media-alpha"); err != nil || ok {
 		t.Errorf("rejected progress stored: ok=%v err=%v, want nothing written", ok, err)
+	}
+}
+
+// TestV1PreflightAllowsDeviceSessionHeaders lets a browser client send the
+// device Session headers and the progress PUT cross-origin.
+func TestV1PreflightAllowsDeviceSessionHeaders(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest(http.MethodOptions, "/v1/media/media-alpha/progress", nil)
+	req.Header.Set("Origin", "https://client.example")
+	req.Header.Set("Access-Control-Request-Method", http.MethodPut)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Fatalf("Access-Control-Allow-Origin = %q, want *", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Methods"); !strings.Contains(got, http.MethodPut) {
+		t.Errorf("Access-Control-Allow-Methods = %q, want PUT", got)
+	}
+	allowed := rec.Header().Get("Access-Control-Allow-Headers")
+	for _, header := range []string{auth.SessionHeader, auth.DeviceHeader, auth.DeviceSecretHeader} {
+		if !strings.Contains(allowed, header) {
+			t.Errorf("Access-Control-Allow-Headers = %q, want %s", allowed, header)
+		}
+	}
+}
+
+// TestV1PlaybackInfoKeepsCaptionStreamIndex keeps the stream index of a muxed
+// subtitle track, which has no URL to fetch.
+func TestV1PlaybackInfoKeepsCaptionStreamIndex(t *testing.T) {
+	index := 3
+	out := v1PlaybackInfoFrom(playback.InfoResponse{CaptionTracks: []playback.CaptionTrack{
+		{ID: "muxed", Format: "pgs", StreamIndex: &index},
+		{ID: "sidecar", Format: "vtt", URL: "/api/media/subtitle/x"},
+	}})
+	if len(out.CaptionTracks) != 2 {
+		t.Fatalf("captionTracks = %+v, want 2", out.CaptionTracks)
+	}
+	if got := out.CaptionTracks[0].StreamIndex; got == nil || *got != 3 {
+		t.Errorf("muxed streamIndex = %v, want 3", got)
+	}
+	if out.CaptionTracks[1].URL == "" || out.CaptionTracks[1].StreamIndex != nil {
+		t.Errorf("sidecar track = %+v, want URL and no streamIndex", out.CaptionTracks[1])
 	}
 }

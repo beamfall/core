@@ -21,6 +21,17 @@ Every `/v1` route contract SHALL declare the credentials it accepts from the clo
 - **WHEN** a scoped developer key calls `POST /v1/media/{mediaID}/playback-info`
 - **THEN** the server answers 403
 
+#### Scenario: Responses are not stored by caches
+
+- **WHEN** any `/v1` route answers
+- **THEN** the response carries `Cache-Control: no-store`
+
+#### Scenario: Browser client preflight
+
+- **WHEN** a browser sends a CORS preflight for a `/v1` route
+- **THEN** the server allows `PUT` and the `X-Beamfall-Session`, `X-Beamfall-Device` and
+  `X-Beamfall-Device-Secret` headers
+
 #### Scenario: Integration Session or admin token
 
 - **WHEN** an integration Session or an admin API token calls a route that accepts `deviceSession`
@@ -55,7 +66,8 @@ the stored position and watched state.
 
 #### Scenario: Invalid report
 
-- **WHEN** a report carries a negative position, duration or event time
+- **WHEN** a report omits `positionSeconds`, sends it as null, or carries a negative position,
+  duration or event time
 - **THEN** the server answers 400 and writes nothing
 
 #### Scenario: Hidden Media

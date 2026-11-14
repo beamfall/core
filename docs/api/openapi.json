@@ -211,6 +211,7 @@
           "id": { "type": "string" },
           "url": { "type": "string" },
           "format": { "type": "string" },
+          "streamIndex": { "type": "integer", "description": "Selects a subtitle stream muxed in the media. A track has either url or streamIndex." },
           "language": { "type": "string" },
           "forced": { "type": "boolean" },
           "sdh": { "type": "boolean" }

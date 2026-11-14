@@ -487,6 +487,7 @@ One playable stream. The `url` carries its own stream token, so the client fetch
 | `id` | string | yes |  |
 | `url` | string | no |  |
 | `format` | string | yes |  |
+| `streamIndex` | integer | no | Selects a subtitle stream muxed in the media. A track has either url or streamIndex. |
 | `language` | string | no |  |
 | `forced` | boolean | no |  |
 | `sdh` | boolean | no |  |

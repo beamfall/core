@@ -139,12 +139,15 @@ type v1Rendition struct {
 }
 
 type v1CaptionTrack struct {
-	ID       string `json:"id"`
-	URL      string `json:"url,omitempty"`
-	Format   string `json:"format"`
-	Language string `json:"language,omitempty"`
-	Forced   bool   `json:"forced,omitempty"`
-	SDH      bool   `json:"sdh,omitempty"`
+	ID     string `json:"id"`
+	URL    string `json:"url,omitempty"`
+	Format string `json:"format"`
+	// StreamIndex selects a subtitle stream muxed in the media; a track has
+	// either a URL (a caption file) or a StreamIndex.
+	StreamIndex *int   `json:"streamIndex,omitempty"`
+	Language    string `json:"language,omitempty"`
+	Forced      bool   `json:"forced,omitempty"`
+	SDH         bool   `json:"sdh,omitempty"`
 }
 
 func (p v1CapabilityProfile) internal() playback.CapabilityProfile {
@@ -187,7 +190,8 @@ func v1PlaybackInfoFrom(resp playback.InfoResponse) v1PlaybackInfoResponse {
 	}
 	for _, track := range resp.CaptionTracks[:min(len(resp.CaptionTracks), v1PlaybackCaptionTrackLimit)] {
 		out.CaptionTracks = append(out.CaptionTracks, v1CaptionTrack{
-			ID: track.ID, URL: track.URL, Format: track.Format, Language: track.Language, Forced: track.Forced, SDH: track.SDH,
+			ID: track.ID, URL: track.URL, Format: track.Format, StreamIndex: track.StreamIndex,
+			Language: track.Language, Forced: track.Forced, SDH: track.SDH,
 		})
 	}
 	return out
@@ -239,7 +243,9 @@ func (s *Server) v1PlaybackInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 type v1ProgressRequest struct {
-	PositionSeconds int  `json:"positionSeconds"`
+	// PositionSeconds is required: a pointer tells a missing or null value
+	// from 0, so an empty report cannot reset the resume point.
+	PositionSeconds *int `json:"positionSeconds"`
 	DurationSeconds int  `json:"durationSeconds,omitempty"`
 	Finished        bool `json:"finished,omitempty"`
 	// EventTimeMS is the client's clock, in Unix milliseconds, when it
@@ -277,7 +283,11 @@ func (s *Server) v1ReportProgress(w http.ResponseWriter, r *http.Request) {
 		writeDecodeError(w, r, err)
 		return
 	}
-	if req.PositionSeconds < 0 || req.DurationSeconds < 0 || req.EventTimeMS < 0 {
+	if req.PositionSeconds == nil {
+		writeError(w, r, http.StatusBadRequest, "positionSeconds is required")
+		return
+	}
+	if *req.PositionSeconds < 0 || req.DurationSeconds < 0 || req.EventTimeMS < 0 {
 		writeError(w, r, http.StatusBadRequest, "positionSeconds, durationSeconds and eventTimeMS must not be negative")
 		return
 	}
@@ -287,7 +297,7 @@ func (s *Server) v1ReportProgress(w http.ResponseWriter, r *http.Request) {
 	progress, err := s.v1Progress.RecordPlaybackProgress(r.Context(), scope, store.PlaybackProgress{
 		ProfileID:       scope.ProfileID,
 		MediaID:         mediaID,
-		PositionSeconds: req.PositionSeconds,
+		PositionSeconds: *req.PositionSeconds,
 		DurationSeconds: req.DurationSeconds,
 		EventTimeMS:     req.EventTimeMS,
 	}, req.Finished)

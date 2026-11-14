@@ -27954,6 +27954,13 @@
                         }
                       },
                       {
+                        "name": "streamIndex",
+                        "shape": {
+                          "type": "integer"
+                        },
+                        "omitempty": true
+                      },
+                      {
                         "name": "language",
                         "shape": {
                           "type": "string"
