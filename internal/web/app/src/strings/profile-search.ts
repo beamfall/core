@@ -14,6 +14,10 @@ export const profileSearchStrings = {
     settingsTrimSilence: "Remove long pauses",
     settingsTrimSilenceLead:
       "Skips long silent gaps between segments when a silence map is available. Smart speed is planned separately.",
+    settingsPrePlay: "Play intros and previews first",
+    settingsPrePlayLead:
+      "Plays the server's intro clips, then previews where an extension offers them, before a title starts.",
+    settingsPrePlayExtrasLabel: "Previews before a title",
     settingsSkipIntervalLabel: "Skip buttons",
     settingsDownstreamAudioLabel: "Audio output",
     settingsDownstreamAudioLead:

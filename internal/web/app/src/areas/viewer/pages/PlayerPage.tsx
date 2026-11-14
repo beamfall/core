@@ -3,8 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { displayString } from "@/lib/display";
-import { fetchClientPrefs, fetchMedia, setClientPref } from "@/lib/graphql";
-import type { ClientPref, GenericMediaInfo } from "@/lib/graphql/types";
+import { fetchClientPrefs, fetchMedia, fetchPrePlayQueue, setClientPref } from "@/lib/graphql";
+import type { ClientPref, GenericMediaInfo, PrePlayItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
 import type { PlaybackNext } from "../lib/playback";
@@ -18,6 +18,7 @@ import {
 import { type PlayQueueItem, queueNeighbours, readPlayerNavState } from "../lib/watchQueue";
 import { AudioStage } from "../player/AudioStage";
 import { PlayerTransport } from "../player/PlayerTransport";
+import { PrePlayStage } from "../player/PrePlayStage";
 import { SkippedOverlay } from "../player/SkippedOverlay";
 import { UpNextCard } from "../player/UpNextCard";
 import { useAutoSkip } from "../player/useAutoSkip";
@@ -38,7 +39,57 @@ import { useUpNext } from "../player/useUpNext";
 // runs, reveals on any pointer/key/focus, never while paused or while a menu is
 // open) and the Up Next countdown card (auto-advance to the server-issued next
 // Media). Both are deferred-pass features layered over the core engine.
+//
+// Before the title starts, the page asks the server for its pre-play queue
+// (CORE-1701) and plays those items first. A timestamped link (?t=) and an
+// advance from the queue or Up Next go straight to the title.
 export function PlayerPage() {
+  const t = useT();
+  const location = useLocation();
+  const { mediaId } = useParams();
+  const skip = new URLSearchParams(location.search).has("t");
+  const carried =
+    !!location.state && (location.state as { skipPrePlay?: unknown }).skipPrePlay === true;
+  const bypass = skip || carried || !mediaId;
+  const [decided, setDecided] = useState<{ mediaId: string; items: PrePlayItem[] } | null>(null);
+
+  useEffect(() => {
+    if (bypass || !mediaId) return;
+    const controller = new AbortController();
+    Promise.resolve()
+      .then(() => fetchPrePlayQueue(mediaId, controller.signal))
+      .catch((): PrePlayItem[] => [])
+      .then((items) => {
+        if (!controller.signal.aborted) setDecided({ mediaId, items: items ?? [] });
+      });
+    return () => controller.abort();
+  }, [bypass, mediaId]);
+
+  const finish = useCallback(() => {
+    if (mediaId) setDecided({ mediaId, items: [] });
+  }, [mediaId]);
+
+  const current = decided && decided.mediaId === mediaId ? decided : null;
+  if (bypass || (current && current.items.length === 0)) return <FeaturePlayer />;
+  if (current) {
+    return (
+      <main className="flex min-h-screen flex-col bg-[oklch(8%_0.012_255)]">
+        <h1 className="sr-only">{t("prePlayRegion")}</h1>
+        <PrePlayStage key={current.mediaId} items={current.items} onDone={finish} />
+      </main>
+    );
+  }
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-[oklch(8%_0.012_255)]">
+      <div role="status">
+        <LoaderCircle aria-hidden className="size-10 animate-spin text-white/80" />
+        <span className="sr-only">{t("playerLoading")}</span>
+      </div>
+    </main>
+  );
+}
+
+function FeaturePlayer() {
   const t = useT();
   const displayLocale = useDisplayLocale();
   const navigate = useNavigate();
@@ -129,7 +180,7 @@ export function PlayerPage() {
     (id: string, title: string) => {
       navigate(`/watch/${encodeURIComponent(id)}`, {
         replace: true,
-        state: { title, ...(queue ? { queue, queueIdentity } : {}) },
+        state: { title, skipPrePlay: true, ...(queue ? { queue, queueIdentity } : {}) },
       });
     },
     [navigate, queue, queueIdentity],

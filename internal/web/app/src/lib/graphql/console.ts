@@ -30,6 +30,7 @@ import type {
   PlayHistoryFilter,
   PlayInfo,
   PlayStatsInfo,
+  PrePlayClipsInfo,
   ProfileAdminInfo,
   QBittorrentIngestInfo,
   RemoteAccessInfo,
@@ -70,6 +71,34 @@ export async function fetchConsoleConfig(signal?: AbortSignal): Promise<ConsoleC
     signal,
   );
   return data.consoleConfig;
+}
+
+// --- Pre-play clips (CORE-1701) ---------------------------------------------
+
+const PRE_PLAY_CLIP_FIELDS = "items { mediaID title durationSeconds role label }";
+const PRE_PLAY_CLIPS_QUERY = `query PrePlayClips { prePlayClips { ${PRE_PLAY_CLIP_FIELDS} } }`;
+const SET_PRE_PLAY_CLIPS_MUTATION = `mutation SetPrePlayClips($mediaIDs: [String!]!) { setPrePlayClips(mediaIDs: $mediaIDs) { ${PRE_PLAY_CLIP_FIELDS} } }`;
+
+/** The most clips the server accepts (store.MaxPrePlayClips). */
+export const MAX_PRE_PLAY_CLIPS = 10;
+
+/** PrePlayClips — the Owner's clips that play before an eligible feature. */
+export async function fetchPrePlayClips(signal?: AbortSignal): Promise<PrePlayClipsInfo> {
+  const data = await graphql<{ prePlayClips: PrePlayClipsInfo }>(PRE_PLAY_CLIPS_QUERY, {}, signal);
+  return data.prePlayClips;
+}
+
+/** SetPrePlayClips — replace the Owner's clip list, in play order. */
+export async function setPrePlayClips(
+  mediaIDs: string[],
+  signal?: AbortSignal,
+): Promise<PrePlayClipsInfo> {
+  const data = await graphql<{ setPrePlayClips: PrePlayClipsInfo }>(
+    SET_PRE_PLAY_CLIPS_MUTATION,
+    { mediaIDs },
+    signal,
+  );
+  return data.setPrePlayClips;
 }
 
 const SET_PLUGIN_ACTIVE_MUTATION = `mutation SetPluginActive($pluginID: String!, $active: Boolean!) { setPluginActive(pluginID: $pluginID, active: $active) { ${CONSOLE_CONFIG_FIELDS} } }`;

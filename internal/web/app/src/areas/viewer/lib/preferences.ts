@@ -36,6 +36,9 @@ export const PREF_KEYS = {
   skipInterval: "playback.skip-interval",
   downstreamAudio: "playback.downstream-audio",
   reduceMotion: "a11y.reduce-motion",
+  // Pre-play queue opt-in and suggested-item count (CORE-1701, graph_preplay.go).
+  prePlayEnabled: "preplay.enabled",
+  prePlayExtras: "preplay.extras",
 } as const;
 
 export type PrefKey = (typeof PREF_KEYS)[keyof typeof PREF_KEYS];
@@ -53,6 +56,10 @@ export const SKIP_INTERVAL_DEFAULT: SkipInterval = "10";
 export const DOWNSTREAM_AUDIO_MODES = ["stereo", "surround"] as const;
 export type DownstreamAudioMode = (typeof DOWNSTREAM_AUDIO_MODES)[number];
 export const DOWNSTREAM_AUDIO_DEFAULT: DownstreamAudioMode = "stereo";
+/** Suggested pre-play item counts; the server clamps any stored value to 0..10. */
+export const PRE_PLAY_EXTRAS = ["0", "1", "2", "3", "4", "5"] as const;
+export type PrePlayExtras = (typeof PRE_PLAY_EXTRAS)[number];
+export const PRE_PLAY_EXTRAS_DEFAULT: PrePlayExtras = "2";
 
 /** The resolved, typed self-service preference set for one Profile. */
 export interface ViewerPreferences {
@@ -66,6 +73,8 @@ export interface ViewerPreferences {
   trimSilence: boolean;
   skipInterval: SkipInterval;
   downstreamAudio: DownstreamAudioMode;
+  prePlayEnabled: boolean;
+  prePlayExtras: PrePlayExtras;
 }
 
 function bool(map: Map<string, string>, key: string): boolean {
@@ -77,6 +86,13 @@ function downstreamAudio(map: Map<string, string>): DownstreamAudioMode {
   return (DOWNSTREAM_AUDIO_MODES as readonly string[]).includes(raw ?? "")
     ? (raw as DownstreamAudioMode)
     : DOWNSTREAM_AUDIO_DEFAULT;
+}
+
+function prePlayExtras(map: Map<string, string>): PrePlayExtras {
+  const raw = map.get(PREF_KEYS.prePlayExtras)?.trim();
+  return (PRE_PLAY_EXTRAS as readonly string[]).includes(raw ?? "")
+    ? (raw as PrePlayExtras)
+    : PRE_PLAY_EXTRAS_DEFAULT;
 }
 
 function speed(map: Map<string, string>): PlaybackSpeed {
@@ -128,6 +144,8 @@ export function resolvePreferences(prefs: ClientPref[], showID = ""): ViewerPref
       ? interval(map, skipIntervalOverrideKey(showID), globalSkipInterval)
       : globalSkipInterval,
     downstreamAudio: downstreamAudio(map),
+    prePlayEnabled: bool(map, PREF_KEYS.prePlayEnabled),
+    prePlayExtras: prePlayExtras(map),
   };
 }
 

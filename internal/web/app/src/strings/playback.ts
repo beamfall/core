@@ -91,6 +91,11 @@ export const playbackStrings = {
     dismiss: "Dismiss",
     reconnecting: "Reconnecting…",
     tryAgain: "Try again",
+    // Pre-play queue (CORE-1701): clips and previews played before a title.
+    prePlayRegion: "Before your title",
+    prePlayProgress: "{index} of {count}",
+    prePlaySkip: "Skip",
+    prePlaySkipAll: "Skip all",
   },
   fr: {
     seeAll: "Tout voir",

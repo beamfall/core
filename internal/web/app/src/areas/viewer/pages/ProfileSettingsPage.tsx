@@ -28,7 +28,9 @@ import {
   encodeBool,
   PLAYBACK_SPEEDS,
   type PlaybackSpeed,
+  PRE_PLAY_EXTRAS,
   PREF_KEYS,
+  type PrePlayExtras,
   resolvePreferences,
   SKIP_INTERVAL_DEFAULT,
   SKIP_INTERVALS,
@@ -236,6 +238,45 @@ export function ProfileSettingsPage() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="settings-row flex flex-col gap-3">
+              <div className="flex flex-col gap-1">
+                <ToggleRow
+                  labelKey="settingsPrePlay"
+                  checked={prefs.prePlayEnabled}
+                  onChange={(on) =>
+                    persist(PREF_KEYS.prePlayEnabled, encodeBool(on), {
+                      prePlayEnabled: on,
+                    })
+                  }
+                />
+                <span className="text-sm text-[var(--text-muted)]">{t("settingsPrePlayLead")}</span>
+              </div>
+              {prefs.prePlayEnabled ? (
+                <div className="flex items-center justify-between gap-4">
+                  <Label htmlFor="settings-preplay-extras">{t("settingsPrePlayExtrasLabel")}</Label>
+                  <Select
+                    value={prefs.prePlayExtras}
+                    onValueChange={(v) =>
+                      persist(PREF_KEYS.prePlayExtras, v, {
+                        prePlayExtras: v as PrePlayExtras,
+                      })
+                    }
+                  >
+                    <SelectTrigger id="settings-preplay-extras" className="w-28">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PRE_PLAY_EXTRAS.map((n) => (
+                        <SelectItem key={n} value={n}>
+                          {n}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
             </div>
 
             <Advanced keep={prefs.trimSilence}>

@@ -3,6 +3,7 @@ import {
   DOWNSTREAM_AUDIO_DEFAULT,
   encodeBool,
   PLAYBACK_SPEED_DEFAULT,
+  PRE_PLAY_EXTRAS_DEFAULT,
   PREF_KEYS,
   resolvePreferences,
   SKIP_INTERVAL_DEFAULT,
@@ -22,7 +23,21 @@ describe("resolvePreferences", () => {
       trimSilence: false,
       skipInterval: SKIP_INTERVAL_DEFAULT,
       downstreamAudio: DOWNSTREAM_AUDIO_DEFAULT,
+      prePlayEnabled: false,
+      prePlayExtras: PRE_PLAY_EXTRAS_DEFAULT,
     });
+  });
+
+  it("reads the pre-play opt-in and falls back on an unknown extras count", () => {
+    const prefs = resolvePreferences([
+      { key: PREF_KEYS.prePlayEnabled, value: "on" },
+      { key: PREF_KEYS.prePlayExtras, value: " 4 " },
+    ]);
+    expect(prefs.prePlayEnabled).toBe(true);
+    expect(prefs.prePlayExtras).toBe("4");
+    expect(resolvePreferences([{ key: PREF_KEYS.prePlayExtras, value: "9" }]).prePlayExtras).toBe(
+      PRE_PLAY_EXTRAS_DEFAULT,
+    );
   });
 
   it("reads the 'on' boolean convention shared with the server", () => {

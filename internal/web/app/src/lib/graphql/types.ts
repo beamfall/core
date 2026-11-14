@@ -1607,3 +1607,21 @@ export interface RetentionCandidateHoldResult {
   mediaID: string;
   hold: boolean;
 }
+
+/**
+ * One entry of a pre-play queue (graph.PrePlayItem, CORE-1701): an item a
+ * client plays before a feature. `role` is "clip" (one of the Owner's clips)
+ * or "suggested" (a plugin policy's pick, shown with its `label`).
+ */
+export interface PrePlayItem {
+  mediaID: string;
+  title: string;
+  durationSeconds: number;
+  role: string;
+  label: string;
+}
+
+/** The Owner's pre-play clip list (graph.PrePlayClipsInfo). */
+export interface PrePlayClipsInfo {
+  items: PrePlayItem[];
+}

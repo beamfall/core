@@ -91,6 +91,23 @@ describe("ProfileSettingsPage", () => {
     expect(setClientPref).toHaveBeenCalledWith("autoskip.intro", "");
   });
 
+  it("turns on pre-play and then offers the suggested-item count (CORE-1701)", async () => {
+    vi.mocked(setClientPref).mockResolvedValue({ key: "preplay.enabled" });
+    const user = userEvent.setup();
+    renderPage();
+
+    const toggle = await screen.findByRole("switch", { name: "Play intros and previews first" });
+    expect(toggle).not.toBeChecked();
+    expect(screen.queryByLabelText("Previews before a title")).toBeNull();
+
+    await user.click(toggle);
+    expect(setClientPref).toHaveBeenCalledWith("preplay.enabled", "on");
+
+    await user.click(await screen.findByLabelText("Previews before a title"));
+    await user.click(await screen.findByRole("option", { name: "4" }));
+    expect(setClientPref).toHaveBeenCalledWith("preplay.extras", "4");
+  });
+
   it("persists the downstream audio preference", async () => {
     const user = userEvent.setup();
     renderPage();
