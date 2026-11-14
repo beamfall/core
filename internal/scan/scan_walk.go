@@ -44,7 +44,7 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 		progress:            progress,
 		workers:             workers,
 		workBudget:          make(chan struct{}, workers),
-		result:              Result{FilesSeen: checkpoint.FilesSeen, MediaImported: checkpoint.MediaImported, LastPath: checkpoint.LastPath, seenMedia: map[store.MediaID]bool{}, totalFiles: checkpoint.TotalFiles},
+		result:              Result{FilesSeen: checkpoint.FilesSeen, MediaImported: checkpoint.MediaImported, LastPath: checkpoint.LastPath, MissingCredentials: append([]string(nil), checkpoint.MissingCredentials...), seenMedia: map[store.MediaID]bool{}, totalFiles: checkpoint.TotalFiles},
 		directoryContexts:   map[string]ParseContext{},
 		directoryPreflights: map[string]*contextualDirectoryPreflight{},
 		sidecars:            newSidecarDiscovery(interactiveSidecarExts),

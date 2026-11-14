@@ -262,6 +262,9 @@ type jobCheckpoint struct {
 	FilesSeen     int    `json:"files_seen"`
 	TotalFiles    int    `json:"total_files,omitempty"`
 	MediaImported int    `json:"media_imported"`
+	// MissingCredentials carries Result.MissingCredentials across job
+	// yields, so a resumed scan does not report them again (CORE-1101).
+	MissingCredentials []string `json:"missing_credentials,omitempty"`
 }
 
 // Result summarizes a completed scan.
@@ -270,8 +273,13 @@ type Result struct {
 	MediaImported int
 	LastPath      string
 	Files         []ImportedFile
-	seenMedia     map[store.MediaID]bool
-	totalFiles    int
+	// MissingCredentials lists, sorted, the provider credential refs
+	// (scraper AuthRefs) that auto-identify needed but that are not
+	// configured. Each is reported once per scan instead of failing every
+	// file (CORE-1101).
+	MissingCredentials []string
+	seenMedia          map[store.MediaID]bool
+	totalFiles         int
 }
 
 // ImportedFile records one file observed by a scan.
