@@ -6,3 +6,7 @@
 - [x] 4. Tests: live start for a graphics and a timed-text Media, Ready rendition preferred,
       profile fallback, precompute queued
 - [x] 5. Wire goldens regenerated for the additive `streamToken.composedPicture`
+- [x] 6. Live composed shape under client and quirk height, bitrate and codec limits; audio when
+      none fits
+- [x] 7. Offer live composition only when the FFmpeg build has the recipe's filters and encoders
+      (cached per binary); audio otherwise

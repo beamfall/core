@@ -18,10 +18,14 @@ the first play of a newly added song never shows its picture.
   video still gets the audio, as today.
 - **Server, stream grant**: the signed grant carries `composedPicture` (optional, omitted when
   false), so the byte layer composes the picture without re-deciding.
-- **Server, HLS sessions**: a composed grant creates a session with one 720p H.264 rung whose
+- **Server, HLS sessions**: a composed grant creates a session with one H.264 rung (720p unless a limit lowers it) whose
   encoder draws the picture (graphics track or timed text over black) under the audio, from the
   requested segment, through the same admission cap, priorities, idle reap and cleanup as every
   live transcode. Precompute and live share one FFmpeg composition recipe.
+- **Server, live limits and capability**: the live picture is encoded at the largest composed
+  shape (720p, 480p or 360p) under the client's declared H.264 height and bitrate limits and any
+  matched quirk caps, scaled to fit; it is offered only when the resolved FFmpeg build has every
+  filter and encoder the recipe needs (libass for timed text). Otherwise the audio plays as before.
 - **Server, precompute**: after a live composed play the Media's composed rendition is queued at
   raised priority, so the next play is precomputed.
 - **Stream grant**: the signed grant gains `composedPicture` (optional, additive). Clients treat
