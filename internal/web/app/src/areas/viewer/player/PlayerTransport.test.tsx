@@ -184,6 +184,22 @@ describe("PlayerTransport", () => {
     expect(video.currentTime).toBe(50);
   });
 
+  it("opens the keyboard shortcut sheet on ? and closes it on Escape (CORE-1682)", async () => {
+    const onMenuOpenChange = vi.fn();
+    render(<Harness onMenuOpenChange={onMenuOpenChange} skipInterval={30} />);
+
+    expect(dispatchKey("?", { shiftKey: true }).defaultPrevented).toBe(true);
+    const sheet = await screen.findByRole("dialog", { name: "Keyboard shortcuts" });
+    expect(sheet).toHaveTextContent("Back or forward 10 seconds");
+    expect(sheet).toHaveTextContent("Back or forward 30 seconds");
+    expect(screen.getByTestId("stage")).toContainElement(sheet);
+    await waitFor(() => expect(onMenuOpenChange).toHaveBeenLastCalledWith(true));
+
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(onMenuOpenChange).toHaveBeenLastCalledWith(false);
+  });
+
   it("mirrors live volume and speed, exposes their values, and restores muted volume", async () => {
     const { video } = renderHarnessVideo({ volume: 0.4, playbackRate: 1 });
     const user = userEvent.setup();

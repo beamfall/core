@@ -1,0 +1,145 @@
+import { useEffect, useRef } from "react";
+import type { PlaybackMarker } from "@/lib/graphql/types";
+import { chapterSeekTarget } from "../lib/transport";
+import {
+  FRAME_SECONDS,
+  JUMP_SECONDS,
+  nextTrackId,
+  type ResolvedShortcut,
+  resolvePlayerShortcut,
+  stepSpeed,
+  subtitleToggleId,
+} from "./playerShortcuts";
+import type { MenuOption } from "./useLiveTracks";
+
+// The player's window keydown listener (CORE-1682). Keys resolve through the
+// shared shortcut table; input aimed at a control, field, menu or dialog stays
+// native. The latest handlers ride a ref so the listener subscribes once.
+export interface PlayerShortcutHandlers {
+  videoRef: React.RefObject<HTMLVideoElement | null>;
+  skipInterval: number;
+  speeds: readonly number[];
+  markers: PlaybackMarker[];
+  togglePlay: () => void;
+  toggleFullscreen: () => void;
+  toggleMute: () => void;
+  seekBy: (seconds: number) => void;
+  setVolume: (volume: number) => void;
+  subtitleOptions: MenuOption[];
+  audioOptions: MenuOption[];
+  selectSubtitle: (id: string) => void;
+  selectAudio: (id: string) => void;
+  onPreviousInQueue?: () => void;
+  onNextInQueue?: () => void;
+  onHelp: () => void;
+}
+
+const INTERACTIVE =
+  'button, a, input, select, textarea, menu, dialog, [role="menu"], [role="listbox"], [role="dialog"], [contenteditable]:not([contenteditable="false"])';
+
+function interactive(target: EventTarget | null) {
+  const element = target instanceof Element ? target : document.activeElement;
+  if (!(element instanceof HTMLElement)) return false;
+  if (element.isContentEditable) return true;
+  return Boolean(element.closest(INTERACTIVE));
+}
+
+export function usePlayerShortcuts(handlers: PlayerShortcutHandlers) {
+  const handlersRef = useRef(handlers);
+  handlersRef.current = handlers;
+  // The subtitle track C brings back; follows whatever track was last shown.
+  const lastSubtitleRef = useRef<string | null>(null);
+  const shown = handlers.subtitleOptions.find((option) => option.selected && option.id !== "off");
+  if (shown) lastSubtitleRef.current = shown.id;
+
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || interactive(event.target)) return;
+      const shortcut = resolvePlayerShortcut(event);
+      if (!shortcut) return;
+      event.preventDefault();
+      apply(shortcut, handlersRef.current, lastSubtitleRef);
+    };
+    window.addEventListener("keydown", keydown);
+    return () => window.removeEventListener("keydown", keydown);
+  }, []);
+}
+
+function apply(
+  shortcut: ResolvedShortcut,
+  h: PlayerShortcutHandlers,
+  lastSubtitleRef: React.RefObject<string | null>,
+) {
+  const video = h.videoRef.current;
+  const seekTo = (seconds: number | null) => {
+    if (!video || seconds === null || !Number.isFinite(seconds)) return;
+    const duration = Number.isFinite(video.duration) ? video.duration : Infinity;
+    video.currentTime = Math.max(0, Math.min(duration, seconds));
+  };
+  switch (shortcut.action) {
+    case "togglePlay":
+      return h.togglePlay();
+    case "jumpBack":
+      return h.seekBy(-JUMP_SECONDS);
+    case "jumpForward":
+      return h.seekBy(JUMP_SECONDS);
+    case "skipBack":
+      return h.seekBy(-h.skipInterval);
+    case "skipForward":
+      return h.seekBy(h.skipInterval);
+    case "volumeUp":
+      return h.setVolume((video?.volume ?? 0) + 0.05);
+    case "volumeDown":
+      return h.setVolume((video?.volume ?? 0) - 0.05);
+    case "toggleMute":
+      return h.toggleMute();
+    case "toggleFullscreen":
+      return h.toggleFullscreen();
+    case "frameBack":
+    case "frameForward":
+      if (video?.paused) h.seekBy(shortcut.action === "frameBack" ? -FRAME_SECONDS : FRAME_SECONDS);
+      return;
+    case "slower":
+    case "faster": {
+      if (!video) return;
+      const next = stepSpeed(h.speeds, video.playbackRate, shortcut.action === "faster" ? 1 : -1);
+      if (next !== null) video.playbackRate = next;
+      return;
+    }
+    case "toggleSubtitles": {
+      const id = subtitleToggleId(h.subtitleOptions, lastSubtitleRef.current);
+      if (id !== null) h.selectSubtitle(id);
+      return;
+    }
+    case "nextSubtitle": {
+      const id = nextTrackId(h.subtitleOptions);
+      if (id !== null) h.selectSubtitle(id);
+      return;
+    }
+    case "nextAudio": {
+      const id = nextTrackId(h.audioOptions);
+      if (id !== null) h.selectAudio(id);
+      return;
+    }
+    case "previousChapter":
+    case "nextChapter":
+      return seekTo(
+        chapterSeekTarget(
+          h.markers,
+          video?.currentTime ?? 0,
+          shortcut.action === "nextChapter" ? 1 : -1,
+        ),
+      );
+    case "previousItem":
+      return h.onPreviousInQueue?.();
+    case "nextItem":
+      return h.onNextInQueue?.();
+    case "seekPercent":
+      if (video && Number.isFinite(video.duration) && video.duration > 0) {
+        seekTo((video.duration * (shortcut.percent ?? 0)) / 100);
+      }
+      return;
+    case "help":
+      return h.onHelp();
+  }
+}
