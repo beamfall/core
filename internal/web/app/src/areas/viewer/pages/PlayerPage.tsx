@@ -53,7 +53,7 @@ export function PlayerPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { mediaId } = useParams();
-  const { revealed } = useSession();
+  const { revealed, session } = useSession();
   const identity = useViewerIdentity();
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -451,6 +451,7 @@ export function PlayerPage() {
               state={state}
               mediaTitle={navTitle}
               mediaID={mediaId || ""}
+              profileID={session?.profileID ?? ""}
               metadataAttribution={media?.metadataAttribution}
               stageRef={stageRef}
               skipInterval={Number(resolvedPrefs.skipInterval)}
