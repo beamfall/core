@@ -497,6 +497,9 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		artworkGrabber = nil
 	}
 	artworkService := artwork.NewService(st, artworkGrabber, cfg.DataDir)
+	// Plugin wirings declare which Entity kinds borrow a poster from their own
+	// Media when no provider supplied one; the artwork sweep applies them.
+	artworkService.SetEntityPosterRules(activeEntityPosterRules(executablePlugins, hooks.EntityPosterRules, logger))
 	jobRegistry := jobs.NewRegistry(st, "beamfall-server")
 	jobRegistry.SetLogger(logger)
 	// A completed scan re-arms the artwork sweep so new imports get posters
@@ -533,6 +536,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// Plugin-owned local metadata mappers are validated against each activated
 	// bundle and adapted into scan's shape-neutral hook, keyed by plugin ID.
 	metadataHydrators := newHydrationAdapters(executablePlugins, st, hooks.HydrationMappers)
+	splitAmbiguousHydrationScopes(ctx, st, metadataHydrators, hooks.HydrationMappers, logger)
 	scanHandler := scanHandlerWithWorkerGovernor(st, observingProber{inner: ffmpegRunner, observability: observabilityController}, ffmpegRunner, parsers, interactiveSidecarExts, autoIdentifier, localExtractors, metadataHydrators, resourceGovernor, artworkService)
 	// First-party EmbeddingProvider seam. The flag records
 	// operator intent and is read at process start. The bundled provider contains
@@ -769,6 +773,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	identifyService := identify.NewService(scrapeEngine, executablePlugins, st)
 	identifyService.SetArtwork(scrapeEngine, artworkService)
 	identifyService.SetArtworkCandidates(st)
+	identifyService.SetProvenance(st)
 	identifyService.SetFields(st)
 	identifyService.SetEntities(st)
 	identifyService.SetFingerprints(st)
@@ -934,6 +939,10 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 			logger.Info("encrypted libraries awaiting unlock", "sealed", len(sealed), "total_encrypted", len(encIDs))
 		}
 	}
+	// The hydration backfill check reads each Library's Media, so it runs after
+	// the boot unseal; a Library still sealed is checked after its runtime unseal.
+	backfillHydration := func(ctx context.Context) { queueHydrationBackfills(ctx, st, metadataHydrators, logger) }
+	backfillHydration(ctx)
 	// Device push-token registration: the persisting
 	// registrar replaces the old no-op seam. It is gated by the same default-off
 	// flag the seam used (config.PushRegistrationEnabled) and persists the token
@@ -1095,7 +1104,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		IntegrationLifecycle:         integrationController,
 		RemoteAccess:                 graphRemoteAccess,
 		LibEncrypt:                   libEncryptManager,
-		EncryptedLibraryDBLifecycle:  st,
+		EncryptedLibraryDBLifecycle:  hydrationBackfillOnUnseal{encryptedLibraryDBLifecycle: st, backfill: backfillHydration},
 		EncryptedGeneratedAssets:     assetService,
 		ExtensionPusher:              extensionPusher,
 		AccessRequestPusher:          accessRequestPusher,
