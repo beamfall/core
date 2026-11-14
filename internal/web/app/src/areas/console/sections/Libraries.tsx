@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
+import { DeleteLibraryButton } from "@/components/beamfall/LibraryDelete";
 import { RescanAllButton, RescanButton, RescanStatus } from "@/components/beamfall/LibraryRescan";
 import {
   EmptyState,
@@ -387,6 +388,9 @@ function LibraryCard({
           <ErrorLine message={scanError} />
         </details>
       </div>
+      <footer className="flex justify-end border-t border-white/[0.07] px-4 py-3">
+        <DeleteLibraryButton library={library} onDeleted={onChanged} />
+      </footer>
     </article>
   );
 }

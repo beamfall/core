@@ -1,5 +1,6 @@
 import { FolderPlus, LibraryBig } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { DeleteLibraryButton } from "@/components/beamfall/LibraryDelete";
 import { RescanAllButton, RescanButton, RescanStatus } from "@/components/beamfall/LibraryRescan";
 import {
   EmptyLine,
@@ -142,6 +143,7 @@ export function LibrariesPage() {
                   library={lib}
                   onTogglePreview={onTogglePreview}
                   onRootsSaved={onRootsSaved}
+                  onDeleted={() => void load()}
                   onError={setError}
                 />
               ))
@@ -190,11 +192,13 @@ function LibraryRow({
   library,
   onTogglePreview,
   onRootsSaved,
+  onDeleted,
   onError,
 }: {
   library: LibraryInfo;
   onTogglePreview: (lib: LibraryInfo, enabled: boolean) => Promise<void>;
   onRootsSaved: (libraryID: string, roots: string[]) => void;
+  onDeleted: () => void;
   onError: (message: string) => void;
 }) {
   const t = useT();
@@ -590,6 +594,9 @@ function LibraryRow({
           />
         </div>
       </details>
+      <footer className="mt-4 flex justify-end border-t border-white/[0.07] pt-3">
+        <DeleteLibraryButton library={library} onDeleted={onDeleted} />
+      </footer>
     </article>
   );
 }
