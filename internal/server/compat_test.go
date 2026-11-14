@@ -749,6 +749,20 @@ func TestCompatHandshakeRefusesUnverifiedBuildProvenance(t *testing.T) {
 		}
 	})
 
+	// CORE-1393: a session in the same enrollment classes with no exact build
+	// mapping used to be refused here. A native device credential now records
+	// its own verified mapping at handshake (as a device enrolled before the
+	// mapping existed must), and no other device gains a row.
+	t.Run("unmapped native device obtains its own mapping", func(t *testing.T) {
+		srv := compatTestServer(t)
+		response := compatHandshakeRecord(t, srv, compatTestContract(surface), authorizeRevealed)
+		if response.Decision != "compatible" || response.DecisionID == "" {
+			t.Fatalf("unmapped device handshake = %#v, want a compatible decision with an id", response)
+		}
+		assertDeviceBuilds(t, srv, "device-tv", map[store.DeviceSurface]string{store.DeviceSurface(surface): compatTestBuildID(surface)})
+		assertDeviceBuilds(t, srv, "device-mac", nil)
+	})
+
 	cases := []struct {
 		name      string
 		prepare   func(*Server, *capabilities.ClientContract)
@@ -773,12 +787,6 @@ func TestCompatHandshakeRefusesUnverifiedBuildProvenance(t *testing.T) {
 				policy.Builds.MinimumSequence[capabilities.Surface(surface)] = compatTestBuildSequence + 1
 				srv.SetCompatPolicy(policy, srv.buildSHA, 0)
 			},
-		},
-		{
-			name: "same enrollment classes without an exact build mapping",
-			prepare: func(_ *Server, _ *capabilities.ClientContract) {
-			},
-			authorize: authorizeRevealed,
 		},
 	}
 	for _, test := range cases {
