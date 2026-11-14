@@ -273,6 +273,9 @@ var originalScopedFields = []string{
 	"setlibraryaiindexing",
 	"skipdetectionenabled",    // ENR-7 (ADR-0048 Decision 3/6): per-Library skip-detection toggle (read)
 	"setskipdetectionenabled", // ENR-7 (ADR-0048 Decision 3/6): per-Library skip-detection toggle (write)
+	"preplayqueue",            // CORE-1701: items to play before a feature
+	"preplayclips",            // CORE-1701: the Owner's pre-play clip list (read)
+	"setpreplayclips",         // CORE-1701: the Owner's pre-play clip list (write)
 	"setlibrarybacking",
 	"setlibrarypreviewclips",
 	"setlibraryrestricted",

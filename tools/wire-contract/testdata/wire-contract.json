@@ -763,6 +763,16 @@
       "tier": "admin"
     },
     {
+      "field": "preplayclips",
+      "effect": "read",
+      "tier": "admin"
+    },
+    {
+      "field": "preplayqueue",
+      "effect": "read",
+      "tier": "session"
+    },
+    {
       "field": "profiles",
       "effect": "read",
       "tier": "session"
@@ -1184,6 +1194,11 @@
     },
     {
       "field": "setpluginupdatesource",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
+      "field": "setpreplayclips",
       "effect": "write",
       "tier": "admin"
     },
@@ -14313,6 +14328,121 @@
       ]
     },
     {
+      "field": "preplayclips",
+      "kind": "object",
+      "children": [
+        {
+          "name": "items",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "durationSeconds",
+                "kind": "scalar"
+              },
+              {
+                "name": "label",
+                "kind": "scalar"
+              },
+              {
+                "name": "mediaID",
+                "kind": "scalar"
+              },
+              {
+                "name": "role",
+                "kind": "scalar"
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "durationSeconds",
+              "kind": "scalar"
+            },
+            {
+              "name": "label",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            },
+            {
+              "name": "role",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "field": "preplayqueue",
+      "kind": "list",
+      "arguments": [
+        {
+          "name": "mediaID",
+          "kind": "string"
+        }
+      ],
+      "elem": {
+        "kind": "object",
+        "children": [
+          {
+            "name": "durationSeconds",
+            "kind": "scalar"
+          },
+          {
+            "name": "label",
+            "kind": "scalar"
+          },
+          {
+            "name": "mediaID",
+            "kind": "scalar"
+          },
+          {
+            "name": "role",
+            "kind": "scalar"
+          },
+          {
+            "name": "title",
+            "kind": "scalar"
+          }
+        ]
+      },
+      "children": [
+        {
+          "name": "durationSeconds",
+          "kind": "scalar"
+        },
+        {
+          "name": "label",
+          "kind": "scalar"
+        },
+        {
+          "name": "mediaID",
+          "kind": "scalar"
+        },
+        {
+          "name": "role",
+          "kind": "scalar"
+        },
+        {
+          "name": "title",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
       "field": "profiles",
       "kind": "object",
       "children": [
@@ -24020,6 +24150,64 @@
       ]
     },
     {
+      "field": "setpreplayclips",
+      "kind": "object",
+      "children": [
+        {
+          "name": "items",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "durationSeconds",
+                "kind": "scalar"
+              },
+              {
+                "name": "label",
+                "kind": "scalar"
+              },
+              {
+                "name": "mediaID",
+                "kind": "scalar"
+              },
+              {
+                "name": "role",
+                "kind": "scalar"
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "durationSeconds",
+              "kind": "scalar"
+            },
+            {
+              "name": "label",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            },
+            {
+              "name": "role",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "field": "setprofilelibraries",
       "kind": "object",
       "children": [
@@ -29108,6 +29296,10 @@
         "effect": "write"
       },
       {
+        "field": "preplayclips",
+        "effect": "read"
+      },
+      {
         "field": "provisionencryptedlibrary",
         "effect": "write"
       },
@@ -29257,6 +29449,10 @@
       },
       {
         "field": "setpluginupdatesource",
+        "effect": "write"
+      },
+      {
+        "field": "setpreplayclips",
         "effect": "write"
       },
       {

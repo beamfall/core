@@ -1914,6 +1914,26 @@
       ]
     },
     {
+      "field": "preplayclips",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "items"
+      ]
+    },
+    {
+      "field": "preplayqueue",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "durationSeconds",
+        "label",
+        "mediaID",
+        "role",
+        "title"
+      ]
+    },
+    {
       "field": "profiles",
       "effect": "read",
       "tier": "session",
@@ -3023,6 +3043,14 @@
         "state",
         "updateSource",
         "version"
+      ]
+    },
+    {
+      "field": "setpreplayclips",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "items"
       ]
     },
     {
