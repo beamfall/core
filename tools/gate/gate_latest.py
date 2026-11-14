@@ -215,9 +215,10 @@ def take_machine_slot(
 
     One full gate runs on a machine at a time across every repository
     (CORE-1470). A preflight never queues; it only says who holds the slot.
-    Neither does a gate whose ancestor already took repository capacity
-    without the slot: waiting for the slot while holding capacity would
-    deadlock with a gate that holds the slot and waits for that capacity.
+    Neither does a gate whose ancestor already took a repository's capacity
+    (this one's or another's) without the slot: waiting for the slot while
+    holding capacity would deadlock with a gate that holds the slot and waits
+    for that capacity.
     Returns (False, None) when the run was cancelled or superseded while
     queued, otherwise (True, slot), where slot is None unless this run now
     holds the slot itself. The slot is advisory plumbing around the gate, not
@@ -284,6 +285,22 @@ def take_machine_slot(
             flush=True,
         )
         return True, None
+
+
+def capacity_held_above() -> bool:
+    """Whether a process above this one already holds a repository capacity lock.
+
+    True for any open FD named in CAPACITY_LOCK_FD, this repository's lock or
+    another's: either way the gate must not then wait for the machine slot.
+    """
+    raw_fd = os.environ.get(CAPACITY_LOCK_FD)
+    if raw_fd is None or not raw_fd.isdecimal():
+        return False
+    try:
+        os.fstat(int(raw_fd))
+    except OSError:
+        return False
+    return True
 
 
 def inherited_capacity_lock(lock_path: Path) -> int | None:
@@ -456,7 +473,7 @@ def supervise(command: list[str]) -> int:
             capacity_path = common_dir / "beamfall-gate.capacity.lock"
             capacity_label = f"gate capacity ({capacity_path})"
             capacity_fd = inherited_capacity_lock(capacity_path)
-        capacity_inherited = capacity_fd is not None
+        capacity_inherited = not preflight and capacity_held_above()
         if capacity_fd is None:
             capacity_fd = os.open(
                 capacity_path,

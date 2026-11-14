@@ -307,9 +307,10 @@ The slot follows the wrapping command's process. If that process is killed outri
 under it keeps running, the slot frees before that gate ends; stop the gate too.
 
 The slot always comes before repository capacity. `script/run-with-evidence.sh -- make gate` takes
-the slot first and capacity second. A gate that starts under a process which already holds capacity
-but not the slot does not queue: it says so and runs, because waiting there would deadlock with a
-gate that holds the slot and waits for that capacity.
+the slot first and capacity second. A gate that starts under a process which already holds a
+capacity lock (this repository's or another's) but not the slot does not queue: it says so and
+runs, because waiting there would deadlock with a gate that holds the slot and waits for that
+capacity. The evidence wrapper follows the same rule when its caller brought a capacity lock.
 
 Two limits are known. Killing the gate coordinator outright (SIGKILL) frees the slot at once, while
 its supervisor still takes a few seconds to stop the worker tree, so a gate in another repository

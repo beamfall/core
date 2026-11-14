@@ -111,8 +111,9 @@ coordinator says so and runs.
 ### Requirement: The slot is taken before repository capacity
 
 No gate SHALL wait for the machine slot while it holds repository capacity.
-`script/run-with-evidence.sh` SHALL take the slot before capacity for `make gate`. A coordinator
-that inherited capacity from a process that does not hold the slot SHALL say so and run without
+`script/run-with-evidence.sh` SHALL take the slot before capacity for `make gate`, and SHALL NOT
+queue for the slot when its caller already holds a capacity lock. A coordinator started under a
+process that holds any repository's capacity lock but not the slot SHALL say so and run without
 waiting for the slot.
 
 #### Scenario: Evidence-wrapped gate
@@ -125,3 +126,15 @@ waiting for the slot.
 - **WHEN** a full gate starts under a process that holds repository capacity but not the slot,
   while another gate holds the slot
 - **THEN** the gate runs without waiting and prints that it did not take the slot
+
+#### Scenario: Another repository's capacity
+
+- **WHEN** a full gate starts under a process that holds a different repository's capacity lock
+  but not the slot, while another gate holds the slot
+- **THEN** the gate runs without waiting and prints that it did not take the slot
+
+#### Scenario: Evidence wrapper under capacity
+
+- **WHEN** `script/run-with-evidence.sh -- make gate` starts under a process that already holds
+  repository capacity, while another gate holds the slot
+- **THEN** the wrapper does not join the slot queue and the gate runs

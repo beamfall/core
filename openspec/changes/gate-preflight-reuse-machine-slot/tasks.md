@@ -24,6 +24,8 @@
 - [x] 2.5 Review fixes: the slot is taken before repository capacity (`run-with-evidence.sh`, and a
       coordinator that inherited capacity does not wait), and process start times are read in one
       time zone; tests for both
+- [x] 2.6 Second review round: a capacity lock held above the gate counts whichever repository
+      owns it, and the evidence wrapper does not queue for the slot under one; tests for both
 
 ## 3. Verify and close
 

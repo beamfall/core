@@ -486,6 +486,29 @@ class CoordinatorSlotTest(SlotCase):
         self.release("other").touch()
         self.assertEqual(self.finish(holder)[0], 0)
 
+    def test_gate_under_another_repositorys_capacity_does_not_wait_for_the_slot(self) -> None:
+        # The capacity in hand need not be this repository's: a wrapper that
+        # holds another repository's lock and starts this gate must not be
+        # left waiting behind a gate that needs that lock.
+        elsewhere = self.directory / "elsewhere"
+        elsewhere.mkdir()
+        subprocess.run(["git", "init", "-q", "-b", "main", str(elsewhere)], check=True)
+        holder = self.slot(*self.holding("other"), cwd=self.directory)
+        self.wait_started("other")
+        runner = self.repository / "tools/gate/gate_latest.py"
+        self.release("gate").touch()
+        gate = self.start(
+            [sys.executable, str(CAPACITY), "--", sys.executable, str(runner), "--", *self.holding("gate")],
+            elsewhere,
+        )
+        status, errors = self.finish(gate)
+        self.assertEqual(status, 0, errors)
+        self.assertIn("running without waiting for the slot", errors)
+        self.assertEqual([entry["pid"] for entry in self.entries()], [holder.pid])
+        self.assertEqual(self.seen(), ["other start", "gate start", "gate end"])
+        self.release("other").touch()
+        self.assertEqual(self.finish(holder)[0], 0)
+
     def test_unusable_store_runs_the_gate(self) -> None:
         blocker = self.directory / "blocker"
         blocker.write_text("", encoding="utf-8")
