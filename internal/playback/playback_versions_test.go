@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/store"
@@ -434,5 +435,105 @@ func TestAlternateWithUnknownHeightTranscodes(t *testing.T) {
 	}
 	if resp := info("4K", heightUncapped(main10_1080p)); resp.Decision != "direct-play" {
 		t.Fatalf("4K Version to a client without a height ceiling = %s (%s), want direct-play", resp.Decision, resp.Reason)
+	}
+}
+
+// TestMissingFirstVersionKeepsAlternatesGuarded: the Media row keeps the
+// 1080p facts of its first Version after that file goes missing, so the live
+// 4K Versions must not be judged by them. Each stays an alternate of unknown
+// height, and a 1080p-capped client gets a transcode, with one live Version
+// left or two.
+func TestMissingFirstVersionKeepsAlternatesGuarded(t *testing.T) {
+	for _, live := range []int{1, 2} {
+		service, st, scope := capabilityTestService(t)
+		hevc := []store.MediaFileStream{
+			{Index: 0, Type: "video", Codec: "hevc", Profile: "Main 10"},
+			audioStream(1, "eac3", 6),
+		}
+		anchorPath := filepath.Join(t.TempDir(), "Coastline.mkv")
+		if err := os.WriteFile(anchorPath, []byte("beamfall bytes"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		anchor, _, err := st.ImportMediaFile(context.Background(), store.ImportMediaFile{
+			LibraryID: "library-local", Path: anchorPath, Title: "Coastline",
+			Container: "mkv", Codec: "hevc", Class: store.MediaClassVideo,
+			ContentFingerprint: "fp-missing-1080", DurationSecondsHint: 120,
+			VideoWidthHint: 1920, VideoHeightHint: 1080, Streams: hevc,
+		})
+		if err != nil {
+			t.Fatalf("ImportMediaFile: %v", err)
+		}
+		mediaID := anchor.ID
+		addVersionFile(t, st, mediaID, "Coastline - 4K.mkv", "fp-missing-4k", "4K", 0, hevc)
+		if live == 2 {
+			addVersionFile(t, st, mediaID, "Coastline - 4K HDR.mkv", "fp-missing-4k-hdr", "4K HDR", 0, hevc)
+		}
+		if err := st.MarkMissingMediaFilesNotSeenSince(context.Background(), "library-local", anchorPath, time.Now().Add(time.Hour)); err != nil {
+			t.Fatalf("MarkMissingMediaFilesNotSeenSince: %v", err)
+		}
+		for _, selected := range []string{"", versionID(mediaID, "4K")} {
+			resp, err := service.Info(context.Background(), scope, InfoRequest{
+				MediaID: string(mediaID), CapabilityProfile: main10_1080p, SelectedVersion: selected,
+			})
+			if err != nil {
+				t.Fatalf("live=%d Info(%q): %v", live, selected, err)
+			}
+			if resp.Decision != "transcode" {
+				t.Fatalf("live=%d selected=%q: 4K Version beside a missing 1080p first Version = %s (%s), want transcode", live, selected, resp.Decision, resp.Reason)
+			}
+		}
+	}
+}
+
+// TestUnprobedFirstVersionIsGuarded: a 4K Version that joins without a probe
+// and sorts first takes over the row with an unknown frame size, not the
+// 1080p file's, so a 1080p-capped client gets a transcode of it.
+func TestUnprobedFirstVersionIsGuarded(t *testing.T) {
+	service, st, scope := capabilityTestService(t)
+	hevc := []store.MediaFileStream{
+		{Index: 0, Type: "video", Codec: "hevc", Profile: "Main 10"},
+		audioStream(1, "eac3", 6),
+	}
+	dir := t.TempDir()
+	extendedPath := filepath.Join(dir, "Night Harbor - Extended.mkv")
+	uhdPath := filepath.Join(dir, "Night Harbor - 4K.mkv")
+	for _, path := range []string{extendedPath, uhdPath} {
+		if err := os.WriteFile(path, []byte("beamfall bytes"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	anchor, anchorFile, err := st.ImportMediaFile(context.Background(), store.ImportMediaFile{
+		LibraryID: "library-local", Path: extendedPath, Title: "Night Harbor",
+		Container: "mkv", Codec: "hevc", Class: store.MediaClassVideo,
+		ContentFingerprint: "fp-unprobed-1080", DurationSecondsHint: 120,
+		VideoWidthHint: 1920, VideoHeightHint: 1080, Streams: hevc,
+	})
+	if err != nil {
+		t.Fatalf("ImportMediaFile: %v", err)
+	}
+	if _, err := st.ImportMediaFileVersion(context.Background(), store.MediaVersionImport{
+		MediaID: anchor.ID,
+		File: store.ImportMediaFile{
+			LibraryID: "library-local", Path: uhdPath, Title: "Night Harbor",
+			Container: "mkv", Codec: "hevc", Class: store.MediaClassVideo,
+			ContentFingerprint: "fp-unprobed-4k", Streams: hevc,
+		},
+		Label: "4K", AnchorFingerprint: anchorFile.ContentFingerprint, AnchorLabel: "Extended",
+	}); err != nil {
+		t.Fatalf("ImportMediaFileVersion: %v", err)
+	}
+	resp, err := service.Info(context.Background(), scope, InfoRequest{
+		MediaID: string(anchor.ID), CapabilityProfile: main10_1080p, SelectedVersion: versionID(anchor.ID, "4K"),
+	})
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	if resp.Decision != "transcode" {
+		t.Fatalf("unprobed 4K first Version to a 1080p-capped client = %s (%s), want transcode", resp.Decision, resp.Reason)
+	}
+	if resp, err := service.Info(context.Background(), scope, InfoRequest{
+		MediaID: string(anchor.ID), CapabilityProfile: main10_1080p, SelectedVersion: versionID(anchor.ID, "Extended"),
+	}); err != nil || resp.Decision == "direct-play" {
+		t.Fatalf("Extended Version (row no longer describes it) = %s, %v; want it held off direct play", resp.Decision, err)
 	}
 }

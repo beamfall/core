@@ -74,8 +74,8 @@ func TestDirectServesNegotiatedVersionFile(t *testing.T) {
 	resp, err := playback.NewService(st, tokens, clock).Info(ctx, scope, playback.InfoRequest{
 		MediaID: string(media.ID),
 		CapabilityProfile: playback.CapabilityProfile{
-			Client:      "beamfall-test",
-			Containers:  []string{"mkv"},
+			Client:     "beamfall-test",
+			Containers: []string{"mkv"},
 			// No height ceiling: a non-first Version has no stored frame height, and
 			// under a ceiling playback would transcode it instead of serving its file.
 			VideoCodecs: []playback.VideoCodecCap{{Codec: "hevc", Profiles: []string{"Main 10"}}},

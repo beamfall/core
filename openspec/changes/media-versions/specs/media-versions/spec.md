@@ -71,17 +71,34 @@ from its path, and its own video codec, from its stream inventory, not by the Me
 - **WHEN** an MKV-only client selects a Version stored as MP4
 - **THEN** that Version is not offered as direct play
 
+### Requirement: The Media row describes its first Version
+
+Frame height is stored once per Media, for its first Version in label order, counting a file marked
+missing. A re-import of another Version SHALL NOT replace those facts, and a first Version that joins
+without a probe SHALL leave the frame size unknown rather than keep the previous file's.
+
+#### Scenario: A rescan re-imports a later Version
+
+- **WHEN** a rescan re-imports the `Extended` Version of a Media whose first Version is unlabelled
+- **THEN** the row keeps the unlabelled file's frame size, codec and duration
+
 ### Requirement: An alternate Version of unknown height is transcoded
 
-Frame height is stored once per Media, for its first Version in label order. When a client caps the
-height for a Version's video codec, playback SHALL NOT direct play or direct stream any other
-Version, whose height it cannot know, and SHALL transcode it instead.
+When a client caps the height for a Version's video codec, playback SHALL NOT direct play or direct
+stream any Version of unknown height, including every Version beside a missing first Version, and
+SHALL transcode it instead.
 
 #### Scenario: 4K alternate on a 1080p-capped client
 
 - **WHEN** a Media holds a 1080p first Version and a `4K` HEVC Version, and a client capped at
   1080p for HEVC selects the `4K` Version
 - **THEN** the decision is a transcode, and the first Version still direct-plays
+
+#### Scenario: First Version's file goes missing
+
+- **WHEN** the 1080p first Version's file is marked missing and the same client plays the `4K`
+  Version
+- **THEN** the decision is a transcode, not a direct play judged by the missing file's height
 
 ### Requirement: Byte routes serve the chosen Version
 

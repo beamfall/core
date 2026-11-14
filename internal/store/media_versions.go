@@ -191,31 +191,46 @@ func importMediaFileVersionSQL(ctx context.Context, plane catalogPlane, req Medi
 
 // refreshFirstVersionFactsTx copies the attached file's probe facts onto the
 // Media row when that file now holds the Media's first Version (label order,
-// part 0). Frame size and duration are stored only on the row, so playback
-// judges the first Version by the row and treats every other Version's frame
-// size as unknown; this keeps the row describing that first Version.
+// part 0, counting missing files). Frame size and duration are stored only on
+// the row, so playback judges the first Version by the row and treats every
+// other Version's frame size as unknown; this keeps the row describing that
+// first Version. Frame size always follows the new file, zero when it was not
+// probed, so the row never claims the previous file's height for it; an
+// unprobed duration keeps the title's known one.
 func refreshFirstVersionFactsTx(ctx context.Context, tx *sql.Tx, mediaID MediaID, imported ImportMediaFile) error {
-	var first string
-	err := tx.QueryRowContext(ctx, `
-		SELECT content_fingerprint FROM media_file
-		WHERE media_id = ? AND part_ordinal = 0 AND missing_at_ms IS NULL
-		ORDER BY version_label LIMIT 1
-	`, mediaID).Scan(&first)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil
-	}
+	first, err := firstVersionFingerprintSQL(ctx, tx, mediaID)
 	if err != nil || first != imported.ContentFingerprint {
 		return err
 	}
 	_, err = tx.ExecContext(ctx, `
 		UPDATE media SET
-		  duration_seconds = ?, container = ?, codec = ?,
-		  video_width = CASE WHEN ? > 0 THEN ? ELSE video_width END,
-		  video_height = CASE WHEN ? > 0 THEN ? ELSE video_height END
+		  container = ?, codec = ?,
+		  duration_seconds = CASE WHEN ? > 0 THEN ? ELSE duration_seconds END,
+		  video_width = ?, video_height = ?
 		WHERE id = ?
-	`, max(0, imported.DurationSecondsHint), imported.Container, imported.Codec,
-		imported.VideoWidthHint, imported.VideoWidthHint, imported.VideoHeightHint, imported.VideoHeightHint, mediaID)
+	`, imported.Container, imported.Codec, imported.DurationSecondsHint, imported.DurationSecondsHint,
+		max(imported.VideoWidthHint, 0), max(imported.VideoHeightHint, 0), mediaID)
 	return err
+}
+
+// firstVersionFingerprintSQL returns the content fingerprint of the Media's
+// first Version in label order (part 0), counting files marked missing, or ""
+// when it has none. The Media row's probe facts describe this file: a missing
+// first file keeps them until it returns or a Version sorting before it joins.
+// A live file wins a tie with a missing one at the same label.
+func firstVersionFingerprintSQL(ctx context.Context, q interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, mediaID MediaID) (string, error) {
+	var first string
+	err := q.QueryRowContext(ctx, `
+		SELECT content_fingerprint FROM media_file
+		WHERE media_id = ? AND part_ordinal = 0
+		ORDER BY version_label, missing_at_ms IS NOT NULL LIMIT 1
+	`, mediaID).Scan(&first)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return first, err
 }
 
 // insertMediaFileVersionTx inserts new bytes at file's (Version, part 0) slot.

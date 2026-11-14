@@ -56,7 +56,8 @@ func versionInfos(mediaID store.MediaID, versions [][]store.MediaFile, streams [
 // several Versions each one is judged by what is known per file instead: its
 // container from its own path, the way a scan names it, and its video codec
 // from its own stream inventory. Frame size is not stored per file, so only
-// the first Version keeps the row's; any other Version's frame size is unknown
+// the file the row describes (first is true; see store.MediaFactsFingerprint)
+// keeps the row's; any other file's frame size is unknown
 // (zero), which keeps the ladder from advertising rungs the file may not reach
 // and lets unknownHeightBarred hold it off passthrough. Duration stays the row's.
 func versionFacts(media store.Media, file store.MediaFile, streams []store.MediaFileStream, first bool) store.Media {
@@ -74,15 +75,17 @@ func versionFacts(media store.Media, file store.MediaFile, streams []store.Media
 	return media
 }
 
-// unknownHeightBarred reports whether a Version other than the first must not
-// pass its video through (direct play or direct stream) because its frame
-// height is unknown while the client caps height for its codec. A legacy
-// single-file Media with no probed height still passes, as before; a non-first
-// Version's height is never stored, so a 4K alternate would otherwise slip past
-// a 1080p ceiling. With no ceiling for the codec the height cannot refuse, so
-// nothing is barred.
-func unknownHeightBarred(media store.Media, profile CapabilityProfile, alternate bool) bool {
-	if !alternate || media.VideoHeight > 0 || media.Class == store.MediaClassAudio || len(profile.VideoCodecs) == 0 {
+// unknownHeightBarred reports whether a file must not pass its video through
+// (direct play or direct stream) because its frame height is unknown while the
+// client caps height for its codec. guarded is true for a file the Media row
+// does not describe, whose height is never stored, and for any Version of a
+// multi-Version Media, whose first Version may have joined without a probe;
+// a 4K Version would otherwise slip past a 1080p ceiling, including while the
+// first Version's file is missing. A legacy single-file Media with no probed
+// height still passes, as before. With no ceiling for the codec the height
+// cannot refuse, so nothing is barred.
+func unknownHeightBarred(media store.Media, profile CapabilityProfile, guarded bool) bool {
+	if !guarded || media.VideoHeight > 0 || media.Class == store.MediaClassAudio || len(profile.VideoCodecs) == 0 {
 		return false
 	}
 	codecCap, ok := videoCodecCap(profile.VideoCodecs, media.Codec)

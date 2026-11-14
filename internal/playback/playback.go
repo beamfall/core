@@ -870,18 +870,24 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	if media.Class == store.MediaClassImage {
 		return s.imageDecision(ctx, scope, media, files, suffix)
 	}
-	file, streams, parts, versions, err := s.negotiateVersion(ctx, media, files, profile, selectedSubtitleIndex, selectedVersion, ov)
+	factsFingerprint, err := s.store.MediaFactsFingerprint(ctx, media.ID)
 	if err != nil {
 		return decision{}, err
 	}
-	// alternate marks a negotiated Version other than the first; passthrough
-	// below is barred for it while its frame height is unknown.
-	alternate := len(versions) > 0 && !versions[0].Selected
-	if len(versions) > 0 {
+	file, streams, parts, versions, err := s.negotiateVersion(ctx, media, files, profile, selectedSubtitleIndex, selectedVersion, factsFingerprint, ov)
+	if err != nil {
+		return decision{}, err
+	}
+	// alternate marks a negotiated file other than the one the Media row's
+	// frame size describes (the first Version, which may be missing). Under a
+	// height ceiling, passthrough below is barred for it, or for any Version
+	// of a multi-Version Media, while its frame height is unknown.
+	alternate := file.ContentFingerprint != factsFingerprint
+	if len(versions) > 0 || alternate {
 		// Every rung below judges the negotiated Version by its own file facts.
 		media = versionFacts(media, file, streams, !alternate)
 	}
-	barred := unknownHeightBarred(media, profile, alternate)
+	barred := unknownHeightBarred(media, profile, alternate || len(versions) > 0)
 	// One deferred stamp covers every decision return below, like
 	// audioLanguage: the picker lists the same Versions whatever the verdict,
 	// so a viewer whose pick cannot play can still pick another.
@@ -1257,7 +1263,7 @@ func (s *Service) imageDecision(ctx context.Context, scope auth.Scope, media sto
 //
 // A single-file Media has one Version with one Part, so this returns that file
 // unchanged and no Version list: existing behaviour is preserved.
-func (s *Service) negotiateVersion(ctx context.Context, media store.Media, files []store.MediaFile, profile CapabilityProfile, selectedSubtitleIndex *int, selectedVersion string, ov quirkOverlay) (store.MediaFile, []store.MediaFileStream, []PartInfo, []VersionInfo, error) {
+func (s *Service) negotiateVersion(ctx context.Context, media store.Media, files []store.MediaFile, profile CapabilityProfile, selectedSubtitleIndex *int, selectedVersion, factsFingerprint string, ov quirkOverlay) (store.MediaFile, []store.MediaFileStream, []PartInfo, []VersionInfo, error) {
 	versions := groupVersions(files)
 	streams := make([][]store.MediaFileStream, len(versions))
 	for i, version := range versions {
@@ -1280,11 +1286,12 @@ func (s *Service) negotiateVersion(ctx context.Context, media store.Media, files
 		}
 	}
 	eligible := func(i int) bool {
-		if len(versions) < 2 {
+		trusted := versions[i][0].ContentFingerprint == factsFingerprint
+		if len(versions) < 2 && trusted {
 			return directPlayEligible(media, versions[i][0], streams[i], profile, selectedSubtitleIndex, ov)
 		}
-		facts := versionFacts(media, versions[i][0], streams[i], i == 0)
-		return !unknownHeightBarred(facts, profile, i != 0) &&
+		facts := versionFacts(media, versions[i][0], streams[i], trusted)
+		return !unknownHeightBarred(facts, profile, true) &&
 			directPlayEligible(facts, versions[i][0], streams[i], profile, selectedSubtitleIndex, ov)
 	}
 	if !selected && !eligible(0) {

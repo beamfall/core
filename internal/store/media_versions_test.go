@@ -204,6 +204,95 @@ func TestImportMediaFileVersionUnlabelledTakesDefaultSlot(t *testing.T) {
 	}
 }
 
+// TestMediaRowKeepsFirstVersionFacts: the row holds the first Version's probe
+// facts. A plain re-import of a later Version, as a rescan's seeded anchor
+// does, leaves them alone; a first Version attached without a probe keeps
+// the known duration; and the first Version still names the row's facts
+// after its file goes missing.
+func TestMediaRowKeepsFirstVersionFacts(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	filter := LibraryFilter{AllowedIDs: []LibraryID{"library-local"}}
+	root := t.TempDir()
+	extendedPath := filepath.Join(root, "Coastline (1998) - Extended.mkv")
+	extended := versionImport("library-local", extendedPath, "Coastline")
+	extended.VideoWidthHint, extended.VideoHeightHint, extended.DurationSecondsHint = 3840, 2160, 140
+	media, anchor, err := st.ImportMediaFile(ctx, extended)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plainPath := filepath.Join(root, "Coastline (1998).mkv")
+	plain := versionImport("library-local", plainPath, "Coastline")
+	plain.Codec, plain.VideoWidthHint, plain.VideoHeightHint, plain.DurationSecondsHint = "h264", 1920, 1080, 120
+	if _, err := st.ImportMediaFileVersion(ctx, MediaVersionImport{
+		MediaID: media.ID, File: plain, AnchorFingerprint: anchor.ContentFingerprint, AnchorLabel: "Extended",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	wantRow := func(when string) {
+		t.Helper()
+		row, err := st.Media(ctx, media.ID, filter)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if row.Codec != "h264" || row.VideoWidth != 1920 || row.VideoHeight != 1080 || row.DurationSeconds != 120 {
+			t.Fatalf("%s: row facts = %s %dx%d %vs, want the first Version's h264 1920x1080 120s", when, row.Codec, row.VideoWidth, row.VideoHeight, row.DurationSeconds)
+		}
+	}
+	reimported, _, err := st.ImportMediaFile(ctx, extended)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reimported.ID != media.ID {
+		t.Fatalf("re-import landed on %s, want %s", reimported.ID, media.ID)
+	}
+	if reimported.Codec != "h264" || reimported.VideoHeight != 1080 || reimported.DurationSeconds != 120 {
+		t.Fatalf("re-import returned %s %dp %vs, want the stored first Version's facts", reimported.Codec, reimported.VideoHeight, reimported.DurationSeconds)
+	}
+	wantRow("after a plain re-import of the Extended Version")
+
+	if _, err := st.catalogW.ExecContext(ctx, `UPDATE media_file SET missing_at_ms = 1 WHERE content_fingerprint = ?`, plain.ContentFingerprint); err != nil {
+		t.Fatal(err)
+	}
+	if fp, err := st.MediaFactsFingerprint(ctx, media.ID); err != nil || fp != plain.ContentFingerprint {
+		t.Fatalf("MediaFactsFingerprint with the first file missing = %q, %v; want the missing first file %q", fp, err, plain.ContentFingerprint)
+	}
+	wantRow("with the first Version's file missing")
+}
+
+// TestImportMediaFileVersionWithoutProbeKeepsDuration: a first Version
+// attached with no probe facts takes the slot's container and codec but does
+// not erase the duration already known for the title.
+func TestImportMediaFileVersionWithoutProbeKeepsDuration(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	extendedPath := filepath.Join(root, "Night Harbor (2001) - Extended.mkv")
+	extended := versionImport("library-local", extendedPath, "Night Harbor")
+	extended.VideoWidthHint, extended.VideoHeightHint, extended.DurationSecondsHint = 1920, 1080, 140
+	media, anchor, err := st.ImportMediaFile(ctx, extended)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uhdPath := filepath.Join(root, "Night Harbor (2001) - 4K.mkv")
+	uhd := versionImport("library-local", uhdPath, "Night Harbor")
+	if _, err := st.ImportMediaFileVersion(ctx, MediaVersionImport{
+		MediaID: media.ID, File: uhd, Label: "4K", AnchorFingerprint: anchor.ContentFingerprint, AnchorLabel: "Extended",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if fp, err := st.MediaFactsFingerprint(ctx, media.ID); err != nil || fp != uhd.ContentFingerprint {
+		t.Fatalf("MediaFactsFingerprint = %q, %v; want the 4K file, first in label order", fp, err)
+	}
+	row, err := st.Media(ctx, media.ID, LibraryFilter{AllowedIDs: []LibraryID{"library-local"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row.DurationSeconds != 140 || row.VideoWidth != 0 || row.VideoHeight != 0 {
+		t.Fatalf("row after a probe-less first Version = %dx%d %vs, want unknown frame size and the known 140s", row.VideoWidth, row.VideoHeight, row.DurationSeconds)
+	}
+}
+
 // TestImportMediaFileVersionRefusesAndRollsBack: a taken slot, bytes on
 // another Media, a Media in another Library or a bad label all refuse, and a
 // refusal undoes the anchor relabel.
