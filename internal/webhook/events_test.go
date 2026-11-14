@@ -175,7 +175,7 @@ func TestMediaAddedCarriesTitleTypeAndArtwork(t *testing.T) {
 	if len(reqs) != 1 {
 		t.Fatalf("want one delivery (seq 3 predates the seeded tail), got %d", len(reqs))
 	}
-	if reqs[0].eventID != "5" {
+	if reqs[0].eventID != "media.added-5" {
 		t.Fatalf("event id = %q", reqs[0].eventID)
 	}
 	p := decodeDerived(t, reqs[0].body)
@@ -205,6 +205,8 @@ func TestPlaybackPrimesThenDiffs(t *testing.T) {
 	f := newDeriveFixture(t, []string{KindPlaybackStarted, KindPlaybackStopped})
 	a := store.ActiveSession{SessionID: "s1", MediaID: "m1", Title: "First", ProfileName: "Ada", DeviceName: "Den TV"}
 	b := store.ActiveSession{SessionID: "s2", MediaID: "m2", Title: "Second"}
+	f.catalog.media["m1"] = store.Media{ID: "m1", Title: "First"}
+	f.catalog.media["m2"] = store.Media{ID: "m2", Title: "Second"}
 	f.catalog.sessions = []store.ActiveSession{a}
 	f.tick(t, 0)
 	if n := len(f.doer.all()); n != 0 {
@@ -239,6 +241,80 @@ func TestPlaybackSkipsSealedSessions(t *testing.T) {
 	f.tick(t, 0)
 	if n := len(f.doer.all()); n != 0 {
 		t.Fatalf("a sealed session must not be reported, got %d", n)
+	}
+}
+
+// A session that drops out of the live view because its Library was sealed
+// or restricted after playback started is not reported as stopped: the stop
+// would replay the cached title, Profile and device.
+func TestPlaybackStopSkipsSessionsHiddenSinceStart(t *testing.T) {
+	for name, hide := range map[string]func(f *deriveFixture){
+		"sealed, row still live": func(f *deriveFixture) { f.sealed["lib"] = true },
+		"sealed, row filtered": func(f *deriveFixture) {
+			f.sealed["lib"] = true
+			f.catalog.sessions = nil
+		},
+		"restricted": func(f *deriveFixture) {
+			delete(f.catalog.media, "m1") // the filtered read no longer returns it
+			f.catalog.sessions = nil
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newDeriveFixture(t, []string{KindPlaybackStopped})
+			f.catalog.media["m1"] = store.Media{ID: "m1", LibraryID: "lib", Title: "Private"}
+			f.catalog.sessions = []store.ActiveSession{{SessionID: "s1", MediaID: "m1", LibraryID: "lib", Title: "Private", ProfileName: "Ada"}}
+			f.tick(t, 0) // prime with the visible session
+			hide(f)
+			f.tick(t, 0)
+			if n := len(f.doer.all()); n != 0 {
+				t.Fatalf("a session hidden since it started must not be reported, got %d deliveries", n)
+			}
+		})
+	}
+}
+
+// cancelOnceDoer cancels the tick's context on its first request and fails
+// it, as a shutdown during delivery would.
+type cancelOnceDoer struct {
+	next   Doer
+	cancel context.CancelFunc
+	done   bool
+}
+
+func (c *cancelOnceDoer) Do(req *http.Request) (*http.Response, error) {
+	if !c.done {
+		c.done = true
+		c.cancel()
+		return nil, context.Canceled
+	}
+	return c.next.Do(req)
+}
+
+// A shutdown during an activity delivery leaves the cursor before that row,
+// so the next tick delivers it instead of skipping it.
+func TestActivityCursorAdvancesOnlyAfterDelivery(t *testing.T) {
+	f := newDeriveFixture(t, []string{KindDeviceRevoked})
+	f.catalog.devices["d9"] = store.Device{ID: "d9", Name: "Old Phone"}
+	f.tick(t, 0) // seed the tail at 0
+	f.catalog.activity = []store.ActivityEntry{
+		{ID: 1, Action: store.ActivityAdminLogin}, // not subscribed: passed over
+		{ID: 2, Action: store.ActivityDeviceRevoke, TargetType: "device", TargetID: "d9"},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	f.em.clients["ep"] = endpointClient{doer: &cancelOnceDoer{next: f.doer, cancel: cancel}, url: "https://hooks.example/in"}
+	if _, err := f.em.tick(ctx, 0); err == nil {
+		t.Fatal("an interrupted tick must report the interruption")
+	}
+	if got := f.state.ActivityCursor(); got != 1 {
+		t.Fatalf("activity cursor = %d after an interrupted delivery, want 1", got)
+	}
+	f.tick(t, 0)
+	reqs := f.doer.all()
+	if len(reqs) != 1 || reqs[0].eventID != "activity-2" {
+		t.Fatalf("the interrupted row must be delivered on the next tick, got %d requests", len(reqs))
+	}
+	if got := f.state.ActivityCursor(); got != 2 {
+		t.Fatalf("activity cursor = %d, want 2", got)
 	}
 }
 
@@ -341,5 +417,37 @@ func TestSetEndpointsRejectsInvalidSetAtomically(t *testing.T) {
 	}
 	if after := f.em.endpoints(); len(after) != len(before) {
 		t.Fatalf("a rejected set must leave the running set unchanged: %d -> %d", len(before), len(after))
+	}
+}
+
+// A delivery that began before a reload keeps its old endpoint snapshot. Once
+// that ID is reinstalled with another URL or local-network approval, the stale
+// snapshot gets no client, so a retry cannot borrow the replacement's egress
+// approval.
+func TestStaleEndpointSnapshotCannotBorrowReplacementClient(t *testing.T) {
+	doer := &recordingDoer{}
+	old := Endpoint{ID: "hook", URL: "http://hooks.example/in", Secret: []byte("s")}
+	em, err := New(Config{Endpoints: []Endpoint{old}}, &fixedEvents{}, doer, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := outbound{method: http.MethodPost, url: old.URL, header: jsonHeader()}
+	if _, err := em.send(context.Background(), old, out); err != nil {
+		t.Fatalf("current snapshot: %v", err)
+	}
+
+	for _, replacement := range []Endpoint{
+		{ID: "hook", URL: "http://192.168.1.10/in", Secret: []byte("s")},
+		{ID: "hook", URL: old.URL, Secret: []byte("s"), AllowPrivateNetwork: true},
+	} {
+		if err := em.SetEndpoints([]Endpoint{replacement}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := em.send(context.Background(), old, out); !errors.Is(err, ErrRequestDiagnostic) {
+			t.Fatalf("stale snapshot after reload to %+v: err = %v, want the request diagnostic", replacement, err)
+		}
+	}
+	if got := len(doer.all()); got != 1 {
+		t.Fatalf("requests sent = %d, want only the one before the reload", got)
 	}
 }

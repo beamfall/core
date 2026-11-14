@@ -314,9 +314,9 @@ func TestNilClientUsesBoundedDefaultHTTPClient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	client, ok := em.clients["sink"].(*http.Client)
+	client, ok := em.clients["sink"].doer.(*http.Client)
 	if !ok {
-		t.Fatalf("client type = %T, want *http.Client", em.clients["sink"])
+		t.Fatalf("client type = %T, want *http.Client", em.clients["sink"].doer)
 	}
 	if client.Timeout != defaultHTTPTimeout {
 		t.Fatalf("timeout = %v, want %v", client.Timeout, defaultHTTPTimeout)

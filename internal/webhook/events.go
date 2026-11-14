@@ -214,7 +214,9 @@ func (d *deriver) mediaAdded(ctx context.Context, event store.OutboxEvent) (Noti
 		return Notification{}, false, nil
 	}
 	n := d.mediaNotification(KindMediaAdded, m)
-	n.ID = strconv.FormatInt(event.Seq, 10)
+	// Namespaced so it never equals the raw outbox event's id, which an
+	// unfiltered generic endpoint also receives for the same row.
+	n.ID = KindMediaAdded + "-" + strconv.FormatInt(event.Seq, 10)
 	n.OccurredAt = event.OccurredAt
 	return n, true, nil
 }
@@ -235,11 +237,13 @@ func (d *deriver) playback(ctx context.Context, e *Emitter) error {
 		return err
 	}
 	current := make(map[string]playbackEntry, len(rows))
+	hidden := make(map[string]bool)
 	for _, row := range rows {
-		if strings.TrimSpace(row.Title) == "" || d.isSealed(row.LibraryID) {
-			continue // a hidden or sealed Media is never reported
-		}
 		key := string(row.SessionID) + "|" + string(row.MediaID)
+		if strings.TrimSpace(row.Title) == "" || d.isSealed(row.LibraryID) {
+			hidden[key] = true // a hidden or sealed Media is never reported
+			continue
+		}
 		if prev, ok := d.sessions[key]; ok {
 			current[key] = playbackEntry{row: row, media: prev.media}
 			continue
@@ -266,13 +270,29 @@ func (d *deriver) playback(ctx context.Context, e *Emitter) error {
 		}
 	}
 	for _, key := range sortedKeys(previous) {
-		if _, ok := current[key]; !ok {
-			if err := e.notify(ctx, d.playbackNotification(KindPlaybackStopped, previous[key], now)); err != nil {
-				return err
-			}
+		if _, ok := current[key]; ok || hidden[key] {
+			continue
+		}
+		if !d.stillVisible(ctx, previous[key]) {
+			continue // sealed or restricted since it started: say nothing about it
+		}
+		if err := e.notify(ctx, d.playbackNotification(KindPlaybackStopped, previous[key], now)); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+// stillVisible reports whether a Media whose session left the live view may
+// still be named. A session in a Library sealed or restricted since playback
+// started drops out of the filtered view just as a finished one does; its stop
+// would replay the cached title, Profile and device, so it is not reported.
+func (d *deriver) stillVisible(ctx context.Context, entry playbackEntry) bool {
+	if d.isSealed(entry.row.LibraryID) {
+		return false
+	}
+	m, err := d.catalog.Media(ctx, entry.row.MediaID, deriveFilter)
+	return err == nil && !d.isSealed(m.LibraryID) && strings.TrimSpace(m.Title) != ""
 }
 
 func (d *deriver) playbackNotification(kind string, entry playbackEntry, at time.Time) Notification {
@@ -301,22 +321,22 @@ func sortedKeys(m map[string]playbackEntry) []string {
 }
 
 // activity derives user and session events from new allowlisted activity-log
-// rows. The cursor advances before each delivery (at most once per row).
+// rows. The cursor advances past a row once it has been offered to every
+// endpoint, as drain does for the outbox: at-least-once, with the stable
+// activity-<id> event id letting a receiver drop a replay after a restart.
 func (d *deriver) activity(ctx context.Context, e *Emitter) error {
 	entries, err := d.catalog.ActivityEntriesAfter(ctx, d.state.ActivityCursor(), activityActions, activityBatch)
 	if err != nil {
 		return err
 	}
 	for _, entry := range entries {
+		if kind, ok := activityKinds[entry.Action]; ok && entry.LibraryID == "" && e.subscribed(kind) {
+			if err := e.notify(ctx, d.activityNotification(ctx, kind, entry)); err != nil {
+				return err
+			}
+		}
 		if err := d.state.SetActivityCursor(entry.ID); err != nil {
 			return ErrCursorDiagnostic
-		}
-		kind, ok := activityKinds[entry.Action]
-		if !ok || entry.LibraryID != "" || !e.subscribed(kind) {
-			continue
-		}
-		if err := e.notify(ctx, d.activityNotification(ctx, kind, entry)); err != nil {
-			return err
 		}
 	}
 	return nil

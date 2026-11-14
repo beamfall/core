@@ -209,7 +209,7 @@ type Emitter struct {
 	// mu guards cfg.Endpoints and clients, which SetEndpoints swaps.
 	mu sync.RWMutex
 	// clients holds one delivery client per endpoint, by Endpoint.ID.
-	clients map[string]Doer
+	clients map[string]endpointClient
 	// injected is the caller's client, used for every endpoint when set.
 	injected Doer
 
@@ -277,16 +277,16 @@ func (e *Emitter) SetEndpoints(endpoints []Endpoint) error {
 	if err := validateSet(endpoints); err != nil {
 		return err
 	}
-	clients := make(map[string]Doer, len(endpoints))
+	clients := make(map[string]endpointClient, len(endpoints))
 	installed := make([]Endpoint, 0, len(endpoints))
 	for _, ep := range endpoints {
 		allowLocal, _ := validateEndpoint(ep)
 		installed = append(installed, ep)
 		if e.injected != nil {
-			clients[ep.ID] = e.injected
+			clients[ep.ID] = endpointClient{doer: e.injected, url: ep.URL, allowPrivate: ep.AllowPrivateNetwork}
 			continue
 		}
-		clients[ep.ID] = newDeliveryClient(allowLocal)
+		clients[ep.ID] = endpointClient{doer: newDeliveryClient(allowLocal), url: ep.URL, allowPrivate: ep.AllowPrivateNetwork}
 		if !allowLocal && looksLikeLANHostname(ep.URL) {
 			e.logger.Warn("webhook endpoint hostname looks local but allow_private_network is not set; deliveries to local addresses will be refused and dead-lettered",
 				"endpoint", ep.ID)
@@ -322,11 +322,26 @@ func (e *Emitter) endpoints() []Endpoint {
 	return append([]Endpoint(nil), e.cfg.Endpoints...)
 }
 
-func (e *Emitter) client(id string) (Doer, bool) {
+// endpointClient is a delivery client bound to the destination and local
+// network approval it was built for.
+type endpointClient struct {
+	doer         Doer
+	url          string
+	allowPrivate bool
+}
+
+// client returns the delivery client for ep. A delivery that began before a
+// reload carries its old endpoint snapshot; when the installed endpoint with
+// that ID now has another URL or approval, the snapshot is stale and gets no
+// client, so it can never borrow the replacement's egress policy.
+func (e *Emitter) client(ep Endpoint) (Doer, bool) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	client, ok := e.clients[id]
-	return client, ok
+	entry, ok := e.clients[ep.ID]
+	if !ok || entry.url != ep.URL || entry.allowPrivate != ep.AllowPrivateNetwork {
+		return nil, false
+	}
+	return entry.doer, true
 }
 
 // validateEndpoint checks one endpoint and reports whether its destination
@@ -732,7 +747,7 @@ func (e *Emitter) post(ctx context.Context, ep Endpoint, event store.OutboxEvent
 // send performs one HTTP request and returns the response status (0 when no
 // response arrived). The response body is drained and discarded unread.
 func (e *Emitter) send(ctx context.Context, ep Endpoint, out outbound) (int, error) {
-	client, ok := e.client(ep.ID)
+	client, ok := e.client(ep)
 	if !ok {
 		return 0, ErrRequestDiagnostic
 	}
