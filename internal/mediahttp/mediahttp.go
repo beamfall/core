@@ -331,7 +331,7 @@ func (h *Handler) Assets(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown asset", http.StatusNotFound)
 		return
 	}
-	file, err := h.store.PrimaryMediaFile(r.Context(), grant.MediaID, scope.PlaybackFilter())
+	file, err := h.grantFile(r.Context(), grant.MediaID, grant.FileFingerprint, scope.PlaybackFilter())
 	if err != nil {
 		http.Error(w, "unknown asset", http.StatusNotFound)
 		return
@@ -659,7 +659,7 @@ func (h *Handler) Sidecars(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "media unavailable", http.StatusNotFound)
 		return
 	}
-	file, err := h.store.PrimaryMediaFile(r.Context(), grant.MediaID, scope.PlaybackFilter())
+	file, err := h.grantFile(r.Context(), grant.MediaID, grant.FileFingerprint, scope.PlaybackFilter())
 	if err != nil {
 		http.Error(w, "unknown subtitle", http.StatusNotFound)
 		return
@@ -981,7 +981,7 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "stream unavailable", http.StatusNotFound)
 		return
 	}
-	file, err := h.store.PrimaryMediaFile(r.Context(), grant.MediaID, scope.PlaybackFilter())
+	file, err := h.grantFile(r.Context(), grant.MediaID, grant.FileFingerprint, scope.PlaybackFilter())
 	if err != nil {
 		http.Error(w, "media unavailable", http.StatusNotFound)
 		return
@@ -1406,6 +1406,29 @@ func (h *Handler) serveLibraryFile(w http.ResponseWriter, r *http.Request, libra
 	}
 }
 
+// grantFile resolves the Media File a playback grant addresses: the live file
+// of mediaID whose content fingerprint is fingerprint, or the primary file when
+// fingerprint is empty (a primary-Version or pre-Version grant). A fingerprint
+// that names no live file of the Media fails closed, so a grant can never be
+// redirected to another Media's bytes.
+func (h *Handler) grantFile(ctx context.Context, mediaID store.MediaID, fingerprint string, filter store.LibraryFilter) (store.MediaFile, error) {
+	if fingerprint == "" {
+		return h.store.PrimaryMediaFile(ctx, mediaID, filter)
+	}
+	files, err := h.store.MediaFilesForMedia(ctx, mediaID, filter)
+	if err != nil {
+		return store.MediaFile{}, err
+	}
+	for _, file := range files {
+		if file.ContentFingerprint == fingerprint {
+			return file, nil
+		}
+	}
+	return store.MediaFile{}, errGrantFileGone
+}
+
+var errGrantFileGone = errors.New("granted media file is not available")
+
 // regularFileExists reports whether path names a regular file, resolved through a
 // descriptor on its own directory rather than by re-walking the name. A cache
 // probe that followed a symlink would report a hit for content the server never
@@ -1426,6 +1449,11 @@ func (h *Handler) Direct(w http.ResponseWriter, r *http.Request) {
 	mediaID := grant.MediaID
 	filter := scope.PlaybackFilter()
 	leased := false
+	// A Circle lease signs the Media only, so it always serves the primary file.
+	fileFingerprint := ""
+	if err == nil {
+		fileFingerprint = grant.FileFingerprint
+	}
 	if err != nil {
 		if h.tokens == nil {
 			http.Error(w, "invalid stream token", http.StatusUnauthorized)
@@ -1455,7 +1483,7 @@ func (h *Handler) Direct(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "media unavailable", http.StatusNotFound)
 		return
 	}
-	file, err := h.store.PrimaryMediaFile(r.Context(), mediaID, filter)
+	file, err := h.grantFile(r.Context(), mediaID, fileFingerprint, filter)
 	if err != nil {
 		http.Error(w, "media unavailable", http.StatusNotFound)
 		return

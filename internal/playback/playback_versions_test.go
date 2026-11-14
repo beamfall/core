@@ -4,10 +4,12 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/store"
+	"github.com/beamfall/core/internal/streamtoken"
 )
 
 // resolveSel resolves a Part's opaque selector back to its (VersionLabel,
@@ -189,5 +191,97 @@ func TestSingleFileStillPlays(t *testing.T) {
 	// pre-1:N shape, so existing clients see no change (no regression).
 	if resp.Parts != nil {
 		t.Fatalf("Parts = %#v, want nil for a single-file Media", resp.Parts)
+	}
+}
+
+// TestInfoListsVersionsAndHonoursSelection: a Media with two Versions lists
+// both with opaque IDs, binds the negotiated non-primary file into its token,
+// and a selectedVersion wins over negotiation even when it needs a transcode.
+func TestInfoListsVersionsAndHonoursSelection(t *testing.T) {
+	service, st, scope := capabilityTestService(t)
+	mediaID := importProbedMedia(t, st, "fp-pick-dv", "mkv", "hevc", 1920, 1080, []store.MediaFileStream{
+		videoStream("hevc", "Main 10", 8, "smpte2084"),
+		audioStream(1, "eac3", 6),
+	})
+	addVersion(t, st, mediaID, "fp-pick-sdr", "1080p SDR", 0, []store.MediaFileStream{
+		{Index: 0, Type: "video", Codec: "hevc", Profile: "Main 10"},
+		audioStream(1, "eac3", 6),
+	})
+	info := func(selected string) InfoResponse {
+		t.Helper()
+		resp, err := service.Info(context.Background(), scope, InfoRequest{
+			MediaID:           string(mediaID),
+			CapabilityProfile: main10_1080p,
+			SelectedVersion:   selected,
+		})
+		if err != nil {
+			t.Fatalf("Info(%q): %v", selected, err)
+		}
+		return resp
+	}
+	grantFile := func(resp InfoResponse) string {
+		t.Helper()
+		stream := resp.Streams[0]
+		target := streamtoken.TargetMediaDirect
+		if stream.Kind == "hls" {
+			target = streamtoken.TargetMediaHLS
+		}
+		grant, err := service.tokens.Verify(stream.Token, target, scope)
+		if err != nil {
+			t.Fatalf("Verify %s token: %v", stream.Kind, err)
+		}
+		return grant.FileFingerprint
+	}
+
+	negotiated := info("")
+	if negotiated.Decision != "direct-play" || len(negotiated.Versions) != 2 {
+		t.Fatalf("negotiated = %s with versions %+v, want direct-play listing 2 Versions", negotiated.Decision, negotiated.Versions)
+	}
+	primary, sdr := negotiated.Versions[0], negotiated.Versions[1]
+	if primary.Label != "" || primary.Selected || primary.VideoCodec != "hevc" || primary.HDR == "" {
+		t.Fatalf("default Version = %+v, want unselected hevc HDR with empty label", primary)
+	}
+	if sdr.Label != "1080p SDR" || !sdr.Selected || sdr.HDR != "" || sdr.ID == primary.ID {
+		t.Fatalf("SDR Version = %+v, want selected SDR with its own ID", sdr)
+	}
+	for _, v := range negotiated.Versions {
+		if strings.Contains(v.ID, "fp-pick") || strings.Contains(v.ID, v.Label) && v.Label != "" {
+			t.Fatalf("Version ID %q leaks a fingerprint or label", v.ID)
+		}
+	}
+	if got := grantFile(negotiated); got != "fp-pick-sdr" {
+		t.Fatalf("negotiated token file = %q, want the SDR Version's", got)
+	}
+
+	picked := info(primary.ID)
+	if picked.Decision != "transcode" || !picked.Versions[0].Selected || picked.Versions[1].Selected {
+		t.Fatalf("picked default = %s (%s) with %+v, want a transcode of the selected default Version", picked.Decision, picked.Reason, picked.Versions)
+	}
+	if got := grantFile(picked); got != "" {
+		t.Fatalf("primary Version token file = %q, want empty (primary file)", got)
+	}
+	if again := info(primary.ID); again.Versions[0].ID != primary.ID {
+		t.Fatalf("Version ID not stable: %q then %q", primary.ID, again.Versions[0].ID)
+	}
+
+	if unknown := info("v0000000000000000"); unknown.Decision != "direct-play" || !unknown.Versions[1].Selected {
+		t.Fatalf("unknown selection = %s with %+v, want the negotiated decision", unknown.Decision, unknown.Versions)
+	}
+}
+
+// TestInfoOmitsVersionsForOneVersion: a single-Version Media keeps the
+// pre-picker response shape.
+func TestInfoOmitsVersionsForOneVersion(t *testing.T) {
+	service, st, scope := capabilityTestService(t)
+	mediaID := importProbedMedia(t, st, "fp-one", "mkv", "hevc", 1920, 1080, []store.MediaFileStream{
+		{Index: 0, Type: "video", Codec: "hevc", Profile: "Main 10"},
+		audioStream(1, "eac3", 6),
+	})
+	resp, err := service.Info(context.Background(), scope, InfoRequest{MediaID: string(mediaID), CapabilityProfile: main10_1080p, SelectedVersion: "v0000000000000000"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Versions != nil || resp.Decision != "direct-play" {
+		t.Fatalf("single Version = %s with versions %+v, want direct-play and no list", resp.Decision, resp.Versions)
 	}
 }

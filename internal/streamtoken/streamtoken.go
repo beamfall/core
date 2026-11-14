@@ -134,6 +134,14 @@ type Grant struct {
 	// grants retain the primary-file compatibility path.
 	// Meaningful only for TargetMediaSubtitle.
 	SubtitleFileFingerprint string `json:"subtitleFileFingerprint,omitempty"`
+	// FileFingerprint binds a playback grant to the Version file playbackInfo
+	// negotiated when that is not the Media's primary file (ADR-0009). The byte
+	// routes resolve it only among the grant Media's live files and refuse the
+	// request when it names none of them. Omitted means the primary file, which
+	// is also how grants minted before Version selection read.
+	// Meaningful for TargetMediaDirect, TargetMediaHLS, TargetMediaAssets and
+	// TargetMediaSidecar.
+	FileFingerprint string `json:"fileFingerprint,omitempty"`
 	// SidecarRawASS carries the effective, quirk-overlay-filtered ASS-rendering
 	// capability from playbackInfo to the sidecar byte route. Raw ASS is served
 	// only when this signed bit is true; omitted and legacy grants fail closed.

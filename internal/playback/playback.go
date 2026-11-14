@@ -40,6 +40,10 @@ type InfoRequest struct {
 	// track the client selected for this playbackInfo request. Omitted means no
 	// concrete subtitle track has been selected server-side.
 	SelectedSubtitleIndex *int `json:"selectedSubtitleIndex,omitempty"`
+	// SelectedVersion is the opaque ID of the Version (VersionInfo.ID) the
+	// viewer picked. It applies to MediaID only; an ID that names none of its
+	// Versions is ignored and the server negotiates as if it were absent.
+	SelectedVersion string `json:"selectedVersion,omitempty"`
 }
 
 // PreviewInfoRequest asks for the card-preview Generated Asset only. It is
@@ -233,6 +237,10 @@ type InfoResponse struct {
 	// that ignore it play the first (primary) Part as today. Omitted when the
 	// item is unavailable.
 	Parts []PartInfo `json:"parts,omitempty"`
+	// Versions lists the Media's Versions when it has two or more, marking the
+	// negotiated one selected, so a client can offer a version picker. Omitted
+	// for a single-Version or unavailable item.
+	Versions []VersionInfo `json:"versions,omitempty"`
 	// Next is the ahead-of-time decision for the declared next queue item.
 	// Omitted whenever the next item cannot be served — an item the scope
 	// cannot see is indistinguishable from an unknown ID (Reveal contract).
@@ -602,6 +610,8 @@ type decision struct {
 	// Version yields one Part; multi-Part Versions present back-to-back as one
 	// timeline. Empty for unavailable items.
 	parts []PartInfo
+	// versions is the Version list for a picker; nil for a single Version.
+	versions []VersionInfo
 	// captionTracks is the chosen Version's sidecar caption tracks (FEAT-4 /
 	// ADR-0005 §4), each with a Stream-Token'd WebVTT URL. Empty for unavailable
 	// items or files with no sidecars.
@@ -697,7 +707,7 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 	// overlay is never written back onto it, which is what makes the
 	// monotone-restrictive rule a property of the code shape.
 	ov := s.quirks.Resolve(req.CapabilityProfile)
-	main, err := s.decide(ctx, scope, mediaID, "main", req.CapabilityProfile, policy, priority, req.SelectedSubtitleIndex, ov)
+	main, err := s.decide(ctx, scope, mediaID, "main", req.CapabilityProfile, policy, priority, req.SelectedSubtitleIndex, strings.TrimSpace(req.SelectedVersion), ov)
 	if err != nil {
 		return InfoResponse{}, err
 	}
@@ -709,6 +719,7 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 		Streams:             main.streams,
 		Timeline:            main.timeline,
 		Parts:               main.parts,
+		Versions:            main.versions,
 		TrackPreferences:    trackPreferences(policy),
 		Assets:              main.assets,
 		CaptionTracks:       main.captionTracks,
@@ -743,7 +754,7 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 		// Best-effort: any next item that cannot be served — unknown,
 		// outside the session scope, or with no playable file — is silently
 		// omitted; current playback is never affected.
-		next, nextErr := s.decide(ctx, scope, nextID, "next", req.CapabilityProfile, policy, priority, nil, ov)
+		next, nextErr := s.decide(ctx, scope, nextID, "next", req.CapabilityProfile, policy, priority, nil, "", ov)
 		if nextErr == nil && next.verdict != "unavailable" {
 			// Attribution tracks what the response actually carries: a next
 			// decision the payload drops would put override IDs on a body whose
@@ -822,7 +833,7 @@ func (s *Service) PreviewInfo(ctx context.Context, scope auth.Scope, req Preview
 // admission rank the transcode-refusal check uses: a foreground
 // playhead may be admitted by preempting a normal stream, so the verdict it
 // receives matches what the byte layer would actually start at that rank.
-func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix string, profile CapabilityProfile, policy store.Profile, priority Priority, selectedSubtitleIndex *int, ov quirkOverlay) (dec decision, err error) {
+func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix string, profile CapabilityProfile, policy store.Profile, priority Priority, selectedSubtitleIndex *int, selectedVersion string, ov quirkOverlay) (dec decision, err error) {
 	media, err := s.store.Media(ctx, store.MediaID(mediaID), scope.LibraryFilter())
 	if err != nil {
 		var validation store.ValidationError
@@ -859,10 +870,18 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	if media.Class == store.MediaClassImage {
 		return s.imageDecision(ctx, scope, media, files, suffix)
 	}
-	file, streams, parts, err := s.negotiateVersion(ctx, media, files, profile, selectedSubtitleIndex, ov)
+	file, streams, parts, versions, err := s.negotiateVersion(ctx, media, files, profile, selectedSubtitleIndex, selectedVersion, ov)
 	if err != nil {
 		return decision{}, err
 	}
+	// One deferred stamp covers every decision return below, like
+	// audioLanguage: the picker lists the same Versions whatever the verdict,
+	// so a viewer whose pick cannot play can still pick another.
+	defer func() {
+		if err == nil {
+			dec.versions = versions
+		}
+	}()
 	// The operator's live-session dashboard reads the main item's decision.
 	if suffix == "main" {
 		defer func() {
@@ -918,6 +937,12 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 		ReceiverProfileResolved: receiverBound && ov.matched,
 		Foreground:              priority == PriorityForeground,
 		ExpiresAt:               expiresAt,
+	}
+	// A Version other than the primary binds its file into every token minted
+	// from this grant, so the byte routes serve the negotiated bytes. The
+	// primary leaves it empty and the routes keep their primary-file path.
+	if file.ContentFingerprint != files[0].ContentFingerprint {
+		grant.FileFingerprint = file.ContentFingerprint
 	}
 	if burnSubtitleIndex := selectedBurnSubtitleIndex(streams, profile, selectedSubtitleIndex, ov); burnSubtitleIndex >= 0 {
 		grant.BurnSubtitleIndex = burnSubtitleIndex + 1
@@ -1204,54 +1229,69 @@ func (s *Service) imageDecision(ctx context.Context, scope auth.Scope, media sto
 
 // negotiateVersion picks the best Version for the client among a Media's
 // available files, returning the chosen Version's primary file
-// (its first Part), that file's stream inventory, and the Version's ordered
-// Parts. files is ordered by (VersionLabel, PartOrdinal), so consecutive files
-// with the same label are one Version's Parts in timeline order.
+// (its first Part), that file's stream inventory, the Version's ordered
+// Parts, and the Version list for a picker. files is ordered by (VersionLabel,
+// PartOrdinal), so consecutive files with the same label are one Version's
+// Parts in timeline order.
 //
-// Selection: prefer the first Version (in label order) whose primary Part
-// direct-plays for this capability profile — direct-play beats transcode, and
-// negotiating it BEFORE transcode is the whole point (a 1080p SDR Version
-// direct-plays where the 4K HDR sibling would force a tone-map transcode). If
-// no Version direct-plays, fall back to the first Version, which is the default
-// ("" label) when present — identical to the pre-1:N primary-file choice.
+// Selection: a selectedVersion naming one of the Media's Versions wins, even
+// when it needs a transcode: the viewer asked for it. Otherwise prefer the
+// first Version (in label order) whose primary Part direct-plays for this
+// capability profile — direct-play beats transcode, and negotiating it BEFORE
+// transcode is the whole point (a 1080p SDR Version direct-plays where the 4K
+// HDR sibling would force a tone-map transcode). If no Version direct-plays,
+// fall back to the first Version, which is the default ("" label) when
+// present — identical to the pre-1:N primary-file choice. An unknown
+// selectedVersion is ignored.
 //
 // A single-file Media has one Version with one Part, so this returns that file
-// unchanged: existing behaviour is preserved.
-func (s *Service) negotiateVersion(ctx context.Context, media store.Media, files []store.MediaFile, profile CapabilityProfile, selectedSubtitleIndex *int, ov quirkOverlay) (store.MediaFile, []store.MediaFileStream, []PartInfo, error) {
+// unchanged and no Version list: existing behaviour is preserved.
+func (s *Service) negotiateVersion(ctx context.Context, media store.Media, files []store.MediaFile, profile CapabilityProfile, selectedSubtitleIndex *int, selectedVersion string, ov quirkOverlay) (store.MediaFile, []store.MediaFileStream, []PartInfo, []VersionInfo, error) {
 	versions := groupVersions(files)
+	streams := make([][]store.MediaFileStream, len(versions))
+	for i, version := range versions {
+		inventory, err := s.store.MediaFileStreams(ctx, version[0].ContentFingerprint)
+		if err != nil {
+			return store.MediaFile{}, nil, nil, nil, err
+		}
+		streams[i] = inventory
+	}
 	// Default to the first Version (label order: "" sorts first), with its
 	// primary Part's streams — the honest transcode fallback.
-	chosen := versions[0]
-	chosenStreams, err := s.store.MediaFileStreams(ctx, chosen[0].ContentFingerprint)
-	if err != nil {
-		return store.MediaFile{}, nil, nil, err
-	}
-	if !directPlayEligible(media, chosen[0], chosenStreams, profile, selectedSubtitleIndex, ov) {
-		// Look for a Version whose primary Part the client can play as-is (or whose
-		// P7 HDR10 base layer plays), preferring it over a transcoding default.
-		for _, version := range versions {
-			streams, err := s.store.MediaFileStreams(ctx, version[0].ContentFingerprint)
-			if err != nil {
-				return store.MediaFile{}, nil, nil, err
-			}
-			if directPlayEligible(media, version[0], streams, profile, selectedSubtitleIndex, ov) {
-				chosen, chosenStreams = version, streams
+	chosen := 0
+	selected := false
+	if selectedVersion != "" {
+		for i, version := range versions {
+			if versionID(media.ID, version[0].VersionLabel) == selectedVersion {
+				chosen, selected = i, true
 				break
 			}
 		}
 	}
+	if !selected && !directPlayEligible(media, versions[0][0], streams[0], profile, selectedSubtitleIndex, ov) {
+		// Look for a Version whose primary Part the client can play as-is (or whose
+		// P7 HDR10 base layer plays), preferring it over a transcoding default.
+		for i, version := range versions {
+			if directPlayEligible(media, version[0], streams[i], profile, selectedSubtitleIndex, ov) {
+				chosen = i
+				break
+			}
+		}
+	}
+	infos := versionInfos(media.ID, versions, streams, chosen)
+	version := versions[chosen]
 	// A single-Part Version is the pre-1:N shape (one file): emit no Parts array,
 	// so its playbackInfo stays byte-identical to before — clients ignore the
 	// absent field and play the primary stream as today (no wire-contract churn,
 	// no regression). Only a genuinely multi-Part Version surfaces the timeline.
-	if len(chosen) < 2 {
-		return chosen[0], chosenStreams, nil, nil
+	if len(version) < 2 {
+		return version[0], streams[chosen], nil, infos, nil
 	}
-	parts := make([]PartInfo, len(chosen))
-	for i, part := range chosen {
+	parts := make([]PartInfo, len(version))
+	for i, part := range version {
 		parts[i] = PartInfo{Ordinal: part.PartOrdinal, versionLabel: part.VersionLabel, partOrdinal: part.PartOrdinal}
 	}
-	return chosen[0], chosenStreams, parts, nil
+	return version[0], streams[chosen], parts, infos, nil
 }
 
 // groupVersions splits a (VersionLabel, PartOrdinal)-ordered file list into
