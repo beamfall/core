@@ -647,6 +647,13 @@
   opacity: 0.35;
 }
 
+/* The empty slot a future Oscillux visualizer mounts into (CORE-1309); core
+ * renders nothing here. */
+.bf-audio-visualizer {
+  position: absolute;
+  inset: 0;
+}
+
 .bf-audio-card {
   position: relative;
   display: flex;
