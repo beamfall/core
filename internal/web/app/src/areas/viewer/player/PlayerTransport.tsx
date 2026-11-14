@@ -38,6 +38,11 @@ import type { MetadataAttribution } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
 import { SKIP_INTERVALS, type SkipInterval } from "../lib/preferences";
 import {
+  SUBTITLE_APPEARANCE_DEFAULTS,
+  type SubtitleAppearance,
+  type SubtitleAppearanceField,
+} from "../lib/subtitleAppearance";
+import {
   buildMarkerStripModel,
   buildRenditionMenuModel,
   chapterSeekTarget,
@@ -52,6 +57,7 @@ import { SubtitleStylePanel } from "./SubtitleStylePanel";
 import { type MenuRow, TransportMenu } from "./TransportMenu";
 import { useLiveTracks } from "./useLiveTracks";
 import type { PlayerState, SwitchResult } from "./usePlayer";
+import { useSubtitleAppearance } from "./useSubtitleAppearance";
 import { useSubtitleStyling } from "./useSubtitleStyling";
 
 // The player's control overlay (CORE-1141): a gradient scrim with the title,
@@ -84,6 +90,9 @@ export function PlayerTransport({
   showSkipIntervalLabel = "",
   showSkipIntervalCollection = "",
   onShowSkipIntervalChange,
+  subtitleAppearance = SUBTITLE_APPEARANCE_DEFAULTS,
+  onSubtitleAppearanceChange,
+  onSubtitleAppearanceReset,
   onShare,
   onPreviousInQueue,
   onNextInQueue,
@@ -111,6 +120,12 @@ export function PlayerTransport({
   /** The collection the row belongs to, shown under the row's title. */
   showSkipIntervalCollection?: string;
   onShowSkipIntervalChange?: (value: SkipInterval | "") => void;
+  /** The Profile's subtitle appearance (subtitle.* client prefs). */
+  subtitleAppearance?: SubtitleAppearance;
+  /** Stores one appearance field for the Profile. */
+  onSubtitleAppearanceChange?: (field: SubtitleAppearanceField, value: string) => void;
+  /** Clears every appearance field for the Profile. */
+  onSubtitleAppearanceReset?: () => void;
   onShare?: (seconds: number) => void;
   /** Play the queue's previous item; the control is hidden when absent. */
   onPreviousInQueue?: () => void;
@@ -216,11 +231,20 @@ export function PlayerTransport({
   }, []);
 
   const subtitle = useSubtitleStyling({
-    stageRef,
     videoRef,
     hlsRef,
     tracksVersion: state.tracksVersion,
   });
+  useSubtitleAppearance({
+    stageRef,
+    videoRef,
+    tracksVersion: state.tracksVersion,
+    appearance: subtitleAppearance,
+  });
+  const resetSubtitles = useCallback(() => {
+    onSubtitleAppearanceReset?.();
+    subtitle.reset();
+  }, [onSubtitleAppearanceReset, subtitle.reset]);
 
   const tracks = useLiveTracks({
     videoRef,
@@ -979,13 +1003,11 @@ export function PlayerTransport({
                   <SubtitleStylePanel
                     open={openKey === "subtitleStyle"}
                     onOpenChange={(open) => setOpen("subtitleStyle", open)}
-                    sizeScale={subtitle.sizeScale}
-                    setSizeScale={subtitle.setSizeScale}
-                    background={subtitle.background}
-                    setBackground={subtitle.setBackground}
+                    appearance={subtitleAppearance}
+                    onAppearanceChange={onSubtitleAppearanceChange}
                     syncOffset={subtitle.syncOffset}
                     nudgeSync={subtitle.nudgeSync}
-                    reset={subtitle.reset}
+                    reset={resetSubtitles}
                     syncSupported={subtitle.syncSupported}
                   />
                 )}
