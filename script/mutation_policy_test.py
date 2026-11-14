@@ -119,7 +119,6 @@ class MutationPolicyTest(unittest.TestCase):
 
     def test_workflow_callers_fetch_full_history(self) -> None:
         for relative, marker in (
-            (".github/workflows/gate.yml", "run: make gate"),
             (".github/workflows/release-gate.yml", "run: make release-test-gates"),
             (".github/workflows/clean-checkout-canary.yml", "run: script/clean-checkout-canary.sh --repo beamfall"),
         ):

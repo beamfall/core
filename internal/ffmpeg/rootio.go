@@ -32,6 +32,12 @@ const outputTempMarker = ".beamfall-ffmpeg-p"
 // truncates the reserved file in place, so its output stays the inode the publish
 // verifies. Anything that unlinks and re-creates that name mid-run (the classic
 // post-check swap) changes the inode and is refused.
+//
+// The reservation descriptor stays open until the publish check has run. Without
+// it, an unlinked temp frees its inode, and on Linux (ext4, tmpfs) the very next
+// create in that directory can be handed the same inode number, so a re-created
+// temp would pass the identity check. Holding the file keeps its inode allocated,
+// so a substitute can never share it.
 type outputTemp struct {
 	root *os.Root
 	// dir is the destination directory NAME, kept only to re-prove that the name
@@ -42,6 +48,10 @@ type outputTemp struct {
 	// id is the identity of the file created at reservation time. The publish
 	// refuses unless the member still names this exact file.
 	id fs.FileInfo
+	// file holds the reserved file open so its inode cannot be reused while the
+	// reservation is live. It is released before any rename or removal of the
+	// member, which Windows refuses on an open file.
+	file *os.File
 	// Path is the absolute path handed to the FFmpeg child process.
 	Path string
 }
@@ -86,13 +96,13 @@ func reserveOutput(dst string) (*outputTemp, error) {
 		return nil, fmt.Errorf("creating temp file: %w", err)
 	}
 	id, err := file.Stat()
-	_ = file.Close()
 	if err != nil {
+		_ = file.Close()
 		_ = root.Remove(name)
 		_ = root.Close()
 		return nil, err
 	}
-	return &outputTemp{root: root, dir: dir, name: name, id: id, Path: filepath.Join(dir, name)}, nil
+	return &outputTemp{root: root, dir: dir, name: name, id: id, file: file, Path: filepath.Join(dir, name)}, nil
 }
 
 // recoverOutputTemps removes only dead-process reservations for this exact
@@ -167,10 +177,12 @@ func outputTempOwnerAlive(pid int, recordedStart string, hasStart bool) bool {
 func (o *outputTemp) publish(dst string) error {
 	defer o.close()
 	if err := verifyDirUnreplaced(o.root, o.dir); err != nil {
+		o.releaseFile()
 		_ = o.root.Remove(o.name)
 		return err
 	}
 	current, err := o.root.Lstat(o.name)
+	o.releaseFile()
 	if err != nil {
 		return err
 	}
@@ -195,6 +207,7 @@ func (o *outputTemp) discard() error {
 	if o == nil || o.root == nil {
 		return nil
 	}
+	o.releaseFile()
 	if err := o.root.Remove(o.name); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("removing temp file: %w", err)
 	}
@@ -214,7 +227,17 @@ func (o *outputTemp) joinDiscardError(err *error) {
 	*err = errors.Join(*err, discardErr)
 }
 
+// releaseFile closes the reservation descriptor. The identity check it protects
+// must already have run; afterwards the inode may be freed once the name goes.
+func (o *outputTemp) releaseFile() {
+	if o.file != nil {
+		_ = o.file.Close()
+		o.file = nil
+	}
+}
+
 func (o *outputTemp) close() {
+	o.releaseFile()
 	if o.root != nil {
 		_ = o.root.Close()
 		o.root = nil
