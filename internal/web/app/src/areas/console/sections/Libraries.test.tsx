@@ -547,6 +547,31 @@ describe("Console Libraries add (CORE-1156)", () => {
     expect(await screen.findByText("Added Films. Scanning its folders now.")).toHaveFocus();
   });
 
+  it("shows the new library's card without a manual Refresh (CORE-1102)", async () => {
+    const user = userEvent.setup();
+    const created: LibraryInfo = {
+      id: "lib-new",
+      title: "Films",
+      pluginID: "filmtv",
+      roots: ["/media/films"],
+      previewClips: true,
+      restricted: false,
+    };
+    // The server lists the library only once the create has committed.
+    vi.mocked(createLibrary).mockImplementation(async () => {
+      vi.mocked(fetchLibraries).mockResolvedValue([created]);
+      return { id: created.id, title: created.title, pluginID: created.pluginID };
+    });
+    renderLibraries();
+
+    await user.click(await screen.findByRole("radio", { name: /^Films/ }));
+    await user.type(screen.getByLabelText("Folder"), "/media/films");
+    expect(screen.queryByRole("article", { name: "Films" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Create Library" }));
+
+    expect(await screen.findByRole("article", { name: "Films" })).toBeInTheDocument();
+  });
+
   it("keeps what was typed and shows the server's reason when the create is refused", async () => {
     const user = userEvent.setup();
     vi.mocked(createLibrary).mockRejectedValue(new Error("folder is not readable"));

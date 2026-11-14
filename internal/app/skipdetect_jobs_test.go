@@ -139,6 +139,32 @@ func TestConfigureSkipDetectionJobsRejectsMissingInvalidAndIncompatibleModelsBef
 	}
 }
 
+// A fresh install has no podcast ad model: that is the default, not a fault,
+// so it logs at INFO and never WARN (CORE-1100).
+func TestAbsentAudioAdModelLogsInfoNotWarn(t *testing.T) {
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	st := storetest.Open(t)
+	configureSkipDetectionJobs(t.TempDir(), st, ffmpeg.New(), jobs.NewRegistry(st, "fresh"), governor.New(), newJobWake(), logger)
+
+	var sawAbsent bool
+	for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+		var record struct{ Level, Msg, Reason string }
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatalf("log line %q: %v", line, err)
+		}
+		if record.Level == slog.LevelWarn.String() || record.Level == slog.LevelError.String() {
+			t.Fatalf("fresh start logged %s: %s", record.Level, line)
+		}
+		if record.Msg == "audio ad detector inactive" && record.Reason == "model-absent" {
+			sawAbsent = record.Level == slog.LevelInfo.String()
+		}
+	}
+	if !sawAbsent {
+		t.Fatalf("missing INFO model-absent record in %q", logs.String())
+	}
+}
+
 func TestConfiguredAudioAdArmAndChildAreTranscodePreempted(t *testing.T) {
 	dataDir := t.TempDir()
 	writeAudioAdModelFixture(t, dataDir, "1.0.0")
