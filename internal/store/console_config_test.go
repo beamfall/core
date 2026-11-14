@@ -419,3 +419,53 @@ func TestConsoleConfigRemoteEnrollmentDefaultAndPatch(t *testing.T) {
 		t.Fatal("reread RemoteEnrollmentEnabled = false, want true")
 	}
 }
+
+// TestConsoleConfigViewerPairingCodesDefaultAndRoundTrip pins CORE-0393's
+// store half: the Viewer pairing-code switch defaults off, persists when
+// written, and reads back after a fresh read.
+func TestConsoleConfigViewerPairingCodesDefaultAndRoundTrip(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := t.Context()
+	now := time.Unix(0, 0).UTC()
+
+	cfg, err := st.ConsoleConfig(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ViewerPairingCodesDisabled {
+		t.Fatal("default ViewerPairingCodesDisabled = true, want false")
+	}
+
+	for _, want := range []bool{true, false} {
+		value := want
+		updated, err := st.SetConsoleConfig(ctx,
+			store.ConsoleConfigPatch{ViewerPairingCodesDisabled: &value}, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if updated.ViewerPairingCodesDisabled != want {
+			t.Fatalf("after write %v, ViewerPairingCodesDisabled = %v", want, updated.ViewerPairingCodesDisabled)
+		}
+		reread, err := st.ConsoleConfig(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if reread.ViewerPairingCodesDisabled != want {
+			t.Fatalf("reread after write %v, ViewerPairingCodesDisabled = %v", want, reread.ViewerPairingCodesDisabled)
+		}
+	}
+
+	// A patch that leaves the switch absent does not touch it.
+	disabled := true
+	if _, err := st.SetConsoleConfig(ctx, store.ConsoleConfigPatch{ViewerPairingCodesDisabled: &disabled}, now); err != nil {
+		t.Fatal(err)
+	}
+	workers := 3
+	after, err := st.SetConsoleConfig(ctx, store.ConsoleConfigPatch{BackgroundWorkers: &workers}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !after.ViewerPairingCodesDisabled {
+		t.Fatal("unrelated patch cleared ViewerPairingCodesDisabled")
+	}
+}

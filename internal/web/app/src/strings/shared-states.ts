@@ -18,6 +18,9 @@ export const sharedStateStrings = {
     codeExpiresPrefix: " (expires ",
     codeExpiresSuffix: ")",
     couldNotMintPairingCode: "Could not mint a pairing code.",
+    viewerPairingCodesDisabled: "Disable Viewer pairing codes",
+    viewerPairingCodesDisabledHelp:
+      "New Viewer codes cannot be created and unused ones stop working. Manager pairing and demo enrollment stay enabled.",
     couldNotReachServer: "Could not reach the server.",
     requestFailed: "Request failed.",
     pairingCodeInvalid: "That pairing code is not valid.",
@@ -74,6 +77,9 @@ export const sharedStateStrings = {
     codeExpiresPrefix: " (expire ",
     codeExpiresSuffix: ")",
     couldNotMintPairingCode: "Impossible de créer un code de jumelage.",
+    viewerPairingCodesDisabled: "Désactiver les codes de jumelage visionneuse",
+    viewerPairingCodesDisabledHelp:
+      "Aucun nouveau code de visionneuse ne peut être créé et les codes inutilisés cessent de fonctionner. Le jumelage gestionnaire et l’inscription de démonstration restent activés.",
     couldNotReachServer: "Impossible de joindre le serveur.",
     requestFailed: "La requête a échoué.",
     pairingCodeInvalid: "Ce code de jumelage n’est pas valide.",
@@ -125,6 +131,9 @@ export const sharedStateStrings = {
     codeExpiresPrefix: " (läuft ab ",
     codeExpiresSuffix: ")",
     couldNotMintPairingCode: "Es konnte kein Kopplungscode erstellt werden.",
+    viewerPairingCodesDisabled: "Viewer-Kopplungscodes deaktivieren",
+    viewerPairingCodesDisabledHelp:
+      "Neue Viewer-Codes können nicht erstellt werden, und unbenutzte Codes funktionieren nicht mehr. Manager-Kopplung und Demo-Registrierung bleiben aktiviert.",
     couldNotReachServer: "Der Server konnte nicht erreicht werden.",
     requestFailed: "Anfrage fehlgeschlagen.",
     pairingCodeInvalid: "Dieser Kopplungscode ist nicht gültig.",
@@ -175,6 +184,9 @@ export const sharedStateStrings = {
     codeExpiresPrefix: " (vence ",
     codeExpiresSuffix: ")",
     couldNotMintPairingCode: "No se pudo crear un código de emparejamiento.",
+    viewerPairingCodesDisabled: "Desactivar los códigos de emparejamiento de visor",
+    viewerPairingCodesDisabledHelp:
+      "No se pueden crear nuevos códigos de visor y los que no se han usado dejan de funcionar. El emparejamiento de administrador y la inscripción de demostración siguen activos.",
     couldNotReachServer: "No se pudo contactar con el servidor.",
     requestFailed: "Error en la solicitud.",
     pairingCodeInvalid: "Ese código de emparejamiento no es válido.",
@@ -226,6 +238,9 @@ export const sharedStateStrings = {
     codeExpiresPrefix: " (expira ",
     codeExpiresSuffix: ")",
     couldNotMintPairingCode: "Não foi possível criar um código de pareamento.",
+    viewerPairingCodesDisabled: "Desativar códigos de pareamento de visualizador",
+    viewerPairingCodesDisabledHelp:
+      "Novos códigos de visualizador não podem ser criados e os não usados deixam de funcionar. O pareamento de gerente e o cadastro de demonstração continuam ativos.",
     couldNotReachServer: "Não foi possível acessar o servidor.",
     requestFailed: "Falha na solicitação.",
     pairingCodeInvalid: "Esse código de pareamento não é válido.",

@@ -30,6 +30,15 @@ export const consoleAccessStrings = {
     consoleActiveLead: "Console unlocked. The admin session is active.",
     adminLock: "Lock Console",
     adminUnlockRejected: "The admin password was not accepted.",
+    // First admin password (CORE-1132): an owner who claimed the server without
+    // choosing one sets it here and lands in the Console.
+    consoleFirstPasswordTitle: "Set an admin password",
+    consoleFirstPasswordLead:
+      "No admin password has been set yet. Choose one to protect the Console and owner-only tools, and keep it in your password manager.",
+    consoleFirstPasswordSubmit: "Set password and unlock",
+    consoleFirstPasswordMismatch: "The passwords do not match.",
+    consoleFirstPasswordRejected:
+      "The admin password could not be set. Check that this is the owner’s profile on a manager device.",
     // Reason-coded Console locked states (ADR-0085 §30) + the Admin/Reveal
     // distinction (§32).
     consoleLockedNotAdultTitle: "Console unavailable",
@@ -79,6 +88,13 @@ export const consoleAccessStrings = {
     consoleActiveLead: "Console déverrouillée. La session administrateur est active.",
     adminLock: "Verrouiller la console",
     adminUnlockRejected: "Le mot de passe administrateur a été refusé.",
+    consoleFirstPasswordTitle: "Définir un mot de passe administrateur",
+    consoleFirstPasswordLead:
+      "Aucun mot de passe administrateur n’est défini. Choisissez-en un pour protéger la console et les outils réservés au propriétaire, et conservez-le dans votre gestionnaire de mots de passe.",
+    consoleFirstPasswordSubmit: "Définir le mot de passe et déverrouiller",
+    consoleFirstPasswordMismatch: "Les mots de passe ne correspondent pas.",
+    consoleFirstPasswordRejected:
+      "Le mot de passe administrateur n’a pas pu être défini. Vérifiez qu’il s’agit du profil du propriétaire sur un appareil gestionnaire.",
     consoleLockedNotAdultTitle: "Console indisponible",
     consoleLockedNotAdultLead:
       "Ce profil ne peut pas administrer le serveur. Passez à un profil propriétaire adulte pour gérer la console.",

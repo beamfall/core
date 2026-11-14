@@ -103,6 +103,75 @@ func (s *Store) SetAdminPassword(ctx context.Context, password string, now time.
 	return tx.Commit()
 }
 
+// CreateFirstAdminPassword stores the first server admin password and opens the
+// caller's Admin Session window until `until`, in one transaction (CORE-1132).
+// It writes only while the caller still qualifies and no password exists: session
+// is an unexpired enrolled session bound to profile on a non-revoked Manager
+// Device, and profile is the designated owner or, with no owner designated, an
+// adult (the rule SetSignInSecurityModeAsOwner applies). The insert never
+// replaces a password, so two racing first sets cannot both win. It reports
+// false, writing nothing, when the caller does not qualify or a password
+// already exists; the plaintext never leaves this function.
+func (s *Store) CreateFirstAdminPassword(ctx context.Context, session SessionID, profile ProfileID, password string, now, until time.Time) (bool, error) {
+	if session == "" || profile == "" {
+		return false, ValidationError("session and profile are required")
+	}
+	if strings.TrimSpace(password) == "" {
+		return false, ValidationError("admin password is required")
+	}
+	salt := make([]byte, revealSaltLen)
+	if _, err := rand.Read(salt); err != nil {
+		return false, err
+	}
+	// The KDF runs before the write transaction so the writer is not held for it.
+	verifier := hashAdminPassword(password, salt)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return false, err
+	}
+	tx, err := s.catalogW.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	var qualifies int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM auth_session AS s
+			JOIN device AS d ON d.id = s.device_id
+			JOIN profile AS p ON p.id = s.profile_id
+			WHERE s.id = ? AND s.profile_id = ?
+				AND (s.kind = ? OR s.kind IS NULL OR s.kind = '')
+				AND (s.expires_at_ms IS NULL OR s.expires_at_ms > ?)
+				AND d.revoked = 0 AND d.role = ?
+				AND p.kind = ?
+				AND (p.is_owner = 1 OR NOT EXISTS (SELECT 1 FROM profile WHERE is_owner = 1)))`,
+		session, profile, SessionKindEnrolled, timeToMillis(now), DeviceRoleManager, ProfileAdult,
+	).Scan(&qualifies); err != nil || qualifies == 0 {
+		return false, err
+	}
+	inserted, err := tx.ExecContext(ctx, `
+		INSERT INTO admin_credential(id, password_hash, password_salt, updated_at_ms)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(id) DO NOTHING`,
+		adminCredentialID, verifier, salt, timeToMillis(now))
+	if err != nil {
+		return false, err
+	}
+	if n, err := inserted.RowsAffected(); err != nil || n == 0 {
+		return false, err
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE auth_session SET admin_until_ms = ? WHERE id = ?`, timeToMillis(until), session); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // AdminPasswordSet reports whether a server admin password exists. Used by
 // first-run wiring (do we bootstrap from env / present the setup wizard?) — never
 // exposed to a network caller as a presence oracle.

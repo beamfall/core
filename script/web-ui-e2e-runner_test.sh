@@ -111,7 +111,7 @@ trap '' INT TERM
 role="$1"
 metadata="$2"
 printf '%s\n' "$$" >"${metadata}/${role}.pid"
-if [[ "${BEAMFALL_RUNNER_TEST_MODE:?}" == success ]]; then
+if [[ "${BEAMFALL_RUNNER_TEST_MODE:?}" == success || "${BEAMFALL_RUNNER_TEST_MODE}" == slow ]]; then
   bash -c 'printf "%s\n" "$$" >"$1"; sleep 0.05' \
     "${role}-child" "${metadata}/${role}-child.pid" &
   wait "$!"
@@ -152,7 +152,14 @@ fi
 touch "${metadata}/ready"
 
 case "${BEAMFALL_RUNNER_TEST_MODE:?}" in
-  success)
+  success|slow)
+    # CORE-0941: a slow run that keeps reporting progress must outlive the stall budget.
+    if [[ "${BEAMFALL_RUNNER_TEST_MODE}" == slow && -n "${BEAMFALL_WEB_E2E_HEARTBEAT:-}" ]]; then
+      for _ in $(seq 1 10); do
+        date +%s >"${BEAMFALL_WEB_E2E_HEARTBEAT}"
+        sleep 0.3
+      done
+    fi
     wait "${browser_pid}"
     if [[ -z "${BEAMFALL_E2E_URL:-}" ]]; then
       wait "${server_pid}"
@@ -163,7 +170,7 @@ case "${BEAMFALL_RUNNER_TEST_MODE:?}" in
     fi
     exit 0
     ;;
-  failure) exit 23 ;;
+  failure|leftover|livesibling) exit 23 ;;
   hang) while :; do sleep 1; done ;;
   *) exit 2 ;;
 esac
@@ -181,8 +188,27 @@ run_case() {
   local runner_pid watchdog_pid status=0 pid_file pid runner_timeout_seconds=15
   if [[ "${mode}" == hang ]]; then
     runner_timeout_seconds=1
+  elif [[ "${mode}" == slow ]]; then
+    runner_timeout_seconds=4
   fi
   mkdir -p "${case_dir}/metadata" "${case_dir}/output"
+
+  local leftover_pid=""
+  local sibling_pid=""
+  if [[ "${mode}" == livesibling ]]; then
+    # A live sibling gate on the same pinned port: its server keeps a live parent and is not ours.
+    bash -c 'exec -a /tmp/beamfall-e2e-49124 sleep 120' &
+    sibling_pid=$!
+    register_pid "${sibling_pid}"
+  fi
+  if [[ "${mode}" == leftover ]]; then
+    # CORE-0941: a server binary orphaned by an earlier killed run holds the port; the runner reaps it.
+    # Started from a subshell so it is re-parented to launchd, like a killed run's server.
+    ( bash -c 'exec -a /tmp/beamfall-e2e-49124 sleep 120' & echo $! >"${case_dir}/leftover.pid" )
+    sleep 1
+    leftover_pid="$(cat "${case_dir}/leftover.pid")"
+    register_pid "${leftover_pid}"
+  fi
 
   PATH="${TMP}/bin:${PATH}" \
     BEAMFALL_E2E_URL= \
@@ -262,9 +288,36 @@ except ProcessLookupError:
   elif [[ "${expected}" -ne 0 ]]; then
     bad "${runner_name} ${mode} retains diagnostics"
   fi
+  if [[ -n "${leftover_pid}" ]]; then
+    assert_process_gone "${leftover_pid}" "${runner_name} ${mode} leftover server binary reaped"
+    if grep -q "^reaped_leftover_server_pids=.*${leftover_pid}" "${case_dir}/output/runner-diagnostics.txt" 2>/dev/null; then
+      ok "${runner_name} ${mode} records reaped pid"
+    else
+      bad "${runner_name} ${mode} records reaped pid"
+    fi
+    wait "${leftover_pid}" 2>/dev/null || true
+    forget_pid "${leftover_pid}"
+  fi
+  if [[ -n "${sibling_pid}" ]]; then
+    if kill -0 "${sibling_pid}" 2>/dev/null; then
+      ok "${runner_name} ${mode} leaves a live sibling server on the pinned port"
+    else
+      bad "${runner_name} ${mode} killed a live sibling server on the pinned port"
+    fi
+    kill -KILL "${sibling_pid}" 2>/dev/null || true
+    wait "${sibling_pid}" 2>/dev/null || true
+    forget_pid "${sibling_pid}"
+  fi
   kill -KILL -- "-${runner_pid}" 2>/dev/null || true
   forget_group "${runner_pid}"
 }
+
+# CORE-0941: ~9s of progressing runs (three ~3s invocations) exceed the 4s stall budget and still
+# pass (the smoke's watchdog reads the heartbeat); the silent hang case below, on the same budget class, still fails
+# closed with 124, so progress is what the runner trusts, not elapsed time.
+run_case smoke slow "" 0
+run_case smoke leftover "" 23
+run_case smoke livesibling "" 23
 
 for runner_name in smoke full; do
   run_case "${runner_name}" success "" 0

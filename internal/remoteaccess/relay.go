@@ -268,7 +268,7 @@ func (c *RelayClient) registerTCP(conn net.Conn, hostnames []string, token, secr
 		return nil, err
 	}
 	_ = conn.SetDeadline(time.Time{})
-	session, err := yamux.Client(conn, relayYamuxConfig())
+	session, err := yamux.Client(conn, relayYamuxConfig(c.cfg.YamuxStreamWindowBytes))
 	if err != nil {
 		return nil, fmt.Errorf("start yamux client: %w", err)
 	}
@@ -602,16 +602,31 @@ func redactToken(msg string, secrets ...[]byte) string {
 	return msg
 }
 
-// relayYamuxConfig returns the carrier-session multiplexer config. It MUST
-// match the relay node's config so window-size and keep-alive
+// defaultRelayYamuxStreamWindowBytes mirrors the relay's
+// protocol.DefaultYamuxStreamWindowBytes (beamfall/relay
+// internal/protocol/yamux.go); TestRelayYamuxConfigMatchesRelay pins both.
+// yamux refills a stream's window only after half of it is drained, so one
+// stream moves about window/2 per round trip: 4 MiB keeps a relayed upload above
+// 40 MB/s at 50 ms, where 1 MiB held it near 10 MB/s (CORE-1386).
+const defaultRelayYamuxStreamWindowBytes = 4 * 1024 * 1024
+
+// relayYamuxConfig returns the carrier-session multiplexer config. It mirrors
+// the relay node's protocol.YamuxConfig so window-size, close and keep-alive
 // expectations agree end to end: a session-wide write timeout long enough to
 // ride out a stalled player without tearing down the whole carrier, a stream
-// window sized for the bandwidth-delay product of a high-bitrate remux, keepalive
-// on so a dead carrier is reaped, and yamux's own stderr logging suppressed.
-func relayYamuxConfig() *yamux.Config {
+// window sized for the bandwidth-delay product of a high-bitrate remux, a 30s
+// close timeout so a half-closed stream whose peer never answers is reset
+// instead of holding its stream slot for yamux's default five minutes,
+// keepalive on so a dead carrier is reaped, and yamux's own stderr logging
+// suppressed. streamWindowBytes <= 0 uses the default.
+func relayYamuxConfig(streamWindowBytes int) *yamux.Config {
+	if streamWindowBytes <= 0 {
+		streamWindowBytes = defaultRelayYamuxStreamWindowBytes
+	}
 	cfg := yamux.DefaultConfig()
 	cfg.ConnectionWriteTimeout = 30 * time.Second
-	cfg.MaxStreamWindowSize = 1024 * 1024 // 1 MiB (BDP headroom for 40 Mbps / 50 ms RTT)
+	cfg.MaxStreamWindowSize = uint32(streamWindowBytes) //nolint:gosec // G115: config validation bounds the window to [256 KiB, MaxUint32].
+	cfg.StreamCloseTimeout = 30 * time.Second
 	cfg.EnableKeepAlive = true
 	cfg.LogOutput = io.Discard
 	return cfg
