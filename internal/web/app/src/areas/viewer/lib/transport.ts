@@ -53,6 +53,17 @@ export interface TrickplayTile {
 }
 
 /** Resolves the sprite tile for a scrub position; null when out of range. */
+// The trickplay manifest URL is usually root-relative (`/api/media/assets/<token>/trickplay.json`),
+// so resolve it against the page first; sheet names are relative to the manifest.
+export function resolveTrickplaySheetURL(sheet: string, manifestURL: string): string {
+  try {
+    const page = typeof window === "undefined" ? undefined : window.location.href;
+    return new URL(sheet, new URL(manifestURL, page)).href;
+  } catch {
+    return sheet;
+  }
+}
+
 export function resolveTrickplayTile(
   manifest: TrickplayManifest | null,
   timeSeconds: number,

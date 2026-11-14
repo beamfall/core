@@ -44,6 +44,7 @@ import {
   formatAriaTime,
   formatClockTime,
   formatRemainingTime,
+  resolveTrickplaySheetURL,
   resolveTrickplayTile,
 } from "../lib/transport";
 import { ChapterList } from "./ChapterList";
@@ -555,12 +556,7 @@ export function PlayerTransport({
       setTrickplay(null);
       return;
     }
-    let sheetURL = tile.sheet;
-    try {
-      sheetURL = new URL(tile.sheet, state.trickplayBaseURL).href;
-    } catch {
-      // leave the server-provided URL as-is
-    }
+    const sheetURL = resolveTrickplaySheetURL(tile.sheet, state.trickplayBaseURL);
     setTrickplay({
       left: ratio * 100,
       time,

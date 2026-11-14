@@ -5,6 +5,7 @@ import { useT } from "@/lib/i18n";
 import {
   type ChapterEntry,
   formatClockTime,
+  resolveTrickplaySheetURL,
   resolveTrickplayTile,
   type TrickplayManifest,
 } from "../lib/transport";
@@ -100,12 +101,7 @@ function ChapterThumb({
   }
   const tile = trickplay ? resolveTrickplayTile(trickplay, chapter.startSeconds) : null;
   if (!tile) return <span aria-hidden="true" className="bf-chapter-thumb is-empty" />;
-  let sheetURL = tile.sheet;
-  try {
-    sheetURL = new URL(tile.sheet, trickplayBaseURL).href;
-  } catch {
-    // leave the server-provided URL as-is
-  }
+  const sheetURL = resolveTrickplaySheetURL(tile.sheet, trickplayBaseURL);
   const scale = THUMB_WIDTH / Math.max(tile.width, 1);
   const columns = trickplay?.columns || 10;
   const rows = trickplay?.rows || 10;

@@ -66,7 +66,7 @@ describe("ChapterList", () => {
 
   it("falls back from a missing marker thumbnail to the trickplay tile", async () => {
     const user = userEvent.setup();
-    renderList({ trickplay, trickplayBaseURL: "http://server/api/media/assets/t/trickplay.json" });
+    renderList({ trickplay, trickplayBaseURL: "/api/media/assets/t/trickplay.json" });
 
     await user.click(screen.getByRole("button", { name: "Chapters" }));
     const items = await screen.findAllByRole("menuitem");
@@ -77,7 +77,9 @@ describe("ChapterList", () => {
     fireEvent.error(img);
     expect(items[1].querySelector("img")).toBeNull();
     const tile = items[1].querySelector<HTMLElement>(".bf-chapter-thumb.is-trickplay");
-    expect(tile?.style.backgroundImage).toContain("http://server/api/media/assets/t/sheet-0.jpg");
+    expect(tile?.style.backgroundImage).toContain(
+      `${window.location.origin}/api/media/assets/t/sheet-0.jpg`,
+    );
   });
 
   it("shows no image when neither a thumbnail nor trickplay exists", async () => {

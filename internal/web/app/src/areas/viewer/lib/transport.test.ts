@@ -7,6 +7,7 @@ import {
   chapterSeekTarget,
   renditionIndex,
   renditionKey,
+  resolveTrickplaySheetURL,
 } from "./transport";
 
 describe("chapterSeekTarget", () => {
@@ -20,6 +21,21 @@ describe("chapterSeekTarget", () => {
     expect(chapterSeekTarget(markers, 31, -1)).toBe(0);
     expect(chapterSeekTarget(markers, 31, 1)).toBe(60);
     expect(chapterSeekTarget(markers, 60.5, 1)).toBeNull();
+  });
+});
+
+describe("resolveTrickplaySheetURL", () => {
+  it("resolves a sheet against a root-relative manifest URL", () => {
+    expect(resolveTrickplaySheetURL("sheet-0.jpg", "/api/media/assets/t/trickplay.json")).toBe(
+      `${window.location.origin}/api/media/assets/t/sheet-0.jpg`,
+    );
+  });
+
+  it("keeps an absolute manifest URL and an absolute sheet", () => {
+    expect(resolveTrickplaySheetURL("s.jpg", "https://cdn.example/a/trickplay.json")).toBe(
+      "https://cdn.example/a/s.jpg",
+    );
+    expect(resolveTrickplaySheetURL("https://x.example/s.jpg", "")).toBe("https://x.example/s.jpg");
   });
 });
 
