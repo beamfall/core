@@ -153,6 +153,13 @@ func (s *Server) setupFirstRun(w http.ResponseWriter, r *http.Request) {
 			writeError(w, r, http.StatusTooManyRequests, "setup attempts throttled")
 		case errors.Is(err, pairing.ErrSetupTokenInvalid):
 			writeError(w, r, http.StatusUnauthorized, "setup token invalid or already used")
+		case errors.Is(err, pairing.ErrSetupTokenMissing) && requestIsLAN(r) && s.pairing.SetupRequired():
+			// The refusal and its status stand; only the explanation changes
+			// (CORE-1600). A LAN source whose only fault is the missing token
+			// was denied the LAN claim by the hostname rule, so it gets the same
+			// code and addresses as the GET /api/setup probe.
+			writeCodedError(w, http.StatusBadRequest, "Open Beamfall by its IP address to finish setup without the setup token.",
+				lanHostnameNotAllowed, requestLANURLs(r))
 		case errors.Is(err, pairing.ErrInvalidRequest):
 			writeError(w, r, http.StatusBadRequest, "invalid setup request")
 		default:

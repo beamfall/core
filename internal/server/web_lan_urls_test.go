@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"net"
 	"net/http"
@@ -153,4 +154,76 @@ func TestSetupProbeOffersLANURLsOnlyToLANBrowsers(t *testing.T) {
 	if raw := probe("127.0.0.1:51000", "127.0.0.1:8800"); raw["lanUrls"] != nil {
 		t.Fatalf("claimable LAN probe carries lanUrls: %v", raw)
 	}
+}
+
+// TestSetupRefusedByHostnameRuleCarriesLANCode covers CORE-1600 on POST
+// /api/setup: a LAN browser whose only fault is the missing setup token (it
+// addressed a rebindable hostname, so it has no LAN claim) gets the probe's
+// code and addresses. The status stays 400 and nothing is created; any other
+// fault, a public source or a finished setup keeps the plain refusal.
+func TestSetupRefusedByHostnameRuleCarriesLANCode(t *testing.T) {
+	post := func(srv *Server, remoteAddr, host, body string, overTLS bool) *httptest.ResponseRecorder {
+		t.Helper()
+		req := newJSONRequest(http.MethodPost, "/api/setup", strings.NewReader(body))
+		req.Header.Set(auth.CSRFHeader, "1")
+		req.RemoteAddr = remoteAddr
+		req.Host = host
+		if overTLS {
+			req.TLS = &tls.ConnectionState{}
+		}
+		req = withLocalAddr(req, "127.0.0.1:8800")
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		return rec
+	}
+	plainRefusal := func(t *testing.T, rec *httptest.ResponseRecorder) {
+		t.Helper()
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
+		}
+		raw := decodeBody(t, rec)
+		if _, ok := raw["code"]; ok {
+			t.Fatalf("refusal carries a code: %s", rec.Body.String())
+		}
+		if _, ok := raw["lanUrls"]; ok {
+			t.Fatalf("refusal carries lanUrls: %s", rec.Body.String())
+		}
+	}
+	const noToken = `{"deviceName":"Laptop","profileName":"Owner"}`
+
+	t.Run("LAN source at a hostname gets the code and the listener", func(t *testing.T) {
+		srv := newTestServer(t)
+		srv.pairing.SetBootstrapToken("first-run-token")
+		rec := post(srv, "127.0.0.1:51000", "beamfall.example:8800", noToken, false)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
+		}
+		raw := decodeBody(t, rec)
+		if string(raw["code"]) != `"lan_hostname_not_allowed"` || string(raw["lanUrls"]) != `["http://127.0.0.1:8800/web/"]` {
+			t.Fatalf("body = %s, want the code with the loopback lanUrls", rec.Body.String())
+		}
+		if len(rec.Result().Cookies()) != 0 {
+			t.Fatalf("refusal set cookies: %v", rec.Result().Cookies())
+		}
+		if !srv.pairing.SetupRequired() {
+			t.Fatal("refused setup consumed the setup token")
+		}
+	})
+
+	t.Run("another fault keeps the plain refusal", func(t *testing.T) {
+		srv := newTestServer(t)
+		srv.pairing.SetBootstrapToken("first-run-token")
+		plainRefusal(t, post(srv, "127.0.0.1:51000", "beamfall.example:8800", `{"profileName":"Owner"}`, false))
+	})
+
+	t.Run("public source keeps the plain refusal", func(t *testing.T) {
+		srv := newTestServer(t)
+		srv.pairing.SetBootstrapToken("first-run-token")
+		plainRefusal(t, post(srv, "203.0.113.9:51000", "beamfall.example", noToken, true))
+	})
+
+	t.Run("finished setup keeps the plain refusal", func(t *testing.T) {
+		srv := newTestServer(t)
+		plainRefusal(t, post(srv, "127.0.0.1:51000", "beamfall.example:8800", noToken, false))
+	})
 }

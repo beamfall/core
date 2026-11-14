@@ -14,6 +14,13 @@ a subnet the browser cannot reach. The refusal itself SHALL be unchanged.
 - **THEN** the answer is `403` with `code` `lan_hostname_not_allowed` and the server's IP URL in
   `lanUrls`, and the page links it
 
+#### Scenario: Setup posted through a hostname
+
+- **WHEN** a browser on the server's subnet posts first-run setup through a rebindable hostname over
+  HTTP, with no setup token and nothing else wrong, while setup is pending
+- **THEN** the answer is still `400` and nothing is created, and it carries `code`
+  `lan_hostname_not_allowed` and `lanUrls` as the setup probe does
+
 #### Scenario: Browser not on the LAN
 
 - **WHEN** the same refusal is sent to a browser that is not on a shared subnet
