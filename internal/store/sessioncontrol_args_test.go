@@ -114,3 +114,32 @@ func TestNewSessionControlPayloadAnchorsPlayMedia(t *testing.T) {
 		t.Fatalf("unset arguments serialized: %s", raw)
 	}
 }
+
+// TestSessionControlPayloadJSONCarriesAnchorSet: a transport command's anchor
+// set reaches the outbox row, and a play-media (which replaces the playback)
+// may not carry one.
+func TestSessionControlPayloadJSONCarriesAnchorSet(t *testing.T) {
+	raw, err := sessionControlPayloadJSON("session-default", SessionControlPayload{
+		Command:         SessionCommandPause,
+		ProfileID:       "profile-default",
+		MediaID:         "media-alpha",
+		PlayingMediaIDs: []MediaID{"media-alpha", "media-next"},
+	})
+	if err != nil {
+		t.Fatalf("sessionControlPayloadJSON: %v", err)
+	}
+	if !strings.Contains(string(raw), `"playingMediaIDs":["media-alpha","media-next"]`) {
+		t.Fatalf("payload JSON missing the anchor set: %s", raw)
+	}
+	play, err := NewSessionControlPayload(SessionCommandPlayMedia, SessionControlArgs{MediaID: "media-alpha"}, "device-a", "profile-default", "media-alpha")
+	if err != nil {
+		t.Fatalf("NewSessionControlPayload: %v", err)
+	}
+	if _, err := sessionControlPayloadJSON("session-default", play); err != nil {
+		t.Fatalf("play-media without an anchor set: %v", err)
+	}
+	play.PlayingMediaIDs = []MediaID{"media-alpha"}
+	if _, err := sessionControlPayloadJSON("session-default", play); err == nil {
+		t.Fatal("play-media with playingMediaIDs was accepted")
+	}
+}

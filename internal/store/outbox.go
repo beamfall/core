@@ -547,16 +547,24 @@ const SessionControlKind = "session.control"
 // (authorized as visible to the controller at issue time); for every other
 // verb it is the target's active Media. Either way the SSE surface
 // reveal-filters delivery on it.
+//
+// PlayingMediaIDs, on every verb but play-media, lists each Media the target
+// session held a live Stream Token for at issue time (a prefetched next item
+// as well as the current one), all visible to the controller. It is the
+// receiver's anchor: a transport command applies only while the receiver
+// plays one of them. The SSE surface reveal-filters on every entry too, so the
+// list never names a Media to a subscriber who cannot reveal it.
 type SessionControlPayload struct {
-	Command    string    `json:"command"`
-	FromDevice DeviceID  `json:"fromDevice,omitempty"`
-	ProfileID  ProfileID `json:"profileID"`
-	MediaID    MediaID   `json:"mediaID,omitempty"`
-	Direction  string    `json:"direction,omitempty"`
-	PositionMs *int64    `json:"positionMs,omitempty"`
-	Volume     *int      `json:"volume,omitempty"`
-	TrackID    *string   `json:"trackID,omitempty"`
-	Text       string    `json:"text,omitempty"`
+	Command         string    `json:"command"`
+	FromDevice      DeviceID  `json:"fromDevice,omitempty"`
+	ProfileID       ProfileID `json:"profileID"`
+	MediaID         MediaID   `json:"mediaID,omitempty"`
+	PlayingMediaIDs []MediaID `json:"playingMediaIDs,omitempty"`
+	Direction       string    `json:"direction,omitempty"`
+	PositionMs      *int64    `json:"positionMs,omitempty"`
+	Volume          *int      `json:"volume,omitempty"`
+	TrackID         *string   `json:"trackID,omitempty"`
+	Text            string    `json:"text,omitempty"`
 }
 
 // NewSessionControlPayload validates command and args and builds the outbox
@@ -669,6 +677,9 @@ func sessionControlPayloadJSON(target SessionID, payload SessionControlPayload) 
 	payload.TrackID = normalized.TrackID
 	if payload.ProfileID == "" {
 		return nil, ValidationError("session-control event is missing its Profile")
+	}
+	if payload.Command == SessionCommandPlayMedia && len(payload.PlayingMediaIDs) > 0 {
+		return nil, ValidationError("play-media does not carry playingMediaIDs")
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {

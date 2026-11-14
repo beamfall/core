@@ -388,6 +388,19 @@ export function usePlayer(
     retryFromRef.current = { mediaID, position: lastPositionRef.current };
     setRetryKey((key) => key + 1);
   }, [mediaID]);
+  // A restart (another device's play-media for this Media) sets the player up
+  // afresh: a new progress queue and reporting timer, and an opening position
+  // that replaces any resume seek still waiting on metadata. An undefined
+  // position resumes from saved progress, as a fresh open does.
+  const restartRef = useRef<{ mediaID: string; at: number | undefined } | null>(null);
+  const restart = useCallback(
+    (atSeconds?: number) => {
+      retryFromRef.current = null;
+      restartRef.current = { mediaID, at: atSeconds };
+      setRetryKey((key) => key + 1);
+    },
+    [mediaID],
+  );
 
   const destroyHls = useCallback(() => {
     if (hlsRef.current) {
@@ -468,6 +481,9 @@ export function usePlayer(
     setState(emptyState());
     const retryFrom = retryFromRef.current?.mediaID === mediaID ? retryFromRef.current.position : 0;
     retryFromRef.current = null;
+    const restartFrom = restartRef.current?.mediaID === mediaID ? restartRef.current : null;
+    restartRef.current = null;
+    const startAt = restartFrom ? restartFrom.at : startAtSeconds;
     lastPositionRef.current = retryFrom;
     presentedPositionRef.current = null;
     // Listeners bound to the <video> for the whole load (not one engine).
@@ -1028,11 +1044,7 @@ export function usePlayer(
       switchRef.current = switchToHls;
 
       const opening =
-        retryFrom > 0
-          ? retryFrom
-          : startAtSeconds !== undefined
-            ? startAtSeconds
-            : resumePositionFromInfo(info);
+        retryFrom > 0 ? retryFrom : startAt !== undefined ? startAt : resumePositionFromInfo(info);
       attachEngine(stream, initialEngine, opening, { play: true });
 
       setState({
@@ -1138,7 +1150,7 @@ export function usePlayer(
     };
   }, [reportProgress, stopProgressReporting]);
 
-  return { videoRef, hlsRef, state, retry, switchToHls };
+  return { videoRef, hlsRef, state, retry, restart, switchToHls };
 }
 
 interface TrackPreferences {

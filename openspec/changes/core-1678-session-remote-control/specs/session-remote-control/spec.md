@@ -64,6 +64,22 @@ playback on the target.
   same-Profile device sends any verb to it
 - **THEN** the request fails with "session not controllable", whichever row is listed first
 
+### Requirement: Transport commands name the target's playing Media
+
+Verbs other than `play-media` SHALL list, as `playingMediaIDs`, every Media the target holds a live
+playback token for. The event stream SHALL deliver a command only to subscribers who can reveal its
+`mediaID` and every entry of `playingMediaIDs`.
+
+#### Scenario: Several playback rows
+
+- **WHEN** a revealed device sends `pause` to a same-Profile session holding tokens for two Media
+- **THEN** the event's `playingMediaIDs` lists both Media
+
+#### Scenario: Anchor set names hidden Media
+
+- **WHEN** a command's `playingMediaIDs` names Media an event-stream subscriber cannot reveal
+- **THEN** that subscriber is not sent the event
+
 ### Requirement: Play on another device
 
 `play-media` SHALL start Media on a live device session in the caller's Profile, whether or not it
@@ -86,7 +102,7 @@ unknown Media and a Media hidden from the caller SHALL both fail with "unknown m
 
 `POST /v1/playback-control` SHALL keep its request body of `sessionID` and `command`. It SHALL
 accept the verbs that need no argument and SHALL answer 400 naming the missing argument for the
-others.
+others. Its `playingMediaIDs` SHALL list only the target's Media the key can reveal.
 
 #### Scenario: Seek over /v1
 
@@ -97,9 +113,10 @@ others.
 
 The web app SHALL list the Profile's other active sessions with transport controls, SHALL offer
 "Play on" for an item to the Profile's other device sessions, and SHALL apply `session.control`
-events addressed to its own session to the player it is running. The receiver SHALL apply each
-event at most once, SHALL refuse a transport command whose Media is not the one it is playing, and
-SHALL end playback on a remote `stop` without returning to an earlier player.
+events addressed to its own session to the player it is running. It SHALL refuse a transport
+command unless the Media it is playing is listed in `playingMediaIDs`, or, when the list is absent,
+is the command's `mediaID`. It SHALL end playback on a remote `stop` without returning to an earlier
+player.
 
 #### Scenario: Pause from another tab
 
@@ -110,6 +127,29 @@ SHALL end playback on a remote `stop` without returning to an earlier player.
 
 - **WHEN** a `pause` authorized for one Media reaches a web player now playing another
 - **THEN** the player ignores it
+
+#### Scenario: Next item prefetched
+
+- **WHEN** a `pause` lists two Media in `playingMediaIDs` and the web player is playing the second
+- **THEN** that web player pauses
+
+
+### Requirement: Web receiver applies each event once and restarts in place
+
+The web receiver SHALL apply each event at most once, accepting a later event when its id is higher
+or it was issued later, so a server restored from backup is still obeyed. A `play-media` for the
+Media already playing SHALL set the player up afresh at the requested position and report progress
+again.
+
+#### Scenario: Restart finished Media
+
+- **WHEN** a web player has finished its Media and is sent `play-media` for the same Media at 0
+- **THEN** it plays from the start and reports progress again
+
+#### Scenario: Server restored from backup
+
+- **WHEN** a web receiver that applied event 500 is sent event 101 issued after event 500
+- **THEN** it applies event 101
 
 #### Scenario: Viewer remounted
 

@@ -58,7 +58,12 @@ export function useRemoteReceiver(profileID: string): RemoteReceiver {
       if (!frame) return;
       void resolveOwnSession()
         .then((own) => {
-          if (!own || frame.target !== own || !claimControlEvent(event.lastEventId)) return;
+          if (
+            !own ||
+            frame.target !== own ||
+            !claimControlEvent(event.lastEventId, frame.occurredAt)
+          )
+            return;
           const { command } = frame;
           const player = remotePlayerTarget();
           if (command.command === "play-media" && command.mediaID) {

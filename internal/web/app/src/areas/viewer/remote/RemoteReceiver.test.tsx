@@ -11,14 +11,19 @@ import { resetAppliedControlEvents, useRemotePlayerTarget } from "./remoteContro
 
 vi.mock("@/lib/graphql", () => ({ fetchMySessions: vi.fn() }));
 
-function control(target: string, payload: Record<string, unknown>, lastEventId = "") {
+function control(
+  target: string,
+  payload: Record<string, unknown>,
+  lastEventId = "",
+  occurredAt = new Date().toISOString(),
+) {
   return new MessageEvent("session.control", {
     lastEventId,
     data: JSON.stringify({
       kind: "session.control",
       aggregateType: "session",
       aggregateID: target,
-      occurredAt: new Date().toISOString(),
+      occurredAt,
       payload,
     }),
   });
@@ -107,25 +112,26 @@ describe("useRemoteReceiver", () => {
   });
 
   it("restarts in place when the player is already on that Media", async () => {
-    const play = vi.fn(() => Promise.resolve());
-    const video = { play, currentTime: 120 } as unknown as HTMLVideoElement;
-    renderHook(() => useRemotePlayerTarget({ video: () => video, mediaID: "m1" }), { wrapper });
+    const restart = vi.fn();
+    renderHook(() => useRemotePlayerTarget({ video: () => null, mediaID: "m1", restart }), {
+      wrapper,
+    });
     const { result } = renderHook(() => useRemoteReceiver("p1"), { wrapper });
     act(() =>
       result.current.onEvent(
         control("session-a", { command: "play-media", mediaID: "m1", positionMs: 5_000 }),
       ),
     );
-    await waitFor(() => expect(play).toHaveBeenCalledOnce());
-    expect(video.currentTime).toBe(5);
+    await waitFor(() => expect(restart).toHaveBeenCalledWith(5));
     expect(path).toBe("/");
   });
 
   it("does not replay an event it already applied", async () => {
+    const issued = new Date().toISOString();
     const first = renderHook(() => useRemoteReceiver("p1"), { wrapper });
     act(() =>
       first.result.current.onEvent(
-        control("session-a", { command: "display-message", text: "Once" }, "7"),
+        control("session-a", { command: "display-message", text: "Once" }, "7", issued),
       ),
     );
     await waitFor(() => expect(first.result.current.message).toBe("Once"));
@@ -135,7 +141,7 @@ describe("useRemoteReceiver", () => {
     const second = renderHook(() => useRemoteReceiver("p1"), { wrapper });
     act(() =>
       second.result.current.onEvent(
-        control("session-a", { command: "display-message", text: "Once" }, "7"),
+        control("session-a", { command: "display-message", text: "Once" }, "7", issued),
       ),
     );
     await waitFor(() => expect(fetchMySessions).toHaveBeenCalledTimes(2));

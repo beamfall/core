@@ -47,6 +47,7 @@ function renderPlayer(state: PlayerState, navState?: unknown) {
     hlsRef: { current: null },
     state,
     retry,
+    restart: vi.fn(),
     switchToHls: vi.fn(() => false as const),
   });
   render(
@@ -338,6 +339,7 @@ describe("PlayerPage Back", () => {
       hlsRef: { current: null },
       state: playerState({ phase: "playing" }),
       retry: vi.fn(),
+      restart: vi.fn(),
       switchToHls: vi.fn(() => false as const),
     });
     render(

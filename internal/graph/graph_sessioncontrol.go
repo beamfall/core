@@ -161,14 +161,15 @@ func (h *Handler) controlSession(ctx context.Context, scope auth.Scope, req requ
 	// learns what restricted Media it is, nor commands it). ActiveSessions has
 	// a row per session and Media, so every row of the target must be visible:
 	// one hidden row makes the whole session uncontrollable, whatever order the
-	// rows come back in.
+	// rows come back in. The rows' Media (a prefetched next item as well as the
+	// current one) travel as the receiver's anchor set: which of them is on
+	// screen only the receiver knows.
 	now := time.Now().UTC()
 	active, err := h.store.ActiveSessions(ctx, now, scope.LibraryFilter())
 	if err != nil {
 		return ControlSessionResult{}, err
 	}
-	var activeMedia store.MediaID
-	found := false
+	var playing []store.MediaID
 	for _, s := range active {
 		if s.SessionID != store.SessionID(targetID) {
 			continue
@@ -176,10 +177,12 @@ func (h *Handler) controlSession(ctx context.Context, scope auth.Scope, req requ
 		if s.Title == "" { // reveal-hidden: Media identity is suppressed
 			return ControlSessionResult{}, clientError("session not controllable")
 		}
-		if !found {
-			activeMedia = s.MediaID
-			found = true
-		}
+		playing = append(playing, s.MediaID)
+	}
+	found := len(playing) > 0
+	var activeMedia store.MediaID
+	if found {
+		activeMedia = playing[0]
 	}
 
 	// Gate 3 — what the command needs from the target.
@@ -204,6 +207,9 @@ func (h *Handler) controlSession(ctx context.Context, scope auth.Scope, req requ
 	payload, err := store.NewSessionControlPayload(command, args, scope.DeviceID, target.ProfileID, anchor)
 	if err != nil {
 		return ControlSessionResult{}, sessionControlClientError(err)
+	}
+	if command != store.SessionCommandPlayMedia {
+		payload.PlayingMediaIDs = playing
 	}
 	if err := h.store.AppendSessionControlEventWithActivity(ctx, store.SessionID(targetID), payload, store.ActivityEntry{
 		OccurredAt: now,

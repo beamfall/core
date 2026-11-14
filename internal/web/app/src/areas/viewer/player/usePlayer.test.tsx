@@ -157,7 +157,7 @@ function Harness({
   startAtSeconds?: number;
   nextMediaID?: string;
 }) {
-  const { videoRef, state, retry, switchToHls } = usePlayer(
+  const { videoRef, state, retry, restart, switchToHls } = usePlayer(
     mediaID,
     messages,
     startAtSeconds,
@@ -189,6 +189,9 @@ function Harness({
       <output data-testid="detail">{state.detail ?? ""}</output>
       <button type="button" onClick={retry}>
         retry
+      </button>
+      <button type="button" onClick={() => restart(0)}>
+        restart
       </button>
       {/* The revealed playback document, surfaced so a test can assert it stops
           being addressable once the reveal goes terminal. */}
@@ -681,6 +684,52 @@ describe("usePlayer", () => {
     fireEvent.loadedMetadata(video);
 
     expect(video.currentTime).toBe(37);
+  });
+
+  it("restarts at the requested position over a resume seek still waiting on metadata", async () => {
+    vi.mocked(fetchPlaybackInfo).mockResolvedValue({
+      decision: "direct-play",
+      timeline: { positionSeconds: 91 },
+      streams: [{ kind: "direct-play", url: "/api/media/direct/token" }],
+    });
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+
+    fireEvent.click(screen.getByRole("button", { name: "restart" }));
+    await waitFor(() => expect(fetchPlaybackInfo).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    const video = screen.getByTestId("player") as HTMLVideoElement;
+    fireEvent.loadedMetadata(video);
+
+    expect(video.currentTime).toBe(0);
+  });
+
+  it("reports progress again after a restart of finished Media", async () => {
+    const pending = capturePendingProgress();
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    let video = screen.getByTestId("player") as HTMLVideoElement;
+    Object.defineProperty(video, "duration", { configurable: true, value: 120 });
+    Object.defineProperty(video, "currentTime", { configurable: true, value: 120 });
+    fireEvent.ended(video);
+    await waitFor(() => expect(pending.requests).toHaveLength(1));
+    expect(pending.requests[0].variables).toMatchObject({ finished: true });
+    pending.requests[0].resolve();
+
+    fireEvent.click(screen.getByRole("button", { name: "restart" }));
+    await waitFor(() => expect(fetchPlaybackInfo).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    video = screen.getByTestId("player") as HTMLVideoElement;
+    Object.defineProperty(video, "currentTime", { configurable: true, value: 5 });
+    fireEvent.pause(video);
+
+    await waitFor(() => expect(pending.requests).toHaveLength(2));
+    expect(pending.requests[1].variables).toMatchObject({
+      mediaID: "media-alpha",
+      positionSeconds: 5,
+      finished: false,
+    });
+    pending.requests[1].resolve();
   });
 
   it("removes the previous media resume listener before the next media loads metadata", async () => {

@@ -97,6 +97,7 @@ export function PlayerTransport({
   onNextInQueue,
   onStop,
   onRemoteStop,
+  onRemoteRestart,
   switchToHls,
   onMenuOpenChange,
 }: {
@@ -135,6 +136,8 @@ export function PlayerTransport({
   onStop?: () => void;
   /** Stop requested by another device; falls back to onStop. */
   onRemoteStop?: () => void;
+  /** Another device's play-media for this Media: set up afresh at that position. */
+  onRemoteRestart?: (atSeconds?: number) => void;
   /** Switches direct play to its HLS rendition stream at the current position. */
   switchToHls?: (renditionKey?: string) => SwitchResult;
   /** Reports whether any menu/overlay is open (drives auto-hide suppression). */
@@ -268,6 +271,7 @@ export function PlayerTransport({
     next: onNextInQueue,
     previous: onPreviousInQueue,
     stop: onRemoteStop ?? onStop,
+    restart: onRemoteRestart,
   });
 
   // Mirror the live <video> time into React state so the chrome re-renders.

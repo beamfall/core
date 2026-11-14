@@ -18,12 +18,16 @@ export interface SessionControlCommand {
   volume?: number;
   trackID?: string;
   mediaID?: string;
+  /** Every Media the target was playing when the command was authorized. */
+  playingMediaIDs?: string[];
   text?: string;
 }
 
 export interface SessionControlFrame {
   /** The target session id (the envelope's aggregateID). */
   target: string;
+  /** When the server issued the command, in epoch milliseconds. */
+  occurredAt: number;
   command: SessionControlCommand;
 }
 
@@ -36,6 +40,12 @@ interface Envelope {
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function optionalStrings(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const strings = value.filter((item): item is string => typeof item === "string");
+  return strings.length > 0 ? strings : undefined;
 }
 
 function optionalNumber(value: unknown): number | undefined {
@@ -64,6 +74,7 @@ export function parseSessionControlFrame(data: unknown, now: number): SessionCon
       : undefined;
   return {
     target: envelope.aggregateID,
+    occurredAt: occurred,
     command: {
       command: payload.command,
       direction,
@@ -71,6 +82,7 @@ export function parseSessionControlFrame(data: unknown, now: number): SessionCon
       volume: optionalNumber(payload.volume),
       trackID: optionalString(payload.trackID),
       mediaID: optionalString(payload.mediaID),
+      playingMediaIDs: optionalStrings(payload.playingMediaIDs),
       text: optionalString(payload.text),
     },
   };
@@ -88,6 +100,8 @@ export interface RemotePlayerTarget {
   next?: () => void;
   previous?: () => void;
   stop?: () => void;
+  /** Sets this player up afresh at a position in seconds (undefined: saved progress). */
+  restart?: (atSeconds?: number) => void;
 }
 
 // Another client's track ids are not this player's; only a plain index applies.
@@ -95,11 +109,19 @@ function isTrackIndex(id: string | undefined): id is string {
   return id !== undefined && /^\d{1,3}$/.test(id);
 }
 
+function anchoredTo(command: SessionControlCommand, target: RemotePlayerTarget): boolean {
+  if (command.playingMediaIDs) {
+    return target.mediaID !== undefined && command.playingMediaIDs.includes(target.mediaID);
+  }
+  return command.mediaID === undefined || command.mediaID === target.mediaID;
+}
+
 /**
  * Applies a transport command to a player. Returns false when the command is
  * not a player command or the player cannot honour it (no next item, say).
- * A command that names a Media was authorized against that Media, so it is
- * refused when this player has moved on to another one. A remote trackID is
+ * A command was authorized against the Media the target was playing then (a
+ * session can hold several, a prefetched next item say), so it is refused when
+ * this player has moved on to one outside that set. A remote trackID is
  * the receiver's zero-based track index; an empty subtitle trackID turns
  * subtitles off.
  */
@@ -107,7 +129,7 @@ export function applyPlayerCommand(
   command: SessionControlCommand,
   target: RemotePlayerTarget,
 ): boolean {
-  if (command.mediaID !== undefined && command.mediaID !== target.mediaID) return false;
+  if (!anchoredTo(command, target)) return false;
   const video = target.video();
   switch (command.command) {
     case "pause":
@@ -161,62 +183,75 @@ export function applyPlayerCommand(
 }
 
 /**
- * Applies play-media in place when the player is already on that Media: seeks
- * to the requested position, if any, and plays. False when it must navigate.
+ * Applies play-media in place when the player is already on that Media: the
+ * player sets itself up afresh at the requested position (saved progress when
+ * none), as opening it would. False when the receiver must navigate instead.
  */
 export function restartInPlace(
   command: SessionControlCommand,
   target: RemotePlayerTarget,
 ): boolean {
-  if (!command.mediaID || command.mediaID !== target.mediaID) return false;
-  const video = target.video();
-  if (!video) return false;
-  if (command.positionMs !== undefined) video.currentTime = command.positionMs / 1000;
-  void video.play()?.catch(() => {});
+  if (!command.mediaID || command.mediaID !== target.mediaID || !target.restart) return false;
+  target.restart(command.positionMs === undefined ? undefined : command.positionMs / 1000);
   return true;
 }
 
-// The highest event id this tab has applied. A remounted viewer subscribes
-// without a cursor and is sent recent events again; without this, leaving and
-// returning to the viewer would replay a play-media sent a moment ago. It is
-// kept in sessionStorage too, so a reload in the same tab does not replay it.
-const APPLIED_KEY = "bf.remote.appliedEventID";
-let appliedThrough: number | null = null;
+// The last event this tab applied: its id and issue time. A remounted viewer
+// subscribes without a cursor and is sent recent events again; without this,
+// leaving and returning to the viewer would replay a play-media sent a moment
+// ago. It is kept in sessionStorage too, so a reload in the same tab does not
+// replay it. Ids alone are not enough: restoring an older backup rewinds the
+// event sequence, so an event is fresh when its id is higher OR it was issued
+// later than the last one applied.
+const APPLIED_KEY = "bf.remote.appliedEvent";
+interface AppliedEvent {
+  id: number;
+  at: number;
+}
+let applied: AppliedEvent | null | undefined;
 
-function readApplied(): number {
-  if (appliedThrough === null) {
-    let stored = 0;
+function readApplied(): AppliedEvent | null {
+  if (applied === undefined) {
+    applied = null;
     try {
-      stored = Number(window.sessionStorage.getItem(APPLIED_KEY)) || 0;
+      const stored = JSON.parse(window.sessionStorage.getItem(APPLIED_KEY) ?? "null") as unknown;
+      if (
+        stored !== null &&
+        typeof stored === "object" &&
+        Number.isSafeInteger((stored as AppliedEvent).id) &&
+        Number.isFinite((stored as AppliedEvent).at)
+      ) {
+        applied = { id: (stored as AppliedEvent).id, at: (stored as AppliedEvent).at };
+      }
     } catch {
-      // Storage is unavailable; the in-memory watermark still applies.
+      // Storage is unavailable or holds junk; the in-memory record still applies.
     }
-    appliedThrough = stored;
   }
-  return appliedThrough;
+  return applied;
 }
 
 /**
- * Records an SSE event id as applied. False when it was already applied, so
- * the caller drops the replay. A frame without a numeric id cannot be tracked
- * and is accepted (the staleness window still bounds it).
+ * Records an SSE event as applied. False when it was already applied, so the
+ * caller drops the replay. A frame without a numeric id cannot be tracked and
+ * is accepted (the staleness window still bounds it).
  */
-export function claimControlEvent(eventID: string): boolean {
+export function claimControlEvent(eventID: string, occurredAt: number): boolean {
   const id = Number(eventID);
   if (!eventID || !Number.isSafeInteger(id) || id <= 0) return true;
-  if (id <= readApplied()) return false;
-  appliedThrough = id;
+  const last = readApplied();
+  if (last && id <= last.id && occurredAt <= last.at) return false;
+  applied = { id, at: occurredAt };
   try {
-    window.sessionStorage.setItem(APPLIED_KEY, String(id));
+    window.sessionStorage.setItem(APPLIED_KEY, JSON.stringify(applied));
   } catch {
-    // Storage is unavailable; the in-memory watermark still applies.
+    // Storage is unavailable; the in-memory record still applies.
   }
   return true;
 }
 
 /** Test seam: forgets the applied-event watermark. */
 export function resetAppliedControlEvents(): void {
-  appliedThrough = null;
+  applied = undefined;
   try {
     window.sessionStorage.removeItem(APPLIED_KEY);
   } catch {

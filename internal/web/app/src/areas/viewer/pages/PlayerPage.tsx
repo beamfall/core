@@ -68,7 +68,7 @@ export function PlayerPage() {
   const startAtSeconds = parseTimestampParam(new URLSearchParams(location.search).get("t"));
   const { previous: previousInQueue, next: nextInQueue } = queueNeighbours(queue, mediaId || "");
 
-  const { videoRef, hlsRef, state, retry, switchToHls } = usePlayer(
+  const { videoRef, hlsRef, state, retry, restart, switchToHls } = usePlayer(
     mediaId || "",
     {
       couldNotReachServer: t("couldNotReachServer"),
@@ -444,6 +444,7 @@ export function PlayerPage() {
               onNextInQueue={playNext}
               onStop={back}
               onRemoteStop={stopRemotely}
+              onRemoteRestart={restart}
               switchToHls={switchToHls}
               onMenuOpenChange={setMenuOpen}
             />

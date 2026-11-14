@@ -38,6 +38,7 @@ describe("parseSessionControlFrame", () => {
       parseSessionControlFrame(frame({ command: "seek", positionMs: 90_000, sessionID: "x" }), NOW),
     ).toEqual({
       target: "session-b",
+      occurredAt: NOW - 1000,
       command: {
         command: "seek",
         direction: undefined,
@@ -45,6 +46,7 @@ describe("parseSessionControlFrame", () => {
         volume: undefined,
         trackID: undefined,
         mediaID: undefined,
+        playingMediaIDs: undefined,
         text: undefined,
       },
     });
@@ -152,33 +154,63 @@ describe("applyPlayerCommand", () => {
     expect(video.pause).toHaveBeenCalledOnce();
   });
 
+  it("accepts any Media the target was playing when the command was authorized", () => {
+    // A session holds tokens for a prefetched next item too; the anchor is the set.
+    const { video, target: t } = target({ mediaID: "media-b" });
+    const playing = ["media-a", "media-b"];
+    expect(
+      applyPlayerCommand({ command: "pause", mediaID: "media-a", playingMediaIDs: playing }, t),
+    ).toBe(true);
+    expect(video.pause).toHaveBeenCalledOnce();
+    expect(
+      applyPlayerCommand({ command: "pause", mediaID: "media-a", playingMediaIDs: ["media-a"] }, t),
+    ).toBe(false);
+    expect(
+      applyPlayerCommand({ command: "pause", playingMediaIDs: playing }, { video: () => video }),
+    ).toBe(false);
+  });
+
   it("does nothing without a video element", () => {
     expect(applyPlayerCommand({ command: "pause" }, { video: () => null })).toBe(false);
   });
 });
 
 describe("restartInPlace", () => {
-  it("seeks and plays when the player is already on that Media", () => {
-    const video = fakeVideo();
-    video.currentTime = 300;
-    const t: RemotePlayerTarget = { video: () => video, mediaID: "m1" };
+  it("has the player set itself up afresh when it is already on that Media", () => {
+    const restart = vi.fn();
+    const t: RemotePlayerTarget = { video: () => fakeVideo(), mediaID: "m1", restart };
     expect(restartInPlace({ command: "play-media", mediaID: "m1", positionMs: 0 }, t)).toBe(true);
-    expect(video.currentTime).toBe(0);
-    expect(video.play).toHaveBeenCalledOnce();
+    expect(restart).toHaveBeenLastCalledWith(0);
+    expect(restartInPlace({ command: "play-media", mediaID: "m1" }, t)).toBe(true);
+    expect(restart).toHaveBeenLastCalledWith(undefined);
     expect(restartInPlace({ command: "play-media", mediaID: "m2" }, t)).toBe(false);
+    expect(
+      restartInPlace(
+        { command: "play-media", mediaID: "m1" },
+        { video: () => null, mediaID: "m1" },
+      ),
+    ).toBe(false);
   });
 });
 
 describe("claimControlEvent", () => {
   it("applies each event id once and accepts frames without one", () => {
     resetAppliedControlEvents();
-    expect(claimControlEvent("41")).toBe(true);
-    expect(claimControlEvent("41")).toBe(false);
-    expect(claimControlEvent("40")).toBe(false);
-    expect(claimControlEvent("42")).toBe(true);
-    expect(claimControlEvent("")).toBe(true);
-    expect(claimControlEvent("not-a-number")).toBe(true);
+    expect(claimControlEvent("41", 1_000)).toBe(true);
+    expect(claimControlEvent("41", 1_000)).toBe(false);
+    expect(claimControlEvent("40", 900)).toBe(false);
+    expect(claimControlEvent("42", 1_100)).toBe(true);
+    expect(claimControlEvent("", 0)).toBe(true);
+    expect(claimControlEvent("not-a-number", 0)).toBe(true);
     resetAppliedControlEvents();
-    expect(claimControlEvent("41")).toBe(true);
+    expect(claimControlEvent("41", 1_000)).toBe(true);
+  });
+
+  it("accepts a rewound event sequence issued later, after a backup restore", () => {
+    resetAppliedControlEvents();
+    expect(claimControlEvent("500", 1_000)).toBe(true);
+    expect(claimControlEvent("101", 2_000)).toBe(true);
+    expect(claimControlEvent("101", 2_000)).toBe(false);
+    expect(claimControlEvent("102", 2_100)).toBe(true);
   });
 });
