@@ -1,6 +1,6 @@
 # Public contract registry (CORE-0902)
 
-Status: proposed, 2026-11-13. Implementation waits on review of this design.
+Status: implemented, 2026-11-13. This document ships with the change it describes.
 
 ## Problem
 
@@ -13,9 +13,9 @@ belongs to private repositories:
   `web-cloud-accounts`, both produced by the private cloud service);
 - `conformanceTest` text that names test files in private repos.
 
-The superseded wire artifacts `internal/conformance/wire-contract-v1.2.0.json` through
+The superseded wire artifacts `wire-contract-v1.2.0.json` through
 `v1.15.0.json` each embed one drift record (`XCONTRACT-1b`, deadline `2026-11-30`). The
-artifacts `wire-contract-v2.0.0.json` (pinned by every client consumer) and `wire-contract-v2.1.0.json` (active since core `43bbe3ea`), plus `tools/wire-contract/testdata/wire-contract.json`,
+artifacts `wire-contract-v2.0.0.json` (pinned by every client consumer), `wire-contract-v2.1.0.json` and `wire-contract-v2.2.0.json` (active since core `1ff26db4`), plus `tools/wire-contract/testdata/wire-contract.json`,
 carry `knownDrift: null` and are already clean.
 
 This material is low sensitivity: repo names, ticket ids and dates, with no credentials or
@@ -45,17 +45,17 @@ entitlement row under its existing `entitlement-money-path` boundary or a new on
 Core's own pins follow the same rule. `circle-federation-wire` lists core as both `owner` and
 `guest` consumer at 1.0.0. Those pins move to the workspace registry too, and the absence test
 has no self-consumer exemption (CORE-1479, decided 2026-11-13). Its `conformanceTest` names
-`internal/circle/protocol_test.go`, which is not in the tree; the real test is
+a `protocol_test.go` under the circle package, which is not in the tree; the real test is
 `internal/streamtoken/circle_protocol_test.go`, and the stripped text names that.
 
 `relay-core-tunnel` (producer `beamfall-relay`, public) and `plugin-artifact-trust` (core is
 the consumer; the artifact lives in core's testdata) stay as they are.
 
 Superseded wire artifacts v1.2.0–v1.15.0 are immutable published identities, so their bytes
-are not rewritten. Nothing pins them: every client consumer pins 2.0.0 (the active artifact is 2.1.0, a permitted minor skew), and
+are not rewritten. Nothing pins them: every client consumer pins 2.0.0 (the active artifact is 2.2.0, a permitted minor skew), and
 `newestWireContractArtifact` reads only the newest file. They move out of the public tree into
 `core-private/` as preserved originals for provenance and rollback. `v1.0.0` and `v1.1.0` hold
-no bookkeeping and stay. The pinned 2.0.0 and active 2.1.0 artifacts and their byte pins do not change, so no fresh
+no bookkeeping and stay. The pinned 2.0.0, superseded 2.1.0 and active 2.2.0 artifacts and their byte pins do not change, so no fresh
 artifact identity is needed.
 
 ## Checks: where each one runs after the change
@@ -78,7 +78,7 @@ New tests:
 - **Retention (workspace):** every consumer pin, `consumerArtifacts` path and drift record
   removed from core exists in the workspace registry with the same values. The workspace
   ticket writes this test, and it runs under the workspace contract gate.
-- **Equivalence:** the 2.0.0 and 2.1.0 wire artifacts, `tools/wire-contract/testdata/*` and
+- **Equivalence:** the 2.0.0, 2.1.0 and 2.2.0 wire artifacts, `tools/wire-contract/testdata/*` and
   `plugin-trust/v1` keep their SHA-256 values byte for byte. Structural schema equivalence
   holds trivially because no artifact bytes change.
 
@@ -87,7 +87,7 @@ New tests:
 1. **Workspace tickets CORE-1428 and CORE-1479** (landed at workspace `1bc75c8` and `c46de2f`):
    add the consumer rows, pins (including core's circle owner and guest pins),
    `consumerArtifacts`, drift records and the entitlement row to the workspace registry, plus
-   the retention test (`contracts/core-0902-retention_test.js`). This is harmless on its own,
+   the retention test (the workspace's `core-0902-retention_test.js`). This is harmless on its own,
    because core still carries the same data.
 2. **Core (this ticket):** strip the core registry, update `check-contract-registry.py`,
    `check_contract_registry_test.py`, `wire_contract_test.go`, `crossrepo-conformance*.sh`

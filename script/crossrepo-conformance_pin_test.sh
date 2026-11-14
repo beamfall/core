@@ -47,11 +47,19 @@ git -C "$RUNNER" init -q
 cp "$ROOT/script/crossrepo-conformance.sh" "$RUNNER/script/"
 chmod +x "$RUNNER/script/crossrepo-conformance.sh"
 printf '%s\n' \
-  '{"schemaVersion":1,"boundaries":[{"boundary":"client-core-wire","consumers":[{"repo":"beamfall-web","pinnedVersion":"1.0.0"}]}]}' \
+  '{"schemaVersion":1,"boundaries":[{"boundary":"client-core-wire","consumers":["beamfall-web"]}]}' \
   >"$RUNNER/contracts/registry.json"
 printf '%s\n' '# repo\tsource\tgate\tcontract_bearing\tpin' \
   >"$RUNNER/testing/release-gates/gate-commands.tsv"
 commit_all "$RUNNER" pin-absent
+
+# Consumer pins live in the private workspace registry, not core's (CORE-0902).
+WORKSPACE="$TMP/workspace"
+mkdir -p "$WORKSPACE/contracts"
+printf '%s\n' \
+  '{"schemaVersion":1,"boundaries":[{"id":"client-core-wire","consumers":[{"repo":"beamfall-web","pinnedVersion":"1.0.0"}]}]}' \
+  >"$WORKSPACE/contracts/registry.json"
+CASE_WORKSPACE="$WORKSPACE"
 
 CASE_STATUS=0
 CASE_LOG=""
@@ -60,8 +68,11 @@ run_case() {
   local run_tmp="$TMP/run-$name"
   CASE_LOG="$TMP/$name.log"
   mkdir "$run_tmp"
+  local workspace_env=(-u BEAMFALL_WORKSPACE_ROOT)
+  [[ -z "$CASE_WORKSPACE" ]] || workspace_env+=("BEAMFALL_WORKSPACE_ROOT=$CASE_WORKSPACE")
   set +e
-  BEAMFALL_CROSSREPO_RUNNER_SUPERVISED=1 \
+  env "${workspace_env[@]}" \
+    BEAMFALL_CROSSREPO_RUNNER_SUPERVISED=1 \
     BEAMFALL_CROSSREPO_FIXTURE_SUPERVISED=1 \
     BEAMFALL_CROSSREPO_TMP="$run_tmp" \
     BEAMFALL_CROSSREPO_PRODUCER_SOURCE="$RUNNER" \
@@ -77,6 +88,21 @@ fail_case() {
   exit 1
 }
 
+CASE_WORKSPACE=""
+run_case no-workspace
+[[ "$CASE_STATUS" -ne 0 ]] \
+  || fail_case "missing workspace registry did not fail closed"
+grep -F "workspace contract registry unresolved: set BEAMFALL_WORKSPACE_ROOT" "$CASE_LOG" >/dev/null \
+  || fail_case "missing-workspace diagnostic not found"
+
+CASE_WORKSPACE="$TMP"
+run_case workspace-without-registry
+[[ "$CASE_STATUS" -ne 0 ]] \
+  || fail_case "workspace root without a registry did not fail closed"
+grep -F "workspace contract registry missing: $TMP/contracts/registry.json" "$CASE_LOG" >/dev/null \
+  || fail_case "missing-registry diagnostic not found"
+
+CASE_WORKSPACE="$WORKSPACE"
 run_case absent
 [[ "$CASE_STATUS" -ne 0 ]] \
   || fail_case "missing committed consumer pin did not fail closed"
@@ -106,4 +132,4 @@ grep -F \
   "$CASE_LOG" >/dev/null \
   || fail_case "resolved consumer SHA was not reported"
 
-echo "crossrepo-conformance_pin_test: OK (missing/unresolvable RED; exact pin resolved $CONSUMER_SHA)"
+echo "crossrepo-conformance_pin_test: OK (no-workspace/missing-registry/missing/unresolvable RED; exact pin resolved $CONSUMER_SHA against the workspace registry)"
