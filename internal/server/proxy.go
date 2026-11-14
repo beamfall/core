@@ -17,7 +17,8 @@ type KnownProxies struct {
 	prefixes []netip.Prefix
 }
 
-// ParseKnownProxies parses a comma-separated CIDR allowlist. By default only
+// ParseKnownProxies parses a comma-separated allowlist of addresses and CIDRs;
+// a bare address is the single-host prefix for that address. By default only
 // private, loopback, and link-local networks are accepted; public or unusually
 // broad networks require the deliberately separate escape hatch.
 func ParseKnownProxies(value string, allowBroad bool) (*KnownProxies, error) {
@@ -29,11 +30,10 @@ func ParseKnownProxies(value string, allowBroad bool) (*KnownProxies, error) {
 	prefixes := make([]netip.Prefix, 0, len(parts))
 	seen := make(map[netip.Prefix]struct{}, len(parts))
 	for _, part := range parts {
-		prefix, err := netip.ParsePrefix(strings.TrimSpace(part))
+		prefix, err := parseKnownProxyEntry(strings.TrimSpace(part))
 		if err != nil {
-			return nil, fmt.Errorf("parse CIDR %q: %w", strings.TrimSpace(part), err)
+			return nil, err
 		}
-		prefix = prefix.Masked()
 		if !allowBroad && !safeProxyPrefix(prefix) {
 			return nil, fmt.Errorf("CIDR %s is public or over-broad; set BEAMFALL_ALLOW_BROAD_KNOWN_PROXIES=true only after reviewing the trust boundary", prefix)
 		}
@@ -83,6 +83,26 @@ func (p *KnownProxies) contains(addr netip.Addr) bool {
 		}
 	}
 	return false
+}
+
+// parseKnownProxyEntry reads one BEAMFALL_KNOWN_PROXIES entry. The deploy
+// runbook documents each entry as an address or a CIDR: an entry with a "/" is
+// a CIDR, and a bare address is the single-host prefix for that address. An
+// IPv4-mapped IPv6 address unmaps first so it dedupes against its IPv4 form.
+func parseKnownProxyEntry(entry string) (netip.Prefix, error) {
+	if strings.Contains(entry, "/") {
+		prefix, err := netip.ParsePrefix(entry)
+		if err != nil {
+			return netip.Prefix{}, fmt.Errorf("known proxy %q must be an address or CIDR: %w", entry, err)
+		}
+		return prefix.Masked(), nil
+	}
+	addr, err := netip.ParseAddr(entry)
+	if err != nil {
+		return netip.Prefix{}, fmt.Errorf("known proxy %q must be an address or CIDR: %w", entry, err)
+	}
+	addr = addr.Unmap()
+	return netip.PrefixFrom(addr, addr.BitLen()), nil
 }
 
 func (p *KnownProxies) String() string {
