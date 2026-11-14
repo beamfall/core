@@ -1091,6 +1091,50 @@ describe("usePlayer", () => {
     expect(video.currentTime).toBe(87);
   });
 
+  it("resumes a renewal at the same song second when the fresh stream drops the tempo", async () => {
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+    vi.mocked(fetchPlaybackInfo)
+      .mockResolvedValueOnce({
+        decision: "transcode",
+        reason: "composed-picture",
+        adjustment: { pitchShiftSemitones: 0, tempo: 0.8 },
+        streams: [{ kind: "hls", url: "/api/media/hls/slow/master.m3u8" }],
+      })
+      // The renewal comes back unadjusted: no adjustment echo.
+      .mockResolvedValueOnce({
+        decision: "transcode",
+        reason: "composed-picture",
+        streams: [{ kind: "hls", url: "/api/media/hls/plain/master.m3u8" }],
+      });
+
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    const video = screen.getByTestId("player") as HTMLVideoElement;
+    // Stream second 100 at tempo 0.8 is song second 80.
+    video.currentTime = 100;
+    fakeHlsInstances[0].emitError({ fatal: true, networkDetails: { status: 401 } });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("stream-url")).toHaveTextContent(
+        "/api/media/hls/plain/master.m3u8",
+      ),
+    );
+    // The unadjusted stream runs in song seconds, so it resumes at 80.
+    expect(fakeHlsInstances[0].config.startPosition).toBe(80);
+
+    // Progress is no longer scaled by the dropped tempo.
+    vi.mocked(graphql).mockClear();
+    Object.defineProperty(video, "duration", { configurable: true, value: 200 });
+    video.currentTime = 90;
+    fireEvent.timeUpdate(video);
+    fireEvent.pause(video);
+    await waitFor(() => expect(graphql).toHaveBeenCalled());
+    expect(vi.mocked(graphql).mock.calls.at(-1)?.[1]).toMatchObject({
+      positionSeconds: 90,
+      durationSeconds: 200,
+    });
+  });
+
   it("keeps the declared next item, so Up Next survives a stream-token refresh (CORE-1143)", async () => {
     vi.mocked(Hls.isSupported).mockReturnValue(true);
     let call = 0;

@@ -617,7 +617,9 @@ export function usePlayer(
       if (!video) return;
       boundVideo = video;
       // Stream seconds are song seconds divided by the applied tempo (CORE-1658).
-      const songScale = songSecondsPerStreamSecond(info);
+      // A renewal may come back with another tempo (or none), so this changes
+      // with the stream actually playing.
+      let songScale = songSecondsPerStreamSecond(info);
       songScaleRef.current = songScale;
 
       // The playhead: the native resume point not yet applied, else the
@@ -702,7 +704,8 @@ export function usePlayer(
         renegotiating = true;
         renegotiatedSinceProgress = true;
         const kind = activeStream.kind;
-        const position = playheadPosition();
+        // In song seconds: the renewed stream may apply another tempo, or none.
+        const songPosition = playheadPosition() * songScale;
         setRecovering(true);
         // The refresh replaces info, so it declares the same next item: Up Next
         // and auto-advance survive a renewed token.
@@ -718,7 +721,9 @@ export function usePlayer(
             }
             info = refreshed;
             activeStream = fresh;
-            reload(fresh, position);
+            songScale = songSecondsPerStreamSecond(refreshed);
+            songScaleRef.current = songScale;
+            reload(fresh, songPosition / songScale);
             // The refreshed info only renews the token: its decision may still name
             // the direct play this session switched away from, so the details keep
             // the decision of the stream actually playing.

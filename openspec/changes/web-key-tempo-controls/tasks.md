@@ -9,3 +9,5 @@
 - [x] 6. Component tests: shown, hidden (no capability, not karaoke), applying (request carries
       the adjustment, position conversion)
 - [x] 7. Media session position and seeks, and auto-skip markers, in song seconds under a tempo
+- [x] 8. A stream renewal keeps the song position and takes its tempo from the fresh response;
+      a declined change keeps the controls, focus and "not applied" notice for the same Media

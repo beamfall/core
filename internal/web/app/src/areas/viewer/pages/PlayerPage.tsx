@@ -122,8 +122,13 @@ export function PlayerPage() {
     });
     return () => controller.abort();
   }, []);
+  // Once a Media is established as a karaoke song it stays one until the Media
+  // changes: a declined key or tempo change can come back as bare audio, and
+  // dropping the verdict then would unmount the focused controls and the
+  // "Not applied" notice.
   const karaokeRef = useRef<{ mediaID: string; karaoke: boolean } | null>(null);
-  if (state.info) {
+  const established = karaokeRef.current?.mediaID === (mediaId || "") && karaokeRef.current.karaoke;
+  if (state.info && !established) {
     karaokeRef.current = {
       mediaID: mediaId || "",
       karaoke: state.info.mediaClass === "audio" && isComposedPictureServed(state.info),

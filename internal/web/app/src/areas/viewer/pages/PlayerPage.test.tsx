@@ -586,6 +586,29 @@ describe("PlayerPage karaoke key and tempo controls", () => {
     );
   });
 
+  it("keeps the controls, focus and notice when a change is declined to bare audio", async () => {
+    const adjustment = { pitchShiftSemitones: 1, tempo: 1 };
+    const { adjust, rerender } = renderPlayer(playerState({ phase: "playing", info: karaokeInfo }));
+    const up = await screen.findByRole("button", { name: "Raise the key by a semitone" });
+    up.focus();
+    fireEvent.click(up);
+    expect(adjust).toHaveBeenCalledTimes(1);
+    // The server declined: plain audio, no composed picture, no adjustment echo.
+    vi.mocked(usePlayer).mockReturnValue({
+      ...vi.mocked(usePlayer).mock.results.at(-1)?.value,
+      state: playerState({
+        phase: "playing",
+        info: { mediaClass: "audio", reason: "direct-play", streams: [] },
+        adjustment,
+      }),
+      adjustment,
+    });
+    rerender();
+    const group = screen.getByRole("group", { name: "Key and tempo" });
+    expect(up).toHaveFocus();
+    expect(within(group).getByRole("status")).toHaveTextContent(/not applied/i);
+  });
+
   it("clamps to the advertised range and keeps the control at its limit focusable", async () => {
     vi.mocked(fetchPlaybackAdjustmentRanges).mockResolvedValue({
       pitchShiftSemitonesMin: -2,
