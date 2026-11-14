@@ -129,6 +129,17 @@ def git_main_checkout(start: Path) -> Path | None:
     return common.parent
 
 
+def is_worktree_of_listed_repo(child: Path, listed: set[Path]) -> bool:
+    """True when child is a linked worktree of a repo the manifest already lists.
+
+    Agent lanes keep worktrees of consumer repos at the workspace root; the listed
+    main checkout is what this check verifies, so its worktrees are not unlisted
+    consumers (CORE-1811). A repository with its own .git still is.
+    """
+    owner = git_main_checkout(child)
+    return owner is not None and owner.resolve() != child.resolve() and owner.resolve() in listed
+
+
 def manifest_repositories(root: Path) -> list[dict]:
     """Repository entries in the workspace manifest's authoritative order."""
     manifest = json.loads((root / WORKSPACE_MANIFEST).read_text(encoding="utf-8"))
@@ -497,11 +508,14 @@ def workspace_results(
                 continue
             results.append(evaluate(obligation, producer, entry["name"], consumer, ctx))
 
+    listed = {(workspace / name).resolve() for name in known}
     for child in workspace.iterdir():
         if not child.is_dir() or child.name in known:
             continue
         for obligation in obligations:
             if (child / obligation["consumerProbe"]).is_file():
+                if is_worktree_of_listed_repo(child, listed):
+                    break
                 results.append(
                     result_for(
                         obligation,
