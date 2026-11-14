@@ -22,6 +22,17 @@ func partMarkerTitle(parser FilenameParser, path string, probe ParseProbe) strin
 	return titleFromPath(path)
 }
 
+// parsedMediaTitle is the Media title for a parsed file: the parser's
+// per-file title when it supplies one, else the parsed title.
+func parsedMediaTitle(parser FilenameParser, path string, probe ParseProbe, parsedTitle string) string {
+	if titler, ok := parser.(MediaTitler); ok {
+		if title := strings.TrimSpace(titler.MediaTitle(path, probe)); title != "" {
+			return title
+		}
+	}
+	return parsedTitle
+}
+
 // ensurePartBoundaryMarkers synthesizes one navigation Marker per ordered Part
 // only when the whole grouped Media has no embedded chapters. Any fresh probe,
 // including one Part in a mixed full/fast rescan, recomputes the deterministic

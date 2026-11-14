@@ -2,8 +2,12 @@ package app
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/beamfall/core/internal/identify"
 	"github.com/beamfall/core/internal/plugin"
@@ -146,6 +150,19 @@ func (f *fakeHydrationStore) AddMediaExternalID(_ context.Context, mediaID store
 		value  string
 	}{mediaID, scheme, value})
 	return nil
+}
+
+func (f *fakeHydrationStore) EntityRelationTargets(_ context.Context, _ store.LibraryID, id store.EntityID, relation string) ([]store.EntityID, bool, error) {
+	if _, ok := f.entities[id]; !ok {
+		return nil, false, nil
+	}
+	var targets []store.EntityID
+	for _, r := range f.relations {
+		if r.FromEntityID == id && r.Name == relation && r.ToEntityID != "" {
+			targets = append(targets, r.ToEntityID)
+		}
+	}
+	return targets, true, nil
 }
 
 func (f *fakeHydrationStore) field(id store.MediaID, name string) (store.MediaField, bool) {
@@ -572,6 +589,14 @@ func TestHydrateMetadataRejectsUndeclaredMarkerAndRelationNames(t *testing.T) {
 			want: "prerequisite relation \"not-declared\"",
 		},
 		{
+			name:   "scoped entity without a declared scope relation",
+			marker: testHydrationMarkerField,
+			plan: HydrationPlan{Relations: []HydrationRelation{{
+				From: HydrationEntity{Kind: "album", Title: "Record", Scope: "Somebody"}, Name: "album-track", Cardinality: "one",
+			}}},
+			want: "declares no scope relation",
+		},
+		{
 			name:   "completion marker not declared",
 			marker: "not-declared",
 			plan:   HydrationPlan{MarkComplete: true, MediaFields: []store.MediaField{{Name: "title", Type: store.EntityFieldText, Text: "x"}}},
@@ -593,5 +618,411 @@ func TestHydrateMetadataRejectsUndeclaredMarkerAndRelationNames(t *testing.T) {
 			}
 			assertNoHydrationWrites(t, st)
 		})
+	}
+}
+
+// scopedAlbumMapper maps a track to an album scoped by its album artist, the
+// way a plugin that scopes a container kind does: the scope rides the Entity
+// and the declared scope relation names the Entity it is scoped by.
+type scopedAlbumMapper struct{}
+
+func (scopedAlbumMapper) MarkerField() string         { return testHydrationMarkerField }
+func (scopedAlbumMapper) ExternalIDSchemes() []string { return nil }
+func (scopedAlbumMapper) EntityScopes() []HydrationEntityScope {
+	return []HydrationEntityScope{{Kind: "album", Relation: "album-artist"}}
+}
+func (scopedAlbumMapper) MapHydration(metadata map[string]string, _ string) HydrationPlan {
+	album := HydrationEntity{Kind: "album", Title: metadata["album"], Scope: metadata["album-artist"]}
+	return HydrationPlan{Relations: []HydrationRelation{
+		{From: album, Name: "album-track", Cardinality: "one"},
+		{From: album, Name: "album-artist", RequiresRelation: "album-track",
+			ToEntity: &HydrationEntity{Kind: "artist", Title: metadata["album-artist"]}},
+	}}
+}
+
+func hydrateScopedTrack(t *testing.T, st *fakeHydrationStore, media store.MediaID, album, albumArtist string) store.EntityID {
+	t.Helper()
+	adapter := newTestAdapterWithMapper(st, scopedAlbumMapper{})
+	err := adapter.HydrateMetadata(context.Background(), scanpkg.MetadataHydrationInput{
+		MediaID: media, LibraryID: testLib, Class: store.MediaClassAudio, Path: "/x.bin",
+		Metadata: map[string]string{"album": album, "album-artist": albumArtist},
+	})
+	if err != nil {
+		t.Fatalf("HydrateMetadata(%s): %v", media, err)
+	}
+	var owner store.EntityID
+	for _, r := range st.relations {
+		if r.Name == "album-track" && r.ToMediaID == media {
+			owner = r.FromEntityID
+		}
+	}
+	if owner == "" {
+		t.Fatalf("no album-track relation for %s", media)
+	}
+	return owner
+}
+
+// TestHydrationSeparatesSameTitledEntitiesByScope pins that the scope, not the
+// title alone, is the identity: the same title under two scopes is two
+// Entities, each pointing at its own scope Entity, and the same title under one
+// scope is one Entity however many Media carry it.
+func TestHydrationSeparatesSameTitledEntitiesByScope(t *testing.T) {
+	st := newFakeHydrationStore()
+	first := hydrateScopedTrack(t, st, "media-1", "Greatest Hits", "First Band")
+	second := hydrateScopedTrack(t, st, "media-2", "Greatest Hits", "Second Band")
+	again := hydrateScopedTrack(t, st, "media-3", "Greatest Hits", "First Band")
+	if first == second {
+		t.Fatalf("two scopes share one entity %s", first)
+	}
+	if again != first {
+		t.Fatalf("same scope hydrated to %s then %s", first, again)
+	}
+	for id, artist := range map[store.EntityID]string{first: "First Band", second: "Second Band"} {
+		if got := st.entities[id].Title; got != "Greatest Hits" {
+			t.Errorf("entity %s title = %q, want the plain title", id, got)
+		}
+		targets, _, _ := st.EntityRelationTargets(context.Background(), testLib, id, "album-artist")
+		want := identify.EntityIDForName(testLib, "artist", artist)
+		if len(targets) == 0 {
+			t.Fatalf("entity %s records no scope", id)
+		}
+		for _, target := range targets {
+			if target != want {
+				t.Errorf("entity %s scope target = %s, want %s (%s)", id, target, want, artist)
+			}
+		}
+	}
+}
+
+// TestHydrationAdoptsUnscopedEntityForItsOnlyScope pins the upgrade path: an
+// Entity written under the title-only id keeps that id (so nothing is orphaned
+// or duplicated on rescan) when it records no scope yet or only this one.
+func TestHydrationAdoptsUnscopedEntityForItsOnlyScope(t *testing.T) {
+	legacy := identify.EntityIDForName(testLib, "album", "Greatest Hits")
+	artist := identify.EntityIDForName(testLib, "artist", "First Band")
+	for name, relations := range map[string][]store.EntityRelation{
+		"no scope recorded":   nil,
+		"this scope recorded": {{FromEntityID: legacy, Name: "album-artist", ToEntityID: artist}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			st := newFakeHydrationStore()
+			st.entities[legacy] = store.Entity{ID: legacy, LibraryID: testLib, Kind: "album", Title: "Greatest Hits"}
+			st.relations = relations
+			if got := hydrateScopedTrack(t, st, "media-1", "Greatest Hits", "First Band"); got != legacy {
+				t.Fatalf("hydrated to %s, want the existing entity %s", got, legacy)
+			}
+			if got := hydrateScopedTrack(t, st, "media-2", "Greatest Hits", "First Band"); got != legacy {
+				t.Fatalf("second track hydrated to %s, want the existing entity %s", got, legacy)
+			}
+			if len(st.entities) != 2 {
+				t.Fatalf("entities = %d, want the adopted album and its artist: %+v", len(st.entities), st.entities)
+			}
+		})
+	}
+}
+
+// TestHydrationKeepsUnscopedEntityOfAnotherScope pins the other half: a
+// title-only Entity that records a different scope is somebody else's, so the
+// scope being hydrated gets its own Entity and the existing one is untouched.
+func TestHydrationKeepsUnscopedEntityOfAnotherScope(t *testing.T) {
+	st := newFakeHydrationStore()
+	legacy := identify.EntityIDForName(testLib, "album", "Greatest Hits")
+	other := identify.EntityIDForName(testLib, "artist", "First Band")
+	st.entities[legacy] = store.Entity{ID: legacy, LibraryID: testLib, Kind: "album", Title: "Greatest Hits"}
+	st.relations = []store.EntityRelation{{FromEntityID: legacy, Name: "album-artist", ToEntityID: other}}
+
+	got := hydrateScopedTrack(t, st, "media-1", "Greatest Hits", "Second Band")
+	if got == legacy {
+		t.Fatal("a second scope adopted another scope's entity")
+	}
+	if want := identify.EntityIDForScopedName(testLib, "album", "Second Band", "Greatest Hits"); got != want {
+		t.Fatalf("hydrated to %s, want the scoped id %s", got, want)
+	}
+	targets, _, _ := st.EntityRelationTargets(context.Background(), testLib, legacy, "album-artist")
+	if len(targets) != 1 || targets[0] != other {
+		t.Fatalf("existing entity's scope changed: %v", targets)
+	}
+}
+
+// TestHydrationSplitsMergedEntityAfterScopeRepair runs the whole upgrade on a
+// real Store: two scopes' Media sit under one title-only Entity (how hydration
+// wrote them before the kind was scoped), the one-time repair reopens it, and
+// the next hydration leaves the first scope on the existing Entity and moves
+// the second scope's Media to its own, with no third Entity and no Media left
+// behind.
+func TestHydrationSplitsMergedEntityAfterScopeRepair(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir(), store.Options{SeedDevelopmentData: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	lib, err := st.CreateLibrary(ctx, "Shelf", false, testHydrationPluginID, "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	track := func(name string) store.MediaID {
+		t.Helper()
+		media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+			LibraryID: lib.ID, Path: "/shelf/" + name + ".flac", Title: name, Container: "flac", Codec: "flac",
+			Class: store.MediaClassAudio, ContentFingerprint: "fp-" + name,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return media.ID
+	}
+	tracks := map[store.MediaID]string{track("one"): "First Band", track("two"): "Second Band"}
+
+	// Before scoping: both tracks land on the title-only Entity.
+	legacy := identify.EntityIDForName(lib.ID, "album", "Greatest Hits")
+	if err := st.UpsertEntity(ctx, store.Entity{ID: legacy, LibraryID: lib.ID, Kind: "album", Title: "Greatest Hits"}); err != nil {
+		t.Fatal(err)
+	}
+	for media, artist := range tracks {
+		artistID := identify.EntityIDForName(lib.ID, "artist", artist)
+		if err := st.UpsertEntity(ctx, store.Entity{ID: artistID, LibraryID: lib.ID, Kind: "artist", Title: artist}); err != nil {
+			t.Fatal(err)
+		}
+		for _, relation := range []store.EntityRelation{
+			{FromEntityID: legacy, Name: "album-track", ToMediaID: media, Cardinality: "one"},
+			{FromEntityID: legacy, Name: "album-artist", ToEntityID: artistID},
+		} {
+			if err := st.UpsertEntityRelation(ctx, relation); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := st.SetMediaFields(ctx, media, []store.MediaField{{Name: testHydrationMarkerField, Type: store.EntityFieldFlag, Flag: true}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	adapter := newTestAdapterWithMapper(st, scopedAlbumMapper{})
+	hydrators := map[string]scanpkg.MetadataHydrator{testHydrationPluginID: adapter}
+	mappers := map[string]HydrationMapper{testHydrationPluginID: scopedAlbumMapper{}}
+	splitAmbiguousHydrationScopes(ctx, st, hydrators, mappers, slog.New(slog.DiscardHandler))
+	stale, err := st.MediaLackingFieldInLibrary(ctx, lib.ID, store.MediaClassAudio, testHydrationMarkerField)
+	if err != nil || len(stale) != len(tracks) {
+		t.Fatalf("stale after repair = %v, %v; want both tracks requeued", stale, err)
+	}
+	for media := range stale {
+		err := adapter.HydrateMetadata(ctx, scanpkg.MetadataHydrationInput{
+			MediaID: media, LibraryID: lib.ID, Class: store.MediaClassAudio, Path: "/x.bin",
+			Metadata: map[string]string{"album": "Greatest Hits", "album-artist": tracks[media]},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	albums, err := st.EntitiesByKind(ctx, lib.ID, "album", store.LibraryFilter{AllLibraries: true}, store.EntityKindOptions{}, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(albums) != 2 {
+		t.Fatalf("albums = %d, want one per scope: %+v", len(albums), albums)
+	}
+	kept := false
+	seen := map[store.EntityID]bool{}
+	for _, album := range albums {
+		kept = kept || album.ID == legacy
+		members, err := st.MediaForEntity(ctx, album.ID, store.LibraryFilter{AllLibraries: true})
+		if err != nil || len(members) != 1 {
+			t.Fatalf("album %s members = %d, %v; want its one track", album.ID, len(members), err)
+		}
+		targets, _, err := st.EntityRelationTargets(ctx, lib.ID, album.ID, "album-artist")
+		want := identify.EntityIDForName(lib.ID, "artist", tracks[members[0].ID])
+		if err != nil || len(targets) != 1 || targets[0] != want {
+			t.Fatalf("album %s scope = %v, %v; want only its track's artist %s", album.ID, targets, err, want)
+		}
+		seen[targets[0]] = true
+	}
+	if !kept {
+		t.Fatalf("the existing entity %s was replaced: %+v", legacy, albums)
+	}
+	if len(seen) != 2 {
+		t.Fatalf("both albums ended under one scope: %v", seen)
+	}
+}
+
+// refusingEnqueueStore fails every job enqueue, the way a full or unavailable
+// jobs database would.
+type refusingEnqueueStore struct{ *store.Store }
+
+func (refusingEnqueueStore) EnqueueJob(context.Context, store.Job) (store.Job, error) {
+	return store.Job{}, errors.New("jobs unavailable")
+}
+
+// TestScopeRepairQueuesBackfillScan pins that the repair's reopened Media are
+// actually hydrated again: an ordinary scan skips unchanged files, so the
+// repair queues a backfill scan of every root of the Library, and the pending
+// mark survives a failed enqueue so the next start queues it instead.
+func TestScopeRepairQueuesBackfillScan(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir(), store.Options{SeedDevelopmentData: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	root := t.TempDir()
+	lib, err := st.CreateLibraryWithRoots(ctx, "Shelf", false, testHydrationPluginID, "profile-default", []string{root}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: lib.ID, Path: root + "/one.flac", Title: "one", Container: "flac", Codec: "flac",
+		Class: store.MediaClassAudio, ContentFingerprint: "fp-one",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := identify.EntityIDForName(lib.ID, "album", "Greatest Hits")
+	if err := st.UpsertEntity(ctx, store.Entity{ID: legacy, LibraryID: lib.ID, Kind: "album", Title: "Greatest Hits"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: legacy, Name: "album-track", ToMediaID: media.ID, Cardinality: "one"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetMediaFields(ctx, media.ID, []store.MediaField{{Name: testHydrationMarkerField, Type: store.EntityFieldFlag, Flag: true}}); err != nil {
+		t.Fatal(err)
+	}
+	hydrators := map[string]scanpkg.MetadataHydrator{testHydrationPluginID: newTestAdapterWithMapper(st, scopedAlbumMapper{})}
+	mappers := map[string]HydrationMapper{testHydrationPluginID: scopedAlbumMapper{}}
+	scanJobs := func() []store.Job {
+		t.Helper()
+		jobs, err := st.ListJobs(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []store.Job
+		for _, job := range jobs {
+			if job.Kind == scanpkg.JobKind {
+				out = append(out, job)
+			}
+		}
+		return out
+	}
+
+	splitAmbiguousHydrationScopes(ctx, refusingEnqueueStore{st}, hydrators, mappers, slog.New(slog.DiscardHandler))
+	if got := scanJobs(); len(got) != 0 {
+		t.Fatalf("scan jobs after a refused enqueue = %+v, want none", got)
+	}
+	if pending, err := st.PendingEntityScopeBackfills(ctx); err != nil || len(pending) != 1 || pending[0] != lib.ID {
+		t.Fatalf("pending after a refused enqueue = %v, %v; want %s kept", pending, err, lib.ID)
+	}
+
+	splitAmbiguousHydrationScopes(ctx, st, hydrators, mappers, slog.New(slog.DiscardHandler))
+	got := scanJobs()
+	if len(got) != 1 || !strings.HasSuffix(got[0].DedupeKey, ":backfill") || !strings.Contains(got[0].DedupeKey, string(lib.ID)) {
+		t.Fatalf("scan jobs = %+v, want one backfill scan of %s", got, lib.ID)
+	}
+	if pending, err := st.PendingEntityScopeBackfills(ctx); err != nil || len(pending) != 0 {
+		t.Fatalf("pending after queueing = %v, %v; want none", pending, err)
+	}
+}
+
+// rendezvousHydrationStore serialises a fakeHydrationStore for concurrent use
+// and holds the first two reads of one Entity's scope until both have been
+// read (or a short wait passes), so two hydrations that are not serialised
+// read the same state before either writes.
+type rendezvousHydrationStore struct {
+	mu      sync.Mutex
+	inner   *fakeHydrationStore
+	watched store.EntityID
+	arrived int
+	both    chan struct{}
+}
+
+func (r *rendezvousHydrationStore) InsertMediaFieldsIfAbsent(ctx context.Context, id store.MediaID, fields []store.MediaField) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.inner.InsertMediaFieldsIfAbsent(ctx, id, fields)
+}
+
+func (r *rendezvousHydrationStore) UpsertEntity(ctx context.Context, entity store.Entity) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.inner.UpsertEntity(ctx, entity)
+}
+
+func (r *rendezvousHydrationStore) UpsertEntityRelation(ctx context.Context, relation store.EntityRelation) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.inner.UpsertEntityRelation(ctx, relation)
+}
+
+func (r *rendezvousHydrationStore) AddMediaExternalID(ctx context.Context, mediaID store.MediaID, scheme, value string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.inner.AddMediaExternalID(ctx, mediaID, scheme, value)
+}
+
+func (r *rendezvousHydrationStore) EntityRelationTargets(ctx context.Context, libraryID store.LibraryID, id store.EntityID, relation string) ([]store.EntityID, bool, error) {
+	r.mu.Lock()
+	targets, exists, err := r.inner.EntityRelationTargets(ctx, libraryID, id, relation)
+	watched := id == r.watched
+	if watched {
+		r.arrived++
+		if r.arrived == 2 {
+			close(r.both)
+		}
+	}
+	r.mu.Unlock()
+	if watched {
+		select {
+		case <-r.both:
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+	return targets, exists, err
+}
+
+// TestConcurrentHydrationAdoptsTitleOnlyEntityOnce pins that two scans
+// hydrating one Library at once cannot both adopt one title-only Entity for
+// different scopes: one adopts it, the other gets its own scoped Entity, and
+// every track's album records only that track's album artist.
+func TestConcurrentHydrationAdoptsTitleOnlyEntityOnce(t *testing.T) {
+	inner := newFakeHydrationStore()
+	legacy := identify.EntityIDForName(testLib, "album", "Greatest Hits")
+	inner.entities[legacy] = store.Entity{ID: legacy, LibraryID: testLib, Kind: "album", Title: "Greatest Hits"}
+	st := &rendezvousHydrationStore{inner: inner, watched: legacy, both: make(chan struct{})}
+	adapter := newTestAdapterWithMapper(st, scopedAlbumMapper{})
+	tracks := map[store.MediaID]string{"media-1": "First Band", "media-2": "Second Band"}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, len(tracks))
+	for media, artist := range tracks {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- adapter.HydrateMetadata(context.Background(), scanpkg.MetadataHydrationInput{
+				MediaID: media, LibraryID: testLib, Class: store.MediaClassAudio, Path: "/x.bin",
+				Metadata: map[string]string{"album": "Greatest Hits", "album-artist": artist},
+			})
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	albums := map[store.EntityID]bool{}
+	for media, artist := range tracks {
+		owner, ok := inner.relation("album-track", media)
+		if !ok {
+			t.Fatalf("no album-track relation for %s", media)
+		}
+		albums[owner.FromEntityID] = true
+		targets, _, _ := inner.EntityRelationTargets(context.Background(), testLib, owner.FromEntityID, "album-artist")
+		want := identify.EntityIDForName(testLib, "artist", artist)
+		if len(targets) != 1 || targets[0] != want {
+			t.Fatalf("%s album %s scope = %v, want only %s (%s)", media, owner.FromEntityID, targets, want, artist)
+		}
+	}
+	if len(albums) != 2 || !albums[legacy] {
+		t.Fatalf("albums = %v, want the adopted %s and one scoped album", albums, legacy)
 	}
 }

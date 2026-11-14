@@ -471,6 +471,35 @@
         "kind": "scalar"
       },
       {
+        "name": "metadataAttribution",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "providerName",
+            "kind": "map",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "text",
+            "kind": "map",
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "url",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
         "name": "summary",
         "kind": "scalar",
         "optional": true
@@ -2274,6 +2303,35 @@
                 "kind": "object",
                 "children": [
                   {
+                    "name": "attribution",
+                    "kind": "object",
+                    "optional": true,
+                    "nullable": true,
+                    "children": [
+                      {
+                        "name": "providerName",
+                        "kind": "map",
+                        "optional": true,
+                        "nullable": true,
+                        "elem": {
+                          "kind": "scalar"
+                        }
+                      },
+                      {
+                        "name": "text",
+                        "kind": "map",
+                        "nullable": true,
+                        "elem": {
+                          "kind": "scalar"
+                        }
+                      },
+                      {
+                        "name": "url",
+                        "kind": "scalar"
+                      }
+                    ]
+                  },
+                  {
                     "name": "authRef",
                     "kind": "scalar"
                   },
@@ -2321,6 +2379,35 @@
                 ]
               },
               "children": [
+                {
+                  "name": "attribution",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "providerName",
+                      "kind": "map",
+                      "optional": true,
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "text",
+                      "kind": "map",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "url",
+                      "kind": "scalar"
+                    }
+                  ]
+                },
                 {
                   "name": "authRef",
                   "kind": "scalar"
@@ -3078,6 +3165,35 @@
               "kind": "object",
               "children": [
                 {
+                  "name": "attribution",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "providerName",
+                      "kind": "map",
+                      "optional": true,
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "text",
+                      "kind": "map",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "url",
+                      "kind": "scalar"
+                    }
+                  ]
+                },
+                {
                   "name": "authRef",
                   "kind": "scalar"
                 },
@@ -3125,6 +3241,35 @@
               ]
             },
             "children": [
+              {
+                "name": "attribution",
+                "kind": "object",
+                "optional": true,
+                "nullable": true,
+                "children": [
+                  {
+                    "name": "providerName",
+                    "kind": "map",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
+                    "name": "text",
+                    "kind": "map",
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
+                    "name": "url",
+                    "kind": "scalar"
+                  }
+                ]
+              },
               {
                 "name": "authRef",
                 "kind": "scalar"
@@ -3677,6 +3822,35 @@
       {
         "name": "id",
         "kind": "scalar"
+      },
+      {
+        "name": "metadataAttribution",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "providerName",
+            "kind": "map",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "text",
+            "kind": "map",
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "url",
+            "kind": "scalar"
+          }
+        ]
       },
       {
         "name": "summary",
@@ -4870,6 +5044,413 @@
         }
       },
       {
+        "name": "relatedEntities",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "items",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "object",
+                "children": [
+                  {
+                    "name": "artwork",
+                    "kind": "object",
+                    "optional": true,
+                    "nullable": true,
+                    "children": [
+                      {
+                        "name": "poster",
+                        "kind": "scalar"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "artworkSlots",
+                    "kind": "map",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
+                    "name": "engagement",
+                    "kind": "object",
+                    "optional": true,
+                    "nullable": true,
+                    "children": [
+                      {
+                        "name": "completed",
+                        "kind": "scalar",
+                        "optional": true
+                      },
+                      {
+                        "name": "durationSeconds",
+                        "kind": "scalar",
+                        "optional": true
+                      },
+                      {
+                        "name": "positionSeconds",
+                        "kind": "scalar",
+                        "optional": true
+                      },
+                      {
+                        "name": "remainingCount",
+                        "kind": "scalar",
+                        "optional": true
+                      },
+                      {
+                        "name": "totalCount",
+                        "kind": "scalar",
+                        "optional": true
+                      }
+                    ]
+                  },
+                  {
+                    "name": "id",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "kind",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "locked",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "muted",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "restricted",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "summary",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "title",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              "children": [
+                {
+                  "name": "artwork",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "poster",
+                      "kind": "scalar"
+                    }
+                  ]
+                },
+                {
+                  "name": "artworkSlots",
+                  "kind": "map",
+                  "optional": true,
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "engagement",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "completed",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "durationSeconds",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "positionSeconds",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "remainingCount",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "totalCount",
+                      "kind": "scalar",
+                      "optional": true
+                    }
+                  ]
+                },
+                {
+                  "name": "id",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "kind",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "locked",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "muted",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "restricted",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "summary",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "title",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "kind",
+              "kind": "scalar"
+            },
+            {
+              "name": "kindDisplayName",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "items",
+            "kind": "list",
+            "nullable": true,
+            "elem": {
+              "kind": "object",
+              "children": [
+                {
+                  "name": "artwork",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "poster",
+                      "kind": "scalar"
+                    }
+                  ]
+                },
+                {
+                  "name": "artworkSlots",
+                  "kind": "map",
+                  "optional": true,
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "engagement",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "completed",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "durationSeconds",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "positionSeconds",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "remainingCount",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "totalCount",
+                      "kind": "scalar",
+                      "optional": true
+                    }
+                  ]
+                },
+                {
+                  "name": "id",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "kind",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "locked",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "muted",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "restricted",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "summary",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "title",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            "children": [
+              {
+                "name": "artwork",
+                "kind": "object",
+                "optional": true,
+                "nullable": true,
+                "children": [
+                  {
+                    "name": "poster",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              {
+                "name": "artworkSlots",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "engagement",
+                "kind": "object",
+                "optional": true,
+                "nullable": true,
+                "children": [
+                  {
+                    "name": "completed",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "durationSeconds",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "positionSeconds",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "remainingCount",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "totalCount",
+                    "kind": "scalar",
+                    "optional": true
+                  }
+                ]
+              },
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "kind",
+                "kind": "scalar"
+              },
+              {
+                "name": "locked",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "muted",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "restricted",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "summary",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              }
+            ]
+          },
+          {
+            "name": "kind",
+            "kind": "scalar"
+          },
+          {
+            "name": "kindDisplayName",
+            "kind": "map",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          }
+        ]
+      },
+      {
         "name": "title",
         "kind": "scalar"
       }
@@ -5078,6 +5659,35 @@
             "kind": "scalar"
           },
           {
+            "name": "metadataAttribution",
+            "kind": "object",
+            "optional": true,
+            "nullable": true,
+            "children": [
+              {
+                "name": "providerName",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "text",
+                "kind": "map",
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "url",
+                "kind": "scalar"
+              }
+            ]
+          },
+          {
             "name": "summary",
             "kind": "scalar",
             "optional": true
@@ -5281,6 +5891,35 @@
       {
         "name": "id",
         "kind": "scalar"
+      },
+      {
+        "name": "metadataAttribution",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "providerName",
+            "kind": "map",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "text",
+            "kind": "map",
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "url",
+            "kind": "scalar"
+          }
+        ]
       },
       {
         "name": "summary",
@@ -5639,6 +6278,35 @@
       {
         "name": "id",
         "kind": "scalar"
+      },
+      {
+        "name": "metadataAttribution",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "providerName",
+            "kind": "map",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "text",
+            "kind": "map",
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "url",
+            "kind": "scalar"
+          }
+        ]
       },
       {
         "name": "summary",
@@ -7968,6 +8636,35 @@
         "kind": "scalar"
       },
       {
+        "name": "metadataAttribution",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "providerName",
+            "kind": "map",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "text",
+            "kind": "map",
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "url",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
         "name": "summary",
         "kind": "scalar",
         "optional": true
@@ -8279,6 +8976,35 @@
             "kind": "scalar"
           },
           {
+            "name": "metadataAttribution",
+            "kind": "object",
+            "optional": true,
+            "nullable": true,
+            "children": [
+              {
+                "name": "providerName",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "text",
+                "kind": "map",
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "url",
+                "kind": "scalar"
+              }
+            ]
+          },
+          {
             "name": "summary",
             "kind": "scalar",
             "optional": true
@@ -8332,6 +9058,59 @@
       },
       {
         "name": "kind",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "metadatacredits",
+    "kind": "list",
+    "elem": {
+      "kind": "object",
+      "children": [
+        {
+          "name": "providerName",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "text",
+          "kind": "map",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "url",
+          "kind": "scalar"
+        }
+      ]
+    },
+    "children": [
+      {
+        "name": "providerName",
+        "kind": "map",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
+        "name": "text",
+        "kind": "map",
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
+        "name": "url",
         "kind": "scalar"
       }
     ]
@@ -15776,6 +16555,35 @@
                 "kind": "object",
                 "children": [
                   {
+                    "name": "attribution",
+                    "kind": "object",
+                    "optional": true,
+                    "nullable": true,
+                    "children": [
+                      {
+                        "name": "providerName",
+                        "kind": "map",
+                        "optional": true,
+                        "nullable": true,
+                        "elem": {
+                          "kind": "scalar"
+                        }
+                      },
+                      {
+                        "name": "text",
+                        "kind": "map",
+                        "nullable": true,
+                        "elem": {
+                          "kind": "scalar"
+                        }
+                      },
+                      {
+                        "name": "url",
+                        "kind": "scalar"
+                      }
+                    ]
+                  },
+                  {
                     "name": "authRef",
                     "kind": "scalar"
                   },
@@ -15823,6 +16631,35 @@
                 ]
               },
               "children": [
+                {
+                  "name": "attribution",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "providerName",
+                      "kind": "map",
+                      "optional": true,
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "text",
+                      "kind": "map",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "url",
+                      "kind": "scalar"
+                    }
+                  ]
+                },
                 {
                   "name": "authRef",
                   "kind": "scalar"
@@ -16580,6 +17417,35 @@
               "kind": "object",
               "children": [
                 {
+                  "name": "attribution",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "providerName",
+                      "kind": "map",
+                      "optional": true,
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "text",
+                      "kind": "map",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "url",
+                      "kind": "scalar"
+                    }
+                  ]
+                },
+                {
                   "name": "authRef",
                   "kind": "scalar"
                 },
@@ -16627,6 +17493,35 @@
               ]
             },
             "children": [
+              {
+                "name": "attribution",
+                "kind": "object",
+                "optional": true,
+                "nullable": true,
+                "children": [
+                  {
+                    "name": "providerName",
+                    "kind": "map",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
+                    "name": "text",
+                    "kind": "map",
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
+                    "name": "url",
+                    "kind": "scalar"
+                  }
+                ]
+              },
               {
                 "name": "authRef",
                 "kind": "scalar"
@@ -16885,6 +17780,35 @@
       {
         "name": "id",
         "kind": "scalar"
+      },
+      {
+        "name": "metadataAttribution",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "providerName",
+            "kind": "map",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "text",
+            "kind": "map",
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "url",
+            "kind": "scalar"
+          }
+        ]
       },
       {
         "name": "summary",
@@ -17921,6 +18845,35 @@
                 "kind": "object",
                 "children": [
                   {
+                    "name": "attribution",
+                    "kind": "object",
+                    "optional": true,
+                    "nullable": true,
+                    "children": [
+                      {
+                        "name": "providerName",
+                        "kind": "map",
+                        "optional": true,
+                        "nullable": true,
+                        "elem": {
+                          "kind": "scalar"
+                        }
+                      },
+                      {
+                        "name": "text",
+                        "kind": "map",
+                        "nullable": true,
+                        "elem": {
+                          "kind": "scalar"
+                        }
+                      },
+                      {
+                        "name": "url",
+                        "kind": "scalar"
+                      }
+                    ]
+                  },
+                  {
                     "name": "authRef",
                     "kind": "scalar"
                   },
@@ -17968,6 +18921,35 @@
                 ]
               },
               "children": [
+                {
+                  "name": "attribution",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "providerName",
+                      "kind": "map",
+                      "optional": true,
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "text",
+                      "kind": "map",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "url",
+                      "kind": "scalar"
+                    }
+                  ]
+                },
                 {
                   "name": "authRef",
                   "kind": "scalar"
@@ -18725,6 +19707,35 @@
               "kind": "object",
               "children": [
                 {
+                  "name": "attribution",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "providerName",
+                      "kind": "map",
+                      "optional": true,
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "text",
+                      "kind": "map",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "url",
+                      "kind": "scalar"
+                    }
+                  ]
+                },
+                {
                   "name": "authRef",
                   "kind": "scalar"
                 },
@@ -18772,6 +19783,35 @@
               ]
             },
             "children": [
+              {
+                "name": "attribution",
+                "kind": "object",
+                "optional": true,
+                "nullable": true,
+                "children": [
+                  {
+                    "name": "providerName",
+                    "kind": "map",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
+                    "name": "text",
+                    "kind": "map",
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
+                    "name": "url",
+                    "kind": "scalar"
+                  }
+                ]
+              },
               {
                 "name": "authRef",
                 "kind": "scalar"
@@ -19569,6 +20609,35 @@
                 "kind": "object",
                 "children": [
                   {
+                    "name": "attribution",
+                    "kind": "object",
+                    "optional": true,
+                    "nullable": true,
+                    "children": [
+                      {
+                        "name": "providerName",
+                        "kind": "map",
+                        "optional": true,
+                        "nullable": true,
+                        "elem": {
+                          "kind": "scalar"
+                        }
+                      },
+                      {
+                        "name": "text",
+                        "kind": "map",
+                        "nullable": true,
+                        "elem": {
+                          "kind": "scalar"
+                        }
+                      },
+                      {
+                        "name": "url",
+                        "kind": "scalar"
+                      }
+                    ]
+                  },
+                  {
                     "name": "authRef",
                     "kind": "scalar"
                   },
@@ -19616,6 +20685,35 @@
                 ]
               },
               "children": [
+                {
+                  "name": "attribution",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "providerName",
+                      "kind": "map",
+                      "optional": true,
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "text",
+                      "kind": "map",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "url",
+                      "kind": "scalar"
+                    }
+                  ]
+                },
                 {
                   "name": "authRef",
                   "kind": "scalar"
@@ -20373,6 +21471,35 @@
               "kind": "object",
               "children": [
                 {
+                  "name": "attribution",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "providerName",
+                      "kind": "map",
+                      "optional": true,
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "text",
+                      "kind": "map",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "url",
+                      "kind": "scalar"
+                    }
+                  ]
+                },
+                {
                   "name": "authRef",
                   "kind": "scalar"
                 },
@@ -20420,6 +21547,35 @@
               ]
             },
             "children": [
+              {
+                "name": "attribution",
+                "kind": "object",
+                "optional": true,
+                "nullable": true,
+                "children": [
+                  {
+                    "name": "providerName",
+                    "kind": "map",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
+                    "name": "text",
+                    "kind": "map",
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
+                    "name": "url",
+                    "kind": "scalar"
+                  }
+                ]
+              },
               {
                 "name": "authRef",
                 "kind": "scalar"
@@ -22760,6 +23916,35 @@
                 "kind": "object",
                 "children": [
                   {
+                    "name": "attribution",
+                    "kind": "object",
+                    "optional": true,
+                    "nullable": true,
+                    "children": [
+                      {
+                        "name": "providerName",
+                        "kind": "map",
+                        "optional": true,
+                        "nullable": true,
+                        "elem": {
+                          "kind": "scalar"
+                        }
+                      },
+                      {
+                        "name": "text",
+                        "kind": "map",
+                        "nullable": true,
+                        "elem": {
+                          "kind": "scalar"
+                        }
+                      },
+                      {
+                        "name": "url",
+                        "kind": "scalar"
+                      }
+                    ]
+                  },
+                  {
                     "name": "authRef",
                     "kind": "scalar"
                   },
@@ -22807,6 +23992,35 @@
                 ]
               },
               "children": [
+                {
+                  "name": "attribution",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "providerName",
+                      "kind": "map",
+                      "optional": true,
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "text",
+                      "kind": "map",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "url",
+                      "kind": "scalar"
+                    }
+                  ]
+                },
                 {
                   "name": "authRef",
                   "kind": "scalar"
@@ -23564,6 +24778,35 @@
               "kind": "object",
               "children": [
                 {
+                  "name": "attribution",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "providerName",
+                      "kind": "map",
+                      "optional": true,
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "text",
+                      "kind": "map",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "url",
+                      "kind": "scalar"
+                    }
+                  ]
+                },
+                {
                   "name": "authRef",
                   "kind": "scalar"
                 },
@@ -23611,6 +24854,35 @@
               ]
             },
             "children": [
+              {
+                "name": "attribution",
+                "kind": "object",
+                "optional": true,
+                "nullable": true,
+                "children": [
+                  {
+                    "name": "providerName",
+                    "kind": "map",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
+                    "name": "text",
+                    "kind": "map",
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
+                    "name": "url",
+                    "kind": "scalar"
+                  }
+                ]
+              },
               {
                 "name": "authRef",
                 "kind": "scalar"

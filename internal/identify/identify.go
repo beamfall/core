@@ -53,6 +53,13 @@ type ArtworkCandidateStore interface {
 	MarkArtworkCandidateApplied(ctx context.Context, candidateID string) error
 }
 
+// ProvenanceStore records which plugin scraper supplied a Media item's
+// metadata so readers can credit that source with its declared attribution;
+// *store.Store satisfies it. Optional: nil keeps Apply provenance-free.
+type ProvenanceStore interface {
+	SetMediaMetadataProvenance(ctx context.Context, mediaID store.MediaID, pluginID, scraperID string) error
+}
+
 // Fetcher downloads one remote resource through a hardened client;
 // *scrape.Engine satisfies it (the same SSRF gate as scraper requests).
 type Fetcher interface {
@@ -61,12 +68,15 @@ type Fetcher interface {
 
 // ArtworkStore stores fetched artwork; *artwork.Service satisfies it.
 // HasEntityPoster is the cheap existence probe that keeps re-applies from
-// re-downloading entity posters that already landed.
+// re-downloading entity posters that already landed; EntityPosterInherited
+// tells a poster the Entity borrowed from its own Media apart from one that
+// was supplied for it, so provider artwork still replaces the former.
 type ArtworkStore interface {
 	ImportArtwork(ctx context.Context, id store.MediaID, slot string, data []byte) error
 	HasArtwork(id store.MediaID, slot string) bool
 	IsGeneratedArtwork(id store.MediaID, slot string) bool
 	HasEntityPoster(id store.EntityID) bool
+	EntityPosterInherited(id store.EntityID) bool
 	ImportEntityPoster(ctx context.Context, id store.EntityID, data []byte) error
 }
 
@@ -108,6 +118,7 @@ type Service struct {
 	bundles      Bundles
 	store        MetadataStore
 	candidates   ArtworkCandidateStore
+	provenance   ProvenanceStore
 	fetcher      Fetcher
 	artwork      ArtworkStore
 	fields       FieldStore
@@ -122,11 +133,57 @@ type Service struct {
 	queue             UnmatchedStore
 	pins              MatchPinStore
 	optionalAuthSkips sync.Map
+	// writes serializes Apply's local writes per Media item, so the
+	// provenance row always names the scraper whose metadata was kept.
+	writes mediaWriteLocks
+}
+
+// mediaWriteLocks hands out one mutex per Media item, dropping it once no
+// Apply holds or waits on it.
+type mediaWriteLocks struct {
+	mu    sync.Mutex
+	locks map[store.MediaID]*mediaWriteLock
+}
+
+type mediaWriteLock struct {
+	sync.Mutex
+	refs int
+}
+
+func (l *mediaWriteLocks) lock(id store.MediaID) func() {
+	l.mu.Lock()
+	if l.locks == nil {
+		l.locks = map[store.MediaID]*mediaWriteLock{}
+	}
+	entry := l.locks[id]
+	if entry == nil {
+		entry = &mediaWriteLock{}
+		l.locks[id] = entry
+	}
+	entry.refs++
+	l.mu.Unlock()
+	entry.Lock()
+	return func() {
+		entry.Unlock()
+		l.mu.Lock()
+		entry.refs--
+		if entry.refs == 0 {
+			delete(l.locks, id)
+		}
+		l.mu.Unlock()
+	}
 }
 
 // NewService wires the identification service.
 func NewService(engine Engine, bundles Bundles, store MetadataStore) *Service {
 	return &Service{engine: engine, bundles: bundles, store: store}
+}
+
+// SetProvenance wires metadata provenance: every successful metadata write
+// in Apply records the plugin and scraper that supplied it, replacing the
+// item's earlier record.
+func (s *Service) SetProvenance(provenance ProvenanceStore) {
+	s.provenance = provenance
 }
 
 // SetArtwork wires scraped-artwork application: Apply downloads the chosen
@@ -269,17 +326,31 @@ func (s *Service) Apply(ctx context.Context, mediaID store.MediaID, pluginID, sc
 	if metadata.Title == nil && metadata.Summary == nil && metadata.Year == nil {
 		return fmt.Errorf("identify: scraper %q returned no usable fields", scraperID)
 	}
-	if err := s.store.UpdateMediaMetadata(ctx, mediaID, metadata); err != nil {
-		return err
-	}
-	if err := s.applyMediaFields(ctx, mediaID, bundle, spec, result); err != nil {
-		return err
-	}
-	if err := s.applyEntities(ctx, mediaID, bundle, spec, result); err != nil {
+	if err := s.applyLocal(ctx, mediaID, pluginID, scraperID, metadata, bundle, spec, result); err != nil {
 		return err
 	}
 	s.applyArtwork(ctx, mediaID, pluginID, scraperID, result)
 	return nil
+}
+
+// applyLocal writes one identification's local rows while holding the Media
+// item's write lock: two identifications racing each other then commit one
+// after the other, never metadata from one with provenance from the other.
+func (s *Service) applyLocal(ctx context.Context, mediaID store.MediaID, pluginID, scraperID string, metadata store.MediaMetadata, bundle plugin.Bundle, spec plugin.ScraperSpec, result scrape.Result) error {
+	unlock := s.writes.lock(mediaID)
+	defer unlock()
+	if err := s.store.UpdateMediaMetadata(ctx, mediaID, metadata); err != nil {
+		return err
+	}
+	if s.provenance != nil {
+		if err := s.provenance.SetMediaMetadataProvenance(ctx, mediaID, pluginID, scraperID); err != nil {
+			return err
+		}
+	}
+	if err := s.applyMediaFields(ctx, mediaID, bundle, spec, result); err != nil {
+		return err
+	}
+	return s.applyEntities(ctx, mediaID, bundle, spec, result)
 }
 
 // applyMediaFields writes the scraper's plugin-declared Media field values
@@ -576,12 +647,14 @@ func relationSortOrder(hydrated scrape.EntityResult, ordinalFields map[string]st
 // Best-effort like applyPoster: the entity write already succeeded, so
 // artwork failures only log. Entities that already carry a poster are
 // skipped — re-applying an identification must not re-download artwork
-// (the same idempotence posture as the entity writes themselves).
+// (the same idempotence posture as the entity writes themselves). A poster
+// inherited from the Entity's own Media does not count: the provider's
+// artwork replaces it.
 func (s *Service) applyEntityPoster(ctx context.Context, id store.EntityID, artworkURL string) {
 	if artworkURL == "" || s.fetcher == nil || s.artwork == nil {
 		return
 	}
-	if s.artwork.HasEntityPoster(id) {
+	if s.artwork.HasEntityPoster(id) && !s.artwork.EntityPosterInherited(id) {
 		return
 	}
 	data, err := s.fetcher.FetchResource(ctx, artworkURL)
@@ -607,6 +680,20 @@ func (s *Service) applyEntityPoster(ctx context.Context, id store.EntityID, artw
 // existing Artist/Album/Genre rows.
 func EntityIDForName(library store.LibraryID, kind, name string) store.EntityID {
 	sum := sha256.Sum256([]byte(string(library) + "\x00" + kind + "\x00" + name))
+	return store.EntityID("entity-" + hex.EncodeToString(sum[:16]))
+}
+
+// EntityIDForScopedName derives the Entity ID for a hydrated Entity whose title
+// is only unique within a scope (the same title under two scopes is two
+// Entities). An empty scope is the plain EntityIDForName id, so unscoped kinds
+// and Entities written before scopes existed keep their ids. The scope follows
+// the name in the hashed key, which no unscoped (kind, name) can produce
+// without a NUL in the name. Persisted like EntityIDForName: do not change it.
+func EntityIDForScopedName(library store.LibraryID, kind, scope, name string) store.EntityID {
+	if scope == "" {
+		return EntityIDForName(library, kind, name)
+	}
+	sum := sha256.Sum256([]byte(string(library) + "\x00" + kind + "\x00" + name + "\x00" + scope))
 	return store.EntityID("entity-" + hex.EncodeToString(sum[:16]))
 }
 

@@ -386,6 +386,7 @@ type fakeArtwork struct {
 	calls   int
 
 	entityHas   map[store.EntityID]bool
+	inherited   map[store.EntityID]bool
 	entityIDs   []store.EntityID
 	entityData  []byte
 	entityErr   error
@@ -433,6 +434,10 @@ func (f *fakeArtwork) ImportEmbeddedPoster(_ context.Context, _ store.MediaID) (
 
 func (f *fakeArtwork) HasEntityPoster(id store.EntityID) bool {
 	return f.entityHas[id]
+}
+
+func (f *fakeArtwork) EntityPosterInherited(id store.EntityID) bool {
+	return f.inherited[id]
 }
 
 func (f *fakeArtwork) ImportEntityPoster(_ context.Context, id store.EntityID, data []byte) error {
@@ -1164,6 +1169,35 @@ func TestApplySkipsEntityPosterWhenPresent(t *testing.T) {
 	}
 	if fetcher.calls != 1 || art.entityCalls != 1 {
 		t.Fatalf("re-apply re-fetched: fetch = %d calls, import = %d calls, want 1 each", fetcher.calls, art.entityCalls)
+	}
+}
+
+// A poster the Entity inherited from its own Media is a stand-in, not the
+// provider's artwork: identification still fetches and imports the real one.
+func TestEntityPosterReplacesInheritedPoster(t *testing.T) {
+	engine := &fakeEngine{lookupResult: hydratedLookupResultWithArtwork()}
+	entities := &fakeEntityStore{library: "lib-main"}
+	fetcher := &fakeFetcher{data: []byte("logo-bytes")}
+	art := &fakeArtwork{}
+	service := identify.NewService(engine, demoBundles(plugin.ScraperSpec{ID: "lookup"}), &fakeStore{})
+	service.SetEntities(entities)
+	service.SetArtwork(fetcher, art)
+	ctx := context.Background()
+
+	if err := service.Apply(ctx, "media-alpha", "demo", "lookup", "42"); err != nil {
+		t.Fatal(err)
+	}
+	maker := art.entityIDs[0]
+	art.entityHas = map[store.EntityID]bool{maker: true}
+	art.inherited = map[store.EntityID]bool{maker: true}
+	if err := service.Apply(ctx, "media-alpha", "demo", "lookup", "42"); err != nil {
+		t.Fatal(err)
+	}
+	if fetcher.calls != 2 || art.entityCalls != 2 {
+		t.Fatalf("inherited poster kept: fetch = %d calls, import = %d calls, want 2 each", fetcher.calls, art.entityCalls)
+	}
+	if art.entityIDs[1] != maker || string(art.entityData) != "logo-bytes" {
+		t.Fatalf("provider poster imported for %v with %q, want %q", art.entityIDs, art.entityData, maker)
 	}
 }
 

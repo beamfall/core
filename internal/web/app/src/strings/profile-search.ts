@@ -26,6 +26,8 @@ export const profileSearchStrings = {
     settingsRecommendHeading: "Recommendations",
     settingsRecommendOptIn: "Personalized recommendations",
     settingsRecommendOptInLead: "Allow recommend-mode search to use this profile's activity.",
+    settingsCreditsHeading: "Credits",
+    settingsCreditsLead: "Metadata on this server comes from these sources.",
     settingsManagedNote: "Some settings are managed by your operator and are not shown here.",
     settingsSaveFailed: "Could not save this preference.",
     settingsUnavailable: "Preferences are unavailable right now.",
@@ -97,6 +99,8 @@ export const profileSearchStrings = {
     settingsRecommendOptIn: "Recommandations personnalisées",
     settingsRecommendOptInLead:
       "Permettre à la recherche en mode recommandation d’utiliser l’activité de ce profil.",
+    settingsCreditsHeading: "Crédits",
+    settingsCreditsLead: "Les métadonnées de ce serveur proviennent de ces sources.",
     settingsManagedNote:
       "Certains paramètres sont gérés par votre opérateur et ne sont pas affichés ici.",
     settingsSaveFailed: "Impossible d’enregistrer cette préférence.",
