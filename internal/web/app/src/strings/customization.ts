@@ -2,8 +2,7 @@ export const customizationStrings = {
   en: {
     // Tag manager (WEB-5D / ADR-0061).
     tagsHeading: "Tags",
-    tagsLead:
-      "Hierarchical, domain-agnostic Core Tags. Create, rename, reparent, and recover them.",
+    tagsLead: "Create tags, nest and rename them, and bring back deleted ones.",
     tagsCount: "{count} tags",
     tagAssignmentCountAria: "{count} assignments",
     tagsUnavailable: "Tags are unavailable right now.",
@@ -45,8 +44,7 @@ export const customizationStrings = {
     tagRestore: "Restore",
     tagNoneDeleted: "No deleted tags.",
     navOverrideHeading: "Navigation",
-    navOverrideLead:
-      "Server-level Navigation Manifest and Layout overrides. Hide, reorder, and relabel nav nodes; override the theme accent; compose Layout sections. Empty = plugin/library defaults.",
+    navOverrideLead: "Hide, reorder and rename what the sidebar shows, and set the accent color.",
     navOverrideUnavailable: "Navigation overrides are unavailable right now.",
     navOverrideActive: "Active override",
     navOverrideNoNodes: "No navigation nodes.",

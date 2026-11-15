@@ -142,8 +142,6 @@ export function MarkersPage() {
   return (
     <div className="space-y-4">
       <ManageSection
-        title={t("markersHeading")}
-        lead={t("markersLead")}
         actions={
           loaded ? (
             <StatusBadge state="neutral">

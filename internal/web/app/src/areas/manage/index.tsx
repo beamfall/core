@@ -31,6 +31,7 @@ import {
   useState,
 } from "react";
 import { Navigate, NavLink, Route, Routes, useLocation } from "react-router";
+import { IconHeading } from "@/components/beamfall/workbench";
 import { AppShell } from "@/components/chrome/AppShell";
 import { SectionMenu } from "@/components/chrome/SectionMenu";
 import { AdvancedSettingsSwitch, useAdvancedSettings } from "@/lib/advancedSettings";
@@ -72,49 +73,118 @@ import { UnmatchedPage } from "./pages/UnmatchedPage";
 // Grouping is visual only — a keyline between clusters — so no new domain
 // strings are introduced; the labels stay the existing localized keys.
 // A nav item labels itself either by a localized string key (`label`) or, for the
-// powertools surfaces that have no global string key yet, a literal `text`.
+// powertools surfaces that have no global string key yet, a literal `text`. Its
+// icon, label and one-line `lead` also make the page's heading (CORE-1125).
 // `advanced` items are expert destinations the Normal view leaves out of the nav
 // (CORE-1117); their routes stay registered, so a link or bookmark still works.
-type NavItem = { to: string; icon: ComponentType<LucideProps>; advanced?: true } & (
-  | { label: StringKey; text?: undefined }
-  | { text: string; label?: undefined }
-);
+type NavItem = {
+  to: string;
+  icon: ComponentType<LucideProps>;
+  lead: StringKey;
+  advanced?: true;
+} & ({ label: StringKey; text?: undefined } | { text: string; label?: undefined });
 const NAV_GROUPS: NavItem[][] = [
   [
-    { to: "/manage/libraries", icon: LibraryBig, label: "libraries" },
-    { to: "/manage/operations", icon: ListChecks, label: "jobs" },
-    { to: "/manage/convert", icon: FileCog, label: "convert", advanced: true },
-    { to: "/manage/rename", icon: PencilLine, label: "rename", advanced: true },
-    { to: "/manage/trash", icon: Trash2, label: "trashPolicyHeading" },
-    { to: "/manage/backups", icon: Archive, label: "backupHeading" },
-    { to: "/manage/subscriptions", icon: Rss, label: "subscriptions" },
-    { to: "/manage/unmatched", icon: FileQuestion, label: "unmatchedHeading" },
+    { to: "/manage/libraries", icon: LibraryBig, label: "libraries", lead: "manageLibrariesLead" },
+    { to: "/manage/operations", icon: ListChecks, label: "jobs", lead: "manageJobsLead" },
+    { to: "/manage/convert", icon: FileCog, label: "convert", lead: "convertLead", advanced: true },
+    { to: "/manage/rename", icon: PencilLine, label: "rename", lead: "renameLead", advanced: true },
+    { to: "/manage/trash", icon: Trash2, label: "trashPolicyHeading", lead: "trashPolicyLead" },
+    { to: "/manage/backups", icon: Archive, label: "backupHeading", lead: "manageBackupsLead" },
+    {
+      to: "/manage/subscriptions",
+      icon: Rss,
+      label: "subscriptions",
+      lead: "manageSubscriptionsLead",
+    },
+    {
+      to: "/manage/unmatched",
+      icon: FileQuestion,
+      label: "unmatchedHeading",
+      lead: "unmatchedLead",
+    },
   ],
   [
-    { to: "/manage/collections", icon: FolderTree, label: "collections" },
-    { to: "/manage/bulk", icon: ListTodo, label: "bulkOpsHeading", advanced: true },
-    { to: "/manage/tags", icon: Tags, label: "tagsHeading" },
-    { to: "/manage/curation", icon: Sparkles, label: "curationHeading", advanced: true },
-    { to: "/manage/entities", icon: Shapes, label: "manageTitle" },
-    { to: "/manage/items", icon: FilePen, label: "itemMetadataHeading" },
-    { to: "/manage/artwork", icon: ImageIcon, label: "artworkCandidates" },
-    { to: "/manage/markers", icon: Bookmark, label: "markersHeading", advanced: true },
-    { to: "/manage/field-locks", icon: Lock, label: "fieldLocksHeading", advanced: true },
-    { to: "/manage/navigation", icon: PanelsTopLeft, label: "navOverrideHeading", advanced: true },
+    {
+      to: "/manage/collections",
+      icon: FolderTree,
+      label: "collections",
+      lead: "manageCollectionsLead",
+    },
+    {
+      to: "/manage/bulk",
+      icon: ListTodo,
+      label: "bulkOpsHeading",
+      lead: "bulkOpsLead",
+      advanced: true,
+    },
+    { to: "/manage/tags", icon: Tags, label: "tagsHeading", lead: "tagsLead" },
+    {
+      to: "/manage/curation",
+      icon: Sparkles,
+      label: "curationHeading",
+      lead: "curationLead",
+      advanced: true,
+    },
+    {
+      to: "/manage/entities",
+      icon: Shapes,
+      label: "manageEntitiesTitle",
+      lead: "manageEntitiesLead",
+    },
+    { to: "/manage/items", icon: FilePen, label: "itemMetadataHeading", lead: "itemMetadataLead" },
+    {
+      to: "/manage/artwork",
+      icon: ImageIcon,
+      label: "artworkCandidates",
+      lead: "manageArtworkLead",
+    },
+    {
+      to: "/manage/markers",
+      icon: Bookmark,
+      label: "markersHeading",
+      lead: "markersLead",
+      advanced: true,
+    },
+    {
+      to: "/manage/field-locks",
+      icon: Lock,
+      label: "fieldLocksHeading",
+      lead: "fieldLocksLead",
+      advanced: true,
+    },
+    {
+      to: "/manage/navigation",
+      icon: PanelsTopLeft,
+      label: "navOverrideHeading",
+      lead: "navOverrideLead",
+      advanced: true,
+    },
   ],
   [
-    { to: "/manage/restrictions", icon: ShieldAlert, label: "restrictionsTitle" },
-    { to: "/manage/profile", icon: UserCog, label: "profilesTitle" },
+    {
+      to: "/manage/restrictions",
+      icon: ShieldAlert,
+      label: "restrictionsTitle",
+      lead: "restrictionsLead",
+    },
+    { to: "/manage/profile", icon: UserCog, label: "profilesTitle", lead: "profilesLead" },
   ],
 ];
 
-// The page title of the current route: the nav label of the item whose path
-// the location is on or under, falling back to the area title.
-function currentRouteLabel(pathname: string): { label?: StringKey; text?: string } {
+// The nav item of the current route: the one whose path the location is on or
+// under, falling back to the area itself.
+const AREA_ROUTE: NavItem = {
+  to: "/manage",
+  icon: LibraryBig,
+  label: "manageTitle",
+  lead: "manageLead",
+};
+function currentRoute(pathname: string): NavItem {
   const item = NAV_GROUPS.flat().find(
     (entry) => pathname === entry.to || pathname.startsWith(`${entry.to}/`),
   );
-  return item ?? { label: "manageTitle" };
+  return item ?? AREA_ROUTE;
 }
 
 // The Normal nav drops Advanced items, except the page being viewed, so a deep
@@ -221,7 +291,8 @@ export function ManageArea() {
   const t = useT();
   const [advanced] = useAdvancedSettings();
   useEffect(() => setRegister("manage"), [setRegister]);
-  const routeTitle = currentRouteLabel(location.pathname);
+  const route = currentRoute(location.pathname);
+  const routeTitle = route.text ?? t(route.label);
 
   if (loading) {
     return (
@@ -241,7 +312,7 @@ export function ManageArea() {
         <SectionMenu
           label={t("manageTitle")}
           className="md:w-52 md:shrink-0"
-          current={routeTitle.text ?? t(routeTitle.label ?? "manageTitle")}
+          current={routeTitle}
           footer={<AdvancedSettingsSwitch className="manage-advanced-switch" />}
         >
           <div className="manage-nav">
@@ -262,8 +333,8 @@ export function ManageArea() {
         </SectionMenu>
 
         <div className="min-w-0 grow">
-          {/* The route's one h1; each ManageSection card title below it is an h2. */}
-          <h1 className="sr-only">{routeTitle.text ?? t(routeTitle.label ?? "manageTitle")}</h1>
+          {/* The route's one h1 and its lead; each ManageSection card title below is an h2. */}
+          <IconHeading icon={route.icon} title={routeTitle} lead={t(route.lead)} />
           <ManageAdminLock>
             <Routes>
               <Route index element={<Navigate to="/manage/libraries" replace />} />

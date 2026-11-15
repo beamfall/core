@@ -2,7 +2,8 @@ export const powerToolStrings = {
   en: {
     // PowerTools: Conversion page (ADR-0124 §6, POWERTOOLS-8).
     convert: "Convert",
-    convertLead: "Convert a source file or folder into a managed file using a server-side preset.",
+    convertLead:
+      "Turn a source file or folder into a managed copy using one of the server's presets.",
     convertSourceLabel: "Source file or folder",
     convertPresetLabel: "Preset",
     convertQueueTitle: "Conversion queue",

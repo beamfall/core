@@ -31,7 +31,7 @@ export function ProfilePage() {
   };
 
   return (
-    <ManageSection title={t("profilesTitle")} lead={t("profilesLead")}>
+    <ManageSection>
       {profiles.length === 0 ? (
         <EmptyLine message={t("profileUnavailable")} />
       ) : (

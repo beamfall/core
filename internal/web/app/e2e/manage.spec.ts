@@ -303,7 +303,7 @@ test.describe("manage", () => {
       "Trash",
       "Subscriptions",
       "Unmatched records",
-      "Manage",
+      "Entity lookup",
       "Artwork candidates",
       "Restrictions",
       "Profiles",

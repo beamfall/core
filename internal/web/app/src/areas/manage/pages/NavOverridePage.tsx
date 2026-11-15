@@ -180,8 +180,6 @@ export function NavOverridePage() {
   return (
     <div className="space-y-4">
       <ManageSection
-        title={t("navOverrideHeading")}
-        lead={t("navOverrideLead")}
         actions={
           <div className="flex items-center gap-2">
             {isOverridden && <StatusBadge state="amber">{t("navOverrideActive")}</StatusBadge>}

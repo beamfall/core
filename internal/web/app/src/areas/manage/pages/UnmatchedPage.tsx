@@ -114,8 +114,6 @@ export function UnmatchedPage() {
   return (
     <div className="space-y-4">
       <ManageSection
-        title={t("unmatchedHeading")}
-        lead={t("unmatchedLead")}
         actions={
           <div className="flex items-center gap-2">
             {libraries.length > 0 && (

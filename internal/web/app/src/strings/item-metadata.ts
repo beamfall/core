@@ -4,7 +4,7 @@ export const itemMetadataStrings = {
   en: {
     itemMetadataHeading: "Edit item",
     itemMetadataLead:
-      "Edit an item's details. Saving locks every field you change, so identification, refresh and rescans leave it alone until you unlock it.",
+      "Edit an item's details. Fields you change stay as you set them through rescans until you unlock them.",
     itemMetadataEmpty: "Enter a media ID to edit its details.",
     itemMetadataUnavailable: "Could not load this item.",
     itemMetadataDetailsHeading: "Details",

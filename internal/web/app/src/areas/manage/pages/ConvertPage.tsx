@@ -88,7 +88,7 @@ function ConvertEnqueueSection() {
   };
 
   return (
-    <ManageSection title={t("convert")} lead={t("convertLead")}>
+    <ManageSection>
       <div className="manage-fieldrow space-y-3">
         <div className="grid gap-1">
           <Label htmlFor="convert-library">{t("library")}</Label>
