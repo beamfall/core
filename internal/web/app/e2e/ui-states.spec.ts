@@ -117,6 +117,11 @@ async function gotoScreen(page: Page, screen: string): Promise<void> {
         page.getByRole("heading", { level: 1, name: FIXTURE_COLLECTION.name }),
       ).toBeVisible();
       return;
+    case "/manage/items/:mediaID":
+      await page.goto("/web/manage/items/media-alpha");
+      // The editor's Details section renders only once the seeded Media has loaded.
+      await expect(page.getByRole("heading", { level: 3, name: "Details" })).toBeVisible();
+      return;
     case "/watch/:mediaId":
       await page.goto("/web/watch/media-alpha");
       await expect(page.getByRole("button", { name: "Back" }).first()).toBeVisible();
