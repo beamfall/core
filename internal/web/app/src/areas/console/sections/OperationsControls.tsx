@@ -26,7 +26,13 @@ import {
 } from "@/lib/graphql";
 import type { JobEventInfo, JobInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
-import { jobKindLabel, jobProgressDetail, jobStatusLabel, jobStatusState } from "@/lib/jobDisplay";
+import {
+  jobEventDetail,
+  jobKindLabel,
+  jobProgressDetail,
+  jobStatusLabel,
+  jobStatusState,
+} from "@/lib/jobDisplay";
 import type { StringKey } from "@/strings";
 import { ConfirmButton } from "../ConfirmButton";
 import { Section } from "../Section";
@@ -310,7 +316,9 @@ function JobLog({ jobID }: { jobID: string }) {
           <span className="console-mono text-muted-foreground">{ev.occurredAt}</span>
           <span className="font-medium">{ev.type}</span>
           <span className="console-mono truncate">
-            {ev.payload ? redactJobLogPayload(ev.payload) : t("jobLogPayloadRedacted")}
+            {ev.payload
+              ? (jobEventDetail(ev, t) ?? redactJobLogPayload(ev.payload))
+              : t("jobLogPayloadRedacted")}
           </span>
         </div>
       ))}

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  jobEventDetail,
   jobKindLabel,
   jobProgressDetail,
   jobProgressMessageLabel,
@@ -105,5 +106,27 @@ describe("job display labels", () => {
     expect(jobProgressMessageLabel("12 of 18 items matched", labels)).toBe(
       "12 of 18 items matched",
     );
+  });
+
+  it("reads a job history entry as a line of text", () => {
+    const progress = (payload: object) =>
+      jobEventDetail({ type: "progress", payload: JSON.stringify(payload) });
+    expect(
+      progress({ type: "progress", current: 7, total: 10, unit: "files", message: "Scanning" }),
+    ).toBe("7/10 files - Scanning");
+    expect(progress({ type: "progress", current: 42, unit: "files", message: "Scanning" })).toBe(
+      "42 files - Scanning",
+    );
+    expect(progress({ type: "progress", current: 42 })).toBe("42");
+    // Entries written before progress carried its numbers have nothing to add.
+    expect(progress({ type: "progress" })).toBe("");
+    expect(jobEventDetail({ type: "running", payload: '{"status":"running"}' })).toBe("");
+    expect(
+      jobEventDetail({ type: "yielded", payload: '{"status":"yielded","reason":"shutdown"}' }),
+    ).toBe("shutdown");
+    // Anything else is left for the caller to show as stored.
+    expect(jobEventDetail({ type: "failed", payload: '{"error":"disk full"}' })).toBeNull();
+    expect(jobEventDetail({ type: "started", payload: "worker=w2" })).toBeNull();
+    expect(jobEventDetail({ type: "started" })).toBeNull();
   });
 });

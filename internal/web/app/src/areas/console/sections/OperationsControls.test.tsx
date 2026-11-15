@@ -234,6 +234,13 @@ describe("OperationsControls", () => {
         type: "started",
         payload: "worker=w2",
       },
+      {
+        id: "2",
+        jobID: "job-1",
+        occurredAt: "2026-06-20T00:00:01Z",
+        type: "progress",
+        payload: '{"type":"progress","current":7,"total":10,"unit":"files","message":"Scanning"}',
+      },
     ]);
     const user = userEvent.setup();
     renderPanel();
@@ -243,6 +250,7 @@ describe("OperationsControls", () => {
 
     expect(await screen.findByText("started")).toBeVisible();
     expect(screen.getByText("worker=w2")).toBeVisible();
+    expect(screen.getByText("7/10 files - Scanning")).toBeVisible();
     expect(fetchJobEvents).toHaveBeenCalledWith("job-1", expect.any(AbortSignal));
   });
 
