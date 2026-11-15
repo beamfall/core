@@ -140,6 +140,9 @@ func TestAudioCopyRestartsLandOnPlaylistTimes(t *testing.T) {
 		// Video that starts half a second after the audio: the first keyframe
 		// opens segment 0 instead of getting a segment of its own.
 		"late-video.mkv": makeLateVideoSource(t, "late-video.mkv", duration),
+		// A second, larger video stream with a 3s GOP that FFmpeg's default
+		// stream choice prefers: segments must follow the probed first one.
+		"two-video.mkv": makeTwoVideoSource(t, "two-video.mkv", duration),
 	}
 	for name, src := range sources {
 		sessions := NewSessions(ffmpeg.New(), t.TempDir(), nil)
@@ -396,6 +399,29 @@ func makeLateVideoSource(t *testing.T, name string, durationSeconds int) string 
 		"-y", src).CombinedOutput()
 	if err != nil {
 		t.Fatalf("synthesize late-video source: %v\n%s", err, out)
+	}
+	return src
+}
+
+// makeTwoVideoSource has a 64x64 7s-GOP first video stream and a 160x90
+// 3s-GOP second one flagged default, which FFmpeg's automatic stream
+// selection picks over the first (CORE-1735).
+func makeTwoVideoSource(t *testing.T, name string, durationSeconds int) string {
+	t.Helper()
+	src := filepath.Join(t.TempDir(), name)
+	out, err := exec.Command("ffmpeg", "-v", "error", // #nosec G204 -- fixed ffmpeg arguments on a test-owned fixture.
+		"-f", "lavfi", "-i", fmt.Sprintf("testsrc=duration=%d:size=64x64:rate=25", durationSeconds),
+		"-f", "lavfi", "-i", fmt.Sprintf("testsrc2=duration=%d:size=160x90:rate=25", durationSeconds),
+		"-f", "lavfi", "-i", fmt.Sprintf("sine=frequency=440:duration=%d", durationSeconds),
+		"-map", "0:v", "-map", "1:v", "-map", "2:a",
+		"-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-sc_threshold", "0",
+		"-g:v:0", "175", "-keyint_min:v:0", "175",
+		"-g:v:1", "75", "-keyint_min:v:1", "75",
+		"-disposition:v:0", "0", "-disposition:v:1", "default",
+		"-c:a", "aac",
+		"-y", src).CombinedOutput()
+	if err != nil {
+		t.Fatalf("synthesize two-video source: %v\n%s", err, out)
 	}
 	return src
 }

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestHLSSegmentArgsMapSelectedAudioStream keeps the seek/restart command line
@@ -74,6 +75,21 @@ func TestStartHLSSegmentsRestartKeepsSelectedAudioRealEncode(t *testing.T) {
 	probe := probeSegmentStreams(t, filepath.Join(dir, "live.m3u8"), "stream=codec_type,sample_rate")
 	if !strings.Contains(probe, "codec_type=video") || !strings.Contains(probe, "codec_type=audio|sample_rate=32000") || strings.Contains(probe, "sample_rate=48000") {
 		t.Fatalf("restarted segments do not carry the selected 32 kHz audio stream:\n%s", probe)
+	}
+}
+
+// TestKeyframeSegmentArgsMapProbedVideoStream maps the video stream the
+// keyframe probe read (CORE-1735) and the selected audio stream, or the first
+// audio stream when none is selected.
+func TestKeyframeSegmentArgsMapProbedVideoStream(t *testing.T) {
+	plain := keyframeSegmentArgs("/src/film.mkv", "/tmp/hls", 8, 56*time.Second, Rendition{CopyVideo: true})
+	if !containsArgSequence(plain, "-map", "0:v:0", "-map", "0:a:0?") {
+		t.Fatalf("keyframe argv = %v, want [-map 0:v:0 -map 0:a:0?]", plain)
+	}
+	selected := 3
+	chosen := keyframeSegmentArgs("/src/film.mkv", "/tmp/hls", 8, 56*time.Second, Rendition{CopyVideo: true, AudioStreamIndex: &selected})
+	if !containsArgSequence(chosen, "-map", "0:v:0", "-map", "0:3") || containsArg(chosen, "0:a:0?") {
+		t.Fatalf("keyframe argv = %v, want [-map 0:v:0 -map 0:3]", chosen)
 	}
 }
 

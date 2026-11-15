@@ -2275,21 +2275,31 @@ func hlsSegmentArgs(src, dir string, startSegment, segmentSeconds int, rendition
 	if !rendition.CopyVideo {
 		forceKeyframes = []string{"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", segmentSeconds)}
 	}
-	return segmentArgs(src, dir, startSegment, seek, strconv.Itoa(startSegment*segmentSeconds), strconv.Itoa(segmentSeconds), forceKeyframes, rendition)
+	return segmentArgs(src, dir, startSegment, seek, strconv.Itoa(startSegment*segmentSeconds), strconv.Itoa(segmentSeconds), rendition.selectedStreamMapArgs(), forceKeyframes, rendition)
 }
 
 // keyframeSegmentArgs is the StartHLSKeyframeSegments command line: the input
-// seek and the output offset are both the keyframe's presentation time.
+// seek and the output offset are both the keyframe's presentation time. The
+// keyframe times come from the first video stream (ProbeKeyframes reads v:0),
+// so that stream is always mapped: FFmpeg's own choice among several video
+// streams may be another one with different keyframes (CORE-1735). Mapping
+// disables the automatic audio choice too, so the selected audio stream is
+// mapped, or the first one when none is selected.
 func keyframeSegmentArgs(src, dir string, startSegment int, start time.Duration, rendition Rendition) []string {
 	offset := formatMicros(start)
-	return segmentArgs(src, dir, startSegment, offset, offset, keyframeSegmentHLSTime, nil, rendition)
+	audioMap := "0:a:0?"
+	if rendition.AudioStreamIndex != nil {
+		audioMap = fmt.Sprintf("0:%d", *rendition.AudioStreamIndex)
+	}
+	streamMaps := []string{"-map", "0:v:0", "-map", audioMap}
+	return segmentArgs(src, dir, startSegment, offset, offset, keyframeSegmentHLSTime, streamMaps, nil, rendition)
 }
 
 // segmentArgs assembles a segmenting command line: seek is the input position,
 // outputOffset the first output timestamp. An audio-only rendition maps just
 // the selected audio stream and drops the video arguments; a video rendition
-// maps a selected audio stream the way the linear encode does.
-func segmentArgs(src, dir string, startSegment int, seek, outputOffset, hlsTime string, forceKeyframes []string, rendition Rendition) []string {
+// adds streamMaps.
+func segmentArgs(src, dir string, startSegment int, seek, outputOffset, hlsTime string, streamMaps, forceKeyframes []string, rendition Rendition) []string {
 	args := []string{
 		"-v", "error",
 	}
@@ -2308,7 +2318,7 @@ func segmentArgs(src, dir string, startSegment int, seek, outputOffset, hlsTime 
 		args = append(args, "-map", audioMap)
 	} else {
 		args = append(args, rendition.videoArgs()...)
-		args = append(args, rendition.selectedStreamMapArgs()...)
+		args = append(args, streamMaps...)
 		args = append(args, forceKeyframes...)
 		args = append(args, rendition.args()...)
 	}
