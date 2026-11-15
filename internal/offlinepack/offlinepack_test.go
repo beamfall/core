@@ -26,22 +26,22 @@ import (
 
 type testDecryptSource struct{ key []byte }
 
-type sizedStore struct {
-	Store
-	sizes map[string]int64
-}
-
-func (s sizedStore) MediaFilesForMedia(ctx context.Context, id store.MediaID, filter store.LibraryFilter) ([]store.MediaFile, error) {
-	files, err := s.Store.MediaFilesForMedia(ctx, id, filter)
+// recordCatalogSize re-imports a fixture file with a recorded size_bytes, as a
+// scan that stats the file does, so the real store returns that catalog size.
+func recordCatalogSize(t *testing.T, st *store.Store, file store.MediaFile, size int64) {
+	t.Helper()
+	ctx := context.Background()
+	mediaRows, err := st.VisibleMediaBatch(ctx, []store.MediaID{file.MediaID}, store.LibraryFilter{AllLibraries: true, Revealed: true})
 	if err != nil {
-		return nil, err
+		t.Fatal(err)
 	}
-	for i := range files {
-		if size, ok := s.sizes[files[i].Path]; ok {
-			files[i].SizeBytes = size
-		}
+	media := mediaRows[file.MediaID]
+	if _, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: media.LibraryID, Path: file.Path, Title: media.Title, Container: "flac", Codec: "flac",
+		Class: store.MediaClassAudio, ContentFingerprint: file.ContentFingerprint, SizeBytes: size,
+	}); err != nil {
+		t.Fatal(err)
 	}
-	return files, nil
 }
 
 type observingDecryptSource struct {
@@ -281,11 +281,9 @@ func TestBuildPackRejectsResourceBudgetsBeforeDecrypt(t *testing.T) {
 		svc, authService, st, _ := newFixture(t)
 		scope := scopeFor(t, authService, "session-revealed")
 		files := fixtureMediaFiles(t, st, scope, "media-alpha", "media-archive")
-		sizes := map[string]int64{}
 		for _, file := range files {
-			sizes[file.Path] = 10
+			recordCatalogSize(t, st, file, 10)
 		}
-		svc.store = sizedStore{Store: st, sizes: sizes}
 		svc.SetBuildByteBudget(19)
 		source := &observingDecryptSource{bodies: map[string][]byte{}}
 		svc.SetEncryptedContent(source, func(store.LibraryID) bool { return true }, func(store.LibraryID, string) (string, string, error) {
@@ -306,14 +304,12 @@ func TestBuildPackStreamsOneBoundedSourceAtATime(t *testing.T) {
 	svc, authService, st, _ := newFixture(t)
 	scope := scopeFor(t, authService, "session-revealed")
 	files := fixtureMediaFiles(t, st, scope, "media-alpha", "media-archive")
-	sizes := map[string]int64{}
 	bodies := map[string][]byte{}
 	for _, file := range files {
 		body := bytes.Repeat([]byte(file.MediaID), 100000)
 		bodies[file.Path] = body
-		sizes[file.Path] = int64(len(body))
+		recordCatalogSize(t, st, file, int64(len(body)))
 	}
-	svc.store = sizedStore{Store: st, sizes: sizes}
 	source := &observingDecryptSource{bodies: bodies}
 	svc.SetEncryptedContent(source, func(store.LibraryID) bool { return true }, func(store.LibraryID, string) (string, string, error) {
 		return "media", "item", nil
@@ -905,7 +901,7 @@ func TestContentRouteStreamsEncryptedPackMemberAcrossChunkBoundary(t *testing.T)
 		resolved = append(resolved, obj.ImmutableObjectID)
 		return string(obj.ObjectClass), obj.ImmutableObjectID, nil
 	})
-	svc.store = sizedStore{Store: st, sizes: map[string]int64{file.Path: int64(len(plain))}}
+	recordCatalogSize(t, st, file, int64(len(plain)))
 	pack, err := svc.BuildPack(context.Background(), scope, BuildPackRequest{
 		TargetKind: TargetKindMedia,
 		TargetRef:  "media-alpha",

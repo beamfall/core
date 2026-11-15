@@ -11,11 +11,11 @@ import (
 	"github.com/beamfall/core/internal/store"
 )
 
-// TestBuildPackSizesEncryptedOriginalsFromTheDecryptReader pins CORE-1742: the
-// store's Media file reads carry no size, so an Original pack in an Encrypted
-// Library takes each item's plaintext length from its decrypt reader instead
-// of refusing with a missing catalog size. Plaintext still streams one bounded
-// source at a time.
+// TestBuildPackSizesEncryptedOriginalsFromTheDecryptReader pins CORE-1742: a
+// file with no recorded catalog size (scanned before size_bytes was kept) in
+// an Encrypted Library takes its plaintext length from its decrypt reader
+// instead of refusing with a missing catalog size. Plaintext still streams one
+// bounded source at a time.
 func TestBuildPackSizesEncryptedOriginalsFromTheDecryptReader(t *testing.T) {
 	svc, authService, st, _ := newFixture(t)
 	scope := scopeFor(t, authService, "session-revealed")
@@ -24,7 +24,7 @@ func TestBuildPackSizesEncryptedOriginalsFromTheDecryptReader(t *testing.T) {
 	want := map[store.MediaID]int64{}
 	for _, file := range files {
 		if file.SizeBytes != 0 {
-			t.Fatalf("fixture %s catalog size = %d, want the store's unsized read", file.MediaID, file.SizeBytes)
+			t.Fatalf("fixture %s catalog size = %d, want an unsized catalog row", file.MediaID, file.SizeBytes)
 		}
 		body := bytes.Repeat([]byte(file.MediaID), 70000)
 		bodies[file.Path] = body
