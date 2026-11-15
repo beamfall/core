@@ -31,8 +31,30 @@ import (
 // access set is masked to the kernel's reported landlock ABI so newer access
 // bits never make create_ruleset reject the request on an older kernel.
 func applyConfinement(roPaths, rwPaths []string, binary string) error {
-	abi := landlockABI()
+	return applyFFmpegConfinement(roPaths, rwPaths, binary, false)
+}
+
+// applyRequiredConfinement is applyConfinement with kernel support made a
+// precondition: a kernel without landlock refuses the launch rather than
+// running the child on rlimits alone. The encrypted-library pipe transcode uses
+// it (--require-landlock), because that child reads decrypted bytes.
+func applyRequiredConfinement(roPaths, rwPaths []string, binary string) error {
+	return applyFFmpegConfinement(roPaths, rwPaths, binary, true)
+}
+
+// errLandlockRequired reports a mandatory confinement the kernel cannot give.
+var errLandlockRequired = errors.New("landlock confinement is required but unavailable on this kernel")
+
+// ffmpegLandlockABI is the kernel-support probe for the ffmpeg shim, held as a
+// seam so the required-confinement refusal is testable on a landlock kernel.
+var ffmpegLandlockABI = landlockABI
+
+func applyFFmpegConfinement(roPaths, rwPaths []string, binary string, required bool) error {
+	abi := ffmpegLandlockABI()
 	if abi < 1 {
+		if required {
+			return errLandlockRequired
+		}
 		// Landlock not supported on this kernel: rlimits carry the weight.
 		return nil
 	}
@@ -45,6 +67,9 @@ func applyConfinement(roPaths, rwPaths []string, binary string) error {
 	rulesetFD, err := landlockCreateRuleset(&attr)
 	if err != nil {
 		if errors.Is(err, unix.ENOSYS) || errors.Is(err, unix.EOPNOTSUPP) {
+			if required {
+				return errLandlockRequired
+			}
 			return nil
 		}
 		return fmt.Errorf("landlock_create_ruleset: %w", err)

@@ -11,3 +11,9 @@ package ffmpeg
 func sandboxWrap(_, _ []string, binPath string, args []string) (string, []string, bool) {
 	return binPath, args, false
 }
+
+// sandboxWrapNet reports no wrapping off darwin; the pipe transcode is confined
+// by the shim's mandatory landlock on Linux and refused elsewhere.
+func sandboxWrapNet(_ int, binPath string, args []string) (string, []string, bool) {
+	return binPath, args, false
+}

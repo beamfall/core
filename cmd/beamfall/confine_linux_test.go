@@ -341,7 +341,7 @@ func confineShimHelper(mode string) {
 	}
 	switch mode {
 	case "ffmpeg":
-		err = runFFmpegShim(nil, nil, probe)
+		err = runFFmpegShim(nil, nil, probe, false)
 	case "local-inference":
 		err = runLocalInferenceShim(
 			os.Getenv("BEAMFALL_CONFINE_SHIM_INPUT"),
@@ -432,4 +432,19 @@ func TestConfinedWorkerProbe(t *testing.T) {
 	}
 	fmt.Fprintf(os.Stderr, "%s worker is confined\n", mode)
 	os.Exit(0)
+}
+
+// TestRequiredFFmpegConfinementRefusesWithoutLandlock proves --require-landlock
+// fails closed on a kernel without landlock while the default best-effort path
+// still runs on rlimits alone.
+func TestRequiredFFmpegConfinementRefusesWithoutLandlock(t *testing.T) {
+	original := ffmpegLandlockABI
+	t.Cleanup(func() { ffmpegLandlockABI = original })
+	ffmpegLandlockABI = func() int { return 0 }
+	if err := applyRequiredConfinement(nil, nil, "/usr/bin/ffmpeg"); !errors.Is(err, errLandlockRequired) {
+		t.Fatalf("applyRequiredConfinement without landlock = %v, want errLandlockRequired", err)
+	}
+	if err := applyConfinement(nil, nil, "/usr/bin/ffmpeg"); err != nil {
+		t.Fatalf("best-effort applyConfinement without landlock = %v, want nil", err)
+	}
 }

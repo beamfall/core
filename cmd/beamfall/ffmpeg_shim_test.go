@@ -70,7 +70,7 @@ func TestMain(m *testing.M) {
 // TestParseShimArgs pins the shim argv parser: --ro/--rw collect their paths,
 // "--" terminates the flag section, and the remainder is the verbatim command.
 func TestParseShimArgs(t *testing.T) {
-	ro, rw, argv, err := parseShimArgs([]string{
+	ro, rw, argv, requireLandlock, err := parseShimArgs([]string{
 		"--ro", "/media/in",
 		"--rw", "/var/out",
 		"--rw", "/tmp/seg",
@@ -89,19 +89,43 @@ func TestParseShimArgs(t *testing.T) {
 	if !reflect.DeepEqual(argv, []string{"/usr/bin/ffmpeg", "-i", "/media/in/m.mkv"}) {
 		t.Errorf("argv = %q", argv)
 	}
+	if requireLandlock {
+		t.Error("requireLandlock set without --require-landlock")
+	}
+}
+
+// TestParseShimArgsRequireLandlock pins the mandatory-confinement flag: it is a
+// bare flag before "--", and the same token after "--" stays part of the
+// verbatim command.
+func TestParseShimArgsRequireLandlock(t *testing.T) {
+	ro, rw, argv, requireLandlock, err := parseShimArgs([]string{
+		"--require-landlock", "--", "/usr/bin/ffmpeg", "--require-landlock",
+	})
+	if err != nil {
+		t.Fatalf("parseShimArgs: %v", err)
+	}
+	if !requireLandlock {
+		t.Error("requireLandlock not set")
+	}
+	if len(ro) != 0 || len(rw) != 0 {
+		t.Errorf("ro = %q, rw = %q, want none", ro, rw)
+	}
+	if !reflect.DeepEqual(argv, []string{"/usr/bin/ffmpeg", "--require-landlock"}) {
+		t.Errorf("argv = %q", argv)
+	}
 }
 
 func TestParseShimArgsRejectsMissingCommand(t *testing.T) {
-	if _, _, _, err := parseShimArgs([]string{"--ro", "/x", "--"}); err == nil {
+	if _, _, _, _, err := parseShimArgs([]string{"--ro", "/x", "--"}); err == nil {
 		t.Fatal("parseShimArgs accepted an empty command after --")
 	}
-	if _, _, _, err := parseShimArgs([]string{"--ro", "/x"}); err == nil {
+	if _, _, _, _, err := parseShimArgs([]string{"--ro", "/x"}); err == nil {
 		t.Fatal("parseShimArgs accepted args with no -- terminator")
 	}
-	if _, _, _, err := parseShimArgs([]string{"--ro"}); err == nil {
+	if _, _, _, _, err := parseShimArgs([]string{"--ro"}); err == nil {
 		t.Fatal("parseShimArgs accepted --ro with no path")
 	}
-	if _, _, _, err := parseShimArgs([]string{"--bogus", "--", "/bin/true"}); err == nil {
+	if _, _, _, _, err := parseShimArgs([]string{"--bogus", "--", "/bin/true"}); err == nil {
 		t.Fatal("parseShimArgs accepted an unknown flag")
 	}
 }
