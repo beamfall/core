@@ -46,9 +46,10 @@ import (
 //     live session is an orphan and is purged.
 //
 // Ciphertext derivatives are the exception (ADR-0235): the Library's encrypted
-// subtitle cache {dataDir}/subtitles/encrypted/<library hash>/ keeps every
-// object that carries a libencrypt header, and anything else in it (plaintext,
-// staging temps, stray entries) is removed.
+// subtitle cache {dataDir}/subtitles/encrypted/<library hash>/ and each live
+// fingerprint's generated-asset dir keep every validly named object that
+// carries a libencrypt header, and anything else in them (plaintext, staging
+// temps, stray entries) is removed.
 //
 // FAIL CLOSED: if any purge errors, the whole reconcile returns non-nil and the
 // store call site unwinds the registration, keeping the Library Sealed — the
@@ -114,7 +115,7 @@ func (r *encryptedDerivativeReconciler) purgeMedia(key store.MediaDerivativeKey)
 	joined = errors.Join(joined, playback.PurgePrecomputedRenditionsForMedia(r.precomputeCache, key.MediaID))
 	for _, fingerprint := range key.Fingerprints {
 		if r.assets != nil {
-			joined = errors.Join(joined, r.assets.PurgeFingerprint(fingerprint))
+			joined = errors.Join(joined, r.assets.ReconcileEncryptedFingerprint(fingerprint, libencrypt.HasObjectHeader))
 		}
 		if r.subtitles != nil {
 			joined = errors.Join(joined, r.subtitles.PurgeSubtitlesForFingerprint(fingerprint))

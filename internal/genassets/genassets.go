@@ -8,11 +8,14 @@
 package genassets
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"image/jpeg"
+	"io"
+	"io/fs"
 	"math"
 	"os"
 	"path/filepath"
@@ -105,6 +108,40 @@ type Generator interface {
 	LoudnessMeasure(ctx context.Context, src string) (integratedLUFS, loudnessRangeLU, truePeakDBTP float64, fromTags bool, err error)
 }
 
+// EncryptedSource is an Encrypted Library's source file as the encrypted
+// generator reads it: through the Library's cipher, never as a plaintext path.
+// Revoked reports a non-nil error once the Library is Sealed or the job ends.
+type EncryptedSource struct {
+	LibraryID   store.LibraryID
+	Path        string
+	Fingerprint string
+	Revoked     func(context.Context) error
+}
+
+// EncryptedGenerator is the Generator for an Unsealed Encrypted Library
+// (ADR-0235, CORE-1966). Each method decrypts the source only in memory and
+// returns the asset's bytes or analysis; nothing is written to disk. The image
+// methods return whole JPEGs and SpriteSheets returns at most maxSheets of them.
+type EncryptedGenerator interface {
+	SpriteSheets(ctx context.Context, src EncryptedSource, intervalSeconds, tileWidth, columns, rows, maxSheets int) ([][]byte, error)
+	SampleClip(ctx context.Context, src EncryptedSource, offsets []float64, segmentSeconds float64, width, maxFPS int) ([]byte, error)
+	FrameGrab(ctx context.Context, src EncryptedSource, atSeconds float64, width int) ([]byte, error)
+	WaveformAmplitudes(ctx context.Context, src EncryptedSource) ([]float64, error)
+	SilenceSpans(ctx context.Context, src EncryptedSource) ([][2]float64, error)
+	// LoudnessMeasure always decodes: container tags are not consulted.
+	LoudnessMeasure(ctx context.Context, src EncryptedSource) (integratedLUFS, loudnessRangeLU, truePeakDBTP float64, err error)
+}
+
+// EncryptedObjects writes and reads an Encrypted Library's ciphertext objects
+// under their object context.
+type EncryptedObjects interface {
+	EncryptObject(libraryID store.LibraryID, src io.Reader, ciphertextPath, objectClass, immutableObjectID string) error
+	OpenDecryptReader(libraryID store.LibraryID, ciphertextPath, objectClass, immutableObjectID string) (io.ReadSeekCloser, error)
+}
+
+// ErrLibrarySealed revokes an encrypted generation once its Library is Sealed.
+var ErrLibrarySealed = errors.New("generated assets: library is sealed")
+
 // Service generates and locates Generated Asset files under dataDir/generated
 // — a parallel storage area to artwork, never mixed into it.
 type Service struct {
@@ -113,6 +150,8 @@ type Service struct {
 	dir        string
 	sealed     SealedPredicate
 	encrypted  EncryptedPredicate
+	encGen     EncryptedGenerator
+	objects    EncryptedObjects
 	trickplay  sync.Mutex
 	publish    sync.Mutex
 	publishErr error
@@ -125,11 +164,11 @@ type Service struct {
 type SealedPredicate func(libraryID store.LibraryID) bool
 
 // EncryptedPredicate reports whether a Library is Encrypted (provisioned),
-// whether it is currently Sealed OR Unsealed. A Generated Asset
-// is a plaintext derivative of the Media, and the encrypted-plane write path is
-// not built yet, so generation fails closed for every Encrypted
-// Library rather than dropping a plaintext derivative on the shared unencrypted
-// plane while the Library happens to be Unsealed. Composition wires it off
+// whether it is currently Sealed OR Unsealed. An Unsealed Encrypted Library's
+// assets are generated through the encrypted plane (SetEncryptedPlane) and
+// written only as ciphertext; without that plane generation fails closed for
+// every Encrypted Library rather than dropping a plaintext derivative on the
+// shared unencrypted plane. Composition wires it off
 // libencrypt.Manager.Provisioned; nil (the default) treats no Library as
 // encrypted.
 type EncryptedPredicate func(libraryID store.LibraryID) bool
@@ -149,6 +188,48 @@ func (s *Service) SetSealed(sealed SealedPredicate) {
 // SetEncrypted wires the Encrypted Library predicate. Nil disables it.
 func (s *Service) SetEncrypted(encrypted EncryptedPredicate) {
 	s.encrypted = encrypted
+}
+
+// SetEncryptedPlane wires generation for Unsealed Encrypted Libraries: gen
+// derives assets in memory and objects encrypts them as they are staged. With
+// either nil, Encrypted Libraries get no generated assets.
+func (s *Service) SetEncryptedPlane(gen EncryptedGenerator, objects EncryptedObjects) {
+	s.encGen = gen
+	s.objects = objects
+}
+
+// refusesEncrypted reports whether a Library is Encrypted while the encrypted
+// plane is not wired, so its assets cannot be written as ciphertext.
+func (s *Service) refusesEncrypted(libraryID store.LibraryID) bool {
+	return s.isEncrypted(libraryID) && (s.encGen == nil || s.objects == nil)
+}
+
+func (s *Service) isEncrypted(libraryID store.LibraryID) bool {
+	return s.encrypted != nil && s.encrypted(libraryID)
+}
+
+// encryptedPlane returns the generator input and publication target for an
+// Encrypted Library's source, or ok=false for a public Library.
+func (s *Service) encryptedPlane(media store.Media, file store.MediaFile) (EncryptedSource, *encryptedTarget, bool) {
+	if !s.isEncrypted(media.LibraryID) {
+		return EncryptedSource{}, nil, false
+	}
+	libraryID := media.LibraryID
+	src := EncryptedSource{
+		LibraryID:   libraryID,
+		Path:        file.Path,
+		Fingerprint: file.ContentFingerprint,
+		Revoked: func(ctx context.Context) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if s.sealed != nil && s.sealed(libraryID) {
+				return ErrLibrarySealed
+			}
+			return nil
+		},
+	}
+	return src, &encryptedTarget{libraryID: libraryID, objects: s.objects}, true
 }
 
 // classGate reports whether a Media is the right class for an asset and has a
@@ -174,10 +255,10 @@ func (s *Service) selectSource(ctx context.Context, id store.MediaID, gate class
 	if s.sealed != nil && s.sealed(media.LibraryID) {
 		return store.Media{}, store.MediaFile{}, false, nil
 	}
-	// Encrypted Libraries fail closed the same way even while Unsealed (ADR-0045
-	// §2.3): a Generated Asset is a plaintext derivative and there is no encrypted
-	// -plane write path yet, so refuse rather than leak plaintext to the shared plane.
-	if s.encrypted != nil && s.encrypted(media.LibraryID) {
+	// An Encrypted Library without the encrypted plane fails closed the same way
+	// even while Unsealed (ADR-0045 §2.3): refuse rather than leak plaintext to
+	// the shared plane.
+	if s.refusesEncrypted(media.LibraryID) {
 		return store.Media{}, store.MediaFile{}, false, nil
 	}
 	files, err := s.store.MediaFilesForMedia(ctx, id, serverFilter)
@@ -229,21 +310,24 @@ func (s *Service) assetDir(fingerprint string) string {
 	return filepath.Join(s.dir, assetFingerprintDir(fingerprint))
 }
 
-// PurgeFingerprint removes a content fingerprint's entire generated-asset
-// directory — trickplay manifest + sprite sheets, preview clip, marker thumbs,
-// waveform/loudness/silence analyses, and image-enrich JSON —
-// through the same assetDir keying every generator writes to, so the purge cannot
-// drift from the layout. It is the reconcile hook for the Encrypted-Library
-// crash-recovery sweep (ADR-0045 §reconcile, ENCPRIV-10d): generation is
-// fail-closed for an Encrypted Library, so any directory found for
-// its media's fingerprints is a crash-stranded plaintext leak. A missing
-// directory is fine (the common case). Hard delete is correct: leaked plaintext
-// derivatives of an encrypted item are the invariant-#5 at-rest violation, and
-// they are losslessly regenerable from the sealed original, so invariant #6
-// recoverability does not attach to them.
-func (s *Service) PurgeFingerprint(fingerprint string) error {
+// ReconcileEncryptedFingerprint is the reconcile hook for the Encrypted-Library
+// crash-recovery sweep (ADR-0045 §reconcile, ADR-0235) over one content
+// fingerprint's generated-asset directory. Published assets with a valid name
+// that isObject recognises as carrying an encrypted-object header are kept,
+// since they were written as ciphertext and are served by decrypting them.
+// Composition passes libencrypt.HasObjectHeader; genassets does not import
+// libencrypt (ARCHITECTURE.md §4), and a nil isObject is refused rather than
+// treating every file as a leak. Anything else in the directory
+// (plaintext, stray or misnamed entries) is a leak and is hard-deleted: it is
+// losslessly regenerable from the encrypted original, so invariant #6
+// recoverability does not attach to it. Generations left unreferenced are then
+// collected. A missing directory is fine (the common case).
+func (s *Service) ReconcileEncryptedFingerprint(fingerprint string, isObject func(io.Reader) (bool, error)) error {
 	if fingerprint == "" {
 		return nil
+	}
+	if isObject == nil {
+		return errors.New("generated assets: reconcile needs an encrypted-object header check")
 	}
 	s.publish.Lock()
 	defer s.publish.Unlock()
@@ -258,11 +342,53 @@ func (s *Service) PurgeFingerprint(fingerprint string) error {
 	if err := ensureRootDir(root, assetGenerationDir); err != nil {
 		return err
 	}
-	if err := root.RemoveAll(assetFingerprintDir(fingerprint)); err != nil {
+	joined := reconcileEncryptedDir(root, assetFingerprintDir(fingerprint), isObject)
+	_, err = collectUnreferencedGenerations(root)
+	return errors.Join(joined, err)
+}
+
+func reconcileEncryptedDir(root *os.Root, dir string, isObject func(io.Reader) (bool, error)) error {
+	info, err := root.Lstat(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
 		return err
 	}
-	_, err = collectUnreferencedGenerations(root)
-	return err
+	if !info.IsDir() {
+		return root.RemoveAll(dir)
+	}
+	entries, err := fs.ReadDir(root.FS(), dir)
+	if err != nil {
+		return err
+	}
+	var joined error
+	for _, entry := range entries {
+		name := filepath.Join(dir, entry.Name())
+		if entry.Type().IsRegular() && validAssetName(entry.Name()) {
+			keep, err := rootedFileIsCiphertext(root, name, isObject)
+			if err != nil {
+				joined = errors.Join(joined, err)
+				continue
+			}
+			if keep {
+				continue
+			}
+		}
+		if err := root.RemoveAll(name); err != nil && !errors.Is(err, os.ErrNotExist) {
+			joined = errors.Join(joined, err)
+		}
+	}
+	return joined
+}
+
+func rootedFileIsCiphertext(root *os.Root, name string, isObject func(io.Reader) (bool, error)) (bool, error) {
+	file, err := root.Open(name)
+	if err != nil {
+		return false, err
+	}
+	defer file.Close()
+	return isObject(file)
 }
 
 // ManifestPath returns where a fingerprint's trickplay manifest lives
@@ -462,25 +588,17 @@ func (s *Service) GenerateTrickplay(ctx context.Context, id store.MediaID) error
 		return err
 	}
 	defer publication.close()
-	stagePath := filepath.Join(publication.root.Name(), publication.stageDir)
-	if err := s.gen.SpriteSheets(ctx, file.Path, interval, TileWidth, SheetColumns, SheetRows, filepath.Join(stagePath, sheetPattern)); err != nil {
-		return err
+	var names []string
+	var tileHeight int
+	if src, target, encrypted := s.encryptedPlane(media, file); encrypted {
+		publication.encrypted = target
+		_, _, sheetCount := trickplayPlan(media.DurationSeconds)
+		names, tileHeight, err = s.stageEncryptedSheets(ctx, publication, src, interval, sheetCount+1)
+	} else {
+		names, tileHeight, err = s.stageSheets(ctx, publication, file.Path, interval)
 	}
-	sheets, err := filepath.Glob(filepath.Join(stagePath, "sheet-*.jpg"))
 	if err != nil {
-		return err
-	}
-	if len(sheets) == 0 {
-		return fmt.Errorf("sprite generation for %s produced no sheets", id)
-	}
-	sort.Strings(sheets)
-	names := make([]string, len(sheets))
-	for i, sheet := range sheets {
-		names[i] = filepath.Base(sheet)
-	}
-	tileHeight, err := tileHeightFromSheet(sheets[0])
-	if err != nil {
-		return fmt.Errorf("reading sheet dimensions for %s: %w", id, err)
+		return fmt.Errorf("sprite generation for %s: %w", id, err)
 	}
 	manifest := TrickplayManifest{
 		Version:         1,
@@ -496,8 +614,7 @@ func (s *Service) GenerateTrickplay(ctx context.Context, id store.MediaID) error
 	if err != nil {
 		return err
 	}
-	stageManifest := filepath.Join(publication.stageDir, ManifestName)
-	if err := publication.root.WriteFile(stageManifest, data, 0o600); err != nil {
+	if err := publication.writeStaged(ManifestName, data); err != nil {
 		return err
 	}
 	for _, name := range names {
@@ -520,18 +637,65 @@ func (s *Service) removeOrphanTrickplaySheets(fingerprint string, expected []str
 	return s.removeOrphanAssets(fingerprint, keep, sheetNameRe.MatchString)
 }
 
+// stageSheets has FFmpeg write a public Library's sprite sheets into the stage
+// directory and returns their names and the tile height.
+func (s *Service) stageSheets(ctx context.Context, publication *assetPublication, src string, interval int) ([]string, int, error) {
+	stagePath := filepath.Join(publication.root.Name(), publication.stageDir)
+	if err := s.gen.SpriteSheets(ctx, src, interval, TileWidth, SheetColumns, SheetRows, filepath.Join(stagePath, sheetPattern)); err != nil {
+		return nil, 0, err
+	}
+	sheets, err := filepath.Glob(filepath.Join(stagePath, "sheet-*.jpg"))
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(sheets) == 0 {
+		return nil, 0, errors.New("no sheets produced")
+	}
+	sort.Strings(sheets)
+	names := make([]string, len(sheets))
+	for i, sheet := range sheets {
+		names[i] = filepath.Base(sheet)
+	}
+	f, err := os.Open(sheets[0])
+	if err != nil {
+		return nil, 0, err
+	}
+	defer f.Close()
+	tileHeight, err := tileHeightFromSheet(f)
+	return names, tileHeight, err
+}
+
+// stageEncryptedSheets derives an Encrypted Library's sprite sheets in memory
+// and stages each one as ciphertext.
+func (s *Service) stageEncryptedSheets(ctx context.Context, publication *assetPublication, src EncryptedSource, interval, maxSheets int) ([]string, int, error) {
+	sheets, err := s.encGen.SpriteSheets(ctx, src, interval, TileWidth, SheetColumns, SheetRows, maxSheets)
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(sheets) == 0 {
+		return nil, 0, errors.New("no sheets produced")
+	}
+	tileHeight, err := tileHeightFromSheet(bytes.NewReader(sheets[0]))
+	if err != nil {
+		return nil, 0, err
+	}
+	names := make([]string, len(sheets))
+	for i, sheet := range sheets {
+		names[i] = fmt.Sprintf(sheetPattern, i+1)
+		if err := publication.writeStaged(names[i], sheet); err != nil {
+			return nil, 0, err
+		}
+	}
+	return names, tileHeight, nil
+}
+
 // tileHeightFromSheet derives the per-tile height from a sheet's JPEG header
 // (sheet height ÷ grid rows) — the scale filter preserves aspect, so the
 // height is only known after generation.
-func tileHeightFromSheet(path string) (int, error) {
-	f, err := os.Open(path)
+func tileHeightFromSheet(sheet io.Reader) (int, error) {
+	cfg, err := jpeg.DecodeConfig(sheet)
 	if err != nil {
-		return 0, err
-	}
-	defer f.Close()
-	cfg, err := jpeg.DecodeConfig(f)
-	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("reading sheet dimensions: %w", err)
 	}
 	return cfg.Height / SheetRows, nil
 }
@@ -560,6 +724,13 @@ func (s *Service) GeneratePreviewClip(ctx context.Context, id store.MediaID) err
 	}
 	offsets, segmentSeconds := previewOffsets(media.DurationSeconds)
 	contract := fmt.Sprintf("preview:v1:width=%d:fps=%d:segments=%d", previewWidth, previewMaxFPS, previewSegments)
+	if src, target, encrypted := s.encryptedPlane(media, file); encrypted {
+		clip, err := s.encGen.SampleClip(ctx, src, offsets, segmentSeconds, previewWidth, previewMaxFPS)
+		if err != nil {
+			return err
+		}
+		return s.publishData(target, string(id), file.ContentFingerprint, contract, PreviewClipName, clip)
+	}
 	return s.publishGeneratedFile(string(id), file.ContentFingerprint, contract, PreviewClipName, func(path string) error {
 		return s.gen.SampleClip(ctx, file.Path, offsets, segmentSeconds, previewWidth, previewMaxFPS, path)
 	})
@@ -573,10 +744,11 @@ func (s *Service) GenerateMarkerThumbs(ctx context.Context, id store.MediaID) er
 	if s.gen == nil {
 		return errors.New("no generator configured")
 	}
-	_, file, ok, err := s.videoSource(ctx, id)
+	media, file, ok, err := s.videoSource(ctx, id)
 	if err != nil || !ok {
 		return err
 	}
+	src, target, encrypted := s.encryptedPlane(media, file)
 	markers, err := s.store.MarkersForMedia(ctx, id, serverFilter)
 	if err != nil {
 		return err
@@ -594,6 +766,16 @@ func (s *Service) GenerateMarkerThumbs(ctx context.Context, id store.MediaID) er
 			continue
 		}
 		contract := fmt.Sprintf("marker-thumb:v1:width=%d:millis=%d", markerThumbWidth, int64(math.Round(marker.StartSeconds*1000)))
+		if encrypted {
+			thumb, err := s.encGen.FrameGrab(ctx, src, marker.StartSeconds, markerThumbWidth)
+			if err == nil {
+				err = s.publishData(target, string(id), file.ContentFingerprint, contract, name, thumb)
+			}
+			if err != nil {
+				errs = append(errs, fmt.Errorf("marker %s: %w", marker.ID, err))
+			}
+			continue
+		}
 		if err := s.publishGeneratedFile(string(id), file.ContentFingerprint, contract, name, func(path string) error {
 			return s.gen.FrameGrab(ctx, file.Path, marker.StartSeconds, markerThumbWidth, path)
 		}); err != nil {

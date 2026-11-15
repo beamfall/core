@@ -1,6 +1,7 @@
 package genassets
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
 	"errors"
@@ -10,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/beamfall/core/internal/store"
 )
 
 const (
@@ -29,12 +32,36 @@ type assetPublication struct {
 	contract   string
 	publicName string
 	stageDir   string
+	// encrypted, when set, routes the publication into an Encrypted Library's
+	// protected plane: staged files are written as ciphertext and content
+	// identity is the hash of the decrypted bytes.
+	encrypted *encryptedTarget
+}
+
+// encryptedTarget names the Encrypted Library a publication belongs to and the
+// cipher that writes and reads its objects.
+type encryptedTarget struct {
+	libraryID store.LibraryID
+	objects   EncryptedObjects
 }
 
 func (s *Service) publishBytes(owner, source, contract, name string, data []byte) error {
-	return s.publishGeneratedFile(owner, source, contract, name, func(path string) error {
-		return os.WriteFile(path, data, 0o600)
-	})
+	return s.publishData(nil, owner, source, contract, name, data)
+}
+
+// publishData publishes in-memory asset bytes. With a target the bytes are
+// encrypted as they are staged, so no plaintext copy reaches the disk.
+func (s *Service) publishData(target *encryptedTarget, owner, source, contract, name string, data []byte) error {
+	publication, err := s.beginPublication(owner, source, contract, name)
+	if err != nil {
+		return err
+	}
+	defer publication.close()
+	publication.encrypted = target
+	if err := publication.writeStaged(name, data); err != nil {
+		return err
+	}
+	return publication.commit(name, publication.publicName)
 }
 
 func (s *Service) publishGeneratedFile(owner, source, contract, name string, generate func(string) error) error {
@@ -126,6 +153,73 @@ func exclusiveStageDir(root *os.Root, owner, source, contract, name string) (str
 	return "", errors.New("cannot allocate exclusive generated asset staging directory")
 }
 
+// readAsset reads a published asset's bytes, decrypting an Encrypted Library's
+// ciphertext object in memory.
+func (s *Service) readAsset(libraryID store.LibraryID, fingerprint, name string) ([]byte, error) {
+	if !s.isEncrypted(libraryID) {
+		root, err := os.OpenRoot(s.dir)
+		if err != nil {
+			return nil, err
+		}
+		defer root.Close()
+		return root.ReadFile(filepath.Join(assetFingerprintDir(fingerprint), name))
+	}
+	path := filepath.Join(s.assetDir(fingerprint), name)
+	if s.objects == nil {
+		return nil, errors.New("generated assets: encrypted plane is not wired")
+	}
+	reader, err := s.objects.OpenDecryptReader(libraryID, path, encryptedClassGeneratedAsset, generatedAssetObjectID(fingerprint, name))
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	return io.ReadAll(reader)
+}
+
+// writeStaged writes one asset into the stage directory: as a plaintext file
+// for a public Library, or as a ciphertext object bound to its generated-asset
+// context for an Encrypted Library.
+func (p *assetPublication) writeStaged(name string, data []byte) error {
+	stagePath := filepath.Join(p.stageDir, name)
+	if p.encrypted == nil {
+		return p.root.WriteFile(stagePath, data, 0o600)
+	}
+	return p.encrypted.objects.EncryptObject(p.encrypted.libraryID, bytes.NewReader(data),
+		filepath.Join(p.root.Name(), stagePath), encryptedClassGeneratedAsset, generatedAssetObjectID(p.source, name))
+}
+
+// Encrypted-object contexts for the objects genassets reads and writes. They
+// mirror libencrypt's ObjectClassMediaBytes / GeneratedAssetObjectContext;
+// genassets does not import libencrypt (ARCHITECTURE.md §4), and the encrypted
+// tests round-trip through the real libencrypt.Manager to keep them in step.
+const (
+	encryptedClassMediaBytes     = "media-bytes"
+	encryptedClassGeneratedAsset = "generated-asset"
+)
+
+// generatedAssetObjectID is the immutable object id a generated asset's
+// ciphertext is bound to: the source content fingerprint plus the asset name.
+func generatedAssetObjectID(fingerprint, name string) string {
+	return fingerprint + "/" + name
+}
+
+// contentHash is the content identity of a rooted asset file. An encrypted
+// asset is identified by its decrypted bytes, since each encryption is
+// randomized; a file that does not decrypt under the asset's context fails.
+func (p *assetPublication) contentHash(name, publicName string) ([sha256.Size]byte, error) {
+	if p.encrypted == nil {
+		return rootedFileHash(p.root, name)
+	}
+	reader, err := p.encrypted.objects.OpenDecryptReader(p.encrypted.libraryID,
+		filepath.Join(p.root.Name(), name), encryptedClassGeneratedAsset,
+		generatedAssetObjectID(p.source, filepath.Base(publicName)))
+	if err != nil {
+		return [sha256.Size]byte{}, err
+	}
+	defer reader.Close()
+	return readerHash(reader)
+}
+
 func (p *assetPublication) commit(stageName, publicName string) error {
 	p.service.publish.Lock()
 	defer p.service.publish.Unlock()
@@ -137,7 +231,7 @@ func (p *assetPublication) commit(stageName, publicName string) error {
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("%w: staged output is not a regular file", ErrPublicationConflict)
 	}
-	contentHash, err := rootedFileHash(p.root, stagePath)
+	contentHash, err := p.contentHash(stagePath, publicName)
 	if err != nil {
 		return err
 	}
@@ -152,7 +246,7 @@ func (p *assetPublication) commit(stageName, publicName string) error {
 		if !errors.Is(err, fs.ErrExist) {
 			return err
 		}
-		matches, matchErr := p.pathHasHash(generationPath, contentHash)
+		matches, matchErr := p.pathHasHash(generationPath, publicName, contentHash)
 		if matchErr != nil {
 			return matchErr
 		}
@@ -164,7 +258,7 @@ func (p *assetPublication) commit(stageName, publicName string) error {
 		if !errors.Is(err, fs.ErrExist) {
 			return err
 		}
-		matches, matchErr := p.pathHasHash(publicName, contentHash)
+		matches, matchErr := p.pathHasHash(publicName, publicName, contentHash)
 		if matchErr != nil {
 			return matchErr
 		}
@@ -175,7 +269,7 @@ func (p *assetPublication) commit(stageName, publicName string) error {
 	return nil
 }
 
-func (p *assetPublication) pathHasHash(name string, want [sha256.Size]byte) (bool, error) {
+func (p *assetPublication) pathHasHash(name, publicName string, want [sha256.Size]byte) (bool, error) {
 	info, err := p.root.Lstat(name)
 	if err != nil {
 		return false, err
@@ -183,7 +277,7 @@ func (p *assetPublication) pathHasHash(name string, want [sha256.Size]byte) (boo
 	if !info.Mode().IsRegular() {
 		return false, fmt.Errorf("%w: publication target is not a regular file", ErrPublicationConflict)
 	}
-	got, err := rootedFileHash(p.root, name)
+	got, err := p.contentHash(name, publicName)
 	return got == want, err
 }
 
@@ -193,8 +287,12 @@ func rootedFileHash(root *os.Root, name string) ([sha256.Size]byte, error) {
 		return [sha256.Size]byte{}, err
 	}
 	defer file.Close()
+	return readerHash(file)
+}
+
+func readerHash(r io.Reader) ([sha256.Size]byte, error) {
 	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
+	if _, err := io.Copy(hash, r); err != nil {
 		return [sha256.Size]byte{}, err
 	}
 	var sum [sha256.Size]byte

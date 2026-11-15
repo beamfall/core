@@ -944,6 +944,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	mediaHTTP.SetEncryptedSubtitles(encryptedSubtitleExtractor{content: appLibEncryptDBCipher{manager: libEncryptManager}, runner: ffmpegRunner}, appLibEncryptDBCipher{manager: libEncryptManager})
 	assetService.SetSealed(sealedPredicate)
 	assetService.SetEncrypted(encryptedPredicate)
+	assetService.SetEncryptedPlane(encryptedAssetGenerator{content: appLibEncryptDBCipher{manager: libEncryptManager}, runner: ffmpegRunner}, appLibEncryptDBCipher{manager: libEncryptManager})
 	artworkService.SetSealed(sealedPredicate)
 	artworkService.SetEncrypted(encryptedPredicate)
 	// Encrypted-Library crash-recovery derivative reconcile (ADR-0045 §reconcile,
@@ -3215,8 +3216,8 @@ func (l playbackAssetsLocator) LoudnessAsset(fingerprint string) (string, bool) 
 	return l.service.LoudnessAsset(fingerprint)
 }
 
-func (l playbackAssetsLocator) LoudnessForFingerprint(fingerprint string) (playback.LoudnessData, bool) {
-	analysis, ok := l.service.LoudnessForFingerprint(fingerprint)
+func (l playbackAssetsLocator) LoudnessForFingerprint(libraryID store.LibraryID, fingerprint string) (playback.LoudnessData, bool) {
+	analysis, ok := l.service.LoudnessForFingerprint(libraryID, fingerprint)
 	if !ok {
 		return playback.LoudnessData{}, false
 	}

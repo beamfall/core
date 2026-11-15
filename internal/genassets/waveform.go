@@ -77,7 +77,7 @@ func (s *Service) GenerateWaveform(ctx context.Context, id store.MediaID) error 
 	if s.gen == nil {
 		return errors.New("no generator configured")
 	}
-	_, file, ok, err := s.audioSource(ctx, id)
+	media, file, ok, err := s.audioSource(ctx, id)
 	if err != nil || !ok {
 		return err
 	}
@@ -85,7 +85,13 @@ func (s *Service) GenerateWaveform(ctx context.Context, id store.MediaID) error 
 	if regularFileExists(dst) {
 		return nil
 	}
-	samples, err := s.gen.WaveformAmplitudes(ctx, file.Path)
+	src, target, encrypted := s.encryptedPlane(media, file)
+	var samples []float64
+	if encrypted {
+		samples, err = s.encGen.WaveformAmplitudes(ctx, src)
+	} else {
+		samples, err = s.gen.WaveformAmplitudes(ctx, file.Path)
+	}
 	if err != nil {
 		return err
 	}
@@ -97,7 +103,7 @@ func (s *Service) GenerateWaveform(ctx context.Context, id store.MediaID) error 
 	if err != nil {
 		return err
 	}
-	return s.publishBytes(string(id), file.ContentFingerprint, "waveform:v1", WaveformName, data)
+	return s.publishData(target, string(id), file.ContentFingerprint, "waveform:v1", WaveformName, data)
 }
 
 // bucketWaveform folds per-window amplitude samples down to at most target

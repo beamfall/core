@@ -611,7 +611,9 @@ type AssetsLocator interface {
 	// existence) so playbackInfo can populate the rung-specific normalization
 	// state from real content without touching on-disk paths. ok=false means no
 	// measurement exists yet for the source.
-	LoudnessForFingerprint(fingerprint string) (LoudnessData, bool)
+	// libraryID scopes the read, since an Encrypted Library's measurement is
+	// decrypted under its Library.
+	LoudnessForFingerprint(libraryID store.LibraryID, fingerprint string) (LoudnessData, bool)
 	// WaveformAsset, BeatGridAsset, SyncLanesAsset, and SilenceMapAsset report the first-class
 	// optional audio Generated Asset name when it exists for the fingerprint
 	// (ADR-0098 area 2). playbackInfo advertises the URL only when ok is true, so
@@ -2012,7 +2014,7 @@ func (s *Service) loudnessMeasurement(media store.Media, file store.MediaFile) (
 	if media.Class != store.MediaClassAudio || file.ContentFingerprint == "" || s.assets == nil {
 		return LoudnessData{}, false
 	}
-	return s.assets.LoudnessForFingerprint(file.ContentFingerprint)
+	return s.assets.LoudnessForFingerprint(media.LibraryID, file.ContentFingerprint)
 }
 
 // hlsAudioProfile picks the transcode's audio target. The overlay constrains

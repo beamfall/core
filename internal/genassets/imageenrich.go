@@ -145,10 +145,9 @@ func (s *Service) imageSource(ctx context.Context, id store.MediaID) (store.Medi
 	if s.sealed != nil && s.sealed(media.LibraryID) {
 		return store.Media{}, store.MediaFile{}, false, nil
 	}
-	// Encrypted Libraries fail closed even while Unsealed: the
-	// enrichment doc is a plaintext derivative with no encrypted-plane write path
-	// yet, so refuse rather than write it to the shared unencrypted plane.
-	if s.encrypted != nil && s.encrypted(media.LibraryID) {
+	// An Encrypted Library without the encrypted plane fails closed even while
+	// Unsealed, rather than write the doc to the shared unencrypted plane.
+	if s.refusesEncrypted(media.LibraryID) {
 		return store.Media{}, store.MediaFile{}, false, nil
 	}
 	file, err := s.store.PrimaryMediaFile(ctx, id, serverFilter)
@@ -171,7 +170,7 @@ func (s *Service) imageSource(ctx context.Context, id store.MediaID) (store.Medi
 // rather than erroring — the still was seen, it just yields no usable structure,
 // and the client uses the shader-only fallback.
 func (s *Service) GenerateImageEnrich(ctx context.Context, id store.MediaID) error {
-	_, file, ok, err := s.imageSource(ctx, id)
+	media, file, ok, err := s.imageSource(ctx, id)
 	if err != nil || !ok {
 		return err
 	}
@@ -180,12 +179,22 @@ func (s *Service) GenerateImageEnrich(ctx context.Context, id store.MediaID) err
 		return nil
 	}
 
-	doc := analyzeImageFile(file.Path)
+	var doc ImageEnrich
+	_, target, encrypted := s.encryptedPlane(media, file)
+	if encrypted {
+		// An Encrypted Library's still is decrypted and decoded in memory only.
+		// A failure to open it is an error, not a flat "analysed" marker.
+		if doc, err = s.analyzeEncryptedImage(media.LibraryID, file); err != nil {
+			return fmt.Errorf("reading encrypted image for %s: %w", id, err)
+		}
+	} else {
+		doc = analyzeImageFile(file.Path)
+	}
 	data, err := json.Marshal(doc)
 	if err != nil {
 		return err
 	}
-	if err := s.publishBytes(string(id), file.ContentFingerprint, "image-enrich:v1", ImageEnrichName, data); err != nil {
+	if err := s.publishData(target, string(id), file.ContentFingerprint, "image-enrich:v1", ImageEnrichName, data); err != nil {
 		return fmt.Errorf("publishing image enrichment for %s: %w", id, err)
 	}
 	return nil
@@ -228,6 +237,22 @@ func analyzeImageFile(path string) ImageEnrich {
 		return flatImageEnrich()
 	}
 	defer f.Close()
+	return analyzeImageReader(f)
+}
+
+// analyzeEncryptedImage decrypts an Encrypted Library's still through its
+// cipher and analyses it without writing the plaintext anywhere.
+func (s *Service) analyzeEncryptedImage(libraryID store.LibraryID, file store.MediaFile) (ImageEnrich, error) {
+	r, err := s.objects.OpenDecryptReader(libraryID, file.Path, encryptedClassMediaBytes, file.ContentFingerprint)
+	if err != nil {
+		return ImageEnrich{}, err
+	}
+	defer r.Close()
+	return analyzeImageReader(r), nil
+}
+
+// analyzeImageReader is analyzeImageFile over an already-open still.
+func analyzeImageReader(f io.ReadSeeker) ImageEnrich {
 	cfg, _, err := image.DecodeConfig(f)
 	if err != nil {
 		return flatImageEnrich()

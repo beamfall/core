@@ -155,6 +155,13 @@ func (r *Runner) ExtractSubtitleToPipe(ctx context.Context, in PipeInput, stream
 // secret. A bounded stdout that overflows kills the tool, so an overproducing
 // child cannot hold the worker until another limit fires.
 func (r *Runner) runPipeTool(ctx context.Context, port int, in PipeInput, tool, what string, args []string, stdout io.Writer) error {
+	return r.runPipeToolWith(ctx, port, in, tool, what, args, stdout, nil)
+}
+
+// runPipeToolWith is runPipeTool with a caller-sized stderr capture, for an
+// analysis whose result FFmpeg prints on stderr. A nil stderr gets the default
+// diagnostic bound. An overflow of either buffer kills the tool.
+func (r *Runner) runPipeToolWith(ctx context.Context, port int, in PipeInput, tool, what string, args []string, stdout io.Writer, stderr *boundedBuffer) error {
 	toolPath, err := exec.LookPath(tool)
 	if err != nil {
 		return fmt.Errorf("%s is not available: %w", tool, err)
@@ -164,15 +171,22 @@ func (r *Runner) runPipeTool(ctx context.Context, port int, in PipeInput, tool, 
 		return err
 	}
 	cmd.Env = pipeEnv(os.Environ())
-	return r.runPipeCmd(ctx, cmd, in, what, stdout)
+	return r.runPipeCmdWith(ctx, cmd, in, what, stdout, stderr)
 }
 
 // runPipeCmd supervises a confined pipe command built by runPipeTool. A
 // bounded stdout that overflows kills the command, as stderr does.
 func (r *Runner) runPipeCmd(ctx context.Context, cmd *exec.Cmd, in PipeInput, what string, stdout io.Writer) error {
+	return r.runPipeCmdWith(ctx, cmd, in, what, stdout, nil)
+}
+
+func (r *Runner) runPipeCmdWith(ctx context.Context, cmd *exec.Cmd, in PipeInput, what string, stdout io.Writer, stderr *boundedBuffer) error {
 	var killOnce sync.Once
 	kill := func() { killOnce.Do(func() { killProcessGroup(cmd) }) }
-	stderr := &boundedBuffer{limit: pipeStderrLimit, onOverflow: kill}
+	if stderr == nil {
+		stderr = &boundedBuffer{limit: pipeStderrLimit}
+	}
+	stderr.onOverflow = kill
 	boundedOut, _ := stdout.(*boundedBuffer)
 	if boundedOut != nil && boundedOut.onOverflow == nil {
 		boundedOut.onOverflow = kill
@@ -187,7 +201,11 @@ func (r *Runner) runPipeCmd(ctx context.Context, cmd *exec.Cmd, in PipeInput, wh
 	if runErr == nil {
 		return nil
 	}
-	return fmt.Errorf("%s: %s", what, redactPipeDetail(captureDetail(nil, stderr.bytes(), runErr), in))
+	detail := stderr.bytes()
+	if len(detail) > pipeStderrLimit {
+		detail = detail[len(detail)-pipeStderrLimit:]
+	}
+	return fmt.Errorf("%s: %s", what, redactPipeDetail(captureDetail(nil, detail, runErr), in))
 }
 
 func pipeReadTimeout(in PipeInput) time.Duration {
