@@ -266,3 +266,27 @@ func TestAuthBackoffIdleLaneResets(t *testing.T) {
 		t.Fatalf("returning inside the Window: want lockout until %v, got %v (err %v)", soon.Add(8*time.Second), until, err)
 	}
 }
+
+// TestAuthBackoffSlowFailuresStayFreshRuns: failures that each arrive after the
+// lane has been idle for Window never add up, however many of them there are
+// and however far back they go.
+func TestAuthBackoffSlowFailuresStayFreshRuns(t *testing.T) {
+	st := openBackoffStore(t)
+	ctx := context.Background()
+	policy := AuthBackoff{Window: 10 * time.Minute, FreeAttempts: 5, BaseDelay: 2 * time.Second, MaxDelay: 10 * time.Minute}
+	base := time.Unix(7_000_000, 0).UTC()
+
+	const action, key = "test.lane", "subject-H"
+	const failures = 600
+	step := policy.Window + time.Second
+	for i := 0; i < failures; i++ {
+		recordFailure(t, st, action, key, base.Add(time.Duration(i)*step))
+	}
+	last := base.Add((failures - 1) * step)
+	if until, err := st.AuthBackoffUntil(ctx, action, key, last.Add(time.Second), policy); err != nil || !until.IsZero() {
+		t.Fatalf("after %d slow failures: want an open lane, got lockout until %v (err %v)", failures, until, err)
+	}
+	if count, _, err := st.consecutiveAuthFailures(ctx, action, key, last.Add(time.Second), policy); err != nil || count != 1 {
+		t.Fatalf("after %d slow failures: want a run of 1, got %d (err %v)", failures, count, err)
+	}
+}

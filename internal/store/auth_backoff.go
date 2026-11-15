@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"math"
 	"time"
 )
 
@@ -143,12 +144,6 @@ func backoffDelay(step int, base, max time.Duration) time.Duration {
 	return delay
 }
 
-// authFailureScanLimit bounds how many recent attempts one lane read walks. A
-// run of failures longer than this is replayed as if the failures before it
-// had already reached MaxDelay, so cutting the history short can only keep a
-// lane locked, never reopen it.
-const authFailureScanLimit = 512
-
 // consecutiveAuthFailures returns the length of the current run of failures
 // for (action, key) as of now, plus the time of the most recent one. A success
 // ends the run: rows at or before the latest success do not count. So does
@@ -169,38 +164,26 @@ type authAttemptQueryer interface {
 }
 
 func consecutiveAuthFailuresIn(ctx context.Context, q authAttemptQueryer, action, key string, now time.Time, policy AuthBackoff) (int, time.Time, error) {
-	rows, err := q.QueryContext(ctx,
-		`SELECT occurred_at_ms, success FROM auth_attempt
-		 WHERE action = ? AND key = ?
-		 ORDER BY occurred_at_ms DESC, id DESC
-		 LIMIT ?`,
-		action, key, authFailureScanLimit,
-	)
-	if err != nil {
-		return 0, time.Time{}, err
-	}
-	defer rows.Close()
-	// Failures since the last success, newest first.
+	// No lockout outlasts MaxDelay, so two failures this far apart are always
+	// in different runs, whatever came before the older one.
+	breakGap := policy.MaxDelay + policy.Window
+	// Read back from now in doubling spans until the start of the current run
+	// is inside the span, so an ordinary check never walks the lane's history.
 	var failures []time.Time
-	scanned, sawSuccess := 0, false
-	for rows.Next() {
-		var occurredMs int64
-		var success int
-		if err := rows.Scan(&occurredMs, &success); err != nil {
+	for span := breakGap; ; span *= 2 {
+		sinceMs := int64(math.MinInt64)
+		if span > 0 && span < authAttemptScanCeiling {
+			sinceMs = timeToMillis(now) - span.Milliseconds()
+		}
+		var complete bool
+		var err error
+		failures, complete, err = authFailureRun(ctx, q, action, key, sinceMs, breakGap)
+		if err != nil {
 			return 0, time.Time{}, err
 		}
-		scanned++
-		if success != 0 {
-			sawSuccess = true
+		if complete || sinceMs == math.MinInt64 {
 			break
 		}
-		// Build directly from millis (not millisToTime, whose zero-guard
-		// would collapse an attempt recorded at the Unix epoch to the zero
-		// time and defeat the lockout math).
-		failures = append(failures, time.UnixMilli(occurredMs).UTC())
-	}
-	if err := rows.Err(); err != nil {
-		return 0, time.Time{}, err
 	}
 	if len(failures) == 0 {
 		return 0, time.Time{}, nil
@@ -210,12 +193,8 @@ func consecutiveAuthFailuresIn(ctx context.Context, q authAttemptQueryer, action
 	count := 0
 	var last time.Time
 	for i := len(failures) - 1; i >= 0; i-- {
-		switch {
-		case count > 0 && laneForgotten(count, last, failures[i], policy):
+		if count > 0 && laneForgotten(count, last, failures[i], policy) {
 			count = 0
-		case count == 0 && i == len(failures)-1 && !sawSuccess && scanned == authFailureScanLimit:
-			// The run began before the scanned rows: carry it in at the cap.
-			count = failuresToCap(policy)
 		}
 		count++
 		last = failures[i]
@@ -226,16 +205,53 @@ func consecutiveAuthFailuresIn(ctx context.Context, q authAttemptQueryer, action
 	return count, last, nil
 }
 
-// failuresToCap is the fewest consecutive failures that arm MaxDelay.
-func failuresToCap(policy AuthBackoff) int {
-	n := policy.FreeAttempts
-	if n < 1 {
-		n = 1
+// authAttemptScanCeiling is the span past which a lane read stops doubling and
+// reads the lane's whole retained history instead.
+const authAttemptScanCeiling = 2 * 365 * 24 * time.Hour
+
+// authFailureRun returns the lane's failures at or after sinceMs, newest
+// first, back to the latest success or to a gap of breakGap between two
+// failures. complete reports that the current run starts inside the rows
+// returned: it is false when older rows could still belong to the run.
+func authFailureRun(ctx context.Context, q authAttemptQueryer, action, key string, sinceMs int64, breakGap time.Duration) ([]time.Time, bool, error) {
+	rows, err := q.QueryContext(ctx,
+		`SELECT occurred_at_ms, success FROM auth_attempt
+		 WHERE action = ? AND key = ? AND occurred_at_ms >= ?
+		 ORDER BY occurred_at_ms DESC, id DESC`,
+		action, key, sinceMs,
+	)
+	if err != nil {
+		return nil, false, err
 	}
-	for lockoutAfter(n, policy) < policy.MaxDelay && policy.BaseDelay > 0 {
-		n++
+	defer rows.Close()
+	var failures []time.Time
+	for rows.Next() {
+		var occurredMs int64
+		var success int
+		if err := rows.Scan(&occurredMs, &success); err != nil {
+			return nil, false, err
+		}
+		if success != 0 {
+			return failures, true, rows.Err()
+		}
+		// Build directly from millis (not millisToTime, whose zero-guard
+		// would collapse an attempt recorded at the Unix epoch to the zero
+		// time and defeat the lockout math).
+		at := time.UnixMilli(occurredMs).UTC()
+		if n := len(failures); n > 0 && breakGap > 0 && failures[n-1].Sub(at) >= breakGap {
+			return failures, true, rows.Err()
+		}
+		failures = append(failures, at)
 	}
-	return n
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	if len(failures) == 0 {
+		// Nothing this recent: any older run is separated by the whole span.
+		return nil, true, nil
+	}
+	oldest := failures[len(failures)-1]
+	return failures, breakGap > 0 && oldest.Sub(time.UnixMilli(sinceMs)) >= breakGap, nil
 }
 
 // laneForgotten reports whether a run of failures consecutive failures, the
