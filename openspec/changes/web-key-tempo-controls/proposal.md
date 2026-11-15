@@ -30,4 +30,4 @@ adjustment. A singer has to accept the song as recorded.
 - Code: `internal/web/app/src` (player engine, transport, player page, a new controls component,
   the playback-info request, a `serverInfo` read, strings).
 - No server or wire contract change: the request, response and `serverInfo` fields shipped in
-  wire contract 2.5.0 (CORE-1658).
+  wire contract 2.6.0 (CORE-1658).
