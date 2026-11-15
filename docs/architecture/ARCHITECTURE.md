@@ -263,7 +263,7 @@ arch test ever disagree, **the test wins** — the test is the law, this table i
 | `conformance` | anything (it is the enforcement layer) |
 | `cmd/beamfall` | anything (sole importer of `plugin/firstparty/**`) |
 
-**Integration Worker mutation-seam promotion rules (ADR-0125).** These are four independent
+**Integration Worker mutation-seam promotion rules (ADR-0125).** These are independent
 dependency rules, so promoting one field cannot rely on another field's review or wiring:
 
 | `integrationhost.Deps` field | Promotion rule before the field may be non-nil |
@@ -272,6 +272,10 @@ dependency rules, so promoting one field cannot rely on another field's review o
 | `Ingest` | The same `Deps` carries a non-nil `*causation.CausationCap`; `Host.RequestIngest` admits a Core-issued token before invoking the seam; every descendant outbox event retains that token. |
 | `FileMut` | The same `Deps` carries a non-nil `*causation.CausationCap`; `Host.RequestFileMutation` admits a Core-issued token before invoking the seam; every descendant outbox event retains that token. |
 | `Outbound` | The same `Deps` carries a non-nil `*causation.CausationCap`; `Host.RequestOutbound` admits a Core-issued token before invoking the seam; any resulting callback/outbox event retains that token. |
+| `Metadata` (CORE-1695) | The same `Deps` carries a non-nil `*causation.CausationCap`, `Scope` and `Audit`; `Host.WriteMetadata` admits a Core-issued token with `AdmitWithDescendantsAt`, binding one `media.updated` row per id stamped with the time the Host passes the seam, after the fields and targets are validated and before the audit row and the seam; a key another write already bound is restamped 1 ms later, so no row's lineage is shared, and each binding lasts until a fresh root started at its row's stamp would be expired; a failed audit row or seam releases the bindings; `SubscribeEvents` hands those rows back with that token (`Inherited`). |
+| `Collections` (CORE-1695) | As `Metadata`, admitted by `Host.CreateCollection` / `Host.AddCollectionMedia`. The collection seams append no outbox row; one that starts to must bind its rows the same way. |
+| `Artwork` (CORE-1695) | As `Collections`, admitted by `Host.SetArtwork`. The artwork import appends no outbox row. |
+| `WatchState` (CORE-1695) | As `Metadata`, admitted by `Host.SetWatched`, binding the bound Profile's `invalidation` row stamped with the time the Host passes the seam. |
 
 An empty, forged, expired, or omitted token denies before the mutation adapter. The cap instance is
 Core-owned and shared across worker Hosts and worker-process restarts; constructing one cap per worker

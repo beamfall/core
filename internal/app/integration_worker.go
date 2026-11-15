@@ -201,8 +201,10 @@ func (e IntegrationEventReader) ReadEventOutboxFiltered(ctx context.Context, aft
 	return e.Store.ReadEventOutboxFiltered(ctx, afterSeq, limit, filter)
 }
 
-// CausationToken returns no inherited lineage while every worker mutation seam
-// remains dormant: all currently reachable outbox rows are chain roots.
+// CausationToken returns no inherited lineage from the store. Rows a promoted
+// scoped write appends (CORE-1695) inherit their chain from the shared
+// causation cap's descendant ledger, which the Host consults first; every other
+// reachable outbox row is a chain root.
 func (IntegrationEventReader) CausationToken(store.OutboxEvent) causation.Token { return "" }
 
 type integrationStatusWriter struct {
@@ -260,6 +262,14 @@ func integrationHostDeps(st *store.Store, secrets secretFiles, lifecycle *integr
 		Outbound:  integrationhost.NewHardenedOutboundProxy(lifecycle),
 		Status:    integrationStatusWriter{st: st},
 		Linker:    integrationProfileLinker{st: st},
+		// Scoped writes and the playback read (CORE-1695). Artwork needs the
+		// artwork service, which the composition root attaches with
+		// setArtworkWriter before Run.
+		Scope:       st,
+		Metadata:    st,
+		Collections: st,
+		WatchState:  integrationWatchStateWriter{st: st},
+		Playback:    st,
 	}
 }
 
