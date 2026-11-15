@@ -179,3 +179,92 @@ func TestScanLogsRefusedPartsFolder(t *testing.T) {
 		}
 	}
 }
+
+// TestScanKeepsPartsGroupAcrossInterleavedImage (CORE-1837): an image whose
+// name sorts between numbered parts must not split the parts into separate
+// items, and a rescan must keep every part present.
+func TestScanKeepsPartsGroupAcrossInterleavedImage(t *testing.T) {
+	// feature:scan-pipeline
+	for _, workers := range []int{1, 4} {
+		root := t.TempDir()
+		dir := filepath.Join(root, "Writer", "Tale")
+		parts := []string{
+			writeScanFile(t, dir, "01.mp3", []byte("part one")),
+			writeScanFile(t, dir, "03.mp3", []byte("part two")),
+		}
+		writeScanFile(t, dir, "02.jpg", jpegBytes("between"))
+		prober := taggedPartsProber{
+			"01.mp3": {"album": "Synthetic Tale", "track": "1/2"},
+			"03.mp3": {"album": "Synthetic Tale", "track": "2/2"},
+		}
+		st := storetest.Open(t)
+		libraryID := partsLibrary(t, st)
+		filter := store.LibraryFilter{AllowedIDs: []store.LibraryID{libraryID}}
+		parsers := map[string]FilenameParser{"parts": taggedPartsParser{}}
+
+		for pass := 1; pass <= 2; pass++ {
+			if _, err := ScanWithWorkerGovernor(context.Background(), st, prober, nil, parsers, nil, nil, nil, nil, fixedGovernor(workers), Request{LibraryID: libraryID, Root: root}); err != nil {
+				t.Fatalf("workers=%d pass=%d scan: %v", workers, pass, err)
+			}
+			files, err := st.MediaFilesForLibrary(context.Background(), libraryID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			partMedia := map[store.MediaID]bool{}
+			for _, file := range files {
+				if filepath.Ext(file.Path) != ".mp3" {
+					continue
+				}
+				partMedia[file.MediaID] = true
+				if !file.MissingAt.IsZero() {
+					t.Fatalf("workers=%d pass=%d part %q marked missing", workers, pass, file.Path)
+				}
+			}
+			if len(partMedia) != 1 {
+				t.Fatalf("workers=%d pass=%d parts split across %d items: %#v", workers, pass, len(partMedia), files)
+			}
+			var mediaID store.MediaID
+			for id := range partMedia {
+				mediaID = id
+			}
+			grouped, err := st.MediaFilesForMedia(context.Background(), mediaID, filter)
+			if err != nil || len(grouped) != len(parts) {
+				t.Fatalf("workers=%d pass=%d grouped files = %#v, %v; want %d parts", workers, pass, grouped, err, len(parts))
+			}
+			for i, file := range grouped {
+				if file.Path != parts[i] || file.PartOrdinal != i || !file.MissingAt.IsZero() {
+					t.Fatalf("workers=%d pass=%d part %d = {path:%q ordinal:%d missing:%v}, want {path:%q ordinal:%d present}", workers, pass, i, file.Path, file.PartOrdinal, file.MissingAt, parts[i], i)
+				}
+			}
+		}
+	}
+}
+
+// TestCompletionKeepsCheckpointBelowPendingParts (CORE-1837): an image that
+// completes while parts are pending leaves the resume checkpoint below the
+// first pending part, so a resumed scan re-walks the whole group.
+func TestCompletionKeepsCheckpointBelowPendingParts(t *testing.T) {
+	// feature:scan-pipeline
+	root := t.TempDir()
+	dir := filepath.Join(root, "Writer", "Tale")
+	before := &completedFile{path: filepath.Join(root, "Writer", "Earlier", "one.jpg"), mediaID: "media-a", done: make(chan struct{})}
+	between := &completedFile{path: filepath.Join(dir, "02.jpg"), mediaID: "media-b", done: make(chan struct{})}
+	close(before.done)
+	close(between.done)
+	s := &scanWalkState{
+		ctx:                context.Background(),
+		req:                Request{Root: root},
+		result:             Result{seenMedia: map[store.MediaID]bool{}},
+		pendingParts:       []parsedPartImport{{imported: store.ImportMediaFile{Path: filepath.Join(dir, "01.mp3")}}},
+		pendingCompletions: []*completedFile{before, between},
+	}
+	if err := s.completeFirst(); err != nil || s.result.LastPath != before.path {
+		t.Fatalf("after earlier file: LastPath = %q, %v; want %q", s.result.LastPath, err, before.path)
+	}
+	if err := s.completeFirst(); err != nil || s.result.LastPath != before.path {
+		t.Fatalf("after interleaved image: LastPath = %q, %v; want it held at %q", s.result.LastPath, err, before.path)
+	}
+	if s.result.FilesSeen != 2 {
+		t.Fatalf("FilesSeen = %d, want 2", s.result.FilesSeen)
+	}
+}

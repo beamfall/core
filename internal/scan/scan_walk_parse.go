@@ -119,9 +119,27 @@ func (*scanWalkState) isParsedPart(parsed ParsedMedia, ok bool) bool {
 	return ok && parsed.PartGroup != "" && parsed.Index > 0 && parsed.Title != ""
 }
 
+// flushPendingPartsUnlessImage flushes the pending parts group before a file
+// that is not a part, except a still image: an image whose name sorts between
+// numbered parts is not part of the group and must not split it (CORE-1837).
+func (s *scanWalkState) flushPendingPartsUnlessImage(isImage bool) error {
+	if isImage {
+		return nil
+	}
+	return s.flushPendingParts()
+}
+
 func (s *scanWalkState) flushPendingParts() error {
 	if len(s.pendingParts) == 0 {
 		return nil
+	}
+	// Complete every file consumed before the group is flushed. An image
+	// consumed between the parts may still be queued, and completing it after
+	// the group would move the resume checkpoint back below the later parts.
+	for len(s.pendingCompletions) > 0 {
+		if err := s.completeFirst(); err != nil {
+			return err
+		}
 	}
 	parts := s.pendingParts
 	s.pendingParts = nil

@@ -31,7 +31,13 @@ func (s *scanWalkState) completeFirst() error {
 		MediaID:            completed.mediaID,
 		ContentFingerprint: completed.fingerprint,
 	})
-	s.result.LastPath = completed.path
+	// A file completed while parts are still pending (an image between
+	// numbered parts) must not move the resume checkpoint onto or past the
+	// first pending part: a resume from there would re-walk only the later
+	// parts and catalogue them as a group of their own (CORE-1837).
+	if len(s.pendingParts) == 0 || compareWalkOrder(s.req.Root, completed.path, s.pendingParts[0].imported.Path) < 0 {
+		s.result.LastPath = completed.path
+	}
 	if !s.result.seenMedia[completed.mediaID] {
 		s.result.seenMedia[completed.mediaID] = true
 		s.result.MediaImported++
