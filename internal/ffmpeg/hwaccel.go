@@ -337,6 +337,9 @@ var hardwareTranscodeCapMax = map[HWAccel]int{
 	HWAccelVAAPI:        integratedGPUTranscodeCap,
 	HWAccelNVENC:        nvencSessionLimit,
 	HWAccelVideoToolbox: videoToolboxTranscodeCap,
+	// AMF drives AMD's VCN engine, integrated or discrete, with no session
+	// limit, so it takes the integrated-GPU throughput figure.
+	HWAccelAMF: integratedGPUTranscodeCap,
 }
 
 // DefaultTranscodeCap derives the automatic realtime admission capacity from
@@ -536,6 +539,12 @@ func DefaultHWAccelRunner(ctx context.Context, encode HWAccelEncode) error {
 	return supervise(ctx, cmd, io.Discard, io.Discard)
 }
 
+// probeSource is the probe's synthetic input. 256x256 clears AMF's minimum
+// frame width (192 for HEVC, 256 for AV1), and NV12 keeps encoders on 4:2:0:
+// testsrc's RGB24 would negotiate to GBRP, which NVENC treats as 4:4:4 and
+// refuses for AV1 on hardware that encodes 4:2:0 AV1 fine.
+const probeSource = "testsrc=duration=0.1:size=256x256:rate=10,format=nv12"
+
 func hwAccelProbeArgs(encode HWAccelEncode) []string {
 	encoder := encode.Encoder
 	accel := hwAccelOfEncoder(encoder)
@@ -545,7 +554,7 @@ func hwAccelProbeArgs(encode HWAccelEncode) []string {
 	args := []string{
 		"-v", "error",
 		"-f", "lavfi",
-		"-i", "testsrc=duration=0.1:size=128x128:rate=10",
+		"-i", probeSource,
 		"-frames:v", "1",
 	}
 	if accel == HWAccelQSV {
@@ -558,7 +567,7 @@ func hwAccelProbeArgs(encode HWAccelEncode) []string {
 			"-v", "error",
 			"-vaapi_device", vaapiDevicePath(),
 			"-f", "lavfi",
-			"-i", "testsrc=duration=0.1:size=128x128:rate=10",
+			"-i", probeSource,
 			"-frames:v", "1",
 			"-vf", "format=nv12,hwupload",
 		}

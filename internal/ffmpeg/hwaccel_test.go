@@ -582,7 +582,7 @@ func TestHWAccelProbeArgsLowPowerAndAV1(t *testing.T) {
 	for encoder, want := range map[string]string{
 		"hevc_vaapi": "-c:v hevc_vaapi -rc_mode VBR -b:v 1000k -maxrate 1000k -bufsize 2000k -f null -",
 		"av1_nvenc":  "-c:v av1_nvenc -preset p4 -forced-idr 1 -rc vbr -b:v 1000k -maxrate 1000k -bufsize 2000k -f null -",
-		"h264_amf":   "-c:v h264_amf -quality speed -rc vbr_peak -b:v 1000k -maxrate 1000k -bufsize 2000k -f null -",
+		"h264_amf":   "-c:v h264_amf -quality speed -forced_idr 1 -rc vbr_peak -b:v 1000k -maxrate 1000k -bufsize 2000k -f null -",
 	} {
 		if got := strings.Join(hwAccelProbeArgs(HWAccelEncode{Encoder: encoder}), " "); !strings.Contains(got, want) {
 			t.Fatalf("%s probe args = %q, want %q", encoder, got, want)
@@ -596,6 +596,10 @@ func TestHWAccelProbeArgsLowPowerAndAV1(t *testing.T) {
 		if !strings.Contains(av1, want) {
 			t.Fatalf("AV1 VAAPI probe args = %q, want %q", av1, want)
 		}
+	}
+	// The source is 4:2:0 and wide enough for AMF's HEVC and AV1 minimums.
+	if got := strings.Join(hwAccelProbeArgs(HWAccelEncode{Encoder: "av1_nvenc"}), " "); !strings.Contains(got, "size=256x256:rate=10,format=nv12") {
+		t.Fatalf("AV1 NVENC probe args = %q, want a 256x256 NV12 source", got)
 	}
 	// NVENC has no low-power mode; the flag is never passed to it.
 	nvenc := strings.Join(hwAccelProbeArgs(HWAccelEncode{Encoder: "av1_nvenc", LowPower: true}), " ")

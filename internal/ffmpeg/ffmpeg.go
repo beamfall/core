@@ -1444,7 +1444,8 @@ func (r Rendition) lowPowerArgs() []string {
 // every hardware path gets an explicit target equal to the rung, a VBR mode
 // capped by -maxrate, and a realtime-friendly preset where the encoder has one.
 // Segment keyframes come from -force_key_frames on every path; NVENC needs
-// -forced-idr so those frames are IDRs that start an HLS segment cleanly.
+// -forced-idr (AMF: -forced_idr) so those frames are IDRs that start an HLS
+// segment cleanly.
 func (r Rendition) rateControlArgs() []string {
 	var out []string
 	hw := hwAccelVideoEncoder(r.hwAccel, r.VideoCodec) != ""
@@ -1455,7 +1456,7 @@ func (r Rendition) rateControlArgs() []string {
 		case HWAccelQSV:
 			out = append(out, "-preset", "veryfast")
 		case HWAccelAMF:
-			out = append(out, "-quality", "speed")
+			out = append(out, "-quality", "speed", "-forced_idr", "1")
 		}
 	}
 	if r.VideoKbps <= 0 {

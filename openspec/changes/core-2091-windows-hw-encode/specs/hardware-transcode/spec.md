@@ -28,10 +28,10 @@ On Windows, QSV probes and encodes SHALL initialise the QSV device with
 
 ### Requirement: AMF encodes use capped VBR
 
-An AMF encode with a bitrate target SHALL pass `-quality speed -rc vbr_peak -b:v <target>`
+An AMF encode with a bitrate target SHALL pass `-quality speed -forced_idr 1 -rc vbr_peak -b:v <target>`
 followed by `-maxrate <target> -bufsize <2×target>`, and SHALL hand the encoder NV12 frames.
 
 #### Scenario: AMF rate control
 
 - **WHEN** an H.264 rendition with a 6000 kbps target encodes on AMF
-- **THEN** its argv carries `-c:v h264_amf -quality speed -rc vbr_peak -b:v 6000k -maxrate 6000k -bufsize 12000k`
+- **THEN** its argv carries `-c:v h264_amf -quality speed -forced_idr 1 -rc vbr_peak -b:v 6000k -maxrate 6000k -bufsize 12000k`
