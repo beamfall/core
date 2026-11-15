@@ -1,6 +1,6 @@
 # Console admin gate: locked reasons and unlock — exceptions
 
-Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:78aacc05eba329f9cbdafa5b9a46f6a4 -->
 Error reachability, rescue behavior and completeness are unresolved\.

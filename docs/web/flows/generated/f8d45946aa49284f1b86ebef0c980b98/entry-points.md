@@ -1,6 +1,6 @@
 # Viewer My Data / privacy: summary, event log, sessions, stream tokens, export — entry-points
 
-Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:fa42f4312be10ffee64ce978a8c53085 -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.

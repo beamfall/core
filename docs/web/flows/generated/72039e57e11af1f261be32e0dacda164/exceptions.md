@@ -1,6 +1,6 @@
 # Viewer notifications inbox — exceptions
 
-Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:bc212d96ecf5c4cdb204875911f3d5b0 -->
 Error reachability, rescue behavior and completeness are unresolved\.

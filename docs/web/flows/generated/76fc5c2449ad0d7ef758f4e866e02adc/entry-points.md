@@ -1,6 +1,6 @@
 # Player audio and subtitle tracks, subtitle styling — entry-points
 
-Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b828643dd5c6faa76b01b863be588faa -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.
@@ -10,5 +10,5 @@ Source: internal/web/app/src/areas/viewer/lib/transport\.ts:440; symbol: TrackMe
 <!-- flowdocs:paragraph:b2281ac1a24759168ee67091ef6664a5 -->
 Declared entry point: source declares useLiveTracks; entry dispatch and callers are unresolved\.
 
-Source: internal/web/app/src/areas/viewer/player/useLiveTracks\.ts:58; symbol: useLiveTracks; span SHA256: 14a3e05ef4b5d115c62bf2709b332c434a874204b1763d669d4bbfe08eff90b4.
+Source: internal/web/app/src/areas/viewer/player/useLiveTracks\.ts:84; symbol: useLiveTracks; span SHA256: 14a3e05ef4b5d115c62bf2709b332c434a874204b1763d669d4bbfe08eff90b4.
 

@@ -1,6 +1,6 @@
 # Console access: sign\-in security mode — exceptions
 
-Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:38214037ba86373c2e39a1b48088a6ad -->
 Error reachability, rescue behavior and completeness are unresolved\.

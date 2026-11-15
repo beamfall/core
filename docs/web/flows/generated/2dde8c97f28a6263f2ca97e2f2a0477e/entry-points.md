@@ -1,6 +1,6 @@
 # Viewer entity detail page and not\-available state — entry-points
 
-Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:176fad5dcc7e5399f51ac61d8eefd259 -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.
@@ -10,5 +10,5 @@ Source: internal/web/app/src/areas/viewer/components/NotAvailable\.tsx:12; symbo
 <!-- flowdocs:paragraph:eb87bba465649e4dd58399548499b773 -->
 Declared entry point: source declares EntityPage; entry dispatch and callers are unresolved\.
 
-Source: internal/web/app/src/areas/viewer/pages/EntityPage\.tsx:64; symbol: EntityPage; span SHA256: 397517278d0181aa246f1fee6658b0eb41f983aa5dc7b254ae00d382ea6d7ad6.
+Source: internal/web/app/src/areas/viewer/pages/EntityPage\.tsx:65; symbol: EntityPage; span SHA256: 397517278d0181aa246f1fee6658b0eb41f983aa5dc7b254ae00d382ea6d7ad6.
 

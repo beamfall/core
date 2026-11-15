@@ -1,6 +1,6 @@
 # Console remote access: certificate, relay, direct connection, watch\-away guide — flow-diagram
 
-Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:786209b29f4d10a61de26299e4f95511 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.

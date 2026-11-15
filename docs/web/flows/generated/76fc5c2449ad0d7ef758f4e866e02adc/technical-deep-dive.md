@@ -1,6 +1,6 @@
 # Player audio and subtitle tracks, subtitle styling — technical-deep-dive
 
-Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a0e801acdf2855edc648f556d5668f3f -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -65,22 +65,22 @@ Source: internal/web/app/src/areas/viewer/player/media\-tracks\.ts:28; symbol: a
 <!-- flowdocs:paragraph:05911dcc87bd538db122819fd7bda706 -->
 Declared member: source declares LiveTracks; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/useLiveTracks\.ts:31; symbol: LiveTracks; span SHA256: 61619119fc3629cb3a8d4a8fcc2aae708fb5e9cf86a53b869400d94f28920ce5.
+Source: internal/web/app/src/areas/viewer/player/useLiveTracks\.ts:43; symbol: LiveTracks; span SHA256: 61619119fc3629cb3a8d4a8fcc2aae708fb5e9cf86a53b869400d94f28920ce5.
 
 <!-- flowdocs:paragraph:decb7eaadae92af1b8db1e5e8e905c0a -->
 Declared member: source declares MenuOption; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/useLiveTracks\.ts:27; symbol: MenuOption; span SHA256: 48837de837e7c6612731555c68c4e495729d983823d98590b0cbace0b3714f1e.
+Source: internal/web/app/src/areas/viewer/player/useLiveTracks\.ts:39; symbol: MenuOption; span SHA256: 48837de837e7c6612731555c68c4e495729d983823d98590b0cbace0b3714f1e.
 
 <!-- flowdocs:paragraph:732728284a8fc76645c2ae298bc1b6b8 -->
 Declared member: source declares nativeAudioTracks; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/useLiveTracks\.ts:41; symbol: nativeAudioTracks; span SHA256: 3f504c3900b6f6c9e4c423c9d1f4e2e2be8bc6ef11109035de1e70042c3e9493.
+Source: internal/web/app/src/areas/viewer/player/useLiveTracks\.ts:53; symbol: nativeAudioTracks; span SHA256: 3f504c3900b6f6c9e4c423c9d1f4e2e2be8bc6ef11109035de1e70042c3e9493.
 
 <!-- flowdocs:paragraph:be3221e390f971a20f60873fbe13aca0 -->
 Declared member: source declares nativeSubtitleTracks; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/useLiveTracks\.ts:48; symbol: nativeSubtitleTracks; span SHA256: fd55a189700685912d4cfbf17f0e019cc6d3122e4d12562d380ee7a9608143cb.
+Source: internal/web/app/src/areas/viewer/player/useLiveTracks\.ts:60; symbol: nativeSubtitleTracks; span SHA256: fd55a189700685912d4cfbf17f0e019cc6d3122e4d12562d380ee7a9608143cb.
 
 <!-- flowdocs:paragraph:f37d07a1f242283be32b0edf5f3bbc7d -->
 Declared member: source declares CueWithBase; membership is caller\-declared, not runtime evidence\.
@@ -100,7 +100,7 @@ Source: internal/web/app/src/areas/viewer/lib/transport\.ts:475; symbol: option;
 <!-- flowdocs:paragraph:f2be6db00449352815e342f7f60e1f9d -->
 Declared member: source declares nudge; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/useLiveTracks\.ts:83; symbol: nudge; span SHA256: 37698791cb9d64279754b293bfd7ef4b7cce74e0f316d0243f3d45336fa55980.
+Source: internal/web/app/src/areas/viewer/player/useLiveTracks\.ts:115; symbol: nudge; span SHA256: 37698791cb9d64279754b293bfd7ef4b7cce74e0f316d0243f3d45336fa55980.
 
 <!-- flowdocs:paragraph:bdfbe4f64499165d3b214f0ae2788edd -->
 Declared member: source declares applySync; membership is caller\-declared, not runtime evidence\.

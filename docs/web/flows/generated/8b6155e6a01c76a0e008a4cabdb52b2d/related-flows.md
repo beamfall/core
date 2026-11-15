@@ -1,6 +1,6 @@
 # Player auto\-skip of intro/credits segments with skipped toast — related-flows
 
-Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:f0d840bed29bc20caf4a7bebf9b0eaf0 -->
 Relations are static lexical candidates; computed dispatch remains unresolved\.

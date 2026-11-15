@@ -1,6 +1,6 @@
 # Viewer entity detail page and not\-available state — flow-diagram
 
-Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:006b61f503bce0588abf5d333fc16f6f -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -16,18 +16,18 @@ sequenceDiagram
     Note over S,U: Source contains call useT in internal/web/app/src/areas/viewer/components/NotAvailable.tsx at line 19 - order unresolved
     Note over S,U: Source contains call t in internal/web/app/src/areas/viewer/components/NotAvailable.tsx at line 22 - order unresolved
     Note over S,U: Source contains call t in internal/web/app/src/areas/viewer/components/NotAvailable.tsx at line 23 - order unresolved
-    Note over S,U: Source contains call useParams in internal/web/app/src/areas/viewer/pages/EntityPage.tsx at line 65 - order unresolved
-    Note over S,U: Source contains call useLocation in internal/web/app/src/areas/viewer/pages/EntityPage.tsx at line 66 - order unresolved
-    Note over S,U: Source contains call useSession in internal/web/app/src/areas/viewer/pages/EntityPage.tsx at line 67 - order unresolved
-    Note over S,U: Source contains call useViewerIdentity in internal/web/app/src/areas/viewer/pages/EntityPage.tsx at line 68 - order unresolved
-    Note over S,U: Source contains call useDisplayLocale in internal/web/app/src/areas/viewer/pages/EntityPage.tsx at line 69 - order unresolved
-    Note over S,U: Source contains call useT in internal/web/app/src/areas/viewer/pages/EntityPage.tsx at line 70 - order unresolved
-    Note over S,U: Source contains call useNavigate in internal/web/app/src/areas/viewer/pages/EntityPage.tsx at line 71 - order unresolved
-    Note over S,U: Source contains call entityCacheKey in internal/web/app/src/areas/viewer/pages/EntityPage.tsx at line 73 - order unresolved
-    Note over S,U: Source contains call useState in internal/web/app/src/areas/viewer/pages/EntityPage.tsx at line 75 - order unresolved
+    Note over S,U: Source contains call useParams in internal/web/app/src/areas/viewer/pages/EntityPage.tsx at line 66 - order unresolved
+    Note over S,U: Source contains call useLocation in internal/web/app/src/areas/viewer/pages/EntityPage.tsx at line 67 - order unresolved
+    Note over S,U: Source contains call useSession in internal/web/app/src/areas/viewer/pages/EntityPage.tsx at line 68 - order unresolved
+    Note over S,U: Source contains call useViewerIdentity in internal/web/app/src/areas/viewer/pages/EntityPage.tsx at line 69 - order unresolved
+    Note over S,U: Source contains call useDisplayLocale in internal/web/app/src/areas/viewer/pages/EntityPage.tsx at line 70 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/areas/viewer/pages/EntityPage.tsx at line 71 - order unresolved
+    Note over S,U: Source contains call useNavigate in internal/web/app/src/areas/viewer/pages/EntityPage.tsx at line 72 - order unresolved
+    Note over S,U: Source contains call entityCacheKey in internal/web/app/src/areas/viewer/pages/EntityPage.tsx at line 74 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/areas/viewer/pages/EntityPage.tsx at line 76 - order unresolved
-    Note over S,U: Source contains call entityMediaCacheKey in internal/web/app/src/areas/viewer/pages/EntityPage.tsx at line 78 - order unresolved
-    Note over S,U: Source contains call seeAllTargetFor in internal/web/app/src/areas/viewer/pages/EntityPage.tsx at line 178 - order unresolved
-    Note over S,U: Source contains call useMemo in internal/web/app/src/areas/viewer/pages/EntityPage.tsx at line 81 - order unresolved
-    Note over S,U: Source contains call playQueueOf in internal/web/app/src/areas/viewer/pages/EntityPage.tsx at line 81 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/viewer/pages/EntityPage.tsx at line 77 - order unresolved
+    Note over S,U: Source contains call entityMediaCacheKey in internal/web/app/src/areas/viewer/pages/EntityPage.tsx at line 79 - order unresolved
+    Note over S,U: Source contains call seeAllTargetFor in internal/web/app/src/areas/viewer/pages/EntityPage.tsx at line 179 - order unresolved
+    Note over S,U: Source contains call useMemo in internal/web/app/src/areas/viewer/pages/EntityPage.tsx at line 82 - order unresolved
+    Note over S,U: Source contains call playQueueOf in internal/web/app/src/areas/viewer/pages/EntityPage.tsx at line 82 - order unresolved
 ```

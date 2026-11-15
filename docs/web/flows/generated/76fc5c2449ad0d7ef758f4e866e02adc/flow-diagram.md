@@ -1,6 +1,6 @@
 # Player audio and subtitle tracks, subtitle styling — flow-diagram
 
-Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1500616c2ec3a004d37072fdc22a79f9 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -18,19 +18,19 @@ sequenceDiagram
     Note over S,U: Source contains call useDisplayLocale in internal/web/app/src/areas/viewer/player/SubtitleStylePanel.tsx at line 91 - order unresolved
     Note over S,U: Source contains call audioTrackList in internal/web/app/src/areas/viewer/player/media-tracks.ts at line 29 - order unresolved
     Note over S,U: Source contains call push in internal/web/app/src/areas/viewer/player/media-tracks.ts at line 33 - order unresolved
-    Note over S,U: Source contains call audioTracksArray in internal/web/app/src/areas/viewer/player/useLiveTracks.ts at line 42 - order unresolved
-    Note over S,U: Source contains call map in internal/web/app/src/areas/viewer/player/useLiveTracks.ts at line 42 - order unresolved
-    Note over S,U: Source contains call from in internal/web/app/src/areas/viewer/player/useLiveTracks.ts at line 51 - order unresolved
-    Note over S,U: Source contains call map in internal/web/app/src/areas/viewer/player/useLiveTracks.ts at line 51 - order unresolved
-    Note over S,U: Source contains call useState in internal/web/app/src/areas/viewer/player/useLiveTracks.ts at line 82 - order unresolved
+    Note over S,U: Source contains call audioTracksArray in internal/web/app/src/areas/viewer/player/useLiveTracks.ts at line 54 - order unresolved
+    Note over S,U: Source contains call map in internal/web/app/src/areas/viewer/player/useLiveTracks.ts at line 54 - order unresolved
+    Note over S,U: Source contains call from in internal/web/app/src/areas/viewer/player/useLiveTracks.ts at line 63 - order unresolved
+    Note over S,U: Source contains call map in internal/web/app/src/areas/viewer/player/useLiveTracks.ts at line 63 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/viewer/player/useLiveTracks.ts at line 114 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/areas/viewer/player/useSubtitleStyling.ts at line 37 - order unresolved
     Note over S,U: Source contains call readSync in internal/web/app/src/areas/viewer/player/useSubtitleStyling.ts at line 37 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/areas/viewer/player/useSubtitleStyling.ts at line 39 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/areas/viewer/player/useSubtitleStyling.ts at line 40 - order unresolved
     Note over S,U: Source contains call useRef in internal/web/app/src/areas/viewer/player/useSubtitleStyling.ts at line 41 - order unresolved
     Note over S,U: Source contains call useRef in internal/web/app/src/areas/viewer/player/useSubtitleStyling.ts at line 43 - order unresolved
-    Note over S,U: Source contains call useCallback in internal/web/app/src/areas/viewer/player/useLiveTracks.ts at line 83 - order unresolved
-    Note over S,U: Source contains call setNudge in internal/web/app/src/areas/viewer/player/useLiveTracks.ts at line 83 - order unresolved
+    Note over S,U: Source contains call useCallback in internal/web/app/src/areas/viewer/player/useLiveTracks.ts at line 115 - order unresolved
+    Note over S,U: Source contains call setNudge in internal/web/app/src/areas/viewer/player/useLiveTracks.ts at line 115 - order unresolved
     Note over S,U: Source contains call useCallback in internal/web/app/src/areas/viewer/player/useSubtitleStyling.ts at line 46 - order unresolved
     Note over S,U: Source contains call from in internal/web/app/src/areas/viewer/player/useSubtitleStyling.ts at line 50 - order unresolved
     Note over S,U: Source contains call from in internal/web/app/src/areas/viewer/player/useSubtitleStyling.ts at line 51 - order unresolved

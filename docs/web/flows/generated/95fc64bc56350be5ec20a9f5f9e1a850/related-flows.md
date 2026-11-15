@@ -1,9 +1,9 @@
 # Viewer area: session pending/error states, setup hand\-off, viewer routes — related-flows
 
-Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:19a8251e5b7e2cdcdca6e101ec61775a -->
 Relations are static lexical candidates; computed dispatch remains unresolved\.
 
-Source: internal/web/app/src/areas/viewer/index\.tsx:70; symbol: ViewerArea; span SHA256: e8c23e5be0c66a622011605c335083f61b506242b50e7f5c4047f2d83ae145ca.
+Source: internal/web/app/src/areas/viewer/index\.tsx:75; symbol: ViewerArea; span SHA256: e8c23e5be0c66a622011605c335083f61b506242b50e7f5c4047f2d83ae145ca.
 
