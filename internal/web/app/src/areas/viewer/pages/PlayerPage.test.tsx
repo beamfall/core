@@ -13,6 +13,7 @@ import {
 import { I18nProvider } from "@/lib/i18n";
 import type { PlaybackAdjustment, PlaybackInfo } from "../lib/playback";
 import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
+import { PlayerHost } from "../player/PlayerHost";
 import { PlayerTransport } from "../player/PlayerTransport";
 import type { PlayerState } from "../player/usePlayer";
 import { DEFAULT_ADJUSTMENT, usePlayer } from "../player/usePlayer";
@@ -438,6 +439,59 @@ describe("PlayerPage class-narrowed queue (CORE-1490, CORE-1309)", () => {
     act(() => lastTransportProps()?.onNextInQueue?.());
     await waitFor(() => expect(lastPlayedID()).toBe("media-t2"));
     expect(screen.getByText("2 of 2")).toBeInTheDocument();
+  });
+
+  it("never auto-advances into an issued next the learned class removed (CORE-1732)", async () => {
+    // An unclassified queue of a track then a video: playback-info issues the
+    // video as next (with streams) before its class is known.
+    renderPlayer(
+      playerState({
+        phase: "playing",
+        info: {
+          mediaClass: "audio",
+          next: {
+            mediaID: "media-v1",
+            mediaClass: "video",
+            streams: [{ kind: "direct-play", url: "/api/media/v1" }],
+          },
+        } as PlayerState["info"],
+      }),
+      {
+        title: "Alpha",
+        queue: [
+          { id: "media-alpha", title: "Alpha" },
+          { id: "media-v1", title: "Film" },
+        ],
+        queueIdentity: "viewer-1",
+      },
+    );
+    // Learning the video's class leaves the track alone in its queue.
+    await waitFor(() => expect(vi.mocked(usePlayer).mock.calls.at(-1)?.[3]).toBe(""));
+    expect(lastTransportProps()?.onNextInQueue).toBeUndefined();
+
+    fireEvent.ended(stageVideo());
+    await act(async () => {});
+    expect(lastPlayedID()).toBe("media-alpha");
+    expect(vi.mocked(usePlayer).mock.calls.some((call) => call[0] === "media-v1")).toBe(false);
+  });
+
+  it("still advances into an issued next of the playing class without a card queue", async () => {
+    renderPlayer(
+      playerState({
+        phase: "playing",
+        info: {
+          mediaClass: "audio",
+          next: {
+            mediaID: "media-t2",
+            mediaClass: "audio",
+            streams: [{ kind: "direct-play", url: "/api/media/t2" }],
+          },
+        } as PlayerState["info"],
+      }),
+      { title: "Alpha" },
+    );
+    fireEvent.ended(stageVideo());
+    await waitFor(() => expect(lastPlayedID()).toBe("media-t2"));
   });
 
   it("shows the audio stage while loading when the queue entry is a track", () => {
@@ -886,5 +940,137 @@ describe("PlayerPage karaoke key and tempo controls", () => {
     expect(adjust).toHaveBeenLastCalledWith({ pitchShiftSemitones: 2, tempo: 0.95 });
     fireEvent.click(screen.getByRole("button", { name: "Reset the key" }));
     expect(adjust).toHaveBeenLastCalledWith({ pitchShiftSemitones: 0, tempo: 0.9 });
+  });
+});
+
+// feature:persistent-mini-player
+describe("PlayerPage in the player host (CORE-1633)", () => {
+  beforeEach(() => {
+    vi.mocked(usePlayer).mockReset();
+    vi.mocked(PlayerTransport).mockClear();
+  });
+
+  const queue = [
+    { id: "media-alpha", title: "Track One" },
+    { id: "media-next", title: "Track Two" },
+  ];
+  let go: NavigateFunction = () => undefined;
+  function Navigator() {
+    go = useNavigate();
+    return null;
+  }
+
+  function renderHosted(info: Partial<PlaybackInfo>) {
+    vi.mocked(usePlayer).mockImplementation((mediaID) => ({
+      videoRef: { current: null },
+      hlsRef: { current: null },
+      state: playerState({ phase: "playing", mediaID, info: info as PlaybackInfo }),
+      retry: vi.fn(),
+      restart: vi.fn(),
+      switchToHls: vi.fn(() => false as const),
+      adjustment: DEFAULT_ADJUSTMENT,
+      adjust: vi.fn(),
+    }));
+    render(
+      <I18nProvider>
+        <MemoryRouter
+          initialEntries={[
+            { pathname: "/" },
+            {
+              pathname: "/watch/media-alpha",
+              state: { skipPrePlay: true, title: "Track One", queue, queueIdentity: "viewer-1" },
+            },
+          ]}
+          initialIndex={1}
+        >
+          <Navigator />
+          <PlayerHost>
+            <Routes>
+              <Route path="/" element={<p>home route</p>} />
+              <Route path="/search" element={<p>search route</p>} />
+              <Route path="/watch/:mediaId" element={<PlayerPage />} />
+            </Routes>
+          </PlayerHost>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+  }
+
+  const miniPlayer = () => screen.queryByRole("region", { name: "Now playing" });
+
+  it("keeps audio playing on the same media element in a docked mini player across routes", async () => {
+    renderHosted({ mediaClass: "audio" });
+    const video = await waitFor(() => stageVideo());
+    expect(miniPlayer()).toBeNull();
+
+    act(() => {
+      void go("/search");
+    });
+    expect(screen.getByText("search route")).toBeInTheDocument();
+    const region = await waitFor(() => {
+      const found = miniPlayer();
+      if (!found) throw new Error("mini player not docked");
+      return found;
+    });
+    expect(stageVideo()).toBe(video);
+    expect(document.querySelector("main")).not.toBeVisible();
+    expect(within(region).getByText("Track One")).toBeInTheDocument();
+    expect(within(region).getByRole("progressbar", { name: "Playback position" })).toBeVisible();
+    for (const name of ["Play", "Next", "Open player", "Stop and close player"]) {
+      expect(within(region).getByRole("button", { name })).toBeEnabled();
+    }
+
+    fireEvent.click(within(region).getByRole("button", { name: "Open player" }));
+    await waitFor(() => expect(miniPlayer()).toBeNull());
+    expect(screen.queryByText("search route")).toBeNull();
+    expect(stageVideo()).toBe(video);
+    expect(document.querySelector("main")).toBeVisible();
+  });
+
+  it("advances to the next track in place while docked", async () => {
+    renderHosted({ mediaClass: "audio" });
+    await waitFor(() => stageVideo());
+    act(() => {
+      void go("/search");
+    });
+    const region = await waitFor(() => {
+      const found = miniPlayer();
+      if (!found) throw new Error("mini player not docked");
+      return found;
+    });
+
+    fireEvent.click(within(region).getByRole("button", { name: "Next" }));
+    await waitFor(() =>
+      expect(vi.mocked(usePlayer).mock.calls.some(([id]) => id === "media-next")).toBe(true),
+    );
+    expect(screen.getByText("search route")).toBeInTheDocument();
+    expect(within(miniPlayer() as HTMLElement).getByText("Track Two")).toBeInTheDocument();
+  });
+
+  it("stops and closes on the mini player's Stop", async () => {
+    renderHosted({ mediaClass: "audio" });
+    await waitFor(() => stageVideo());
+    act(() => {
+      void go("/search");
+    });
+    const region = await waitFor(() => {
+      const found = miniPlayer();
+      if (!found) throw new Error("mini player not docked");
+      return found;
+    });
+    fireEvent.click(within(region).getByRole("button", { name: "Stop and close player" }));
+    await waitFor(() => expect(miniPlayer()).toBeNull());
+    expect(document.querySelector("video")).toBeNull();
+  });
+
+  it("stops a video Media when its watch route closes, keeping the full-screen route", async () => {
+    renderHosted({ mediaClass: "video" });
+    await waitFor(() => stageVideo());
+    act(() => {
+      void go("/search");
+    });
+    expect(screen.getByText("search route")).toBeInTheDocument();
+    expect(miniPlayer()).toBeNull();
+    expect(document.querySelector("video")).toBeNull();
   });
 });
