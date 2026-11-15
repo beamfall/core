@@ -537,9 +537,15 @@ type quirkOverlay struct {
 	// sets matched or overrideIDs, so attribution never names an entry for it,
 	// and it does not gate audio-only items, which have no picture to scale.
 	clientMaxBitrate int
-	// policyCeiling reports that clientMaxBitrate came from the admin's
-	// remote bitrate cap (CORE-1717) rather than the viewer's own ceiling. It
-	// changes only the decision reason a ceiling-forced verdict names.
+	// policyMaxBitrate is the admin's remote bitrate cap (CORE-1717) when it
+	// is tighter than the viewer's own ceiling. Unlike clientMaxBitrate it is
+	// enforced on its own terms (CORE-1864): it is never raised to the ladder
+	// floor, it gates audio-only items too, and a transcode no rung of which
+	// fits under it is refused.
+	policyMaxBitrate int
+	// policyCeiling reports that policyMaxBitrate is set: the admin's cap,
+	// not the viewer's ceiling, binds. It names the decision reason a
+	// ceiling-forced verdict carries.
 	policyCeiling bool
 }
 
@@ -556,6 +562,45 @@ func (ov quirkOverlay) withClientCeiling(ceiling int) quirkOverlay {
 	return ov
 }
 
+// withPolicyCeiling folds the admin's binding remote cap into the overlay
+// exactly as configured (CORE-1864). A non-positive cap is none.
+func (ov quirkOverlay) withPolicyCeiling(cap int) quirkOverlay {
+	ov.policyMaxBitrate = max(cap, 0)
+	ov.policyCeiling = cap > 0
+	return ov
+}
+
+// streamCeiling is the tighter of the viewer's ceiling and the admin's cap:
+// the streaming ceiling the request runs under, apart from quirk caps.
+func (ov quirkOverlay) streamCeiling() int {
+	return minNonZero(ov.clientMaxBitrate, ov.policyMaxBitrate)
+}
+
+// audioOnlyMaxBitrate is the cap an audio-only item answers to. The viewer's
+// ceiling exempts it (there is no picture to scale), but the admin's cap and a
+// quirk cap do not.
+func (ov quirkOverlay) audioOnlyMaxBitrate() int {
+	return minNonZero(ov.MaxBitrate, ov.policyMaxBitrate)
+}
+
+// policyTranscodeRefusal is the reason the admin's cap refuses a server
+// transcode outright, or "": no video rung fits under a cap below the ladder
+// floor, and an audio-only stream whose peak (audioOnlyPeak) exceeds the cap
+// does not fit either.
+func (ov quirkOverlay) policyTranscodeRefusal(media store.Media, audioOnlyPeak int) string {
+	if ov.policyMaxBitrate <= 0 {
+		return ""
+	}
+	floor := ladderFloorBandwidth()
+	if media.Class == store.MediaClassAudio {
+		floor = audioOnlyPeak
+	}
+	if floor > ov.policyMaxBitrate {
+		return policyBitrateCeilingReason
+	}
+	return ""
+}
+
 // ceilingReason is the decision reason for a verdict the streaming ceiling
 // alone forced: the admin's remote cap names itself apart from the viewer's.
 func (ov quirkOverlay) ceilingReason() string {
@@ -565,17 +610,19 @@ func (ov quirkOverlay) ceilingReason() string {
 	return bitrateCeilingReason
 }
 
-// withoutClientCeiling is the overlay the quirks alone produce, the
-// counterfactual bitrateCeilingForced and the dashboard cause compare against.
+// withoutClientCeiling is the overlay the quirks alone produce, without the
+// viewer's ceiling or the admin's cap: the counterfactual bitrateCeilingForced
+// and the dashboard cause compare against.
 func (ov quirkOverlay) withoutClientCeiling() quirkOverlay {
 	ov.clientMaxBitrate = 0
+	ov.policyMaxBitrate = 0
 	return ov
 }
 
 // maxBitrate is the effective whole-stream bitrate cap: the tighter of the
-// quirk cap and the viewer's ceiling.
+// quirk cap and the streaming ceiling.
 func (ov quirkOverlay) maxBitrate() int {
-	return minNonZero(ov.MaxBitrate, ov.clientMaxBitrate)
+	return minNonZero(ov.MaxBitrate, ov.streamCeiling())
 }
 
 // ladderFloorBandwidth is the advertised bandwidth of the lowest h264 rung.
@@ -688,7 +735,7 @@ func (ov quirkOverlay) vetoesVideoPassthrough(media store.Media, file store.Medi
 	}
 	// The viewer's ceiling follows the same evidence rule: a source whose
 	// bitrate cannot be estimated is not handed over on a capped network.
-	bitrateCap := ov.MaxBitrate
+	bitrateCap := ov.audioOnlyMaxBitrate()
 	if !audioOnly {
 		bitrateCap = ov.maxBitrate()
 	}
@@ -801,8 +848,9 @@ func (ov quirkOverlay) subtitleFormats(declared []string) []string {
 // bitrateHeightCeiling expresses a video-maxrate ceiling as a height ceiling.
 // The ladder vocabulary is closed and fixed, so this is exact: it returns the
 // height of the best rung whose advertised bandwidth fits under the cap. The
-// parser rejects a quirk cap below the ladder floor and withClientCeiling
-// raises the viewer's ceiling to it, so a candidate always exists.
+// parser rejects a quirk cap below the ladder floor, withClientCeiling raises
+// the viewer's ceiling to it, and an admin cap below it refuses the transcode
+// (policyTranscodeRefusal), so a candidate always exists.
 func (ov quirkOverlay) bitrateHeightCeiling() int {
 	maxBitrate := ov.maxBitrate()
 	if maxBitrate <= 0 {
