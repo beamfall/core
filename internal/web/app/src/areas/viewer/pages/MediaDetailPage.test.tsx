@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchEntity, fetchMediaForEntity } from "@/lib/graphql";
+import { calibrateWatchPartyClock, fetchEntity, fetchMediaForEntity } from "@/lib/graphql";
 import type { GenericMediaInfo, Section, SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { clearViewerCache, readViewerCache, writeViewerCache } from "@/lib/viewerCache";
@@ -14,6 +14,7 @@ import {
   mediaDetailCacheKey,
   mediaLinkState,
 } from "../lib/mediaDetail";
+import { resetHomeNetworkProbeForTest } from "../lib/watchTogether";
 import { MediaDetailPage } from "./MediaDetailPage";
 
 const mocks = vi.hoisted(() => ({ identity: null as string | null }));
@@ -27,6 +28,7 @@ vi.mock("@/lib/graphql", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/graphql")>()),
   fetchEntity: vi.fn(),
   fetchMediaForEntity: vi.fn(),
+  calibrateWatchPartyClock: vi.fn(),
 }));
 vi.mock("@/lib/session", () => ({ useViewerIdentity: () => mocks.identity }));
 vi.mock("@/components/chrome/AppShell", () => ({
@@ -100,6 +102,9 @@ beforeEach(() => {
   vi.mocked(fetchMediaDetailFields).mockReset().mockResolvedValue([]);
   vi.mocked(fetchMediaForEntity).mockReset().mockResolvedValue([]);
   vi.mocked(fetchEntity).mockReset().mockResolvedValue(null);
+  // Off the home network by default: Watch together is not offered (CORE-1764).
+  resetHomeNetworkProbeForTest();
+  vi.mocked(calibrateWatchPartyClock).mockReset().mockRejectedValue(new Error("home network only"));
 });
 
 afterEach(() => {
@@ -353,6 +358,22 @@ describe("MediaDetailPage", () => {
     expect(
       screen.getByRole("button", { name: "Start Server title from the beginning" }),
     ).toHaveClass("h-11");
+  });
+
+  it("offers Watch together as a ghost secondary on the home network only", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue(media);
+    renderAt(["/media/m1"]);
+    await act(async () => {});
+    expect(screen.queryByRole("button", { name: "Watch Server title together" })).toBeNull();
+    cleanup();
+
+    resetHomeNetworkProbeForTest();
+    vi.mocked(calibrateWatchPartyClock).mockResolvedValue({ offsetMS: 0, roundTripMS: 2 });
+    const { container } = renderAt(["/media/m1"]);
+    await act(async () => {});
+    const together = screen.getByRole("button", { name: "Watch Server title together" });
+    expect(together).toHaveClass("h-11");
+    expect(container.querySelectorAll(".bg-primary")).toHaveLength(1);
   });
 
   it("starts over from the beginning with ?t=0 only when a position is known", async () => {

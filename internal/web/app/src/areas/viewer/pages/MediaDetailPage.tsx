@@ -19,6 +19,7 @@ import { findCachedSectionItem } from "../components/HydratedSection";
 import { NotAvailable } from "../components/NotAvailable";
 import { SectionView } from "../components/SectionView";
 import { ViewerActions } from "../components/ViewerActions";
+import { WatchTogetherButton } from "../components/WatchTogetherButton";
 import { artworkBucketURL, artworkSlotURL, artworkSrcSet } from "../lib/artwork";
 import { useContainerContext } from "../lib/containerContext";
 import {
@@ -286,6 +287,13 @@ export function MediaDetailPage() {
                     <RotateCcw aria-hidden />
                     {t("mediaDetailStartOver")}
                   </button>
+                )}
+                {mediaId && (
+                  <WatchTogetherButton
+                    mediaID={mediaId}
+                    title={title}
+                    positionSeconds={progress?.positionSeconds}
+                  />
                 )}
                 {next && (
                   <Link

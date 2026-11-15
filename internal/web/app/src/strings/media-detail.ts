@@ -19,6 +19,11 @@ export const mediaDetailStrings = {
     mediaDetailRuntimeMinutes: "{minutes} min",
     mediaDetailOverviewMore: "More",
     mediaDetailOverviewLess: "Less",
+    // Watch together from the detail page (CORE-1764).
+    mediaDetailWatchTogether: "Watch together",
+    mediaDetailWatchTogetherLabel: "Watch {title} together",
+    mediaDetailWatchTogetherHomeOnly: "Watch Party works only on your home network.",
+    mediaDetailWatchTogetherFailed: "The Watch Party couldn’t be started. Try again.",
   },
   fr: {
     mediaDetailResume: "Reprendre",
@@ -39,6 +44,10 @@ export const mediaDetailStrings = {
     mediaDetailRuntimeMinutes: "{minutes} min",
     mediaDetailOverviewMore: "Plus",
     mediaDetailOverviewLess: "Moins",
+    mediaDetailWatchTogether: "Regarder ensemble",
+    mediaDetailWatchTogetherLabel: "Regarder {title} ensemble",
+    mediaDetailWatchTogetherHomeOnly: "Watch Party ne fonctionne que sur votre réseau domestique.",
+    mediaDetailWatchTogetherFailed: "Impossible de lancer la Watch Party. Réessayez.",
   },
   de: {
     mediaDetailResume: "Fortsetzen",
@@ -59,6 +68,11 @@ export const mediaDetailStrings = {
     mediaDetailRuntimeMinutes: "{minutes} Min.",
     mediaDetailOverviewMore: "Mehr",
     mediaDetailOverviewLess: "Weniger",
+    mediaDetailWatchTogether: "Gemeinsam ansehen",
+    mediaDetailWatchTogetherLabel: "{title} gemeinsam ansehen",
+    mediaDetailWatchTogetherHomeOnly: "Watch Party funktioniert nur in deinem Heimnetzwerk.",
+    mediaDetailWatchTogetherFailed:
+      "Die Watch Party konnte nicht gestartet werden. Versuche es erneut.",
   },
   es: {
     mediaDetailResume: "Reanudar",
@@ -79,6 +93,10 @@ export const mediaDetailStrings = {
     mediaDetailRuntimeMinutes: "{minutes} min",
     mediaDetailOverviewMore: "Más",
     mediaDetailOverviewLess: "Menos",
+    mediaDetailWatchTogether: "Ver juntos",
+    mediaDetailWatchTogetherLabel: "Ver {title} juntos",
+    mediaDetailWatchTogetherHomeOnly: "Watch Party solo funciona en tu red doméstica.",
+    mediaDetailWatchTogetherFailed: "No se pudo iniciar la Watch Party. Inténtalo de nuevo.",
   },
   pt: {
     mediaDetailResume: "Retomar",
@@ -99,5 +117,9 @@ export const mediaDetailStrings = {
     mediaDetailRuntimeMinutes: "{minutes} min",
     mediaDetailOverviewMore: "Mais",
     mediaDetailOverviewLess: "Menos",
+    mediaDetailWatchTogether: "Assistir juntos",
+    mediaDetailWatchTogetherLabel: "Assistir a {title} juntos",
+    mediaDetailWatchTogetherHomeOnly: "A Watch Party só funciona na sua rede doméstica.",
+    mediaDetailWatchTogetherFailed: "Não foi possível iniciar a Watch Party. Tente novamente.",
   },
 };
