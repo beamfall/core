@@ -165,6 +165,8 @@ type packBuildSource struct {
 	// transcode, path names the temporary MP4 in the pack directory.
 	transcode  bool
 	transcoded bool
+	// streams is the source file's stream inventory, read for transcodes.
+	streams []store.MediaFileStream
 }
 
 func (s *Service) preflightBuildSources(ctx context.Context, ids []store.MediaID, visible map[store.MediaID]store.Media, filter store.LibraryFilter, selectedVersions map[store.MediaID]string, quality string) ([]packBuildSource, error) {
@@ -190,7 +192,12 @@ func (s *Service) preflightBuildSources(ctx context.Context, ids []store.MediaID
 			mediaID: id, libraryID: media.LibraryID, path: file.Path,
 			selectedVersion: file.VersionLabel, transcode: transcode,
 		}
-		if !transcode {
+		if transcode {
+			source.streams, err = s.store.MediaFileStreams(ctx, file.ContentFingerprint)
+			if err != nil {
+				return nil, err
+			}
+		} else {
 			// Fail before any transcode work when original bytes already break
 			// a bound; checkBuildBytes re-checks the final set.
 			size, err := s.catalogPlaintextSize(media.LibraryID, file)
@@ -222,7 +229,7 @@ func (s *Service) transcodeSources(ctx context.Context, sources []packBuildSourc
 			return errors.New("offline pack transcoder is not configured")
 		}
 		dst := filepath.Join(packDir, fmt.Sprintf("%04d.src.mp4", i))
-		if err := s.transcode(ctx, sources[i].path, dst, quality); err != nil {
+		if err := s.transcode(ctx, sources[i].path, dst, quality, sources[i].streams); err != nil {
 			_ = os.Remove(dst)
 			// A transcoder may flatten a cancellation into its own error. Keep
 			// shutdown and preemption visible so the job yields and reruns under

@@ -79,9 +79,11 @@ func NormalizeQuality(quality string) (string, error) {
 }
 
 // Transcoder writes a transcoded copy of the plaintext source file src to dst
-// at quality (one of high, medium or low). The composition root wires it to
+// at quality (one of high, medium or low). streams is the source file's
+// persisted per-stream inventory (empty when the scan recorded none), so the
+// transcoder can tell an HDR source from SDR. The composition root wires it to
 // FFmpeg; nil (the default) refuses every non-original video build.
-type Transcoder func(ctx context.Context, src, dst, quality string) error
+type Transcoder func(ctx context.Context, src, dst, quality string, streams []store.MediaFileStream) error
 
 // ExpireJobKind runs the server-side Offline Pack eviction/expiry sweep.
 const ExpireJobKind store.JobKind = "offline-pack-expire"
@@ -125,6 +127,7 @@ type Store interface {
 	VisibleMediaBatch(ctx context.Context, ids []store.MediaID, filter store.LibraryFilter) (map[store.MediaID]store.Media, error)
 	PrimaryMediaFile(ctx context.Context, id store.MediaID, filter store.LibraryFilter) (store.MediaFile, error)
 	MediaFilesForMedia(ctx context.Context, id store.MediaID, filter store.LibraryFilter) ([]store.MediaFile, error)
+	MediaFileStreams(ctx context.Context, fingerprint string) ([]store.MediaFileStream, error)
 	Libraries(ctx context.Context, filter store.LibraryFilter) ([]store.Library, error)
 }
 
