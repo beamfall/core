@@ -141,6 +141,11 @@ export interface SourceItem {
   locked?: boolean;
   /** The acting Profile's playback state; absent when it has none. */
   engagement?: SourceItemEngagement;
+  /**
+   * A media item's playback class ("audio", "video"), for a class-aware
+   * placeholder when it has no artwork (CORE-1492). Absent for entities.
+   */
+  mediaClass?: string;
 }
 
 /**
@@ -215,6 +220,8 @@ export interface EntityInfo {
   kindDisplayName?: DisplayString;
   title: string;
   fields: EntityFieldInfo[];
+  /** The kind's fixed archetype ("container", "person", …); drives generic page layout. */
+  archetype?: string;
   /** Entities related in either direction, grouped by kind; only entity(id) fills it. */
   relatedEntities?: RelatedEntityGroup[];
 }
@@ -223,6 +230,8 @@ export interface EntityInfo {
 export interface RelatedEntityGroup {
   kind: string;
   kindDisplayName?: DisplayString;
+  /** The group kind's fixed archetype ("container", "person", …). */
+  archetype?: string;
   items: SourceItem[];
 }
 
@@ -233,6 +242,10 @@ export interface GenericMediaInfo {
   summary?: string;
   year?: number;
   favorited: boolean;
+  /** Probed or hinted runtime in whole seconds; omitted when unknown. */
+  durationSeconds?: number;
+  /** The Media class ("audio", "video", …); omitted when unknown. */
+  mediaClass?: string;
   /** Present artwork slots → URL; only the media(id) read fills it. */
   artworkSlots?: Record<string, string>;
   /** Linked Entities in plugin declaration order; only the media(id) read fills it. */

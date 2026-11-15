@@ -1,0 +1,4 @@
+- [x] Store batch annotation `AnnotateMediaClass` and graph `SourceItem.mediaClass`
+- [x] Regenerate wire-contract baselines
+- [x] Web `PosterGlyph` on cards and the detail poster; queries select `mediaClass`
+- [x] Tests: store annotation, nested schema, card glyph

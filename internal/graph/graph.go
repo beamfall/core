@@ -130,6 +130,10 @@ type SourceItem struct {
 	// Engagement is the acting Profile's playback state for the item; absent
 	// means none. See SourceItemEngagement.
 	Engagement *SourceItemEngagement `json:"engagement,omitempty"`
+	// MediaClass is a media-kind item's playback class ("audio", "video"), so
+	// a client can choose a class-appropriate placeholder for an artwork-less
+	// card (CORE-1492). Absent for entities and unknown classes.
+	MediaClass string `json:"mediaClass,omitempty"`
 }
 
 // SourceItemArtwork describes an item's stored artwork. Poster is the
@@ -928,6 +932,16 @@ func (h *Handler) SetUpdateChecker(checker UpdateChecker, serverVersion string) 
 // item.Locked is propagated unconditionally: the client needs to know whether
 // to render the lock treatment, and locked items are always visible to the scope
 // that receives them (the byte gate is server-side, not UI-side).
+// annotateCards sets the per-item fields a card renders that the feed query
+// does not carry: each media item's class (for its placeholder) and the acting
+// Profile's engagement.
+func (h *Handler) annotateCards(ctx context.Context, scope auth.Scope, items []store.SourceItem) error {
+	if err := h.store.AnnotateMediaClass(ctx, items); err != nil {
+		return err
+	}
+	return h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items)
+}
+
 func (h *Handler) sourceItem(item store.SourceItem, revealed bool) SourceItem {
 	resp := SourceItem{
 		ID:         string(item.ID),
@@ -937,6 +951,7 @@ func (h *Handler) sourceItem(item store.SourceItem, revealed bool) SourceItem {
 		Locked:     item.Locked,
 		Muted:      item.Muted,
 		Engagement: sourceItemEngagement(item.Engagement),
+		MediaClass: string(item.MediaClass),
 	}
 	if revealed {
 		resp.Restricted = item.Restricted
@@ -1539,7 +1554,7 @@ func (h *Handler) sourceItems(ctx context.Context, scope auth.Scope, req request
 	if err := h.store.AnnotateMuted(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
 		return nil, err
 	}
-	if err := h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
+	if err := h.annotateCards(ctx, scope, items); err != nil {
 		return nil, err
 	}
 	resp := make([]SourceItem, len(items))
@@ -2904,7 +2919,7 @@ func (h *Handler) search(ctx context.Context, scope auth.Scope, req request) ([]
 	if err := h.store.AnnotateMuted(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
 		return nil, err
 	}
-	if err := h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
+	if err := h.annotateCards(ctx, scope, items); err != nil {
 		return nil, err
 	}
 	resp := make([]SourceItem, len(items))
@@ -2956,7 +2971,7 @@ func (h *Handler) searchEntities(ctx context.Context, scope auth.Scope, req requ
 	if err := h.store.AnnotateMuted(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
 		return nil, err
 	}
-	if err := h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
+	if err := h.annotateCards(ctx, scope, items); err != nil {
 		return nil, err
 	}
 	resp := make([]SourceItem, len(items))
@@ -3844,7 +3859,7 @@ func (h *Handler) queueItems(ctx context.Context, scope auth.Scope) ([]SourceIte
 	if err != nil {
 		return nil, err
 	}
-	if err := h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
+	if err := h.annotateCards(ctx, scope, items); err != nil {
 		return nil, err
 	}
 	resp := make([]SourceItem, len(items))
@@ -3873,6 +3888,11 @@ type MediaInfo struct {
 	Summary   string `json:"summary,omitempty"`
 	Year      int    `json:"year,omitempty"`
 	Favorited bool   `json:"favorited"`
+	// DurationSeconds and MediaClass are the stored runtime and playback
+	// class; filled only by the media(id) read and omitted when unknown, so a
+	// client can render a track-list row (CORE-1635).
+	DurationSeconds int    `json:"durationSeconds,omitempty"`
+	MediaClass      string `json:"mediaClass,omitempty"`
 	// ArtworkSlots maps each present artwork slot to its URL; filled only by
 	// the media(id) read, omitted when the item carries no artwork.
 	ArtworkSlots map[string]string `json:"artworkSlots,omitempty"`
@@ -3929,6 +3949,8 @@ func (h *Handler) media(ctx context.Context, scope auth.Scope, req request) (Med
 			return h.artwork.ArtworkVersion(media.ID, slot)
 		})
 	}
+	info.DurationSeconds = media.DurationSeconds
+	info.MediaClass = string(media.Class)
 	info.Credits = h.mediaCredits(ctx, scope, media.ID)
 	info.MetadataAttribution = h.mediaMetadataAttribution(ctx, media.ID)
 	return info, nil
@@ -4145,7 +4167,11 @@ type EntityInfo struct {
 	// locale map); omitted when the declaration carries none — clients fall
 	// back to Kind.
 	KindDisplayName plugin.LocaleString `json:"kindDisplayName,omitempty"`
-	Fields          []EntityFieldInfo   `json:"fields"`
+	// Archetype is the plugin-declared shape of Kind ("person", "container",
+	// "category", ...); omitted when undeclared. Clients pick a layout from it
+	// without domain knowledge (CORE-1635).
+	Archetype string            `json:"archetype,omitempty"`
+	Fields    []EntityFieldInfo `json:"fields"`
 }
 
 // EntityDetailInfo is the entity(id) wire shape: the Entity plus the Entities
@@ -4164,7 +4190,9 @@ type EntityDetailInfo struct {
 type RelatedEntityGroupInfo struct {
 	Kind            string              `json:"kind"`
 	KindDisplayName plugin.LocaleString `json:"kindDisplayName,omitempty"`
-	Items           []SourceItem        `json:"items"`
+	// Archetype is the plugin-declared shape of Kind; omitted when undeclared.
+	Archetype string       `json:"archetype,omitempty"`
+	Items     []SourceItem `json:"items"`
 }
 
 // RelatedEntityInfo pairs an Entity with the relation attributes that
@@ -4190,16 +4218,18 @@ func (h *Handler) entityQuery(ctx context.Context, scope auth.Scope, req request
 		return EntityDetailInfo{}, err
 	}
 	for _, group := range groups {
-		if err := h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), group.Items); err != nil {
+		if err := h.annotateCards(ctx, scope, group.Items); err != nil {
 			return EntityDetailInfo{}, err
 		}
 		items := make([]SourceItem, len(group.Items))
 		for i, item := range group.Items {
 			items[i] = h.sourceItem(item, scope.Revealed)
 		}
+		spec := h.entityKindSpec(ctx, group.LibraryID, group.Kind)
 		info.RelatedEntities = append(info.RelatedEntities, RelatedEntityGroupInfo{
 			Kind:            group.Kind,
-			KindDisplayName: h.entityKindSpec(ctx, group.LibraryID, group.Kind).DisplayName,
+			KindDisplayName: spec.DisplayName,
+			Archetype:       spec.Archetype,
 			Items:           items,
 		})
 	}
@@ -4618,6 +4648,7 @@ func entityInfo(entity store.Entity, kind plugin.EntityKind) EntityInfo {
 		Kind:            entity.Kind,
 		Title:           entity.Title,
 		KindDisplayName: kind.DisplayName,
+		Archetype:       kind.Archetype,
 		Fields:          []EntityFieldInfo{},
 	}
 	specs := map[string]plugin.FieldSpec{}
@@ -4655,7 +4686,7 @@ func (h *Handler) mediaForEntity(ctx context.Context, scope auth.Scope, req requ
 	if err := h.store.AnnotateMuted(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
 		return nil, err
 	}
-	if err := h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
+	if err := h.annotateCards(ctx, scope, items); err != nil {
 		return nil, err
 	}
 	resp := make([]SourceItem, len(items))

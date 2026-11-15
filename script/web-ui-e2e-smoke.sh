@@ -278,6 +278,7 @@ run_tracked env BEAMFALL_WEB_E2E_RENDER_PHASE=1 npm run e2e -- \
   --project auth-matrix \
   --project ui-states \
   --project ui-states-mobile \
+  --project music \
   --output "${output_dir}" \
   --reporter "list,./e2e/lib/require-visual-parity-states.mjs,./e2e/lib/require-ui-state-coverage.mjs,./e2e/lib/progress-heartbeat-reporter.mjs"
 if [[ ! -s "${provenance_file}" ]]; then

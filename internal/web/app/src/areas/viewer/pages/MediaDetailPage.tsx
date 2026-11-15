@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronRight, Film, Play, RotateCcw } from "lucide-react";
+import { ArrowLeft, ChevronRight, Play, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
@@ -17,6 +17,7 @@ import {
 } from "@/lib/viewerCache";
 import { findCachedSectionItem } from "../components/HydratedSection";
 import { NotAvailable } from "../components/NotAvailable";
+import { PosterGlyph } from "../components/PosterGlyph";
 import { SectionView } from "../components/SectionView";
 import { ViewerActions } from "../components/ViewerActions";
 import { WatchTogetherButton } from "../components/WatchTogetherButton";
@@ -218,7 +219,7 @@ export function MediaDetailPage() {
         <section className="bf-detail-stage" data-backdrop={backdrop ? "" : undefined}>
           {backdrop && <DetailBackdrop key={backdrop} url={backdrop} />}
           <div className="bf-detail-lockup">
-            <DetailPoster key={poster} url={poster} />
+            <DetailPoster key={poster} url={poster} mediaClass={card?.mediaClass} />
             <div className="bf-detail-copy">
               {context.parents.length > 0 && (
                 <nav className="bf-detail-parents" aria-label={t("mediaDetailPartOf")}>
@@ -415,7 +416,7 @@ function DetailOverview({ text }: { text: string }) {
   );
 }
 
-function DetailPoster({ url }: { url: string }) {
+function DetailPoster({ url, mediaClass }: { url: string; mediaClass?: string }) {
   const [failed, setFailed] = useState(false);
   return (
     <div className="bf-poster bf-detail-poster">
@@ -430,7 +431,7 @@ function DetailPoster({ url }: { url: string }) {
         />
       ) : (
         // The same glyph a card draws when it has no artwork.
-        <Film aria-hidden strokeWidth={1.5} className="bf-poster-glyph size-[28%]" />
+        <PosterGlyph mediaClass={mediaClass} />
       )}
     </div>
   );

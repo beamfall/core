@@ -87,7 +87,7 @@ func (h *Handler) libraryItems(ctx context.Context, scope auth.Scope, req reques
 	if err != nil {
 		return LibraryItemsResponse{}, err
 	}
-	if err := h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), result.Items); err != nil {
+	if err := h.annotateCards(ctx, scope, result.Items); err != nil {
 		return LibraryItemsResponse{}, err
 	}
 	resp := emptyLibraryItems()

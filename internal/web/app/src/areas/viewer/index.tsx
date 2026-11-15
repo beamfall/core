@@ -16,16 +16,21 @@ import { BrowsePage } from "./pages/BrowsePage";
 import { CollectionListPage } from "./pages/CollectionListPage";
 import { CollectionPage } from "./pages/CollectionPage";
 import { EntityPage } from "./pages/EntityPage";
+import { FavoritesPage } from "./pages/FavoritesPage";
+import { HistoryPage } from "./pages/HistoryPage";
 import { LibraryBrowsePage } from "./pages/LibraryBrowsePage";
 import { MediaDetailPage } from "./pages/MediaDetailPage";
 import { MyDataPage } from "./pages/MyDataPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
+import { PlaylistPage } from "./pages/PlaylistPage";
+import { PlaylistsPage } from "./pages/PlaylistsPage";
 import { ProfilePickerPage } from "./pages/ProfilePickerPage";
 import { ProfileSettingsPage } from "./pages/ProfileSettingsPage";
 import { RemotePage } from "./pages/RemotePage";
 import { SearchPage } from "./pages/SearchPage";
 import { SeeAllPage } from "./pages/SeeAllPage";
 import { LazyPlayerPage } from "./player/LazyPlayerPage";
+import { PlayerHost } from "./player/PlayerHost";
 import "./player/player-deferred.css";
 import { RemoteMessage, useRemoteReceiver } from "./remote/RemoteReceiver";
 
@@ -140,8 +145,11 @@ export function ViewerArea() {
 function ViewerRoutes({ profileID }: { profileID: string }) {
   const remote = useRemoteReceiver(profileID);
   useEngagementEvents(remote.onEvent);
+  // The player host sits above the routes so audio keeps playing, docked in a
+  // mini player, while the listener browses (CORE-1633). Keyed like the routes:
+  // a Profile switch ends playback.
   return (
-    <>
+    <PlayerHost key={profileID}>
       <Routes key={profileID}>
         <Route path="/" element={<BrowsePage home />} />
         <Route path="/n/:nodeId" element={<BrowsePage />} />
@@ -153,6 +161,10 @@ function ViewerRoutes({ profileID }: { profileID: string }) {
         <Route path="/collections/:libraryId/:collectionId" element={<CollectionPage />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/mydata" element={<MyDataPage />} />
+        <Route path="/favorites" element={<FavoritesPage />} />
+        <Route path="/history" element={<HistoryPage />} />
+        <Route path="/playlists" element={<PlaylistsPage />} />
+        <Route path="/playlists/:playlistId" element={<PlaylistPage />} />
         <Route path="/notifications" element={<NotificationsPage />} />
         <Route path="/remote" element={<RemotePage />} />
         <Route path="/profiles" element={<ProfilePickerPage />} />
@@ -168,6 +180,6 @@ function ViewerRoutes({ profileID }: { profileID: string }) {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <RemoteMessage message={remote.message} onDismiss={remote.dismissMessage} />
-    </>
+    </PlayerHost>
   );
 }

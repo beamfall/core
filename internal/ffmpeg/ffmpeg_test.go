@@ -614,6 +614,21 @@ func TestHLSArgsMapSelectedAudioStream(t *testing.T) {
 	}
 }
 
+// The segmented session path (every web HLS stream, the audio-copy rung
+// included) maps the picked audio track exactly like the whole-file path.
+func TestSegmentArgsMapSelectedAudioStream(t *testing.T) {
+	selected := 2
+	plain := keyframeSegmentArgs("/src/movie.mkv", "/tmp/hls", 0, 0, Rendition{AudioStreamIndex: &selected})
+	if !containsArgSequence(plain, "-map", "0:v:0", "-map", "0:2") {
+		t.Fatalf("segment argv = %v, want [-map 0:v:0 -map 0:2]", plain)
+	}
+
+	copied := keyframeSegmentArgs("/src/movie.mkv", "/tmp/hls", 0, 0, Rendition{CopyVideo: true, AudioStreamIndex: &selected})
+	if !containsArgSequence(copied, "-map", "0:v:0", "-map", "0:2") {
+		t.Fatalf("audio-copy segment argv = %v, want [-map 0:v:0 -map 0:2]", copied)
+	}
+}
+
 // TestHLSArgsAudioOnlyDropsVideo covers the linear (unknown-duration) HLS
 // encode of an audio-only rendition: only the audio stream is mapped and no
 // video encoder, filter or forced keyframe reaches the argv (CORE-1542).

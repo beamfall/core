@@ -1,0 +1,27 @@
+/* CORE-1718: off-screen until keyboard focus lands on it, then pinned top-left
+ * above the header. */
+.bf-skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(calc(-100% - 16px));
+}
+
+.bf-skip-link:focus,
+.bf-skip-link:focus-visible {
+  transform: none;
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+#bf-main-content:focus {
+  outline: none;
+}

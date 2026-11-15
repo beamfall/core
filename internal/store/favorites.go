@@ -39,6 +39,18 @@ func (s *Store) SetMediaFavorite(ctx context.Context, profileID ProfileID, media
 	return err
 }
 
+// favoriteItemsSQL backs the favorites Source: the Profile's favorited Media,
+// most recently favorited first (CORE-1635). Read-only over media_favorite.
+func (s *Store) favoriteItemsSQL(ctx context.Context, profileID ProfileID, filter LibraryFilter, limit, offset int) ([]SourceItem, error) {
+	return s.profileItemsSQL(ctx, filter, `
+		SELECT 'media', media_id, 0
+		FROM media_favorite
+		WHERE profile_id = ?
+		ORDER BY favorited_at_ms DESC, media_id
+		LIMIT ? OFFSET ?
+	`, profileID, limit, offset)
+}
+
 // SetMediaKeep is the ADR-0051 retention-facing name for the same viewer-
 // writable rescue bit as Favorite. Retention only consumes the aggregate
 // "any Profile kept/favorited this" boolean, never which Profile set it.

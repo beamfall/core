@@ -81,6 +81,59 @@ export interface PlaybackVersion {
   selected: boolean;
 }
 
+/**
+ * One audio stream of the negotiated file (CORE-1709). `streamIndex` is sent
+ * back as `selectedAudioIndex` to hear another track; exactly one is
+ * `selected`: the track the delivered streams play.
+ */
+export interface PlaybackAudioTrack {
+  streamIndex: number;
+  codec: string;
+  language?: string;
+  channels?: number;
+  default?: boolean;
+  commentary?: boolean;
+  visualImpaired?: boolean;
+  selected?: boolean;
+}
+
+/**
+ * One caption track of the negotiated file: a sidecar (`url` only) or a
+ * subtitle stream muxed into the file (`streamIndex`). A muxed text stream
+ * also carries a WebVTT `url`; a muxed picture-based stream has none and is
+ * shown by burning it into the video (`selectedSubtitleIndex`).
+ */
+export interface PlaybackCaptionTrack {
+  id: string;
+  url?: string;
+  format: string;
+  streamIndex?: number;
+  language?: string;
+  forced?: boolean;
+  sdh?: boolean;
+  visualImpaired?: boolean;
+  commentary?: boolean;
+}
+
+/** The server's subtitle pick at playback start: a language, kind and role ref. */
+export interface PlaybackSelectedSubtitle {
+  track: {
+    language?: string;
+    /** "muxed" | "sidecar". */
+    kind: string;
+    roles?: { forced?: boolean; sdh?: boolean; visualImpaired?: boolean; commentary?: boolean };
+  };
+  reason?: string;
+}
+
+/** The tracks the viewer picked that the server has to deliver (CORE-1709). */
+export interface PlaybackTrackChoice {
+  /** The audio stream to play, by absolute stream index. */
+  selectedAudioIndex?: number;
+  /** The picture-based subtitle stream to burn into the video. */
+  selectedSubtitleIndex?: number;
+}
+
 /** The /api/playback-info response (ADR-0010 playbackInfo), narrowed to what the player reads. */
 export interface PlaybackInfo {
   /** "audio" | "video": the item's playback class; absent when unavailable. */
@@ -101,6 +154,14 @@ export interface PlaybackInfo {
   adjustment?: PlaybackAdjustment;
   /** The Media's Versions, listed only when it has two or more. */
   versions?: PlaybackVersion[];
+  /** Every audio stream of the file; absent when it has none. */
+  audioTracks?: PlaybackAudioTrack[];
+  /** Muxed and sidecar caption tracks; absent when there are none. */
+  captionTracks?: PlaybackCaptionTrack[];
+  /** The server's subtitle pick for the start of playback. */
+  selectedSubtitleTrack?: PlaybackSelectedSubtitle;
+  /** Why subtitles the viewer would want cannot be shown here, when they cannot. */
+  subtitlesUnavailableReason?: string;
 }
 
 /** The /api/preview-info response: Generated Asset URLs only, no playback streams. */
@@ -130,13 +191,15 @@ export function isRevealTerminalStatus(status: number): boolean {
  * undefined means no card queue, so a Play all queue may name the next item.
  * `adjustment` asks for a key or tempo change; the default sends none.
  * `selectedVersion` names the Version the viewer picked; the server ignores
- * an id it does not know and chooses itself.
+ * an id it does not know and chooses itself. `tracks` names the audio stream
+ * and the burned-in subtitle stream the viewer picked (CORE-1709).
  */
 export async function fetchPlaybackInfo(
   mediaID: string,
   nextMediaID?: string,
   adjustment?: PlaybackAdjustment,
   selectedVersion?: string,
+  tracks?: PlaybackTrackChoice,
 ): Promise<PlaybackInfo> {
   // Taken before the probe: a request that resumes after a newer Play all
   // started must not be read as leaving that queue.
@@ -163,6 +226,12 @@ export async function fetchPlaybackInfo(
           },
         }),
     ...(selectedVersion ? { selectedVersion } : {}),
+    ...(tracks?.selectedAudioIndex !== undefined
+      ? { selectedAudioIndex: tracks.selectedAudioIndex }
+      : {}),
+    ...(tracks?.selectedSubtitleIndex !== undefined
+      ? { selectedSubtitleIndex: tracks.selectedSubtitleIndex }
+      : {}),
   });
   // The server issues a declared next item without a title; the Play all
   // queue kept the one its listing gave, so Up Next and the next heading can

@@ -12,10 +12,12 @@ import { karaokeStrings } from "./karaoke";
 import { libraryHealthStrings } from "./library-health";
 import { libraryOperationsStrings } from "./library-operations";
 import { libraryTrashStrings } from "./library-trash";
+import { listeningStrings } from "./listening";
 import { managedFileStrings } from "./managed-files";
 import { mediaDetailStrings } from "./media-detail";
 import { metadataManagementStrings } from "./metadata-management";
 import { migrationStrings } from "./migration";
+import { miniPlayerStrings } from "./mini-player";
 import { onboardingStrings } from "./onboarding";
 import { pathPickerStrings } from "./path-picker";
 import { playbackStrings } from "./playback";
@@ -34,6 +36,7 @@ import { setupStrings } from "./setup";
 import { sharedStateStrings } from "./shared-states";
 import { stagedRestoreStrings } from "./staged-restore";
 import { subtitleAppearanceStrings } from "./subtitle-appearance";
+import { trackMenuStrings } from "./track-menu";
 import { viewerAccountStrings } from "./viewer-account";
 import { viewerCollectionStrings } from "./viewer-collections";
 import { watchPartyStrings } from "./watch-party";
@@ -50,6 +53,8 @@ export const en = {
   ...playbackStrings.en,
   ...playerShortcutStrings.en,
   ...subtitleAppearanceStrings.en,
+  ...listeningStrings.en,
+  ...trackMenuStrings.en,
   ...managedFileStrings.en,
   ...backupRetentionStrings.en,
   ...sharedStateStrings.en,
@@ -82,6 +87,7 @@ export const en = {
   ...providerKeyStrings.en,
   ...serverLogStrings.en,
   ...stagedRestoreStrings.en,
+  ...miniPlayerStrings.en,
 } as const;
 
 export const fr = {
@@ -94,6 +100,8 @@ export const fr = {
   ...playbackStrings.fr,
   ...playerShortcutStrings.fr,
   ...subtitleAppearanceStrings.fr,
+  ...listeningStrings.fr,
+  ...trackMenuStrings.fr,
   ...managedFileStrings.fr,
   ...backupRetentionStrings.fr,
   ...sharedStateStrings.fr,
@@ -126,6 +134,7 @@ export const fr = {
   ...providerKeyStrings.fr,
   ...serverLogStrings.fr,
   ...stagedRestoreStrings.fr,
+  ...miniPlayerStrings.fr,
 } as const;
 
 export const de = {
@@ -138,6 +147,8 @@ export const de = {
   ...playbackStrings.de,
   ...playerShortcutStrings.de,
   ...subtitleAppearanceStrings.de,
+  ...listeningStrings.de,
+  ...trackMenuStrings.de,
   ...managedFileStrings.de,
   ...backupRetentionStrings.de,
   ...sharedStateStrings.de,
@@ -170,6 +181,7 @@ export const de = {
   ...providerKeyStrings.de,
   ...serverLogStrings.de,
   ...stagedRestoreStrings.de,
+  ...miniPlayerStrings.de,
 } as const;
 
 export const es = {
@@ -182,6 +194,8 @@ export const es = {
   ...playbackStrings.es,
   ...playerShortcutStrings.es,
   ...subtitleAppearanceStrings.es,
+  ...listeningStrings.es,
+  ...trackMenuStrings.es,
   ...managedFileStrings.es,
   ...backupRetentionStrings.es,
   ...sharedStateStrings.es,
@@ -214,6 +228,7 @@ export const es = {
   ...providerKeyStrings.es,
   ...serverLogStrings.es,
   ...stagedRestoreStrings.es,
+  ...miniPlayerStrings.es,
 } as const;
 
 export const pt = {
@@ -226,6 +241,8 @@ export const pt = {
   ...playbackStrings.pt,
   ...playerShortcutStrings.pt,
   ...subtitleAppearanceStrings.pt,
+  ...listeningStrings.pt,
+  ...trackMenuStrings.pt,
   ...managedFileStrings.pt,
   ...backupRetentionStrings.pt,
   ...sharedStateStrings.pt,
@@ -258,4 +275,5 @@ export const pt = {
   ...providerKeyStrings.pt,
   ...serverLogStrings.pt,
   ...stagedRestoreStrings.pt,
+  ...miniPlayerStrings.pt,
 } as const;
