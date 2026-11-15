@@ -49,6 +49,11 @@ type ConvertProfile struct {
 	// (see WithSourceVideo). The zero values mean an SDR source.
 	sourceTransfer    string
 	sourceDoViProfile int
+	// sourceVideoStream is the absolute index of the video stream the source
+	// signal was read from; mapsSourceVideo reports that it is set (see
+	// WithSourceVideoStream).
+	sourceVideoStream int
+	mapsSourceVideo   bool
 }
 
 // WithSourceVideo returns a copy of the profile that knows the source's video
@@ -61,6 +66,27 @@ func (p ConvertProfile) WithSourceVideo(colorTransfer string, doViProfile int) C
 	p.sourceTransfer = colorTransfer
 	p.sourceDoViProfile = doViProfile
 	return p
+}
+
+// WithSourceVideoStream returns a copy of the profile that maps the source's
+// video stream at this absolute index (ffprobe's stream index) instead of
+// leaving the choice to FFmpeg, so the stream encoded is the one whose signal
+// WithSourceVideo described. Mapping disables FFmpeg's automatic choice for
+// every stream type, so the first audio stream is mapped too, when present.
+func (p ConvertProfile) WithSourceVideoStream(index int) ConvertProfile {
+	p.sourceVideoStream = index
+	p.mapsSourceVideo = true
+	return p
+}
+
+// streamMapArgs maps the chosen source video stream and the first audio
+// stream, or returns nil so FFmpeg's default stream choice stands. An
+// audio-only preset drops video, so it never maps one.
+func (p ConvertProfile) streamMapArgs() []string {
+	if !p.mapsSourceVideo || p.AudioOnly || p.sourceVideoStream < 0 {
+		return nil
+	}
+	return []string{"-map", "0:" + strconv.Itoa(p.sourceVideoStream), "-map", "0:a:0?"}
 }
 
 // sourceRendition is the source signal as the live transcode's Rendition, so
@@ -124,11 +150,11 @@ func ConvertProfileByName(name string) (ConvertProfile, bool) {
 	return p, ok
 }
 
-// encodeArgs returns the codec-selection arguments this profile adds to a
-// convert run. -vn drops video for audio-only presets; an empty VideoCodec on a
+// encodeArgs returns the stream-map and codec-selection arguments this profile
+// adds to a convert run. -vn drops video for audio-only presets; an empty VideoCodec on a
 // video preset stream-copies (-c:v copy). Audio is always specified.
 func (p ConvertProfile) encodeArgs() []string {
-	var args []string
+	args := p.streamMapArgs()
 	if p.AudioOnly {
 		args = append(args, "-vn")
 	} else {

@@ -410,3 +410,46 @@ func TestMediaFilesInDirectoryListsOnlyDirectChildren(t *testing.T) {
 		t.Fatalf("files = %+v, %v; want only the 4K file", files, err)
 	}
 }
+
+// TestMediaFilesForMediaReturnsCatalogSize pins CORE-1844: every Version's
+// recorded size_bytes reaches MediaFilesForMedia callers, and a file scanned
+// before its size was recorded reads as 0.
+func TestMediaFilesForMediaReturnsCatalogSize(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	anchorReq := versionImport("library-local", filepath.Join(root, "Harbor Lights - 1080p.mkv"), "Harbor Lights")
+	anchorReq.SizeBytes = 4096
+	media, anchor, err := st.ImportMediaFile(ctx, anchorReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uhdPath := filepath.Join(root, "Harbor Lights - 4K.mkv")
+	uhd := versionImport("library-local", uhdPath, "Harbor Lights")
+	uhd.SizeBytes = 8192
+	if _, err := st.ImportMediaFileVersion(ctx, MediaVersionImport{
+		MediaID: media.ID, File: uhd, Label: "4K",
+		AnchorFingerprint: anchor.ContentFingerprint, AnchorLabel: "1080p",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	unsizedPath := filepath.Join(root, "Harbor Lights - 720p.mkv")
+	if _, err := st.ImportMediaFileVersion(ctx, MediaVersionImport{
+		MediaID: media.ID, File: versionImport("library-local", unsizedPath, "Harbor Lights"), Label: "720p",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	files, err := st.MediaFilesForMedia(ctx, media.ID, LibraryFilter{AllowedIDs: []LibraryID{"library-local"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]int64{anchorReq.Path: 4096, uhdPath: 8192, unsizedPath: 0}
+	if len(files) != len(want) {
+		t.Fatalf("files = %+v, want %d", files, len(want))
+	}
+	for _, f := range files {
+		if size, ok := want[f.Path]; !ok || f.SizeBytes != size {
+			t.Fatalf("%s size = %d, want %d", f.Path, f.SizeBytes, size)
+		}
+	}
+}

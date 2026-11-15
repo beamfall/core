@@ -19,6 +19,10 @@ type contextualDirectoryPreflight struct {
 	accepted map[string]bool
 	refused  bool
 	refusal  ParsedMedia
+	// audioParts reports that the plugin accepted an audio-only sibling as a
+	// numbered part, so the folder is a parts folder and a still image in it
+	// is never an item (CORE-1833).
+	audioParts bool
 }
 
 func (s *scanWalkState) preflightDirectory(path string) (*contextualDirectoryPreflight, error) {
@@ -68,6 +72,9 @@ func (s *scanWalkState) preflightDirectory(path string) (*contextualDirectoryPre
 		legacy, legacyOK := s.parser.Parse(candidate, parseProbe)
 		parsed, accepted := contextual.ParseWithContext(candidate, parseProbe, s.directoryContext(candidate))
 		decision.parsed[candidate], decision.accepted[candidate] = parsed, accepted
+		if !isImage && s.isParsedPart(parsed, accepted) && parseProbe.HasAudio && !parseProbe.HasVideo {
+			decision.audioParts = true
+		}
 		switch {
 		case accepted && !isImage:
 			otherAccepted = true
@@ -91,6 +98,14 @@ func (s *scanWalkState) preflightDirectory(path string) (*contextualDirectoryPre
 	}
 	s.directoryPreflights[dir] = decision
 	return decision, nil
+}
+
+// skipsStillImage reports whether path is a still image the plugin did not
+// accept, inside a folder of audio parts. Whatever its name, such an image is
+// a scan, a booklet page or other artwork beside the parts, never a playable
+// item, so the walk does not catalogue it (CORE-1833).
+func (d *contextualDirectoryPreflight) skipsStillImage(path string) bool {
+	return d != nil && d.audioParts && imageClassForPath(path) && !d.accepted[path]
 }
 
 func (s *scanWalkState) parseFilename(path string, probe ParseProbe) (ParsedMedia, bool, bool) {
@@ -119,9 +134,27 @@ func (*scanWalkState) isParsedPart(parsed ParsedMedia, ok bool) bool {
 	return ok && parsed.PartGroup != "" && parsed.Index > 0 && parsed.Title != ""
 }
 
+// flushPendingPartsUnlessImage flushes the pending parts group before a file
+// that is not a part, except a still image: an image whose name sorts between
+// numbered parts is not part of the group and must not split it (CORE-1837).
+func (s *scanWalkState) flushPendingPartsUnlessImage(isImage bool) error {
+	if isImage {
+		return nil
+	}
+	return s.flushPendingParts()
+}
+
 func (s *scanWalkState) flushPendingParts() error {
 	if len(s.pendingParts) == 0 {
 		return nil
+	}
+	// Complete every file consumed before the group is flushed. An image
+	// consumed between the parts may still be queued, and completing it after
+	// the group would move the resume checkpoint back below the later parts.
+	for len(s.pendingCompletions) > 0 {
+		if err := s.completeFirst(); err != nil {
+			return err
+		}
 	}
 	parts := s.pendingParts
 	s.pendingParts = nil

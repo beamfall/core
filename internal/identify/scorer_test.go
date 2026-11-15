@@ -19,8 +19,8 @@ func TestScoreMatchAutoApplyAboveThreshold(t *testing.T) {
 	svc := identify.NewService(nil, nil, nil)
 	svc.RegisterScorer("filmtv", stubScorer(0.9), 0.75)
 
-	got := svc.ScoreMatch("filmtv", identify.Candidate{Title: "The Matrix", Year: 1999},
-		identify.ParsedMedia{Title: "The Matrix", Year: 1999})
+	got := svc.ScoreMatch("filmtv", identify.Candidate{Title: "Harbor Signal", Year: 1999},
+		identify.ParsedMedia{Title: "Harbor Signal", Year: 1999})
 
 	if !got.Scored {
 		t.Fatal("expected Scored=true for a registered plugin")
@@ -39,7 +39,7 @@ func TestScoreMatchQueuesBelowThreshold(t *testing.T) {
 	svc.RegisterScorer("filmtv", stubScorer(0.4), 0.75)
 
 	got := svc.ScoreMatch("filmtv", identify.Candidate{Title: "Unrelated"},
-		identify.ParsedMedia{Title: "The Matrix"})
+		identify.ParsedMedia{Title: "Harbor Signal"})
 
 	if !got.Scored {
 		t.Fatal("expected Scored=true for a registered plugin")

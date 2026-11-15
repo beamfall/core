@@ -135,12 +135,24 @@ func (s *Service) RetryBuild(ctx context.Context, scope auth.Scope, id store.Off
 	if err != nil {
 		return store.OfflinePackBuild{}, nil, err
 	}
-	build, err = s.store.OfflinePackBuildByID(ctx, id, scope.ProfileID)
-	if err != nil {
-		return store.OfflinePackBuild{}, nil, err
-	}
 	if !restarted {
+		build, err = s.store.OfflinePackBuildByID(ctx, id, scope.ProfileID)
+		if err != nil {
+			return store.OfflinePackBuild{}, nil, err
+		}
 		return build, nil, nil
+	}
+	// The row is building now and only the caller's enqueue gives it a job,
+	// so a request cancelled from here on must not abandon it: reread
+	// without the request's cancellation, and put the row back to failed
+	// (retryable) if the reread still fails.
+	detached := context.WithoutCancel(ctx)
+	build, err = s.store.OfflinePackBuildByID(detached, id, scope.ProfileID)
+	if err != nil {
+		if failErr := s.store.FailOfflinePackBuild(detached, id, FailureBuild, s.now()); failErr != nil {
+			return store.OfflinePackBuild{}, nil, errors.Join(err, failErr)
+		}
+		return store.OfflinePackBuild{}, nil, err
 	}
 	return build, payload, nil
 }
@@ -149,6 +161,88 @@ func (s *Service) RetryBuild(ctx context.Context, scope auth.Scope, id store.Off
 // retry whose job could not be queued.
 func (s *Service) FailBuild(ctx context.Context, id store.OfflinePackID, reason string) error {
 	return s.store.FailOfflinePackBuild(ctx, id, reason, s.now())
+}
+
+// BuildJobCanceled moves the build of a cancelled job back to failed. An
+// operator cancel makes the job terminal, so no worker will ever finish that
+// build; failed keeps it retryable and dismissable. Call it only once no
+// worker holds the job: jobCancel does for a job no worker had claimed, and
+// RunBuildJob does after a cancelled running job's worker returns. A payload
+// without a pack ID (an untracked build) needs nothing.
+func (s *Service) BuildJobCanceled(ctx context.Context, payload []byte) error {
+	var job BuildJobPayload
+	if err := json.Unmarshal(payload, &job); err != nil {
+		return err
+	}
+	if job.PackID == "" {
+		return nil
+	}
+	return s.store.FailOfflinePackBuild(context.WithoutCancel(ctx), job.PackID, FailureBuild, s.now())
+}
+
+// JobReader reads a job's current row (satisfied by *store.Store).
+type JobReader interface {
+	Job(ctx context.Context, id store.JobID) (store.Job, error)
+}
+
+// RunBuildJob is the job runner handler for BuildJobKind. It runs the build
+// and, when the run stopped because an operator cancelled its job while it was
+// running, moves the build to failed (CORE-1866). That waits until this worker
+// has returned, so a retry under the same pack ID never overlaps a worker
+// still writing the pack folder.
+func (s *Service) RunBuildJob(ctx context.Context, jobs JobReader, job store.Job) error {
+	_, err := s.HandleBuildJob(ctx, job.Payload)
+	if err == nil || ctx.Err() == nil {
+		return err
+	}
+	current, readErr := jobs.Job(context.WithoutCancel(ctx), job.ID)
+	if readErr != nil {
+		return errors.Join(err, readErr)
+	}
+	if current.Status != store.JobStatusCanceled {
+		return err
+	}
+	return errors.Join(err, s.BuildJobCanceled(ctx, job.Payload))
+}
+
+// JobLister lists jobs by status (satisfied by *store.Store).
+type JobLister interface {
+	ListJobs(ctx context.Context, statuses ...store.JobStatus) ([]store.Job, error)
+}
+
+// ReconcileBuilds fails every building row that no live build job will finish
+// and returns how many it failed. Run it at startup: a process that stopped
+// between an operator cancel of a running build and that worker's return
+// leaves the job canceled and the build building, and RunBuildJob never runs
+// again for it (CORE-1866). It reads the building rows before the jobs, so a
+// retry that restarts a build and queues its job in between is not failed.
+func (s *Service) ReconcileBuilds(ctx context.Context, jobs JobLister) (int, error) {
+	building, err := s.store.BuildingOfflinePackIDs(ctx)
+	if err != nil || len(building) == 0 {
+		return 0, err
+	}
+	live, err := jobs.ListJobs(ctx, store.JobStatusQueued, store.JobStatusRunning, store.JobStatusYielded)
+	if err != nil {
+		return 0, err
+	}
+	held := map[store.OfflinePackID]bool{}
+	for _, job := range live {
+		var payload BuildJobPayload
+		if job.Kind == BuildJobKind && json.Unmarshal(job.Payload, &payload) == nil {
+			held[payload.PackID] = true
+		}
+	}
+	failed := 0
+	for _, id := range building {
+		if held[id] {
+			continue
+		}
+		if err := s.store.FailOfflinePackBuild(ctx, id, FailureBuild, s.now()); err != nil {
+			return failed, err
+		}
+		failed++
+	}
+	return failed, nil
 }
 
 // DismissBuild removes the caller's failed build from the list.

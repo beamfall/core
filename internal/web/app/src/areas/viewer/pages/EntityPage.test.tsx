@@ -176,14 +176,17 @@ describe("EntityPage instant paint", () => {
     expect(await screen.findByText("Related item")).toBeInTheDocument();
   });
 
-  it("starts the detail Layout from the previewed kind without fetching the related list", () => {
+  it("starts the detail Layout from the previewed kind and lists no Media beside it", async () => {
     mocks.layouts = [{ id: "series-detail", sections: [], role: "detail", entityKind: "Series" }];
     vi.mocked(fetchEntity).mockReturnValue(new Promise(() => {}));
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([related]);
 
     renderEntity(entityLinkState({ id: "e1", title: "Card title", kind: "Series" }, identity));
+    await act(async () => {});
 
     expect(screen.getByText("detail layout series-detail")).toBeInTheDocument();
-    expect(fetchMediaForEntity).not.toHaveBeenCalled();
+    // The Media are read for the primary action only; the Layout renders them.
+    expect(screen.queryByText("Related item")).toBeNull();
   });
 
   it("aborts both requests when the page unmounts", () => {
@@ -400,6 +403,36 @@ describe("EntityPage container lockup", () => {
         .getAllByRole("link")
         .map((link) => link.getAttribute("href")),
     ).toEqual(["/media/c1", "/media/c3"]);
+  });
+
+  it("plays on through the next-up child container when it has no Media of its own", async () => {
+    mocks.layouts = [{ id: "set-detail", sections: [], role: "detail", entityKind: "set" }];
+    const box = (id: string, remainingCount: number): SourceItem => ({
+      id,
+      kind: "entity",
+      title: id,
+      engagement: { totalCount: 3, remainingCount },
+    });
+    vi.mocked(fetchEntity).mockResolvedValue({
+      ...container,
+      relatedEntities: [
+        { kind: "member", archetype: "person", items: [box("p1", 1)] },
+        { kind: "part", archetype: "container", items: [box("b1", 0), box("b2", 2)] },
+      ],
+    });
+    vi.mocked(fetchMediaForEntity).mockImplementation(async (id: string) =>
+      id === "b2" ? children : [],
+    );
+    const { container: root } = renderEntity();
+    await act(async () => {});
+    await act(async () => {});
+
+    expect(fetchMediaForEntity).toHaveBeenCalledWith("b2", expect.any(AbortSignal));
+    expect(root.querySelectorAll(".bg-primary")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Resume Second part" }));
+    const player = screen.getByRole("status", { name: "player" }).textContent ?? "";
+    const state = JSON.parse(player.slice(3));
+    expect(state.queue.map((item: { id: string }) => item.id)).toEqual(["c1", "c2", "c3"]);
   });
 
   it("has no primary action when nothing in the container can play", async () => {

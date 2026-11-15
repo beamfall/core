@@ -184,8 +184,11 @@ export function LayoutView({
   if (!layout && !manifest) {
     return <LoadFailed onRetry={() => void refresh()} />;
   }
+  // A detail Layout with nothing to show renders nothing: the Entity page
+  // around it already has its header, and the library onboarding empty state
+  // (first scan, migrate) does not belong inside an Entity (CORE-1786).
   if (!layout || !renderable.length) {
-    return <LibraryEmpty />;
+    return entityID ? null : <LibraryEmpty />;
   }
 
   function retrySections() {
@@ -207,7 +210,9 @@ export function LayoutView({
       {aggregateFailed ? (
         <LoadFailed onRetry={retrySections} />
       ) : aggregateEmpty ? (
-        <LibraryEmpty />
+        entityID ? null : (
+          <LibraryEmpty />
+        )
       ) : (
         renderable.map((section, index) => {
           if (section.kind === "filter-bar") {

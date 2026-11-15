@@ -966,6 +966,11 @@ type Store struct {
 	// test land a scan import in that exact window. Never set in production
 	// wiring.
 	managedImportStepHook func(step string)
+	// offlinePackSealHook, when non-nil, fires inside CreateOfflinePack after
+	// the items' Media were found and before the write transaction opens.
+	// Test-only, like convertStepHook: it lets a deterministic test purge the
+	// Media in that exact window. Never set in production wiring.
+	offlinePackSealHook func()
 	// entityIndexes holds the registered plugin-declared field index
 	// postures: kind → field → spec (RegisterEntityFieldIndexes). Guarded by
 	// mu like every other member.
@@ -1020,12 +1025,13 @@ type Store struct {
 	// registration never contends on s.mu). Lazily allocated.
 	importTokens  map[string]managedImportToken
 	importTokenMu sync.Mutex
-	// managedInflight holds the Library paths an ImportManagedFile has put on
-	// disk but not yet cataloged. The ordinary scan imports refuse such a path
-	// with ErrManagedAdmissionInFlight, so a scan cannot catalog a managed
-	// import ahead of its own admission. Guarded by managedInflightMu (never
+	// managedInflight counts the holds on each Library path an
+	// ImportManagedFile or ConvertManagedFile has put on disk but not yet
+	// cataloged. The ordinary scan imports refuse such a path with
+	// ErrManagedAdmissionInFlight, so a scan cannot catalog a managed import or
+	// conversion ahead of its own admission. Guarded by managedInflightMu (never
 	// s.mu); lazily allocated.
-	managedInflight   map[string]struct{}
+	managedInflight   map[string]int
 	managedInflightMu sync.Mutex
 }
 
@@ -2820,6 +2826,36 @@ func (s *Store) MarkMissingMediaFilesNotSeenSince(ctx context.Context, libraryID
 	return err
 }
 
+// MarkMediaFileMissing marks one live file of a Library missing. A scan calls
+// it for a catalogued file it now deliberately leaves out, so that file leaves
+// the catalog even when the missing-ratio guard holds back the end-of-scan
+// missing pass, and it never counts toward that guard (CORE-1833).
+func (s *Store) MarkMediaFileMissing(ctx context.Context, libraryID LibraryID, path string) error {
+	if libraryID == "" {
+		return errors.New("library ID is required")
+	}
+	if path == "" {
+		return errors.New("path is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+	if err != nil {
+		return err
+	}
+	_, err = plane.writer.ExecContext(ctx, `
+		UPDATE media_file
+		SET missing_at_ms = ?
+		WHERE missing_at_ms IS NULL
+		  AND path = ?
+		  AND media_id IN (SELECT id FROM media WHERE library_id = ?)
+	`, timeToMillis(time.Now().UTC()), path, libraryID)
+	return err
+}
+
 // MediaFingerprints returns the content-identity values for one Media item's
 // primary file (scraper variable substitution, ADR-0027 D2 §7). This is a
 // server-internal read like MediaLibrary — visibility gating belongs to the
@@ -2892,6 +2928,27 @@ func (s *Store) ImportMediaFile(ctx context.Context, imported ImportMediaFile) (
 	if err := s.guardLocked(); err != nil {
 		return Media{}, MediaFile{}, err
 	}
+	return s.importMediaFileLocked(ctx, imported)
+}
+
+// admitManagedMediaFileLocked is ImportManagedFile's catalog admission: the
+// same authority and validation checks as ImportMediaFile, for a caller that
+// already holds s.mu (read). sync.RWMutex read locks are not reentrant, so the
+// admission must not take s.mu again (CORE-1832).
+func (s *Store) admitManagedMediaFileLocked(ctx context.Context, imported ImportMediaFile) (Media, MediaFile, error) {
+	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
+		return Media{}, MediaFile{}, err
+	}
+	if err := validateImportMediaFile(imported); err != nil {
+		return Media{}, MediaFile{}, err
+	}
+	return s.importMediaFileLocked(ctx, imported)
+}
+
+// importMediaFileLocked writes one imported file to its Library's catalog
+// plane and emits the realtime event. Caller holds s.mu (read) and has checked
+// authority, validation and the managed-admission reservation.
+func (s *Store) importMediaFileLocked(ctx context.Context, imported ImportMediaFile) (Media, MediaFile, error) {
 	now := time.Now().UTC()
 	plane, err := s.catalogPlaneForLibraryLocked(ctx, imported.LibraryID)
 	if err != nil {

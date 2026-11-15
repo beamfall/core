@@ -564,6 +564,8 @@ type OfflinePackService interface {
 	RetryBuild(ctx context.Context, scope auth.Scope, id store.OfflinePackID) (store.OfflinePackBuild, []byte, error)
 	FailBuild(ctx context.Context, id store.OfflinePackID, reason string) error
 	DismissBuild(ctx context.Context, id store.OfflinePackID, profileID store.ProfileID) error
+	// BuildJobCanceled fails the build an operator-cancelled job was running.
+	BuildJobCanceled(ctx context.Context, payload []byte) error
 }
 
 // SetOfflinePacks wires the Offline Pack substrate (ADR-0098 area 6).
@@ -1677,11 +1679,29 @@ func (h *Handler) jobCancel(ctx context.Context, scope auth.Scope, req request) 
 	if id == "" {
 		return JobInfo{}, clientError(store.ErrJobNotFound.Error())
 	}
-	if err := h.store.CancelJob(ctx, store.JobID(id), time.Now().UTC()); err != nil {
+	cancelled, err := h.store.Job(ctx, store.JobID(id))
+	if err != nil {
+		if errors.Is(err, store.ErrJobNotFound) {
+			return JobInfo{}, clientError(err.Error())
+		}
+		return JobInfo{}, err
+	}
+	prior, err := h.store.CancelJobWithPrior(ctx, store.JobID(id), time.Now().UTC())
+	if err != nil {
 		if errors.Is(err, store.ErrJobTerminal) || errors.Is(err, store.ErrJobNotFound) {
 			return JobInfo{}, clientError(err.Error())
 		}
 		return JobInfo{}, err
+	}
+	// A cancelled offline pack build job never finishes its build, so put
+	// the build row back to failed (retryable, dismissable) instead of
+	// leaving it building with no worker (CORE-1866). A job a worker was
+	// running is left to that worker: it fails the build once it has stopped
+	// writing the pack folder, so a retry cannot overlap it.
+	if cancelled.Kind == offlinepack.BuildJobKind && prior != store.JobStatusRunning && h.offlinePacks != nil {
+		if err := h.offlinePacks.BuildJobCanceled(context.WithoutCancel(ctx), cancelled.Payload); err != nil {
+			return JobInfo{}, err
+		}
 	}
 	job, err := h.store.Job(ctx, store.JobID(id))
 	if err != nil {

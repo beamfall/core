@@ -261,6 +261,17 @@ async function neutralizeVolatileText(page) {
 }
 
 const DRIVERS = {
+  // React Viewer (CORE-1785): pick the seed's Default profile, open the home
+  // shelf's first Media card, and wait for the detail lockup and its backdrop.
+  async mediaDetail(page) {
+    const profile = page.getByRole("button", { name: /^Default\b/ });
+    await profile.or(page.locator(".bf-card-more").first()).first().waitFor({ timeout: 8000 });
+    if (await profile.count()) await profile.click();
+    await page.getByRole("button", { name: "Sample Media", exact: true }).first().click();
+    await waitVisible(page, ".bf-detail-stage .bf-detail-play");
+    await page.waitForSelector(".bf-detail-backdrop img[data-loaded]", { timeout: 8000 }).catch(() => {});
+    await settle(page);
+  },
   async enroll(page) {
     await waitVisible(page, "#enroll-view");
     await settle(page);

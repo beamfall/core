@@ -39,6 +39,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"BulkEditApply":                         {},
 	"BulkEditPreview":                       {},
 	"CancelJob":                             {},
+	"CancelJobWithPrior":                    {},
 	"CapabilityStates":                      {},
 	"ChannelByID":                           {},
 	"Channels":                              {},

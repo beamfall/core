@@ -31,12 +31,23 @@ func (s *scanWalkState) completeFirst() error {
 		MediaID:            completed.mediaID,
 		ContentFingerprint: completed.fingerprint,
 	})
-	s.result.LastPath = completed.path
+	// A file completed while parts are still pending (an image between
+	// numbered parts) must not move the resume checkpoint onto or past the
+	// first pending part: a resume from there would re-walk only the later
+	// parts and catalogue them as a group of their own (CORE-1837).
+	held := len(s.pendingParts) != 0 && compareWalkOrder(s.req.Root, completed.path, s.pendingParts[0].imported.Path) >= 0
+	if !held {
+		s.result.LastPath = completed.path
+	}
 	if !s.result.seenMedia[completed.mediaID] {
 		s.result.seenMedia[completed.mediaID] = true
 		s.result.MediaImported++
 	}
-	if s.progress != nil {
+	// A held completion reports no progress: each report counts toward the
+	// job's batch, and a batch that yields with the checkpoint held would
+	// resume onto the same files and yield again, forever, once a pending
+	// group is followed by a batch's worth of images.
+	if s.progress != nil && !held {
 		return s.progress(s.result.checkpoint("scanning"), store.JobProgress{
 			Current: int64(s.result.FilesSeen),
 			Total:   int64(s.result.totalFiles),

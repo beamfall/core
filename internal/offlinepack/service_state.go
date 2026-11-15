@@ -308,10 +308,10 @@ func (s *Service) catalogPlaintextSize(libraryID store.LibraryID, file store.Med
 }
 
 // encryptedPlaintextSize reads an encrypted item's plaintext length from its
-// decrypt reader when the catalog carries no size. The store's Media file
-// reads do not return size_bytes, and stat would report the ciphertext
-// length. hashPackSource then decrypts the whole stream, authenticating every
-// chunk, and refuses a stream that does not end at this length.
+// decrypt reader when the catalog carries no size (a file scanned before
+// size_bytes was recorded); stat would report the ciphertext length.
+// hashPackSource then decrypts the whole stream, authenticating every chunk,
+// and refuses a stream that does not end at this length.
 func (s *Service) encryptedPlaintextSize(libraryID store.LibraryID, path string) (uint64, error) {
 	reader, err := s.openContent(libraryID, path)
 	if err != nil {

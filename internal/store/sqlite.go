@@ -1907,7 +1907,7 @@ func (s *Store) mediaFilesForMediaSQL(ctx context.Context, id MediaID) ([]MediaF
 		return nil, err
 	}
 	rows, err := plane.reader.QueryContext(ctx, `
-		SELECT media_id, path, content_fingerprint, version_label, part_ordinal, oshash, phash, last_seen_at_ms
+		SELECT media_id, path, content_fingerprint, version_label, part_ordinal, oshash, phash, size_bytes, last_seen_at_ms
 		FROM media_file
 		WHERE media_id = ? AND missing_at_ms IS NULL
 		ORDER BY version_label, part_ordinal
@@ -1920,7 +1920,7 @@ func (s *Store) mediaFilesForMediaSQL(ctx context.Context, id MediaID) ([]MediaF
 	for rows.Next() {
 		var file MediaFile
 		var lastSeen int64
-		if err := rows.Scan(&file.MediaID, &file.Path, &file.ContentFingerprint, &file.VersionLabel, &file.PartOrdinal, &file.OSHash, &file.PHash, &lastSeen); err != nil {
+		if err := rows.Scan(&file.MediaID, &file.Path, &file.ContentFingerprint, &file.VersionLabel, &file.PartOrdinal, &file.OSHash, &file.PHash, &file.SizeBytes, &lastSeen); err != nil {
 			return nil, err
 		}
 		file.LastSeenAt = millisToTime(lastSeen)

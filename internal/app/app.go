@@ -1236,7 +1236,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	}
 	offlinePackAuthority.SetIssueEnabled(!cfg.Role.Attached())
 	offlinePacks := offlinepack.NewService(st, offlinePackAuthority, readClock)
-	offlinePacks.SetPackRoot(filepath.Join(cfg.DataDir, "offline-packs"))
+	offlinePacks.SetPackRoot(filepath.Join(cfg.DataDir, store.OfflinePackDirName))
 	offlinePacks.SetDeviceKeyAttestationVerifier(hooks.OfflinePackAttestationVerifier)
 	// A Sealed Library serves NOTHING (ADR-0098 area 2): stamp the same Sealed
 	// predicate used by the byte routes so a Sealed Library's Media is never
@@ -1262,9 +1262,13 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	offlinePacks.SetTranscoder(offlinePackTranscoder(ffmpegRunner))
 	registerOfflinePackResolvers(offlinePacks, st, executablePlugins, hooks.OfflinePackResolvers)
 	jobRegistry.Register(offlinepack.BuildJobKind, func(ctx context.Context, job store.Job) (jobs.Result, error) {
-		_, err := offlinePacks.HandleBuildJob(ctx, job.Payload)
-		return jobs.Result{}, err
+		return jobs.Result{}, offlinePacks.RunBuildJob(ctx, st, job)
 	})
+	if failed, err := offlinePacks.ReconcileBuilds(ctx, st); err != nil {
+		logger.WarnContext(ctx, "offline pack build reconciliation failed", "error", err)
+	} else if failed > 0 {
+		logger.InfoContext(ctx, "offline pack builds without a live job marked failed", "count", failed)
+	}
 	jobRegistry.Register(offlinepack.ExpireJobKind, func(ctx context.Context, job store.Job) (jobs.Result, error) {
 		_, err := offlinePacks.HandleExpireJob(ctx)
 		return jobs.Result{}, err

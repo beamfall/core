@@ -428,8 +428,9 @@ func (s *Store) ImportManagedFile(ctx context.Context, libraryID LibraryID, impo
 	// ResolveManagedMediaFile/ConvertManagedFile accept it. On failure, undo the
 	// on-disk write so no un-cataloged orphan is left — unless another
 	// admission has cataloged the file, which the undo must never delete.
+	// s.mu is already held (read), so the admission runs the locked form.
 	stem := strings.TrimSuffix(base, filepath.Ext(base))
-	_, _, err = s.ImportMediaFile(ctx, ImportMediaFile{
+	_, _, err = s.admitManagedMediaFileLocked(ctx, ImportMediaFile{
 		LibraryID:          libraryID,
 		Path:               target,
 		Title:              stem,
@@ -447,7 +448,8 @@ func (s *Store) ImportManagedFile(ctx context.Context, libraryID LibraryID, impo
 }
 
 // ErrManagedAdmissionInFlight refuses an ordinary (scan) import of a path that
-// an ImportManagedFile has put on disk but not yet cataloged. The managed
+// an ImportManagedFile or ConvertManagedFile has put on disk but not yet
+// cataloged. The managed
 // admission catalogs the file itself, so the scan skips the path and loses
 // nothing; a later scan sees it as an ordinary cataloged file.
 var ErrManagedAdmissionInFlight = errors.New("managed import of this path is in flight")
@@ -458,18 +460,38 @@ var ErrManagedAdmissionInFlight = errors.New("managed import of this path is in 
 func (s *Store) reserveManagedAdmission(target string) (func(), error) {
 	s.managedInflightMu.Lock()
 	defer s.managedInflightMu.Unlock()
-	if s.managedInflight == nil {
-		s.managedInflight = map[string]struct{}{}
-	}
-	if _, busy := s.managedInflight[target]; busy {
+	if s.managedInflight[target] > 0 {
 		return nil, ValidationError("import target already exists")
 	}
-	s.managedInflight[target] = struct{}{}
+	return s.holdManagedAdmissionLocked(target), nil
+}
+
+// holdManagedAdmission marks target as an in-flight managed admission until
+// the returned release runs, without refusing a path another admission already
+// holds. ConvertManagedFile uses it: its NO-REPLACE admission and succession
+// journal already settle a collision with another generation of the same job,
+// so the hold only has to keep scans out of the window (CORE-1831).
+func (s *Store) holdManagedAdmission(target string) func() {
+	s.managedInflightMu.Lock()
+	defer s.managedInflightMu.Unlock()
+	return s.holdManagedAdmissionLocked(target)
+}
+
+// holdManagedAdmissionLocked counts one hold on target. Caller holds
+// managedInflightMu.
+func (s *Store) holdManagedAdmissionLocked(target string) func() {
+	if s.managedInflight == nil {
+		s.managedInflight = map[string]int{}
+	}
+	s.managedInflight[target]++
 	return func() {
 		s.managedInflightMu.Lock()
 		defer s.managedInflightMu.Unlock()
-		delete(s.managedInflight, target)
-	}, nil
+		s.managedInflight[target]--
+		if s.managedInflight[target] <= 0 {
+			delete(s.managedInflight, target)
+		}
+	}
 }
 
 // refuseManagedAdmissionInFlight returns ErrManagedAdmissionInFlight when path
@@ -480,7 +502,7 @@ func (s *Store) reserveManagedAdmission(target string) (func(), error) {
 func (s *Store) refuseManagedAdmissionInFlight(path string) error {
 	s.managedInflightMu.Lock()
 	defer s.managedInflightMu.Unlock()
-	if _, busy := s.managedInflight[path]; busy {
+	if s.managedInflight[path] > 0 {
 		return fmt.Errorf("%w: %s", ErrManagedAdmissionInFlight, path)
 	}
 	return nil
@@ -1392,13 +1414,19 @@ func newManagedTrashID() (string, error) {
 	return hex.EncodeToString(raw[:]), nil
 }
 
+// updateManagedMediaPathsTx repoints the media_file rows a managed move or
+// rename relocated. It also clears their stored mtime: the move keeps bytes,
+// size and mtime, so the next scan would otherwise take the unchanged-file fast
+// path and never re-derive metadata that depends on the path (CORE-1838). The
+// cleared mtime sends each moved file through one full scan, which keeps its
+// identity by content fingerprint and restores the mtime.
 func updateManagedMediaPathsTx(ctx context.Context, tx *sql.Tx, oldPath, newPath, kind string, foldCase bool) error {
 	pairs, err := managedMediaPathPairs(ctx, tx, oldPath, newPath, kind, foldCase)
 	if err != nil {
 		return err
 	}
 	for old, next := range pairs {
-		if _, err := tx.ExecContext(ctx, `UPDATE media_file SET path = ? WHERE path = ?`, next, old); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE media_file SET path = ?, mtime_ms = 0 WHERE path = ?`, next, old); err != nil {
 			return err
 		}
 	}

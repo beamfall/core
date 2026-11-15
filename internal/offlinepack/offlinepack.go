@@ -138,6 +138,7 @@ type Store interface {
 	TrackOfflinePackBuild(ctx context.Context, build store.OfflinePackBuild, now time.Time) (store.OfflinePackBuild, error)
 	SetOfflinePackBuildProgress(ctx context.Context, id store.OfflinePackID, progress float64, now time.Time) error
 	FailOfflinePackBuild(ctx context.Context, id store.OfflinePackID, reason string, now time.Time) error
+	BuildingOfflinePackIDs(ctx context.Context) ([]store.OfflinePackID, error)
 	RestartOfflinePackBuild(ctx context.Context, id store.OfflinePackID, profileID store.ProfileID, payload []byte, now time.Time) (bool, error)
 	DeleteFailedOfflinePackBuild(ctx context.Context, id store.OfflinePackID, profileID store.ProfileID) error
 	OfflinePackBuildByID(ctx context.Context, id store.OfflinePackID, profileID store.ProfileID) (store.OfflinePackBuild, error)

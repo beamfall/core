@@ -33,10 +33,10 @@ func (testHydrationMapper) MapHydration(tags map[string]string, _ string) Hydrat
 		return HydrationPlan{}
 	}
 	order := 1002
-	artist := HydrationEntity{Kind: "artist", Title: "Radiohead"}
+	artist := HydrationEntity{Kind: "artist", Title: "Artist Quill"}
 	album := HydrationEntity{
 		Kind:  "album",
-		Title: "OK Computer",
+		Title: "Lantern Field",
 		Fields: []store.EntityField{
 			{Name: "release-date", Type: store.EntityFieldDate},
 			{Name: "musicbrainz-release-id", Type: store.EntityFieldText, Text: "rel-mbid"},
@@ -45,14 +45,14 @@ func (testHydrationMapper) MapHydration(tags map[string]string, _ string) Hydrat
 	return HydrationPlan{
 		MarkComplete: true,
 		MediaFields: []store.MediaField{
-			{Name: "title", Type: store.EntityFieldText, Text: "Paranoid Android"},
-			{Name: "album", Type: store.EntityFieldText, Text: "OK Computer"},
+			{Name: "title", Type: store.EntityFieldText, Text: "Copper Weather"},
+			{Name: "album", Type: store.EntityFieldText, Text: "Lantern Field"},
 			{Name: "track-number", Type: store.EntityFieldNumber, Number: 2},
 			{Name: "disc-number", Type: store.EntityFieldNumber, Number: 1},
 			{Name: "musicbrainz-recording-id", Type: store.EntityFieldText, Text: "rec-mbid"},
 		},
 		Relations: []HydrationRelation{
-			{From: artist, Name: "appears-on", Attributes: map[string]string{"credited-as": "Radiohead"}},
+			{From: artist, Name: "appears-on", Attributes: map[string]string{"credited-as": "Artist Quill"}},
 			{From: album, Name: "album-track", Cardinality: "one", SortOrder: &order},
 			{From: album, Name: "album-artist", ToEntity: &artist},
 			{From: HydrationEntity{Kind: "genre", Title: "Alternative Rock"}, Name: "classifies"},
@@ -273,9 +273,9 @@ func TestHydrateMetadataWritesDeclaredModel(t *testing.T) {
 	st := newFakeHydrationStore()
 	adapter := newTestAdapter(st)
 	tags := map[string]string{
-		"TITLE": "Paranoid Android", "ALBUM": "OK Computer",
-		"TRACK": "2/12", "DISC": "1", "DATE": "1997-05-21",
-		"ARTIST": "Radiohead", "ALBUMARTIST": "Radiohead", "GENRE": "Alternative Rock",
+		"TITLE": "Copper Weather", "ALBUM": "Lantern Field",
+		"TRACK": "2/12", "DISC": "1", "DATE": "2001-02-03",
+		"ARTIST": "Artist Quill", "ALBUMARTIST": "Artist Quill", "GENRE": "Alternative Rock",
 		"MUSICBRAINZ_TRACKID": "rec-mbid", "MUSICBRAINZ_ALBUMID": "rel-mbid",
 	}
 	if err := hydrateTestMetadata(adapter, "/x.flac", tags); err != nil {
@@ -283,7 +283,7 @@ func TestHydrateMetadataWritesDeclaredModel(t *testing.T) {
 	}
 
 	// Declared Media fields written.
-	for name, want := range map[string]string{"album": "OK Computer", "musicbrainz-recording-id": "rec-mbid"} {
+	for name, want := range map[string]string{"album": "Lantern Field", "musicbrainz-recording-id": "rec-mbid"} {
 		if got, ok := st.field(testMedia, name); !ok || got.Text != want {
 			t.Errorf("media field %q = (%q, %v), want %q", name, got.Text, ok, want)
 		}
@@ -296,16 +296,16 @@ func TestHydrateMetadataWritesDeclaredModel(t *testing.T) {
 	}
 
 	// artist/appears-on → Media, with credited-as attribute.
-	artistID := identify.EntityIDForName(testLib, "artist", "Radiohead")
+	artistID := identify.EntityIDForName(testLib, "artist", "Artist Quill")
 	if _, ok := st.entities[artistID]; !ok {
-		t.Fatal("Radiohead artist entity not upserted")
+		t.Fatal("Artist Quill artist entity not upserted")
 	}
-	if rel, ok := st.relation("appears-on", testMedia); !ok || rel.FromEntityID != artistID || rel.Attributes["credited-as"] != "Radiohead" {
+	if rel, ok := st.relation("appears-on", testMedia); !ok || rel.FromEntityID != artistID || rel.Attributes["credited-as"] != "Artist Quill" {
 		t.Errorf("appears-on relation = %+v", rel)
 	}
 
 	// album/album-track → Media, one-cardinality, sort order (disc, track).
-	albumID := identify.EntityIDForName(testLib, "album", "OK Computer")
+	albumID := identify.EntityIDForName(testLib, "album", "Lantern Field")
 	rel, ok := st.relation("album-track", testMedia)
 	if !ok || rel.FromEntityID != albumID || rel.Cardinality != "one" {
 		t.Fatalf("album-track relation = %+v", rel)
@@ -726,9 +726,9 @@ func hydrateScopedTrack(t *testing.T, st *fakeHydrationStore, media store.MediaI
 // scope is one Entity however many Media carry it.
 func TestHydrationSeparatesSameTitledEntitiesByScope(t *testing.T) {
 	st := newFakeHydrationStore()
-	first := hydrateScopedTrack(t, st, "media-1", "Greatest Hits", "First Band")
-	second := hydrateScopedTrack(t, st, "media-2", "Greatest Hits", "Second Band")
-	again := hydrateScopedTrack(t, st, "media-3", "Greatest Hits", "First Band")
+	first := hydrateScopedTrack(t, st, "media-1", "Shared Collection", "First Band")
+	second := hydrateScopedTrack(t, st, "media-2", "Shared Collection", "Second Band")
+	again := hydrateScopedTrack(t, st, "media-3", "Shared Collection", "First Band")
 	if first == second {
 		t.Fatalf("two scopes share one entity %s", first)
 	}
@@ -736,7 +736,7 @@ func TestHydrationSeparatesSameTitledEntitiesByScope(t *testing.T) {
 		t.Fatalf("same scope hydrated to %s then %s", first, again)
 	}
 	for id, artist := range map[store.EntityID]string{first: "First Band", second: "Second Band"} {
-		if got := st.entities[id].Title; got != "Greatest Hits" {
+		if got := st.entities[id].Title; got != "Shared Collection" {
 			t.Errorf("entity %s title = %q, want the plain title", id, got)
 		}
 		targets, _, _ := st.EntityRelationTargets(context.Background(), testLib, id, "album-artist")
@@ -756,7 +756,7 @@ func TestHydrationSeparatesSameTitledEntitiesByScope(t *testing.T) {
 // Entity written under the title-only id keeps that id (so nothing is orphaned
 // or duplicated on rescan) when it records no scope yet or only this one.
 func TestHydrationAdoptsUnscopedEntityForItsOnlyScope(t *testing.T) {
-	legacy := identify.EntityIDForName(testLib, "album", "Greatest Hits")
+	legacy := identify.EntityIDForName(testLib, "album", "Shared Collection")
 	artist := identify.EntityIDForName(testLib, "artist", "First Band")
 	for name, relations := range map[string][]store.EntityRelation{
 		"no scope recorded":   nil,
@@ -764,12 +764,12 @@ func TestHydrationAdoptsUnscopedEntityForItsOnlyScope(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			st := newFakeHydrationStore()
-			st.entities[legacy] = store.Entity{ID: legacy, LibraryID: testLib, Kind: "album", Title: "Greatest Hits"}
+			st.entities[legacy] = store.Entity{ID: legacy, LibraryID: testLib, Kind: "album", Title: "Shared Collection"}
 			st.relations = relations
-			if got := hydrateScopedTrack(t, st, "media-1", "Greatest Hits", "First Band"); got != legacy {
+			if got := hydrateScopedTrack(t, st, "media-1", "Shared Collection", "First Band"); got != legacy {
 				t.Fatalf("hydrated to %s, want the existing entity %s", got, legacy)
 			}
-			if got := hydrateScopedTrack(t, st, "media-2", "Greatest Hits", "First Band"); got != legacy {
+			if got := hydrateScopedTrack(t, st, "media-2", "Shared Collection", "First Band"); got != legacy {
 				t.Fatalf("second track hydrated to %s, want the existing entity %s", got, legacy)
 			}
 			if len(st.entities) != 2 {
@@ -784,16 +784,16 @@ func TestHydrationAdoptsUnscopedEntityForItsOnlyScope(t *testing.T) {
 // scope being hydrated gets its own Entity and the existing one is untouched.
 func TestHydrationKeepsUnscopedEntityOfAnotherScope(t *testing.T) {
 	st := newFakeHydrationStore()
-	legacy := identify.EntityIDForName(testLib, "album", "Greatest Hits")
+	legacy := identify.EntityIDForName(testLib, "album", "Shared Collection")
 	other := identify.EntityIDForName(testLib, "artist", "First Band")
-	st.entities[legacy] = store.Entity{ID: legacy, LibraryID: testLib, Kind: "album", Title: "Greatest Hits"}
+	st.entities[legacy] = store.Entity{ID: legacy, LibraryID: testLib, Kind: "album", Title: "Shared Collection"}
 	st.relations = []store.EntityRelation{{FromEntityID: legacy, Name: "album-artist", ToEntityID: other}}
 
-	got := hydrateScopedTrack(t, st, "media-1", "Greatest Hits", "Second Band")
+	got := hydrateScopedTrack(t, st, "media-1", "Shared Collection", "Second Band")
 	if got == legacy {
 		t.Fatal("a second scope adopted another scope's entity")
 	}
-	if want := identify.EntityIDForScopedName(testLib, "album", "Second Band", "Greatest Hits"); got != want {
+	if want := identify.EntityIDForScopedName(testLib, "album", "Second Band", "Shared Collection"); got != want {
 		t.Fatalf("hydrated to %s, want the scoped id %s", got, want)
 	}
 	targets, _, _ := st.EntityRelationTargets(context.Background(), testLib, legacy, "album-artist")
@@ -833,8 +833,8 @@ func TestHydrationSplitsMergedEntityAfterScopeRepair(t *testing.T) {
 	tracks := map[store.MediaID]string{track("one"): "First Band", track("two"): "Second Band"}
 
 	// Before scoping: both tracks land on the title-only Entity.
-	legacy := identify.EntityIDForName(lib.ID, "album", "Greatest Hits")
-	if err := st.UpsertEntity(ctx, store.Entity{ID: legacy, LibraryID: lib.ID, Kind: "album", Title: "Greatest Hits"}); err != nil {
+	legacy := identify.EntityIDForName(lib.ID, "album", "Shared Collection")
+	if err := st.UpsertEntity(ctx, store.Entity{ID: legacy, LibraryID: lib.ID, Kind: "album", Title: "Shared Collection"}); err != nil {
 		t.Fatal(err)
 	}
 	for media, artist := range tracks {
@@ -866,7 +866,7 @@ func TestHydrationSplitsMergedEntityAfterScopeRepair(t *testing.T) {
 	for media := range stale {
 		err := adapter.HydrateMetadata(ctx, scanpkg.MetadataHydrationInput{
 			MediaID: media, LibraryID: lib.ID, Class: store.MediaClassAudio, Path: "/x.bin",
-			Metadata: map[string]string{"album": "Greatest Hits", "album-artist": tracks[media]},
+			Metadata: map[string]string{"album": "Shared Collection", "album-artist": tracks[media]},
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -934,8 +934,8 @@ func TestScopeRepairQueuesBackfillScan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacy := identify.EntityIDForName(lib.ID, "album", "Greatest Hits")
-	if err := st.UpsertEntity(ctx, store.Entity{ID: legacy, LibraryID: lib.ID, Kind: "album", Title: "Greatest Hits"}); err != nil {
+	legacy := identify.EntityIDForName(lib.ID, "album", "Shared Collection")
+	if err := st.UpsertEntity(ctx, store.Entity{ID: legacy, LibraryID: lib.ID, Kind: "album", Title: "Shared Collection"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: legacy, Name: "album-track", ToMediaID: media.ID, Cardinality: "one"}); err != nil {
@@ -1065,8 +1065,8 @@ func (r *rendezvousHydrationStore) EntityRelationTargets(ctx context.Context, li
 // every track's album records only that track's album artist.
 func TestConcurrentHydrationAdoptsTitleOnlyEntityOnce(t *testing.T) {
 	inner := newFakeHydrationStore()
-	legacy := identify.EntityIDForName(testLib, "album", "Greatest Hits")
-	inner.entities[legacy] = store.Entity{ID: legacy, LibraryID: testLib, Kind: "album", Title: "Greatest Hits"}
+	legacy := identify.EntityIDForName(testLib, "album", "Shared Collection")
+	inner.entities[legacy] = store.Entity{ID: legacy, LibraryID: testLib, Kind: "album", Title: "Shared Collection"}
 	st := &rendezvousHydrationStore{inner: inner, watched: legacy, both: make(chan struct{})}
 	adapter := newTestAdapterWithMapper(st, scopedAlbumMapper{})
 	tracks := map[store.MediaID]string{"media-1": "First Band", "media-2": "Second Band"}
@@ -1079,7 +1079,7 @@ func TestConcurrentHydrationAdoptsTitleOnlyEntityOnce(t *testing.T) {
 			defer wg.Done()
 			errs <- adapter.HydrateMetadata(context.Background(), scanpkg.MetadataHydrationInput{
 				MediaID: media, LibraryID: testLib, Class: store.MediaClassAudio, Path: "/x.bin",
-				Metadata: map[string]string{"album": "Greatest Hits", "album-artist": artist},
+				Metadata: map[string]string{"album": "Shared Collection", "album-artist": artist},
 			})
 		}()
 	}
@@ -1552,5 +1552,56 @@ func TestScanRehydratesMovedFileIntoDiscFolder(t *testing.T) {
 	r.scan()
 	if r.counted.writes != writes || r.number("disc-number") != 2 {
 		t.Fatalf("fact-preserving move: %d writes, disc-number %v; want no write and disc 2", r.counted.writes-writes, r.number("disc-number"))
+	}
+}
+
+// CORE-1838: a managed move keeps the file's bytes, size and mtime and
+// repoints the stored path, so without invalidation the next scan took the
+// unchanged-file fast path and never re-derived the disc number.
+func TestScanRehydratesManagedMoveBetweenDiscFolders(t *testing.T) {
+	ctx := context.Background()
+	r := newRehydrationScan(t)
+	registry, err := plugin.NewRegistry([]plugin.Bundle{rehydrationBundle()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.adapter = newHydrationAdapters(registry, r.counted, map[string]HydrationMapper{testHydrationPluginID: discFolderTestMapper{}})[testHydrationPluginID].(*hydrationAdapter)
+	if r.root, err = filepath.EvalSymlinks(r.root); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.st.SetLibraryRoots(ctx, r.library, []string{r.root}); err != nil {
+		t.Fatal(err)
+	}
+	r.path = filepath.Join(r.root, "Set", "CD1", "01 track.flac")
+	discTwo := filepath.Join(r.root, "Set", "CD2")
+	for _, dir := range []string{filepath.Dir(r.path), discTwo} {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r.write("untagged audio bytes padding padding", 3*time.Hour, map[string]string{"title": "One"})
+	r.scan()
+	if got := r.number("disc-number"); got != 1 {
+		t.Fatalf("first scan disc-number = %v, want 1", got)
+	}
+	first := r.mediaID
+
+	moved, err := r.st.MoveManagedPath(ctx, r.library, r.path, discTwo, store.LibraryFilter{AllLibraries: true})
+	if err != nil {
+		t.Fatalf("MoveManagedPath: %v", err)
+	}
+	r.path = moved.Path
+	r.scan()
+	if r.mediaID != first {
+		t.Fatalf("moved file Media = %q, want the same Media %q", r.mediaID, first)
+	}
+	if got := r.number("disc-number"); got != 2 {
+		t.Fatalf("managed-moved file disc-number = %v, want 2 from the CD2 folder", got)
+	}
+
+	writes := r.counted.writes
+	r.scan()
+	if r.counted.writes != writes {
+		t.Fatalf("managed-moved file re-hydrated again with nothing changed: %d writes, want 0", r.counted.writes-writes)
 	}
 }

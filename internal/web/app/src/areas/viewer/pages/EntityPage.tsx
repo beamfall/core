@@ -25,7 +25,7 @@ import { MediaItemCard } from "../components/MediaItemCard";
 import { NotAvailable } from "../components/NotAvailable";
 import type { SeeAllTarget } from "../components/SectionView";
 import { ViewerActions } from "../components/ViewerActions";
-import { nextUpChild } from "../lib/containerChildren";
+import { nextUpChild, nextUpChildContainer } from "../lib/containerChildren";
 import { readEntityPreview } from "../lib/entityPreview";
 import { seeAllTargetFor } from "../lib/seeall";
 import { viewerFacingFields } from "../lib/viewerFields";
@@ -79,8 +79,9 @@ export function EntityPage() {
     () => readViewerCache<SourceItem[]>(identity, entityMediaCacheKey(entityId)) ?? null,
   );
 
-  const fallbackQueue = useMemo(() => (fallback ? playQueueOf(fallback) : undefined), [fallback]);
-  const nextUp = useMemo(() => (fallback ? nextUpChild(fallback) : null), [fallback]);
+  // Media of the next-up child container, read only when this Entity has no
+  // playable Media of its own (a container of containers).
+  const [childMedia, setChildMedia] = useState<{ id: string; items: SourceItem[] } | null>(null);
 
   const navPreview = readEntityPreview(location.state, identity, entityId);
   const previewTitle = navPreview?.title ?? findCachedSectionItem(identity, entityId)?.title ?? "";
@@ -94,6 +95,27 @@ export function EntityPage() {
   // when no Kind could ever match one — that request does not wait on fetchEntity.
   const needsFallback =
     !notFound && !detailLayout && (!!kindHint || !layouts.some((l) => l.role === "detail"));
+  // The primary action reads the Entity's own Media whether or not a detail
+  // Layout renders them (CORE-1786: one accent action on every container).
+  const needsDirectMedia = !notFound;
+
+  const directNext = useMemo(() => (fallback ? nextUpChild(fallback) : null), [fallback]);
+  // No playable Media of its own: play on through the next-up child container.
+  const childContainer = useMemo(
+    () => (fallback && !directNext ? nextUpChildContainer(entity?.relatedEntities) : null),
+    [fallback, directNext, entity],
+  );
+  const childItems =
+    childContainer && childMedia?.id === childContainer.id ? childMedia.items : null;
+  const queueSource = directNext ? fallback : childItems;
+  const fallbackQueue = useMemo(
+    () => (queueSource ? playQueueOf(queueSource) : undefined),
+    [queueSource],
+  );
+  const nextUp = useMemo(
+    () => directNext ?? (childItems ? nextUpChild(childItems) : null),
+    [directNext, childItems],
+  );
 
   // The Entity read carries related-Entity engagement, so it reloads with it.
   const engagementEpoch = useEngagementEpoch();
@@ -136,10 +158,11 @@ export function EntityPage() {
     };
   }, [identity, entityId, engagementEpoch]);
 
-  // No detail Layout for this Kind: load the hand-rolled related-Media list,
-  // again whenever watched, watchlist or rating state changes under it.
+  // The Entity's own Media: the hand-rolled list when no detail Layout renders
+  // them, and the primary action's next-up child either way. Reloads whenever
+  // watched, watchlist or rating state changes under it.
   useEffect(() => {
-    if (!entityId || !needsFallback) return;
+    if (!entityId || !needsDirectMedia) return;
     let alive = true;
     const controller = new AbortController();
     const key = entityMediaCacheKey(entityId);
@@ -161,7 +184,27 @@ export function EntityPage() {
       alive = false;
       controller.abort();
     };
-  }, [identity, entityId, needsFallback, engagementEpoch]);
+  }, [identity, entityId, needsDirectMedia, engagementEpoch]);
+
+  const childContainerID = childContainer?.id ?? "";
+  useEffect(() => {
+    if (!childContainerID) return;
+    let alive = true;
+    const controller = new AbortController();
+    fetchMediaForEntity(childContainerID, controller.signal)
+      .then((items) => {
+        if (alive) setChildMedia({ id: childContainerID, items });
+      })
+      .catch((err: unknown) => {
+        if (!alive) return;
+        if (isAuthRejection(err)) clearViewerCache();
+        setChildMedia({ id: childContainerID, items: [] });
+      });
+    return () => {
+      alive = false;
+      controller.abort();
+    };
+  }, [childContainerID, engagementEpoch]);
 
   // Plays or resumes the next-up child with the container's order as the queue.
   function playNext() {
@@ -278,6 +321,7 @@ export function EntityPage() {
               navigationID={`entity:${entityId || ""}`}
             />
           ) : (
+            needsFallback &&
             fallback && (
               <EntityMediaBrowse
                 entity={entity}

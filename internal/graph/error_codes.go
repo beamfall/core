@@ -216,6 +216,7 @@ var clientErrorCodes = map[string]ErrorCode{
 	"no runnable job":                                   ErrorCodeConflict,
 	"offline pack is still building":                    ErrorCodeConflict,
 	"another offline pack build for the same selection is running; retry when it finishes": ErrorCodeConflict,
+	"the previous offline pack build is still finishing; retry shortly":                    ErrorCodeConflict,
 	"queue has items; pass confirmReplace to replace it":                                   ErrorCodeConflict,
 	"session has no active playback":                                                       ErrorCodeConflict,
 
