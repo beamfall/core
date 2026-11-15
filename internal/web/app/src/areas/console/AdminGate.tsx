@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { MIN_ADMIN_PASSWORD_LENGTH } from "@/areas/setup/orchestrate";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -69,6 +70,7 @@ export function AdminGate({
   const [needsFirstPassword, setNeedsFirstPassword] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState("");
   const [mismatch, setMismatch] = useState(false);
+  const [tooShort, setTooShort] = useState(false);
   // The Profile bound and the expiry captured at unlock time, so a later
   // Profile switch or a lapsed window drops the gate to its reason-coded state.
   const [boundProfileID, setBoundProfileID] = useState("");
@@ -125,6 +127,7 @@ export function AdminGate({
     setPassword("");
     setConfirmPassword("");
     setMismatch(false);
+    setTooShort(false);
     setRejected(false);
     setBusy(false);
     setBoundProfileID("");
@@ -186,6 +189,10 @@ export function AdminGate({
     e.preventDefault();
     if (!password) return;
     const creating = needsFirstPassword;
+    // Counted in characters, as the server counts them (CORE-1601).
+    const short = creating && [...password].length < MIN_ADMIN_PASSWORD_LENGTH;
+    setTooShort(short);
+    if (short) return;
     if (creating && password !== confirmPassword) {
       setMismatch(true);
       return;
@@ -260,6 +267,7 @@ export function AdminGate({
         confirmPassword={confirmPassword}
         setConfirmPassword={setConfirmPassword}
         mismatch={mismatch}
+        tooShort={tooShort}
         busy={busy}
         rejected={rejected}
       />
@@ -285,6 +293,7 @@ function LockedCard({
   confirmPassword,
   setConfirmPassword,
   mismatch,
+  tooShort,
   busy,
   rejected,
 }: {
@@ -298,6 +307,8 @@ function LockedCard({
   confirmPassword: string;
   setConfirmPassword: (v: string) => void;
   mismatch: boolean;
+  /** The new password is below the server's minimum length. */
+  tooShort: boolean;
   busy: boolean;
   rejected: boolean;
 }) {
@@ -330,7 +341,14 @@ function LockedCard({
                   onChange={(e) => setPassword(e.target.value)}
                   autoComplete={firstPassword ? AUTOFILL_NEW : AUTOFILL_CURRENT}
                   autoFocus
+                  aria-describedby={firstPassword ? "admin-password-hint" : undefined}
+                  aria-invalid={tooShort || undefined}
                 />
+                {firstPassword && (
+                  <p id="admin-password-hint" className="text-xs text-[var(--text-muted)]">
+                    {t("setupAdminPasswordHint")}
+                  </p>
+                )}
               </div>
               {firstPassword && (
                 <div className="space-y-2">
@@ -343,6 +361,11 @@ function LockedCard({
                     autoComplete="new-password"
                   />
                 </div>
+              )}
+              {tooShort && (
+                <p role="alert" className="text-sm text-[var(--state-danger)]">
+                  {t("setupAdminPasswordTooShort")}
+                </p>
               )}
               {mismatch && (
                 <p role="alert" className="text-sm text-[var(--state-danger)]">

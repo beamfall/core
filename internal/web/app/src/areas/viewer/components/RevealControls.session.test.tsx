@@ -107,6 +107,24 @@ describe("identity-epoch failures survive the remount", () => {
     expect(revealMutation).toHaveBeenCalledOnce();
   });
 
+  it("explains a profile with no PIN instead of blaming the PIN", async () => {
+    vi.mocked(revealMutation).mockRejectedValue(new Error("profile has no reveal path"));
+    const user = userEvent.setup();
+    renderWithSession(<RevealControls />);
+
+    await user.click(await screen.findByRole("button", { name: /restrictions/i }));
+    expect(screen.getByRole("dialog")).toHaveTextContent(
+      "A profile without a PIN can't show restricted content.",
+    );
+    await user.type(screen.getByLabelText(/pin/i), "0000");
+    await user.click(screen.getByRole("button", { name: /^reveal$/i }));
+
+    expect(
+      await screen.findByText("This profile has no PIN, so restricted content stays hidden."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("That PIN is not right.")).toBeNull();
+  });
+
   it("shows the switch error when a Profile switch fails", async () => {
     vi.mocked(switchProfileMutation).mockRejectedValue(new Error("offline"));
     const user = userEvent.setup();

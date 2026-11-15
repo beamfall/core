@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { SourceItem } from "@/lib/graphql/types";
 import { unavailableReasonMessage } from "./playback";
-import { playQueueOf, queueNeighbours, queueWindow, readPlayerNavState } from "./watchQueue";
+import {
+  playQueueOf,
+  queueNeighbours,
+  queueOfClass,
+  queueWindow,
+  readPlayerNavState,
+  withQueueClasses,
+} from "./watchQueue";
 
 const item = (id: string, kind: string) =>
   ({ id, title: `T-${id}`, kind }) as unknown as SourceItem;
@@ -68,6 +75,80 @@ describe("watchQueue (CORE-1143)", () => {
     ).toBeUndefined();
     expect(readPlayerNavState({ queue }, "v").queue).toBeUndefined();
     expect(readPlayerNavState({ queue, queueIdentity: "v" }, null).queue).toBeUndefined();
+  });
+});
+
+describe("class-narrowed play queue (CORE-1490)", () => {
+  const classed = (id: string, mediaClass?: string) =>
+    ({ id, title: `T-${id}`, kind: "media", mediaClass }) as unknown as SourceItem;
+
+  it("records the class a row reports, and nothing for a row that reports none", () => {
+    expect(playQueueOf([classed("a", "audio"), classed("b")])).toEqual([
+      { id: "a", title: "T-a", mediaClass: "audio" },
+      { id: "b", title: "T-b" },
+    ]);
+    expect(playQueueOf([classed("b")])[0]).not.toHaveProperty("mediaClass");
+  });
+
+  it("queues only items of the playing item's class from a mixed list", () => {
+    const queue = playQueueOf([
+      classed("t1", "audio"),
+      classed("v1", "video"),
+      classed("t2", "audio"),
+      classed("v2", "video"),
+    ]);
+    expect(queueOfClass(queue, "audio", "t1").map((item) => item.id)).toEqual(["t1", "t2"]);
+    expect(queueOfClass(queue, "video", "v2").map((item) => item.id)).toEqual(["v1", "v2"]);
+  });
+
+  it("keeps entries of unknown class and always the playing item", () => {
+    const queue = [
+      { id: "t1", title: "1", mediaClass: "audio" },
+      { id: "x", title: "x" },
+      { id: "v", title: "v", mediaClass: "video" },
+    ];
+    expect(queueOfClass(queue, "audio", "t1").map((item) => item.id)).toEqual(["t1", "x"]);
+    // The playing item stays even when its listed class disagrees.
+    expect(queueOfClass(queue, "audio", "v").map((item) => item.id)).toEqual(["t1", "x", "v"]);
+  });
+
+  it("leaves the queue alone while the playing item's class is unknown", () => {
+    const queue = [
+      { id: "a", title: "a", mediaClass: "audio" },
+      { id: "v", title: "v", mediaClass: "video" },
+    ];
+    expect(queueOfClass(queue, undefined, "a")).toBe(queue);
+    expect(queueOfClass(queue, "audio", "missing").map((item) => item.id)).toEqual(["a"]);
+  });
+
+  it("records learned classes without overriding a listed one", () => {
+    const queue = [
+      { id: "a", title: "a" },
+      { id: "b", title: "b", mediaClass: "audio" },
+    ];
+    expect(withQueueClasses(queue, { a: "video", b: "video" })).toEqual([
+      { id: "a", title: "a", mediaClass: "video" },
+      { id: "b", title: "b", mediaClass: "audio" },
+    ]);
+    expect(withQueueClasses(queue, { b: "video", z: "audio" })).toBe(queue);
+  });
+
+  it("round-trips a queue entry's class through nav state", () => {
+    expect(
+      readPlayerNavState(
+        {
+          queue: [
+            { id: "a", title: "A", mediaClass: "audio" },
+            { id: "b", title: "B", mediaClass: 3 },
+          ],
+          queueIdentity: "v",
+        },
+        "v",
+      ).queue,
+    ).toEqual([
+      { id: "a", title: "A", mediaClass: "audio" },
+      { id: "b", title: "B" },
+    ]);
   });
 });
 

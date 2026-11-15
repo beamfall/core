@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/beamfall/core/internal/causation"
@@ -38,6 +39,14 @@ type Deps struct {
 	Causation *causation.CausationCap
 	Status    StatusWriter
 	Linker    ProfileLinker
+	// Scoped write and playback-read seams (writes.go). Scope resolves targets
+	// through the grant's Library filter and is required by every one of them.
+	Scope       ScopeReader
+	Metadata    MetadataWriter
+	Collections CollectionWriter
+	Artwork     ArtworkWriter
+	WatchState  WatchStateWriter
+	Playback    PlaybackReader
 }
 
 // StatusWriter records a worker's status / dead-letter write (status-write
@@ -200,7 +209,10 @@ func (h *Host) SubscribeEvents(ctx context.Context, afterSeq int64, limit int) (
 	}
 	out := make([]SubscribedEvent, 0, len(events))
 	for _, event := range events {
-		token := h.deps.Events.CausationToken(event)
+		token := h.inheritedToken(event)
+		if token == "" {
+			token = h.deps.Events.CausationToken(event)
+		}
 		if token == "" {
 			token, err = h.causationTokenFor(fmt.Sprintf("outbox:%d", event.Seq), event.OccurredAt)
 			if err != nil {
@@ -226,11 +238,27 @@ func (h *Host) causationTokenFor(root string, startedAt time.Time) (causation.To
 	return h.deps.Causation.TokenFor(root, startedAt)
 }
 
-func (h *Host) admitMutation(ctx context.Context, action string) error {
+func (h *Host) admitMutation(ctx context.Context, action string, descendants ...string) error {
 	if h.deps.Causation == nil {
 		return fmt.Errorf("%w: %s containment unavailable", ErrPermissionDenied, action)
 	}
-	return h.deps.Causation.Admit(h.pluginID, causation.TokenFromContext(ctx), action)
+	return h.deps.Causation.AdmitWithDescendants(h.pluginID, causation.TokenFromContext(ctx), action, descendants)
+}
+
+// descendantKey names one outbox row a promoted mutation seam will append, by
+// the fields the row is delivered with. The seam must stamp the row with the
+// same time the Host passed it; the store keeps millisecond precision.
+func descendantKey(aggregateType, aggregateID string, occurredAt time.Time) string {
+	return aggregateType + "\x00" + aggregateID + "\x00" + strconv.FormatInt(occurredAt.UTC().UnixMilli(), 10)
+}
+
+// inheritedToken returns the chain token a scoped mutation bound to event, if
+// any, so a Worker's own writes come back to it inside the chain they spent.
+func (h *Host) inheritedToken(event store.OutboxEvent) causation.Token {
+	if h.deps.Causation == nil {
+		return ""
+	}
+	return h.deps.Causation.Inherited(descendantKey(event.AggregateType, event.AggregateID, event.OccurredAt))
 }
 
 // resolveFilter turns a read grant into a store.LibraryFilter, reading the bound

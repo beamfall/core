@@ -15,7 +15,7 @@ unclassified — a new route cannot ship without a reviewed classification.
 
 | Class | Meaning | Credential gate |
 | --- | --- | --- |
-| `public-v1` | The ADR-0040 `/v1/` stable developer contract — the single deliberately-public API line. | Scoped developer key, per-route scope. |
+| `public-v1` | The ADR-0040 `/v1/` stable contract — the single deliberately-public API line, for automation and for client apps (ADR-0234). | Per-route accepted credentials: a scoped developer key holding the route's scope, an enrolled device Session, or either. |
 | `private-ui` | First-party Core UI surface (`/api`, `/web`) consumed by the web app. Not a public contract; shape may change with the client. | Session/device credential (+ CSRF header on cookie-authenticated writes). |
 | `admin-automation` | Admin/automation surface authorized by an admin API token. Core currently layers admin authorization onto the private-UI surface via scope rather than dedicated admin-only paths, so no route carries this class today; it exists so a future dedicated admin route is classified and audited deliberately. | Admin API token. |
 | `internal-only` | Unauthenticated ops / bootstrap / loopback: liveness, metrics, AGPL source offer, pre-enrollment first-run probe, published moderation contact, root redirect, loopback-only test-fault control. | None (exposes no library content, resolves no session). |
@@ -31,7 +31,8 @@ because it creates the ADR-0040 compatibility promise. Approval by a
 deployment's server operator or through routine code review is not sufficient.
 
 1. A route becomes public **only** by mounting it under the `/v1/` prefix with a
-   per-route scope in `v1RouteContracts` (`internal/server/v1_contract.go`).
+   `v1RouteContracts` entry (`internal/server/v1_contract.go`) that declares its
+   accepted credentials and, when it accepts a scoped key, its scope.
    `routeAccessClass` classifies `/v1/` structurally, so the prefix *is* the
    boundary.
 2. The public line is frozen by `TestV1RouteSetIsPinned` against `v1PublicLine`

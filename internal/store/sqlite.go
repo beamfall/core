@@ -13,7 +13,10 @@ import (
 	"image"
 	"image/jpeg"
 	_ "image/png"
+	"io"
+	"io/fs"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -70,7 +73,17 @@ type Options struct {
 	// catalog-identity authoring and engagement-projection writes — it
 	// index-pushes its locally-identified index instead (ADR-0123 decision 2/3).
 	Role serverrole.Role
+	// RequireExisting refuses to open a data directory that holds no Beamfall
+	// database, and creates nothing there (CORE-1599). Offline commands that
+	// only make sense against an existing server (pairing-code,
+	// reset-admin-password, the capabilities overrides) set it so a mistyped --data-dir is
+	// reported instead of silently becoming a new, empty server.
+	RequireExisting bool
 }
+
+// ErrNoDataDir is returned by Open with Options.RequireExisting when the data
+// directory holds no Beamfall database.
+var ErrNoDataDir = errors.New("no Beamfall data")
 
 // SeedProfile selects an optional boot-time catalog seed.
 type SeedProfile string
@@ -111,6 +124,18 @@ const AcceptanceSeedVersion = "acceptance-2"
 func Open(ctx context.Context, dataDir string, opts Options) (*Store, error) {
 	if dataDir == "" {
 		return nil, errors.New("data-dir is required")
+	}
+	// SQLite opens a file: URI built from this path, and a relative path there
+	// parses as a URI authority ("invalid uri authority"), so resolve it against
+	// the working directory first (CORE-1599). Absolute paths are unchanged.
+	dataDir, err := filepath.Abs(dataDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data-dir: %w", err)
+	}
+	if opts.RequireExisting {
+		if err := requireExistingDataDir(ctx, dataDir); err != nil {
+			return nil, err
+		}
 	}
 	if err := guardDataDirPlacement(dataDir, opts.AllowNetworkDataDir); err != nil {
 		return nil, err
@@ -172,13 +197,20 @@ func Open(ctx context.Context, dataDir string, opts Options) (*Store, error) {
 		return nil, err
 	}
 
-	if err := migrate(ctx, logger, st.catalogW, catalogPath, "catalog", catalogMigrations, "migrate/catalog", backupDir); err != nil {
+	catalogApplied, err := migrateCounted(ctx, logger, st.catalogW, catalogPath, "catalog", catalogMigrations, "migrate/catalog", backupDir)
+	if err != nil {
 		_ = st.Close()
 		return nil, err
 	}
-	if err := migrate(ctx, logger, st.eventsW, eventsPath, "events", eventsMigrations, "migrate/events", backupDir); err != nil {
+	eventsApplied, err := migrateCounted(ctx, logger, st.eventsW, eventsPath, "events", eventsMigrations, "migrate/events", backupDir)
+	if err != nil {
 		_ = st.Close()
 		return nil, err
+	}
+	// One summary line rather than one per migration (CORE-1603): a fresh
+	// install applies well over a hundred, burying the first-run setup URL.
+	if catalogApplied+eventsApplied > 0 {
+		logger.InfoContext(ctx, "applied migrations", "catalog", catalogApplied, "events", eventsApplied)
 	}
 	if profile := opts.resolvedSeedProfile(); profile != "" {
 		if err := st.seedData(ctx, profile); err != nil {
@@ -208,6 +240,133 @@ func Open(ctx context.Context, dataDir string, opts Options) (*Store, error) {
 	}
 	logger.InfoContext(ctx, "store opened", "dataDir", dataDir)
 	return st, nil
+}
+
+// requireExistingDataDir reports ErrNoDataDir unless dataDir holds a Beamfall
+// catalog database or an interrupted restore publish that Open will recover.
+// It only reads: a catalog.db that is empty or is not a Beamfall catalog is
+// refused before Open creates or modifies anything (CORE-1599).
+func requireExistingDataDir(ctx context.Context, dataDir string) error {
+	_, err := os.Stat(filepath.Join(dataDir, restorePublishTransactionName)) // #nosec G703 -- the data directory the operator named; fixed file name
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	catalogPath := filepath.Join(dataDir, "db", "catalog.db")
+	info, err := os.Stat(catalogPath) // #nosec G703 -- the data directory the operator named; fixed file name
+	if errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("%w in %s", ErrNoDataDir, dataDir)
+	}
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() || !isBeamfallCatalog(ctx, catalogPath) {
+		return fmt.Errorf("%w in %s: %s is empty or is not a Beamfall catalog", ErrNoDataDir, dataDir, catalogPath)
+	}
+	return nil
+}
+
+// sqliteFileHeader opens every SQLite database file.
+const sqliteFileHeader = "SQLite format 3\x00"
+
+// catalogProbeCopyLimit caps the bytes isBeamfallCatalog copies to read a
+// ledger that is still only in the WAL. Only a young catalog has never
+// checkpointed its first migration into the main file, and it is small.
+const catalogProbeCopyLimit = 64 << 20
+
+// isBeamfallCatalog reports whether path is an SQLite database whose
+// schema_migrations ledger records the first catalog migration with the
+// checksum the migrator itself recorded for it, which a foreign database does
+// not have by accident. It checks the file header itself first, so an empty or
+// foreign file never reaches SQLite.
+//
+// The probe creates and writes no file beside the database, whatever the
+// owner of the database does meanwhile (CORE-1599). SQLite opens the database
+// itself only immutable, which reads the main file alone, takes no locks and
+// never creates a -wal or -shm. A running server can still hold its whole
+// ledger in the WAL (a fresh data dir does until its first checkpoint), so
+// when the main file lacks it and a -wal is present the probe copies the main
+// file and the -wal, read-only and at most catalogProbeCopyLimit bytes, into a
+// private temporary directory and lets SQLite read the copy there. A database
+// that changes while it is copied may be misread, which refuses it; the main
+// file is probed once more afterwards in case a checkpoint landed meanwhile.
+func isBeamfallCatalog(ctx context.Context, path string) bool {
+	f, err := os.Open(path) // #nosec G304 G703 -- path is db/catalog.db under the data directory the operator named
+	if err != nil {
+		return false
+	}
+	header := make([]byte, len(sqliteFileHeader))
+	_, err = io.ReadFull(f, header)
+	_ = f.Close()
+	if err != nil || string(header) != sqliteFileHeader {
+		return false
+	}
+	return catalogLedgerMatches(ctx, path, "mode=ro&immutable=1") ||
+		walCatalogCopyMatches(ctx, path) ||
+		catalogLedgerMatches(ctx, path, "mode=ro&immutable=1")
+}
+
+// catalogLedgerMatches opens path with the given URI query and compares the
+// ledger's first catalog migration checksum with the embedded one.
+func catalogLedgerMatches(ctx context.Context, path, query string) bool {
+	db, err := sql.Open("sqlite", (&url.URL{Scheme: "file", Path: path, RawQuery: query}).String())
+	if err != nil {
+		return false
+	}
+	defer db.Close()
+	first, err := fs.ReadFile(catalogMigrations, "migrate/catalog/0001_initial.sql")
+	if err != nil {
+		return false
+	}
+	checksum, err := migrationChecksumInDB(ctx, db, "0001_initial.sql")
+	return err == nil && checksum == migrationChecksum(first)
+}
+
+// walCatalogCopyMatches probes a private copy of path and its -wal, so that
+// SQLite's -wal and -shm handling only ever touches the temporary directory.
+func walCatalogCopyMatches(ctx context.Context, path string) bool {
+	if wal, _ := pathExists(path + "-wal"); !wal {
+		return false
+	}
+	dir, err := os.MkdirTemp("", "beamfall-catalog-probe-")
+	if err != nil {
+		return false
+	}
+	defer os.RemoveAll(dir)
+	copyPath := filepath.Join(dir, "catalog.db")
+	budget := int64(catalogProbeCopyLimit)
+	for _, suffix := range []string{"", "-wal"} {
+		n, err := copyFileBounded(path+suffix, copyPath+suffix, budget)
+		if err != nil {
+			return false
+		}
+		budget -= n
+	}
+	return catalogLedgerMatches(ctx, copyPath, "mode=ro")
+}
+
+// copyFileBounded copies src to a new 0600 file dst and fails when src holds
+// more than limit bytes.
+func copyFileBounded(src, dst string, limit int64) (int64, error) {
+	in, err := os.Open(src) // #nosec G304 -- src is the catalog or its -wal under the data directory the operator named
+	if err != nil {
+		return 0, err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- dst is inside a directory this process just created
+	if err != nil {
+		return 0, err
+	}
+	n, err := io.Copy(out, io.LimitReader(in, limit+1))
+	if closeErr := out.Close(); err == nil {
+		err = closeErr
+	}
+	if err == nil && n > limit {
+		err = fmt.Errorf("%s exceeds %d bytes", src, limit)
+	}
+	return n, err
 }
 
 func (opts Options) resolvedSeedProfile() SeedProfile {

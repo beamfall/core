@@ -84,12 +84,15 @@ func (c MetadataHydrationCapability) Supports(class store.MediaClass) bool {
 // MetadataHydrationInput is the generic local Media shape passed immediately
 // after ImportMediaFile. Metadata contains FFmpeg probe tags when available;
 // the plugin adapter owns all interpretation into declared fields and Entities.
+// ContentFingerprint is the file's content hash (empty when unknown), so the
+// adapter can tell re-tagged bytes from an unchanged file on a rescan.
 type MetadataHydrationInput struct {
-	MediaID   store.MediaID
-	LibraryID store.LibraryID
-	Class     store.MediaClass
-	Path      string
-	Metadata  map[string]string
+	MediaID            store.MediaID
+	LibraryID          store.LibraryID
+	Class              store.MediaClass
+	Path               string
+	Metadata           map[string]string
+	ContentFingerprint string
 }
 
 // MetadataHydrator is scan's consumer-side local metadata hook. A dedicated

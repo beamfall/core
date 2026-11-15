@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAdvancedSettings } from "@/lib/advancedSettings";
-import { fetchSetupState } from "@/lib/graphql";
+import { browseServerFolders, fetchLibraries, fetchSetupState } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
@@ -18,10 +18,12 @@ vi.mock("@/lib/register", () => ({ useRegister: vi.fn() }));
 vi.mock("@/lib/session", () => ({ useSession: vi.fn() }));
 vi.mock("@/lib/graphql", () => ({
   fetchSetupState: vi.fn(),
+  fetchJobs: vi.fn().mockResolvedValue([]),
   fetchLibraries: vi.fn().mockResolvedValue([]),
   fetchUnmatchedQueue: vi.fn().mockResolvedValue([]),
   fetchConsoleConfig: vi.fn().mockResolvedValue({ plugins: [] }),
   fetchWatcherStatus: vi.fn().mockResolvedValue([]),
+  browseServerFolders: vi.fn().mockResolvedValue({ name: "x", path: "/x", kind: "folder" }),
 }));
 vi.mock("./AdminGate", () => ({
   AdminGate: ({ children }: { children: ReactNode | ((lock: () => void) => ReactNode) }) => (
@@ -29,8 +31,10 @@ vi.mock("./AdminGate", () => ({
   ),
 }));
 
-vi.mock("./sections/SetupChecklist", () => ({
+vi.mock("./sections/SetupChecklist", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./sections/SetupChecklist")>()),
   SetupChecklist: () => <section aria-label="First-run checklist">setup-panel</section>,
+  fetchHasBrowsableContent: vi.fn().mockResolvedValue(false),
 }));
 vi.mock("./sections/Libraries", () => ({ Libraries: () => <div>libraries-panel</div> }));
 vi.mock("./sections/Plugins", () => ({ Plugins: () => <div>plugins-panel</div> }));
@@ -306,6 +310,38 @@ describe("Console IA conformance", () => {
 
     expect(await screen.findByText("Nothing needs attention.")).toBeVisible();
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("lists a missing Library folder under Needs attention with a fix link (CORE-1606)", async () => {
+    vi.mocked(fetchSetupState).mockResolvedValueOnce({
+      adminPasswordSet: true,
+      hasLibrary: true,
+      hasOwnerProfile: true,
+      pluginsActivated: true,
+      complete: true,
+    });
+    vi.mocked(fetchLibraries).mockResolvedValue([
+      { id: "lib-1", title: "Films", roots: ["/gone"] } as never,
+    ]);
+    vi.mocked(browseServerFolders).mockRejectedValueOnce(new Error("folder does not exist"));
+
+    renderConsole("/console");
+
+    const row = await screen.findByRole("link", { name: /Films: \/gone/ });
+    expect(row).toHaveAttribute("href", "/console/libraries");
+    expect(row).toHaveTextContent("Folder not found");
+    expect(screen.queryByText("Nothing needs attention.")).toBeNull();
+    vi.mocked(fetchLibraries).mockResolvedValue([]);
+  });
+
+  it("puts the first-value checklist above Server resources while a step is open", async () => {
+    renderConsole("/console");
+
+    const checklist = await screen.findByLabelText("First-run checklist");
+    const graphs = screen.getByText("host-graphs-panel");
+    expect(
+      checklist.compareDocumentPosition(graphs) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("maps every Console IA child surface exactly once", () => {

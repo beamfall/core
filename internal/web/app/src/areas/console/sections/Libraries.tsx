@@ -21,10 +21,16 @@ import {
   startRescan,
 } from "@/components/beamfall/LibraryRescan";
 import {
+  probeRoot,
+  ROOT_PROBLEM_LABEL,
+  type RootProblemReason,
+} from "@/components/beamfall/LibraryRootHealth";
+import {
   EmptyState,
   ErrorLine,
   ErrorState,
   PathPickerField,
+  StatusChip,
 } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -134,6 +140,25 @@ function LibraryCard({
   const [scanError, setScanError] = useState("");
   const plugin = plugins.find((p) => p.id === library.pluginID);
   const HeaderIcon = useLibraryIconSymbol(library);
+  // Each folder is checked on the server so a missing or unreadable one is
+  // marked on the card instead of looking healthy (CORE-1606).
+  const [rootProblems, setRootProblems] = useState<Record<string, RootProblemReason>>({});
+  const rootsKey = roots.join("\n");
+  useEffect(() => {
+    let live = true;
+    const paths = rootsKey ? rootsKey.split("\n") : [];
+    void Promise.all(paths.map(async (root) => [root, await probeRoot(root)] as const)).then(
+      (results) => {
+        if (!live) return;
+        const next: Record<string, RootProblemReason> = {};
+        for (const [root, reason] of results) if (reason) next[root] = reason;
+        setRootProblems(next);
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [rootsKey]);
 
   const loadScanFolders = useCallback(async () => {
     if ((library.roots ?? []).length === 0) {
@@ -293,6 +318,14 @@ function LibraryCard({
                       <span className="block truncate font-mono text-[11px] text-muted-foreground">
                         {root}
                       </span>
+                      {rootProblems[root] && (
+                        <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          <StatusChip tone="red">
+                            {t(ROOT_PROBLEM_LABEL[rootProblems[root]])}
+                          </StatusChip>
+                          {t("libraryRootFixHint")}
+                        </span>
+                      )}
                     </span>
                     <ConfirmButton
                       variant="ghost"

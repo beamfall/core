@@ -36,6 +36,10 @@ BEAMFALL_MEDIA_DIR=/srv/media \
 ```
 
 Then open `http://127.0.0.1:8800/` and finish setup in the Beamfall Console.
+The first-run setup URLs, including the one-time setup token, are the last
+lines the server prints once it is listening: read them with
+`docker logs beamfall`. A browser on the server's local network needs no
+token; the token URL is for this machine. Each restart prints a new token.
 
 ## Public HTTPS
 

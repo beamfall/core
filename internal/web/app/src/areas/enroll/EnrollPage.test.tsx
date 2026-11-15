@@ -147,16 +147,19 @@ describe("EnrollPage", () => {
         <EnrollPage />
       </I18nProvider>,
     );
-    await userEvent.type(await screen.findByLabelText("Admin password"), password);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Sign in with the admin password" }),
+    );
+    await userEvent.type(screen.getByLabelText("Admin password"), password);
     await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
   }
 
   it("signs in with the admin password and redirects", async () => {
     vi.mocked(adminSignIn).mockResolvedValue("bound");
 
-    await signInWithPassword("correct horse");
+    await signInWithPassword("correct horse battery");
 
-    expect(adminSignIn).toHaveBeenCalledWith("correct horse", "Web Browser");
+    expect(adminSignIn).toHaveBeenCalledWith("correct horse battery", "Web Browser");
     expect(enroll).not.toHaveBeenCalled();
     expect(assign).toHaveBeenCalledWith("/");
     expect(screen.getByRole("status")).toHaveTextContent("Connected.");
@@ -184,6 +187,92 @@ describe("EnrollPage", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Too many attempts.");
   });
 
+  it("offers admin sign-in as a visible action next to the code form", async () => {
+    render(
+      <I18nProvider>
+        <EnrollPage />
+      </I18nProvider>,
+    );
+    const action = await screen.findByRole("button", { name: "Sign in with the admin password" });
+    // Not tucked inside a collapsed disclosure, and above the pairing-code help.
+    expect(action.closest("details")).toBeNull();
+    const help = screen.getByRole("heading", { name: "Where do I get a pairing code?" });
+    expect(action.compareDocumentPosition(help) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByLabelText("Admin password")).not.toBeInTheDocument();
+  });
+
+  it("tells a LAN browser on a hostname to open Beamfall by its IP address", async () => {
+    vi.mocked(adminSignIn).mockRejectedValue(
+      new ApiError("POST /api/web/admin-signin failed", 403, {
+        error: "Open Beamfall by its IP address to sign in with the admin password.",
+        code: "lan_hostname_not_allowed",
+        lanUrls: ["http://192.168.1.10:8800/web/", "http://10.0.0.2:8800/web/"],
+      }),
+    );
+
+    await signInWithPassword("correct horse battery");
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Open Beamfall by its IP address to sign in with the admin password",
+    );
+    expect(
+      screen.getByRole("link", { name: "Open http://192.168.1.10:8800/web/" }),
+    ).toHaveAttribute("href", "http://192.168.1.10:8800/web/");
+  });
+
+  it("keeps the IP-address advice without a link when no address was offered or it is not http", async () => {
+    vi.mocked(adminSignIn).mockRejectedValue(
+      new ApiError("POST /api/web/admin-signin failed", 403, {
+        code: "lan_hostname_not_allowed",
+        lanUrls: ["javascript:alert(1)"],
+      }),
+    );
+
+    await signInWithPassword("correct horse battery");
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Open Beamfall by its IP address");
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  });
+
+  it("prefills the code from the link fragment and clears it from the address bar", async () => {
+    const replaceState = vi.spyOn(window.history, "replaceState");
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: {
+        ...window.location,
+        assign,
+        hash: "#code=abcd-1234",
+        pathname: "/web/enroll",
+        search: "",
+      },
+    });
+    render(
+      <I18nProvider>
+        <EnrollPage />
+      </I18nProvider>,
+    );
+
+    expect(screen.getByLabelText("Pairing code")).toHaveValue("ABCD-1234");
+    expect(replaceState.mock.calls.at(-1)?.[2]).toBe("/web/enroll");
+    replaceState.mockRestore();
+  });
+
+  it("tells a locked-out owner in Strict mode how to get a code on the server", async () => {
+    vi.mocked(fetchSetupStatus).mockResolvedValue({
+      required: false,
+      tokenRequired: true,
+      securityMode: "strict",
+    });
+    render(
+      <I18nProvider>
+        <EnrollPage />
+      </I18nProvider>,
+    );
+
+    expect(await screen.findByText("beamfall pairing-code")).toBeInTheDocument();
+    expect(screen.getByText(/Locked out\?/)).toBeInTheDocument();
+  });
+
   it("hides the admin-password form when the server is in Strict mode", async () => {
     vi.mocked(fetchSetupStatus).mockResolvedValue({
       required: false,
@@ -201,6 +290,9 @@ describe("EnrollPage", () => {
     await act(async () => {});
     expect(screen.queryByLabelText("Admin password")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Sign in" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Sign in with the admin password" }),
+    ).not.toBeInTheDocument();
   });
 
   it("hides the admin-password form while the mode is unknown after a failed probe", async () => {
@@ -219,5 +311,8 @@ describe("EnrollPage", () => {
     await act(async () => {});
     expect(screen.queryByLabelText("Admin password")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Sign in" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Sign in with the admin password" }),
+    ).not.toBeInTheDocument();
   });
 });

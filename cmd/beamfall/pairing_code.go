@@ -5,7 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
+	"net"
 	"os"
+	"time"
 
 	"github.com/beamfall/core/internal/config"
 	"github.com/beamfall/core/internal/pairing"
@@ -14,15 +17,20 @@ import (
 
 // pairingCodeCommand mints a one-time owner pairing code on the host
 // (CORE-1106). Like reset-admin-password it needs filesystem access to the data
-// directory and refuses while the server runs, so it adds no network surface.
+// directory, so it adds no network surface. It is meant to run while the server
+// runs: the code lives in the database, and the server redeems it there.
 func pairingCodeCommand(ctx context.Context, args []string, stdout io.Writer) error {
 	cfg := config.Default()
 	if value := os.Getenv("BEAMFALL_DATA_DIR"); value != "" {
 		cfg.DataDir = value
 	}
+	if value := os.Getenv("BEAMFALL_ADDR"); value != "" {
+		cfg.Addr = value
+	}
 	role := string(store.DeviceRoleManager)
 	fs := commandFlagSet("beamfall pairing-code", stdout)
 	fs.StringVar(&cfg.DataDir, "data-dir", cfg.DataDir, "data directory")
+	fs.StringVar(&cfg.Addr, "addr", cfg.Addr, "the server's listen address, for the printed URL")
 	fs.StringVar(&role, "role", role, "device role for the code: manager or viewer")
 	if helped, err := parseCommandFlags(fs, args); err != nil || helped {
 		return err
@@ -36,7 +44,10 @@ func pairingCodeCommand(ctx context.Context, args []string, stdout io.Writer) er
 	if err := refuseServerLock(cfg.DataDir); err != nil {
 		return err
 	}
-	st, err := store.Open(ctx, cfg.DataDir, store.Options{})
+	// Store log lines (migrations, "store opened") go to stderr at WARN and
+	// above only, so the code and its instruction stand alone (CORE-1609).
+	quiet := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	st, err := store.Open(ctx, cfg.DataDir, store.Options{Logger: quiet, RequireExisting: true})
 	if err != nil {
 		return err
 	}
@@ -49,7 +60,48 @@ func pairingCodeCommand(ctx context.Context, args []string, stdout io.Writer) er
 		return err
 	}
 	if stdout != nil {
-		_, _ = fmt.Fprintf(stdout, "%s\nStart the server, open http://<server>:8800/web/ and enter this code. It expires at %s.\n", code.Code, code.ExpiresAt)
+		interfaceAddrs, _ := net.InterfaceAddrs()
+		_, _ = fmt.Fprintf(stdout, "%s\nOpen %s and enter this code %s.\n",
+			code.Code, pairingWebURL(cfg.Addr, interfaceAddrs), pairingExpiry(code.ExpiresAt, time.Now()))
 	}
 	return nil
+}
+
+// pairingWebURL is the /web/ address to open for the configured listen address.
+// A wildcard listener is reached on the machine's first LAN IPv4 address, since
+// the code is usually entered on another device; loopback is the fallback.
+func pairingWebURL(listenAddr string, interfaceAddrs []net.Addr) string {
+	host, port, err := net.SplitHostPort(listenAddr)
+	if err != nil {
+		return "http://127.0.0.1:8800/web/"
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+		for _, addr := range interfaceAddrs {
+			ipNet, ok := addr.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			if ip := ipNet.IP.To4(); ip != nil && !ip.IsLoopback() && !ip.IsLinkLocalUnicast() && !ip.IsUnspecified() {
+				host = ip.String()
+				break
+			}
+		}
+	}
+	return "http://" + net.JoinHostPort(host, port) + "/web/"
+}
+
+// pairingExpiry phrases the code's RFC 3339 expiry for a person: a relative
+// duration and the local wall-clock time.
+func pairingExpiry(expiresAt string, now time.Time) string {
+	at, err := time.Parse(time.RFC3339, expiresAt)
+	if err != nil {
+		return "before it expires at " + expiresAt
+	}
+	minutes := int(at.Sub(now).Round(time.Minute) / time.Minute)
+	unit := "minutes"
+	if minutes == 1 {
+		unit = "minute"
+	}
+	return fmt.Sprintf("within %d %s (it expires at %s)", minutes, unit, at.Local().Format("15:04"))
 }

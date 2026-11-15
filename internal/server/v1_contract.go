@@ -18,15 +18,38 @@ type V1Contract struct {
 }
 
 type V1RouteContract struct {
-	OperationID string              `json:"operationID"`
-	Method      string              `json:"method"`
-	Pattern     string              `json:"pattern"`
-	Scope       store.APIScope      `json:"scope"`
+	OperationID string `json:"operationID"`
+	Method      string `json:"method"`
+	Pattern     string `json:"pattern"`
+	// Scope is the API scope a scoped developer key must hold. It is empty
+	// for a route that does not accept scoped keys.
+	Scope store.APIScope `json:"scope,omitempty"`
+	// Credentials lists the credential kinds the route accepts.
+	Credentials []V1Credential      `json:"credentials"`
 	RevealClass reveal.SurfaceClass `json:"revealClass"`
 	Request     *V1MessageContract  `json:"request,omitempty"`
 	Response    *V1MessageContract  `json:"response,omitempty"`
 	ListBounds  []V1ListBound       `json:"listBounds,omitempty"`
 }
+
+// V1Credential names a credential kind a /v1 route accepts.
+type V1Credential string
+
+const (
+	// V1CredentialScopedKey is an operator-minted scoped developer key
+	// (Bearer bfk_…) that holds the route's Scope.
+	V1CredentialScopedKey V1Credential = "scopedKey"
+	// V1CredentialDeviceSession is an enrolled device Session: the credential
+	// a client app holds after pairing. The request acts as the Session's
+	// Profile, with its reveal state and library grants.
+	V1CredentialDeviceSession V1Credential = "deviceSession"
+)
+
+var (
+	v1KeyOnly     = []V1Credential{V1CredentialScopedKey}
+	v1KeyOrDevice = []V1Credential{V1CredentialScopedKey, V1CredentialDeviceSession}
+	v1DeviceOnly  = []V1Credential{V1CredentialDeviceSession}
+)
 
 // V1ListBound records how an array-valued response field is kept bounded.
 // Cursor fields identify list endpoints; MaxItems covers finite command
@@ -78,14 +101,21 @@ type V1SSEFrameField struct {
 }
 
 var v1RouteContracts = []V1RouteContract{
-	{OperationID: "listLibraries", Method: http.MethodGet, Pattern: "/v1/libraries", Scope: store.ScopeReadCatalog, RevealClass: reveal.ContentJSON, Response: jsonMessage[v1LibrariesResponse](), ListBounds: []V1ListBound{cursorListBound("libraries")}},
-	{OperationID: "listLibraryMedia", Method: http.MethodGet, Pattern: "/v1/libraries/{libraryID}/media", Scope: store.ScopeReadCatalog, RevealClass: reveal.ContentJSON, Response: jsonMessage[v1LibraryMediaResponse](), ListBounds: []V1ListBound{cursorListBound("media")}},
-	{OperationID: "getMedia", Method: http.MethodGet, Pattern: "/v1/media/{mediaID}", Scope: store.ScopeReadCatalog, RevealClass: reveal.ContentJSON, Response: jsonMessage[v1MediaItem]()},
-	{OperationID: "listSessions", Method: http.MethodGet, Pattern: "/v1/sessions", Scope: store.ScopeReadSessions, RevealClass: reveal.ContentJSON, Response: jsonMessage[v1SessionsResponse](), ListBounds: []V1ListBound{cursorListBound("sessions")}},
-	{OperationID: "playbackControl", Method: http.MethodPost, Pattern: "/v1/playback-control", Scope: store.ScopePlaybackControl, RevealClass: reveal.ContentJSON, Request: jsonMessage[v1PlaybackControlRequest](), Response: jsonMessage[v1PlaybackControlResponse]()},
-	{OperationID: "scanLibrary", Method: http.MethodPost, Pattern: "/v1/scans", Scope: store.ScopeIngest, RevealClass: reveal.ContentJSON, Request: jsonMessage[v1ScanRequest](), Response: jsonMessage[v1ScanResponse](), ListBounds: []V1ListBound{{Field: "jobIDs", MaxItems: v1ScanJobLimit}}},
-	{OperationID: "getBackupStatus", Method: http.MethodGet, Pattern: "/v1/backups/{libraryID}/status", Scope: store.ScopeBackup, RevealClass: reveal.ContentJSON, Response: jsonMessage[v1BackupStatusResponse]()},
-	{OperationID: "backupMedia", Method: http.MethodPost, Pattern: "/v1/backups/media", Scope: store.ScopeBackup, RevealClass: reveal.ContentJSON, Request: multipartMessage(
+	{OperationID: "listLibraries", Method: http.MethodGet, Pattern: "/v1/libraries", Scope: store.ScopeReadCatalog, Credentials: v1KeyOrDevice, RevealClass: reveal.ContentJSON, Response: jsonMessage[v1LibrariesResponse](), ListBounds: []V1ListBound{cursorListBound("libraries")}},
+	{OperationID: "listLibraryMedia", Method: http.MethodGet, Pattern: "/v1/libraries/{libraryID}/media", Scope: store.ScopeReadCatalog, Credentials: v1KeyOrDevice, RevealClass: reveal.ContentJSON, Response: jsonMessage[v1LibraryMediaResponse](), ListBounds: []V1ListBound{cursorListBound("media")}},
+	{OperationID: "getMedia", Method: http.MethodGet, Pattern: "/v1/media/{mediaID}", Scope: store.ScopeReadCatalog, Credentials: v1KeyOrDevice, RevealClass: reveal.ContentJSON, Response: jsonMessage[v1MediaDetail](), ListBounds: []V1ListBound{{Field: "externalIDs", MaxItems: v1ExternalIDLimit}}},
+	{OperationID: "lookupMediaByExternalID", Method: http.MethodGet, Pattern: "/v1/media", Scope: store.ScopeReadCatalog, Credentials: v1KeyOrDevice, RevealClass: reveal.ContentJSON, Response: jsonMessage[v1MediaLookupResponse](), ListBounds: []V1ListBound{{Field: "media", MaxItems: v1ExternalIDLookupLimit}, {Field: "media.externalIDs", MaxItems: v1ExternalIDLimit}}},
+	{OperationID: "getPlaybackInfo", Method: http.MethodPost, Pattern: "/v1/media/{mediaID}/playback-info", Credentials: v1DeviceOnly, RevealClass: reveal.ContentJSON, Request: jsonMessage[v1PlaybackInfoRequest](), Response: jsonMessage[v1PlaybackInfoResponse](), ListBounds: []V1ListBound{
+		{Field: "streams", MaxItems: v1PlaybackStreamLimit},
+		{Field: "streams.renditions", MaxItems: v1PlaybackRenditionLimit},
+		{Field: "captionTracks", MaxItems: v1PlaybackCaptionTrackLimit},
+	}},
+	{OperationID: "reportProgress", Method: http.MethodPut, Pattern: "/v1/media/{mediaID}/progress", Credentials: v1DeviceOnly, RevealClass: reveal.ContentJSON, Request: jsonMessage[v1ProgressRequest](), Response: jsonMessage[v1ProgressResponse]()},
+	{OperationID: "listSessions", Method: http.MethodGet, Pattern: "/v1/sessions", Scope: store.ScopeReadSessions, Credentials: v1KeyOnly, RevealClass: reveal.ContentJSON, Response: jsonMessage[v1SessionsResponse](), ListBounds: []V1ListBound{cursorListBound("sessions")}},
+	{OperationID: "playbackControl", Method: http.MethodPost, Pattern: "/v1/playback-control", Scope: store.ScopePlaybackControl, Credentials: v1KeyOnly, RevealClass: reveal.ContentJSON, Request: jsonMessage[v1PlaybackControlRequest](), Response: jsonMessage[v1PlaybackControlResponse]()},
+	{OperationID: "scanLibrary", Method: http.MethodPost, Pattern: "/v1/scans", Scope: store.ScopeIngest, Credentials: v1KeyOnly, RevealClass: reveal.ContentJSON, Request: jsonMessage[v1ScanRequest](), Response: jsonMessage[v1ScanResponse](), ListBounds: []V1ListBound{{Field: "jobIDs", MaxItems: v1ScanJobLimit}}},
+	{OperationID: "getBackupStatus", Method: http.MethodGet, Pattern: "/v1/backups/{libraryID}/status", Scope: store.ScopeBackup, Credentials: v1KeyOnly, RevealClass: reveal.ContentJSON, Response: jsonMessage[v1BackupStatusResponse]()},
+	{OperationID: "backupMedia", Method: http.MethodPost, Pattern: "/v1/backups/media", Scope: store.ScopeBackup, Credentials: v1KeyOnly, RevealClass: reveal.ContentJSON, Request: multipartMessage(
 		V1FormField{Name: "libraryID", Required: true, Type: "string"},
 		V1FormField{Name: "file", Required: true, Type: "file"},
 		V1FormField{Name: "title", Type: "string"},
@@ -93,7 +123,7 @@ var v1RouteContracts = []V1RouteContract{
 		V1FormField{Name: "container", Type: "string"},
 		V1FormField{Name: "codec", Type: "string"},
 	), Response: jsonMessage[v1BackupMediaResponse]()},
-	{OperationID: "subscribeEvents", Method: http.MethodGet, Pattern: "/v1/events", Scope: store.ScopeEventsSubscribe, RevealClass: reveal.EventFanout},
+	{OperationID: "subscribeEvents", Method: http.MethodGet, Pattern: "/v1/events", Scope: store.ScopeEventsSubscribe, Credentials: v1KeyOnly, RevealClass: reveal.EventFanout},
 }
 
 func cursorListBound(field string) V1ListBound {

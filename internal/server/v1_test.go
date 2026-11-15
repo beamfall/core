@@ -14,6 +14,7 @@ import (
 	"net/textproto"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -127,13 +128,21 @@ func TestV1RequiresMatchingScope(t *testing.T) {
 		t.Fatalf("jobIDs = %#v, want one non-empty id", scanResp.JobIDs)
 	}
 
-	// A session credential carries no API scopes — every /v1/ route rejects it.
+	// An enrolled device Session reads the catalog (ADR-0234 D1) but carries no
+	// API scopes, so the automation routes reject it.
 	req := httptest.NewRequest(http.MethodGet, "/v1/libraries", nil)
 	authorizeViewer(req)
 	rec = httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("device session GET /v1/libraries = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	req = newJSONRequest(http.MethodPost, "/v1/scans", strings.NewReader(`{"libraryID":"library-local","root":`+strconv.Quote(scanRoot)+`}`))
+	authorizeViewer(req)
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
 	if rec.Code != http.StatusForbidden {
-		t.Fatalf("session credential GET /v1/libraries = %d, want 403: %s", rec.Code, rec.Body.String())
+		t.Fatalf("device session POST /v1/scans = %d, want 403: %s", rec.Code, rec.Body.String())
 	}
 
 	// No credential at all is 401.
@@ -1013,7 +1022,8 @@ func sessionControlActivity(t *testing.T, st *store.Store) []store.ActivityEntry
 // TestOpenAPISpecMatchesRoutes pins that the published OpenAPI spec is valid
 // JSON and stays consistent with the registered /v1/ routes: every mounted /v1/
 // route (method+path) appears as a spec path operation, and every spec /v1/
-// operation declares the scope its handler enforces.
+// operation declares the credentials its route contract accepts and, when it
+// accepts a scoped key, the scope its handler enforces.
 func TestOpenAPISpecMatchesRoutes(t *testing.T) {
 	specPath := filepath.Join("..", "..", "docs", "api", "openapi.json")
 	raw, err := os.ReadFile(specPath)
@@ -1023,7 +1033,8 @@ func TestOpenAPISpecMatchesRoutes(t *testing.T) {
 	var spec struct {
 		OpenAPI string `json:"openapi"`
 		Paths   map[string]map[string]struct {
-			RequiredScope string `json:"x-required-scope"`
+			RequiredScope string         `json:"x-required-scope"`
+			Credentials   []V1Credential `json:"x-credentials"`
 		} `json:"paths"`
 	}
 	if err := json.Unmarshal(raw, &spec); err != nil {
@@ -1061,16 +1072,46 @@ func TestOpenAPISpecMatchesRoutes(t *testing.T) {
 			t.Errorf("mounted /v1/ route %q is not in the OpenAPI spec", route)
 		}
 	}
-	// Every documented /v1/ operation must be a mounted route and declare a scope.
+	contracts := map[string]V1RouteContract{}
+	for _, route := range v1RouteContracts {
+		contracts[route.Method+" "+route.Pattern] = route
+	}
+	// Every documented /v1/ operation must be a mounted route and match its
+	// route contract's credentials and scope.
 	for path, ops := range spec.Paths {
 		for method, op := range ops {
 			key := upperMethod(method) + " " + path
 			if !mounted[key] {
 				t.Errorf("spec documents %q but no such /v1/ route is mounted", key)
 			}
-			if op.RequiredScope == "" {
-				t.Errorf("spec operation %q declares no x-required-scope", key)
+			contract, ok := contracts[key]
+			if !ok {
+				continue
 			}
+			if !slices.Equal(op.Credentials, contract.Credentials) {
+				t.Errorf("spec operation %q x-credentials = %v, route contract accepts %v", key, op.Credentials, contract.Credentials)
+			}
+			if op.RequiredScope != string(contract.Scope) {
+				t.Errorf("spec operation %q x-required-scope = %q, route contract requires %q", key, op.RequiredScope, contract.Scope)
+			}
+		}
+	}
+}
+
+// TestV1RouteContractsDeclareCredentials pins the credential rules of the route
+// table: every route accepts at least one credential, a route that accepts a
+// scoped key names the scope it requires, and a device-only route names none.
+func TestV1RouteContractsDeclareCredentials(t *testing.T) {
+	for _, route := range v1RouteContracts {
+		if len(route.Credentials) == 0 {
+			t.Errorf("%s accepts no credential", route.OperationID)
+		}
+		acceptsKey := slices.Contains(route.Credentials, V1CredentialScopedKey)
+		if acceptsKey && route.Scope == "" {
+			t.Errorf("%s accepts a scoped key but requires no scope", route.OperationID)
+		}
+		if !acceptsKey && route.Scope != "" {
+			t.Errorf("%s requires scope %q but accepts no scoped key", route.OperationID, route.Scope)
 		}
 	}
 }
