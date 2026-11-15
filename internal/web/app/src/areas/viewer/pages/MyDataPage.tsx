@@ -6,10 +6,12 @@ import {
   Download,
   Filter,
   RefreshCw,
+  ShieldCheck,
   Trash2,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
+import { CollapsibleCard, IconHeading } from "@/components/beamfall/workbench";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -193,13 +195,8 @@ export function MyDataPage() {
 
   return (
     <AppShell actions={<ViewerActions />}>
-      <div className="mydata mx-auto flex max-w-4xl flex-col gap-6">
-        <header className="mydata-hero">
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <h1 className="bf-page-title">{t("myDataTitle")}</h1>
-            <p className="bf-lead max-w-2xl">{t("myDataLead")}</p>
-          </div>
-        </header>
+      <div className="mydata mx-auto flex max-w-3xl flex-col gap-4">
+        <IconHeading icon={ShieldCheck} title={t("myDataTitle")} lead={t("myDataLead")} />
 
         <SummarySection summary={summary} error={summaryError} />
 
@@ -221,8 +218,10 @@ export function MyDataPage() {
           onNext={() => setOffset((o) => o + MY_DATA_LOG_PAGE_SIZE)}
         />
 
-        <Panel
-          heading={t("myDataSessionsHeading")}
+        {/* Open: a session this viewer does not recognise is the thing to spot. */}
+        <CollapsibleCard
+          title={t("myDataSessionsHeading")}
+          defaultOpen
           actions={
             <Button variant="outline" size="sm" onClick={refresh}>
               <RefreshCw className="size-3.5" aria-hidden />
@@ -252,64 +251,35 @@ export function MyDataPage() {
               </ul>
             )}
           </div>
-        </Panel>
+        </CollapsibleCard>
 
-        <div className="grid gap-6 md:grid-cols-2">
-          <Panel heading={t("myDataExportHeading")} lead={t("myDataExportLead")}>
-            <div className="mt-auto flex flex-col gap-3">
-              <div>
-                <Button onClick={onExport}>
-                  <Download className="size-4" aria-hidden />
-                  {t("myDataExport")}
-                </Button>
-              </div>
-              {exportMsg && <Notice tone="ok">{exportMsg}</Notice>}
-              {exportError && <Notice tone="error">{exportError}</Notice>}
+        <CollapsibleCard title={t("myDataExportHeading")} lead={t("myDataExportLead")}>
+          <div className="flex flex-col gap-3">
+            <div>
+              <Button onClick={onExport}>
+                <Download className="size-4" aria-hidden />
+                {t("myDataExport")}
+              </Button>
             </div>
-          </Panel>
+            {exportMsg && <Notice tone="ok">{exportMsg}</Notice>}
+            {exportError && <Notice tone="error">{exportError}</Notice>}
+          </div>
+        </CollapsibleCard>
 
-          <Panel heading={t("myDataDeleteHeading")} lead={t("myDataDeleteLead")}>
-            <div className="mt-auto flex flex-col gap-3">
-              <div>
-                <Button variant="danger" onClick={onDeleteAll}>
-                  <Trash2 className="size-4" aria-hidden />
-                  {t("myDataDeleteAll")}
-                </Button>
-              </div>
-              {deleteMsg && <Notice tone="ok">{deleteMsg}</Notice>}
-              {deleteError && <Notice tone="error">{deleteError}</Notice>}
+        <CollapsibleCard title={t("myDataDeleteHeading")} lead={t("myDataDeleteLead")}>
+          <div className="flex flex-col gap-3">
+            <div>
+              <Button variant="danger" onClick={onDeleteAll}>
+                <Trash2 className="size-4" aria-hidden />
+                {t("myDataDeleteAll")}
+              </Button>
             </div>
-          </Panel>
-        </div>
+            {deleteMsg && <Notice tone="ok">{deleteMsg}</Notice>}
+            {deleteError && <Notice tone="error">{deleteError}</Notice>}
+          </div>
+        </CollapsibleCard>
       </div>
     </AppShell>
-  );
-}
-
-// Panel is one bordered surface: a heading with an optional lead, an optional
-// action cluster, and the body.
-function Panel({
-  heading,
-  lead,
-  actions,
-  children,
-}: {
-  heading: string;
-  lead?: string;
-  actions?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section className="mydata-panel">
-      <div className="mydata-panel-head">
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <h2 className="mydata-panel-title">{heading}</h2>
-          {lead && <p className="mydata-panel-lead">{lead}</p>}
-        </div>
-        {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
-      </div>
-      {children}
-    </section>
   );
 }
 
@@ -344,7 +314,7 @@ function SummarySection({
     : [];
   const maxPlays = Math.max(1, ...(summary?.libraryBreakdown.map((b) => b.plays) ?? []));
   return (
-    <Panel heading={t("myDataSummaryHeading")} lead={t("myDataSummaryLead")}>
+    <CollapsibleCard title={t("myDataSummaryHeading")} lead={t("myDataSummaryLead")} defaultOpen>
       {error && <Notice tone="error">{error}</Notice>}
       {summary && (
         <>
@@ -386,7 +356,7 @@ function SummarySection({
           )}
         </>
       )}
-    </Panel>
+    </CollapsibleCard>
   );
 }
 
@@ -433,7 +403,7 @@ function LogSection({
   const hasPrev = offset > 0;
   const hasNext = offset + pageSize < total;
   return (
-    <Panel heading={t("myDataLogHeading")} lead={t("myDataLogLead")}>
+    <CollapsibleCard title={t("myDataLogHeading")} lead={t("myDataLogLead")}>
       <div className="mydata-filters">
         <div className="flex min-w-0 flex-col gap-1.5">
           <Label htmlFor="mydata-log-library">{t("myDataLogFilterLibrary")}</Label>
@@ -513,7 +483,7 @@ function LogSection({
           </Button>
         </div>
       </div>
-    </Panel>
+    </CollapsibleCard>
   );
 }
 

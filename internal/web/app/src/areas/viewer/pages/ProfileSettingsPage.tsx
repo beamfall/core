@@ -1,6 +1,8 @@
+import { SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MetadataAttributionText } from "@/components/beamfall/MetadataAttributionText";
 import { AvatarChooser, PROFILE_AVATAR_PREF_KEY } from "@/components/beamfall/profile";
+import { CollapsibleCard, IconHeading } from "@/components/beamfall/workbench";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Label } from "@/components/ui/label";
 import {
@@ -146,13 +148,14 @@ export function ProfileSettingsPage() {
 
   return (
     <AppShell>
-      <div className="mx-auto flex max-w-2xl flex-col gap-8">
-        <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-          <div className="flex min-w-0 flex-col gap-2">
-            <h1 className="bf-page-title">{t("settingsTitle")}</h1>
-            <p className="bf-lead">{t("settingsLead")}</p>
-          </div>
-          <AdvancedSettingsSwitch className="sm:mt-2" />
+      <div className="mx-auto flex max-w-2xl flex-col gap-4">
+        <header className="flex flex-wrap items-start justify-between gap-x-6">
+          <IconHeading
+            icon={SlidersHorizontal}
+            title={t("settingsTitle")}
+            lead={t("settingsLead")}
+          />
+          <AdvancedSettingsSwitch className="mb-5 sm:mt-2" />
         </header>
 
         {saveError && (
@@ -162,27 +165,20 @@ export function ProfileSettingsPage() {
         )}
 
         {profile && (
-          <section className="flex flex-col gap-3" aria-labelledby="settings-avatar">
-            <h2 id="settings-avatar" className="bf-section-title">
-              {t("avatarHeading")}
-            </h2>
-            <div className="settings-group settings-row flex flex-col gap-4">
-              <p className="m-0 text-sm text-[var(--text-muted)]">{t("avatarLead")}</p>
+          <section aria-label={t("avatarHeading")}>
+            <CollapsibleCard title={t("avatarHeading")} lead={t("avatarLead")}>
               {avatarError && (
                 <p className="m-0 text-sm text-[var(--state-danger)]" role="alert">
                   {t("avatarSaveFailed")}
                 </p>
               )}
               <AvatarChooser profile={profile} onSave={saveAvatar} />
-            </div>
+            </CollapsibleCard>
           </section>
         )}
 
-        <section className="flex flex-col gap-3" aria-labelledby="settings-playback">
-          <h2 id="settings-playback" className="bf-section-title">
-            {t("settingsPlaybackHeading")}
-          </h2>
-          <div className="settings-group">
+        <section aria-label={t("settingsPlaybackHeading")}>
+          <CollapsibleCard title={t("settingsPlaybackHeading")} defaultOpen>
             <div className="settings-row flex flex-col gap-3">
               <div className="flex flex-col gap-1">
                 <span className="font-medium">{t("settingsAutoSkipHeading")}</span>
@@ -387,14 +383,11 @@ export function ProfileSettingsPage() {
                 </Select>
               </div>
             </Advanced>
-          </div>
+          </CollapsibleCard>
         </section>
 
-        <section className="flex flex-col gap-3" aria-labelledby="settings-a11y">
-          <h2 id="settings-a11y" className="bf-section-title">
-            {t("settingsAccessibilityHeading")}
-          </h2>
-          <div className="settings-group">
+        <section aria-label={t("settingsAccessibilityHeading")}>
+          <CollapsibleCard title={t("settingsAccessibilityHeading")} defaultOpen>
             <div className="settings-row flex flex-col gap-1">
               <ToggleRow
                 labelKey="settingsReduceMotion"
@@ -409,18 +402,15 @@ export function ProfileSettingsPage() {
                 {t("settingsReduceMotionLead")}
               </span>
             </div>
-          </div>
+          </CollapsibleCard>
         </section>
 
         {/* Recommendations opt-in uses the Profile's activity — adult-only on
             this self-service surface (managed-Profile recommendation policy is
             operator-owned, ADR-0082 §37). */}
         {!managed && (
-          <section className="flex flex-col gap-3" aria-labelledby="settings-recommend">
-            <h2 id="settings-recommend" className="bf-section-title">
-              {t("settingsRecommendHeading")}
-            </h2>
-            <div className="settings-group">
+          <section aria-label={t("settingsRecommendHeading")}>
+            <CollapsibleCard title={t("settingsRecommendHeading")} defaultOpen>
               <div className="settings-row flex flex-col gap-1">
                 <ToggleRow
                   labelKey="settingsRecommendOptIn"
@@ -435,18 +425,14 @@ export function ProfileSettingsPage() {
                   {t("settingsRecommendOptInLead")}
                 </span>
               </div>
-            </div>
+            </CollapsibleCard>
           </section>
         )}
 
         {credits.length > 0 && (
-          <section className="flex flex-col gap-3" aria-labelledby="settings-credits">
-            <h2 id="settings-credits" className="bf-section-title">
-              {t("settingsCreditsHeading")}
-            </h2>
-            <div className="settings-group">
+          <section aria-label={t("settingsCreditsHeading")}>
+            <CollapsibleCard title={t("settingsCreditsHeading")} lead={t("settingsCreditsLead")}>
               <div className="settings-row flex flex-col gap-2">
-                <p className="m-0 text-sm text-[var(--text-muted)]">{t("settingsCreditsLead")}</p>
                 <ul className="m-0 flex list-none flex-col gap-1 p-0 text-sm">
                   {credits.map((credit) => (
                     <li key={`${JSON.stringify(credit.text)}|${credit.url}`}>
@@ -458,7 +444,7 @@ export function ProfileSettingsPage() {
                   ))}
                 </ul>
               </div>
-            </div>
+            </CollapsibleCard>
           </section>
         )}
 

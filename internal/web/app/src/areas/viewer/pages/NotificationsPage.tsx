@@ -1,6 +1,7 @@
 import { Bell } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router";
+import { IconHeading } from "@/components/beamfall/workbench";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
 import { fetchNotifications, markNotificationRead } from "@/lib/graphql";
@@ -116,10 +117,7 @@ export function NotificationsPage() {
   return (
     <AppShell actions={<ViewerActions />}>
       <div className="mx-auto flex max-w-3xl flex-col gap-6">
-        <header className="flex flex-col gap-2">
-          <h1 className="bf-page-title">{t("notificationsTitle")}</h1>
-          <p className="bf-lead">{t("notificationsLead")}</p>
-        </header>
+        <IconHeading icon={Bell} title={t("notificationsTitle")} lead={t("notificationsLead")} />
 
         <section aria-labelledby="notifications-inbox" className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-3">

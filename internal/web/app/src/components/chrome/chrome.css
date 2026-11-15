@@ -2433,8 +2433,9 @@
 }
 
 /* ============================================================ *
- *  My Data & Privacy (viewer): flat bordered panels, one stat
- *  strip, divided lists. No glass, no icon tiles, no glows.
+ *  My Data & Privacy (viewer): its groups are CollapsibleCards
+ *  (CORE-1121); one stat strip, divided lists. The .mydata-panel
+ *  surface below serves the collection and remote pages.
  * ============================================================ */
 
 .mydata-hero {
@@ -2451,27 +2452,12 @@
   background: var(--bg-surface);
 }
 
-.mydata-panel-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 12px;
-}
-
 .mydata-panel-title {
   margin: 0;
   font-size: 17px;
   font-weight: 600;
   line-height: 24px;
   color: var(--text-primary);
-}
-
-.mydata-panel-lead {
-  margin: 0;
-  max-width: 64ch;
-  font-size: 13px;
-  line-height: 20px;
-  color: var(--text-muted);
 }
 
 /* The counts read as one line of facts inside the panel, not a row of tiles. */
@@ -2763,6 +2749,17 @@ main:has(> .bf-player-stage.is-chrome-hidden) > .bf-player-bar > * {
 
 .settings-group > .settings-row + .settings-row {
   border-top: 1px solid var(--border-subtle);
+}
+
+/* Settings rows set straight into a CollapsibleCard (CORE-1121): the card is
+ * the group, so the rows drop their own inset and keep the hairline. */
+.collapsible-card-body > .settings-row {
+  padding: 0;
+}
+
+.collapsible-card-body > .settings-row + .settings-row {
+  padding-top: 12px;
+  border-top: 1px solid var(--glass-divider, var(--border-subtle));
 }
 
 /* Section menu (SectionMenu.tsx): an area's rail behind one button on phones,

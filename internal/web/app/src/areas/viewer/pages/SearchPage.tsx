@@ -1,5 +1,7 @@
+import { Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
+import { IconHeading } from "@/components/beamfall/workbench";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -98,7 +100,7 @@ export function SearchPage() {
   return (
     <AppShell actions={<ViewerActions />}>
       <div className="mx-auto flex max-w-3xl flex-col gap-4">
-        <h1 className="bf-page-title">{t("search")}</h1>
+        <IconHeading icon={Search} title={t("search")} />
         <form onSubmit={(e) => e.preventDefault()} className="flex flex-wrap gap-2">
           <Input
             ref={inputRef}

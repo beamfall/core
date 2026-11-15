@@ -1,6 +1,7 @@
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, LayoutGrid } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
+import { IconHeading } from "@/components/beamfall/workbench";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -156,7 +157,7 @@ export function SeeAllPage() {
             <ChevronLeft aria-hidden />
             {t("back")}
           </Button>
-          <h1 className="bf-page-title">{displayString(ctx.section.title, displayLocale)}</h1>
+          <IconHeading icon={LayoutGrid} title={displayString(ctx.section.title, displayLocale)} />
         </div>
         {firstPageLoading && (
           <div aria-busy="true" className="bf-grid">
