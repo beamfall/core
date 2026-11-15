@@ -1,6 +1,6 @@
 # Localization: locale resolution, ICU formatting and string catalogs — flow-diagram
 
-Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: b952880cf4519beaa9738e25e349aabf600c9a41. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:70687676a287479a4e9d27b342b665f8 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.

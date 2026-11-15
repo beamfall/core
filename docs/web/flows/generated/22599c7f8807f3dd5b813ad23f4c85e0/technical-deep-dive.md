@@ -1,6 +1,6 @@
 # Manage rename: pattern preview, batch rename managed paths, undo — technical-deep-dive
 
-Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: b952880cf4519beaa9738e25e349aabf600c9a41. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:245c73ec090cd743c140186dd8802434 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.

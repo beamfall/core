@@ -1,6 +1,6 @@
 # Viewer My Data / privacy: summary, event log, sessions, stream tokens, export — exceptions
 
-Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: b952880cf4519beaa9738e25e349aabf600c9a41. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:97cc9c9c8bc51cd718814aeabf9a6d26 -->
 Error reachability, rescue behavior and completeness are unresolved\.

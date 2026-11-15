@@ -1,6 +1,6 @@
 # Manage manual and smart collections — entry-points
 
-Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: b952880cf4519beaa9738e25e349aabf600c9a41. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b5d3ced693956cfecb2a4a6f3b06f0fd -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.

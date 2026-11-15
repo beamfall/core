@@ -1,6 +1,6 @@
 # Viewer See\-All: paginate a Source from a shelf — exceptions
 
-Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: b952880cf4519beaa9738e25e349aabf600c9a41. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:276b3632158ed656b327c375d0e850c9 -->
 Error reachability, rescue behavior and completeness are unresolved\.

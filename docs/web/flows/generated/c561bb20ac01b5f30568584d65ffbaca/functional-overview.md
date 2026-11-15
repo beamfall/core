@@ -1,16 +1,16 @@
 # Console live sessions and host graphs — functional-overview
 
-Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: b952880cf4519beaa9738e25e349aabf600c9a41. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:f043a23992b5dc9a3b4da3f3aa5bda72 -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
 
-Source: internal/web/app/src/areas/console/sections/Dashboard\.tsx:294; symbol: CHART\_HEIGHT; span SHA256: 795a0efbd16af2c292727707936c42deca150072ae3d45c960aba52fb4eb6337.
+Source: internal/web/app/src/areas/console/sections/Dashboard\.tsx:339; symbol: CHART\_HEIGHT; span SHA256: 795a0efbd16af2c292727707936c42deca150072ae3d45c960aba52fb4eb6337.
 
 <!-- flowdocs:paragraph:fcbc62aa62ffcaae930e59d6a3d49774 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
 
-Source: internal/web/app/src/areas/console/sections/Dashboard\.tsx:265; symbol: ; span SHA256: 649346b32ebe90d6d97ab0e77f2959de9a55637328ab0bda94ec2cf763a39ce1.
+Source: internal/web/app/src/areas/console/sections/Dashboard\.tsx:310; symbol: ; span SHA256: 649346b32ebe90d6d97ab0e77f2959de9a55637328ab0bda94ec2cf763a39ce1.
 
 <!-- flowdocs:paragraph:fa778c63ea99d9b52f21b9312dae0605 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.

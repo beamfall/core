@@ -1,6 +1,6 @@
 # Native app\-store host bridge: host messages, open in native player — exceptions
 
-Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: b952880cf4519beaa9738e25e349aabf600c9a41. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:d7d0ae6c087004284366af6b62a95278 -->
 Error reachability, rescue behavior and completeness are unresolved\.

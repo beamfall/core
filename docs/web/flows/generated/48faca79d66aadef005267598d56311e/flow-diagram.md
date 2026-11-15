@@ -1,6 +1,6 @@
 # Console update awareness: update check, release channel and update\-available guidance — flow-diagram
 
-Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: b952880cf4519beaa9738e25e349aabf600c9a41. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:e0de9263216b4c650f14e5993fe9cf5b -->
 Static source inventory only; sequence and runtime ordering are unresolved\.

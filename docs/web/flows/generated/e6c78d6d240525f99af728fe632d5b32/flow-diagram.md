@@ -1,6 +1,6 @@
 # App shell chrome: header, library sidebar, account menu, phone layout — flow-diagram
 
-Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: b952880cf4519beaa9738e25e349aabf600c9a41. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:d615ec7ce0e551eeb17c139b8e1f7423 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.

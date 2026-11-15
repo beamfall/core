@@ -1,6 +1,6 @@
 # Rescan a library or all libraries and follow scan state — technical-deep-dive
 
-Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: b952880cf4519beaa9738e25e349aabf600c9a41. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:834cd5a6bfc5387f771ab3575a7ed6c9 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.

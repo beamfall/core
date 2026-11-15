@@ -1,6 +1,6 @@
 # Console access: devices and pairing codes — flow-diagram
 
-Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: b952880cf4519beaa9738e25e349aabf600c9a41. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:627edae7273401dd1b8e57469578b420 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.

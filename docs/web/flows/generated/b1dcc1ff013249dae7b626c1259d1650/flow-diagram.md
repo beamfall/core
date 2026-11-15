@@ -1,6 +1,6 @@
 # Manage convert: enqueue conversion presets and watch the queue — flow-diagram
 
-Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: b952880cf4519beaa9738e25e349aabf600c9a41. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:2c5cfde77320cb3939bea5e80eb50c96 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.

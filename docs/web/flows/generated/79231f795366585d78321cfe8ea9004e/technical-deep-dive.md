@@ -1,6 +1,6 @@
 # Console API tokens and keys: scopes, create, revoke, one\-time secret — technical-deep-dive
 
-Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: b952880cf4519beaa9738e25e349aabf600c9a41. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:e219d28ebe1ffbb769e619914b209653 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.

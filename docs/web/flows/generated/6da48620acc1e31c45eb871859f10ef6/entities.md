@@ -1,6 +1,6 @@
 # Console access: library grants, rating ceilings, access schedules, managed policy — entities
 
-Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: b952880cf4519beaa9738e25e349aabf600c9a41. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:ead789c4198fbbd90e243e37bc50a09b -->
 Runtime entities and persistence effects are unresolved; lexical calls are listed separately\.

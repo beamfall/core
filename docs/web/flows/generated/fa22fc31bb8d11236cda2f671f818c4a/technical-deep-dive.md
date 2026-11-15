@@ -1,6 +1,6 @@
 # Player up\-next countdown and play queue navigation — technical-deep-dive
 
-Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: b952880cf4519beaa9738e25e349aabf600c9a41. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:d3c5a539ef601cb9f5c3f7c7a71d80a2 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.

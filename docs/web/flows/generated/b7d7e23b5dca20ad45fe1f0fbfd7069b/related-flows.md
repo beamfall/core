@@ -1,6 +1,6 @@
 # Manage markers: segment edit, bulk delete, trashed markers — related-flows
 
-Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: b952880cf4519beaa9738e25e349aabf600c9a41. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:7bee61b20eb542cd3965c717d29b5613 -->
 Relations are static lexical candidates; computed dispatch remains unresolved\.

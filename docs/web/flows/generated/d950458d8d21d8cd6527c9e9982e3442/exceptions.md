@@ -1,6 +1,6 @@
 # Player route: lazy load, timestamp links, info overlay, audio stage — exceptions
 
-Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: b952880cf4519beaa9738e25e349aabf600c9a41. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:12ef4b2a57a85c97a7838fe17d484502 -->
 Error reachability, rescue behavior and completeness are unresolved\.

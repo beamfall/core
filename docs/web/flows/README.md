@@ -34,8 +34,8 @@ version 6 (member declarations of every kind, and the JSX fragment mask fix); ru
 older generator and members go unresolved.
 
 Summary at that revision: 89 flows, all generated; 2,355 declared members, all resolved;
-2,265 in-scope declarations unassigned: 1,005 in unit tests, e2e specs and test setup, 8 in the
-Playwright and Vite configs, and 1,252 product declarations no flow names yet (most under
+2,267 in-scope declarations unassigned: 1,005 in unit tests, e2e specs and test setup, 8 in the
+Playwright and Vite configs, and 1,254 product declarations no flow names yet (most under
 `areas/viewer/player`, `areas/viewer/lib`, the console sections and `lib/theme`; CORE-1487 tracks
 naming the ones the CORE-1117 design pass added). When a refactor moves or renames a member declaration, repoint its
 `inventory.json` entry and regenerate; an unresolved member means the curation has drifted from
