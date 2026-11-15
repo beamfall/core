@@ -26,4 +26,4 @@
 ## 5. Verify and close
 
 - [x] 5.1 `openspec validate --all --strict`
-- [ ] 5.2 Preflight on wsl (`script/wsl-gate.sh`)
+- [x] 5.2 Preflight on wsl (`script/wsl-gate.sh`)

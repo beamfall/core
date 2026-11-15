@@ -8,4 +8,4 @@
 ## 2. Close
 
 - [x] 2.1 `openspec validate --all --strict` passes
-- [ ] 2.2 Archive the change after landing
+- [x] 2.2 Archive the change after landing
