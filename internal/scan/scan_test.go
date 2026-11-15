@@ -2795,13 +2795,13 @@ func (m *markingMetadataHydrator) HydrateMetadata(ctx context.Context, input Met
 // probe metadata and selected by the Library's plugin ID.
 func TestScanInvokesMetadataHydratorForAudioWithProbeMetadata(t *testing.T) {
 	root := t.TempDir()
-	writeScanFile(t, root, "Radiohead/OK Computer/02 Paranoid Android.flac", []byte("flac bytes here padding padding"))
+	writeScanFile(t, root, "Quiet Meridian/Paper Lanterns/02 Glass Orchard.flac", []byte("flac bytes here padding padding"))
 	st := storetest.Open(t)
 	library, err := st.CreateLibrary(context.Background(), "Music", false, "music", "profile-default")
 	if err != nil {
 		t.Fatal(err)
 	}
-	tags := map[string]string{"title": "Paranoid Android", "album": "OK Computer", "artist": "Radiohead", "track": "2/12"}
+	tags := map[string]string{"title": "Glass Orchard", "album": "Paper Lanterns", "artist": "Quiet Meridian", "track": "2/12"}
 	prober := fakeProber{probe: ffmpeg.Probe{Container: "flac", AudioCodec: "flac", HasVideo: false, DurationSeconds: 387, Tags: tags}}
 	hydrator := &fakeMetadataHydrator{capability: MetadataHydrationCapability{
 		MediaClasses: []store.MediaClass{store.MediaClassAudio},
@@ -2826,7 +2826,7 @@ func TestScanInvokesMetadataHydratorForAudioWithProbeMetadata(t *testing.T) {
 	if call.Class != store.MediaClassAudio {
 		t.Errorf("hydrator class = %q, want %q", call.Class, store.MediaClassAudio)
 	}
-	if call.Metadata["album"] != "OK Computer" || call.Metadata["track"] != "2/12" {
+	if call.Metadata["album"] != "Paper Lanterns" || call.Metadata["track"] != "2/12" {
 		t.Errorf("hydrator did not receive probe metadata: %v", call.Metadata)
 	}
 }

@@ -223,16 +223,16 @@ func musicAlbumIdentity(t *testing.T, tags map[string]string, path string) strin
 }
 
 func TestMusicAlbumIdentityIsAlbumArtistAndTitle(t *testing.T) {
-	queen := musicAlbumIdentity(t, map[string]string{"TITLE": "Bohemian Rhapsody", "ALBUM": "Greatest Hits", "ARTIST": "Queen", "ALBUMARTIST": "Queen"}, "/flat/a.flac")
-	abba := musicAlbumIdentity(t, map[string]string{"TITLE": "Waterloo", "ALBUM": "Greatest Hits", "ARTIST": "ABBA", "ALBUMARTIST": "ABBA"}, "/flat/b.flac")
-	if queen == abba {
-		t.Fatalf("two albums titled Greatest Hits by different album artists share one identity: %s", queen)
+	lantern := musicAlbumIdentity(t, map[string]string{"TITLE": "Copper Tide", "ALBUM": "Tidewater Anthology", "ARTIST": "Lantern Choir", "ALBUMARTIST": "Lantern Choir"}, "/flat/a.flac")
+	northbound := musicAlbumIdentity(t, map[string]string{"TITLE": "Salt Road", "ALBUM": "Tidewater Anthology", "ARTIST": "Northbound Signal", "ALBUMARTIST": "Northbound Signal"}, "/flat/b.flac")
+	if lantern == northbound {
+		t.Fatalf("two albums titled Tidewater Anthology by different album artists share one identity: %s", lantern)
 	}
 
 	// No album-artist tag and no artist folder: the track artist stands in.
-	untaggedQueen := musicAlbumIdentity(t, map[string]string{"TITLE": "Killer Queen", "ALBUM": "Greatest Hits", "ARTIST": "Queen"}, "/flat/c.flac")
-	if untaggedQueen != queen {
-		t.Fatalf("album without an album-artist tag = %s, want the artist's album %s", untaggedQueen, queen)
+	untaggedLantern := musicAlbumIdentity(t, map[string]string{"TITLE": "Ember Steps", "ALBUM": "Tidewater Anthology", "ARTIST": "Lantern Choir"}, "/flat/c.flac")
+	if untaggedLantern != lantern {
+		t.Fatalf("album without an album-artist tag = %s, want the artist's album %s", untaggedLantern, lantern)
 	}
 
 	// A compilation with one album artist stays one album whatever each track's artist is.
