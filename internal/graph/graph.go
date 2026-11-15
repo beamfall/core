@@ -1449,7 +1449,15 @@ func clientCanceled(ctx context.Context, err error) bool {
 // fields instead accumulate a per-field error via readField and resolve the
 // rest of the batch.
 func graphFail(ctx context.Context, field string, err error) response {
-	return response{Errors: []graphError{newGraphError(errorCode(err), graphFailMessage(ctx, field, err))}}
+	return response{Errors: []graphError{fieldGraphError(ctx, field, err)}}
+}
+
+// fieldGraphError builds the wire error for one failed field: its code, its
+// client-safe message and, where it carries one, its reason.
+func fieldGraphError(ctx context.Context, field string, err error) graphError {
+	fail := newGraphError(errorCode(err), graphFailMessage(ctx, field, err))
+	fail.Extensions.Reason = errorReason(err)
+	return fail
 }
 
 // readField records one READ field's outcome under M2 partial-success: on
@@ -1462,7 +1470,7 @@ func graphFail(ctx context.Context, field string, err error) response {
 func readField[T any](ctx context.Context, data map[string]any, errs *[]graphError, dataKey, errorField, errorPath string, result T, err error) {
 	if err != nil {
 		data[dataKey] = nil
-		fail := newGraphError(errorCode(err), graphFailMessage(ctx, errorField, err))
+		fail := fieldGraphError(ctx, errorField, err)
 		fail.Path = []string{errorPath}
 		*errs = append(*errs, fail)
 		return

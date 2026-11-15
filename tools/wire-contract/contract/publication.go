@@ -50,7 +50,9 @@ type PlaybackInfoContract struct {
 type GraphQLErrorsContract struct {
 	Error WireShape `json:"error"`
 	Codes []string  `json:"codes"`
-	Notes []string  `json:"notes,omitempty"`
+	// Reasons is the closed extensions.reason vocabulary (CORE-1551).
+	Reasons []string `json:"reasons,omitempty"`
+	Notes   []string `json:"notes,omitempty"`
 }
 
 type WireShape struct {
@@ -133,13 +135,19 @@ func buildGraphQLErrorsContract() GraphQLErrorsContract {
 	for _, code := range graph.ErrorCodes() {
 		codes = append(codes, string(code))
 	}
+	reasons := make([]string, 0, len(graph.ErrorReasons()))
+	for _, reason := range graph.ErrorReasons() {
+		reasons = append(reasons, string(reason))
+	}
 	return GraphQLErrorsContract{
-		Error: shapeOf(reflect.TypeOf(graph.GraphQLErrorWire{})),
-		Codes: codes,
+		Error:   shapeOf(reflect.TypeOf(graph.GraphQLErrorWire{})),
+		Codes:   codes,
+		Reasons: reasons,
 		Notes: []string{
 			"Every entry in a GraphQL response's errors array carries extensions.code from the closed vocabulary in codes. Clients branch on the code, never on the message text; growing the vocabulary is a deliberate wire-contract change.",
 			"Denial of existence (ARCHITECTURE §6): content outside the caller's Library or Reveal scope answers NOT_FOUND, exactly as content that does not exist. FORBIDDEN means a role, tier, session-kind or Reveal gate refused an authenticated caller; it never confirms that hidden content exists.",
 			"UNAUTHENTICATED means no valid session or device credential; THROTTLED means attempt limiting refused the request and it may be retried later; INVALID means the request or an argument is malformed; CONFLICT means the target's current state does not allow the operation; INTERNAL means a server-side failure; its message is generic (the failed field name followed by \"unavailable\") and the cause stays in the server log.",
+			"extensions.reason, when present, is one of the closed vocabulary in reasons and refines extensions.code where a client must act differently on refusals that share a code. REVEAL_PIN_NOT_SET (FORBIDDEN): the step-up needs a reveal PIN and the Profile has none, so entering one cannot help. REVEAL_PIN_REQUIRED (FORBIDDEN): the request carried no reveal PIN. REVEAL_PIN_INCORRECT (FORBIDDEN): the reveal PIN does not match. myEngagement and deleteMyData use these. Absent means the error has no finer reason; clients must not infer one from the message text, and must treat an unknown reason as absent.",
 		},
 	}
 }

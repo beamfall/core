@@ -513,21 +513,25 @@ func TestDeleteMyEngagementRequiresRevealPIN(t *testing.T) {
 	mydataSeedEngagement(t, handler, authorizeViewer)
 
 	// No PIN (old-client shape): rejected, and nothing is deleted.
-	if _, errs := post(t, handler,
+	_, errs := post(t, handler,
 		`{"query":"mutation D($scope: String!){ deleteMyEngagement(scope: $scope){ scope } }","variables":{"scope":"all"}}`,
-		authorizeViewer); len(errs) == 0 {
+		authorizeViewer)
+	if len(errs) == 0 {
 		t.Fatal("delete without a reveal PIN succeeded — My Data hard-delete is not PIN-gated")
 	}
+	assertRefusalReason(t, errs, ErrorReasonRevealPINRequired)
 	if s := mydataReadEngagement(t, handler, authorizeViewer); len(s.PlaybackProgress) != 1 || len(s.Favorites) != 1 || len(s.Queue) != 1 {
 		t.Fatalf("rejected (no-PIN) delete still removed data: %#v", s)
 	}
 
 	// Wrong PIN: rejected, still nothing deleted.
-	if _, errs := post(t, handler,
+	_, errs = post(t, handler,
 		`{"query":"mutation D($scope: String!, $pin: String){ deleteMyEngagement(scope: $scope, pin: $pin){ scope } }","variables":{"scope":"all","pin":"0000"}}`,
-		authorizeViewer); len(errs) == 0 {
+		authorizeViewer)
+	if len(errs) == 0 {
 		t.Fatal("delete with a wrong reveal PIN succeeded")
 	}
+	assertRefusalReason(t, errs, ErrorReasonRevealPINIncorrect)
 	if s := mydataReadEngagement(t, handler, authorizeViewer); len(s.PlaybackProgress) != 1 {
 		t.Fatalf("rejected (wrong-PIN) delete still removed data: %#v", s)
 	}
@@ -561,18 +565,22 @@ func TestMyEngagementExportRequiresRevealPIN(t *testing.T) {
 	mydataSeedEngagement(t, handler, authorizeViewer)
 
 	// No PIN: rejected.
-	if _, errs := post(t, handler,
+	_, errs := post(t, handler,
 		`{"query":"query { myEngagement { schema playbackProgress { mediaID } } }"}`,
-		authorizeViewer); len(errs) == 0 {
+		authorizeViewer)
+	if len(errs) == 0 {
 		t.Fatal("export without a reveal PIN succeeded — My Data export is not PIN-gated")
 	}
+	assertRefusalReason(t, errs, ErrorReasonRevealPINRequired)
 
 	// Wrong PIN: rejected.
-	if _, errs := post(t, handler,
+	_, errs = post(t, handler,
 		`{"query":"query Q($pin: String){ myEngagement(pin: $pin){ schema playbackProgress { mediaID } } }","variables":{"pin":"0000"}}`,
-		authorizeViewer); len(errs) == 0 {
+		authorizeViewer)
+	if len(errs) == 0 {
 		t.Fatal("export with a wrong reveal PIN succeeded")
 	}
+	assertRefusalReason(t, errs, ErrorReasonRevealPINIncorrect)
 
 	// Correct PIN: export succeeds and returns the seeded data.
 	data, errs := post(t, handler,
@@ -636,6 +644,7 @@ func TestMyEngagementExportRejectsPINlessAdult(t *testing.T) {
 	if !strings.Contains(errs[0].Message, "reveal PIN must be set before exporting your data") {
 		t.Fatalf("PIN-less adult export error = %#v, want no-PIN clientError", errs)
 	}
+	assertRefusalReason(t, errs, ErrorReasonRevealPINNotSet)
 	if strings.Contains(string(data["myEngagement"]), "recoveryKey") {
 		t.Fatalf("PIN-less adult export payload contains recovery material: %s", data["myEngagement"])
 	}
@@ -785,5 +794,17 @@ func TestOperatorDeleteProfileDataCanDeleteAdultTarget(t *testing.T) {
 	gone := mydataReadEngagement(t, handler, authorizeViewer)
 	if len(gone.PlaybackProgress) != 0 || len(gone.Favorites) != 0 || len(gone.Queue) != 0 {
 		t.Fatalf("adult target engagement survived operator delete: %#v", gone)
+	}
+}
+
+// assertRefusalReason checks a My Data PIN refusal's machine-readable reason
+// (CORE-1551): clients branch on extensions.reason, never on the message.
+func assertRefusalReason(t *testing.T, errs []graphError, want ErrorReason) {
+	t.Helper()
+	if len(errs) != 1 {
+		t.Fatalf("errors = %#v, want one refusal", errs)
+	}
+	if got := errs[0].Extensions; got.Code != ErrorCodeForbidden || got.Reason != want {
+		t.Fatalf("refusal extensions = %#v, want code %s reason %s", got, ErrorCodeForbidden, want)
 	}
 }
