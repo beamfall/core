@@ -26,6 +26,7 @@
       {
         "id": "media-archive",
         "kind": "media",
+        "mediaClass": "video",
         "restricted": true,
         "summary": "2 min",
         "title": "Archive Media"
@@ -40,6 +41,7 @@
         },
         "id": "media-alpha",
         "kind": "media",
+        "mediaClass": "video",
         "summary": "2 min",
         "title": "Sample Media"
       }

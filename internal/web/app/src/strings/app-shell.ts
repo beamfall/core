@@ -1,5 +1,6 @@
 export const appShellStrings = {
   en: {
+    skipToContent: "Skip to main content",
     appTitle: "Beamfall",
     brand: "Beamfall",
     coreSourceOffer: "Beamfall Core corresponding source",
@@ -65,6 +66,7 @@ export const appShellStrings = {
     refresh: "Refresh",
   },
   fr: {
+    skipToContent: "Aller au contenu principal",
     appTitle: "Beamfall",
     brand: "Beamfall",
     navLabel: "Navigation",
@@ -121,6 +123,7 @@ export const appShellStrings = {
     profileActionLabel: "Profil : {name}",
   },
   de: {
+    skipToContent: "Zum Hauptinhalt springen",
     appTitle: "Beamfall",
     brand: "Beamfall",
     navLabel: "Navigation",
@@ -177,6 +180,7 @@ export const appShellStrings = {
     refresh: "Aktualisieren",
   },
   es: {
+    skipToContent: "Saltar al contenido principal",
     appTitle: "Beamfall",
     brand: "Beamfall",
     navLabel: "Navegación",
@@ -232,6 +236,7 @@ export const appShellStrings = {
     refresh: "Actualizar",
   },
   pt: {
+    skipToContent: "Pular para o conteúdo principal",
     appTitle: "Beamfall",
     brand: "Beamfall",
     navLabel: "Navegação",

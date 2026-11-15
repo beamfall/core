@@ -6,3 +6,9 @@ import { lazyRoute } from "@/lib/lazyRoute";
 export const LazyPlayerPage = lazyRoute(() =>
   import("../pages/PlayerPage").then((m) => ({ default: m.PlayerPage })),
 );
+
+// The same chunk's player engine, mounted by the persistent player host above
+// the viewer routes (CORE-1633) so audio outlives the watch route.
+export const LazyHostedPlayer = lazyRoute(() =>
+  import("../pages/PlayerPage").then((m) => ({ default: m.HostedPlayer })),
+);

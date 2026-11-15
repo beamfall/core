@@ -115,6 +115,11 @@ async function openPlayer(page: Page): Promise<{ stage: Locator; video: Locator 
   ).toBeVisible();
   await expect(scrubber).toBeVisible();
   await expect.poll(() => video.evaluate((element) => element.duration)).toBe(2);
+  // The player starts playback on its one-shot canplay listener, which fires
+  // after the duration is known; pausing before then gets overridden.
+  await expect
+    .poll(() => video.evaluate((element) => element.readyState))
+    .toBeGreaterThanOrEqual(3);
   await video.evaluate(
     (element) =>
       new Promise<void>((resolve) => {

@@ -18,7 +18,7 @@ import {
 } from "@/lib/viewerCache";
 import { ItemActions } from "../actions";
 import { useEngagementEpoch } from "../actions/engagementSync";
-import { ContainerChildren } from "../components/ContainerChildren";
+import { EntityMediaBrowse } from "../components/EntityMediaBrowse";
 import { findCachedSectionItem } from "../components/HydratedSection";
 import { LayoutView } from "../components/LayoutView";
 import { MediaItemCard } from "../components/MediaItemCard";
@@ -42,7 +42,8 @@ const entityMediaCacheKey = (id: string) => `entity-media:${id}`;
 // values). When the manifest carries a detail Layout for this Entity's Kind
 // (role: "detail", matching entityKind), its Sections render through the same
 // LayoutView as browse, with entityID riding the variables for entity-media
-// Sources. Otherwise the hand-rolled mediaForEntity list renders. Related
+// Sources. Otherwise the hand-rolled mediaForEntity list renders, laid out by
+// archetype and Media class (EntityMediaBrowse: track list, person). Related
 // Entities (either relation direction, grouped by kind) render before both,
 // so an Entity linked only to other Entities never opens empty. `kind` is a
 // plugin display label, rendered as text only (invariant #1 / #5).
@@ -277,9 +278,9 @@ export function EntityPage() {
               navigationID={`entity:${entityId || ""}`}
             />
           ) : (
-            fallback &&
-            fallback.length > 0 && (
-              <ContainerChildren
+            fallback && (
+              <EntityMediaBrowse
+                entity={entity}
                 items={fallback}
                 label={t("entityDetailChildrenLabel", { title: entity?.title ?? previewTitle })}
               />

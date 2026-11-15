@@ -54,6 +54,7 @@ const { fakeHlsInstances } = vi.hoisted(() => ({
     destroyed: () => boolean;
     tracks: {
       subtitleTrack: number;
+      audioTrack: number;
       currentLevel: number;
       levels: Array<{ height?: number; bitrate?: number }>;
       subtitleTracks: Array<{ lang?: string; name?: string }>;
@@ -674,6 +675,7 @@ describe("usePlayer", () => {
       undefined,
       DEFAULT_ADJUSTMENT,
       "v-uhd",
+      undefined,
     );
   });
 
@@ -687,6 +689,7 @@ describe("usePlayer", () => {
       undefined,
       DEFAULT_ADJUSTMENT,
       "",
+      undefined,
     );
     const video = screen.getByTestId("player");
     expect(video).toHaveAttribute("src", "/api/media/direct/token");
@@ -717,7 +720,13 @@ describe("usePlayer", () => {
     await waitFor(() =>
       expect(screen.getByTestId("stream-url")).toHaveTextContent("/api/media/direct/adjusted"),
     );
-    expect(fetchPlaybackInfo).toHaveBeenLastCalledWith("media-alpha", undefined, adjustment, "");
+    expect(fetchPlaybackInfo).toHaveBeenLastCalledWith(
+      "media-alpha",
+      undefined,
+      adjustment,
+      "",
+      undefined,
+    );
     const restarted = screen.getByTestId("player") as HTMLVideoElement;
     fireEvent.loadedMetadata(restarted);
     expect(restarted.currentTime).toBe(37.5);
@@ -984,7 +993,12 @@ describe("usePlayer", () => {
     vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce({
       decision: "transcode",
       streams: [{ kind: "hls", url: "/api/media/hls/token.m3u8" }],
-      trackPreferences: { subtitleLanguage: "en", subtitleMode: "on" },
+      trackPreferences: {
+        audioLanguages: [],
+        subtitleLanguages: ["eng"],
+        subtitleMode: "always",
+        preferSDH: false,
+      },
     });
     render(<Harness />);
     await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
@@ -1010,6 +1024,113 @@ describe("usePlayer", () => {
     act(() => hls.emit("audioTracksUpdated"));
     expect(hls.tracks.subtitleTrack).toBe(-1);
     expect(textTracks.map((track) => track.mode)).toEqual(["disabled", "disabled"]);
+  });
+
+  it("applies the preferred audio language to hls.js audio renditions (CORE-1680)", async () => {
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+    vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce({
+      decision: "transcode",
+      streams: [{ kind: "hls", url: "/api/media/hls/token.m3u8" }],
+      trackPreferences: { audioLanguages: ["fr"], subtitleLanguages: [], subtitleMode: "off" },
+    });
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    const [hls] = fakeHlsInstances;
+    hls.tracks.audioTracks = [
+      { lang: "eng", name: "English" },
+      { lang: "fra", name: "French" },
+    ];
+    act(() => hls.emit("manifestParsed"));
+    expect(hls.tracks.audioTrack).toBe(1);
+  });
+
+  describe("server subtitle pick at start (CORE-1680)", () => {
+    // jsdom has no TextTrack on <track>: give each element a mode to toggle.
+    const modes = new WeakMap<HTMLTrackElement, { mode: string }>();
+    beforeEach(() => {
+      Object.defineProperty(HTMLTrackElement.prototype, "track", {
+        configurable: true,
+        get(this: HTMLTrackElement) {
+          let track = modes.get(this);
+          if (!track) {
+            track = { mode: "disabled" };
+            modes.set(this, track);
+          }
+          return track;
+        },
+      });
+    });
+    afterEach(() => {
+      Reflect.deleteProperty(HTMLTrackElement.prototype, "track");
+    });
+
+    const shown = (video: HTMLVideoElement) =>
+      Array.from(video.querySelectorAll("track"))
+        .filter((element) => element.track.mode === "showing")
+        .map((element) => element.getAttribute("data-bf-caption"));
+
+    it("shows the forced text track the server picked on direct play", async () => {
+      vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce({
+        decision: "direct-play",
+        streams: [{ kind: "direct-play", url: "/api/media/direct/alpha" }],
+        captionTracks: [
+          {
+            id: "muxed-main-3",
+            format: "subrip",
+            streamIndex: 3,
+            language: "eng",
+            url: "/s/3.vtt",
+          },
+          {
+            id: "muxed-main-4",
+            format: "subrip",
+            streamIndex: 4,
+            language: "fra",
+            url: "/s/4.vtt",
+          },
+          {
+            id: "muxed-main-5",
+            format: "subrip",
+            streamIndex: 5,
+            language: "fra",
+            forced: true,
+            url: "/s/5.vtt",
+          },
+        ],
+        selectedSubtitleTrack: {
+          track: { kind: "muxed", language: "fr", roles: { forced: true } },
+          reason: "forced subtitles",
+        },
+      });
+      render(<Harness />);
+      const video = screen.getByTestId("player") as HTMLVideoElement;
+      await waitFor(() => expect(shown(video)).toEqual(["muxed-main-5"]));
+      expect(fetchPlaybackInfo).toHaveBeenCalledTimes(1);
+    });
+
+    it("asks once more with a picture-based pick burned in", async () => {
+      const picture = {
+        decision: "direct-stream",
+        streams: [{ kind: "hls", url: "/api/media/hls/token.m3u8" }],
+        captionTracks: [
+          { id: "muxed-main-6", format: "hdmv_pgs_subtitle", streamIndex: 6, language: "fra" },
+        ],
+        selectedSubtitleTrack: {
+          track: { kind: "muxed", language: "fra" },
+          reason: "preferred-language subtitles",
+        },
+      };
+      vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce(picture).mockResolvedValueOnce(picture);
+      render(<Harness />);
+      await waitFor(() => expect(fetchPlaybackInfo).toHaveBeenCalledTimes(2));
+      expect(vi.mocked(fetchPlaybackInfo).mock.calls[0][4]).toBeUndefined();
+      expect(vi.mocked(fetchPlaybackInfo).mock.calls[1][4]).toEqual({
+        selectedAudioIndex: undefined,
+        selectedSubtitleIndex: 6,
+      });
+      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+      expect(fetchPlaybackInfo).toHaveBeenCalledTimes(2);
+    });
   });
 
   it("leaves no loadedmetadata listener on the video after cleanup", async () => {
@@ -1321,6 +1442,7 @@ describe("usePlayer", () => {
       "media-next",
       DEFAULT_ADJUSTMENT,
       "",
+      undefined,
     );
     expect(screen.getByTestId("up-next")).toHaveTextContent("media-next");
   });

@@ -667,3 +667,36 @@ func TestManualMarkOutranksAnOlderPlaybackReport(t *testing.T) {
 		t.Fatalf("a report newer than the mark = %+v, %v; want position 50", progress, err)
 	}
 }
+
+func TestFavoritesSource(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	revealed := LibraryFilter{AllowedIDs: []LibraryID{"library-local", "library-archive"}, Revealed: true}
+	query := SourceQuery{Kind: "favorites", ProfileID: "profile-default"}
+
+	for _, id := range []MediaID{"media-alpha", "media-archive"} {
+		if err := st.SetMediaFavorite(ctx, "profile-default", id, true, revealed); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := len(mustSourceItems(t, st, revealed, query)); got != 2 {
+		t.Fatalf("revealed favorites has %d items, want 2", got)
+	}
+	// The restricted Library's favorite stays hidden under an open filter.
+	items := mustSourceItems(t, st, itemOpenFilter, query)
+	if len(items) != 1 || string(items[0].ID) != "media-alpha" {
+		t.Fatalf("favorites = %+v, want only the open Media", items)
+	}
+	if got := mustSourceItems(t, st, itemOpenFilter, SourceQuery{Kind: "favorites", ProfileID: "profile-managed"}); len(got) != 0 {
+		t.Fatalf("another Profile's favorites = %+v", got)
+	}
+	if got := mustSourceItems(t, st, itemOpenFilter, SourceQuery{Kind: "favorites"}); len(got) != 0 {
+		t.Fatalf("profile-less favorites = %+v", got)
+	}
+	if err := st.SetMediaFavorite(ctx, "profile-default", "media-alpha", false, itemOpenFilter); err != nil {
+		t.Fatal(err)
+	}
+	if got := mustSourceItems(t, st, itemOpenFilter, query); len(got) != 0 {
+		t.Fatalf("unfavorited item still listed: %+v", got)
+	}
+}

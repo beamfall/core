@@ -1,0 +1,3 @@
+- [x] Shared SkipLink component, styles and localized label
+- [x] App shell, profile picker and player pages render it with a focusable main region
+- [x] Unit test: first Tab stop and focus move

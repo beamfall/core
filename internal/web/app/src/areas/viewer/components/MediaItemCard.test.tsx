@@ -343,6 +343,32 @@ describe("MediaItemCard player prefetch", () => {
   });
 });
 
+describe("MediaItemCard placeholder glyph (CORE-1492)", () => {
+  it("draws the audio glyph for an artwork-less audio item", () => {
+    const { container } = renderCard({ artwork: undefined, mediaClass: "audio" });
+    expect(container.querySelector(".bf-poster img")).toBeNull();
+    expect(container.querySelector('.bf-poster-glyph[data-glyph="audio"]')).not.toBeNull();
+    expect(container.querySelector('.bf-poster-glyph[data-glyph="film"]')).toBeNull();
+  });
+
+  it("keeps the film glyph for an artwork-less video item", () => {
+    const { container } = renderCard({ artwork: undefined, mediaClass: "video" });
+    expect(container.querySelector('.bf-poster-glyph[data-glyph="film"]')).not.toBeNull();
+    expect(container.querySelector('.bf-poster-glyph[data-glyph="audio"]')).toBeNull();
+  });
+
+  it("keeps the film glyph when the class is unknown", () => {
+    const { container } = renderCard({ artwork: undefined });
+    expect(container.querySelector('.bf-poster-glyph[data-glyph="film"]')).not.toBeNull();
+  });
+
+  it("shows artwork, not a glyph, when an audio item has artwork", () => {
+    const { container } = renderCard({ mediaClass: "audio" });
+    expect(container.querySelector(".bf-poster img")).not.toBeNull();
+    expect(container.querySelector(".bf-poster-glyph")).toBeNull();
+  });
+});
+
 function renderCard(overrides: Partial<SourceItem> = {}) {
   return render(
     <I18nProvider initialLocale="en">
