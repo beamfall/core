@@ -74,7 +74,7 @@ func (s *scanWalkState) releaseBudget() {
 
 func (s *scanWalkState) isSupportedMediaFile(path string, info fs.FileInfo) bool {
 	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")
-	return info.Mode().IsRegular() && titleFromPath(path) != "" && mediaExtensions[ext]
+	return info.Mode().IsRegular() && titleFromPath(path) != "" && mediaExtensions[ext] && !isLocalArtworkSidecar(path)
 }
 
 func (s *scanWalkState) directoryContext(path string) ParseContext {
@@ -131,6 +131,9 @@ func (s *scanWalkState) admitEntry(path string, entry fs.DirEntry, err error) (*
 		return nil, err
 	}
 	if !info.Mode().IsRegular() {
+		return nil, nil
+	}
+	if isLocalArtworkSidecar(path) {
 		return nil, nil
 	}
 	if now().Sub(info.ModTime()) < stabilityWindow {
