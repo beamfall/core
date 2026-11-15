@@ -156,6 +156,17 @@ export default defineConfig({
       testMatch: /auth-matrix\.spec\.ts/,
       use: { ...devices["Desktop Chrome"] },
     },
+    // MUSIC (CORE-1640): a real Music-plugin Library of generated tracks played in the
+    // browser. Last among the Chromium projects so the Library it adds (and deletes
+    // again) never shows on another project's shelves.
+    {
+      name: "music",
+      testMatch: /music\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        storageState: join(authDir, "viewer.json"),
+      },
+    },
     {
       name: "web-compat-firefox",
       testMatch: /browser-compat\.spec\.ts/,
