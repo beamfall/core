@@ -1,6 +1,7 @@
 package encderiv
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
@@ -16,6 +17,12 @@ const (
 	maxBufferedBox = 16 << 20
 	// maxReferences is the sidx reference_count ceiling.
 	maxReferences = math.MaxUint16
+	// maxFragmentSamples bounds the reference-track samples one moof may
+	// declare, across all of its truns. A trun whose samples all take the
+	// defaults has no per-sample table, so its byte length cannot bound its
+	// sample_count; this cap does. FFmpeg's keyframe fragments hold a GOP, a
+	// few hundred samples.
+	maxFragmentSamples = 1 << 16
 	// sidxHeaderBytes and sidxReferenceBytes size a version-1 sidx box.
 	sidxHeaderBytes    = 40
 	sidxReferenceBytes = 12
@@ -67,6 +74,7 @@ type fragment struct {
 // passes through without being buffered; only ftyp, moov and moof are held,
 // each bounded.
 type fragmentReader struct {
+	ctx      context.Context
 	src      io.Reader
 	maxBytes int64
 	sum      hash.Hash
@@ -86,8 +94,8 @@ type fragmentReader struct {
 	lastMdatEnd int64
 }
 
-func newFragmentReader(src io.Reader, maxBytes int64) *fragmentReader {
-	return &fragmentReader{src: src, maxBytes: maxBytes, sum: sha256.New(), insertAt: -1}
+func newFragmentReader(ctx context.Context, src io.Reader, maxBytes int64) *fragmentReader {
+	return &fragmentReader{ctx: ctx, src: src, maxBytes: maxBytes, sum: sha256.New(), insertAt: -1}
 }
 
 func (f *fragmentReader) Read(p []byte) (int, error) {
@@ -143,6 +151,9 @@ func (f *fragmentReader) readFailure(err error) error {
 }
 
 func (f *fragmentReader) nextBox() error {
+	if err := f.ctx.Err(); err != nil {
+		return err
+	}
 	var hdr [16]byte
 	if _, err := io.ReadFull(f.src, hdr[:8]); err != nil {
 		if errors.Is(err, io.EOF) {
@@ -394,6 +405,7 @@ func (f *fragmentReader) parseTraf(body []byte) (fragment, bool, error) {
 		hasDefDur  bool
 		hasDefFlag bool
 		firstDone  bool
+		samples    uint32
 	)
 	err := walkBoxes(body, func(typ string, body []byte) error {
 		switch typ {
@@ -461,6 +473,10 @@ func (f *fragmentReader) parseTraf(body []byte) (fragment, bool, error) {
 			if err != nil {
 				return err
 			}
+			if run.samples > maxFragmentSamples-samples {
+				return invalid("fragment declares more than %d samples", maxFragmentSamples)
+			}
+			samples += run.samples
 			if frag.duration > math.MaxUint64-run.duration {
 				return invalid("fragment duration overflows")
 			}
@@ -520,6 +536,9 @@ func parseTrun(body []byte, defaults trunDefaults) (trunSummary, error) {
 		if flags&bit != 0 {
 			per += 4
 		}
+	}
+	if count > maxFragmentSamples {
+		return trunSummary{}, invalid("trun declares more than %d samples", maxFragmentSamples)
 	}
 	if pos > len(body) || int64(count)*int64(per) > int64(len(body)-pos) {
 		return trunSummary{}, invalid("trun sample table overruns its box")
