@@ -74,7 +74,7 @@ export function CastControl({
             step={1}
             value={Math.min(remote.currentTime, remote.duration || remote.currentTime)}
             aria-label={t("castPosition")}
-            aria-valuetext={formatAriaTime(remote.currentTime, remote.duration)}
+            aria-valuetext={formatAriaTime(remote.currentTime, remote.duration, t)}
             onChange={(event) => cast.seek(Number(event.currentTarget.value))}
           />
           <span className="bf-cast-time" aria-hidden="true">

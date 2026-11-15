@@ -68,6 +68,7 @@ const SHIPPED = new Set(
 // updated for the CORE-2077 Library folders, Add folder and file tools copy.
 // updated for the CORE-1237 one-key plural search result count, the CORE-1208 localized activity
 // log copy and the CORE-1204/1223/1255/1271/1310/2052 completion of the fr, de, es and pt catalogs.
+// merged with the CORE-0557 spoken scrubber time copy.
 const BASE_SERIALIZED_LENGTH = 618_753;
 const BASE_REGISTRY_SHA256 = "c78451ace56c75e0c045fa7c6ec58fb83894c57d74c38cb19f60a1095d1c8a43";
 const BASE_KEY_ORDER_SHA256 = "ef627b853653ce67d41060678dedaa910517d5d63a156697f6fb9c99a493a2a1";

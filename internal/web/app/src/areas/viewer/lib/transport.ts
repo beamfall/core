@@ -1,4 +1,5 @@
 import type { PlaybackMarker } from "@/lib/graphql/types";
+import type { StringKey } from "@/strings";
 import type { PlaybackInfo, PlaybackNext, PlaybackRendition, PlaybackStream } from "./playback";
 
 // Pure transport model helpers, ported faithfully from the vanilla
@@ -123,27 +124,36 @@ export function formatRemainingTime(currentSeconds: number, durationSeconds: num
   return `-${formatClockTime(remaining)}`;
 }
 
-function spokenDuration(seconds: number): string {
+/** The catalog lookup the spoken time is built from (useT's signature). */
+export type TransportTranslate = (
+  key: StringKey,
+  values?: Record<string, string | number>,
+) => string;
+
+function spokenDuration(seconds: number, t: TransportTranslate): string {
   const total = Math.max(0, Math.floor(finiteNumber(seconds)));
   const hours = Math.floor(total / 3600);
   const minutes = Math.floor((total % 3600) / 60);
   const remainingSeconds = total % 60;
   const parts: string[] = [];
-  if (hours) {
-    parts.push(`${hours} ${hours === 1 ? "hour" : "hours"}`);
-  }
-  if (minutes) {
-    parts.push(`${minutes} ${minutes === 1 ? "minute" : "minutes"}`);
-  }
+  if (hours) parts.push(t("playbackSpokenHours", { count: hours }));
+  if (minutes) parts.push(t("playbackSpokenMinutes", { count: minutes }));
   if (remainingSeconds || !parts.length) {
-    parts.push(`${remainingSeconds} ${remainingSeconds === 1 ? "second" : "seconds"}`);
+    parts.push(t("playbackSpokenSeconds", { count: remainingSeconds }));
   }
   return parts.join(" ");
 }
 
-/** The screen-reader time announcement for the scrubber slider (a11y gate). */
-export function formatAriaTime(currentSeconds: number, durationSeconds: number): string {
-  return `${spokenDuration(currentSeconds)} of ${spokenDuration(durationSeconds)}`;
+/** The screen-reader time announcement for the scrubber slider (a11y gate), in the viewer's language. */
+export function formatAriaTime(
+  currentSeconds: number,
+  durationSeconds: number,
+  t: TransportTranslate,
+): string {
+  return t("playbackSpokenPosition", {
+    position: spokenDuration(currentSeconds, t),
+    duration: spokenDuration(durationSeconds, t),
+  });
 }
 
 // --- Marker strip + skip segment (ADR-0033 markers) -----------------------

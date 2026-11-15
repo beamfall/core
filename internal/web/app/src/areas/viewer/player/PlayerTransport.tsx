@@ -794,7 +794,7 @@ export function PlayerTransport({
                   className="bf-slider-thumb"
                   onKeyDown={onScrubberKeyDown}
                   getAriaLabel={() => t("playbackPosition")}
-                  aria-valuetext={formatAriaTime(position, duration)}
+                  aria-valuetext={formatAriaTime(position, duration, t)}
                 />
               </Slider.Control>
             </Slider.Root>
