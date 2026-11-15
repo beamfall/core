@@ -187,7 +187,7 @@ export function EnrollPage() {
         <AdminSignInForm deviceName={deviceName.trim() || fallbackName} />
       )}
       {securityMode === "strict" && <StrictRecoveryHint />}
-      <div className="mt-7 border-t border-white/10 pt-6">
+      <div className="mt-7 border-t border-foreground/10 pt-6">
         <PairingCodeHelp />
       </div>
     </AuthShell>
@@ -240,7 +240,7 @@ function AdminSignInForm({ deviceName }: { deviceName: string }) {
 
   return (
     <div className="mt-5">
-      <p className="m-0 mb-5 flex items-center gap-3 text-xs uppercase tracking-wide text-muted-foreground before:h-px before:flex-1 before:bg-white/10 after:h-px after:flex-1 after:bg-white/10">
+      <p className="m-0 mb-5 flex items-center gap-3 text-xs uppercase tracking-wide text-muted-foreground before:h-px before:flex-1 before:bg-foreground/10 after:h-px after:flex-1 after:bg-foreground/10">
         {t("adminSignInOr")}
       </p>
       {!open ? (
@@ -251,7 +251,7 @@ function AdminSignInForm({ deviceName }: { deviceName: string }) {
             setOpen(true);
             requestAnimationFrame(() => passwordRef.current?.focus());
           }}
-          className="h-11 w-full rounded-[10px] border-white/15 bg-transparent text-[15px] font-semibold hover:bg-white/[0.06]"
+          className="h-11 w-full rounded-[10px] border-foreground/15 bg-transparent text-[15px] font-semibold hover:bg-foreground/[0.06]"
         >
           {t("adminSignInTitle")}
         </Button>
@@ -289,7 +289,7 @@ function AdminSignInForm({ deviceName }: { deviceName: string }) {
             type="submit"
             variant="outline"
             disabled={busy || password === ""}
-            className="h-11 w-full rounded-[10px] border-white/15 bg-transparent text-[15px] font-semibold hover:bg-white/[0.06]"
+            className="h-11 w-full rounded-[10px] border-foreground/15 bg-transparent text-[15px] font-semibold hover:bg-foreground/[0.06]"
           >
             {t("adminSignIn")}
           </Button>
@@ -306,7 +306,7 @@ function StrictRecoveryHint() {
   return (
     <p className="m-0 mt-5 text-sm leading-relaxed text-muted-foreground">
       {t("strictRecoveryHint")}{" "}
-      <code className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[13px] text-foreground">
+      <code className="rounded bg-foreground/[0.06] px-1.5 py-0.5 font-mono text-[13px] text-foreground">
         beamfall pairing-code
       </code>
     </p>

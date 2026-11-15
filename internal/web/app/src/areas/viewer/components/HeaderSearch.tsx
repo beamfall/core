@@ -296,7 +296,7 @@ function ResultRow({
           aria-label={playLabel}
           onClick={() => onActivate(play)}
           onPointerEnter={preloadPlayer}
-          className="flex size-8 cursor-pointer items-center justify-center self-center rounded-full text-[var(--text-secondary)] outline-none hover:text-[var(--text-primary)] data-highlighted:bg-[var(--beam-500)] data-highlighted:text-primary-foreground"
+          className="flex size-8 cursor-pointer items-center justify-center self-center rounded-full text-[var(--text-secondary)] outline-none hover:text-[var(--text-primary)] data-highlighted:bg-[var(--accent)] data-highlighted:text-primary-foreground"
         >
           <Play aria-hidden="true" className="size-4" />
         </Autocomplete.Item>

@@ -1,0 +1,92 @@
+/* Theme roles (ADR-0106 vocabulary, ADR-0231 D7, CORE-1179).
+ *
+ * tokens.css is generated from the design-system release and carries each scheme's resolved
+ * roles as --theme-dark-* / --theme-light-*. This file maps them onto the role names the app
+ * styles against; the run-time theme seam (src/lib/theme/runtime.ts) re-skins the app by
+ * overriding the --theme-* values inline on <html>, so nothing here changes per preset.
+ *
+ * <html data-theme="light"> selects the light scheme (the device's light/dark/system choice).
+ * Media surfaces (.bf-media, .bf-mini-player) stay on the dark scheme in every mode: video and
+ * artwork read against a dark stage. No colour literals here or anywhere outside tokens.css
+ * (scripts/check-colour-literals.mjs). */
+
+:root,
+:where(.bf-media, .bf-mini-player) {
+  color-scheme: dark;
+
+  --bg-root: var(--theme-dark-bg-root);
+  --bg-surface: var(--theme-dark-bg-surface);
+  --bg-raised: var(--theme-dark-bg-raised);
+  --bg-overlay: var(--theme-dark-bg-overlay);
+  --line: var(--theme-dark-line);
+  --line-soft: var(--theme-dark-line-soft);
+  --border-strong: var(--theme-dark-border-strong);
+  --text: var(--theme-dark-text);
+  --text-muted: var(--theme-dark-text-muted);
+  --accent: var(--theme-dark-accent);
+  --accent-ink: var(--theme-dark-accent-ink);
+  --accent-on-light: var(--theme-dark-accent-on-light);
+  --focus-ring: var(--theme-dark-focus-ring);
+  --state-direct: var(--theme-dark-state-direct);
+  --state-remote: var(--theme-dark-state-remote);
+  --state-restricted: var(--theme-dark-state-restricted);
+  --state-warning: var(--theme-dark-state-warning);
+  --state-danger: var(--theme-dark-state-danger);
+  --shadow-card: var(--theme-dark-shadow-card);
+  --shadow-window: var(--theme-dark-shadow-window);
+
+  /* Accent used as text: on light surfaces the accent fill is too pale to read. */
+  --accent-text: var(--accent);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg-root: var(--theme-light-bg-root);
+  --bg-surface: var(--theme-light-bg-surface);
+  --bg-raised: var(--theme-light-bg-raised);
+  --bg-overlay: var(--theme-light-bg-overlay);
+  --line: var(--theme-light-line);
+  --line-soft: var(--theme-light-line-soft);
+  --border-strong: var(--theme-light-border-strong);
+  --text: var(--theme-light-text);
+  --text-muted: var(--theme-light-text-muted);
+  --accent: var(--theme-light-accent);
+  --accent-ink: var(--theme-light-accent-ink);
+  --accent-on-light: var(--theme-light-accent-on-light);
+  --focus-ring: var(--theme-light-focus-ring);
+  --state-direct: var(--theme-light-state-direct);
+  --state-remote: var(--theme-light-state-remote);
+  --state-restricted: var(--theme-light-state-restricted);
+  --state-warning: var(--theme-light-state-warning);
+  --state-danger: var(--theme-light-state-danger);
+  --shadow-card: var(--theme-light-shadow-card);
+  --shadow-window: var(--theme-light-shadow-window);
+
+  --accent-text: var(--accent-on-light);
+}
+
+/* Derived names the components use. They follow the scheme because they read the roles. */
+:root,
+:root[data-theme="light"],
+:where(.bf-media, .bf-mini-player) {
+  --text-primary: var(--text);
+  --text-secondary: color-mix(in oklab, var(--text) 72%, var(--text-muted));
+  --border-subtle: var(--line);
+  --control-bg: color-mix(in oklab, var(--bg-raised) 60%, transparent);
+  --control-bg-hover: var(--bg-raised);
+}
+
+/* Scheme-independent media helpers: the dark stage and the ink drawn on it. */
+:root {
+  --scrim: var(--theme-dark-bg-root);
+  --on-scrim: var(--theme-dark-text);
+  --on-scrim-muted: var(--theme-dark-text-muted);
+  --shadow-color: var(--theme-dark-bg-root);
+
+  --radius-card: var(--radius-panel);
+  --duration-fast: var(--motion-fast);
+  --duration-normal: var(--motion-normal);
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-emphasis: cubic-bezier(0.16, 1, 0.3, 1);
+}

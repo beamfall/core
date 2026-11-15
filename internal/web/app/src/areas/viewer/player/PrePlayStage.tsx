@@ -63,19 +63,19 @@ export function PrePlayStage({ items, onDone }: { items: PrePlayItem[]; onDone: 
     <section className="bf-pre-play flex flex-1 flex-col" aria-label={t("prePlayRegion")}>
       <video
         ref={videoRef}
-        className="min-h-0 w-full flex-1 bg-black"
+        className="min-h-0 w-full flex-1 bg-scrim"
         playsInline
         autoPlay
         controls={needsGesture}
         onEnded={() => setIndex((current) => current + 1)}
         onError={() => setIndex((current) => current + 1)}
       />
-      <div className="flex flex-wrap items-center gap-3 bg-black px-4 py-3 text-white">
+      <div className="flex flex-wrap items-center gap-3 bg-scrim px-4 py-3 text-on-scrim">
         <span className="min-w-0 flex-1 break-words">
-          {item.label ? <span className="mr-2 text-white/70">{item.label}</span> : null}
+          {item.label ? <span className="mr-2 text-on-scrim/70">{item.label}</span> : null}
           {item.title}
         </span>
-        <span className="text-sm text-white/70" aria-live="polite">
+        <span className="text-sm text-on-scrim/70" aria-live="polite">
           {t("prePlayProgress", { index: index + 1, count: items.length })}
         </span>
         <button

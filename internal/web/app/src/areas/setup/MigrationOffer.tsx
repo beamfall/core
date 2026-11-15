@@ -69,7 +69,7 @@ export function MigrationOffer({
   const Heading = embedded ? "h2" : "h1";
 
   return (
-    <section className={embedded ? "mt-6 border-t border-white/10 pt-5" : undefined}>
+    <section className={embedded ? "mt-6 border-t border-foreground/10 pt-5" : undefined}>
       <Heading className={embedded ? "m-0 text-[15px] font-semibold" : "m-0 text-xl font-semibold"}>
         {t("setupMigrateTitle")}
       </Heading>

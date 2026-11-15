@@ -23,6 +23,7 @@
 // side of the seam.
 
 import type { ClientPref } from "@/lib/graphql/types";
+import { THEME_PREF_KEYS } from "@/lib/theme/runtime";
 
 /** Canonical clientPref keys. Mirror the server's namespaced keys exactly. */
 export const PREF_KEYS = {
@@ -48,6 +49,9 @@ export const PREF_KEYS = {
   subtitleEdge: "subtitle.edge",
   subtitlePosition: "subtitle.position",
   stillWatchingAfter: "stillwatching.after",
+  // Theme preset and reserved accent (CORE-1179, ADR-0231 D10); the scheme stays on the device.
+  themePreset: THEME_PREF_KEYS.preset,
+  themeAccent: THEME_PREF_KEYS.accent,
 } as const;
 
 export type PrefKey = (typeof PREF_KEYS)[keyof typeof PREF_KEYS];

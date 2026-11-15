@@ -1,22 +1,14 @@
-/* Beamfall design-system tokens — canonical sRGB token import.
+/* GENERATED FILE — do not edit. Run: npm run tokens:generate (scripts/generate-theme-tokens.mjs).
  *
- * Source of truth: beamfall-design-system/tokens/generated/beamfall-tokens.css
- * Governance: core-web-app is registered as an import-marker client in
- * beamfall-design-system/tokens/clients.json (ADR-0106).
+ * Source: beamfall-design-system token release 1.1.0
+ * (tokens/releases/<release>/beamfall-tokens.css), followed by the default preset's resolved
+ * roles for both schemes. src/styles/theme.css maps the --theme-<scheme>-* values onto the
+ * role names; the run-time theme seam (src/lib/theme/runtime.ts) overrides them inline.
  *
- * @import beamfall-tokens.css  ← governance marker (conformance.mjs)
- *
- * The generated canonical tokens live in a sibling repo. This embedded app
- * keeps an inlined copy so the Go binary builds without a cross-repo runtime
- * dependency; re-inline after regenerating canonical tokens.
- *
- * Registers switch by attribute on <html>:
- *   (default :root)                           -> Cinema Dark (Viewer)
- *   data-register="manage"                    -> Workbench Dark
- *   data-register="manage" data-theme="light" -> Workbench Light
+ * @import beamfall-tokens.css  ← governance marker (beamfall-design-system conformance)
  */
 
-/* ---- Canonical primitives + theme blocks (inlined from beamfall-tokens.css) ---- */
+/* GENERATED FILE — do not edit. Source: tokens/beamfall-workbench.tokens.json. Run: node tokens/generate.mjs */
 
 :root {
   /* color primitives */
@@ -32,142 +24,178 @@
   --beam-500: #9fd8e5;
   --green-500: #52bc7f;
   --cyan-500: #6f8fc9;
+  --remote-blue-500: #6f8fc9;
   --iris-500: #bd81c5;
   --amber-500: #e0b34a;
   --red-500: #d96e63;
-
   /* radius */
   --radius-control: 6px;
-  --radius-card: 8px;
-
+  --radius-panel: 8px;
+  --radius-window: 14px;
+  /* spacing */
+  --space-xxs: 4px;
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 16px;
+  --space-lg: 20px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+  --space-3xl: 48px;
+  --space-tv-1: 16px;
+  --space-tv-2: 24px;
+  --space-tv-3: 32px;
+  --space-tv-4: 48px;
+  --space-tv-5: 64px;
   /* motion */
-  --duration-fast: 140ms;
-  --duration-normal: 220ms;
-  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-emphasis: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-instant: 80ms;
+  --motion-fast: 140ms;
+  --motion-normal: 220ms;
+  --motion-slow: 360ms;
+  --motion-reveal: 420ms;
+  /* easing */
+  --ease-settle: cubic-bezier(.2, .7, .2, 1);
+  /* type */
+  --font-apple: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+  --font-android: 'Roboto', 'Noto Sans', system-ui, sans-serif;
+  --font-system: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Roboto Mono', Menlo, monospace;
+  --type-display: 600 34px/40px var(--font);
+  --type-title: 650 20px/26px var(--font);
+  --type-title2: 650 16px/22px var(--font);
+  --type-body: 400 13px/18px var(--font);
+  --type-label: 650 11px/16px var(--font);
+  --type-numeric: 500 11px/16px var(--font);
+  --type-tv-hero: 600 44px/50px var(--font);
+  --type-tv-display: 600 40px/46px var(--font);
+  --type-tv-title: 650 24px/30px var(--font);
+  --type-tv-body: 400 17px/24px var(--font);
+  --type-tv-label: 650 13px/18px var(--font);
+  --font: var(--font-system);
 }
 
-/* ---- Derived primitives (not in canonical; used by chrome.css and other surfaces) ----
- * These sRGB values correspond to the OKLCH originals used in chrome.css.
- * Kept as local bridge tokens until those surfaces migrate to canonical semantic vars.
- * Do not add new uses of these primitives; prefer the semantic tokens below instead. */
-:root {
-  /* Between --night-950 and --night-900 */
-  --night-925: #0b1217;
-  /* Between --night-900 and --night-800 */
-  --night-850: #131d24;
-  /* Workbench text (maps to canonical cinema --text and workbench --text) */
-  --mist-100: #eef6f8;
-  --mist-200: #d9e7ec;
-  --mist-500: #9bb0ba;
-  /* Workbench light text (maps to canonical workbench --text / --text-muted) */
-  --ink-950: #162128;
-  --ink-700: #52656f;
-  /* A slightly darker beam for pressed/active states */
-  --beam-600: #4ba6be;
-  /* Cinema border; matches canonical .theme-cinema --line exactly */
-  --line-dark: #31414a;
-}
-
-/* ---- Cinema Dark (Viewer default) — :root semantic roles ---- */
-:root {
-  color-scheme: dark;
-
+.theme-cinema {
   --bg-root: var(--night-950);
   --bg-surface: var(--night-900);
   --bg-raised: var(--night-800);
-
-  /* Canonical rename: border-subtle → line (kept as alias for existing consumers) */
-  --line: var(--line-dark);
-  --border-subtle: var(--line);
-
-  /* Canonical rename: text-primary → text (kept as alias) */
-  --text: var(--mist-100);
-  --text-primary: var(--text);
-  --text-secondary: var(--mist-200);
-  --text-muted: var(--mist-500);
-
+  --bg-overlay: rgba(7, 12, 16, .88);
+  --line: #31414a;
+  --line-soft: rgba(255, 255, 255, .10);
+  --text: #eef6f8;
+  --text-muted: #9bb0ba;
   --accent: var(--beam-500);
   --accent-ink: var(--night-950);
   --state-direct: var(--green-500);
-  --state-remote: var(--cyan-500);
+  --state-remote: var(--remote-blue-500);
   --state-restricted: var(--iris-500);
   --state-warning: var(--amber-500);
   --state-danger: var(--red-500);
-  --focus-ring: rgba(159, 216, 229, 0.92);
-
-  --control-bg: rgba(32, 36, 44, 0.6);
-  --control-bg-hover: var(--night-800);
+  --focus-ring: rgba(159, 216, 229, .92);
+  --shadow-card: 0 10px 24px rgba(0, 0, 0, .28);
+  --shadow-window: 0 24px 60px rgba(0, 0, 0, .40);
+  --artwork-scrim-lead-long: linear-gradient(90deg, var(--bg-root) 0%, color-mix(in srgb, var(--bg-root) 90%, transparent) 30%, color-mix(in srgb, var(--bg-root) 45%, transparent) 56%, transparent 80%);
+  --artwork-scrim-bottom-extended: linear-gradient(0deg, var(--bg-root) 0%, var(--bg-root) 30%, color-mix(in srgb, var(--bg-root) 55.00000000000001%, transparent) 50%, transparent 70%);
+  --artwork-scrim-lead-offset: linear-gradient(90deg, var(--bg-root) 3%, color-mix(in srgb, var(--bg-root) 88%, transparent) 36%, transparent 86%);
+  --artwork-scrim-bottom-short: linear-gradient(0deg, var(--bg-root) 0%, transparent 60%);
+  --artwork-scrim-lead-copy: linear-gradient(90deg, var(--bg-root) 0%, color-mix(in srgb, var(--bg-root) 86%, transparent) 58%, transparent 100%);
+  --artwork-scrim-bottom-retained: linear-gradient(0deg, var(--bg-root) 3%, color-mix(in srgb, var(--bg-root) 85%, transparent) 65%, color-mix(in srgb, var(--bg-root) 25%, transparent) 100%);
 }
 
-/* ---- Workbench Dark (Manage register default) ---- */
-[data-register="manage"] {
-  color-scheme: dark;
-
-  --bg-root: var(--night-950);
-  --bg-surface: var(--night-900);
-  --bg-raised: var(--night-800);
-
-  --line: var(--line-dark);
-  --border-subtle: var(--line);
-  --border-strong: #3e4450;
-
-  --text: var(--mist-100);
-  --text-primary: var(--text);
-  --text-secondary: var(--mist-200);
-  --text-muted: var(--mist-500);
-
-  --accent: var(--beam-500);
-  --accent-ink: var(--night-950);
-  --state-direct: var(--green-500);
-  --state-remote: var(--cyan-500);
-  --state-restricted: var(--iris-500);
-  --state-warning: var(--amber-500);
-  --state-danger: var(--red-500);
-  --focus-ring: rgba(159, 216, 229, 0.92);
-
-  /* Workbench chrome (consumed by chrome.css [data-register="manage"]) */
-  --workbench-root-foot: #070c10;
-  --workbench-header-bg: #0f171d;
-  --workbench-header-accent: rgba(75, 166, 190, 0.22);
-}
-
-/* ---- Workbench Light (Manage + light theme) ---- */
-[data-register="manage"][data-theme="light"] {
-  color-scheme: light;
-
+.theme-workbench {
   --bg-root: var(--paper-50);
   --bg-surface: #f8fbfc;
   --bg-raised: #fcfeff;
-  --bg-overlay: rgba(248, 251, 252, 0.94);
-
+  --bg-overlay: rgba(248, 251, 252, .94);
   --line: #7b929e;
-  --line-soft: rgba(23, 51, 64, 0.1);
-  --border-subtle: var(--line);
+  --line-soft: rgba(23, 51, 64, .10);
   --border-strong: #657f8b;
-
-  /* Canonical paper-* primitives bridge for Workbench Light */
-  --text: var(--ink-950);
-  --text-primary: var(--text);
-  --text-secondary: var(--ink-700);
-  --text-muted: var(--ink-700);
-
+  --text: #162128;
+  --text-muted: #52656f;
   --accent: var(--brand-cyan-500);
-  --accent-on-light: #176a80;
   --accent-ink: var(--night-950);
+  --accent-on-light: var(--brand-cyan-700);
   --state-direct: #267d4f;
   --state-remote: #3f619e;
   --state-restricted: #8f5a97;
   --state-warning: #92670f;
   --state-danger: #b8453a;
-  --focus-ring: rgba(23, 106, 128, 0.82);
-  --shadow-card: 0 6px 18px rgba(20, 46, 58, 0.1);
-  --shadow-window: 0 24px 60px rgba(20, 46, 58, 0.16);
+  --focus-ring: rgba(23, 106, 128, .82);
+  --shadow-card: 0 6px 18px rgba(20, 46, 58, .10);
+  --shadow-window: 0 24px 60px rgba(20, 46, 58, .16);
+  --artwork-scrim-lead-long: linear-gradient(90deg, var(--bg-root) 0%, color-mix(in srgb, var(--bg-root) 90%, transparent) 30%, color-mix(in srgb, var(--bg-root) 45%, transparent) 56%, transparent 80%);
+  --artwork-scrim-bottom-extended: linear-gradient(0deg, var(--bg-root) 0%, var(--bg-root) 30%, color-mix(in srgb, var(--bg-root) 55.00000000000001%, transparent) 50%, transparent 70%);
+  --artwork-scrim-lead-offset: linear-gradient(90deg, var(--bg-root) 3%, color-mix(in srgb, var(--bg-root) 88%, transparent) 36%, transparent 86%);
+  --artwork-scrim-bottom-short: linear-gradient(0deg, var(--bg-root) 0%, transparent 60%);
+  --artwork-scrim-lead-copy: linear-gradient(90deg, var(--bg-root) 0%, color-mix(in srgb, var(--bg-root) 86%, transparent) 58%, transparent 100%);
+  --artwork-scrim-bottom-retained: linear-gradient(0deg, var(--bg-root) 3%, color-mix(in srgb, var(--bg-root) 85%, transparent) 65%, color-mix(in srgb, var(--bg-root) 25%, transparent) 100%);
+}
 
-  --control-bg: #f8fbfc;
-  --control-bg-hover: var(--paper-100);
+.theme-workbench.dark {
+  --bg-root: var(--night-950);
+  --bg-surface: var(--night-900);
+  --bg-raised: var(--night-800);
+  --bg-overlay: rgba(7, 12, 16, .88);
+  --line: #31414a;
+  --line-soft: rgba(255, 255, 255, .10);
+  --text: #eef6f8;
+  --text-muted: #9bb0ba;
+  --accent: var(--beam-500);
+  --accent-ink: var(--night-950);
+  --state-direct: var(--green-500);
+  --state-remote: var(--remote-blue-500);
+  --state-restricted: var(--iris-500);
+  --state-warning: var(--amber-500);
+  --state-danger: var(--red-500);
+  --focus-ring: rgba(159, 216, 229, .92);
+  --shadow-card: 0 10px 24px rgba(0, 0, 0, .28);
+  --shadow-window: 0 24px 60px rgba(0, 0, 0, .40);
+  --artwork-scrim-lead-long: linear-gradient(90deg, var(--bg-root) 0%, color-mix(in srgb, var(--bg-root) 90%, transparent) 30%, color-mix(in srgb, var(--bg-root) 45%, transparent) 56%, transparent 80%);
+  --artwork-scrim-bottom-extended: linear-gradient(0deg, var(--bg-root) 0%, var(--bg-root) 30%, color-mix(in srgb, var(--bg-root) 55.00000000000001%, transparent) 50%, transparent 70%);
+  --artwork-scrim-lead-offset: linear-gradient(90deg, var(--bg-root) 3%, color-mix(in srgb, var(--bg-root) 88%, transparent) 36%, transparent 86%);
+  --artwork-scrim-bottom-short: linear-gradient(0deg, var(--bg-root) 0%, transparent 60%);
+  --artwork-scrim-lead-copy: linear-gradient(90deg, var(--bg-root) 0%, color-mix(in srgb, var(--bg-root) 86%, transparent) 58%, transparent 100%);
+  --artwork-scrim-bottom-retained: linear-gradient(0deg, var(--bg-root) 3%, color-mix(in srgb, var(--bg-root) 85%, transparent) 65%, color-mix(in srgb, var(--bg-root) 25%, transparent) 100%);
+}
 
-  --workbench-root-foot: var(--paper-100);
-  --workbench-header-bg: #f8fbfc;
-  --workbench-header-accent: rgba(23, 106, 128, 0.2);
+/* Resolved roles: preset "beamfall" (default). */
+:root {
+  --theme-dark-bg-root: #070c10;
+  --theme-dark-bg-surface: #0f171d;
+  --theme-dark-bg-raised: #18232b;
+  --theme-dark-bg-overlay: #070c10e0;
+  --theme-dark-line: #31414a;
+  --theme-dark-line-soft: #ffffff1a;
+  --theme-dark-border-strong: #55666f;
+  --theme-dark-text: #eef6f8;
+  --theme-dark-text-muted: #9bb0ba;
+  --theme-dark-accent: #9fd8e5;
+  --theme-dark-accent-ink: #070c10;
+  --theme-dark-accent-on-light: #9fd8e5;
+  --theme-dark-focus-ring: #9fd8e5eb;
+  --theme-dark-state-direct: #52bc7f;
+  --theme-dark-state-remote: #6f8fc9;
+  --theme-dark-state-restricted: #bd81c5;
+  --theme-dark-state-warning: #e0b34a;
+  --theme-dark-state-danger: #d96e63;
+  --theme-dark-shadow-card: 0 10px 24px rgba(0, 0, 0, .28);
+  --theme-dark-shadow-window: 0 24px 60px rgba(0, 0, 0, .40);
+  --theme-light-bg-root: #f3f7f9;
+  --theme-light-bg-surface: #f8fbfc;
+  --theme-light-bg-raised: #fcfeff;
+  --theme-light-bg-overlay: #f8fbfcf0;
+  --theme-light-line: #7b929e;
+  --theme-light-line-soft: #1733401a;
+  --theme-light-border-strong: #657f8b;
+  --theme-light-text: #162128;
+  --theme-light-text-muted: #52656f;
+  --theme-light-accent: #4ba6be;
+  --theme-light-accent-ink: #070c10;
+  --theme-light-accent-on-light: #176a80;
+  --theme-light-focus-ring: #176a80d1;
+  --theme-light-state-direct: #267d4f;
+  --theme-light-state-remote: #3f619e;
+  --theme-light-state-restricted: #8f5a97;
+  --theme-light-state-warning: #92670f;
+  --theme-light-state-danger: #b8453a;
+  --theme-light-shadow-card: 0 6px 18px rgba(20, 46, 58, .10);
+  --theme-light-shadow-window: 0 24px 60px rgba(20, 46, 58, .16);
 }

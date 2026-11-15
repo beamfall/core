@@ -8,6 +8,7 @@ import { I18nProvider } from "@/lib/i18n";
 import { registerServiceWorker } from "@/lib/pwa";
 import { RegisterProvider } from "@/lib/register";
 import { SessionProvider } from "@/lib/session";
+import { ThemePrefsSync } from "@/lib/theme/ThemePrefsSync";
 import { App, preloadInitialRoute } from "./App";
 
 const container = document.getElementById("root");
@@ -33,6 +34,7 @@ function render() {
           <BrowserRouter basename={basename}>
             <RegisterProvider>
               <SessionProvider>
+                <ThemePrefsSync />
                 <App />
               </SessionProvider>
             </RegisterProvider>

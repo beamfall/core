@@ -113,6 +113,11 @@ beforeEach(() => {
     theme: "dark",
     setRegister: vi.fn(),
     setTheme: vi.fn(),
+    schemePreference: "dark",
+    setSchemePreference: vi.fn(),
+    preset: "beamfall",
+    setPreset: vi.fn(),
+    applyThemeDocument: vi.fn(),
   });
   vi.mocked(useSession).mockReturnValue({
     loading: false,

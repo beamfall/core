@@ -81,7 +81,7 @@ export function KaraokeControls({
     <div
       role="group"
       aria-label={t("karaokeControlsLabel")}
-      className="ml-auto flex flex-wrap items-center justify-end gap-x-4 gap-y-2 text-white"
+      className="ml-auto flex flex-wrap items-center justify-end gap-x-4 gap-y-2 text-on-scrim"
     >
       <div className="flex items-center gap-1.5">
         {step(
@@ -125,7 +125,7 @@ export function KaraokeControls({
         )}
       </div>
       {applied === false && (
-        <span className="rounded-md bg-black/60 px-2 py-0.5 text-xs font-medium text-[var(--state-warning)]">
+        <span className="rounded-md bg-scrim/60 px-2 py-0.5 text-xs font-medium text-[var(--state-warning)]">
           {t("karaokeNotApplied")}
         </span>
       )}

@@ -1,67 +1,31 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync } from "node:fs";
+// Design token drift gate (ADR-0106, CORE-1179): the web app's generated token CSS and theme
+// presets (internal/web/app/src/styles/tokens.css, src/lib/theme/theme.generated.ts) must equal a
+// fresh generation from the latest published beamfall-design-system token release. The generator
+// is internal/web/app/scripts/generate-theme-tokens.mjs; this gate runs its --check mode.
+//
+// The design system is a sibling checkout ($BEAMFALL_DESIGN_SYSTEM_DIR, or
+// ../beamfall-design-system); when it is absent the gate is skipped, like core's other
+// sibling-only checks. A sibling that predates the theme catalog is skipped the same way, loudly.
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
-const corePath = resolve("internal/web/app/src/styles/tokens.css");
-const dsPath = resolve("../beamfall-design-system/tokens/generated/beamfall-tokens.css");
+const generator = resolve("internal/web/app/scripts/generate-theme-tokens.mjs");
+const { designSystemDir, designSystemUnavailable, drift } = await import(
+  pathToFileURL(generator).href
+);
 
-if (!existsSync(dsPath)) {
-  console.log("design-token-drift: skipped (../beamfall-design-system not present)");
+const dsDir = designSystemDir();
+const unavailable = designSystemUnavailable(dsDir);
+if (unavailable) {
+  console.log(`design-token-drift: SKIPPED (${unavailable}); set BEAMFALL_DESIGN_SYSTEM_DIR`);
   process.exit(0);
 }
 
-const core = readFileSync(corePath, "utf8");
-const ds = readFileSync(dsPath, "utf8");
-
-function vars(css, selector) {
-  const out = {};
-  const re = new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([\\s\\S]*?)\\}`, "g");
-  for (const match of css.matchAll(re)) {
-    for (const m of match[1].matchAll(/--([a-z0-9-]+):\s*([^;]+);/gi)) {
-      out[m[1]] = normalize(m[2]);
-    }
-  }
-  if (!Object.keys(out).length) throw new Error(`missing selector ${selector}`);
-  return out;
+const stale = drift(dsDir);
+if (stale.length) {
+  for (const path of stale) console.error(`DRIFT ${path}`);
+  console.error("run: npm --prefix internal/web/app run tokens:generate");
+  process.exit(1);
 }
-
-function normalize(value) {
-  return value.trim().toLowerCase().replaceAll("0.", ".").replace(/\s+/g, " ");
-}
-
-function resolveVar(map, name, seen = new Set()) {
-  const value = map[name];
-  if (!value || seen.has(name)) return value;
-  const match = value.match(/^var\(--([a-z0-9-]+)\)$/);
-  if (!match) return value;
-  seen.add(name);
-  return resolveVar(map, match[1], seen) || value;
-}
-
-const checks = [
-  [":root", ":root", ["night-950", "night-900", "night-800", "paper-50", "paper-100", "paper-200", "beam-500", "green-500", "cyan-500", "iris-500", "amber-500", "red-500"]],
-  [":root", ".theme-cinema", ["bg-root", "bg-surface", "bg-raised", "line", "text", "text-muted", "accent", "accent-ink", "state-direct", "state-remote", "state-restricted", "state-warning", "state-danger", "focus-ring"]],
-  ['[data-register="manage"]', ".theme-workbench.dark", ["bg-root", "bg-surface", "bg-raised", "line", "text", "text-muted", "accent", "accent-ink", "state-direct", "state-remote", "state-restricted", "state-warning", "state-danger", "focus-ring"]],
-  ['[data-register="manage"][data-theme="light"]', ".theme-workbench", ["bg-root", "bg-surface", "bg-raised", "line", "text", "text-muted", "accent", "accent-ink", "accent-on-light", "state-direct", "state-remote", "state-restricted", "state-warning", "state-danger", "focus-ring"]],
-];
-
-const coreRoot = vars(core, ":root");
-const dsRoot = vars(ds, ":root");
-let drift = false;
-for (const [coreSel, dsSel, names] of checks) {
-  const coreVars = { ...coreRoot, ...vars(core, coreSel) };
-  const dsVars = { ...dsRoot, ...vars(ds, dsSel) };
-  for (const name of names) {
-    const got = coreVars[name];
-    const want = dsVars[name];
-    const gotResolved = resolveVar(coreVars, name);
-    const wantResolved = resolveVar(dsVars, name);
-    if (!gotResolved || !wantResolved || gotResolved !== wantResolved) {
-      drift = true;
-      console.error(`DRIFT ${coreSel} --${name}: got ${got || "missing"}, want ${want || "missing"} (${dsSel})`);
-    }
-  }
-}
-
-if (drift) process.exit(1);
-console.log("design-token-drift: core tokens match generated design-system tokens");
+console.log(`design-token-drift: generated web tokens match the design-system release (${dsDir})`);

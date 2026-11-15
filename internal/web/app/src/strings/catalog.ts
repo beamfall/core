@@ -1,5 +1,6 @@
 import { accessBulkStrings } from "./access-bulk";
 import { appShellStrings } from "./app-shell";
+import { appearanceStrings } from "./appearance";
 import { backupRetentionStrings } from "./backup-retention";
 import { castStrings } from "./cast";
 import { collectionMarkerStrings } from "./collections-markers";
@@ -88,6 +89,7 @@ export const en = {
   ...serverLogStrings.en,
   ...stagedRestoreStrings.en,
   ...miniPlayerStrings.en,
+  ...appearanceStrings.en,
 } as const;
 
 export const fr = {
@@ -135,6 +137,7 @@ export const fr = {
   ...serverLogStrings.fr,
   ...stagedRestoreStrings.fr,
   ...miniPlayerStrings.fr,
+  ...appearanceStrings.fr,
 } as const;
 
 export const de = {
@@ -182,6 +185,7 @@ export const de = {
   ...serverLogStrings.de,
   ...stagedRestoreStrings.de,
   ...miniPlayerStrings.de,
+  ...appearanceStrings.de,
 } as const;
 
 export const es = {
@@ -229,6 +233,7 @@ export const es = {
   ...serverLogStrings.es,
   ...stagedRestoreStrings.es,
   ...miniPlayerStrings.es,
+  ...appearanceStrings.es,
 } as const;
 
 export const pt = {
@@ -276,4 +281,5 @@ export const pt = {
   ...serverLogStrings.pt,
   ...stagedRestoreStrings.pt,
   ...miniPlayerStrings.pt,
+  ...appearanceStrings.pt,
 } as const;

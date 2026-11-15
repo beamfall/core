@@ -818,7 +818,7 @@ export function SetupWizard() {
                   key={key}
                   aria-current={i === visibleIndex ? "step" : undefined}
                   className={cn(
-                    "h-1 flex-1 rounded-full bg-white/10 transition-colors duration-200",
+                    "h-1 flex-1 rounded-full bg-foreground/10 transition-colors duration-200",
                     i < visibleIndex && "bg-primary/70",
                     i === visibleIndex && "bg-primary",
                   )}
@@ -847,7 +847,7 @@ export function SetupWizard() {
             ref={formRef}
             onSubmit={onNext}
             noValidate
-            className="animate-in fade-in motion-reduce:animate-none rounded-[14px] border border-white/10 bg-card p-5 shadow-[0_24px_60px_-28px_rgba(0,0,0,0.7)] duration-200 sm:p-8"
+            className="animate-in fade-in motion-reduce:animate-none rounded-[14px] border border-foreground/10 bg-card p-5 shadow-[var(--shadow-window)] duration-200 sm:p-8"
           >
             {step === 0 && (
               <section>
@@ -920,7 +920,7 @@ export function SetupWizard() {
                   <Button
                     type="button"
                     variant="outline"
-                    className="h-11 shrink-0 rounded-[10px] border-white/10 bg-white/[0.04] px-3"
+                    className="h-11 shrink-0 rounded-[10px] border-foreground/10 bg-foreground/[0.04] px-3"
                     onClick={() => setShowPassword((v) => !v)}
                     aria-pressed={showPassword}
                     aria-label={t(showPassword ? "setupPasswordHide" : "setupPasswordShow")}
@@ -958,7 +958,7 @@ export function SetupWizard() {
                   title={t("setupSecurityTitle")}
                   lead={t("setupSecurityLead")}
                 />
-                <div className="divide-y divide-white/10 border-y border-white/10">
+                <div className="divide-y divide-foreground/10 border-y border-foreground/10">
                   {SECURITY_MODES.map(({ mode, label, detail }) => (
                     <label key={mode} className={OPTION_ROW}>
                       <input
@@ -1054,7 +1054,7 @@ export function SetupWizard() {
                     ref={browseRef}
                     type="button"
                     variant="outline"
-                    className="h-11 shrink-0 rounded-[10px] border-white/10 bg-white/[0.04] px-4"
+                    className="h-11 shrink-0 rounded-[10px] border-foreground/10 bg-foreground/[0.04] px-4"
                     onClick={() => void openPicker()}
                     aria-expanded={pickerNode != null}
                   >
@@ -1188,7 +1188,7 @@ export function SetupWizard() {
                 {savedChoices !== "ready" ? null : plugins.length === 0 ? (
                   <p className="text-sm text-muted-foreground">{t("setupPluginsEmpty")}</p>
                 ) : (
-                  <ul className="m-0 list-none divide-y divide-white/10 border-y border-white/10 p-0">
+                  <ul className="m-0 list-none divide-y divide-foreground/10 border-y border-foreground/10 p-0">
                     {plugins.map((p) => {
                       const name = displayString(p.displayName, locale);
                       const on = activePlugins.has(p.id);
@@ -1214,7 +1214,7 @@ export function SetupWizard() {
                   </ul>
                 )}
                 {neededKeys.length > 0 && (
-                  <div className="mt-6 border-t border-white/10 pt-5">
+                  <div className="mt-6 border-t border-foreground/10 pt-5">
                     <h2 className="m-0 text-[15px] font-semibold">{t("setupKeysTitle")}</h2>
                     <p className="m-0 mt-1 text-dense leading-snug text-muted-foreground">
                       {t("setupKeysLead")}
@@ -1251,7 +1251,7 @@ export function SetupWizard() {
                   </div>
                 )}
                 {savedChoices === "ready" && (
-                  <div className="mt-6 border-t border-white/10 pt-5">
+                  <div className="mt-6 border-t border-foreground/10 pt-5">
                     <div className="flex items-start justify-between gap-4">
                       <div>
                         <h2 className="m-0 text-[15px] font-semibold">{t("setupUpdateTitle")}</h2>
@@ -1338,7 +1338,10 @@ export function SetupWizard() {
                   </p>
                 )}
                 {scanFraction != null && (
-                  <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/10" aria-hidden>
+                  <div
+                    className="mt-4 h-1.5 overflow-hidden rounded-full bg-foreground/10"
+                    aria-hidden
+                  >
                     <div
                       className="h-full rounded-full bg-primary transition-[width] duration-200"
                       style={{ width: `${Math.round(scanFraction * 100)}%` }}
@@ -1388,7 +1391,7 @@ export function SetupWizard() {
   );
 }
 
-const FIELD = "h-11 rounded-[10px] border-white/10 bg-white/[0.04] text-[15px]";
+const FIELD = "h-11 rounded-[10px] border-foreground/10 bg-foreground/[0.04] text-[15px]";
 const FIELD_LABEL = "mb-2 block text-dense font-medium text-foreground/80";
 // Options sit directly on the card as rows split by hairlines: one surface,
 // with the native radio carrying the selection.

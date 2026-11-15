@@ -141,7 +141,7 @@ const LABELS: Record<LibraryIconName, StringKey> = {
 };
 
 const TILE =
-  "flex h-9 min-w-9 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2 text-muted-foreground transition-colors hover:border-white/25 hover:text-foreground peer-checked:border-primary/60 peer-checked:bg-primary/15 peer-checked:text-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring motion-reduce:transition-none";
+  "flex h-9 min-w-9 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-foreground/10 bg-foreground/[0.03] px-2 text-muted-foreground transition-colors hover:border-foreground/25 hover:text-foreground peer-checked:border-primary/60 peer-checked:bg-primary/15 peer-checked:text-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring motion-reduce:transition-none";
 
 // The icon picker on a Library card: one radio group, "Default" first, then
 // every icon in the vocabulary. Native radios carry the keyboard behaviour

@@ -5,7 +5,8 @@ import { CinemaBackdrop } from "@/components/beamfall/CinemaBackdrop";
 import { useT } from "@/lib/i18n";
 
 // The house form look (CORE-1114 setup wizard), shared by the sign-in pages.
-export const AUTH_FIELD = "h-11 rounded-[10px] border-white/10 bg-white/[0.04] text-[15px]";
+export const AUTH_FIELD =
+  "h-11 rounded-[10px] border-foreground/10 bg-foreground/[0.04] text-[15px]";
 export const AUTH_FIELD_LABEL = "mb-2 block text-dense font-medium text-foreground/80";
 
 // Pairing codes are case-insensitive and the server ignores spaces and dashes,
@@ -39,7 +40,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
         <Wordmark label={t("brand")} />
       </header>
       <div className="flex flex-1 justify-center px-4 pb-12 pt-2 sm:px-8 sm:pt-[8vh]">
-        <div className="animate-in fade-in w-full max-w-[440px] self-start rounded-[14px] border border-white/10 bg-card p-6 shadow-[0_24px_60px_-28px_rgba(0,0,0,0.7)] duration-200 sm:p-8">
+        <div className="animate-in fade-in w-full max-w-[440px] self-start rounded-[14px] border border-foreground/10 bg-card p-6 shadow-[var(--shadow-window)] duration-200 sm:p-8">
           {children}
         </div>
       </div>

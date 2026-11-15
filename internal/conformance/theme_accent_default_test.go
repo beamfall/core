@@ -9,47 +9,59 @@ import (
 	"github.com/beamfall/core/internal/manifest"
 )
 
-// The canonical brand accent comes from the web app's inlined copy of the
-// generated design-system tokens; tools/gate/design-token-drift.mjs pins that
-// copy to beamfall-design-system/tokens/generated/beamfall-tokens.css.
+// The canonical brand accent comes from the web app's generated copy of the
+// design-system tokens (internal/web/app/scripts/generate-theme-tokens.mjs, whose
+// --check mode tools/gate/design-token-drift.mjs runs against the design-system
+// release): the default preset's resolved dark accent, emitted both into
+// tokens.css (--theme-dark-accent) and into theme.generated.ts.
 const (
 	designTokensFile        = embeddedWebClientSrcDir + "/styles/tokens.css"
+	generatedThemeFile      = embeddedWebClientSrcDir + "/lib/theme/theme.generated.ts"
 	navOverridePageFile     = embeddedWebClientSrcDir + "/areas/manage/pages/NavOverridePage.tsx"
 	brandAccentPrimitiveVar = "beam-500"
+	defaultAccentRoleVar    = "theme-dark-accent"
 )
 
 // TestThemeAccentDefaultMatchesBrandToken fails when core's default theme
 // accent, the web app's default accent and the design-system brand accent
-// (Cinema --accent, which resolves to --beam-500) drift apart (CORE-1174).
+// (the default preset's dark accent, which is --beam-500) drift apart (CORE-1174).
 func TestThemeAccentDefaultMatchesBrandToken(t *testing.T) {
 	tokens, err := os.ReadFile(designTokensFile)
 	if err != nil {
 		t.Fatalf("read %s: %v", designTokensFile, err)
 	}
 	root := rootBlocks(t, string(tokens))
-	if accent := cssVar(root, "accent"); accent != "var(--"+brandAccentPrimitiveVar+")" {
-		t.Fatalf("%s :root --accent = %q, want var(--%s); update brandAccentPrimitiveVar if the brand accent moved",
-			designTokensFile, accent, brandAccentPrimitiveVar)
-	}
-	brand := cssVar(root, brandAccentPrimitiveVar)
+	brand := cssVar(root, defaultAccentRoleVar)
 	if brand == "" {
-		t.Fatalf("%s :root has no --%s", designTokensFile, brandAccentPrimitiveVar)
+		t.Fatalf("%s :root has no --%s", designTokensFile, defaultAccentRoleVar)
+	}
+	if primitive := cssVar(root, brandAccentPrimitiveVar); !strings.EqualFold(primitive, brand) {
+		t.Fatalf("%s :root --%s = %q, want --%s %q; update brandAccentPrimitiveVar if the brand accent moved",
+			designTokensFile, defaultAccentRoleVar, brand, brandAccentPrimitiveVar, primitive)
 	}
 
 	if !strings.EqualFold(manifest.DefaultAccentColor, brand) {
 		t.Errorf("manifest.DefaultAccentColor = %q, want brand accent %q from %s", manifest.DefaultAccentColor, brand, designTokensFile)
 	}
 
+	generated, err := os.ReadFile(generatedThemeFile)
+	if err != nil {
+		t.Fatalf("read %s: %v", generatedThemeFile, err)
+	}
+	m := regexp.MustCompile(`export const THEME_DEFAULT_ACCENT = "(#[0-9a-fA-F]{6})";`).FindSubmatch(generated)
+	if m == nil {
+		t.Fatalf("%s: THEME_DEFAULT_ACCENT constant not found", generatedThemeFile)
+	}
+	if web := string(m[1]); !strings.EqualFold(web, brand) {
+		t.Errorf("web THEME_DEFAULT_ACCENT = %q, want brand accent %q from %s", web, brand, designTokensFile)
+	}
+
 	page, err := os.ReadFile(navOverridePageFile)
 	if err != nil {
 		t.Fatalf("read %s: %v", navOverridePageFile, err)
 	}
-	m := regexp.MustCompile(`const DEFAULT_ACCENT = "(#[0-9a-fA-F]{6})";`).FindSubmatch(page)
-	if m == nil {
-		t.Fatalf("%s: DEFAULT_ACCENT constant not found", navOverridePageFile)
-	}
-	if web := string(m[1]); !strings.EqualFold(web, brand) {
-		t.Errorf("web DEFAULT_ACCENT = %q, want brand accent %q from %s", web, brand, designTokensFile)
+	if !strings.Contains(string(page), "const DEFAULT_ACCENT = THEME_DEFAULT_ACCENT;") {
+		t.Errorf("%s: DEFAULT_ACCENT must be the generated THEME_DEFAULT_ACCENT", navOverridePageFile)
 	}
 }
 

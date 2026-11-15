@@ -34,6 +34,18 @@ export const SUBTITLE_COLORS = [
   "#ff0000",
   "#000000",
 ] as const;
+// Each colour's name, for its "subtitleColor<Name>" label. Subtitle colours are user content
+// (a caption style), not theme colour, so they live here rather than in markup or styles.
+export const SUBTITLE_COLOR_NAMES = {
+  "#ffffff": "White",
+  "#ffff00": "Yellow",
+  "#00ff00": "Green",
+  "#00ffff": "Cyan",
+  "#0000ff": "Blue",
+  "#ff00ff": "Magenta",
+  "#ff0000": "Red",
+  "#000000": "Black",
+} as const satisfies Record<(typeof SUBTITLE_COLORS)[number], string>;
 export const SUBTITLE_OPACITIES = ["1", "0.75", "0.5", "0.25"] as const;
 export const SUBTITLE_EDGES = ["none", "outline", "drop-shadow", "raised", "depressed"] as const;
 export const SUBTITLE_POSITIONS = ["auto", "10", "25", "50", "80"] as const;

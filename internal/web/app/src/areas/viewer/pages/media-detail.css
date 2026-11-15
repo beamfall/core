@@ -188,7 +188,7 @@
 [data-register="viewer"] .bf-detail-progress-fill {
   height: 100%;
   border-radius: inherit;
-  background: var(--beam-500);
+  background: var(--accent);
 }
 
 [data-register="viewer"] .bf-detail-actions {

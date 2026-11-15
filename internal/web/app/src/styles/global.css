@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "./tokens.css";
+@import "./theme.css";
 
 /* Bridge the Beamfall design tokens to the names shadcn/ui components expect,
  * so every copied-in component is themed by our OKLCH tokens — not shadcn's
@@ -12,17 +13,19 @@
   --color-popover: var(--bg-raised);
   --color-popover-foreground: var(--text-primary);
   --color-primary: var(--accent);
-  --color-primary-foreground: var(--night-950);
+  --color-primary-foreground: var(--accent-ink);
   --color-secondary: var(--bg-raised);
   --color-secondary-foreground: var(--text-primary);
   --color-muted: var(--bg-surface);
   --color-muted-foreground: var(--text-muted);
   --color-accent: var(--bg-raised);
   --color-accent-foreground: var(--text-primary);
-  --color-destructive: var(--red-500);
-  /* Dark ink on red-500: 5.27:1 (WCAG AA); mist-100 on red-500 was 2.84:1
-   * and failed the ADR-0100 axe color-contrast gate on every destructive fill. */
-  --color-destructive-foreground: var(--ink-950);
+  --color-destructive: var(--state-danger);
+  /* Root background as ink on the danger fill: dark ink on the bright dark-scheme red and
+   * paper on the deep light-scheme red, so both pass the ADR-0100 axe color-contrast gate. */
+  --color-destructive-foreground: var(--bg-root);
+  --color-scrim: var(--scrim);
+  --color-on-scrim: var(--on-scrim);
   --color-border: var(--border-subtle);
   --color-input: var(--border-subtle);
   --color-ring: var(--focus-ring);
@@ -53,14 +56,6 @@
   --surface-gap: 1.5rem;
 }
 
-/* tokens.css defines --border-strong only for the Manage register, so a
- * viewer-register `var(--border-strong)` fell back to currentColor (a white
- * frame). Give the Cinema register the same emphasis hairline; the Manage
- * blocks in tokens.css keep their own value. */
-:root:not([data-register="manage"]) {
-  --border-strong: color-mix(in oklab, var(--line) 78%, var(--text-primary));
-}
-
 * {
   box-sizing: border-box;
 }
@@ -76,12 +71,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  color-scheme: dark;
   scrollbar-color: color-mix(in oklch, var(--text-muted) 45%, transparent) transparent;
-}
-
-[data-register="manage"][data-theme="light"] {
-  color-scheme: light;
 }
 
 h1,
