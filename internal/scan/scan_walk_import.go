@@ -19,6 +19,13 @@ func (s *scanWalkState) consumeTask(task *workerTask) error {
 	} else if decision != nil && decision.refused {
 		return s.queueContextRefusal(path, decision.refusal)
 	} else if decision.skipsStillImage(path) {
+		// A catalogued image this scan now leaves out goes missing here
+		// rather than in the guarded end-of-scan pass, which it would
+		// otherwise count against (CORE-1833). An image never catalogued
+		// matches no row.
+		if err := s.st.MarkMediaFileMissing(s.ctx, s.req.LibraryID, path); err != nil {
+			return err
+		}
 		return s.ctx.Err()
 	}
 	if task.fastPath {

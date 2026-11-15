@@ -138,6 +138,54 @@ func TestScanCataloguesTaggedPartsFolderBesideImages(t *testing.T) {
 	}
 }
 
+// TestScanDropsCataloguedPartsFolderImagesPastRatioGuard (CORE-1833): images
+// catalogued before their folder was recognised as parts leave the catalog on
+// the rescan that skips them, even when there are enough of them to trip the
+// missing-ratio guard that holds back the end-of-scan missing pass.
+func TestScanDropsCataloguedPartsFolderImagesPastRatioGuard(t *testing.T) {
+	// feature:scan-pipeline
+	root := t.TempDir()
+	dir, parts := writePartsFolder(t, root)
+	for i := 1; i <= missingRatioGuardMinPresent; i++ {
+		writeScanFile(t, dir, fmt.Sprintf("page-%02d.jpg", i), jpegBytes(fmt.Sprintf("page %d", i)))
+	}
+	prober := taggedPartsProber{}
+	for i, part := range parts {
+		prober[filepath.Base(part)] = map[string]string{"album": "Synthetic Tale", "track": fmt.Sprintf("%d/3", i+1)}
+	}
+	st := storetest.Open(t)
+	libraryID := partsLibrary(t, st)
+	if _, err := ScanWithWorkerGovernor(context.Background(), st, prober, nil, nil, nil, nil, nil, nil, fixedGovernor(1), Request{LibraryID: libraryID, Root: root}); err != nil {
+		t.Fatalf("scan without the parts parser: %v", err)
+	}
+	before, err := st.MediaFilesForLibrary(context.Background(), libraryID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	images := 0
+	for _, file := range before {
+		if imageClassForPath(file.Path) {
+			images++
+		}
+	}
+	if images < missingRatioGuardMinPresent {
+		t.Fatalf("first scan catalogued %d images, want at least %d; files = %#v", images, missingRatioGuardMinPresent, before)
+	}
+	parsers := map[string]FilenameParser{"parts": taggedPartsParser{}}
+	if _, err := ScanWithWorkerGovernor(context.Background(), st, prober, nil, parsers, nil, nil, nil, nil, fixedGovernor(1), Request{LibraryID: libraryID, Root: root}); err != nil {
+		t.Fatalf("rescan with the parts parser: %v", err)
+	}
+	after, err := st.MediaFilesForLibrary(context.Background(), libraryID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range after {
+		if imageClassForPath(file.Path) {
+			t.Fatalf("image still live after the rescan: %q", file.Path)
+		}
+	}
+}
+
 // TestScanLogsRefusedPartsFolder (CORE-1710): a folder the plugin refuses is
 // queued as unmatched and the scan log names the folder, the refused file and
 // the reason, so it is never silently missing. A folder of images alone keeps
@@ -261,6 +309,11 @@ func TestCompletionKeepsCheckpointBelowPendingParts(t *testing.T) {
 		pendingParts:       []parsedPartImport{{imported: store.ImportMediaFile{Path: filepath.Join(dir, "01.mp3")}}},
 		pendingCompletions: []*completedFile{before, between},
 	}
+	reports := 0
+	s.progress = func(jobCheckpoint, store.JobProgress) error {
+		reports++
+		return nil
+	}
 	if err := s.completeFirst(); err != nil || s.result.LastPath != before.path {
 		t.Fatalf("after earlier file: LastPath = %q, %v; want %q", s.result.LastPath, err, before.path)
 	}
@@ -269,5 +322,10 @@ func TestCompletionKeepsCheckpointBelowPendingParts(t *testing.T) {
 	}
 	if s.result.FilesSeen != 2 {
 		t.Fatalf("FilesSeen = %d, want 2", s.result.FilesSeen)
+	}
+	// Each report counts toward the job's yield batch; a held one would
+	// let a batch of images yield onto the same checkpoint forever.
+	if reports != 1 {
+		t.Fatalf("progress reports = %d, want 1 (none for the held image)", reports)
 	}
 }

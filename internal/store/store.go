@@ -2826,6 +2826,36 @@ func (s *Store) MarkMissingMediaFilesNotSeenSince(ctx context.Context, libraryID
 	return err
 }
 
+// MarkMediaFileMissing marks one live file of a Library missing. A scan calls
+// it for a catalogued file it now deliberately leaves out, so that file leaves
+// the catalog even when the missing-ratio guard holds back the end-of-scan
+// missing pass, and it never counts toward that guard (CORE-1833).
+func (s *Store) MarkMediaFileMissing(ctx context.Context, libraryID LibraryID, path string) error {
+	if libraryID == "" {
+		return errors.New("library ID is required")
+	}
+	if path == "" {
+		return errors.New("path is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+	if err != nil {
+		return err
+	}
+	_, err = plane.writer.ExecContext(ctx, `
+		UPDATE media_file
+		SET missing_at_ms = ?
+		WHERE missing_at_ms IS NULL
+		  AND path = ?
+		  AND media_id IN (SELECT id FROM media WHERE library_id = ?)
+	`, timeToMillis(time.Now().UTC()), path, libraryID)
+	return err
+}
+
 // MediaFingerprints returns the content-identity values for one Media item's
 // primary file (scraper variable substitution, ADR-0027 D2 §7). This is a
 // server-internal read like MediaLibrary — visibility gating belongs to the
