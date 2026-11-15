@@ -4,6 +4,7 @@ import { type Location, useLocation, useNavigate } from "react-router";
 import { SignOutButton } from "@/areas/enroll";
 import beamfallLogo from "@/assets/beamfall-logo.png";
 import { markProfilePicked, ProfileAvatar } from "@/components/beamfall/profile";
+import { MAIN_CONTENT_ID, SkipLink } from "@/components/chrome/SkipLink";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -103,6 +104,7 @@ export function ProfilePickerPage() {
 
   return (
     <div className="flex min-h-dvh flex-col">
+      <SkipLink />
       <header className="flex items-center justify-between px-5 py-4 sm:px-8 sm:py-6">
         <div className="flex items-center gap-2.5">
           <img src={beamfallLogo} alt="" width={28} height={28} className="shrink-0" />
@@ -110,7 +112,11 @@ export function ProfilePickerPage() {
         </div>
         <SignOutButton />
       </header>
-      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center px-4 py-8 sm:px-8">
+      <main
+        id={MAIN_CONTENT_ID}
+        tabIndex={-1}
+        className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center px-4 py-8 sm:px-8"
+      >
         {pinProfile ? (
           <PinPrompt
             profile={pinProfile}

@@ -1,6 +1,7 @@
 import { AlertCircle, LoaderCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
+import { MAIN_CONTENT_ID, SkipLink } from "@/components/chrome/SkipLink";
 import { Button } from "@/components/ui/button";
 import { getIdentityEpochSignal } from "@/lib/api";
 import { displayString } from "@/lib/display";
@@ -563,6 +564,7 @@ function FeaturePlayer() {
 
   return (
     <main className="flex min-h-screen flex-col bg-[oklch(8%_0.012_255)]">
+      <SkipLink />
       <h1 className="sr-only">{navTitle || t("brand")}</h1>
       <div className="bf-player-bar">
         <Button variant="outline" size="sm" onClick={back}>
@@ -588,7 +590,11 @@ function FeaturePlayer() {
       </div>
 
       {state.phase === "message" || state.phase === "terminal" ? (
-        <div className="flex flex-1 items-center justify-center p-6">
+        <div
+          id={MAIN_CONTENT_ID}
+          tabIndex={-1}
+          className="flex flex-1 items-center justify-center p-6"
+        >
           <div className="flex max-w-md flex-col items-center gap-3 text-center">
             <AlertCircle aria-hidden className="size-7 text-[var(--state-danger)]" />
             {navTitle ? <h2 className="m-0 text-xl font-semibold text-white">{navTitle}</h2> : null}
@@ -612,6 +618,8 @@ function FeaturePlayer() {
       ) : (
         <div
           ref={stageRef}
+          id={MAIN_CONTENT_ID}
+          tabIndex={-1}
           className={"bf-player-stage" + (playing && chromeHidden ? " is-chrome-hidden" : "")}
         >
           {/* eslint-disable-next-line jsx-a11y/media-has-caption */}

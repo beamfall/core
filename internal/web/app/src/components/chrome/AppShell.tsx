@@ -10,6 +10,7 @@ import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
 import { AccountMenu } from "./AccountMenu";
 import { LibrarySidebar } from "./LibrarySidebar";
+import { MAIN_CONTENT_ID, SkipLink } from "./SkipLink";
 import { NOTIFICATION_BADGE_LIMIT, useUnreadNotifications } from "./unreadNotifications";
 import "./chrome.css";
 
@@ -128,11 +129,19 @@ export function AppShell({
       : unreadNotifications;
 
   if (beamfallHost) {
-    return <main className="bf-main px-4 py-6">{children}</main>;
+    return (
+      <>
+        <SkipLink />
+        <main id={MAIN_CONTENT_ID} tabIndex={-1} className="bf-main px-4 py-6">
+          {children}
+        </main>
+      </>
+    );
   }
 
   return (
     <div className="bf-shell min-h-screen text-foreground">
+      <SkipLink />
       <header className={"bf-header" + (revealed ? " is-revealed" : "")}>
         {hasSidebar && (
           <button
@@ -235,7 +244,9 @@ export function AppShell({
             </div>
           )}
 
-          <main className="bf-main px-4 py-6">{children}</main>
+          <main id={MAIN_CONTENT_ID} tabIndex={-1} className="bf-main px-4 py-6">
+            {children}
+          </main>
           <footer className="bf-source-footer">
             <a href="/source" target="_blank" rel="noreferrer noopener">
               {t("coreSourceOffer")}
