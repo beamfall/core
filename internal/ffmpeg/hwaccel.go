@@ -67,7 +67,15 @@ const (
 // includes FFmpeg stderr or local paths.
 type HWAccelProbe struct {
 	Accelerator HWAccel
-	Status      HWAccelStatus
+	// Status is the H.264 probe verdict, which decides whether the accelerator
+	// is usable at all.
+	Status HWAccelStatus
+	// HEVC reports that the accelerator's HEVC encoder also passed its own
+	// trivial encode. It is probed only after the H.264 encode works: a GPU
+	// that encodes H.264 does not necessarily encode HEVC (older NVENC, QSV
+	// before Skylake, Macs without an HEVC media engine), so HEVC is never
+	// inferred from the H.264 verdict (CORE-2088, ADR-0013 §4).
+	HEVC bool
 }
 
 // hwAccelEncoder maps an accelerator to the ffmpeg encoder name its trivial
@@ -155,6 +163,17 @@ const (
 func (r HWAccelResult) Supports(a HWAccel) bool {
 	for _, probe := range r.Results {
 		if probe.Accelerator == a && probe.Status == HWAccelWorking {
+			return true
+		}
+	}
+	return false
+}
+
+// SupportsHEVC reports whether the probe verified the given accelerator's HEVC
+// encoder works.
+func (r HWAccelResult) SupportsHEVC(a HWAccel) bool {
+	for _, probe := range r.Results {
+		if probe.Accelerator == a && probe.Status == HWAccelWorking && probe.HEVC {
 			return true
 		}
 	}
@@ -264,13 +283,15 @@ func ProbeHardwareAccel(ctx context.Context, opts HWAccelOptions) HWAccelResult 
 			result.Results = append(result.Results, HWAccelProbe{Accelerator: candidate, Status: status})
 			continue
 		}
+		hevc := false
 		if err := probeOneHWAccel(ctx, runner, hwAccelEncoder[candidate], timeout); err == nil {
 			status = HWAccelWorking
 			result.Working = append(result.Working, candidate)
+			hevc = ctx.Err() == nil && probeOneHWAccel(ctx, runner, hwAccelHEVCEncoder[candidate], timeout) == nil
 		} else if opts.ConfiguredPreference == candidate {
 			status = HWAccelConfiguredFailed
 		}
-		result.Results = append(result.Results, HWAccelProbe{Accelerator: candidate, Status: status})
+		result.Results = append(result.Results, HWAccelProbe{Accelerator: candidate, Status: status, HEVC: hevc})
 	}
 	return result
 }
@@ -330,7 +351,7 @@ func hwAccelProbeArgs(encoder string) []string {
 		"-i", "testsrc=duration=0.1:size=128x128:rate=10",
 		"-frames:v", "1",
 	}
-	if encoder == hwAccelEncoder[HWAccelVAAPI] {
+	if encoder == hwAccelEncoder[HWAccelVAAPI] || encoder == hwAccelHEVCEncoder[HWAccelVAAPI] {
 		args = []string{
 			"-v", "error",
 			"-vaapi_device", vaapiDevicePath(),

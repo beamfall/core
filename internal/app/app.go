@@ -255,6 +255,7 @@ func hardwareAccelReport(result ffmpeg.HWAccelResult) config.HardwareAccelReport
 		report.Results[i] = config.HardwareAccelProbe{
 			Accelerator: string(probe.Accelerator),
 			Status:      string(probe.Status),
+			HEVC:        probe.HEVC,
 		}
 	}
 	return report
@@ -458,13 +459,14 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 			configured = accel
 		}
 		probe := ffmpeg.ProbeHardwareAccel(ctx, ffmpeg.HWAccelOptions{ConfiguredPreference: configured})
-		ffmpegRunner.SetHardwareAccel(ffmpeg.SelectHWAccel(probe, configured))
+		selected := ffmpeg.SelectHWAccel(probe, configured)
+		ffmpegRunner.SetHardwareAccel(selected, probe.SupportsHEVC(selected))
 		cfg.HardwareAcceleration = hardwareAccelReport(probe)
 		cfg.TranscodeCap = ffmpeg.TranscodeCapForHWAccel(probe)
 		if cfg.HardwareAcceleration.SoftwareOnly() {
 			logger.Info("hardware acceleration probe: none verified, using software transcode")
 		} else {
-			logger.Info("hardware acceleration probe: verified working", "accelerators", cfg.HardwareAcceleration.Working)
+			logger.Info("hardware acceleration probe: verified working", "accelerators", cfg.HardwareAcceleration.Working, "hevc", cfg.HardwareAcceleration.HEVC())
 		}
 	}
 	autoTranscodeCap := cfg.TranscodeCap

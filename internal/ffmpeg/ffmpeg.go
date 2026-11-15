@@ -198,6 +198,9 @@ type Runner struct {
 	ffprobePath string
 	resolveErr  error
 	hwAccel     HWAccel
+	// hwHEVC reports that the probe verified hwAccel's HEVC encoder. HEVC is
+	// advertised and selected only when it is set (CORE-2088).
+	hwHEVC bool
 	// generationNiceness is the Unix niceness applied to background generation
 	// processes (frame grabs, sprite sheets, preview clips, image scales) on
 	// Linux so a realtime transcode — never niced — always wins the CPU.
@@ -245,15 +248,19 @@ func (r *Runner) SetGenerationNiceness(niceness int) {
 }
 
 // SetHardwareAccel selects the verified hardware encoder used by HLS
-// transcodes. The zero value means software libx264.
+// transcodes. The zero value means software libx264. hevc reports that the
+// probe also verified accel's HEVC encoder; without it the runner neither
+// advertises nor selects HEVC output.
 //
 //io:ignore — config setter, not an I/O operation (cmd/ioe2e ledger).
-func (r *Runner) SetHardwareAccel(accel HWAccel) {
+func (r *Runner) SetHardwareAccel(accel HWAccel, hevc bool) {
 	if _, ok := hwAccelEncoder[accel]; ok {
 		r.hwAccel = accel
+		r.hwHEVC = hevc
 		return
 	}
 	r.hwAccel = ""
+	r.hwHEVC = false
 }
 
 //io:ignore — in-memory capability check, not an I/O operation (cmd/ioe2e ledger).
@@ -262,7 +269,7 @@ func (r *Runner) SupportsTranscodeCodec(codec string) bool {
 	case "", "h264":
 		return true
 	case "hevc":
-		return hwAccelVideoEncoder(r.hwAccel, "hevc") != ""
+		return r.hwHEVC && hwAccelVideoEncoder(r.hwAccel, "hevc") != ""
 	default:
 		return false
 	}
@@ -1255,6 +1262,10 @@ type Rendition struct {
 	// while still allowing stream index 0 to be selected.
 	burnSubtitleIndex int
 	hwAccel           HWAccel
+	// hwHEVC reports that the probe verified hwAccel's HEVC encoder. An HEVC
+	// request without it takes the libx264 path, exactly as it does with no
+	// accelerator, so an unverified hevc_* encoder is never launched (CORE-2088).
+	hwHEVC bool
 	// toneMapAccel is the accelerator the HDR→SDR transform itself runs on.
 	// It is NOT hwAccel: the encoder may be hardware while the tone-map is
 	// software (that is the shipped behaviour), and ADR-0075 Amendment
@@ -1361,8 +1372,11 @@ func (r Rendition) videoArgs() []string {
 	if r.CopyVideo {
 		return []string{"-c:v", "copy"}
 	}
-	if encoder := hwAccelVideoEncoder(r.hwAccel, r.VideoCodec); encoder != "" {
-		return []string{"-c:v", encoder}
+	// Unverified HEVC takes the libx264 fallback below.
+	if r.VideoCodec != "hevc" || r.hwHEVC {
+		if encoder := hwAccelVideoEncoder(r.hwAccel, r.VideoCodec); encoder != "" {
+			return []string{"-c:v", encoder}
+		}
 	}
 	return []string{
 		"-c:v", "libx264",
@@ -2136,6 +2150,7 @@ func (r *Runner) startHLS(ctx context.Context, src, dir string, rendition Rendit
 	}
 	if !rendition.AudioOnly {
 		rendition = rendition.withHWAccel(r.hwAccel)
+		rendition.hwHEVC = r.hwHEVC
 		rendition = rendition.withToneMapAccel(selectRenditionToneMapBackend(rendition))
 	}
 	ffmpegPath, err := exec.LookPath("ffmpeg")
@@ -2306,6 +2321,7 @@ func (r *Runner) startHLSSegmentProcess(ctx context.Context, src, dir string, re
 	}
 	if !rendition.AudioOnly {
 		rendition = rendition.withHWAccel(r.hwAccel)
+		rendition.hwHEVC = r.hwHEVC
 		rendition = rendition.withToneMapAccel(selectRenditionToneMapBackend(rendition))
 	}
 	ffmpegPath, err := exec.LookPath("ffmpeg")

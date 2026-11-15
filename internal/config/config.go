@@ -191,6 +191,21 @@ type HardwareAccelReport struct {
 type HardwareAccelProbe struct {
 	Accelerator string `json:"accelerator"`
 	Status      string `json:"status"`
+	// HEVC reports that the accelerator's HEVC encoder passed its own probe
+	// encode, separately from the H.264 verdict in Status.
+	HEVC bool `json:"hevc"`
+}
+
+// HEVC lists the working accelerators whose HEVC encoder was also verified, in
+// probe order.
+func (r HardwareAccelReport) HEVC() []string {
+	var out []string
+	for _, probe := range r.Results {
+		if probe.Status == "working" && probe.HEVC {
+			out = append(out, probe.Accelerator)
+		}
+	}
+	return out
 }
 
 // ReviewDemoEnrollmentConfig enables the App Review demo enrollment grant.

@@ -39,10 +39,12 @@ func statusByAccel(result HWAccelResult) map[HWAccel]HWAccelStatus {
 
 func TestProbeHardwareAccelLinuxReportsOnlyWorking(t *testing.T) {
 	// QSV works, VAAPI fails, NVENC works → only QSV and NVENC are reported.
+	// NVENC's HEVC encoder works too; QSV's does not.
 	stub := &stubHWAccelRunner{results: map[string]error{
 		"h264_qsv":   nil,
 		"h264_nvenc": nil,
-		// h264_vaapi intentionally absent → runStrict fails it.
+		"hevc_nvenc": nil,
+		// h264_vaapi and hevc_qsv intentionally absent → runStrict fails them.
 	}}
 	got := ProbeHardwareAccel(context.Background(), HWAccelOptions{
 		Runner:     stub.runStrict,
@@ -69,8 +71,13 @@ func TestProbeHardwareAccelLinuxReportsOnlyWorking(t *testing.T) {
 	if got.Supports(HWAccelVAAPI) {
 		t.Fatalf("Supports(VAAPI) = true, but its probe failed")
 	}
-	// VAAPI must have been attempted (DRI present) even though it failed.
-	wantAttempts := []string{"h264_qsv", "h264_vaapi", "h264_nvenc"}
+	if !got.SupportsHEVC(HWAccelNVENC) || got.SupportsHEVC(HWAccelQSV) || got.SupportsHEVC(HWAccelVAAPI) {
+		t.Fatalf("SupportsHEVC = qsv:%v vaapi:%v nvenc:%v, want only nvenc",
+			got.SupportsHEVC(HWAccelQSV), got.SupportsHEVC(HWAccelVAAPI), got.SupportsHEVC(HWAccelNVENC))
+	}
+	// VAAPI must have been attempted (DRI present) even though it failed; HEVC
+	// is probed only behind a passing H.264 probe.
+	wantAttempts := []string{"h264_qsv", "hevc_qsv", "h264_vaapi", "h264_nvenc", "hevc_nvenc"}
 	if !reflect.DeepEqual(stub.attempts, wantAttempts) {
 		t.Fatalf("attempts = %v, want %v", stub.attempts, wantAttempts)
 	}
@@ -128,7 +135,7 @@ func TestProbeHardwareAccelDegradesWhenDRIAbsent(t *testing.T) {
 	if want := []HWAccel{HWAccelNVENC}; !reflect.DeepEqual(got.Working, want) {
 		t.Fatalf("Working = %v, want %v", got.Working, want)
 	}
-	if want := []string{"h264_nvenc"}; !reflect.DeepEqual(stub.attempts, want) {
+	if want := []string{"h264_nvenc", "hevc_nvenc"}; !reflect.DeepEqual(stub.attempts, want) {
 		t.Fatalf("attempts = %v, want %v (QSV/VAAPI must be skipped without /dev/dri)", stub.attempts, want)
 	}
 	statuses := statusByAccel(got)
@@ -197,7 +204,7 @@ func TestProbeHardwareAccelDarwinProbesVideoToolbox(t *testing.T) {
 	if want := []HWAccel{HWAccelVideoToolbox}; !reflect.DeepEqual(got.Working, want) {
 		t.Fatalf("Working = %v, want %v", got.Working, want)
 	}
-	if want := []string{"h264_videotoolbox"}; !reflect.DeepEqual(stub.attempts, want) {
+	if want := []string{"h264_videotoolbox", "hevc_videotoolbox"}; !reflect.DeepEqual(stub.attempts, want) {
 		t.Fatalf("attempts = %v, want %v", stub.attempts, want)
 	}
 }
@@ -304,6 +311,61 @@ func TestHWAccelProbeArgsUploadsSoftwareFramesForVAAPI(t *testing.T) {
 	for _, forbidden := range []string{"-vaapi_device", "hwupload"} {
 		if strings.Contains(nvencArgs, forbidden) {
 			t.Fatalf("NVENC probe args = %q, must not contain %q", nvencArgs, forbidden)
+		}
+	}
+}
+
+func TestProbeHardwareAccelH264PassHEVCFailIsNotHEVCCapable(t *testing.T) {
+	// The CORE-2088 case: a GPU whose H.264 encoder works but whose HEVC
+	// encoder does not stays a working accelerator, but HEVC is not verified,
+	// so the runner neither advertises nor selects HEVC output.
+	stub := &stubHWAccelRunner{results: map[string]error{"h264_nvenc": nil}}
+	got := ProbeHardwareAccel(context.Background(), HWAccelOptions{
+		Runner:     stub.runStrict,
+		GOOS:       "linux",
+		DRIPresent: func() bool { return false },
+	})
+	if !got.Supports(HWAccelNVENC) {
+		t.Fatalf("Supports(NVENC) = false, want true (H.264 probe passed)")
+	}
+	if got.SupportsHEVC(HWAccelNVENC) {
+		t.Fatalf("SupportsHEVC(NVENC) = true, but the hevc_nvenc probe failed")
+	}
+	if want := []string{"h264_nvenc", "hevc_nvenc"}; !reflect.DeepEqual(stub.attempts, want) {
+		t.Fatalf("attempts = %v, want %v", stub.attempts, want)
+	}
+
+	selected := SelectHWAccel(got, "")
+	runner := New()
+	runner.SetHardwareAccel(selected, got.SupportsHEVC(selected))
+	if !runner.SupportsTranscodeCodec("h264") {
+		t.Fatalf("SupportsTranscodeCodec(h264) = false, want true")
+	}
+	if runner.SupportsTranscodeCodec("hevc") {
+		t.Fatalf("SupportsTranscodeCodec(hevc) = true, but HEVC was not verified")
+	}
+	runner.SetHardwareAccel(selected, true)
+	if !runner.SupportsTranscodeCodec("hevc") {
+		t.Fatalf("SupportsTranscodeCodec(hevc) = false with a verified HEVC encoder")
+	}
+	runner.SetHardwareAccel("", true)
+	if runner.SupportsTranscodeCodec("hevc") {
+		t.Fatalf("SupportsTranscodeCodec(hevc) = true with software transcode")
+	}
+}
+
+func TestRenditionUnverifiedHEVCFallsBackToSoftware(t *testing.T) {
+	got := (Rendition{VideoCodec: "hevc", hwAccel: HWAccelNVENC}).videoArgs()
+	if len(got) < 2 || got[1] != "libx264" {
+		t.Fatalf("videoArgs = %v, want the libx264 fallback for unverified HEVC", got)
+	}
+}
+
+func TestHWAccelProbeArgsUploadsSoftwareFramesForHEVCVAAPI(t *testing.T) {
+	args := strings.Join(hwAccelProbeArgs("hevc_vaapi"), " ")
+	for _, want := range []string{"-vaapi_device", "format=nv12,hwupload", "-c:v hevc_vaapi"} {
+		if !strings.Contains(args, want) {
+			t.Fatalf("HEVC VAAPI probe args = %q, want %q", args, want)
 		}
 	}
 }
