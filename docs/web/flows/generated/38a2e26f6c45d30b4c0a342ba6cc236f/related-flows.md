@@ -1,6 +1,6 @@
 # Home\-mode admin password sign\-in on the enroll page — related-flows
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:9c58f7f445932bc7f6d8cfacc60d0fb4 -->
 Relations are static lexical candidates; computed dispatch remains unresolved\.

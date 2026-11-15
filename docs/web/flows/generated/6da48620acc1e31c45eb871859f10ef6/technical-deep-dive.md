@@ -1,6 +1,6 @@
 # Console access: library grants, rating ceilings, access schedules, managed policy — technical-deep-dive
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:08cef2f6a7dc5081c0055b8d6a4b95a8 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -50,27 +50,27 @@ Source: internal/web/app/src/areas/console/lib/schedulePreview\.ts:19; symbol: w
 <!-- flowdocs:paragraph:8da17a3fe1e65d7acb820eebba114d60 -->
 Declared member: source declares AccessGrantList; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:525; symbol: AccessGrantList; span SHA256: b267612b8f1c2008f524c59386e5be7a19c129c5e48cb0300048c36f41648cdc.
+Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:556; symbol: AccessGrantList; span SHA256: b267612b8f1c2008f524c59386e5be7a19c129c5e48cb0300048c36f41648cdc.
 
 <!-- flowdocs:paragraph:9802d7cf529da4eb6981dbfa27bcca21 -->
 Declared member: source declares AccessScheduleEditor; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:266; symbol: AccessScheduleEditor; span SHA256: b7898edfecd2a6b4fe1ee0cad812194013401033c7dc281f96475ad2a1327c87.
+Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:269; symbol: AccessScheduleEditor; span SHA256: b7898edfecd2a6b4fe1ee0cad812194013401033c7dc281f96475ad2a1327c87.
 
 <!-- flowdocs:paragraph:45c9cc298ccebbed887f0fb8ca54d2fa -->
 Declared member: source declares CeilingRow; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:219; symbol: CeilingRow; span SHA256: 0b2ab3292ab82dc1f1902f88888cead99f270f4453b90b94827997fab3ff7766.
+Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:222; symbol: CeilingRow; span SHA256: 0b2ab3292ab82dc1f1902f88888cead99f270f4453b90b94827997fab3ff7766.
 
 <!-- flowdocs:paragraph:494109cea9091eb4aa41a4b70d8bd79d -->
 Declared member: source declares LibraryGrantEditor; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:150; symbol: LibraryGrantEditor; span SHA256: c4f190b00b68d746265aa281642a1d4c8531d4e2dc84d6a75b7b56f565c5421a.
+Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:153; symbol: LibraryGrantEditor; span SHA256: c4f190b00b68d746265aa281642a1d4c8531d4e2dc84d6a75b7b56f565c5421a.
 
 <!-- flowdocs:paragraph:a08b27b82534810b9dbaae92bd91acdb -->
 Declared member: source declares ManagedPolicyControls; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:397; symbol: ManagedPolicyControls; span SHA256: 9ccd110baa3b1779f8c5412ed4c7b32961a4255e9e15a7afd742cc9d2a0ba840.
+Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:401; symbol: ManagedPolicyControls; span SHA256: 96d8507029444d975bc9ca461bacd62fb1a5d1aa3ddec5f74efe8535a8b9fa55.
 
 <!-- flowdocs:paragraph:c4af78487ae5b4e73df3f0cbdcb3174c -->
 Declared member: source declares NO\_CEILING; membership is caller\-declared, not runtime evidence\.
@@ -80,7 +80,7 @@ Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:55; symb
 <!-- flowdocs:paragraph:4f274cf595cd771bc57bd425c5708ed3 -->
 Declared member: source declares SchedulePreview; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:369; symbol: SchedulePreview; span SHA256: 59f95e08b59aaf1b3975ff96fa5c52135e798cbfe59e1b0695bca80e0aa96b38.
+Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:372; symbol: SchedulePreview; span SHA256: 59f95e08b59aaf1b3975ff96fa5c52135e798cbfe59e1b0695bca80e0aa96b38.
 
 <!-- flowdocs:paragraph:6dc895413b292b2d9ecddb41f3f66cf3 -->
 Declared member: source declares WEEKDAYS; membership is caller\-declared, not runtime evidence\.
@@ -205,60 +205,60 @@ Source: internal/web/app/src/lib/graphql/manage\.ts:87; symbol: fetchLibraries; 
 <!-- flowdocs:paragraph:5ff1061858101051c322464d21bf604e -->
 Declared member: source declares addWindow; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:278; symbol: addWindow; span SHA256: f0dcee47c24207aab459bb66b0ae2eb2c76b96ca21a89250a70604075b95cdb3.
+Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:281; symbol: addWindow; span SHA256: f0dcee47c24207aab459bb66b0ae2eb2c76b96ca21a89250a70604075b95cdb3.
 
 <!-- flowdocs:paragraph:0f63c3ef0d79dbbe0bfa8b1858d7e1a1 -->
 Source contains a lexical call to update; dispatch and effects are unresolved\.
 
-Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:279; symbol: ; span SHA256: 5c26fae89117f92ffa03751f1e3c00c9b3e5135a144d80c4543b44ffe735252c.
+Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:282; symbol: ; span SHA256: 5c26fae89117f92ffa03751f1e3c00c9b3e5135a144d80c4543b44ffe735252c.
 
 <!-- flowdocs:paragraph:04582656f045e8c19079d8ff58927f16 -->
 Declared member: source declares applyCap; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:407; symbol: applyCap; span SHA256: 114267ac594e358c442b948853fc7d8627d201aedb2997032f87ae4801849e6f.
+Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:431; symbol: applyCap; span SHA256: 114267ac594e358c442b948853fc7d8627d201aedb2997032f87ae4801849e6f.
 
 <!-- flowdocs:paragraph:4ad1602e65473d81082f2b7e5680efc9 -->
 Declared member: source declares editWindow; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:286; symbol: editWindow; span SHA256: a8d7d2a77fc8e685927611cb3a6feae7e8acff8c1526d0154e782e96e4b49a4d.
+Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:289; symbol: editWindow; span SHA256: a8d7d2a77fc8e685927611cb3a6feae7e8acff8c1526d0154e782e96e4b49a4d.
 
 <!-- flowdocs:paragraph:eb8cc855071b82096d799e9c767d3c63 -->
 Source contains a lexical call to update; dispatch and effects are unresolved\.
 
-Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:287; symbol: ; span SHA256: b90b9d9df663fbfb0425fd5ba1310596fc045533f4c8c59f4c93e87cb9aaf343.
+Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:290; symbol: ; span SHA256: b90b9d9df663fbfb0425fd5ba1310596fc045533f4c8c59f4c93e87cb9aaf343.
 
 <!-- flowdocs:paragraph:79c29cf07ac88bdaa0a2986109189bef -->
 Declared member: source declares onChange; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:234; symbol: onChange; span SHA256: 482fb6ac1c6d9e5ac443270f48a96684dca200d2055aa2531b1afb16be06533a.
+Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:237; symbol: onChange; span SHA256: 482fb6ac1c6d9e5ac443270f48a96684dca200d2055aa2531b1afb16be06533a.
 
 <!-- flowdocs:paragraph:68d2de4900111465a1ef86c92efe74d9 -->
 Declared member: source declares removeWindow; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:282; symbol: removeWindow; span SHA256: fc3d22440c4fcd44691e6abb7d233936b96c28f4fb0d882d2bd3c39203a72772.
+Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:285; symbol: removeWindow; span SHA256: fc3d22440c4fcd44691e6abb7d233936b96c28f4fb0d882d2bd3c39203a72772.
 
 <!-- flowdocs:paragraph:1e7490cc4ba67f2f637044e3d067215e -->
 Source contains a lexical call to update; dispatch and effects are unresolved\.
 
-Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:283; symbol: ; span SHA256: 22e154c0aacd3ca316aaa9c09ebd77c4f6596a3730ab07056bd6cb6c8af7276d.
+Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:286; symbol: ; span SHA256: 22e154c0aacd3ca316aaa9c09ebd77c4f6596a3730ab07056bd6cb6c8af7276d.
 
 <!-- flowdocs:paragraph:47f8d9b14e630a0de01572cfc1cceddf -->
 Declared member: source declares revoke; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:533; symbol: revoke; span SHA256: c0730ec5181e25871c1e105f5ad0fafac4505789fb4d4c43be5f84d7fa650b37.
+Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:564; symbol: revoke; span SHA256: c0730ec5181e25871c1e105f5ad0fafac4505789fb4d4c43be5f84d7fa650b37.
 
 <!-- flowdocs:paragraph:9109436b54410ee660b9b3e48614fa52 -->
 Declared member: source declares toggle; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:168; symbol: toggle; span SHA256: bd84c326b34ca741887b711a102fc48b75ca4cb9a9573b2b356bd99d9df2fdb4.
+Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:171; symbol: toggle; span SHA256: bd84c326b34ca741887b711a102fc48b75ca4cb9a9573b2b356bd99d9df2fdb4.
 
 <!-- flowdocs:paragraph:85a2f3f022ad779bb95689a282524d05 -->
 Declared member: source declares togglePreauth; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:433; symbol: togglePreauth; span SHA256: 301346b6ed9f4b889fa3294888cc083096576a976f9666cd2ae19af2d7f45a5b.
+Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:463; symbol: togglePreauth; span SHA256: 301346b6ed9f4b889fa3294888cc083096576a976f9666cd2ae19af2d7f45a5b.
 
 <!-- flowdocs:paragraph:ddb7676bed117fd1a67b1af572aed3af -->
 Declared member: source declares update; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:274; symbol: update; span SHA256: bfc4786223aca03c68ac33ff9a4941686c2676cab36228f2f3ffb26b8cbc3a5f.
+Source: internal/web/app/src/areas/console/sections/ProfilesAccess\.tsx:277; symbol: update; span SHA256: bfc4786223aca03c68ac33ff9a4941686c2676cab36228f2f3ffb26b8cbc3a5f.
 

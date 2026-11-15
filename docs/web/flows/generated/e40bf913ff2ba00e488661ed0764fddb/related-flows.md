@@ -1,6 +1,6 @@
 # Console remote access: certificate, relay, direct connection, watch\-away guide — related-flows
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:9f95607c821b606f77f46da6fa48f031 -->
 Relations are static lexical candidates; computed dispatch remains unresolved\.

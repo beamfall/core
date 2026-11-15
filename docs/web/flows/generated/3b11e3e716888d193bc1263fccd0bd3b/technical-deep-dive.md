@@ -1,16 +1,16 @@
 # Console access: devices and pairing codes — technical-deep-dive
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b86d0772ed233f57d577991e3f90ad09 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/console/sections/Devices\.tsx:148; symbol: Devices; span SHA256: 91122bd481a61a50c8979c2c0c3e5c18a73f7bcb28014fd595308c1dee7ffbf5.
+Source: internal/web/app/src/areas/console/sections/Devices\.tsx:192; symbol: Devices; span SHA256: 91122bd481a61a50c8979c2c0c3e5c18a73f7bcb28014fd595308c1dee7ffbf5.
 
 <!-- flowdocs:paragraph:5dfc7490e9381b3da5aef229288a379e -->
 Declared member: source declares PairingCodeBanner; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/Devices\.tsx:61; symbol: PairingCodeBanner; span SHA256: d77fa5bb812d16436a64b065cd628603419dbb4a261c22c3ffae8d7059a0e232.
+Source: internal/web/app/src/areas/console/sections/Devices\.tsx:104; symbol: PairingCodeBanner; span SHA256: d77fa5bb812d16436a64b065cd628603419dbb4a261c22c3ffae8d7059a0e232.
 
 <!-- flowdocs:paragraph:d1d51ad8bb894be1a228a48706b6636d -->
 Declared member: source declares PairingCode; membership is caller\-declared, not runtime evidence\.
@@ -40,7 +40,7 @@ Source: internal/web/app/src/lib/graphql/console\.ts:172; symbol: ConsoleConfigP
 <!-- flowdocs:paragraph:662ef4b4d6f315f4e66f203e4e8c9f48 -->
 Declared member: source declares DEVICES\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:438; symbol: DEVICES\_QUERY; span SHA256: 2efe78749cb59a6e16b6191959a5275d16d86d9bcdd864daf177341bb9f940e8.
+Source: internal/web/app/src/lib/graphql/console\.ts:438; symbol: DEVICES\_QUERY; span SHA256: 91a80d8b7741c24b3ccccf7236f760a6fc718415309e70554b6fbb13aef84737.
 
 <!-- flowdocs:paragraph:312ca1370fd569124ad4a2cfcf913e91 -->
 Declared member: source declares REVOKE\_ALL\_DEVICES\_MUTATION; membership is caller\-declared, not runtime evidence\.
@@ -95,25 +95,25 @@ Source: internal/web/app/src/lib/graphql/console\.ts:483; symbol: setDeviceRole;
 <!-- flowdocs:paragraph:0e49288bf1b86bfecd03dbc996703f3a -->
 Declared member: source declares mint; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/Devices\.tsx:155; symbol: mint; span SHA256: 86d2153804b0114f320db7a2e9205dadfad0162342b7068d6831d2b23b3b5add.
+Source: internal/web/app/src/areas/console/sections/Devices\.tsx:199; symbol: mint; span SHA256: 86d2153804b0114f320db7a2e9205dadfad0162342b7068d6831d2b23b3b5add.
 
 <!-- flowdocs:paragraph:71350a4a566d1d61c77f3d312fe65f75 -->
 Declared member: source declares onRevoke; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/Devices\.tsx:164; symbol: onRevoke; span SHA256: 6ffa5a943bfa7a454177b97dc794cb925246ef426a7d60d7f80a97fa9143ac1e.
+Source: internal/web/app/src/areas/console/sections/Devices\.tsx:208; symbol: onRevoke; span SHA256: 6ffa5a943bfa7a454177b97dc794cb925246ef426a7d60d7f80a97fa9143ac1e.
 
 <!-- flowdocs:paragraph:79f760ee5e5ac87496f1a1736c3df340 -->
 Declared member: source declares onRevokeAll; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/Devices\.tsx:169; symbol: onRevokeAll; span SHA256: 341805df7a7c9f3af90335011cdc4566f750b94aa398fcad7002503b4777eaf8.
+Source: internal/web/app/src/areas/console/sections/Devices\.tsx:213; symbol: onRevokeAll; span SHA256: 341805df7a7c9f3af90335011cdc4566f750b94aa398fcad7002503b4777eaf8.
 
 <!-- flowdocs:paragraph:54e88848aa69f41f97760ffc4272b771 -->
 Declared member: source declares onSetRole; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/Devices\.tsx:174; symbol: onSetRole; span SHA256: 44496156b2655924478674a87fd3f5a42bf93eb287a6dc80340981295b9b7cf6.
+Source: internal/web/app/src/areas/console/sections/Devices\.tsx:218; symbol: onSetRole; span SHA256: 44496156b2655924478674a87fd3f5a42bf93eb287a6dc80340981295b9b7cf6.
 
 <!-- flowdocs:paragraph:cb2e04b05dd4534ed01441ac36f2f73e -->
 Declared member: source declares onToggleRemote; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/Devices\.tsx:179; symbol: onToggleRemote; span SHA256: 5111050b7be5f77389af84d6028f25185d545673aa1050b1f56ad34846690caa.
+Source: internal/web/app/src/areas/console/sections/Devices\.tsx:223; symbol: onToggleRemote; span SHA256: 5111050b7be5f77389af84d6028f25185d545673aa1050b1f56ad34846690caa.
 

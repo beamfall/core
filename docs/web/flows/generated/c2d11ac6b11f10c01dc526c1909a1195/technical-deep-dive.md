@@ -1,6 +1,6 @@
 # Console activity log — technical-deep-dive
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:fc7d068d082293ba7042d9b0fee026d8 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -60,7 +60,7 @@ Source: internal/web/app/src/lib/graphql/activity\.ts:29; symbol: fetchActivityR
 <!-- flowdocs:paragraph:a449a2e7204d816d6f6c44d4bb7aafe2 -->
 Declared member: source declares DEVICES\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:438; symbol: DEVICES\_QUERY; span SHA256: 2efe78749cb59a6e16b6191959a5275d16d86d9bcdd864daf177341bb9f940e8.
+Source: internal/web/app/src/lib/graphql/console\.ts:438; symbol: DEVICES\_QUERY; span SHA256: 91a80d8b7741c24b3ccccf7236f760a6fc718415309e70554b6fbb13aef84737.
 
 <!-- flowdocs:paragraph:04114547381d9bd92842ade7af531009 -->
 Declared member: source declares PROFILES\_ADMIN\_QUERY; membership is caller\-declared, not runtime evidence\.

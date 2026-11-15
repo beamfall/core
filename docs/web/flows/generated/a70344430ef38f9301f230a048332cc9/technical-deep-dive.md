@@ -1,6 +1,6 @@
 # Player transport: seek bar, trickplay, markers, chapters, renditions, touch gestures — technical-deep-dive
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:ebb23304efe52dc24f2bbb0c3b2b015d -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -100,7 +100,7 @@ Source: internal/web/app/src/areas/viewer/lib/transport\.ts:580; symbol: buildRe
 <!-- flowdocs:paragraph:56aa393e79974161226ede0495e83e9c -->
 Declared member: source declares buildRouteDetailModel; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/lib/transport\.ts:666; symbol: buildRouteDetailModel; span SHA256: af8c8aa126c1740a1647bc26a3fd6c61d1b341aadffadbd5ab37ba61532b6a50.
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:679; symbol: buildRouteDetailModel; span SHA256: af8c8aa126c1740a1647bc26a3fd6c61d1b341aadffadbd5ab37ba61532b6a50.
 
 <!-- flowdocs:paragraph:a9447ef8d457f411ff271a776c8ab9a5 -->
 Declared member: source declares chapterSeekTarget; membership is caller\-declared, not runtime evidence\.
@@ -155,7 +155,7 @@ Source: internal/web/app/src/areas/viewer/lib/transport\.ts:180; symbol: markerT
 <!-- flowdocs:paragraph:37b33e6ba54c0e403d14ad616ce5b1f1 -->
 Declared member: source declares reasonLabel; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/lib/transport\.ts:651; symbol: reasonLabel; span SHA256: 9456200c048cfefe1136b869fdd0d46b2006469934cd398c92f63b805d7ebc9c.
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:653; symbol: reasonLabel; span SHA256: 9456200c048cfefe1136b869fdd0d46b2006469934cd398c92f63b805d7ebc9c.
 
 <!-- flowdocs:paragraph:4e0f40272791fcf68141bf8790f1d76b -->
 Declared member: source declares renditionIndex; membership is caller\-declared, not runtime evidence\.

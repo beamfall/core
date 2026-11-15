@@ -1,9 +1,9 @@
 # Console live sessions and host graphs — related-flows
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:021b855dba19fabd023d64856fde6be4 -->
 Relations are static lexical candidates; computed dispatch remains unresolved\.
 
-Source: internal/web/app/src/areas/console/sections/Dashboard\.tsx:291; symbol: CHART\_HEIGHT; span SHA256: 795a0efbd16af2c292727707936c42deca150072ae3d45c960aba52fb4eb6337.
+Source: internal/web/app/src/areas/console/sections/Dashboard\.tsx:294; symbol: CHART\_HEIGHT; span SHA256: 795a0efbd16af2c292727707936c42deca150072ae3d45c960aba52fb4eb6337.
 

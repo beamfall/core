@@ -1,6 +1,6 @@
 # Viewer entity detail page and not\-available state — technical-deep-dive
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:4e4a241607db2eb1f4b7ceb5bfe9f802 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -65,10 +65,5 @@ Source: internal/web/app/src/lib/graphql/viewer\.ts:204; symbol: fetchMediaForEn
 <!-- flowdocs:paragraph:c9bd6fde22b3f41ca057f80b5d54409a -->
 Declared member: source declares buildSeeAll; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/pages/EntityPage\.tsx:178; symbol: buildSeeAll; span SHA256: 7a73770aa1de3dddcd2440bfa04ad32728cb0203ac98fa742d3d4295ecd08c79.
-
-<!-- flowdocs:paragraph:c17fc976d8479b9dd58731e4373bedde -->
-Declared member: source declares fallbackQueue; membership is caller\-declared, not runtime evidence\.
-
-Source: internal/web/app/src/areas/viewer/pages/EntityPage\.tsx:82; symbol: fallbackQueue; span SHA256: 6f055c4a4ee3608de245fc9661d948bfebf7a1fdeb5406d216b5b07a47c55200.
+Source: internal/web/app/src/areas/viewer/pages/EntityPage\.tsx:221; symbol: buildSeeAll; span SHA256: 7a73770aa1de3dddcd2440bfa04ad32728cb0203ac98fa742d3d4295ecd08c79.
 

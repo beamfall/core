@@ -1,6 +1,6 @@
 # Player route: lazy load, timestamp links, info overlay, audio stage — technical-deep-dive
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:41b41964c0c4920e543ab8d1becb7dd1 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -10,12 +10,12 @@ Source: internal/web/app/src/areas/viewer/pages/PlayerPage\.tsx:94; symbol: Play
 <!-- flowdocs:paragraph:8af732ea464b9e36ad8409fcdd36dfd9 -->
 Declared member: source declares buildTimestampedLink; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/pages/PlayerPage\.tsx:865; symbol: buildTimestampedLink; span SHA256: c3fb37a335af45dc7c5cae087c62afcf46a82252a78c0690201022ad10dcf83e.
+Source: internal/web/app/src/areas/viewer/pages/PlayerPage\.tsx:868; symbol: buildTimestampedLink; span SHA256: c3fb37a335af45dc7c5cae087c62afcf46a82252a78c0690201022ad10dcf83e.
 
 <!-- flowdocs:paragraph:66a214617dbb1bcb690e947a2e72999d -->
 Declared member: source declares parseTimestampParam; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/pages/PlayerPage\.tsx:859; symbol: parseTimestampParam; span SHA256: 797bd778b40b672d4886813ada3803b727e71de235cee1356f3b44efa985460d.
+Source: internal/web/app/src/areas/viewer/pages/PlayerPage\.tsx:862; symbol: parseTimestampParam; span SHA256: 797bd778b40b672d4886813ada3803b727e71de235cee1356f3b44efa985460d.
 
 <!-- flowdocs:paragraph:1b75ba00eec3c8847e68b95cee156b8a -->
 Declared member: source declares AudioStage; membership is caller\-declared, not runtime evidence\.

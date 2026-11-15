@@ -1,6 +1,6 @@
 # Player audio and subtitle tracks, subtitle styling — flow-diagram
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1500616c2ec3a004d37072fdc22a79f9 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.

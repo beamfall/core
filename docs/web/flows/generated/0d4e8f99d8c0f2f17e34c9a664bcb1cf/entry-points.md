@@ -1,6 +1,6 @@
 # Manage field locks — entry-points
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1fde5b95e4f43dc4206688e44adda776 -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.

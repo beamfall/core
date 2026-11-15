@@ -1,6 +1,6 @@
 # UI primitives: button, dialog, alert dialog, select, table, tabs, tree and form controls — technical-deep-dive
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:d6139ac7954c1d16a21e4e320c9bf0fa -->
 Declared members are listed below; generated call observations do not establish executed behavior\.

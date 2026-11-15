@@ -1,6 +1,6 @@
 # Console area shell: route table, section nav, host firewall, session bar — related-flows
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a1ee9c434d4b68af7aaaf7bbb26bae0c -->
 Relations are static lexical candidates; computed dispatch remains unresolved\.

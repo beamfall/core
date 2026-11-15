@@ -1,6 +1,6 @@
 # Viewer entity detail page and not\-available state — readme
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:895b31a9129840196493859a58239ced -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -30,4 +30,6 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow viewer\.entity: 14 resolved, 0 unresolved members.
+Declared inventory flow viewer\.entity: 13 resolved, 1 unresolved members.
+
+- Unresolved member internal/web/app/src/areas/viewer/pages/EntityPage\.tsx fallbackQueue: symbol is not a top\-level declaration in this path at this revision; name a class or object member&\#39;s enclosing declaration.

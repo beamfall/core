@@ -1,6 +1,6 @@
 # Player transport: seek bar, trickplay, markers, chapters, renditions, touch gestures — flow-diagram
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:e56c4e24895f7bfec80b11f456e2848e -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -14,20 +14,20 @@ sequenceDiagram
     Note over S,U: Lexical inventory only - no witnessed order
     Note over S: Flow a70344430ef38f9301f230a048332cc9
     Note over S,U: Source contains call isArray in internal/web/app/src/areas/viewer/lib/transport.ts at line 593 - order unresolved
-    Note over S,U: Source contains call push in internal/web/app/src/areas/viewer/lib/transport.ts at line 688 - order unresolved
-    Note over S,U: Source contains call push in internal/web/app/src/areas/viewer/lib/transport.ts at line 690 - order unresolved
-    Note over S,U: Source contains call isArray in internal/web/app/src/areas/viewer/lib/transport.ts at line 700 - order unresolved
-    Note over S,U: Source contains call find in internal/web/app/src/areas/viewer/lib/transport.ts at line 702 - order unresolved
-    Note over S,U: Source contains call renditionKey in internal/web/app/src/areas/viewer/lib/transport.ts at line 703 - order unresolved
-    Note over S,U: Source contains call push in internal/web/app/src/areas/viewer/lib/transport.ts at line 706 - order unresolved
-    Note over S,U: Source contains call renditionLabel in internal/web/app/src/areas/viewer/lib/transport.ts at line 706 - order unresolved
-    Note over S,U: Source contains call push in internal/web/app/src/areas/viewer/lib/transport.ts at line 708 - order unresolved
-    Note over S,U: Source contains call formatBitrate in internal/web/app/src/areas/viewer/lib/transport.ts at line 710 - order unresolved
-    Note over S,U: Source contains call push in internal/web/app/src/areas/viewer/lib/transport.ts at line 714 - order unresolved
-    Note over S,U: Source contains call push in internal/web/app/src/areas/viewer/lib/transport.ts at line 717 - order unresolved
-    Note over S,U: Source contains call push in internal/web/app/src/areas/viewer/lib/transport.ts at line 724 - order unresolved
-    Note over S,U: Source contains call push in internal/web/app/src/areas/viewer/lib/transport.ts at line 732 - order unresolved
-    Note over S,U: Source contains call reasonLabel in internal/web/app/src/areas/viewer/lib/transport.ts at line 732 - order unresolved
+    Note over S,U: Source contains call push in internal/web/app/src/areas/viewer/lib/transport.ts at line 701 - order unresolved
+    Note over S,U: Source contains call push in internal/web/app/src/areas/viewer/lib/transport.ts at line 703 - order unresolved
+    Note over S,U: Source contains call isArray in internal/web/app/src/areas/viewer/lib/transport.ts at line 713 - order unresolved
+    Note over S,U: Source contains call find in internal/web/app/src/areas/viewer/lib/transport.ts at line 715 - order unresolved
+    Note over S,U: Source contains call renditionKey in internal/web/app/src/areas/viewer/lib/transport.ts at line 716 - order unresolved
+    Note over S,U: Source contains call push in internal/web/app/src/areas/viewer/lib/transport.ts at line 719 - order unresolved
+    Note over S,U: Source contains call renditionLabel in internal/web/app/src/areas/viewer/lib/transport.ts at line 719 - order unresolved
+    Note over S,U: Source contains call push in internal/web/app/src/areas/viewer/lib/transport.ts at line 721 - order unresolved
+    Note over S,U: Source contains call formatBitrate in internal/web/app/src/areas/viewer/lib/transport.ts at line 723 - order unresolved
+    Note over S,U: Source contains call push in internal/web/app/src/areas/viewer/lib/transport.ts at line 727 - order unresolved
+    Note over S,U: Source contains call push in internal/web/app/src/areas/viewer/lib/transport.ts at line 730 - order unresolved
+    Note over S,U: Source contains call push in internal/web/app/src/areas/viewer/lib/transport.ts at line 737 - order unresolved
+    Note over S,U: Source contains call push in internal/web/app/src/areas/viewer/lib/transport.ts at line 745 - order unresolved
+    Note over S,U: Source contains call reasonLabel in internal/web/app/src/areas/viewer/lib/transport.ts at line 745 - order unresolved
     Note over S,U: Source contains call from in internal/web/app/src/areas/viewer/lib/transport.ts at line 300 - order unresolved
     Note over S,U: Source contains call Set in internal/web/app/src/areas/viewer/lib/transport.ts at line 301 - order unresolved
     Note over S,U: Source contains call map in internal/web/app/src/areas/viewer/lib/transport.ts at line 303 - order unresolved

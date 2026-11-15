@@ -1,6 +1,6 @@
 # GraphQL client wire types shared by every data call — technical-deep-dive
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:aaa00270188f800d20990636f8fb80fd -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -15,22 +15,22 @@ Source: internal/web/app/src/lib/graphql/types\.ts:976; symbol: APITokenInfo; sp
 <!-- flowdocs:paragraph:32ad03c2f70a360d374c5fe3ba009a64 -->
 Declared member: source declares AccessGrantInfo; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1716; symbol: AccessGrantInfo; span SHA256: 86a879b6e3a8ac8061d27f0508791840d646185191133c459b4d00276ac82502.
+Source: internal/web/app/src/lib/graphql/types\.ts:1720; symbol: AccessGrantInfo; span SHA256: 86a879b6e3a8ac8061d27f0508791840d646185191133c459b4d00276ac82502.
 
 <!-- flowdocs:paragraph:60a11f4e2b12030632501b22a5829433 -->
 Declared member: source declares AccessScheduleInfo; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1460; symbol: AccessScheduleInfo; span SHA256: 7fbc18590a72933d81111a695fffefdcb95f97b1ce85a3f177049a939c37c3ef.
+Source: internal/web/app/src/lib/graphql/types\.ts:1462; symbol: AccessScheduleInfo; span SHA256: 7fbc18590a72933d81111a695fffefdcb95f97b1ce85a3f177049a939c37c3ef.
 
 <!-- flowdocs:paragraph:2dcd3d3195d568598bdb4babc5f08dc8 -->
 Declared member: source declares AccessWindowInfo; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1453; symbol: AccessWindowInfo; span SHA256: 6dd0eafee447c6714728bea10cf5e6080cf8cfcaee7accf1abc4de50a6f36739.
+Source: internal/web/app/src/lib/graphql/types\.ts:1455; symbol: AccessWindowInfo; span SHA256: 6dd0eafee447c6714728bea10cf5e6080cf8cfcaee7accf1abc4de50a6f36739.
 
 <!-- flowdocs:paragraph:3016449f643824cd28ca002fcbc333f7 -->
 Declared member: source declares AccessWindowInput; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1709; symbol: AccessWindowInput; span SHA256: 8ccd7f7a70f62543e54620dd67c8ce782292b141bd9b4dbff11e015360e65bc5.
+Source: internal/web/app/src/lib/graphql/types\.ts:1713; symbol: AccessWindowInput; span SHA256: 8ccd7f7a70f62543e54620dd67c8ce782292b141bd9b4dbff11e015360e65bc5.
 
 <!-- flowdocs:paragraph:3f0f825329098cf7903c7550db56aa35 -->
 Declared member: source declares ActivityEntryInfo; membership is caller\-declared, not runtime evidence\.
@@ -40,7 +40,7 @@ Source: internal/web/app/src/lib/graphql/types\.ts:1008; symbol: ActivityEntryIn
 <!-- flowdocs:paragraph:77f3aa0cd796bce815ba3a9290968d64 -->
 Declared member: source declares AdminSessionInfo; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1679; symbol: AdminSessionInfo; span SHA256: d0fbe07b59b50b7d599042bc04ce2b9d3054ee98a82bac1cb627b24d83c9cbee.
+Source: internal/web/app/src/lib/graphql/types\.ts:1683; symbol: AdminSessionInfo; span SHA256: d0fbe07b59b50b7d599042bc04ce2b9d3054ee98a82bac1cb627b24d83c9cbee.
 
 <!-- flowdocs:paragraph:25118bc145e61526e70b970971c03c36 -->
 Declared member: source declares ArtworkCandidate; membership is caller\-declared, not runtime evidence\.
@@ -75,17 +75,17 @@ Source: internal/web/app/src/lib/graphql/types\.ts:1027; symbol: BulkOpResult; s
 <!-- flowdocs:paragraph:85bd2af5e3bda924c1ed3b3e89c4ac5d -->
 Declared member: source declares CapabilityStateInfo; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1438; symbol: CapabilityStateInfo; span SHA256: 31ac4f9b8a06bfc56082130602f6dc00922e27b1654d5d11223442aa5a0c4fcd.
+Source: internal/web/app/src/lib/graphql/types\.ts:1440; symbol: CapabilityStateInfo; span SHA256: 31ac4f9b8a06bfc56082130602f6dc00922e27b1654d5d11223442aa5a0c4fcd.
 
 <!-- flowdocs:paragraph:3c072725a68475fcbce264aa2a8e55b1 -->
 Declared member: source declares CertificationCeilingInfo; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1612; symbol: CertificationCeilingInfo; span SHA256: 7875ccfad3cf5c3836829ac1e07934d81f31b0d9a2f72f2861d3a14e80ca39e7.
+Source: internal/web/app/src/lib/graphql/types\.ts:1614; symbol: CertificationCeilingInfo; span SHA256: 7875ccfad3cf5c3836829ac1e07934d81f31b0d9a2f72f2861d3a14e80ca39e7.
 
 <!-- flowdocs:paragraph:d8b8cd69866f6daf734b29591de0c52f -->
 Declared member: source declares CertificationCeilingResult; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1644; symbol: CertificationCeilingResult; span SHA256: 0d3806504791f6674f99d02b6615859c59e24defba906b87aea5d7eafa0e010f.
+Source: internal/web/app/src/lib/graphql/types\.ts:1648; symbol: CertificationCeilingResult; span SHA256: 0d3806504791f6674f99d02b6615859c59e24defba906b87aea5d7eafa0e010f.
 
 <!-- flowdocs:paragraph:0b63a320785ec12290db30db42f898cb -->
 Declared member: source declares ClientPref; membership is caller\-declared, not runtime evidence\.
@@ -145,12 +145,12 @@ Source: internal/web/app/src/lib/graphql/types\.ts:1039; symbol: DuplicateGroupI
 <!-- flowdocs:paragraph:5d89f0e2c3227732044c1e210ef896fd -->
 Declared member: source declares EnforcedFilterPlugin; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1628; symbol: EnforcedFilterPlugin; span SHA256: acd7426522bec16cdb9443f2c7711be96b435cb8be0a7771903a0ff4046964e5.
+Source: internal/web/app/src/lib/graphql/types\.ts:1632; symbol: EnforcedFilterPlugin; span SHA256: acd7426522bec16cdb9443f2c7711be96b435cb8be0a7771903a0ff4046964e5.
 
 <!-- flowdocs:paragraph:e84d96a690068642576bb1605f2e6db0 -->
 Declared member: source declares EnforcedFilterProfile; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1619; symbol: EnforcedFilterProfile; span SHA256: 683c7c2de5c34ff9ede3557b690459ef5f3638dace93798115810363fe0f92a0.
+Source: internal/web/app/src/lib/graphql/types\.ts:1621; symbol: EnforcedFilterProfile; span SHA256: 683c7c2de5c34ff9ede3557b690459ef5f3638dace93798115810363fe0f92a0.
 
 <!-- flowdocs:paragraph:71bdd6e79db5acc834fd06232aa72f27 -->
 Declared member: source declares EntityFieldInfo; membership is caller\-declared, not runtime evidence\.
@@ -185,7 +185,7 @@ Source: internal/web/app/src/lib/graphql/types\.ts:118; symbol: FieldFilters; sp
 <!-- flowdocs:paragraph:b65d23235ca620cf90a82665f27ae308 -->
 Declared member: source declares FieldLockInfo; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1581; symbol: FieldLockInfo; span SHA256: 91839557523147e67a76f10b979145e247c63d1a36c6af45d52139299dd22204.
+Source: internal/web/app/src/lib/graphql/types\.ts:1583; symbol: FieldLockInfo; span SHA256: 91839557523147e67a76f10b979145e247c63d1a36c6af45d52139299dd22204.
 
 <!-- flowdocs:paragraph:6037ef4c73ecbde7695ea204df34b1b1 -->
 Declared member: source declares FileChangeInfo; membership is caller\-declared, not runtime evidence\.
@@ -200,12 +200,12 @@ Source: internal/web/app/src/lib/graphql/types\.ts:81; symbol: FilterOption; spa
 <!-- flowdocs:paragraph:0e3ea7ee33ae65724f81e59bac5bfa35 -->
 Declared member: source declares FixMatchCandidateInfo; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1517; symbol: FixMatchCandidateInfo; span SHA256: 0908c7dce7bfd8cc3f5e56ddb2e0caf361afa8f9249dfa28d5f1d7d100ba3145.
+Source: internal/web/app/src/lib/graphql/types\.ts:1519; symbol: FixMatchCandidateInfo; span SHA256: 0908c7dce7bfd8cc3f5e56ddb2e0caf361afa8f9249dfa28d5f1d7d100ba3145.
 
 <!-- flowdocs:paragraph:6f2b77ab32deb51c78932c2c6627fcb8 -->
 Declared member: source declares FixMatchFieldDiff; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1532; symbol: FixMatchFieldDiff; span SHA256: 9ce6560c53c20906c9cd78c80dd3524347017f8b70b9785c8ca3e77c07365c31.
+Source: internal/web/app/src/lib/graphql/types\.ts:1534; symbol: FixMatchFieldDiff; span SHA256: 9ce6560c53c20906c9cd78c80dd3524347017f8b70b9785c8ca3e77c07365c31.
 
 <!-- flowdocs:paragraph:f2909b8338974cf7f6fe455d73243bf5 -->
 Declared member: source declares FolderEntryInfo; membership is caller\-declared, not runtime evidence\.
@@ -220,7 +220,7 @@ Source: internal/web/app/src/lib/graphql/types\.ts:239; symbol: GenericMediaInfo
 <!-- flowdocs:paragraph:04858bb5d9fe03b523e80cae22fd22c6 -->
 Declared member: source declares HardwareAccelerationInfo; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1322; symbol: HardwareAccelerationInfo; span SHA256: 6967dee3e36b19bf61b4a8f0b2c66736d1759ff13a179d0ef2e2c6d1b375a199.
+Source: internal/web/app/src/lib/graphql/types\.ts:1324; symbol: HardwareAccelerationInfo; span SHA256: 6967dee3e36b19bf61b4a8f0b2c66736d1759ff13a179d0ef2e2c6d1b375a199.
 
 <!-- flowdocs:paragraph:2cef8caf0520fccbc2eb1f5a665bebb2 -->
 Declared member: source declares HealthItemInfo; membership is caller\-declared, not runtime evidence\.
@@ -230,12 +230,12 @@ Source: internal/web/app/src/lib/graphql/types\.ts:1032; symbol: HealthItemInfo;
 <!-- flowdocs:paragraph:bb48f4fa64c1812d9171151b59d1ab78 -->
 Declared member: source declares HostMetricSample; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1359; symbol: HostMetricSample; span SHA256: 908cc855c661db2cac6b78a213aeea2546d3a288f5b80e48b4643be630d7920f.
+Source: internal/web/app/src/lib/graphql/types\.ts:1361; symbol: HostMetricSample; span SHA256: 908cc855c661db2cac6b78a213aeea2546d3a288f5b80e48b4643be630d7920f.
 
 <!-- flowdocs:paragraph:8c8817847cd09fa9b5b0176c8b748098 -->
 Declared member: source declares HostMetricsInfo; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1370; symbol: HostMetricsInfo; span SHA256: a32576a0c86868ef66979c9d0638e1932531e0e7201b4cd20cc3ee1f329e2c9f.
+Source: internal/web/app/src/lib/graphql/types\.ts:1372; symbol: HostMetricsInfo; span SHA256: a32576a0c86868ef66979c9d0638e1932531e0e7201b4cd20cc3ee1f329e2c9f.
 
 <!-- flowdocs:paragraph:95e80acffef163dc596f6d126210c3cf -->
 Declared member: source declares IDRef; membership is caller\-declared, not runtime evidence\.
@@ -250,7 +250,7 @@ Source: internal/web/app/src/lib/graphql/types\.ts:914; symbol: IdentifyCandidat
 <!-- flowdocs:paragraph:871bc42c98014d88505709fc7671117f -->
 Declared member: source declares ImporterInfo; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1477; symbol: ImporterInfo; span SHA256: c6d464bcac5e321acf25ae50d12f53a1a41075c1f05c95f1b6fffa56d0a0b4b7.
+Source: internal/web/app/src/lib/graphql/types\.ts:1479; symbol: ImporterInfo; span SHA256: c6d464bcac5e321acf25ae50d12f53a1a41075c1f05c95f1b6fffa56d0a0b4b7.
 
 <!-- flowdocs:paragraph:88f1f2bf029bcf648f9e587dfe291d19 -->
 Declared member: source declares ItemStateInfo; membership is caller\-declared, not runtime evidence\.
@@ -310,7 +310,7 @@ Source: internal/web/app/src/lib/graphql/types\.ts:38; symbol: LibrarySummary; s
 <!-- flowdocs:paragraph:2b9f10934c46f593ce911e449efabe01 -->
 Declared member: source declares LiveSessionInfo; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1339; symbol: LiveSessionInfo; span SHA256: 14902b18fda20e016340df868753cf14b6c996e32b36b4d6a7ce7e76ae7db2f7.
+Source: internal/web/app/src/lib/graphql/types\.ts:1341; symbol: LiveSessionInfo; span SHA256: 14902b18fda20e016340df868753cf14b6c996e32b36b4d6a7ce7e76ae7db2f7.
 
 <!-- flowdocs:paragraph:869f8c26fe2652596d2aa49f7c417f23 -->
 Declared member: source declares LocaleString; membership is caller\-declared, not runtime evidence\.
@@ -350,7 +350,7 @@ Source: internal/web/app/src/lib/graphql/types\.ts:1052; symbol: MediaFieldInfo;
 <!-- flowdocs:paragraph:0ac1e13ae99d90ba22900c59183ee421 -->
 Declared member: source declares MediaFieldInput; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1702; symbol: MediaFieldInput; span SHA256: d845111bd55fb90f0777cc1e0706b47efa5562304b82a859e7d2a09d351b3b1e.
+Source: internal/web/app/src/lib/graphql/types\.ts:1706; symbol: MediaFieldInput; span SHA256: d845111bd55fb90f0777cc1e0706b47efa5562304b82a859e7d2a09d351b3b1e.
 
 <!-- flowdocs:paragraph:75bb35cafd06e8e7fffc369b4526fcc8 -->
 Declared member: source declares MediaFileDetail; membership is caller\-declared, not runtime evidence\.
@@ -505,27 +505,27 @@ Source: internal/web/app/src/lib/graphql/types\.ts:1091; symbol: PathPickerRootI
 <!-- flowdocs:paragraph:2b746dc6d6c384f0cbade6faafd6e8f7 -->
 Declared member: source declares PlayHistoryFilter; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1389; symbol: PlayHistoryFilter; span SHA256: 7caa2058dcf98a9fab34efd7a77538f0a427b67a6c2cd0ee38a4c631b3f9d356.
+Source: internal/web/app/src/lib/graphql/types\.ts:1391; symbol: PlayHistoryFilter; span SHA256: 7caa2058dcf98a9fab34efd7a77538f0a427b67a6c2cd0ee38a4c631b3f9d356.
 
 <!-- flowdocs:paragraph:43043e36d55b75a83342343b5592b035 -->
 Declared member: source declares PlayInfo; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1376; symbol: PlayInfo; span SHA256: b135a9363d8a0f4fd5d123eb342a0aaa73682d01d2d80f21798bc6bed136e1a3.
+Source: internal/web/app/src/lib/graphql/types\.ts:1378; symbol: PlayInfo; span SHA256: b135a9363d8a0f4fd5d123eb342a0aaa73682d01d2d80f21798bc6bed136e1a3.
 
 <!-- flowdocs:paragraph:761bdf7b312c8cd932d9a5815a19830a -->
 Declared member: source declares PlayStatsInfo; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1398; symbol: PlayStatsInfo; span SHA256: 14848713562a76ca682dbd37f973a24e90ffba212f6d94e5c07eda04398383e0.
+Source: internal/web/app/src/lib/graphql/types\.ts:1400; symbol: PlayStatsInfo; span SHA256: 14848713562a76ca682dbd37f973a24e90ffba212f6d94e5c07eda04398383e0.
 
 <!-- flowdocs:paragraph:9d0b7c26e29c3e395e5cefa7c7c9e7e4 -->
 Declared member: source declares PlaybackCacheInfo; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1422; symbol: PlaybackCacheInfo; span SHA256: 4eebd93d60f0cca25e7d7a1235a18ada672891a5c2dcb1d6f33beb4fda54a470.
+Source: internal/web/app/src/lib/graphql/types\.ts:1424; symbol: PlaybackCacheInfo; span SHA256: 4eebd93d60f0cca25e7d7a1235a18ada672891a5c2dcb1d6f33beb4fda54a470.
 
 <!-- flowdocs:paragraph:d9c6092afbbb5f701e627ea1a6f37cf3 -->
 Declared member: source declares PlaybackCacheOpResult; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1448; symbol: PlaybackCacheOpResult; span SHA256: 23875f3be871dd841e2f20a32d5b125423f7dd2aef9d77744e69382bea5e1926.
+Source: internal/web/app/src/lib/graphql/types\.ts:1450; symbol: PlaybackCacheOpResult; span SHA256: 23875f3be871dd841e2f20a32d5b125423f7dd2aef9d77744e69382bea5e1926.
 
 <!-- flowdocs:paragraph:978effe17035e81a8dbc474a330efdc0 -->
 Declared member: source declares PlaybackMarker; membership is caller\-declared, not runtime evidence\.
@@ -575,7 +575,7 @@ Source: internal/web/app/src/lib/graphql/types\.ts:640; symbol: PluginSummary; s
 <!-- flowdocs:paragraph:ba8e5e965e3012c725fe2b80e9e8f5c7 -->
 Declared member: source declares ProfileAdminInfo; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1635; symbol: ProfileAdminInfo; span SHA256: 89f7b09acb731928e1592c9afdf1dcc3087b9ebec1841c434ea44437e0003e4c.
+Source: internal/web/app/src/lib/graphql/types\.ts:1639; symbol: ProfileAdminInfo; span SHA256: 89f7b09acb731928e1592c9afdf1dcc3087b9ebec1841c434ea44437e0003e4c.
 
 <!-- flowdocs:paragraph:8c5a10a213678b7371a0cd9a4ee1d473 -->
 Declared member: source declares ProfileSummary; membership is caller\-declared, not runtime evidence\.
@@ -585,22 +585,22 @@ Source: internal/web/app/src/lib/graphql/types\.ts:188; symbol: ProfileSummary; 
 <!-- flowdocs:paragraph:290bb96ff3db7ba9c2c95cc8e45b84fd -->
 Declared member: source declares QBittorrentConfig; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1656; symbol: QBittorrentConfig; span SHA256: ea0536af1db35db6d4527f0c9598ef2ee36b282968c3a357df240a7205e945c4.
+Source: internal/web/app/src/lib/graphql/types\.ts:1660; symbol: QBittorrentConfig; span SHA256: ea0536af1db35db6d4527f0c9598ef2ee36b282968c3a357df240a7205e945c4.
 
 <!-- flowdocs:paragraph:0839e5f1213a9bb17dc0dcd0726c806d -->
 Declared member: source declares QBittorrentIngestInfo; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1671; symbol: QBittorrentIngestInfo; span SHA256: 77e855ec42389f09afe112c37a02b6862243f769bf98eb772c3efee23b282a6c.
+Source: internal/web/app/src/lib/graphql/types\.ts:1675; symbol: QBittorrentIngestInfo; span SHA256: 77e855ec42389f09afe112c37a02b6862243f769bf98eb772c3efee23b282a6c.
 
 <!-- flowdocs:paragraph:2c8bb9e314c73665f7bef43262f1bbe4 -->
 Declared member: source declares QBittorrentRoute; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1650; symbol: QBittorrentRoute; span SHA256: 59a6e4dfe4dec9d703b468c65a4006e7c9bae93ead173a6a6c04eeb60623ca91.
+Source: internal/web/app/src/lib/graphql/types\.ts:1654; symbol: QBittorrentRoute; span SHA256: 59a6e4dfe4dec9d703b468c65a4006e7c9bae93ead173a6a6c04eeb60623ca91.
 
 <!-- flowdocs:paragraph:d8a2bbbfc91c5426b75f452e7aabd0bf -->
 Declared member: source declares QBittorrentStatusEntry; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1662; symbol: QBittorrentStatusEntry; span SHA256: 643c51ff4b9e04825eee329c8672b692e419075f605ddd7bde97d923437be8fb.
+Source: internal/web/app/src/lib/graphql/types\.ts:1666; symbol: QBittorrentStatusEntry; span SHA256: 643c51ff4b9e04825eee329c8672b692e419075f605ddd7bde97d923437be8fb.
 
 <!-- flowdocs:paragraph:b7305343e694bf64174b084edaa1549d -->
 Declared member: source declares RelationWriteResult; membership is caller\-declared, not runtime evidence\.
@@ -635,12 +635,12 @@ Source: internal/web/app/src/lib/graphql/types\.ts:338; symbol: ReportPlaybackVa
 <!-- flowdocs:paragraph:874ddf68f627a1ce3c81ed1c04a64fab -->
 Declared member: source declares RetentionCandidateHoldResult; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1740; symbol: RetentionCandidateHoldResult; span SHA256: 87db0430b61b68592cb0556c26356beaa5b11fe7ef2c7b75c6a0bad58121694f.
+Source: internal/web/app/src/lib/graphql/types\.ts:1744; symbol: RetentionCandidateHoldResult; span SHA256: 87db0430b61b68592cb0556c26356beaa5b11fe7ef2c7b75c6a0bad58121694f.
 
 <!-- flowdocs:paragraph:5c47f3098dcb0408f657b01a7fb18d7d -->
 Declared member: source declares RetentionRuleInfo; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1726; symbol: RetentionRuleInfo; span SHA256: 614b6c44e51452000199b90ad9b100a27e1e22925f14df533586752a01d6ce8d.
+Source: internal/web/app/src/lib/graphql/types\.ts:1730; symbol: RetentionRuleInfo; span SHA256: 614b6c44e51452000199b90ad9b100a27e1e22925f14df533586752a01d6ce8d.
 
 <!-- flowdocs:paragraph:e55d24272ff959ea709dbfd2950e6f28 -->
 Declared member: source declares RevealState; membership is caller\-declared, not runtime evidence\.
@@ -650,12 +650,12 @@ Source: internal/web/app/src/lib/graphql/types\.ts:197; symbol: RevealState; spa
 <!-- flowdocs:paragraph:027253df724935fef8b78af83e22ae1e -->
 Declared member: source declares RevokeAllDevicesResult; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1297; symbol: RevokeAllDevicesResult; span SHA256: 3a38b21bbbed610bbd98989196398594a995aa53cc1ef998da606ade2f6a5881.
+Source: internal/web/app/src/lib/graphql/types\.ts:1299; symbol: RevokeAllDevicesResult; span SHA256: 3a38b21bbbed610bbd98989196398594a995aa53cc1ef998da606ade2f6a5881.
 
 <!-- flowdocs:paragraph:b8d24d373dc6c8896983f4c3a226a74f -->
 Declared member: source declares RevokeDeviceResult; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1291; symbol: RevokeDeviceResult; span SHA256: 1e1145bfaf93a23650bbf18e5cf808ad39119a0ac0c05107d704d24b5676560f.
+Source: internal/web/app/src/lib/graphql/types\.ts:1293; symbol: RevokeDeviceResult; span SHA256: 1e1145bfaf93a23650bbf18e5cf808ad39119a0ac0c05107d704d24b5676560f.
 
 <!-- flowdocs:paragraph:fdabb4586edcf66db33891f7772c2d5f -->
 Declared member: source declares ScanLibraryResult; membership is caller\-declared, not runtime evidence\.
@@ -680,7 +680,7 @@ Source: internal/web/app/src/lib/graphql/types\.ts:690; symbol: ScheduleTriggerI
 <!-- flowdocs:paragraph:1200845ccdc7d5bc78e4a6a9bc34871e -->
 Declared member: source declares ScheduleTriggerInput; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1692; symbol: ScheduleTriggerInput; span SHA256: c4267f1762ca82ac328e779ccd1a8b5183431510138f8654d29c0f1a0e5d0810.
+Source: internal/web/app/src/lib/graphql/types\.ts:1696; symbol: ScheduleTriggerInput; span SHA256: c4267f1762ca82ac328e779ccd1a8b5183431510138f8654d29c0f1a0e5d0810.
 
 <!-- flowdocs:paragraph:d18647755acbb6beda258282244df0e1 -->
 Declared member: source declares ScopedAPIKeyInfo; membership is caller\-declared, not runtime evidence\.
@@ -725,7 +725,7 @@ Source: internal/web/app/src/lib/graphql/types\.ts:557; symbol: SemanticCapabili
 <!-- flowdocs:paragraph:ffbe7d68b83999af5131f6d76fcd15e2 -->
 Declared member: source declares SetupState; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1468; symbol: SetupState; span SHA256: 5734eca2fad9212cf7acb352c34dbc21be83de47a30b68dd89b831b9f2f9f161.
+Source: internal/web/app/src/lib/graphql/types\.ts:1470; symbol: SetupState; span SHA256: 5734eca2fad9212cf7acb352c34dbc21be83de47a30b68dd89b831b9f2f9f161.
 
 <!-- flowdocs:paragraph:b3dac5589fb047cac913f4393d739d5e -->
 Declared member: source declares SkipDetectionInfo; membership is caller\-declared, not runtime evidence\.
@@ -800,7 +800,7 @@ Source: internal/web/app/src/lib/graphql/types\.ts:831; symbol: TagTargetType; s
 <!-- flowdocs:paragraph:38a5fb449a6a7b1dfbc11d7986cf4287 -->
 Declared member: source declares TerminateSessionResult; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1411; symbol: TerminateSessionResult; span SHA256: 8a12bbbd6d173f87ad01f09bf1ab3cb14f8620d84c0828fdd8000da8d486310a.
+Source: internal/web/app/src/lib/graphql/types\.ts:1413; symbol: TerminateSessionResult; span SHA256: 8a12bbbd6d173f87ad01f09bf1ab3cb14f8620d84c0828fdd8000da8d486310a.
 
 <!-- flowdocs:paragraph:d522077bb26c5b539834fc310f12dae6 -->
 Declared member: source declares Theme; membership is caller\-declared, not runtime evidence\.
@@ -810,7 +810,7 @@ Source: internal/web/app/src/lib/graphql/types\.ts:109; symbol: Theme; span SHA2
 <!-- flowdocs:paragraph:599845cf36ff584cfea6ebe0dfabad1d -->
 Declared member: source declares TranscodeConfigInfo; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1327; symbol: TranscodeConfigInfo; span SHA256: a2ef84bcd3e9e4dc0dfad0cd5d8952c1fe1f394be3a17fcf945561a17c57dd0e.
+Source: internal/web/app/src/lib/graphql/types\.ts:1329; symbol: TranscodeConfigInfo; span SHA256: a2ef84bcd3e9e4dc0dfad0cd5d8952c1fe1f394be3a17fcf945561a17c57dd0e.
 
 <!-- flowdocs:paragraph:a27c265b51c9a3a2e4f7a9a0007a7b5b -->
 Declared member: source declares TrashEntry; membership is caller\-declared, not runtime evidence\.
@@ -820,27 +820,27 @@ Source: internal/web/app/src/lib/graphql/types\.ts:812; symbol: TrashEntry; span
 <!-- flowdocs:paragraph:9693f4a5bf89cf13a44564f71d25a987 -->
 Declared member: source declares UnmatchedItemInfo; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1495; symbol: UnmatchedItemInfo; span SHA256: 5829e9db4bb2a92581726d7a6b04c04b4b4ca555bb4e48866c27d22136777b87.
+Source: internal/web/app/src/lib/graphql/types\.ts:1497; symbol: UnmatchedItemInfo; span SHA256: 5829e9db4bb2a92581726d7a6b04c04b4b4ca555bb4e48866c27d22136777b87.
 
 <!-- flowdocs:paragraph:28b17a9dc6d1e6bc107fecb72632e9b2 -->
 Declared member: source declares UnmatchedRecordInfo; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1543; symbol: UnmatchedRecordInfo; span SHA256: 1da79c644b784b4e1eb4e94204371058ec34597097d8c832d14b689517d9e0bf.
+Source: internal/web/app/src/lib/graphql/types\.ts:1545; symbol: UnmatchedRecordInfo; span SHA256: 1da79c644b784b4e1eb4e94204371058ec34597097d8c832d14b689517d9e0bf.
 
 <!-- flowdocs:paragraph:ba72ca014186d62a1c2ea48eb2fff6b0 -->
 Declared member: source declares UnmatchedSuppressionInfo; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1562; symbol: UnmatchedSuppressionInfo; span SHA256: e61391a1ca380402157cfc609d56ab02ac17f6b4c125472c2d1b660a8e84cc09.
+Source: internal/web/app/src/lib/graphql/types\.ts:1564; symbol: UnmatchedSuppressionInfo; span SHA256: e61391a1ca380402157cfc609d56ab02ac17f6b4c125472c2d1b660a8e84cc09.
 
 <!-- flowdocs:paragraph:5da8f0fb8bfd1bf44de96d33ac79677c -->
 Declared member: source declares UpdateCheckState; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1309; symbol: UpdateCheckState; span SHA256: c1fa6f8521318197ceaec47dbb517e9bfa385b20573ac420082d22538a76d6bd.
+Source: internal/web/app/src/lib/graphql/types\.ts:1311; symbol: UpdateCheckState; span SHA256: c1fa6f8521318197ceaec47dbb517e9bfa385b20573ac420082d22538a76d6bd.
 
 <!-- flowdocs:paragraph:3fd1cd2354fa05dc36fdbc02eba1d8ca -->
 Declared member: source declares UpdateStatusInfo; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1312; symbol: UpdateStatusInfo; span SHA256: c7e397c4716e4e30f9b06ef9a7445b36ec71379c2704e032ea218dbb0648ea57.
+Source: internal/web/app/src/lib/graphql/types\.ts:1314; symbol: UpdateStatusInfo; span SHA256: c7e397c4716e4e30f9b06ef9a7445b36ec71379c2704e032ea218dbb0648ea57.
 
 <!-- flowdocs:paragraph:4ae62cfb810850439bec4064347c057c -->
 Declared member: source declares VerifyBackupInfo; membership is caller\-declared, not runtime evidence\.
@@ -850,5 +850,5 @@ Source: internal/web/app/src/lib/graphql/types\.ts:741; symbol: VerifyBackupInfo
 <!-- flowdocs:paragraph:e0cea977500a4d69999260e79f22a172 -->
 Declared member: source declares WatcherStatusInfo; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1573; symbol: WatcherStatusInfo; span SHA256: b6b4b3e54c110af91d0223bc700a40a248eddfe78f4abe15c0ef3805d5013aab.
+Source: internal/web/app/src/lib/graphql/types\.ts:1575; symbol: WatcherStatusInfo; span SHA256: b6b4b3e54c110af91d0223bc700a40a248eddfe78f4abe15c0ef3805d5013aab.
 
