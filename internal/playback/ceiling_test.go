@@ -212,6 +212,11 @@ func TestStreamingCeilingVetoUsesKnownBitrate(t *testing.T) {
 	if got := directPlayRefusalCause(media, file, streams, main10_1080p, nil, under); got != PlayReasonBitrate {
 		t.Fatalf("refusal cause = %q, want %q", got, PlayReasonBitrate)
 	}
+	policy := under
+	policy.policyCeiling = true
+	if got := directPlayRefusalCause(media, file, streams, main10_1080p, nil, policy); got != PlayReasonPolicyBitrate {
+		t.Fatalf("refusal cause under the remote cap = %q, want %q (CORE-1854)", got, PlayReasonPolicyBitrate)
+	}
 	quirked := quirkOverlay{DenyVideoCodecs: []string{"hevc"}}.withClientCeiling(5_000_000)
 	if bitrateCeilingForced(media, file, streams, main10_1080p, nil, quirked) {
 		t.Fatal("bitrateCeilingForced = true while a quirk also refuses the source")

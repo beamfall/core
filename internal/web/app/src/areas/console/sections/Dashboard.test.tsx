@@ -96,6 +96,30 @@ describe("LiveSessions", () => {
   });
 });
 
+describe("LiveSessions bitrate reasons (CORE-1854)", () => {
+  it("tells a client bitrate limit apart from the admin's remote cap", async () => {
+    vi.mocked(fetchLiveSessions).mockResolvedValue([
+      session({ transcoding: true, playMethod: "transcode", playReason: "bitrate" }),
+      session({
+        sessionID: "s-2",
+        title: "Harbour",
+        transcoding: true,
+        playMethod: "transcode",
+        playReason: "policy-bitrate",
+      }),
+    ] as never);
+    show(<LiveSessions />);
+
+    const client = (await screen.findByText("Night Train")).closest("tr") as HTMLElement;
+    expect(within(client).getByText("Bitrate above the device limit")).toBeInTheDocument();
+    expect(within(client).queryByText(/remote cap/i)).not.toBeInTheDocument();
+
+    const policy = screen.getByText("Harbour").closest("tr") as HTMLElement;
+    expect(within(policy).getByText("Bitrate above the server's remote cap")).toBeInTheDocument();
+    expect(within(policy).queryByText("Bitrate above the device limit")).not.toBeInTheDocument();
+  });
+});
+
 describe("useEventRefresh", () => {
   it("gathers a burst of events into one read and never overlaps reads", async () => {
     vi.useFakeTimers();

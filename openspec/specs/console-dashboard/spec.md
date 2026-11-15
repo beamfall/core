@@ -21,8 +21,10 @@ recent playback decision the server made for that session and item.
 
 - **WHEN** a session reports a `playReason`
 - **THEN** it is empty or one of `container`, `video-codec`, `resolution`, `bitrate`,
-  `video-profile`, `hdr`, `audio`, `subtitles`, `device-quirk`, `capacity`, `cached-rendition`
-  or `quality-choice`
+  `policy-bitrate`, `video-profile`, `hdr`, `audio`, `subtitles`, `device-quirk`, `capacity`,
+  `cached-rendition` or `quality-choice`
+- **AND** `bitrate` means the client's own ceiling forced the transcode, while `policy-bitrate`
+  means the admin's remote bitrate cap did
 
 #### Scenario: Direct play
 
