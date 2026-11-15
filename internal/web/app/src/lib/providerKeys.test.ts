@@ -59,4 +59,11 @@ describe("groupProviderKeys", () => {
     expect(keyNeeded(keys[0])).toBe(true);
     expect(keyNeeded(keys[1])).toBe(false);
   });
+
+  it("does not flag a key the owner disabled as needed", () => {
+    // CORE-1540: disabling stops the provider on purpose; it is not a setup gap.
+    const [key] = groupProviderKeys([scraper({ credentialStatus: "disabled" })]);
+    expect(key.status).toBe("disabled");
+    expect(keyNeeded(key)).toBe(false);
+  });
 });

@@ -629,3 +629,46 @@ func TestRewrapBeforeCommitDoesNotBlockOtherLibraries(t *testing.T) {
 		t.Fatal("beforeCommit callback deadlocked against another library's queries")
 	}
 }
+
+func TestEraseDestroysOnlyThatLibrarysKeyMaterialAndIsRepeatable(t *testing.T) {
+	m, store := newTestManager()
+	const otherLib = "lib-test-erase-other"
+	for _, id := range []string{testLib, otherLib} {
+		if _, err := m.Provision(id, UnsealModeAuto, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Plant both recovery journals so Erase is seen to clear every kind.
+	for _, ref := range []string{rewrapJournalRef(testLib), provisionJournalRef(testLib)} {
+		if err := store.SetSecret(ref, "journal"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store.failSetRef, store.failSetErr = bundleRef(testLib), errors.New("secure store unavailable")
+	if err := m.Erase(testLib); err == nil {
+		t.Fatal("Erase with a failing secure store returned nil")
+	}
+	if !m.Sealed(testLib) {
+		t.Fatal("a failed Erase left the DEK in memory")
+	}
+	store.failSetRef = ""
+	for range 2 {
+		if err := m.Erase(testLib); err != nil {
+			t.Fatalf("Erase: %v", err)
+		}
+	}
+	for _, ref := range []string{kekRef(testLib), bundleRef(testLib), rewrapJournalRef(testLib), provisionJournalRef(testLib)} {
+		if _, err := store.Secret(ref); err == nil {
+			t.Fatalf("%s survived Erase", ref)
+		}
+	}
+	if m.Provisioned(testLib) {
+		t.Fatal("erased library still reports provisioned")
+	}
+	if err := m.AutoUnseal(testLib); err == nil {
+		t.Fatal("erased library unsealed again")
+	}
+	if !m.Provisioned(otherLib) || m.Sealed(otherLib) {
+		t.Fatal("Erase touched another library's key material")
+	}
+}

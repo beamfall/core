@@ -2,6 +2,7 @@ package scan
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -38,6 +39,12 @@ func (s *scanWalkState) preflightDirectory(path string) (*contextualDirectoryPre
 	if err != nil {
 		return nil, err
 	}
+	// Images are never probed, so a parser that wants embedded evidence
+	// refuses every image. That says nothing about the folder: an image
+	// refusal refuses the folder only when no probed sibling was accepted
+	// (CORE-1710).
+	var imageRefusal ParsedMedia
+	imageRefusalPath, refusalPath, otherAccepted := "", "", false
 	for _, entry := range entries {
 		info, err := entry.Info()
 		if err != nil {
@@ -47,8 +54,9 @@ func (s *scanWalkState) preflightDirectory(path string) (*contextualDirectoryPre
 		if !s.isSupportedMediaFile(candidate, info) {
 			continue
 		}
+		isImage := imageClassForPath(candidate)
 		parseProbe := ParseProbe{}
-		if s.prober != nil && !imageClassForPath(candidate) {
+		if s.prober != nil && !isImage {
 			probeCtx, cancel := context.WithTimeout(s.ctx, probeTimeout)
 			probe, probeErr := s.prober.Probe(probeCtx, candidate)
 			cancel()
@@ -60,9 +68,26 @@ func (s *scanWalkState) preflightDirectory(path string) (*contextualDirectoryPre
 		legacy, legacyOK := s.parser.Parse(candidate, parseProbe)
 		parsed, accepted := contextual.ParseWithContext(candidate, parseProbe, s.directoryContext(candidate))
 		decision.parsed[candidate], decision.accepted[candidate] = parsed, accepted
-		if legacyOK && !accepted && !decision.refused {
-			decision.refused, decision.refusal = true, legacy
+		switch {
+		case accepted && !isImage:
+			otherAccepted = true
+		case !legacyOK || accepted:
+		case isImage:
+			if imageRefusalPath == "" {
+				imageRefusal, imageRefusalPath = legacy, candidate
+			}
+		case !decision.refused:
+			decision.refused, decision.refusal, refusalPath = true, legacy, candidate
 		}
+	}
+	if !decision.refused && imageRefusalPath != "" && !otherAccepted {
+		decision.refused, decision.refusal, refusalPath = true, imageRefusal, imageRefusalPath
+	}
+	if decision.refused {
+		// The folder goes to the Unmatched queue; say why in the scan log
+		// too, once per folder, so it is never silently missing.
+		slog.Warn("scan: library plugin refused a file in a multi-file folder; folder queued as unmatched",
+			"folder", dir, "file", refusalPath, "plugin", s.libraryPluginID, "reason", store.UnmatchedReasonAmbiguous)
 	}
 	s.directoryPreflights[dir] = decision
 	return decision, nil
@@ -109,7 +134,9 @@ func (s *scanWalkState) flushPendingParts() error {
 	}
 	media, files, err := s.st.ImportMediaFileParts(s.ctx, imports)
 	if err != nil {
-		return err
+		// A member a managed import is still admitting skips the whole group
+		// this pass; the next scan groups it with the cataloged file.
+		return skipManagedAdmissionInFlight(err, parts[0].imported.Path)
 	}
 	first := parts[0]
 	fields := append([]store.MediaField(nil), first.fields...)
@@ -132,7 +159,7 @@ func (s *scanWalkState) flushPendingParts() error {
 			MediaID:            media.ID,
 			ContentFingerprint: file.ContentFingerprint,
 		})
-		if file.Path > s.result.LastPath {
+		if s.result.LastPath == "" || compareWalkOrder(s.req.Root, file.Path, s.result.LastPath) > 0 {
 			s.result.LastPath = file.Path
 		}
 		if !s.result.seenMedia[media.ID] {

@@ -196,6 +196,16 @@ export async function loadSavedPluginChoices(): Promise<SavedPluginChoices> {
 }
 
 /**
+ * Reopen the Admin Session a resumed wizard needs to read the saved choices
+ * once the first run's window has lapsed (CORE-1731). Resolves true when the
+ * server accepted the password. The password is not kept.
+ */
+export async function reopenAdminSession(adminPassword: string): Promise<boolean> {
+  const info = await verifyAdminSession(adminPassword);
+  return info.active;
+}
+
+/**
  * List the provider keys the installed plugins' scrapers declare (CORE-1115).
  * Console config is Admin-Session-gated, so first-run setup verifies that gate
  * with the password the operator just created, as `configureUpdateCheck` does.

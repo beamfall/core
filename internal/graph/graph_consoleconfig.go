@@ -430,6 +430,9 @@ func (h *Handler) scraperCredentialStatus(authRef string) scraperCredentialStatu
 		return scraperCredentialStatus{status: "unavailable", err: "unavailable"}
 	}
 	if _, err := h.scraperCredentials.Secret(authRef); err != nil {
+		if disabler, ok := h.scraperCredentials.(ScraperCredentialDisabler); ok && disabler.SecretDisabled(authRef) {
+			return scraperCredentialStatus{status: "disabled", err: "disabled"}
+		}
 		return safeScraperCredentialError(err)
 	}
 	return scraperCredentialStatus{configured: true, status: "configured"}
@@ -537,7 +540,15 @@ func (h *Handler) disableScraperCredential(ctx context.Context, scope auth.Scope
 	if h.scraperCredentials == nil {
 		return ScraperCredentialInfo{}, clientError("scraper credentials are unavailable on this server")
 	}
-	if err := h.scraperCredentials.SetSecret(authRef, ""); err != nil {
+	// Disable means stop: on a store with a bundled default the opt-out keeps
+	// the scraper from falling back to the built-in key (CORE-1540).
+	var err error
+	if disabler, ok := h.scraperCredentials.(ScraperCredentialDisabler); ok {
+		err = disabler.DisableSecret(authRef)
+	} else {
+		err = h.scraperCredentials.SetSecret(authRef, "")
+	}
+	if err != nil {
 		return ScraperCredentialInfo{}, clientError("scraper credential could not be disabled")
 	}
 	if h.scraperCredentialInvalidator != nil {

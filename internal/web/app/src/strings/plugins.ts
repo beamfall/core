@@ -27,6 +27,7 @@ export const pluginStrings = {
     consoleScraperUnavailable: "Unavailable",
     consoleScraperInvalid: "Invalid",
     consoleScraperUnreadable: "Unreadable",
+    consoleScraperDisabled: "Disabled",
     consoleScraperActionFailed: "Could not update the scraper credential.",
     pluginKeysHeading: "Provider keys",
     pluginKeysLead:
@@ -36,6 +37,10 @@ export const pluginStrings = {
     pluginKeyPlaceholder: "Paste your API key",
     pluginKeyReplacePlaceholder: "Paste a new key to replace the saved one",
     pluginKeySentTo: "Sent only to {hosts}",
+    pluginKeyDisableHint:
+      "Disable stops all requests to this provider. It does not fall back to a key built into the server.",
+    pluginKeyDisabledHint:
+      "Disabled: no requests go to this provider, even with a key built into the server. Save a key to turn it back on.",
     pluginDetails: "Details",
     pluginDetailsToggle: "Details for {name}",
     pluginConfigHeading: "Configuration",

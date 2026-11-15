@@ -589,6 +589,17 @@ type ScraperCredentialStore interface {
 	SetSecret(ref, value string) error
 }
 
+// ScraperCredentialDisabler is the optional opt-out half of a
+// ScraperCredentialStore that can fall back to a credential bundled into the
+// build (CORE-1540). DisableSecret removes the owner's secret and stops the
+// AuthRef from resolving to the bundled default; SecretDisabled reports that
+// state so the Console can surface it. A store without bundled defaults need not
+// implement it: disabling then just clears the owner's secret.
+type ScraperCredentialDisabler interface {
+	DisableSecret(ref string) error
+	SecretDisabled(ref string) bool
+}
+
 // ScraperCredentialInvalidator clears runtime auth state derived from an AuthRef.
 type ScraperCredentialInvalidator interface {
 	InvalidateCredential(ref string)
