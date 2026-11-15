@@ -2,6 +2,7 @@
 - [x] `{year}` substitution, dropped when unknown; identify passes the parsed year and retries
       without it on an empty result
 - [x] Multi-condition path predicates and `||` fallbacks for translations
+- [x] Scraper `{config.<name>}` falls back to the declared default
 - [x] `Engine.LookupByID` over `LookupByIDTemplate`
 - [x] Reference documents with `{ref.<name>:<path>}`, cached a week, failures not cached
 - [x] Login token cache lengthened to 27 days

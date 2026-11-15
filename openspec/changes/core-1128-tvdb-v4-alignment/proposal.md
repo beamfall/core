@@ -28,7 +28,9 @@ through a static lookup document, and no multi-condition or fallback path syntax
 - **Language.** Paths accept multi-condition predicates (`list[a=b,c=d].field`) and ordered
   fallbacks (`p1||p2`), and `{config.<field>}` already reads plugin config, so a plugin maps the
   title to the translation in its configured language and falls back to the original-language
-  base value.
+  base value. `{config.<name>}` now falls back to the field's declared default when the owner has
+  saved no value (`internal/app/scrape_config.go`), matching what the Console shows, so the
+  plugin's default language applies before anyone edits it.
 - **Remote IDs.** `Engine.LookupByID` runs a scraper's `LookupByIDTemplate` for an external ID
   scheme; the plugin maps IMDb and TMDB to `/search/remoteid/{id}`.
 - **Artwork.** A scraper may declare `ReferenceDocuments` (plugin-sdk v0.3.6): static documents

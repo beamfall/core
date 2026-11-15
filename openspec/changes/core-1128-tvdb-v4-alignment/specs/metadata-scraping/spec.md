@@ -22,7 +22,8 @@ candidates.
 
 Scraper paths SHALL support predicates with several conditions and ordered fallbacks, so a field
 can read a translation selected by plugin configuration and fall back to another path when it is
-absent.
+absent. A configuration placeholder SHALL resolve to the field's declared default when the owner
+has saved no value.
 
 #### Scenario: Translation present
 
