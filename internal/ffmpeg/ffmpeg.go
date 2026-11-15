@@ -163,6 +163,16 @@ type ProbeStream struct {
 	// HDR10-compatible), used to tell profile-8.1 from 8.4 etc.
 	DoViProfile    int
 	DoViBLCompatID int
+	// SampleRate, EncoderDelaySamples, EncoderPaddingSamples and
+	// DecodedSamples are an audio stream's gapless facts (CORE-1626), set by
+	// the gapless probe Probe runs on audio-only files: the sample rate, the
+	// priming samples at the start and the padding samples at the end of the
+	// decoded stream as the stream declares them, and the content length in
+	// between (0 when unmeasured). All zero when nothing was declared.
+	SampleRate            int
+	EncoderDelaySamples   int
+	EncoderPaddingSamples int
+	DecodedSamples        int64
 }
 
 // AudioProfile is the HLS transcode audio target selected by playback.
@@ -333,7 +343,14 @@ func (r *Runner) Probe(ctx context.Context, path string) (Probe, error) {
 		}
 		return Probe{}, fmt.Errorf("ffprobe: %w", err)
 	}
-	return parseProbe(stdout, path)
+	probe, err := parseProbe(stdout, path)
+	if err != nil {
+		return Probe{}, err
+	}
+	if !probe.HasVideo && probe.AudioCodec != "" {
+		r.probeGapless(ctx, path, &probe)
+	}
+	return probe, nil
 }
 
 // FrameGrab extracts one video frame as a JPEG, scaled to width (keeping
@@ -1219,6 +1236,12 @@ type Rendition struct {
 	// AudioOnly drops the video: the encode writes only the selected audio
 	// stream (an audio-only HLS rendition).
 	AudioOnly bool
+	// KeepPriming marks an audio-only source: a segmenting encode that starts
+	// at position zero then omits its input seek. An input seek, even to
+	// zero, drops the source's pre-roll packet, so the decoder starts cold
+	// and the output's first frame is corrupt and its length one frame short
+	// of the gapless arithmetic playbackInfo reports (CORE-1626).
+	KeepPriming bool
 	// burnSubtitleIndex is the 1-based-plus-one encoding of the burn-in
 	// subtitle stream index: 0 means "no burn-in", and a value v>0 names
 	// absolute stream index v-1. This keeps the zero Rendition burn-in-free
@@ -2291,6 +2314,9 @@ func hlsSegmentArgs(src, dir string, startSegment, segmentSeconds int, rendition
 	if !rendition.CopyVideo {
 		forceKeyframes = []string{"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", segmentSeconds)}
 	}
+	if startSegment == 0 && rendition.KeepPriming {
+		seek = ""
+	}
 	return segmentArgs(src, dir, startSegment, seek, strconv.Itoa(startSegment*segmentSeconds), strconv.Itoa(segmentSeconds), rendition.selectedStreamMapArgs(), forceKeyframes, rendition)
 }
 
@@ -2308,19 +2334,25 @@ func keyframeSegmentArgs(src, dir string, startSegment int, start time.Duration,
 		audioMap = fmt.Sprintf("0:%d", *rendition.AudioStreamIndex)
 	}
 	streamMaps := []string{"-map", "0:v:0", "-map", audioMap}
-	return segmentArgs(src, dir, startSegment, offset, offset, keyframeSegmentHLSTime, streamMaps, nil, rendition)
+	seek := offset
+	if start == 0 && rendition.KeepPriming {
+		seek = ""
+	}
+	return segmentArgs(src, dir, startSegment, seek, offset, keyframeSegmentHLSTime, streamMaps, nil, rendition)
 }
 
-// segmentArgs assembles a segmenting command line: seek is the input position,
-// outputOffset the first output timestamp. An audio-only rendition maps just
-// the selected audio stream and drops the video arguments; a video rendition
-// adds streamMaps.
+// segmentArgs assembles a segmenting command line: seek is the input position
+// ("" for no input seek, see Rendition.KeepPriming), outputOffset the first
+// output timestamp. An audio-only rendition maps just the selected audio
+// stream and drops the video arguments; a video rendition adds streamMaps.
 func segmentArgs(src, dir string, startSegment int, seek, outputOffset, hlsTime string, streamMaps, forceKeyframes []string, rendition Rendition) []string {
 	args := []string{
 		"-v", "error",
 	}
 	args = append(args, hlsProgressArgs()...)
-	args = append(args, "-ss", seek)
+	if seek != "" {
+		args = append(args, "-ss", seek)
+	}
 	args = append(args, rendition.inputArgs()...)
 	args = append(args, inputProtocolArgs()...)
 	args = append(args,

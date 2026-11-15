@@ -477,6 +477,23 @@ type StreamChoice struct {
 	// exactly the renditions the master playlist advertises, never above the
 	// source resolution. Empty for direct-play choices.
 	Renditions []RenditionInfo `json:"renditions,omitempty"`
+	// Gapless is the stream's encoder delay and end padding (CORE-1626):
+	// what a client trims from the decoded audio so consecutive items join
+	// without a gap. Omitted when the stream declares neither or the server
+	// cannot vouch for the arithmetic.
+	Gapless *GaplessInfo `json:"gapless,omitempty"`
+}
+
+// GaplessInfo is the gapless trim of one stream's first audio track, in
+// samples at SampleRate (CORE-1626): EncoderDelaySamples priming samples at
+// the start of the decoded audio and EncoderPaddingSamples padding samples at
+// its end, as the stream declares them in its container. A client whose
+// decoder already applies the container's own gapless signalling (an MP4 edit
+// list, an Opus pre-skip, a LAME header) must not trim them a second time.
+type GaplessInfo struct {
+	SampleRate            int `json:"sampleRate"`
+	EncoderDelaySamples   int `json:"encoderDelaySamples"`
+	EncoderPaddingSamples int `json:"encoderPaddingSamples"`
 }
 
 // RenditionInfo describes one advertised HLS rendition (ladder rung).
@@ -1103,6 +1120,14 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	// repeating the assignment at each return.
 	audioLanguage := firstAudioLanguage(streams)
 	defer func() { dec.audioLanguage = audioLanguage }()
+	// Gapless trims (CORE-1626), one deferred stamp for every path. A
+	// composed picture or a pitch/tempo adjustment re-times the audio, so
+	// neither stream carries the source's arithmetic.
+	defer func() {
+		if err == nil && dec.reason != "composed-picture" && dec.adjustment.IsZero() {
+			stampGapless(dec.streams, streams, hlsAudio, dec.timeline.PositionSeconds)
+		}
+	}()
 
 	// The transcode pipeline is policy- and admission-gated before it is
 	// offered anywhere. An honest verdict beats a stream that the server
@@ -2258,6 +2283,75 @@ func canDirectPlay(media store.Media, file store.MediaFile, streams []store.Medi
 	return videoOK &&
 		audioDirectPlayable(streams, profile) &&
 		subtitleFormatsCompatible(streams, profile, selectedSubtitleIndex, ov)
+}
+
+// aacEncoderDelaySamples is the priming FFmpeg's native AAC encoder puts
+// ahead of the first input sample, and aacFrameSamples its frame length.
+const (
+	aacEncoderDelaySamples = 1024
+	aacFrameSamples        = 1024
+)
+
+// aacSampleRates are the sampling rates the AAC encoder takes as is. The
+// segmenting encode does not resample, so its output runs at the source's
+// rate, and the gapless arithmetic holds only for these.
+var aacSampleRates = map[int]bool{
+	96000: true, 88200: true, 64000: true, 48000: true, 44100: true, 32000: true,
+	24000: true, 22050: true, 16000: true, 12000: true, 11025: true, 8000: true, 7350: true,
+}
+
+// stampGapless sets each stream choice's gapless trim from the source's
+// first audio stream (CORE-1626). A direct-play choice serves the source's
+// own bytes, so it carries what the source declares. A live HLS transcode of
+// an audio-only source re-encodes to AAC from the source's first sample
+// (ffmpeg.Rendition.KeepPriming): its decoded output is the encoder's own
+// priming, the source's decoded content, and padding out to a whole frame,
+// all at the source's rate. That holds only for a measured content length,
+// an AAC target, a rate the encoder takes without resampling, and an encode
+// from the start: a resume position starts the encoder mid-item, where its
+// output is a different length. Any other transcode carries no trim rather
+// than a wrong one.
+func stampGapless(choices []StreamChoice, streams []store.MediaFileStream, hlsAudio ffmpeg.AudioProfile, resumeSeconds int) {
+	source, ok := firstAudioStream(streams)
+	if !ok || source.SampleRate <= 0 {
+		return
+	}
+	_, hasVideo := primaryVideoStream(streams)
+	for i := range choices {
+		choice := &choices[i]
+		switch {
+		case choice.Kind == "direct-play":
+			if source.EncoderDelaySamples > 0 || source.EncoderPaddingSamples > 0 {
+				choice.Gapless = &GaplessInfo{SampleRate: source.SampleRate, EncoderDelaySamples: source.EncoderDelaySamples, EncoderPaddingSamples: source.EncoderPaddingSamples}
+			}
+		case choice.Kind == "hls" && strings.HasPrefix(choice.ID, "hls-"):
+			codec := normalizedAudioCodec(hlsAudio.Codec)
+			if hasVideo || resumeSeconds > 0 || source.DecodedSamples <= 0 || (codec != "aac" && codec != "") || !aacSampleRates[source.SampleRate] {
+				continue
+			}
+			choice.Gapless = &GaplessInfo{SampleRate: source.SampleRate, EncoderDelaySamples: aacEncoderDelaySamples, EncoderPaddingSamples: aacPaddingSamples(source.DecodedSamples)}
+		}
+	}
+}
+
+// aacPaddingSamples is the end padding of an AAC encode of decoded content
+// samples: the encoder emits whole frames covering its priming and the
+// content, so the padding fills the last frame.
+func aacPaddingSamples(decoded int64) int {
+	covered := aacEncoderDelaySamples + decoded
+	frames := (covered + aacFrameSamples - 1) / aacFrameSamples
+	return int(frames*aacFrameSamples - covered)
+}
+
+// firstAudioStream is the source's first audio stream: the one a direct play
+// decodes by default and a live transcode maps.
+func firstAudioStream(streams []store.MediaFileStream) (store.MediaFileStream, bool) {
+	for _, stream := range streams {
+		if stream.Type == "audio" {
+			return stream, true
+		}
+	}
+	return store.MediaFileStream{}, false
 }
 
 // audioOnlyMedia reports an audio-class item with no video stream. Its

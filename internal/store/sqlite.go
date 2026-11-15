@@ -2643,7 +2643,8 @@ func (s *Store) mediaFileStreamsSQL(ctx context.Context, fingerprint string) ([]
 		SELECT stream_index, stream_type, codec, profile, level, language,
 		  is_default, is_forced, is_hearing_impaired, is_visual_impaired, is_commentary,
 		  channels, channel_layout, bit_depth,
-		  color_transfer, color_primaries, hdr10_plus, dovi_profile, dovi_bl_compat_id
+		  color_transfer, color_primaries, hdr10_plus, dovi_profile, dovi_bl_compat_id,
+		  sample_rate, encoder_delay_samples, encoder_padding_samples, decoded_samples
 		FROM media_file_stream
 		WHERE content_fingerprint = ?
 		ORDER BY stream_index
@@ -2659,7 +2660,8 @@ func (s *Store) mediaFileStreamsSQL(ctx context.Context, fingerprint string) ([]
 		if err := rows.Scan(&st.Index, &st.Type, &st.Codec, &st.Profile, &st.Level, &st.Language,
 			&isDefault, &isForced, &hearingImpaired, &visualImpaired, &commentary,
 			&st.Channels, &st.ChannelLayout, &st.BitDepth,
-			&st.ColorTransfer, &st.ColorPrimaries, &hdr10Plus, &st.DoViProfile, &st.DoViBLCompatID); err != nil {
+			&st.ColorTransfer, &st.ColorPrimaries, &hdr10Plus, &st.DoViProfile, &st.DoViBLCompatID,
+			&st.SampleRate, &st.EncoderDelaySamples, &st.EncoderPaddingSamples, &st.DecodedSamples); err != nil {
 			return nil, err
 		}
 		st.Default = isDefault != 0
@@ -2717,13 +2719,15 @@ func replaceMediaFileInventoryTx(ctx context.Context, tx *sql.Tx, fingerprint st
 			  content_fingerprint, stream_index, stream_type, codec, profile, level, language,
 			  is_default, is_forced, is_hearing_impaired, is_visual_impaired, is_commentary,
 			  channels, channel_layout, bit_depth,
-			  color_transfer, color_primaries, hdr10_plus, dovi_profile, dovi_bl_compat_id)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			  color_transfer, color_primaries, hdr10_plus, dovi_profile, dovi_bl_compat_id,
+			  sample_rate, encoder_delay_samples, encoder_padding_samples, decoded_samples)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, fingerprint, stream.Index, stream.Type, stream.Codec, stream.Profile, stream.Level, stream.Language,
 			boolInt(stream.Default), boolInt(stream.Forced), boolInt(stream.HearingImpaired),
 			boolInt(stream.VisualImpaired), boolInt(stream.Commentary),
 			stream.Channels, stream.ChannelLayout, stream.BitDepth,
-			stream.ColorTransfer, stream.ColorPrimaries, boolInt(stream.HDR10Plus), stream.DoViProfile, stream.DoViBLCompatID); err != nil {
+			stream.ColorTransfer, stream.ColorPrimaries, boolInt(stream.HDR10Plus), stream.DoViProfile, stream.DoViBLCompatID,
+			stream.SampleRate, stream.EncoderDelaySamples, stream.EncoderPaddingSamples, stream.DecodedSamples); err != nil {
 			return err
 		}
 	}

@@ -698,6 +698,13 @@ type MediaFileStream struct {
 	HDR10Plus       bool
 	DoViProfile     int
 	DoViBLCompatID  int
+	// SampleRate, EncoderDelaySamples, EncoderPaddingSamples and
+	// DecodedSamples are an audio stream's gapless facts (CORE-1626); zero
+	// when the stream declared none.
+	SampleRate            int
+	EncoderDelaySamples   int
+	EncoderPaddingSamples int
+	DecodedSamples        int64
 }
 
 // MediaFileFontAttachment is one muxed font attachment captured at scan:
