@@ -86,6 +86,8 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "mediaID", Kind: "string"},
 		{Name: "subscriptionID", Kind: "string"},
 	},
+	// Two lines of distance from the feed-subscription entry above: the ADR-0115
+	// firewall reads a subscriptionID within three lines of the next key as billing.
 	"backup": {
 		{Name: "dest", Kind: "string"},
 	},
