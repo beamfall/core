@@ -21,6 +21,7 @@ var offlinePackPresets = map[string]string{
 // videoConverter is the slice of the FFmpeg runner the pack transcoder uses.
 type videoConverter interface {
 	Convert(ctx context.Context, src, dst string, profile ffmpeg.ConvertProfile) error
+	Probe(ctx context.Context, path string) (ffmpeg.Probe, error)
 }
 
 // offlinePackTranscoder adapts the FFmpeg runner to the offline pack service's
@@ -28,7 +29,9 @@ type videoConverter interface {
 // rides on the preset, so an HDR source is tone-mapped to SDR BT.709 by the
 // live transcode's chain (CORE-1744). The stream the signal is read from is
 // mapped explicitly, so the tone-map decision always describes the stream
-// FFmpeg encodes (CORE-1850).
+// FFmpeg encodes (CORE-1850). A source whose inventory records no video stream
+// (scanned without a probe) is probed first, so an HDR source is not taken
+// for SDR (CORE-1845).
 func offlinePackTranscoder(runner videoConverter) offlinepack.Transcoder {
 	return func(ctx context.Context, src, dst, quality string, streams []store.MediaFileStream) error {
 		profile, ok := ffmpeg.PackProfileByName(offlinePackPresets[quality])
@@ -36,6 +39,13 @@ func offlinePackTranscoder(runner videoConverter) offlinepack.Transcoder {
 			return fmt.Errorf("no offline pack preset for quality %q", quality)
 		}
 		video, ok := packVideoStream(streams)
+		if !ok {
+			probe, err := runner.Probe(ctx, src)
+			if err != nil {
+				return fmt.Errorf("probe offline pack source: %w", err)
+			}
+			video, ok = packVideoStream(probedVideoStreams(probe.Streams))
+		}
 		if !ok {
 			return runner.Convert(ctx, src, dst, profile)
 		}
@@ -63,4 +73,22 @@ func packVideoStream(streams []store.MediaFileStream) (store.MediaFileStream, bo
 		}
 	}
 	return first, found
+}
+
+// probedVideoStreams maps an on-demand probe's video streams onto the store's
+// stream rows, keeping only what the pack transcode decides on. Embedded cover
+// art is skipped, as the scan's inventory skips it.
+func probedVideoStreams(streams []ffmpeg.ProbeStream) []store.MediaFileStream {
+	var out []store.MediaFileStream
+	for _, stream := range streams {
+		if stream.Type != "video" || stream.AttachedPicture {
+			continue
+		}
+		out = append(out, store.MediaFileStream{
+			Index: stream.Index, Type: stream.Type, Codec: stream.Codec, Default: stream.Default,
+			ColorTransfer: stream.ColorTransfer, ColorPrimaries: stream.ColorPrimaries,
+			DoViProfile: stream.DoViProfile, DoViBLCompatID: stream.DoViBLCompatID,
+		})
+	}
+	return out
 }
