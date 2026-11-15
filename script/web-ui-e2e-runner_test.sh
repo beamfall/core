@@ -2,6 +2,47 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Every wait below polls for its event (a readiness file, a process exit, a stand-in's exec) and
+# returns as soon as it happens, so a fast host finishes in the time the events take. Two factors
+# size the bounds:
+# - ceiling_scale stretches the ceilings, which a passing case never reaches. It uses the CORE-1062
+#   rule of script/web-ui-e2e-smoke_test.sh (1 at or below one runnable task per CPU, load1/ncpu
+#   above that, capped at 10); BEAMFALL_WEB_E2E_RUNNER_TEST_LOAD1 overrides load1.
+# - scale (BEAMFALL_WEB_E2E_RUNNER_TEST_SCALE, default 1) multiplies everything, the timers a case
+#   really waits out included, so a gate can raise every budget at once.
+# Ordering the assertions rely on: the hang-mode runner timer is far below the independent harness
+# deadline, so "the runner's watchdog fired" (124) stays distinct from "the harness had to kill it".
+scale="${BEAMFALL_WEB_E2E_RUNNER_TEST_SCALE:-1}"
+case "${scale}" in
+  ''|*[!0-9]*|0)
+    echo "BEAMFALL_WEB_E2E_RUNNER_TEST_SCALE must be a positive integer" >&2
+    exit 2
+    ;;
+esac
+ceiling_scale="$(python3 -c '
+import math, os, sys
+load1 = float(sys.argv[1]) if sys.argv[1] else os.getloadavg()[0]
+print(int(math.ceil(min(10.0, max(1.0, load1 / (os.cpu_count() or 1))))))
+' "${BEAMFALL_WEB_E2E_RUNNER_TEST_LOAD1:-}")"
+ceiling_scale=$((ceiling_scale * scale))
+# Timers a passing case waits out. Hang: the smoke stall budget counts from the fake npm's last
+# heartbeat (written up to readiness); the full runner's wall clock counts from launch.
+HANG_RUNNER_TIMEOUT_SECONDS=$((10 * scale))
+# Stall budget for the slow case. The first fake npm invocation keeps beating for longer than
+# this; the runner's own silent steps between invocations (node, python) must fit within it.
+SLOW_STALL_SECONDS=$((20 * scale))
+# Ceilings. Runner timer for cases that must not time out (success, failure, leftover, livesibling):
+LONG_RUNNER_TIMEOUT_SECONDS=$((60 * ceiling_scale))
+# Independent backstop that SIGKILLs a case's whole process group; also bounds readiness waits.
+HARNESS_DEADLINE_SECONDS=$((90 * ceiling_scale))
+# Runner timer for the INT and TERM cases, and the smoke absolute ceiling for every case: past the
+# harness deadline, so neither can race the signal.
+SIGNAL_RUNNER_TIMEOUT_SECONDS=$((HARNESS_DEADLINE_SECONDS + 60 * ceiling_scale))
+# Ceiling for a retired process to disappear.
+EXIT_WAIT_SECONDS=$((30 * ceiling_scale))
+# Full runner's post-SIGKILL group wait, in its 0.05s ticks (30s per ceiling unit).
+KILL_WAIT_TICKS=$((600 * ceiling_scale))
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/beamfall-web-e2e-runner-test.XXXXXX")"
 ACTIVE_PIDS=()
 ACTIVE_GROUPS=()
@@ -59,20 +100,49 @@ forget_group() {
   ACTIVE_GROUPS=("${kept[@]+"${kept[@]}"}")
 }
 
+# Waits for the file while its owner lives; the harness deadline (which kills the owner) bounds it.
 wait_for_file() {
-  local file="$1" owner="$2" ticks=200
-  while [[ ! -e "${file}" && "${ticks}" -gt 0 ]] && kill -0 "${owner}" 2>/dev/null; do
+  local file="$1" owner="$2" deadline=$((SECONDS + HARNESS_DEADLINE_SECONDS + 5))
+  while [[ ! -e "${file}" && "${SECONDS}" -lt "${deadline}" ]] && kill -0 "${owner}" 2>/dev/null; do
     sleep 0.02
-    ticks=$((ticks - 1))
   done
   [[ -e "${file}" ]]
 }
 
-assert_process_gone() {
-  local pid="$1" label="$2" ticks=100
-  while kill -0 "${pid}" 2>/dev/null && [[ "${ticks}" -gt 0 ]]; do
+# Waits until a just-started stand-in process has exec'd into the server binary name, so the
+# runner's process-table snapshot sees the name rather than the pre-exec bash.
+wait_for_command() {
+  local pid="$1" want="$2" deadline=$((SECONDS + EXIT_WAIT_SECONDS)) command
+  while [[ "${SECONDS}" -lt "${deadline}" ]]; do
+    command="$(ps -o command= -p "${pid}" 2>/dev/null || true)"
+    [[ "${command%% *}" == "${want}" ]] && return 0
     sleep 0.02
-    ticks=$((ticks - 1))
+  done
+  echo "process ${pid} never became ${want}" >&2
+  return 1
+}
+
+# Distinct free loopback ports chosen at run time (bound together, then released).
+free_ports() {
+  python3 -c '
+import socket
+import sys
+
+held = []
+for _ in range(int(sys.argv[1])):
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(("127.0.0.1", 0))
+    held.append(s)
+print(" ".join(str(s.getsockname()[1]) for s in held))
+for s in held:
+    s.close()
+' "$1"
+}
+
+assert_process_gone() {
+  local pid="$1" label="$2" deadline=$((SECONDS + EXIT_WAIT_SECONDS))
+  while kill -0 "${pid}" 2>/dev/null && [[ "${SECONDS}" -lt "${deadline}" ]]; do
+    sleep 0.02
   done
   if kill -0 "${pid}" 2>/dev/null; then
     bad "${label} survived"
@@ -137,6 +207,23 @@ printf '%s\n' "$@" >>"${metadata}/args"
 printf '%s\n' "${BEAMFALL_E2E_URL:-}" >"${metadata}/url"
 printf '%s\n' "${BEAMFALL_WEB_E2E_SMOKE_GATE:-}" >"${metadata}/smoke-gate"
 
+# Progress report the smoke runner's stall watchdog reads (the full runner sets no heartbeat).
+# Startup beats, so the stall budget counts from readiness and not from how long a loaded host
+# took to fork; the hang mode then goes silent.
+beat() {
+  if [[ -n "${BEAMFALL_WEB_E2E_HEARTBEAT:-}" ]]; then
+    printf '%s\n' "${RANDOM}" >"${BEAMFALL_WEB_E2E_HEARTBEAT}" 2>/dev/null || true
+  fi
+}
+beat
+
+# Verification knob: a slowed startup (still reporting progress) delays readiness.
+startup_end=$((SECONDS + ${BEAMFALL_RUNNER_TEST_STARTUP_DELAY_SECONDS:-0}))
+while [[ "${SECONDS}" -lt "${startup_end}" ]]; do
+  beat
+  sleep 0.2
+done
+
 browser_role="browser-${invocation}"
 "${BEAMFALL_RUNNER_TEST_DESCENDANT}" "${browser_role}" "${metadata}" &
 browser_pid=$!
@@ -145,19 +232,24 @@ if [[ -z "${BEAMFALL_E2E_URL:-}" ]]; then
   "${BEAMFALL_RUNNER_TEST_DESCENDANT}" "${server_role}" "${metadata}" &
   server_pid=$!
 fi
-while [[ ! -s "${metadata}/${browser_role}-child.pid" ]]; do sleep 0.01; done
+while [[ ! -s "${metadata}/${browser_role}-child.pid" ]]; do beat; sleep 0.02; done
 if [[ -z "${BEAMFALL_E2E_URL:-}" ]]; then
-  while [[ ! -s "${metadata}/${server_role}-child.pid" ]]; do sleep 0.01; done
+  while [[ ! -s "${metadata}/${server_role}-child.pid" ]]; do beat; sleep 0.02; done
 fi
+beat
 touch "${metadata}/ready"
 
 case "${BEAMFALL_RUNNER_TEST_MODE:?}" in
   success|slow)
-    # CORE-0941: a slow run that keeps reporting progress must outlive the stall budget.
-    if [[ "${BEAMFALL_RUNNER_TEST_MODE}" == slow && -n "${BEAMFALL_WEB_E2E_HEARTBEAT:-}" ]]; then
-      for _ in $(seq 1 10); do
-        date +%s >"${BEAMFALL_WEB_E2E_HEARTBEAT}"
-        sleep 0.3
+    # CORE-0941: a slow run that keeps reporting progress must outlive the stall budget. The
+    # first invocation alone runs longer than the budget (SECONDS ticks whole seconds, so
+    # stall + 1); the runner's own steps between invocations stay silent and must fit within it.
+    if [[ "${BEAMFALL_RUNNER_TEST_MODE}" == slow && "${invocation}" -eq 1 \
+      && -n "${BEAMFALL_WEB_E2E_HEARTBEAT:-}" ]]; then
+      slow_end=$((SECONDS + ${BEAMFALL_RUNNER_TEST_SLOW_STALL_SECONDS:?} + 1))
+      while [[ "${SECONDS}" -lt "${slow_end}" ]]; do
+        beat
+        sleep 0.2
       done
     fi
     wait "${browser_pid}"
@@ -177,9 +269,16 @@ esac
 SH
 chmod +x "${TMP}/bin/npm"
 
-sleep 120 &
+# Outlives any scaled run; cleanup kills it.
+sleep 86400 &
 sentinel_pid=$!
 register_pid "${sentinel_pid}"
+
+# Ports are chosen at run time so concurrent gates (and concurrent copies of this selftest) never
+# share them: CASE_PORT is the pinned port of the lifecycle cases, whose leftover and sibling
+# stand-ins are named after it; the reuse cases get a supplied URL port and a pinned port.
+read -r CASE_PORT REUSE_URL_PORT REUSE_PORT <<<"$(free_ports 3)"
+CASE_SERVER_BINARY="/tmp/beamfall-e2e-${CASE_PORT}"
 
 run_case() {
   local runner_name="$1" mode="$2" signal="${3:-}" expected="$4"
@@ -188,11 +287,17 @@ run_case() {
   local load_attribution="${5:-1000000}"
   local runner="${ROOT}/script/web-ui-e2e-${runner_name}.sh"
   local case_dir="${TMP}/${runner_name}-${mode}-${signal:-none}${5:+-load${5}}"
-  local runner_pid watchdog_pid status=0 pid_file pid runner_timeout_seconds=15
-  if [[ "${mode}" == hang ]]; then
-    runner_timeout_seconds=1
+  local runner_pid watchdog_pid status=0 pid_file pid
+  local runner_timeout_seconds="${LONG_RUNNER_TIMEOUT_SECONDS}"
+  # Only the silent hang case without a signal tests the runner's timer. The INT and TERM cases
+  # test signal handling: their timer outlasts the harness deadline, which bounds the readiness
+  # wait, so the timer can never fire before the harness delivers the signal.
+  if [[ "${mode}" == hang && -n "${signal}" ]]; then
+    runner_timeout_seconds="${SIGNAL_RUNNER_TIMEOUT_SECONDS}"
+  elif [[ "${mode}" == hang ]]; then
+    runner_timeout_seconds="${HANG_RUNNER_TIMEOUT_SECONDS}"
   elif [[ "${mode}" == slow ]]; then
-    runner_timeout_seconds=4
+    runner_timeout_seconds="${SLOW_STALL_SECONDS}"
   fi
   mkdir -p "${case_dir}/metadata" "${case_dir}/output"
 
@@ -200,17 +305,18 @@ run_case() {
   local sibling_pid=""
   if [[ "${mode}" == livesibling ]]; then
     # A live sibling gate on the same pinned port: its server keeps a live parent and is not ours.
-    bash -c 'exec -a /tmp/beamfall-e2e-49124 sleep 120' &
+    bash -c 'exec -a "$1" sleep 86400' sibling "${CASE_SERVER_BINARY}" &
     sibling_pid=$!
     register_pid "${sibling_pid}"
+    wait_for_command "${sibling_pid}" "${CASE_SERVER_BINARY}" || bad "${runner_name} ${mode} sibling stand-in started"
   fi
   if [[ "${mode}" == leftover ]]; then
     # CORE-0941: a server binary orphaned by an earlier killed run holds the port; the runner reaps it.
     # Started from a subshell so it is re-parented to launchd, like a killed run's server.
-    ( bash -c 'exec -a /tmp/beamfall-e2e-49124 sleep 120' & echo $! >"${case_dir}/leftover.pid" )
-    sleep 1
+    ( bash -c 'exec -a "$1" sleep 86400' leftover "${CASE_SERVER_BINARY}" & echo $! >"${case_dir}/leftover.pid" )
     leftover_pid="$(cat "${case_dir}/leftover.pid")"
     register_pid "${leftover_pid}"
+    wait_for_command "${leftover_pid}" "${CASE_SERVER_BINARY}" || bad "${runner_name} ${mode} leftover stand-in started"
   fi
 
   PATH="${TMP}/bin:${PATH}" \
@@ -219,13 +325,15 @@ run_case() {
     BEAMFALL_RUNNER_TEST_DESCENDANT="${TMP}/fake-descendant.sh" \
     BEAMFALL_RUNNER_TEST_MODE="${mode}" \
     BEAMFALL_RUNNER_TEST_VALID_PROVENANCE="${TMP}/valid-provenance.json" \
-    BEAMFALL_E2E_PORT=49124 \
+    BEAMFALL_RUNNER_TEST_SLOW_STALL_SECONDS="${SLOW_STALL_SECONDS}" \
+    BEAMFALL_E2E_PORT="${CASE_PORT}" \
     BEAMFALL_WEB_E2E_OUTPUT_DIR="${case_dir}/output" \
     RELEASE_NIGHTLY_EVIDENCE_DIR="${case_dir}/evidence" \
     BEAMFALL_WEB_E2E_RUNNER_TIMEOUT_SECONDS="${runner_timeout_seconds}" \
+    BEAMFALL_WEB_E2E_RUNNER_CEILING_SECONDS="${SIGNAL_RUNNER_TIMEOUT_SECONDS}" \
     BEAMFALL_WEB_E2E_LOAD_ATTRIBUTION_PER_CPU="${load_attribution}" \
     BEAMFALL_WEB_E2E_TERM_GRACE_TICKS=2 \
-    BEAMFALL_WEB_E2E_KILL_WAIT_TICKS=20 \
+    BEAMFALL_WEB_E2E_KILL_WAIT_TICKS="${KILL_WAIT_TICKS}" \
     python3 -c '
 import os
 import signal
@@ -244,14 +352,14 @@ import signal
 import sys
 import time
 
-time.sleep(20)
+time.sleep(int(sys.argv[3]))
 with open(sys.argv[2], "w", encoding="utf-8"):
     pass
 try:
     os.killpg(int(sys.argv[1]), signal.SIGKILL)
 except ProcessLookupError:
     pass
-' "${runner_pid}" "${case_dir}/harness-timeout" &
+' "${runner_pid}" "${case_dir}/harness-timeout" "${HARNESS_DEADLINE_SECONDS}" &
   watchdog_pid=$!
   register_pid "${watchdog_pid}"
 
@@ -275,6 +383,7 @@ except ProcessLookupError:
     ok "${runner_name} ${mode} exits ${expected}"
   else
     bad "${runner_name} ${mode} exits ${expected} (got ${status})"
+    tail -n 40 "${case_dir}/stderr" >&2
   fi
 
   for pid_file in "${case_dir}/metadata/"*.pid; do
@@ -316,9 +425,9 @@ except ProcessLookupError:
   forget_group "${runner_pid}"
 }
 
-# CORE-0941: ~9s of progressing runs (three ~3s invocations) exceed the 4s stall budget and still
-# pass (the smoke's watchdog reads the heartbeat); the silent hang case below, on the same budget class, still fails
-# closed with 124, so progress is what the runner trusts, not elapsed time.
+# CORE-0941: a progressing run (its first invocation alone longer than the stall budget) still passes
+# (the smoke's watchdog reads the heartbeat); the silent hang case below still fails closed with
+# 124, so progress is what the runner trusts, not elapsed time.
 run_case smoke slow "" 0
 run_case smoke leftover "" 23
 run_case smoke livesibling "" 23
@@ -354,22 +463,23 @@ for runner_name in smoke full; do
     attempt_metadata="${reuse_dir}/metadata-${attempt}"
     mkdir -p "${attempt_metadata}"
     PATH="${TMP}/bin:${PATH}" \
-      BEAMFALL_E2E_URL="http://127.0.0.1:49123" \
+      BEAMFALL_E2E_URL="http://127.0.0.1:${REUSE_URL_PORT}" \
       BEAMFALL_RUNNER_TEST_METADATA="${attempt_metadata}" \
       BEAMFALL_RUNNER_TEST_DESCENDANT="${TMP}/fake-descendant.sh" \
       BEAMFALL_RUNNER_TEST_MODE=success \
       BEAMFALL_RUNNER_TEST_VALID_PROVENANCE="${TMP}/valid-provenance.json" \
-      BEAMFALL_E2E_PORT=49124 \
+      BEAMFALL_E2E_PORT="${REUSE_PORT}" \
       BEAMFALL_WEB_E2E_OUTPUT_DIR="${reuse_dir}/output" \
       RELEASE_NIGHTLY_EVIDENCE_DIR="${reuse_dir}/evidence-${attempt}" \
       BEAMFALL_WEB_E2E_TERM_GRACE_TICKS=2 \
+      BEAMFALL_WEB_E2E_KILL_WAIT_TICKS="${KILL_WAIT_TICKS}" \
       "${ROOT}/script/web-ui-e2e-${runner_name}.sh" \
       >"${reuse_dir}/stdout-${attempt}" 2>"${reuse_dir}/stderr-${attempt}" \
       || status=$?
   done
   final_metadata="${reuse_dir}/metadata-2"
   if [[ "${status}" -eq 0 ]] \
-    && [[ "$(<"${final_metadata}/url")" == "http://127.0.0.1:49123" ]] \
+    && [[ "$(<"${final_metadata}/url")" == "http://127.0.0.1:${REUSE_URL_PORT}" ]] \
     && ! compgen -G "${final_metadata}/server-*.pid" >/dev/null; then
     ok "${runner_name} reuses supplied URL and output directory without local server"
   else
