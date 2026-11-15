@@ -27662,10 +27662,143 @@
                   "type": "integer"
                 },
                 "omitempty": true
+              },
+              {
+                "name": "externalIDs",
+                "shape": {
+                  "type": "array",
+                  "element": {
+                    "type": "object",
+                    "fields": [
+                      {
+                        "name": "scheme",
+                        "shape": {
+                          "type": "string"
+                        }
+                      },
+                      {
+                        "name": "value",
+                        "shape": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  }
+                },
+                "omitempty": true
               }
             ]
           }
-        }
+        },
+        "listBounds": [
+          {
+            "field": "externalIDs",
+            "maxItems": 32
+          }
+        ]
+      },
+      {
+        "operationID": "lookupMediaByExternalID",
+        "method": "GET",
+        "pattern": "/v1/media",
+        "scope": "read-catalog",
+        "credentials": [
+          "scopedKey",
+          "deviceSession"
+        ],
+        "revealClass": "content-json",
+        "response": {
+          "contentType": "application/json",
+          "shape": {
+            "type": "object",
+            "fields": [
+              {
+                "name": "media",
+                "shape": {
+                  "type": "array",
+                  "element": {
+                    "type": "object",
+                    "fields": [
+                      {
+                        "name": "id",
+                        "shape": {
+                          "type": "string"
+                        }
+                      },
+                      {
+                        "name": "libraryID",
+                        "shape": {
+                          "type": "string"
+                        }
+                      },
+                      {
+                        "name": "title",
+                        "shape": {
+                          "type": "string"
+                        }
+                      },
+                      {
+                        "name": "summary",
+                        "shape": {
+                          "type": "string"
+                        },
+                        "omitempty": true
+                      },
+                      {
+                        "name": "year",
+                        "shape": {
+                          "type": "integer"
+                        },
+                        "omitempty": true
+                      },
+                      {
+                        "name": "durationSeconds",
+                        "shape": {
+                          "type": "integer"
+                        },
+                        "omitempty": true
+                      },
+                      {
+                        "name": "externalIDs",
+                        "shape": {
+                          "type": "array",
+                          "element": {
+                            "type": "object",
+                            "fields": [
+                              {
+                                "name": "scheme",
+                                "shape": {
+                                  "type": "string"
+                                }
+                              },
+                              {
+                                "name": "value",
+                                "shape": {
+                                  "type": "string"
+                                }
+                              }
+                            ]
+                          }
+                        },
+                        "omitempty": true
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "listBounds": [
+          {
+            "field": "media",
+            "maxItems": 20
+          },
+          {
+            "field": "media.externalIDs",
+            "maxItems": 32
+          }
+        ]
       },
       {
         "operationID": "getPlaybackInfo",

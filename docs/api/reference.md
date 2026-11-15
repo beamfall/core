@@ -70,6 +70,32 @@ Accepts a scoped key with the `read-catalog` scope or an enrolled device Session
 | 401 | No valid credential was presented. | [Error](#error) |
 | 403 | The credential is not accepted: a scoped key without the required scope, or a credential kind the operation does not list in `x-credentials`. | [Error](#error) |
 
+### GET `/v1/media`
+
+Find the Media carrying an external identifier.
+
+Accepted credentials: `scopedKey`, `deviceSession`
+
+Required scope: `read-catalog`
+
+Accepts a scoped key with the `read-catalog` scope or an enrolled device Session. Answers whether an item another system knows by `scheme`/`value` is in the library. Reveal-filtered: Media the caller cannot see are dropped, so an empty list never says whether hidden Media carry the identifier. An identifier normally names one Media; duplicate imports can share one until a dedupe pass resolves them.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `scheme` | query | string | yes | Identifier scheme, as plugins attach it. |
+| `value` | query | string | yes | Identifier value within the scheme. |
+
+**Responses**
+
+| Status | Description | Body |
+| --- | --- | --- |
+| 200 | The visible Media carrying the identifier; empty when none do. | object {`media`: array of [MediaDetail](#mediadetail)} |
+| 400 | scheme or value missing, or scheme malformed. | [Error](#error) |
+| 401 | No valid credential was presented. | [Error](#error) |
+| 403 | The credential is not accepted: a scoped key without the required scope, or a credential kind the operation does not list in `x-credentials`. | [Error](#error) |
+
 ### GET `/v1/media/{mediaID}`
 
 Read one Media's detail.
@@ -346,6 +372,16 @@ Full detail for one Media row, Reveal-filtered. A hidden or unknown id resolves 
 | `summary` | string | no |  |
 | `year` | integer | no |  |
 | `durationSeconds` | integer | no |  |
+| `externalIDs` | array of [ExternalID](#externalid) | no | Identifiers other systems use for this Media, attached by plugins during import or hydration. Omitted when there are none. |
+
+### ExternalID
+
+One identifier another system uses for a Media. The scheme vocabulary is open: core names no scheme; plugins and integrations agree on them.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `scheme` | string | yes |  |
+| `value` | string | yes |  |
 
 ### Session
 
