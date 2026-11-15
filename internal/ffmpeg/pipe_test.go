@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"runtime"
 	"slices"
@@ -270,5 +271,27 @@ func TestRedactPipeDetailRemovesURLAndSecret(t *testing.T) {
 	got := redactPipeDetail(testPipeURL+": Server returned 404; token 0123abcd", in)
 	if strings.Contains(got, "0123abcd") || strings.Contains(got, "127.0.0.1:4321") {
 		t.Fatalf("redactPipeDetail leaked the token: %q", got)
+	}
+}
+
+// TestPipeRunKillsAToolThatOverflowsBoundedStdout runs /usr/bin/yes, which
+// writes past the probe's stdout cap and never exits, through the pipe run
+// loop. The overflow must kill it and refuse, rather than discard its output
+// until the context expires.
+func TestPipeRunKillsAToolThatOverflowsBoundedStdout(t *testing.T) {
+	if _, err := os.Stat("/usr/bin/yes"); err != nil {
+		t.Skip("/usr/bin/yes not present")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "/usr/bin/yes")
+	stdout := &boundedBuffer{limit: pipeProbeStdoutLimit}
+	start := time.Now()
+	err := New().runPipeCmd(ctx, cmd, PipeInput{URL: testPipeURL}, "ffprobe pipe probe", stdout)
+	if !errors.Is(err, ErrOutputOverflow) {
+		t.Fatalf("runPipeCmd = %v, want ErrOutputOverflow", err)
+	}
+	if elapsed := time.Since(start); elapsed > 10*time.Second {
+		t.Fatalf("overflowing tool ran %v; the overflow did not kill it", elapsed)
 	}
 }
