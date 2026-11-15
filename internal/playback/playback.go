@@ -1180,7 +1180,8 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 			reason := "cached-rendition"
 			// The cache is consulted before the video-copy rung, so only a
 			// direct play the ceiling refused would have beaten it.
-			if bitrateCeilingRefusedDirectPlay(media, file, streams, profile, selectedSubtitleIndex, ov) {
+			// An unknown-height bar refuses that rung whatever the ceiling.
+			if !barred && bitrateCeilingRefusedDirectPlay(media, file, streams, profile, selectedSubtitleIndex, ov) {
 				reason = bitrateCeilingReason
 			}
 			return decision{
@@ -1271,7 +1272,8 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 		return decision{}, err
 	}
 	reason := "requires-transcode"
-	if bitrateCeilingForced(media, file, streams, profile, selectedSubtitleIndex, ov) {
+	// Under an unknown-height bar no passthrough rung was open to the ceiling.
+	if !barred && bitrateCeilingForced(media, file, streams, profile, selectedSubtitleIndex, ov) {
 		reason = bitrateCeilingReason
 	}
 	return decision{

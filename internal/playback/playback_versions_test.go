@@ -436,6 +436,13 @@ func TestAlternateWithUnknownHeightTranscodes(t *testing.T) {
 	if resp := info("4K", heightUncapped(main10_1080p)); resp.Decision != "direct-play" {
 		t.Fatalf("4K Version to a client without a height ceiling = %s (%s), want direct-play", resp.Decision, resp.Reason)
 	}
+	// The unknown height, not a streaming ceiling, is what refuses passthrough:
+	// adding a ceiling must not relabel the transcode as the viewer's choice.
+	for _, label := range []string{"4K", "4K TrueHD"} {
+		if resp := info(label, withCeiling(main10_1080p, 40_000_000)); resp.Decision != "transcode" || resp.Reason != "requires-transcode" {
+			t.Fatalf("%s Version to a 1080p-capped client with a ceiling = %s (%s), want transcode (requires-transcode)", label, resp.Decision, resp.Reason)
+		}
+	}
 }
 
 // TestMissingFirstVersionKeepsAlternatesGuarded: the Media row keeps the
