@@ -1,6 +1,6 @@
 ## 1. Server
 
-- [x] 1.1 Catalog migration 0116: `media_metadata_provenance.candidate_id`, `media_sort_title`
+- [x] 1.1 Catalog migration 0119: `media_metadata_provenance.candidate_id`, `media_sort_title`
 - [x] 1.2 Store: rank-gated `UpdateMediaMetadata` with sort title, lockable sort title and artwork slots, held plugin field locks
 - [x] 1.3 Identify: remember the candidate; skip locked artwork slots
 - [x] 1.4 Graph: `mediaMetadata`, `editMediaMetadata`, `refreshMediaMetadata`; activity kinds
@@ -17,7 +17,7 @@
 ## 3. Follow-ups (not in this change)
 
 - [ ] 3.1 Viewer media detail More/Manage link to `/manage/items/:mediaID`
-- [x] 3.2 Publish the wire contract at batch landing (2.9.0; batch 4 holds 2.8.0)
+- [ ] 3.2 Publish the wire contract: rides the 2.8.0 that batch 4 (the single wire owner) cuts, or its 2.9.0 if 2.8.0 is already out
 - [ ] 3.3 Genres stored as related entities
 
 ## 4. Gate and archive

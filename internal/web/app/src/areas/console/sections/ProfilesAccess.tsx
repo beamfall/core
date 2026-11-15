@@ -25,6 +25,7 @@ import {
   setCertificationCeiling,
   setExtensionPreauthorization,
   setProfileLibraries,
+  setProfileRemoteBitrateCap,
   setProfileStreamCap,
 } from "@/lib/graphql";
 import type {
@@ -388,7 +389,7 @@ function SchedulePreview({ windows }: { windows: AccessWindowInput[] }) {
 }
 
 // The managed-Profile policy controls (ADR-0087 §30/§31): the concurrent-stream
-// cap (any Profile) and the extension-request pre-authorization toggle (managed
+// cap and the remote bitrate cap (any Profile, CORE-1717) and the extension-request pre-authorization toggle (managed
 // only — the server rejects an adult Profile). Both are write-through: the
 // server exposes no read query for the current values yet (the inputs start
 // blank and report "applied" on save), so the controls set policy rather than
@@ -397,6 +398,8 @@ function ManagedPolicyControls({ profileID, managed }: { profileID: string; mana
   const t = useT();
   const [cap, setCap] = useState("");
   const [capApplied, setCapApplied] = useState(false);
+  const [remoteCap, setRemoteCap] = useState("");
+  const [remoteCapApplied, setRemoteCapApplied] = useState(false);
   const [preauth, setPreauth] = useState(false);
   const [busy, setBusy] = useState(false);
   const showAdvanced = useShowAdvanced();
@@ -408,6 +411,20 @@ function ManagedPolicyControls({ profileID, managed }: { profileID: string; mana
     try {
       await setProfileStreamCap(profileID, Number(cap) || 0);
       setCapApplied(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // The remote cap is entered in Mbit/s and stored in bits per second
+  // (CORE-1717); an empty or non-positive entry clears it.
+  async function applyRemoteCap(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setRemoteCapApplied(false);
+    try {
+      await setProfileRemoteBitrateCap(profileID, (Number(remoteCap) || 0) * 1_000_000);
+      setRemoteCapApplied(true);
     } finally {
       setBusy(false);
     }
@@ -451,6 +468,36 @@ function ManagedPolicyControls({ profileID, managed }: { profileID: string; mana
             </span>
           )}
           <p className="w-full text-xs text-muted-foreground">{t("streamCapHint")}</p>
+        </form>
+
+        <form onSubmit={applyRemoteCap} className="flex flex-wrap items-end gap-2">
+          <div className="space-y-1">
+            <Label htmlFor="remote-bitrate-cap" className="text-xs">
+              {t("remoteBitrateCapLabel")}
+            </Label>
+            <Input
+              id="remote-bitrate-cap"
+              type="number"
+              min={0}
+              step="any"
+              className="w-24"
+              value={remoteCap}
+              placeholder="0"
+              onChange={(e) => {
+                setRemoteCap(e.target.value);
+                setRemoteCapApplied(false);
+              }}
+            />
+          </div>
+          <Button type="submit" size="sm" disabled={busy}>
+            {t("streamCapApply")}
+          </Button>
+          {remoteCapApplied && (
+            <span className="text-xs text-[var(--text-secondary)]" role="status">
+              {t("streamCapApplied")}
+            </span>
+          )}
+          <p className="w-full text-xs text-muted-foreground">{t("remoteBitrateCapHint")}</p>
         </form>
 
         {managed && (

@@ -1545,11 +1545,11 @@ func (s *Store) profileSQL(ctx context.Context, id ProfileID) (Profile, error) {
 	err := s.catalogR.QueryRowContext(ctx, `
 		SELECT id, name, kind, max_concurrent_streams, transcode_allowed,
 		       disabled, audio_languages, subtitle_languages, subtitle_mode, prefer_sdh,
-		       created_at_ms, is_owner, integration_sign_in
+		       created_at_ms, is_owner, integration_sign_in, remote_max_bitrate
 		FROM profile WHERE id = ?`, id,
 	).Scan(&profile.ID, &profile.Name, &profile.Kind, &maxStreams, &transcodeAllowed,
 		&disabled, &audioLanguages, &subtitleLanguages, &profile.SubtitleMode, &preferSDH,
-		&profile.CreatedAtMs, &isOwner, &integrationSignIn)
+		&profile.CreatedAtMs, &isOwner, &integrationSignIn, &profile.RemoteMaxBitrate)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Profile{}, ValidationError("profile not found")
 	}
@@ -1627,11 +1627,11 @@ func (s *Store) updateProfileSettingsSQL(ctx context.Context, profile Profile) e
 	_, err = s.catalogW.ExecContext(ctx, `
 		UPDATE profile SET name = ?, kind = ?, max_concurrent_streams = ?, transcode_allowed = ?,
 		       disabled = ?, audio_languages = ?, subtitle_languages = ?,
-		       subtitle_mode = ?, prefer_sdh = ?, integration_sign_in = ?
+		       subtitle_mode = ?, prefer_sdh = ?, integration_sign_in = ?, remote_max_bitrate = ?
 		WHERE id = ?`,
 		profile.Name, profile.Kind, maxStreams, boolInt(profile.TranscodeAllowed), boolInt(profile.Disabled),
 		audioLanguages, subtitleLanguages, profile.SubtitleMode, boolInt(profile.PreferSDH), boolInt(profile.IntegrationSignIn),
-		profile.ID)
+		profile.RemoteMaxBitrate, profile.ID)
 	if err != nil {
 		return err
 	}
@@ -2643,7 +2643,8 @@ func (s *Store) mediaFileStreamsSQL(ctx context.Context, fingerprint string) ([]
 		SELECT stream_index, stream_type, codec, profile, level, language,
 		  is_default, is_forced, is_hearing_impaired, is_visual_impaired, is_commentary,
 		  channels, channel_layout, bit_depth,
-		  color_transfer, color_primaries, hdr10_plus, dovi_profile, dovi_bl_compat_id
+		  color_transfer, color_primaries, hdr10_plus, dovi_profile, dovi_bl_compat_id,
+		  sample_rate, encoder_delay_samples, encoder_padding_samples, decoded_samples
 		FROM media_file_stream
 		WHERE content_fingerprint = ?
 		ORDER BY stream_index
@@ -2659,7 +2660,8 @@ func (s *Store) mediaFileStreamsSQL(ctx context.Context, fingerprint string) ([]
 		if err := rows.Scan(&st.Index, &st.Type, &st.Codec, &st.Profile, &st.Level, &st.Language,
 			&isDefault, &isForced, &hearingImpaired, &visualImpaired, &commentary,
 			&st.Channels, &st.ChannelLayout, &st.BitDepth,
-			&st.ColorTransfer, &st.ColorPrimaries, &hdr10Plus, &st.DoViProfile, &st.DoViBLCompatID); err != nil {
+			&st.ColorTransfer, &st.ColorPrimaries, &hdr10Plus, &st.DoViProfile, &st.DoViBLCompatID,
+			&st.SampleRate, &st.EncoderDelaySamples, &st.EncoderPaddingSamples, &st.DecodedSamples); err != nil {
 			return nil, err
 		}
 		st.Default = isDefault != 0
@@ -2717,13 +2719,15 @@ func replaceMediaFileInventoryTx(ctx context.Context, tx *sql.Tx, fingerprint st
 			  content_fingerprint, stream_index, stream_type, codec, profile, level, language,
 			  is_default, is_forced, is_hearing_impaired, is_visual_impaired, is_commentary,
 			  channels, channel_layout, bit_depth,
-			  color_transfer, color_primaries, hdr10_plus, dovi_profile, dovi_bl_compat_id)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			  color_transfer, color_primaries, hdr10_plus, dovi_profile, dovi_bl_compat_id,
+			  sample_rate, encoder_delay_samples, encoder_padding_samples, decoded_samples)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, fingerprint, stream.Index, stream.Type, stream.Codec, stream.Profile, stream.Level, stream.Language,
 			boolInt(stream.Default), boolInt(stream.Forced), boolInt(stream.HearingImpaired),
 			boolInt(stream.VisualImpaired), boolInt(stream.Commentary),
 			stream.Channels, stream.ChannelLayout, stream.BitDepth,
-			stream.ColorTransfer, stream.ColorPrimaries, boolInt(stream.HDR10Plus), stream.DoViProfile, stream.DoViBLCompatID); err != nil {
+			stream.ColorTransfer, stream.ColorPrimaries, boolInt(stream.HDR10Plus), stream.DoViProfile, stream.DoViBLCompatID,
+			stream.SampleRate, stream.EncoderDelaySamples, stream.EncoderPaddingSamples, stream.DecodedSamples); err != nil {
 			return err
 		}
 	}

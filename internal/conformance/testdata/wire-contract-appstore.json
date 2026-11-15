@@ -978,6 +978,11 @@
       "tier": "admin"
     },
     {
+      "field": "retryofflinepack",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
       "field": "reveal",
       "effect": "write",
       "tier": "session"
@@ -4926,6 +4931,10 @@
           "kind": "scalar"
         },
         {
+          "name": "remoteMaxBitrate",
+          "kind": "scalar"
+        },
+        {
           "name": "updateCheckChannel",
           "kind": "scalar"
         },
@@ -5448,6 +5457,11 @@
           "kind": "scalar"
         },
         {
+          "name": "failureReason",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "id",
           "kind": "scalar"
         },
@@ -5464,6 +5478,10 @@
           "name": "manifestToken",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "progress",
+          "kind": "scalar"
         },
         {
           "name": "state",
@@ -5562,6 +5580,10 @@
         },
         {
           "name": "preferSDH",
+          "kind": "scalar"
+        },
+        {
+          "name": "remoteMaxBitrate",
           "kind": "scalar"
         },
         {
@@ -13596,6 +13618,11 @@
             "kind": "scalar"
           },
           {
+            "name": "failureReason",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
             "name": "id",
             "kind": "scalar"
           },
@@ -13612,6 +13639,10 @@
             "name": "manifestToken",
             "kind": "scalar",
             "optional": true
+          },
+          {
+            "name": "progress",
+            "kind": "scalar"
           },
           {
             "name": "state",
@@ -13649,6 +13680,11 @@
           "kind": "scalar"
         },
         {
+          "name": "failureReason",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "id",
           "kind": "scalar"
         },
@@ -13665,6 +13701,10 @@
           "name": "manifestToken",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "progress",
+          "kind": "scalar"
         },
         {
           "name": "state",
@@ -16220,6 +16260,71 @@
       ]
     },
     {
+      "field": "retryofflinepack",
+      "kind": "object",
+      "children": [
+        {
+          "name": "bytesReady",
+          "kind": "scalar"
+        },
+        {
+          "name": "bytesTotal",
+          "kind": "scalar"
+        },
+        {
+          "name": "createdAt",
+          "kind": "scalar"
+        },
+        {
+          "name": "expiresAt",
+          "kind": "scalar"
+        },
+        {
+          "name": "failureReason",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "itemCount",
+          "kind": "scalar"
+        },
+        {
+          "name": "keyToken",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "manifestToken",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "progress",
+          "kind": "scalar"
+        },
+        {
+          "name": "state",
+          "kind": "scalar"
+        },
+        {
+          "name": "targetKind",
+          "kind": "scalar"
+        },
+        {
+          "name": "targetRef",
+          "kind": "scalar"
+        },
+        {
+          "name": "updatedAt",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
       "field": "reveal",
       "kind": "object",
       "children": [
@@ -16375,6 +16480,11 @@
           "kind": "scalar"
         },
         {
+          "name": "failureReason",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "id",
           "kind": "scalar"
         },
@@ -16391,6 +16501,10 @@
           "name": "manifestToken",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "progress",
+          "kind": "scalar"
         },
         {
           "name": "state",
@@ -17998,6 +18112,10 @@
         },
         {
           "name": "preferSDH",
+          "kind": "scalar"
+        },
+        {
+          "name": "remoteMaxBitrate",
           "kind": "scalar"
         },
         {
@@ -19784,6 +19902,10 @@
         },
         {
           "name": "remoteEnrollmentEnabled",
+          "kind": "scalar"
+        },
+        {
+          "name": "remoteMaxBitrate",
           "kind": "scalar"
         },
         {
@@ -22137,6 +22259,10 @@
           "kind": "scalar"
         },
         {
+          "name": "remoteMaxBitrate",
+          "kind": "scalar"
+        },
+        {
           "name": "updateCheckChannel",
           "kind": "scalar"
         },
@@ -23901,6 +24027,10 @@
           "kind": "scalar"
         },
         {
+          "name": "remoteMaxBitrate",
+          "kind": "scalar"
+        },
+        {
           "name": "updateCheckChannel",
           "kind": "scalar"
         },
@@ -24051,6 +24181,10 @@
         },
         {
           "name": "preferSDH",
+          "kind": "scalar"
+        },
+        {
+          "name": "remoteMaxBitrate",
           "kind": "scalar"
         },
         {
@@ -25376,6 +25510,11 @@
           "kind": "scalar"
         },
         {
+          "name": "failureReason",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "id",
           "kind": "scalar"
         },
@@ -25392,6 +25531,10 @@
           "name": "manifestToken",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "progress",
+          "kind": "scalar"
         },
         {
           "name": "state",
@@ -27640,6 +27783,10 @@
           "kind": "scalar"
         },
         {
+          "name": "remoteMaxBitrate",
+          "kind": "scalar"
+        },
+        {
           "name": "updateCheckChannel",
           "kind": "scalar"
         },
@@ -28111,6 +28258,10 @@
         },
         {
           "name": "preferSDH",
+          "kind": "scalar"
+        },
+        {
+          "name": "remoteMaxBitrate",
           "kind": "scalar"
         },
         {
@@ -31109,6 +31260,33 @@
                     },
                     "optional": true
                   }
+                },
+                {
+                  "name": "gapless",
+                  "shape": {
+                    "type": "object",
+                    "fields": [
+                      {
+                        "name": "sampleRate",
+                        "shape": {
+                          "type": "integer"
+                        }
+                      },
+                      {
+                        "name": "encoderDelaySamples",
+                        "shape": {
+                          "type": "integer"
+                        }
+                      },
+                      {
+                        "name": "encoderPaddingSamples",
+                        "shape": {
+                          "type": "integer"
+                        }
+                      }
+                    ],
+                    "optional": true
+                  }
                 }
               ]
             }
@@ -31295,6 +31473,33 @@
                               }
                             ]
                           },
+                          "optional": true
+                        }
+                      },
+                      {
+                        "name": "gapless",
+                        "shape": {
+                          "type": "object",
+                          "fields": [
+                            {
+                              "name": "sampleRate",
+                              "shape": {
+                                "type": "integer"
+                              }
+                            },
+                            {
+                              "name": "encoderDelaySamples",
+                              "shape": {
+                                "type": "integer"
+                              }
+                            },
+                            {
+                              "name": "encoderPaddingSamples",
+                              "shape": {
+                                "type": "integer"
+                              }
+                            }
+                          ],
                           "optional": true
                         }
                       }
@@ -31939,7 +32144,8 @@
       "selectedSubtitleTrack.track.kind is the closed vocabulary muxed|sidecar. Reflection publishes it as a generic string, so the vocabulary is enumerated here; growing it is a deliberate wire-contract change.",
       "subtitlesUnavailableReason is free text and is INDEPENDENT of decision. Subtitles being unavailable never degrades the whole-media decision verdict (direct-play|direct-stream|precomputed-rendition|transcode|unavailable). Absent/empty means subtitles are not known to be unavailable.",
       "systemSurfaceDisclosure.metadataAllowed is server-authoritative for the response Media. It is true only when the Media metadata is visible to every Profile with Reveal off. Missing fields, unknown snapshot versions, and false mean clients must use generic system-surface metadata.",
-      "adjustment requests a pitch shift (pitchShiftSemitones, whole semitones) and a tempo factor (tempo; 0 or omitted is 1) inside the ranges serverInfo.playbackAdjustments advertises; out-of-range values are rejected. It applies only to the main item of an audio Media when a transcode is admitted: the response echoes adjustment only when applied, and an absent response adjustment means the stream plays unadjusted. An adjusted stream runs on its own clock (stream seconds = song seconds / tempo) while timeline and reported progress stay in song seconds. Changing the adjustment mid-play is a new playback info call: report progress first, and the new stream starts at the segment holding timeline.positionSeconds."
+      "adjustment requests a pitch shift (pitchShiftSemitones, whole semitones) and a tempo factor (tempo; 0 or omitted is 1) inside the ranges serverInfo.playbackAdjustments advertises; out-of-range values are rejected. It applies only to the main item of an audio Media when a transcode is admitted: the response echoes adjustment only when applied, and an absent response adjustment means the stream plays unadjusted. An adjusted stream runs on its own clock (stream seconds = song seconds / tempo) while timeline and reported progress stay in song seconds. Changing the adjustment mid-play is a new playback info call: report progress first, and the new stream starts at the segment holding timeline.positionSeconds.",
+      "streams[].gapless declares the stream's encoder delay and end padding in samples at sampleRate, for gapless playback of consecutive items. A client trims encoderDelaySamples from the start and encoderPaddingSamples from the end of the decoded audio, exactly once. On a live transcode the stream's container trims nothing, so the client applies the trim. On direct play the source's own signalling (an MP4 edit list, an Opus pre-skip, a LAME header) declares the same samples, so a client whose decoder already honours it must not trim again. It is present only when the server knows the exact values: on direct play when the source file declares them, and on a live audio transcode started from the item's beginning. Absent means play the stream untrimmed."
     ],
     "streamToken": {
       "type": "object",

@@ -61,7 +61,19 @@ package store
 //     key so a pack can hold Encrypted Library Media (CORE-1742); a trigger
 //     keeps the catalog Media delete cascade. Same columns and index, off
 //     every entity-query path.
-//   - 0116 adds media_metadata_provenance.candidate_id, the provider candidate
+//   - 0116 adds offline_pack_build, the pending row for an Offline Pack whose
+//     background build has not sealed yet (CORE-1743). It is keyed by pack ID,
+//     read only by the offlinePacks list and retry paths, written a few times
+//     per build, and off every entity-query path.
+//   - 0117 adds profile.remote_max_bitrate, the per-Profile remote playback
+//     bitrate cap (CORE-1717). It is a defaulted scalar column read with the
+//     Profile row at playback decision time; it adds no index and touches no
+//     entity-query table.
+//   - 0118 adds the gapless columns (sample rate, encoder delay, end padding,
+//     decoded length) to media_file_stream (CORE-1626). They ride the
+//     existing fingerprint-keyed inventory read once per playback decision;
+//     no index and no entity-query table changes.
+//   - 0119 adds media_metadata_provenance.candidate_id, the provider candidate
 //     a per-item refresh re-runs, and media_sort_title, one row per Media item
 //     with an admin-set sort title (CORE-1715). The sort-title table is read
 //     once per catalog-plane library browse, by library, and is empty unless an
@@ -82,4 +94,4 @@ package store
 // query was search/fts/revealed at 50.56275 ms against a 60 ms budget, on a
 // loaded shared host. 0113 adds no index or column on any benched table: the
 // provenance table is read only by the media(id) detail read.
-const schemaFreezeCatalogMigrations = 112
+const schemaFreezeCatalogMigrations = 115

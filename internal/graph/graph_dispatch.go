@@ -540,6 +540,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"restorenavoverride":                 newFieldHandler("restoreNavOverride", "restoreNavOverride", fieldMutation, roleSession|roleManager, 62),
 	"restoretag":                         newFieldHandler("restoreTag", "restoreTag", fieldMutation, roleSession|roleManager, 36),
 	"retentionrules":                     newFieldHandler("retentionRules", "retentionRules", fieldRead, roleSession|roleAdmin, 58),
+	"retryofflinepack":                   newFieldHandler("retryOfflinePack", "retryOfflinePack", fieldMutation, roleSession, 118),
 	"reveal":                             newFieldHandler("reveal", "reveal", fieldMutation, roleSession, 25),
 	"revokeaccessgrant":                  newFieldHandler("revokeAccessGrant", "revokeAccessGrant", fieldMutation, roleSession, 102),
 	"revokealldevices":                   newFieldHandler("revokeAllDevices", "revokeAllDevices", fieldMutation, roleSession|roleAdmin, 145),
@@ -3461,6 +3462,12 @@ func dispatchFieldBlock118(dispatch *fieldDispatchContext) response {
 	if fields["createofflinepack"] {
 		pack, err := h.createOfflinePack(ctx, scope, req)
 		if resp := resolveField(dispatch, "createofflinepack", pack, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["retryofflinepack"] {
+		pack, err := h.retryOfflinePack(ctx, scope, req)
+		if resp := resolveField(dispatch, "retryofflinepack", pack, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

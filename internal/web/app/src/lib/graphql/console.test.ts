@@ -41,6 +41,7 @@ import {
   setDeviceRole,
   setExtensionPreauthorization,
   setProfileLibraries,
+  setProfileRemoteBitrateCap,
   setProfileStreamCap,
   setRetentionCandidateHold,
   setWebhookSettings,
@@ -212,6 +213,16 @@ describe("console GraphQL requests", () => {
     expect(recorded[1].variables).toEqual({ viewerPairingCodesDisabled: true });
   });
 
+  it("reads and sets the server-wide remote bitrate cap (CORE-1717)", async () => {
+    await fetchConsoleConfig();
+    expect(recorded[0].query).toContain("remoteMaxBitrate");
+
+    await setConsoleConfig({ remoteMaxBitrate: 4_000_000 });
+    expect(recorded[1].query).toContain("$remoteMaxBitrate: Int");
+    expect(recorded[1].query).toContain("remoteMaxBitrate: $remoteMaxBitrate");
+    expect(recorded[1].variables).toEqual({ remoteMaxBitrate: 4_000_000 });
+  });
+
   it("cancelJob sends JobCancel(id)", async () => {
     // feature:jobs-live
     await cancelJob("job-1");
@@ -354,6 +365,18 @@ describe("console GraphQL requests", () => {
       profileID: "p-1",
       maxConcurrentStreams: 0,
     });
+  });
+
+  it("setProfileRemoteBitrateCap sends UpdateProfile with the cap in bits per second", async () => {
+    // feature:managed-profile-policy
+    await setProfileRemoteBitrateCap("p-1", 8_000_000);
+    expect(recorded[0].query).toContain(
+      "updateProfile(profileID: $profileID, remoteMaxBitrate: $remoteMaxBitrate)",
+    );
+    expect(recorded[0].variables).toEqual({ profileID: "p-1", remoteMaxBitrate: 8_000_000 });
+
+    await setProfileRemoteBitrateCap("p-1", -5);
+    expect(recorded[1].variables).toEqual({ profileID: "p-1", remoteMaxBitrate: 0 });
   });
 
   it("setExtensionPreauthorization sends SetExtensionPreauthorization(profileID, enabled)", async () => {

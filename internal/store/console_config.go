@@ -63,7 +63,24 @@ const (
 	// pairing codes and refuses to redeem Viewer codes minted earlier. Manager
 	// pairing and the demo Viewer enrollment are unaffected.
 	configViewerPairingCodesDisabled = "enrollment.viewer_pairing_codes_disabled"
+	// Server-wide remote playback bitrate cap (CORE-1717), in bits per
+	// second. Absent or 0 means no server-wide cap. It applies only to
+	// playback requests that do not come from the LAN.
+	configRemoteMaxBitrate = "playback.remote_max_bitrate"
 )
+
+// MaxRemoteBitrate is the upper bound accepted for a remote bitrate cap
+// (server-wide or per Profile): 1 Gbit/s, well above any real stream.
+const MaxRemoteBitrate = 1_000_000_000
+
+// ValidateRemoteMaxBitrate checks a remote bitrate cap in bits per second:
+// 0 (no cap) up to MaxRemoteBitrate.
+func ValidateRemoteMaxBitrate(bitsPerSecond int) error {
+	if bitsPerSecond < 0 || bitsPerSecond > MaxRemoteBitrate {
+		return ValidationError("remoteMaxBitrate must be between 0 and " + strconv.Itoa(MaxRemoteBitrate))
+	}
+	return nil
+}
 
 // capabilityConfigPrefix namespaces the runtime Workflow-capability enabled
 // overrides. A `capability.<id>.enabled` row is the operator's
@@ -111,6 +128,9 @@ type ConsoleConfig struct {
 	// ObservabilityEnabled gates ADR-0146's OTel metrics layer. Default OFF:
 	// coarse ADR-0013 /metrics remains, but no OTel exporter runs.
 	ObservabilityEnabled bool
+	// RemoteMaxBitrate caps playback for requests that do not come from the
+	// LAN, in bits per second. Default 0: no server-wide remote cap.
+	RemoteMaxBitrate int
 }
 
 // defaultBackgroundWorkers is the low-power default for the resource governor
@@ -135,6 +155,7 @@ type ConsoleConfigPatch struct {
 	ViewerPairingCodesDisabled *bool
 	EventsRetentionDays        *int
 	ObservabilityEnabled       *bool
+	RemoteMaxBitrate           *int
 }
 
 // TranscodeConfig is the typed hardware-transcode policy. The
@@ -221,6 +242,11 @@ func (s *Store) ConsoleConfigWithDefaults(ctx context.Context, defaults ConsoleC
 	if raw, ok := values[configObservabilityEnabled]; ok {
 		cfg.ObservabilityEnabled = raw == "1"
 	}
+	if raw, ok := values[configRemoteMaxBitrate]; ok {
+		if n, convErr := strconv.Atoi(raw); convErr == nil && ValidateRemoteMaxBitrate(n) == nil {
+			cfg.RemoteMaxBitrate = n
+		}
+	}
 	return cfg, nil
 }
 
@@ -239,6 +265,12 @@ func (s *Store) SetConsoleConfig(ctx context.Context, patch ConsoleConfigPatch, 
 			return ConsoleConfig{}, ValidationError("eventsRetentionDays must be at least 1")
 		}
 		writes[configEventsRetentionDays] = strconv.Itoa(*patch.EventsRetentionDays)
+	}
+	if patch.RemoteMaxBitrate != nil {
+		if err := ValidateRemoteMaxBitrate(*patch.RemoteMaxBitrate); err != nil {
+			return ConsoleConfig{}, err
+		}
+		writes[configRemoteMaxBitrate] = strconv.Itoa(*patch.RemoteMaxBitrate)
 	}
 	if patch.UpdateCheckEnabled != nil {
 		writes[configUpdateCheckEnabled] = boolToConfig(*patch.UpdateCheckEnabled)

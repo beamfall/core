@@ -1248,6 +1248,11 @@ export interface ConsoleConfigInfo {
   /** Remote (off-LAN) pairing-code enrollment toggle (ADR-0081). */
   remoteEnrollmentEnabled: boolean;
   /**
+   * Server-wide remote (off-LAN) streaming cap in bits per second; 0 means
+   * unlimited (CORE-1717). Optional so older fixtures compile.
+   */
+  remoteMaxBitrate?: number;
+  /**
    * Operator switch that refuses new Viewer pairing codes and the redemption of
    * outstanding ones (CORE-0393). Manager pairing and demo enrollment are
    * unaffected. The server always sends it; optional so older fixtures compile.

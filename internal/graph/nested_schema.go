@@ -358,6 +358,7 @@ var resultTypes = map[string]any{
 	"offlinepacks":              []OfflinePackInfo{},
 	"createofflinepack":         OfflinePackInfo{},
 	"revokeofflinepack":         OfflinePackInfo{},
+	"retryofflinepack":          OfflinePackInfo{},
 	"syncofflinepackprogress":   OfflinePackInfo{},
 	"deletemypacktokens":        deleteMyPackTokensResult{},
 }

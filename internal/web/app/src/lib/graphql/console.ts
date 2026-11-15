@@ -64,7 +64,7 @@ export async function fetchRemoteAccess(signal?: AbortSignal): Promise<RemoteAcc
 // --- Console config: workers + plugin activation (ADR-0013) ---------------
 
 const CONSOLE_CONFIG_FIELDS =
-  "backgroundWorkers updateCheckEnabled updateCheckChannel remoteEnrollmentEnabled viewerPairingCodesDisabled eventsRetentionDays plugins { id displayName active controlPolicy config { name type label required default value configured options { value label } } permissions { kind label description highRisk } status { id label state detail } actions { id label icon risk requiredPermissions inputFields { name type label required default value configured options { value label } } confirmation } scrapers { pluginID scraperID displayName kind endpoint authRef authStyle credentialRequired credentialConfigured credentialStatus credentialError } }";
+  "backgroundWorkers updateCheckEnabled updateCheckChannel remoteEnrollmentEnabled remoteMaxBitrate viewerPairingCodesDisabled eventsRetentionDays plugins { id displayName active controlPolicy config { name type label required default value configured options { value label } } permissions { kind label description highRisk } status { id label state detail } actions { id label icon risk requiredPermissions inputFields { name type label required default value configured options { value label } } confirmation } scrapers { pluginID scraperID displayName kind endpoint authRef authStyle credentialRequired credentialConfigured credentialStatus credentialError } }";
 
 const CONSOLE_CONFIG_QUERY = `query ConsoleConfig { consoleConfig { ${CONSOLE_CONFIG_FIELDS} } }`;
 
@@ -174,11 +174,13 @@ export interface ConsoleConfigPatch {
   updateCheckEnabled?: boolean;
   updateCheckChannel?: string;
   remoteEnrollmentEnabled?: boolean;
+  /** Server-wide remote streaming cap in bits per second; 0 clears it (CORE-1717). */
+  remoteMaxBitrate?: number;
   viewerPairingCodesDisabled?: boolean;
   eventsRetentionDays?: number;
 }
 
-const SET_CONSOLE_CONFIG_MUTATION = `mutation SetConsoleConfig($backgroundWorkers: Int, $updateCheckEnabled: Boolean, $updateCheckChannel: String, $remoteEnrollmentEnabled: Boolean, $viewerPairingCodesDisabled: Boolean, $eventsRetentionDays: Int) { setConsoleConfig(backgroundWorkers: $backgroundWorkers, updateCheckEnabled: $updateCheckEnabled, updateCheckChannel: $updateCheckChannel, remoteEnrollmentEnabled: $remoteEnrollmentEnabled, viewerPairingCodesDisabled: $viewerPairingCodesDisabled, eventsRetentionDays: $eventsRetentionDays) { ${CONSOLE_CONFIG_FIELDS} } }`;
+const SET_CONSOLE_CONFIG_MUTATION = `mutation SetConsoleConfig($backgroundWorkers: Int, $updateCheckEnabled: Boolean, $updateCheckChannel: String, $remoteEnrollmentEnabled: Boolean, $remoteMaxBitrate: Int, $viewerPairingCodesDisabled: Boolean, $eventsRetentionDays: Int) { setConsoleConfig(backgroundWorkers: $backgroundWorkers, updateCheckEnabled: $updateCheckEnabled, updateCheckChannel: $updateCheckChannel, remoteEnrollmentEnabled: $remoteEnrollmentEnabled, remoteMaxBitrate: $remoteMaxBitrate, viewerPairingCodesDisabled: $viewerPairingCodesDisabled, eventsRetentionDays: $eventsRetentionDays) { ${CONSOLE_CONFIG_FIELDS} } }`;
 
 /** SetConsoleConfig — partially update Console runtime config. */
 export async function setConsoleConfig(
@@ -884,6 +886,33 @@ export async function setProfileStreamCap(
     {
       profileID,
       maxConcurrentStreams: max > 0 ? Math.floor(max) : 0,
+    },
+    signal,
+  );
+  return data.updateProfile;
+}
+
+const SET_PROFILE_REMOTE_BITRATE_CAP_MUTATION =
+  "mutation UpdateProfile($profileID: String!, $remoteMaxBitrate: Int) { updateProfile(profileID: $profileID, remoteMaxBitrate: $remoteMaxBitrate) { id remoteMaxBitrate } }";
+
+/**
+ * setProfileRemoteBitrateCap — set or CLEAR a Profile's remote streaming cap in
+ * bits per second (CORE-1717). Playback outside the LAN runs under the lower of
+ * this, the server-wide cap and the client's own ceiling. A non-positive value
+ * sends `0` explicitly, which clears the cap. Admin-gated.
+ */
+export async function setProfileRemoteBitrateCap(
+  profileID: string,
+  bitsPerSecond: number,
+  signal?: AbortSignal,
+): Promise<{ id: string; remoteMaxBitrate: number }> {
+  const data = await graphql<{
+    updateProfile: { id: string; remoteMaxBitrate: number };
+  }>(
+    SET_PROFILE_REMOTE_BITRATE_CAP_MUTATION,
+    {
+      profileID,
+      remoteMaxBitrate: bitsPerSecond > 0 ? Math.round(bitsPerSecond) : 0,
     },
     signal,
   );
