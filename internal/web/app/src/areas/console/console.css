@@ -748,6 +748,31 @@ a.console-step:hover {
   flex: 1 0 100%;
   margin-top: 8px;
 }
+/* What the job does and which Library folder it works on, full-width under
+ * the row. */
+.console-job-about {
+  flex: 1 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin-top: -4px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+.console-job-target {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+}
+.console-job-help {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
 
 /* Labeled disk/budget meter (mockup .meter): a head row (label + numeric read)
  * over a rounded track. The fill warns amber when over budget. Distinct from

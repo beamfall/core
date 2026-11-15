@@ -368,7 +368,7 @@ export async function linkMediaRelation(
 // --- Jobs -----------------------------------------------------------------
 
 const JOBS_QUERY =
-  "query Jobs { jobs { id kind status error progress { current total unit message } } }";
+  "query Jobs { jobs { id kind status error progress { current total unit message } target { libraryID libraryTitle root backfill } } }";
 
 /** Jobs — the job substrate queue with progress detail. */
 export async function fetchJobs(

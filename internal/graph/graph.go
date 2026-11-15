@@ -146,7 +146,9 @@ type SourceItemArtwork struct {
 	Poster string `json:"poster"`
 }
 
-// JobInfo describes one durable background job without exposing payloads or paths.
+// JobInfo describes one durable background job without exposing raw payloads.
+// Target names the Library a job works on; it is filled only when the session
+// may see that Library's operational detail (see jobNeedsRedaction).
 type JobInfo struct {
 	ID         string          `json:"id"`
 	Kind       string          `json:"kind"`
@@ -159,6 +161,17 @@ type JobInfo struct {
 	StartedAt  string          `json:"startedAt,omitempty"`
 	FinishedAt string          `json:"finishedAt,omitempty"`
 	Error      string          `json:"error,omitempty"`
+	Target     *JobTargetInfo  `json:"target,omitempty"`
+}
+
+// JobTargetInfo is what a Library-scoped job works on: the Library, the folder
+// a scan walks (empty for whole-Library jobs) and whether a scan re-runs
+// metadata backfill.
+type JobTargetInfo struct {
+	LibraryID    string `json:"libraryID"`
+	LibraryTitle string `json:"libraryTitle"`
+	Root         string `json:"root,omitempty"`
+	Backfill     bool   `json:"backfill,omitempty"`
 }
 
 // JobProgressInfo describes user-visible job progress.
@@ -1650,9 +1663,13 @@ func (h *Handler) jobs(ctx context.Context, scope auth.Scope) ([]JobInfo, error)
 	if err != nil {
 		return nil, err
 	}
+	titles, err := h.visibleLibraryTitles(ctx, scope)
+	if err != nil {
+		return nil, err
+	}
 	resp := make([]JobInfo, len(jobs))
 	for i, job := range jobs {
-		resp[i] = h.jobInfo(ctx, scope, job)
+		resp[i] = h.jobInfoWithTitles(ctx, scope, job, titles)
 	}
 	return resp, nil
 }
@@ -4848,6 +4865,12 @@ func (h *Handler) resumePolicy(ctx context.Context, media store.Media) store.Res
 const redactedJobError = "error withheld — reveal required"
 
 func (h *Handler) jobInfo(ctx context.Context, scope auth.Scope, job store.Job) JobInfo {
+	return h.jobInfoWithTitles(ctx, scope, job, nil)
+}
+
+// jobInfoWithTitles builds JobInfo; titles maps the session's visible Library
+// IDs to titles. A nil map is loaded on demand, only for a Library-scoped job.
+func (h *Handler) jobInfoWithTitles(ctx context.Context, scope auth.Scope, job store.Job, titles map[store.LibraryID]string) JobInfo {
 	info := JobInfo{
 		ID:         string(job.ID),
 		Kind:       string(job.Kind),
@@ -4866,8 +4889,52 @@ func (h *Handler) jobInfo(ctx context.Context, scope auth.Scope, job store.Job) 
 			info.Error = redactedJobError
 		}
 		info.Progress.Message = ""
+		return info
 	}
+	info.Target = h.jobTarget(ctx, scope, job, titles)
 	return info
+}
+
+// jobTarget decodes the Library a job works on from its payload. Jobs without a
+// library_id, and Libraries the session cannot see, have no target.
+func (h *Handler) jobTarget(ctx context.Context, scope auth.Scope, job store.Job, titles map[store.LibraryID]string) *JobTargetInfo {
+	var payload struct {
+		LibraryID string `json:"library_id"`
+		Root      string `json:"root"`
+		Backfill  bool   `json:"backfill"`
+	}
+	if err := json.Unmarshal(job.Payload, &payload); err != nil || payload.LibraryID == "" {
+		return nil
+	}
+	if titles == nil {
+		var err error
+		if titles, err = h.visibleLibraryTitles(ctx, scope); err != nil {
+			return nil
+		}
+	}
+	title, ok := titles[store.LibraryID(payload.LibraryID)]
+	if !ok {
+		return nil
+	}
+	return &JobTargetInfo{
+		LibraryID:    payload.LibraryID,
+		LibraryTitle: title,
+		Root:         payload.Root,
+		Backfill:     payload.Backfill,
+	}
+}
+
+// visibleLibraryTitles maps the Libraries the session can see to their titles.
+func (h *Handler) visibleLibraryTitles(ctx context.Context, scope auth.Scope) (map[store.LibraryID]string, error) {
+	libraries, err := h.store.Libraries(ctx, scope.LibraryFilter())
+	if err != nil {
+		return nil, err
+	}
+	titles := make(map[store.LibraryID]string, len(libraries))
+	for _, library := range libraries {
+		titles[library.ID] = library.Title
+	}
+	return titles, nil
 }
 
 // jobNeedsRedaction applies the Reveal contract to the operational job read:

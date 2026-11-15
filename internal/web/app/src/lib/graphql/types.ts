@@ -663,6 +663,15 @@ export interface JobInfo {
   startedAt?: string;
   finishedAt?: string;
   error?: string;
+  target?: JobTargetInfo | null;
+}
+
+/** The Library a job works on (graph.JobTargetInfo); absent when redacted. */
+export interface JobTargetInfo {
+  libraryID: string;
+  libraryTitle: string;
+  root?: string;
+  backfill?: boolean;
 }
 
 /** One durable job history/log entry (graph.JobEventInfo). */

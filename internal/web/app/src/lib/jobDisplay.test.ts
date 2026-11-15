@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   jobEventDetail,
+  jobKindDescription,
   jobKindLabel,
   jobProgressDetail,
   jobProgressMessageLabel,
   jobStatusLabel,
+  jobTargetDetail,
 } from "./jobDisplay";
 
 const labels = {
@@ -128,5 +130,38 @@ describe("job display labels", () => {
     expect(jobEventDetail({ type: "failed", payload: '{"error":"disk full"}' })).toBeNull();
     expect(jobEventDetail({ type: "started", payload: "worker=w2" })).toBeNull();
     expect(jobEventDetail({ type: "started" })).toBeNull();
+  });
+});
+
+describe("job purpose and target", () => {
+  const descriptions = {
+    jobKindDescScan: "Imports a folder.",
+    jobKindDescScanBackfill: "Refreshes metadata.",
+    jobKindDescArtworkSweep: "Fills in posters.",
+  };
+
+  it("describes known kinds, the backfill scan, and nothing for unknown kinds", () => {
+    expect(jobKindDescription({ kind: "scan" }, descriptions)).toBe("Imports a folder.");
+    expect(
+      jobKindDescription(
+        { kind: "scan", target: { libraryID: "l", libraryTitle: "Films", backfill: true } },
+        descriptions,
+      ),
+    ).toBe("Refreshes metadata.");
+    expect(jobKindDescription({ kind: "artwork-sweep" }, descriptions)).toBe("Fills in posters.");
+    expect(jobKindDescription({ kind: "future-kind" }, descriptions)).toBe("");
+  });
+
+  it("formats the Library and folder a job works on", () => {
+    expect(
+      jobTargetDetail({ target: { libraryID: "l", libraryTitle: "Films", root: "/media/films" } }),
+    ).toBe("Films · /media/films");
+    expect(jobTargetDetail({ target: { libraryID: "l", libraryTitle: "Films" } })).toBe("Films");
+    expect(jobTargetDetail({ target: null })).toBe("");
+    expect(jobTargetDetail({})).toBe("");
+  });
+
+  it("humanizes dotted kinds it has no label for", () => {
+    expect(jobKindLabel("plugin.thing-run", labels)).toBe("Plugin thing run");
   });
 });

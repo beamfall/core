@@ -17,6 +17,37 @@ const JOB_KIND_LABELS: Record<string, StringKey> = {
   "asset-sweep": "jobKindAssetSweep",
   "decode-verify": "jobKindDecodeVerify",
   "skip-detect-sweep": "jobKindSkipDetectSweep",
+  "playback.precompute": "jobKindPlaybackPrecompute",
+  "playback.precompute.evict": "jobKindPlaybackPrecomputeEvict",
+  "playback-composed-sweep": "jobKindPlaybackComposedSweep",
+  "offline-pack-build": "jobKindOfflinePackBuild",
+  "offline-pack-expire": "jobKindOfflinePackExpire",
+  "photo-export": "jobKindPhotoExport",
+  "convert-managed-file": "jobKindConvertManagedFile",
+  "subtitle-offset-prune": "jobKindSubtitleOffsetPrune",
+};
+
+// One plain sentence per job kind: what the job does and why it exists.
+const JOB_KIND_DESCRIPTIONS: Record<string, StringKey> = {
+  scan: "jobKindDescScan",
+  "subscription-poll": "jobKindDescSubscriptionPoll",
+  "qbittorrent-ingest-poll": "jobKindDescQBittorrentIngestPoll",
+  migration: "jobKindDescMigration",
+  "retention-sweep": "jobKindDescRetentionSweep",
+  "events-compaction": "jobKindDescEventsCompaction",
+  "database-backup": "jobKindDescDatabaseBackup",
+  "artwork-sweep": "jobKindDescArtworkSweep",
+  "asset-sweep": "jobKindDescAssetSweep",
+  "decode-verify": "jobKindDescDecodeVerify",
+  "skip-detect-sweep": "jobKindDescSkipDetectSweep",
+  "playback.precompute": "jobKindDescPlaybackPrecompute",
+  "playback.precompute.evict": "jobKindDescPlaybackPrecomputeEvict",
+  "playback-composed-sweep": "jobKindDescPlaybackComposedSweep",
+  "offline-pack-build": "jobKindDescOfflinePackBuild",
+  "offline-pack-expire": "jobKindDescOfflinePackExpire",
+  "photo-export": "jobKindDescPhotoExport",
+  "convert-managed-file": "jobKindDescConvertManagedFile",
+  "subtitle-offset-prune": "jobKindDescSubtitleOffsetPrune",
 };
 
 const JOB_STATUS_LABELS: Record<string, StringKey> = {
@@ -52,7 +83,7 @@ function lookup(labels: LabelSource, key: StringKey): string {
 function humanizeWireValue(value: string): string {
   const words = String(value || "")
     .trim()
-    .replace(/[_-]+/g, " ")
+    .replace(/[._-]+/g, " ")
     .replace(/\s+/g, " ")
     .toLowerCase();
   if (!words) return "";
@@ -79,6 +110,24 @@ function mappedDiagnostic(
 
 export function jobKindLabel(kind: string, labels: LabelSource): string {
   return mappedLabel(kind, JOB_KIND_LABELS, labels);
+}
+
+/** What a job does, or "" for a kind this client does not know. */
+export function jobKindDescription(
+  job: Pick<JobInfo, "kind" | "target">,
+  labels: LabelSource,
+): string {
+  if (job.kind === "scan" && job.target?.backfill) return lookup(labels, "jobKindDescScanBackfill");
+  const key = JOB_KIND_DESCRIPTIONS[job.kind];
+  return key ? lookup(labels, key) : "";
+}
+
+/** "Library · /folder" for a job that names its Library, or "" when it does not. */
+export function jobTargetDetail(job: Pick<JobInfo, "target">): string {
+  const target = job.target;
+  if (!target) return "";
+  const title = target.libraryTitle || target.libraryID;
+  return target.root ? `${title} · ${target.root}` : title;
 }
 
 export function jobStatusLabel(status: string, labels: LabelSource): string {
