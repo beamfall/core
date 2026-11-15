@@ -1,11 +1,11 @@
 # Enroll a browser with a pairing code — technical-deep-dive
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:5d18aff9816a7846c9ffcaf8db29bb2d -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/enroll/EnrollPage\.tsx:40; symbol: EnrollPage; span SHA256: c47f9fbfc591d8600ffb4e5bf8ad928e38cf084157f16d18d570897e045204fa.
+Source: internal/web/app/src/areas/enroll/EnrollPage\.tsx:46; symbol: EnrollPage; span SHA256: c47f9fbfc591d8600ffb4e5bf8ad928e38cf084157f16d18d570897e045204fa.
 
 <!-- flowdocs:paragraph:a9c188cd85623cc49dc9e11bb494a268 -->
 Declared member: source declares AUTH\_FIELD; membership is caller\-declared, not runtime evidence\.

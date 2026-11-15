@@ -1,6 +1,6 @@
 # Console remote access: certificate, relay, direct connection, watch\-away guide — technical-deep-dive
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:196d6bcec934682106b5b1486918d76b -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -80,10 +80,10 @@ Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:86; symbol
 <!-- flowdocs:paragraph:f4962e408d1b0923be75cab8269d9350 -->
 Declared member: source declares REMOTE\_ACCESS\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:49; symbol: REMOTE\_ACCESS\_QUERY; span SHA256: c0b594694f2bce1ef6994a9bd2875a577a337243f204b7dfca9b7baa92ee7d2e.
+Source: internal/web/app/src/lib/graphql/console\.ts:55; symbol: REMOTE\_ACCESS\_QUERY; span SHA256: c0b594694f2bce1ef6994a9bd2875a577a337243f204b7dfca9b7baa92ee7d2e.
 
 <!-- flowdocs:paragraph:49da87cc013afd686889d723572ab581 -->
 Declared member: source declares fetchRemoteAccess; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:53; symbol: fetchRemoteAccess; span SHA256: 098987e60ab4f38516105c38f9b7ded03f1f0f85716da05bc7b9010ba507ded5.
+Source: internal/web/app/src/lib/graphql/console\.ts:59; symbol: fetchRemoteAccess; span SHA256: 098987e60ab4f38516105c38f9b7ded03f1f0f85716da05bc7b9010ba507ded5.
 

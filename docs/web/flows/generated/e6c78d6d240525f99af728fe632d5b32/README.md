@@ -1,6 +1,6 @@
 # App shell chrome: header, library sidebar, account menu, phone layout — readme
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:8883224f23dc77db72bdc229e4b86273 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -30,4 +30,14 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow shell\.app\-shell: 21 resolved, 0 unresolved members.
+Declared inventory flow shell\.app\-shell: 16 resolved, 5 unresolved members.
+
+- Unresolved member internal/web/app/src/components/chrome/AppShell\.tsx NOTIFICATION\_BADGE\_LIMIT: symbol is not a top\-level declaration in this path at this revision; name a class or object member&\#39;s enclosing declaration.
+
+- Unresolved member internal/web/app/src/components/chrome/LibrarySidebar\.tsx AggregateIcon: symbol is not a top\-level declaration in this path at this revision; name a class or object member&\#39;s enclosing declaration.
+
+- Unresolved member internal/web/app/src/components/chrome/AppShell\.tsx onKey: symbol is not a top\-level declaration in this path at this revision; name a class or object member&\#39;s enclosing declaration.
+
+- Unresolved member internal/web/app/src/components/chrome/AppShell\.tsx refreshIfForeground: symbol is not a top\-level declaration in this path at this revision; name a class or object member&\#39;s enclosing declaration.
+
+- Unresolved member internal/web/app/src/components/chrome/AppShell\.tsx refreshUnreadNotifications: symbol is not a top\-level declaration in this path at this revision; name a class or object member&\#39;s enclosing declaration.

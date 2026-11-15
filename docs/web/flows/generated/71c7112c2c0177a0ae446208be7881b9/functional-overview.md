@@ -1,6 +1,6 @@
 # Console migration: importer wizard, credentials, mapping, match\-rate report — functional-overview
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:c7fdf5c4d9234e8c8aa8fc97a3f29790 -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
@@ -15,22 +15,22 @@ Source: internal/web/app/src/lib/migrationReport\.ts:103; symbol: ; span SHA256:
 <!-- flowdocs:paragraph:8941a921a9be60358d28c52ca6617de4 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:1311; symbol: ; span SHA256: aa92c3db69b1291a49eb0f8a7b9576da0f8c1fa9b3c447a121886734a0924675.
+Source: internal/web/app/src/lib/graphql/manage\.ts:1491; symbol: ; span SHA256: aa92c3db69b1291a49eb0f8a7b9576da0f8c1fa9b3c447a121886734a0924675.
 
 <!-- flowdocs:paragraph:5fd7e2b871edd7134564a3d08cb39923 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:1272; symbol: ; span SHA256: e860d3bbb2e5bc28fe413a2faa918efdb08713a5efad6d3ce05204d7183674b6.
+Source: internal/web/app/src/lib/graphql/manage\.ts:1452; symbol: ; span SHA256: e860d3bbb2e5bc28fe413a2faa918efdb08713a5efad6d3ce05204d7183674b6.
 
 <!-- flowdocs:paragraph:5c0650b930afff54f0ae87ff79d5ba6d -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:81; symbol: ; span SHA256: 0c03cc7cbf8f14c88723f102436a0d578a5823acaf69a7e777c6207282cb096e.
+Source: internal/web/app/src/lib/graphql/manage\.ts:87; symbol: ; span SHA256: 0c03cc7cbf8f14c88723f102436a0d578a5823acaf69a7e777c6207282cb096e.
 
 <!-- flowdocs:paragraph:3dfaf85d51915508734a803a6d8ff508 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:74; symbol: ; span SHA256: 9858e7e681100359f6d87c1dca7279b59328c5e8c71f7f08c2787694c63e5629.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:79; symbol: ; span SHA256: 9858e7e681100359f6d87c1dca7279b59328c5e8c71f7f08c2787694c63e5629.
 
 | Variation inventory | Runtime coverage | Denominator rule |
 | --- | --- | --- |

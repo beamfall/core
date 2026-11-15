@@ -1,6 +1,6 @@
 # Unreached code: unmounted modules and GraphQL operations no UI calls — entities
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a9f424048da4afc6e3412df1cafed49a -->
 Runtime entities and persistence effects are unresolved; lexical calls are listed separately\.

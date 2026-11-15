@@ -1,6 +1,6 @@
 # Manage tags: tag tree, assign, bulk, trashed tags — technical-deep-dive
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:e24238003c40f26313784936c7d41737 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -55,97 +55,97 @@ Source: internal/web/app/src/areas/manage/pages/TagsPage\.tsx:54; symbol: treeOr
 <!-- flowdocs:paragraph:7fd4cd1349fb6e04ba09c4470c26b1de -->
 Declared member: source declares ASSIGN\_TAG\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:530; symbol: ASSIGN\_TAG\_MUTATION; span SHA256: a3dad7c8044d723866be01bd3fa2bff78953a4617f4d2d91b9319a52b8a9f693.
+Source: internal/web/app/src/lib/graphql/manage\.ts:662; symbol: ASSIGN\_TAG\_MUTATION; span SHA256: a3dad7c8044d723866be01bd3fa2bff78953a4617f4d2d91b9319a52b8a9f693.
 
 <!-- flowdocs:paragraph:0d108b0de2f2394914cc5748170b2f18 -->
 Declared member: source declares BULK\_ASSIGN\_TAGS\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:568; symbol: BULK\_ASSIGN\_TAGS\_MUTATION; span SHA256: fd73f3afb3bcd09a9face10d35f95330c3f56ec9cc636f6b5e908d2f68e037a6.
+Source: internal/web/app/src/lib/graphql/manage\.ts:700; symbol: BULK\_ASSIGN\_TAGS\_MUTATION; span SHA256: fd73f3afb3bcd09a9face10d35f95330c3f56ec9cc636f6b5e908d2f68e037a6.
 
 <!-- flowdocs:paragraph:078a5f2a811bcfe01bfe6c62573406a8 -->
 Declared member: source declares CREATE\_TAG\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:475; symbol: CREATE\_TAG\_MUTATION; span SHA256: 7413e5ec2eb384e29e07182aed425d26cb36a28b6130119bb5a0a8f687777016.
+Source: internal/web/app/src/lib/graphql/manage\.ts:607; symbol: CREATE\_TAG\_MUTATION; span SHA256: 7413e5ec2eb384e29e07182aed425d26cb36a28b6130119bb5a0a8f687777016.
 
 <!-- flowdocs:paragraph:bba7ea3ddad57d6ad4a0cfd834704430 -->
 Declared member: source declares DELETE\_TAG\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:508; symbol: DELETE\_TAG\_MUTATION; span SHA256: bd3905331df7706fb4b8e5cf14c41b414ea425fed46d48ec3e65f95e7485832f.
+Source: internal/web/app/src/lib/graphql/manage\.ts:640; symbol: DELETE\_TAG\_MUTATION; span SHA256: bd3905331df7706fb4b8e5cf14c41b414ea425fed46d48ec3e65f95e7485832f.
 
 <!-- flowdocs:paragraph:be0e70481a3a35a219cfef8d66954dbf -->
 Declared member: source declares RESTORE\_TAG\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:519; symbol: RESTORE\_TAG\_MUTATION; span SHA256: 96ce3a2fddfd24fd086a8e90af26552885f86cc532b79d21cdeeaff6a19e7c7f.
+Source: internal/web/app/src/lib/graphql/manage\.ts:651; symbol: RESTORE\_TAG\_MUTATION; span SHA256: 96ce3a2fddfd24fd086a8e90af26552885f86cc532b79d21cdeeaff6a19e7c7f.
 
 <!-- flowdocs:paragraph:446e7d3a7767db165a1f34625681fdb5 -->
 Declared member: source declares TAGS\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:445; symbol: TAGS\_QUERY; span SHA256: 3dec0a341e76458f765fed5fdf0cce90463d240f4a9e30a9b41ed363cb082681.
+Source: internal/web/app/src/lib/graphql/manage\.ts:577; symbol: TAGS\_QUERY; span SHA256: 3dec0a341e76458f765fed5fdf0cce90463d240f4a9e30a9b41ed363cb082681.
 
 <!-- flowdocs:paragraph:026aaa074c13dea9e81ee4bfa9cddbf6 -->
 Declared member: source declares TAG\_ASSIGNMENTS\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:458; symbol: TAG\_ASSIGNMENTS\_QUERY; span SHA256: adceceb0140b4775e4fb954198685b98cdb75533f9c6d5debf9bd7ca6f41632b.
+Source: internal/web/app/src/lib/graphql/manage\.ts:590; symbol: TAG\_ASSIGNMENTS\_QUERY; span SHA256: adceceb0140b4775e4fb954198685b98cdb75533f9c6d5debf9bd7ca6f41632b.
 
 <!-- flowdocs:paragraph:e6eac2df76eda3a77f33a359a92fc65d -->
 Declared member: source declares TAG\_FIELDS; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:443; symbol: TAG\_FIELDS; span SHA256: 6b3e66b139b63a3041a99cac08e903694276687d229cb796f87cdca8087fed3f.
+Source: internal/web/app/src/lib/graphql/manage\.ts:575; symbol: TAG\_FIELDS; span SHA256: 6b3e66b139b63a3041a99cac08e903694276687d229cb796f87cdca8087fed3f.
 
 <!-- flowdocs:paragraph:9add3f9272bcb928cf87698aa54927c0 -->
 Declared member: source declares UNASSIGN\_TAG\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:549; symbol: UNASSIGN\_TAG\_MUTATION; span SHA256: cf7bcb91a87434ae5c44b4dbad5e9b00cd28f26d291616b73c88a85f63c8ac05.
+Source: internal/web/app/src/lib/graphql/manage\.ts:681; symbol: UNASSIGN\_TAG\_MUTATION; span SHA256: cf7bcb91a87434ae5c44b4dbad5e9b00cd28f26d291616b73c88a85f63c8ac05.
 
 <!-- flowdocs:paragraph:aeb9d116554c1d85c5cffbb63c9de14a -->
 Declared member: source declares UPDATE\_TAG\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:489; symbol: UPDATE\_TAG\_MUTATION; span SHA256: c290931ec3f4b8c49689630738f87d1fe74956ee64a2e612d3720fccffc322c5.
+Source: internal/web/app/src/lib/graphql/manage\.ts:621; symbol: UPDATE\_TAG\_MUTATION; span SHA256: c290931ec3f4b8c49689630738f87d1fe74956ee64a2e612d3720fccffc322c5.
 
 <!-- flowdocs:paragraph:f279965d0b3ac0a2f1b942e6557a144f -->
 Declared member: source declares assignTag; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:536; symbol: assignTag; span SHA256: 66ce7f8fecd70f463c49a2442a874b4a5264abc9958651b38f10d120624f0ea8.
+Source: internal/web/app/src/lib/graphql/manage\.ts:668; symbol: assignTag; span SHA256: 66ce7f8fecd70f463c49a2442a874b4a5264abc9958651b38f10d120624f0ea8.
 
 <!-- flowdocs:paragraph:5ce0b418be5300e85b25dfd0f600cb69 -->
 Declared member: source declares bulkAssignTags; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:574; symbol: bulkAssignTags; span SHA256: 3f1e8357ac1a2aadc296a1421297cf3b676c934187f56daa33f49e07c5e2c7af.
+Source: internal/web/app/src/lib/graphql/manage\.ts:706; symbol: bulkAssignTags; span SHA256: 3f1e8357ac1a2aadc296a1421297cf3b676c934187f56daa33f49e07c5e2c7af.
 
 <!-- flowdocs:paragraph:f1a35540c8a14acfd35abf995e365c3a -->
 Declared member: source declares createTag; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:481; symbol: createTag; span SHA256: 0791ea12c772306bb9bc73da97938d43133490b0fa733e6508a50e7247dbe84c.
+Source: internal/web/app/src/lib/graphql/manage\.ts:613; symbol: createTag; span SHA256: 0791ea12c772306bb9bc73da97938d43133490b0fa733e6508a50e7247dbe84c.
 
 <!-- flowdocs:paragraph:45b6aea6d108380dd03ca5e7255a38ad -->
 Declared member: source declares deleteTag; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:512; symbol: deleteTag; span SHA256: 50000ecd8580d17d8eb66470e71ff4fc485f761aed8f99cc094cbd6c8e511d12.
+Source: internal/web/app/src/lib/graphql/manage\.ts:644; symbol: deleteTag; span SHA256: 50000ecd8580d17d8eb66470e71ff4fc485f761aed8f99cc094cbd6c8e511d12.
 
 <!-- flowdocs:paragraph:58d98bf6979673217471a6464102c1b9 -->
 Declared member: source declares fetchTagAssignments; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:464; symbol: fetchTagAssignments; span SHA256: 5bb7b1c70ef5076c9e6c6970bf7c19af5ec1e19260f203b8bddf41bde72626d7.
+Source: internal/web/app/src/lib/graphql/manage\.ts:596; symbol: fetchTagAssignments; span SHA256: 5bb7b1c70ef5076c9e6c6970bf7c19af5ec1e19260f203b8bddf41bde72626d7.
 
 <!-- flowdocs:paragraph:6c785594ce3ba4311adcb3357e854fa9 -->
 Declared member: source declares fetchTags; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:451; symbol: fetchTags; span SHA256: f3cc9babf71aab1087bffb58c3186203f6e18352bbafb23e53d1c9911a160b35.
+Source: internal/web/app/src/lib/graphql/manage\.ts:583; symbol: fetchTags; span SHA256: f3cc9babf71aab1087bffb58c3186203f6e18352bbafb23e53d1c9911a160b35.
 
 <!-- flowdocs:paragraph:da881f56fb07f816f353ece006d2941b -->
 Declared member: source declares restoreTag; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:523; symbol: restoreTag; span SHA256: ffbeecc73cb75f52d707e125a6a514cb7d81806dcdecbdd0014263008da7a296.
+Source: internal/web/app/src/lib/graphql/manage\.ts:655; symbol: restoreTag; span SHA256: ffbeecc73cb75f52d707e125a6a514cb7d81806dcdecbdd0014263008da7a296.
 
 <!-- flowdocs:paragraph:96d4e60b9f73f6e086dda08dc3d4c2bf -->
 Declared member: source declares unassignTag; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:555; symbol: unassignTag; span SHA256: 9cab80c0a5387dd66af5fd7507bb471586613b440c996103f1794f244962eaa9.
+Source: internal/web/app/src/lib/graphql/manage\.ts:687; symbol: unassignTag; span SHA256: 9cab80c0a5387dd66af5fd7507bb471586613b440c996103f1794f244962eaa9.
 
 <!-- flowdocs:paragraph:b648e8b46ab80146e7845996f5507d32 -->
 Declared member: source declares updateTag; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:495; symbol: updateTag; span SHA256: 66c5ce068cf528db2c088d33ccba0336ada084bb415371fcb0d9afeacaef3073.
+Source: internal/web/app/src/lib/graphql/manage\.ts:627; symbol: updateTag; span SHA256: 66c5ce068cf528db2c088d33ccba0336ada084bb415371fcb0d9afeacaef3073.
 
 <!-- flowdocs:paragraph:8ec4164f2cd5d80156ec6620c39e911f -->
 Declared member: source declares beginEdit; membership is caller\-declared, not runtime evidence\.

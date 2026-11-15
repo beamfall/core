@@ -1,6 +1,6 @@
 # Manage rename: pattern preview, batch rename managed paths, undo — technical-deep-dive
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:245c73ec090cd743c140186dd8802434 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -90,22 +90,22 @@ Source: internal/web/app/src/areas/manage/pages/RenamePage\.tsx:331; symbol: Num
 <!-- flowdocs:paragraph:628852ba57cbce72ce57a3d3b762b189 -->
 Declared member: source declares FOLDER\_TREE\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:988; symbol: FOLDER\_TREE\_QUERY; span SHA256: 3336a24b314258a4ae372a934c6962f39f967d30a7a96fa2656098de7a8447e7.
+Source: internal/web/app/src/lib/graphql/manage\.ts:1120; symbol: FOLDER\_TREE\_QUERY; span SHA256: 3336a24b314258a4ae372a934c6962f39f967d30a7a96fa2656098de7a8447e7.
 
 <!-- flowdocs:paragraph:7b6932b49dbe46185cb5a1597204b9bd -->
 Declared member: source declares LIBRARIES\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:77; symbol: LIBRARIES\_QUERY; span SHA256: 65bf15c326193e30a3a53d948eb6f5e5664d2b9bbf29e2359a95b66f56bd612e.
+Source: internal/web/app/src/lib/graphql/manage\.ts:83; symbol: LIBRARIES\_QUERY; span SHA256: 65bf15c326193e30a3a53d948eb6f5e5664d2b9bbf29e2359a95b66f56bd612e.
 
 <!-- flowdocs:paragraph:fa45330368d1156067dc35aa76841922 -->
 Declared member: source declares fetchFolderTree; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:992; symbol: fetchFolderTree; span SHA256: ab89a8c90719da008f4c10b349575bfb6f461aad353c5cc27faa71cf85dab1b5.
+Source: internal/web/app/src/lib/graphql/manage\.ts:1124; symbol: fetchFolderTree; span SHA256: ab89a8c90719da008f4c10b349575bfb6f461aad353c5cc27faa71cf85dab1b5.
 
 <!-- flowdocs:paragraph:33f2d57ceee1924c49f536fcbbe5d214 -->
 Declared member: source declares fetchLibraries; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:81; symbol: fetchLibraries; span SHA256: 0c03cc7cbf8f14c88723f102436a0d578a5823acaf69a7e777c6207282cb096e.
+Source: internal/web/app/src/lib/graphql/manage\.ts:87; symbol: fetchLibraries; span SHA256: 0c03cc7cbf8f14c88723f102436a0d578a5823acaf69a7e777c6207282cb096e.
 
 <!-- flowdocs:paragraph:4caf09bbd4b90dbb7df3f1c2d2740605 -->
 Declared member: source declares changeCount; membership is caller\-declared, not runtime evidence\.

@@ -1,6 +1,6 @@
 # Console activity log — technical-deep-dive
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:fc7d068d082293ba7042d9b0fee026d8 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -60,32 +60,32 @@ Source: internal/web/app/src/lib/graphql/activity\.ts:29; symbol: fetchActivityR
 <!-- flowdocs:paragraph:a449a2e7204d816d6f6c44d4bb7aafe2 -->
 Declared member: source declares DEVICES\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:402; symbol: DEVICES\_QUERY; span SHA256: 2efe78749cb59a6e16b6191959a5275d16d86d9bcdd864daf177341bb9f940e8.
+Source: internal/web/app/src/lib/graphql/console\.ts:436; symbol: DEVICES\_QUERY; span SHA256: 2efe78749cb59a6e16b6191959a5275d16d86d9bcdd864daf177341bb9f940e8.
 
 <!-- flowdocs:paragraph:04114547381d9bd92842ade7af531009 -->
 Declared member: source declares PROFILES\_ADMIN\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:738; symbol: PROFILES\_ADMIN\_QUERY; span SHA256: f81461f06935721b01e01e88c898fdf527fb268cfc0ae778a3d6072847f6aeba.
+Source: internal/web/app/src/lib/graphql/console\.ts:772; symbol: PROFILES\_ADMIN\_QUERY; span SHA256: f81461f06935721b01e01e88c898fdf527fb268cfc0ae778a3d6072847f6aeba.
 
 <!-- flowdocs:paragraph:5cd95830d48353e021ecf0a93c431cac -->
 Declared member: source declares fetchDevices; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:405; symbol: fetchDevices; span SHA256: 2cb96a1f6fdf5156d5272f0e55d47e88874ef6c042a24d3b1ad18553236c3879.
+Source: internal/web/app/src/lib/graphql/console\.ts:439; symbol: fetchDevices; span SHA256: 2cb96a1f6fdf5156d5272f0e55d47e88874ef6c042a24d3b1ad18553236c3879.
 
 <!-- flowdocs:paragraph:d2c9fee7d5db97ed501d13505beef6f3 -->
 Declared member: source declares fetchProfilesAdmin; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:746; symbol: fetchProfilesAdmin; span SHA256: 30be662031e6633e4b0e408c2b988f565f8a3a3e93f158e5aa170a57abe0b1a1.
+Source: internal/web/app/src/lib/graphql/console\.ts:780; symbol: fetchProfilesAdmin; span SHA256: 30be662031e6633e4b0e408c2b988f565f8a3a3e93f158e5aa170a57abe0b1a1.
 
 <!-- flowdocs:paragraph:19d3e2b797157a4d94fcec6a4dc6f10d -->
 Declared member: source declares LIBRARIES\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:77; symbol: LIBRARIES\_QUERY; span SHA256: 65bf15c326193e30a3a53d948eb6f5e5664d2b9bbf29e2359a95b66f56bd612e.
+Source: internal/web/app/src/lib/graphql/manage\.ts:83; symbol: LIBRARIES\_QUERY; span SHA256: 65bf15c326193e30a3a53d948eb6f5e5664d2b9bbf29e2359a95b66f56bd612e.
 
 <!-- flowdocs:paragraph:d69a850cd4cf775e954952e114c5c490 -->
 Declared member: source declares fetchLibraries; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:81; symbol: fetchLibraries; span SHA256: 0c03cc7cbf8f14c88723f102436a0d578a5823acaf69a7e777c6207282cb096e.
+Source: internal/web/app/src/lib/graphql/manage\.ts:87; symbol: fetchLibraries; span SHA256: 0c03cc7cbf8f14c88723f102436a0d578a5823acaf69a7e777c6207282cb096e.
 
 <!-- flowdocs:paragraph:68be02da06fa8c8bb1e927d2f4092f92 -->
 Declared member: source declares counts; membership is caller\-declared, not runtime evidence\.

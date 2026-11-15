@@ -1,6 +1,6 @@
 # Console activity log — flow-diagram
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:6e81a010e4a044e5daa9f13522f02f91 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -45,7 +45,7 @@ sequenceDiagram
     Note over S,U: Source contains call setNow in internal/web/app/src/areas/console/sections/ActivityLog.tsx at line 79 - order unresolved
     Note over S,U: Source contains call Date in internal/web/app/src/areas/console/sections/ActivityLog.tsx at line 79 - order unresolved
     Note over S,U: Source contains call clearInterval in internal/web/app/src/areas/console/sections/ActivityLog.tsx at line 80 - order unresolved
-    Note over S,U: Source contains call map in internal/web/app/src/lib/graphql/console.ts at line 750 - order unresolved
+    Note over S,U: Source contains call map in internal/web/app/src/lib/graphql/console.ts at line 784 - order unresolved
     Note over S,U: Source contains call useMemo in internal/web/app/src/areas/console/sections/ActivityLog.tsx at line 102 - order unresolved
     Note over S,U: Source contains call set in internal/web/app/src/areas/console/sections/ActivityLog.tsx at line 105 - order unresolved
     Note over S,U: Source contains call get in internal/web/app/src/areas/console/sections/ActivityLog.tsx at line 105 - order unresolved

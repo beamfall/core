@@ -1,6 +1,6 @@
 # Manage markers: segment edit, bulk delete, trashed markers — technical-deep-dive
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:85b4e9c2498fdb402caaeb906be9979a -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -55,67 +55,67 @@ Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:66; symbol: toD
 <!-- flowdocs:paragraph:536669df3c1c3b086ea53a5addea4d24 -->
 Declared member: source declares CREATE\_MARKER\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:615; symbol: CREATE\_MARKER\_MUTATION; span SHA256: 5a99e9f4b1e2a095550078530befb3a0c7fb34b158342adeedbea4ff8cd80f82.
+Source: internal/web/app/src/lib/graphql/manage\.ts:747; symbol: CREATE\_MARKER\_MUTATION; span SHA256: 5a99e9f4b1e2a095550078530befb3a0c7fb34b158342adeedbea4ff8cd80f82.
 
 <!-- flowdocs:paragraph:2148d28a51fe2af3e94732955bf1528c -->
 Declared member: source declares DELETE\_MARKER\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:643; symbol: DELETE\_MARKER\_MUTATION; span SHA256: e1ebabc33f82dc42958ccfc613d799ff3cef6128c6a64eb08827f8ccb28802ce.
+Source: internal/web/app/src/lib/graphql/manage\.ts:775; symbol: DELETE\_MARKER\_MUTATION; span SHA256: e1ebabc33f82dc42958ccfc613d799ff3cef6128c6a64eb08827f8ccb28802ce.
 
 <!-- flowdocs:paragraph:e60ea1a7e61d34590a0eb69b6d216a5a -->
 Declared member: source declares MARKERS\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:593; symbol: MARKERS\_QUERY; span SHA256: 5972ee84aa0d21ff787e140723cd89fa51f999d17244ee3e262a870769a8f604.
+Source: internal/web/app/src/lib/graphql/manage\.ts:725; symbol: MARKERS\_QUERY; span SHA256: 5972ee84aa0d21ff787e140723cd89fa51f999d17244ee3e262a870769a8f604.
 
 <!-- flowdocs:paragraph:1a115196231e885f3238423efd1d4fbc -->
 Declared member: source declares MARKER\_FIELDS; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:591; symbol: MARKER\_FIELDS; span SHA256: 9214c1f8be29998f3378c5481fbbbd9bb04b113376d7f5cc7e4598f2f73eed7b.
+Source: internal/web/app/src/lib/graphql/manage\.ts:723; symbol: MARKER\_FIELDS; span SHA256: 9214c1f8be29998f3378c5481fbbbd9bb04b113376d7f5cc7e4598f2f73eed7b.
 
 <!-- flowdocs:paragraph:a6e068cb4e6cb89c5f7f52d8e924a5ff -->
 Declared member: source declares RESTORE\_MARKER\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:654; symbol: RESTORE\_MARKER\_MUTATION; span SHA256: b2a6fe8630422560fb8f6e9509e3209a26d7eb570541c71ac67d4da577a399ab.
+Source: internal/web/app/src/lib/graphql/manage\.ts:786; symbol: RESTORE\_MARKER\_MUTATION; span SHA256: b2a6fe8630422560fb8f6e9509e3209a26d7eb570541c71ac67d4da577a399ab.
 
 <!-- flowdocs:paragraph:5e2ba002bb9565b6686c6f8b2c02cf41 -->
 Declared member: source declares TRASHED\_MARKERS\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:602; symbol: TRASHED\_MARKERS\_QUERY; span SHA256: 7ba6b3550d6697260af439d792afa363c2f89bae43808989182cca3ec71cbc20.
+Source: internal/web/app/src/lib/graphql/manage\.ts:734; symbol: TRASHED\_MARKERS\_QUERY; span SHA256: 7ba6b3550d6697260af439d792afa363c2f89bae43808989182cca3ec71cbc20.
 
 <!-- flowdocs:paragraph:8a6e9c5a84a04853e99b45480e5f66af -->
 Declared member: source declares UPDATE\_MARKER\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:629; symbol: UPDATE\_MARKER\_MUTATION; span SHA256: b51cc2febb998c632b6c89c807793879f683d0507209c8e337532298fa0d464f.
+Source: internal/web/app/src/lib/graphql/manage\.ts:761; symbol: UPDATE\_MARKER\_MUTATION; span SHA256: b51cc2febb998c632b6c89c807793879f683d0507209c8e337532298fa0d464f.
 
 <!-- flowdocs:paragraph:27d6726dbea2d13be4841fc376da12d6 -->
 Declared member: source declares createMarker; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:621; symbol: createMarker; span SHA256: df4e18ffc0b8f17591e13413c7e6ea933ceffab31a5fb48f6d10e2f20ae2dd64.
+Source: internal/web/app/src/lib/graphql/manage\.ts:753; symbol: createMarker; span SHA256: df4e18ffc0b8f17591e13413c7e6ea933ceffab31a5fb48f6d10e2f20ae2dd64.
 
 <!-- flowdocs:paragraph:ef1c035ad16a24d035eae2bb30433296 -->
 Declared member: source declares deleteMarker; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:649; symbol: deleteMarker; span SHA256: 38819f3ef35e94b2cf92074202b7429b70f1314455d7800affec8c780bc60eab.
+Source: internal/web/app/src/lib/graphql/manage\.ts:781; symbol: deleteMarker; span SHA256: 38819f3ef35e94b2cf92074202b7429b70f1314455d7800affec8c780bc60eab.
 
 <!-- flowdocs:paragraph:f5a3b2b9bc738592c6266ec72e556fba -->
 Declared member: source declares fetchMarkers; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:597; symbol: fetchMarkers; span SHA256: 06b73eb84970e1820f64967935674c7d13dbd16412c043bc7b74662b2f100e5a.
+Source: internal/web/app/src/lib/graphql/manage\.ts:729; symbol: fetchMarkers; span SHA256: 06b73eb84970e1820f64967935674c7d13dbd16412c043bc7b74662b2f100e5a.
 
 <!-- flowdocs:paragraph:00dd4772af35e7f3f97af14b97572139 -->
 Declared member: source declares fetchTrashedMarkers; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:608; symbol: fetchTrashedMarkers; span SHA256: d5400495ff48d820ad76a40a65eaf48ad2ab1c5ff0e0d24a0495361a52be76e4.
+Source: internal/web/app/src/lib/graphql/manage\.ts:740; symbol: fetchTrashedMarkers; span SHA256: d5400495ff48d820ad76a40a65eaf48ad2ab1c5ff0e0d24a0495361a52be76e4.
 
 <!-- flowdocs:paragraph:1650ff6c46bdda7f0af4cc7a68bfaaf8 -->
 Declared member: source declares restoreMarker; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:660; symbol: restoreMarker; span SHA256: b23143815963a972127ae90b45de907058b3cb9528dec78fc90e4bd2087bef30.
+Source: internal/web/app/src/lib/graphql/manage\.ts:792; symbol: restoreMarker; span SHA256: b23143815963a972127ae90b45de907058b3cb9528dec78fc90e4bd2087bef30.
 
 <!-- flowdocs:paragraph:371a02d42d8805f1678fcc8e5f7209dc -->
 Declared member: source declares updateMarker; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:635; symbol: updateMarker; span SHA256: c803ebd2f5c37ea492602ff65ae545e4cc1879c8a67553a98f1b7ae2df5d4e58.
+Source: internal/web/app/src/lib/graphql/manage\.ts:767; symbol: updateMarker; span SHA256: c803ebd2f5c37ea492602ff65ae545e4cc1879c8a67553a98f1b7ae2df5d4e58.
 
 <!-- flowdocs:paragraph:1ed9d59215abd086bd40612af1f3c4af -->
 Declared member: source declares onBulkDelete; membership is caller\-declared, not runtime evidence\.

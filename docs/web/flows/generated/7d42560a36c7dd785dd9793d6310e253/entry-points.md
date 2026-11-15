@@ -1,6 +1,6 @@
 # Service worker registration and reload\-on\-controller\-change — entry-points
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:dd6f33cc1cb6fb10c7f3880674299ea7 -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.

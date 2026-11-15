@@ -1,6 +1,6 @@
 # Admin Session unlock gate \(admin password\) reused by Console — technical-deep-dive
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:25b4d224ac5aa3cd6563469a65a8b480 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.

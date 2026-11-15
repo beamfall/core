@@ -1,11 +1,11 @@
 # Console admin gate: locked reasons and unlock — functional-overview
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:e6cea650af266a72a0afc657ff77524b -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
 
-Source: internal/web/app/src/areas/console/AdminGate\.tsx:46; symbol: AdminGate; span SHA256: 7fec3f21e920c5b6baebe521f9c0721935304bf74d69e13ad72c3a8769272c45.
+Source: internal/web/app/src/areas/console/AdminGate\.tsx:47; symbol: AdminGate; span SHA256: 7fec3f21e920c5b6baebe521f9c0721935304bf74d69e13ad72c3a8769272c45.
 
 <!-- flowdocs:paragraph:e38551c982d365121132beac445dd91e -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
@@ -21,6 +21,11 @@ Source: internal/web/app/src/lib/graphql/auth\.ts:81; symbol: ; span SHA256: 4ee
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
 
 Source: internal/web/app/src/lib/graphql/auth\.ts:40; symbol: ; span SHA256: f0be9cc4c6a65260b545e70f6a28e7d9bd5c6838e5f968c60379e0c713627100.
+
+<!-- flowdocs:paragraph:35679f26a63f2e0bfbef9764cd6367a0 -->
+Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
+
+Source: internal/web/app/src/areas/console/AdminGate\.tsx:193; symbol: ; span SHA256: e21aee17cdc9391a399857e0776cffaa2e45701c283b66c7b2f4f3a7a6361715.
 
 | Variation inventory | Runtime coverage | Denominator rule |
 | --- | --- | --- |

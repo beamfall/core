@@ -1,11 +1,11 @@
 # Setup: activate plugins and enter provider keys — readme
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:dbd7f52b7c405f2f7fc76fce50eaf622 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:109; symbol: PLUGIN\_ICON; span SHA256: 05333a405746aecee5aaad7e9a91ad91fcdda7e6f1e4a8700ec73ec1f5962de8.
+Source: internal/web/app/src/areas/setup/orchestrate\.ts:160; symbol: activatePlugins; span SHA256: d93b01c0df3736470e7bed2b2264605f54e8b4ef2d319cbba4071191a9acea7f.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -30,4 +30,6 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow setup\.plugins: 13 resolved, 0 unresolved members.
+Declared inventory flow setup\.plugins: 12 resolved, 1 unresolved members.
+
+- Unresolved member internal/web/app/src/areas/setup/SetupWizard\.tsx PLUGIN\_ICON: symbol is not a top\-level declaration in this path at this revision; name a class or object member&\#39;s enclosing declaration.

@@ -1,6 +1,6 @@
 # Rescan a library or all libraries and follow scan state — entities
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:30cd95f58435f9473cfb7d4b2c43f72b -->
 Runtime entities and persistence effects are unresolved; lexical calls are listed separately\.

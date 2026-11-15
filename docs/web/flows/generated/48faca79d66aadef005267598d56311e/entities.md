@@ -1,6 +1,6 @@
 # Console update awareness: update check, release channel and update\-available guidance — entities
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:35c275489986625f6b3c31d39e45d83f -->
 Runtime entities and persistence effects are unresolved; lexical calls are listed separately\.

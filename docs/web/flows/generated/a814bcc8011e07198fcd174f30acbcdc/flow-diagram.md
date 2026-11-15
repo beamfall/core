@@ -1,6 +1,6 @@
 # Display helpers: activity, job, provider\-key and string formatting — flow-diagram
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:2be4f055260fe96658c7617ba9dda609 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -48,10 +48,10 @@ sequenceDiagram
     Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 148 - order unresolved
     Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 156 - order unresolved
     Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 157 - order unresolved
-    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 163 - order unresolved
-    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 169 - order unresolved
-    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 170 - order unresolved
-    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 171 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 158 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 159 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 165 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 166 - order unresolved
     Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 172 - order unresolved
     Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 173 - order unresolved
     Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 174 - order unresolved
@@ -66,9 +66,9 @@ sequenceDiagram
     Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 183 - order unresolved
     Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 184 - order unresolved
     Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 185 - order unresolved
-    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 189 - order unresolved
-    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 190 - order unresolved
-    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 191 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 186 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 187 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 188 - order unresolved
     Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 192 - order unresolved
     Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 193 - order unresolved
     Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 194 - order unresolved
@@ -84,53 +84,63 @@ sequenceDiagram
     Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 204 - order unresolved
     Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 205 - order unresolved
     Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 206 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 207 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 208 - order unresolved
     Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 209 - order unresolved
     Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 210 - order unresolved
-    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 216 - order unresolved
-    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 222 - order unresolved
-    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 223 - order unresolved
-    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 224 - order unresolved
-    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 225 - order unresolved
-    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 231 - order unresolved
-    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 237 - order unresolved
-    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 243 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 211 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 214 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 215 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 221 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 227 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 228 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 229 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 230 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 236 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 242 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 248 - order unresolved
     Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 249 - order unresolved
-    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 257 - order unresolved
-    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 258 - order unresolved
-    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 259 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 255 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 256 - order unresolved
     Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 262 - order unresolved
-    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 263 - order unresolved
-    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 264 - order unresolved
-    Note over S,U: Source contains call Map in internal/web/app/src/lib/activityDisplay.ts at line 275 - order unresolved
-    Note over S,U: Source contains call Map in internal/web/app/src/lib/activityDisplay.ts at line 276 - order unresolved
-    Note over S,U: Source contains call Map in internal/web/app/src/lib/activityDisplay.ts at line 277 - order unresolved
-    Note over S,U: Source contains call trim in internal/web/app/src/lib/activityDisplay.ts at line 363 - order unresolved
-    Note over S,U: Source contains call toLowerCase in internal/web/app/src/lib/activityDisplay.ts at line 363 - order unresolved
-    Note over S,U: Source contains call some in internal/web/app/src/lib/activityDisplay.ts at line 374 - order unresolved
-    Note over S,U: Source contains call toLowerCase in internal/web/app/src/lib/activityDisplay.ts at line 374 - order unresolved
-    Note over S,U: Source contains call includes in internal/web/app/src/lib/activityDisplay.ts at line 374 - order unresolved
-    Note over S,U: Source contains call get in internal/web/app/src/lib/activityDisplay.ts at line 305 - order unresolved
-    Note over S,U: Source contains call DateTimeFormat in internal/web/app/src/lib/activityDisplay.ts at line 401 - order unresolved
-    Note over S,U: Source contains call format in internal/web/app/src/lib/activityDisplay.ts at line 405 - order unresolved
-    Note over S,U: Source contains call round in internal/web/app/src/lib/activityDisplay.ts at line 389 - order unresolved
-    Note over S,U: Source contains call getTime in internal/web/app/src/lib/activityDisplay.ts at line 389 - order unresolved
-    Note over S,U: Source contains call RelativeTimeFormat in internal/web/app/src/lib/activityDisplay.ts at line 390 - order unresolved
-    Note over S,U: Source contains call abs in internal/web/app/src/lib/activityDisplay.ts at line 391 - order unresolved
-    Note over S,U: Source contains call format in internal/web/app/src/lib/activityDisplay.ts at line 392 - order unresolved
-    Note over S,U: Source contains call format in internal/web/app/src/lib/activityDisplay.ts at line 394 - order unresolved
-    Note over S,U: Source contains call trunc in internal/web/app/src/lib/activityDisplay.ts at line 394 - order unresolved
-    Note over S,U: Source contains call format in internal/web/app/src/lib/activityDisplay.ts at line 396 - order unresolved
-    Note over S,U: Source contains call trim in internal/web/app/src/lib/activityDisplay.ts at line 293 - order unresolved
-    Note over S,U: Source contains call replace in internal/web/app/src/lib/activityDisplay.ts at line 294 - order unresolved
-    Note over S,U: Source contains call replace in internal/web/app/src/lib/activityDisplay.ts at line 295 - order unresolved
-    Note over S,U: Source contains call toLowerCase in internal/web/app/src/lib/activityDisplay.ts at line 296 - order unresolved
-    Note over S,U: Source contains call sentenceCase in internal/web/app/src/lib/activityDisplay.ts at line 297 - order unresolved
-    Note over S,U: Source contains call Date in internal/web/app/src/lib/activityDisplay.ts at line 415 - order unresolved
-    Note over S,U: Source contains call isNaN in internal/web/app/src/lib/activityDisplay.ts at line 416 - order unresolved
-    Note over S,U: Source contains call getTime in internal/web/app/src/lib/activityDisplay.ts at line 416 - order unresolved
-    Note over S,U: Source contains call charAt in internal/web/app/src/lib/activityDisplay.ts at line 301 - order unresolved
-    Note over S,U: Source contains call toUpperCase in internal/web/app/src/lib/activityDisplay.ts at line 301 - order unresolved
-    Note over S,U: Source contains call slice in internal/web/app/src/lib/activityDisplay.ts at line 301 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 268 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 274 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 282 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 283 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 284 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 287 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 288 - order unresolved
+    Note over S,U: Source contains call label in internal/web/app/src/lib/activityDisplay.ts at line 289 - order unresolved
+    Note over S,U: Source contains call Map in internal/web/app/src/lib/activityDisplay.ts at line 300 - order unresolved
+    Note over S,U: Source contains call Map in internal/web/app/src/lib/activityDisplay.ts at line 301 - order unresolved
+    Note over S,U: Source contains call Map in internal/web/app/src/lib/activityDisplay.ts at line 302 - order unresolved
+    Note over S,U: Source contains call trim in internal/web/app/src/lib/activityDisplay.ts at line 388 - order unresolved
+    Note over S,U: Source contains call toLowerCase in internal/web/app/src/lib/activityDisplay.ts at line 388 - order unresolved
+    Note over S,U: Source contains call some in internal/web/app/src/lib/activityDisplay.ts at line 399 - order unresolved
+    Note over S,U: Source contains call toLowerCase in internal/web/app/src/lib/activityDisplay.ts at line 399 - order unresolved
+    Note over S,U: Source contains call includes in internal/web/app/src/lib/activityDisplay.ts at line 399 - order unresolved
+    Note over S,U: Source contains call get in internal/web/app/src/lib/activityDisplay.ts at line 330 - order unresolved
+    Note over S,U: Source contains call DateTimeFormat in internal/web/app/src/lib/activityDisplay.ts at line 426 - order unresolved
+    Note over S,U: Source contains call format in internal/web/app/src/lib/activityDisplay.ts at line 430 - order unresolved
+    Note over S,U: Source contains call round in internal/web/app/src/lib/activityDisplay.ts at line 414 - order unresolved
+    Note over S,U: Source contains call getTime in internal/web/app/src/lib/activityDisplay.ts at line 414 - order unresolved
+    Note over S,U: Source contains call RelativeTimeFormat in internal/web/app/src/lib/activityDisplay.ts at line 415 - order unresolved
+    Note over S,U: Source contains call abs in internal/web/app/src/lib/activityDisplay.ts at line 416 - order unresolved
+    Note over S,U: Source contains call format in internal/web/app/src/lib/activityDisplay.ts at line 417 - order unresolved
+    Note over S,U: Source contains call format in internal/web/app/src/lib/activityDisplay.ts at line 419 - order unresolved
+    Note over S,U: Source contains call trunc in internal/web/app/src/lib/activityDisplay.ts at line 419 - order unresolved
+    Note over S,U: Source contains call format in internal/web/app/src/lib/activityDisplay.ts at line 421 - order unresolved
+    Note over S,U: Source contains call trim in internal/web/app/src/lib/activityDisplay.ts at line 318 - order unresolved
+    Note over S,U: Source contains call replace in internal/web/app/src/lib/activityDisplay.ts at line 319 - order unresolved
+    Note over S,U: Source contains call replace in internal/web/app/src/lib/activityDisplay.ts at line 320 - order unresolved
+    Note over S,U: Source contains call toLowerCase in internal/web/app/src/lib/activityDisplay.ts at line 321 - order unresolved
+    Note over S,U: Source contains call sentenceCase in internal/web/app/src/lib/activityDisplay.ts at line 322 - order unresolved
+    Note over S,U: Source contains call Date in internal/web/app/src/lib/activityDisplay.ts at line 440 - order unresolved
+    Note over S,U: Source contains call isNaN in internal/web/app/src/lib/activityDisplay.ts at line 441 - order unresolved
+    Note over S,U: Source contains call getTime in internal/web/app/src/lib/activityDisplay.ts at line 441 - order unresolved
+    Note over S,U: Source contains call charAt in internal/web/app/src/lib/activityDisplay.ts at line 326 - order unresolved
+    Note over S,U: Source contains call toUpperCase in internal/web/app/src/lib/activityDisplay.ts at line 326 - order unresolved
+    Note over S,U: Source contains call slice in internal/web/app/src/lib/activityDisplay.ts at line 326 - order unresolved
     Note over S,U: Source contains call split in internal/web/app/src/lib/display.ts at line 12 - order unresolved
     Note over S,U: Source contains call values in internal/web/app/src/lib/display.ts at line 15 - order unresolved
     Note over S,U: Source contains call String in internal/web/app/src/lib/jobDisplay.ts at line 53 - order unresolved

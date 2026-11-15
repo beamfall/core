@@ -1,6 +1,6 @@
 # Manage trash: restore, purge and reversible activity — technical-deep-dive
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:17c9749ef4e9f802099d4b5d6a99c8c1 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -30,42 +30,42 @@ Source: internal/web/app/src/areas/manage/pages/TrashPage\.tsx:46; symbol: REVER
 <!-- flowdocs:paragraph:87337d56f78850332ace5460c3302db2 -->
 Declared member: source declares ACTIVITY\_LOG\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:719; symbol: ACTIVITY\_LOG\_QUERY; span SHA256: 43c011cc1803f3c7444e87a8b0648774414a8641ab8063ce65c1c523cc6a36cb.
+Source: internal/web/app/src/lib/graphql/console\.ts:753; symbol: ACTIVITY\_LOG\_QUERY; span SHA256: 43c011cc1803f3c7444e87a8b0648774414a8641ab8063ce65c1c523cc6a36cb.
 
 <!-- flowdocs:paragraph:e7e72654fea9ac35686a9b0aa4c573b2 -->
 Declared member: source declares fetchActivityLog; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:723; symbol: fetchActivityLog; span SHA256: 7a0b83fc8d4571e2c2cfba58455501c76ba2feb04967c6ec685995d9e196e31e.
+Source: internal/web/app/src/lib/graphql/console\.ts:757; symbol: fetchActivityLog; span SHA256: 7a0b83fc8d4571e2c2cfba58455501c76ba2feb04967c6ec685995d9e196e31e.
 
 <!-- flowdocs:paragraph:e59e6ea8da4e5abc0af293ed87e14e79 -->
 Declared member: source declares PURGE\_TRASH\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:371; symbol: PURGE\_TRASH\_MUTATION; span SHA256: fe78a49205d64943b0a2e214375a349308a3ecbefda522ca9db9d88d9b77512f.
+Source: internal/web/app/src/lib/graphql/manage\.ts:444; symbol: PURGE\_TRASH\_MUTATION; span SHA256: fe78a49205d64943b0a2e214375a349308a3ecbefda522ca9db9d88d9b77512f.
 
 <!-- flowdocs:paragraph:aaf659664f86bf1a3949d475658d9b90 -->
 Declared member: source declares RESTORE\_MEDIA\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:360; symbol: RESTORE\_MEDIA\_MUTATION; span SHA256: 495531356e0a72d6f1e7e802942c3e6861784cbb51b00611c339a5876590ea06.
+Source: internal/web/app/src/lib/graphql/manage\.ts:433; symbol: RESTORE\_MEDIA\_MUTATION; span SHA256: 495531356e0a72d6f1e7e802942c3e6861784cbb51b00611c339a5876590ea06.
 
 <!-- flowdocs:paragraph:b6c1bd4f44494ebe46f047a344f25f0a -->
 Declared member: source declares TRASH\_LIST\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:352; symbol: TRASH\_LIST\_QUERY; span SHA256: e75efa54867c96b466b420c4f3c69d833b22f10ca412db2565cb51f6af2e5178.
+Source: internal/web/app/src/lib/graphql/manage\.ts:425; symbol: TRASH\_LIST\_QUERY; span SHA256: e75efa54867c96b466b420c4f3c69d833b22f10ca412db2565cb51f6af2e5178.
 
 <!-- flowdocs:paragraph:a12ce785b4b427d45057656367ac67fe -->
 Declared member: source declares fetchTrashList; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:355; symbol: fetchTrashList; span SHA256: 7358184a12a7b4ef7a7f77e5da7fddf6b0e28cdf46bb0b390782b676494055cb.
+Source: internal/web/app/src/lib/graphql/manage\.ts:428; symbol: fetchTrashList; span SHA256: 7358184a12a7b4ef7a7f77e5da7fddf6b0e28cdf46bb0b390782b676494055cb.
 
 <!-- flowdocs:paragraph:e964f8deca66272421c757dab87cd6ac -->
 Declared member: source declares purgeTrash; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:375; symbol: purgeTrash; span SHA256: 63a1a7737d8d45b616fadeba58caeb5e2d6642bfbe4c27674903917ab10757be.
+Source: internal/web/app/src/lib/graphql/manage\.ts:448; symbol: purgeTrash; span SHA256: 63a1a7737d8d45b616fadeba58caeb5e2d6642bfbe4c27674903917ab10757be.
 
 <!-- flowdocs:paragraph:99f4ae2bd04afa4b290e84d0de91ea52 -->
 Declared member: source declares restoreMedia; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:364; symbol: restoreMedia; span SHA256: cee67d6bc6fa55224522b5bb3d6b701d1dcdc28bf560d90189a42f9afbf4865e.
+Source: internal/web/app/src/lib/graphql/manage\.ts:437; symbol: restoreMedia; span SHA256: cee67d6bc6fa55224522b5bb3d6b701d1dcdc28bf560d90189a42f9afbf4865e.
 
 <!-- flowdocs:paragraph:65850ff24cb7ddbe44479729139d3118 -->
 Declared member: source declares onConfirm; membership is caller\-declared, not runtime evidence\.

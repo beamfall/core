@@ -1,6 +1,6 @@
 # Console qBittorrent ingest connection and outcomes — technical-deep-dive
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:d33eb6fec66b0d69352635ecc30bebb8 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -20,10 +20,10 @@ Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:124; symbo
 <!-- flowdocs:paragraph:d6434d3ca9ec86bd283d17fda4a49924 -->
 Declared member: source declares QBITTORRENT\_INGEST\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:618; symbol: QBITTORRENT\_INGEST\_QUERY; span SHA256: 0cf579587f6a47d56cbe961e9fa8eaf464e22e6d808127817e502debc5756432.
+Source: internal/web/app/src/lib/graphql/console\.ts:652; symbol: QBITTORRENT\_INGEST\_QUERY; span SHA256: 0cf579587f6a47d56cbe961e9fa8eaf464e22e6d808127817e502debc5756432.
 
 <!-- flowdocs:paragraph:c6cc3e55b448c7af5bdadc8fd35a79b4 -->
 Declared member: source declares fetchQBittorrentIngest; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:622; symbol: fetchQBittorrentIngest; span SHA256: 1dc1a08df2aaaed0830bd7404d8ab64d21c9137cc0bd1db0b477515e94bc7a1d.
+Source: internal/web/app/src/lib/graphql/console\.ts:656; symbol: fetchQBittorrentIngest; span SHA256: 1dc1a08df2aaaed0830bd7404d8ab64d21c9137cc0bd1db0b477515e94bc7a1d.
 

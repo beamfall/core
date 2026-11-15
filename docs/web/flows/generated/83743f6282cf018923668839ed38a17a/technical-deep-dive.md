@@ -1,6 +1,6 @@
 # Viewer who&\#39;s\-watching Profile picker with PIN prompt — technical-deep-dive
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:e8cbe093ceea6be83baf49d16aaaaa14 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -115,22 +115,22 @@ Source: internal/web/app/src/components/beamfall/profile/entry\.ts:13; symbol: p
 <!-- flowdocs:paragraph:48cebc4f0bc34455054086bbcce2e309 -->
 Declared member: source declares PROFILES\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:71; symbol: PROFILES\_QUERY; span SHA256: afea04a7b095a38903ed99b6d38ab40e9d25ad3c5613e2a10a82f8a484955285.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:76; symbol: PROFILES\_QUERY; span SHA256: afea04a7b095a38903ed99b6d38ab40e9d25ad3c5613e2a10a82f8a484955285.
 
 <!-- flowdocs:paragraph:7db131039326ad093e096429cf90bf4a -->
 Declared member: source declares SWITCH\_PROFILE\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:79; symbol: SWITCH\_PROFILE\_MUTATION; span SHA256: 8deacfde38957976f70ab2861be0cbbaf4c86a5566207cc62a48b60616fc73db.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:84; symbol: SWITCH\_PROFILE\_MUTATION; span SHA256: 8deacfde38957976f70ab2861be0cbbaf4c86a5566207cc62a48b60616fc73db.
 
 <!-- flowdocs:paragraph:063d5cb68bba58bd30882a3cbbc06d76 -->
 Declared member: source declares fetchProfiles; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:74; symbol: fetchProfiles; span SHA256: 9858e7e681100359f6d87c1dca7279b59328c5e8c71f7f08c2787694c63e5629.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:79; symbol: fetchProfiles; span SHA256: 9858e7e681100359f6d87c1dca7279b59328c5e8c71f7f08c2787694c63e5629.
 
 <!-- flowdocs:paragraph:5fc7c39b95d7120c0a070902aca0fccf -->
 Declared member: source declares switchProfile; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:87; symbol: switchProfile; span SHA256: 8af66a65bec999c2320d0ad276774537b365471d314c64bc26fe96d7f3adfb7a.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:92; symbol: switchProfile; span SHA256: 8af66a65bec999c2320d0ad276774537b365471d314c64bc26fe96d7f3adfb7a.
 
 <!-- flowdocs:paragraph:6d709016ef24fc7ebb115aafdc0bfe6b -->
 Declared member: source declares done; membership is caller\-declared, not runtime evidence\.

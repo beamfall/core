@@ -1,6 +1,6 @@
 # Localization: locale resolution, ICU formatting and string catalogs — technical-deep-dive
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:754800b9f9bea5b43d3c9fb842dbb5ba -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -140,27 +140,27 @@ Source: internal/web/app/src/strings/backup\-retention\.ts:1; symbol: backupRete
 <!-- flowdocs:paragraph:c5476b854c7d3b083e3aea3e4eb692b6 -->
 Declared member: source declares de; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/strings/catalog\.ts:89; symbol: de; span SHA256: bc388bfc92f57f404c5b58d111906b45818182337e4304e14afb4b8cec7a7b3d.
+Source: internal/web/app/src/strings/catalog\.ts:131; symbol: de; span SHA256: bc388bfc92f57f404c5b58d111906b45818182337e4304e14afb4b8cec7a7b3d.
 
 <!-- flowdocs:paragraph:d8560d59cd0babd68ab6199c7db1b58a -->
 Declared member: source declares en; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/strings/catalog\.ts:29; symbol: en; span SHA256: e65db136999d05392d1d1b17ea1e72a3a62e82e53d133f5cc73c23a757ed2461.
+Source: internal/web/app/src/strings/catalog\.ts:43; symbol: en; span SHA256: e65db136999d05392d1d1b17ea1e72a3a62e82e53d133f5cc73c23a757ed2461.
 
 <!-- flowdocs:paragraph:b51ff324b7e5c588f080248ffcb4d942 -->
 Declared member: source declares es; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/strings/catalog\.ts:119; symbol: es; span SHA256: f32d997c5a23950f9e8287ccd17f64cf7aef89ed267c04ae160060c6cfbac137.
+Source: internal/web/app/src/strings/catalog\.ts:175; symbol: es; span SHA256: f32d997c5a23950f9e8287ccd17f64cf7aef89ed267c04ae160060c6cfbac137.
 
 <!-- flowdocs:paragraph:83a35a65e3a5687e71750af1feeaea53 -->
 Declared member: source declares fr; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/strings/catalog\.ts:59; symbol: fr; span SHA256: 51d4db578c97599c2d1695e3fdcc831e6acc9e2645e8105db248530c18e760f3.
+Source: internal/web/app/src/strings/catalog\.ts:87; symbol: fr; span SHA256: 51d4db578c97599c2d1695e3fdcc831e6acc9e2645e8105db248530c18e760f3.
 
 <!-- flowdocs:paragraph:119bfed01cbb4222dbd8279d0e6fb15b -->
 Declared member: source declares pt; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/strings/catalog\.ts:149; symbol: pt; span SHA256: 266485028f4d0bb4488fa67cb59057d5f91433b8d4b5cadfc456b2c8be2e4ae0.
+Source: internal/web/app/src/strings/catalog\.ts:219; symbol: pt; span SHA256: 266485028f4d0bb4488fa67cb59057d5f91433b8d4b5cadfc456b2c8be2e4ae0.
 
 <!-- flowdocs:paragraph:e87593965cb3dabb4a4cf9df9fbd9c70 -->
 Declared member: source declares collectionMarkerStrings; membership is caller\-declared, not runtime evidence\.

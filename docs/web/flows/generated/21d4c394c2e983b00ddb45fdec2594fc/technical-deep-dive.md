@@ -1,6 +1,6 @@
 # Rescan a library or all libraries and follow scan state — technical-deep-dive
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:834cd5a6bfc5387f771ab3575a7ed6c9 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -15,7 +15,7 @@ Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:28; symbol: 
 <!-- flowdocs:paragraph:0a25b9577618901270208d6d0138908d -->
 Declared member: source declares ACTIVE\_PHASES; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:140; symbol: ACTIVE\_PHASES; span SHA256: b3fbe1bc98845ec84801fadafa1a1c497ebf4960cc7a76c41d25623b61b2afdc.
+Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:152; symbol: ACTIVE\_PHASES; span SHA256: b3fbe1bc98845ec84801fadafa1a1c497ebf4960cc7a76c41d25623b61b2afdc.
 
 <!-- flowdocs:paragraph:006df01c6bd5ec857a64c6ec5fdc2c07 -->
 Declared member: source declares IDLE; membership is caller\-declared, not runtime evidence\.
@@ -30,7 +30,7 @@ Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:29; symbol: 
 <!-- flowdocs:paragraph:80c9b78dd8b31ffc81adbae6313ce9f9 -->
 Declared member: source declares RescanAllButton; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:195; symbol: RescanAllButton; span SHA256: a7b29862c74ec31c99a6ee4e6850b9b4ed7a91667f30a42bece86aad3478f852.
+Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:207; symbol: RescanAllButton; span SHA256: a7b29862c74ec31c99a6ee4e6850b9b4ed7a91667f30a42bece86aad3478f852.
 
 <!-- flowdocs:paragraph:9635a1af774eb3611e72f371e97f4d64 -->
 Declared member: source declares RescanPhase; membership is caller\-declared, not runtime evidence\.
@@ -45,7 +45,7 @@ Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:19; symbol: 
 <!-- flowdocs:paragraph:83a913c1ecf40db92132e9004183513b -->
 Declared member: source declares RescanStatus; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:225; symbol: RescanStatus; span SHA256: cba01878b7d992a99abcf7dc5fcb1c2d6507387571911e90d7ba2a0d8bfe312b.
+Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:237; symbol: RescanStatus; span SHA256: cba01878b7d992a99abcf7dc5fcb1c2d6507387571911e90d7ba2a0d8bfe312b.
 
 <!-- flowdocs:paragraph:fda688ad23faf482be7752895ae2445f -->
 Declared member: source declares emit; membership is caller\-declared, not runtime evidence\.
@@ -90,7 +90,7 @@ Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:49; symbol: 
 <!-- flowdocs:paragraph:52d4c3d7b92e4a1b51fd3026fb731332 -->
 Declared member: source declares resetRescansForTest; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:160; symbol: resetRescansForTest; span SHA256: 092bc13bdb083940bc65eec067e4bf697170ca9ce323fee89943d42ae75d071c.
+Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:172; symbol: resetRescansForTest; span SHA256: 092bc13bdb083940bc65eec067e4bf697170ca9ce323fee89943d42ae75d071c.
 
 <!-- flowdocs:paragraph:d775ca1bf1f987521682e210c9365e45 -->
 Declared member: source declares setState; membership is caller\-declared, not runtime evidence\.
@@ -100,7 +100,7 @@ Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:44; symbol: 
 <!-- flowdocs:paragraph:e613f1314db96cb6deb6ba8947010f13 -->
 Declared member: source declares startRescan; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:114; symbol: startRescan; span SHA256: 6295466699400363d2f4e38c86dcd34a972eb564865e3fc035d71757ae80b006.
+Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:119; symbol: startRescan; span SHA256: bd0196347e0af5f7b29a3ae6ef1cf4f9100d02cf435c16309369e802d0f0a6ed.
 
 <!-- flowdocs:paragraph:957745e8631a8c19d09f6715d96ef7ce -->
 Declared member: source declares states; membership is caller\-declared, not runtime evidence\.
@@ -110,12 +110,12 @@ Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:31; symbol: 
 <!-- flowdocs:paragraph:f600f60f98ad3fe66e04e515bdc65da3 -->
 Declared member: source declares subscribe; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:142; symbol: subscribe; span SHA256: 5942c62e8d24689835a95e5bf7c8251770471a298c335e31f00d3dedd1bced06.
+Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:154; symbol: subscribe; span SHA256: 5942c62e8d24689835a95e5bf7c8251770471a298c335e31f00d3dedd1bced06.
 
 <!-- flowdocs:paragraph:3cbe330969f38ab63be4f6b44ebce7cb -->
 Source contains a lexical call to delete; dispatch and effects are unresolved\.
 
-Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:144; symbol: ; span SHA256: 48a2a02e79c8c4a0f05fe198ecabdd985a4d0e015d3368989a60163531a286cf.
+Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:156; symbol: ; span SHA256: 48a2a02e79c8c4a0f05fe198ecabdd985a4d0e015d3368989a60163531a286cf.
 
 <!-- flowdocs:paragraph:3e1150573febba0095b679f9e3e217d8 -->
 Declared member: source declares timer; membership is caller\-declared, not runtime evidence\.
@@ -125,30 +125,30 @@ Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:33; symbol: 
 <!-- flowdocs:paragraph:b05db304bca681484b4a0a7360a56100 -->
 Declared member: source declares useAnyRescanActive; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:152; symbol: useAnyRescanActive; span SHA256: fa099cac30c0523fe40363f27595456221d79b79fd8043242843dfa579a0938b.
+Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:164; symbol: useAnyRescanActive; span SHA256: fa099cac30c0523fe40363f27595456221d79b79fd8043242843dfa579a0938b.
 
 <!-- flowdocs:paragraph:13a26d1954b4ff39c0b0ed017e8bc356 -->
 Declared member: source declares useRescanState; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:147; symbol: useRescanState; span SHA256: cd2f0be4b925a8a378fcb96b60a71452c2f8dc121f5a987805736e5f0f171419.
+Source: internal/web/app/src/components/beamfall/LibraryRescan\.tsx:159; symbol: useRescanState; span SHA256: cd2f0be4b925a8a378fcb96b60a71452c2f8dc121f5a987805736e5f0f171419.
 
 <!-- flowdocs:paragraph:a6a16cf4be65ab69ea22affec2e73467 -->
 Declared member: source declares JOBS\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:297; symbol: JOBS\_QUERY; span SHA256: 10f1f3bacf7fbd455bf418c8503ff518f957a45ee1c80502a1ffd014086a0aad.
+Source: internal/web/app/src/lib/graphql/manage\.ts:370; symbol: JOBS\_QUERY; span SHA256: 10f1f3bacf7fbd455bf418c8503ff518f957a45ee1c80502a1ffd014086a0aad.
 
 <!-- flowdocs:paragraph:ef18a676feeea0f71878056171e9d448 -->
 Declared member: source declares SCAN\_LIBRARY\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:100; symbol: SCAN\_LIBRARY\_MUTATION; span SHA256: b4ab8d53d142d2a21eca7e4086fcd9ba88394a16720e841d710ae6d57d0b82c0.
+Source: internal/web/app/src/lib/graphql/manage\.ts:120; symbol: SCAN\_LIBRARY\_MUTATION; span SHA256: b4ab8d53d142d2a21eca7e4086fcd9ba88394a16720e841d710ae6d57d0b82c0.
 
 <!-- flowdocs:paragraph:d94fb0b69b857ebf590cb5554c5d24f5 -->
 Declared member: source declares fetchJobs; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:301; symbol: fetchJobs; span SHA256: 84981ee21f1139b8d18ea75b74fdb61f6a726342170062d90fb00fab530ce0f4.
+Source: internal/web/app/src/lib/graphql/manage\.ts:374; symbol: fetchJobs; span SHA256: 84981ee21f1139b8d18ea75b74fdb61f6a726342170062d90fb00fab530ce0f4.
 
 <!-- flowdocs:paragraph:fce868eb06ee1378cd7cc1b9f2da7399 -->
 Declared member: source declares scanLibrary; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:104; symbol: scanLibrary; span SHA256: 3842bc8209274fbd2134ef0917ac375dafee81b2f85cee5661642a82fca123f1.
+Source: internal/web/app/src/lib/graphql/manage\.ts:124; symbol: scanLibrary; span SHA256: 3842bc8209274fbd2134ef0917ac375dafee81b2f85cee5661642a82fca123f1.
 

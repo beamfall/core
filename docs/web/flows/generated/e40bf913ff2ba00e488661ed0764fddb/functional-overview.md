@@ -1,6 +1,6 @@
 # Console remote access: certificate, relay, direct connection, watch\-away guide — functional-overview
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:2e1a418ee714679eef66ac328210a4f6 -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
@@ -15,7 +15,7 @@ Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:340; symbo
 <!-- flowdocs:paragraph:a48a1f6df3771ac7c5f8450079a4b6f9 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:53; symbol: ; span SHA256: 098987e60ab4f38516105c38f9b7ded03f1f0f85716da05bc7b9010ba507ded5.
+Source: internal/web/app/src/lib/graphql/console\.ts:59; symbol: ; span SHA256: 098987e60ab4f38516105c38f9b7ded03f1f0f85716da05bc7b9010ba507ded5.
 
 | Variation inventory | Runtime coverage | Denominator rule |
 | --- | --- | --- |

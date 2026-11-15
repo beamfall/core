@@ -1,11 +1,11 @@
 # Console plugins: standing, lifecycle, config editor, provider keys — readme
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:826a68869060badccad2d3bbd0ddb1c6 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:904; symbol: ActionRow; span SHA256: 2a20e7df7d8ac823ea677063b20d2017cc11d6c03e2b7774889185c0c031b315.
+Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:808; symbol: ActionRow; span SHA256: 2a20e7df7d8ac823ea677063b20d2017cc11d6c03e2b7774889185c0c031b315.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -30,4 +30,12 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow console\.plugins: 52 resolved, 0 unresolved members.
+Declared inventory flow console\.plugins: 48 resolved, 4 unresolved members.
+
+- Unresolved member internal/web/app/src/areas/console/sections/Plugins\.tsx KEY\_INPUT: symbol is not a top\-level declaration in this path at this revision; name a class or object member&\#39;s enclosing declaration.
+
+- Unresolved member internal/web/app/src/areas/console/sections/Plugins\.tsx KEY\_STATUS: symbol is not a top\-level declaration in this path at this revision; name a class or object member&\#39;s enclosing declaration.
+
+- Unresolved member internal/web/app/src/areas/console/sections/Plugins\.tsx ProviderKeyRow: symbol is not a top\-level declaration in this path at this revision; name a class or object member&\#39;s enclosing declaration.
+
+- Unresolved member internal/web/app/src/areas/console/sections/Plugins\.tsx keyStatusChip: symbol is not a top\-level declaration in this path at this revision; name a class or object member&\#39;s enclosing declaration.

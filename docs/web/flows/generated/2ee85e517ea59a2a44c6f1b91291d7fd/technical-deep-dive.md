@@ -1,6 +1,6 @@
 # Manage artwork slots and candidates — technical-deep-dive
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:54128c7a95e6c297734be98b13d6f6aa -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -30,22 +30,22 @@ Source: internal/web/app/src/areas/manage/pages/ArtworkPage\.tsx:25; symbol: pro
 <!-- flowdocs:paragraph:88bdd1ba00df3f039bd9f0a666ae90d0 -->
 Declared member: source declares ARTWORK\_CANDIDATES\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:667; symbol: ARTWORK\_CANDIDATES\_QUERY; span SHA256: c550b72ed6423a79de1720e096cfe9cdeaaf84c49cd69c37b3ffd21ec7bc496b.
+Source: internal/web/app/src/lib/graphql/manage\.ts:799; symbol: ARTWORK\_CANDIDATES\_QUERY; span SHA256: c550b72ed6423a79de1720e096cfe9cdeaaf84c49cd69c37b3ffd21ec7bc496b.
 
 <!-- flowdocs:paragraph:9b3230769f2ab25d919bd6b3c71e0ca8 -->
 Declared member: source declares PIN\_ARTWORK\_CANDIDATE\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:682; symbol: PIN\_ARTWORK\_CANDIDATE\_MUTATION; span SHA256: ca37986acd72d6f086f249c621780382866891d840bc6bb89084c74ae7eff9c0.
+Source: internal/web/app/src/lib/graphql/manage\.ts:814; symbol: PIN\_ARTWORK\_CANDIDATE\_MUTATION; span SHA256: ca37986acd72d6f086f249c621780382866891d840bc6bb89084c74ae7eff9c0.
 
 <!-- flowdocs:paragraph:1a86595dcf2acf38e3e63bcc3be664cc -->
 Declared member: source declares fetchArtworkCandidates; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:671; symbol: fetchArtworkCandidates; span SHA256: e1347942bc81b9320845fed325af7500f5abbd88c10fd3e4e1db1a38e8aa7250.
+Source: internal/web/app/src/lib/graphql/manage\.ts:803; symbol: fetchArtworkCandidates; span SHA256: e1347942bc81b9320845fed325af7500f5abbd88c10fd3e4e1db1a38e8aa7250.
 
 <!-- flowdocs:paragraph:d16719419cb65f000331dae464430865 -->
 Declared member: source declares pinArtworkCandidate; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:686; symbol: pinArtworkCandidate; span SHA256: 464e926903022675f216774186b8bb6c5f4a1b134086ab91b34257b7245c1a2f.
+Source: internal/web/app/src/lib/graphql/manage\.ts:818; symbol: pinArtworkCandidate; span SHA256: 464e926903022675f216774186b8bb6c5f4a1b134086ab91b34257b7245c1a2f.
 
 <!-- flowdocs:paragraph:8a898c401c8515ab59daf3ccaca1890b -->
 Declared member: source declares loadSlot; membership is caller\-declared, not runtime evidence\.

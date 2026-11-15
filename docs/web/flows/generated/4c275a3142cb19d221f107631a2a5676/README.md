@@ -1,11 +1,11 @@
 # Viewer reveal and relock of restricted content — readme
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:d45cb834da839d2324a57a0fc218b62c -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/viewer/components/RevealControls\.tsx:26; symbol: RevealControls; span SHA256: af47a5d0f814e0002788bd166a6a35cbe7e495208ec4ff0bb72fe2686a99cc24.
+Source: internal/web/app/src/areas/viewer/components/RevealControls\.tsx:39; symbol: RevealControls; span SHA256: af47a5d0f814e0002788bd166a6a35cbe7e495208ec4ff0bb72fe2686a99cc24.
 
 
 Security summaries: not collected; absence is not a clean security finding.

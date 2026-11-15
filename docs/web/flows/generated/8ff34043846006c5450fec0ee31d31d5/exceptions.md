@@ -1,6 +1,6 @@
 # Localization: locale resolution, ICU formatting and string catalogs — exceptions
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:dd858b44bb1ea9adee3dbd9a0a776496 -->
 Error reachability, rescue behavior and completeness are unresolved\.

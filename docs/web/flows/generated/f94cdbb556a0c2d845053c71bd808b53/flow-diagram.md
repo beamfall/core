@@ -1,6 +1,6 @@
 # Viewer item actions: mark watched, watchlist, rating, engagement sync — flow-diagram
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:94cd4425ea529e3382576b74c56f578e -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -33,10 +33,11 @@ sequenceDiagram
     Note over S,U: Source contains call add in internal/web/app/src/areas/viewer/actions/engagementSync.ts at line 20 - order unresolved
     Note over S,U: Source contains call delete in internal/web/app/src/areas/viewer/actions/engagementSync.ts at line 21 - order unresolved
     Note over S,U: Source contains call useSyncExternalStore in internal/web/app/src/areas/viewer/actions/engagementSync.ts at line 32 - order unresolved
-    Note over S,U: Source contains call useEffect in internal/web/app/src/areas/viewer/actions/engagementSync.ts at line 52 - order unresolved
-    Note over S,U: Source contains call subscribeEvents in internal/web/app/src/areas/viewer/actions/engagementSync.ts at line 54 - order unresolved
-    Note over S,U: Source contains call isEngagementInvalidation in internal/web/app/src/areas/viewer/actions/engagementSync.ts at line 57 - order unresolved
-    Note over S,U: Source contains call notifyEngagementChanged in internal/web/app/src/areas/viewer/actions/engagementSync.ts at line 59 - order unresolved
+    Note over S,U: Source contains call useRef in internal/web/app/src/areas/viewer/actions/engagementSync.ts at line 56 - order unresolved
+    Note over S,U: Source contains call useEffect in internal/web/app/src/areas/viewer/actions/engagementSync.ts at line 58 - order unresolved
+    Note over S,U: Source contains call subscribeEvents in internal/web/app/src/areas/viewer/actions/engagementSync.ts at line 60 - order unresolved
+    Note over S,U: Source contains call isEngagementInvalidation in internal/web/app/src/areas/viewer/actions/engagementSync.ts at line 63 - order unresolved
+    Note over S,U: Source contains call notifyEngagementChanged in internal/web/app/src/areas/viewer/actions/engagementSync.ts at line 65 - order unresolved
     Note over S,U: Source contains call targetKey in internal/web/app/src/areas/viewer/actions/useItemActions.ts at line 36 - order unresolved
     Note over S,U: Source contains call useEngagementEpoch in internal/web/app/src/areas/viewer/actions/useItemActions.ts at line 37 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/areas/viewer/actions/useItemActions.ts at line 39 - order unresolved

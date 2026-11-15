@@ -1,6 +1,6 @@
 # Manage convert: enqueue conversion presets and watch the queue — technical-deep-dive
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1d6b2baacd23be259711b56c909eaa1a -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -60,22 +60,22 @@ Source: internal/web/app/src/areas/manage/pages/ConvertPage\.tsx:151; symbol: Co
 <!-- flowdocs:paragraph:89f9cc6af7b631bfd17392edf713e1e7 -->
 Declared member: source declares JOBS\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:297; symbol: JOBS\_QUERY; span SHA256: 10f1f3bacf7fbd455bf418c8503ff518f957a45ee1c80502a1ffd014086a0aad.
+Source: internal/web/app/src/lib/graphql/manage\.ts:370; symbol: JOBS\_QUERY; span SHA256: 10f1f3bacf7fbd455bf418c8503ff518f957a45ee1c80502a1ffd014086a0aad.
 
 <!-- flowdocs:paragraph:ac0ac7e4285fc749a8fb39ceffe97cf1 -->
 Declared member: source declares LIBRARIES\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:77; symbol: LIBRARIES\_QUERY; span SHA256: 65bf15c326193e30a3a53d948eb6f5e5664d2b9bbf29e2359a95b66f56bd612e.
+Source: internal/web/app/src/lib/graphql/manage\.ts:83; symbol: LIBRARIES\_QUERY; span SHA256: 65bf15c326193e30a3a53d948eb6f5e5664d2b9bbf29e2359a95b66f56bd612e.
 
 <!-- flowdocs:paragraph:1373b06e03bc02e4e234b5aad20f53db -->
 Declared member: source declares fetchJobs; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:301; symbol: fetchJobs; span SHA256: 84981ee21f1139b8d18ea75b74fdb61f6a726342170062d90fb00fab530ce0f4.
+Source: internal/web/app/src/lib/graphql/manage\.ts:374; symbol: fetchJobs; span SHA256: 84981ee21f1139b8d18ea75b74fdb61f6a726342170062d90fb00fab530ce0f4.
 
 <!-- flowdocs:paragraph:7f0cec7c620c3fd6a0dd0840726aefcc -->
 Declared member: source declares fetchLibraries; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:81; symbol: fetchLibraries; span SHA256: 0c03cc7cbf8f14c88723f102436a0d578a5823acaf69a7e777c6207282cb096e.
+Source: internal/web/app/src/lib/graphql/manage\.ts:87; symbol: fetchLibraries; span SHA256: 0c03cc7cbf8f14c88723f102436a0d578a5823acaf69a7e777c6207282cb096e.
 
 <!-- flowdocs:paragraph:559a8b56f5dc7de28be9274d311e517e -->
 Declared member: source declares load; membership is caller\-declared, not runtime evidence\.

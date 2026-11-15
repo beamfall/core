@@ -1,6 +1,6 @@
 # Manage field locks — flow-diagram
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:e35f7b44d54280c504b07d7dc8194888 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -27,9 +27,8 @@ sequenceDiagram
     Note over S,U: Source contains call async at line 49 - order unresolved
     Note over S,U: Source contains call setError at line 50 - order unresolved
     Note over S,U: Source contains call trim at line 51 - order unresolved
+    Note over S,U: Source contains call setLocks at line 53 - order unresolved
     Note over S,U: Source contains call setMediaFieldLock at line 53 - order unresolved
-    Note over S,U: Source contains call setLocks at line 54 - order unresolved
-    Note over S,U: Source contains call map at line 54 - order unresolved
-    Note over S,U: Source contains call setError at line 56 - order unresolved
-    Note over S,U: Source contains call t at line 56 - order unresolved
+    Note over S,U: Source contains call setError at line 55 - order unresolved
+    Note over S,U: Source contains call t at line 55 - order unresolved
 ```
