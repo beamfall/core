@@ -53,19 +53,27 @@ func applyStagedRestore(ctx context.Context, dataDir string, logger *slog.Logger
 		// The held lock file moved with the original into the rollback
 		// copy; take the restored directory's lock before the journal goes,
 		// so a server racing this start still finds the journal and stops.
-		restored, err := acquireServerLock(dataDir)
+		restored, lockErr := acquireServerLock(dataDir)
 		release()
-		if err != nil {
-			return nil, fmt.Errorf("lock the restored data directory: %w", err)
-		}
-		release = restored
+		// The restore is complete and the rollback copy whole, so the
+		// journal goes even when another start took the restored directory
+		// first; keeping it would refuse every later start.
 		if err := restorestage.ClearJournal(dataDir); err != nil {
-			release()
+			if restored != nil {
+				restored()
+			}
 			return nil, fmt.Errorf("staged restore applied but its journal could not be cleared: %w", err)
 		}
 		result.OK = true
 		result.RollbackCopy = snapshot
 		logger.Info("staged restore applied", "rollback_copy", snapshot)
+		if lockErr != nil {
+			if err := restorestage.WriteResult(dataDir, result); err != nil {
+				logger.Error("staged restore result could not be recorded", "error", err)
+			}
+			return nil, fmt.Errorf("staged restore applied, but the restored data directory could not be locked: %w", lockErr)
+		}
+		release = restored
 	}
 	if err := restorestage.WriteResult(dataDir, result); err != nil {
 		logger.Error("staged restore result could not be recorded", "error", err)

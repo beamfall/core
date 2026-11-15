@@ -262,6 +262,74 @@ func TestStagedRestoreHoldsTheDataDirectoryAgainstASecondServer(t *testing.T) {
 	}
 }
 
+func TestStagedRestoreClearsTheJournalWhenAnotherStartTookTheRestoredDirectory(t *testing.T) {
+	dataDir := stagedRestoreFixture(t)
+	oldRestoreBackup := restoreBackupFn
+	var other func()
+	restoreBackupFn = func(ctx context.Context, manifest, dir string) error {
+		if err := oldRestoreBackup(ctx, manifest, dir); err != nil {
+			return err
+		}
+		// A start that passed its journal check before this one journaled
+		// locks the restored directory first.
+		var err error
+		other, err = acquireServerLock(dir)
+		return err
+	}
+	t.Cleanup(func() { restoreBackupFn = oldRestoreBackup })
+
+	release, err := lockServeDataDir(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	if _, err := applyStagedRestore(context.Background(), dataDir, logger, release); err == nil {
+		t.Fatal("start went on without the restored directory's lock")
+	}
+	other()
+	if _, ok, err := restorestage.ReadJournal(dataDir); ok || err != nil {
+		t.Fatalf("journal kept after a complete restore, refusing every later start: %v %v", ok, err)
+	}
+	if !readRestoreResult(t, dataDir).OK {
+		t.Fatal("complete restore not recorded")
+	}
+	release, err = lockServeDataDir(dataDir)
+	if err != nil {
+		t.Fatalf("next start: %v", err)
+	}
+	release()
+}
+
+func TestServerLockIsNotHeldOnAFileTheDataDirectoryMovedAway(t *testing.T) {
+	dataDir := filepath.Join(t.TempDir(), "data")
+	release, err := acquireServerLock(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	path := filepath.Join(dataDir, serverLockName)
+	f, err := os.Open(path) // #nosec G304 -- test-owned temp dir
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if !lockStillAt(f, path) {
+		t.Fatal("lock file reported moved before any rename")
+	}
+	if err := os.Rename(dataDir, dataDir+".pre-restore-test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if lockStillAt(f, path) {
+		t.Fatal("a descriptor opened before the rename still counts as the data directory's lock")
+	}
+}
+
 func TestServeRefusesAnInterruptedRestoreAndRemovesOrphanClaims(t *testing.T) {
 	parent := t.TempDir()
 	dataDir := filepath.Join(parent, "data")

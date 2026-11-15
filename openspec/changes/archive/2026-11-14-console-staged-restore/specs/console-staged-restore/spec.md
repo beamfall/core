@@ -68,3 +68,9 @@ journal exists, no server SHALL start.
 
 - **WHEN** another server starts while a staged restore is replacing the data directory
 - **THEN** it refuses to start and does not open or create the data directory
+
+#### Scenario: Another start takes the restored directory first
+
+- **WHEN** a restore completes but another start already holds the restored data directory's lock
+- **THEN** the restoring start records the restore, clears the journal and stops, so later starts
+  are not refused

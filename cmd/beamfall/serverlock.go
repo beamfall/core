@@ -22,22 +22,45 @@ var errServerLockHeld = errors.New("server lock held by another process")
 // acquireServerLock creates <dataDir>/server.lock (0600) and takes an
 // exclusive, non-blocking lock on it. The caller must call release once it no
 // longer needs exclusive ownership of the data directory.
+//
+// A staged restore renames the data directory, and the lock file with it,
+// while holding the lock, so a lock taken on a descriptor opened before the
+// rename would guard the rollback copy instead. After locking it checks that
+// the path still names the locked file and tries again when it does not.
 func acquireServerLock(dataDir string) (release func(), err error) {
 	if err := os.MkdirAll(dataDir, 0o700); err != nil { // #nosec G703 -- operator-chosen data directory (flag or env)
 		return nil, err
 	}
-	f, err := os.OpenFile(filepath.Join(dataDir, serverLockName), os.O_RDWR|os.O_CREATE, 0o600) // #nosec G304 G703 -- operator-chosen data directory; fixed file name
+	path := filepath.Join(dataDir, serverLockName)
+	for attempt := 0; attempt < 3; attempt++ {
+		f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600) // #nosec G304 G703 -- operator-chosen data directory; fixed file name
+		if err != nil {
+			return nil, err
+		}
+		if err := lockFileExclusive(f); err != nil {
+			_ = f.Close()
+			return nil, err
+		}
+		release := func() {
+			_ = unlockFile(f)
+			_ = f.Close()
+		}
+		if lockStillAt(f, path) {
+			return release, nil
+		}
+		release()
+	}
+	return nil, fmt.Errorf("data directory %s kept moving while its server lock was taken", dataDir)
+}
+
+// lockStillAt reports whether path still names the open file f.
+func lockStillAt(f *os.File, path string) bool {
+	held, err := f.Stat()
 	if err != nil {
-		return nil, err
+		return false
 	}
-	if err := lockFileExclusive(f); err != nil {
-		_ = f.Close()
-		return nil, err
-	}
-	return func() {
-		_ = unlockFile(f)
-		_ = f.Close()
-	}, nil
+	current, err := os.Stat(path) // #nosec G703 -- operator-chosen data directory; fixed file name
+	return err == nil && os.SameFile(held, current)
 }
 
 // lockServeDataDir takes the server lock for `serve`, naming the data
