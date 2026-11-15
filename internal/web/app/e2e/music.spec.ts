@@ -55,15 +55,13 @@ async function expectPlaying(page: Page, after = 0): Promise<void> {
     .toBeGreaterThan(after);
 }
 
-/** Opens Track One from its album page and presses Play on its detail page. */
+/** Plays Track One from its album page's track list (CORE-1635), which starts playback directly. */
 async function playAlbumFromTrackOne(page: Page): Promise<void> {
   await page.goto(`/web/entity/${library.albumEntityID}`);
   await page
     .getByRole("button", { name: /Track One/ })
     .first()
     .click();
-  await expect(page).toHaveURL(new RegExp(`/web/media/${library.tracks[0].id}$`));
-  await page.locator(".bf-detail-play").click();
   await expect(page).toHaveURL(new RegExp(`/web/watch/${library.tracks[0].id}$`));
 }
 
