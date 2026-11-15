@@ -148,7 +148,7 @@ resolver over `store` typed methods. No `internal/util`, no `internal/model`, no
 | `hostmetrics` | In-memory one-hour ring of host CPU, memory and this server's own network traffic for the console graphs; never persisted or sent off the server | — |
 | `redact` | Secret-class and personal-detail redaction for operational log text (API keys, auth headers, URL tokens, content paths, secret-named values, home-directory user names, IP addresses) | — |
 | `logtail` | Bounded in-memory tail of the most recent operator log lines, redacted before they are kept, for the console server-log read (CORE-1716) | — |
-| `restorestage` | Staged restore from the console: decrypts a backup beside the data directory and keeps the restore journal that the next start applies under the server lock (CORE-1720) | 0115 |
+| `restorestage` | Staged restore from the console: decrypts a backup into the data directory and leaves a staged marker; the next start applies it under the server lock, and a restore journal left by an interrupted apply blocks later starts (CORE-1720) | 0115 |
 | `identify` | Identify/apply pipeline, confidence thresholds, Unmatched queue, match pinning, and per-field source precedence | 0003 §4, 0009 §8 |
 | `ingest` | Subscription feed poller and enclosure ingest through the hardened scrape/scan path | 0030 §7, 0020 |
 | `integrationhost` | Third-party integration worker runtime and Host API permission gate | 0058 |
