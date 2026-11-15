@@ -3,7 +3,10 @@ package store
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"math"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -80,8 +83,8 @@ func assertNoOfflinePackRows(t *testing.T, st *Store) {
 
 // TestPurgeUnsealedEncryptedLibraryRemovesItsPackItems pins CORE-1852: the
 // catalog media delete trigger never sees an Encrypted Library's Media, so
-// the purge itself removes the pack items naming it, and keeps the items of
-// another Library in the same pack.
+// the purge itself removes the pack items naming it and their ciphertext
+// files, and keeps the items of another Library in the same pack.
 func TestPurgeUnsealedEncryptedLibraryRemovesItsPackItems(t *testing.T) {
 	ctx := context.Background()
 	st, library, media := trashedEncryptedLibrary(t)
@@ -96,7 +99,8 @@ func TestPurgeUnsealedEncryptedLibraryRemovesItsPackItems(t *testing.T) {
 
 // TestPurgeSealedEncryptedLibraryRemovesItsPackItems pins CORE-1852 for a
 // sealed Library, whose Media ids cannot be listed: the pack items no
-// readable plane holds go, and the other Library's item stays.
+// readable plane holds go with their files, and the other Library's item
+// stays.
 func TestPurgeSealedEncryptedLibraryRemovesItsPackItems(t *testing.T) {
 	ctx := context.Background()
 	st, library, media := trashedEncryptedLibrary(t)
@@ -113,13 +117,27 @@ func TestPurgeSealedEncryptedLibraryRemovesItsPackItems(t *testing.T) {
 }
 
 // createPackOverEncryptedMedia seals a pack holding the encrypted Media and
-// the seeded catalog Media of another Library.
+// the seeded catalog Media of another Library, each with a ciphertext file
+// under the data folder's offline pack root.
 func createPackOverEncryptedMedia(t *testing.T, st *Store, library LibraryID, media MediaID) OfflinePackID {
 	t.Helper()
+	dir := filepath.Join(st.dataDir, OfflinePackDirName, "pack-under-test")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	encryptedFile, archiveFile := filepath.Join(dir, "0000.bfop"), filepath.Join(dir, "0001.bfop")
+	for _, path := range []string{encryptedFile, archiveFile} {
+		if err := os.WriteFile(path, []byte("ciphertext"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	pack, err := st.CreateOfflinePack(t.Context(), OfflinePack{
 		ProfileID: "profile-default", TargetKind: "media", State: OfflinePackReady,
 		LibraryIDs: []LibraryID{library, "library-archive"},
-	}, []OfflinePackItem{{MediaID: media}, {MediaID: "media-archive"}}, time.Now().UTC())
+	}, []OfflinePackItem{
+		{MediaID: media, CiphertextPath: encryptedFile},
+		{MediaID: "media-archive", CiphertextPath: archiveFile},
+	}, time.Now().UTC())
 	if err != nil {
 		t.Fatalf("CreateOfflinePack: %v", err)
 	}
@@ -134,5 +152,12 @@ func assertOnlyArchivePackItem(t *testing.T, st *Store, pack OfflinePackID) {
 	}
 	if len(items) != 1 || items[0].MediaID != "media-archive" {
 		t.Fatalf("pack items after purge = %+v, want only media-archive", items)
+	}
+	dir := filepath.Join(st.dataDir, OfflinePackDirName, "pack-under-test")
+	if _, err := os.Stat(filepath.Join(dir, "0000.bfop")); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("purged item's ciphertext file stat = %v, want it removed", err)
+	}
+	if _, err := os.Stat(items[0].CiphertextPath); err != nil {
+		t.Fatalf("other Library's ciphertext file: %v", err)
 	}
 }

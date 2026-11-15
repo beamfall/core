@@ -224,8 +224,9 @@ func (s *Store) purgeLibraryLocked(ctx context.Context, id LibraryID, trashedBef
 			return LibraryPurge{}, false, err
 		}
 	}
+	var packCiphertexts []string
 	if encrypted {
-		if err := s.purgeEncryptedLibraryPackItemsTx(ctx, tx, id, purge.MediaIDs, catalog != nil); err != nil {
+		if packCiphertexts, err = s.purgeEncryptedLibraryPackItemsTx(ctx, tx, id, purge.MediaIDs, catalog != nil); err != nil {
 			return LibraryPurge{}, false, err
 		}
 	}
@@ -274,6 +275,7 @@ func (s *Store) purgeLibraryLocked(ctx context.Context, id LibraryID, trashedBef
 	if _, err := s.pruneOrphanedEngagementRowsLocked(ctx); err != nil {
 		slog.WarnContext(ctx, "library purge: engagement cleanup failed", "library", id, "error", err)
 	}
+	s.removeOfflinePackCiphertexts(ctx, packCiphertexts)
 	return purge, encrypted, nil
 }
 

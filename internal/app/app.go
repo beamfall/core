@@ -1236,7 +1236,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	}
 	offlinePackAuthority.SetIssueEnabled(!cfg.Role.Attached())
 	offlinePacks := offlinepack.NewService(st, offlinePackAuthority, readClock)
-	offlinePacks.SetPackRoot(filepath.Join(cfg.DataDir, "offline-packs"))
+	offlinePacks.SetPackRoot(filepath.Join(cfg.DataDir, store.OfflinePackDirName))
 	offlinePacks.SetDeviceKeyAttestationVerifier(hooks.OfflinePackAttestationVerifier)
 	// A Sealed Library serves NOTHING (ADR-0098 area 2): stamp the same Sealed
 	// predicate used by the byte routes so a Sealed Library's Media is never

@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -17,6 +19,10 @@ import (
 // may still exist. The purge transaction writes it with the catalog deletion;
 // completeLibraryPurge deletes it only once every teardown step has succeeded.
 const libraryPurgePendingConfigPrefix = "library.purge-pending."
+
+// OfflinePackDirName is the data-folder subdirectory holding offline pack
+// ciphertext, one folder per pack.
+const OfflinePackDirName = "offline-packs"
 
 // EncryptedLibraryKeyEraser destroys a purged encrypted Library's key material
 // so nothing it left behind can be decrypted again. Erasing keys that are
@@ -65,39 +71,81 @@ func (s *Store) checkEncryptedLibraryPurgeableTx(ctx context.Context, tx *sql.Tx
 // listed, so each pack that names the Library drops the items no readable
 // plane holds. A pack that also names another sealed encrypted Library keeps
 // its items: which of them belonged to the purged Library cannot be told.
-func (s *Store) purgeEncryptedLibraryPackItemsTx(ctx context.Context, tx *sql.Tx, id LibraryID, mediaIDs []MediaID, listed bool) error {
+// It returns the removed items' ciphertext paths, whose files the caller
+// removes once the purge has committed.
+func (s *Store) purgeEncryptedLibraryPackItemsTx(ctx context.Context, tx *sql.Tx, id LibraryID, mediaIDs []MediaID, listed bool) ([]string, error) {
+	var ciphertexts []string
+	removeItems := func(where string, args ...any) error {
+		paths, err := queryIDs[string](ctx, tx, `SELECT ciphertext_path FROM offline_pack_item WHERE `+where, args...)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM offline_pack_item WHERE `+where, args...); err != nil {
+			return err
+		}
+		ciphertexts = append(ciphertexts, paths...)
+		return nil
+	}
 	if listed {
 		for _, mediaID := range mediaIDs {
-			if _, err := tx.ExecContext(ctx, `DELETE FROM offline_pack_item WHERE media_id = ?`, mediaID); err != nil {
-				return err
+			if err := removeItems(`media_id = ?`, mediaID); err != nil {
+				return nil, err
 			}
 		}
-		return nil
+		return ciphertexts, nil
 	}
 	packs, err := s.offlinePacksNamingOnlySealedLibraryTx(ctx, tx, id)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for _, pack := range packs {
 		items, err := queryIDs[MediaID](ctx, tx, `SELECT media_id FROM offline_pack_item WHERE pack_id = ?`, pack)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		for _, mediaID := range items {
 			_, err := s.catalogPlaneForMediaLocked(ctx, mediaID)
 			var missing ValidationError
 			if err != nil && !errors.As(err, &missing) {
-				return err
+				return nil, err
 			}
 			if err == nil {
 				continue
 			}
-			if _, err := tx.ExecContext(ctx, `DELETE FROM offline_pack_item WHERE pack_id = ? AND media_id = ?`, pack, mediaID); err != nil {
-				return err
+			if err := removeItems(`pack_id = ? AND media_id = ?`, pack, mediaID); err != nil {
+				return nil, err
 			}
 		}
 	}
-	return nil
+	return ciphertexts, nil
+}
+
+// removeOfflinePackCiphertexts deletes the ciphertext files of offline pack
+// items a committed purge removed (CORE-1852). Only files under the data
+// folder's offline pack root are touched. The rows are already gone, so a
+// failure is logged rather than returned.
+func (s *Store) removeOfflinePackCiphertexts(ctx context.Context, paths []string) {
+	if len(paths) == 0 || s.dataDir == "" {
+		return
+	}
+	packRoot := filepath.Join(s.dataDir, OfflinePackDirName)
+	root, err := os.OpenRoot(packRoot)
+	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			slog.WarnContext(ctx, "library purge: offline pack folder unavailable", "error", err)
+		}
+		return
+	}
+	defer func() { _ = root.Close() }()
+	for _, path := range paths {
+		rel, err := filepath.Rel(packRoot, path)
+		if path == "" || err != nil || !filepath.IsLocal(rel) {
+			continue
+		}
+		if err := root.Remove(rel); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			slog.WarnContext(ctx, "library purge: offline pack item file removal failed", "error", err)
+		}
+	}
 }
 
 // offlinePacksNamingOnlySealedLibraryTx returns the packs whose Library list
