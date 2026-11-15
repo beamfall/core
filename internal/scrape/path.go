@@ -3,7 +3,13 @@ package scrape
 // Response-path resolution for the two document shapes scrapers map from.
 //
 // JSON paths (http-json, http-graphql): dot-separated segments; a segment is
-// an object key or, on arrays, a zero-based index — `data.0.name`.
+// an object key or, on arrays, a zero-based index — `data.0.name`. A key may
+// carry a predicate selecting the first array element whose keys match every
+// comma-separated condition — `artworks[type=3,language=eng].image`.
+//
+// Map paths (FieldMap, ArtworkMap and the search maps, plus CandidateIDPath)
+// may list alternatives separated by "||": the first alternative that
+// resolves to a non-empty value wins — `translated.name||name`.
 //
 // XML paths (rss): dot-separated segments resolved against the element tree
 // with namespace *prefixes* kept verbatim (`itunes:image`). A numeric segment
@@ -54,13 +60,13 @@ func resolveJSONNode(root any, path string) (any, bool) {
 	for _, segment := range splitJSONPath(path) {
 		switch node := current.(type) {
 		case map[string]any:
-			name, predicateKey, predicateValue, predicate := jsonPathPredicate(segment)
+			name, conditions, predicate := jsonPathPredicate(segment)
 			value, ok := node[name]
 			if !ok {
 				return nil, false
 			}
 			if predicate {
-				value, ok = selectJSONPredicate(value, predicateKey, predicateValue)
+				value, ok = selectJSONPredicate(value, conditions)
 				if !ok {
 					return nil, false
 				}
@@ -98,33 +104,73 @@ func splitJSONPath(path string) []string {
 	return append(segments, path[start:])
 }
 
-func jsonPathPredicate(segment string) (name, key, value string, ok bool) {
+func jsonPathPredicate(segment string) (name string, conditions [][2]string, ok bool) {
 	name, predicate, found := strings.Cut(segment, "[")
 	if !found || name == "" || !strings.HasSuffix(predicate, "]") {
-		return segment, "", "", false
+		return segment, nil, false
 	}
 	predicate = strings.TrimSuffix(predicate, "]")
-	key, value, found = strings.Cut(predicate, "=")
-	if !found || key == "" {
-		return segment, "", "", false
+	for _, condition := range strings.Split(predicate, ",") {
+		key, value, found := strings.Cut(condition, "=")
+		if !found || key == "" {
+			return segment, nil, false
+		}
+		conditions = append(conditions, [2]string{key, value})
 	}
-	return name, key, value, true
+	return name, conditions, true
 }
 
-func selectJSONPredicate(node any, key, want string) (any, bool) {
+func selectJSONPredicate(node any, conditions [][2]string) (any, bool) {
 	elements, ok := node.([]any)
 	if !ok {
 		return nil, false
 	}
 	for _, element := range elements {
 		object, ok := element.(map[string]any)
+		if ok && matchesConditions(object, conditions) {
+			return element, true
+		}
+	}
+	return nil, false
+}
+
+func matchesConditions(object map[string]any, conditions [][2]string) bool {
+	for _, condition := range conditions {
+		got, ok := scalarString(object[condition[0]])
+		if !ok || got != condition[1] {
+			return false
+		}
+	}
+	return true
+}
+
+// pathAlternatives splits a map path on "||". A path without alternatives is
+// returned whole, so existing paths resolve exactly as before.
+func pathAlternatives(path string) []string {
+	if !strings.Contains(path, "||") {
+		return []string{path}
+	}
+	parts := strings.Split(path, "||")
+	for i, part := range parts {
+		parts[i] = strings.TrimSpace(part)
+	}
+	return parts
+}
+
+// resolveAlternatives returns the first alternative of path that resolves to
+// a non-empty scalar. With a single alternative an empty value still counts,
+// as it always has.
+func resolveAlternatives(path string, resolve func(string) (any, bool)) (any, bool) {
+	alternatives := pathAlternatives(path)
+	for i, alternative := range alternatives {
+		raw, ok := resolve(alternative)
 		if !ok {
 			continue
 		}
-		got, ok := scalarString(object[key])
-		if ok && got == want {
-			return element, true
+		if value, _ := scalarString(raw); value == "" && i < len(alternatives)-1 {
+			continue
 		}
+		return raw, true
 	}
 	return nil, false
 }

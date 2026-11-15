@@ -1,0 +1,7 @@
+{"status": "success", "data": [
+  {"id": 15, "name": "Background", "slug": "background", "recordType": "movie", "imageFormat": "JPG"},
+  {"id": 1, "name": "Banner", "slug": "banner", "recordType": "series", "imageFormat": "JPG"},
+  {"id": 2, "name": "Poster", "slug": "posters", "recordType": "series", "imageFormat": "JPG"},
+  {"id": 3, "name": "Background", "slug": "background", "recordType": "series", "imageFormat": "JPG"},
+  {"id": 23, "name": "ClearLogo", "slug": "clearlogo", "recordType": "series", "imageFormat": "PNG"}
+]}

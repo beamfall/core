@@ -107,6 +107,18 @@ type PluginScraperInfo struct {
 	// Attribution is the credit the scraper's data source requires, as the
 	// plugin declares it (CORE-1126).
 	Attribution *MetadataAttributionInfo `json:"attribution,omitempty"`
+	// CredentialHelp names what the owner enters for AuthRef and where to
+	// get it, as the plugin declares it (CORE-1127). Never a secret value.
+	CredentialHelp *PluginCredentialHelpInfo `json:"credentialHelp,omitempty"`
+}
+
+// PluginCredentialHelpInfo presents a scraper credential that is not a plain
+// API key: its label ("Subscriber PIN") and an optional https link to where
+// the owner obtains it.
+type PluginCredentialHelpInfo struct {
+	Label     plugin.LocaleString `json:"label"`
+	HelpURL   string              `json:"helpURL,omitempty"`
+	HelpLabel plugin.LocaleString `json:"helpLabel,omitempty"`
 }
 
 // PluginConfigFieldInfo is one typed, non-secret plugin setting plus its
@@ -330,9 +342,24 @@ func (h *Handler) pluginScraperInfo(pluginID string, bundle plugin.Bundle) []Plu
 			CredentialStatus:     status.status,
 			CredentialError:      status.err,
 			Attribution:          scraperAttributionInfo(scraper),
+			CredentialHelp:       h.scraperCredentialHelp(scraper),
 		})
 	}
 	return items
+}
+
+// scraperCredentialHelp returns the plugin's presentation for scraper's
+// AuthRef, or nil when it declares none or has no AuthRef.
+func (h *Handler) scraperCredentialHelp(scraper plugin.ScraperSpec) *PluginCredentialHelpInfo {
+	extensions := plugin.ScraperExtensionsOf
+	if h.scraperExtensions != nil {
+		extensions = h.scraperExtensions
+	}
+	help := extensions(scraper).CredentialHelp
+	if help == nil || scraper.AuthRef == "" {
+		return nil
+	}
+	return &PluginCredentialHelpInfo{Label: help.Label, HelpURL: help.HelpURL, HelpLabel: help.HelpLabel}
 }
 
 func pluginConfigFieldInfo(fields []plugin.ConfigFieldSpec, values map[string]string) []PluginConfigFieldInfo {

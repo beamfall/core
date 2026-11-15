@@ -2540,6 +2540,36 @@
                     "optional": true
                   },
                   {
+                    "name": "credentialHelp",
+                    "kind": "object",
+                    "optional": true,
+                    "nullable": true,
+                    "children": [
+                      {
+                        "name": "helpLabel",
+                        "kind": "map",
+                        "optional": true,
+                        "nullable": true,
+                        "elem": {
+                          "kind": "scalar"
+                        }
+                      },
+                      {
+                        "name": "helpURL",
+                        "kind": "scalar",
+                        "optional": true
+                      },
+                      {
+                        "name": "label",
+                        "kind": "map",
+                        "nullable": true,
+                        "elem": {
+                          "kind": "scalar"
+                        }
+                      }
+                    ]
+                  },
+                  {
                     "name": "credentialRequired",
                     "kind": "scalar"
                   },
@@ -2615,6 +2645,36 @@
                   "name": "credentialError",
                   "kind": "scalar",
                   "optional": true
+                },
+                {
+                  "name": "credentialHelp",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "helpLabel",
+                      "kind": "map",
+                      "optional": true,
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "helpURL",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "label",
+                      "kind": "map",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    }
+                  ]
                 },
                 {
                   "name": "credentialRequired",
@@ -3402,6 +3462,36 @@
                   "optional": true
                 },
                 {
+                  "name": "credentialHelp",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "helpLabel",
+                      "kind": "map",
+                      "optional": true,
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "helpURL",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "label",
+                      "kind": "map",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    }
+                  ]
+                },
+                {
                   "name": "credentialRequired",
                   "kind": "scalar"
                 },
@@ -3477,6 +3567,36 @@
                 "name": "credentialError",
                 "kind": "scalar",
                 "optional": true
+              },
+              {
+                "name": "credentialHelp",
+                "kind": "object",
+                "optional": true,
+                "nullable": true,
+                "children": [
+                  {
+                    "name": "helpLabel",
+                    "kind": "map",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
+                    "name": "helpURL",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "label",
+                    "kind": "map",
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  }
+                ]
               },
               {
                 "name": "credentialRequired",
@@ -18075,6 +18195,36 @@
                     "optional": true
                   },
                   {
+                    "name": "credentialHelp",
+                    "kind": "object",
+                    "optional": true,
+                    "nullable": true,
+                    "children": [
+                      {
+                        "name": "helpLabel",
+                        "kind": "map",
+                        "optional": true,
+                        "nullable": true,
+                        "elem": {
+                          "kind": "scalar"
+                        }
+                      },
+                      {
+                        "name": "helpURL",
+                        "kind": "scalar",
+                        "optional": true
+                      },
+                      {
+                        "name": "label",
+                        "kind": "map",
+                        "nullable": true,
+                        "elem": {
+                          "kind": "scalar"
+                        }
+                      }
+                    ]
+                  },
+                  {
                     "name": "credentialRequired",
                     "kind": "scalar"
                   },
@@ -18150,6 +18300,36 @@
                   "name": "credentialError",
                   "kind": "scalar",
                   "optional": true
+                },
+                {
+                  "name": "credentialHelp",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "helpLabel",
+                      "kind": "map",
+                      "optional": true,
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "helpURL",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "label",
+                      "kind": "map",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    }
+                  ]
                 },
                 {
                   "name": "credentialRequired",
@@ -18937,6 +19117,36 @@
                   "optional": true
                 },
                 {
+                  "name": "credentialHelp",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "helpLabel",
+                      "kind": "map",
+                      "optional": true,
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "helpURL",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "label",
+                      "kind": "map",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    }
+                  ]
+                },
+                {
                   "name": "credentialRequired",
                   "kind": "scalar"
                 },
@@ -19012,6 +19222,36 @@
                 "name": "credentialError",
                 "kind": "scalar",
                 "optional": true
+              },
+              {
+                "name": "credentialHelp",
+                "kind": "object",
+                "optional": true,
+                "nullable": true,
+                "children": [
+                  {
+                    "name": "helpLabel",
+                    "kind": "map",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
+                    "name": "helpURL",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "label",
+                    "kind": "map",
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  }
+                ]
               },
               {
                 "name": "credentialRequired",
@@ -20439,6 +20679,36 @@
                     "optional": true
                   },
                   {
+                    "name": "credentialHelp",
+                    "kind": "object",
+                    "optional": true,
+                    "nullable": true,
+                    "children": [
+                      {
+                        "name": "helpLabel",
+                        "kind": "map",
+                        "optional": true,
+                        "nullable": true,
+                        "elem": {
+                          "kind": "scalar"
+                        }
+                      },
+                      {
+                        "name": "helpURL",
+                        "kind": "scalar",
+                        "optional": true
+                      },
+                      {
+                        "name": "label",
+                        "kind": "map",
+                        "nullable": true,
+                        "elem": {
+                          "kind": "scalar"
+                        }
+                      }
+                    ]
+                  },
+                  {
                     "name": "credentialRequired",
                     "kind": "scalar"
                   },
@@ -20514,6 +20784,36 @@
                   "name": "credentialError",
                   "kind": "scalar",
                   "optional": true
+                },
+                {
+                  "name": "credentialHelp",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "helpLabel",
+                      "kind": "map",
+                      "optional": true,
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "helpURL",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "label",
+                      "kind": "map",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    }
+                  ]
                 },
                 {
                   "name": "credentialRequired",
@@ -21301,6 +21601,36 @@
                   "optional": true
                 },
                 {
+                  "name": "credentialHelp",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "helpLabel",
+                      "kind": "map",
+                      "optional": true,
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "helpURL",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "label",
+                      "kind": "map",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    }
+                  ]
+                },
+                {
                   "name": "credentialRequired",
                   "kind": "scalar"
                 },
@@ -21376,6 +21706,36 @@
                 "name": "credentialError",
                 "kind": "scalar",
                 "optional": true
+              },
+              {
+                "name": "credentialHelp",
+                "kind": "object",
+                "optional": true,
+                "nullable": true,
+                "children": [
+                  {
+                    "name": "helpLabel",
+                    "kind": "map",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
+                    "name": "helpURL",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "label",
+                    "kind": "map",
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  }
+                ]
               },
               {
                 "name": "credentialRequired",
@@ -22207,6 +22567,36 @@
                     "optional": true
                   },
                   {
+                    "name": "credentialHelp",
+                    "kind": "object",
+                    "optional": true,
+                    "nullable": true,
+                    "children": [
+                      {
+                        "name": "helpLabel",
+                        "kind": "map",
+                        "optional": true,
+                        "nullable": true,
+                        "elem": {
+                          "kind": "scalar"
+                        }
+                      },
+                      {
+                        "name": "helpURL",
+                        "kind": "scalar",
+                        "optional": true
+                      },
+                      {
+                        "name": "label",
+                        "kind": "map",
+                        "nullable": true,
+                        "elem": {
+                          "kind": "scalar"
+                        }
+                      }
+                    ]
+                  },
+                  {
                     "name": "credentialRequired",
                     "kind": "scalar"
                   },
@@ -22282,6 +22672,36 @@
                   "name": "credentialError",
                   "kind": "scalar",
                   "optional": true
+                },
+                {
+                  "name": "credentialHelp",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "helpLabel",
+                      "kind": "map",
+                      "optional": true,
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "helpURL",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "label",
+                      "kind": "map",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    }
+                  ]
                 },
                 {
                   "name": "credentialRequired",
@@ -23069,6 +23489,36 @@
                   "optional": true
                 },
                 {
+                  "name": "credentialHelp",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "helpLabel",
+                      "kind": "map",
+                      "optional": true,
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "helpURL",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "label",
+                      "kind": "map",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    }
+                  ]
+                },
+                {
                   "name": "credentialRequired",
                   "kind": "scalar"
                 },
@@ -23144,6 +23594,36 @@
                 "name": "credentialError",
                 "kind": "scalar",
                 "optional": true
+              },
+              {
+                "name": "credentialHelp",
+                "kind": "object",
+                "optional": true,
+                "nullable": true,
+                "children": [
+                  {
+                    "name": "helpLabel",
+                    "kind": "map",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
+                    "name": "helpURL",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "label",
+                    "kind": "map",
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  }
+                ]
               },
               {
                 "name": "credentialRequired",
@@ -26202,6 +26682,36 @@
                     "optional": true
                   },
                   {
+                    "name": "credentialHelp",
+                    "kind": "object",
+                    "optional": true,
+                    "nullable": true,
+                    "children": [
+                      {
+                        "name": "helpLabel",
+                        "kind": "map",
+                        "optional": true,
+                        "nullable": true,
+                        "elem": {
+                          "kind": "scalar"
+                        }
+                      },
+                      {
+                        "name": "helpURL",
+                        "kind": "scalar",
+                        "optional": true
+                      },
+                      {
+                        "name": "label",
+                        "kind": "map",
+                        "nullable": true,
+                        "elem": {
+                          "kind": "scalar"
+                        }
+                      }
+                    ]
+                  },
+                  {
                     "name": "credentialRequired",
                     "kind": "scalar"
                   },
@@ -26277,6 +26787,36 @@
                   "name": "credentialError",
                   "kind": "scalar",
                   "optional": true
+                },
+                {
+                  "name": "credentialHelp",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "helpLabel",
+                      "kind": "map",
+                      "optional": true,
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "helpURL",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "label",
+                      "kind": "map",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    }
+                  ]
                 },
                 {
                   "name": "credentialRequired",
@@ -27064,6 +27604,36 @@
                   "optional": true
                 },
                 {
+                  "name": "credentialHelp",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "helpLabel",
+                      "kind": "map",
+                      "optional": true,
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "helpURL",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "label",
+                      "kind": "map",
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    }
+                  ]
+                },
+                {
                   "name": "credentialRequired",
                   "kind": "scalar"
                 },
@@ -27139,6 +27709,36 @@
                 "name": "credentialError",
                 "kind": "scalar",
                 "optional": true
+              },
+              {
+                "name": "credentialHelp",
+                "kind": "object",
+                "optional": true,
+                "nullable": true,
+                "children": [
+                  {
+                    "name": "helpLabel",
+                    "kind": "map",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
+                    "name": "helpURL",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "label",
+                    "kind": "map",
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  }
+                ]
               },
               {
                 "name": "credentialRequired",
