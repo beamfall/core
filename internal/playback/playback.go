@@ -2818,8 +2818,13 @@ func (v VideoSignal) FullTranscodeRefusal() string {
 	if v.DoViProfile == 5 {
 		return ffmpeg.ToneMapRefusalDoViP5
 	}
-	if v.NeedsToneMap() && !toneMapSupported() {
-		return ffmpeg.ToneMapRefusalUnverified
+	if v.NeedsToneMap() {
+		if !ffmpeg.ToneMapEnabled() {
+			return ffmpeg.ToneMapRefusalDisabled
+		}
+		if !toneMapSupported() {
+			return ffmpeg.ToneMapRefusalUnverified
+		}
 	}
 	return ""
 }

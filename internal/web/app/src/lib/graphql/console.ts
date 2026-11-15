@@ -43,6 +43,7 @@ import type {
   ServerLogsInfo,
   TerminateSessionResult,
   TranscodeConfigInfo,
+  TranscodeConfigUpdate,
   UpdateStatusInfo,
   WebhookDeliveryInfo,
   WebhookEndpointInfo,
@@ -315,8 +316,10 @@ export async function runEventsCompaction(signal?: AbortSignal): Promise<JobInfo
 
 // --- Transcode config -----------------------------------------------------
 
-const TRANSCODE_CONFIG_QUERY =
-  "query TranscodeConfig { transcodeConfig { hardwareEnabled codec quality device configuredPreference hardwareAcceleration { accelerator status } } }";
+const TRANSCODE_CONFIG_SELECTION =
+  "hardwareEnabled codec quality device configuredPreference hardwareAcceleration { accelerator status } maxConcurrentTranscodes effectiveMaxConcurrentTranscodes maxConcurrentTranscodesEnvOverride maxConcurrentTranscodesRestartRequired tempDir effectiveTempDir tempDirEnvOverride tempDirRestartRequired toneMapEnabled";
+
+const TRANSCODE_CONFIG_QUERY = `query TranscodeConfig { transcodeConfig { ${TRANSCODE_CONFIG_SELECTION} } }`;
 
 /** TranscodeConfig — the transcode policy. */
 export async function fetchTranscodeConfig(signal?: AbortSignal): Promise<TranscodeConfigInfo> {
@@ -328,19 +331,29 @@ export async function fetchTranscodeConfig(signal?: AbortSignal): Promise<Transc
   return data.transcodeConfig;
 }
 
-const SET_TRANSCODE_CONFIG_MUTATION =
-  "mutation SetTranscodeConfig($hardwareEnabled: Boolean!, $codec: String!, $quality: String!, $device: String!) { setTranscodeConfig(hardwareEnabled: $hardwareEnabled, codec: $codec, quality: $quality, device: $device) { hardwareEnabled codec quality device configuredPreference hardwareAcceleration { accelerator status } } }";
+const SET_TRANSCODE_CONFIG_MUTATION = `mutation SetTranscodeConfig($hardwareEnabled: Boolean!, $codec: String!, $quality: String!, $device: String!, $maxConcurrentTranscodes: Int, $clearMaxConcurrentTranscodes: Boolean, $tempDir: String!, $toneMapEnabled: Boolean!) { setTranscodeConfig(hardwareEnabled: $hardwareEnabled, codec: $codec, quality: $quality, device: $device, maxConcurrentTranscodes: $maxConcurrentTranscodes, clearMaxConcurrentTranscodes: $clearMaxConcurrentTranscodes, tempDir: $tempDir, toneMapEnabled: $toneMapEnabled) { ${TRANSCODE_CONFIG_SELECTION} } }`;
 
-/** SetTranscodeConfig — set the transcode policy. */
+/**
+ * SetTranscodeConfig — set the transcode policy. A null cap clears the stored
+ * cap back to automatic; the server rejects a zero or negative cap and a temp
+ * directory that does not exist or is not writable.
+ */
 export async function setTranscodeConfig(
-  config: TranscodeConfigInfo,
-
+  config: TranscodeConfigUpdate,
   signal?: AbortSignal,
 ): Promise<TranscodeConfigInfo> {
   const data = await graphql<{ setTranscodeConfig: TranscodeConfigInfo }>(
     SET_TRANSCODE_CONFIG_MUTATION,
-    config as unknown as Record<string, unknown>,
-
+    {
+      hardwareEnabled: config.hardwareEnabled,
+      codec: config.codec,
+      quality: config.quality,
+      device: config.device,
+      maxConcurrentTranscodes: config.maxConcurrentTranscodes,
+      clearMaxConcurrentTranscodes: config.maxConcurrentTranscodes === null,
+      tempDir: config.tempDir,
+      toneMapEnabled: config.toneMapEnabled,
+    },
     signal,
   );
   return data.setTranscodeConfig;

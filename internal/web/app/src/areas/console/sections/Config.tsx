@@ -34,26 +34,88 @@ const TEXT_FIELDS: { field: TextField; label: StringKey }[] = [
 // control; codec, quality, device and the probe list are Advanced, and a field
 // that holds a value, saved or being edited, stays visible in Normal so Save
 // never submits a setting out of sight (CORE-1117).
+//
+// Resource settings (CORE-1970): the concurrent-transcode cap (empty means
+// automatic) and the HDR tone-map switch are Normal and apply live; the temp
+// directory is Advanced and needs a restart. Each shows the value in effect and
+// says when an environment variable overrides the saved one.
+const EMPTY_TRANSCODE_CONFIG: TranscodeConfigInfo = {
+  hardwareEnabled: false,
+  codec: "",
+  quality: "",
+  device: "",
+  configuredPreference: "",
+  hardwareAcceleration: [],
+  maxConcurrentTranscodes: 0,
+  effectiveMaxConcurrentTranscodes: 0,
+  maxConcurrentTranscodesEnvOverride: false,
+  maxConcurrentTranscodesRestartRequired: false,
+  tempDir: "",
+  effectiveTempDir: "",
+  tempDirEnvOverride: false,
+  tempDirRestartRequired: false,
+  toneMapEnabled: true,
+};
+
+function capText(cap: number): string {
+  return cap > 0 ? String(cap) : "";
+}
+
+// parseCap returns null for automatic (empty), a whole number of at least 1,
+// or undefined when the text is not a valid cap.
+function parseCap(text: string): number | null | undefined {
+  const trimmed = text.trim();
+  if (trimmed === "") return null;
+  if (!/^\d+$/.test(trimmed)) return undefined;
+  const n = Number(trimmed);
+  return n >= 1 ? n : undefined;
+}
+
+function errorReason(err: unknown): string {
+  return err instanceof Error ? err.message : "";
+}
+
+function StatusNote({ children }: { children: string }) {
+  return <p className="console-control-help">{children}</p>;
+}
+
 function TranscodeConfig() {
   const t = useT();
   const { data, failed, setData } = useAsync(fetchTranscodeConfig);
-  const [form, setForm] = useState<TranscodeConfigInfo>({
-    hardwareEnabled: false,
-    codec: "",
-    quality: "",
-    device: "",
-    configuredPreference: "",
-    hardwareAcceleration: [],
-  });
+  const [form, setForm] = useState<TranscodeConfigInfo>(EMPTY_TRANSCODE_CONFIG);
+  const [cap, setCap] = useState("");
+  const [saveError, setSaveError] = useState("");
 
   useEffect(() => {
-    if (data) setForm(data);
+    if (data) {
+      setForm(data);
+      setCap(capText(data.maxConcurrentTranscodes));
+    }
   }, [data]);
+
+  const parsedCap = parseCap(cap);
 
   async function onSave(e: FormEvent) {
     e.preventDefault();
-    const next = await setTranscodeConfig(form);
-    setData(next);
+    if (parsedCap === undefined) {
+      setSaveError(t("transcodeMaxConcurrentInvalid"));
+      return;
+    }
+    setSaveError("");
+    try {
+      const next = await setTranscodeConfig({
+        hardwareEnabled: form.hardwareEnabled,
+        codec: form.codec,
+        quality: form.quality,
+        device: form.device,
+        maxConcurrentTranscodes: parsedCap,
+        tempDir: form.tempDir.trim(),
+        toneMapEnabled: form.toneMapEnabled,
+      });
+      setData(next);
+    } catch (err) {
+      setSaveError(t("transcodeConfigSaveFailed", { reason: errorReason(err) }));
+    }
   }
 
   if (failed) return <ErrorState message="transcodeConfigUnavailable" />;
@@ -68,6 +130,47 @@ function TranscodeConfig() {
               aria-label={t("transcodeHardwareEnabled")}
               checked={form.hardwareEnabled}
               onCheckedChange={(c) => setForm((f) => ({ ...f, hardwareEnabled: c }))}
+            />
+          }
+        />
+        <ControlRow
+          label="transcodeMaxConcurrent"
+          control={
+            <Input
+              id="tc-max-concurrent"
+              aria-label={t("transcodeMaxConcurrent")}
+              inputMode="numeric"
+              value={cap}
+              placeholder={t("transcodeAutomatic")}
+              aria-invalid={parsedCap === undefined}
+              className="w-28"
+              onChange={(e) => setCap(e.target.value)}
+            />
+          }
+        />
+        {data ? (
+          <div data-testid="transcode-cap-status">
+            <StatusNote>
+              {t("transcodeMaxConcurrentEffective", {
+                count: String(data.effectiveMaxConcurrentTranscodes),
+              })}
+            </StatusNote>
+            {data.maxConcurrentTranscodesEnvOverride ? (
+              <StatusNote>{t("transcodeMaxConcurrentEnvOverride")}</StatusNote>
+            ) : null}
+            {data.maxConcurrentTranscodesRestartRequired ? (
+              <StatusNote>{t("transcodeRestartRequired")}</StatusNote>
+            ) : null}
+          </div>
+        ) : null}
+        <ControlRow
+          label="transcodeToneMapEnabled"
+          help="transcodeToneMapHelp"
+          control={
+            <Switch
+              aria-label={t("transcodeToneMapEnabled")}
+              checked={form.toneMapEnabled}
+              onCheckedChange={(c) => setForm((f) => ({ ...f, toneMapEnabled: c }))}
             />
           }
         />
@@ -88,6 +191,39 @@ function TranscodeConfig() {
             />
           </Advanced>
         ))}
+        <Advanced
+          keep={
+            Boolean(form.tempDir) ||
+            Boolean(data?.tempDirEnvOverride || data?.tempDirRestartRequired)
+          }
+        >
+          <ControlRow
+            label="transcodeTempDir"
+            control={
+              <Input
+                id="tc-temp-dir"
+                aria-label={t("transcodeTempDir")}
+                value={form.tempDir}
+                placeholder={t("transcodeServerDefault")}
+                className="w-64"
+                onChange={(e) => setForm((f) => ({ ...f, tempDir: e.target.value }))}
+              />
+            }
+          />
+          {data ? (
+            <div data-testid="transcode-temp-dir-status">
+              <StatusNote>
+                {t("transcodeTempDirEffective", { dir: data.effectiveTempDir })}
+              </StatusNote>
+              {data.tempDirEnvOverride ? (
+                <StatusNote>{t("transcodeTempDirEnvOverride")}</StatusNote>
+              ) : null}
+              {data.tempDirRestartRequired ? (
+                <StatusNote>{t("transcodeRestartRequired")}</StatusNote>
+              ) : null}
+            </div>
+          ) : null}
+        </Advanced>
         {form.hardwareAcceleration.length > 0 ? (
           <Advanced>
             <div className="grid gap-2 text-sm">
@@ -104,6 +240,11 @@ function TranscodeConfig() {
           </Advanced>
         ) : null}
       </Fieldset>
+      {saveError ? (
+        <p role="alert" className="text-sm text-destructive">
+          {saveError}
+        </p>
+      ) : null}
       <Button type="submit">{t("transcodeConfigSave")}</Button>
     </form>
   );

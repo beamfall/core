@@ -140,3 +140,21 @@ func TestDolbyVision78KeepsTodaysSoftwareToneMapPath(t *testing.T) {
 		t.Fatalf("DoVi 8 refusal on an unverified build = %q, want %q", got, ffmpeg.ToneMapRefusalUnverified)
 	}
 }
+
+// TestFullTranscodeRefusalHonoursTheOperatorToneMapSwitch proves playbackInfo
+// reports the same disabled reason the transcoder refuses with while the
+// Console tone-map switch is off (CORE-1970).
+func TestFullTranscodeRefusalHonoursTheOperatorToneMapSwitch(t *testing.T) {
+	withToneMapSupport(t, true)
+	t.Cleanup(func() { ffmpeg.SetToneMapEnabled(true) })
+	ffmpeg.SetToneMapEnabled(false)
+	if got := (VideoSignal{ColorTransfer: "smpte2084"}).FullTranscodeRefusal(); got != ffmpeg.ToneMapRefusalDisabled {
+		t.Fatalf("disabled HDR refusal = %q, want %q", got, ffmpeg.ToneMapRefusalDisabled)
+	}
+	if got := (VideoSignal{}).FullTranscodeRefusal(); got != "" {
+		t.Fatalf("disabled SDR refusal = %q, want none", got)
+	}
+	if ffmpeg.ToneMapRefusalDisabled != "hdr-tone-map-disabled" {
+		t.Fatalf("disabled tone-map wire reason changed: %q", ffmpeg.ToneMapRefusalDisabled)
+	}
+}

@@ -433,6 +433,12 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	}
 	configuredTranscodeCap := cfg.TranscodeCap
 	defaultTranscodeCap := config.Default().TranscodeCap
+	// An env var or flag cap overrides the Console-stored cap (CORE-1970). A
+	// non-default in-process cap counts as explicit too, as it always has.
+	envTranscodeCap := 0
+	if cfg.TranscodeCapExplicit || configuredTranscodeCap != defaultTranscodeCap {
+		envTranscodeCap = configuredTranscodeCap
+	}
 	// Hardware-acceleration probe: test-drive each candidate
 	// accelerator with a short, time-boxed trivial encode at startup and record
 	// what actually worked, so the Console reports verified accelerators instead
@@ -452,15 +458,28 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		ffmpegRunner.SetHardwareAccel(ffmpeg.SelectHWAccel(probe, configured))
 		cfg.HardwareAcceleration = hardwareAccelReport(probe)
 		cfg.TranscodeCap = ffmpeg.TranscodeCapForHWAccel(probe)
-		if configuredTranscodeCap != defaultTranscodeCap {
-			cfg.TranscodeCap = configuredTranscodeCap
-		}
 		if cfg.HardwareAcceleration.SoftwareOnly() {
 			logger.Info("hardware acceleration probe: none verified, using software transcode")
 		} else {
 			logger.Info("hardware acceleration probe: verified working", "accelerators", cfg.HardwareAcceleration.Working)
 		}
 	}
+	autoTranscodeCap := cfg.TranscodeCap
+	cfg.TranscodeCap = graph.ResolveTranscodeCap(transcodePolicy, envTranscodeCap, autoTranscodeCap)
+	defaultTranscodeScratchDir := filepath.Join(cfg.DataDir, "transcode")
+	if !cfg.TranscodeScratchDirExplicit && transcodePolicy.TempDir != "" {
+		// The Console-stored temp directory applies at startup. It was proven
+		// writable when stored; if it has since gone away, fall back to the
+		// default rather than refuse to boot — the Console then reports the
+		// stored directory as not yet in effect.
+		if err := config.ValidateTranscodeScratchDir(transcodePolicy.TempDir); err != nil {
+			logger.Warn("stored transcode temp directory unusable; using the default", "err", err)
+			cfg.TranscodeScratchDir = defaultTranscodeScratchDir
+		} else {
+			cfg.TranscodeScratchDir = transcodePolicy.TempDir
+		}
+	}
+	ffmpeg.SetToneMapEnabled(transcodePolicy.ToneMapEnabled)
 	// Resource governance for weak hardware: background generation
 	// runs against a worker-pool size + CPU budget and a niced FFmpeg, while
 	// realtime transcode is never niced or budgeted (it preempts generation).
@@ -1094,6 +1113,17 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// purely browser SNI on the direct FQDN; it is never the pinned identity.
 	pairingService.SetSPKIProvider(selfSigned)
 	beamService := beam.NewService(st, authService, time.Now)
+	// Console transcoder resource settings (CORE-1970): the cap applies live
+	// through hlsSessions; the temp directory needs a restart.
+	transcodeRuntime := graph.TranscodeRuntime{
+		CapSetter:      hlsSessions,
+		StartupCap:     cfg.TranscodeCap,
+		AutoCap:        autoTranscodeCap,
+		EnvCap:         envTranscodeCap,
+		ActiveTempDir:  cfg.TranscodeScratchDir,
+		DefaultTempDir: defaultTranscodeScratchDir,
+		EnvTempDir:     cfg.TranscodeScratchDirExplicit,
+	}
 	graphOptions := graph.Options{
 		AuditRecorder:                observability.NewAuditLogger(logger),
 		ObservabilityController:      observabilityController,
@@ -1122,6 +1152,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		PlaybackObserver:             playbackObserverAdapter{service: playbackInfo},
 		HostMetrics:                  hostSampler,
 		TranscodeAdmission:           hlsSessions,
+		TranscodeRuntime:             transcodeRuntime,
 		UpdateChecker:                graphUpdateChecker,
 		WatcherStatus:                watcherStatusAdapter{service: watcherService},
 		IntegrationLifecycle:         integrationController,

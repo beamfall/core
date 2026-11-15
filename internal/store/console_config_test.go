@@ -1,6 +1,8 @@
 package store_test
 
 import (
+	"errors"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -226,8 +228,8 @@ func TestTranscodeConfigPatchAndClear(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.HardwareEnabled || cfg.Codec != "" || cfg.Quality != "" || cfg.Device != "" {
-		t.Fatalf("default transcode config = %#v, want all-zero", cfg)
+	if cfg != (store.TranscodeConfig{ToneMapEnabled: true}) {
+		t.Fatalf("default transcode config = %#v, want all-zero with tone-map on", cfg)
 	}
 
 	enabled := true
@@ -243,7 +245,7 @@ func TestTranscodeConfigPatchAndClear(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := store.TranscodeConfig{HardwareEnabled: true, Codec: "hevc", Quality: "high", Device: "/dev/dri/renderD128"}
+	want := store.TranscodeConfig{HardwareEnabled: true, Codec: "hevc", Quality: "high", Device: "/dev/dri/renderD128", ToneMapEnabled: true}
 	if updated != want {
 		t.Fatalf("after write = %#v, want %#v", updated, want)
 	}
@@ -269,6 +271,51 @@ func TestTranscodeConfigPatchAndClear(t *testing.T) {
 	// The unrelated codec/quality survive the device clear.
 	if cleared.Codec != "hevc" || cleared.Quality != "high" || !cleared.HardwareEnabled {
 		t.Fatalf("after device clear = %#v, want codec/quality/enabled intact", cleared)
+	}
+}
+
+// TestTranscodeResourceSettings proves the concurrent-transcode cap, temp
+// directory and tone-map toggle round-trip, that a zero or negative cap is a
+// ValidationError that leaves the stored cap alone, and that the cap and temp
+// directory clear back to their defaults (CORE-1970).
+func TestTranscodeResourceSettings(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := t.Context()
+	now := time.Unix(1700, 0).UTC()
+
+	limit := 3
+	dir := filepath.Join(t.TempDir(), "scratch")
+	off := false
+	updated, err := st.SetTranscodeConfig(ctx, store.TranscodeConfigPatch{MaxConcurrent: &limit, TempDir: &dir, ToneMapEnabled: &off}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.MaxConcurrent != 3 || updated.TempDir != dir || updated.ToneMapEnabled {
+		t.Fatalf("after write = %#v, want cap 3, temp dir, tone-map off", updated)
+	}
+
+	for _, bad := range []int{0, -2} {
+		bad := bad
+		_, err := st.SetTranscodeConfig(ctx, store.TranscodeConfigPatch{MaxConcurrent: &bad}, now)
+		var validation store.ValidationError
+		if !errors.As(err, &validation) {
+			t.Fatalf("SetTranscodeConfig(cap=%d) error = %v, want ValidationError", bad, err)
+		}
+	}
+	if reread, _ := st.TranscodeConfig(ctx); reread.MaxConcurrent != 3 {
+		t.Fatalf("after rejected caps MaxConcurrent = %d, want 3", reread.MaxConcurrent)
+	}
+	if _, err := st.SetTranscodeConfig(ctx, store.TranscodeConfigPatch{MaxConcurrent: &limit, ClearMaxConcurrent: true}, now); err == nil {
+		t.Fatal("set and clear cap at once = nil error, want ValidationError")
+	}
+
+	empty := ""
+	cleared, err := st.SetTranscodeConfig(ctx, store.TranscodeConfigPatch{ClearMaxConcurrent: true, TempDir: &empty}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleared.MaxConcurrent != 0 || cleared.TempDir != "" || cleared.ToneMapEnabled {
+		t.Fatalf("after clear = %#v, want cap/temp dir cleared, tone-map still off", cleared)
 	}
 }
 

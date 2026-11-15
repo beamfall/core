@@ -13,6 +13,8 @@ export const playerRecoveryStrings = {
     playbackDolbyVisionUnavailable:
       "This Dolby Vision video can't be converted to play on this device.",
     playbackHdrToneMapUnavailable: "This server can't convert this HDR video for this device.",
+    playbackHdrToneMapDisabled:
+      "HDR conversion is turned off on this server, so this video can't play on this device.",
     playbackSourceEndsEarly:
       "This file ends early. The rest of it is missing or damaged on the server.",
   },

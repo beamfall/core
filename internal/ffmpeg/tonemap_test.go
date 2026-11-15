@@ -338,3 +338,29 @@ func workingToneMapFrame(render ToneMapRender) []byte {
 	}
 	return flatFrame(toneMapProbeFrameBytes, 173)
 }
+
+// TestToneMapRefusalHonoursTheOperatorSwitch proves the Console tone-map switch
+// (CORE-1970): off refuses an HDR re-encode with its own reason even on a
+// verified build, leaves SDR and stream-copy untouched, and on restores it.
+func TestToneMapRefusalHonoursTheOperatorSwitch(t *testing.T) {
+	withToneMapSupport(t, true)
+	t.Cleanup(func() { SetToneMapEnabled(true) })
+	if !ToneMapEnabled() {
+		t.Fatal("tone-map switch default = off, want on")
+	}
+	SetToneMapEnabled(false)
+	hdr := Rendition{Height: 720, ColorTransfer: "smpte2084"}
+	if got := hdr.ToneMapRefusal(); got != ToneMapRefusalDisabled {
+		t.Fatalf("disabled HDR refusal = %q, want %q", got, ToneMapRefusalDisabled)
+	}
+	if got := (Rendition{Height: 720}).ToneMapRefusal(); got != "" {
+		t.Fatalf("disabled SDR refusal = %q, want none", got)
+	}
+	if got := (Rendition{Height: 720, ColorTransfer: "smpte2084", CopyVideo: true}).ToneMapRefusal(); got != "" {
+		t.Fatalf("disabled stream-copy refusal = %q, want none", got)
+	}
+	SetToneMapEnabled(true)
+	if got := hdr.ToneMapRefusal(); got != "" {
+		t.Fatalf("re-enabled HDR refusal = %q, want none", got)
+	}
+}

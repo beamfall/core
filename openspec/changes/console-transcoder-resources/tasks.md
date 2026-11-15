@@ -1,0 +1,10 @@
+- [x] Store: cap, temp directory and tone-map keys in the server-config store, cap validation
+- [x] Config: record whether the cap and temp directory came from an environment variable or flag; export the temp-directory writability check
+- [x] ffmpeg and playback: operator tone-map switch, `hdr-tone-map-disabled` refusal in both gates
+- [x] Graph: new `transcodeConfig` fields and `setTranscodeConfig` arguments, validation, live cap and tone-map apply, restart-required reporting, audit
+- [x] App startup: resolve cap and temp directory by precedence, apply the saved tone-map switch
+- [x] Console Config: cap, tone-map switch, Advanced temp directory, in-effect / override / restart notes, save errors
+- [x] Web player: message for `hdr-tone-map-disabled`
+- [x] Tests: zero and negative cap, unwritable and missing temp directory, env override, live apply, audit, UI
+- [x] Regenerate wire goldens
+- [ ] Publish the next client-core-wire minor and pin it (batch lander)

@@ -3333,9 +3333,18 @@
         "codec",
         "configuredPreference",
         "device",
+        "effectiveMaxConcurrentTranscodes",
+        "effectiveTempDir",
         "hardwareAcceleration",
         "hardwareEnabled",
-        "quality"
+        "maxConcurrentTranscodes",
+        "maxConcurrentTranscodesEnvOverride",
+        "maxConcurrentTranscodesRestartRequired",
+        "quality",
+        "tempDir",
+        "tempDirEnvOverride",
+        "tempDirRestartRequired",
+        "toneMapEnabled"
       ]
     },
     {
@@ -3635,9 +3644,18 @@
         "codec",
         "configuredPreference",
         "device",
+        "effectiveMaxConcurrentTranscodes",
+        "effectiveTempDir",
         "hardwareAcceleration",
         "hardwareEnabled",
-        "quality"
+        "maxConcurrentTranscodes",
+        "maxConcurrentTranscodesEnvOverride",
+        "maxConcurrentTranscodesRestartRequired",
+        "quality",
+        "tempDir",
+        "tempDirEnvOverride",
+        "tempDirRestartRequired",
+        "toneMapEnabled"
       ]
     },
     {

@@ -1381,13 +1381,20 @@ func (r Rendition) ToneMapUnavailable() bool {
 // HDR source on a build whose tone-map chain has not been PROVEN runnable
 // (ToneMapSupported). The alternative to the second refusal is spawning a
 // filter graph the binary rejects at parse time — the FFMPEG-TONEMAP-BT2390
-// failure — or, worse, quietly emitting an untone-mapped washed-out encode.
+// failure — or, worse, quietly emitting an untone-mapped washed-out encode. A
+// third refusal, ToneMapRefusalDisabled, applies while the operator has turned
+// tone-mapping off (SetToneMapEnabled).
 func (r Rendition) ToneMapRefusal() string {
 	if r.ToneMapUnavailable() {
 		return ToneMapRefusalDoViP5
 	}
-	if !r.CopyVideo && r.needsToneMap() && !toneMapSupported() {
-		return ToneMapRefusalUnverified
+	if !r.CopyVideo && r.needsToneMap() {
+		if !ToneMapEnabled() {
+			return ToneMapRefusalDisabled
+		}
+		if !toneMapSupported() {
+			return ToneMapRefusalUnverified
+		}
 	}
 	return ""
 }

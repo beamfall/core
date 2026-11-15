@@ -243,6 +243,56 @@ func TestLoadDefaultsTranscodeScratchDirUnderDataDir(t *testing.T) {
 	}
 }
 
+// TestLoadRecordsExplicitTranscodeOverrides proves Load marks a cap or temp
+// directory set by env var or flag as explicit, so it overrides the Console-
+// stored value, and leaves defaults unmarked (CORE-1970).
+func TestLoadRecordsExplicitTranscodeOverrides(t *testing.T) {
+	none := func(string) (string, bool) { return "", false }
+	cfg, err := Load([]string{"--data-dir", t.TempDir()}, none)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TranscodeCapExplicit || cfg.TranscodeScratchDirExplicit {
+		t.Fatalf("defaults explicit = cap %v dir %v, want neither", cfg.TranscodeCapExplicit, cfg.TranscodeScratchDirExplicit)
+	}
+
+	cfg, err = Load([]string{"--data-dir", t.TempDir(), "--transcode-cap", "4", "--transcode-tmp", t.TempDir()}, none)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.TranscodeCapExplicit || !cfg.TranscodeScratchDirExplicit {
+		t.Fatalf("flags explicit = cap %v dir %v, want both", cfg.TranscodeCapExplicit, cfg.TranscodeScratchDirExplicit)
+	}
+
+	envDir := t.TempDir()
+	cfg, err = Load([]string{"--data-dir", t.TempDir()}, func(name string) (string, bool) {
+		switch name {
+		case "BEAMFALL_TRANSCODE_CAP":
+			return "2", true
+		case "BEAMFALL_TRANSCODE_TMP":
+			return envDir, true
+		default:
+			return "", false
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.TranscodeCapExplicit || !cfg.TranscodeScratchDirExplicit || cfg.TranscodeCap != 2 {
+		t.Fatalf("env explicit = cap %v (%d) dir %v, want both with cap 2", cfg.TranscodeCapExplicit, cfg.TranscodeCap, cfg.TranscodeScratchDirExplicit)
+	}
+
+	cfg, err = Load([]string{"--data-dir", t.TempDir()}, func(name string) (string, bool) {
+		return "", name == "BEAMFALL_TRANSCODE_TMP"
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TranscodeScratchDirExplicit {
+		t.Fatal("empty BEAMFALL_TRANSCODE_TMP marked explicit, want default")
+	}
+}
+
 func TestLoadRejectsInvalidOperatorLogLevelEnv(t *testing.T) {
 	_, err := Load([]string{"--data-dir", t.TempDir()}, func(name string) (string, bool) {
 		if name == "BEAMFALL_LOG_LEVEL" {

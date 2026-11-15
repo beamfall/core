@@ -54,9 +54,16 @@ type Config struct {
 	// TranscodeCap is the per-server concurrent-transcode cap (ADR-0010 §6
 	// admission control; ADR-0013 resource governance).
 	TranscodeCap int
+	// TranscodeCapExplicit records that BEAMFALL_TRANSCODE_CAP or
+	// --transcode-cap set TranscodeCap, so it overrides the Console-stored cap.
+	TranscodeCapExplicit bool
 	// TranscodeScratchDir is the ephemeral working directory for live HLS
 	// transcodes. Empty input normalizes to <DataDir>/transcode.
 	TranscodeScratchDir string
+	// TranscodeScratchDirExplicit records that a non-empty BEAMFALL_TRANSCODE_TMP
+	// or --transcode-tmp set TranscodeScratchDir, so it overrides the
+	// Console-stored temp directory.
+	TranscodeScratchDirExplicit bool
 	// LogLevel controls the server's operator-facing slog threshold.
 	LogLevel slog.Level
 	// GenerationWorkers is the background generation worker-pool size and
@@ -408,9 +415,11 @@ func LoadWithOutput(args []string, lookupEnv func(string) (string, bool), output
 			return Config{}, fmt.Errorf("invalid BEAMFALL_TRANSCODE_CAP %q: must be a positive integer", value)
 		}
 		cfg.TranscodeCap = limit
+		cfg.TranscodeCapExplicit = true
 	}
 	if value, ok := lookupEnv("BEAMFALL_TRANSCODE_TMP"); ok {
 		cfg.TranscodeScratchDir = strings.TrimSpace(value)
+		cfg.TranscodeScratchDirExplicit = cfg.TranscodeScratchDir != ""
 	}
 	if value, ok := lookupEnv("BEAMFALL_LOG_LEVEL"); ok && value != "" {
 		level, err := parseLogLevel(value)
@@ -574,6 +583,14 @@ func LoadWithOutput(args []string, lookupEnv func(string) (string, bool), output
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
 	}
+	fs.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "transcode-cap":
+			cfg.TranscodeCapExplicit = true
+		case "transcode-tmp":
+			cfg.TranscodeScratchDirExplicit = strings.TrimSpace(cfg.TranscodeScratchDir) != ""
+		}
+	})
 	if attached {
 		cfg.Role = serverrole.Attached
 	} else {
@@ -660,7 +677,7 @@ func validate(cfg Config) (Config, error) {
 	}
 	cfg.TranscodeScratchDir = strings.TrimSpace(cfg.TranscodeScratchDir)
 	if cfg.TranscodeScratchDir != "" {
-		if err := validateScratchDir(cfg.TranscodeScratchDir); err != nil {
+		if err := ValidateTranscodeScratchDir(cfg.TranscodeScratchDir); err != nil {
 			return Config{}, err
 		}
 	} else {
@@ -746,7 +763,10 @@ func parseLogLevel(value string) (slog.Level, error) {
 	return level, nil
 }
 
-func validateScratchDir(dir string) error {
+// ValidateTranscodeScratchDir proves dir is an existing, writable directory by
+// creating and removing a probe file in it. The Console temp-directory setting
+// and the env/flag override share this one check.
+func ValidateTranscodeScratchDir(dir string) error {
 	info, err := os.Stat(dir)
 	if err != nil {
 		return fmt.Errorf("invalid transcode scratch dir %q: %w", dir, err)
