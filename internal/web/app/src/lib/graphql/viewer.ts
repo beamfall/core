@@ -30,6 +30,7 @@ import type {
   NotificationReadResult,
   PlaybackAdjustmentRanges,
   PlaybackMarker,
+  PrePlayItem,
   ProfileSessionInfo,
   ProfileSummary,
   ReportPlaybackResult,
@@ -439,6 +440,26 @@ const CLIENT_PREFS_QUERY = "query ClientPrefs { clientPrefs { key value } }";
 export async function fetchClientPrefs(): Promise<ClientPref[]> {
   const data = await graphql<{ clientPrefs: ClientPref[] | null }>(CLIENT_PREFS_QUERY, {});
   return data.clientPrefs ?? [];
+}
+
+const PRE_PLAY_QUEUE_QUERY =
+  "query PrePlayQueue($mediaID: String!) { prePlayQueue(mediaID: $mediaID) { mediaID title durationSeconds role label } }";
+
+/**
+ * PrePlayQueue — the items to play before `mediaID` (CORE-1701): the Owner's
+ * clips, then any items the active plugin suggests. Empty unless the Profile
+ * opted in and the feature is eligible.
+ */
+export async function fetchPrePlayQueue(
+  mediaID: string,
+  signal?: AbortSignal,
+): Promise<PrePlayItem[]> {
+  const data = await graphql<{ prePlayQueue: PrePlayItem[] | null }>(
+    PRE_PLAY_QUEUE_QUERY,
+    { mediaID },
+    signal,
+  );
+  return data.prePlayQueue ?? [];
 }
 
 const SET_CLIENT_PREF_MUTATION =

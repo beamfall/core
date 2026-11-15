@@ -341,6 +341,7 @@ var fieldDispatchRuns = [...]fieldDispatchFunc{
 	146: dispatchFieldBlock146,
 	147: dispatchFieldBlock147,
 	148: dispatchFieldBlock148,
+	149: dispatchFieldBlock149,
 }
 
 var fieldHandlerRegistry = map[string]fieldHandler{
@@ -500,6 +501,8 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"provisionencryptedlibrary":          newFieldHandler("provisionEncryptedLibrary", "provisionEncryptedLibrary", fieldMutation, roleSession|roleAdmin, 107),
 	"purgetrash":                         newFieldHandler("purgeTrash", "purgeTrash", fieldMutation, roleSession|roleManager|roleAdmin, 35),
 	"purgelibrary":                       newFieldHandler("purgeLibrary", "purgeLibrary", fieldMutation, roleSession|roleAdmin, 148),
+	"preplayclips":                       newFieldHandler("prePlayClips", "prePlayClips", fieldRead, roleSession|roleAdmin, 149),
+	"preplayqueue":                       newFieldHandler("prePlayQueue", "prePlayQueue", fieldRead, roleSession, 149),
 	"qbittorrentingest":                  newFieldHandler("qbittorrentIngest", "qbittorrentIngest", fieldRead, roleSession|roleAdmin, 106),
 	"qualitypolicy":                      newFieldHandler("qualityPolicy", "qualityPolicy", fieldRead, roleSession|roleAdmin, 50),
 	"queueadd":                           newFieldHandler("queueAdd", "queue", fieldMutation, roleSession, 30),
@@ -587,6 +590,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"setrevealpin":                       newFieldHandler("setRevealPin", "reveal", fieldMutation, roleSession|roleManager, 25),
 	"setscrapercredential":               newFieldHandler("setScraperCredential", "setScraperCredential", fieldMutation, roleSession|roleAdmin, 66),
 	"setscrobbleeligibility":             newFieldHandler("setScrobbleEligibility", "setScrobbleEligibility", fieldMutation, roleSession|roleAdmin, 29),
+	"setpreplayclips":                    newFieldHandler("setPrePlayClips", "setPrePlayClips", fieldMutation, roleSession|roleAdmin, 149),
 	"setskipdetectionenabled":            newFieldHandler("setSkipDetectionEnabled", "setSkipDetectionEnabled", fieldMutation, roleSession|roleAdmin, 78),
 	"setsubscriptionretention":           newFieldHandler("setSubscriptionRetention", "setSubscriptionRetention", fieldMutation, roleSession|roleManager, 54),
 	"settranscodeconfig":                 newFieldHandler("setTranscodeConfig", "setTranscodeConfig", fieldMutation, roleSession|roleAdmin, 69),
@@ -3996,6 +4000,35 @@ func dispatchFieldBlock148(dispatch *fieldDispatchContext) response {
 	if fields["purgelibrary"] {
 		result, err := h.purgeLibrary(ctx, scope, req)
 		if resp := resolveField(dispatch, "purgelibrary", result, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	return response{}
+}
+
+// dispatchFieldBlock149 resolves the pre-play queue and the Owner's clip list
+// (CORE-1701).
+func dispatchFieldBlock149(dispatch *fieldDispatchContext) response {
+	h := dispatch.handler
+	ctx := dispatch.ctx
+	scope := dispatch.scope
+	req := dispatch.req
+	fields := dispatch.fields
+	if fields["setpreplayclips"] {
+		info, err := h.setPrePlayClips(ctx, scope, req)
+		if resp := resolveField(dispatch, "setpreplayclips", info, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["preplayclips"] {
+		info, err := h.prePlayClips(ctx, scope)
+		if resp := resolveField(dispatch, "preplayclips", info, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["preplayqueue"] {
+		items, err := h.prePlayQueue(ctx, scope, req)
+		if resp := resolveField(dispatch, "preplayqueue", items, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

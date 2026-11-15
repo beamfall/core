@@ -12823,6 +12823,121 @@
     ]
   },
   {
+    "field": "preplayclips",
+    "kind": "object",
+    "children": [
+      {
+        "name": "items",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "durationSeconds",
+              "kind": "scalar"
+            },
+            {
+              "name": "label",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            },
+            {
+              "name": "role",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "durationSeconds",
+            "kind": "scalar"
+          },
+          {
+            "name": "label",
+            "kind": "scalar"
+          },
+          {
+            "name": "mediaID",
+            "kind": "scalar"
+          },
+          {
+            "name": "role",
+            "kind": "scalar"
+          },
+          {
+            "name": "title",
+            "kind": "scalar"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "field": "preplayqueue",
+    "kind": "list",
+    "arguments": [
+      {
+        "name": "mediaID",
+        "kind": "string"
+      }
+    ],
+    "elem": {
+      "kind": "object",
+      "children": [
+        {
+          "name": "durationSeconds",
+          "kind": "scalar"
+        },
+        {
+          "name": "label",
+          "kind": "scalar"
+        },
+        {
+          "name": "mediaID",
+          "kind": "scalar"
+        },
+        {
+          "name": "role",
+          "kind": "scalar"
+        },
+        {
+          "name": "title",
+          "kind": "scalar"
+        }
+      ]
+    },
+    "children": [
+      {
+        "name": "durationSeconds",
+        "kind": "scalar"
+      },
+      {
+        "name": "label",
+        "kind": "scalar"
+      },
+      {
+        "name": "mediaID",
+        "kind": "scalar"
+      },
+      {
+        "name": "role",
+        "kind": "scalar"
+      },
+      {
+        "name": "title",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "profiles",
     "kind": "object",
     "children": [
@@ -22548,6 +22663,64 @@
         "name": "version",
         "kind": "scalar",
         "optional": true
+      }
+    ]
+  },
+  {
+    "field": "setpreplayclips",
+    "kind": "object",
+    "children": [
+      {
+        "name": "items",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "durationSeconds",
+              "kind": "scalar"
+            },
+            {
+              "name": "label",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            },
+            {
+              "name": "role",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "durationSeconds",
+            "kind": "scalar"
+          },
+          {
+            "name": "label",
+            "kind": "scalar"
+          },
+          {
+            "name": "mediaID",
+            "kind": "scalar"
+          },
+          {
+            "name": "role",
+            "kind": "scalar"
+          },
+          {
+            "name": "title",
+            "kind": "scalar"
+          }
+        ]
       }
     ]
   },

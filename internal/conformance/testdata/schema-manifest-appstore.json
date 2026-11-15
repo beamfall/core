@@ -745,6 +745,16 @@
     "tier": "admin"
   },
   {
+    "field": "preplayclips",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "preplayqueue",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "profiles",
     "effect": "read",
     "tier": "session"
@@ -1146,6 +1156,11 @@
   },
   {
     "field": "setpluginconfig",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "setpreplayclips",
     "effect": "write",
     "tier": "admin"
   },

@@ -7,6 +7,7 @@ import {
   fetchClientPrefs,
   fetchMedia,
   fetchPlaybackAdjustmentRanges,
+  fetchPrePlayQueue,
   setClientPref,
 } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
@@ -26,6 +27,17 @@ vi.mock("@/lib/graphql", () => ({
   setClientPref: vi.fn().mockResolvedValue(undefined),
   fetchMedia: vi.fn().mockResolvedValue(null),
   fetchPlaybackAdjustmentRanges: vi.fn().mockResolvedValue(null),
+  fetchPrePlayQueue: vi.fn().mockResolvedValue([]),
+}));
+vi.mock("../player/PrePlayStage", () => ({
+  PrePlayStage: vi.fn(({ items, onDone }: { items: { title: string }[]; onDone: () => void }) => (
+    <section aria-label="pre-play stage">
+      <span>{items.map((item) => item.title).join(", ")}</span>
+      <button type="button" onClick={onDone}>
+        Skip all
+      </button>
+    </section>
+  )),
 }));
 vi.mock("../player/usePlayer", () => ({
   usePlayer: vi.fn(),
@@ -71,7 +83,16 @@ function renderPlayer(
   });
   const tree = () => (
     <I18nProvider>
-      <MemoryRouter initialEntries={[{ pathname: "/watch/media-alpha", state: navState }]}>
+      <MemoryRouter
+        initialEntries={[
+          {
+            pathname: "/watch/media-alpha",
+            // These cases test the title's player, so they arrive as an
+            // advance does: past any pre-play queue (CORE-1701).
+            state: { skipPrePlay: true, ...((navState as object | undefined) ?? {}) },
+          },
+        ]}
+      >
         <Routes>
           <Route path="/watch/:mediaId" element={<PlayerPage />} />
         </Routes>
@@ -465,7 +486,10 @@ describe("PlayerPage Back", () => {
     });
     render(
       <I18nProvider>
-        <MemoryRouter initialEntries={entries} initialIndex={entries.length - 1}>
+        <MemoryRouter
+          initialEntries={entries.map((pathname) => ({ pathname, state: { skipPrePlay: true } }))}
+          initialIndex={entries.length - 1}
+        >
           <Routes>
             <Route path="/" element={<p>home route</p>} />
             <Route path="/entity/:entityId" element={<p>entity route</p>} />
@@ -513,6 +537,68 @@ describe("PlayerPage Version choice (CORE-1676)", () => {
     // Choosing the Version already playing does nothing.
     act(() => vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0]?.onSelectVersion?.("v-uhd"));
     expect(retry).toHaveBeenCalledOnce();
+  });
+});
+
+// CORE-1701: the pre-play queue plays before the title unless the viewer
+// arrived by a timestamped link or an advance.
+describe("PlayerPage pre-play", () => {
+  beforeEach(() => {
+    vi.mocked(usePlayer).mockReset();
+    vi.mocked(usePlayer).mockReturnValue({
+      videoRef: { current: null },
+      hlsRef: { current: null },
+      state: playerState({ phase: "playing" }),
+      retry: vi.fn(),
+      switchToHls: vi.fn(() => false as const),
+    });
+    vi.mocked(fetchPrePlayQueue).mockReset();
+  });
+
+  function renderEntry(entry: { pathname: string; search?: string; state?: unknown }) {
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={[entry]}>
+          <Routes>
+            <Route path="/watch/:mediaId" element={<PlayerPage />} />
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+  }
+
+  it("plays the pre-play queue first, then the title on Skip all", async () => {
+    vi.mocked(fetchPrePlayQueue).mockResolvedValue([
+      { mediaID: "clip-1", title: "Intro clip", durationSeconds: 10, role: "clip", label: "" },
+      {
+        mediaID: "s-1",
+        title: "Suggested one",
+        durationSeconds: 90,
+        role: "suggested",
+        label: "Preview",
+      },
+    ]);
+    renderEntry({ pathname: "/watch/media-alpha" });
+    const stage = await screen.findByRole("region", { name: "pre-play stage" });
+    expect(stage).toHaveTextContent("Intro clip, Suggested one");
+    expect(vi.mocked(fetchPrePlayQueue).mock.calls[0]?.[0]).toBe("media-alpha");
+    expect(usePlayer).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Skip all" }));
+    expect(screen.queryByRole("region", { name: "pre-play stage" })).not.toBeInTheDocument();
+    expect(usePlayer).toHaveBeenCalled();
+  });
+
+  it("starts the title when the queue is empty or cannot load", async () => {
+    vi.mocked(fetchPrePlayQueue).mockRejectedValue(new Error("offline"));
+    renderEntry({ pathname: "/watch/media-alpha" });
+    await waitFor(() => expect(usePlayer).toHaveBeenCalled());
+    expect(screen.queryByRole("region", { name: "pre-play stage" })).not.toBeInTheDocument();
+  });
+
+  it("skips pre-play for a timestamped link and for an advance", () => {
+    renderEntry({ pathname: "/watch/media-alpha", search: "?t=42" });
+    expect(fetchPrePlayQueue).not.toHaveBeenCalled();
+    expect(usePlayer).toHaveBeenCalled();
   });
 });
 

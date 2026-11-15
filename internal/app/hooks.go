@@ -30,6 +30,7 @@ type Hooks struct {
 	EnrichmentProvider             EnrichmentProviderFactory
 	ScrobbleAdapters               []ScrobbleAdapterHook
 	FeedSearcher                   *FeedSearcherHook
+	PrePlayPolicy                  *PrePlayPolicyHook
 }
 
 type IdentifyScorerHook struct {
@@ -73,6 +74,13 @@ type FeedSearcherHook struct {
 	PluginID          string
 	RequiredScraperID string
 	New               func(*scrape.Engine, SecretSource) graph.FeedSearcher
+}
+
+// PrePlayPolicyHook contributes the graph.PrePlayPolicy behind prePlayQueue
+// (CORE-1701). It is used only while PluginID's bundle is active.
+type PrePlayPolicyHook struct {
+	PluginID string
+	New      func(*store.Store) graph.PrePlayPolicy
 }
 
 // HydrationPlan is a shape-neutral write intent supplied by a compiled plugin
@@ -167,6 +175,16 @@ func activeFeedSearcher(registry *plugin.Registry, hook *FeedSearcherHook, engin
 		return nil
 	}
 	return hook.New(engine, secrets)
+}
+
+func activePrePlayPolicy(registry *plugin.Registry, hook *PrePlayPolicyHook, st *store.Store) graph.PrePlayPolicy {
+	if hook == nil || hook.New == nil || st == nil {
+		return nil
+	}
+	if _, ok := activeBundle(registry, hook.PluginID); !ok {
+		return nil
+	}
+	return hook.New(st)
 }
 
 func declaresScraper(bundle plugin.Bundle, scraperID string) bool {

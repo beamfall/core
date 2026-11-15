@@ -1101,6 +1101,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		PlaybackCache:                graphPlaybackCache,
 		Governor:                     resourceGovernor,
 		FeedSearcher:                 graphFeedSearcher,
+		PrePlayPolicy:                activePrePlayPolicy(executablePlugins, hooks.PrePlayPolicy, st),
 		AssetSweep:                   func(ctx context.Context) { enqueueAssetSweep(ctx, st, logger, jobWake) },
 		SubscriptionSecrets:          secretFiles{dir: filepath.Join(cfg.DataDir, "secrets")},
 		ScraperCredentialStore:       scraperCredentials,

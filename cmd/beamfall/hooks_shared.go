@@ -48,6 +48,7 @@ func firstPartyHooksForBundles(bundles []plugin.Bundle) app.Hooks {
 		addFilmTVMigrationSources(&hooks)
 		addFilmTVPackResolvers(&hooks)
 		hooks.ScrobbleAdapters = append(hooks.ScrobbleAdapters, app.ScrobbleAdapterHook{PluginID: filmtv.PluginID, Service: filmtv.ScrobbleServiceTrakt, Factory: filmtv.TraktScrobbleFactory})
+		hooks.PrePlayPolicy = filmtvPrePlayHook()
 	}
 	if active[books.PluginID] {
 		hooks.Parsers[books.PluginID] = books.New()

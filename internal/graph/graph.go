@@ -324,6 +324,7 @@ type Options struct {
 	PlaybackCache                PlaybackCacheController
 	Governor                     GovernorStatusProvider
 	FeedSearcher                 FeedSearcher
+	PrePlayPolicy                PrePlayPolicy
 	AssetSweep                   func(context.Context)
 	SubscriptionSecrets          SubscriptionSecretStore
 	ScraperCredentialStore       ScraperCredentialStore
@@ -390,6 +391,7 @@ type Handler struct {
 	jobRunner       JobRunner
 	governor        GovernorStatusProvider
 	feedSearcher    FeedSearcher
+	prePlayPolicy   PrePlayPolicy
 	// playbackCache wires the precomputed-playback-rendition cache controls:
 	// explicit operator generation, on-demand eviction, and the
 	// cache-health snapshot the Console surfaces. Nil (the default) reports the
@@ -664,6 +666,7 @@ func NewHandler(manifests *manifest.Service, authService *auth.Service, st *stor
 	h.playbackCache = o.PlaybackCache
 	h.governor = o.Governor
 	h.feedSearcher = o.FeedSearcher
+	h.prePlayPolicy = o.PrePlayPolicy
 	h.assetSweep = o.AssetSweep
 	h.subscriptionSecrets = o.SubscriptionSecrets
 	h.scraperCredentials = o.ScraperCredentialStore
@@ -4931,6 +4934,8 @@ var queryFields = map[string]bool{
 	"semanticcapability":     true,
 	"searchentities":         true,
 	"searchfeeds":            true,
+	"preplayqueue":           true, // CORE-1701: items to play before a feature
+	"preplayclips":           true, // CORE-1701: the Owner's pre-play clip list
 	"media":                  true,
 	"trashlist":              true,
 	"tags":                   true,
@@ -5224,6 +5229,7 @@ var mutationFields = map[string]bool{
 	// ENR-7 (ADR-0048 Decision 3/6): operator write of the per-Library
 	// skip-detection toggle (resolver in graph_skipdetect.go).
 	"setskipdetectionenabled": true,
+	"setpreplayclips":         true,
 	// Encrypted-Library key model: provision the DEK +
 	// three wraps (Recovery Key once), and the Sealed/Unsealed lifecycle.
 	"provisionencryptedlibrary": true,
@@ -5413,6 +5419,8 @@ var adminFields = map[string]bool{
 	// 3/6 — Admin Session, the same tier as setLibraryAIIndexing).
 	"skipdetectionenabled":    true,
 	"setskipdetectionenabled": true,
+	"preplayclips":            true, // CORE-1701: the Owner's pre-play clip list
+	"setpreplayclips":         true,
 }
 
 // scopedFields are the top-level fields that need an authenticated session
