@@ -303,6 +303,8 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 	// is injected at build time through capabilities.SourceOfferURL and is never
 	// accepted from a request. Development builds with no offer fail closed.
 	s.handle(http.MethodGet, "/source", "", s.sourceOffer)
+	s.handle(http.MethodGet, apiDocsPath, "", s.apiDocsReference)
+	s.handle(http.MethodGet, apiDocsOpenAPIPath, "", s.apiDocsOpenAPI)
 	s.handle(http.MethodPost, "/api/graphql", reveal.ContentJSON, s.graphQL)
 	s.handle(http.MethodPost, "/api/compat/handshake", reveal.ContentJSON, s.compatHandshake)
 	s.handle(http.MethodPost, createMediaArtworkRoutePattern, reveal.ContentJSON, s.createMediaWithArtwork)

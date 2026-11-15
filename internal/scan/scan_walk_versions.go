@@ -59,7 +59,7 @@ func (s *scanWalkState) attachVersion(key string, imported store.ImportMediaFile
 		AnchorFingerprint: anchor.fingerprint,
 		AnchorLabel:       anchor.label,
 	})
-	if errors.Is(err, store.ErrVersionNotAttached) {
+	if errors.Is(err, store.ErrVersionNotAttached) || errors.Is(err, store.ErrManagedAdmissionInFlight) {
 		return "", false, nil
 	}
 	if err != nil {

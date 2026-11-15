@@ -30,6 +30,7 @@ import {
   loadProviderKeys,
   loadSavedPluginChoices,
   MIN_ADMIN_PASSWORD_LENGTH,
+  reopenAdminSession,
   SetupTokenError,
   type UpdateCheckChannel,
 } from "./orchestrate";
@@ -101,6 +102,14 @@ function rememberedResumeStep(): string | null {
 // is shown to the owner.
 const INTERNAL_ERROR = /^[a-z][A-Za-z]* unavailable$|graphql|admin session required/i;
 
+// A read refused because the Admin Session lapsed, which the admin password can
+// reopen, as opposed to any other failure (CORE-1731).
+function isAdminSessionRefusal(err: unknown): boolean {
+  return (
+    err instanceof ApiError && err.status === 403 && /admin session required/i.test(err.message)
+  );
+}
+
 const SECURITY_MODES: { mode: SignInSecurityMode; label: StringKey; detail: StringKey }[] = [
   { mode: "home", label: "setupSecurityHome", detail: "setupSecurityHomeDetail" },
   { mode: "strict", label: "setupSecurityStrict", detail: "setupSecurityStrictDetail" },
@@ -164,8 +173,16 @@ export function SetupWizard() {
   // A resumed run reads the saved plugin choices from the server. Until that
   // read succeeds the activation state is unknown and the Plugins step cannot
   // save (CORE-1604): saving a guess would overwrite the owner's choices.
-  const [savedChoices, setSavedChoices] = useState<"loading" | "ready" | "failed">("ready");
+  // "locked" is a read refused because the Admin Session lapsed (the window
+  // closed before a reload): the owner re-enters the admin password to reopen
+  // it, then the read runs again (CORE-1731).
+  const [savedChoices, setSavedChoices] = useState<"loading" | "ready" | "failed" | "locked">(
+    "ready",
+  );
   const [savedChoicesAttempt, setSavedChoicesAttempt] = useState(0);
+  const [unlockPassword, setUnlockPassword] = useState("");
+  const [unlockError, setUnlockError] = useState<string | null>(null);
+  const [unlocking, setUnlocking] = useState(false);
   const [keySecrets, setKeySecrets] = useState<Record<string, string>>({});
 
   // True once POST /api/setup has succeeded — drives the "unlocked" banner and
@@ -207,6 +224,8 @@ export function SetupWizard() {
   const rootID = useId();
   const profileID = useId();
   const errorID = useId();
+  const unlockID = useId();
+  const unlockErrorID = useId();
 
   useEffect(
     () => () => {
@@ -305,9 +324,9 @@ export function SetupWizard() {
           setProviderKeys(saved.providerKeys);
           setSavedChoices("ready");
         })
-        .catch(() => {
+        .catch((err: unknown) => {
           if (cancelled) return;
-          setSavedChoices("failed");
+          setSavedChoices(isAdminSessionRefusal(err) ? "locked" : "failed");
           setActivePlugins(new Set());
           return fetchPlugins().then((list) => {
             if (!cancelled) setPlugins(list);
@@ -474,6 +493,28 @@ export function SetupWizard() {
       initialTokenRef.current = "";
       setToken("");
       setBusy(false);
+    }
+  }
+
+  // Reopen the lapsed Admin Session with the admin password, then read the
+  // saved choices again. The password is cleared whatever the verdict.
+  async function unlockSavedChoices() {
+    if (unlocking || !unlockPassword) return;
+    const candidate = unlockPassword;
+    setUnlocking(true);
+    setUnlockError(null);
+    try {
+      const active = await reopenAdminSession(candidate);
+      if (!active) {
+        setUnlockError(t("adminUnlockRejected"));
+        return;
+      }
+      setSavedChoicesAttempt((n) => n + 1);
+    } catch {
+      setUnlockError(t("adminUnlockRejected"));
+    } finally {
+      setUnlockPassword("");
+      setUnlocking(false);
     }
   }
 
@@ -1092,6 +1133,56 @@ export function SetupWizard() {
                     >
                       {t("setupPluginsRetry")}
                     </Button>
+                  </div>
+                )}
+                {savedChoices === "locked" && (
+                  <div className="space-y-3">
+                    <p role="alert" className="m-0 text-sm text-(--state-danger)">
+                      {t("setupPluginsLocked")}
+                    </p>
+                    <div className="space-y-1.5">
+                      <Label htmlFor={unlockID}>{t("adminPasswordLabel")}</Label>
+                      <div className="flex items-center gap-3">
+                        <Input
+                          id={unlockID}
+                          type="password"
+                          value={unlockPassword}
+                          onChange={(e) => setUnlockPassword(e.target.value)}
+                          // Enter unlocks here; it must not submit the step,
+                          // which cannot save until the choices load.
+                          onKeyDown={(e) => {
+                            if (e.key !== "Enter") return;
+                            e.preventDefault();
+                            void unlockSavedChoices();
+                          }}
+                          autoComplete="current-password"
+                          autoCapitalize="off"
+                          autoCorrect="off"
+                          spellCheck={false}
+                          aria-invalid={unlockError != null}
+                          aria-describedby={unlockError ? unlockErrorID : undefined}
+                          className="flex-1"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-9 rounded-[10px] px-4"
+                          disabled={unlocking || !unlockPassword}
+                          onClick={() => void unlockSavedChoices()}
+                        >
+                          {t("setupPluginsUnlock")}
+                        </Button>
+                      </div>
+                      {unlockError && (
+                        <p
+                          id={unlockErrorID}
+                          role="alert"
+                          className="m-0 text-sm text-(--state-danger)"
+                        >
+                          {unlockError}
+                        </p>
+                      )}
+                    </div>
                   </div>
                 )}
                 {savedChoices !== "ready" ? null : plugins.length === 0 ? (

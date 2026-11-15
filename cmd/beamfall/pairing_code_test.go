@@ -80,8 +80,10 @@ func TestPairingCodeHonoursDataDirEnv(t *testing.T) {
 	}
 }
 
-// TestPairingCodeOutput covers CORE-1609: a real URL for the configured
-// address, a relative and local-time expiry, and no "start the server".
+// TestPairingCodeOutput asserts the printed steps: a real URL for the
+// configured address and a relative, local-time expiry (CORE-1609). The command
+// refuses a running server and only a running server redeems the code, so the
+// line starts with the start-the-server step (CORE-1734).
 func TestPairingCodeOutput(t *testing.T) {
 	dataDir, _ := ownerDataDir(t)
 	t.Setenv("BEAMFALL_ADDR", "127.0.0.1:9123")
@@ -90,12 +92,9 @@ func TestPairingCodeOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	want := regexp.MustCompile(`^Open http://127\.0\.0\.1:9123/web/ and enter this code within \d+ minutes \(it expires at \d\d:\d\d\)\.$`)
+	want := regexp.MustCompile(`^Start the server, then open http://127\.0\.0\.1:9123/web/ and enter this code within \d+ minutes \(it expires at \d\d:\d\d\)\.$`)
 	if len(lines) != 2 || !want.MatchString(lines[1]) {
 		t.Fatalf("output = %q, want the code then one instruction line", out.String())
-	}
-	if strings.Contains(strings.ToLower(out.String()), "start the server") {
-		t.Fatalf("output tells the owner to start a server: %q", out.String())
 	}
 }
 

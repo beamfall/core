@@ -476,9 +476,11 @@ func (s *Service) packRestricted(ctx context.Context, pack store.OfflinePack, fi
 // was sealed AFTER the pack was built/granted is detected. The serving layer
 // denies such a pack unconditionally (a Sealed Library serves NOTHING — unlike
 // restricted, Reveal does not lift it). When no Sealed predicate is wired this
-// is always false (nothing sealed). A member resolved away by the filter (e.g.
-// already deleted) is NOT treated as sealed here — revoke/expiry/restricted
-// guards cover those; this guard is specifically the Sealed boundary.
+// is always false (nothing sealed). A sealed encrypted Library's rows live on
+// its locked plane, so its members resolve to nothing at all; the store cannot
+// tell them apart from deleted rows. While any Library the pack may draw from is
+// sealed, a member that does not resolve is therefore treated as sealed (fail
+// closed): the pack serves again once the Library is unsealed.
 func (s *Service) packHasSealedMember(ctx context.Context, pack store.OfflinePack) (bool, error) {
 	if s.sealed == nil {
 		return false, nil
@@ -490,12 +492,21 @@ func (s *Service) packHasSealedMember(ctx context.Context, pack store.OfflinePac
 	// Reveal+sentinel so the enumeration is COMPLETE (restricted Libraries
 	// included): this probe only asks "is anything sealed at all", it is not a
 	// visibility decision — the per-member resolve below makes the real call.
+	// A pack scoped to named Libraries can only hold members from them.
+	inScope := func(store.LibraryID) bool { return true }
+	if len(pack.LibraryIDs) > 0 {
+		scoped := make(map[store.LibraryID]bool, len(pack.LibraryIDs))
+		for _, id := range pack.LibraryIDs {
+			scoped[id] = true
+		}
+		inScope = func(id store.LibraryID) bool { return scoped[id] }
+	}
 	libraries, err := s.store.Libraries(ctx, store.LibraryFilter{AllLibraries: true, Revealed: true})
 	if err != nil {
 		return false, err
 	}
 	for _, lib := range libraries {
-		if s.sealed(lib.ID) {
+		if inScope(lib.ID) && s.sealed(lib.ID) {
 			sealedAny = true
 			break
 		}
@@ -522,8 +533,9 @@ func (s *Service) packHasSealedMember(ctx context.Context, pack store.OfflinePac
 	if err != nil {
 		return false, err
 	}
-	for _, media := range rows {
-		if s.sealed(media.LibraryID) {
+	for _, id := range ids {
+		media, ok := rows[id]
+		if !ok || s.sealed(media.LibraryID) {
 			return true, nil
 		}
 	}

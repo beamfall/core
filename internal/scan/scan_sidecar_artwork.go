@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -81,6 +82,7 @@ var localArtworkVocabulary = []localArtworkName{
 	{localArtworkFolder, "banner", ""},
 	{localArtworkFolder, "logo", ""},
 	{localArtworkFolder, "clearlogo", ""},
+	{localArtworkFolder, "artist", ""},
 	{localArtworkFolderDir, "extrafanart", "backdrop"},
 	{localArtworkContainer, "season00-poster", "poster"},
 	{localArtworkContainer, "season-specials-poster", "poster"},
@@ -88,6 +90,85 @@ var localArtworkVocabulary = []localArtworkName{
 
 // localArtworkExts is the accepted sidecar image formats, in preference order.
 var localArtworkExts = []string{"jpg", "jpeg", "png", "webp"}
+
+// isLocalArtworkSidecar reports whether path is an image the local artwork
+// vocabulary recognises, so the walk never catalogues it as an item
+// (CORE-1708). Folder and container names match on the name alone; a file
+// name "<stem>-<name>" matches only beside a non-image media file with that
+// stem, and any image inside an extrafanart directory matches. It reads at most
+// the file's own directory and keeps no state, so the walker and the consumer
+// may call it concurrently.
+func isLocalArtworkSidecar(path string) bool {
+	lower := strings.ToLower(filepath.Base(path))
+	ext := strings.TrimPrefix(filepath.Ext(lower), ".")
+	if !slices.Contains(localArtworkExts, ext) {
+		return false
+	}
+	base := strings.TrimSuffix(lower, "."+ext)
+	if base == "" {
+		return false
+	}
+	var fileStems []string
+	for _, row := range localArtworkVocabulary {
+		switch row.Scope {
+		case localArtworkFolder:
+			if base == row.Name {
+				return true
+			}
+		case localArtworkFolderDir:
+			if strings.EqualFold(filepath.Base(filepath.Dir(path)), row.Name) {
+				return true
+			}
+		case localArtworkContainer:
+			if containerArtworkName(base, row.Name) {
+				return true
+			}
+		case localArtworkFile:
+			if stem, ok := strings.CutSuffix(base, "-"+row.Name); ok && stem != "" {
+				fileStems = append(fileStems, stem)
+			}
+		}
+	}
+	return len(fileStems) > 0 && dirHasMediaStem(filepath.Dir(path), fileStems)
+}
+
+// containerArtworkName reports whether base matches a container vocabulary
+// name, where "00" stands for two or more digits.
+func containerArtworkName(base, name string) bool {
+	prefix, suffix, numbered := strings.Cut(name, "00")
+	if !numbered {
+		return base == name
+	}
+	digits, ok := strings.CutPrefix(base, prefix)
+	if !ok {
+		return false
+	}
+	digits, ok = strings.CutSuffix(digits, suffix)
+	if !ok || len(digits) < 2 {
+		return false
+	}
+	return strings.Trim(digits, "0123456789") == ""
+}
+
+// dirHasMediaStem reports whether dir holds a non-image media file whose
+// lowercase stem is one of stems.
+func dirHasMediaStem(dir string, stems []string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(name)), ".")
+		if entry.IsDir() || !mediaExtensions[ext] || imageExtensions[ext] {
+			continue
+		}
+		if slices.Contains(stems, strings.ToLower(titleFromPath(name))) {
+			return true
+		}
+	}
+	return false
+}
 
 // localArtworkMediaSlots lists the Media slots local artwork can fill, in a
 // stable order.

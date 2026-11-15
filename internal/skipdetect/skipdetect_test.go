@@ -2,6 +2,7 @@ package skipdetect
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -24,10 +25,27 @@ type fakeDetector struct {
 	fingerprintCalls  int
 	tailCalls         int
 	cueCalls          int
+	// fingerprintErr, when set, fails every self/sibling fingerprint read.
+	fingerprintErr error
+	// onFingerprint, when set, runs before each fingerprint read and may fail it.
+	onFingerprint func(path string) error
+}
+
+func (f *fakeDetector) fingerprintFault(path string) error {
+	if f.fingerprintErr != nil {
+		return f.fingerprintErr
+	}
+	if f.onFingerprint != nil {
+		return f.onFingerprint(path)
+	}
+	return nil
 }
 
 func (f *fakeDetector) AudioFingerprintTail(_ context.Context, path string, windowCount, _ int) ([]float64, error) {
 	f.tailCalls++
+	if err := f.fingerprintFault(path); err != nil {
+		return nil, err
+	}
 	sig := f.tailByPath[path]
 	if len(sig) > windowCount {
 		sig = sig[len(sig)-windowCount:]
@@ -42,6 +60,9 @@ func (f *fakeDetector) Chapters(_ context.Context, path string) ([]ffmpeg.Chapte
 
 func (f *fakeDetector) AudioFingerprint(_ context.Context, path string, windowCount int) ([]float64, error) {
 	f.fingerprintCalls++
+	if err := f.fingerprintFault(path); err != nil {
+		return nil, err
+	}
 	sig := f.fingerprintByPath[path]
 	if len(sig) > windowCount {
 		sig = sig[:windowCount]
@@ -676,4 +697,151 @@ func repeat(v float64, n int) []float64 {
 		out[i] = v
 	}
 	return out
+}
+
+// fingerprintRetryFixture seeds two ordered siblings sharing a 40-window intro
+// and a 45-window EOF-aligned credits run, runs one successful detection for
+// a, then adds a manual recap and an ad suppression lock to a.
+func fingerprintRetryFixture(t *testing.T, name string) (*store.Store, *Service, *fakeDetector, store.MediaID, string, string, store.Marker) {
+	t.Helper()
+	ctx := context.Background()
+	st := storetest.Open(t)
+	a, pathA := seedVideo(t, st, "library-local", name+"-a", 1800)
+	b, pathB := seedVideo(t, st, "library-local", name+"-b", 1800)
+	enable(t, st, "library-local")
+	linkOrderedContainer(t, st, "library-local", store.EntityID("container-"+name), a.ID, b.ID)
+	sharedCredits := repeat(0.7, 45)
+	det := &fakeDetector{
+		chaptersByPath: map[string][]ffmpeg.Chapter{},
+		fingerprintByPath: map[string][]float64{
+			pathA: append(repeat(0.5, 40), repeat(0.1, 140)...),
+			pathB: append(repeat(0.5, 40), repeat(0.9, 140)...),
+		},
+		tailByPath: map[string][]float64{
+			pathA: append(repeat(0.1, fingerprintTailWindows-len(sharedCredits)), sharedCredits...),
+			pathB: append(repeat(0.9, fingerprintTailWindows-len(sharedCredits)), sharedCredits...),
+		},
+	}
+	svc := &Service{store: st, detector: det, now: fixedClock()}
+	if err := svc.DetectForMedia(ctx, a.ID); err != nil {
+		t.Fatalf("initial DetectForMedia: %v", err)
+	}
+	markers := markersOf(t, st, a.ID)
+	if _, ok := segmentOfKind(markers, "intro"); !ok {
+		t.Fatal("fixture: expected a fingerprint intro")
+	}
+	if _, ok := segmentOfKind(markers, "credits"); !ok {
+		t.Fatal("fixture: expected fingerprint credits")
+	}
+	end := 20.0
+	manual, err := st.CreateMarker(ctx, store.Marker{
+		MediaID: a.ID, SegmentKind: "recap", StartSeconds: 5, EndSeconds: &end,
+		Provenance: store.ProvenanceManual,
+	}, store.LibraryFilter{Revealed: true, AllLibraries: true}, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("create manual recap: %v", err)
+	}
+	if err := st.SuppressSegment(ctx, a.ID, store.SegmentKindAd, time.Now().UTC()); err != nil {
+		t.Fatalf("suppress ad: %v", err)
+	}
+	return st, svc, det, a.ID, pathA, pathB, manual
+}
+
+func assertManualAndSuppressionKept(t *testing.T, st *store.Store, id store.MediaID, manual store.Marker) {
+	t.Helper()
+	recap, ok := segmentOfKind(markersOf(t, st, id), "recap")
+	if !ok || recap.ID != manual.ID || recap.Provenance != store.ProvenanceManual {
+		t.Fatalf("manual recap not preserved: got %+v (present=%v)", recap, ok)
+	}
+	suppressed, err := st.SegmentSuppressed(context.Background(), id, store.SegmentKindAd)
+	if err != nil {
+		t.Fatalf("SegmentSuppressed: %v", err)
+	}
+	if !suppressed {
+		t.Fatal("ad suppression lock was lost")
+	}
+}
+
+// TestAuditFingerprintFailureKeepsPriorMarkers verifies CORE-0752: a retry
+// whose analysis fails (detector error) or is canceled mid-analysis returns
+// an error and leaves the prior detector markers, manual rows and suppression
+// state untouched.
+func TestAuditFingerprintFailureKeepsPriorMarkers(t *testing.T) {
+	st, svc, det, id, _, pathB, manual := fingerprintRetryFixture(t, "retry-fail")
+	before := markersOf(t, st, id)
+	priorIntro, _ := segmentOfKind(before, "intro")
+	priorCredits, _ := segmentOfKind(before, "credits")
+	assertPriorKept := func(stage string) {
+		t.Helper()
+		after := markersOf(t, st, id)
+		intro, ok := segmentOfKind(after, "intro")
+		if !ok || intro.ID != priorIntro.ID {
+			t.Fatalf("%s: prior fingerprint intro erased or replaced: %+v (present=%v)", stage, intro, ok)
+		}
+		credits, ok := segmentOfKind(after, "credits")
+		if !ok || credits.ID != priorCredits.ID {
+			t.Fatalf("%s: prior fingerprint credits erased or replaced: %+v (present=%v)", stage, credits, ok)
+		}
+		assertManualAndSuppressionKept(t, st, id, manual)
+	}
+
+	det.fingerprintErr = errors.New("transient decode failure")
+	if err := svc.DetectForMedia(context.Background(), id); err == nil {
+		t.Fatal("failed analysis returned nil error")
+	}
+	assertPriorKept("detector error")
+
+	// Cancellation during a sibling read: the per-sibling failure is skipped,
+	// so without the staged check the empty result would erase prior markers.
+	det.fingerprintErr = nil
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	det.onFingerprint = func(path string) error {
+		if path == pathB {
+			cancel()
+			return context.Canceled
+		}
+		return nil
+	}
+	if err := svc.DetectForMedia(ctx, id); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled analysis error = %v, want context.Canceled", err)
+	}
+	assertPriorKept("cancellation")
+}
+
+// TestFingerprintSuccessReplacesPriorMarkers verifies CORE-0752's other half:
+// a completed analysis that changes or finds nothing replaces the prior
+// detector markers, still preserving manual rows and suppression state.
+func TestFingerprintSuccessReplacesPriorMarkers(t *testing.T) {
+	st, svc, det, id, pathA, pathB, manual := fingerprintRetryFixture(t, "retry-ok")
+
+	// Changed analysis: a shorter shared intro and diverging tails.
+	det.fingerprintByPath[pathA] = append(repeat(0.5, 30), repeat(0.1, 150)...)
+	det.fingerprintByPath[pathB] = append(repeat(0.5, 30), repeat(0.9, 150)...)
+	det.tailByPath[pathA] = repeat(0.1, fingerprintTailWindows)
+	det.tailByPath[pathB] = repeat(0.9, fingerprintTailWindows)
+	if err := svc.DetectForMedia(context.Background(), id); err != nil {
+		t.Fatalf("changed DetectForMedia: %v", err)
+	}
+	markers := markersOf(t, st, id)
+	intro, ok := segmentOfKind(markers, "intro")
+	if !ok || intro.Method != MethodFingerprint || intro.EndSeconds == nil || *intro.EndSeconds != 30 {
+		t.Fatalf("changed analysis intro = %+v (present=%v), want fingerprint [0,30]", intro, ok)
+	}
+	if credits, ok := segmentOfKind(markers, "credits"); ok {
+		t.Fatalf("stale credits survived a successful analysis: %+v", credits)
+	}
+	assertManualAndSuppressionKept(t, st, id, manual)
+
+	// Empty analysis: nothing shared any more.
+	det.fingerprintByPath[pathA] = repeat(0.1, 180)
+	det.fingerprintByPath[pathB] = repeat(0.9, 180)
+	if err := svc.DetectForMedia(context.Background(), id); err != nil {
+		t.Fatalf("empty DetectForMedia: %v", err)
+	}
+	markers = markersOf(t, st, id)
+	if intro, ok := segmentOfKind(markers, "intro"); ok {
+		t.Fatalf("stale intro survived an empty successful analysis: %+v", intro)
+	}
+	assertManualAndSuppressionKept(t, st, id, manual)
 }

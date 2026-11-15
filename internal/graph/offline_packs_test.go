@@ -345,7 +345,7 @@ func TestCreateOfflinePackRefusesOriginalOverTheItemBound(t *testing.T) {
 		makeOfflinePackFixtureLargeVideo(t, st)
 		body := `{"query":"mutation { createOfflinePack { id } }","variables":` + variables + `}`
 		_, errs := post(t, handler, body, authorizeViewer)
-		if len(errs) != 1 || errs[0].Message != errOriginalPackItemTooLarge || errs[0].Extensions.Code != ErrorCodeInvalid {
+		if len(errs) != 1 || errs[0].Message != "original quality is limited to 4 GiB per item; choose high, medium or low quality" || errs[0].Extensions.Code != ErrorCodeInvalid {
 			t.Fatalf("variables %s: errors = %#v, want the INVALID 4 GiB original limit", variables, errs)
 		}
 		queued, err := st.ListJobs(t.Context())

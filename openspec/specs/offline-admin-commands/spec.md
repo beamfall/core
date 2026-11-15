@@ -47,3 +47,19 @@ set by `--addr` or `BEAMFALL_ADDR`.
 - **WHEN** the command mints a code
 - **THEN** its output is the code followed by one line naming the URL and the expiry, with no
   migration or "store opened" lines
+
+### Requirement: Pairing code names the start step and refuses a running server
+
+`beamfall pairing-code` SHALL refuse to run while a server holds the data directory. Because only a
+running server redeems the code, its instruction SHALL tell the operator to start the server before
+opening the URL.
+
+#### Scenario: Start step
+
+- **WHEN** the command mints a code
+- **THEN** its instruction tells the operator to start the server, then open the URL
+
+#### Scenario: Server already running
+
+- **WHEN** the command runs while a server holds the data directory
+- **THEN** it refuses without opening the store

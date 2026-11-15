@@ -205,16 +205,12 @@ func (h *Handler) createOfflinePack(ctx context.Context, scope auth.Scope, req r
 // pack row exists.
 const offlinePackBuilding = "building"
 
-// errOriginalPackItemTooLarge answers an Original-quality pack request with a
-// video item over the 4 GiB per-item bound.
-const errOriginalPackItemTooLarge = "original quality is limited to 4 GiB per item; choose high, medium or low quality"
-
 // admitOfflinePackBuild refuses, before any job is queued, a request the
 // build would fail on its per-item bound. Every other admission failure is
 // left to the job, which reports it as before.
 func (h *Handler) admitOfflinePackBuild(ctx context.Context, scope auth.Scope, build offlinepack.BuildPackRequest) error {
 	if err := h.offlinePacks.AdmitBuild(ctx, scope, build); errors.Is(err, offlinepack.ErrOriginalItemTooLarge) {
-		return clientError(errOriginalPackItemTooLarge)
+		return clientError("original quality is limited to 4 GiB per item; choose high, medium or low quality")
 	}
 	return nil
 }
