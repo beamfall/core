@@ -41,7 +41,6 @@ GATE_EXIT_OK=0
 #   -> discrepancy 19.257327s (0.77%); reduced 97.35%, driven by the three outer checks (release-workflow-pins
 #   0.31s, vuln-check 3.16s, contract-registry 0.10s) plus the pre-gate web smoke (185.20s) now recorded under
 #   the supervisor; residual ~19s is overlapping-lane double counting plus wrapper overhead.
-# Raw evidence (untracked): .agent-evidence/GATE-OUTER-COORDINATION-1-r2-walltime-vs-metrics.txt (+ *gate-runs.jsonl / *gate.log)
 export GATE_RUN_ID="${GATE_RUN_ID:-direct-$$}"
 
 configure_sandbox_go() {
