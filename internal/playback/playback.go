@@ -1126,7 +1126,10 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 			}
 		}()
 	}
-	hlsAudio := hlsAudioProfile(profile, streams, loudness, loudnessOK, ov)
+	// Passthrough and the encoder target are judged on the track the stream
+	// maps (CORE-1874), not on whichever of the file's tracks a client could
+	// take as is.
+	hlsAudio := hlsAudioProfile(profile, audio.chosenStreams(streams), loudness, loudnessOK, ov)
 	if ov.ceilingBindsAudio(media, file, streams) {
 		hlsAudio = ceilingBoundAudio(hlsAudio)
 	}
@@ -1201,7 +1204,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	// of direct play, which would lose the picture. A Ready precomputed
 	// rendition is served as is; otherwise the picture is composed live when
 	// the transcode policy and capacity admit it.
-	if composed, live, ok, err := s.composedChoice(ctx, scope, grant, suffix, media, file, profile, hlsAudio, expiresAt, ov, transcodeRefusal); err != nil {
+	if composed, live, ok, err := s.composedChoice(ctx, scope, grant, suffix, media, file, profile, hlsAudio, expiresAt, ov, transcodeRefusal, audio.overridesDefault()); err != nil {
 		return decision{}, err
 	} else if ok {
 		verdict := "precomputed-rendition"

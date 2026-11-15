@@ -63,6 +63,24 @@ func (sel audioSelection) overridesDefault() bool {
 	return sel.chosen != sel.fileDefault
 }
 
+// chosenStreams is streams with every audio stream but the chosen one left
+// out: the view a decision about the delivered audio (passthrough, the
+// transcode target) must judge, since a server stream maps only the chosen
+// track. A file with no audio is returned as is.
+func (sel audioSelection) chosenStreams(streams []store.MediaFileStream) []store.MediaFileStream {
+	if sel.chosen < 0 {
+		return streams
+	}
+	out := make([]store.MediaFileStream, 0, len(streams))
+	for _, stream := range streams {
+		if stream.Type == "audio" && stream.Index != sel.chosen {
+			continue
+		}
+		out = append(out, stream)
+	}
+	return out
+}
+
 // language is the chosen track's language tag, the audio language subtitle
 // pre-selection resolves against. Empty when the file has no audio or the
 // probe recorded none.
