@@ -10,6 +10,11 @@ export const sessionUpdateLiveStrings = {
     liveSessionDirectPlay: "Direct play",
     liveSessionRestricted: "Restricted",
     terminateSession: "End session",
+    liveSessionThisBrowser: "This browser",
+    terminateMaybeOwnSessionWarning:
+      "If this is this browser's session, ending it signs this browser out.",
+    terminateOwnSessionWarning:
+      "Ending this session signs this browser out. You will need to sign in again.",
     liveSessionRemux: "Remux",
     liveSessionMethod: "Playback",
     liveSessionBitrate: "Bitrate",
@@ -56,6 +61,11 @@ export const sessionUpdateLiveStrings = {
     liveSessionDirectPlay: "Lecture directe",
     liveSessionRestricted: "Restreint",
     terminateSession: "Terminer la session",
+    liveSessionThisBrowser: "Ce navigateur",
+    terminateMaybeOwnSessionWarning:
+      "S’il s’agit de la session de ce navigateur, la terminer déconnecte ce navigateur.",
+    terminateOwnSessionWarning:
+      "Terminer cette session déconnecte ce navigateur. Vous devrez vous reconnecter.",
     liveSessionRemux: "Remuxage",
     liveSessionMethod: "Lecture",
     liveSessionBitrate: "Débit",
@@ -103,6 +113,11 @@ export const sessionUpdateLiveStrings = {
     liveSessionDirectPlay: "Direkte Wiedergabe",
     liveSessionRestricted: "Eingeschränkt",
     terminateSession: "Sitzung beenden",
+    liveSessionThisBrowser: "Dieser Browser",
+    terminateMaybeOwnSessionWarning:
+      "Wenn das die Sitzung dieses Browsers ist, wird dieser Browser beim Beenden abgemeldet.",
+    terminateOwnSessionWarning:
+      "Wenn du diese Sitzung beendest, wird dieser Browser abgemeldet. Du musst dich erneut anmelden.",
     liveSessionRemux: "Remux",
     liveSessionMethod: "Wiedergabe",
     liveSessionBitrate: "Bitrate",
@@ -149,6 +164,11 @@ export const sessionUpdateLiveStrings = {
     liveSessionDirectPlay: "Reproducción directa",
     liveSessionRestricted: "Restringido",
     terminateSession: "Finalizar sesión",
+    liveSessionThisBrowser: "Este navegador",
+    terminateMaybeOwnSessionWarning:
+      "Si es la sesión de este navegador, finalizarla cierra la sesión de este navegador.",
+    terminateOwnSessionWarning:
+      "Finalizar esta sesión cierra la sesión de este navegador. Tendrás que volver a iniciar sesión.",
     liveSessionRemux: "Remux",
     liveSessionMethod: "Reproducción",
     liveSessionBitrate: "Tasa de bits",
@@ -195,6 +215,11 @@ export const sessionUpdateLiveStrings = {
     liveSessionDirectPlay: "Reprodução direta",
     liveSessionRestricted: "Restrito",
     terminateSession: "Encerrar sessão",
+    liveSessionThisBrowser: "Este navegador",
+    terminateMaybeOwnSessionWarning:
+      "Se esta for a sessão deste navegador, encerrá-la desconecta este navegador.",
+    terminateOwnSessionWarning:
+      "Encerrar esta sessão desconecta este navegador. Você precisará entrar novamente.",
     liveSessionRemux: "Remux",
     liveSessionMethod: "Reprodução",
     liveSessionBitrate: "Taxa de bits",
