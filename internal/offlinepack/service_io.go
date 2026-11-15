@@ -92,6 +92,13 @@ func (s *Service) SetSealed(sealed SealedPredicate) {
 	s.sealed = sealed
 }
 
+// SetScopeReauthorizer wires how a build rebuilds its scope from the current
+// Profile policy at each re-check of an Encrypted Library item. Without one,
+// an encrypted transcode is refused.
+func (s *Service) SetScopeReauthorizer(reauthorize ScopeReauthorizer) {
+	s.reauthorize = reauthorize
+}
+
 // SetEncryptedContent wires encrypted Offline Pack byte reads to libencrypt's
 // shared chunked reader, plus the resolver that binds each open to the file's
 // immutable object identity. Sequential readahead remains here, at the pack

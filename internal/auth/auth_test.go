@@ -514,6 +514,63 @@ func TestScopeResolvesCertificationCeilings(t *testing.T) {
 	}
 }
 
+// TestReauthorizeProfileScopeRebuildsFromTheCurrentProfile pins that a scope
+// re-derived from a Profile's current record takes its ceilings and Library
+// grants, narrows Reveal and admin for a non-adult Profile, and refuses a
+// disabled or different Profile.
+func TestReauthorizeProfileScopeRebuildsFromTheCurrentProfile(t *testing.T) {
+	st := storetest.Open(t)
+	service := NewService(st)
+	service.SetCertificationScales(map[string][]string{"filmtv": {"low", "mid", "high"}})
+	ctx := context.Background()
+	scope, err := service.Scope(ctx, "session-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scope.Certification) != 0 {
+		t.Fatalf("seed scope certification = %#v, want none", scope.Certification)
+	}
+	profile, err := st.Profile(ctx, scope.ProfileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile.CertificationCeilings = []store.ProfileCertificationCeiling{{PluginID: "filmtv", Ceiling: "low", FilterVisibility: "hide"}}
+	profile.Library = []store.LibraryID{"library-other"}
+
+	current, err := service.ReauthorizeProfileScope(ctx, scope, profile)
+	if err != nil {
+		t.Fatalf("ReauthorizeProfileScope: %v", err)
+	}
+	if len(current.Certification) != 1 || len(current.Certification[0].Allowed) != 1 || current.Certification[0].Allowed[0] != "low" {
+		t.Fatalf("certification = %#v, want filmtv allowing [low]", current.Certification)
+	}
+	if len(current.LibraryIDs) != 1 || current.LibraryIDs[0] != "library-other" || current.SessionID != scope.SessionID {
+		t.Fatalf("scope = %#v, want the Profile's current Library grant on the same session", current)
+	}
+
+	scope.Revealed, scope.Admin, scope.AdminUntil = true, true, time.Now().Add(time.Hour)
+	managed := profile
+	managed.Kind = store.ProfileManaged
+	current, err = service.ReauthorizeProfileScope(ctx, scope, managed)
+	if err != nil {
+		t.Fatalf("ReauthorizeProfileScope(managed): %v", err)
+	}
+	if current.Revealed || current.Admin || !current.AdminUntil.IsZero() || current.Profile != store.ProfileManaged {
+		t.Fatalf("managed scope = %#v, want no Reveal and no admin", current)
+	}
+
+	disabled := profile
+	disabled.Disabled = true
+	if _, err := service.ReauthorizeProfileScope(ctx, scope, disabled); !errors.Is(err, store.ErrProfileDisabled) {
+		t.Fatalf("disabled Profile err = %v, want ErrProfileDisabled", err)
+	}
+	other := profile
+	other.ID = "profile-other"
+	if _, err := service.ReauthorizeProfileScope(ctx, scope, other); err == nil {
+		t.Fatal("a different Profile re-authorized the scope")
+	}
+}
+
 // TestBeginAdminSessionLocksOutAfterRepeatedFailures asserts the admin re-auth
 // throttle: after the free-attempt budget of failed password
 // attempts the session is locked (ErrAdminLocked), and the lane resets once the

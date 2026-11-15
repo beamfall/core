@@ -356,6 +356,41 @@ func (s *Service) ScopeFromScopedKey(ctx context.Context, key string) (Scope, er
 	return scope, nil
 }
 
+// ReauthorizeProfileScope rebuilds a Profile-bound scope's authorization from
+// profile, that Profile's current record, so a policy change after the scope
+// was resolved applies to what a long-running holder (an Offline Pack build)
+// still reads. A disabled Profile, or a managed one outside its access
+// schedule, is refused; the Library grants, certification ceilings and access
+// grants are re-derived as a session of the Profile would resolve them, and
+// Reveal and admin authority can only narrow. The session and device are not
+// re-checked.
+func (s *Service) ReauthorizeProfileScope(ctx context.Context, scope Scope, profile store.Profile) (Scope, error) {
+	if scope.ProfileID == "" || profile.ID != scope.ProfileID {
+		return Scope{}, errors.New("profile does not match the scope")
+	}
+	if profile.Disabled {
+		return Scope{}, store.ErrProfileDisabled
+	}
+	if err := s.enforceProfileAccessSchedule(ctx, profile, scope.SessionID); err != nil {
+		return Scope{}, err
+	}
+	scope.Profile = profile.Kind
+	if profile.Kind != store.ProfileAdult {
+		scope.Revealed = false
+		scope.Admin = false
+		scope.AdminUntil = time.Time{}
+	}
+	if !scope.AllLibraries {
+		scope.LibraryIDs = append([]store.LibraryID(nil), profile.Library...)
+	}
+	scope.Certification = s.certificationConstraints(profile.CertificationCeilings)
+	scope.GrantedMediaIDs = nil
+	if profile.Kind == store.ProfileManaged {
+		scope.GrantedMediaIDs, _ = s.store.GrantedMediaIDsForProfile(ctx, profile.ID)
+	}
+	return scope, nil
+}
+
 // HasAPIScope reports whether a scoped-key Scope carries the given API scope.
 // It is false for any non-scoped-key Scope (a session or admin token carries no
 // APIScopes), so a route that gates on an API scope rejects credentials that are
