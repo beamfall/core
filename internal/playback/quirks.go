@@ -603,10 +603,20 @@ func (ov quirkOverlay) policyTranscodeRefusal(media store.Media, audioOnlyPeak i
 	return ""
 }
 
+// policyBinds reports that the admin's remote cap, not the viewer's ceiling,
+// is the ceiling media answers to. The viewer's ceiling exempts an audio-only
+// item (audioOnlyMaxBitrate), so for one any admin cap is the binding ceiling.
+func (ov quirkOverlay) policyBinds(media store.Media) bool {
+	if audioOnlyMedia(media) {
+		return ov.policyMaxBitrate > 0
+	}
+	return ov.policyCeiling
+}
+
 // ceilingReason is the decision reason for a verdict the streaming ceiling
 // alone forced: the admin's remote cap names itself apart from the viewer's.
-func (ov quirkOverlay) ceilingReason() string {
-	if ov.policyCeiling {
+func (ov quirkOverlay) ceilingReason(media store.Media) string {
+	if ov.policyBinds(media) {
 		return policyBitrateCeilingReason
 	}
 	return bitrateCeilingReason

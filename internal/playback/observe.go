@@ -201,21 +201,21 @@ func directPlayRefusalCause(media store.Media, file store.MediaFile, streams []s
 	base := ov.withoutClientCeiling()
 	if ov.streamCeiling() > 0 && dolbyVisionP7BaseLayer(media, file, streams, profile, selectedSubtitleIndex, base) &&
 		!dolbyVisionP7BaseLayer(media, file, streams, profile, selectedSubtitleIndex, ov) {
-		return ov.ceilingCause()
+		return ov.ceilingCause(media)
 	}
 	if cause := deviceRefusalCause(media, file, streams, profile, selectedSubtitleIndex, base); cause != "" {
 		return cause
 	}
 	if ov.vetoesVideoPassthrough(media, file, streams) {
-		return ov.ceilingCause()
+		return ov.ceilingCause(media)
 	}
 	return ""
 }
 
 // ceilingCause is the dashboard cause for a refusal the streaming ceiling
 // alone forced, naming the admin's remote cap apart from the client's.
-func (ov quirkOverlay) ceilingCause() string {
-	if ov.policyCeiling {
+func (ov quirkOverlay) ceilingCause(media store.Media) string {
+	if ov.policyBinds(media) {
 		return PlayReasonPolicyBitrate
 	}
 	return PlayReasonBitrate

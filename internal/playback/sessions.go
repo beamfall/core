@@ -1757,6 +1757,11 @@ func (g primedGrid) restartSegment(segment int) int {
 	}
 	for j := segment; j > 0; j-- {
 		start := int64(j) * g.gridSamples
+		// An encode seeked to or past the last decoded sample has no input
+		// and writes no frames at all.
+		if start >= g.decodedSamples {
+			continue
+		}
 		frames := (aacEncoderDelaySamples + g.decodedSamples - start + aacFrameSamples - 1) / aacFrameSamples
 		if int((start+(frames-1)*aacFrameSamples)/g.gridSamples)+1 >= g.segments {
 			return j

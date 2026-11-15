@@ -186,6 +186,15 @@ func TestResumedPrimedEncodeServesTheTailSegment(t *testing.T) {
 			t.Fatalf("%s: %v", name, err)
 		}
 	}
+	// A seek straight to the tail starts the first encoder there. The tail's
+	// grid line (8 s) lies past the source's last sample, so the encode must
+	// start earlier rather than seek past the end and write nothing.
+	tailKey := SessionKey{SessionID: "session-gapless-tail-first", MediaID: "media-piece"}
+	for _, name := range []string{"index.m3u8", "seg00002.m4s"} {
+		if _, err := sessions.FilePathShaped(context.Background(), tailKey, source, 7, 0, 0, false, false, ladderCaps{}, VideoSignal{}, -1, aac, nil, shape, PriorityNormal, audioOnlyRungID+"/"+name); err != nil {
+			t.Fatalf("tail first %s: %v", name, err)
+		}
+	}
 }
 
 func TestPrimedRestartSegmentReachesTheTail(t *testing.T) {
@@ -194,7 +203,10 @@ func TestPrimedRestartSegmentReachesTheTail(t *testing.T) {
 	if grid.segments != 3 {
 		t.Fatalf("grid = %+v, want three segments", grid)
 	}
-	for _, tc := range []struct{ asked, want int }{{0, 0}, {1, 0}, {2, 2}, {3, 3}} {
+	// Segment 2's grid line (8 s, sample 352800) lies past the last decoded
+	// sample, and an encode started at segment 1 ends a segment short, so
+	// both restart from zero.
+	for _, tc := range []struct{ asked, want int }{{0, 0}, {1, 0}, {2, 0}, {3, 3}} {
 		if got := grid.restartSegment(tc.asked); got != tc.want {
 			t.Errorf("restartSegment(%d) = %d, want %d", tc.asked, got, tc.want)
 		}
