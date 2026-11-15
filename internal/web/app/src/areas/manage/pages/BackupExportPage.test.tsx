@@ -134,6 +134,15 @@ describe("BackupExportPage", () => {
     expect(screen.getByText(/never overwrites a live database: a staged restore/)).toBeVisible();
   });
 
+  it("links the restore guide by absolute URL so it works from any route (CORE-2013)", () => {
+    renderPage();
+
+    const guide = screen.getByRole("link", { name: "restore guide" });
+    const href = guide.getAttribute("href") ?? "";
+    expect(new URL(href).protocol).toBe("https:");
+    expect(href).toBe("https://github.com/beamfall/core/blob/main/docs/operations/restore.md");
+  });
+
   it("loads history for a destination and renders per-set verify state", async () => {
     const user = userEvent.setup();
     mockHistory.mockResolvedValue([

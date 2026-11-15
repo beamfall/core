@@ -12,11 +12,10 @@ export const backupRetentionStrings = {
     backupNoneYet: "No backup has been run from here yet.",
     backupFailed: "The backup could not be run.",
     backupNeedDest: "Enter a destination path.",
-    backupRestoreNote:
-      "Restore is operator-run from the destination with the server stopped; use the guided restore flow below, documented in ",
-    backupRestoreNoteDocLabel: "docs/operations/restore.md",
-    backupRestoreNoteDocHref: "docs/operations/restore.md",
-    backupRestoreNoteAfterDoc: ". The Console never writes over a live database.",
+    backupRestoreNote: "For every step in detail, read the ",
+    backupRestoreNoteDocLabel: "restore guide",
+    backupRestoreNoteDocHref: "https://github.com/beamfall/core/blob/main/docs/operations/restore.md",
+    backupRestoreNoteAfterDoc: ".",
     backupRestoreHeading: "Guided restore",
     backupRestoreLead:
       "Use this when startup refuses a corrupt database or you need to roll back to a known-good backup.",
