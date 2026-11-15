@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/beamfall/core/internal/ffmpeg"
@@ -305,4 +306,49 @@ func TestSessionKeepsPrimingOnlyForPicturelessSources(t *testing.T) {
 			t.Fatalf("%dx%d renditions = %+v, want KeepPriming %v", tc.width, tc.height, transcoder.renditions, tc.want)
 		}
 	}
+}
+
+// TestHLSGaplessFollowsSelectedAudioTrack checks the trim a transcoded stream
+// reports comes from the track the server maps, not the file's first audio
+// stream: a selected 44.1 kHz AAC track must not carry the arithmetic of a
+// 48 kHz TrueHD default ahead of it.
+func TestHLSGaplessFollowsSelectedAudioTrack(t *testing.T) {
+	service, st, scope := capabilityTestService(t)
+	path := filepath.Join(t.TempDir(), "tracks.mka")
+	if err := os.WriteFile(path, []byte("beamfall bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	media, _, err := st.ImportMediaFile(context.Background(), store.ImportMediaFile{
+		LibraryID:           "library-local",
+		Path:                path,
+		Title:               "Two tracks",
+		Container:           "matroska",
+		Codec:               "truehd",
+		Class:               store.MediaClassAudio,
+		ContentFingerprint:  "fp-gapless-tracks",
+		DurationSecondsHint: 2,
+		Streams: []store.MediaFileStream{
+			{Index: 0, Type: "audio", Codec: "truehd", Channels: 8, SampleRate: 48000, DecodedSamples: 96000, Default: true},
+			{Index: 1, Type: "audio", Codec: "aac", Channels: 2, SampleRate: 44100, DecodedSamples: 88200},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ImportMediaFile: %v", err)
+	}
+	selected := 1
+	resp, err := service.Info(context.Background(), scope, InfoRequest{MediaID: string(media.ID), CapabilityProfile: browserProfile, SelectedAudioIndex: &selected})
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	want := GaplessInfo{SampleRate: 44100, EncoderDelaySamples: aacEncoderDelaySamples, EncoderPaddingSamples: aacPaddingSamples(88200)}
+	for _, stream := range resp.Streams {
+		if stream.Kind != "hls" || !strings.HasPrefix(stream.ID, "hls-") {
+			continue
+		}
+		if stream.Gapless == nil || *stream.Gapless != want {
+			t.Fatalf("HLS gapless = %+v, want %+v", stream.Gapless, want)
+		}
+		return
+	}
+	t.Fatalf("streams = %+v, want a transcoded HLS stream", resp.Streams)
 }

@@ -543,9 +543,9 @@ type quirkOverlay struct {
 	// floor, it gates audio-only items too, and a transcode no rung of which
 	// fits under it is refused.
 	policyMaxBitrate int
-	// policyCeiling reports that policyMaxBitrate is set: the admin's cap,
-	// not the viewer's ceiling, binds. It names the decision reason a
-	// ceiling-forced verdict carries.
+	// policyCeiling reports that the admin's cap, not the viewer's ceiling,
+	// binds: it is set and tighter than the viewer's effective ceiling. It
+	// names the decision reason a ceiling-forced verdict carries.
 	policyCeiling bool
 }
 
@@ -562,11 +562,13 @@ func (ov quirkOverlay) withClientCeiling(ceiling int) quirkOverlay {
 	return ov
 }
 
-// withPolicyCeiling folds the admin's binding remote cap into the overlay
-// exactly as configured (CORE-1864). A non-positive cap is none.
+// withPolicyCeiling folds the admin's remote cap into the overlay exactly as
+// configured (CORE-1864), whether or not the viewer's ceiling is tighter. A
+// non-positive cap is none. Call it after withClientCeiling: whether the cap
+// binds is judged against the viewer's effective ceiling.
 func (ov quirkOverlay) withPolicyCeiling(cap int) quirkOverlay {
 	ov.policyMaxBitrate = max(cap, 0)
-	ov.policyCeiling = cap > 0
+	ov.policyCeiling = cap > 0 && (ov.clientMaxBitrate <= 0 || cap < ov.clientMaxBitrate)
 	return ov
 }
 

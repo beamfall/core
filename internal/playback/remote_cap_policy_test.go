@@ -59,6 +59,12 @@ func TestRemotePolicyCapIsEnforcedAsConfigured(t *testing.T) {
 			}
 		}
 	})
+	t.Run("a lower viewer ceiling does not raise the admin cap to the floor", func(t *testing.T) {
+		resp := remoteCapInfo(t, 1_000_000, 0, withCeiling(main10_1080p, 500_000), true)
+		if resp.Decision != "unavailable" || resp.Reason != policyBitrateCeilingReason {
+			t.Fatalf("decision = %q/%q, want unavailable/%s", resp.Decision, resp.Reason, policyBitrateCeilingReason)
+		}
+	})
 	t.Run("a viewer ceiling below the floor still selects the lowest rung", func(t *testing.T) {
 		resp := remoteCapInfo(t, 0, 0, withCeiling(main10_1080p, 1_000_000), true)
 		if resp.Decision != "transcode" || resp.Reason != bitrateCeilingReason {
@@ -80,6 +86,12 @@ func TestRemotePolicyCapIsEnforcedAsConfigured(t *testing.T) {
 			if top := maxRenditionBandwidth(t, resp); top > 2_000_000 {
 				t.Fatalf("top rendition %d bit/s exceeds the 2 Mbit/s cap", top)
 			}
+		}
+	})
+	t.Run("a lower viewer ceiling does not lift the admin cap off an audio-only item", func(t *testing.T) {
+		resp := remoteCapAudioInfo(t, 2_000_000, withCeiling(flacProfile, 1_000_000), true, "flac", ceilingSourceBytes, flac)
+		if resp.Decision == "direct-play" || resp.Decision == "direct-stream" {
+			t.Fatalf("decision = %q/%q, want the 6 Mbit/s item held under the 2 Mbit/s cap", resp.Decision, resp.Reason)
 		}
 	})
 	t.Run("the viewer's ceiling still exempts an audio-only item", func(t *testing.T) {
@@ -128,6 +140,12 @@ func TestPolicyCeilingOverlay(t *testing.T) {
 	both := quirkOverlay{}.withClientCeiling(3_000_000).withPolicyCeiling(2_000_000)
 	if got := both.streamCeiling(); got != 2_000_000 {
 		t.Fatalf("streamCeiling = %d, want the tighter admin cap", got)
+	}
+	if !both.policyCeiling {
+		t.Fatal("a 2 Mbit/s cap under a 3 Mbit/s viewer ceiling does not name itself as binding")
+	}
+	if looser := (quirkOverlay{}).withClientCeiling(2_000_000).withPolicyCeiling(3_000_000); looser.policyCeiling || looser.streamCeiling() != 2_000_000 {
+		t.Fatalf("looser cap overlay = %+v, want the viewer ceiling binding with the cap still held", looser)
 	}
 	if base := both.withoutClientCeiling(); base.streamCeiling() != 0 {
 		t.Fatalf("withoutClientCeiling streamCeiling = %d, want 0", base.streamCeiling())
