@@ -223,3 +223,64 @@ func contains(args []string, want string) bool {
 	}
 	return false
 }
+
+// TestPackProfileMapsTheSourceVideoStream pins CORE-1850: a profile told which
+// stream its source signal came from maps that stream (and the first audio
+// stream, optionally) ahead of the codec arguments, while a profile with no
+// chosen stream, or an audio-only preset, leaves FFmpeg's default choice.
+func TestPackProfileMapsTheSourceVideoStream(t *testing.T) {
+	preset, _ := PackProfileByName("pack-720p")
+	args := preset.WithSourceVideo("bt709", 0).WithSourceVideoStream(2).encodeArgs()
+	if len(args) < 4 || strings.Join(args[:4], " ") != "-map 0:2 -map 0:a:0?" {
+		t.Fatalf("mapped args = %v, want -map 0:2 -map 0:a:0? first", args)
+	}
+	if contains(preset.encodeArgs(), "-map") {
+		t.Fatalf("unmapped preset args = %v, want no -map", preset.encodeArgs())
+	}
+	audio, _ := ConvertProfileByName("aac-m4a")
+	if contains(audio.WithSourceVideoStream(0).encodeArgs(), "-map") {
+		t.Fatalf("audio-only args = %v, want no -map", audio.WithSourceVideoStream(0).encodeArgs())
+	}
+}
+
+// TestConvertPackProfileEncodesTheMappedStreamRealBinary proves on a real
+// FFmpeg that the mapped stream, not FFmpeg's default pick, is encoded: of a
+// 480-line first stream and a 720-line second stream (FFmpeg alone prefers
+// the larger), mapping each yields its own height. Skipped without ffmpeg.
+func TestConvertPackProfileEncodesTheMappedStreamRealBinary(t *testing.T) {
+	ffmpegPath, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("ffmpeg not installed; skipping real-binary mapped-stream test")
+	}
+	ffprobePath, err := exec.LookPath("ffprobe")
+	if err != nil {
+		t.Skip("ffprobe not installed; skipping real-binary mapped-stream test")
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.mkv")
+	gen := exec.CommandContext(t.Context(), ffmpegPath, "-v", "error", // #nosec G204 -- resolved test binary, fixed args
+		"-f", "lavfi", "-i", "testsrc=size=640x480:rate=10:duration=1",
+		"-f", "lavfi", "-i", "testsrc=size=1280x720:rate=10:duration=1",
+		"-f", "lavfi", "-i", "sine=frequency=440:duration=1",
+		"-map", "0:v", "-map", "1:v", "-map", "2:a",
+		"-c:v", "libx264", "-c:a", "aac", "-pix_fmt", "yuv420p", "-t", "1", "-y", src)
+	if out, err := gen.CombinedOutput(); err != nil {
+		t.Skipf("could not synthesize test clip (ffmpeg build lacks libx264/aac?): %v\n%s", err, out)
+	}
+	preset, _ := PackProfileByName("pack-1080p")
+	for index, wantHeight := range map[int]string{0: "480", 1: "720"} {
+		dst := filepath.Join(dir, "out-"+strings.Repeat("v", index+1)+".mp4")
+		if err := New().Convert(t.Context(), src, dst, preset.WithSourceVideoStream(index)); err != nil {
+			t.Fatalf("Convert stream %d: %v", index, err)
+		}
+		out, err := exec.CommandContext(t.Context(), ffprobePath, "-v", "error", // #nosec G204 -- resolved test binary, fixed args
+			"-show_entries", "stream=codec_type,height", "-of", "csv=p=0", dst).Output()
+		if err != nil {
+			t.Fatalf("ffprobe stream %d: %v", index, err)
+		}
+		lines := strings.Fields(strings.TrimSpace(string(out)))
+		if len(lines) != 2 || !contains(lines, "video,"+wantHeight) || !contains(lines, "audio") {
+			t.Fatalf("stream %d output streams = %q, want one %s-line video and one audio", index, lines, wantHeight)
+		}
+	}
+}
