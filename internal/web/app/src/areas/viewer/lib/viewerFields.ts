@@ -73,3 +73,37 @@ export function runtimeParts(seconds: number): { hours: number; minutes: number 
   const total = Math.round(seconds / 60);
   return { hours: Math.floor(total / 60), minutes: total % 60 };
 }
+
+const DATE_VALUE = /^(\d{4})-(\d{2})-(\d{2})(?:[T ].*)?$/;
+
+/**
+ * A field's value as a viewer reads it. A `date` field is stored as an ISO
+ * date or timestamp (2025-05-09T00:00:00Z); it shows as a calendar date in the
+ * display locale (May 9, 2025). The stored day is kept as written, never
+ * shifted into the viewer's time zone. Anything else, and a date that does not
+ * parse, shows as stored.
+ */
+export function fieldDisplayValue(
+  field: Pick<EntityFieldInfo, "type" | "value">,
+  locale?: string,
+): string {
+  if (field.type !== "date") return field.value;
+  const match = DATE_VALUE.exec(field.value.trim());
+  if (!match) return field.value;
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const date = new Date(Date.UTC(year, month - 1, day));
+  // Date.UTC reads years 0-99 as 1900-1999, so the year is checked too.
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return field.value;
+  }
+  const options = { dateStyle: "long", timeZone: "UTC" } as const;
+  try {
+    return new Intl.DateTimeFormat(locale || undefined, options).format(date);
+  } catch {
+    return new Intl.DateTimeFormat(undefined, options).format(date);
+  }
+}

@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAdvancedSettings } from "@/lib/advancedSettings";
 import {
+  browseServerFolders,
   fetchConsoleConfig,
   fetchPrePlayClips,
   fetchTranscodeConfig,
@@ -12,12 +13,13 @@ import {
   setPrePlayClips,
   setTranscodeConfig,
 } from "@/lib/graphql";
-import type { ConsoleConfigInfo } from "@/lib/graphql/types";
+import type { ConsoleConfigInfo, FolderEntryInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { Config } from "./Config";
 
 vi.mock("@/lib/graphql", () => ({
   MAX_PRE_PLAY_CLIPS: 2,
+  browseServerFolders: vi.fn(),
   fetchConsoleConfig: vi.fn(),
   fetchPrePlayClips: vi.fn(),
   fetchTranscodeConfig: vi.fn(),
@@ -192,6 +194,38 @@ describe("transcoding config", () => {
     expect(setTranscodeConfig).toHaveBeenCalledWith(
       expect.objectContaining({ tempDir: "/srv/missing" }),
     );
+  });
+
+  it("picks the temp directory from a folder browse and confirms the save", async () => {
+    const cache = { name: "cache", path: "/mnt/cache", kind: "folder" } as FolderEntryInfo;
+    vi.mocked(browseServerFolders).mockImplementation(async (path?: string) =>
+      path === cache.path
+        ? { ...cache, children: [] }
+        : ({ name: "/", path: "/", kind: "folder", children: [cache] } as FolderEntryInfo),
+    );
+    vi.mocked(setTranscodeConfig).mockImplementation(async (config) => ({
+      ...savedTranscode,
+      tempDir: config.tempDir,
+    }));
+    setAdvancedSettings(true);
+    const user = userEvent.setup();
+    renderConfig();
+
+    const dir = await screen.findByRole("textbox", { name: "Transcoder temp directory" });
+    const form = dir.closest("form") as HTMLFormElement;
+    await user.click(within(form).getByRole("button", { name: "Browse…" }));
+    await user.click(await within(form).findByRole("button", { name: "cache" }));
+    await user.click(await within(form).findByRole("button", { name: "Use this folder" }));
+    expect(dir).toHaveValue("/mnt/cache");
+
+    await user.click(within(form).getByRole("button", { name: "Save" }));
+    expect(await within(form).findByRole("status")).toHaveTextContent("Transcoding settings saved");
+    expect(setTranscodeConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ tempDir: "/mnt/cache" }),
+    );
+
+    await user.type(dir, "2");
+    expect(within(form).getByRole("status")).toBeEmptyDOMElement();
   });
 
   it("says when an environment variable overrides a setting and when a restart is needed", async () => {

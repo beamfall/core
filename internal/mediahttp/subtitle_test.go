@@ -155,6 +155,57 @@ func TestSubtitleSidecarPathUnlocksAfterConversionError(t *testing.T) {
 	}
 }
 
+// A conversion reads the whole source file. A request that goes away part way
+// through must not discard it, or every retry starts over and nothing is ever
+// cached; a request that went away while queued must not start one.
+func TestSubtitleSidecarPathFinishesConversionAfterRequestCancel(t *testing.T) {
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	conv := &contextSubtitleConverter{started: started, release: release}
+	handler := &Handler{subtitles: conv, subtitleDir: t.TempDir()}
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() {
+		_, err := handler.subtitleSidecarPath(ctx, "sha256:test", "movie.mkv", 2)
+		result <- err
+	}()
+	<-started
+	cancel()
+	close(release)
+	if err := <-result; err != nil {
+		t.Fatalf("conversion after request cancel: %v", err)
+	}
+
+	gone, cancelGone := context.WithCancel(context.Background())
+	cancelGone()
+	if _, err := handler.subtitleSidecarPath(gone, "sha256:test", "movie.mkv", 3); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled request error = %v, want context.Canceled", err)
+	}
+	if _, err := handler.subtitleSidecarPath(gone, "sha256:test", "movie.mkv", 2); err != nil {
+		t.Fatalf("cache hit for a cancelled request: %v", err)
+	}
+	if got := conv.calls.Load(); got != 1 {
+		t.Fatalf("converter calls = %d, want 1", got)
+	}
+}
+
+// contextSubtitleConverter fails like ffmpeg does when its context ends.
+type contextSubtitleConverter struct {
+	started chan<- struct{}
+	release <-chan struct{}
+	calls   atomic.Int32
+}
+
+func (f *contextSubtitleConverter) ExtractSubtitleToWebVTT(ctx context.Context, _ string, _ int, dst string) error {
+	f.calls.Add(1)
+	f.started <- struct{}{}
+	<-f.release
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return os.WriteFile(dst, []byte("WEBVTT\n"), 0o600)
+}
+
 type blockingSubtitleConverter struct {
 	started chan<- struct{}
 	release <-chan struct{}

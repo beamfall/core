@@ -917,7 +917,7 @@ func (s *Store) updateJobCheckpointSQL(ctx context.Context, id JobID, leaseOwner
 	if err := upsertJobCheckpointSQL(ctx, tx, id, checkpoint, version, now); err != nil {
 		return err
 	}
-	if err := appendJobEventSQL(ctx, tx, id, now, "progress", `{"type":"progress"}`); err != nil {
+	if err := appendJobEventSQL(ctx, tx, id, now, "progress", jobProgressEventPayload(progress)); err != nil {
 		return err
 	}
 	return s.commitOutboxTx(tx)
@@ -1106,6 +1106,23 @@ func nextCheckpointVersionSQL(ctx context.Context, tx *sql.Tx, id JobID) (int, e
 		return 1, nil
 	}
 	return int(version.Int64) + 1, nil
+}
+
+// jobProgressEventPayload is the history entry for one progress update. It
+// carries the counters and message so a job's log says what the job was doing
+// at that point, not only that it moved.
+func jobProgressEventPayload(progress JobProgress) string {
+	payload, err := json.Marshal(struct {
+		Type    string `json:"type"`
+		Current int64  `json:"current"`
+		Total   int64  `json:"total,omitempty"`
+		Unit    string `json:"unit,omitempty"`
+		Message string `json:"message,omitempty"`
+	}{"progress", progress.Current, progress.Total, progress.Unit, progress.Message})
+	if err != nil {
+		return `{"type":"progress"}`
+	}
+	return string(payload)
 }
 
 func appendJobEventSQL(ctx context.Context, tx *sql.Tx, id JobID, now time.Time, typ string, payload string) error {

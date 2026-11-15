@@ -52,7 +52,10 @@ export const libraryOperationsStrings = {
     friday: "Friday",
     saturday: "Saturday",
     save: "Save",
-    libraryRoots: "Library roots",
+    libraryRoots: "Library folders",
+    libraryFileTools: "Manage files on disk",
+    libraryFileToolsHint:
+      "Create, rename, move or delete folders and files inside this Library's folders. Changes apply to the files on disk.",
     rootsPlaceholder: "One folder per line",
     browse: "Browse",
     trash: "Trash",
@@ -140,6 +143,9 @@ export const libraryOperationsStrings = {
     saturday: "Samedi",
     save: "Enregistrer",
     libraryRoots: "Racines de la bibliothèque",
+    libraryFileTools: "Gérer les fichiers sur le disque",
+    libraryFileToolsHint:
+      "Créez, renommez, déplacez ou supprimez des dossiers et des fichiers dans les dossiers de cette bibliothèque. Les changements s’appliquent aux fichiers sur le disque.",
     rootsPlaceholder: "Un dossier par ligne",
     trash: "Corbeille",
     trashIsEmpty: "La corbeille est vide.",
@@ -227,6 +233,9 @@ export const libraryOperationsStrings = {
     saturday: "Samstag",
     save: "Speichern",
     libraryRoots: "Bibliotheksstammordner",
+    libraryFileTools: "Dateien auf dem Datenträger verwalten",
+    libraryFileToolsHint:
+      "Ordner und Dateien in den Ordnern dieser Bibliothek erstellen, umbenennen, verschieben oder löschen. Änderungen gelten für die Dateien auf dem Datenträger.",
     rootsPlaceholder: "Ein Ordner pro Zeile",
     trash: "Papierkorb",
     trashIsEmpty: "Der Papierkorb ist leer.",
@@ -314,6 +323,9 @@ export const libraryOperationsStrings = {
     saturday: "Sábado",
     save: "Guardar",
     libraryRoots: "Raíces de biblioteca",
+    libraryFileTools: "Gestionar archivos en disco",
+    libraryFileToolsHint:
+      "Crea, renombra, mueve o elimina carpetas y archivos dentro de las carpetas de esta biblioteca. Los cambios se aplican a los archivos en disco.",
     rootsPlaceholder: "Una carpeta por línea",
     trash: "Papelera",
     trashIsEmpty: "La papelera está vacía.",
@@ -401,6 +413,9 @@ export const libraryOperationsStrings = {
     saturday: "Sábado",
     save: "Salvar",
     libraryRoots: "Raízes da biblioteca",
+    libraryFileTools: "Gerenciar arquivos no disco",
+    libraryFileToolsHint:
+      "Crie, renomeie, mova ou exclua pastas e arquivos dentro das pastas desta biblioteca. As alterações se aplicam aos arquivos no disco.",
     rootsPlaceholder: "Uma pasta por linha",
     trash: "Lixeira",
     trashIsEmpty: "A lixeira está vazia.",

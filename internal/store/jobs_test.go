@@ -265,6 +265,14 @@ func TestJobProgressWritesCheckpointEventsAndOutbox(t *testing.T) {
 	if outboxCount != eventCount {
 		t.Fatalf("outbox count = %d, job_event count = %d", outboxCount, eventCount)
 	}
+	// The progress entry says how far the job got, so the job log is readable.
+	var payload string
+	if err := st.eventsR.QueryRowContext(ctx, "SELECT payload_json FROM job_event WHERE job_id = ? AND type = 'progress'", "job-progress").Scan(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"type":"progress","current":7,"total":10,"unit":"files","message":"Scanning"}`; payload != want {
+		t.Fatalf("progress event payload = %s, want %s", payload, want)
+	}
 }
 
 func TestJobRetryRequeuesTerminalJobWithCheckpointAndEventsAreReadable(t *testing.T) {

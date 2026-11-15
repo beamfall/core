@@ -1,11 +1,13 @@
 import { ArrowDown, ArrowUp, Plus, X } from "lucide-react";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
+import { FolderPicker } from "@/areas/setup/FolderPicker";
 import { ControlRow, ErrorState, Fieldset } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Advanced } from "@/lib/advancedSettings";
 import {
+  browseServerFolders,
   fetchConsoleConfig,
   fetchPrePlayClips,
   fetchTranscodeConfig,
@@ -15,7 +17,12 @@ import {
   setPrePlayClips,
   setTranscodeConfig,
 } from "@/lib/graphql";
-import type { PrePlayItem, SourceItem, TranscodeConfigInfo } from "@/lib/graphql/types";
+import type {
+  FolderEntryInfo,
+  PrePlayItem,
+  SourceItem,
+  TranscodeConfigInfo,
+} from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import type { StringKey } from "@/strings";
 import { Section } from "../Section";
@@ -85,6 +92,13 @@ function TranscodeConfig() {
   const [form, setForm] = useState<TranscodeConfigInfo>(EMPTY_TRANSCODE_CONFIG);
   const [cap, setCap] = useState("");
   const [saveError, setSaveError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  // The temp directory's folder browse: the directory on show, or null when closed.
+  const [pickerNode, setPickerNode] = useState<FolderEntryInfo | null>(null);
+  const [pickerBusy, setPickerBusy] = useState(false);
+  const [pickerError, setPickerError] = useState<string | null>(null);
+  const browseRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (data) {
@@ -94,6 +108,46 @@ function TranscodeConfig() {
   }, [data]);
 
   const parsedCap = parseCap(cap);
+  // "Saved" stays up only while the form still matches what the server holds.
+  const unchanged =
+    data != null &&
+    cap.trim() === capText(data.maxConcurrentTranscodes) &&
+    form.hardwareEnabled === data.hardwareEnabled &&
+    form.toneMapEnabled === data.toneMapEnabled &&
+    form.codec === data.codec &&
+    form.quality === data.quality &&
+    form.device === data.device &&
+    form.tempDir.trim() === data.tempDir;
+
+  async function loadPickerFolder(path?: string): Promise<boolean> {
+    setPickerBusy(true);
+    setPickerError(null);
+    try {
+      setPickerNode(await browseServerFolders(path));
+      return true;
+    } catch {
+      setPickerError(t("setupLibraryPickerError"));
+      return false;
+    } finally {
+      setPickerBusy(false);
+    }
+  }
+
+  // Opens at the typed directory, else the one in use; a directory the server
+  // cannot open falls back to the filesystem root with a note.
+  async function openPicker() {
+    const seed = form.tempDir.trim() || data?.effectiveTempDir || "";
+    if ((await loadPickerFolder(seed || undefined)) || !seed) return;
+    if (await loadPickerFolder(undefined)) {
+      setPickerError(t("setupLibraryPickerSeedError", { path: seed }));
+    }
+  }
+
+  function closePicker() {
+    setPickerNode(null);
+    setPickerError(null);
+    requestAnimationFrame(() => browseRef.current?.focus());
+  }
 
   async function onSave(e: FormEvent) {
     e.preventDefault();
@@ -102,6 +156,8 @@ function TranscodeConfig() {
       return;
     }
     setSaveError("");
+    setSaved(false);
+    setSaving(true);
     try {
       const next = await setTranscodeConfig({
         hardwareEnabled: form.hardwareEnabled,
@@ -113,8 +169,11 @@ function TranscodeConfig() {
         toneMapEnabled: form.toneMapEnabled,
       });
       setData(next);
+      setSaved(true);
     } catch (err) {
       setSaveError(t("transcodeConfigSaveFailed", { reason: errorReason(err) }));
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -200,16 +259,53 @@ function TranscodeConfig() {
           <ControlRow
             label="transcodeTempDir"
             control={
-              <Input
-                id="tc-temp-dir"
-                aria-label={t("transcodeTempDir")}
-                value={form.tempDir}
-                placeholder={t("transcodeServerDefault")}
-                className="w-64"
-                onChange={(e) => setForm((f) => ({ ...f, tempDir: e.target.value }))}
-              />
+              <div className="flex items-center gap-2">
+                <Input
+                  id="tc-temp-dir"
+                  aria-label={t("transcodeTempDir")}
+                  value={form.tempDir}
+                  placeholder={t("transcodeServerDefault")}
+                  className="w-64 font-mono"
+                  autoComplete="off"
+                  spellCheck={false}
+                  onChange={(e) => setForm((f) => ({ ...f, tempDir: e.target.value }))}
+                />
+                <Button
+                  ref={browseRef}
+                  type="button"
+                  variant="outline"
+                  aria-expanded={pickerNode != null}
+                  onClick={() => (pickerNode ? closePicker() : void openPicker())}
+                >
+                  {t("setupLibraryBrowse")}
+                </Button>
+              </div>
             }
           />
+          {pickerNode == null && pickerError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {pickerError}
+            </p>
+          ) : null}
+          {pickerNode != null ? (
+            <FolderPicker
+              node={pickerNode}
+              busy={pickerBusy}
+              error={pickerError}
+              onOpenFolder={(path) => void loadPickerFolder(path)}
+              onUse={() => {
+                setForm((f) => ({ ...f, tempDir: pickerNode.path }));
+                closePicker();
+              }}
+              onClose={closePicker}
+              labels={{
+                use: t("setupLibraryPickerUse"),
+                loading: t("setupLibraryPickerLoading"),
+                empty: t("setupLibraryPickerEmpty"),
+                close: t("setupLibraryPickerClose"),
+              }}
+            />
+          ) : null}
           {data ? (
             <div data-testid="transcode-temp-dir-status">
               <StatusNote>
@@ -245,7 +341,14 @@ function TranscodeConfig() {
           {saveError}
         </p>
       ) : null}
-      <Button type="submit">{t("transcodeConfigSave")}</Button>
+      <div className="flex items-center gap-3">
+        <Button type="submit" disabled={saving}>
+          {t("transcodeConfigSave")}
+        </Button>
+        <span role="status" className="text-sm text-muted-foreground">
+          {saved && unchanged ? t("transcodeConfigSaved") : null}
+        </span>
+      </div>
     </form>
   );
 }

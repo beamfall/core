@@ -506,6 +506,10 @@ func (h *Handler) subtitleSourceStillVisible(ctx context.Context, scope auth.Sco
 // cache file only ever exists in its sanitised form: nothing under subtitleDir
 // is servable until it has passed the ingest boundary, including for the
 // lock-free cache-hit above.
+// subtitleConvertTimeout bounds one muxed-subtitle conversion once it is
+// detached from the request that started it.
+const subtitleConvertTimeout = 15 * time.Minute
+
 func (h *Handler) subtitleSidecarPath(ctx context.Context, fingerprint, srcPath string, streamIndex int) (rootedPath, error) {
 	if fingerprint == "" {
 		return rootedPath{}, errors.New("media file has no content fingerprint")
@@ -525,10 +529,20 @@ func (h *Handler) subtitleSidecarPath(ctx context.Context, fingerprint, srcPath 
 	if rootedRegularFileExists(member) {
 		return member, nil
 	}
+	// A request that gave up while it queued behind another conversion must not
+	// start one of its own.
+	if err := ctx.Err(); err != nil {
+		return rootedPath{}, err
+	}
 	dst := member.String()
 	staged := dst + ".staged"
 	defer os.Remove(staged)
-	if err := h.subtitles.ExtractSubtitleToWebVTT(ctx, srcPath, streamIndex, staged); err != nil {
+	// The conversion reads the whole source file, so it outlives an impatient
+	// request: once started it runs to completion and the next request is a
+	// cache hit, instead of every retry starting over from nothing.
+	convertCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), subtitleConvertTimeout)
+	defer cancel()
+	if err := h.subtitles.ExtractSubtitleToWebVTT(convertCtx, srcPath, streamIndex, staged); err != nil {
 		return rootedPath{}, err
 	}
 	if err := hardenExtractedWebVTT(h.subtitleDir, staged, member); err != nil {

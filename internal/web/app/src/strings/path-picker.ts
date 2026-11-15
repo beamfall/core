@@ -1,6 +1,6 @@
 export const pathPickerStrings = {
   en: {
-    stagePathPickerRoot: "Add root",
+    stagePathPickerRoot: "Add folder",
     pathPickerBrowser: "Folder browser",
     pathPickerLocation: "Current location",
     pathPickerLocations: "Locations",
