@@ -2130,15 +2130,24 @@ func hlsArgs(src, dir string, rendition Rendition) []string {
 		"-i", src,
 	)
 	args = append(args, rendition.videoArgs()...)
-	if _, burnsSubtitle := rendition.burnsSubtitle(); rendition.AudioStreamIndex != nil && !burnsSubtitle {
-		args = append(args, "-map", "0:v:0", "-map", fmt.Sprintf("0:%d", *rendition.AudioStreamIndex))
-	}
+	args = append(args, rendition.selectedStreamMapArgs()...)
 	if !rendition.CopyVideo {
 		args = append(args, "-force_key_frames", "expr:gte(t,n_forced*4)")
 	}
 	args = append(args, rendition.args()...)
 	args = append(args, rendition.audioArgs()...)
 	return append(args, hlsMuxArgs(dir)...)
+}
+
+// selectedStreamMapArgs maps the first video stream and the selected audio
+// stream when an audio stream is selected. A burned subtitle maps its own
+// overlay output and the selected audio in burnInArgs instead, and with no
+// selection FFmpeg's default stream choice stands.
+func (r Rendition) selectedStreamMapArgs() []string {
+	if _, burnsSubtitle := r.burnsSubtitle(); r.AudioStreamIndex == nil || burnsSubtitle {
+		return nil
+	}
+	return []string{"-map", "0:v:0", "-map", fmt.Sprintf("0:%d", *r.AudioStreamIndex)}
 }
 
 // hlsMuxArgs is the CMAF fMP4 HLS muxer tail every file-to-HLS encode shares:
@@ -2278,7 +2287,8 @@ func keyframeSegmentArgs(src, dir string, startSegment int, start time.Duration,
 
 // segmentArgs assembles a segmenting command line: seek is the input position,
 // outputOffset the first output timestamp. An audio-only rendition maps just
-// the selected audio stream and drops the video arguments.
+// the selected audio stream and drops the video arguments; a video rendition
+// maps a selected audio stream the way the linear encode does.
 func segmentArgs(src, dir string, startSegment int, seek, outputOffset, hlsTime string, forceKeyframes []string, rendition Rendition) []string {
 	args := []string{
 		"-v", "error",
@@ -2298,6 +2308,7 @@ func segmentArgs(src, dir string, startSegment int, seek, outputOffset, hlsTime 
 		args = append(args, "-map", audioMap)
 	} else {
 		args = append(args, rendition.videoArgs()...)
+		args = append(args, rendition.selectedStreamMapArgs()...)
 		args = append(args, forceKeyframes...)
 		args = append(args, rendition.args()...)
 	}
