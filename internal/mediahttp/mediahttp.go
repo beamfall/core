@@ -1126,7 +1126,7 @@ func (h *Handler) servePrecomputedHLS(w http.ResponseWriter, r *http.Request, gr
 		// The rendition file's immutable identity is the persisted rendition row
 		// id plus the member name within it — never the file path.
 		h.serveLibraryFile(w, r, library, member.String(), filepath.Base(member.rel), w.Header().Get("Content-Type"), "stream unavailable",
-			encryptedClassGeneratedAsset, "playback-rendition/"+string(rendition.ID)+"/"+name)
+			encryptedClassGeneratedAsset, playback.PrecomputeMemberObjectID(rendition.ID, name))
 		return
 	}
 	if h.hotSegments != nil && !strings.HasSuffix(name, ".m3u8") {

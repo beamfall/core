@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"sort"
 	"strings"
 	"time"
 )
@@ -90,12 +91,11 @@ func (s *Store) UpsertPlaybackRendition(ctx context.Context, r PlaybackRendition
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	if exists, err := s.mediaExistsSQL(ctx, r.MediaID); err != nil {
+	plane, err := s.playbackRenditionPlaneForMediaLocked(ctx, r.MediaID)
+	if err != nil {
 		return err
-	} else if !exists {
-		return errors.New("media not found")
 	}
-	_, err := s.catalogW.ExecContext(ctx, `
+	_, err = plane.writer.ExecContext(ctx, `
 		INSERT INTO playback_rendition(
 			id, media_id, content_fingerprint, kind, status, rung_id, codec,
 			height, bandwidth, path, size_bytes, created_at_ms, last_used_at_ms
@@ -137,12 +137,11 @@ func (s *Store) StartPlaybackRenditionGeneration(ctx context.Context, r Playback
 	if err := s.verifyPlaybackRenditionJobLeaseLocked(ctx, jobID, leaseOwner); err != nil {
 		return 0, "", err
 	}
-	if exists, err := s.mediaExistsSQL(ctx, r.MediaID); err != nil {
+	plane, err := s.playbackRenditionPlaneForMediaLocked(ctx, r.MediaID)
+	if err != nil {
 		return 0, "", err
-	} else if !exists {
-		return 0, "", errors.New("media not found")
 	}
-	tx, err := s.catalogW.BeginTx(ctx, nil)
+	tx, err := plane.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, "", err
 	}
@@ -211,7 +210,11 @@ func (s *Store) PublishPlaybackRenditionGeneration(ctx context.Context, r Playba
 	if err := s.verifyPlaybackRenditionJobLeaseLocked(ctx, jobID, leaseOwner); err != nil {
 		return err
 	}
-	tx, err := s.catalogW.BeginTx(ctx, nil)
+	plane, err := s.playbackRenditionPlaneForMediaLocked(ctx, r.MediaID)
+	if err != nil {
+		return err
+	}
+	tx, err := plane.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -280,7 +283,14 @@ func (s *Store) FailPlaybackRenditionGeneration(ctx context.Context, id Playback
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	_, err := s.catalogW.ExecContext(ctx, `
+	plane, err := s.playbackRenditionPlaneLocked(ctx, id)
+	if errors.Is(err, ErrPlaybackRenditionNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	_, err = plane.writer.ExecContext(ctx, `
 		UPDATE playback_rendition
 		SET status = ?, size_bytes = 0, last_used_at_ms = ?
 		WHERE id = ? AND status = ? AND created_at_ms = ?
@@ -289,15 +299,28 @@ func (s *Store) FailPlaybackRenditionGeneration(ctx context.Context, id Playback
 }
 
 // ReadyPlaybackRenditionPaths returns the immutable generation directories
-// referenced by ready rows. Startup residue recovery uses this allowlist and
-// never trusts unreferenced directory names.
+// referenced by ready rows in the shared catalog and every Unsealed Encrypted
+// Library DB. Startup residue recovery uses this allowlist and never trusts
+// unreferenced directory names.
 func (s *Store) ReadyPlaybackRenditionPaths(ctx context.Context) ([]string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	rows, err := s.catalogR.QueryContext(ctx, `SELECT path FROM playback_rendition WHERE status = ?`, PlaybackRenditionReady)
+	var paths []string
+	for _, plane := range s.playbackRenditionPlanesLocked() {
+		planePaths, err := readyPlaybackRenditionPathsFrom(ctx, plane.reader)
+		if err != nil {
+			return nil, err
+		}
+		paths = append(paths, planePaths...)
+	}
+	return paths, nil
+}
+
+func readyPlaybackRenditionPathsFrom(ctx context.Context, reader *sql.DB) ([]string, error) {
+	rows, err := reader.QueryContext(ctx, `SELECT path FROM playback_rendition WHERE status = ?`, PlaybackRenditionReady)
 	if err != nil {
 		return nil, err
 	}
@@ -325,7 +348,11 @@ func (s *Store) ReadyPlaybackRenditions(ctx context.Context, mediaID MediaID, fi
 	if _, err := s.visibleMediaSQL(ctx, mediaID, filter); err != nil {
 		return nil, nil
 	}
-	rows, err := s.catalogR.QueryContext(ctx, `
+	plane, err := s.playbackRenditionPlaneForMediaLocked(ctx, mediaID)
+	if err != nil {
+		return nil, nil
+	}
+	rows, err := plane.reader.QueryContext(ctx, `
 		SELECT id, media_id, content_fingerprint, kind, status, rung_id, codec,
 		       height, bandwidth, path, size_bytes, created_at_ms, last_used_at_ms
 		FROM playback_rendition
@@ -367,7 +394,14 @@ func (s *Store) RecordPlaybackRenditionUse(ctx context.Context, id PlaybackRendi
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
-	_, err := s.catalogW.ExecContext(ctx,
+	plane, err := s.playbackRenditionPlaneLocked(ctx, id)
+	if errors.Is(err, ErrPlaybackRenditionNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	_, err = plane.writer.ExecContext(ctx,
 		`UPDATE playback_rendition SET last_used_at_ms = ? WHERE id = ?`,
 		timeToMillis(now.UTC()), id,
 	)
@@ -387,7 +421,8 @@ type PlaybackRenditionCacheStats struct {
 }
 
 // PlaybackRenditionCacheHealth reports the precomputed-rendition cache health
-// across every Media (ADR-0057 §"cache health visibility"): per-status counts
+// across every Media (ADR-0057 §"cache health visibility") in the shared
+// catalog and every Unsealed Encrypted Library DB: per-status counts
 // plus the on-disk bytes the ready cache objects occupy, the input the
 // disk-budget eviction governs. Cache objects are not Reveal-filtered because
 // they are server-owned derivatives, not Library content — but the operator
@@ -398,38 +433,52 @@ func (s *Store) PlaybackRenditionCacheHealth(ctx context.Context) (PlaybackRendi
 	if err := s.guardLocked(); err != nil {
 		return PlaybackRenditionCacheStats{}, err
 	}
-	rows, err := s.catalogR.QueryContext(ctx, `
+	var stats PlaybackRenditionCacheStats
+	for _, plane := range s.playbackRenditionPlanesLocked() {
+		if err := addPlaybackRenditionCacheStats(ctx, plane.reader, &stats); err != nil {
+			return PlaybackRenditionCacheStats{}, err
+		}
+	}
+	return stats, nil
+}
+
+func addPlaybackRenditionCacheStats(ctx context.Context, reader *sql.DB, stats *PlaybackRenditionCacheStats) error {
+	rows, err := reader.QueryContext(ctx, `
 		SELECT status, COUNT(*), COALESCE(SUM(size_bytes), 0)
 		FROM playback_rendition
 		GROUP BY status
 	`)
 	if err != nil {
-		return PlaybackRenditionCacheStats{}, err
+		return err
 	}
 	defer rows.Close()
-	var stats PlaybackRenditionCacheStats
 	for rows.Next() {
 		var status PlaybackRenditionStatus
 		var count int
 		var bytes int64
 		if err := rows.Scan(&status, &count, &bytes); err != nil {
-			return PlaybackRenditionCacheStats{}, err
+			return err
 		}
 		switch status {
 		case PlaybackRenditionReady:
-			stats.Ready = count
-			stats.ReadyBytes = bytes
+			stats.Ready += count
+			stats.ReadyBytes += bytes
 		case PlaybackRenditionGenerating:
-			stats.Generating = count
+			stats.Generating += count
 		case PlaybackRenditionFailed:
-			stats.Failed = count
+			stats.Failed += count
 		case PlaybackRenditionEvicted:
-			stats.Evicted = count
+			stats.Evicted += count
 		}
 	}
-	return stats, rows.Err()
+	return rows.Err()
 }
 
+// EvictPlaybackRenditionsOverBudget evicts the least recently used ready
+// renditions, across the shared catalog and every Unsealed Encrypted Library
+// DB, until the ready bytes fit maxBytes. A row is reported only when its own
+// plane accepted the eviction, so a row republished or failed meanwhile is never
+// handed to the caller for deletion.
 func (s *Store) EvictPlaybackRenditionsOverBudget(ctx context.Context, maxBytes int64, now time.Time) ([]PlaybackRendition, error) {
 	if maxBytes < 0 {
 		return nil, errors.New("playback rendition budget must be non-negative")
@@ -439,55 +488,124 @@ func (s *Store) EvictPlaybackRenditionsOverBudget(ctx context.Context, maxBytes 
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	tx, err := s.catalogW.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, err
+	type candidate struct {
+		rendition PlaybackRendition
+		writer    *sql.DB
 	}
-	defer tx.Rollback()
-
+	var candidates []candidate
 	var total int64
-	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(size_bytes), 0) FROM playback_rendition WHERE status = ?`, PlaybackRenditionReady).Scan(&total); err != nil {
-		return nil, err
+	for _, plane := range s.playbackRenditionPlanesLocked() {
+		rows, err := plane.reader.QueryContext(ctx, `
+			SELECT id, media_id, content_fingerprint, kind, status, rung_id, codec,
+			       height, bandwidth, path, size_bytes, created_at_ms, last_used_at_ms
+			FROM playback_rendition
+			WHERE status = ?
+		`, PlaybackRenditionReady)
+		if err != nil {
+			return nil, err
+		}
+		ready, err := scanPlaybackRenditions(rows)
+		_ = rows.Close()
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range ready {
+			total += r.SizeBytes
+			candidates = append(candidates, candidate{rendition: r, writer: plane.writer})
+		}
 	}
 	if total <= maxBytes {
-		return nil, tx.Commit()
+		return nil, nil
 	}
-	rows, err := tx.QueryContext(ctx, `
-		SELECT id, media_id, content_fingerprint, kind, status, rung_id, codec,
-		       height, bandwidth, path, size_bytes, created_at_ms, last_used_at_ms
-		FROM playback_rendition
-		WHERE status = ?
-		ORDER BY last_used_at_ms, created_at_ms, id
-	`, PlaybackRenditionReady)
-	if err != nil {
-		return nil, err
-	}
-	candidates, err := scanPlaybackRenditions(rows)
-	rows.Close()
-	if err != nil {
-		return nil, err
-	}
+	sort.Slice(candidates, func(i, j int) bool {
+		a, b := candidates[i].rendition, candidates[j].rendition
+		if !a.LastUsedAt.Equal(b.LastUsedAt) {
+			return a.LastUsedAt.Before(b.LastUsedAt)
+		}
+		if !a.CreatedAt.Equal(b.CreatedAt) {
+			return a.CreatedAt.Before(b.CreatedAt)
+		}
+		return a.ID < b.ID
+	})
 	var evicted []PlaybackRendition
-	for _, r := range candidates {
+	for _, c := range candidates {
 		if total <= maxBytes {
 			break
+		}
+		r := c.rendition
+		result, err := c.writer.ExecContext(ctx, `
+			UPDATE playback_rendition SET status = ?, last_used_at_ms = ?
+			WHERE id = ? AND status = ? AND created_at_ms = ?
+		`, PlaybackRenditionEvicted, timeToMillis(now.UTC()), r.ID, PlaybackRenditionReady, timeToMillis(r.CreatedAt))
+		if err != nil {
+			return evicted, err
+		}
+		changed, err := result.RowsAffected()
+		if err != nil {
+			return evicted, err
+		}
+		if changed != 1 {
+			continue
 		}
 		total -= r.SizeBytes
 		r.Status = PlaybackRenditionEvicted
 		r.LastUsedAt = now.UTC()
 		evicted = append(evicted, r)
-		if _, err := tx.ExecContext(ctx, `UPDATE playback_rendition SET status = ?, last_used_at_ms = ? WHERE id = ?`, PlaybackRenditionEvicted, timeToMillis(now.UTC()), r.ID); err != nil {
-			return nil, err
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
 	}
 	return evicted, nil
 }
 
+// playbackRenditionPlanesLocked lists every plane that can hold rendition rows:
+// the shared catalog first, then each Unsealed registered Encrypted Library DB.
+// A Sealed Library's rows are unreachable by construction.
+func (s *Store) playbackRenditionPlanesLocked() []catalogPlane {
+	planes := []catalogPlane{{writer: s.catalogW, reader: s.catalogR}}
+	ids := make([]LibraryID, 0, len(s.encryptedDBs))
+	for id, db := range s.encryptedDBs {
+		if db != nil && db.state == "unsealed-registered" && db.reader != nil && db.writer != nil {
+			ids = append(ids, id)
+		}
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	for _, id := range ids {
+		db := s.encryptedDBs[id]
+		planes = append(planes, catalogPlane{libraryID: id, encrypted: true, writer: db.writer, reader: db.reader})
+	}
+	return planes
+}
+
+// playbackRenditionPlaneForMediaLocked is the plane that owns mediaID's rows:
+// an Encrypted Library's renditions live beside its Media in its own DB, so the
+// Media, fingerprint and path join never reaches the shared catalog.
+func (s *Store) playbackRenditionPlaneForMediaLocked(ctx context.Context, mediaID MediaID) (catalogPlane, error) {
+	plane, err := s.catalogPlaneForMediaLocked(ctx, mediaID)
+	if err != nil {
+		return catalogPlane{}, errors.New("media not found")
+	}
+	return plane, nil
+}
+
+// playbackRenditionPlaneLocked finds the plane holding rendition id.
+func (s *Store) playbackRenditionPlaneLocked(ctx context.Context, id PlaybackRenditionID) (catalogPlane, error) {
+	for _, plane := range s.playbackRenditionPlanesLocked() {
+		var one int
+		err := plane.reader.QueryRowContext(ctx, `SELECT 1 FROM playback_rendition WHERE id = ?`, id).Scan(&one)
+		if err == nil {
+			return plane, nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return catalogPlane{}, err
+		}
+	}
+	return catalogPlane{}, ErrPlaybackRenditionNotFound
+}
+
 func (s *Store) playbackRenditionSQL(ctx context.Context, id PlaybackRenditionID) (PlaybackRendition, error) {
-	row := s.catalogR.QueryRowContext(ctx, `
+	plane, err := s.playbackRenditionPlaneLocked(ctx, id)
+	if err != nil {
+		return PlaybackRendition{}, err
+	}
+	row := plane.reader.QueryRowContext(ctx, `
 		SELECT id, media_id, content_fingerprint, kind, status, rung_id, codec,
 		       height, bandwidth, path, size_bytes, created_at_ms, last_used_at_ms
 		FROM playback_rendition

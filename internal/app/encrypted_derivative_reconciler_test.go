@@ -230,3 +230,33 @@ func TestEncryptedDerivativeReconcilerKeepsCiphertextSubtitles(t *testing.T) {
 	mustBeGone(t, "plaintext in the encrypted subtitle cache", plaintext)
 	mustBeGone(t, "staging temp in the encrypted subtitle cache", temp)
 }
+
+// TestEncryptedDerivativeReconcilerSweepsEncryptedPrecompute binds the unseal
+// reconcile to the encrypted precompute tree: a generation of libencrypt
+// objects survives and a generation holding a plaintext segment is removed.
+func TestEncryptedDerivativeReconcilerSweepsEncryptedPrecompute(t *testing.T) {
+	dataDir := t.TempDir()
+	cacheRoot := filepath.Join(dataDir, "playback-cache")
+	libraryID := store.LibraryID("library-enc")
+	mediaDir := filepath.Join(cacheRoot, ".precompute-encrypted", hex.EncodeToString([]byte(libraryID)), hex.EncodeToString([]byte("media-alpha")))
+	kept := filepath.Join(mediaDir, strings.Repeat("a", 64), "seg-00000.m4s")
+	leaked := filepath.Join(mediaDir, strings.Repeat("b", 64))
+	header := append([]byte("BFE2"), 0x02, 0x00, 0x01, 0x00, 0x00)
+	header = append(header, make([]byte, 64)...)
+	if err := os.MkdirAll(filepath.Dir(kept), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(kept, header, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(leaked, "seg-00000.m4s"))
+
+	reconciler := newEncryptedDerivativeReconciler(nil, nil, nil, nil, cacheRoot)
+	if err := reconciler.ReconcileEncryptedDerivatives(context.Background(), libraryID, nil); err != nil {
+		t.Fatalf("ReconcileEncryptedDerivatives: %v", err)
+	}
+	if _, err := os.Stat(kept); err != nil {
+		t.Fatalf("ciphertext precompute generation removed: %v", err)
+	}
+	mustBeGone(t, "plaintext generation in the encrypted precompute tree", leaked)
+}

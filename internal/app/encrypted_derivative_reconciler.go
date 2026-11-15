@@ -49,7 +49,9 @@ import (
 // subtitle cache {dataDir}/subtitles/encrypted/<library hash>/ and each live
 // fingerprint's generated-asset dir keep every validly named object that
 // carries a libencrypt header, and anything else in them (plaintext, staging
-// temps, stray entries) is removed.
+// temps, stray entries) is removed. The Library's encrypted precompute tree
+// {playback-cache}/.precompute-encrypted/<library hex>/ keeps each generation
+// whose members are all ciphertext and removes any other generation whole.
 //
 // FAIL CLOSED: if any purge errors, the whole reconcile returns non-nil and the
 // store call site unwinds the registration, keeping the Library Sealed — the
@@ -98,6 +100,7 @@ func (r *encryptedDerivativeReconciler) ReconcileEncryptedDerivatives(ctx contex
 	if r.subtitles != nil {
 		joined = errors.Join(joined, r.subtitles.ReconcileEncryptedSubtitles(libraryID, libencrypt.HasObjectHeader))
 	}
+	joined = errors.Join(joined, playback.ReconcileEncryptedPrecomputedRenditions(r.precomputeCache, libraryID, libencrypt.HasObjectHeader))
 	if joined != nil {
 		return fmt.Errorf("encrypted-library %s derivative reconcile: %w", libraryID, joined)
 	}

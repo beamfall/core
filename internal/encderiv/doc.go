@@ -25,4 +25,9 @@
 // (one session, startSession) but captures the tool's stdout into a bounded
 // buffer, killing the tool when it overflows, and writes nothing to disk; the
 // caller hardens the bytes and stores them in its own at-rest format.
+//
+// SegmentFMP4 cuts a final-layout stream (from Result.Open) into an HLS init
+// section and fragment-aligned segments in memory, handing each to the
+// caller's sink so it can be encrypted before it reaches disk; precomputed
+// renditions use it to publish a generation with no plaintext member.
 package encderiv

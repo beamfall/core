@@ -945,6 +945,11 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	assetService.SetSealed(sealedPredicate)
 	assetService.SetEncrypted(encryptedPredicate)
 	assetService.SetEncryptedPlane(encryptedAssetGenerator{content: appLibEncryptDBCipher{manager: libEncryptManager}, runner: ffmpegRunner}, appLibEncryptDBCipher{manager: libEncryptManager})
+	// Precomputed renditions of an Unsealed Encrypted Library go through the
+	// same helper (CORE-1963). Set before any job worker runs; the precompute
+	// job closure reads the handler at call time.
+	precomputeHandler.Encrypted = encryptedPrecomputeGenerator{content: appLibEncryptDBCipher{manager: libEncryptManager}, runner: ffmpegRunner}
+	precomputeHandler.Sealed = sealedPredicate
 	artworkService.SetSealed(sealedPredicate)
 	artworkService.SetEncrypted(encryptedPredicate)
 	// Encrypted-Library crash-recovery derivative reconcile (ADR-0045 §reconcile,
@@ -1038,6 +1043,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 			now:       time.Now,
 			wake:      jobWake,
 			composer:  composers.playbackComposer(),
+			sealed:    sealedPredicate,
 		}
 	}
 	// Device-key revocation aborts the revoked device's in-flight transcodes
@@ -1172,7 +1178,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		LibEncrypt:                   libEncryptManager,
 		EncryptedLibraryDBLifecycle:  hydrationBackfillOnUnseal{encryptedLibraryDBLifecycle: st, backfill: backfillHydration},
 		EncryptedGeneratedAssets:     assetService,
-		EncryptedDerivativePurgers:   []graph.EncryptedDerivativePurger{mediaHTTP},
+		EncryptedDerivativePurgers:   []graph.EncryptedDerivativePurger{mediaHTTP, encryptedPrecomputePurger{cacheRoot: precomputeCacheRoot}},
 		ExtensionPusher:              extensionPusher,
 		AccessRequestPusher:          accessRequestPusher,
 	}
@@ -3150,12 +3156,15 @@ type playbackCacheController struct {
 	// resolved build). An unsupported picture is refused, not sent to the
 	// ladder.
 	recipeSupported playback.ComposedRecipeCheck
+	// sealed lets an Unsealed Encrypted Library precompute on the encrypted
+	// plane; nil refuses every Encrypted Library.
+	sealed func(store.LibraryID) bool
 }
 
 func (c playbackCacheController) PrecomputeMedia(ctx context.Context, mediaID store.MediaID) (int, error) {
 	jobs, err := playback.PrecomputeComposedRendition(ctx, c.store, mediaID, c.composer, c.recipeSupported, c.cacheRoot, c.clock())
 	if err == nil && len(jobs) == 0 {
-		jobs, err = playback.PrecomputeMediaRenditions(ctx, c.store, mediaID, "h264", c.cacheRoot, c.clock())
+		jobs, err = playback.PrecomputeMediaRenditionsAllowingEncrypted(ctx, c.store, mediaID, "h264", c.cacheRoot, c.clock(), c.sealed)
 	}
 	if err == nil && len(jobs) > 0 {
 		c.wake.notify()

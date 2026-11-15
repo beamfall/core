@@ -1728,6 +1728,13 @@ func precomputedRenditionCompatible(r store.PlaybackRendition, profile Capabilit
 			return false
 		}
 	}
+	// A rewrap purges an encrypted rendition's ciphertext while its Library is
+	// Sealed, so its row can outlive the files: offer it only while they exist.
+	if IsEncryptedPrecomputeRenditionID(r.ID) {
+		if _, err := os.Stat(filepath.Join(r.Path, masterPlaylistName)); err != nil {
+			return false
+		}
+	}
 	if len(profile.VideoCodecs) > 0 {
 		cap, ok := videoCodecCap(profile.VideoCodecs, r.Codec)
 		if !ok {
