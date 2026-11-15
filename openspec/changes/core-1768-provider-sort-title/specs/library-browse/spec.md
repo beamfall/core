@@ -20,8 +20,9 @@ from an admin edit. Core SHALL NOT derive one from a language rule such as a lea
 
 When an identification or refresh result carries a sort title, it SHALL be stored at identification
 rank, so a locked admin value is kept. When a later result carries none, the sort title an earlier
-identification supplied SHALL be removed. A sort title an admin entered SHALL be kept, whether or
-not its lock is still set.
+identification supplied SHALL be removed. A locked admin sort title SHALL be kept against any
+provider result. An admin sort title whose lock was cleared SHALL be kept when a result carries no
+sort title, and SHALL be replaced when a result carries one.
 
 #### Scenario: Re-match to a candidate without a sort title
 
@@ -31,5 +32,11 @@ not its lock is still set.
 
 #### Scenario: Admin sort title survives a refresh
 
-- **WHEN** an admin set the sort title and a refresh returns a different sort title, or none
+- **WHEN** an admin set the sort title, the lock is still set, and a refresh returns a different
+  sort title or none
+- **THEN** the admin's sort title is kept
+
+#### Scenario: Unlocked admin sort title and a result without one
+
+- **WHEN** an admin cleared the lock on their sort title and a refresh returns no sort title
 - **THEN** the admin's sort title is kept

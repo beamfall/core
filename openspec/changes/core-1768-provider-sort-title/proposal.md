@@ -16,7 +16,8 @@ provider still cannot supply one, so every item without an admin edit sorts on i
   item's sort title at identification rank. Field locks still apply: a locked admin value is kept.
 - If a later identification or refresh returns no sort title, the sort title the provider wrote
   before is retracted, so a re-match does not keep the previous candidate's key. A sort title an
-  admin entered is never retracted, whether locked or unlocked.
+  admin entered is never retracted, whether locked or unlocked. Once unlocked, a provider value
+  can replace it, as with any unlocked field.
 - Browse and its letters keep keying on the sort title when the item has one and on the title
   otherwise. A store test checks this order and these buckets.
 - Core adds no article list or other language rule. A plugin (or an admin) decides the key.
