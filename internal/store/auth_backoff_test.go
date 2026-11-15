@@ -178,7 +178,7 @@ func TestReserveAuthAttemptCountsEveryLaneOrNone(t *testing.T) {
 	if err != nil || !until.After(at) {
 		t.Fatalf("second reservation = (%v, %v), want locked", until, err)
 	}
-	if failures, _, err := st.consecutiveAuthFailures(ctx, action, "global", at.Add(-time.Hour)); err != nil || failures != 1 {
+	if failures, _, err := st.consecutiveAuthFailures(ctx, action, "global", at, policy); err != nil || failures != 1 {
 		t.Fatalf("global failures = (%d, %v), want 1: a locked reservation must record nothing", failures, err)
 	}
 	for _, key := range keys {
@@ -189,5 +189,79 @@ func TestReserveAuthAttemptCountsEveryLaneOrNone(t *testing.T) {
 	}
 	if _, err := st.ReserveAuthAttempt(ctx, action, []string{"source", ""}, at, policy); err == nil {
 		t.Fatal("reservation with an empty key succeeded")
+	}
+}
+
+// TestAuthBackoffHoldsTheCapUnderSustainedGuessing pins ADR-0012 §3 against a
+// caller that guesses the moment each lockout ends (CORE-2119): once the delay
+// reaches MaxDelay it must stay there, so a day of guessing yields about one
+// attempt per MaxDelay and not a fresh set of free attempts every Window.
+func TestAuthBackoffHoldsTheCapUnderSustainedGuessing(t *testing.T) {
+	st := openBackoffStore(t)
+	ctx := context.Background()
+	policy := AuthBackoff{Window: 5 * time.Minute, FreeAttempts: 5, BaseDelay: 2 * time.Second, MaxDelay: 5 * time.Minute}
+	start := time.Unix(5_000_000, 0).UTC()
+	end := start.Add(24 * time.Hour)
+
+	const action, key = "test.lane", "subject-E"
+
+	guesses := 0
+	for now := start; now.Before(end); {
+		until, err := st.AuthBackoffUntil(ctx, action, key, now, policy)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !until.IsZero() {
+			now = until
+			continue
+		}
+		recordFailure(t, st, action, key, now)
+		guesses++
+		now = now.Add(time.Millisecond)
+	}
+	// Free attempts, the doubling steps up to the cap, then one per MaxDelay.
+	const climb = 5 + 8
+	if limit := climb + int(24*time.Hour/policy.MaxDelay); guesses > limit {
+		t.Fatalf("a day of guessing at every lockout end: %d attempts, want at most %d", guesses, limit)
+	}
+}
+
+// TestAuthBackoffIdleLaneResets: a lane left alone for Window after its lockout
+// ended starts again with its free attempts.
+func TestAuthBackoffIdleLaneResets(t *testing.T) {
+	st := openBackoffStore(t)
+	ctx := context.Background()
+	policy := AuthBackoff{Window: 5 * time.Minute, FreeAttempts: 5, BaseDelay: 2 * time.Second, MaxDelay: 5 * time.Minute}
+	base := time.Unix(6_000_000, 0).UTC()
+
+	const action, key = "test.lane", "subject-F"
+
+	// Six quick failures arm the second step (4s).
+	for i := 0; i < 6; i++ {
+		recordFailure(t, st, action, key, base.Add(time.Duration(i)*time.Millisecond))
+	}
+	last := base.Add(5 * time.Millisecond)
+	if until, err := st.AuthBackoffUntil(ctx, action, key, last, policy); err != nil || !until.Equal(last.Add(4*time.Second)) {
+		t.Fatalf("after 6 failures: want lockout until %v, got %v (err %v)", last.Add(4*time.Second), until, err)
+	}
+
+	// Idle for Window past the lockout: four more failures are free again.
+	at := last.Add(4*time.Second + policy.Window)
+	for i := 0; i < 4; i++ {
+		recordFailure(t, st, action, key, at.Add(time.Duration(i)*time.Millisecond))
+	}
+	if until, err := st.AuthBackoffUntil(ctx, action, key, at.Add(time.Second), policy); err != nil || !until.IsZero() {
+		t.Fatalf("after an idle Window: want an open lane, got lockout until %v (err %v)", until, err)
+	}
+
+	// Returning just before that point keeps the run going.
+	const other = "subject-G"
+	for i := 0; i < 6; i++ {
+		recordFailure(t, st, action, other, base.Add(time.Duration(i)*time.Millisecond))
+	}
+	soon := last.Add(4*time.Second + policy.Window - time.Second)
+	recordFailure(t, st, action, other, soon)
+	if until, err := st.AuthBackoffUntil(ctx, action, other, soon, policy); err != nil || !until.Equal(soon.Add(8*time.Second)) {
+		t.Fatalf("returning inside the Window: want lockout until %v, got %v (err %v)", soon.Add(8*time.Second), until, err)
 	}
 }
