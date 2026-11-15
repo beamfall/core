@@ -1264,6 +1264,11 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	jobRegistry.Register(offlinepack.BuildJobKind, func(ctx context.Context, job store.Job) (jobs.Result, error) {
 		return jobs.Result{}, offlinePacks.RunBuildJob(ctx, st, job)
 	})
+	if failed, err := offlinePacks.ReconcileBuilds(ctx, st); err != nil {
+		logger.WarnContext(ctx, "offline pack build reconciliation failed", "error", err)
+	} else if failed > 0 {
+		logger.InfoContext(ctx, "offline pack builds without a live job marked failed", "count", failed)
+	}
 	jobRegistry.Register(offlinepack.ExpireJobKind, func(ctx context.Context, job store.Job) (jobs.Result, error) {
 		_, err := offlinePacks.HandleExpireJob(ctx)
 		return jobs.Result{}, err

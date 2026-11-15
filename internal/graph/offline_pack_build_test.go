@@ -516,6 +516,42 @@ func TestOfflinePackOperatorCancelOfRunningBuildWaitsForTheWorker(t *testing.T) 
 	}
 }
 
+// TestOfflinePackReconcileFailsBuildsWithoutALiveJob covers the restart side of
+// CORE-1866: a build left building after its running job was cancelled and the
+// process stopped before the worker returned is failed at startup, while a
+// build whose job is still queued is left alone.
+func TestOfflinePackReconcileFailsBuildsWithoutALiveJob(t *testing.T) {
+	handler, st, _, svc := newOfflinePackHandlerWith(t, nil)
+	openManagerAdminSession(t, st)
+	created := queueOfflinePackBuildForTest(t, handler)
+	if failed, err := svc.ReconcileBuilds(t.Context(), st); err != nil || failed != 0 {
+		t.Fatalf("ReconcileBuilds with a queued job = %d, %v, want 0, nil", failed, err)
+	}
+	if state := offlinePackBuildState(t, handler, created.ID); state != "building" {
+		t.Fatalf("build %q with a queued job after reconcile = %q, want building", created.ID, state)
+	}
+	queued := activeOfflinePackBuildJobs(t, st, created.ID)
+	if len(queued) != 1 {
+		t.Fatalf("active jobs = %+v, want one", queued)
+	}
+	// The store-level cancel leaves the build row as an interrupted jobCancel
+	// of a running job does.
+	if err := st.CancelJob(t.Context(), queued[0].ID, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if failed, err := svc.ReconcileBuilds(t.Context(), st); err != nil || failed != 1 {
+		t.Fatalf("ReconcileBuilds with a cancelled job = %d, %v, want 1, nil", failed, err)
+	}
+	if state := offlinePackBuildState(t, handler, created.ID); state != "failed" {
+		t.Fatalf("build %q after reconcile = %q, want failed", created.ID, state)
+	}
+	retried, errs := retryOfflinePackForTest(t, handler, created.ID)
+	if len(errs) != 0 || retried.State != "building" {
+		t.Fatalf("retry after reconcile = %+v / %#v, want building", retried, errs)
+	}
+	requireBuildHasWorker(t, handler, st, created.ID)
+}
+
 // TestOfflinePackRetryWhileFailedJobIsFinishing covers CORE-1865: a retry
 // made after the build wrote failed but before its job turned terminal must
 // not join that dying job. The retry is refused, the row stays failed, and a

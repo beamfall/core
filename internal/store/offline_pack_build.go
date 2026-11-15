@@ -237,6 +237,34 @@ func (s *Store) OfflinePackBuildsForProfile(ctx context.Context, profileID Profi
 	return out, rows.Err()
 }
 
+// BuildingOfflinePackIDs lists every pending build row still in building,
+// across Profiles, for startup reconciliation against the live jobs.
+func (s *Store) BuildingOfflinePackIDs(ctx context.Context) ([]OfflinePackID, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	rows, err := s.catalogR.QueryContext(ctx, `
+		SELECT b.pack_id FROM offline_pack_build b
+		WHERE b.state = ? AND NOT EXISTS (SELECT 1 FROM offline_pack p WHERE p.id = b.pack_id)
+		ORDER BY b.pack_id
+	`, OfflinePackBuildBuilding)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []OfflinePackID
+	for rows.Next() {
+		var id OfflinePackID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
 const offlinePackBuildSelect = `
 		SELECT b.pack_id, b.profile_id, b.device_id, b.target_kind, b.target_ref, b.quality,
 		       b.state, b.progress, b.failure_reason, b.job_payload, b.created_at_ms, b.updated_at_ms

@@ -205,6 +205,46 @@ func (s *Service) RunBuildJob(ctx context.Context, jobs JobReader, job store.Job
 	return errors.Join(err, s.BuildJobCanceled(ctx, job.Payload))
 }
 
+// JobLister lists jobs by status (satisfied by *store.Store).
+type JobLister interface {
+	ListJobs(ctx context.Context, statuses ...store.JobStatus) ([]store.Job, error)
+}
+
+// ReconcileBuilds fails every building row that no live build job will finish
+// and returns how many it failed. Run it at startup: a process that stopped
+// between an operator cancel of a running build and that worker's return
+// leaves the job canceled and the build building, and RunBuildJob never runs
+// again for it (CORE-1866). It reads the building rows before the jobs, so a
+// retry that restarts a build and queues its job in between is not failed.
+func (s *Service) ReconcileBuilds(ctx context.Context, jobs JobLister) (int, error) {
+	building, err := s.store.BuildingOfflinePackIDs(ctx)
+	if err != nil || len(building) == 0 {
+		return 0, err
+	}
+	live, err := jobs.ListJobs(ctx, store.JobStatusQueued, store.JobStatusRunning, store.JobStatusYielded)
+	if err != nil {
+		return 0, err
+	}
+	held := map[store.OfflinePackID]bool{}
+	for _, job := range live {
+		var payload BuildJobPayload
+		if job.Kind == BuildJobKind && json.Unmarshal(job.Payload, &payload) == nil {
+			held[payload.PackID] = true
+		}
+	}
+	failed := 0
+	for _, id := range building {
+		if held[id] {
+			continue
+		}
+		if err := s.store.FailOfflinePackBuild(ctx, id, FailureBuild, s.now()); err != nil {
+			return failed, err
+		}
+		failed++
+	}
+	return failed, nil
+}
+
 // DismissBuild removes the caller's failed build from the list.
 func (s *Service) DismissBuild(ctx context.Context, id store.OfflinePackID, profileID store.ProfileID) error {
 	return s.store.DeleteFailedOfflinePackBuild(ctx, id, profileID)
