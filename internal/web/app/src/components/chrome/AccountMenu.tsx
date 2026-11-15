@@ -1,4 +1,4 @@
-import { Cast, Database, LayoutDashboard, Settings, Users, Wrench } from "lucide-react";
+import { Cast, Database, LayoutDashboard, ListVideo, Settings, Users, Wrench } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { SignOutButton } from "@/areas/enroll";
@@ -85,6 +85,14 @@ export function AccountMenu() {
             <Link to="/mydata" className="bf-account-item" aria-current={current("/mydata")}>
               <Database aria-hidden />
               {t("myData")}
+            </Link>
+            <Link
+              to="/collections"
+              className="bf-account-item"
+              aria-current={current("/collections")}
+            >
+              <ListVideo aria-hidden />
+              {t("viewerCollectionsTitle")}
             </Link>
             <Link to="/remote" className="bf-account-item" aria-current={current("/remote")}>
               <Cast aria-hidden />

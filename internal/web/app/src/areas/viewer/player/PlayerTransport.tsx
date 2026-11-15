@@ -58,6 +58,8 @@ import { versionLabel } from "../lib/versionChoice";
 import { useRemotePlayerTarget } from "../remote/remoteControl";
 import { AudioSyncPanel } from "./AudioSyncPanel";
 import { ChapterList } from "./ChapterList";
+import { CastControl } from "./cast/CastControl";
+import { CAST_RECEIVER_PLAYBACK_READY } from "./cast/castMedia";
 import { InfoOverlay } from "./InfoOverlay";
 import { ShortcutHelpOverlay } from "./ShortcutHelpOverlay";
 import { SubtitleStylePanel } from "./SubtitleStylePanel";
@@ -1142,6 +1144,9 @@ export function PlayerTransport({
             )}
           </div>
 
+          {CAST_RECEIVER_PLAYBACK_READY && mediaID && state.info?.mediaClass === "video" && (
+            <CastControl videoRef={videoRef} mediaID={mediaID} mediaTitle={mediaTitle} />
+          )}
           <button
             type="button"
             onClick={() => void togglePictureInPicture()}

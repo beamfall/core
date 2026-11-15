@@ -448,6 +448,14 @@ func webAppHandler(configuredBase ...*url.URL) http.HandlerFunc {
 	return webAppHandlerFS(web.AppAssets(), base)
 }
 
+// castSenderScriptSources are the CSP script sources of the Google Cast sender
+// SDK (CORE-1679): the cast_sender.js loader, the CAF sender framework it loads
+// on desktop Chromium, and the Android Chrome loader it delegates to. Path
+// prefixes keep the allowance off the rest of the host.
+const castSenderScriptSources = "https://www.gstatic.com/cv/js/sender/ " +
+	"https://www.gstatic.com/cast/sdk/libs/sender/ " +
+	"https://www.gstatic.com/eureka/clank/"
+
 func webAppHandlerFS(assets fs.FS, base *url.URL) http.HandlerFunc {
 	fileServer := http.StripPrefix("/web/", http.FileServerFS(assets))
 	index, _ := fs.ReadFile(assets, "index.html")
@@ -488,9 +496,13 @@ func webAppHandlerFS(assets fs.FS, base *url.URL) http.HandlerFunc {
 		// static hash can cover (style-src 'unsafe-inline'); HLS.js runs its demuxer
 		// in a blob: Worker and assigns a blob: MediaSource URL to <video>.src
 		// (worker-src/media-src blob:). No inline SCRIPT is allowed — the XSS
-		// backstop stays intact.
+		// backstop stays intact. The one script exception is the Google Cast
+		// sender SDK (CORE-1679), which the player loads on demand in a
+		// Cast-capable browser: its loader and the framework it pulls, scoped
+		// to their gstatic paths.
 		h.Set("Content-Security-Policy",
 			"default-src 'self'; "+
+				"script-src 'self' "+castSenderScriptSources+"; "+
 				"style-src 'self' 'unsafe-inline'; "+
 				"worker-src 'self' blob:; "+
 				"media-src 'self' blob:; "+

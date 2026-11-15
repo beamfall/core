@@ -211,6 +211,8 @@ export interface EntityFieldInfo {
 export interface EntityInfo {
   id: string;
   kind: string;
+  /** The plugin's display name for `kind`; absent when it declares none. */
+  kindDisplayName?: DisplayString;
   title: string;
   fields: EntityFieldInfo[];
   /** Entities related in either direction, grouped by kind; only entity(id) fills it. */

@@ -793,3 +793,52 @@ func randomCollectionID() (CollectionID, error) {
 	}
 	return CollectionID("collection-" + hex.EncodeToString(raw[:])), nil
 }
+
+// collectionSourceItemsLocked backs the "collection" Source kind (CORE-1684):
+// a manual Collection's members in their stored order, value = Collection ID.
+// An ordered Collection is the household's playlist, so the order is the
+// curator's, never re-sorted. Members the filter hides or that left the
+// catalog are dropped before paging, so offset and limit count visible items.
+// A trashed, unknown, or hidden-Library Collection yields an empty feed, the
+// same answer as an unknown Source value.
+func (s *Store) collectionSourceItemsLocked(ctx context.Context, filter LibraryFilter, query SourceQuery, limit, offset int) ([]SourceItem, error) {
+	id := CollectionID(strings.TrimSpace(query.Value))
+	if id == "" {
+		return []SourceItem{}, nil
+	}
+	if _, err := s.collectionByIDVisibleLocked(ctx, id, false, filter); err != nil {
+		if errors.Is(err, ErrCollectionNotFound) {
+			return []SourceItem{}, nil
+		}
+		return nil, err
+	}
+	members, err := s.collectionMembersLocked(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]MediaID, len(members))
+	for i, m := range members {
+		ids[i] = m.MediaID
+	}
+	visible, err := s.visibleMediaBatchSQL(ctx, ids, filter)
+	if err != nil {
+		return nil, err
+	}
+	items := []SourceItem{}
+	skip := max(offset, 0)
+	for _, id := range ids {
+		media, ok := visible[id]
+		if !ok {
+			continue
+		}
+		if skip > 0 {
+			skip--
+			continue
+		}
+		items = append(items, SourceItem{ID: media.ID, Kind: ItemTargetMedia, Title: media.Title, Summary: mediaDurationSummary(media.DurationSeconds)})
+		if len(items) >= limit {
+			break
+		}
+	}
+	return items, nil
+}
