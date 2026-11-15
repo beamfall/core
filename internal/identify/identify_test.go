@@ -1544,3 +1544,54 @@ func TestApplyKeepsLockedArtworkSlots(t *testing.T) {
 		}
 	}
 }
+
+// fakeTitles is a canned MediaTitleSource that records its calls.
+type fakeTitles struct {
+	title string
+	err   error
+	calls int
+}
+
+func (f *fakeTitles) ParsedMediaTitle(_ context.Context, _ store.MediaID, _ string) (string, error) {
+	f.calls++
+	return f.title, f.err
+}
+
+// TestApplyMediaTitleSource (CORE-1713): a parser-owned per-file title
+// replaces the scraper's title; a blank one or a failed read keeps the
+// scraper's; a lookup with no title never asks.
+func TestApplyMediaTitleSource(t *testing.T) {
+	cases := []struct {
+		name      string
+		fields    map[string]any
+		titles    *fakeTitles
+		wantTitle string // "" means no title written
+		wantCalls int
+	}{
+		{name: "parser title wins", fields: map[string]any{"title": "Synthetic Group", "year": "2005"},
+			titles: &fakeTitles{title: " 2023-03-01 "}, wantTitle: "2023-03-01", wantCalls: 1},
+		{name: "blank parser title", fields: map[string]any{"title": "Synthetic Group"},
+			titles: &fakeTitles{title: "  "}, wantTitle: "Synthetic Group", wantCalls: 1},
+		{name: "failed read", fields: map[string]any{"title": "Synthetic Group"},
+			titles: &fakeTitles{title: "ignored", err: errors.New("media file not found")}, wantTitle: "Synthetic Group", wantCalls: 1},
+		{name: "no scraper title", fields: map[string]any{"summary": "Only a summary."},
+			titles: &fakeTitles{title: "2023-03-01"}, wantCalls: 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			st := &fakeStore{}
+			service := identify.NewService(&fakeEngine{lookupResult: scrape.Result{Fields: tc.fields}}, demoBundles(plugin.ScraperSpec{ID: "lookup"}), st)
+			service.SetMediaTitles(tc.titles)
+			if err := service.Apply(context.Background(), "media-alpha", "demo", "lookup", "42"); err != nil {
+				t.Fatal(err)
+			}
+			got := ""
+			if st.metadata.Title != nil {
+				got = *st.metadata.Title
+			}
+			if got != tc.wantTitle || tc.titles.calls != tc.wantCalls {
+				t.Errorf("title = %q after %d title reads, want %q after %d", got, tc.titles.calls, tc.wantTitle, tc.wantCalls)
+			}
+		})
+	}
+}

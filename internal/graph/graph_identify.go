@@ -396,7 +396,7 @@ func (h *Handler) fixMatchPreview(ctx context.Context, scope auth.Scope, req req
 		return nil, err
 	}
 	return []FixMatchFieldDiff{
-		fieldDiff("title", media.Title, candidate.Title),
+		fieldDiff("title", media.Title, h.identify.AppliedTitle(ctx, store.MediaID(mediaID), pluginID, candidate.Title)),
 		fieldDiff("summary", media.Summary, candidate.Summary),
 		fieldDiff("year", yearText(media.Year), yearText(candidate.Year)),
 	}, nil

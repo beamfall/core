@@ -118,6 +118,14 @@ type EntityStore interface {
 	UpsertEntityRelation(ctx context.Context, relation store.EntityRelation) error
 }
 
+// MediaTitleSource supplies a Media item's parser-owned display title: the
+// per-file title a plugin's filename parser gives a file whose parsed title
+// names a container shared by several files (scan.MediaTitler). It returns ""
+// when the plugin's parser supplies none.
+type MediaTitleSource interface {
+	ParsedMediaTitle(ctx context.Context, mediaID store.MediaID, pluginID string) (string, error)
+}
+
 // Candidate is one identification candidate from a scraper search.
 type Candidate = sdk.Candidate
 
@@ -134,6 +142,7 @@ type Service struct {
 	fields       FieldStore
 	entities     EntityStore
 	fingerprints FingerprintStore
+	titles       MediaTitleSource
 	// scorers binds each plugin's MatchScorer + auto-apply threshold by plugin
 	// ID; empty until the composition root registers one.
 	scorers map[string]scorerBinding
@@ -232,6 +241,38 @@ func (s *Service) SetEntities(entities EntityStore) {
 // them empty.
 func (s *Service) SetFingerprints(fingerprints FingerprintStore) {
 	s.fingerprints = fingerprints
+}
+
+// SetMediaTitles wires parser-owned display titles. A scraper's title names
+// the same container the parsed title does (the identification query), so
+// when the plugin's parser supplies a per-file title for the Media, Apply
+// writes that title instead of the scraper's and the identified Media stays
+// distinguishable from its siblings. Nil (the default) writes the scraper's
+// title.
+func (s *Service) SetMediaTitles(titles MediaTitleSource) {
+	s.titles = titles
+}
+
+// AppliedTitle is the title Apply writes for a scraper title: the plugin
+// parser's per-file title for mediaID when one is wired and non-blank, else
+// the scraper's. A blank scraper title stays blank (Apply writes no title).
+// A failed title read (say, a Media whose files are all missing) keeps the
+// scraper's title rather than failing the identification. The Fix-Match
+// preview reads it so the proposed title is the one Apply keeps.
+func (s *Service) AppliedTitle(ctx context.Context, mediaID store.MediaID, pluginID, scraperTitle string) string {
+	scraperTitle = strings.TrimSpace(scraperTitle)
+	if scraperTitle == "" || s.titles == nil || mediaID == "" {
+		return scraperTitle
+	}
+	title, err := s.titles.ParsedMediaTitle(ctx, mediaID, pluginID)
+	if err != nil {
+		slog.Debug("identify: parser title unavailable, keeping scraper title", "media", mediaID, "error", err.Error())
+		return scraperTitle
+	}
+	if title = strings.TrimSpace(title); title != "" {
+		return title
+	}
+	return scraperTitle
 }
 
 // Search resolves the plugin's scraper spec and returns the engine's
@@ -361,6 +402,10 @@ func (s *Service) Apply(ctx context.Context, mediaID store.MediaID, pluginID, sc
 		// identification supplied; the store leaves an admin's value alone.
 		none := ""
 		metadata.SortTitle = &none
+	}
+	if metadata.Title != nil {
+		title := s.AppliedTitle(ctx, mediaID, pluginID, *metadata.Title)
+		metadata.Title = &title
 	}
 	if err := s.applyLocal(ctx, mediaID, pluginID, scraperID, candidateID, metadata, bundle, spec, result); err != nil {
 		return err
