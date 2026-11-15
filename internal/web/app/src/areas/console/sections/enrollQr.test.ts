@@ -41,6 +41,21 @@ describe("enrollQrTarget (CORE-1614)", () => {
     expect(isLoopbackHost("LOCALHOST")).toBe(true);
     expect(isLoopbackHost("127.4.5.6")).toBe(true);
     expect(isLoopbackHost("192.168.1.10")).toBe(false);
+    // Aliases a browser accepts for this machine (Codex review, CORE-1614).
+    for (const host of [
+      "localhost.",
+      "app.localhost.",
+      "[::ffff:7f00:1]",
+      "[::ffff:127.0.0.1]",
+      "0.0.0.0",
+      "[::]",
+      "[0:0:0:0:0:0:0:1]",
+    ]) {
+      expect(isLoopbackHost(host), host).toBe(true);
+    }
+    for (const host of ["[::ffff:c0a8:10a]", "localhost.example", "127.example", "[fe80::1]"]) {
+      expect(isLoopbackHost(host), host).toBe(false);
+    }
     expect(isLoopbackHost("localhost.example.test")).toBe(false);
   });
 });
