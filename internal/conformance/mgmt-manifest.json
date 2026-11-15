@@ -114,6 +114,10 @@
       "effect": "write"
     },
     {
+      "field": "deletewebhook",
+      "effect": "write"
+    },
+    {
       "field": "devices",
       "effect": "read"
     },
@@ -310,6 +314,10 @@
       "effect": "write"
     },
     {
+      "field": "savewebhook",
+      "effect": "write"
+    },
+    {
       "field": "scanestimate",
       "effect": "read"
     },
@@ -418,11 +426,19 @@
       "effect": "write"
     },
     {
+      "field": "setwebhooksettings",
+      "effect": "write"
+    },
+    {
       "field": "skipdetectionenabled",
       "effect": "read"
     },
     {
       "field": "terminatesession",
+      "effect": "write"
+    },
+    {
+      "field": "testwebhook",
       "effect": "write"
     },
     {
@@ -471,6 +487,18 @@
     },
     {
       "field": "watcherstatus",
+      "effect": "read"
+    },
+    {
+      "field": "webhookdeliveries",
+      "effect": "read"
+    },
+    {
+      "field": "webhooks",
+      "effect": "read"
+    },
+    {
+      "field": "webhooksettings",
       "effect": "read"
     }
   ],

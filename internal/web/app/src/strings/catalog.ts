@@ -31,6 +31,7 @@ import { sharedStateStrings } from "./shared-states";
 import { subtitleAppearanceStrings } from "./subtitle-appearance";
 import { viewerAccountStrings } from "./viewer-account";
 import { watchPartyStrings } from "./watch-party";
+import { webhookStrings } from "./webhooks";
 import { whosWatchingStrings } from "./whos-watching";
 
 export const en = {
@@ -68,6 +69,7 @@ export const en = {
   ...mediaDetailStrings.en,
   ...karaokeStrings.en,
   ...remoteControlStrings.en,
+  ...webhookStrings.en,
 } as const;
 
 export const fr = {
@@ -105,6 +107,7 @@ export const fr = {
   ...mediaDetailStrings.fr,
   ...karaokeStrings.fr,
   ...remoteControlStrings.fr,
+  ...webhookStrings.fr,
 } as const;
 
 export const de = {
@@ -142,6 +145,7 @@ export const de = {
   ...mediaDetailStrings.de,
   ...karaokeStrings.de,
   ...remoteControlStrings.de,
+  ...webhookStrings.de,
 } as const;
 
 export const es = {
@@ -179,6 +183,7 @@ export const es = {
   ...mediaDetailStrings.es,
   ...karaokeStrings.es,
   ...remoteControlStrings.es,
+  ...webhookStrings.es,
 } as const;
 
 export const pt = {
@@ -216,4 +221,5 @@ export const pt = {
   ...mediaDetailStrings.pt,
   ...karaokeStrings.pt,
   ...remoteControlStrings.pt,
+  ...webhookStrings.pt,
 } as const;

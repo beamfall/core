@@ -350,6 +350,11 @@
     "tier": "session"
   },
   {
+    "field": "deletewebhook",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
     "field": "devices",
     "effect": "read",
     "tier": "admin"
@@ -1005,6 +1010,11 @@
     "tier": "session"
   },
   {
+    "field": "savewebhook",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
     "field": "scanestimate",
     "effect": "read",
     "tier": "admin"
@@ -1230,6 +1240,11 @@
     "tier": "session"
   },
   {
+    "field": "setwebhooksettings",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
     "field": "skipdetectionenabled",
     "effect": "read",
     "tier": "admin"
@@ -1301,6 +1316,11 @@
   },
   {
     "field": "terminatesession",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "testwebhook",
     "effect": "write",
     "tier": "admin"
   },
@@ -1458,5 +1478,20 @@
     "field": "watchpartytransport",
     "effect": "write",
     "tier": "session"
+  },
+  {
+    "field": "webhookdeliveries",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "webhooks",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "webhooksettings",
+    "effect": "read",
+    "tier": "admin"
   }
 ]

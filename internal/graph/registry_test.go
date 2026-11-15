@@ -102,10 +102,17 @@ var originalScopedFields = []string{
 	"createprofile",
 	"currentsession",
 	"deletelibrary",
-	"trashedlibraries",  // CORE-1201: deleted Libraries that can still be restored
-	"restorelibrary",    // CORE-1201: bring a deleted Library back
-	"purgelibrary",      // CORE-1201: permanently remove a deleted Library
-	"deletemanagedpath", // WEB-5C (ADR-0061): manager-scoped recoverable managed file/folder delete
+	"trashedlibraries",   // CORE-1201: deleted Libraries that can still be restored
+	"restorelibrary",     // CORE-1201: bring a deleted Library back
+	"purgelibrary",       // CORE-1201: permanently remove a deleted Library
+	"webhooks",           // CORE-1697: console-managed webhook endpoints
+	"webhookdeliveries",  // CORE-1697: webhook delivery log
+	"webhooksettings",    // CORE-1697: shared webhook options
+	"savewebhook",        // CORE-1697: add or edit a webhook endpoint
+	"deletewebhook",      // CORE-1697: remove a webhook endpoint
+	"testwebhook",        // CORE-1697: send one test notification
+	"setwebhooksettings", // CORE-1697: save shared webhook options
+	"deletemanagedpath",  // WEB-5C (ADR-0061): manager-scoped recoverable managed file/folder delete
 	"deletemarker",
 	"deletetag",
 	"deletemyengagement",

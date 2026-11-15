@@ -342,6 +342,7 @@ var fieldDispatchRuns = [...]fieldDispatchFunc{
 	147: dispatchFieldBlock147,
 	148: dispatchFieldBlock148,
 	149: dispatchFieldBlock149,
+	150: dispatchFieldBlock150,
 }
 
 var fieldHandlerRegistry = map[string]fieldHandler{
@@ -645,6 +646,13 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"watcherstatus":                      newFieldHandler("watcherStatus", "watcherStatus", fieldRead, roleSession|roleAdmin, 105),
 	"watchpartyautoskip":                 newFieldHandler("watchPartyAutoSkip", "watchPartyAutoSkip", fieldMutation, roleSession, 141),
 	"watchpartytransport":                newFieldHandler("watchPartyTransport", "watchPartyTransport", fieldMutation, roleSession, 139),
+	"webhooks":                           newFieldHandler("webhooks", "webhooks", fieldRead, roleSession|roleAdmin, 150),
+	"webhookdeliveries":                  newFieldHandler("webhookDeliveries", "webhookDeliveries", fieldRead, roleSession|roleAdmin, 150),
+	"webhooksettings":                    newFieldHandler("webhookSettings", "webhookSettings", fieldRead, roleSession|roleAdmin, 150),
+	"savewebhook":                        newFieldHandler("saveWebhook", "saveWebhook", fieldMutation, roleSession|roleAdmin, 150),
+	"deletewebhook":                      newFieldHandler("deleteWebhook", "deleteWebhook", fieldMutation, roleSession|roleAdmin, 150),
+	"testwebhook":                        newFieldHandler("testWebhook", "testWebhook", fieldMutation, roleSession|roleAdmin, 150),
+	"setwebhooksettings":                 newFieldHandler("setWebhookSettings", "setWebhookSettings", fieldMutation, roleSession|roleAdmin, 150),
 }
 
 func dispatchFieldBlock000(dispatch *fieldDispatchContext) response {
@@ -4029,6 +4037,60 @@ func dispatchFieldBlock149(dispatch *fieldDispatchContext) response {
 	if fields["preplayqueue"] {
 		items, err := h.prePlayQueue(ctx, scope, req)
 		if resp := resolveField(dispatch, "preplayqueue", items, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	return response{}
+}
+
+// dispatchFieldBlock150 resolves the console webhook fields (CORE-1697): list,
+// add, edit, test and remove endpoints, read the delivery log, and read or
+// save the shared options.
+func dispatchFieldBlock150(dispatch *fieldDispatchContext) response {
+	h := dispatch.handler
+	ctx := dispatch.ctx
+	scope := dispatch.scope
+	req := dispatch.req
+	fields := dispatch.fields
+	if fields["webhooks"] {
+		list, err := h.webhookEndpoints()
+		if resp := resolveField(dispatch, "webhooks", list, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["webhookdeliveries"] {
+		list, err := h.webhookDeliveries()
+		if resp := resolveField(dispatch, "webhookdeliveries", list, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["webhooksettings"] {
+		settings, err := h.webhookSettings()
+		if resp := resolveField(dispatch, "webhooksettings", settings, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["savewebhook"] {
+		endpoint, err := h.saveWebhook(ctx, scope, req)
+		if resp := resolveField(dispatch, "savewebhook", endpoint, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["deletewebhook"] {
+		err := h.deleteWebhook(ctx, scope, req)
+		if resp := resolveField(dispatch, "deletewebhook", true, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["testwebhook"] {
+		result, err := h.testWebhook(ctx, req)
+		if resp := resolveField(dispatch, "testwebhook", result, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["setwebhooksettings"] {
+		settings, err := h.setWebhookSettings(ctx, scope, req)
+		if resp := resolveField(dispatch, "setwebhooksettings", settings, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}
