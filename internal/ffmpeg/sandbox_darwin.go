@@ -34,3 +34,17 @@ func sandboxWrap(roPaths, rwPaths []string, binPath string, args []string) (stri
 	wrapped := append([]string{"-p", profile, binPath}, args...)
 	return sandboxExec, wrapped, true
 }
+
+// sandboxWrapNet wraps a pipe-transcode spawn in a Seatbelt profile that grants
+// no job path at all and allows outbound TCP only to the loopback port. Unlike
+// sandboxWrap, a missing sandbox-exec is reported (false) so the caller can
+// refuse: this child reads decrypted bytes and must never run unconfined.
+func sandboxWrapNet(port int, binPath string, args []string) (string, []string, bool) {
+	sandboxExec, err := exec.LookPath(sandboxExecBinary)
+	if err != nil {
+		return binPath, args, false
+	}
+	profile := sandboxProfileNet(nil, nil, port)
+	wrapped := append([]string{"-p", profile, binPath}, args...)
+	return sandboxExec, wrapped, true
+}

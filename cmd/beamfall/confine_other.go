@@ -17,6 +17,14 @@ import (
 // Linux-only. binary is the exec target whose directory must remain reachable.
 func applyConfinement(_, _ []string, _ string) error { return nil }
 
+// applyRequiredConfinement refuses everywhere landlock is absent. A spawn that
+// asks for mandatory confinement (--require-landlock) must not fall back to
+// rlimits; on darwin that child is confined by sandbox-exec before it reaches
+// this shim, so the shim is never asked to require landlock there.
+func applyRequiredConfinement(_, _ []string, _ string) error {
+	return fmt.Errorf("ffmpeg-shim: landlock confinement is required but unavailable on %s", runtime.GOOS)
+}
+
 // applyLocalInferenceConfinement fails closed everywhere landlock is absent.
 // Local inference carries a stricter contract than the ffmpeg shim: ADR-0127 §1
 // requires an OS-enforced deny-all profile, so a host with no kernel

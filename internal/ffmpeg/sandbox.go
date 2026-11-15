@@ -35,6 +35,14 @@ import (
 // quoted literal so a path containing SBPL metacharacters cannot break out of
 // the string; an empty path is skipped.
 func sandboxProfile(roPaths, rwPaths []string) string {
+	return sandboxProfileNet(roPaths, rwPaths, 0)
+}
+
+// sandboxProfileNet is sandboxProfile with one exception to the network
+// denial: when port is non-zero, outbound TCP to that loopback port. The
+// encrypted-library pipe transcode reads its source from that port and is
+// given no other reach.
+func sandboxProfileNet(roPaths, rwPaths []string, port int) string {
 	var b strings.Builder
 	b.WriteString("(version 1)\n")
 	b.WriteString("(deny default)\n")
@@ -51,6 +59,9 @@ func sandboxProfile(roPaths, rwPaths []string) string {
 	// Deny all network access explicitly (defense in depth over deny-default):
 	// the convert child has no business reaching the network.
 	b.WriteString("(deny network*)\n")
+	if port > 0 && port <= 65535 {
+		fmt.Fprintf(&b, "(allow network-outbound (remote ip \"localhost:%d\"))\n", port)
+	}
 	// Read-only system trees where ffmpeg and its dylibs may live outside the
 	// dyld shared cache (Homebrew prefixes); read-only, never writable.
 	for _, p := range sandboxSystemReadRoots() {

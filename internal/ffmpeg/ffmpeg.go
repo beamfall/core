@@ -288,14 +288,19 @@ func (r *Runner) SetHardeningShim(shimPath string) {
 // is launched directly under the shim. The caller still applies applySysProcAttr
 // to set the death signal.
 func (r *Runner) generationCommand(ctx context.Context, conf confinement, ffmpegPath string, args ...string) *exec.Cmd {
-	binPath, binArgs := ffmpegPath, args
+	binPath, binArgs := r.niceWrap(ffmpegPath, args)
+	return r.hardenedCommand(ctx, binPath, conf.ReadOnly, conf.ReadWrite, binArgs)
+}
+
+// niceWrap prefixes `nice -n N` to a background FFmpeg run when a generation
+// niceness is configured and the platform honors it (Linux).
+func (r *Runner) niceWrap(ffmpegPath string, args []string) (string, []string) {
 	if nice := nicePriority(r.generationNiceness); nice > 0 {
 		if nicePath, err := exec.LookPath("nice"); err == nil {
-			binPath = nicePath
-			binArgs = append([]string{"-n", strconv.Itoa(nice), ffmpegPath}, args...)
+			return nicePath, append([]string{"-n", strconv.Itoa(nice), ffmpegPath}, args...)
 		}
 	}
-	return r.hardenedCommand(ctx, binPath, conf.ReadOnly, conf.ReadWrite, binArgs)
+	return ffmpegPath, args
 }
 
 // convertCommand builds the FFmpeg command for a conversion-workflow run and,
