@@ -15,6 +15,15 @@
 # binary-archive attestation. The tamper-rejection logic itself is asserted in
 # `make gate` (internal/release + internal/updatecheck tests), so a tampered
 # artifact is proven-rejected on every PR, not only at release time.
+#
+# Both the archives and the image link the release's first-party native build
+# catalog (ADR-0063, CORE-1395). The repository variable
+# FIRST_PARTY_BUILDS_MANIFEST holds this release's beamfall.first-party-builds/v1
+# manifest, assembled with `beamfall release build-catalog --assemble` from the
+# build records the client release pipelines publish
+# (docs/release/first-party-builds.md). It is public build metadata, not a
+# secret. Without it the release fails: a Core without the catalog refuses every
+# native client.
 
 name: release
 
@@ -30,6 +39,8 @@ permissions:
 jobs:
   attest:
     runs-on: ubuntu-latest
+    outputs:
+      first_party_builds_catalog: ${{ steps.first_party_builds.outputs.catalog }}
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
@@ -84,8 +95,22 @@ jobs:
       - name: Archive release-gate evidence
         run: tar -C /tmp/release-gate-signed-input -czf /tmp/release-gate-evidence.tar.gz .
 
+      - name: Validate first-party build manifest
+        id: first_party_builds
+        env:
+          FIRST_PARTY_BUILDS_MANIFEST: ${{ vars.FIRST_PARTY_BUILDS_MANIFEST }}
+        run: |
+          if [ -z "${FIRST_PARTY_BUILDS_MANIFEST}" ]; then
+            echo "FIRST_PARTY_BUILDS_MANIFEST variable is not set — a release without the first-party build catalog refuses every native client" >&2
+            exit 1
+          fi
+          printf '%s\n' "${FIRST_PARTY_BUILDS_MANIFEST}" >/tmp/first-party-builds.json
+          catalog="$(go run ./cmd/beamfall release build-catalog --manifest /tmp/first-party-builds.json)"
+          echo "catalog=${catalog}" >>"${GITHUB_OUTPUT}"
+
       - name: build + sign + SBOM + provenance
         env:
+          FIRST_PARTY_BUILDS: /tmp/first-party-builds.json
           BEAMFALL_RELEASE_SIGNING_KEY: ${{ secrets.BEAMFALL_RELEASE_SIGNING_KEY }}
           VERSION: ${{ github.ref_name }}
           CHANNEL: stable
@@ -149,6 +174,17 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: sigstore/cosign-installer@f713795cb21599bc4e5c4b58cbad1da852d7eeb9 # v3
 
+      # The image links the catalog `attest` validated; the Dockerfile validates
+      # it again with `beamfall release build-catalog --catalog` before linking.
+      - name: require first-party build catalog
+        env:
+          FIRST_PARTY_BUILDS_CATALOG: ${{ needs.attest.outputs.first_party_builds_catalog }}
+        run: |
+          if [ -z "${FIRST_PARTY_BUILDS_CATALOG}" ]; then
+            echo "attest produced no first-party build catalog — refusing to publish an image that refuses every native client" >&2
+            exit 1
+          fi
+
       # Build + push the multi-arch image WITH the SBOM/provenance attestations
       # declared in docker-bake.hcl. The pushed digest is captured for signing.
       - name: build + push (attested)
@@ -156,6 +192,7 @@ jobs:
         env:
           VERSION: ${{ github.ref_name }}
           CHANNEL: stable
+          FIRST_PARTY_BUILDS_CATALOG: ${{ needs.attest.outputs.first_party_builds_catalog }}
         uses: docker/bake-action@4a9a8d494466d37134e2bfca2d3a8de8fb2681ad # v5
         with:
           push: true

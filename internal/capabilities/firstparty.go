@@ -17,10 +17,12 @@ import (
 //	-X github.com/beamfall/core/internal/capabilities.FirstPartyBuildManifest=<base64 manifest>
 //
 // script/release.sh produces the value with `beamfall release build-catalog`,
-// which validates the manifest before it is linked. Empty means the binary
-// carries no first-party native builds, so every native build is unknown and
-// refused; only the embedded Core Web UI remains known. Operator rollout policy
-// still arrives through Server.SetCompatPolicy.
+// which validates the manifest before it is linked; the manifest itself is
+// assembled from the client release pipelines' build records with
+// `beamfall release build-catalog --assemble` (docs/release/first-party-builds.md).
+// Empty means the binary carries no first-party native builds, so every native
+// build is unknown and refused; only the embedded Core Web UI remains known.
+// Operator rollout policy still arrives through Server.SetCompatPolicy.
 var FirstPartyBuildManifest string
 
 // FirstPartyBuildManifestSchema names the only accepted manifest format.
@@ -50,7 +52,16 @@ type firstPartyBuild struct {
 // rollback floors only: the exact enrollment mapping comes from server-held
 // enrollment state, never from a release manifest.
 func FirstPartyBuildCatalog() (BuildCatalog, error) {
-	encoded := strings.TrimSpace(FirstPartyBuildManifest)
+	return DecodeFirstPartyBuildCatalog(FirstPartyBuildManifest)
+}
+
+// DecodeFirstPartyBuildCatalog decodes and strictly validates a link-time
+// FirstPartyBuildManifest value; empty decodes to an empty catalog. The image
+// build runs it (via `beamfall release build-catalog --catalog`) before
+// linking a value, so a malformed one fails the build instead of the server's
+// boot (CORE-1395).
+func DecodeFirstPartyBuildCatalog(encoded string) (BuildCatalog, error) {
+	encoded = strings.TrimSpace(encoded)
 	if encoded == "" {
 		return BuildCatalog{}, nil
 	}
@@ -72,6 +83,66 @@ func EncodeFirstPartyBuildManifest(data []byte) (string, error) {
 		return "", fmt.Errorf("first-party build manifest: %w", err)
 	}
 	return base64.StdEncoding.EncodeToString(compact.Bytes()), nil
+}
+
+// FirstPartyBuildRecordFile is one client release pipeline's contribution to a
+// Core release's first-party build manifest: a FirstPartyBuildManifestSchema
+// manifest holding only the builds that pipeline ships (and, optionally, the
+// rollback floors of its own surfaces). Name identifies the file in errors.
+type FirstPartyBuildRecordFile struct {
+	Name string
+	Data []byte
+}
+
+// AssembleFirstPartyBuildManifest combines the per-client record files of one
+// Core release into the single manifest that release links (CORE-1395). Each
+// file must parse strictly on its own and contribute at least one build. A
+// build id recorded by two files, or a surface floor set by two files, is
+// refused rather than resolved: two pipelines claiming the same build or
+// surface is a release error. Builds keep file order, so the output is
+// deterministic for a given file order, and it is re-parsed before return.
+func AssembleFirstPartyBuildManifest(files []FirstPartyBuildRecordFile) ([]byte, error) {
+	if len(files) == 0 {
+		return nil, errors.New("first-party build records: no record files")
+	}
+	merged := firstPartyBuildManifest{Schema: FirstPartyBuildManifestSchema}
+	buildOwner := make(map[string]string)
+	floorOwner := make(map[Surface]string)
+	for _, file := range files {
+		catalog, err := ParseFirstPartyBuildManifest(file.Data)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", file.Name, err)
+		}
+		if len(catalog.Builds) == 0 {
+			return nil, fmt.Errorf("%s: first-party build record file contributes no builds", file.Name)
+		}
+		for _, record := range catalog.Builds {
+			if owner, dup := buildOwner[record.BuildID]; dup {
+				return nil, fmt.Errorf("%s: duplicate buildID %q (already recorded by %s)", file.Name, record.BuildID, owner)
+			}
+			buildOwner[record.BuildID] = file.Name
+			merged.Builds = append(merged.Builds, firstPartyBuild(record))
+		}
+		for surface, floor := range catalog.MinimumSequence {
+			if owner, dup := floorOwner[surface]; dup {
+				return nil, fmt.Errorf("%s: minimumSequence[%s] is also set by %s", file.Name, surface, owner)
+			}
+			floorOwner[surface] = file.Name
+			if merged.MinimumSequence == nil {
+				merged.MinimumSequence = make(map[Surface]int)
+			}
+			merged.MinimumSequence[surface] = floor
+		}
+	}
+	data, err := json.MarshalIndent(merged, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("first-party build records: %w", err)
+	}
+	data = append(data, '\n')
+	if _, err := ParseFirstPartyBuildManifest(data); err != nil {
+		return nil, fmt.Errorf("first-party build records: assembled manifest: %w", err)
+	}
+	return data, nil
 }
 
 // ParseFirstPartyBuildManifest strictly decodes a first-party build manifest.
