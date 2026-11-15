@@ -1025,6 +1025,7 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 	// A live composed-picture session (no precomputed composed rendition was
 	// Ready at mint) is likewise decided at mint and carried by the grant.
 	shape := playback.StreamShapeFromGrant(grant, media)
+	shape.AudioSource = playback.AudioSourceStream(streams, audioStreamIndex)
 	path, err := h.hls.FilePathShaped(r.Context(), key, file.Path, media.DurationSeconds, media.VideoWidth, media.VideoHeight, audioCopy, degraded, caps, playback.VideoSignalFromStreams(streams), burnSubtitleIndex, audioProfile, audioStreamIndex, shape, priority, name)
 	if err != nil {
 		// An evicted session is an expected teardown (ADR-0012 §7 revocation,

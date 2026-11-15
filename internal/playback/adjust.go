@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/beamfall/core/internal/ffmpeg"
+	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/streamtoken"
 )
 
@@ -82,14 +83,14 @@ func grantAudioAdjust(grant streamtoken.Grant) ffmpeg.AudioAdjust {
 // adjustedAudioChoice mints the HLS stream for an adjusted audio Media
 // without a composed picture: an audio-only encode carrying the grant's
 // adjustment.
-func (s *Service) adjustedAudioChoice(ctx context.Context, grant streamtoken.Grant, suffix string, audio ffmpeg.AudioProfile, expiresAt time.Time) (StreamChoice, error) {
+func (s *Service) adjustedAudioChoice(ctx context.Context, grant streamtoken.Grant, suffix string, audio ffmpeg.AudioProfile, audioSource store.MediaFileStream, expiresAt time.Time) (StreamChoice, error) {
 	grant.Target = streamtoken.TargetMediaHLS
 	grant = withHLSAudioGrant(grant, audio)
 	token, err := s.tokens.Issue(ctx, grant)
 	if err != nil {
 		return StreamChoice{}, err
 	}
-	rung := audioOnlyRung()
+	rung := audioOnlyRung(audioOnlyBandwidth(audio, audioSource, true))
 	return StreamChoice{
 		ID:         "adjusted-" + suffix,
 		Kind:       "hls",

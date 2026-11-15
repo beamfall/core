@@ -1133,6 +1133,10 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	if ov.ceilingBindsAudio(media, file, streams) {
 		hlsAudio = ceilingBoundAudio(hlsAudio)
 	}
+	// The audio-only rung advertises the peak of the audio it carries
+	// (CORE-1849): the chosen track, or the first one as 0:a:0 maps it.
+	audioSource := AudioSourceStream(audio.chosenStreams(streams), nil)
+	audioOnlyPeak := audioOnlyBandwidth(hlsAudio, audioSource, false)
 
 	// Generated Asset advertisement: one assets-target token covers
 	// the trickplay manifest + sheets, the preview clip, and Marker
@@ -1225,7 +1229,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 		}, nil
 	}
 	if !adjust.IsZero() {
-		adjusted, err := s.adjustedAudioChoice(ctx, grant, suffix, hlsAudio, expiresAt)
+		adjusted, err := s.adjustedAudioChoice(ctx, grant, suffix, hlsAudio, audioSource, expiresAt)
 		if err != nil {
 			return decision{}, err
 		}
@@ -1264,7 +1268,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 		// files too (the weak-WiFi case) — but only when the transcode could
 		// actually start right now.
 		if transcodeRefusal == "" && sourceVideo.FullTranscodeRefusal() == "" {
-			hls, err := s.hlsChoice(ctx, grant, suffix, media, profile, hlsAudio, expiresAt, ov)
+			hls, err := s.hlsChoice(ctx, grant, suffix, media, profile, hlsAudio, audioOnlyPeak, expiresAt, ov)
 			if err != nil {
 				return decision{}, err
 			}
@@ -1332,7 +1336,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 				if reason := sourceVideo.FullTranscodeRefusal(); reason != "" {
 					return decision{media: media, verdict: "unavailable", reason: reason, streams: []StreamChoice{}, timeline: timeline, parts: parts, assets: assets, captionTracks: captionTracks, overlayApplied: true}, nil
 				}
-				hls, err = s.degradedHLSChoice(ctx, grant, suffix, media, profile, hlsAudio, expiresAt, ov)
+				hls, err = s.degradedHLSChoice(ctx, grant, suffix, media, profile, hlsAudio, audioOnlyPeak, expiresAt, ov)
 			}
 			if err != nil {
 				return decision{}, err
@@ -1388,7 +1392,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 
 	// Fall to the server HLS transcode rung: the session starts
 	// lazily on the first segment request.
-	hls, err := s.hlsChoice(ctx, grant, suffix, media, profile, hlsAudio, expiresAt, ov)
+	hls, err := s.hlsChoice(ctx, grant, suffix, media, profile, hlsAudio, audioOnlyPeak, expiresAt, ov)
 	if err != nil {
 		return decision{}, err
 	}
@@ -1586,7 +1590,7 @@ func (s *Service) transcodeRefusal(ctx context.Context, scope auth.Scope, mediaI
 // clipped to what the client can actually decode (rungsForClient); a profile
 // that declares no per-codec ceiling falls back to source-only rungs exactly as
 // before (clientLadderCeiling returns 0).
-func (s *Service) hlsChoice(ctx context.Context, grant streamtoken.Grant, suffix string, media store.Media, profile CapabilityProfile, audio ffmpeg.AudioProfile, expiresAt time.Time, ov quirkOverlay) (StreamChoice, error) {
+func (s *Service) hlsChoice(ctx context.Context, grant streamtoken.Grant, suffix string, media store.Media, profile CapabilityProfile, audio ffmpeg.AudioProfile, audioOnlyPeak int, expiresAt time.Time, ov quirkOverlay) (StreamChoice, error) {
 	grant.Target = streamtoken.TargetMediaHLS
 	grant = withHLSAudioGrant(grant, audio)
 	caps := s.ladderCaps(profile, ov)
@@ -1595,7 +1599,7 @@ func (s *Service) hlsChoice(ctx context.Context, grant streamtoken.Grant, suffix
 	if err != nil {
 		return StreamChoice{}, err
 	}
-	rungs := advertisedRungs(media, caps)
+	rungs := advertisedRungs(media, caps, audioOnlyPeak)
 	renditions := make([]RenditionInfo, 0, len(rungs))
 	for _, rung := range rungs {
 		renditions = append(renditions, RenditionInfo{ID: rung.ID, Height: advertisedRungHeight(media, rung), Bandwidth: rung.Bandwidth})
@@ -1758,10 +1762,11 @@ func (s *Service) ladderCaps(profile CapabilityProfile, ov quirkOverlay) ladderC
 // ladder): a picture stream it carries is embedded art, not video, so its
 // dimensions must not seed a resolution ladder and the master must not
 // advertise a video rate. The byte layer reaches the same rung through
-// StreamShape.AudioOnly.
-func advertisedRungs(media store.Media, caps ladderCaps) []Rung {
+// StreamShape.AudioOnly. audioOnlyPeak is that rung's BANDWIDTH
+// (audioOnlyBandwidth).
+func advertisedRungs(media store.Media, caps ladderCaps, audioOnlyPeak int) []Rung {
 	if media.Class == store.MediaClassAudio {
-		return []Rung{audioOnlyRung()}
+		return []Rung{audioOnlyRung(audioOnlyPeak)}
 	}
 	return rungsForLadder(media.VideoWidth, media.VideoHeight, caps)
 }
@@ -1807,7 +1812,7 @@ func (s *Service) audioCopyChoice(ctx context.Context, grant streamtoken.Grant, 
 // client parses an honest one-rung ladder (also honoring §8: one rendition per
 // session). The lowest rung is honest twice over: at or below the source height
 // and at or below the client decode ceiling.
-func (s *Service) degradedHLSChoice(ctx context.Context, grant streamtoken.Grant, suffix string, media store.Media, profile CapabilityProfile, audio ffmpeg.AudioProfile, expiresAt time.Time, ov quirkOverlay) (StreamChoice, error) {
+func (s *Service) degradedHLSChoice(ctx context.Context, grant streamtoken.Grant, suffix string, media store.Media, profile CapabilityProfile, audio ffmpeg.AudioProfile, audioOnlyPeak int, expiresAt time.Time, ov quirkOverlay) (StreamChoice, error) {
 	grant.Target = streamtoken.TargetMediaHLS
 	grant.Degraded = true
 	grant = withHLSAudioGrant(grant, audio)
@@ -1817,7 +1822,7 @@ func (s *Service) degradedHLSChoice(ctx context.Context, grant streamtoken.Grant
 	if err != nil {
 		return StreamChoice{}, err
 	}
-	rung := lowestRung(advertisedRungs(media, caps))
+	rung := lowestRung(advertisedRungs(media, caps, audioOnlyPeak))
 	return StreamChoice{
 		ID:         "hls-" + suffix,
 		Kind:       "hls",

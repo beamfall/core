@@ -66,9 +66,14 @@ const audioOnlyRungID = "audio"
 // audioOnlyRung is the single rung an audio-only stream offers: an
 // audio-class Media (whose only picture is embedded art) or an adjusted audio
 // stream. No video is encoded, so there is no resolution ladder and no
-// RESOLUTION attribute. Bandwidth is the stereo-AAC-and-mux allowance.
-func audioOnlyRung() Rung {
-	return Rung{ID: audioOnlyRungID, AudioOnly: true, Bandwidth: bandwidthFor(0)}
+// RESOLUTION attribute. Bandwidth is the peak of the audio the stream carries
+// (audioOnlyBandwidth, CORE-1849); a non-positive value falls back to the
+// stereo-AAC-and-mux allowance.
+func audioOnlyRung(bandwidth int) Rung {
+	if bandwidth <= 0 {
+		bandwidth = bandwidthFor(0)
+	}
+	return Rung{ID: audioOnlyRungID, AudioOnly: true, Bandwidth: bandwidth}
 }
 
 // audioCopyRung is the single rung for the audio-only-transcode decision: it
