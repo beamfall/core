@@ -99,6 +99,14 @@ type Transcoder func(ctx context.Context, src, dst, quality string, streams []st
 // non-original video build in an Encrypted Library.
 type PipeTranscoder func(ctx context.Context, input encderiv.Input, stdout io.Writer, quality string, streams []store.MediaFileStream) error
 
+// PipeDurationProbe measures the playback length of a video item in an
+// Encrypted Library from its decrypted bytes, read from input as for
+// PipeTranscoder, before the transcode starts. The transcode's output must
+// cover that length: the catalog's duration need not describe the selected
+// Version's file. nil (the default) refuses every non-original video build in
+// an Encrypted Library.
+type PipeDurationProbe func(ctx context.Context, input encderiv.Input) (time.Duration, error)
+
 // ExpireJobKind runs the server-side Offline Pack eviction/expiry sweep.
 const ExpireJobKind store.JobKind = "offline-pack-expire"
 
@@ -142,7 +150,6 @@ type Store interface {
 	PrimaryMediaFile(ctx context.Context, id store.MediaID, filter store.LibraryFilter) (store.MediaFile, error)
 	MediaFilesForMedia(ctx context.Context, id store.MediaID, filter store.LibraryFilter) ([]store.MediaFile, error)
 	MediaFileStreams(ctx context.Context, fingerprint string) ([]store.MediaFileStream, error)
-	MediaFactsFingerprint(ctx context.Context, id store.MediaID) (fingerprint string, versioned bool, err error)
 	Libraries(ctx context.Context, filter store.LibraryFilter) ([]store.Library, error)
 	Profile(ctx context.Context, id store.ProfileID) (store.Profile, error)
 	TrackOfflinePackBuild(ctx context.Context, build store.OfflinePackBuild, now time.Time) (store.OfflinePackBuild, error)
@@ -210,6 +217,7 @@ type Service struct {
 	buildByteBudget uint64
 	transcode       Transcoder
 	pipeTranscode   PipeTranscoder
+	pipeProbe       PipeDurationProbe
 	deviceMu        sync.RWMutex
 	devices         map[string]deviceRegistration
 	// resolveContext binds each encrypted open to its immutable object identity.

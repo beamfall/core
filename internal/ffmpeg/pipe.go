@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/url"
 	"os"
@@ -23,8 +24,9 @@ import (
 // The child gets no writable path at all: its only reach outside its own
 // address space is that one loopback port.
 //
-// This is the only spawn that may read over a network protocol. Every other
-// input keeps the file-only productionProtocolAllowlist.
+// The transcode and the ffprobe run that measures its source first are the only
+// spawns that may read over a network protocol. Every other input keeps the
+// file-only productionProtocolAllowlist.
 
 // pipeProtocolAllowlist is the input protocol set for a pipe transcode: plain
 // HTTP over TCP, nothing else (no file, no https, no crypto, no concat).
@@ -43,8 +45,11 @@ const pipeMovflags = "frag_keyframe+empty_moov+default_base_moof"
 // defaultPipeReadTimeout bounds one blocked read or write on the input.
 const defaultPipeReadTimeout = 30 * time.Second
 
-// pipeStderrLimit caps the diagnostic capture of a pipe transcode.
+// pipeStderrLimit caps the diagnostic capture of a pipe transcode or probe.
 const pipeStderrLimit = 64 << 10
+
+// pipeProbeStdoutLimit caps a duration probe's output, which is one number.
+const pipeProbeStdoutLimit = 4 << 10
 
 var (
 	// ErrPipeConfinementUnavailable is returned when this host cannot give the
@@ -54,6 +59,8 @@ var (
 	// errPipeInput refuses any input that is not a plain http URL on
 	// 127.0.0.1. It never echoes the URL, which carries a bearer token.
 	errPipeInput = errors.New("ffmpeg pipe transcode: input must be a plain http URL on 127.0.0.1")
+	// errPipeDuration refuses a probe that names no positive, finite duration.
+	errPipeDuration = errors.New("ffprobe pipe probe: the source's duration is unknown")
 )
 
 // PipeInput names the loopback source of a pipe transcode. URL and Secret carry
@@ -89,15 +96,39 @@ func (r *Runner) TranscodeToPipe(ctx context.Context, in PipeInput, profile Conv
 		return fmt.Errorf("%w: %s", ErrToneMapRefused, reason)
 	}
 	profile.FastStart = false
-	timeout := in.Timeout
-	if timeout <= 0 {
-		timeout = defaultPipeReadTimeout
-	}
-	ffmpegPath, err := exec.LookPath("ffmpeg")
+	args := pipeArgs(in.URL, pipeReadTimeout(in), profile)
+	return r.runPipeTool(ctx, port, in, "ffmpeg", "ffmpeg pipe transcode", args, stdout)
+}
+
+// ProbePipeDuration measures the playback length of the loopback HTTP source
+// in with ffprobe, under the same confinement and input options as
+// TranscodeToPipe. It fails unless ffprobe names a positive, finite duration
+// for the container: "N/A", zero and non-numbers are refused.
+func (r *Runner) ProbePipeDuration(ctx context.Context, in PipeInput) (time.Duration, error) {
+	port, err := loopbackPort(in.URL)
 	if err != nil {
-		return fmt.Errorf("ffmpeg is not available: %w", err)
+		return 0, err
 	}
-	cmd, err := r.pipeCommand(ctx, runtime.GOOS, port, ffmpegPath, pipeArgs(in.URL, timeout, profile))
+	stdout := &boundedBuffer{limit: pipeProbeStdoutLimit}
+	if err := r.runPipeTool(ctx, port, in, "ffprobe", "ffprobe pipe probe", pipeProbeArgs(in.URL, pipeReadTimeout(in)), stdout); err != nil {
+		return 0, err
+	}
+	if stdout.overflowed() {
+		return 0, ErrOutputOverflow
+	}
+	return parsePipeDuration(stdout.bytes())
+}
+
+// runPipeTool runs the FFmpeg tool named by tool against a loopback input
+// under the pipe confinement, streaming its stdout to stdout. what names the
+// run in its errors, and a failure's diagnostic is redacted of in's URL and
+// secret.
+func (r *Runner) runPipeTool(ctx context.Context, port int, in PipeInput, tool, what string, args []string, stdout io.Writer) error {
+	toolPath, err := exec.LookPath(tool)
+	if err != nil {
+		return fmt.Errorf("%s is not available: %w", tool, err)
+	}
+	cmd, err := r.pipeCommand(ctx, runtime.GOOS, port, toolPath, args)
 	if err != nil {
 		return err
 	}
@@ -107,7 +138,7 @@ func (r *Runner) TranscodeToPipe(ctx context.Context, in PipeInput, profile Conv
 	stderr := &boundedBuffer{limit: pipeStderrLimit, onOverflow: kill}
 	runErr := r.runWith(ctx, cmd, stdout, stderr)
 	if ctxErr := ctx.Err(); ctxErr != nil {
-		return fmt.Errorf("ffmpeg pipe transcode interrupted: %w", ctxErr)
+		return fmt.Errorf("%s interrupted: %w", what, ctxErr)
 	}
 	if stderr.overflowed() {
 		return ErrOutputOverflow
@@ -115,7 +146,25 @@ func (r *Runner) TranscodeToPipe(ctx context.Context, in PipeInput, profile Conv
 	if runErr == nil {
 		return nil
 	}
-	return fmt.Errorf("ffmpeg pipe transcode: %s", redactPipeDetail(captureDetail(nil, stderr.bytes(), runErr), in))
+	return fmt.Errorf("%s: %s", what, redactPipeDetail(captureDetail(nil, stderr.bytes(), runErr), in))
+}
+
+func pipeReadTimeout(in PipeInput) time.Duration {
+	if in.Timeout <= 0 {
+		return defaultPipeReadTimeout
+	}
+	return in.Timeout
+}
+
+// pipeInputOptions scope a pipe run's one input: HTTP over TCP only, no
+// redirects, a bounded blocked read and single-resource demuxers.
+func pipeInputOptions(timeout time.Duration) []string {
+	return []string{
+		"-protocol_whitelist", pipeProtocolAllowlist,
+		"-max_redirects", "0",
+		"-rw_timeout", strconv.FormatInt(timeout.Microseconds(), 10),
+		"-format_whitelist", pipeFormatAllowlist,
+	}
 }
 
 // pipeArgs builds the FFmpeg argv for a pipe transcode: input options scoped to
@@ -123,16 +172,36 @@ func (r *Runner) TranscodeToPipe(ctx context.Context, in PipeInput, profile Conv
 // -xerror makes a decode error fatal: without it FFmpeg exits 0 on a truncated
 // or corrupt input, having encoded only what it could read.
 func pipeArgs(inputURL string, timeout time.Duration, profile ConvertProfile) []string {
-	args := []string{
-		"-v", "error", "-nostdin", "-xerror",
-		"-protocol_whitelist", pipeProtocolAllowlist,
-		"-max_redirects", "0",
-		"-rw_timeout", strconv.FormatInt(timeout.Microseconds(), 10),
-		"-format_whitelist", pipeFormatAllowlist,
-		"-i", inputURL,
-	}
+	args := append([]string{"-v", "error", "-nostdin", "-xerror"}, pipeInputOptions(timeout)...)
+	args = append(args, "-i", inputURL)
 	args = append(args, profile.encodeArgs()...)
 	return append(args, "-movflags", pipeMovflags, "-f", "mp4", "pipe:1")
+}
+
+// pipeProbeArgs builds the ffprobe argv that prints the loopback source's
+// container duration in seconds, alone on one line, under the same input
+// options as pipeArgs. ffprobe never reads stdin and has no -nostdin.
+func pipeProbeArgs(inputURL string, timeout time.Duration) []string {
+	args := append([]string{"-v", "error"}, pipeInputOptions(timeout)...)
+	return append(args,
+		"-show_entries", "format=duration",
+		"-of", "default=noprint_wrappers=1:nokey=1",
+		"-i", inputURL)
+}
+
+// parsePipeDuration reads ffprobe's container duration in seconds. Anything
+// but a positive, finite number that fits a time.Duration is refused, and the
+// output is never echoed.
+func parsePipeDuration(out []byte) (time.Duration, error) {
+	seconds, err := strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
+	if err != nil || math.IsNaN(seconds) || math.IsInf(seconds, 0) || seconds <= 0 {
+		return 0, errPipeDuration
+	}
+	nanos := seconds * float64(time.Second)
+	if nanos >= math.MaxInt64 || nanos < 1 {
+		return 0, errPipeDuration
+	}
+	return time.Duration(math.Round(nanos)), nil
 }
 
 // loopbackPort accepts only http://127.0.0.1:<port>/<path> with a conservative
@@ -189,21 +258,21 @@ func pipeConfinementRefusal(goos, shimPath string) error {
 	}
 }
 
-// pipeCommand builds the confined pipe-transcode command. On Linux it runs the
-// shim with --require-landlock and no granted paths, so a kernel without
-// landlock ABI 3 or later (the first that fences truncate(2)) refuses the
-// launch. On macOS it wraps the (optionally shimmed)
-// command in a deny-default Seatbelt profile whose only network grant is the
-// loopback port and which grants no writable path.
-func (r *Runner) pipeCommand(ctx context.Context, goos string, port int, ffmpegPath string, args []string) (*exec.Cmd, error) {
+// pipeCommand builds the confined command for a pipe run of toolPath (FFmpeg
+// or ffprobe). On Linux it runs the shim with --require-landlock and no
+// granted paths, so a kernel without landlock ABI 3 or later (the first that
+// fences truncate(2)) refuses the launch. On macOS it wraps the (optionally
+// shimmed) command in a deny-default Seatbelt profile whose only network grant
+// is the loopback port and which grants no writable path.
+func (r *Runner) pipeCommand(ctx context.Context, goos string, port int, toolPath string, args []string) (*exec.Cmd, error) {
 	if err := pipeConfinementRefusal(goos, r.shimPath); err != nil {
 		return nil, err
 	}
-	binPath, binArgs := r.niceWrap(ffmpegPath, args)
+	binPath, binArgs := r.niceWrap(toolPath, args)
 	if goos == "linux" {
 		shimArgs := append([]string{shimSubcommand, "--require-landlock", "--", binPath}, binArgs...)
 		// #nosec G204 -- the shim path is the server's own executable and the
-		// arguments are a fixed subcommand, the resolved FFmpeg path and its argv.
+		// arguments are a fixed subcommand, the resolved tool path and its argv.
 		return exec.CommandContext(ctx, r.shimPath, shimArgs...), nil
 	}
 	inner := r.hardenedCommand(ctx, binPath, nil, nil, binArgs)
@@ -212,7 +281,7 @@ func (r *Runner) pipeCommand(ctx context.Context, goos string, port int, ffmpegP
 		return nil, ErrPipeConfinementUnavailable
 	}
 	// #nosec G204 -- sandbox-exec is resolved from PATH and wraps the confined
-	// FFmpeg command built above.
+	// tool command built above.
 	return exec.CommandContext(ctx, sandboxPath, sandboxArgs...), nil
 }
 

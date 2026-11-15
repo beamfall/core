@@ -1268,6 +1268,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// An Encrypted Library's reduced qualities transcode through the loopback
 	// decrypt endpoint so no plaintext reaches disk (ADR-0235).
 	offlinePacks.SetPipeTranscoder(offlinePackPipeTranscoder(ffmpegRunner))
+	offlinePacks.SetPipeDurationProbe(offlinePackPipeDurationProbe(ffmpegRunner))
 	// Each re-check of an encrypted transcode rebuilds the build's scope from
 	// the Profile's current policy, certification ceilings included.
 	offlinePacks.SetScopeReauthorizer(authService.ReauthorizeProfileScope)

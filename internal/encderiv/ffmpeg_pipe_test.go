@@ -68,6 +68,45 @@ func ffmpegFixture(t *testing.T, faststart bool) []byte {
 	return data
 }
 
+// streamedMatroska generates a Matroska written to a pipe. Unable to seek back,
+// the muxer never records the segment's duration, so ffprobe reports N/A.
+func streamedMatroska(t *testing.T) []byte {
+	t.Helper()
+	ffmpegPath, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("ffmpeg is not installed")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, ffmpegPath, "-hide_banner", "-loglevel", "error", "-nostdin", //nolint:gosec // fixed test argv
+		"-f", "lavfi", "-i", "testsrc=size=160x120:rate=24:duration=2",
+		"-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+		"-f", "matroska", "pipe:1")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil || len(out) == 0 {
+		t.Skipf("ffmpeg cannot generate the streamed fixture: %v: %s", err, stderr.Bytes())
+	}
+	return out
+}
+
+// ffprobeDuration is the production duration probe. It stores what it
+// measured in measured, when that is not nil.
+func ffprobeDuration(t *testing.T, measured *time.Duration) func(context.Context, Input) (time.Duration, error) {
+	t.Helper()
+	if _, err := exec.LookPath("ffprobe"); err != nil {
+		t.Skip("ffprobe is not installed")
+	}
+	return func(ctx context.Context, in Input) (time.Duration, error) {
+		d, err := ffmpeg.New().ProbePipeDuration(ctx, ffmpeg.PipeInput{URL: in.URL, Secret: in.Secret})
+		if measured != nil {
+			*measured = d
+		}
+		return d, err
+	}
+}
+
 // encryptedSource encrypts plaintext under a fresh key and opens it the way an
 // encrypted library does: as a decrypting reader over the ciphertext.
 func encryptedSource(t *testing.T, plaintext []byte) func() (io.ReadSeekCloser, error) {
@@ -143,8 +182,9 @@ func (s *teeScanner) output() (written []byte, scanned bool) {
 }
 
 // TestRunTranscodesAMoovAtEndSourceWithRealFFmpeg drives the production pipe
-// transcode end to end: FFmpeg range-reads a decrypted source from the token
-// endpoint and its fragmented output is indexed and staged encrypted.
+// probe and transcode end to end: ffprobe measures and FFmpeg range-reads a
+// decrypted source from the token endpoint, and the fragmented output is
+// indexed and staged encrypted.
 func TestRunTranscodesAMoovAtEndSourceWithRealFFmpeg(t *testing.T) {
 	if testing.Short() {
 		t.Skip("encodes video")
@@ -157,19 +197,27 @@ func TestRunTranscodesAMoovAtEndSourceWithRealFFmpeg(t *testing.T) {
 		t.Fatal("no pack-480p profile")
 	}
 	open := encryptedSource(t, fixture)
-	var opens atomic.Int32
+	var opens, probeOpens, transcodeOpens atomic.Int32
 	var tee *teeScanner
+	var measured time.Duration
+	probe := ffprobeDuration(t, &measured)
 	job := Job{
 		Open: func() (io.ReadSeekCloser, error) {
 			opens.Add(1)
 			return open()
 		},
-		Size:           int64(len(fixture)),
-		StageDir:       stageDir,
-		StageName:      "0001",
-		SourceDuration: fixtureSeconds * time.Second,
-		Revoked:        func(context.Context) error { return nil },
+		Size:      int64(len(fixture)),
+		StageDir:  stageDir,
+		StageName: "0001",
+		ProbeDuration: func(ctx context.Context, in Input) (time.Duration, error) {
+			d, err := probe(ctx, in)
+			probeOpens.Store(opens.Load())
+			return d, err
+		},
+		Revoked: func(context.Context) error { return nil },
 		Transcode: func(ctx context.Context, in Input, w io.Writer) error {
+			before := opens.Load()
+			defer func() { transcodeOpens.Store(opens.Load() - before) }()
 			tee = &teeScanner{w: w, scanAt: 64 << 10, dirs: []string{stageDir, tmpDir}, t: t}
 			// io:ffmpeg-transcode-to-pipe
 			if err := ffmpeg.New().TranscodeToPipe(ctx, ffmpeg.PipeInput{URL: in.URL, Secret: in.Secret}, profile, tee); err != nil {
@@ -189,8 +237,14 @@ func TestRunTranscodesAMoovAtEndSourceWithRealFFmpeg(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = result.Close() }()
-	if n := opens.Load(); n < 2 {
+	if n := probeOpens.Load(); n < 2 {
+		t.Fatalf("ffprobe opened the source %d times; a moov-at-end input needs a ranged read", n)
+	}
+	if n := transcodeOpens.Load(); n < 2 {
 		t.Fatalf("FFmpeg opened the source %d times; a moov-at-end input needs a ranged read", n)
+	}
+	if want := fixtureSeconds * time.Second; measured < want-time.Second/fixtureRate || measured > want+time.Second/fixtureRate {
+		t.Fatalf("ffprobe measured %v of a %v source", measured, want)
 	}
 
 	reader, err := result.Open()
@@ -238,7 +292,8 @@ func TestRunTranscodesAMoovAtEndSourceWithRealFFmpeg(t *testing.T) {
 // TestRunRefusesATruncatedSourceWithRealFFmpeg cuts a faststart source in half:
 // FFmpeg reads the whole moov, then runs out of media data partway. Left to
 // itself it exits 0 on what it could encode. -xerror makes the decode error
-// fatal, and the duration check refuses the short output on its own.
+// fatal, and the duration check refuses the short output on its own: ffprobe
+// still measures the full length the intact moov declares.
 func TestRunRefusesATruncatedSourceWithRealFFmpeg(t *testing.T) {
 	if testing.Short() {
 		t.Skip("encodes video")
@@ -249,22 +304,23 @@ func TestRunRefusesATruncatedSourceWithRealFFmpeg(t *testing.T) {
 	if !ok {
 		t.Fatal("no pack-480p profile")
 	}
-	for name, source := range map[string]time.Duration{
+	var measured time.Duration
+	for name, probe := range map[string]func(context.Context, Input) (time.Duration, error){
 		// A source duration the half-length output still covers leaves only
 		// -xerror to refuse it.
-		"decode error": time.Second,
-		"short output": fixtureSeconds * time.Second,
+		"decode error": func(context.Context, Input) (time.Duration, error) { return time.Second, nil },
+		"short output": ffprobeDuration(t, &measured),
 	} {
 		t.Run(name, func(t *testing.T) {
 			stageDir, tmpDir := t.TempDir(), t.TempDir()
 			t.Setenv("TMPDIR", tmpDir)
 			job := Job{
-				Open:           encryptedSource(t, truncated),
-				Size:           int64(len(truncated)),
-				StageDir:       stageDir,
-				StageName:      "0001",
-				SourceDuration: source,
-				Revoked:        func(context.Context) error { return nil },
+				Open:          encryptedSource(t, truncated),
+				Size:          int64(len(truncated)),
+				StageDir:      stageDir,
+				StageName:     "0001",
+				ProbeDuration: probe,
+				Revoked:       func(context.Context) error { return nil },
 				Transcode: func(ctx context.Context, in Input, w io.Writer) error {
 					return ffmpeg.New().TranscodeToPipe(ctx, ffmpeg.PipeInput{URL: in.URL, Secret: in.Secret}, profile, w)
 				},
@@ -278,6 +334,55 @@ func TestRunRefusesATruncatedSourceWithRealFFmpeg(t *testing.T) {
 			if err == nil {
 				_ = result.Close()
 				t.Fatal("Run accepted a truncated source")
+			}
+			t.Logf("refused: %v", err)
+			if name == "short output" && measured < (fixtureSeconds-1)*time.Second {
+				t.Fatalf("ffprobe measured %v of the truncated source; its moov declares %ds", measured, fixtureSeconds)
+			}
+			assertNoFiles(t, stageDir, tmpDir)
+		})
+	}
+}
+
+// TestRunRefusesAnUnmeasurableSourceWithRealFFprobe feeds the production probe
+// sources it cannot name a length for. The job refuses them before FFmpeg
+// starts, since a short output could not be told from a complete one.
+func TestRunRefusesAnUnmeasurableSourceWithRealFFprobe(t *testing.T) {
+	if testing.Short() {
+		t.Skip("encodes video")
+	}
+	probe := ffprobeDuration(t, nil)
+	for name, source := range map[string][]byte{
+		"streamed matroska": streamedMatroska(t),
+		"not media":         bytes.Repeat([]byte("not a media file "), 4096),
+	} {
+		t.Run(name, func(t *testing.T) {
+			stageDir, tmpDir := t.TempDir(), t.TempDir()
+			t.Setenv("TMPDIR", tmpDir)
+			var transcoded atomic.Bool
+			job := Job{
+				Open:          encryptedSource(t, source),
+				Size:          int64(len(source)),
+				StageDir:      stageDir,
+				StageName:     "0001",
+				ProbeDuration: probe,
+				Revoked:       func(context.Context) error { return nil },
+				Transcode: func(context.Context, Input, io.Writer) error {
+					transcoded.Store(true)
+					return errors.New("transcoder started without a source duration")
+				},
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			defer cancel()
+			result, err := Run(ctx, job)
+			if errors.Is(err, ffmpeg.ErrPipeConfinementUnavailable) {
+				t.Skip(err)
+			}
+			if err == nil {
+				_ = result.Close()
+			}
+			if !errors.Is(err, ErrSourceDuration) || transcoded.Load() {
+				t.Fatalf("err = %v, transcoder started %v; want ErrSourceDuration before the transcode", err, transcoded.Load())
 			}
 			t.Logf("refused: %v", err)
 			assertNoFiles(t, stageDir, tmpDir)

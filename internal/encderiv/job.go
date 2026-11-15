@@ -33,6 +33,10 @@ var (
 	ErrRevoked = errors.New("encderiv: authorization revoked")
 	// ErrExpired is returned when the token outlives its TTL or idle timeout.
 	ErrExpired = errors.New("encderiv: token expired")
+	// ErrSourceDuration is returned when the duration probe cannot name a
+	// positive playback length for the source, so the output's completeness
+	// cannot be checked.
+	ErrSourceDuration = errors.New("encderiv: source duration is unknown")
 )
 
 // Input is what the transcoder is handed. URL and Secret carry the bearer
@@ -56,10 +60,13 @@ type Job struct {
 	StageName string
 	// MaxBytes bounds the derivative's final length. Zero means unbounded.
 	MaxBytes int64
-	// SourceDuration is the source's playback length. The derivative's
-	// reference track must run within durationTolerance of it: a transcoder
-	// that stops early on a decoder error it does not report still exits 0.
-	SourceDuration time.Duration
+	// ProbeDuration measures the source's playback length from the bytes the
+	// endpoint serves at in, before the transcoder starts. The derivative's
+	// reference track must run within the larger of one second and 1% of it:
+	// a transcoder that stops early on a decoder error it does not report
+	// still exits 0.
+	// It must stop when ctx ends.
+	ProbeDuration func(ctx context.Context, in Input) (time.Duration, error)
 	// TTL, IdleTimeout and PollInterval default to the package defaults.
 	TTL          time.Duration
 	IdleTimeout  time.Duration
@@ -78,8 +85,8 @@ type Job struct {
 
 func (j *Job) normalize() error {
 	switch {
-	case j.Open == nil || j.Transcode == nil || j.Revoked == nil:
-		return errors.New("encderiv: job is missing its source, transcoder or revocation check")
+	case j.Open == nil || j.ProbeDuration == nil || j.Transcode == nil || j.Revoked == nil:
+		return errors.New("encderiv: job is missing its source, duration probe, transcoder or revocation check")
 	case j.Size < 0:
 		return errors.New("encderiv: negative source size")
 	case j.StageDir == "" || !filepath.IsAbs(j.StageDir):
@@ -88,8 +95,6 @@ func (j *Job) normalize() error {
 		return errors.New("encderiv: staging name must be a single path component")
 	case j.MaxBytes < 0:
 		return errors.New("encderiv: negative size limit")
-	case j.SourceDuration <= 0:
-		return errors.New("encderiv: job is missing the source duration")
 	}
 	if j.TTL <= 0 {
 		j.TTL = DefaultTTL
@@ -212,6 +217,10 @@ func run(parent context.Context, job *Job, file *os.File, path string, key []byt
 		watchers.Wait()
 	}()
 
+	source, err := probeSource(ctx, job, ep)
+	if err != nil {
+		return nil, secret, err
+	}
 	scan, transcodeErr, err := transcodeToStage(ctx, cancel, job, ep, file, key)
 	ep.Revoke()
 	if failure := firstFailure(ctx, ep, err, transcodeErr); failure != nil {
@@ -224,7 +233,7 @@ func run(parent context.Context, job *Job, file *os.File, path string, key []byt
 	if err != nil {
 		return nil, secret, err
 	}
-	if err := coversSource(scan.duration(), job.SourceDuration); err != nil {
+	if err := coversSource(scan.duration(), source); err != nil {
 		return nil, secret, err
 	}
 	finalLen := scan.n + int64(len(index))
@@ -241,6 +250,24 @@ func run(parent context.Context, job *Job, file *os.File, path string, key []byt
 		return nil, secret, ErrRevoked
 	}
 	return &Result{path: path, key: key, insertAt: scan.insertAt, index: index, size: finalLen, sha: sum}, secret, nil
+}
+
+// probeSource measures the source through the job's own endpoint, so the
+// length the output is checked against is that of the bytes the transcoder
+// reads. A revocation, endpoint failure or cancellation during the probe wins
+// over the probe's own error.
+func probeSource(ctx context.Context, job *Job, ep *endpoint) (time.Duration, error) {
+	source, err := job.ProbeDuration(ctx, Input{URL: ep.URL(), Secret: ep.token, Port: ep.Port()})
+	if failure := firstFailure(ctx, ep, nil, nil); failure != nil {
+		return 0, failure
+	}
+	if err != nil {
+		return 0, fmt.Errorf("%w: %w", ErrSourceDuration, err)
+	}
+	if source <= 0 {
+		return 0, ErrSourceDuration
+	}
+	return source, nil
 }
 
 // coversSource refuses a derivative that runs shorter than its source by more

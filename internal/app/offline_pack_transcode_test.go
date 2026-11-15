@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/beamfall/core/internal/encderiv"
 	"github.com/beamfall/core/internal/ffmpeg"
@@ -206,6 +207,12 @@ func TestOfflinePackTranscoderMapsTheStreamItReadsTheSignalFrom(t *testing.T) {
 type recordingPipe struct {
 	inputs   []ffmpeg.PipeInput
 	profiles []ffmpeg.ConvertProfile
+	probed   []ffmpeg.PipeInput
+}
+
+func (r *recordingPipe) ProbePipeDuration(_ context.Context, in ffmpeg.PipeInput) (time.Duration, error) {
+	r.probed = append(r.probed, in)
+	return 90 * time.Second, nil
 }
 
 func (r *recordingPipe) TranscodeToPipe(_ context.Context, in ffmpeg.PipeInput, profile ffmpeg.ConvertProfile, _ io.Writer) error {
@@ -239,5 +246,24 @@ func TestOfflinePackPipeTranscoderUsesTheEndpointAndThePresets(t *testing.T) {
 	}
 	if len(runner.inputs) != 1 {
 		t.Fatalf("FFmpeg ran %d times, want only the valid quality", len(runner.inputs))
+	}
+}
+
+// TestOfflinePackPipeDurationProbeUsesTheEndpoint pins CORE-1742: the
+// encrypted-library duration probe measures the source through the same
+// loopback endpoint and token the transcode reads.
+func TestOfflinePackPipeDurationProbeUsesTheEndpoint(t *testing.T) {
+	runner := &recordingPipe{}
+	probe := offlinePackPipeDurationProbe(runner)
+	in := encderiv.Input{URL: "http://127.0.0.1:40000/source/abc", Secret: "abc", Port: 40000}
+	got, err := probe(t.Context(), in)
+	if err != nil || got != 90*time.Second {
+		t.Fatalf("probe = %v, %v; want the runner's duration", got, err)
+	}
+	if len(runner.probed) != 1 || runner.probed[0] != (ffmpeg.PipeInput{URL: in.URL, Secret: in.Secret}) {
+		t.Fatalf("probed = %+v, want the endpoint URL and token", runner.probed)
+	}
+	if len(runner.inputs) != 0 {
+		t.Fatal("the probe ran a transcode")
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/beamfall/core/internal/encderiv"
 	"github.com/beamfall/core/internal/ffmpeg"
@@ -27,9 +28,10 @@ type videoConverter interface {
 }
 
 // pipeTranscoder is the slice of the FFmpeg runner the encrypted-library pack
-// transcoder uses.
+// transcoder and its duration probe use.
 type pipeTranscoder interface {
 	TranscodeToPipe(ctx context.Context, in ffmpeg.PipeInput, profile ffmpeg.ConvertProfile, stdout io.Writer) error
+	ProbePipeDuration(ctx context.Context, in ffmpeg.PipeInput) (time.Duration, error)
 }
 
 // offlinePackProfile is the preset for quality, carrying the source's video
@@ -129,4 +131,13 @@ func probedVideoStreams(streams []ffmpeg.ProbeStream) []store.MediaFileStream {
 		})
 	}
 	return out
+}
+
+// offlinePackPipeDurationProbe adapts the FFmpeg runner to the offline pack
+// service's PipeDurationProbe: ffprobe measures the decrypted source from the
+// same loopback endpoint, under the same confinement as the transcode.
+func offlinePackPipeDurationProbe(runner pipeTranscoder) offlinepack.PipeDurationProbe {
+	return func(ctx context.Context, input encderiv.Input) (time.Duration, error) {
+		return runner.ProbePipeDuration(ctx, ffmpeg.PipeInput{URL: input.URL, Secret: input.Secret})
+	}
 }

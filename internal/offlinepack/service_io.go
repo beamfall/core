@@ -50,6 +50,12 @@ func (s *Service) SetPipeTranscoder(transcode PipeTranscoder) {
 	s.pipeTranscode = transcode
 }
 
+// SetPipeDurationProbe sets the probe that measures an Encrypted Library
+// item's source before its pipe transcode.
+func (s *Service) SetPipeDurationProbe(probe PipeDurationProbe) {
+	s.pipeProbe = probe
+}
+
 // SetTranscoder sets the transcoder used for non-original video qualities.
 func (s *Service) SetTranscoder(transcode Transcoder) {
 	s.transcode = transcode

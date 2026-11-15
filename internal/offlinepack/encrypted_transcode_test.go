@@ -35,11 +35,24 @@ import (
 // and a Seal or a lost grant ends the build with nothing staged.
 
 // lockedDecryptSource serves plaintext bodies by path; the loopback endpoint
-// opens it from its own goroutines.
+// opens it from its own goroutines. lengths holds each body's playback length
+// by digest, as a duration probe would measure it.
 type lockedDecryptSource struct {
-	mu     sync.Mutex
-	bodies map[string][]byte
-	opens  int
+	mu      sync.Mutex
+	bodies  map[string][]byte
+	lengths map[string]time.Duration
+	opens   int
+}
+
+// serve makes body the plaintext at path. A positive length is what the
+// fixture's duration probe reports for those bytes; otherwise it reports none.
+func (s *lockedDecryptSource) serve(path string, body []byte, length time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.bodies[path] = body
+	if length > 0 {
+		s.lengths[digestOf(body)] = length
+	}
 }
 
 type bytesReadSeekCloser struct{ *bytes.Reader }
@@ -127,13 +140,18 @@ func be32(v uint32) []byte { return binary.BigEndian.AppendUint32(nil, v) }
 const (
 	fmp4Timescale  = 12288
 	fmp4FrameCount = 24
-	// fmp4Seconds is media-alpha's seeded duration, which the output must
-	// cover.
+	// fmp4Seconds is the length of the fixture's source body, which the
+	// output must cover.
 	fmp4Seconds = 120
 )
 
 func fragmentedMP4(payload []byte, fragments int) []byte {
-	frameDuration := fmp4Seconds * fmp4Timescale / (fragments * fmp4FrameCount)
+	return fragmentedMP4Seconds(payload, fragments, fmp4Seconds)
+}
+
+// fragmentedMP4Seconds is fragmentedMP4 running seconds long.
+func fragmentedMP4Seconds(payload []byte, fragments, seconds int) []byte {
+	frameDuration := seconds * fmp4Timescale / (fragments * fmp4FrameCount)
 	trak := fmp4Box("trak",
 		fmp4FullBox("tkhd", 0, 3, be32(0), be32(0), be32(1), make([]byte, 68)),
 		fmp4Box("mdia",
@@ -174,28 +192,6 @@ func firstFragments(t *testing.T, b []byte, n int) []byte {
 	}
 	t.Fatalf("stream has %d fragments, want more than %d", moofs, n)
 	return nil
-}
-
-// clearDuration re-imports media-alpha's file without a duration, as a scan
-// whose probe failed leaves it.
-func (fx *encryptedVideoFixture) clearDuration(t *testing.T) {
-	t.Helper()
-	filter := store.LibraryFilter{AllLibraries: true, Revealed: true}
-	rows, err := fx.st.VisibleMediaBatch(context.Background(), []store.MediaID{"media-alpha"}, filter)
-	if err != nil {
-		t.Fatal(err)
-	}
-	files, err := fx.st.MediaFilesForMedia(context.Background(), "media-alpha", filter)
-	if err != nil || len(files) == 0 {
-		t.Fatalf("MediaFilesForMedia: %v", err)
-	}
-	media := rows["media-alpha"]
-	if _, _, err := fx.st.ImportMediaFile(context.Background(), store.ImportMediaFile{
-		LibraryID: media.LibraryID, Path: files[0].Path, Title: media.Title, Container: "mkv", Codec: "hevc",
-		Class: store.MediaClassVideo, ContentFingerprint: files[0].ContentFingerprint,
-	}); err != nil {
-		t.Fatal(err)
-	}
 }
 
 // topLevelBoxTypes lists b's top-level box types and the sidx's offset.
@@ -322,9 +318,10 @@ func newEncryptedVideoFixture(t *testing.T) *encryptedVideoFixture {
 	}
 	fx := &encryptedVideoFixture{
 		svc: svc, st: st, auth: authService, scope: scope, body: body, needles: needles, tmpDir: tmpDir, device: device,
-		source:    &lockedDecryptSource{bodies: map[string][]byte{files[0].Path: body}},
+		source:    &lockedDecryptSource{bodies: map[string][]byte{}, lengths: map[string]time.Duration{}},
 		fileCalls: &fakeTranscoder{out: map[string][]byte{}},
 	}
+	fx.source.serve(files[0].Path, body, fmp4Seconds*time.Second)
 	fx.profiles = &profileStore{Store: svc.store}
 	svc.store = fx.profiles
 	svc.SetEncryptedContent(fx.source, func(store.LibraryID) bool { return true }, func(store.LibraryID, string) (string, string, error) {
@@ -333,8 +330,26 @@ func newEncryptedVideoFixture(t *testing.T) *encryptedVideoFixture {
 	svc.SetSealed(func(store.LibraryID) bool { return fx.sealed.Load() })
 	svc.SetScopeReauthorizer(authService.ReauthorizeProfileScope)
 	svc.SetTranscoder(fx.fileCalls.transcode)
+	svc.SetPipeDurationProbe(fx.probe)
 	svc.pipePoll = time.Millisecond
 	return fx
+}
+
+// probe is the fixture's duration probe. Like ffprobe it reads the source
+// through the job's endpoint, and it reports the length served for those
+// bytes, failing for bytes with none.
+func (fx *encryptedVideoFixture) probe(ctx context.Context, in encderiv.Input) (time.Duration, error) {
+	src, err := fetchSource(ctx, in.URL)
+	if err != nil {
+		return 0, err
+	}
+	fx.source.mu.Lock()
+	defer fx.source.mu.Unlock()
+	length, ok := fx.source.lengths[digestOf(src)]
+	if !ok {
+		return 0, errors.New("ffprobe: duration N/A")
+	}
+	return length, nil
 }
 
 func (fx *encryptedVideoFixture) request(quality string) BuildPackRequest {
@@ -466,8 +481,8 @@ func TestBuildTranscodesEncryptedLibraryVideoInsideTheProtectedPlane(t *testing.
 			if len(midStages) != 1 || stageMode != 0o600 {
 				t.Fatalf("mid-transcode staging = %v mode %o, want one 0600 stage file", midStages, stageMode)
 			}
-			if fx.source.openCount() < 2 {
-				t.Fatalf("decrypt opens = %d, want the size probe and an endpoint read", fx.source.openCount())
+			if fx.source.openCount() < 3 {
+				t.Fatalf("decrypt opens = %d, want the size check and the duration probe's and transcode's endpoint reads", fx.source.openCount())
 			}
 			if len(fx.fileCalls.calls) != 0 {
 				t.Fatalf("file transcoder ran %v for an Encrypted Library", fx.fileCalls.calls)
@@ -736,9 +751,7 @@ func certifiedFilmTarget(t *testing.T, fx *encryptedVideoFixture) string {
 	if _, err := fx.st.SetProfileCertificationCeiling(ctx, fx.scope.ProfileID, store.ProfileCertificationCeiling{PluginID: "filmtv", Ceiling: "R", FilterVisibility: "hide"}); err != nil {
 		t.Fatal(err)
 	}
-	fx.source.mu.Lock()
-	fx.source.bodies[path] = fx.body
-	fx.source.mu.Unlock()
+	fx.source.serve(path, fx.body, fmp4Seconds*time.Second)
 	fx.scope = scopeFor(t, fx.auth, fx.scope.SessionID)
 	if len(fx.scope.Certification) != 1 || !slices.Contains(fx.scope.Certification[0].Allowed, "R") {
 		t.Fatalf("scope certification = %#v, want a filmtv ceiling that allows R", fx.scope.Certification)
@@ -796,6 +809,23 @@ func TestBuildEncryptedTranscodeRefusals(t *testing.T) {
 		}
 		fx.assertNothingLeft(t)
 	})
+	t.Run("no duration probe", func(t *testing.T) {
+		fx := newEncryptedVideoFixture(t)
+		fx.svc.SetPipeDurationProbe(nil)
+		var ran atomic.Bool
+		fx.svc.SetPipeTranscoder(func(context.Context, encderiv.Input, io.Writer, string, []store.MediaFileStream) error {
+			ran.Store(true)
+			return nil
+		})
+		_, err := fx.build(QualityHigh)
+		if !errors.Is(err, ErrTranscode) || FailureReason(err) != FailureTranscode {
+			t.Fatalf("BuildPack err = %v, want ErrTranscode", err)
+		}
+		if ran.Load() || fx.source.openCount() != 0 {
+			t.Fatalf("a build without a duration probe reached the transcoder (%v) or decrypted %d times", ran.Load(), fx.source.openCount())
+		}
+		fx.assertNothingLeft(t)
+	})
 	for name, transcode := range map[string]PipeTranscoder{
 		"transcoder error": func(ctx context.Context, in encderiv.Input, stdout io.Writer, _ string, _ []store.MediaFileStream) error {
 			src, err := fetchSource(ctx, in.URL)
@@ -845,16 +875,22 @@ func TestBuildEncryptedTranscodeRefusals(t *testing.T) {
 			fx.assertNothingLeft(t)
 		})
 	}
+	// The probe reads the source and names no length for it, as ffprobe
+	// reports N/A for a container that never recorded one.
 	t.Run("unknown source duration", func(t *testing.T) {
 		fx := newEncryptedVideoFixture(t)
-		fx.clearDuration(t)
+		files := fixtureMediaFiles(t, fx.st, fx.scope, "media-alpha")
+		fx.source.serve(files[0].Path, append([]byte("unmeasured|"), fx.body...), 0)
 		fx.svc.SetPipeTranscoder(func(context.Context, encderiv.Input, io.Writer, string, []store.MediaFileStream) error {
 			t.Error("transcoder ran for a source of unknown duration")
 			return nil
 		})
 		_, err := fx.build(QualityHigh)
-		if !errors.Is(err, ErrTranscode) || FailureReason(err) != FailureTranscode {
-			t.Fatalf("BuildPack err = %v, want ErrTranscode", err)
+		if !errors.Is(err, ErrTranscode) || FailureReason(err) != FailureTranscode || !errors.Is(err, encderiv.ErrSourceDuration) {
+			t.Fatalf("BuildPack err = %v, want ErrTranscode for the unknown source duration", err)
+		}
+		if fx.source.openCount() < 2 {
+			t.Fatalf("decrypt opens = %d; the probe never read the source", fx.source.openCount())
 		}
 		fx.assertNothingLeft(t)
 	})
@@ -920,7 +956,18 @@ func TestBuildEncryptedTranscodeRefusesATruncatedSourceWithRealFFmpeg(t *testing
 		fx.source.bodies[name] = full[:len(full)/2]
 	}
 	fx.source.mu.Unlock()
+	if _, err := exec.LookPath("ffprobe"); err != nil {
+		t.Skip("ffprobe is not installed")
+	}
+	var measured time.Duration
+	fx.svc.SetPipeDurationProbe(func(ctx context.Context, in encderiv.Input) (time.Duration, error) {
+		d, err := ffmpeg.New().ProbePipeDuration(ctx, ffmpeg.PipeInput{URL: in.URL, Secret: in.Secret})
+		measured = d
+		return d, err
+	})
+	var transcoded atomic.Bool
 	fx.svc.SetPipeTranscoder(func(ctx context.Context, in encderiv.Input, stdout io.Writer, _ string, _ []store.MediaFileStream) error {
+		transcoded.Store(true)
 		return ffmpeg.New().TranscodeToPipe(ctx, ffmpeg.PipeInput{URL: in.URL, Secret: in.Secret}, profile, stdout)
 	})
 	_, err = fx.svc.BuildPack(ctx, fx.scope, fx.request(QualityMedium))
@@ -930,24 +977,34 @@ func TestBuildEncryptedTranscodeRefusesATruncatedSourceWithRealFFmpeg(t *testing
 	if !errors.Is(err, ErrTranscode) || FailureReason(err) != FailureTranscode {
 		t.Fatalf("BuildPack err = %v, want ErrTranscode", err)
 	}
-	if fx.source.openCount() == 0 {
+	if !transcoded.Load() || fx.source.openCount() == 0 {
 		t.Fatal("FFmpeg never read the source")
+	}
+	if measured < 11*time.Second {
+		t.Fatalf("ffprobe measured %v; the truncated source's moov declares 12s", measured)
 	}
 	fx.assertNothingLeft(t)
 }
 
-// TestBuildEncryptedTranscodeChecksTheSelectedVersionsDuration gives
-// media-alpha a second Version of a different length: the default Version runs
-// 120 seconds, the duration the catalog probed from it, and an "extended" cut
-// runs 180 seconds, which the catalog does not record. Each transcode yields
-// 120 seconds of output. That is all of the selected default Version, so it
-// seals; it is two thirds of the selected extended cut, so that build is
-// refused before anything is decrypted rather than checked against the
-// default Version's length.
-func TestBuildEncryptedTranscodeChecksTheSelectedVersionsDuration(t *testing.T) {
-	build := func(t *testing.T, version string) (*encryptedVideoFixture, store.OfflinePack, error) {
+// TestBuildEncryptedTranscodeChecksTheProbedSourceDuration checks each
+// transcode against the length probed from the selected Version's own bytes,
+// not the catalog's one duration per Media. Every transcode yields 120 seconds
+// of output, the catalog duration media-alpha keeps throughout.
+func TestBuildEncryptedTranscodeChecksTheProbedSourceDuration(t *testing.T) {
+	transcode := func(seconds int) PipeTranscoder {
+		return func(ctx context.Context, in encderiv.Input, stdout io.Writer, _ string, _ []store.MediaFileStream) error {
+			src, err := fetchSource(ctx, in.URL)
+			if err != nil {
+				return err
+			}
+			_, err = stdout.Write(fragmentedMP4Seconds(src, 4, seconds))
+			return err
+		}
+	}
+	// addExtended gives media-alpha an "extended" Version, not its first,
+	// whose cut runs 180 seconds.
+	addExtended := func(t *testing.T, fx *encryptedVideoFixture) {
 		t.Helper()
-		fx := newEncryptedVideoFixture(t)
 		extended := filepath.Join(t.TempDir(), "media-alpha-extended.mkv")
 		if err := os.WriteFile(extended, []byte("extended-cut"), 0o600); err != nil {
 			t.Fatal(err)
@@ -957,41 +1014,76 @@ func TestBuildEncryptedTranscodeChecksTheSelectedVersionsDuration(t *testing.T) 
 		}, nil); err != nil {
 			t.Fatalf("AddMediaFileVersion: %v", err)
 		}
-		fx.source.mu.Lock()
-		fx.source.bodies[extended] = fx.body
-		fx.source.mu.Unlock()
-		fx.svc.SetPipeTranscoder(func(ctx context.Context, in encderiv.Input, stdout io.Writer, _ string, _ []store.MediaFileStream) error {
-			src, err := fetchSource(ctx, in.URL)
-			if err != nil {
-				return err
-			}
-			_, err = stdout.Write(fragmentedMP4(src, 4))
-			return err
-		})
+		fx.source.serve(extended, append([]byte("extended cut|"), fx.body...), 180*time.Second)
+	}
+	build := func(fx *encryptedVideoFixture, version string) (store.OfflinePack, error) {
 		req := fx.request(QualityMedium)
 		req.SelectedVersions = map[store.MediaID]string{"media-alpha": version}
-		pack, err := fx.svc.BuildPack(context.Background(), fx.scope, req)
-		return fx, pack, err
+		return fx.svc.BuildPack(context.Background(), fx.scope, req)
 	}
-	t.Run("complete default Version", func(t *testing.T) {
-		fx, pack, err := build(t, "")
+	refused := func(t *testing.T, fx *encryptedVideoFixture, err error) {
+		t.Helper()
+		if !errors.Is(err, ErrTranscode) || FailureReason(err) != FailureTranscode || !errors.Is(err, encderiv.ErrInvalidOutput) {
+			t.Fatalf("BuildPack err = %v, want ErrTranscode for output short of the source", err)
+		}
+		fx.assertNothingLeft(t)
+	}
+	t.Run("complete non-first Version", func(t *testing.T) {
+		fx := newEncryptedVideoFixture(t)
+		addExtended(t, fx)
+		fx.svc.SetPipeTranscoder(transcode(180))
+		pack, err := build(fx, "extended")
 		if err != nil {
-			t.Fatalf("BuildPack of the complete default Version: %v", err)
+			t.Fatalf("BuildPack of the complete extended cut: %v", err)
 		}
 		items, err := fx.st.OfflinePackItems(context.Background(), pack.ID)
 		if err != nil || len(items) != 1 {
 			t.Fatalf("pack items = %+v, %v; want the one transcoded item", items, err)
 		}
 	})
-	t.Run("truncated extended cut", func(t *testing.T) {
-		fx, _, err := build(t, "extended")
-		if !errors.Is(err, ErrTranscode) || FailureReason(err) != FailureTranscode {
-			t.Fatalf("BuildPack err = %v, want ErrTranscode", err)
+	t.Run("truncated non-first Version", func(t *testing.T) {
+		fx := newEncryptedVideoFixture(t)
+		addExtended(t, fx)
+		fx.svc.SetPipeTranscoder(transcode(fmp4Seconds))
+		_, err := build(fx, "extended")
+		refused(t, fx, err)
+	})
+	// A 4K Version imported without a probe becomes first in label order and
+	// so names the Media's facts, while the catalog keeps the 120 seconds
+	// probed from the file it displaced. The 4K file runs 240 seconds, so
+	// 120 seconds of output is half of it.
+	t.Run("unprobed longer Version made first", func(t *testing.T) {
+		fx := newEncryptedVideoFixture(t)
+		ctx := context.Background()
+		filter := store.LibraryFilter{AllLibraries: true, Revealed: true}
+		anchor := fixtureMediaFiles(t, fx.st, fx.scope, "media-alpha")[0]
+		rows, err := fx.st.VisibleMediaBatch(ctx, []store.MediaID{"media-alpha"}, filter)
+		if err != nil {
+			t.Fatal(err)
 		}
-		if fx.source.openCount() != 0 {
-			t.Fatalf("decrypted %d times for a Version of unknown duration", fx.source.openCount())
+		media := rows["media-alpha"]
+		uhd := filepath.Join(t.TempDir(), "media-alpha-4k.mkv")
+		if _, err := fx.st.ImportMediaFileVersion(ctx, store.MediaVersionImport{
+			MediaID: media.ID,
+			File: store.ImportMediaFile{
+				LibraryID: media.LibraryID, Path: uhd, Title: media.Title, Container: "mkv", Codec: "hevc",
+				Class: store.MediaClassVideo, ContentFingerprint: store.HashMediaFilePath(uhd),
+			},
+			Label: "4K", AnchorFingerprint: anchor.ContentFingerprint, AnchorLabel: "Extended",
+		}); err != nil {
+			t.Fatalf("ImportMediaFileVersion: %v", err)
 		}
-		fx.assertNothingLeft(t)
+		if fp, _, err := fx.st.MediaFactsFingerprint(ctx, media.ID); err != nil || fp != store.HashMediaFilePath(uhd) {
+			t.Fatalf("MediaFactsFingerprint = %q, %v; want the 4K file", fp, err)
+		}
+		rows, err = fx.st.VisibleMediaBatch(ctx, []store.MediaID{"media-alpha"}, filter)
+		if err != nil || rows["media-alpha"].DurationSeconds != fmp4Seconds {
+			t.Fatalf("catalog duration = %v, %v; want the displaced file's %ds", rows["media-alpha"].DurationSeconds, err, fmp4Seconds)
+		}
+		fx.source.serve(uhd, append([]byte("4k remux|"), fx.body...), 240*time.Second)
+		fx.svc.SetPipeTranscoder(transcode(fmp4Seconds))
+		_, err = build(fx, "4K")
+		refused(t, fx, err)
 	})
 }
 
