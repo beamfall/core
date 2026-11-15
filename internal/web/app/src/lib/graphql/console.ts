@@ -615,7 +615,7 @@ export async function setAccessSchedule(
 // --- Enforced certification filters (ADR-0028 §5) -------------------------
 
 const ENFORCED_FILTERS_QUERY =
-  "query EnforcedFilters { profiles { id name kind libraryIDs certificationCeilings { pluginID ceiling allowUnrated } } plugins { id displayName certificationScale } }";
+  "query EnforcedFilters { profiles { id name kind libraryIDs remoteMaxBitrate certificationCeilings { pluginID ceiling allowUnrated } } plugins { id displayName certificationScale } }";
 
 /** The enforced-filters Console screen payload (profiles + plugins-with-scale). */
 export interface EnforcedFiltersData {

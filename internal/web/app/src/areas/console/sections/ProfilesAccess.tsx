@@ -102,8 +102,11 @@ export function ProfilesAccess() {
           {profileID && <AccessScheduleEditor profileID={profileID} />}
           {selectedProfile && (
             <ManagedPolicyControls
+              key={`policy:${selectedProfile.id}`}
               profileID={selectedProfile.id}
               managed={selectedProfile.kind === "managed"}
+              remoteMaxBitrate={selectedProfile.remoteMaxBitrate ?? 0}
+              onChanged={() => void filters.refresh()}
             />
           )}
           {selectedProfile && (
@@ -389,17 +392,38 @@ function SchedulePreview({ windows }: { windows: AccessWindowInput[] }) {
 }
 
 // The managed-Profile policy controls (ADR-0087 §30/§31): the concurrent-stream
-// cap and the remote bitrate cap (any Profile, CORE-1717) and the extension-request pre-authorization toggle (managed
-// only — the server rejects an adult Profile). Both are write-through: the
-// server exposes no read query for the current values yet (the inputs start
-// blank and report "applied" on save), so the controls set policy rather than
-// reflect it.
-function ManagedPolicyControls({ profileID, managed }: { profileID: string; managed: boolean }) {
+// cap and the remote bitrate cap (any Profile, CORE-1717) and the extension-request
+// pre-authorization toggle (managed only — the server rejects an adult Profile).
+// The remote cap reads back from the profiles query and shows the stored value
+// (CORE-1853). The stream cap and pre-authorization are still write-through: the
+// console does not read them back, so those inputs start blank and report
+// "applied" on save.
+function ManagedPolicyControls({
+  profileID,
+  managed,
+  remoteMaxBitrate,
+  onChanged,
+}: {
+  profileID: string;
+  managed: boolean;
+  remoteMaxBitrate: number;
+  onChanged: () => void;
+}) {
   const t = useT();
   const [cap, setCap] = useState("");
   const [capApplied, setCapApplied] = useState(false);
-  const [remoteCap, setRemoteCap] = useState("");
+  const [storedRemoteCap, setStoredRemoteCap] = useState(remoteMaxBitrate);
+  // A profiles reread (after an Apply, possibly from an earlier mount of this
+  // control) replaces the stored cap; an unsaved draft is left alone.
+  const [seenRemoteMaxBitrate, setSeenRemoteMaxBitrate] = useState(remoteMaxBitrate);
+  if (remoteMaxBitrate !== seenRemoteMaxBitrate) {
+    setSeenRemoteMaxBitrate(remoteMaxBitrate);
+    setStoredRemoteCap(remoteMaxBitrate);
+  }
+  const [remoteCapDraft, setRemoteCapDraft] = useState<string | null>(null);
   const [remoteCapApplied, setRemoteCapApplied] = useState(false);
+  const remoteCap =
+    remoteCapDraft ?? (storedRemoteCap > 0 ? String(storedRemoteCap / 1_000_000) : "");
   const [preauth, setPreauth] = useState(false);
   const [busy, setBusy] = useState(false);
   const showAdvanced = useShowAdvanced();
@@ -423,8 +447,14 @@ function ManagedPolicyControls({ profileID, managed }: { profileID: string; mana
     setBusy(true);
     setRemoteCapApplied(false);
     try {
-      await setProfileRemoteBitrateCap(profileID, (Number(remoteCap) || 0) * 1_000_000);
+      const saved = await setProfileRemoteBitrateCap(
+        profileID,
+        (Number(remoteCap) || 0) * 1_000_000,
+      );
+      setStoredRemoteCap(saved.remoteMaxBitrate);
+      setRemoteCapDraft(null);
       setRemoteCapApplied(true);
+      onChanged();
     } finally {
       setBusy(false);
     }
@@ -436,7 +466,7 @@ function ManagedPolicyControls({ profileID, managed }: { profileID: string; mana
   }
 
   // The stream cap and extension pre-authorization are Advanced (CORE-1117). The
-  // server offers no read of either, so neither can be kept in view while set.
+  // console reads neither back, so neither can be kept in view while set.
   if (!managed && !showAdvanced) return null;
   return (
     <div className="space-y-4 border-t border-[var(--border-subtle)] pt-4">
@@ -483,8 +513,9 @@ function ManagedPolicyControls({ profileID, managed }: { profileID: string; mana
               className="w-24"
               value={remoteCap}
               placeholder="0"
+              disabled={busy}
               onChange={(e) => {
-                setRemoteCap(e.target.value);
+                setRemoteCapDraft(e.target.value);
                 setRemoteCapApplied(false);
               }}
             />

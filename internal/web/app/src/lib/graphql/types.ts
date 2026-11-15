@@ -1621,6 +1621,8 @@ export interface EnforcedFilterProfile {
   name: string;
   kind: string;
   libraryIDs: string[];
+  /** The Profile's remote bitrate cap in bits per second; 0 or absent is no cap (CORE-1717). */
+  remoteMaxBitrate?: number;
   certificationCeilings: CertificationCeilingInfo[];
 }
 

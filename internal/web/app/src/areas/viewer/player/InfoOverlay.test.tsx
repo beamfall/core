@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { MetadataAttribution } from "@/lib/graphql";
+import type { PlaybackInfo } from "../lib/playback";
 import { I18nProvider } from "@/lib/i18n";
 import { InfoOverlay } from "./InfoOverlay";
 
@@ -48,5 +49,40 @@ describe("InfoOverlay metadata attribution (CORE-1126)", () => {
 
     expect(screen.queryByText(/Metadata provided by/)).not.toBeInTheDocument();
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  });
+});
+
+describe("InfoOverlay transcode reason labels (CORE-1853)", () => {
+  function renderReason(reason: string) {
+    return render(
+      <I18nProvider initialLocale="en">
+        <InfoOverlay
+          mediaTitle="Long Weekend"
+          info={{ decision: "transcode", reason } as PlaybackInfo}
+          stream={null}
+          manualRenditionID=""
+          hlsActive={false}
+          open
+          onOpenChange={() => {}}
+        />
+      </I18nProvider>,
+    );
+  }
+
+  it("labels the admin remote bitrate cap", () => {
+    renderReason("policy-bitrate-ceiling");
+    expect(
+      screen.getByText("The source is above the remote bitrate limit set for this server or profile."),
+    ).toBeInTheDocument();
+  });
+
+  it("labels the viewer's own quality limit", () => {
+    renderReason("bitrate-ceiling");
+    expect(screen.getByText("The source is above the quality limit you chose.")).toBeInTheDocument();
+  });
+
+  it("shows an unknown reason token verbatim", () => {
+    renderReason("something-new");
+    expect(screen.getByText("something-new")).toBeInTheDocument();
   });
 });

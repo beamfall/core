@@ -646,11 +646,24 @@ export interface RouteDetailLabels {
   engineNativeHls?: string;
   engineHlsJs?: string;
   reasonRequiresTranscode?: string;
+  reasonBitrateCeiling?: string;
+  reasonPolicyBitrateCeiling?: string;
 }
 
 function reasonLabel(reason: string, labels: RouteDetailLabels): string {
   if (reason === "requires-transcode") {
     return labels.reasonRequiresTranscode || "This device cannot direct play the source.";
+  }
+  // The viewer's own streaming quality limit (CORE-1674) kept it off direct play.
+  if (reason === "bitrate-ceiling") {
+    return labels.reasonBitrateCeiling || "The source is above the quality limit you chose.";
+  }
+  // The admin's remote bitrate cap, server-wide or per Profile (CORE-1717, CORE-1853).
+  if (reason === "policy-bitrate-ceiling") {
+    return (
+      labels.reasonPolicyBitrateCeiling ||
+      "The source is above the remote bitrate limit set for this server or profile."
+    );
   }
   // Unknown machine token: render it verbatim rather than inventing copy.
   return reason;
