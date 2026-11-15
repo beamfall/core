@@ -27,7 +27,9 @@ import {
 // orchestrator's 8810). The self-booted gate server always has it.
 const { adminAvailable } = harnessState();
 
-async function seedLibraryHealthDrilldownData(): Promise<() => void> {
+const HEALTH_LIBRARY_TITLE = "Health Library";
+
+async function seedLibraryHealthDrilldownData(): Promise<() => Promise<void>> {
   const { baseURL } = harnessState();
   // The scan job may be claimed by the server's own background worker before
   // this helper gets to drain it, in which case `runJob` reports "no runnable
@@ -85,15 +87,20 @@ async function seedLibraryHealthDrilldownData(): Promise<() => void> {
   writeMedia("omega-health.mp4", duplicateB);
   writeMedia("unmatched-health.mp4", "unmatched fixture");
 
-  await graphqlWithSeedManager(
+  // A Library of its own: the drilldown merges duplicates and trashes broken
+  // files, which on the seeded Local Library would move media-alpha to Trash
+  // and break every later spec that opens it.
+  const created = (await graphqlWithSeedManager(
     baseURL,
-    "mutation SetRoots($libraryID: String!, $roots: [String!]!) { setLibraryRoots(libraryID: $libraryID, roots: $roots) { id } }",
-    { libraryID: "library-local", roots: [root] },
-  );
+    "mutation C($title: String!, $roots: [String!]) { createLibrary(title: $title, roots: $roots) { id } }",
+    { title: HEALTH_LIBRARY_TITLE, roots: [root] },
+  )) as { createLibrary?: { id?: string } };
+  const libraryID = created.createLibrary?.id;
+  if (!libraryID) throw new Error(`createLibrary returned ${JSON.stringify(created)}`);
   const firstScan = (await graphqlWithSeedManager(
     baseURL,
     "mutation Scan($libraryID: String!, $root: String!) { scanLibrary(libraryID: $libraryID, root: $root) { id status } }",
-    { libraryID: "library-local", root },
+    { libraryID, root },
   )) as { scanLibrary?: { id?: string } };
   await runQueuedJob(firstScan.scanLibrary?.id ?? "");
 
@@ -101,13 +108,23 @@ async function seedLibraryHealthDrilldownData(): Promise<() => void> {
   const secondScan = (await graphqlWithSeedManager(
     baseURL,
     "mutation Rescan($libraryID: String!, $root: String!) { scanLibrary(libraryID: $libraryID, root: $root) { id status } }",
-    { libraryID: "library-local", root },
+    { libraryID, root },
   )) as { scanLibrary?: { id?: string } };
   await runQueuedJob(secondScan.scanLibrary?.id ?? "");
 
   // Keep the watched root alive until the assertions finish. Removing it here
   // makes the watcher mark every seeded file missing, hiding duplicate groups.
-  return () => rmSync(root, { recursive: true, force: true });
+  return async () => {
+    try {
+      await graphqlWithSeedManager(
+        baseURL,
+        "mutation D($libraryID: String!) { deleteLibrary(libraryID: $libraryID) }",
+        { libraryID },
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  };
 }
 
 test.describe("console", () => {
@@ -424,7 +441,7 @@ test.describe("console", () => {
     }) {
       await gotoConsole(page, "health");
       await page
-        .getByRole("row", { name: /Local Library/ })
+        .getByRole("row", { name: /Health Library/ })
         .getByRole("button", { name: new RegExp(`^${buttonLabel}: \\d+$`) })
         .click();
       await expect(page.getByText(title)).toBeVisible();
@@ -452,35 +469,35 @@ test.describe("console", () => {
     try {
       await exerciseSelectedDimension({
         buttonLabel: "Duplicates",
-        title: /Local Library - Duplicates/,
+        title: /Health Library - Duplicates/,
         action: "Merge duplicates",
         confirm: /Merged-away items move to Trash/,
         expectedText: "Survivor",
       });
       await exerciseSelectedDimension({
         buttonLabel: "Unmatched",
-        title: /Local Library - Unmatched/,
+        title: /Health Library - Unmatched/,
         action: "Rescan unmatched",
       });
       await exerciseSelectedDimension({
         buttonLabel: "Scrape failures",
-        title: /Local Library - Scrape failures/,
+        title: /Health Library - Scrape failures/,
         action: "Rescrape failures",
       });
       await exerciseSelectedDimension({
         buttonLabel: "Missing artwork",
-        title: /Local Library - Missing artwork/,
+        title: /Health Library - Missing artwork/,
         action: "Fetch missing artwork",
       });
       await exerciseSelectedDimension({
         buttonLabel: "Broken",
-        title: /Local Library - Broken/,
+        title: /Health Library - Broken/,
         action: "Trash broken",
         confirm: "Move every broken file in this library to Trash?",
       });
       expect(errors, errors.join("\n")).toEqual([]);
     } finally {
-      cleanup();
+      await cleanup();
     }
   });
 
