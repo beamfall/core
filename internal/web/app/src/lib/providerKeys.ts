@@ -69,7 +69,10 @@ export function groupProviderKeys(scrapers: PluginScraperInfo[]): ProviderKey[] 
   });
 }
 
-/** True when a required key has not been configured yet. */
+/**
+ * True when a required key has not been configured yet. A key the owner
+ * disabled on purpose (CORE-1540) is a choice, not a missing setup step.
+ */
 export function keyNeeded(key: ProviderKey): boolean {
-  return key.required && key.status !== "configured";
+  return key.required && key.status !== "configured" && key.status !== "disabled";
 }

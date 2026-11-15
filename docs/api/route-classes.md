@@ -18,7 +18,7 @@ unclassified — a new route cannot ship without a reviewed classification.
 | `public-v1` | The ADR-0040 `/v1/` stable contract — the single deliberately-public API line, for automation and for client apps (ADR-0234). | Per-route accepted credentials: a scoped developer key holding the route's scope, an enrolled device Session, or either. |
 | `private-ui` | First-party Core UI surface (`/api`, `/web`) consumed by the web app. Not a public contract; shape may change with the client. | Session/device credential (+ CSRF header on cookie-authenticated writes). |
 | `admin-automation` | Admin/automation surface authorized by an admin API token. Core currently layers admin authorization onto the private-UI surface via scope rather than dedicated admin-only paths, so no route carries this class today; it exists so a future dedicated admin route is classified and audited deliberately. | Admin API token. |
-| `internal-only` | Unauthenticated ops / bootstrap / loopback: liveness, metrics, AGPL source offer, pre-enrollment first-run probe, published moderation contact, root redirect, loopback-only test-fault control. | None (exposes no library content, resolves no session). |
+| `internal-only` | Unauthenticated ops / bootstrap / loopback: liveness, metrics, AGPL source offer, developer API reference (`/api/docs`), pre-enrollment first-run probe, published moderation contact, root redirect, loopback-only test-fault control. | None (exposes no library content, resolves no session). |
 
 ## Private → public promotion rule
 

@@ -22,10 +22,9 @@ type TrashedLibrary struct {
 // Purgeable reports whether the Library may ever be purged. A Custodial Library
 // holds the only copy of its bytes (ADR-0045 §2.1), so it stays restorable
 // until an owner restores it, exactly as its trashed Media does. An encrypted
-// Library keeps its catalog in a separate database that a purge does not yet
-// remove, so it is restorable only too.
+// Library is purgeable: its purge removes its private database and keys.
 func (t TrashedLibrary) Purgeable() bool {
-	return !t.Library.Custodial && !t.Library.Encrypted
+	return !t.Library.Custodial
 }
 
 // PurgeAfter is when the retention sweep removes the Library. ok is false when
@@ -135,11 +134,14 @@ func (s *Store) RestoreLibrary(ctx context.Context, id LibraryID) error {
 // profile grants, root-folder records, scan schedule and every row that hangs
 // off them, then the engagement history of the removed Media. It refuses a
 // Library that is not already deleted, so one call can never take a live
-// Library to an unrecoverable state, and it refuses a Custodial or encrypted Library.
+// Library to an unrecoverable state, and it refuses a Custodial Library.
 //
 // It only ever deletes database rows. The files under the Library's root
 // folders are never opened, moved or removed; a new Library pointed at the same
-// folders re-imports them.
+// folders re-imports them. An encrypted Library's catalog lives in its own
+// private database, which is server state rather than media: purging the
+// Library removes that database and destroys its key material (see
+// completeLibraryPurge for the ordering).
 //
 // PurgeLibrary writes no activity record: the caller is a human-confirmed
 // mutation that records the actor. The autonomous path is
@@ -148,76 +150,114 @@ func (s *Store) PurgeLibrary(ctx context.Context, id LibraryID) (LibraryPurge, e
 	if id == "" {
 		return LibraryPurge{}, ValidationError("library ID is required")
 	}
+	return s.purgeLibrary(ctx, id, math.MaxInt64)
+}
+
+// purgeLibrary commits the catalog purge under the read lock, then tears down
+// an encrypted Library's private database and keys with that lock released.
+func (s *Store) purgeLibrary(ctx context.Context, id LibraryID, trashedBeforeMs int64) (LibraryPurge, error) {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
+		s.mu.RUnlock()
 		return LibraryPurge{}, err
 	}
-	return s.purgeLibraryLocked(ctx, id, math.MaxInt64)
+	purge, encrypted, err := s.purgeLibraryLocked(ctx, id, trashedBeforeMs, s.encKeyEraser != nil)
+	s.mu.RUnlock()
+	if err != nil {
+		return LibraryPurge{}, err
+	}
+	if encrypted {
+		if err := s.completeLibraryPurge(ctx, id); err != nil {
+			// The purge has happened; its pending row keeps the teardown owed
+			// until a retention sweep or the next start finishes it.
+			slog.WarnContext(ctx, "library purge: encrypted library teardown incomplete, will retry", "library", id, "error", err)
+		}
+	}
+	return purge, nil
 }
 
 // purgeLibraryLocked removes a Library that was deleted before trashedBeforeMs
 // (math.MaxInt64 for no bound). The bound is checked inside the transaction so
 // the retention sweep cannot purge a Library an admin restored and deleted again
-// after the sweep chose its candidates.
-func (s *Store) purgeLibraryLocked(ctx context.Context, id LibraryID, trashedBeforeMs int64) (LibraryPurge, error) {
+// after the sweep chose its candidates. encrypted reports that the Library kept
+// a private database, whose teardown the caller owes once the lock is released.
+func (s *Store) purgeLibraryLocked(ctx context.Context, id LibraryID, trashedBeforeMs int64, canEraseKeys bool) (purge LibraryPurge, encrypted bool, err error) {
 	tx, err := s.catalogW.BeginTx(ctx, nil)
 	if err != nil {
-		return LibraryPurge{}, err
+		return LibraryPurge{}, false, err
 	}
 	defer tx.Rollback()
-	purge := LibraryPurge{LibraryID: id}
-	var custodial, encrypted int
+	purge = LibraryPurge{LibraryID: id}
+	var custodial int
 	err = tx.QueryRowContext(ctx,
 		`SELECT title, is_restricted, custodial, encrypted FROM library
 		 WHERE id = ? AND trashed_at_ms IS NOT NULL AND trashed_at_ms < ?`, id, trashedBeforeMs).
 		Scan(&purge.Title, &purge.Restricted, &custodial, &encrypted)
 	if errors.Is(err, sql.ErrNoRows) {
-		return LibraryPurge{}, ValidationError("library not found or not deleted")
+		return LibraryPurge{}, false, ValidationError("library not found or not deleted")
 	}
 	if err != nil {
-		return LibraryPurge{}, err
+		return LibraryPurge{}, false, err
 	}
 	if custodial != 0 {
-		return LibraryPurge{}, ValidationError("this library stores the only copy of its media and cannot be removed permanently")
+		return LibraryPurge{}, false, ValidationError("this library stores the only copy of its media and cannot be removed permanently")
 	}
-	if encrypted != 0 {
-		// An Encrypted Library keeps its catalog in its own database, which this
-		// purge does not reach; removing the row would orphan that data.
-		return LibraryPurge{}, ValidationError("an encrypted library cannot be removed permanently")
+	catalog := rowQuerier(tx)
+	if encrypted {
+		if err := s.checkEncryptedLibraryPurgeableTx(ctx, tx, id, canEraseKeys); err != nil {
+			return LibraryPurge{}, false, err
+		}
+		// The Library's Media and entities live in its private database, so
+		// their ids can be listed for the caller only while it is unsealed.
+		// Whatever a sealed Library's ids key stays encrypted, and erasing the
+		// keys makes it unreadable.
+		catalog = nil
+		if db := s.encryptedDBs[id]; db != nil && db.state == "unsealed-registered" && db.reader != nil {
+			catalog = db.reader
+		}
 	}
-	if purge.MediaIDs, err = queryIDs[MediaID](ctx, tx, `SELECT id FROM media WHERE library_id = ? ORDER BY id`, id); err != nil {
-		return LibraryPurge{}, err
-	}
-	if purge.EntityIDs, err = queryIDs[EntityID](ctx, tx, `SELECT id FROM entity WHERE library_id = ? ORDER BY id`, id); err != nil {
-		return LibraryPurge{}, err
+	if catalog != nil {
+		if purge.MediaIDs, err = queryIDs[MediaID](ctx, catalog, `SELECT id FROM media WHERE library_id = ? ORDER BY id`, id); err != nil {
+			return LibraryPurge{}, false, err
+		}
+		if purge.EntityIDs, err = queryIDs[EntityID](ctx, catalog, `SELECT id FROM entity WHERE library_id = ? ORDER BY id`, id); err != nil {
+			return LibraryPurge{}, false, err
+		}
 	}
 	// media and entity reference library without a cascade, so they go first.
 	// Deleting an entity cascades its fields and relations (see PurgePluginData).
 	if _, err := purgeMediaRowsTx(ctx, tx, `SELECT id FROM media WHERE library_id = ?`, id); err != nil {
-		return LibraryPurge{}, err
+		return LibraryPurge{}, false, err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM entity WHERE library_id = ?`, id); err != nil {
-		return LibraryPurge{}, err
+		return LibraryPurge{}, false, err
 	}
 	// Neither the scan schedule nor the icon choice is keyed by a foreign key.
 	if _, err := tx.ExecContext(ctx, `DELETE FROM schedules WHERE id = ?`, scanScheduleID(id)); err != nil {
-		return LibraryPurge{}, err
+		return LibraryPurge{}, false, err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM server_config WHERE key = ?`, libraryIconConfigPrefix+string(id)); err != nil {
-		return LibraryPurge{}, err
+		return LibraryPurge{}, false, err
 	}
 	// Grants, root folders and every other per-Library table cascade from here.
 	if _, err := tx.ExecContext(ctx, `DELETE FROM library WHERE id = ?`, id); err != nil {
-		return LibraryPurge{}, err
+		return LibraryPurge{}, false, err
 	}
+	nowMs := time.Now().UnixMilli()
 	if _, err := tx.ExecContext(ctx,
 		`INSERT OR REPLACE INTO server_config(key, value, updated_at_ms) VALUES (?, '1', ?)`,
-		libraryPurgedConfigPrefix+string(id), time.Now().UnixMilli()); err != nil {
-		return LibraryPurge{}, err
+		libraryPurgedConfigPrefix+string(id), nowMs); err != nil {
+		return LibraryPurge{}, false, err
+	}
+	if encrypted {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT OR REPLACE INTO server_config(key, value, updated_at_ms) VALUES (?, '1', ?)`,
+			libraryPurgePendingConfigPrefix+string(id), nowMs); err != nil {
+			return LibraryPurge{}, false, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
-		return LibraryPurge{}, err
+		return LibraryPurge{}, false, err
 	}
 	// The catalog is the authority and is already committed, so the purge has
 	// happened: callers must still record it and drop its artwork. The
@@ -229,53 +269,69 @@ func (s *Store) purgeLibraryLocked(ctx context.Context, id LibraryID, trashedBef
 	if _, err := s.pruneOrphanedEngagementRowsLocked(ctx); err != nil {
 		slog.WarnContext(ctx, "library purge: engagement cleanup failed", "library", id, "error", err)
 	}
-	return purge, nil
+	return purge, encrypted, nil
 }
 
 // SweepPurgeTrashedLibrariesBefore is the autonomous retention purge for
 // Libraries: it purges every Library soft-deleted before the cutoff, under the
 // rules SweepPurgeTrashedBefore applies to Media. It yields while trash is
 // disabled, never touches a Custodial Library, and records a library.purge
-// activity entry per Library because no human actor is behind it.
+// activity entry per Library because no human actor is behind it. It first
+// finishes any encrypted Library purge whose teardown is still owed, which is
+// not a new removal and so runs even while trash is disabled.
 func (s *Store) SweepPurgeTrashedLibrariesBefore(ctx context.Context, cutoff time.Time) (purged []LibraryPurge, skipped bool, err error) {
+	if err := s.CompletePendingLibraryPurges(ctx); err != nil {
+		slog.WarnContext(ctx, "library retention sweep: encrypted library teardown incomplete, will retry", "error", err)
+	}
 	if s.trashDisabled {
 		s.trashDisabledSweepSkips.Add(1)
 		return nil, true, ErrTrashDisabledConfirmationRequired
 	}
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if err := s.guardLocked(); err != nil {
-		return nil, false, err
+	err = s.guardLocked()
+	var ids []LibraryID
+	if err == nil {
+		ids, err = queryIDs[LibraryID](ctx, s.catalogR, `
+			SELECT id FROM library
+			WHERE trashed_at_ms IS NOT NULL AND trashed_at_ms < ? AND custodial = 0
+			ORDER BY trashed_at_ms, rowid`, timeToMillis(cutoff))
 	}
-	ids, err := queryIDs[LibraryID](ctx, s.catalogR, `
-		SELECT id FROM library
-		WHERE trashed_at_ms IS NOT NULL AND trashed_at_ms < ? AND custodial = 0 AND encrypted = 0
-		ORDER BY trashed_at_ms, rowid`, timeToMillis(cutoff))
+	s.mu.RUnlock()
 	if err != nil {
 		return nil, false, err
 	}
 	for _, id := range ids {
-		purge, err := s.purgeLibraryLocked(ctx, id, timeToMillis(cutoff))
-		var restored ValidationError
-		if errors.As(err, &restored) {
-			// Restored (or purged by hand) since the selection above.
+		purge, err := s.purgeLibrary(ctx, id, timeToMillis(cutoff))
+		var refused ValidationError
+		if errors.As(err, &refused) {
+			// Restored (or purged by hand) since the selection above, or an
+			// encrypted Library this store cannot erase the keys of yet.
 			continue
 		}
 		if err != nil {
 			return purged, false, err
 		}
 		purged = append(purged, purge)
-		if err := appendActivitySQL(ctx, s.eventsW, ActivityEntry{
-			OccurredAt: time.Now().UTC(),
-			Action:     ActivityLibraryPurge,
-			TargetType: "library",
-			TargetID:   string(id),
-			LibraryID:  purge.ActivityLibraryID(),
-		}); err != nil {
+		if err := s.appendLibraryPurgeActivity(ctx, purge); err != nil {
 			return purged, false, err
 		}
 	}
 	return purged, false, nil
+}
+
+func (s *Store) appendLibraryPurgeActivity(ctx context.Context, purge LibraryPurge) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	return appendActivitySQL(ctx, s.eventsW, ActivityEntry{
+		OccurredAt: time.Now().UTC(),
+		Action:     ActivityLibraryPurge,
+		TargetType: "library",
+		TargetID:   string(purge.LibraryID),
+		LibraryID:  purge.ActivityLibraryID(),
+	})
 }
 
 type rowQuerier interface {

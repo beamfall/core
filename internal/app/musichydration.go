@@ -2,6 +2,9 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -28,6 +31,7 @@ type hydrationStore interface {
 	MediaFieldLocks(ctx context.Context, id store.MediaID, filter store.LibraryFilter) ([]store.MediaFieldLock, error)
 	UpsertEntity(ctx context.Context, entity store.Entity) error
 	UpsertEntityRelation(ctx context.Context, relation store.EntityRelation) error
+	ReplaceMediaRelations(ctx context.Context, mediaID store.MediaID, relations []store.EntityRelation) error
 	AddMediaExternalID(ctx context.Context, mediaID store.MediaID, scheme string, value string) error
 	EntityRelationTargets(ctx context.Context, libraryID store.LibraryID, id store.EntityID, relation string) ([]store.EntityID, bool, error)
 }
@@ -49,8 +53,10 @@ const (
 // HydrationRehydrator is the optional HydrationMapper extension that keys
 // hydration on the file's content fingerprint, so a re-tagged file is
 // re-hydrated and an unchanged one is not. FingerprintField names a declared
-// text Media field holding the fingerprint the last hydration read; a mapper
-// without it keeps the absent-only write.
+// text Media field holding the hydration key the last hydration recorded (the
+// content fingerprint plus a digest of the mapped plan, see hydrationKey); a
+// mapper without it keeps the absent-only write. DecideHydrationWrite
+// compares the recorded and the current key.
 type HydrationRehydrator interface {
 	FingerprintField() string
 	DecideHydrationWrite(recordedFingerprint, currentFingerprint string) HydrationWrite
@@ -179,7 +185,12 @@ func (a *hydrationAdapter) HydrateMetadata(ctx context.Context, input scanpkg.Me
 	if !a.capability.Supports(input.Class) {
 		return nil
 	}
-	write, err := a.decideWrite(ctx, input)
+	plan := a.mapper.MapHydration(input.Metadata, input.Path)
+	key, err := hydrationKey(input.ContentFingerprint, plan)
+	if err != nil {
+		return err
+	}
+	write, err := a.decideWrite(ctx, input.MediaID, key)
 	if err != nil {
 		return err
 	}
@@ -196,7 +207,6 @@ func (a *hydrationAdapter) HydrateMetadata(ctx context.Context, input scanpkg.Me
 			write = HydrationWriteFresh
 		}
 	}
-	plan := a.mapper.MapHydration(input.Metadata, input.Path)
 	if plan.Empty() {
 		return nil
 	}
@@ -211,7 +221,7 @@ func (a *hydrationAdapter) HydrateMetadata(ctx context.Context, input scanpkg.Me
 	if err := a.writeMediaFields(ctx, input.MediaID, validated, marker, write, locked); err != nil {
 		return err
 	}
-	if err := a.writeRelations(ctx, input.MediaID, input.LibraryID, validated.Relations); err != nil {
+	if err := a.writeRelations(ctx, input.MediaID, input.LibraryID, validated.Relations, write == HydrationWriteReplace); err != nil {
 		return err
 	}
 	for _, externalID := range validated.ExternalIDs {
@@ -219,7 +229,26 @@ func (a *hydrationAdapter) HydrateMetadata(ctx context.Context, input scanpkg.Me
 			return err
 		}
 	}
-	return a.recordFingerprint(ctx, input.MediaID, write, input.ContentFingerprint)
+	return a.recordFingerprint(ctx, input.MediaID, write, key)
+}
+
+// hydrationKey is the value the skip decision compares and the fingerprint
+// field records: the content fingerprint plus a digest of the mapped plan. The
+// plan carries what the mapper derived from the file's path (a disc folder,
+// say), so a file moved with the same bytes is re-hydrated when the move
+// changes a derived fact, and skipped when neither bytes nor derived facts
+// changed. An empty fingerprint stays empty so the mapper's no-fingerprint
+// rule still applies.
+func hydrationKey(fingerprint string, plan HydrationPlan) (string, error) {
+	if fingerprint == "" {
+		return "", nil
+	}
+	encoded, err := json.Marshal(plan)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(encoded)
+	return fingerprint + ";plan=" + hex.EncodeToString(sum[:8]), nil
 }
 
 // recordFingerprint records the hydrated content fingerprint after every other
@@ -237,16 +266,16 @@ func (a *hydrationAdapter) recordFingerprint(ctx context.Context, mediaID store.
 }
 
 // decideWrite asks an opted-in mapper how to land this hydration, from the
-// fingerprint recorded at the last hydration and the one the scan computed.
+// hydration key recorded at the last hydration and the current one.
 // A mapper without a fingerprint field always gets the absent-only write.
-func (a *hydrationAdapter) decideWrite(ctx context.Context, input scanpkg.MetadataHydrationInput) (HydrationWrite, error) {
+func (a *hydrationAdapter) decideWrite(ctx context.Context, mediaID store.MediaID, key string) (HydrationWrite, error) {
 	if a.rehydrator == nil {
 		return HydrationWriteFresh, nil
 	}
 	if declaredType, ok := a.declaredMediaFields[a.fingerprintField]; a.fingerprintField == "" || !ok || declaredType != string(store.EntityFieldText) {
 		return HydrationWriteFresh, fmt.Errorf("hydration fingerprint field %q is not a declared text field", a.fingerprintField)
 	}
-	fields, err := a.store.MediaFields(ctx, input.MediaID, metadataLibraryFilter)
+	fields, err := a.store.MediaFields(ctx, mediaID, metadataLibraryFilter)
 	if err != nil {
 		return HydrationWriteFresh, err
 	}
@@ -257,7 +286,7 @@ func (a *hydrationAdapter) decideWrite(ctx context.Context, input scanpkg.Metada
 			break
 		}
 	}
-	return a.rehydrator.DecideHydrationWrite(recorded, input.ContentFingerprint), nil
+	return a.rehydrator.DecideHydrationWrite(recorded, key), nil
 }
 
 func (a *hydrationAdapter) validatePlan(plan HydrationPlan, marker string) (HydrationPlan, error) {
@@ -506,41 +535,56 @@ func (a *hydrationAdapter) lockedFields(ctx context.Context, mediaID store.Media
 // once per plan, so every relation from it (its Media and its scope) lands on
 // the same Entity, and under scopeMu, so the resolution and the scope relation
 // that settles it are one step for concurrent scans.
-func (a *hydrationAdapter) writeRelations(ctx context.Context, mediaID store.MediaID, libraryID store.LibraryID, relations []HydrationRelation) error {
+// writeRelations writes the plan's relations. A replace collects the
+// Media-target relations and rewrites them together, so the Media's previous
+// rows for every relation name the plan carries — single- and many-valued
+// alike — are dropped and relation names the plan does not carry are kept.
+func (a *hydrationAdapter) writeRelations(ctx context.Context, mediaID store.MediaID, libraryID store.LibraryID, relations []HydrationRelation, replace bool) error {
 	if len(a.entityScopes) > 0 {
 		a.scopeMu.Lock()
 		defer a.scopeMu.Unlock()
 	}
 	resolved := map[string]store.EntityID{}
-	for _, relation := range relations {
-		if err := a.writeRelation(ctx, mediaID, libraryID, relation, resolved); err != nil {
+	var mediaRelations []store.EntityRelation
+	for _, mapped := range relations {
+		relation, ok, err := a.resolveRelation(ctx, mediaID, libraryID, mapped, resolved)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			continue
+		}
+		if replace && relation.ToMediaID != "" {
+			mediaRelations = append(mediaRelations, relation)
+			continue
+		}
+		if err := a.store.UpsertEntityRelation(ctx, relation); err != nil {
 			return err
 		}
 	}
-	return nil
+	if len(mediaRelations) == 0 {
+		return nil
+	}
+	return a.store.ReplaceMediaRelations(ctx, mediaID, mediaRelations)
 }
 
-func (a *hydrationAdapter) writeRelation(ctx context.Context, mediaID store.MediaID, libraryID store.LibraryID, mapped HydrationRelation, resolved map[string]store.EntityID) error {
-	if mapped.From.Kind == "" {
-		return nil
-	}
-	if mapped.From.Title == "" {
-		return nil
-	}
-	if mapped.Name == "" {
-		return nil
+// resolveRelation upserts a mapped relation's Entities and returns the store
+// relation to write; ok is false for a relation the bundle does not declare.
+func (a *hydrationAdapter) resolveRelation(ctx context.Context, mediaID store.MediaID, libraryID store.LibraryID, mapped HydrationRelation, resolved map[string]store.EntityID) (store.EntityRelation, bool, error) {
+	if mapped.From.Kind == "" || mapped.From.Title == "" || mapped.Name == "" {
+		return store.EntityRelation{}, false, nil
 	}
 	if _, ok := a.declaredRelationSpecs[mapped.From.Kind+"\x00"+mapped.Name]; !ok {
-		return nil
+		return store.EntityRelation{}, false, nil
 	}
 	if mapped.RequiresRelation != "" {
 		if _, ok := a.declaredRelationSpecs[mapped.From.Kind+"\x00"+mapped.RequiresRelation]; !ok {
-			return nil
+			return store.EntityRelation{}, false, nil
 		}
 	}
 	fromID, err := a.upsertEntity(ctx, libraryID, mapped.From, resolved)
 	if err != nil {
-		return err
+		return store.EntityRelation{}, false, err
 	}
 	relation := store.EntityRelation{
 		FromEntityID: fromID,
@@ -553,12 +597,12 @@ func (a *hydrationAdapter) writeRelation(ctx context.Context, mediaID store.Medi
 	if mapped.ToEntity != nil {
 		toID, err := a.upsertEntity(ctx, libraryID, *mapped.ToEntity, resolved)
 		if err != nil {
-			return err
+			return store.EntityRelation{}, false, err
 		}
 		relation.ToMediaID = ""
 		relation.ToEntityID = toID
 	}
-	return a.store.UpsertEntityRelation(ctx, relation)
+	return relation, true, nil
 }
 
 func (a *hydrationAdapter) upsertEntity(ctx context.Context, libraryID store.LibraryID, mapped HydrationEntity, resolved map[string]store.EntityID) (store.EntityID, error) {

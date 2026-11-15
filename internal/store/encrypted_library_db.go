@@ -118,7 +118,7 @@ func (s *Store) UnsealEncryptedLibraryDB(ctx context.Context, libraryID LibraryI
 	if err != nil {
 		return s.unwindEncryptedLibraryUnsealLocked(libraryID, nil, nil, paths.working, err)
 	}
-	if err := migrateEncryptedLibrary(ctx, s.logger, writer, paths.working, paths.ciphertext, filepath.Join(s.dataDir, "backups", "pre-migration", "encrypted-library", safeLibraryPathComponent(libraryID))); err != nil {
+	if err := migrateEncryptedLibrary(ctx, s.logger, writer, paths.working, paths.ciphertext, s.encryptedLibraryBackupDir(libraryID)); err != nil {
 		return s.unwindEncryptedLibraryUnsealLocked(libraryID, nil, writer, paths.working, err)
 	}
 	reader, err := openEncryptedLibrarySQLiteReader(paths.working)
@@ -411,6 +411,11 @@ func (s *Store) encryptedLibraryDBPaths(libraryID LibraryID) encryptedLibraryDBP
 		ciphertext: filepath.Join(s.encryptedDBRoot, component, "encrypted_library"+encryptedLibraryDBCipherExt),
 		working:    filepath.Join(s.encryptedDBWorkingRoot, component, "working.db"),
 	}
+}
+
+// encryptedLibraryBackupDir holds the Library's pre-migration ciphertext backups.
+func (s *Store) encryptedLibraryBackupDir(libraryID LibraryID) string {
+	return filepath.Join(s.dataDir, "backups", "pre-migration", "encrypted-library", safeLibraryPathComponent(libraryID))
 }
 
 func ensureEncryptedLibraryWorkingRoot(root string) error {

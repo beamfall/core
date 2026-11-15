@@ -71,6 +71,9 @@ func (s *Store) ImportMediaFileVersion(ctx context.Context, req MediaVersionImpo
 	if err := validateImportMediaFile(req.File); err != nil {
 		return MediaFile{}, err
 	}
+	if err := s.refuseManagedAdmissionInFlight(req.File.Path); err != nil {
+		return MediaFile{}, err
+	}
 	if !ValidMediaVersionLabel(req.Label) || !ValidMediaVersionLabel(req.AnchorLabel) {
 		return MediaFile{}, ValidationError("invalid version label")
 	}

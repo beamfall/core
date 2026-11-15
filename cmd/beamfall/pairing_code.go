@@ -17,8 +17,10 @@ import (
 
 // pairingCodeCommand mints a one-time owner pairing code on the host
 // (CORE-1106). Like reset-admin-password it needs filesystem access to the data
-// directory, so it adds no network surface. It is meant to run while the server
-// runs: the code lives in the database, and the server redeems it there.
+// directory, so it adds no network surface. It refuses to run while a server
+// holds the data directory, because opening the store runs startup maintenance
+// that a live server owns. The code lives in the database and only a running
+// server redeems it, so the printed step starts the server first (CORE-1734).
 func pairingCodeCommand(ctx context.Context, args []string, stdout io.Writer) error {
 	cfg := config.Default()
 	if value := os.Getenv("BEAMFALL_DATA_DIR"); value != "" {
@@ -61,7 +63,7 @@ func pairingCodeCommand(ctx context.Context, args []string, stdout io.Writer) er
 	}
 	if stdout != nil {
 		interfaceAddrs, _ := net.InterfaceAddrs()
-		_, _ = fmt.Fprintf(stdout, "%s\nOpen %s and enter this code %s.\n",
+		_, _ = fmt.Fprintf(stdout, "%s\nStart the server, then open %s and enter this code %s.\n",
 			code.Code, pairingWebURL(cfg.Addr, interfaceAddrs), pairingExpiry(code.ExpiresAt, time.Now()))
 	}
 	return nil
