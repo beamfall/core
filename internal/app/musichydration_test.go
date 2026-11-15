@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -180,6 +182,21 @@ func (f *fakeHydrationStore) UpsertEntity(_ context.Context, entity store.Entity
 
 func (f *fakeHydrationStore) UpsertEntityRelation(_ context.Context, relation store.EntityRelation) error {
 	f.relations = append(f.relations, relation)
+	return nil
+}
+
+func (f *fakeHydrationStore) ReplaceMediaRelations(_ context.Context, mediaID store.MediaID, relations []store.EntityRelation) error {
+	names := map[string]bool{}
+	for _, relation := range relations {
+		names[relation.Name] = true
+	}
+	kept := f.relations[:0]
+	for _, relation := range f.relations {
+		if relation.ToMediaID != mediaID || !names[relation.Name] {
+			kept = append(kept, relation)
+		}
+	}
+	f.relations = append(kept, relations...)
 	return nil
 }
 
@@ -1009,6 +1026,12 @@ func (r *rendezvousHydrationStore) UpsertEntityRelation(ctx context.Context, rel
 	return r.inner.UpsertEntityRelation(ctx, relation)
 }
 
+func (r *rendezvousHydrationStore) ReplaceMediaRelations(ctx context.Context, mediaID store.MediaID, relations []store.EntityRelation) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.inner.ReplaceMediaRelations(ctx, mediaID, relations)
+}
+
 func (r *rendezvousHydrationStore) AddMediaExternalID(ctx context.Context, mediaID store.MediaID, scheme, value string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -1103,6 +1126,16 @@ func (rehydratingTestMapper) MapHydration(tags map[string]string, _ string) Hydr
 	if tags["album"] != "" {
 		plan.MarkComplete = true
 		plan.MediaFields = append(plan.MediaFields, store.MediaField{Name: "album", Type: store.EntityFieldText, Text: tags["album"]})
+	}
+	// "contributors" maps to the many-cardinality credit relation, one row per
+	// comma-separated name; "category" maps to a second, independent kind.
+	if tags["contributors"] != "" {
+		for _, name := range strings.Split(tags["contributors"], ",") {
+			plan.Relations = append(plan.Relations, HydrationRelation{From: HydrationEntity{Kind: "artist", Title: name}, Name: "appears-on"})
+		}
+	}
+	if tags["category"] != "" {
+		plan.Relations = append(plan.Relations, HydrationRelation{From: HydrationEntity{Kind: "genre", Title: tags["category"]}, Name: "classifies"})
 	}
 	return plan
 }
@@ -1344,6 +1377,51 @@ func TestRehydrationReplacesScanTierFields(t *testing.T) {
 	r.rehydrate("sha256:retagged", map[string]string{"title": "Two", "album": "Second"})
 	if r.field("title") != "Two" || r.field("album") != "Second" || r.field(testHydrationFingerprintField) != "sha256:retagged" {
 		t.Fatalf("title %q album %q fingerprint %q, want the re-tagged values", r.field("title"), r.field("album"), r.field(testHydrationFingerprintField))
+	}
+}
+
+// relationSources returns the titles of the Entities related to the scanned
+// Media by one relation name, sorted.
+func (r *rehydrationScan) relationSources(name string) []string {
+	r.t.Helper()
+	related, err := r.st.EntitiesForMedia(context.Background(), r.mediaID, name, store.LibraryFilter{AllLibraries: true})
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	titles := make([]string, 0, len(related))
+	for _, entity := range related {
+		titles = append(titles, entity.Entity.Title)
+	}
+	sort.Strings(titles)
+	return titles
+}
+
+// CORE-1654: a replace rewrites every relation kind the plan carries,
+// many-cardinality credits included, and keeps the kinds it does not carry.
+func TestRehydrationReplacesManyCardinalityRelations(t *testing.T) {
+	r := newRehydrationScan(t)
+	r.write("original audio bytes padding padding", 2*time.Hour, map[string]string{
+		"title": "One", "contributors": "Contributor Alpha,Contributor Beta", "category": "Category One",
+	})
+	r.scan()
+	if got := r.relationSources("appears-on"); !slices.Equal(got, []string{"Contributor Alpha", "Contributor Beta"}) {
+		t.Fatalf("first scan credits = %v", got)
+	}
+
+	r.rehydrate("sha256:retagged", map[string]string{"title": "Two", "contributors": "Contributor Beta,Contributor Gamma"})
+	if got := r.relationSources("appears-on"); !slices.Equal(got, []string{"Contributor Beta", "Contributor Gamma"}) {
+		t.Fatalf("re-hydrated credits = %v, want only the new credits", got)
+	}
+	if got := r.relationSources("classifies"); !slices.Equal(got, []string{"Category One"}) {
+		t.Fatalf("untouched relation kind = %v, want it kept", got)
+	}
+
+	r.rehydrate("sha256:retagged-again", map[string]string{"title": "Three", "category": "Category Two"})
+	if got := r.relationSources("classifies"); !slices.Equal(got, []string{"Category Two"}) {
+		t.Fatalf("re-hydrated category = %v, want only the new category", got)
+	}
+	if got := r.relationSources("appears-on"); !slices.Equal(got, []string{"Contributor Beta", "Contributor Gamma"}) {
+		t.Fatalf("credits after a category-only replace = %v, want them kept", got)
 	}
 }
 
