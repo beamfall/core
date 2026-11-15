@@ -1,10 +1,10 @@
 # Tasks (CORE-1763, CORE-1765, CORE-1766)
 
-- [ ] 1. CORE-1763 conductor: join order, host hand-off on leave, `EndParty`, stream presence and
+- [x] 1. CORE-1763 conductor: join order, host hand-off on leave, `EndParty`, stream presence and
   expiry; Go tests
-- [ ] 2. CORE-1763 sync and GraphQL: hand-off roster, `ended` signal, `leaveWatchParty(end:)`,
+- [x] 2. CORE-1763 sync and GraphQL: hand-off roster, `ended` signal, `leaveWatchParty(end:)`,
   event-stream observer and expiry timer; Go tests
-- [ ] 3. CORE-1763 web: pagehide keepalive leave, hand-off and end notices, End for everyone;
+- [x] 3. CORE-1763 web: pagehide keepalive leave, hand-off and end notices, End for everyone;
   strings; vitest
 - [ ] 4. CORE-1765 conductor and GraphQL: stored requests, `watch-party-request` notification,
   `request` signal, approve and decline on `watchPartyTransport`; Go tests

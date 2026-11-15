@@ -4,16 +4,20 @@ import {
   acceptWatchParty,
   calibrateWatchPartyClock,
   createWatchParty,
+  fetchMySessions,
   inviteToWatchParty,
   leaveWatchParty,
+  leaveWatchPartyKeepalive,
   requestWatchPartyTransport,
   watchPartyTransport,
 } from "@/lib/graphql";
 import {
+  endParty,
   getWatchParty,
   inviteToParty,
   joinWatchParty,
   leaveParty,
+  leavePartyOnPageHide,
   resetWatchPartyForTest,
   sendPartyTransport,
   startWatchParty,
@@ -28,8 +32,10 @@ vi.mock("@/lib/graphql", () => ({
   acceptWatchParty: vi.fn(),
   calibrateWatchPartyClock: vi.fn(),
   createWatchParty: vi.fn(),
+  fetchMySessions: vi.fn(),
   inviteToWatchParty: vi.fn(),
   leaveWatchParty: vi.fn(),
+  leaveWatchPartyKeepalive: vi.fn(),
   requestWatchPartyTransport: vi.fn(),
   watchPartyTransport: vi.fn(),
 }));
@@ -391,5 +397,124 @@ describe("races", () => {
     });
     await sendPartyTransport("m1", 5000, false);
     expect(getWatchParty().timeline).toMatchObject({ presentAtMS: 10_100, paused: true });
+  });
+});
+
+describe("host leave, end and page exit (CORE-1763)", () => {
+  async function member(partyID = "p3") {
+    vi.mocked(acceptWatchParty).mockImplementation(async () => {
+      deliver({ groupID: partyID, signal: "roster", paused: true, members: ["Guest", "Host"] });
+      return { partyID, item: "m1", positionMS: 0, presentAtMS: 0 };
+    });
+    await joinWatchParty(partyID);
+  }
+
+  function mySession(id: string) {
+    vi.mocked(fetchMySessions).mockResolvedValue({
+      sessions: [
+        {
+          id: "other",
+          deviceID: "d0",
+          deviceName: "",
+          deviceRole: "",
+          current: false,
+          expiresAt: "",
+        },
+        { id, deviceID: "d1", deviceName: "", deviceRole: "", current: true, expiresAt: "" },
+      ],
+      streamTokens: [],
+    } as never);
+  }
+
+  it("tells a member who the host handed the party to, without making it host", async () => {
+    await member();
+    deliver({
+      groupID: "p3",
+      signal: "roster",
+      paused: true,
+      members: ["Guest"],
+      handoff: true,
+      hostName: "Guest2",
+    });
+    expect(getWatchParty()).toMatchObject({
+      status: "active",
+      isHost: false,
+      notice: "handoff",
+      noticeName: "Guest2",
+      members: ["Guest"],
+    });
+    expect(fetchMySessions).not.toHaveBeenCalled();
+  });
+
+  it("makes this viewer host when the hand-off names its own session", async () => {
+    mySession("session-guest");
+    await member();
+    deliver({
+      groupID: "p3",
+      signal: "roster",
+      paused: true,
+      members: ["Guest"],
+      handoff: true,
+      hostName: "Guest",
+      host: "session-guest",
+    });
+    await vi.waitFor(() => expect(getWatchParty().isHost).toBe(true));
+    expect(getWatchParty().notice).toBe("handoff");
+  });
+
+  it("stays a member when the hand-off names another session of the same Profile", async () => {
+    mySession("session-guest");
+    await member();
+    deliver({
+      groupID: "p3",
+      signal: "roster",
+      paused: true,
+      handoff: true,
+      hostName: "Guest",
+      host: "session-tv",
+    });
+    await vi.waitFor(() => expect(fetchMySessions).toHaveBeenCalled());
+    await Promise.resolve();
+    expect(getWatchParty().isHost).toBe(false);
+  });
+
+  it("drops the party with a notice when the host ends it", async () => {
+    await member();
+    deliver({ groupID: "p3", signal: "ended", hostName: "Host" });
+    expect(getWatchParty()).toMatchObject({
+      status: "idle",
+      partyID: "",
+      notice: "ended",
+      noticeName: "Host",
+    });
+    expect(unsubscribe).toHaveBeenCalled();
+    expect(leaveWatchParty).not.toHaveBeenCalled();
+  });
+
+  it("ends the party for everyone only as host", async () => {
+    await member();
+    await endParty();
+    expect(leaveWatchParty).not.toHaveBeenCalled();
+    resetWatchPartyForTest();
+
+    vi.mocked(createWatchParty).mockResolvedValue({
+      partyID: "p1",
+      content: "m1",
+      relaxed: true,
+      members: [{ displayName: "Host", present: true }],
+    });
+    await startWatchParty("m1");
+    await endParty();
+    expect(getWatchParty().status).toBe("idle");
+    expect(leaveWatchParty).toHaveBeenCalledWith("p1", true);
+  });
+
+  it("leaves with a keepalive request when the page goes away", async () => {
+    await member();
+    leavePartyOnPageHide();
+    expect(leaveWatchPartyKeepalive).toHaveBeenCalledWith("p3");
+    expect(getWatchParty().status).toBe("idle");
+    leavePartyOnPageHide();
+    expect(leaveWatchPartyKeepalive).toHaveBeenCalledTimes(1);
   });
 });

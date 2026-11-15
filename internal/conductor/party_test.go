@@ -72,8 +72,8 @@ func TestLeaveParty(t *testing.T) {
 
 	// Guest leaves: cross-Profile (different profile than host). Unlike Leave,
 	// this does NOT require the caller to own the group's Profile.
-	if err := r.LeaveParty(g.ID, "guest-session"); err != nil {
-		t.Fatalf("LeaveParty(guest): %v", err)
+	if leave, err := r.LeaveParty(g.ID, "guest-session"); err != nil || leave != (PartyLeave{}) {
+		t.Fatalf("LeaveParty(guest) = %+v, %v; want no hand-off", leave, err)
 	}
 	if n := len(g.Members()); n != 1 {
 		t.Fatalf("members after guest leave = %d, want 1 (host only)", n)
@@ -83,13 +83,13 @@ func TestLeaveParty(t *testing.T) {
 	}
 
 	// Leaving as a non-member is ErrNotMember.
-	if err := r.LeaveParty(g.ID, "stranger"); err != ErrNotMember {
+	if _, err := r.LeaveParty(g.ID, "stranger"); err != ErrNotMember {
 		t.Errorf("non-member LeaveParty err = %v, want ErrNotMember", err)
 	}
 
 	// Host leaves: party dissolves because it was the last member.
-	if err := r.LeaveParty(g.ID, "host-session"); err != nil {
-		t.Fatalf("LeaveParty(host): %v", err)
+	if leave, err := r.LeaveParty(g.ID, "host-session"); err != nil || !leave.Dissolved {
+		t.Fatalf("LeaveParty(host) = %+v, %v; want dissolved", leave, err)
 	}
 	if r.GroupCount() != 0 {
 		t.Fatalf("group count after last member leaves = %d, want 0 (party dissolved)", r.GroupCount())
@@ -109,7 +109,7 @@ func TestLeavePartyRejectsAmbientGroup(t *testing.T) {
 	if err := r.Join(ag.ID, "profile-p", Member{SessionID: "s1"}); err != nil {
 		t.Fatalf("Join: %v", err)
 	}
-	if err := r.LeaveParty(ag.ID, "s1"); err != ErrNotParty {
+	if _, err := r.LeaveParty(ag.ID, "s1"); err != ErrNotParty {
 		t.Errorf("ambient-group LeaveParty err = %v, want ErrNotParty", err)
 	}
 }

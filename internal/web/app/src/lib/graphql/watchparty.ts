@@ -3,7 +3,7 @@
 // shared timeline, and leave. Forming and joining are home-network only
 // (CORE-0531); the server refuses them from anywhere else.
 
-import { graphql, postJSON } from "@/lib/api";
+import { graphql, postJSON, postKeepalive } from "@/lib/api";
 
 export interface WatchPartyParticipant {
   displayName: string;
@@ -57,7 +57,7 @@ const REQUEST_WATCH_PARTY_TRANSPORT_MUTATION =
   "mutation RequestWatchPartyTransport($partyID: String!, $item: String!, $positionMS: Int!, $paused: Boolean) { requestWatchPartyTransport(partyID: $partyID, item: $item, positionMS: $positionMS, paused: $paused) { partyID approved } }";
 
 const LEAVE_WATCH_PARTY_MUTATION =
-  "mutation LeaveWatchParty($partyID: String!) { leaveWatchParty(partyID: $partyID) { partyID } }";
+  "mutation LeaveWatchParty($partyID: String!, $end: Boolean) { leaveWatchParty(partyID: $partyID, end: $end) { partyID } }";
 
 /** CreateWatchParty — the caller's session hosts a party around `content`. */
 export async function createWatchParty(vars: {
@@ -126,11 +126,20 @@ export async function requestWatchPartyTransport(vars: {
   return data.requestWatchPartyTransport;
 }
 
-/** LeaveWatchParty — the caller's session leaves the party. */
-export async function leaveWatchParty(partyID: string): Promise<void> {
+/**
+ * LeaveWatchParty — the caller's session leaves the party. A host's leave
+ * hands the party to the member who joined first; `end` ends it for everyone.
+ */
+export async function leaveWatchParty(partyID: string, end = false): Promise<void> {
   await graphql<{ leaveWatchParty: { partyID: string } }>(LEAVE_WATCH_PARTY_MUTATION, {
     partyID,
+    ...(end ? { end: true } : {}),
   });
+}
+
+/** LeaveWatchParty sent with keepalive from pagehide, so a closing tab still leaves. */
+export function leaveWatchPartyKeepalive(partyID: string): void {
+  postKeepalive("/api/graphql", { query: LEAVE_WATCH_PARTY_MUTATION, variables: { partyID } });
 }
 
 /**

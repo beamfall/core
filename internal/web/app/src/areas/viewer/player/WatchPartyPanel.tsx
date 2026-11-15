@@ -1,14 +1,24 @@
 import { Users } from "lucide-react";
-import { type FormEvent, useId, useState } from "react";
+import { type FormEvent, useEffect, useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useT } from "@/lib/i18n";
 import type { WatchPartyPlayback } from "./useWatchParty";
-import { inviteToParty, type WatchPartyState } from "./watchPartyStore";
+import {
+  clearWatchPartyNotice,
+  endParty,
+  inviteToParty,
+  useWatchPartyState,
+  type WatchPartyState,
+} from "./watchPartyStore";
 import { driftLevel } from "./watchPartySync";
 
 // The player bar's Watch Party control (CORE-1677): start a party from the
 // title playing, invite a household Profile by name, see who is in it, leave.
+// A host can also end it for everyone (CORE-1763).
+
+/** How long a hand-off or end notice stays on the stage. */
+const NOTICE_MS = 6000;
 
 export function WatchPartyPanel({
   party,
@@ -106,9 +116,16 @@ export function WatchPartyPanel({
                   </Button>
                 </div>
               </form>
-              <Button variant="outline" size="sm" onClick={() => void onLeave()}>
-                {t("watchPartyLeave")}
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => void onLeave()}>
+                  {t("watchPartyLeave")}
+                </Button>
+                {party.isHost && (
+                  <Button variant="outline" size="sm" onClick={() => void endParty()}>
+                    {t("watchPartyEnd")}
+                  </Button>
+                )}
+              </div>
             </>
           )}
           {error && (
@@ -144,8 +161,13 @@ export function WatchPartySyncIndicator({
   onResume: () => void;
 }) {
   const t = useT();
-  if (playback === "off") return null;
-  if (needsTap) {
+  const party = useWatchPartyState();
+  useEffect(() => {
+    if (!party.notice) return;
+    const timer = setTimeout(clearWatchPartyNotice, NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [party.notice]);
+  if (playback !== "off" && needsTap) {
     return (
       <div className="absolute right-4 top-16 z-20">
         <Button size="sm" onClick={onResume}>
@@ -154,6 +176,25 @@ export function WatchPartySyncIndicator({
       </div>
     );
   }
+  if (party.notice) {
+    const name = party.noticeName;
+    const label =
+      party.notice === "ended"
+        ? t("watchPartyEnded", { name })
+        : party.isHost
+          ? t("watchPartyYouHost")
+          : t("watchPartyHandedOff", { name });
+    return (
+      <p
+        className="pointer-events-none absolute right-4 top-16 z-20 m-0 rounded-md bg-black/70 px-3 py-1 text-sm text-white"
+        role="status"
+        data-party-notice={party.notice}
+      >
+        {label}
+      </p>
+    );
+  }
+  if (playback === "off") return null;
   let label: string;
   let level = "in-sync";
   if (playback === "waiting") label = t("watchPartyWaiting");

@@ -736,12 +736,16 @@ const (
 	// so a member who joined from an invite can see who is watching and land
 	// on the live timeline (CORE-1677).
 	GroupSignalRoster = "roster"
+	// GroupSignalEnded tells every Watch Party member that the host ended the
+	// party for everyone (CORE-1763). HostName names who ended it.
+	GroupSignalEnded = "ended"
 )
 
 var groupSyncSignals = map[string]bool{
 	GroupSignalTransition: true,
 	GroupSignalNudge:      true,
 	GroupSignalRoster:     true,
+	GroupSignalEnded:      true,
 }
 
 // GroupSyncPayload is the JSON body of a group.sync outbox event.
@@ -756,7 +760,11 @@ var groupSyncSignals = map[string]bool{
 //   - nudge: Session (the one member it targets) + Rate (the signed ±0.1 %
 //     playback-rate delta); a member ignores a nudge whose Session is not its own.
 //   - roster: Members (display names) plus the transition fields for the
-//     current anchor.
+//     current anchor. A roster sent because the host left carries Handoff and
+//     HostName (the new host's display name) on every row, and Host (the new
+//     host's session) only on the row for the new host's Profile, so that
+//     session learns it now drives the party (CORE-1763).
+//   - ended: HostName, the display name of the host who ended the party.
 //
 // Paused accompanies a Watch Party transition or roster whose timeline holds at
 // Position. A Watch Party is cross-Profile, so the surface writes one row per
@@ -778,6 +786,9 @@ type GroupSyncPayload struct {
 	Rate        float64   `json:"rate,omitempty"`
 	Paused      bool      `json:"paused,omitempty"`
 	Members     []string  `json:"members,omitempty"`
+	Host        SessionID `json:"host,omitempty"`
+	HostName    string    `json:"hostName,omitempty"`
+	Handoff     bool      `json:"handoff,omitempty"`
 }
 
 // GroupSyncSignalValid reports whether signal is a member of the closed

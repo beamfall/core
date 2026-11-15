@@ -2,7 +2,7 @@ import { fireEvent, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useWatchParty } from "./useWatchParty";
 import { markViewerIntent } from "./viewerIntent";
-import { sendPartyTransport, type WatchPartyState } from "./watchPartyStore";
+import { leavePartyOnPageHide, sendPartyTransport, type WatchPartyState } from "./watchPartyStore";
 
 let party: WatchPartyState;
 
@@ -12,6 +12,7 @@ vi.mock("./watchPartyStore", () => ({
   sendPartyTransport: vi.fn(async () => {}),
   startWatchParty: vi.fn(async () => true),
   leaveParty: vi.fn(async () => {}),
+  leavePartyOnPageHide: vi.fn(),
 }));
 
 // A <video> stand-in: jsdom implements neither play() nor a settable clock.
@@ -43,6 +44,8 @@ function activeParty(timeline: WatchPartyState["timeline"]): WatchPartyState {
     offsetMS: 0,
     error: "",
     errorDetail: "",
+    notice: "",
+    noticeName: "",
   };
 }
 
@@ -144,5 +147,17 @@ describe("useWatchParty local transport", () => {
     video.play();
     expect(sendPartyTransport).toHaveBeenCalledWith("m1", 0, false);
     view.unmount();
+  });
+});
+
+describe("useWatchParty page exit", () => {
+  it("leaves the party when the tab is closed or navigated away", () => {
+    party = activeParty({ item: "m1", positionMS: 0, presentAtMS: 0, paused: true });
+    const view = mount(new FakeVideo());
+    window.dispatchEvent(new Event("pagehide"));
+    expect(leavePartyOnPageHide).toHaveBeenCalledTimes(1);
+    view.unmount();
+    window.dispatchEvent(new Event("pagehide"));
+    expect(leavePartyOnPageHide).toHaveBeenCalledTimes(1);
   });
 });

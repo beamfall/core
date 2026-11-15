@@ -23,6 +23,10 @@ export const watchPartyStrings = {
     watchPartyTapToJoin: "Tap to join playback",
     watchPartyJoin: "Join",
     watchPartyJoining: "Joining…",
+    watchPartyEnd: "End for everyone",
+    watchPartyHandedOff: "{name} is now hosting",
+    watchPartyYouHost: "You're now hosting",
+    watchPartyEnded: "{name} ended the Watch Party",
   },
   fr: {
     watchPartyButton: "Watch Party",
@@ -47,6 +51,10 @@ export const watchPartyStrings = {
     watchPartyTapToJoin: "Touchez pour rejoindre la lecture",
     watchPartyJoin: "Rejoindre",
     watchPartyJoining: "Connexion…",
+    watchPartyEnd: "Terminer pour tous",
+    watchPartyHandedOff: "{name} anime maintenant la séance",
+    watchPartyYouHost: "Vous animez maintenant la séance",
+    watchPartyEnded: "{name} a terminé la Watch Party",
   },
   de: {
     watchPartyButton: "Watch Party",
@@ -71,6 +79,10 @@ export const watchPartyStrings = {
     watchPartyTapToJoin: "Tippen, um der Wiedergabe beizutreten",
     watchPartyJoin: "Beitreten",
     watchPartyJoining: "Wird beigetreten…",
+    watchPartyEnd: "Für alle beenden",
+    watchPartyHandedOff: "{name} ist jetzt Gastgeber",
+    watchPartyYouHost: "Du bist jetzt Gastgeber",
+    watchPartyEnded: "{name} hat die Watch Party beendet",
   },
   es: {
     watchPartyButton: "Watch Party",
@@ -95,6 +107,10 @@ export const watchPartyStrings = {
     watchPartyTapToJoin: "Toca para unirte a la reproducción",
     watchPartyJoin: "Unirse",
     watchPartyJoining: "Uniéndose…",
+    watchPartyEnd: "Terminar para todos",
+    watchPartyHandedOff: "{name} ahora es el anfitrión",
+    watchPartyYouHost: "Ahora eres el anfitrión",
+    watchPartyEnded: "{name} terminó la Watch Party",
   },
   pt: {
     watchPartyButton: "Watch Party",
@@ -119,5 +135,9 @@ export const watchPartyStrings = {
     watchPartyTapToJoin: "Toque para entrar na reprodução",
     watchPartyJoin: "Entrar",
     watchPartyJoining: "Entrando…",
+    watchPartyEnd: "Encerrar para todos",
+    watchPartyHandedOff: "{name} agora é o anfitrião",
+    watchPartyYouHost: "Agora você é o anfitrião",
+    watchPartyEnded: "{name} encerrou a Watch Party",
   },
 } as const;

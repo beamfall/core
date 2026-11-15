@@ -3,6 +3,7 @@ import { lastViewerIntent, markViewerIntent } from "./viewerIntent";
 import {
   getWatchParty,
   leaveParty,
+  leavePartyOnPageHide,
   sendPartyTransport,
   startWatchParty,
   useWatchPartyState,
@@ -199,6 +200,12 @@ export function useWatchParty({
       video.removeEventListener("seeked", onLocal);
     };
   }, [active, attached, videoRef]);
+
+  // Closing the tab or navigating away leaves within seconds (CORE-1763).
+  useEffect(() => {
+    window.addEventListener("pagehide", leavePartyOnPageHide);
+    return () => window.removeEventListener("pagehide", leavePartyOnPageHide);
+  }, []);
 
   // Leaving the player leaves the party.
   useEffect(() => {

@@ -707,6 +707,15 @@ func (h *Handler) broadcastPartyRoster(ctx context.Context, partyID string) erro
 
 // broadcastPartyRosterLocked is broadcastPartyRoster for a caller holding partyMu.
 func (h *Handler) broadcastPartyRosterLocked(ctx context.Context, partyID string) error {
+	return h.broadcastPartyRosterHandoffLocked(ctx, partyID, "")
+}
+
+// broadcastPartyRosterHandoffLocked writes the roster; when newHost is set the
+// host just left and the role passed to newHost (CORE-1763). Every row then
+// carries Handoff and the new host's display name, so each member's player can
+// say who leads now, and the row for the new host's Profile also names the new
+// host session, so that session takes over the controls. A caller holds partyMu.
+func (h *Handler) broadcastPartyRosterHandoffLocked(ctx context.Context, partyID string, newHost store.SessionID) error {
 	if h.store == nil {
 		return nil
 	}
@@ -720,13 +729,19 @@ func (h *Handler) broadcastPartyRosterLocked(ctx context.Context, partyID string
 	}
 	members := g.Members()
 	names := make([]string, 0, len(members))
+	hostName := ""
 	for _, m := range members {
-		names = append(names, partyMemberDisplayName(ctx, h.store, m))
+		name := partyMemberDisplayName(ctx, h.store, m)
+		names = append(names, name)
+		if newHost != "" && m.SessionID == newHost {
+			hostName = name
+		}
 	}
 	slices.Sort(names)
+	hostProfile := g.HostProfile()
 	now := time.Now().UTC()
-	for _, profile := range partyProfiles(members, g.ProfileID) {
-		if err := h.store.AppendGroupSyncEvent(ctx, store.GroupSyncPayload{
+	for _, profile := range partyProfiles(members, hostProfile) {
+		payload := store.GroupSyncPayload{
 			GroupID:     partyID,
 			ProfileID:   profile,
 			Signal:      store.GroupSignalRoster,
@@ -735,6 +750,36 @@ func (h *Handler) broadcastPartyRosterLocked(ctx context.Context, partyID string
 			PresentAtMS: anchor.PresentAt.UnixMilli(),
 			Paused:      anchor.Paused,
 			Members:     names,
+		}
+		if newHost != "" {
+			payload.Handoff = true
+			payload.HostName = hostName
+			if profile == hostProfile {
+				payload.Host = newHost
+			}
+		}
+		if err := h.store.AppendGroupSyncEvent(ctx, payload, now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// broadcastPartyEnded tells every member of an ended party that the host ended
+// it (CORE-1763). The party is already gone from the Registry, so the members
+// come from EndParty. A caller holds partyMu.
+func (h *Handler) broadcastPartyEndedLocked(ctx context.Context, partyID string, host conductor.Member, members []conductor.Member) error {
+	if h.store == nil {
+		return nil
+	}
+	hostName := partyMemberDisplayName(ctx, h.store, host)
+	now := time.Now().UTC()
+	for _, profile := range partyProfiles(members, host.ProfileID) {
+		if err := h.store.AppendGroupSyncEvent(ctx, store.GroupSyncPayload{
+			GroupID:   partyID,
+			ProfileID: profile,
+			Signal:    store.GroupSignalEnded,
+			HostName:  hostName,
 		}, now); err != nil {
 			return err
 		}
@@ -743,14 +788,15 @@ func (h *Handler) broadcastPartyRosterLocked(ctx context.Context, partyID string
 }
 
 // partyHostProfile resolves the Profile that owns the party's host session, used
-// to address a host-approval notification. The party's ProfileID is the host's
-// Profile (set at FormParty).
+// to address a host-approval notification. It follows the host role on
+// hand-off (CORE-1763), so it is the current host's Profile, not necessarily
+// the Profile that formed the party.
 func (h *Handler) partyHostProfile(partyID string) (store.ProfileID, error) {
 	g, err := h.conductor.Party(partyID)
 	if err != nil {
 		return "", err
 	}
-	return g.ProfileID, nil
+	return g.HostProfile(), nil
 }
 
 // partyClientError maps the Registry's party errors to client-facing errors. A
@@ -768,6 +814,12 @@ type LeaveWatchPartyResult struct {
 // party dissolves when the last member leaves. Unlike leaveGroup, this path
 // does NOT assert same-Profile ownership — a Watch Party is cross-Profile by
 // design, so a guest can leave without knowing the host's Profile.
+//
+// The host has two ways out (CORE-1763). A plain leave hands the host role to
+// the member who joined first, and the roster tells everyone who leads now.
+// `end: true` ends the party for everyone: only the host may, and every member
+// receives an `ended` signal. The web viewer also sends a plain leave from
+// pagehide, so a closed tab leaves at once; partyStreamsDropped is the backstop.
 func (h *Handler) leaveWatchParty(ctx context.Context, scope auth.Scope, req request) (LeaveWatchPartyResult, error) {
 	if h.conductor == nil {
 		return LeaveWatchPartyResult{}, clientError("group conductor unavailable")
@@ -779,19 +831,87 @@ func (h *Handler) leaveWatchParty(ctx context.Context, scope auth.Scope, req req
 	if partyID == "" {
 		return LeaveWatchPartyResult{}, clientError("partyID is required")
 	}
-	if err := h.conductor.LeaveParty(partyID, scope.SessionID); err != nil {
-		return LeaveWatchPartyResult{}, partyClientError(err)
-	}
-	// Tell the remaining members; a party that dissolved has no one to tell.
-	if _, err := h.conductor.Party(partyID); err == nil {
-		if err := h.broadcastPartyRoster(ctx, partyID); err != nil {
+	if boolVar(req, "end") {
+		if err := h.endWatchParty(ctx, scope, partyID); err != nil {
 			return LeaveWatchPartyResult{}, err
 		}
+	} else if err := h.leavePartySession(ctx, partyID, scope.SessionID); err != nil {
+		return LeaveWatchPartyResult{}, partyClientError(err)
 	}
 	if err := h.logActivity(ctx, scope, store.ActivityGroupControl, "watch-party", partyID, ""); err != nil {
 		return LeaveWatchPartyResult{}, err
 	}
 	return LeaveWatchPartyResult{PartyID: partyID}, nil
+}
+
+// leavePartySession removes session from the party and tells the members who
+// remain, handing the host role on when the host left. It holds partyMu so the
+// leave and its roster stay in order with every other party fan-out.
+func (h *Handler) leavePartySession(ctx context.Context, partyID string, session store.SessionID) error {
+	h.partyMu.Lock()
+	defer h.partyMu.Unlock()
+	leave, err := h.conductor.LeaveParty(partyID, session)
+	if err != nil {
+		return err
+	}
+	// A party that dissolved has no one to tell.
+	if leave.Dissolved {
+		return nil
+	}
+	return h.broadcastPartyRosterHandoffLocked(ctx, partyID, leave.NewHost)
+}
+
+// endWatchParty ends the caller's party for everyone. Only the host may.
+func (h *Handler) endWatchParty(ctx context.Context, scope auth.Scope, partyID string) error {
+	h.partyMu.Lock()
+	defer h.partyMu.Unlock()
+	members, err := h.conductor.EndParty(partyID, scope.SessionID)
+	if err != nil {
+		return partyClientError(err)
+	}
+	host := conductor.Member{SessionID: scope.SessionID, ProfileID: scope.ProfileID}
+	return h.broadcastPartyEndedLocked(ctx, partyID, host, members)
+}
+
+// partyStreamGrace is how long a party member's event stream may stay closed
+// before the member is removed (CORE-1763). An EventSource reconnects within a
+// few seconds, so a reconnect never expires a member; a closed tab whose
+// pagehide leave was lost is gone within this window.
+const partyStreamGrace = 20 * time.Second
+
+// EventStreamOpened records that session opened an event stream. The server's
+// event surface calls it for every session stream (CORE-1763 presence).
+func (h *Handler) EventStreamOpened(session store.SessionID) {
+	if h.conductor != nil {
+		h.conductor.StreamOpened(session)
+	}
+}
+
+// EventStreamClosed records that session closed an event stream. When that was
+// the last stream of a party member, it schedules an expiry sweep for after the
+// grace window.
+func (h *Handler) EventStreamClosed(session store.SessionID) {
+	if h.conductor == nil || !h.conductor.StreamClosed(session) || !h.conductor.SessionInParty(session) {
+		return
+	}
+	time.AfterFunc(partyStreamGrace+time.Second, func() {
+		h.partyStreamsDropped(context.Background(), partyStreamGrace)
+	})
+}
+
+// partyStreamsDropped removes every party member whose last event stream has
+// stayed closed for grace, and tells the members who remain, exactly as if the
+// member had left (host hand-off included).
+func (h *Handler) partyStreamsDropped(ctx context.Context, grace time.Duration) {
+	h.partyMu.Lock()
+	defer h.partyMu.Unlock()
+	for _, expired := range h.conductor.ExpireDisconnected(grace) {
+		if expired.Leave.Dissolved {
+			continue
+		}
+		// Best effort: the next roster or transition re-states the party.
+		_ = h.broadcastPartyRosterHandoffLocked(ctx, expired.PartyID, expired.Leave.NewHost)
+	}
 }
 
 // missing party and a non-party group both collapse to "unknown party" so the
