@@ -77,7 +77,12 @@ func newTVDBServer(t *testing.T) *tvdbServer {
 		return "search-all.json"
 	})
 	authorized("/series/700303/extended", func(*http.Request) string { return "series-extended.json" })
-	authorized("/search/remoteid/", func(*http.Request) string { return "remoteid.json" })
+	authorized("/search/remoteid/", func(r *http.Request) string {
+		if r.URL.Path == "/search/remoteid/tt0700303" {
+			return "remoteid.json"
+		}
+		return "remoteid-none.json"
+	})
 	authorized("/artwork/types", func(*http.Request) string { return "artwork-types.json" })
 	s.server = httptest.NewServer(mux)
 	t.Cleanup(s.server.Close)
@@ -124,12 +129,12 @@ func tvdbSpec(endpoint string) plugin.ScraperSpec {
 			"imdb": "/search/remoteid/{id}",
 		},
 		FieldMap: map[string]string{
-			"title":   "data.translations.nameTranslations[language={config.metadata-language}].name||data.name||data.0.series.name",
-			"summary": "data.translations.overviewTranslations[language={config.metadata-language}].overview||data.overview||data.0.series.overview",
-			"year":    "data.year||data.0.series.year",
+			"title":   "data.translations.nameTranslations[language={config.metadata-language}].name||data.name",
+			"summary": "data.translations.overviewTranslations[language={config.metadata-language}].overview||data.overview",
+			"year":    "data.year",
 		},
 		ArtworkMap: map[string]string{
-			"poster":   "data.image||data.0.series.image",
+			"poster":   "data.image",
 			"backdrop": artwork("background"),
 			"banner":   artwork("banner"),
 			"logo":     artwork("clearlogo"),
@@ -140,7 +145,7 @@ func tvdbSpec(endpoint string) plugin.ScraperSpec {
 func tvdbExtensions(plugin.ScraperSpec) plugin.ScraperExtensions {
 	return plugin.ScraperExtensions{ReferenceDocuments: map[string]plugin.ReferenceDocument{
 		"artwork-types": {Path: "/artwork/types"},
-	}}
+	}, LookupByIDRecordIDPath: "data.0.series.id"}
 }
 
 func newTVDBEngine(credentials CredentialSource, language string) *Engine {
@@ -310,8 +315,9 @@ func TestTVDBLookupUsesConfiguredLanguageWithOriginalFallback(t *testing.T) {
 	}
 }
 
-// CORE-1128 AC: a remote id (IMDb here) resolves through /search/remoteid and
-// maps through the same field and artwork maps as a direct lookup.
+// CORE-1128 AC: a remote id (IMDb here) resolves through /search/remoteid to
+// the TVDB series id, then maps that series' extended record exactly like a
+// direct lookup: translated title and summary, and the extra artwork types.
 func TestTVDBRemoteIDLookupResolvesTheSeries(t *testing.T) {
 	server := newTVDBServer(t)
 	engine := newTVDBEngine(pinCredentials(), "eng")
@@ -319,14 +325,17 @@ func TestTVDBRemoteIDLookupResolvesTheSeries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Fields["title"] != "Faro del Norte" || fmt.Sprint(result.Fields["year"]) != "2019" {
-		t.Fatalf("remote-id fields = %v", result.Fields)
+	if result.Fields["title"] != "North Beacon" || result.Fields["summary"] != "A lighthouse keeper watches the coast." || fmt.Sprint(result.Fields["year"]) != "2019" {
+		t.Fatalf("remote-id fields = %v, want the extended record's English translation", result.Fields)
 	}
-	if result.Artwork["poster"] != "https://artworks.example.org/posters/700303.jpg" {
-		t.Fatalf("remote-id poster = %q", result.Artwork["poster"])
+	if result.Artwork["poster"] != "https://artworks.example.org/posters/700303.jpg" || result.Artwork["backdrop"] == "" {
+		t.Fatalf("remote-id artwork = %v, want the poster and extra artwork types", result.Artwork)
 	}
-	if server.count("/search/remoteid/tt0700303") != 1 {
-		t.Fatalf("remote-id endpoint calls = %v", server.counts)
+	if server.count("/search/remoteid/tt0700303") != 1 || server.count("/series/700303/extended") != 1 {
+		t.Fatalf("remote-id calls = %v, want one remote-id and one extended lookup", server.counts)
+	}
+	if _, err := engine.LookupByID(context.Background(), tvdbSpec(server.server.URL), "imdb", "tt0000000", pluginVars(0)); err == nil {
+		t.Fatal("an unknown remote id resolved, want an error")
 	}
 	if _, err := engine.LookupByID(context.Background(), tvdbSpec(server.server.URL), "undeclared", "1", pluginVars(0)); err == nil {
 		t.Fatal("undeclared id provider did not error")

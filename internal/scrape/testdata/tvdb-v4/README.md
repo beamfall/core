@@ -12,5 +12,6 @@ used. Every series name, overview and id is invented.
 | `search-all.json` | `GET /search?query=Harbor Lights&type=series` |
 | `search-2021.json` | `GET /search?query=Harbor Lights&type=series&year=2021` |
 | `series-extended.json` | `GET /series/{id}/extended?meta=translations` |
-| `remoteid.json` | `GET /search/remoteid/{id}` |
+| `remoteid.json` | `GET /search/remoteid/{id}` (a `SeriesBaseRecord`: translations are language codes only, no overview) |
+| `remoteid-none.json` | `GET /search/remoteid/{id}` for an id TheTVDB does not know |
 | `artwork-types.json` | `GET /artwork/types` |

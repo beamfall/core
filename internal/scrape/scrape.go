@@ -383,8 +383,11 @@ func (e *Engine) Lookup(ctx context.Context, spec plugin.ScraperSpec, id string,
 
 // LookupByID executes spec's LookupByIDTemplate for provider (an external id
 // namespace the source can resolve) with {id} replaced by id, and maps the
-// document exactly like Lookup. A provider the scraper does not declare is
-// an error; rss scrapers have no id lookups.
+// document exactly like Lookup. When the scraper declares an id-lookup record
+// path, the document only resolves the scraper's own record id and the
+// result is the LookupTemplate lookup of that id, so an external id yields
+// the same full record as a search match. A provider the scraper does not
+// declare is an error; rss scrapers have no id lookups.
 func (e *Engine) LookupByID(ctx context.Context, spec plugin.ScraperSpec, provider, id string, vars ...Variables) (Result, error) {
 	template := spec.LookupByIDTemplate[provider]
 	if template == "" {
@@ -398,7 +401,23 @@ func (e *Engine) LookupByID(ctx context.Context, spec plugin.ScraperSpec, provid
 	if err != nil {
 		return Result{}, err
 	}
-	return e.lookupDocument(ctx, spec, template, id, v, config)
+	recordIDPath := e.extensions(spec).LookupByIDRecordIDPath
+	if recordIDPath == "" {
+		return e.lookupDocument(ctx, spec, template, id, v, config)
+	}
+	if spec.Kind != "http-json" || spec.LookupTemplate == "" {
+		return Result{}, fmt.Errorf("scrape: scraper %q: an id-lookup record path needs an http-json LookupTemplate", spec.ID)
+	}
+	root, err := e.fetchJSONDocument(ctx, spec, template, "{id}", id, v, config, 0)
+	if err != nil {
+		return Result{}, err
+	}
+	raw, ok := resolveAlternatives(recordIDPath, func(path string) (any, bool) { return resolveJSONScalar(root, path) })
+	recordID, _ := jsonScalar(raw)
+	if !ok || recordID == "" {
+		return Result{}, fmt.Errorf("scrape: scraper %q: %q id %q resolved to no record", spec.ID, provider, id)
+	}
+	return e.lookupDocument(ctx, spec, spec.LookupTemplate, recordID, v, config)
 }
 
 // lookupDocument fetches one http-json or http-graphql document from template

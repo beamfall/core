@@ -61,3 +61,20 @@ The engine SHALL reuse a login-bearer token for 27 days and SHALL log in again a
 
 - **WHEN** a second scrape runs a week after the first
 - **THEN** no new login request is sent
+
+### Requirement: External-id lookups resolve to the full record
+
+When a scraper declares an id-lookup record path, an external-id lookup SHALL read only the
+scraper's own record id from the `LookupByIDTemplate` document and SHALL map the `LookupTemplate`
+document of that id. An external id that resolves to no record SHALL be an error.
+
+#### Scenario: IMDb id on TheTVDB
+
+- **WHEN** an IMDb id is looked up and `/search/remoteid/{id}` returns series 700303
+- **THEN** the engine fetches `/series/700303/extended?meta=translations` and maps its translated
+  title, summary and extra artwork
+
+#### Scenario: Unknown external id
+
+- **WHEN** `/search/remoteid/{id}` returns no records
+- **THEN** the lookup fails rather than mapping an empty document
