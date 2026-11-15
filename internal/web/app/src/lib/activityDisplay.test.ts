@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { formatMessage } from "@/lib/i18n";
+import { type Locale, STRINGS } from "@/strings";
 import {
   ACTIVITY_CATEGORIES,
   ACTIVITY_CATEGORY_LABELS,
@@ -13,7 +15,15 @@ import {
   formatUtcTime,
   humanizeActivityKey,
   parseActivityTime,
+  type Translate,
 } from "./activityDisplay";
+
+// The same lookup useT performs, bound to one locale's resolved table.
+function translator(locale: Locale): Translate {
+  return (key, values) => formatMessage(STRINGS[locale][key], values, locale);
+}
+
+const t = translator("en");
 
 // The server's closed action vocabulary, read from its Go source (vitest runs
 // from internal/web/app).
@@ -29,6 +39,7 @@ const names: ActivityNames = {
   ]),
   devices: new Map([["d-tv", "Living Room TV"]]),
   libraries: new Map([["lib-films", "Films"]]),
+  media: new Map([["m-film", "Night Train"]]),
 };
 
 const base = { id: "1", occurredAt: "2026-11-12T03:23:23Z" };
@@ -55,15 +66,27 @@ describe("activity labels", () => {
     }
   });
 
-  it("leaves no placeholder behind, with or without names", () => {
-    for (const action of Object.keys(ACTIVITY_LABELS)) {
-      for (const entry of [
-        { ...base, action },
-        { ...base, action, profileID: "p-alex", targetType: "media", targetID: "m-1" },
-      ]) {
-        const { sentence } = describeActivity(entry, names);
-        expect(sentence, action).not.toMatch(/[{}]/);
-        expect(sentence, action).toMatch(/^[A-Z]/);
+  it("names every sentence and category in the localized catalog", () => {
+    for (const [action, entry] of Object.entries(ACTIVITY_LABELS)) {
+      expect(STRINGS.en[entry.sentence], action).toBeTruthy();
+      if (entry.noun) expect(STRINGS.en[entry.noun], action).toBeTruthy();
+    }
+  });
+
+  it("leaves no placeholder behind in any locale, with or without names", () => {
+    for (const locale of Object.keys(STRINGS) as Locale[]) {
+      const tl = translator(locale);
+      for (const action of Object.keys(ACTIVITY_LABELS)) {
+        for (const entry of [
+          { ...base, action },
+          { ...base, action, profileID: "p-alex", targetType: "media", targetID: "m-1" },
+          { ...base, action, tokenID: "tok-1", targetType: "media", targetID: "m-film" },
+        ]) {
+          const { sentence, categoryLabel } = describeActivity(entry, tl, names);
+          expect(sentence, `${locale} ${action}`).not.toMatch(/[{}]/);
+          expect(sentence, `${locale} ${action}`).toMatch(/^\p{Lu}/u);
+          expect(categoryLabel, `${locale} ${action}`).toBeTruthy();
+        }
       }
     }
   });
@@ -73,18 +96,55 @@ describe("describeActivity", () => {
   it("says who did what", () => {
     const row = describeActivity(
       { ...base, action: "media.trash", profileID: "p-alex", targetType: "media", targetID: "m-1" },
+      t,
       names,
     );
     expect(row).toMatchObject({
       sentence: "Alex moved an item to Trash",
       category: "library",
+      categoryLabel: "Library & media",
       known: true,
     });
   });
 
+  it("names a media item whose title the viewer may see", () => {
+    const media = { ...base, profileID: "p-alex", targetType: "media" };
+    expect(
+      describeActivity({ ...media, action: "media.trash", targetID: "m-film" }, t, names).sentence,
+    ).toBe("Alex moved Night Train to Trash");
+    // A hidden item has no title in the names, so it keeps the generic noun.
+    expect(
+      describeActivity({ ...media, action: "media.restore", targetID: "m-hidden" }, t, names)
+        .sentence,
+    ).toBe("Alex restored an item from Trash");
+    // Only a Media target is looked up by Media id.
+    expect(
+      describeActivity(
+        { ...media, action: "media.trash", targetType: "library", targetID: "m-film" },
+        t,
+        names,
+      ).sentence,
+    ).toBe("Alex moved an item to Trash");
+  });
+
+  it("writes the sentence in the viewer's language", () => {
+    const entry = {
+      ...base,
+      action: "media.trash",
+      profileID: "p-alex",
+      targetType: "media",
+      targetID: "m-film",
+    };
+    const fr = describeActivity(entry, translator("fr"), names);
+    expect(fr.sentence).toContain("Alex");
+    expect(fr.sentence).toContain("Night Train");
+    expect(fr.sentence).not.toBe(describeActivity(entry, t, names).sentence);
+    expect(fr.categoryLabel).toBe(STRINGS.fr.activityCategoryLibrary);
+  });
+
   it("names the profile, device, library, plugin or settings area acted on", () => {
     const describe = (entry: object) =>
-      describeActivity({ ...base, profileID: "p-alex", action: "", ...entry }, names).sentence;
+      describeActivity({ ...base, profileID: "p-alex", action: "", ...entry }, t, names).sentence;
     expect(describe({ action: "profile.owner_transfer", targetID: "p-sam" })).toBe(
       "Alex made Sam the owner",
     );
@@ -104,16 +164,16 @@ describe("describeActivity", () => {
   });
 
   it("attributes a change made with an API credential", () => {
-    expect(describeActivity({ ...base, action: "trash.purge", tokenID: "tok-1" }).sentence).toBe(
+    expect(describeActivity({ ...base, action: "trash.purge", tokenID: "tok-1" }, t).sentence).toBe(
       "An API token permanently emptied Trash",
     );
-    expect(describeActivity({ ...base, action: "trash.purge" }).sentence).toBe(
+    expect(describeActivity({ ...base, action: "trash.purge" }, t).sentence).toBe(
       "Someone permanently emptied Trash",
     );
   });
 
   it("falls back to a readable form of an unknown key", () => {
-    const row = describeActivity({ ...base, action: "widget.frobnicate_all" }, names);
+    const row = describeActivity({ ...base, action: "widget.frobnicate_all" }, t, names);
     expect(row).toMatchObject({
       sentence: "Widget frobnicate all",
       category: "other",
@@ -124,7 +184,7 @@ describe("describeActivity", () => {
 
   it("matches a search on the sentence, the raw key and names", () => {
     const entry = { ...base, action: "media.trash", profileID: "p-alex", libraryID: "lib-films" };
-    const row = describeActivity(entry, names);
+    const row = describeActivity(entry, t, names);
     for (const query of ["trash", "ALEX", "media.trash", "films", "  "]) {
       expect(activityMatches(entry, row, query), query).toBe(true);
     }

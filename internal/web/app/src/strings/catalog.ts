@@ -1,4 +1,9 @@
 import { accessBulkStrings } from "./access-bulk";
+import { activityLibraryStrings } from "./activity-library";
+import { activityMediaStrings } from "./activity-media";
+import { activityPageStrings } from "./activity-page";
+import { activityPluginStrings } from "./activity-plugins";
+import { activitySecurityStrings } from "./activity-security";
 import { appShellStrings } from "./app-shell";
 import { backupRetentionStrings } from "./backup-retention";
 import { backupRetentionExportStrings } from "./backup-retention-export";
@@ -134,6 +139,11 @@ export const en = {
   ...serverLogStrings.en,
   ...stagedRestoreStrings.en,
   ...miniPlayerStrings.en,
+  ...activityPageStrings.en,
+  ...activitySecurityStrings.en,
+  ...activityLibraryStrings.en,
+  ...activityMediaStrings.en,
+  ...activityPluginStrings.en,
 } as const;
 
 export const fr = {
@@ -204,6 +214,11 @@ export const fr = {
   ...serverLogStrings.fr,
   ...stagedRestoreStrings.fr,
   ...miniPlayerStrings.fr,
+  ...activityPageStrings.fr,
+  ...activitySecurityStrings.fr,
+  ...activityLibraryStrings.fr,
+  ...activityMediaStrings.fr,
+  ...activityPluginStrings.fr,
 } as const;
 
 export const de = {
@@ -274,6 +289,11 @@ export const de = {
   ...serverLogStrings.de,
   ...stagedRestoreStrings.de,
   ...miniPlayerStrings.de,
+  ...activityPageStrings.de,
+  ...activitySecurityStrings.de,
+  ...activityLibraryStrings.de,
+  ...activityMediaStrings.de,
+  ...activityPluginStrings.de,
 } as const;
 
 export const es = {
@@ -344,6 +364,11 @@ export const es = {
   ...serverLogStrings.es,
   ...stagedRestoreStrings.es,
   ...miniPlayerStrings.es,
+  ...activityPageStrings.es,
+  ...activitySecurityStrings.es,
+  ...activityLibraryStrings.es,
+  ...activityMediaStrings.es,
+  ...activityPluginStrings.es,
 } as const;
 
 export const pt = {
@@ -414,4 +439,9 @@ export const pt = {
   ...serverLogStrings.pt,
   ...stagedRestoreStrings.pt,
   ...miniPlayerStrings.pt,
+  ...activityPageStrings.pt,
+  ...activitySecurityStrings.pt,
+  ...activityLibraryStrings.pt,
+  ...activityMediaStrings.pt,
+  ...activityPluginStrings.pt,
 } as const;

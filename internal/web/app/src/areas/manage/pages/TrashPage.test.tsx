@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchActivityLog, fetchTrashList, purgeTrash, restoreMedia } from "@/lib/graphql";
+import { fetchActivityRecords, fetchTrashList, purgeTrash, restoreMedia } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { TrashPage } from "./TrashPage";
 
@@ -10,7 +10,7 @@ vi.mock("@/lib/graphql", () => ({
   fetchTrashList: vi.fn(),
   restoreMedia: vi.fn(),
   purgeTrash: vi.fn(),
-  fetchActivityLog: vi.fn(),
+  fetchActivityRecords: vi.fn(),
 }));
 
 beforeEach(() => {
@@ -20,7 +20,7 @@ beforeEach(() => {
   ]);
   vi.mocked(restoreMedia).mockResolvedValue([]);
   vi.mocked(purgeTrash).mockResolvedValue({ affected: 3 });
-  vi.mocked(fetchActivityLog).mockResolvedValue([
+  vi.mocked(fetchActivityRecords).mockResolvedValue([
     {
       id: "1",
       occurredAt: "2026-06-14T14:02:00Z",

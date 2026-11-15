@@ -93,7 +93,7 @@ vi.mock("@/lib/graphql", () => ({
     ]),
   restoreMedia: vi.fn().mockResolvedValue([]),
   purgeTrash: vi.fn().mockResolvedValue({ affected: 0 }),
-  fetchActivityLog: vi.fn().mockResolvedValue([]),
+  fetchActivityRecords: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("@/lib/session", () => ({

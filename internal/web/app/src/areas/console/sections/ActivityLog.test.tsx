@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchDevices, fetchLibraries, fetchProfilesAdmin } from "@/lib/graphql";
 import { type ActivityRecord, fetchActivityRecords } from "@/lib/graphql/activity";
+import { fetchMediaRows } from "@/lib/graphql/browse";
 import { I18nProvider } from "@/lib/i18n";
 import { ActivityLog } from "./ActivityLog";
 
@@ -12,7 +13,9 @@ vi.mock("@/lib/graphql", () => ({
   fetchLibraries: vi.fn(),
   fetchProfilesAdmin: vi.fn(),
 }));
-vi.mock("@/lib/graphql/activity", () => ({ fetchActivityRecords: vi.fn() }));
+// A page of three: the three fixture entries fill it, so an older page may exist.
+vi.mock("@/lib/graphql/activity", () => ({ ACTIVITY_PAGE_SIZE: 3, fetchActivityRecords: vi.fn() }));
+vi.mock("@/lib/graphql/browse", () => ({ fetchMediaRows: vi.fn() }));
 
 const entries: ActivityRecord[] = [
   {
@@ -38,7 +41,10 @@ function renderLog() {
 }
 
 beforeEach(() => {
+  vi.mocked(fetchActivityRecords).mockReset();
   vi.mocked(fetchActivityRecords).mockResolvedValue(entries);
+  vi.mocked(fetchMediaRows).mockReset();
+  vi.mocked(fetchMediaRows).mockResolvedValue({});
   vi.mocked(fetchProfilesAdmin).mockResolvedValue([
     { id: "p-alex", name: "Alex", kind: "owner", libraryIDs: [], disabled: false },
   ]);
@@ -99,7 +105,7 @@ describe("Console Activity log", () => {
 
     expect(screen.getByText("Alex unlocked the Console")).toBeInTheDocument();
     expect(screen.queryByText("Alex moved an item to Trash")).not.toBeInTheDocument();
-    expect(screen.getByText("Showing 1 of the latest 3 events")).toBeInTheDocument();
+    expect(screen.getByText("Showing 1 of 3 loaded events")).toBeInTheDocument();
 
     await user.click(filters.getByRole("button", { name: "All" }));
     expect(screen.getByText("Alex moved an item to Trash")).toBeInTheDocument();
@@ -126,5 +132,68 @@ describe("Console Activity log", () => {
     expect(
       await screen.findByText("A profile that no longer exists moved an item to Trash"),
     ).toBeInTheDocument();
+  });
+
+  it("names a media item when its title is visible to the viewer", async () => {
+    vi.mocked(fetchMediaRows).mockResolvedValue({
+      "m-1": { id: "m-1", title: "Night Train", favorited: false },
+    });
+    renderLog();
+
+    expect(await screen.findByText("Alex moved Night Train to Trash")).toBeInTheDocument();
+    expect(vi.mocked(fetchMediaRows).mock.calls[0][0]).toEqual(["m-1"]);
+  });
+
+  it("loads events older than the first page on request", async () => {
+    const older: ActivityRecord[] = [
+      { id: "0", occurredAt: "2026-11-10T09:00:00Z", action: "trash.purge", profileID: "p-alex" },
+    ];
+    vi.mocked(fetchActivityRecords).mockImplementation(async (_signal, offset = 0) =>
+      offset === 0 ? entries : older,
+    );
+    const user = userEvent.setup();
+    renderLog();
+
+    await user.click(await screen.findByRole("button", { name: "Load older events" }));
+
+    expect(await screen.findByText("Alex permanently emptied Trash")).toBeInTheDocument();
+    expect(vi.mocked(fetchActivityRecords).mock.calls.at(-1)?.[1]).toBe(entries.length);
+    expect(screen.getByText("Showing 4 of 4 loaded events")).toBeInTheDocument();
+    // The short page was the last one, so nothing older remains to load.
+    expect(screen.queryByRole("button", { name: "Load older events" })).not.toBeInTheDocument();
+  });
+
+  it("offers no older events when the first page is the whole log", async () => {
+    vi.mocked(fetchActivityRecords).mockResolvedValue(entries.slice(0, 2));
+    renderLog();
+
+    expect(await screen.findByText("Alex moved an item to Trash")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Load older events" })).not.toBeInTheDocument();
+  });
+
+  it("says so when older events cannot be loaded, and keeps the loaded ones", async () => {
+    vi.mocked(fetchActivityRecords).mockImplementation(async (_signal, offset = 0) => {
+      if (offset === 0) return entries;
+      throw new Error("offline");
+    });
+    const user = userEvent.setup();
+    renderLog();
+
+    await user.click(await screen.findByRole("button", { name: "Load older events" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not load older events.");
+    expect(screen.getByText("Alex moved an item to Trash")).toBeInTheDocument();
+  });
+
+  it("writes the page in the viewer's language", async () => {
+    render(
+      <I18nProvider initialLocale="fr">
+        <ActivityLog />
+      </I18nProvider>,
+    );
+
+    expect(await screen.findByRole("group", { name: "Catégorie" })).toBeInTheDocument();
+    expect(screen.queryByText("Alex moved an item to Trash")).not.toBeInTheDocument();
+    expect(screen.getByText("3 événements affichés sur 3 chargés")).toBeInTheDocument();
   });
 });

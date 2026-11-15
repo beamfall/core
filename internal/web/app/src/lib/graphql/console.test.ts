@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAdminEpochSignal, withAdminEpoch } from "@/areas/console/adminEpoch";
+import { ACTIVITY_PAGE_SIZE, fetchActivityRecords } from "./activity";
 import {
   cancelJob,
   checkRemoteAccessReachability,
@@ -10,7 +11,6 @@ import {
   disableProfile,
   evictPlaybackRenditionCache,
   fetchAccessSchedule,
-  fetchActivityLog,
   fetchAPIKeys,
   fetchAPITokens,
   fetchCapabilityStates,
@@ -126,7 +126,7 @@ const CONSOLE_READS: [string, (signal: AbortSignal) => Promise<unknown>][] = [
   ["fetchQBittorrentIngest", (s) => fetchQBittorrentIngest(s)],
   ["fetchAPITokens", (s) => fetchAPITokens(s)],
   ["fetchAPIKeys", (s) => fetchAPIKeys(s)],
-  ["fetchActivityLog", (s) => fetchActivityLog(s)],
+  ["fetchActivityRecords", (s) => fetchActivityRecords(s)],
   ["fetchRetentionRules", (s) => fetchRetentionRules(s)],
   ["fetchUpdateStatus", (s) => fetchUpdateStatus(s)],
   ["fetchProfilesAdmin", (s) => fetchProfilesAdmin(s)],
@@ -235,6 +235,18 @@ describe("console GraphQL requests", () => {
     expect(recorded[1].query).toContain("$remoteMaxBitrate: Int");
     expect(recorded[1].query).toContain("remoteMaxBitrate: $remoteMaxBitrate");
     expect(recorded[1].variables).toEqual({ remoteMaxBitrate: 4_000_000 });
+  });
+
+  it("pages the activity log through limit and offset variables (CORE-1208)", async () => {
+    // The server reads limit and offset only from variables; an inline
+    // argument would be ignored and every page would hold the default 50.
+    await fetchActivityRecords(undefined, ACTIVITY_PAGE_SIZE);
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].query).toContain("activityLog(limit: $limit, offset: $offset)");
+    expect(recorded[0].variables).toEqual({
+      limit: ACTIVITY_PAGE_SIZE,
+      offset: ACTIVITY_PAGE_SIZE,
+    });
   });
 
   it("cancelJob sends JobCancel(id)", async () => {

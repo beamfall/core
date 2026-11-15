@@ -10,7 +10,6 @@ import { graphql } from "@/lib/api";
 import type {
   AccessScheduleInfo,
   AccessWindowInput,
-  ActivityEntryInfo,
   APITokenInfo,
   CapabilityStateInfo,
   CertificationCeilingResult,
@@ -799,21 +798,6 @@ export async function createAPIKey(
     signal,
   );
   return data.createApiKey;
-}
-
-// --- Activity log (ADR-0012) ----------------------------------------------
-
-const ACTIVITY_LOG_QUERY =
-  "query ActivityLog { activityLog(limit: 50) { id occurredAt action reversible targetType targetID } }";
-
-/** ActivityLog — the append-only, reveal-filtered activity log (latest 50). */
-export async function fetchActivityLog(signal?: AbortSignal): Promise<ActivityEntryInfo[]> {
-  const data = await graphql<{ activityLog: ActivityEntryInfo[] | null }>(
-    ACTIVITY_LOG_QUERY,
-    {},
-    signal,
-  );
-  return data.activityLog ?? [];
 }
 
 // --- Profile administration (ADR-0086 — Admin-Session-gated) --------------
