@@ -263,6 +263,17 @@ func (r *Runner) SetHardwareAccel(accel HWAccel, hevc bool) {
 	r.hwHEVC = false
 }
 
+// renditionHWAccel is the accelerator a rendition encodes on. An HEVC
+// rendition whose HEVC encoder the probe did not verify gets none, so its
+// upload filters, tone-map backend and encoder all take the software path
+// together instead of launching an unverified hevc_* encoder (CORE-2088).
+func (r *Runner) renditionHWAccel(rendition Rendition) HWAccel {
+	if rendition.VideoCodec == "hevc" && !r.hwHEVC {
+		return ""
+	}
+	return r.hwAccel
+}
+
 //io:ignore — in-memory capability check, not an I/O operation (cmd/ioe2e ledger).
 func (r *Runner) SupportsTranscodeCodec(codec string) bool {
 	switch codec {
@@ -1262,10 +1273,6 @@ type Rendition struct {
 	// while still allowing stream index 0 to be selected.
 	burnSubtitleIndex int
 	hwAccel           HWAccel
-	// hwHEVC reports that the probe verified hwAccel's HEVC encoder. An HEVC
-	// request without it takes the libx264 path, exactly as it does with no
-	// accelerator, so an unverified hevc_* encoder is never launched (CORE-2088).
-	hwHEVC bool
 	// toneMapAccel is the accelerator the HDR→SDR transform itself runs on.
 	// It is NOT hwAccel: the encoder may be hardware while the tone-map is
 	// software (that is the shipped behaviour), and ADR-0075 Amendment
@@ -1372,11 +1379,8 @@ func (r Rendition) videoArgs() []string {
 	if r.CopyVideo {
 		return []string{"-c:v", "copy"}
 	}
-	// Unverified HEVC takes the libx264 fallback below.
-	if r.VideoCodec != "hevc" || r.hwHEVC {
-		if encoder := hwAccelVideoEncoder(r.hwAccel, r.VideoCodec); encoder != "" {
-			return []string{"-c:v", encoder}
-		}
+	if encoder := hwAccelVideoEncoder(r.hwAccel, r.VideoCodec); encoder != "" {
+		return []string{"-c:v", encoder}
 	}
 	return []string{
 		"-c:v", "libx264",
@@ -2149,8 +2153,7 @@ func (r *Runner) startHLS(ctx context.Context, src, dir string, rendition Rendit
 		return nil, errors.New("ffmpeg: " + reason)
 	}
 	if !rendition.AudioOnly {
-		rendition = rendition.withHWAccel(r.hwAccel)
-		rendition.hwHEVC = r.hwHEVC
+		rendition = rendition.withHWAccel(r.renditionHWAccel(rendition))
 		rendition = rendition.withToneMapAccel(selectRenditionToneMapBackend(rendition))
 	}
 	ffmpegPath, err := exec.LookPath("ffmpeg")
@@ -2320,8 +2323,7 @@ func (r *Runner) startHLSSegmentProcess(ctx context.Context, src, dir string, re
 		return nil, errors.New("ffmpeg: an adjusted encode must be audio-only or a composed picture")
 	}
 	if !rendition.AudioOnly {
-		rendition = rendition.withHWAccel(r.hwAccel)
-		rendition.hwHEVC = r.hwHEVC
+		rendition = rendition.withHWAccel(r.renditionHWAccel(rendition))
 		rendition = rendition.withToneMapAccel(selectRenditionToneMapBackend(rendition))
 	}
 	ffmpegPath, err := exec.LookPath("ffmpeg")

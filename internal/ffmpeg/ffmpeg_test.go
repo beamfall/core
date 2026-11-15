@@ -692,7 +692,7 @@ func TestRenditionHEVCHardwareVideoArgs(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := (Rendition{VideoCodec: "hevc", hwAccel: tc.accel, hwHEVC: true}).videoArgs(); !equalArgs(got, tc.want) {
+			if got := (Rendition{VideoCodec: "hevc", hwAccel: tc.accel}).videoArgs(); !equalArgs(got, tc.want) {
 				t.Fatalf("videoArgs = %v, want %v", got, tc.want)
 			}
 		})
