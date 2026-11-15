@@ -37,11 +37,15 @@ const keyframeProbeTimeout = 5 * time.Minute
 const keyframeCacheEntries = 64
 
 // keyframeTimeline is the audio-copy rung's segment layout. Copied video can
-// only start at a keyframe, so segment i spans starts[i] to starts[i+1] (the
-// last one to end) instead of a uniform grid: each segment is one GOP, and a
-// restart at segment i begins exactly where the playlist says it does.
+// only start at a keyframe, so the encoder writes one file per GOP: encoder
+// segment i spans starts[i] to starts[i+1] (the last one to end), and a restart
+// at segment i begins exactly at that keyframe. The playlist merges
+// consecutive GOPs up to the target segment length (CORE-1843): playlist
+// segment j is GOPs groups[j] up to groups[j+1], so a short-GOP source does not
+// list one segment per GOP.
 type keyframeTimeline struct {
 	starts []time.Duration
+	groups []int
 	end    time.Duration
 }
 
@@ -66,10 +70,45 @@ func newKeyframeTimeline(index ffmpeg.KeyframeIndex) *keyframeTimeline {
 		}
 		starts = append(starts, k)
 	}
-	return &keyframeTimeline{starts: starts, end: end}
+	target := time.Duration(audioCopySegmentSeconds) * time.Second
+	return &keyframeTimeline{starts: starts, groups: mergeGOPs(starts, end, target), end: end}
 }
 
+// mergeGOPs returns the first GOP of each playlist segment. A segment takes
+// the next GOP while it still ends within target of the segment's start, so
+// segments run up to target long and a GOP longer than target stands alone.
+// Lengths use the playlist's millisecond-rounded boundaries.
+func mergeGOPs(starts []time.Duration, end, target time.Duration) []int {
+	ms := func(d time.Duration) int64 { return d.Round(time.Millisecond).Milliseconds() }
+	groups := []int{0}
+	for gop := 1; gop < len(starts); gop++ {
+		gopEnd := end
+		if gop+1 < len(starts) {
+			gopEnd = starts[gop+1]
+		}
+		if ms(gopEnd)-ms(starts[groups[len(groups)-1]]) > target.Milliseconds() {
+			groups = append(groups, gop)
+		}
+	}
+	return groups
+}
+
+// segmentCount is how many encoder segments (GOPs) the source has.
 func (t *keyframeTimeline) segmentCount() int { return len(t.starts) }
+
+// playlistSegmentCount is how many segments the playlist lists.
+func (t *keyframeTimeline) playlistSegmentCount() int { return len(t.groups) }
+
+// encoderSegments is the range of encoder segments [first, end) that playlist
+// segment carries.
+func (t *keyframeTimeline) encoderSegments(segment int) (first, end int) {
+	first = t.groups[segment]
+	end = len(t.starts)
+	if segment+1 < len(t.groups) {
+		end = t.groups[segment+1]
+	}
+	return first, end
+}
 
 // segmentStart is where segment begins on the source timeline; a segment past
 // the last starts at the end.
@@ -83,14 +122,16 @@ func (t *keyframeTimeline) segmentStart(segment int) time.Duration {
 	return t.starts[segment]
 }
 
-// segmentAt is the segment containing at.
+// segmentAt is the encoder segment playback from at begins with: the first
+// GOP of the playlist segment containing at, which is the first file a player
+// starting there asks for.
 func (t *keyframeTimeline) segmentAt(at time.Duration) int {
 	segment := 0
-	for i, start := range t.starts {
-		if start > at {
+	for _, first := range t.groups {
+		if t.starts[first] > at {
 			break
 		}
-		segment = i
+		segment = first
 	}
 	return segment
 }
@@ -99,9 +140,9 @@ func (t *keyframeTimeline) segmentAt(at time.Duration) int {
 // millisecond-rounded boundaries, so their running sum is each segment's start
 // to the millisecond and the total is the probed duration.
 func (t *keyframeTimeline) playlist() string {
-	bounds := make([]int64, 0, len(t.starts)+1)
-	for _, start := range t.starts {
-		bounds = append(bounds, start.Round(time.Millisecond).Milliseconds())
+	bounds := make([]int64, 0, len(t.groups)+1)
+	for _, first := range t.groups {
+		bounds = append(bounds, t.starts[first].Round(time.Millisecond).Milliseconds())
 	}
 	bounds = append(bounds, t.end.Round(time.Millisecond).Milliseconds())
 	target := int64(1)

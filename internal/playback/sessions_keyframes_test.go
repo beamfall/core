@@ -548,3 +548,208 @@ func TestCloseCancelsAndWaitsForKeyframeProbes(t *testing.T) {
 		t.Fatalf("after Close: %d sessions, %d encoder starts; want none", open, starts)
 	}
 }
+
+// TestKeyframeTimelineMergesShortGOPs is CORE-1843's layout criterion: a
+// short-GOP source lists target-length playlist segments, each a run of whole
+// GOPs, instead of one segment per GOP; a GOP longer than the target stands
+// alone.
+func TestKeyframeTimelineMergesShortGOPs(t *testing.T) {
+	t.Parallel()
+	seconds := func(values ...float64) []time.Duration {
+		out := make([]time.Duration, len(values))
+		for i, v := range values {
+			out[i] = time.Duration(v * float64(time.Second))
+		}
+		return out
+	}
+	everySecond := make([]float64, 26)
+	for i := range everySecond {
+		everySecond[i] = float64(i)
+	}
+	for _, tc := range []struct {
+		name      string
+		keyframes []time.Duration
+		duration  time.Duration
+		groups    []int
+		extinf    []string
+	}{
+		{"1s GOPs", seconds(everySecond...), 25500 * time.Millisecond, []int{0, 10, 20}, []string{"10.000", "10.000", "5.500"}},
+		{"uneven GOPs", seconds(0, 4, 8, 9, 12), 20 * time.Second, []int{0, 3, 4}, []string{"9.000", "3.000", "8.000"}},
+		{"long GOPs", seconds(0, 15, 17), 30 * time.Second, []int{0, 1, 2}, []string{"15.000", "2.000", "13.000"}},
+	} {
+		timeline := newKeyframeTimeline(ffmpeg.KeyframeIndex{Keyframes: tc.keyframes, Duration: tc.duration})
+		if !slices.Equal(timeline.groups, tc.groups) {
+			t.Fatalf("%s: groups = %v, want %v", tc.name, timeline.groups, tc.groups)
+		}
+		if timeline.playlistSegmentCount() != len(tc.groups) || timeline.segmentCount() != len(timeline.starts) {
+			t.Fatalf("%s: %d playlist segments over %d GOPs", tc.name, timeline.playlistSegmentCount(), timeline.segmentCount())
+		}
+		playlist := timeline.playlist()
+		var got []string
+		for _, line := range strings.Split(playlist, "\n") {
+			if text, ok := strings.CutPrefix(line, "#EXTINF:"); ok {
+				got = append(got, strings.TrimSuffix(text, ","))
+			}
+		}
+		if !slices.Equal(got, tc.extinf) {
+			t.Fatalf("%s: EXTINF %v, want %v:\n%s", tc.name, got, tc.extinf, playlist)
+		}
+		for segment := range tc.groups {
+			first, end := timeline.encoderSegments(segment)
+			wantEnd := timeline.segmentCount()
+			if segment+1 < len(tc.groups) {
+				wantEnd = tc.groups[segment+1]
+			}
+			if first != tc.groups[segment] || end != wantEnd {
+				t.Fatalf("%s: segment %d carries GOPs [%d,%d), want [%d,%d)", tc.name, segment, first, end, tc.groups[segment], wantEnd)
+			}
+			// A player starting anywhere inside the segment asks for its
+			// first GOP.
+			mid := (timeline.segmentStart(first) + timeline.segmentStart(end)) / 2
+			if got := timeline.segmentAt(mid); got != first {
+				t.Fatalf("%s: segmentAt(%v) = %d, want %d", tc.name, mid, got, first)
+			}
+		}
+	}
+}
+
+// TestJoinFragmentsKeepsFragmentsAndDropsIndexes checks the box surgery that
+// joins merged GOP files: the first styp opens the result, every moof and
+// mdat follows in order, sidx boxes go, and malformed input is refused.
+func TestJoinFragmentsKeepsFragmentsAndDropsIndexes(t *testing.T) {
+	t.Parallel()
+	box := func(kind, payload string) []byte {
+		out := make([]byte, 8, 8+len(payload))
+		out[3] = byte(8 + len(payload)) // #nosec G115 -- test payloads are a few bytes.
+		copy(out[4:], kind)
+		return append(out, payload...)
+	}
+	join := func(boxes ...[]byte) []byte { return slices.Concat(boxes...) }
+	dir := t.TempDir()
+	partA := filepath.Join(dir, "seg00000.m4s")
+	partB := filepath.Join(dir, "seg00001.m4s")
+	if err := os.WriteFile(partA, join(box("styp", "a"), box("sidx", "a1"), box("sidx", "a2"), box("moof", "a"), box("mdat", "aa")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(partB, join(box("styp", "b"), box("sidx", "b1"), box("moof", "b"), box("mdat", "bb")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(dir, "joined00000.m4s")
+	if err := joinFragments(dst, []string{partA, partB}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(dst) // #nosec G304 -- path is beneath a test-owned temporary directory.
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := join(box("styp", "a"), box("moof", "a"), box("mdat", "aa"), box("moof", "b"), box("mdat", "bb"))
+	if !slices.Equal(got, want) {
+		t.Fatalf("joined = %q, want %q", got, want)
+	}
+
+	broken := filepath.Join(dir, "broken.m4s")
+	if err := os.WriteFile(broken, join(box("moof", "c"), []byte{0, 0, 0, 40, 'm', 'd', 'a', 't'}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	refused := filepath.Join(dir, "joined00001.m4s")
+	if err := joinFragments(refused, []string{partA, broken}); err == nil {
+		t.Fatal("joined a truncated segment")
+	}
+	if _, err := os.Stat(refused); !os.IsNotExist(err) {
+		t.Fatalf("a refused join left %s behind: %v", refused, err)
+	}
+	if leftovers, _ := filepath.Glob(filepath.Join(dir, ".join-*")); len(leftovers) > 0 {
+		t.Fatalf("a refused join left temporary files: %v", leftovers)
+	}
+}
+
+// TestAudioCopyMergesShortGOPSegments is CORE-1843's end-to-end criterion: a
+// 2s-GOP source lists about 10s segments on its keyframes, a request for a
+// later segment restarts the encoder at that segment's first GOP, and the
+// joined segment plays from the playlist time for the whole segment.
+func TestAudioCopyMergesShortGOPSegments(t *testing.T) {
+	t.Parallel()
+	ffmpegtest.Require(t)
+	const duration = 30
+	src := makeGOPSource(t, "gop2.mp4", 2, 25, duration)
+	sessions := NewSessions(ffmpeg.New(), t.TempDir(), nil)
+	defer sessions.Close()
+	key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
+	playlist := readAudioCopyPlaylist(t, sessions, key, src, duration)
+	lengths := playlistSegmentLengths(t, playlist)
+	if len(lengths) != 3 {
+		t.Fatalf("%d segments, want 3 merged 10s segments:\n%s", len(lengths), playlist)
+	}
+	for i, length := range lengths[:2] {
+		if math.Abs(length-10) > 0.05 {
+			t.Fatalf("segment %d lasts %.3fs, want about 10s:\n%s", i, length, playlist)
+		}
+	}
+
+	file := audioCopyRungID + "/seg00002.m4s"
+	path, err := sessions.FilePath(context.Background(), key, src, duration, 64, 64, true, file)
+	if err != nil {
+		t.Fatalf("%s: %v", file, err)
+	}
+	sessions.mu.Lock()
+	base := sessions.sessions[key].baseSegment
+	sessions.mu.Unlock()
+	if base != 10 {
+		t.Fatalf("encoder base %d, want a restart at GOP 10 (20s)", base)
+	}
+	playlistAt, err := playlistStartTime(playlist, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	init := filepath.Join(filepath.Dir(path), initSegmentName)
+	if videoAt := firstVideoPacketPTS(t, init, path); math.Abs(videoAt-playlistAt) > keyframeDriftTolerance {
+		t.Fatalf("segment 2 video starts at %.6fs, want the playlist's %.3fs", videoAt, playlistAt)
+	}
+
+	// Segment 1 joins five GOP files; its video covers the whole 10s.
+	file = audioCopyRungID + "/seg00001.m4s"
+	path, err = sessions.FilePath(context.Background(), key, src, duration, 64, 64, true, file)
+	if err != nil {
+		t.Fatalf("%s: %v", file, err)
+	}
+	if filepath.Base(path) != "joined00001.m4s" {
+		t.Fatalf("segment 1 served from %s, want the joined file", path)
+	}
+	first, last := videoPacketSpan(t, init, path)
+	if math.Abs(first-10) > keyframeDriftTolerance || last < 10+lengths[1]-2.0/25 {
+		t.Fatalf("segment 1 video spans %.3fs to %.3fs, want 10s to about %.3fs", first, last, 10+lengths[1])
+	}
+}
+
+// videoPacketSpan is the first and last video packet PTS in init + segment.
+func videoPacketSpan(t *testing.T, initPath, segmentPath string) (first, last float64) {
+	t.Helper()
+	joined := filepath.Join(t.TempDir(), "span.mp4")
+	initBody, err := os.ReadFile(initPath) // #nosec G304 -- path is beneath a test-owned temporary directory.
+	if err != nil {
+		t.Fatal(err)
+	}
+	segmentBody, err := os.ReadFile(segmentPath) // #nosec G304 -- path is beneath a test-owned temporary directory.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(joined, slices.Concat(initBody, segmentBody), 0o600); err != nil { // #nosec G703 -- joined is beneath a test-owned temporary directory.
+		t.Fatal(err)
+	}
+	out, err := exec.Command("ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time", "-of", "csv=p=0", joined).CombinedOutput() // #nosec G204 -- fixed ffprobe arguments on a test-owned file.
+	if err != nil {
+		t.Fatalf("ffprobe packets: %v\n%s", err, out)
+	}
+	first, last = math.Inf(1), math.Inf(-1)
+	for _, line := range strings.Fields(string(out)) {
+		pts, err := strconv.ParseFloat(strings.TrimSuffix(line, ","), 64)
+		if err != nil {
+			continue
+		}
+		first, last = math.Min(first, pts), math.Max(last, pts)
+	}
+	if math.IsInf(first, 1) {
+		t.Fatal("no video packets")
+	}
+	return first, last
+}

@@ -345,6 +345,25 @@ func (h *hlsSession) segmentCount(rung Rung) int {
 	return segmentCount(h.durationSeconds, rungSegmentSeconds(rung))
 }
 
+// playlistSegmentCount is how many segments rung's playlist lists: one per
+// encoder segment on the uniform grid, one per merged run of GOPs on a
+// keyframe timeline.
+func (h *hlsSession) playlistSegmentCount(rung Rung) int {
+	if t := h.keyframeTimeline(rung); t != nil {
+		return t.playlistSegmentCount()
+	}
+	return h.segmentCount(rung)
+}
+
+// encoderSegments is the range [first, end) of encoder segments that rung's
+// playlist segment is made of.
+func (h *hlsSession) encoderSegments(rung Rung, segment int) (first, end int) {
+	if t := h.keyframeTimeline(rung); t != nil {
+		return t.encoderSegments(segment)
+	}
+	return segment, segment + 1
+}
+
 // segmentStart is where rung's segment begins on the source timeline.
 func (h *hlsSession) segmentStart(rung Rung, segment int) time.Duration {
 	if t := h.keyframeTimeline(rung); t != nil {
@@ -934,7 +953,6 @@ func (s *Sessions) FilePathShaped(ctx context.Context, key SessionKey, src strin
 	waitBudget := s.transcodeLatencyBudget(session, path)
 
 	segment := 0
-	isSegment := false
 	var run *encoderRun
 	switch {
 	case file == "index.m3u8":
@@ -953,28 +971,79 @@ func (s *Sessions) FilePathShaped(ctx context.Context, key SessionKey, src strin
 	default:
 		match := segmentName.FindStringSubmatch(file)
 		segment, _ = strconv.Atoi(match[1])
-		isSegment = true
-		if session.durationSeconds > 0 && segment >= session.segmentCount(rung) {
+		if session.durationSeconds > 0 && segment >= session.playlistSegmentCount(rung) {
 			return "", errors.New("unknown stream file")
 		}
-		if s.beyondSourceEnd(session, rung, segment) {
-			return "", ErrSourceEnded // known short source: never encode an empty segment
-		}
-		if run, err = s.ensureRung(ctx, key, session, rung, segment, path); err != nil {
+		path, err := s.playlistSegment(ctx, key, session, rung, segment)
+		if err != nil {
 			return "", err
 		}
+		s.markDelivered(key, session, rung.ID)
+		return path, nil
 	}
-	if err := s.waitWhileEncoderProgresses(ctx, key, session, rung, segment, isSegment, path, run, waitBudget); err != nil {
+	if err := s.waitWhileEncoderProgresses(ctx, key, session, rung, segment, false, path, run, waitBudget); err != nil {
 		return "", err
 	}
-	if isSegment && segmentLacksMedia(path) {
+	if file != "index.m3u8" {
+		s.markDelivered(key, session, rung.ID)
+	}
+	return path, nil
+}
+
+// playlistSegment resolves the media segment rung's playlist lists at index
+// segment. On the uniform grid that is the encoder's own file. On a keyframe
+// timeline a segment that merges several GOPs (CORE-1843) is joined from their
+// files once and kept beside them; when a truncated source ends inside it, the
+// segment carries the media before the end.
+func (s *Sessions) playlistSegment(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int) (string, error) {
+	first, end := session.encoderSegments(rung, segment)
+	if end-first == 1 {
+		return s.encoderSegment(ctx, key, session, rung, first)
+	}
+	joined := filepath.Join(session.dir, rung.ID, fmt.Sprintf("joined%05d.m4s", segment))
+	if fileReady(joined) {
+		return joined, nil
+	}
+	parts := make([]string, 0, end-first)
+	for part := first; part < end; part++ {
+		path, err := s.encoderSegment(ctx, key, session, rung, part)
+		if errors.Is(err, ErrSourceEnded) && len(parts) > 0 {
+			break
+		}
+		if err != nil {
+			return "", err
+		}
+		parts = append(parts, path)
+	}
+	if len(parts) == 1 {
+		return parts[0], nil
+	}
+	if err := joinFragments(joined, parts); err != nil {
+		return "", err
+	}
+	return joined, nil
+}
+
+// encoderSegment waits for encoder segment file segment of rung, starting or
+// moving the encoder when the running one will not reach it.
+func (s *Sessions) encoderSegment(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int) (string, error) {
+	path := filepath.Join(session.dir, rung.ID, fmt.Sprintf("seg%05d.m4s", segment))
+	waitBudget := s.transcodeLatencyBudget(session, path)
+	if s.beyondSourceEnd(session, rung, segment) {
+		return "", ErrSourceEnded // known short source: never encode an empty segment
+	}
+	run, err := s.ensureRung(ctx, key, session, rung, segment, path)
+	if err != nil {
+		return "", err
+	}
+	if err := s.waitWhileEncoderProgresses(ctx, key, session, rung, segment, true, path, run, waitBudget); err != nil {
+		return "", err
+	}
+	if segmentLacksMedia(path) {
 		// FFmpeg started past the real end of a truncated source writes a
 		// segment with no media; serving it as playable would stall the player.
 		s.noteSourceEnd(key, session, rung, segment, "")
 		return "", ErrSourceEnded
-	}
-	if file != "index.m3u8" {
-		s.markDelivered(key, session, rung.ID)
 	}
 	return path, nil
 }
