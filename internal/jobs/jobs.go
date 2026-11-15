@@ -6,41 +6,18 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"time"
 
+	"github.com/beamfall/core/internal/redact"
 	"github.com/beamfall/core/internal/store"
 )
 
-// secretPatterns matches known secret classes before they reach operational
-// logs. Patterns cover:
-//   - Beamfall API keys (bfk_…)
-//   - Authorization header values (Bearer …, Basic …)
-//   - URL query tokens (?token=…, &token=…)
-//   - Stream and pack content paths (/api/media/…, /api/pack/…)
-//   - Private endpoint URLs (http:// and https:// in error strings)
-//
-// Each pattern replaces the matched value with a [REDACTED] marker so log
-// consumers still see a non-empty diagnostic token.
-var secretPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`(?i)(bfk_[A-Za-z0-9_-]+)`),
-	regexp.MustCompile(`(?i)(Bearer\s+\S+)`),
-	regexp.MustCompile(`(?i)(Basic\s+\S+)`),
-	regexp.MustCompile(`(?i)([?&]token=[^&\s"']+)`),
-	regexp.MustCompile(`(?i)(/api/media/[^\s"']+)`),
-	regexp.MustCompile(`(?i)(/api/pack/[^\s"']+)`),
-	regexp.MustCompile(`(?i)(https?://[^\s"']+)`),
-}
-
 // redactLogError returns a copy of err.Error() with every known secret class
-// replaced by [REDACTED]. It is applied before logging and before storing job
-// failure text so Console reads never receive a handler-embedded secret.
+// replaced by [REDACTED] (see redact.Secrets). It is applied before logging and
+// before storing job failure text so Console reads never receive a
+// handler-embedded secret.
 func redactLogError(err error) string {
-	s := err.Error()
-	for _, re := range secretPatterns {
-		s = re.ReplaceAllString(s, "[REDACTED]")
-	}
-	return s
+	return redact.Secrets(err.Error())
 }
 
 var (

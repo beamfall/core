@@ -244,6 +244,10 @@ type ReportDriftResult struct {
 // ±0.1 % rate nudge published to the reporting session; a drift beyond the
 // recoverable threshold (> 500 ms) produces a full re-sync — a fresh transition
 // broadcast that re-anchors the group. The caller must be a member of the group.
+//
+// A Watch Party member reports through the same mutation (CORE-1766), on the
+// party path: membership is cross-Profile, a nudge goes to the member's own
+// Profile, and a resync never re-anchors the host's timeline.
 func (h *Handler) reportDrift(ctx context.Context, scope auth.Scope, req request) (ReportDriftResult, error) {
 	if h.conductor == nil {
 		return ReportDriftResult{}, clientError("group conductor unavailable")
@@ -256,6 +260,9 @@ func (h *Handler) reportDrift(ctx context.Context, scope auth.Scope, req request
 		return ReportDriftResult{}, clientError("groupID is required")
 	}
 	drift := time.Duration(int64Var(req, "driftMS")) * time.Millisecond
+	if _, err := h.conductor.Party(groupID); err == nil {
+		return h.reportPartyDrift(ctx, scope, groupID, drift)
+	}
 	// The member snapshot ReportDrift returns is unused here: a re-sync broadcasts
 	// one transition the Profile gate fans out to every same-Profile subscriber on
 	// the SSE channel, never a per-member fan-out — so the snapshot is discarded.
@@ -287,6 +294,33 @@ func (h *Handler) reportDrift(ctx context.Context, scope auth.Scope, req request
 		return ReportDriftResult{GroupID: groupID, Action: "nudge", Rate: decision.Rate}, nil
 	default:
 		return ReportDriftResult{GroupID: groupID, Action: "none"}, nil
+	}
+}
+
+// reportPartyDrift is reportDrift for a Watch Party member. A nudge is written
+// to the member's own Profile and addressed to its session; a resync tells the
+// member to seek back onto the host's timeline and moves no one else.
+func (h *Handler) reportPartyDrift(ctx context.Context, scope auth.Scope, partyID string, drift time.Duration) (ReportDriftResult, error) {
+	decision, err := h.conductor.PartyReportDrift(partyID, scope.SessionID, drift)
+	if err != nil {
+		return ReportDriftResult{}, partyClientError(err)
+	}
+	switch decision.Action {
+	case conductor.DriftResync:
+		return ReportDriftResult{GroupID: partyID, Action: "resync"}, nil
+	case conductor.DriftNudge:
+		if err := h.store.AppendGroupSyncEvent(ctx, store.GroupSyncPayload{
+			GroupID:   partyID,
+			ProfileID: scope.ProfileID,
+			Signal:    store.GroupSignalNudge,
+			Session:   scope.SessionID,
+			Rate:      decision.Rate,
+		}, time.Now().UTC()); err != nil {
+			return ReportDriftResult{}, err
+		}
+		return ReportDriftResult{GroupID: partyID, Action: "nudge", Rate: decision.Rate}, nil
+	default:
+		return ReportDriftResult{GroupID: partyID, Action: "none"}, nil
 	}
 }
 

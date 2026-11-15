@@ -99,6 +99,17 @@ type libraryBrowseCandidate struct {
 	inProgress  bool
 	lastWatched int64
 	rating      int
+	// sortTitle is the admin-set sort title, "" when none is set.
+	sortTitle string
+}
+
+// titleKey is the title a candidate sorts and letter-indexes by: its sort
+// title when an admin set one, else its title.
+func (c libraryBrowseCandidate) titleKey() string {
+	if c.sortTitle != "" {
+		return c.sortTitle
+	}
+	return c.item.Title
 }
 
 // ValidLibraryBrowseSort reports whether sortKey is a known sort ("" is title).
@@ -200,6 +211,19 @@ func (s *Store) LibraryBrowse(ctx context.Context, filter LibraryFilter, query L
 	candidates, err := libraryBrowseCandidates(ctx, reader, certify, visible, nil)
 	if err != nil {
 		return empty, err
+	}
+	// Sort titles live on the catalog plane only; an Encrypted Library's items
+	// sort by their titles.
+	if reader == s.catalogR {
+		sortTitles := map[MediaID]string{}
+		for _, libraryID := range visible {
+			if err := librarySortTitles(ctx, reader, libraryID, sortTitles); err != nil {
+				return empty, err
+			}
+		}
+		for i := range candidates {
+			candidates[i].sortTitle = sortTitles[candidates[i].item.ID]
+		}
 	}
 	if query.ProfileID != "" {
 		candidates, err = s.libraryBrowseUnmutedLocked(ctx, reader, query.ProfileID, filter, candidates)
@@ -544,7 +568,7 @@ func sortLibraryBrowse(candidates []libraryBrowseCandidate, query LibraryBrowseQ
 	}
 	titles := make(map[MediaID]string, len(candidates))
 	for _, c := range candidates {
-		titles[c.item.ID] = strings.ToLower(c.item.Title)
+		titles[c.item.ID] = strings.ToLower(c.titleKey())
 	}
 	byTitle := func(a, b libraryBrowseCandidate) int {
 		if cmp := strings.Compare(titles[a.item.ID], titles[b.item.ID]); cmp != 0 {

@@ -26,7 +26,7 @@ function fieldLabel(t: (key: StringKey) => string, field: string): string {
 
 // Media field locks (ADR-0009 §8): per-field source precedence. A locked field
 // keeps its value through re-scans and scraper passes. Loaded by Media ID;
-// setMediaFieldLock returns the updated row. Ported from app.js loadFieldLocks /
+// setMediaFieldLock returns the Media's whole updated lock list. Ported from app.js loadFieldLocks /
 // setFieldLock. The field names are the generic metadata shape the server
 // returns — never invented client-side (HARD invariant #1).
 export function FieldLocksPage() {
@@ -50,8 +50,7 @@ export function FieldLocksPage() {
     setError("");
     const id = mediaID.trim();
     try {
-      const updated = await setMediaFieldLock(id, lock.field, !lock.locked);
-      setLocks((prev) => (prev ?? []).map((l) => (l.field === lock.field ? updated : l)));
+      setLocks(await setMediaFieldLock(id, lock.field, !lock.locked));
     } catch {
       setError(t("fieldLocksUnavailable"));
     }

@@ -193,6 +193,8 @@ export const ACTIVITY_LABELS: Record<string, ActivityLabel> = {
   "media.organize": label("library", "{actor} reorganized files"),
   "media.merge": label("library", "{actor} merged items"),
   "media.field_lock": label("library", "{actor} locked or unlocked a field on an item"),
+  "media.metadata_edit": label("library", "{actor} edited an item's details"),
+  "media.metadata_refresh": label("library", "{actor} refreshed an item's details"),
   "media.relation": label("library", "{actor} changed how an item is related to others"),
   "entity.merge": label("library", "{actor} merged two entries"),
   "entity.relation": label("library", "{actor} changed how an entry is related to others"),

@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addCollectionMedia,
@@ -70,9 +71,11 @@ beforeEach(() => {
 
 function renderPage() {
   return render(
-    <I18nProvider>
-      <CollectionsPage />
-    </I18nProvider>,
+    <MemoryRouter>
+      <I18nProvider>
+        <CollectionsPage />
+      </I18nProvider>
+    </MemoryRouter>,
   );
 }
 

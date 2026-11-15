@@ -7,7 +7,12 @@ import { fetchNotifications, markNotificationRead } from "@/lib/graphql";
 import type { NotificationInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { ViewerActions } from "../components/ViewerActions";
-import { getWatchParty, joinWatchParty } from "../player/watchPartyStore";
+import {
+  decidePartyRequest,
+  getWatchParty,
+  joinWatchParty,
+  useWatchPartyState,
+} from "../player/watchPartyStore";
 
 const NOTIFICATION_INBOX_LIMIT = 100;
 const NOTIFICATIONS_CHANGED_EVENT = "beamfall:notifications-changed";
@@ -94,6 +99,18 @@ export function NotificationsPage() {
     navigate(`/watch/${encodeURIComponent(item)}`);
   }
 
+  // Approve or decline a member's request from its notification (CORE-1765).
+  // Either way the request is answered, so the notification is marked read.
+  async function onDecideRequest(notification: NotificationInfo, approve: boolean) {
+    setError(null);
+    const { requestID } = partyRequestRef(notification.ref);
+    if (!(await decidePartyRequest(requestID, approve))) {
+      setError(t("watchPartyFailed", { reason: getWatchParty().errorDetail }));
+      return;
+    }
+    if (!notification.read) void onMarkRead(notification.id);
+  }
+
   const unreadCount = notifications.filter((row) => !row.read).length;
 
   return (
@@ -141,6 +158,7 @@ export function NotificationsPage() {
                   onMarkRead={onMarkRead}
                   joining={joiningID === notification.id}
                   onJoinParty={onJoinParty}
+                  onDecideRequest={onDecideRequest}
                 />
               ))}
             </ul>
@@ -156,18 +174,31 @@ function NotificationRow({
   onMarkRead,
   joining,
   onJoinParty,
+  onDecideRequest,
 }: {
   notification: NotificationInfo;
   onMarkRead: (id: string) => void;
   joining: boolean;
   onJoinParty: (notification: NotificationInfo) => void;
+  onDecideRequest: (notification: NotificationInfo, approve: boolean) => void;
 }) {
   const t = useT();
-  // A host's own party sends it seek requests under the same kind; those are not invites.
+  const party = useWatchPartyState();
+  // Requests filed before they had their own kind arrived as invites to the
+  // host's own party; those are not invites.
   const joinable =
     notification.kind === "watch-party-invite" &&
     notification.ref !== "" &&
-    !(getWatchParty().isHost && getWatchParty().partyID === notification.ref);
+    !(party.isHost && party.partyID === notification.ref);
+  // A request can be decided only while this viewer still hosts its party.
+  const request =
+    notification.kind === "watch-party-request" ? partyRequestRef(notification.ref) : null;
+  const decidable =
+    request !== null &&
+    request.requestID !== "" &&
+    party.status === "active" &&
+    party.isHost &&
+    party.partyID === request.partyID;
   return (
     <li className="settings-row flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 gap-3">
@@ -199,6 +230,20 @@ function NotificationRow({
             {joining ? t("watchPartyJoining") : t("watchPartyJoin")}
           </Button>
         )}
+        {decidable && (
+          <>
+            <Button size="sm" onClick={() => onDecideRequest(notification, true)}>
+              {t("watchPartyApprove")}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onDecideRequest(notification, false)}
+            >
+              {t("watchPartyDecline")}
+            </Button>
+          </>
+        )}
         {!notification.read && (
           <Button variant="outline" size="sm" onClick={() => onMarkRead(notification.id)}>
             {t("notificationsMarkRead")}
@@ -215,11 +260,21 @@ function notificationKindLabel(kind: string, t: TFunction): string {
       return t("notificationKindExtensionRequest");
     case "watch-party-invite":
       return t("notificationKindWatchPartyInvite");
+    case "watch-party-request":
+      return t("notificationKindWatchPartyRequest");
     case "system":
       return t("notificationKindSystem");
     default:
       return kind || t("notificationKindSystem");
   }
+}
+
+/** Splits a watch-party-request ref, "<party id>:<request id>". */
+function partyRequestRef(ref: string): { partyID: string; requestID: string } {
+  const at = ref.lastIndexOf(":");
+  return at < 0
+    ? { partyID: ref, requestID: "" }
+    : { partyID: ref.slice(0, at), requestID: ref.slice(at + 1) };
 }
 
 function formatDateTime(value: string): string {

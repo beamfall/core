@@ -123,6 +123,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"MediaLibrary":                            {},
 	"MediaMetadataProvenance":                 {},
 	"MediaRelationsOf":                        {},
+	"MediaSortTitle":                          {},
 	"MutedTargets":                            {},
 	"MyDataSummary":                           {},
 	"MyEngagementLog":                         {},
@@ -265,6 +266,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"UpdateCollection":             {},
 	"UpdateLibraryRestricted":      {},
 	"UpdateMarker":                 {},
+	"UpdateMediaMetadata":          {}, // in-place, rank-gated metadata edit (CORE-1715)
 	"UpdateProfileSettings":        {},
 	"UpdateRetentionRule":          {},
 	"UpdateSchedule":               {},

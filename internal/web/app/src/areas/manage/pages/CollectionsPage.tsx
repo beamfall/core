@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router";
 import { EmptyLine, ErrorLine, ManageSection, ManageTable } from "@/components/beamfall/workbench";
 import {
   AlertDialog,
@@ -606,7 +607,13 @@ function MembersEditor({
                         <ChevronDown aria-hidden />
                       </Button>
                     </span>
-                    <span className="manage-mono">{m.mediaID}</span>
+                    <Link
+                      to={`/manage/items/${encodeURIComponent(m.mediaID)}`}
+                      className="manage-mono underline-offset-2 hover:underline"
+                      aria-label={`${t("itemMetadataEditLink")} ${m.mediaID}`}
+                    >
+                      {m.mediaID}
+                    </Link>
                   </div>
                 </TableCell>
                 <TableCell className="manage-mono text-muted-foreground">

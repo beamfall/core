@@ -1,0 +1,50 @@
+// Per-item metadata editor copy (CORE-1715). English only for now; the other
+// locales resolve through English until translated.
+export const itemMetadataStrings = {
+  en: {
+    itemMetadataHeading: "Edit item",
+    itemMetadataLead:
+      "Edit an item's details. Saving locks every field you change, so identification, refresh and rescans leave it alone until you unlock it.",
+    itemMetadataEmpty: "Enter a media ID to edit its details.",
+    itemMetadataUnavailable: "Could not load this item.",
+    itemMetadataDetailsHeading: "Details",
+    itemMetadataTitle: "Title",
+    itemMetadataSortTitle: "Sort title",
+    itemMetadataSortTitleHint: "Used for ordering. Leave empty to sort by the title.",
+    itemMetadataYear: "Year",
+    itemMetadataOverview: "Overview",
+    itemMetadataSave: "Save",
+    itemMetadataSaved: "Saved. Changed fields are now locked.",
+    itemMetadataNoChanges: "Nothing has changed.",
+    itemMetadataSaveFailed: "Could not save the changes.",
+    itemMetadataYearInvalid: "Year must be a whole number from 0 to 9999.",
+    itemMetadataTitleRequired: "Title cannot be empty.",
+    itemMetadataLockedBadge: "Locked",
+    itemMetadataUnlockedBadge: "Unlocked",
+    itemMetadataLockField: "Lock {field}",
+    itemMetadataUnlockField: "Unlock {field}",
+    itemMetadataLockFailed: "Could not change the lock.",
+    itemMetadataFieldsHeading: "More fields",
+    itemMetadataFieldsLead:
+      "Fields the item's plugin declares, such as genres. Saving locks the fields you change.",
+    itemMetadataFieldsEmpty: "This item has no other fields.",
+    itemMetadataArtworkHeading: "Artwork",
+    itemMetadataArtworkLead:
+      "Choosing artwork locks that slot. A locked slot keeps its artwork through identification and refresh.",
+    itemMetadataArtworkChoose: "Choose",
+    itemMetadataArtworkNone: "No artwork to choose from.",
+    itemMetadataArtworkApplied: "In use",
+    itemMetadataRefreshHeading: "Refresh",
+    itemMetadataRefreshLead:
+      "Ask the provider that identified this item again. Locked fields keep their values.",
+    itemMetadataRefresh: "Refresh details",
+    itemMetadataRefreshed: "Refreshed. Locked fields kept their values.",
+    itemMetadataRefreshFailed: "Could not refresh this item.",
+    itemMetadataRefreshNeedsMatch: "Identify this item with Fix Match before refreshing it.",
+    itemMetadataEditLink: "Edit",
+  },
+  fr: {},
+  de: {},
+  es: {},
+  pt: {},
+} as const;

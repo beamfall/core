@@ -1,6 +1,6 @@
 # Manage entities — entry-points
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:858c6e7d964aabae36188526757ee20e -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.

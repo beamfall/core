@@ -4,8 +4,12 @@ import {
   acceptWatchParty,
   calibrateWatchPartyClock,
   createWatchParty,
+  decideWatchPartyRequest,
+  fetchMySessions,
   inviteToWatchParty,
   leaveWatchParty,
+  leaveWatchPartyKeepalive,
+  reportWatchPartyDrift,
   requestWatchPartyTransport,
   type WatchPartyInfo,
   watchPartyTransport,
@@ -29,6 +33,22 @@ export type WatchPartyStatus = "idle" | "starting" | "joining" | "active";
 /** Why the last party action failed; the UI turns it into words. */
 export type WatchPartyErrorKind = "" | "home-network" | "failed";
 
+/** What last happened to the party's host (CORE-1763); the UI turns it into words. */
+export type WatchPartyNotice = "" | "handoff" | "ended";
+
+/** A member's play, pause or seek waiting for the host's decision (CORE-1765). */
+export interface WatchPartyRequest {
+  id: string;
+  /** The requesting member's display name. */
+  from: string;
+  item: string;
+  positionMS: number;
+  paused: boolean;
+}
+
+/** How many pending requests the host's player keeps; older ones fall off. */
+export const MAX_PARTY_REQUESTS = 10;
+
 export interface WatchPartyState {
   status: WatchPartyStatus;
   partyID: string;
@@ -44,6 +64,12 @@ export interface WatchPartyState {
   error: WatchPartyErrorKind;
   /** The server's reason for a "failed" error. */
   errorDetail: string;
+  /** The host handed the party off or ended it. */
+  notice: WatchPartyNotice;
+  /** The display name the notice is about: the new host, or the host who ended it. */
+  noticeName: string;
+  /** Members' requests waiting for this host's decision, oldest first. */
+  requests: WatchPartyRequest[];
 }
 
 const IDLE: WatchPartyState = {
@@ -56,6 +82,9 @@ const IDLE: WatchPartyState = {
   offsetMS: 0,
   error: "",
   errorDetail: "",
+  notice: "",
+  noticeName: "",
+  requests: [],
 };
 
 /** How long a join waits for the roster that tells it whether the party is paused. */
@@ -69,6 +98,11 @@ let rosterWaiters: Array<() => void> = [];
 let generation = 0;
 // Counts timeline frames, so a host's transport response older than a frame is dropped.
 let timelineFrames = 0;
+/** Date.now() of the last drift report; the rate bound counts from it. */
+let lastDriftReport = Number.NEGATIVE_INFINITY;
+
+/** A member's player reports its measured drift at most this often (CORE-1766). */
+export const DRIFT_REPORT_INTERVAL_MS = 5000;
 
 function set(patch: Partial<WatchPartyState>): void {
   state = { ...state, ...patch };
@@ -116,6 +150,15 @@ function applyFrame(frame: GroupSyncFrame): void {
   // corrects its own drift. Transitions and rosters both carry the live anchor,
   // in stream order, so each one is the timeline.
   if (frame.signal === "nudge") return;
+  if (frame.signal === "request") {
+    addRequest(frame);
+    return;
+  }
+  if (frame.signal === "ended") {
+    // The host ended the party for everyone; the local player keeps playing on its own.
+    reset({ notice: "ended", noticeName: frame.hostName ?? "" });
+    return;
+  }
   const patch: Partial<WatchPartyState> = {};
   if (frame.item && !(frame.signal === "roster" && sameTimeline(state.timeline, frame))) {
     patch.timeline = timelineOf(frame);
@@ -125,6 +168,15 @@ function applyFrame(frame: GroupSyncFrame): void {
     const members = frame.members ?? state.members;
     patch.members = members;
     patch.invited = state.invited.filter((name) => !members.includes(name));
+    if (frame.handoff) {
+      patch.notice = "handoff";
+      patch.noticeName = frame.hostName ?? "";
+      patch.isHost = false;
+      // Requests were addressed to the old host; the server dropped them.
+      patch.requests = [];
+      // Only the new host's own Profile row names its session.
+      if (frame.host) void adoptHost(frame.host, generation);
+    }
   }
   set(patch);
   if (frame.signal === "roster") {
@@ -132,6 +184,38 @@ function applyFrame(frame: GroupSyncFrame): void {
     rosterWaiters = [];
     for (const wake of waiters) wake();
   }
+}
+
+// A request frame reaches every session of the host's Profile; only the host acts on it.
+function addRequest(frame: GroupSyncFrame): void {
+  if (!state.isHost || !frame.request) return;
+  const request: WatchPartyRequest = {
+    id: frame.request,
+    from: frame.from ?? "",
+    item: frame.item,
+    positionMS: frame.positionMS,
+    paused: frame.paused,
+  };
+  const rest = state.requests.filter((r) => r.id !== request.id);
+  set({ requests: [...rest, request].slice(-MAX_PARTY_REQUESTS) });
+}
+
+// This viewer's own session id, fetched once: a hand-off names the new host by session.
+let ownSession: Promise<string> | null = null;
+
+function ownSessionID(): Promise<string> {
+  ownSession ??= fetchMySessions()
+    .then((info) => info.sessions.find((s) => s.current)?.id ?? "")
+    .catch(() => {
+      ownSession = null;
+      return "";
+    });
+  return ownSession;
+}
+
+async function adoptHost(host: string, gen: number): Promise<void> {
+  const own = await ownSessionID();
+  if (gen === generation && own && own === host) set({ isHost: true });
 }
 
 function openStream(): void {
@@ -146,6 +230,7 @@ function reset(patch: Partial<WatchPartyState> = {}): void {
   closeStream?.();
   closeStream = null;
   generation++;
+  lastDriftReport = Number.NEGATIVE_INFINITY;
   const waiters = rosterWaiters;
   rosterWaiters = [];
   for (const wake of waiters) wake();
@@ -175,16 +260,21 @@ function invitedOf(info: WatchPartyInfo): string[] {
  * Start a party around `content`, hosted by this session. The timeline holds
  * at `positionMS` until the host's first transport puts it in motion.
  */
-export async function startWatchParty(content: string, positionMS = 0): Promise<boolean> {
+export async function startWatchParty(
+  content: string,
+  positionMS = 0,
+  relaxed = true,
+): Promise<boolean> {
   if (state.status !== "idle") return false;
-  set({ status: "starting", error: "", errorDetail: "" });
+  set({ status: "starting", error: "", errorDetail: "", notice: "", noticeName: "" });
   const gen = generation;
   try {
     const clock = await calibrateWatchPartyClock();
-    // Relaxed: anyone in the household party may play, pause or seek.
+    // Relaxed: anyone in the household party may play, pause or seek. Host-only:
+    // a member's play, pause or seek waits for the host's approval (CORE-1765).
     const info = await createWatchParty({
       content,
-      relaxed: true,
+      relaxed,
       clockOffsetMS: clock.offsetMS,
       renderLatencyMS: 0,
     });
@@ -237,7 +327,15 @@ export async function joinWatchParty(partyID: string): Promise<string | null> {
     if (state.partyID === partyID && state.timeline) return state.timeline.item;
     return null;
   }
-  set({ status: "joining", partyID, isHost: false, error: "", errorDetail: "" });
+  set({
+    status: "joining",
+    partyID,
+    isHost: false,
+    error: "",
+    errorDetail: "",
+    notice: "",
+    noticeName: "",
+  });
   const gen = generation;
   openStream();
   try {
@@ -323,18 +421,88 @@ export async function sendPartyTransport(
   }
 }
 
-/** Leave the party; the local player keeps playing on its own. */
+/**
+ * As host, approve a member's pending request, which moves every member, or
+ * decline it. Resolves to false when this viewer is not the host or the
+ * server refused (the error is in the state).
+ */
+export async function decidePartyRequest(requestID: string, approve: boolean): Promise<boolean> {
+  if (state.status !== "active" || !state.isHost || !requestID) return false;
+  const partyID = state.partyID;
+  const gen = generation;
+  set({ requests: state.requests.filter((r) => r.id !== requestID) });
+  try {
+    await decideWatchPartyRequest(partyID, requestID, approve);
+    return true;
+  } catch (err) {
+    if (gen === generation) set(failure(err));
+    return false;
+  }
+}
+
+/**
+ * Report the player's measured drift from the party timeline, at most once per
+ * DRIFT_REPORT_INTERVAL_MS. The player corrects itself from the timeline; the
+ * report lets the server see and nudge it, so a failed one is not surfaced.
+ * Returns whether a report was sent.
+ */
+export function reportPartyDrift(driftMS: number, now: number = Date.now()): boolean {
+  if (state.status !== "active" || !state.partyID || !Number.isFinite(driftMS)) return false;
+  if (now - lastDriftReport < DRIFT_REPORT_INTERVAL_MS) return false;
+  lastDriftReport = now;
+  void reportWatchPartyDrift(state.partyID, driftMS).catch(() => {});
+  return true;
+}
+
+/**
+ * True when this viewer is a member, not the host, of an active party: its
+ * player's Up Next and autoplay defer to the party, which the host advances
+ * for everyone (CORE-1766).
+ */
+export function watchPartyDefersUpNext(party: WatchPartyState): boolean {
+  return party.status === "active" && !party.isHost;
+}
+
+/**
+ * Leave the party; the local player keeps playing on its own. A host's leave
+ * hands the party to the earliest member still in it.
+ */
 export async function leaveParty(): Promise<void> {
   const partyID = state.partyID;
   reset();
   if (partyID) await leaveWatchParty(partyID).catch(() => {});
 }
 
+/** As host, end the party for everyone in it. */
+export async function endParty(): Promise<void> {
+  if (!state.isHost) return;
+  const partyID = state.partyID;
+  reset();
+  if (partyID) await leaveWatchParty(partyID, true).catch(() => {});
+}
+
+/**
+ * The tab is closing or navigating away: leave with a keepalive request that
+ * outlives the page. The server expires a member whose stream dropped anyway;
+ * this makes it seconds rather than the expiry's grace.
+ */
+export function leavePartyOnPageHide(): void {
+  if (state.status === "idle" || !state.partyID) return;
+  const partyID = state.partyID;
+  reset();
+  leaveWatchPartyKeepalive(partyID);
+}
+
 export function clearWatchPartyError(): void {
   if (state.error) set({ error: "", errorDetail: "" });
+}
+
+export function clearWatchPartyNotice(): void {
+  if (state.notice) set({ notice: "", noticeName: "" });
 }
 
 /** Test seam: drop all party state without calling the server. */
 export function resetWatchPartyForTest(): void {
   reset();
+  ownSession = null;
 }

@@ -1,6 +1,6 @@
 # Manage curation: fields, relations and files of a Media — technical-deep-dive
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:c666295d85413adc3ea2d99c7fc348d0 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -35,72 +35,72 @@ Source: internal/web/app/src/areas/manage/pages/CurationPage\.tsx:38; symbol: Su
 <!-- flowdocs:paragraph:20d936f4ed19aeaa98fd02f7f1a2078d -->
 Declared member: source declares ENTITY\_RELATIONS\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:227; symbol: ENTITY\_RELATIONS\_QUERY; span SHA256: 4463e33e05a67d347a0c0a1e120ff24af5e2b5bb972b2b04ec276d08035e664e.
+Source: internal/web/app/src/lib/graphql/manage\.ts:300; symbol: ENTITY\_RELATIONS\_QUERY; span SHA256: 4463e33e05a67d347a0c0a1e120ff24af5e2b5bb972b2b04ec276d08035e664e.
 
 <!-- flowdocs:paragraph:f6766b479ed78e7fb26b350301319878 -->
 Declared member: source declares LINK\_MEDIA\_RELATION\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:279; symbol: LINK\_MEDIA\_RELATION\_MUTATION; span SHA256: 262bb598ff106b878e9e2fa44eb0239dda05d6652d3e1016d35cb53bc40fa014.
+Source: internal/web/app/src/lib/graphql/manage\.ts:352; symbol: LINK\_MEDIA\_RELATION\_MUTATION; span SHA256: 262bb598ff106b878e9e2fa44eb0239dda05d6652d3e1016d35cb53bc40fa014.
 
 <!-- flowdocs:paragraph:f560ef928ec71f16addc4d542a67e6c3 -->
 Declared member: source declares MEDIA\_FIELDS\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:205; symbol: MEDIA\_FIELDS\_QUERY; span SHA256: 307dff93eabefb6dbee9f9d25fcf0fe97a0f8eed45bfc42f1c153463969ba0e9.
+Source: internal/web/app/src/lib/graphql/manage\.ts:278; symbol: MEDIA\_FIELDS\_QUERY; span SHA256: 307dff93eabefb6dbee9f9d25fcf0fe97a0f8eed45bfc42f1c153463969ba0e9.
 
 <!-- flowdocs:paragraph:2217b65037d19dcc909bea47cf3995c8 -->
 Declared member: source declares MEDIA\_FILES\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:216; symbol: MEDIA\_FILES\_QUERY; span SHA256: c17d5784df8c545e849d8e6da4276a7b5235261357007d56b93a78f671d47e19.
+Source: internal/web/app/src/lib/graphql/manage\.ts:289; symbol: MEDIA\_FILES\_QUERY; span SHA256: c17d5784df8c545e849d8e6da4276a7b5235261357007d56b93a78f671d47e19.
 
 <!-- flowdocs:paragraph:e729144a92a6ccfb764b86bfad3775a1 -->
 Declared member: source declares MEDIA\_RELATIONS\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:241; symbol: MEDIA\_RELATIONS\_QUERY; span SHA256: 25d246929cb5d7a7c62995b4ff4557e6d3f01ee11d2f6f1392c5f6e9cf9250d0.
+Source: internal/web/app/src/lib/graphql/manage\.ts:314; symbol: MEDIA\_RELATIONS\_QUERY; span SHA256: 25d246929cb5d7a7c62995b4ff4557e6d3f01ee11d2f6f1392c5f6e9cf9250d0.
 
 <!-- flowdocs:paragraph:b81077e97f4d3a4ad0644668541a91fd -->
 Declared member: source declares UPSERT\_ENTITY\_RELATION\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:256; symbol: UPSERT\_ENTITY\_RELATION\_MUTATION; span SHA256: 872aa3cd15c52a61b39a57836c4ec0c4eef811d2820f0e5fed40f4eb593831e0.
+Source: internal/web/app/src/lib/graphql/manage\.ts:329; symbol: UPSERT\_ENTITY\_RELATION\_MUTATION; span SHA256: 872aa3cd15c52a61b39a57836c4ec0c4eef811d2820f0e5fed40f4eb593831e0.
 
 <!-- flowdocs:paragraph:ed64e5159723933f17391ab44ce75367 -->
 Declared member: source declares fetchEntityRelations; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:231; symbol: fetchEntityRelations; span SHA256: a38d3ec94b0cce3ee6c3a2c2c4aab816354f19ec9542618ff46cc493e6744474.
+Source: internal/web/app/src/lib/graphql/manage\.ts:304; symbol: fetchEntityRelations; span SHA256: a38d3ec94b0cce3ee6c3a2c2c4aab816354f19ec9542618ff46cc493e6744474.
 
 <!-- flowdocs:paragraph:94366fd0acf764e3315226fd227e3b9d -->
 Declared member: source declares fetchMediaFields; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:209; symbol: fetchMediaFields; span SHA256: 195ce396db2594eb24e4d5c75afe8b6430fdff685960a6170e33fb774f59fcbc.
+Source: internal/web/app/src/lib/graphql/manage\.ts:282; symbol: fetchMediaFields; span SHA256: 195ce396db2594eb24e4d5c75afe8b6430fdff685960a6170e33fb774f59fcbc.
 
 <!-- flowdocs:paragraph:f3c0a426ab86fa52e315497b6b37ef6d -->
 Declared member: source declares fetchMediaFiles; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:220; symbol: fetchMediaFiles; span SHA256: 7a386d3477e0124e6ea6309a07b74807a45716a5e1afb66c38474c207fd3440d.
+Source: internal/web/app/src/lib/graphql/manage\.ts:293; symbol: fetchMediaFiles; span SHA256: 7a386d3477e0124e6ea6309a07b74807a45716a5e1afb66c38474c207fd3440d.
 
 <!-- flowdocs:paragraph:0b2dbe0fb972c541f53deea51d348c9b -->
 Declared member: source declares fetchMediaRelations; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:245; symbol: fetchMediaRelations; span SHA256: 13e7b705d40ff76aff3cd48029d21d1a15d4be1a3999c9b6d46edd0c7ac64c17.
+Source: internal/web/app/src/lib/graphql/manage\.ts:318; symbol: fetchMediaRelations; span SHA256: 13e7b705d40ff76aff3cd48029d21d1a15d4be1a3999c9b6d46edd0c7ac64c17.
 
 <!-- flowdocs:paragraph:ae0efb8e94fd5786636ef1fa80a0e104 -->
 Declared member: source declares linkMediaRelation; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:283; symbol: linkMediaRelation; span SHA256: d83503f6bf6d5255b46034f74501757dcbd1e4f77ed048973e118b34bac11b87.
+Source: internal/web/app/src/lib/graphql/manage\.ts:356; symbol: linkMediaRelation; span SHA256: d83503f6bf6d5255b46034f74501757dcbd1e4f77ed048973e118b34bac11b87.
 
 <!-- flowdocs:paragraph:2753b962e202076a8d9f5e69733de3a6 -->
 Declared member: source declares upsertEntityRelation; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:265; symbol: upsertEntityRelation; span SHA256: 938a059b807ef0e336ff575f6e290dc0991b554c8b727a9d59d80f052b6e0b1e.
+Source: internal/web/app/src/lib/graphql/manage\.ts:338; symbol: upsertEntityRelation; span SHA256: 938a059b807ef0e336ff575f6e290dc0991b554c8b727a9d59d80f052b6e0b1e.
 
 <!-- flowdocs:paragraph:888765e206196d55e49a3d9f15c1148f -->
 Declared member: source declares ENTITY\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:162; symbol: ENTITY\_QUERY; span SHA256: 627c6e771053a52180953962e10b8430cfd41399070925fd0e39ca02186007e9.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:167; symbol: ENTITY\_QUERY; span SHA256: 627c6e771053a52180953962e10b8430cfd41399070925fd0e39ca02186007e9.
 
 <!-- flowdocs:paragraph:7ac9b615f42e5afca1ba4280c058d1b4 -->
 Declared member: source declares fetchEntity; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:166; symbol: fetchEntity; span SHA256: cbd25c6d89af74d6c8f7b06c7586226787030ab0284cf1e3bb011cb303bc58f8.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:171; symbol: fetchEntity; span SHA256: cbd25c6d89af74d6c8f7b06c7586226787030ab0284cf1e3bb011cb303bc58f8.
 
 <!-- flowdocs:paragraph:f5554531446fa6e5665f64468131af8e -->
 Declared member: source declares load; membership is caller\-declared, not runtime evidence\.

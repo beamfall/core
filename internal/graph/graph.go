@@ -538,6 +538,12 @@ type Handler struct {
 	// webhooks is the console webhook manager (CORE-1697). Nil means the build
 	// has none, so the webhook fields report it unavailable.
 	webhooks WebhookAdmin
+	// serverLogSource is the redacted in-memory log tail (CORE-1716). Nil means
+	// the server keeps none; the console field then reports it unavailable.
+	serverLogSource ServerLogSource
+	// restoreStager stages console restores for the next start (CORE-1720).
+	// Nil means the build has none; the fields then report it unavailable.
+	restoreStager RestoreStager
 }
 
 // OfflinePackService is the consumer-side seam for the Offline Pack substrate
@@ -5045,6 +5051,8 @@ var queryFields = map[string]bool{
 	"webhooks":               true, // CORE-1697: console-managed outbound notification endpoints
 	"webhookdeliveries":      true, // CORE-1697: webhook delivery log
 	"webhooksettings":        true, // CORE-1697: shared webhook options and choices
+	"serverlogs":             true, // CORE-1716: recent redacted server log lines
+	"stagedrestore":          true, // CORE-1720: the restore staged for the next start
 	"libraryhealthitems":     true,
 	"libraryduplicategroups": true,
 	"metadataexport":         true,
@@ -5063,6 +5071,7 @@ var queryFields = map[string]bool{
 	"remoteaccess":           true,
 	"watcherstatus":          true,
 	"mediafieldlocks":        true,
+	"mediametadata":          true,
 	"consoleconfig":          true,
 	"pluginworker":           true,
 	"updatestatus":           true,
@@ -5155,6 +5164,8 @@ var mutationFields = map[string]bool{
 	"bulkassigntags":                     true,
 	"purgetrash":                         true,
 	"setmediafieldlock":                  true,
+	"editmediametadata":                  true,
+	"refreshmediametadata":               true,
 	"bulkeditapply":                      true,
 	"registerimportsource":               true, // admin-gated (see adminFields); apple ADR-0003 §3
 	"importmanagedfile":                  true, // admin-gated (see adminFields); apple ADR-0003 §1
@@ -5199,6 +5210,9 @@ var mutationFields = map[string]bool{
 	"deletewebhook":                      true, // CORE-1697: remove a webhook endpoint
 	"testwebhook":                        true, // CORE-1697: send one test notification
 	"setwebhooksettings":                 true, // CORE-1697: save shared webhook options
+	"inspectbackup":                      true, // CORE-1720: decrypt a backup set and report its contents
+	"stagerestore":                       true, // CORE-1720: stage a restore for the next start
+	"cancelstagedrestore":                true, // CORE-1720: drop a staged restore
 	"scanlibrary":                        true,
 	"addsubscription":                    true,
 	"removesubscription":                 true,
@@ -5360,6 +5374,13 @@ var adminFields = map[string]bool{
 	"deletewebhook":      true,
 	"testwebhook":        true,
 	"setwebhooksettings": true,
+	// Server logs (CORE-1716): recent redacted log lines for the console.
+	"serverlogs": true,
+	// Staged restore (CORE-1720): inspect a backup set and stage a restore.
+	"inspectbackup":       true,
+	"stagerestore":        true,
+	"cancelstagedrestore": true,
+	"stagedrestore":       true,
 	// Authorized native→server import transport (apple ADR-0003 §1/§3,
 	// POWERTOOLS-6B): the Admin Session tier the loopback bearer authenticates as
 	// — only the native Companion authority can register a source token or import.

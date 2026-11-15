@@ -25,6 +25,7 @@ import {
   fetchQBittorrentIngest,
   fetchRemoteAccess,
   fetchRetentionRules,
+  fetchServerLogs,
   fetchTranscodeConfig,
   fetchUpdateStatus,
   fetchWebhookDeliveries,
@@ -89,6 +90,7 @@ const DATA = {
   deleteWebhook: true,
   testWebhook: { ok: true, statusClass: "2xx", diagnostic: "", durationMs: 40 },
   setWebhookSettings: { publicBaseURL: "https://media.example.net", formats: [], eventKinds: [] },
+  serverLogs: { available: true, capacity: 2000, lines: [] },
 };
 
 // The transport matrix: every Console READ the common fetch path
@@ -117,6 +119,7 @@ const CONSOLE_READS: [string, (signal: AbortSignal) => Promise<unknown>][] = [
   ["fetchWebhooks", (s) => fetchWebhooks(s)],
   ["fetchWebhookDeliveries", (s) => fetchWebhookDeliveries(s)],
   ["fetchWebhookSettings", (s) => fetchWebhookSettings(s)],
+  ["fetchServerLogs", (s) => fetchServerLogs(undefined, s)],
 ];
 
 beforeEach(() => {
@@ -465,5 +468,13 @@ describe("console GraphQL requests", () => {
     expect(recorded[5].variables).toEqual({ id: "hook-1" });
     expect(recorded[6].query).toContain("setWebhookSettings(publicBaseURL: $publicBaseURL)");
     expect(recorded[6].variables).toEqual({ publicBaseURL: "https://media.example.net" });
+  });
+
+  it("server log read binds its limit only when given (CORE-1716)", async () => {
+    await fetchServerLogs();
+    await fetchServerLogs(200);
+    expect(recorded[0].query).toContain("serverLogs(limit: $limit) { available capacity lines }");
+    expect(recorded[0].variables).toEqual({});
+    expect(recorded[1].variables).toEqual({ limit: 200 });
   });
 });

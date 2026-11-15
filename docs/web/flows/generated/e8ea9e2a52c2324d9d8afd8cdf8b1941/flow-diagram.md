@@ -1,6 +1,6 @@
 # Viewer search page: modes \(text, semantic, recommend\) and grouped results — flow-diagram
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:7869fcca506e4a6b12f352808d0ad882 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.

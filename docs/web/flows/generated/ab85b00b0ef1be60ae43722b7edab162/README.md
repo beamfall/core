@@ -1,11 +1,11 @@
 # Player OS media\-session integration \(lock\-screen controls\) — readme
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:9d5cd27d86248da9d7af8b615cbaa893 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/viewer/player/useMediaSession\.ts:21; symbol: MediaSessionOptions; span SHA256: 95576f28669ad505c5392f40a89e0b690355ee7fe776f9c634f395d223406529.
+Source: internal/web/app/src/areas/viewer/player/useMediaSession\.ts:23; symbol: MediaSessionOptions; span SHA256: 95576f28669ad505c5392f40a89e0b690355ee7fe776f9c634f395d223406529.
 
 
 Security summaries: not collected; absence is not a clean security finding.

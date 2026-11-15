@@ -23,8 +23,12 @@ make flow-docs-check  # read-only: exit 1 when the source drifted from the commi
 ```
 
 Both run [`script/flow-docs.sh`](../../../script/flow-docs.sh) and need `corvint` (with
-`corvint-docs`) on `PATH`. Neither is part of `make gate`: a drifted record is a documentation
-follow-up, not a merge blocker. The record was generated at the revision recorded in
+`corvint-docs`) on `PATH`. Neither is part of `make gate` or `make gate-preflight`, by decision
+(CORE-1762, 2026-11-14): `generated/generation.json` pins `source.revision`, so a required check
+would make every concurrent web PR regenerate the record and conflict with every other one, and it
+needs a Corvint build on every gate host. A drifted record is a documentation follow-up, not a
+merge blocker: whoever lands a batch of web changes runs `make flow-docs` on the batch head and
+commits the result. The record was generated at the revision recorded in
 `generated/generation.json` (`source.revision`) with a Corvint build carrying flow generator
 version 6 (member declarations of every kind, and the JSX fragment mask fix); run it with an
 older generator and members go unresolved.

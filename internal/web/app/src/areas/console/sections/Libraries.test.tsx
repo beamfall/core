@@ -9,6 +9,8 @@ import {
   browseServerFolders,
   createLibrary,
   deleteLibrary,
+  disableScraperCredential,
+  fetchConsoleConfig,
   fetchFolderTree,
   fetchJobs,
   fetchLibraries,
@@ -17,8 +19,14 @@ import {
   fetchSkipDetectionEnabled,
   scanLibrary,
   setLibraryRoots,
+  setScraperCredential,
 } from "@/lib/graphql";
-import type { LibraryInfo, PathPickerEntryInfo, PathPickerInfo } from "@/lib/graphql/types";
+import type {
+  ConsoleConfigInfo,
+  LibraryInfo,
+  PathPickerEntryInfo,
+  PathPickerInfo,
+} from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { Libraries } from "./Libraries";
 
@@ -34,6 +42,8 @@ vi.mock("@/lib/graphql", () => ({
   browseServerFolders: vi.fn(),
   createLibrary: vi.fn(),
   deleteLibrary: vi.fn(),
+  disableScraperCredential: vi.fn(),
+  fetchConsoleConfig: vi.fn().mockResolvedValue({ plugins: [] }),
   fetchFolderTree: vi.fn(),
   fetchJobs: vi.fn(),
   fetchLibraries: vi.fn(),
@@ -47,7 +57,9 @@ vi.mock("@/lib/graphql", () => ({
   scanLibrary: vi.fn(),
   setLibraryPreviewClips: vi.fn(),
   setLibraryRoots: vi.fn(),
+  setScraperCredential: vi.fn(),
   setSkipDetectionEnabled: vi.fn(),
+  validateScraperCredential: vi.fn(),
 }));
 
 function pickerEntry(path: string, children?: PathPickerEntryInfo[]): PathPickerEntryInfo {
@@ -626,5 +638,122 @@ describe("Console Libraries add (CORE-1156)", () => {
       "href",
       "/console/plugins",
     );
+  });
+});
+
+// CORE-1534: the Libraries page names a missing metadata-provider key and sets
+// it in place; the stored value is never echoed back.
+describe("Console Libraries provider keys (CORE-1534)", () => {
+  function keyConfig(status: string, active = true): ConsoleConfigInfo {
+    return {
+      plugins: [
+        {
+          id: "catalog",
+          active,
+          scrapers: ["catalog-a", "catalog-b"].map((scraperID) => ({
+            pluginID: "catalog",
+            scraperID,
+            displayName: "Example Catalog",
+            kind: "metadata",
+            endpoint: "https://api.example.org/3",
+            authRef: "example-api-key",
+            authStyle: "query",
+            credentialRequired: true,
+            credentialConfigured: status === "configured",
+            credentialStatus: status,
+          })),
+        },
+      ],
+    } as unknown as ConsoleConfigInfo;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetRescansForTest();
+    vi.mocked(fetchLibraries).mockResolvedValue([
+      {
+        id: "library-1",
+        title: "Library",
+        pluginID: null,
+        roots: ["/Volumes/library"],
+        previewClips: true,
+        restricted: false,
+      },
+    ]);
+    vi.mocked(fetchPlugins).mockResolvedValue([]);
+    vi.mocked(fetchSkipDetectionEnabled).mockResolvedValue([]);
+  });
+
+  function renderPage() {
+    return render(
+      <MemoryRouter>
+        <I18nProvider>
+          <Libraries />
+        </I18nProvider>
+      </MemoryRouter>,
+    );
+  }
+
+  it("shows a missing key, sets it without echoing it back, then clears it", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchConsoleConfig).mockResolvedValue(keyConfig("missing"));
+    renderPage();
+
+    const panel = await screen.findByRole("region", { name: "Metadata provider keys needed" });
+    expect(within(panel).getByText("Example Catalog")).toBeInTheDocument();
+    expect(within(panel).getByText("Missing")).toBeInTheDocument();
+    expect(within(panel).queryByRole("button", { name: "Disable" })).toBeNull();
+
+    // Set: the value goes to the server once and the field empties.
+    vi.mocked(setScraperCredential).mockResolvedValue({
+      authRef: "example-api-key",
+      credentialConfigured: true,
+      credentialStatus: "configured",
+      scraperIDs: ["catalog-a", "catalog-b"],
+    });
+    vi.mocked(fetchConsoleConfig).mockResolvedValue(keyConfig("configured"));
+    const field = within(panel).getByLabelText("Example Catalog API key");
+    await user.type(field, "example-secret-value");
+    await user.click(within(panel).getByRole("button", { name: "Save" }));
+
+    expect(setScraperCredential).toHaveBeenCalledWith("example-api-key", "example-secret-value");
+    const configuredPanel = await screen.findByRole("region", { name: "Metadata provider keys" });
+    expect(await within(configuredPanel).findByText("Configured")).toBeInTheDocument();
+    expect(within(configuredPanel).getByLabelText("Example Catalog API key")).toHaveValue("");
+    expect(screen.queryByDisplayValue("example-secret-value")).toBeNull();
+    expect(document.body.textContent).not.toContain("example-secret-value");
+
+    // Clear: Disable stores an empty key and the row reports it missing again.
+    vi.mocked(disableScraperCredential).mockResolvedValue({
+      authRef: "example-api-key",
+      credentialConfigured: false,
+      credentialStatus: "missing",
+      scraperIDs: ["catalog-a", "catalog-b"],
+    });
+    vi.mocked(fetchConsoleConfig).mockResolvedValue(keyConfig("missing"));
+    await user.click(within(configuredPanel).getByRole("button", { name: "Disable" }));
+
+    expect(disableScraperCredential).toHaveBeenCalledWith("example-api-key");
+    const clearedPanel = await screen.findByRole("region", {
+      name: "Metadata provider keys needed",
+    });
+    expect(await within(clearedPanel).findByText("Missing")).toBeInTheDocument();
+    expect(within(clearedPanel).getByLabelText("Example Catalog API key")).toHaveValue("");
+  });
+
+  it("shows no provider-key panel when every required key is configured", async () => {
+    vi.mocked(fetchConsoleConfig).mockResolvedValue(keyConfig("configured"));
+    renderPage();
+    await screen.findByText("Library");
+    await waitFor(() => expect(fetchConsoleConfig).toHaveBeenCalled());
+    expect(screen.queryByRole("region", { name: /Metadata provider keys/ })).toBeNull();
+  });
+
+  it("ignores keys of inactive plugins", async () => {
+    vi.mocked(fetchConsoleConfig).mockResolvedValue(keyConfig("missing", false));
+    renderPage();
+    await screen.findByText("Library");
+    await waitFor(() => expect(fetchConsoleConfig).toHaveBeenCalled());
+    expect(screen.queryByRole("region", { name: /Metadata provider keys/ })).toBeNull();
   });
 });

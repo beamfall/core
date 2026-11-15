@@ -54,3 +54,20 @@ For disaster recovery rather than migration rollback, follow the
 databases plus operational state and requires the separately held BackupKey. A legacy v1 backup is
 database-only and requires secrets, TLS identity, and configuration to be re-provisioned. BackupKey
 and Library Recovery Key material are never inside either artifact.
+
+## Stage a restore from the console
+
+An admin can also restore an encrypted Backup Set without a shell. On the console Backup page,
+load the destination's history, select the set, and enter its BackupKey to see what it holds: its
+databases and schema versions against the versions this server supports, its operational files,
+and whether this server can restore it. The key is only used to open the set; it is never stored,
+logged or shown again.
+
+Staging decrypts the set into `<data-dir>/restore-staged`. A set newer than the running binary is
+refused, as is one whose secrets or TLS identity differ from the server's unless the admin chooses
+to replace them. The restore runs the next time `beamfall serve` starts, before the store opens,
+through the same path as the offline restore: the data directory is kept as
+`<data-dir>.pre-restore-<time>`, and a failed restore puts it back and is not retried. The console
+reports the outcome and the rollback copy. If the original data cannot be put back, the server
+refuses to start, leaving both directories for the operator. A staged restore can be canceled from
+the console until the restart.

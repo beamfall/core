@@ -28,7 +28,7 @@ export const backupRetentionStrings = {
     backupRestoreStepStart:
       "Start Beamfall again and keep the pre-restore snapshot until the restored server is verified.",
     backupRestoreSafety:
-      "The web Console only guides restore. It never overwrites a live database.",
+      "The Console never overwrites a live database: a staged restore applies on the next start, before the database opens.",
     // MIGREV-3 — Backup panel: history + verify + manifest + restore assistant.
     backupHistoryHeading: "Backup history",
     backupHistoryLead:

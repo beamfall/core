@@ -1,6 +1,6 @@
 # Console live sessions and host graphs — technical-deep-dive
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:35115d1eabb769fdc83352e20b083618 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -130,32 +130,32 @@ Source: internal/web/app/src/areas/console/sections/Dashboard\.tsx:294; symbol: 
 <!-- flowdocs:paragraph:1b8a3c704cfb0a118aceb8304c61a156 -->
 Declared member: source declares HOST\_METRICS\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:330; symbol: HOST\_METRICS\_QUERY; span SHA256: 7e54ddffeb61a1e97b05b83c5f31c9bac7ad4fec864a48c53313e6f113f68603.
+Source: internal/web/app/src/lib/graphql/console\.ts:366; symbol: HOST\_METRICS\_QUERY; span SHA256: 7e54ddffeb61a1e97b05b83c5f31c9bac7ad4fec864a48c53313e6f113f68603.
 
 <!-- flowdocs:paragraph:082c40ba53de084d094bdaad255c10b7 -->
 Declared member: source declares LIVE\_SESSIONS\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:315; symbol: LIVE\_SESSIONS\_QUERY; span SHA256: 80737307272489f5a23ac82dd9d129bf5edc61e926df71374701b235c58d9a89.
+Source: internal/web/app/src/lib/graphql/console\.ts:351; symbol: LIVE\_SESSIONS\_QUERY; span SHA256: 80737307272489f5a23ac82dd9d129bf5edc61e926df71374701b235c58d9a89.
 
 <!-- flowdocs:paragraph:4f715251f210f38c010513aa6041cffd -->
 Declared member: source declares TERMINATE\_SESSION\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:383; symbol: TERMINATE\_SESSION\_MUTATION; span SHA256: 6813655cc1ab9343b77671f5195685ff353a9cd7fe641a8a2653aa0934381e0a.
+Source: internal/web/app/src/lib/graphql/console\.ts:419; symbol: TERMINATE\_SESSION\_MUTATION; span SHA256: 6813655cc1ab9343b77671f5195685ff353a9cd7fe641a8a2653aa0934381e0a.
 
 <!-- flowdocs:paragraph:c334750562be70331d8ad101d7321412 -->
 Declared member: source declares fetchHostMetrics; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:334; symbol: fetchHostMetrics; span SHA256: a311ae1ed25b2e18a7df6a956c98469bd815a657fefe6da39eea492233707985.
+Source: internal/web/app/src/lib/graphql/console\.ts:370; symbol: fetchHostMetrics; span SHA256: a311ae1ed25b2e18a7df6a956c98469bd815a657fefe6da39eea492233707985.
 
 <!-- flowdocs:paragraph:d2c8bb3d5f0ca58e8d2f27043fb3d1d7 -->
 Declared member: source declares fetchLiveSessions; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:319; symbol: fetchLiveSessions; span SHA256: 3f05f0b7178bbaad55b2ab5abd435cd1259e7893fb6029fcba330b7cfd7dd654.
+Source: internal/web/app/src/lib/graphql/console\.ts:355; symbol: fetchLiveSessions; span SHA256: 3f05f0b7178bbaad55b2ab5abd435cd1259e7893fb6029fcba330b7cfd7dd654.
 
 <!-- flowdocs:paragraph:1a8e715017fe069274740ee89cba7601 -->
 Declared member: source declares terminateSession; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:387; symbol: terminateSession; span SHA256: c1d116b4d1da2b11211afc24e9acf691bbc2a74f22dd38fc67d8ceed226a4b6d.
+Source: internal/web/app/src/lib/graphql/console\.ts:423; symbol: terminateSession; span SHA256: c1d116b4d1da2b11211afc24e9acf691bbc2a74f22dd38fc67d8ceed226a4b6d.
 
 <!-- flowdocs:paragraph:7e02f83dc9a923f660040957efdd7fc5 -->
 Declared member: source declares onMove; membership is caller\-declared, not runtime evidence\.

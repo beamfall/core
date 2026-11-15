@@ -154,6 +154,20 @@ func (s *Server) SetEvents(events EventStore) {
 	s.events = events
 }
 
+// EventStreamObserver hears when a session's event stream opens and closes.
+// Watch Party presence uses it to remove a member whose tab closed without
+// leaving (CORE-1763). Only session streams are reported; developer keys and
+// admin tokens are not party members.
+type EventStreamObserver interface {
+	EventStreamOpened(session store.SessionID)
+	EventStreamClosed(session store.SessionID)
+}
+
+// SetEventStreamObserver wires the observer told about session event streams.
+func (s *Server) SetEventStreamObserver(observer EventStreamObserver) {
+	s.streamObserver = observer
+}
+
 // events streams the reveal-filtered event outbox as Server-Sent Events.
 // It is an EventFanout Reveal surface: every Media-scoped event is
 // resolved through the caller's LibraryFilter before it is written, so an
@@ -202,6 +216,10 @@ func (s *Server) eventStream(w http.ResponseWriter, r *http.Request, beforeEmit 
 		return
 	}
 	defer s.eventStreams.release(key)
+	if s.streamObserver != nil && scope.SessionID != "" && scope.APIKeyID == "" && scope.APITokenID == "" {
+		s.streamObserver.EventStreamOpened(scope.SessionID)
+		defer s.streamObserver.EventStreamClosed(scope.SessionID)
+	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", cacheControl)

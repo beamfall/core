@@ -57,7 +57,7 @@ type ArtworkCandidateStore interface {
 // metadata so readers can credit that source with its declared attribution;
 // *store.Store satisfies it. Optional: nil keeps Apply provenance-free.
 type ProvenanceStore interface {
-	SetMediaMetadataProvenance(ctx context.Context, mediaID store.MediaID, pluginID, scraperID string) error
+	SetMediaMetadataProvenance(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string) error
 }
 
 // Fetcher downloads one remote resource through a hardened client;
@@ -79,6 +79,16 @@ type ArtworkStore interface {
 	EntityPosterInherited(id store.EntityID) bool
 	ImportEntityPoster(ctx context.Context, id store.EntityID, data []byte) error
 }
+
+// artworkLockReader reads a field's recorded write source; *store.Store
+// satisfies it. When the metadata store implements it, an artwork slot an
+// admin locked (manual source on store.ArtworkLockField(slot)) is not
+// refetched. A store without it never locks artwork.
+type artworkLockReader interface {
+	MediaFieldProvenance(ctx context.Context, id store.MediaID, field string) (store.MutationSource, error)
+}
+
+var _ artworkLockReader = (*store.Store)(nil)
 
 type embeddedArtworkStore interface {
 	ImportEmbeddedPoster(ctx context.Context, id store.MediaID) (bool, error)
@@ -326,7 +336,7 @@ func (s *Service) Apply(ctx context.Context, mediaID store.MediaID, pluginID, sc
 	if metadata.Title == nil && metadata.Summary == nil && metadata.Year == nil {
 		return fmt.Errorf("identify: scraper %q returned no usable fields", scraperID)
 	}
-	if err := s.applyLocal(ctx, mediaID, pluginID, scraperID, metadata, bundle, spec, result); err != nil {
+	if err := s.applyLocal(ctx, mediaID, pluginID, scraperID, candidateID, metadata, bundle, spec, result); err != nil {
 		return err
 	}
 	s.applyArtwork(ctx, mediaID, pluginID, scraperID, result)
@@ -336,14 +346,14 @@ func (s *Service) Apply(ctx context.Context, mediaID store.MediaID, pluginID, sc
 // applyLocal writes one identification's local rows while holding the Media
 // item's write lock: two identifications racing each other then commit one
 // after the other, never metadata from one with provenance from the other.
-func (s *Service) applyLocal(ctx context.Context, mediaID store.MediaID, pluginID, scraperID string, metadata store.MediaMetadata, bundle plugin.Bundle, spec plugin.ScraperSpec, result scrape.Result) error {
+func (s *Service) applyLocal(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string, metadata store.MediaMetadata, bundle plugin.Bundle, spec plugin.ScraperSpec, result scrape.Result) error {
 	unlock := s.writes.lock(mediaID)
 	defer unlock()
 	if err := s.store.UpdateMediaMetadata(ctx, mediaID, metadata); err != nil {
 		return err
 	}
 	if s.provenance != nil {
-		if err := s.provenance.SetMediaMetadataProvenance(ctx, mediaID, pluginID, scraperID); err != nil {
+		if err := s.provenance.SetMediaMetadataProvenance(ctx, mediaID, pluginID, scraperID, candidateID); err != nil {
 			return err
 		}
 	}
@@ -722,6 +732,9 @@ func (s *Service) applyArtwork(ctx context.Context, mediaID store.MediaID, plugi
 					"media", string(mediaID), "slot", slot, "error", err.Error())
 			}
 		}
+		if s.artworkLocked(ctx, mediaID, slot) {
+			continue // an admin pinned this slot: keep their artwork
+		}
 		if slot == artwork.SlotPoster && (!s.artwork.HasArtwork(mediaID, slot) || s.artwork.IsGeneratedArtwork(mediaID, slot)) {
 			if embedded, ok := s.artwork.(embeddedArtworkStore); ok {
 				found, err := embedded.ImportEmbeddedPoster(ctx, mediaID)
@@ -754,6 +767,21 @@ func (s *Service) applyArtwork(ctx context.Context, mediaID store.MediaID, plugi
 			}
 		}
 	}
+}
+
+// artworkLocked reports whether an admin locked one artwork slot. A failed
+// read leaves the slot unlocked: artwork apply is best-effort either way.
+func (s *Service) artworkLocked(ctx context.Context, mediaID store.MediaID, slot string) bool {
+	locks, ok := s.store.(artworkLockReader)
+	if !ok {
+		return false
+	}
+	source, err := locks.MediaFieldProvenance(ctx, mediaID, store.ArtworkLockField(slot))
+	if err != nil {
+		slog.Debug("identify: artwork lock read failed", "media", string(mediaID), "slot", slot, "error", err.Error())
+		return false
+	}
+	return source == store.MutationSourceManual
 }
 
 // spec resolves pluginID → activated bundle → declared scraper. The bundle

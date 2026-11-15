@@ -229,12 +229,18 @@ const (
 	// the entry carries the Media's LibraryID for reveal-filtered visibility;
 	// it records that a lock toggled, never the field value behind it.
 	ActivityMediaFieldLock = "media.field_lock"
-	ActivityTagCreate      = "tag.create"
-	ActivityTagUpdate      = "tag.update"
-	ActivityTagDelete      = "tag.delete"
-	ActivityTagRestore     = "tag.restore"
-	ActivityTagAssign      = "tag.assign"
-	ActivityTagBulkAssign  = "tag.bulk_assign"
+	// ActivityMediaMetadataEdit and ActivityMediaMetadataRefresh audit a
+	// per-item metadata edit and a per-item provider refresh from the Console
+	// (CORE-1715), in the same Media-and-Library shape as a field-lock change;
+	// neither records the values written.
+	ActivityMediaMetadataEdit    = "media.metadata_edit"
+	ActivityMediaMetadataRefresh = "media.metadata_refresh"
+	ActivityTagCreate            = "tag.create"
+	ActivityTagUpdate            = "tag.update"
+	ActivityTagDelete            = "tag.delete"
+	ActivityTagRestore           = "tag.restore"
+	ActivityTagAssign            = "tag.assign"
+	ActivityTagBulkAssign        = "tag.bulk_assign"
 	// Generic curation relation writes (ADR-0001/0061): relation names remain
 	// plugin/core vocabulary and no relation payload is stored in the activity
 	// row. TargetID anchors the source object; LibraryID preserves Reveal

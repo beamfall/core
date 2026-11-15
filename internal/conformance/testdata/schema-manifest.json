@@ -180,6 +180,11 @@
     "tier": "admin"
   },
   {
+    "field": "cancelstagedrestore",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
     "field": "capabilitystates",
     "effect": "read",
     "tier": "admin"
@@ -380,6 +385,11 @@
     "tier": "session"
   },
   {
+    "field": "editmediametadata",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "encryptedlibrarystatus",
     "effect": "read",
     "tier": "admin"
@@ -477,6 +487,11 @@
   {
     "field": "importstatus",
     "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "inspectbackup",
+    "effect": "write",
     "tier": "admin"
   },
   {
@@ -611,6 +626,11 @@
   },
   {
     "field": "mediaforentity",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
+    "field": "mediametadata",
     "effect": "read",
     "tier": "session"
   },
@@ -831,6 +851,11 @@
   },
   {
     "field": "recordengagement",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "refreshmediametadata",
     "effect": "write",
     "tier": "session"
   },
@@ -1110,6 +1135,11 @@
     "tier": "public"
   },
   {
+    "field": "serverlogs",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
     "field": "setaccessschedule",
     "effect": "write",
     "tier": "admin"
@@ -1303,6 +1333,16 @@
     "field": "sourceitems",
     "effect": "read",
     "tier": "session"
+  },
+  {
+    "field": "stagedrestore",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "stagerestore",
+    "effect": "write",
+    "tier": "admin"
   },
   {
     "field": "stationdelete",

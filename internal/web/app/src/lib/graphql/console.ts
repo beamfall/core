@@ -40,6 +40,7 @@ import type {
   RevokeDeviceResult,
   ScopedAPIKeyInfo,
   ScraperCredentialInfo,
+  ServerLogsInfo,
   TerminateSessionResult,
   TranscodeConfigInfo,
   UpdateStatusInfo,
@@ -1179,4 +1180,22 @@ export async function setWebhookSettings(
     signal,
   );
   return data.setWebhookSettings;
+}
+
+// --- Server logs (CORE-1716) ------------------------------------------------
+
+const SERVER_LOGS_QUERY =
+  "query ServerLogs($limit: Int) { serverLogs(limit: $limit) { available capacity lines } }";
+
+/** ServerLogs — the most recent redacted server log lines, oldest first. */
+export async function fetchServerLogs(
+  limit?: number,
+  signal?: AbortSignal,
+): Promise<ServerLogsInfo> {
+  const data = await graphql<{ serverLogs: ServerLogsInfo }>(
+    SERVER_LOGS_QUERY,
+    limit === undefined ? {} : { limit },
+    signal,
+  );
+  return data.serverLogs;
 }

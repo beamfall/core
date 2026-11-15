@@ -3243,6 +3243,20 @@ func (s *Store) updateMediaMetadataSQL(ctx context.Context, id MediaID, metadata
 			return err
 		}
 	}
+	if metadata.SortTitle != nil {
+		allowed, err := canWriteFieldTx(ctx, tx, id, "sortTitle", source)
+		if err != nil {
+			return err
+		}
+		if allowed {
+			if err := writeSortTitleTx(ctx, tx, id, strings.TrimSpace(*metadata.SortTitle)); err != nil {
+				return err
+			}
+			if err := recordFieldProvenanceTx(ctx, tx, id, "sortTitle", source); err != nil {
+				return err
+			}
+		}
+	}
 	if len(sets) == 0 {
 		return tx.Commit() // nothing outranked the stored values; media exists
 	}
