@@ -1291,7 +1291,79 @@ func TestHLSLiveEncryptedLibraryFailsClosed(t *testing.T) {
 	}
 }
 
+// fakeHLSEncryptedTranscoder uploads its output through the encrypted live
+// run's loopback endpoint, as ffmpeg does on an Encrypted Library.
+type fakeHLSEncryptedTranscoder struct {
+	fakeHLSTranscoder
+}
+
+const fakeLiveSegment = "live-segment-bytes"
+
+func (fakeHLSEncryptedTranscoder) StartEncryptedHLSSegments(_ context.Context, ep ffmpeg.EncryptedLiveEndpoint, startSegment, _ int, _ ffmpeg.Rendition) (*ffmpeg.HLSProcess, error) {
+	for name, body := range map[string]string{
+		"init.mp4":                               "init",
+		fmt.Sprintf("seg%05d.m4s", startSegment): fakeLiveSegment,
+	} {
+		req, err := http.NewRequest(http.MethodPut, ep.Output+"/"+name, strings.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("PUT %s: %s", name, resp.Status)
+		}
+	}
+	return &ffmpeg.HLSProcess{}, nil
+}
+
+// TestHLSLiveEncryptedLibraryServesTheSessionDecrypted runs a live session on
+// an Encrypted Library through the route: the playlist and segment it serves
+// are the decrypted session files.
+func TestHLSLiveEncryptedLibraryServesTheSessionDecrypted(t *testing.T) {
+	handler, token := newHLSSealedTestHandlerWith(t, fakeHLSEncryptedTranscoder{})
+	if err := handler.store.SetLibraryBacking(context.Background(), "library-local", false, true); err != nil {
+		t.Fatalf("SetLibraryBacking: %v", err)
+	}
+	decryptor := &fakeEncryptedStreamingDecryptor{
+		fakeEncryptedByteDecryptor: fakeEncryptedByteDecryptor{body: []byte("plaintext-source")},
+	}
+	handler.SetEncryptedBytes(decryptor)
+
+	master := httptest.NewRecorder()
+	handler.HLS(master, httptest.NewRequest(http.MethodGet, "/api/media/hls/"+token+"/master.m3u8", nil))
+	if master.Code != http.StatusOK {
+		t.Fatalf("master status = %d, want 200: %s", master.Code, master.Body.String())
+	}
+	if body := master.Body.String(); !strings.HasPrefix(body, "#EXTM3U") || !strings.Contains(body, "720p/index.m3u8") {
+		t.Fatalf("master body = %q, want the decrypted playlist", body)
+	}
+	segment := httptest.NewRecorder()
+	handler.HLS(segment, httptest.NewRequest(http.MethodGet, "/api/media/hls/"+token+"/720p/seg00000.m4s", nil))
+	if segment.Code != http.StatusOK {
+		t.Fatalf("segment status = %d, want 200: %s", segment.Code, segment.Body.String())
+	}
+	if segment.Body.String() != fakeLiveSegment {
+		t.Fatalf("segment body = %q, want the uploaded bytes", segment.Body.String())
+	}
+	if got := segment.Header().Get("Content-Type"); got != "video/mp4" {
+		t.Fatalf("segment Content-Type = %q, want video/mp4", got)
+	}
+	// The source is bound by its fingerprint, never its path.
+	if decryptor.objectClass != "media-bytes" || decryptor.objectID == "" {
+		t.Fatalf("object identity = %q/%q, want media-bytes + fingerprint", decryptor.objectClass, decryptor.objectID)
+	}
+}
+
 func newHLSSealedTestHandler(t *testing.T) (*Handler, string) {
+	t.Helper()
+	return newHLSSealedTestHandlerWith(t, fakeHLSTranscoder{})
+}
+
+func newHLSSealedTestHandlerWith(t *testing.T, transcoder playback.Transcoder) (*Handler, string) {
 	t.Helper()
 	st := storetest.Open(t)
 	src := filepath.Join(t.TempDir(), "movie.bin")
@@ -1319,7 +1391,7 @@ func newHLSSealedTestHandler(t *testing.T) (*Handler, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sessions := playback.NewSessions(fakeHLSTranscoder{}, t.TempDir(), nil)
+	sessions := playback.NewSessions(transcoder, t.TempDir(), nil)
 	t.Cleanup(sessions.Close)
 	return NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessions), token
 }

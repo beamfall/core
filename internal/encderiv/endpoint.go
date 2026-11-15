@@ -1,6 +1,7 @@
 package encderiv
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
@@ -29,6 +30,9 @@ const (
 	readHeaderTimeout = 10 * time.Second
 	// maxHeaderBytes bounds the request headers the endpoint will parse.
 	maxHeaderBytes = 16 << 10
+	// outPath is the prefix of the upload resources a live run accepts
+	// (ADR-0236 D1): out/<rung>/<name>.
+	outPath = "out"
 )
 
 // Opener returns a fresh plaintext view of the source. The endpoint opens one
@@ -40,9 +44,27 @@ type Opener func() (io.ReadSeekCloser, error)
 // accepts (macOS peer verification is a deferred ADR-0235 item).
 type peerChecker func(peer, server netip.AddrPort) error
 
+// uploadSink stores the uploads a live run's encoder sends (ADR-0236 D1). The
+// endpoint routes only out/<rung>/<name> for its own rung to it.
+type uploadSink interface {
+	// uploadLimit reports whether name is on the closed upload list and the
+	// most bytes its body may carry.
+	uploadLimit(name string) (limit int64, ok bool)
+	// upload consumes body and stores it under name. errUploadExists means the
+	// name is already published and nothing was read.
+	upload(name string, body io.Reader) error
+}
+
 var (
-	errForbidden     = errors.New("encderiv: request refused")
-	errSourceFailure = errors.New("encderiv: source could not be read")
+	errForbidden      = errors.New("encderiv: request refused")
+	errSourceFailure  = errors.New("encderiv: source could not be read")
+	errUploadFailure  = errors.New("encderiv: upload could not be stored")
+	errUploadTooLarge = errors.New("encderiv: upload exceeds its size limit")
+	// errUploadTruncated is a body that ended before its declared end. It
+	// must not reach the encryptor as io.ErrUnexpectedEOF, which there means
+	// a short final frame, or the partial file would be published.
+	errUploadTruncated = errors.New("encderiv: upload body ended early")
+	errUploadExists    = errors.New("encderiv: upload name already published")
 )
 
 // endpoint serves one source over loopback HTTP for the life of one job.
@@ -56,8 +78,16 @@ type endpoint struct {
 	now      func() time.Time
 	peer     peerChecker
 
+	// sink and rung, when sink is set, accept the encoder's uploads under
+	// out/<rung>/ (a live run, ADR-0236 D1).
+	sink uploadSink
+	rung string
+
 	srv       *http.Server
 	serveDone chan struct{}
+	// failed is closed by the first failure, so a live run's owner can kill the
+	// encoder at once instead of waiting for it to exit.
+	failed chan struct{}
 
 	mu       sync.Mutex
 	open     Opener
@@ -78,6 +108,8 @@ type endpointConfig struct {
 	idle     time.Duration
 	now      func() time.Time
 	peer     peerChecker
+	sink     uploadSink
+	rung     string
 }
 
 // startEndpoint listens on an ephemeral IPv4 loopback port and serves until
@@ -112,8 +144,11 @@ func startEndpoint(cfg endpointConfig) (*endpoint, error) {
 		now:       now,
 		peer:      cfg.peer,
 		open:      cfg.open,
+		sink:      cfg.sink,
+		rung:      cfg.rung,
 		lastSeen:  now(),
 		serveDone: make(chan struct{}),
+		failed:    make(chan struct{}),
 	}
 	clear(raw)
 	e.srv = &http.Server{
@@ -135,6 +170,12 @@ func startEndpoint(cfg endpointConfig) (*endpoint, error) {
 // URL is the transcoder's input. It carries the token, so it is a secret.
 func (e *endpoint) URL() string {
 	return "http://" + e.host + "/" + e.token + "/" + sourcePath
+}
+
+// OutputURL is the base a live run's encoder uploads under: out/<rung>. It
+// carries the token, so it is a secret.
+func (e *endpoint) OutputURL() string {
+	return "http://" + e.host + "/" + e.token + "/" + outPath + "/" + e.rung
 }
 
 // Port is the loopback port the transcoder's sandbox must be allowed to reach.
@@ -167,12 +208,41 @@ func (e *endpoint) Revoke() {
 	})
 }
 
+// Drain revokes the token once the requests already sent have been served.
+// It stops accepting connections and lets the handlers in flight finish
+// before revoking. Use it after the encoder has exited: FFmpeg ends an upload
+// without waiting for the answer, so its last upload can still be arriving
+// when it exits, and Revoke would cut it off. With the client gone, each
+// handler ends at its body's end, or within the idle timeout at worst.
+func (e *endpoint) Drain() {
+	wait := e.idle
+	if wait <= 0 {
+		wait = readHeaderTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
+	defer cancel()
+	_ = e.srv.Shutdown(ctx)
+	e.Revoke()
+}
+
+// Failed is closed once the endpoint has recorded a failure (see Err).
+func (e *endpoint) Failed() <-chan struct{} { return e.failed }
+
 func (e *endpoint) fail(err error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.failErr == nil {
 		e.failErr = err
+		close(e.failed)
 	}
+}
+
+// expire ends the token because the encoder stopped making progress.
+func (e *endpoint) expire() {
+	e.mu.Lock()
+	e.expired = true
+	e.mu.Unlock()
+	e.fail(ErrExpired)
 }
 
 // enter admits one request while the token is live and registers it so
@@ -218,16 +288,29 @@ func (e *endpoint) live() error {
 	return nil
 }
 
-func (e *endpoint) tokenMatches(path string) bool {
+// route returns the resource named after the token, and false when the path
+// does not carry the token.
+func (e *endpoint) route(path string) (string, bool) {
 	rest, ok := strings.CutPrefix(path, "/")
 	if !ok {
-		return false
+		return "", false
 	}
 	token, resource, ok := strings.Cut(rest, "/")
-	if !ok || resource != sourcePath {
-		return false
+	if !ok || subtle.ConstantTimeCompare([]byte(token), []byte(e.token)) != 1 {
+		return "", false
 	}
-	return subtle.ConstantTimeCompare([]byte(token), []byte(e.token)) == 1
+	return resource, true
+}
+
+// uploadTarget accepts out/<rung>/<name> for this run's rung and a name on the
+// sink's closed list.
+func (e *endpoint) uploadTarget(resource string) (string, int64, bool) {
+	name, ok := strings.CutPrefix(resource, outPath+"/"+e.rung+"/")
+	if !ok || name == "" || strings.Contains(name, "/") {
+		return "", 0, false
+	}
+	limit, ok := e.sink.uploadLimit(name)
+	return name, limit, ok
 }
 
 func (e *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -236,17 +319,34 @@ func (e *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	if !e.tokenMatches(r.URL.Path) {
+	resource, ok := e.route(r.URL.Path)
+	if !ok || (resource != sourcePath && e.sink == nil) {
 		http.NotFound(w, r)
 		return
 	}
 	// From here the caller has proven the token, so every refusal also fails
 	// the job: a token presented wrongly is a token that may have leaked.
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		e.fail(errForbidden)
-		w.Header().Set("Allow", "GET, HEAD")
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
+	var upload string
+	var limit int64
+	if resource == sourcePath {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			e.fail(errForbidden)
+			w.Header().Set("Allow", "GET, HEAD")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+	} else {
+		if upload, limit, ok = e.uploadTarget(resource); !ok {
+			e.fail(errForbidden)
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodPut {
+			e.fail(errForbidden)
+			w.Header().Set("Allow", http.MethodPut)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
 	}
 	if r.Host != e.host {
 		e.fail(errForbidden)
@@ -267,7 +367,122 @@ func (e *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer e.exit()
+	if upload != "" {
+		e.receive(w, r, upload, limit)
+		return
+	}
 	e.serveRange(w, r, open)
+}
+
+// receive hands one upload body to the sink. The body counts as encoder
+// activity while it arrives, and a body that stalls for the idle timeout ends
+// the token (ADR-0236 D3).
+func (e *endpoint) receive(w http.ResponseWriter, r *http.Request, name string, limit int64) {
+	w.Header().Set("Cache-Control", "no-store")
+	if r.ContentLength > limit {
+		w.Header().Set("Connection", "close")
+		e.fail(errUploadTooLarge)
+		http.Error(w, "too large", http.StatusRequestEntityTooLarge)
+		return
+	}
+	rc := http.NewResponseController(w)
+	defer func() { _ = rc.SetReadDeadline(time.Time{}) }()
+	body := &uploadBody{e: e, src: r.Body, rc: rc, remaining: limit}
+	err := e.sink.upload(name, body)
+	switch {
+	case err == nil && body.err == nil:
+		w.WriteHeader(http.StatusCreated)
+	case errors.Is(err, errUploadExists) && body.err == nil:
+		// A restarted encoder sends names an earlier run of the same session
+		// already published (init.mp4 every time). The first copy stays; the
+		// body is drained so the encoder's write completes, and the run goes on.
+		if _, err := io.Copy(io.Discard, body); err != nil {
+			e.failUpload(w, body.err)
+			return
+		}
+		http.Error(w, "exists", http.StatusConflict)
+	default:
+		e.failUpload(w, body.err)
+	}
+}
+
+// failUpload records an upload that did not complete and answers it. cause is
+// the body's own failure, nil when the sink failed. The connection closes
+// after the answer: otherwise the server drains the rest of the body first,
+// with no deadline, and a stalled encoder never sees the refusal.
+func (e *endpoint) failUpload(w http.ResponseWriter, cause error) {
+	w.Header().Set("Connection", "close")
+	switch {
+	case errors.Is(cause, errUploadTooLarge):
+		e.fail(errUploadTooLarge)
+		http.Error(w, "too large", http.StatusRequestEntityTooLarge)
+	case errors.Is(cause, ErrRevoked), errors.Is(cause, ErrExpired):
+		e.fail(cause)
+		http.Error(w, "gone", http.StatusGone)
+	case isTimeout(cause):
+		e.expire()
+		http.Error(w, "gone", http.StatusGone)
+	default:
+		e.fail(errUploadFailure)
+		http.Error(w, "unavailable", http.StatusInternalServerError)
+	}
+}
+
+func isTimeout(err error) bool {
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
+}
+
+// uploadBody is one upload's request body as the sink reads it: each read is
+// admitted only while the token is live, may block at most the idle timeout,
+// and may not take the body past its limit. err keeps the first failure so
+// the endpoint can tell a body failure from a sink failure.
+type uploadBody struct {
+	e         *endpoint
+	src       io.Reader
+	rc        *http.ResponseController
+	remaining int64
+	err       error
+}
+
+func (b *uploadBody) Read(p []byte) (int, error) {
+	if b.err != nil {
+		return 0, b.err
+	}
+	if err := b.e.live(); err != nil {
+		b.err = err
+		return 0, err
+	}
+	if b.e.idle > 0 {
+		if err := b.rc.SetReadDeadline(time.Now().Add(b.e.idle)); err != nil {
+			b.err = err
+			return 0, err
+		}
+	}
+	// One byte past the limit is enough to tell an oversized body.
+	if int64(len(p)) > b.remaining+1 {
+		p = p[:b.remaining+1]
+	}
+	n, err := b.src.Read(p)
+	if int64(n) > b.remaining {
+		b.err = errUploadTooLarge
+		return 0, b.err
+	}
+	b.remaining -= int64(n)
+	if errors.Is(err, io.ErrUnexpectedEOF) {
+		err = errUploadTruncated
+	}
+	if err != nil && !errors.Is(err, io.EOF) {
+		b.err = err
+		return n, err
+	}
+	// Checked again after the read, which can block, so a body that finishes
+	// after revocation is never published.
+	if liveErr := b.e.live(); liveErr != nil {
+		b.err = liveErr
+		return 0, liveErr
+	}
+	return n, err
 }
 
 func (e *endpoint) serveRange(w http.ResponseWriter, r *http.Request, open Opener) {

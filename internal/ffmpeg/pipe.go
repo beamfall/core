@@ -273,10 +273,16 @@ func pipeConfinementRefusal(goos, shimPath string) error {
 // shimmed) command in a deny-default Seatbelt profile whose only network grant
 // is the loopback port and which grants no writable path.
 func (r *Runner) pipeCommand(ctx context.Context, goos string, port int, toolPath string, args []string) (*exec.Cmd, error) {
+	binPath, binArgs := r.niceWrap(toolPath, args)
+	return r.loopbackCommand(ctx, goos, port, binPath, binArgs)
+}
+
+// loopbackCommand is pipeCommand without the niceness wrapper: the same
+// confinement around binPath and binArgs, for a run a viewer is waiting on.
+func (r *Runner) loopbackCommand(ctx context.Context, goos string, port int, binPath string, binArgs []string) (*exec.Cmd, error) {
 	if err := pipeConfinementRefusal(goos, r.shimPath); err != nil {
 		return nil, err
 	}
-	binPath, binArgs := r.niceWrap(toolPath, args)
 	if goos == "linux" {
 		shimArgs := append([]string{shimSubcommand, "--require-landlock", "--", binPath}, binArgs...)
 		// #nosec G204 -- the shim path is the server's own executable and the
