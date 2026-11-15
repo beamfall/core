@@ -672,3 +672,83 @@ func TestEraseDestroysOnlyThatLibrarysKeyMaterialAndIsRepeatable(t *testing.T) {
 		t.Fatal("Erase touched another library's key material")
 	}
 }
+
+// TestSealedEncryptedDoesNotQueueBehindAWaitingSeal pins the revocation path
+// for open decrypt streams: while a Seal waits for an open reader's shared
+// lease, SealedEncrypted must report Sealed at once rather than queue behind
+// that Seal, or a derivative job's revocation poll would wait for its own
+// stream to finish before it could stop it.
+func TestSealedEncryptedDoesNotQueueBehindAWaitingSeal(t *testing.T) {
+	m, _ := newTestManager()
+	if _, err := m.Provision(testLib, UnsealModeAuto, ""); err != nil {
+		t.Fatal(err)
+	}
+	if m.SealedEncrypted(testLib) {
+		t.Fatal("SealedEncrypted reported an Unsealed Library as Sealed")
+	}
+	if m.SealedEncrypted("unprovisioned-library") {
+		t.Fatal("SealedEncrypted reported an unprovisioned Library as Sealed")
+	}
+	dir := t.TempDir()
+	plain := filepath.Join(dir, "plain")
+	ciphertext := filepath.Join(dir, "cipher")
+	if err := os.WriteFile(plain, []byte("lease-bound plaintext"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.EncryptFile(testLib, plain, ciphertext, testObj); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := m.OpenDecryptReader(testLib, ciphertext, testObj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealDone := make(chan struct{})
+	go func() {
+		m.Seal(testLib)
+		close(sealDone)
+	}()
+	lease := m.lease(testLib)
+	deadline := time.Now().Add(time.Second)
+	// Seal has queued once it is announced and holds or awaits the lease
+	// exclusively, so a shared TryRLock fails.
+	queued := func() bool {
+		if lease.sealPending.Load() == 0 {
+			return false
+		}
+		if lease.mu.TryRLock() {
+			lease.mu.RUnlock()
+			return false
+		}
+		return true
+	}
+	for !queued() {
+		if time.Now().After(deadline) {
+			t.Fatal("Seal never queued on the lease")
+		}
+		runtime.Gosched()
+	}
+	answered := make(chan bool, 1)
+	go func() { answered <- m.SealedEncrypted(testLib) }()
+	select {
+	case sealed := <-answered:
+		if !sealed {
+			t.Fatal("SealedEncrypted reported Unsealed while a Seal was queued")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("SealedEncrypted queued behind the waiting Seal")
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-sealDone:
+	case <-time.After(time.Second):
+		t.Fatal("Seal did not resume after reader Close")
+	}
+	if !m.SealedEncrypted(testLib) {
+		t.Fatal("SealedEncrypted reported Unsealed after the Seal completed")
+	}
+	if lease.sealPending.Load() != 0 {
+		t.Fatalf("sealPending = %d after the Seal completed, want 0", lease.sealPending.Load())
+	}
+}

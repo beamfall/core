@@ -390,3 +390,77 @@ func TestRunRefusesAnUnmeasurableSourceWithRealFFprobe(t *testing.T) {
 		})
 	}
 }
+
+// subtitledMatroska generates a short Matroska with one video stream and one
+// SRT subtitle stream at index 1 whose single cue reads cue.
+func subtitledMatroska(t *testing.T, cue string) []byte {
+	t.Helper()
+	ffmpegPath, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("ffmpeg is not installed")
+	}
+	dir := t.TempDir()
+	srt := filepath.Join(dir, "track.srt")
+	if err := os.WriteFile(srt, []byte("1\n00:00:00,200 --> 00:00:01,500\n"+cue+"\n\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, ffmpegPath, "-hide_banner", "-loglevel", "error", "-nostdin", //nolint:gosec // fixed test argv
+		"-f", "lavfi", "-i", "testsrc=size=160x120:rate=24:duration=2",
+		"-i", srt,
+		"-map", "0:v", "-map", "1:s",
+		"-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+		"-c:s", "srt", "-f", "matroska", "pipe:1")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil || len(out) == 0 {
+		t.Skipf("ffmpeg cannot generate the subtitled fixture: %v: %s", err, stderr.Bytes())
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func TestRunCaptureExtractsASubtitleWithRealFFmpeg(t *testing.T) {
+	const cue = "synthetic cue line for the capture test"
+	fixture := subtitledMatroska(t, cue)
+	tmpDir := t.TempDir()
+	t.Setenv("TMPDIR", tmpDir)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	out, err := RunCapture(ctx, Capture{
+		Open:     encryptedSource(t, fixture),
+		Size:     int64(len(fixture)),
+		MaxBytes: 1 << 20,
+		Revoked:  func(context.Context) error { return nil },
+		Transcode: func(ctx context.Context, in Input, w io.Writer) error {
+			return ffmpeg.New().ExtractSubtitleToPipe(ctx, ffmpeg.PipeInput{URL: in.URL, Secret: in.Secret}, 1, 1<<20, w)
+		},
+	})
+	if errors.Is(err, ffmpeg.ErrPipeConfinementUnavailable) {
+		t.Skip(err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.HasPrefix(out, []byte("WEBVTT")) || !bytes.Contains(out, []byte(cue)) {
+		t.Fatalf("captured output is not the WebVTT track: %q", out)
+	}
+	assertNoFiles(t, tmpDir)
+
+	_, err = RunCapture(ctx, Capture{
+		Open:     encryptedSource(t, fixture),
+		Size:     int64(len(fixture)),
+		MaxBytes: 1 << 20,
+		Revoked:  func(context.Context) error { return nil },
+		Transcode: func(ctx context.Context, in Input, w io.Writer) error {
+			return ffmpeg.New().ExtractSubtitleToPipe(ctx, ffmpeg.PipeInput{URL: in.URL, Secret: in.Secret}, 1, 8, w)
+		},
+	})
+	if !errors.Is(err, ffmpeg.ErrOutputOverflow) {
+		t.Fatalf("over-limit extraction: err = %v, want ErrOutputOverflow", err)
+	}
+}

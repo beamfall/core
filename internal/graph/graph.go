@@ -354,6 +354,7 @@ type Options struct {
 	LibEncrypt                   LibEncryptManager
 	EncryptedLibraryDBLifecycle  EncryptedLibraryDBLifecycle
 	EncryptedGeneratedAssets     EncryptedGeneratedAssetRewrapper
+	EncryptedDerivativePurgers   []EncryptedDerivativePurger
 	ExtensionPusher              ExtensionPusher
 	AccessRequestPusher          AccessRequestPusher
 	OfflinePacks                 OfflinePackService
@@ -524,6 +525,9 @@ type Handler struct {
 	// encryptedGeneratedAssets rewrites existing fingerprint-keyed Generated
 	// Asset ciphertext during encrypted-Library DEK rewrap.
 	encryptedGeneratedAssets EncryptedGeneratedAssetRewrapper
+	// encryptedDerivativePurgers remove regenerable ciphertext derivative
+	// caches during encrypted-Library DEK rewrap.
+	encryptedDerivativePurgers []EncryptedDerivativePurger
 	// pushRegistrar persists a viewer's device push token at enrollment (ADR-0039
 	// §2.5, PUSH-1). The composition root wires in the persisting push.Registrar.
 	// Nil (the default) means push-token registration is unavailable on this
@@ -747,6 +751,7 @@ func NewHandler(manifests *manifest.Service, authService *auth.Service, st *stor
 	h.libEncrypt = o.LibEncrypt
 	h.encryptedLibraryDBLifecycle = o.EncryptedLibraryDBLifecycle
 	h.encryptedGeneratedAssets = o.EncryptedGeneratedAssets
+	h.encryptedDerivativePurgers = o.EncryptedDerivativePurgers
 	h.extensionPusher = o.ExtensionPusher
 	h.accessRequestPusher = o.AccessRequestPusher
 	h.offlinePacks = o.OfflinePacks

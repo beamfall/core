@@ -285,8 +285,9 @@ func TestGenerateImageEnrichSkipsSealedLibrary(t *testing.T) {
 }
 
 func TestGenerateImageEnrichSkipsEncryptedUnsealedLibrary(t *testing.T) {
-	// feature:image-enrich — ENCPRIV-10b: an Encrypted Library that is currently
-	// Unsealed (sealed predicate returns false) still gets no plaintext derivative.
+	// feature:image-enrich — ENCPRIV-10b: without the encrypted plane, an
+	// Encrypted Library that is currently Unsealed (sealed predicate returns
+	// false) still gets no derivative, since it could only be plaintext.
 	svc, st, _ := newTestService(t, &fakeGen{})
 	svc.SetSealed(func(store.LibraryID) bool { return false })
 	svc.SetEncrypted(func(libraryID store.LibraryID) bool { return libraryID == "library-local" })

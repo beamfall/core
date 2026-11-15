@@ -183,8 +183,8 @@ func (l playbackLoudnessLocator) SilenceMapAsset(fp string) (string, bool) {
 func (l playbackLoudnessLocator) LoudnessAsset(fp string) (string, bool) {
 	return l.service.LoudnessAsset(fp)
 }
-func (l playbackLoudnessLocator) LoudnessForFingerprint(fp string) (playback.LoudnessData, bool) {
-	analysis, ok := l.service.LoudnessForFingerprint(fp)
+func (l playbackLoudnessLocator) LoudnessForFingerprint(libraryID store.LibraryID, fp string) (playback.LoudnessData, bool) {
+	analysis, ok := l.service.LoudnessForFingerprint(libraryID, fp)
 	if !ok {
 		return playback.LoudnessData{}, false
 	}

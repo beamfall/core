@@ -1645,7 +1645,7 @@ func (t testAssetLocator) PreviewClipAsset(string) (string, bool) {
 
 func (t testAssetLocator) LoudnessAsset(string) (string, bool) { return "", false }
 
-func (t testAssetLocator) LoudnessForFingerprint(string) (playback.LoudnessData, bool) {
+func (t testAssetLocator) LoudnessForFingerprint(store.LibraryID, string) (playback.LoudnessData, bool) {
 	return playback.LoudnessData{}, false
 }
 

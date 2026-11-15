@@ -55,6 +55,13 @@ package store
 //     upsert surface into the encrypted library.
 //   - encrypted-library 0006 (CORE-1626) mirrors catalog 0115's gapless
 //     media_file_stream columns into the encrypted library.
+//   - encrypted-library 0007 (CORE-1963) mirrors catalog 0070's
+//     playback_rendition table into the encrypted library so precomputed
+//     rendition rows for an Encrypted Library never reach the shared catalog;
+//     it is read only by the precompute path, off the entity-query hot path.
+//     The latency bench passed for the 0007 bump on 2026-11-15; the worst
+//     measured query was search/fts/revealed at 28.48125 ms against a 60 ms
+//     budget, at a host load average near 30.
 //
 // Every entry above rode the `make bench` gate at the migration that introduced
 // it, and each sits off the entity-query hot path.
@@ -64,5 +71,5 @@ package store
 //   - mute/retention/podcast predicates
 const (
 	schemaFreezeEventsMigrations           = 22
-	schemaFreezeEncryptedLibraryMigrations = 6
+	schemaFreezeEncryptedLibraryMigrations = 7
 )

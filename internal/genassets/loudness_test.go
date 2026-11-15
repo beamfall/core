@@ -50,7 +50,7 @@ func TestGenerateLoudnessFromR128(t *testing.T) {
 		t.Fatalf("loudness not servable: %v", err)
 	}
 	// The content seam returns the parsed measurement for the playback report.
-	data, ok := svc.LoudnessForFingerprint(fingerprint)
+	data, ok := svc.LoudnessForFingerprint("", fingerprint)
 	if !ok || data.Source != LoudnessSourceR128 || data.GainDB != analysis.GainDB {
 		t.Fatalf("LoudnessForFingerprint = (%+v, %v), want the parsed analysis", data, ok)
 	}

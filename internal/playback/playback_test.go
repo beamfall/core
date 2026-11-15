@@ -673,7 +673,7 @@ func (f fakeAssetsLocator) LoudnessAsset(string) (string, bool) {
 	return "loudness.json", true
 }
 
-func (f fakeAssetsLocator) LoudnessForFingerprint(string) (LoudnessData, bool) {
+func (f fakeAssetsLocator) LoudnessForFingerprint(store.LibraryID, string) (LoudnessData, bool) {
 	if f.loudness == nil {
 		return LoudnessData{}, false
 	}

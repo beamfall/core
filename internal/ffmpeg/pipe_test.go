@@ -46,6 +46,11 @@ func TestPipeArgsScopeInputAndFragmentOutput(t *testing.T) {
 			t.Errorf("format allowlist admits the %s demuxer", demuxer)
 		}
 	}
+	for _, demuxer := range []string{"mp3", "flac", "wav", "aiff", "ogg", "mov"} {
+		if !slices.Contains(strings.Split(pipeFormatAllowlist, ","), demuxer) {
+			t.Errorf("format allowlist refuses the %s demuxer an Encrypted music Library needs", demuxer)
+		}
+	}
 	joined := strings.Join(args, " ")
 	for _, banned := range []string{"faststart", "global_sidx", "file"} {
 		if strings.Contains(joined, banned) {
@@ -85,6 +90,69 @@ func TestPipeProbeArgsScopeInputLikeTheTranscode(t *testing.T) {
 		if strings.Contains(joined, banned) {
 			t.Errorf("probe args contain %q: %v", banned, args)
 		}
+	}
+}
+
+func TestPipeSubtitleArgsScopeInputLikeTheTranscode(t *testing.T) {
+	profile, _ := PackProfileByName("pack-720p")
+	transcode := pipeArgs(testPipeURL, 10*time.Second, profile)
+	args := pipeSubtitleArgs(testPipeURL, 10*time.Second, 3)
+	i := slices.Index(args, "-i")
+	if i < 0 || args[i+1] != testPipeURL || slices.Index(args[i+1:], "-i") >= 0 {
+		t.Fatalf("subtitle args lack their one input -i %s: %v", testPipeURL, args)
+	}
+	input := args[:i]
+	for _, pair := range [][2]string{
+		{"-protocol_whitelist", "http,tcp"},
+		{"-max_redirects", "0"},
+		{"-rw_timeout", "10000000"},
+		{"-format_whitelist", pipeFormatAllowlist},
+	} {
+		j := slices.Index(input, pair[0])
+		if j < 0 || input[j+1] != pair[1] {
+			t.Errorf("input options lack %s %s: %v", pair[0], pair[1], input)
+		}
+		if k := slices.Index(transcode, pair[0]); k < 0 || transcode[k+1] != input[j+1] {
+			t.Errorf("subtitle extract and transcode disagree on %s", pair[0])
+		}
+	}
+	if !slices.Contains(input, "-nostdin") {
+		t.Errorf("subtitle args read stdin: %v", args)
+	}
+	joined := strings.Join(args, " ")
+	if !strings.HasSuffix(joined, "-map 0:3 -c:s webvtt -f webvtt pipe:1") {
+		t.Errorf("subtitle args do not map the one stream to WebVTT on pipe:1: %v", args)
+	}
+	if strings.Contains(joined, "file") || slices.Contains(args, "-y") || slices.Contains(args, "--") {
+		t.Errorf("subtitle args name a file output: %v", args)
+	}
+}
+
+func TestExtractSubtitleToPipeRefusesBadArguments(t *testing.T) {
+	var out bytes.Buffer
+	for name, call := range map[string]func() error{
+		"non-loopback host": func() error {
+			return New().ExtractSubtitleToPipe(context.Background(), PipeInput{URL: "http://192.168.1.10:8080/token/source"}, 0, 1024, &out)
+		},
+		"file input": func() error {
+			return New().ExtractSubtitleToPipe(context.Background(), PipeInput{URL: "file:///etc/passwd"}, 0, 1024, &out)
+		},
+		"negative stream": func() error {
+			return New().ExtractSubtitleToPipe(context.Background(), PipeInput{URL: testPipeURL}, -1, 1024, &out)
+		},
+		"no limit": func() error {
+			return New().ExtractSubtitleToPipe(context.Background(), PipeInput{URL: testPipeURL}, 0, 0, &out)
+		},
+		"no writer": func() error {
+			return New().ExtractSubtitleToPipe(context.Background(), PipeInput{URL: testPipeURL}, 0, 1024, nil)
+		},
+	} {
+		if err := call(); err == nil {
+			t.Errorf("%s: ExtractSubtitleToPipe accepted it", name)
+		}
+	}
+	if out.Len() != 0 {
+		t.Fatalf("refused extraction wrote %d bytes", out.Len())
 	}
 }
 

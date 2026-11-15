@@ -212,10 +212,10 @@ func TestSubtitlesRejectsUnresolvableMediaBeforeConversion(t *testing.T) {
 }
 
 func TestSubtitlesRejectsEncryptedUnsealedLibrary(t *testing.T) {
-	// ENCPRIV-10b: extracting a muxed subtitle caches a plaintext WebVTT sidecar —
-	// a plaintext derivative of the encrypted Media. An Encrypted Library that is
-	// currently Unsealed (no sealed predicate wired, so sealedMedia is false) must
-	// still fail closed: the converter never runs and no sidecar is written.
+	// ENCPRIV-10b: the plaintext sidecar path never serves an Encrypted Library.
+	// Without the encrypted subtitle pipeline wired (SetEncryptedSubtitles and
+	// SetEncryptedBytes), an Unsealed Encrypted Library still fails closed: the
+	// plaintext converter never runs and no sidecar is written.
 	conv := &fakeSubtitleConverter{body: "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHello\n"}
 	handler, token := newSubtitleTestHandler(t, "session-default", "media-alpha", false, conv)
 	if err := handler.store.SetLibraryBacking(context.Background(), "library-local", false, true); err != nil {
