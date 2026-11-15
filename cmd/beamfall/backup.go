@@ -267,7 +267,18 @@ func snapshotRestoreDataDir(dataDir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	snapshot := dataDir + ".pre-restore-" + time.Now().UTC().Format("20060102T150405.000000000Z")
+	return snapshotRestoreDataDirTo(dataDir, newRestoreSnapshotPath(dataDir))
+}
+
+// newRestoreSnapshotPath names the rollback copy a restore renames the live
+// data directory to.
+func newRestoreSnapshotPath(dataDir string) string {
+	return dataDir + ".pre-restore-" + time.Now().UTC().Format("20060102T150405.000000000Z")
+}
+
+// snapshotRestoreDataDirTo renames the existing data directory to snapshot.
+// On error it returns "" with the data directory put back when it could be.
+func snapshotRestoreDataDirTo(dataDir, snapshot string) (string, error) {
 	if err := renameRestoreDataDir(dataDir, snapshot); err != nil {
 		return "", err
 	}

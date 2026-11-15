@@ -40,13 +40,14 @@ func serve(ctx context.Context, args []string) error {
 }
 
 // startServer takes the data directory's server lock, which offline commands
-// probe before writing, and builds the server. The caller runs the server and
-// then calls release.
+// probe before writing, applies a staged restore under it, and builds the
+// server. The caller runs the server and then calls release.
 func startServer(ctx context.Context, cfg config.Config) (*app.App, func(), error) {
-	if err := applyStagedRestore(ctx, cfg.DataDir, slog.Default()); err != nil {
+	release, err := lockServeDataDir(cfg.DataDir)
+	if err != nil {
 		return nil, nil, err
 	}
-	release, err := lockServeDataDir(cfg.DataDir)
+	release, err = applyStagedRestore(ctx, cfg.DataDir, slog.Default(), release)
 	if err != nil {
 		return nil, nil, err
 	}

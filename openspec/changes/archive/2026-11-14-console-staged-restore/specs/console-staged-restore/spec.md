@@ -50,3 +50,21 @@ SHALL NOT retry; if it cannot, the server SHALL refuse to start.
 
 - **WHEN** the admin cancels a staged restore before a restart
 - **THEN** nothing is applied on the next start
+
+### Requirement: A staged restore holds the data directory until its outcome is safe
+
+The restore SHALL run under the server lock, and a journal beside the data directory SHALL record
+the rollback copy from before the data directory is renamed until the outcome is safe. While the
+journal exists, no server SHALL start.
+
+#### Scenario: Interrupted restore
+
+- **WHEN** a start stopped after renaming the data directory, or a rollback could not put the
+  original back
+- **THEN** later starts refuse and name where the original data is, rather than starting on an
+  empty data directory
+
+#### Scenario: Second server during a restore
+
+- **WHEN** another server starts while a staged restore is replacing the data directory
+- **THEN** it refuses to start and does not open or create the data directory

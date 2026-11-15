@@ -263,6 +263,62 @@ func Claim(dataDir string, now time.Time) (string, string, error) {
 	return claimed, filepath.Join(claimed, setName, "manifest.json"), nil
 }
 
+// Journal records, beside the data directory, a staged restore that has
+// started replacing the data directory. It is written before the live data
+// directory is renamed to Snapshot and removed only once the outcome is safe
+// (restored, or rolled back), so a crash or a failed rollback in between
+// leaves a record that stops the next start from booting an empty server.
+type Journal struct {
+	StartedAt string `json:"startedAt"`
+	Snapshot  string `json:"snapshot"`
+}
+
+// JournalPath is where dataDir's restore journal lives. It sits outside the
+// data directory, which the restore renames away.
+func JournalPath(dataDir string) string {
+	return filepath.Clean(dataDir) + ".restore-journal.json"
+}
+
+// WriteJournal durably records that a restore is about to rename dataDir.
+func WriteJournal(dataDir string, journal Journal) error {
+	if err := writeJSON(JournalPath(dataDir), journal); err != nil {
+		return fmt.Errorf("write restore journal: %w", err)
+	}
+	return syncDir(filepath.Dir(filepath.Clean(dataDir)))
+}
+
+// ReadJournal reports dataDir's restore journal, if any.
+func ReadJournal(dataDir string) (Journal, bool, error) {
+	var journal Journal
+	err := readJSON(JournalPath(dataDir), &journal)
+	if errors.Is(err, os.ErrNotExist) {
+		return Journal{}, false, nil
+	}
+	if err != nil {
+		return Journal{}, true, fmt.Errorf("read restore journal: %w", err)
+	}
+	return journal, true, nil
+}
+
+// ClearJournal removes dataDir's restore journal once the outcome is safe.
+func ClearJournal(dataDir string) error {
+	if err := os.Remove(JournalPath(dataDir)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return syncDir(filepath.Dir(filepath.Clean(dataDir)))
+}
+
+// RemoveOrphanClaims removes claimed sets a start that stopped before
+// renaming the data directory left beside it: they hold decrypted data. The
+// caller must hold the server lock and have found no journal.
+func RemoveOrphanClaims(dataDir string) {
+	if orphans, err := filepath.Glob(filepath.Clean(dataDir) + ".restore-applying-*"); err == nil {
+		for _, dir := range orphans {
+			_ = os.RemoveAll(dir)
+		}
+	}
+}
+
 // WriteResult records the outcome of an applied restore in dataDir.
 func WriteResult(dataDir string, result Result) error {
 	return writeJSON(filepath.Join(dataDir, resultName), result)
