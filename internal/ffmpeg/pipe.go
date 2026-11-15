@@ -191,7 +191,8 @@ func pipeConfinementRefusal(goos, shimPath string) error {
 
 // pipeCommand builds the confined pipe-transcode command. On Linux it runs the
 // shim with --require-landlock and no granted paths, so a kernel without
-// landlock refuses the launch. On macOS it wraps the (optionally shimmed)
+// landlock ABI 3 or later (the first that fences truncate(2)) refuses the
+// launch. On macOS it wraps the (optionally shimmed)
 // command in a deny-default Seatbelt profile whose only network grant is the
 // loopback port and which grants no writable path.
 func (r *Runner) pipeCommand(ctx context.Context, goos string, port int, ffmpegPath string, args []string) (*exec.Cmd, error) {
