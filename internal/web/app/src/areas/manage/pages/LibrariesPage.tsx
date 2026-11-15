@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { DeleteLibraryButton } from "@/components/beamfall/LibraryDelete";
-import { RescanAllButton, RescanButton, RescanStatus } from "@/components/beamfall/LibraryRescan";
+import {
+  RescanAllButton,
+  RescanButton,
+  RescanStatus,
+  startRescan,
+  useRescanState,
+} from "@/components/beamfall/LibraryRescan";
 import {
   EmptyLine,
   ErrorLine,
@@ -33,7 +39,6 @@ import {
   moveManagedPath,
   renameManagedPath,
   restoreManagedPath,
-  scanLibrary,
   setLibraryPreviewClips,
   setLibraryRoots,
 } from "@/lib/graphql";
@@ -209,6 +214,8 @@ function LibraryRow({
   const [moveDestination, setMoveDestination] = useState("");
   const [lastTrash, setLastTrash] = useState<ManagedTrashInfo | null>(null);
   const [busy, setBusy] = useState(false);
+  const rescanPhase = useRescanState(library.id).phase;
+  const scanBusy = rescanPhase === "starting" || rescanPhase === "scanning";
 
   const loadTree = useCallback(async () => {
     if ((library.roots ?? []).length === 0 && !rootsText.trim()) {
@@ -243,15 +250,9 @@ function LibraryRow({
       onError(t("selectFolderToScan"));
       return;
     }
-    setBusy(true);
     onError("");
-    try {
-      await scanLibrary(library.id, path);
-    } catch (err) {
-      onError(err instanceof Error ? err.message : t("scanFailed"));
-    } finally {
-      setBusy(false);
-    }
+    // The tracker drives the status chip below, like a full rescan (CORE-2012).
+    if ((await startRescan(library.id, [path])) === "refused") onError(t("scanNeedsUnlock"));
   };
 
   const onSaveRoots = async () => {
@@ -440,10 +441,10 @@ function LibraryRow({
               variant="outline"
               size="sm"
               className="ml-auto shrink-0"
-              disabled={busy || selectedKind !== "folder" || !selectedPath}
+              disabled={busy || scanBusy || selectedKind !== "folder" || !selectedPath}
               onClick={onScan}
             >
-              {t("scanOneFolder")}
+              {scanBusy ? t("rescanScanning") : t("scanOneFolder")}
             </Button>
           </div>
           <div className={actionRow}>

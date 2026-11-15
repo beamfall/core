@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetRescansForTest } from "@/components/beamfall/LibraryRescan";
 import { setAdvancedSettings } from "@/lib/advancedSettings";
+import { ApiError } from "@/lib/api";
 import {
   browseServerFolders,
   createLibrary,
@@ -283,9 +284,9 @@ describe("Console Libraries scan", () => {
 
     await user.click(await screen.findByRole("button", { name: "Scan" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "folder is outside the library roots",
-    );
+    // The card's scan status reports the failure (CORE-2012).
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Scan failed"));
+    expect(screen.getByRole("status")).toHaveTextContent("folder is outside the library roots");
     expect(unhandled).not.toHaveBeenCalled();
     window.removeEventListener("unhandledrejection", unhandled);
   });
@@ -299,6 +300,47 @@ describe("Console Libraries scan", () => {
 
     await waitFor(() => expect(scanLibrary).toHaveBeenCalledWith("library-1", "/Volumes/library"));
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("acknowledges a one-folder scan and follows it to the end (CORE-2012)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchJobs).mockResolvedValue([
+      {
+        id: "scan-job",
+        kind: "scan",
+        status: "completed",
+        progress: { current: 3, total: 3, unit: "files" },
+      },
+    ]);
+    renderLibraries();
+    await openFolderScan();
+
+    await user.click(await screen.findByRole("button", { name: "Scan" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Scanning");
+    // The folder's Scan button turns into a disabled "Scanning…" like the rescan buttons.
+    expect(screen.queryByRole("button", { name: "Scan" })).toBeNull();
+    for (const button of screen.getAllByRole("button", { name: "Scanning…" })) {
+      expect(button).toBeDisabled();
+    }
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Scan finished"), {
+      timeout: 4000,
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("Checked 3 files.");
+  });
+
+  it("asks to unlock the Console when a one-folder scan is refused (CORE-2012)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(scanLibrary).mockRejectedValueOnce(new ApiError("admin session required", 403));
+    renderLibraries();
+    await openFolderScan();
+
+    await user.click(await screen.findByRole("button", { name: "Scan" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Unlock the Console, then scan again.",
+    );
+    expect(screen.queryByRole("status")).toBeNull();
   });
 
   it("saves an added folder at once", async () => {

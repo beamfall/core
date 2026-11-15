@@ -126,6 +126,11 @@ export const managedFileStrings = {
     libraryIconSparkles: "Sparkles",
     libraryIconLayers: "Layers",
     libraryIconFolder: "Folder",
+    rescanUnknown: "Scan result unknown",
+    rescanUnknownHint:
+      "Beamfall lost track of this scan before it ended. Check the library, or scan again.",
+    rescanDoneFiles: "{count, plural, one {Checked # file.} other {Checked # files.}}",
+    scanNeedsUnlock: "Your Console session has ended. Unlock the Console, then scan again.",
   },
   fr: {
     backToBrowse: "Retour au navigateur",
@@ -180,6 +185,12 @@ export const managedFileStrings = {
     libraryIconSparkles: "Étincelles",
     libraryIconLayers: "Calques",
     libraryIconFolder: "Dossier",
+    rescanUnknown: "Résultat de l’analyse inconnu",
+    rescanUnknownHint:
+      "Beamfall a perdu la trace de cette analyse avant sa fin. Vérifiez la bibliothèque ou relancez l’analyse.",
+    rescanDoneFiles: "{count, plural, one {# fichier vérifié.} other {# fichiers vérifiés.}}",
+    scanNeedsUnlock:
+      "Votre session Console a pris fin. Déverrouillez la Console, puis relancez l’analyse.",
   },
   de: {
     backToBrowse: "Zurück zum Durchsuchen",
@@ -233,6 +244,12 @@ export const managedFileStrings = {
     libraryIconSparkles: "Funkeln",
     libraryIconLayers: "Ebenen",
     libraryIconFolder: "Ordner",
+    rescanUnknown: "Scan-Ergebnis unbekannt",
+    rescanUnknownHint:
+      "Beamfall hat diesen Scan vor seinem Ende aus den Augen verloren. Prüfen Sie die Bibliothek oder scannen Sie erneut.",
+    rescanDoneFiles: "{count, plural, one {# Datei geprüft.} other {# Dateien geprüft.}}",
+    scanNeedsUnlock:
+      "Ihre Console-Sitzung ist abgelaufen. Entsperren Sie die Console und scannen Sie dann erneut.",
   },
   es: {
     backToBrowse: "Volver a Explorar",
@@ -286,6 +303,11 @@ export const managedFileStrings = {
     libraryIconSparkles: "Destellos",
     libraryIconLayers: "Capas",
     libraryIconFolder: "Carpeta",
+    rescanUnknown: "Resultado del análisis desconocido",
+    rescanUnknownHint:
+      "Beamfall perdió el seguimiento de este análisis antes de que terminara. Revisa la biblioteca o vuelve a analizar.",
+    rescanDoneFiles: "{count, plural, one {Se revisó # archivo.} other {Se revisaron # archivos.}}",
+    scanNeedsUnlock: "Tu sesión de la Consola terminó. Desbloquea la Consola y vuelve a analizar.",
   },
   pt: {
     backToBrowse: "Voltar para Navegar",
@@ -339,5 +361,10 @@ export const managedFileStrings = {
     libraryIconSparkles: "Brilhos",
     libraryIconLayers: "Camadas",
     libraryIconFolder: "Pasta",
+    rescanUnknown: "Resultado da verificação desconhecido",
+    rescanUnknownHint:
+      "O Beamfall perdeu o acompanhamento desta verificação antes do fim. Confira a biblioteca ou verifique de novo.",
+    rescanDoneFiles: "{count, plural, one {# arquivo verificado.} other {# arquivos verificados.}}",
+    scanNeedsUnlock: "Sua sessão do Console terminou. Desbloqueie o Console e verifique de novo.",
   },
 } as const;

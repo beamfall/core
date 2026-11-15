@@ -42,7 +42,6 @@ export const sharedStateStrings = {
     couldNotSwitchProfile: "Could not switch the profile.",
     couldNotCreateLibrary: "Could not create the library.",
     couldNotUpdateLibrary: "Could not update the library.",
-    scanFailed: "Scan failed.",
     subscriptionsUnavailable: "Subscriptions are unavailable right now.",
     libraryEmptyTitle: "Nothing to show in this library yet.",
     libraryEmptyLead: "This library has no visible content for the current profile and filters.",
@@ -99,7 +98,6 @@ export const sharedStateStrings = {
     couldNotSwitchProfile: "Impossible de changer de profil.",
     couldNotCreateLibrary: "Impossible de créer la bibliothèque.",
     couldNotUpdateLibrary: "Impossible de mettre à jour la bibliothèque.",
-    scanFailed: "L’analyse a échoué.",
     subscriptionsUnavailable: "Les abonnements sont indisponibles pour le moment.",
     libraryEmptyTitle: "Rien à afficher dans cette bibliothèque pour le moment.",
     libraryEmptyLead:
@@ -153,7 +151,6 @@ export const sharedStateStrings = {
     couldNotSwitchProfile: "Das Profil konnte nicht gewechselt werden.",
     couldNotCreateLibrary: "Die Bibliothek konnte nicht erstellt werden.",
     couldNotUpdateLibrary: "Die Bibliothek konnte nicht aktualisiert werden.",
-    scanFailed: "Scan fehlgeschlagen.",
     subscriptionsUnavailable: "Abonnements sind derzeit nicht verfügbar.",
     libraryEmptyTitle: "In dieser Bibliothek gibt es noch nichts anzuzeigen.",
     libraryEmptyLead:
@@ -204,7 +201,6 @@ export const sharedStateStrings = {
     couldNotSwitchProfile: "No se pudo cambiar el perfil.",
     couldNotCreateLibrary: "No se pudo crear la biblioteca.",
     couldNotUpdateLibrary: "No se pudo actualizar la biblioteca.",
-    scanFailed: "Error al analizar.",
     subscriptionsUnavailable: "Las suscripciones no están disponibles en este momento.",
     libraryEmptyTitle: "Aún no hay nada que mostrar en esta biblioteca.",
     libraryEmptyLead:
@@ -256,7 +252,6 @@ export const sharedStateStrings = {
     couldNotSwitchProfile: "Não foi possível trocar o perfil.",
     couldNotCreateLibrary: "Não foi possível criar a biblioteca.",
     couldNotUpdateLibrary: "Não foi possível atualizar a biblioteca.",
-    scanFailed: "Falha ao verificar.",
     subscriptionsUnavailable: "As assinaturas não estão disponíveis no momento.",
     libraryEmptyTitle: "Ainda não há nada para mostrar nesta biblioteca.",
     libraryEmptyLead: "Esta biblioteca não tem conteúdo visível para o perfil e os filtros atuais.",
