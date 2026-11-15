@@ -178,6 +178,34 @@ describe("ProfileSettingsPage", () => {
     localStorage.clear();
   });
 
+  it("shows an older theme save that succeeds after the newest one failed (CORE-1179)", async () => {
+    const user = userEvent.setup();
+    let saveMoss: () => void = () => {};
+    vi.mocked(setClientPref)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            saveMoss = () => resolve(undefined as never);
+          }),
+      )
+      .mockRejectedValueOnce(new Error("offline"));
+    renderPage();
+
+    await user.click(await screen.findByLabelText("Theme"));
+    await user.click(await screen.findByRole("option", { name: "Moss" }));
+    await user.click(screen.getByLabelText("Theme"));
+    await user.click(await screen.findByRole("option", { name: "Tide" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    await waitFor(() => expect(screen.getByLabelText("Theme")).not.toHaveTextContent("Tide"));
+
+    saveMoss();
+    await waitFor(() => expect(screen.getByLabelText("Theme")).toHaveTextContent("Moss"));
+    expect(JSON.parse(localStorage.getItem("beamfall.web.appearance.v1") ?? "{}").preset).toBe(
+      "moss",
+    );
+    localStorage.clear();
+  });
+
   it("persists the downstream audio preference", async () => {
     const user = userEvent.setup();
     renderPage();

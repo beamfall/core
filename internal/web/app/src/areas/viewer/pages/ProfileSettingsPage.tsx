@@ -75,7 +75,15 @@ export function ProfileSettingsPage() {
   const loadToken = useRef(0);
   // Theme saves can overlap (pick Moss, then Tide before Moss resolves). Only the newest pick may
   // roll back, and it rolls back to the newest pick the server confirmed, never over a later success.
-  const themeSave = useRef({ latest: 0, confirmed: 0, pending: 0, confirmedPreset: preset });
+  // Once the newest pick has failed, a later-arriving success for an older pick is what the server
+  // holds, so it is shown.
+  const themeSave = useRef({
+    latest: 0,
+    confirmed: 0,
+    pending: 0,
+    latestFailed: false,
+    confirmedPreset: preset,
+  });
   useEffect(() => {
     // With no save in flight the shown preset is the settled one (it may arrive from the server).
     if (themeSave.current.pending === 0) themeSave.current.confirmedPreset = preset;
@@ -224,13 +232,16 @@ export function ProfileSettingsPage() {
                   const save = themeSave.current;
                   const seq = ++save.latest;
                   save.pending += 1;
+                  save.latestFailed = false;
                   setPreset(v as string);
                   void persist(PREF_KEYS.themePreset, v as string, {}).then((saved) => {
                     save.pending -= 1;
                     if (saved && seq > save.confirmed) {
                       save.confirmed = seq;
                       save.confirmedPreset = v as string;
+                      if (save.latestFailed) setPreset(v as string);
                     } else if (!saved && seq === save.latest) {
+                      save.latestFailed = true;
                       setPreset(save.confirmedPreset);
                     }
                   });
