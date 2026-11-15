@@ -29,11 +29,20 @@ function feedPage(kind: string, offset: number, signal: AbortSignal): Promise<So
 
 /** A bound on the server pages one read walks past pages shortened by muting. */
 const MAX_FEED_READS = 10;
+/**
+ * How many empty pages in a row end a feed. A whole page can be muted, so one
+ * empty page does not prove the end; a run of this many does. A longer run of
+ * muted rows still hides what follows until the server applies Mute before
+ * paging (CORE-1859).
+ */
+const FEED_END_EMPTY_PAGES = 3;
 
 // One read of a feed from `offset`. The server drops muted rows from a page
-// after paging, so a short page is not the end: the read steps on by the
-// requested size until a page comes back full (more may follow) or empty (the
-// end). It returns the rows and the offset of the next page, or null at the end.
+// after paging, so a short or even empty page is not the end: the read steps
+// on by the requested size until a page comes back full (more may follow) or
+// FEED_END_EMPTY_PAGES pages in a row come back empty (the end). It returns the
+// rows and the offset of the next page, or null at the end. A read that hits
+// MAX_FEED_READS first leaves Load more to step on.
 async function readFeed(
   kind: string,
   offset: number,
@@ -41,12 +50,14 @@ async function readFeed(
 ): Promise<{ items: SourceItem[]; next: number | null }> {
   const items: SourceItem[] = [];
   let at = offset;
+  let emptyRun = 0;
   for (let reads = 0; reads < MAX_FEED_READS; reads++) {
     const page = await feedPage(kind, at, signal);
     items.push(...page);
     at += PROFILE_FEED_LIMIT;
     if (page.length === PROFILE_FEED_LIMIT) return { items, next: at };
-    if (page.length === 0) return { items, next: null };
+    emptyRun = page.length === 0 ? emptyRun + 1 : 0;
+    if (emptyRun === FEED_END_EMPTY_PAGES) return { items, next: null };
   }
   return { items, next: at };
 }
