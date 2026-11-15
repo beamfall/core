@@ -61,6 +61,12 @@ the mapping and SHALL give up after a bounded timeout.
 - **WHEN** an admin turns port mapping off
 - **THEN** the server deletes the mapping and the state is `disabled`
 
+#### Scenario: Gateway does not confirm the removal
+
+- **WHEN** the gateway refuses or does not answer the delete on disable
+- **THEN** the state is `disabled` with reason `removal_failed`
+- **AND** the server retries the delete with backoff, and again at shutdown, until it succeeds
+
 #### Scenario: Silent gateway at shutdown
 
 - **WHEN** the gateway does not answer the delete during shutdown
