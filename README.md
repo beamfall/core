@@ -104,8 +104,11 @@ You need:
 
 - Go, at the version in [`go.mod`](go.mod), which is the version authority;
 - FFmpeg on `PATH`, for probing and transcoding;
-- Node.js and npm only if you change the Web UI. The production bundle in
-  `internal/web/app-dist` is committed and embedded, so a plain Go build serves the UI.
+- Node.js and npm to build the Web UI. Only a placeholder page is committed in
+  `internal/web/app-dist`, so a plain Go build from a clean clone serves that placeholder at
+  `/web/`. Build the real UI first with `npm --prefix internal/web/app ci` and then
+  `npm --prefix internal/web/app run build` (or `make web-build`, which runs the UI's checks first);
+  the bundle lands in the ignored `internal/web/app-dist/production` and the next Go build embeds it.
 
 Build the binary:
 
@@ -170,9 +173,10 @@ templates follow the same contract. None of them can be used until a release is 
 | `make orient` | A one-page map of the codebase. |
 | `make coverage` | The feature-coverage ledger: `testing/features.yaml` against the markers in tests. |
 
-The Web UI source is `internal/web/app`. Its committed production bundle is
-`internal/web/app-dist`, built by `npm --prefix internal/web/app run build` and embedded by the
-server at `/web/`. `make web-build` runs the UI's checks and typecheck before building.
+The Web UI source is `internal/web/app`. `npm --prefix internal/web/app run build` writes its
+production bundle to the ignored `internal/web/app-dist/production`, which the server embeds and
+serves at `/web/`; without it the server serves the committed placeholder in `internal/web/app-dist`.
+`make web-build` runs the UI's checks and typecheck before building.
 
 Nightly workflows for fuzzing, race detection, mutation testing, vulnerability scanning, the scale
 fixture, and the UI catalog are defined in [`.github/workflows`](.github/workflows). Like the gate,
