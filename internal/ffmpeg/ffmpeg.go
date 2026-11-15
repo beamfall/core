@@ -2089,8 +2089,10 @@ func (r *Runner) startHLS(ctx context.Context, src, dir string, rendition Rendit
 	if reason := rendition.ToneMapRefusal(); reason != "" {
 		return nil, errors.New("ffmpeg: " + reason)
 	}
-	rendition = rendition.withHWAccel(r.hwAccel)
-	rendition = rendition.withToneMapAccel(selectRenditionToneMapBackend(rendition))
+	if !rendition.AudioOnly {
+		rendition = rendition.withHWAccel(r.hwAccel)
+		rendition = rendition.withToneMapAccel(selectRenditionToneMapBackend(rendition))
+	}
 	ffmpegPath, err := exec.LookPath("ffmpeg")
 	if err != nil {
 		return nil, fmt.Errorf("ffmpeg is not available: %w", err)
@@ -2129,16 +2131,39 @@ func hlsArgs(src, dir string, rendition Rendition) []string {
 	args = append(args,
 		"-i", src,
 	)
-	args = append(args, rendition.videoArgs()...)
-	if _, burnsSubtitle := rendition.burnsSubtitle(); rendition.AudioStreamIndex != nil && !burnsSubtitle {
-		args = append(args, "-map", "0:v:0", "-map", fmt.Sprintf("0:%d", *rendition.AudioStreamIndex))
+	if rendition.AudioOnly {
+		args = append(args, "-map", audioOnlyMap(rendition))
+		args = append(args, rendition.audioArgs()...)
+		return append(args, hlsMuxArgs(dir)...)
 	}
+	args = append(args, rendition.videoArgs()...)
+	args = append(args, rendition.selectedStreamMapArgs()...)
 	if !rendition.CopyVideo {
 		args = append(args, "-force_key_frames", "expr:gte(t,n_forced*4)")
 	}
 	args = append(args, rendition.args()...)
 	args = append(args, rendition.audioArgs()...)
 	return append(args, hlsMuxArgs(dir)...)
+}
+
+// selectedStreamMapArgs maps the first video stream and the selected audio
+// stream when an audio stream is selected. A burned subtitle maps its own
+// overlay output and the selected audio in burnInArgs instead, and with no
+// selection FFmpeg's default stream choice stands.
+func (r Rendition) selectedStreamMapArgs() []string {
+	if _, burnsSubtitle := r.burnsSubtitle(); r.AudioStreamIndex == nil || burnsSubtitle {
+		return nil
+	}
+	return []string{"-map", "0:v:0", "-map", fmt.Sprintf("0:%d", *r.AudioStreamIndex)}
+}
+
+// audioOnlyMap is the single -map an audio-only rendition encodes: the
+// selected audio stream, or the first audio stream when none is selected.
+func audioOnlyMap(rendition Rendition) string {
+	if rendition.AudioStreamIndex != nil {
+		return fmt.Sprintf("0:%d", *rendition.AudioStreamIndex)
+	}
+	return "0:a:0"
 }
 
 // hlsMuxArgs is the CMAF fMP4 HLS muxer tail every file-to-HLS encode shares:
@@ -2266,20 +2291,31 @@ func hlsSegmentArgs(src, dir string, startSegment, segmentSeconds int, rendition
 	if !rendition.CopyVideo {
 		forceKeyframes = []string{"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", segmentSeconds)}
 	}
-	return segmentArgs(src, dir, startSegment, seek, strconv.Itoa(startSegment*segmentSeconds), strconv.Itoa(segmentSeconds), forceKeyframes, rendition)
+	return segmentArgs(src, dir, startSegment, seek, strconv.Itoa(startSegment*segmentSeconds), strconv.Itoa(segmentSeconds), rendition.selectedStreamMapArgs(), forceKeyframes, rendition)
 }
 
 // keyframeSegmentArgs is the StartHLSKeyframeSegments command line: the input
-// seek and the output offset are both the keyframe's presentation time.
+// seek and the output offset are both the keyframe's presentation time. The
+// keyframe times come from the first video stream (ProbeKeyframes reads v:0),
+// so that stream is always mapped: FFmpeg's own choice among several video
+// streams may be another one with different keyframes (CORE-1735). Mapping
+// disables the automatic audio choice too, so the selected audio stream is
+// mapped, or the first one when none is selected.
 func keyframeSegmentArgs(src, dir string, startSegment int, start time.Duration, rendition Rendition) []string {
 	offset := formatMicros(start)
-	return segmentArgs(src, dir, startSegment, offset, offset, keyframeSegmentHLSTime, nil, rendition)
+	audioMap := "0:a:0?"
+	if rendition.AudioStreamIndex != nil {
+		audioMap = fmt.Sprintf("0:%d", *rendition.AudioStreamIndex)
+	}
+	streamMaps := []string{"-map", "0:v:0", "-map", audioMap}
+	return segmentArgs(src, dir, startSegment, offset, offset, keyframeSegmentHLSTime, streamMaps, nil, rendition)
 }
 
 // segmentArgs assembles a segmenting command line: seek is the input position,
 // outputOffset the first output timestamp. An audio-only rendition maps just
-// the selected audio stream and drops the video arguments.
-func segmentArgs(src, dir string, startSegment int, seek, outputOffset, hlsTime string, forceKeyframes []string, rendition Rendition) []string {
+// the selected audio stream and drops the video arguments; a video rendition
+// adds streamMaps.
+func segmentArgs(src, dir string, startSegment int, seek, outputOffset, hlsTime string, streamMaps, forceKeyframes []string, rendition Rendition) []string {
 	args := []string{
 		"-v", "error",
 	}
@@ -2291,13 +2327,10 @@ func segmentArgs(src, dir string, startSegment int, seek, outputOffset, hlsTime 
 		"-i", src,
 	)
 	if rendition.AudioOnly {
-		audioMap := "0:a:0"
-		if rendition.AudioStreamIndex != nil {
-			audioMap = fmt.Sprintf("0:%d", *rendition.AudioStreamIndex)
-		}
-		args = append(args, "-map", audioMap)
+		args = append(args, "-map", audioOnlyMap(rendition))
 	} else {
 		args = append(args, rendition.videoArgs()...)
+		args = append(args, streamMaps...)
 		args = append(args, forceKeyframes...)
 		args = append(args, rendition.args()...)
 	}

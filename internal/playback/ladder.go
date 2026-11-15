@@ -60,6 +60,17 @@ const sourceRungID = "source"
 // resolution ladder to climb when the video is never re-encoded.
 const audioCopyRungID = "audio-copy"
 
+// audioOnlyRungID names the single rung of an audio-only stream.
+const audioOnlyRungID = "audio"
+
+// audioOnlyRung is the single rung an audio-only stream offers: an
+// audio-class Media (whose only picture is embedded art) or an adjusted audio
+// stream. No video is encoded, so there is no resolution ladder and no
+// RESOLUTION attribute. Bandwidth is the stereo-AAC-and-mux allowance.
+func audioOnlyRung() Rung {
+	return Rung{ID: audioOnlyRungID, AudioOnly: true, Bandwidth: bandwidthFor(0)}
+}
+
 // audioCopyRung is the single rung for the audio-only-transcode decision: it
 // copies the source video (no Height/VideoKbps cap) and transcodes only the
 // audio. Bandwidth advertises the source video rate ceiling plus the AAC
@@ -74,10 +85,14 @@ func audioCopyRung() Rung {
 	}
 }
 
+// audioMuxReserve is the stereo-AAC-and-mux allowance, in bits/s, every
+// advertised video rung reserves on top of its video maxrate.
+const audioMuxReserve = 256_000
+
 // bandwidthFor converts a video maxrate ceiling into the peak stream rate
 // advertised to clients: video plus a stereo-AAC-and-mux allowance.
 func bandwidthFor(videoKbps int) int {
-	return videoKbps*1000 + 256_000
+	return videoKbps*1000 + audioMuxReserve
 }
 
 // rungsFor returns the rungs the source can honestly back, best first, with no

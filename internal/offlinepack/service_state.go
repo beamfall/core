@@ -165,6 +165,8 @@ type packBuildSource struct {
 	// transcode, path names the temporary MP4 in the pack directory.
 	transcode  bool
 	transcoded bool
+	// streams is the source file's stream inventory, read for transcodes.
+	streams []store.MediaFileStream
 }
 
 func (s *Service) preflightBuildSources(ctx context.Context, ids []store.MediaID, visible map[store.MediaID]store.Media, filter store.LibraryFilter, selectedVersions map[store.MediaID]string, quality string) ([]packBuildSource, error) {
@@ -190,7 +192,12 @@ func (s *Service) preflightBuildSources(ctx context.Context, ids []store.MediaID
 			mediaID: id, libraryID: media.LibraryID, path: file.Path,
 			selectedVersion: file.VersionLabel, transcode: transcode,
 		}
-		if !transcode {
+		if transcode {
+			source.streams, err = s.store.MediaFileStreams(ctx, file.ContentFingerprint)
+			if err != nil {
+				return nil, err
+			}
+		} else {
 			// Fail before any transcode work when original bytes already break
 			// a bound; checkBuildBytes re-checks the final set.
 			size, err := s.catalogPlaintextSize(media.LibraryID, file)
@@ -198,6 +205,9 @@ func (s *Service) preflightBuildSources(ctx context.Context, ids []store.MediaID
 				return nil, err
 			}
 			if size > MaxItemSize {
+				if media.Class == store.MediaClassVideo {
+					return nil, ErrOriginalItemTooLarge
+				}
 				return nil, errors.New("offline pack item exceeds size bound")
 			}
 			if size > s.buildByteBudget-total {
@@ -222,7 +232,7 @@ func (s *Service) transcodeSources(ctx context.Context, sources []packBuildSourc
 			return errors.New("offline pack transcoder is not configured")
 		}
 		dst := filepath.Join(packDir, fmt.Sprintf("%04d.src.mp4", i))
-		if err := s.transcode(ctx, sources[i].path, dst, quality); err != nil {
+		if err := s.transcode(ctx, sources[i].path, dst, quality, sources[i].streams); err != nil {
 			_ = os.Remove(dst)
 			// A transcoder may flatten a cancellation into its own error. Keep
 			// shutdown and preemption visible so the job yields and reruns under
@@ -283,7 +293,7 @@ func (s *Service) catalogPlaintextSize(libraryID store.LibraryID, file store.Med
 		return uint64(file.SizeBytes), nil
 	}
 	if s.encrypted != nil && s.encrypted(libraryID) {
-		return 0, errors.New("offline pack encrypted item is missing catalog size")
+		return s.encryptedPlaintextSize(libraryID, file.Path)
 	}
 	info, err := os.Stat(file.Path)
 	if err != nil {
@@ -292,6 +302,30 @@ func (s *Service) catalogPlaintextSize(libraryID store.LibraryID, file store.Med
 	size := info.Size()
 	if size < 0 {
 		return 0, errors.New("offline pack item has invalid catalog size")
+	}
+	return uint64(size), nil
+}
+
+// encryptedPlaintextSize reads an encrypted item's plaintext length from its
+// decrypt reader when the catalog carries no size. The store's Media file
+// reads do not return size_bytes, and stat would report the ciphertext
+// length. hashPackSource then decrypts the whole stream, authenticating every
+// chunk, and refuses a stream that does not end at this length.
+func (s *Service) encryptedPlaintextSize(libraryID store.LibraryID, path string) (uint64, error) {
+	reader, err := s.openContent(libraryID, path)
+	if err != nil {
+		return 0, err
+	}
+	size, seekErr := reader.Seek(0, io.SeekEnd)
+	closeErr := reader.Close()
+	if seekErr != nil {
+		return 0, seekErr
+	}
+	if closeErr != nil {
+		return 0, closeErr
+	}
+	if size < 0 {
+		return 0, errors.New("offline pack item has invalid plaintext size")
 	}
 	return uint64(size), nil
 }
@@ -441,9 +475,11 @@ func (s *Service) packRestricted(ctx context.Context, pack store.OfflinePack, fi
 // was sealed AFTER the pack was built/granted is detected. The serving layer
 // denies such a pack unconditionally (a Sealed Library serves NOTHING — unlike
 // restricted, Reveal does not lift it). When no Sealed predicate is wired this
-// is always false (nothing sealed). A member resolved away by the filter (e.g.
-// already deleted) is NOT treated as sealed here — revoke/expiry/restricted
-// guards cover those; this guard is specifically the Sealed boundary.
+// is always false (nothing sealed). A sealed encrypted Library's rows live on
+// its locked plane, so its members resolve to nothing at all; the store cannot
+// tell them apart from deleted rows. While any Library the pack may draw from is
+// sealed, a member that does not resolve is therefore treated as sealed (fail
+// closed): the pack serves again once the Library is unsealed.
 func (s *Service) packHasSealedMember(ctx context.Context, pack store.OfflinePack) (bool, error) {
 	if s.sealed == nil {
 		return false, nil
@@ -455,12 +491,21 @@ func (s *Service) packHasSealedMember(ctx context.Context, pack store.OfflinePac
 	// Reveal+sentinel so the enumeration is COMPLETE (restricted Libraries
 	// included): this probe only asks "is anything sealed at all", it is not a
 	// visibility decision — the per-member resolve below makes the real call.
+	// A pack scoped to named Libraries can only hold members from them.
+	inScope := func(store.LibraryID) bool { return true }
+	if len(pack.LibraryIDs) > 0 {
+		scoped := make(map[store.LibraryID]bool, len(pack.LibraryIDs))
+		for _, id := range pack.LibraryIDs {
+			scoped[id] = true
+		}
+		inScope = func(id store.LibraryID) bool { return scoped[id] }
+	}
 	libraries, err := s.store.Libraries(ctx, store.LibraryFilter{AllLibraries: true, Revealed: true})
 	if err != nil {
 		return false, err
 	}
 	for _, lib := range libraries {
-		if s.sealed(lib.ID) {
+		if inScope(lib.ID) && s.sealed(lib.ID) {
 			sealedAny = true
 			break
 		}
@@ -487,8 +532,9 @@ func (s *Service) packHasSealedMember(ctx context.Context, pack store.OfflinePac
 	if err != nil {
 		return false, err
 	}
-	for _, media := range rows {
-		if s.sealed(media.LibraryID) {
+	for _, id := range ids {
+		media, ok := rows[id]
+		if !ok || s.sealed(media.LibraryID) {
 			return true, nil
 		}
 	}

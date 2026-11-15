@@ -2,6 +2,7 @@ package ffmpeg
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -73,6 +74,69 @@ func TestPackProfilesBoundHeightAndBitrate(t *testing.T) {
 			t.Fatalf("h264-mp4 args gained %s: %v", flag, plain.encodeArgs())
 		}
 	}
+}
+
+// TestPackProfilesToneMapHDRSources pins CORE-1744: a pack preset re-encoding
+// an HDR10, HLG or Dolby Vision source leads its -vf graph with the live
+// transcode's tone-map chain, ahead of the scale, while an SDR source gets the
+// scale alone.
+func TestPackProfilesToneMapHDRSources(t *testing.T) {
+	chain := strings.Join(BuildToneMapChain(ToneMapChainRequest{}).Filters, ",")
+	if chain == "" {
+		t.Fatal("software tone-map chain is empty")
+	}
+	for _, name := range []string{"pack-1080p", "pack-720p", "pack-480p"} {
+		preset, _ := PackProfileByName(name)
+		for label, source := range map[string]ConvertProfile{
+			"hdr10":        preset.WithSourceVideo("smpte2084", 0),
+			"hlg":          preset.WithSourceVideo("arib-std-b67", 0),
+			"dolby vision": preset.WithSourceVideo("", 8),
+		} {
+			vf := argValue(source.encodeArgs(), "-vf")
+			if !strings.HasPrefix(vf, chain+",scale=") {
+				t.Fatalf("%s %s -vf = %q, want the tone-map chain %q before the scale", name, label, vf, chain)
+			}
+		}
+		for label, source := range map[string]ConvertProfile{"untagged": preset, "bt709": preset.WithSourceVideo("bt709", 0)} {
+			vf := argValue(source.encodeArgs(), "-vf")
+			if strings.Contains(vf, chain) || !strings.HasPrefix(vf, "scale=") {
+				t.Fatalf("%s %s -vf = %q, want the scale and no tone-map", name, label, vf)
+			}
+		}
+	}
+	preset, _ := PackProfileByName("pack-720p")
+	if vf := argValue(preset.WithSourceVideo("smpte2084", 0).encodeArgs(), "-vf"); vf != chain+",scale=-2:trunc(min(ih\\,720)/2)*2" {
+		t.Fatalf("pack-720p hdr10 -vf = %q", vf)
+	}
+}
+
+// TestConvertRefusesHDRSourceItCannotToneMap: Dolby Vision profile 5 has no
+// base layer to tone-map, and an unverified build cannot run the chain, so
+// Convert refuses before spawning FFmpeg rather than writing a washed-out file.
+func TestConvertRefusesHDRSourceItCannotToneMap(t *testing.T) {
+	dir := t.TempDir()
+	src, dst := filepath.Join(dir, "src.mkv"), filepath.Join(dir, "out.mp4")
+	preset, _ := PackProfileByName("pack-720p")
+	withToneMapSupport(t, true)
+	if err := New().Convert(t.Context(), src, dst, preset.WithSourceVideo("", 5)); !errors.Is(err, ErrToneMapRefused) {
+		t.Fatalf("DoVi P5 Convert err = %v, want ErrToneMapRefused", err)
+	}
+	withToneMapSupport(t, false)
+	if err := New().Convert(t.Context(), src, dst, preset.WithSourceVideo("smpte2084", 0)); !errors.Is(err, ErrToneMapRefused) {
+		t.Fatalf("unverified-build HDR Convert err = %v, want ErrToneMapRefused", err)
+	}
+	if _, err := os.Stat(dst); !os.IsNotExist(err) {
+		t.Fatalf("refused Convert left %s: %v", dst, err)
+	}
+}
+
+func argValue(args []string, flag string) string {
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == flag {
+			return args[i+1]
+		}
+	}
+	return ""
 }
 
 // TestConvertPackProfileRealBinary transcodes a synthesized 720-line clip with
