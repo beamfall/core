@@ -540,8 +540,9 @@ type MediaMetadata struct {
 	Title   *string
 	Summary *string
 	Year    *int
-	// SortTitle is the admin-set browse sort key; "" clears it so the item
-	// sorts by its title again.
+	// SortTitle is the browse sort key. From a manual write "" clears it so
+	// the item sorts by its title again; from a provider write "" retracts
+	// only a sort title that same source tier supplied (see updateSortTitleTx).
 	SortTitle *string
 	// Source records who is making this write for provenance tracking. If
 	// zero-value the store falls back to MutationSourceOperator (all

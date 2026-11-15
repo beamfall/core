@@ -308,10 +308,11 @@ func (s *Service) variables(ctx context.Context, mediaID store.MediaID) (scrape.
 	}, nil
 }
 
-// Apply looks up the chosen candidate and writes its title/summary/year onto
-// the Media row. The engine already returns transformed values; a year that
-// does not parse to an int is omitted, like an unresolved path. Visibility
-// gating belongs to the caller — this is the server-internal write path.
+// Apply looks up the chosen candidate and writes its title/summary/year and
+// sort title onto the Media row. The engine already returns transformed
+// values; a year that does not parse to an int is omitted, like an unresolved
+// path. Visibility gating belongs to the caller — this is the server-internal
+// write path.
 func (s *Service) Apply(ctx context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string) error {
 	if mediaID == "" {
 		return errors.New("identify: media ID is required")
@@ -333,8 +334,14 @@ func (s *Service) Apply(ctx context.Context, mediaID store.MediaID, pluginID, sc
 		return err
 	}
 	metadata := metadataFromResult(result)
-	if metadata.Title == nil && metadata.Summary == nil && metadata.Year == nil {
+	if metadata.Title == nil && metadata.Summary == nil && metadata.Year == nil && metadata.SortTitle == nil {
 		return fmt.Errorf("identify: scraper %q returned no usable fields", scraperID)
+	}
+	if metadata.SortTitle == nil {
+		// A candidate without a sort title retracts one an earlier
+		// identification supplied; the store leaves an admin's value alone.
+		none := ""
+		metadata.SortTitle = &none
 	}
 	if err := s.applyLocal(ctx, mediaID, pluginID, scraperID, candidateID, metadata, bundle, spec, result); err != nil {
 		return err
@@ -832,6 +839,13 @@ func metadataFromResult(result scrape.Result) store.MediaMetadata {
 	}
 	if year, ok := fieldYear(result.Fields, "year"); ok {
 		metadata.Year = &year
+	}
+	// "sortTitle" is the provider's browse sort key (CORE-1768): the plugin,
+	// not core, decides how a title sorts (for example without a leading
+	// article). Plugin SDK bundles cannot map it until the SDK admits it as a
+	// built-in FieldMap key; core reads it as soon as a result carries it.
+	if sortTitle := strings.TrimSpace(fieldString(result.Fields, "sortTitle")); sortTitle != "" {
+		metadata.SortTitle = &sortTitle
 	}
 	return metadata
 }

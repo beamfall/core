@@ -3244,17 +3244,8 @@ func (s *Store) updateMediaMetadataSQL(ctx context.Context, id MediaID, metadata
 		}
 	}
 	if metadata.SortTitle != nil {
-		allowed, err := canWriteFieldTx(ctx, tx, id, "sortTitle", source)
-		if err != nil {
+		if err := updateSortTitleTx(ctx, tx, id, strings.TrimSpace(*metadata.SortTitle), source); err != nil {
 			return err
-		}
-		if allowed {
-			if err := writeSortTitleTx(ctx, tx, id, strings.TrimSpace(*metadata.SortTitle)); err != nil {
-				return err
-			}
-			if err := recordFieldProvenanceTx(ctx, tx, id, "sortTitle", source); err != nil {
-				return err
-			}
 		}
 	}
 	if len(sets) == 0 {

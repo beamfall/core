@@ -235,6 +235,37 @@ func TestApplyOmitsUnparseableYearAndBlankFields(t *testing.T) {
 	if st.metadata.Title == nil || st.metadata.Summary != nil || st.metadata.Year != nil {
 		t.Fatalf("metadata = %#v, want title only", st.metadata)
 	}
+	// No sort title in the result: Apply asks the store to retract one an
+	// earlier identification supplied.
+	if st.metadata.SortTitle == nil || *st.metadata.SortTitle != "" {
+		t.Fatalf("metadata.SortTitle = %v, want an empty retraction", st.metadata.SortTitle)
+	}
+}
+
+// CORE-1768: a provider result's "sortTitle" is written as the item's sort
+// title, trimmed; core derives none itself.
+func TestApplyWritesProviderSortTitle(t *testing.T) {
+	engine := &fakeEngine{lookupResult: scrape.Result{
+		Fields: map[string]any{"title": "The Quiet Orchard", "sortTitle": "  Quiet Orchard, The "},
+	}}
+	st := &fakeStore{}
+	service := identify.NewService(engine, demoBundles(plugin.ScraperSpec{ID: "lookup"}), st)
+
+	if err := service.Apply(context.Background(), "media-alpha", "demo", "lookup", "42"); err != nil {
+		t.Fatal(err)
+	}
+	if st.metadata.SortTitle == nil || *st.metadata.SortTitle != "Quiet Orchard, The" {
+		t.Fatalf("metadata.SortTitle = %v, want the provider value", st.metadata.SortTitle)
+	}
+
+	// A sort title alone is a usable result.
+	engine.lookupResult = scrape.Result{Fields: map[string]any{"sortTitle": "Orchard"}}
+	if err := service.Apply(context.Background(), "media-alpha", "demo", "lookup", "42"); err != nil {
+		t.Fatalf("sort-title-only result: %v", err)
+	}
+	if st.metadata.Title != nil || st.metadata.SortTitle == nil || *st.metadata.SortTitle != "Orchard" {
+		t.Fatalf("metadata = %#v, want the sort title only", st.metadata)
+	}
 }
 
 func TestApplyRejectsResultWithNoUsableFields(t *testing.T) {
