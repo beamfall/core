@@ -9,6 +9,13 @@ updates:
       prefix: "ci"
     labels:
       - "dependencies"
+    groups:
+      github-actions-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "docker"
     directory: "/"
@@ -19,3 +26,10 @@ updates:
       prefix: "ci"
     labels:
       - "dependencies"
+    groups:
+      docker-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
