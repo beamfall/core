@@ -1018,8 +1018,8 @@
           "symbol": "LocalePreference"
         },
         {
-          "path": "internal/web/app/src/lib/i18n.tsx",
-          "symbol": "SUPPORTED_LOCALES"
+          "path": "internal/web/app/src/l10n/locales.ts",
+          "symbol": "OFFERED_LOCALE_TAGS"
         },
         {
           "path": "internal/web/app/src/lib/i18n.tsx",
@@ -1042,8 +1042,8 @@
           "symbol": "formatNumberFor"
         },
         {
-          "path": "internal/web/app/src/lib/i18n.tsx",
-          "symbol": "isLocale"
+          "path": "internal/web/app/src/strings.ts",
+          "symbol": "isCatalogLocale"
         },
         {
           "path": "internal/web/app/src/lib/i18n.tsx",
@@ -1140,10 +1140,6 @@
         {
           "path": "internal/web/app/src/strings/console-operations.ts",
           "symbol": "consoleOperationsStrings"
-        },
-        {
-          "path": "internal/web/app/src/strings/console-operations.ts",
-          "symbol": "updateSafetyStrings"
         },
         {
           "path": "internal/web/app/src/strings/customization.ts",
@@ -1746,8 +1742,8 @@
           "symbol": "AccessWindowInput"
         },
         {
-          "path": "internal/web/app/src/lib/graphql/types.ts",
-          "symbol": "ActivityEntryInfo"
+          "path": "internal/web/app/src/lib/graphql/activity.ts",
+          "symbol": "ActivityRecord"
         },
         {
           "path": "internal/web/app/src/lib/graphql/types.ts",
@@ -2428,10 +2424,6 @@
         {
           "path": "internal/web/app/src/lib/activityDisplay.ts",
           "symbol": "ACTIVITY_LABELS"
-        },
-        {
-          "path": "internal/web/app/src/lib/activityDisplay.ts",
-          "symbol": "ACTIVITY_TEXT"
         },
         {
           "path": "internal/web/app/src/lib/activityDisplay.ts",
@@ -5623,7 +5615,7 @@
         },
         {
           "path": "internal/web/app/src/areas/manage/index.tsx",
-          "symbol": "currentRouteLabel"
+          "symbol": "currentRoute"
         },
         {
           "path": "internal/web/app/src/areas/manage/index.tsx",
@@ -6154,12 +6146,12 @@
           "symbol": "TrashPage"
         },
         {
-          "path": "internal/web/app/src/lib/graphql/console.ts",
-          "symbol": "ACTIVITY_LOG_QUERY"
+          "path": "internal/web/app/src/lib/graphql/activity.ts",
+          "symbol": "ACTIVITY_RECORDS_QUERY"
         },
         {
-          "path": "internal/web/app/src/lib/graphql/console.ts",
-          "symbol": "fetchActivityLog"
+          "path": "internal/web/app/src/lib/graphql/activity.ts",
+          "symbol": "fetchActivityRecords"
         },
         {
           "path": "internal/web/app/src/lib/graphql/manage.ts",
@@ -8236,10 +8228,6 @@
         {
           "path": "internal/web/app/src/areas/viewer/pages/EntityPage.tsx",
           "symbol": "buildSeeAll"
-        },
-        {
-          "path": "internal/web/app/src/areas/viewer/pages/EntityPage.tsx",
-          "symbol": "fallbackQueue"
         }
       ],
       "entry_points": [
@@ -8520,10 +8508,6 @@
         {
           "path": "internal/web/app/src/areas/viewer/pages/MyDataPage.tsx",
           "symbol": "Notice"
-        },
-        {
-          "path": "internal/web/app/src/areas/viewer/pages/MyDataPage.tsx",
-          "symbol": "Panel"
         },
         {
           "path": "internal/web/app/src/areas/viewer/pages/MyDataPage.tsx",
@@ -10000,18 +9984,6 @@
         {
           "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
           "symbol": "bufferedEnd"
-        },
-        {
-          "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
-          "symbol": "routeLabel"
-        },
-        {
-          "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
-          "symbol": "routeStateClass"
-        },
-        {
-          "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
-          "symbol": "routeSummary"
         },
         {
           "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
