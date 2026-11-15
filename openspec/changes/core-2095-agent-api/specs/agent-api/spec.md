@@ -14,7 +14,7 @@ Every admin API token SHALL carry one access tier from the closed set `cli`, `di
 
 A `cli` token SHALL run only the admin fields it ran before tiers. A `diagnostics` token SHALL also
 run every admin read field and `jobCancel` and `jobRetry`. An `agent` token SHALL run every admin
-field except `createApiToken`, `createApiKey` and `transferProfileOwner`. A request that names any
+field except `createApiToken`, `createApiKey`, `registerImportSource` and `transferProfileOwner`. A request that names any
 admin field its token's tier does not allow SHALL fail with `admin session required`.
 
 #### Scenario: Diagnostics token reads jobs
@@ -35,8 +35,9 @@ admin field its token's tier does not allow SHALL fail with `admin session requi
 ### Requirement: Elevated tiers are minted offline only
 
 `beamfall token create` SHALL accept `--access cli|diagnostics|agent`, defaulting to `cli`, and SHALL
-refuse any other value. It SHALL keep refusing to run while the server holds the data directory. No
-GraphQL operation SHALL create a token or change a token's tier. `apiTokens` and
+refuse any other value. It SHALL keep refusing to run while the server holds the data directory.
+The Admin Session `createApiToken` mutation SHALL create only `cli` tokens, and no GraphQL operation
+SHALL change a token's tier. `apiTokens` and
 `beamfall token list` SHALL report each token's tier.
 
 #### Scenario: Mint an agent token

@@ -3089,6 +3089,8 @@ type APITokenInfo struct {
 	CreatedAt  string `json:"createdAt"`
 	LastUsedAt string `json:"lastUsedAt,omitempty"`
 	Revoked    bool   `json:"revoked"`
+	// Access is the token tier (CORE-2095): cli, diagnostics or agent.
+	Access string `json:"access"`
 }
 
 // CreatedAPITokenInfo carries the full token string exactly once, from the
@@ -3242,6 +3244,7 @@ func apiTokenInfo(token store.APIToken) APITokenInfo {
 		Name:      token.Name,
 		CreatedAt: token.CreatedAt.UTC().Format(time.RFC3339),
 		Revoked:   token.Revoked,
+		Access:    string(token.Access),
 	}
 	if !token.LastUsedAt.IsZero() {
 		info.LastUsedAt = token.LastUsedAt.UTC().Format(time.RFC3339)

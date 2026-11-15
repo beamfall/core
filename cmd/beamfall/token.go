@@ -34,7 +34,7 @@ func tokenCommand(ctx context.Context, args []string, stdout io.Writer) error {
 const tokenHelp = `Usage: beamfall token <command>
 
 Commands:
-  create   create a local API token while the server is stopped
+  create   create a local API token while the server is stopped (--access cli|diagnostics|agent)
   list     list API tokens through the running server
   revoke   revoke an API token through the running server
 `
@@ -44,10 +44,11 @@ func tokenCreate(ctx context.Context, args []string, stdout io.Writer) error {
 	if value := os.Getenv("BEAMFALL_DATA_DIR"); value != "" {
 		cfg.DataDir = value
 	}
-	var name string
+	var name, accessFlag string
 	fs := commandFlagSet("beamfall token create", stdout)
 	fs.StringVar(&cfg.DataDir, "data-dir", cfg.DataDir, "data directory")
 	fs.StringVar(&name, "name", "", "token name")
+	fs.StringVar(&accessFlag, "access", string(store.APITokenAccessCLI), "token tier: cli (operator CLI commands), diagnostics (also every admin read) or agent (also admin mutations, except minting credentials)")
 	if helped, err := parseCommandFlags(fs, args); err != nil || helped {
 		return err
 	}
@@ -57,6 +58,10 @@ func tokenCreate(ctx context.Context, args []string, stdout io.Writer) error {
 	if name == "" {
 		return fmt.Errorf("--name is required")
 	}
+	access, err := store.ParseAPITokenAccess(accessFlag)
+	if err != nil {
+		return err
+	}
 	if err := refuseServerLock(cfg.DataDir); err != nil {
 		return err
 	}
@@ -65,7 +70,7 @@ func tokenCreate(ctx context.Context, args []string, stdout io.Writer) error {
 		return err
 	}
 	defer st.Close()
-	_, fullToken, err := st.CreateAPIToken(ctx, name, time.Now().UTC())
+	_, fullToken, err := st.CreateAPITokenWithAccess(ctx, name, access, time.Now().UTC())
 	if err != nil {
 		return err
 	}
@@ -89,7 +94,7 @@ func tokenList(ctx context.Context, args []string, stdout io.Writer) error {
 		APITokens []cliAPITokenInfo `json:"apiTokens"`
 	}
 	if err := cliGraphQL(ctx, opts,
-		"query APITokens { apiTokens { id name createdAt lastUsedAt revoked } }",
+		"query APITokens { apiTokens { id name createdAt lastUsedAt revoked access } }",
 		map[string]any{},
 		&resp,
 	); err != nil {
@@ -97,7 +102,7 @@ func tokenList(ctx context.Context, args []string, stdout io.Writer) error {
 	}
 	for _, token := range resp.APITokens {
 		if stdout != nil {
-			_, _ = fmt.Fprintf(stdout, "id=%s name=%q created=%s last_used=%s revoked=%t\n", token.ID, token.Name, token.CreatedAt, token.LastUsedAt, token.Revoked)
+			_, _ = fmt.Fprintf(stdout, "id=%s name=%q access=%s created=%s last_used=%s revoked=%t\n", token.ID, token.Name, token.Access, token.CreatedAt, token.LastUsedAt, token.Revoked)
 		}
 	}
 	return nil
@@ -140,4 +145,5 @@ type cliAPITokenInfo struct {
 	CreatedAt  string `json:"createdAt"`
 	LastUsedAt string `json:"lastUsedAt"`
 	Revoked    bool   `json:"revoked"`
+	Access     string `json:"access"`
 }

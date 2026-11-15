@@ -17,7 +17,8 @@ and there is no runtime or profile read.
 - **Token access tiers.** `api_token` gains an `access` column (append-only migration). Tiers:
   - `cli` (default; every existing token): today's allowlist.
   - `diagnostics`: `cli` plus every admin read field, plus `jobCancel` and `jobRetry`.
-  - `agent`: every admin field except `createApiToken`, `createApiKey` and `transferProfileOwner`.
+  - `agent`: every admin field except `createApiToken`, `createApiKey`, `registerImportSource` and
+  `transferProfileOwner`.
   Elevated tiers are minted only offline with `beamfall token create --access diagnostics|agent`
   while the server is stopped, the same authority that mints any token today. No GraphQL operation
   mints a token or raises a tier, so a token still never mints a credential. `apiTokens` and

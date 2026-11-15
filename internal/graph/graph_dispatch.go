@@ -173,19 +173,53 @@ var adminTokenOps = map[string]bool{
 	"revokeapitoken": true,
 }
 
+// diagnosticsTokenMutations are the admin mutations a diagnostics-tier token
+// may run beyond the CLI allowlist: unsticking a job is part of diagnosing it.
+var diagnosticsTokenMutations = map[string]bool{
+	"jobcancel": true,
+	"jobretry":  true,
+}
+
+// agentTokenDenied are the admin fields no token tier may run (CORE-2095):
+// minting or registering a credential, and moving server ownership. These stay
+// Admin Session only, so a token can never mint another credential.
+var agentTokenDenied = map[string]bool{
+	"createapitoken":       true,
+	"createapikey":         true,
+	"registerimportsource": true,
+	"transferprofileowner": true,
+}
+
 // adminTokenMayRun reports whether the request authenticated with an admin API
-// token and every field it selects is an allowlisted CLI operation. Scoped keys
-// and sessions never qualify.
+// token whose tier allows every admin field it selects. Scoped keys and
+// sessions never qualify.
 func adminTokenMayRun(dispatch *fieldDispatchContext) bool {
 	if dispatch.scope.APITokenID == "" {
 		return false
 	}
 	for field, requested := range dispatch.fields {
-		if requested && adminFields[field] && !adminTokenOps[field] {
+		if requested && adminFields[field] && !tokenTierAllows(dispatch.scope.APITokenAccess, field) {
 			return false
 		}
 	}
 	return true
+}
+
+// tokenTierAllows reports whether an admin API token of the given tier may run
+// one admin field without an Admin Session. An unknown tier gets nothing
+// beyond the CLI allowlist.
+func tokenTierAllows(access store.APITokenAccess, field string) bool {
+	if adminTokenOps[field] {
+		return true
+	}
+	switch access {
+	case store.APITokenAccessDiagnostics:
+		return fieldHandlerRegistry[field].kind == fieldRead || diagnosticsTokenMutations[field]
+	case store.APITokenAccessAgent:
+		return !agentTokenDenied[field]
+	default:
+		return false
+	}
 }
 
 // fieldDispatchRuns is the single order-to-function authority. Field handlers

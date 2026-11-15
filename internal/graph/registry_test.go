@@ -882,6 +882,51 @@ func TestAdminAPITokenCLIOpsEndToEnd(t *testing.T) {
 	}
 }
 
+// TestAPITokenTiersBoundConsoleFields (CORE-2095): a diagnostics token runs
+// every Console read plus job cancel and retry and nothing else that writes; an
+// agent token runs every Console field except the credential-minting and
+// ownership-transfer ones; neither tier can widen itself through GraphQL.
+func TestAPITokenTiersBoundConsoleFields(t *testing.T) {
+	st := storetest.Open(t)
+	handler := newTestHandlerWithStore(st)
+	for _, access := range []store.APITokenAccess{store.APITokenAccessDiagnostics, store.APITokenAccessAgent} {
+		_, token, err := st.CreateAPITokenWithAccess(t.Context(), string(access), access, time.Now().UTC())
+		if err != nil {
+			t.Fatal(err)
+		}
+		authorize := func(req *http.Request) { req.Header.Set("Authorization", "Bearer "+token) }
+		for field := range adminFields {
+			kind := "query"
+			if mutationFields[field] {
+				kind = "mutation"
+			}
+			var want bool
+			switch access {
+			case store.APITokenAccessDiagnostics:
+				want = adminTokenOps[field] || !mutationFields[field] || diagnosticsTokenMutations[field]
+			case store.APITokenAccessAgent:
+				want = !agentTokenDenied[field]
+			}
+			body := `{"query":"` + kind + ` { ` + fieldHandlerRegistry[field].wireName + ` }"}`
+			_, errs := post(t, handler, body, authorize)
+			refused := len(errs) > 0 && errs[0].Message == "admin session required"
+			if want == refused {
+				t.Errorf("%s token on %q: refused=%v errs=%#v, want allowed=%v", access, field, refused, errs, want)
+			}
+		}
+	}
+	for field := range agentTokenDenied {
+		if !adminFields[field] {
+			t.Errorf("agentTokenDenied %q is not a Console field", field)
+		}
+	}
+	for field := range diagnosticsTokenMutations {
+		if !adminFields[field] || !mutationFields[field] {
+			t.Errorf("diagnosticsTokenMutations %q is not a Console mutation", field)
+		}
+	}
+}
+
 // TestNonConsoleFieldsAreNotAdminGated is the reverse drift-guard: a scoped
 // field that is NOT in the adminFields registry must NOT answer with the Admin
 // Session gate to a non-admin manager session. This catches a field carrying
