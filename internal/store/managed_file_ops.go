@@ -448,7 +448,8 @@ func (s *Store) ImportManagedFile(ctx context.Context, libraryID LibraryID, impo
 }
 
 // ErrManagedAdmissionInFlight refuses an ordinary (scan) import of a path that
-// an ImportManagedFile has put on disk but not yet cataloged. The managed
+// an ImportManagedFile or ConvertManagedFile has put on disk but not yet
+// cataloged. The managed
 // admission catalogs the file itself, so the scan skips the path and loses
 // nothing; a later scan sees it as an ordinary cataloged file.
 var ErrManagedAdmissionInFlight = errors.New("managed import of this path is in flight")
@@ -459,18 +460,38 @@ var ErrManagedAdmissionInFlight = errors.New("managed import of this path is in 
 func (s *Store) reserveManagedAdmission(target string) (func(), error) {
 	s.managedInflightMu.Lock()
 	defer s.managedInflightMu.Unlock()
-	if s.managedInflight == nil {
-		s.managedInflight = map[string]struct{}{}
-	}
-	if _, busy := s.managedInflight[target]; busy {
+	if s.managedInflight[target] > 0 {
 		return nil, ValidationError("import target already exists")
 	}
-	s.managedInflight[target] = struct{}{}
+	return s.holdManagedAdmissionLocked(target), nil
+}
+
+// holdManagedAdmission marks target as an in-flight managed admission until
+// the returned release runs, without refusing a path another admission already
+// holds. ConvertManagedFile uses it: its NO-REPLACE admission and succession
+// journal already settle a collision with another generation of the same job,
+// so the hold only has to keep scans out of the window (CORE-1831).
+func (s *Store) holdManagedAdmission(target string) func() {
+	s.managedInflightMu.Lock()
+	defer s.managedInflightMu.Unlock()
+	return s.holdManagedAdmissionLocked(target)
+}
+
+// holdManagedAdmissionLocked counts one hold on target. Caller holds
+// managedInflightMu.
+func (s *Store) holdManagedAdmissionLocked(target string) func() {
+	if s.managedInflight == nil {
+		s.managedInflight = map[string]int{}
+	}
+	s.managedInflight[target]++
 	return func() {
 		s.managedInflightMu.Lock()
 		defer s.managedInflightMu.Unlock()
-		delete(s.managedInflight, target)
-	}, nil
+		s.managedInflight[target]--
+		if s.managedInflight[target] <= 0 {
+			delete(s.managedInflight, target)
+		}
+	}
 }
 
 // refuseManagedAdmissionInFlight returns ErrManagedAdmissionInFlight when path
@@ -481,7 +502,7 @@ func (s *Store) reserveManagedAdmission(target string) (func(), error) {
 func (s *Store) refuseManagedAdmissionInFlight(path string) error {
 	s.managedInflightMu.Lock()
 	defer s.managedInflightMu.Unlock()
-	if _, busy := s.managedInflight[path]; busy {
+	if s.managedInflight[path] > 0 {
 		return fmt.Errorf("%w: %s", ErrManagedAdmissionInFlight, path)
 	}
 	return nil

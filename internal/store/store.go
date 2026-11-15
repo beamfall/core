@@ -1020,12 +1020,13 @@ type Store struct {
 	// registration never contends on s.mu). Lazily allocated.
 	importTokens  map[string]managedImportToken
 	importTokenMu sync.Mutex
-	// managedInflight holds the Library paths an ImportManagedFile has put on
-	// disk but not yet cataloged. The ordinary scan imports refuse such a path
-	// with ErrManagedAdmissionInFlight, so a scan cannot catalog a managed
-	// import ahead of its own admission. Guarded by managedInflightMu (never
+	// managedInflight counts the holds on each Library path an
+	// ImportManagedFile or ConvertManagedFile has put on disk but not yet
+	// cataloged. The ordinary scan imports refuse such a path with
+	// ErrManagedAdmissionInFlight, so a scan cannot catalog a managed import or
+	// conversion ahead of its own admission. Guarded by managedInflightMu (never
 	// s.mu); lazily allocated.
-	managedInflight   map[string]struct{}
+	managedInflight   map[string]int
 	managedInflightMu sync.Mutex
 }
 

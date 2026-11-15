@@ -253,6 +253,13 @@ func (s *Store) ConvertManagedFile(ctx context.Context, libraryID LibraryID, src
 		_ = os.Remove(tmpOut)
 		return ConvertResult{}, err
 	}
+	// Hold dst as an in-flight managed admission BEFORE it appears on disk and
+	// until the catalog admission settles: a scan that finds the output in
+	// between is refused (ErrManagedAdmissionInFlight) instead of cataloging it
+	// as an ordinary item, which would skip the duplicate refusal below and
+	// repoint an existing row (CORE-1831, the conversion leg of CORE-1089).
+	release := s.holdManagedAdmission(dst)
+	defer release()
 	admitErr := admitStagedFileNoReplace(tmpOut, dst)
 	if errors.Is(admitErr, os.ErrExist) {
 		done, result, recErr := s.recoverConvertJournal(ctx, libraryID, dst, srcPath, filter, lease, now)
