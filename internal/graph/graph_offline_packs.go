@@ -331,6 +331,17 @@ func (h *Handler) retryOfflinePack(ctx context.Context, scope auth.Scope, req re
 			}
 			return OfflinePackInfo{}, clientError("another offline pack build for the same selection is running; retry when it finishes")
 		}
+		// A running job for this pack ID is the one whose failure this retry
+		// is answering: the build writes failed before its job turns
+		// terminal, so joining it would leave the row building once that job
+		// ends. A queued or yielded job will still run the build, so joining
+		// one is safe; a running one is refused and the row stays failed.
+		if queued.Status == store.JobStatusRunning {
+			if failErr := h.offlinePacks.FailBuild(detached, id, offlinepack.FailureBuild); failErr != nil {
+				return OfflinePackInfo{}, failErr
+			}
+			return OfflinePackInfo{}, clientError("the previous offline pack build is still finishing; retry shortly")
+		}
 	}
 	return offlinePackBuildInfo(build), nil
 }

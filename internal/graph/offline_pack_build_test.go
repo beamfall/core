@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/beamfall/core/internal/jobs"
 	"github.com/beamfall/core/internal/offlinepack"
 	"github.com/beamfall/core/internal/store"
 )
@@ -462,5 +463,58 @@ func TestOfflinePackOperatorCancelFailsTheBuild(t *testing.T) {
 	}
 	if packs := listOfflinePackBuilds(t, handler); len(packs) != 0 {
 		t.Fatalf("offlinePacks after dismissing = %+v, want none", packs)
+	}
+}
+
+// TestOfflinePackRetryWhileFailedJobIsFinishing covers CORE-1865: a retry
+// made after the build wrote failed but before its job turned terminal must
+// not join that dying job. The retry is refused, the row stays failed, and a
+// later retry queues a job that seals the pack.
+func TestOfflinePackRetryWhileFailedJobIsFinishing(t *testing.T) {
+	handler, st, registry, svc := newOfflinePackHandlerWith(t, nil)
+	file, err := st.PrimaryMediaFile(t.Context(), "media-alpha", store.LibraryFilter{AllLibraries: true, Revealed: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	original, err := os.ReadFile(file.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created := queueOfflinePackBuildForTest(t, handler)
+	if err := os.Remove(file.Path); err != nil {
+		t.Fatal(err)
+	}
+	var windowRetry offlinePackBuildView
+	var windowErrs []graphError
+	retriedInWindow := false
+	registry.Register(offlinepack.BuildJobKind, func(ctx context.Context, job store.Job) (jobs.Result, error) {
+		_, err := svc.HandleBuildJob(ctx, job.Payload)
+		if err != nil && !retriedInWindow {
+			// The build row is failed now; the job is still running.
+			retriedInWindow = true
+			if writeErr := os.WriteFile(file.Path, original, 0o600); writeErr != nil { // #nosec G703 -- test fixture path from the seeded catalog under t.TempDir()
+				t.Error(writeErr)
+			}
+			windowRetry, windowErrs = retryOfflinePackForTest(t, handler, created.ID)
+		}
+		return jobs.Result{}, err
+	})
+	runOfflinePackBuildJob(t, handler)
+	if !retriedInWindow {
+		t.Fatal("the build job did not fail, so no retry ran in the window")
+	}
+	if len(windowErrs) == 0 && windowRetry.State == "building" {
+		t.Fatalf("retry while the failed job was finishing = %+v, want it refused rather than building", windowRetry)
+	}
+	requireBuildHasWorker(t, handler, st, created.ID)
+
+	retried, errs := retryOfflinePackForTest(t, handler, created.ID)
+	if len(errs) != 0 || retried.State != "building" {
+		t.Fatalf("retry after the job ended = %+v / %#v, want building", retried, errs)
+	}
+	requireBuildHasWorker(t, handler, st, created.ID)
+	runOfflinePackBuildJob(t, handler)
+	if state := offlinePackBuildState(t, handler, created.ID); state != "ready" {
+		t.Fatalf("build %q after the retried job = %q, want ready", created.ID, state)
 	}
 }
