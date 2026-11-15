@@ -1341,7 +1341,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		graphHandler.SetIntegrationActionRunner(integrationMgr)
 	}
 	if scrobbleDispatcher != nil {
-		graphHandler.SetWatchedObserver(scrobbleWatchedObserver{dispatcher: scrobbleDispatcher})
+		graphHandler.SetWatchedObserver(scrobbleWatchedObserver{dispatcher: scrobbleDispatcher, targets: newScrobbleTargetResolver(st, executablePlugins)})
 		// MUSIC-7 (ADR-0098 area 7): the read-only status source (dead-letter +
 		// skip feeds + configured adapters) for the operator diagnostic surface,
 		// and the richer-outbound-metadata resolver (artist/album + MBIDs from the
@@ -3415,8 +3415,11 @@ func (s scrobbleLinkSource) LibraryEligible(ctx context.Context, libraryID strin
 // store's MediaClass + External IDs into the plugin's generic shape) and
 // enqueues it. Non-blocking by construction — the dispatcher's Watched returns
 // immediately, so the playback path never waits on a third-party service.
+// targets selects the event's TargetHint from the Library plugin's declared
+// ScrobbleTargetSpec; an unresolved hint stays empty and the dispatcher skips.
 type scrobbleWatchedObserver struct {
 	dispatcher *scrobble.Dispatcher
+	targets    *scrobbleTargetResolver
 }
 
 func (o scrobbleWatchedObserver) Watched(t graph.WatchedTransition) {
@@ -3428,11 +3431,15 @@ func (o scrobbleWatchedObserver) Watched(t graph.WatchedTransition) {
 	for _, id := range t.ExternalIDs {
 		ids = append(ids, scrobble.ExternalID{Scheme: id.Scheme, Value: id.Value})
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), scrobbleTargetLookupTimeout)
+	hint := o.targets.resolve(ctx, t.LibraryID, t.MediaID)
+	cancel()
 	o.dispatcher.Watched(scrobble.WatchedEvent{
 		ProfileID:   string(t.ProfileID),
 		MediaID:     string(t.MediaID),
 		LibraryID:   string(t.LibraryID),
 		Class:       class,
+		TargetHint:  hint,
 		Title:       t.Title,
 		Year:        t.Year,
 		ExternalIDs: ids,
