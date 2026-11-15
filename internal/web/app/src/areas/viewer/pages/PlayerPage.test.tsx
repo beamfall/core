@@ -550,7 +550,10 @@ describe("PlayerPage pre-play", () => {
       hlsRef: { current: null },
       state: playerState({ phase: "playing" }),
       retry: vi.fn(),
+      restart: vi.fn(),
       switchToHls: vi.fn(() => false as const),
+      adjustment: DEFAULT_ADJUSTMENT,
+      adjust: vi.fn(),
     });
     vi.mocked(fetchPrePlayQueue).mockReset();
   });
