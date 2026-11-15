@@ -27,12 +27,13 @@ vi.mock("@/lib/api", async (importOriginal) => ({
 }));
 
 const assign = vi.fn();
-const SECRET = "secret-handle-1";
+const HANDLE = "request-handle-1";
+const NEXT_HANDLE = "request-handle-2";
 
 function ticket(overrides: Partial<JoinRequest> = {}): JoinRequest {
   return {
     code: "K7M2QX4D",
-    requestSecret: SECRET,
+    requestSecret: HANDLE,
     expiresAt: new Date(Date.now() + 600_000).toISOString(),
     // A few milliseconds keeps the poll loop on real timers.
     pollIntervalSeconds: 0.005,
@@ -86,12 +87,12 @@ describe("Ask to join", () => {
       screen.getByText("On the server, open the Console and approve this code."),
     ).toBeVisible();
     await waitFor(() => expect(assign).toHaveBeenCalledWith("/"));
-    expect(pollJoinRequest).toHaveBeenCalledWith(SECRET, expect.any(AbortSignal));
+    expect(pollJoinRequest).toHaveBeenCalledWith(HANDLE, expect.any(AbortSignal));
     expect(screen.getByRole("status")).toHaveTextContent("Connected.");
     // The secret is a credential: never rendered, never stored.
-    expect(document.body).not.toHaveTextContent(SECRET);
-    expect(JSON.stringify({ ...window.localStorage })).not.toContain(SECRET);
-    expect(JSON.stringify({ ...window.sessionStorage })).not.toContain(SECRET);
+    expect(document.body).not.toHaveTextContent(HANDLE);
+    expect(JSON.stringify({ ...window.localStorage })).not.toContain(HANDLE);
+    expect(JSON.stringify({ ...window.sessionStorage })).not.toContain(HANDLE);
   });
 
   it("says the request was declined", async () => {
@@ -137,7 +138,7 @@ describe("Ask to join", () => {
       () => new Promise((resolve) => (resolvePoll = resolve)),
     );
     vi.mocked(regenerateJoinRequest).mockResolvedValue(
-      ticket({ code: "ZZ22YY33", requestSecret: "secret-handle-2" }),
+      ticket({ code: "ZZ22YY33", requestSecret: NEXT_HANDLE }),
     );
 
     await ask();
@@ -145,13 +146,13 @@ describe("Ask to join", () => {
     await waitFor(() => expect(pollJoinRequest).toHaveBeenCalledTimes(1));
     await userEvent.click(screen.getByRole("button", { name: "New code" }));
 
-    expect(regenerateJoinRequest).toHaveBeenCalledWith(SECRET, expect.any(AbortSignal));
+    expect(regenerateJoinRequest).toHaveBeenCalledWith(HANDLE, expect.any(AbortSignal));
     expect(await screen.findByText("ZZ22YY33")).toBeInTheDocument();
     // The poll that was in flight for the old code was aborted and its answer is ignored.
     expect(vi.mocked(pollJoinRequest).mock.calls[0][1]?.aborted).toBe(true);
     resolvePoll({ status: "pending" });
     await waitFor(() =>
-      expect(pollJoinRequest).toHaveBeenLastCalledWith("secret-handle-2", expect.any(AbortSignal)),
+      expect(pollJoinRequest).toHaveBeenLastCalledWith(NEXT_HANDLE, expect.any(AbortSignal)),
     );
   });
 
