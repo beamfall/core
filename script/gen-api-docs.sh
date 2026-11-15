@@ -40,6 +40,7 @@ cat > "$OUT/llms.txt" <<EOF
 - [API reference](reference.md): every /v1 endpoint, auth, scopes, and schemas (rendered from the OpenAPI spec)
 - [OpenAPI spec](openapi.json): the machine-readable source of truth, pinned against the handlers by internal/server/v1_test.go
 - [Home-automation guide](home-automation.md): event stream and playback-control integration notes
+- [Request-tool guide](request-tools.md): sign-in, availability lookup, targeted scan and arrival events for request-management tools
 EOF
 
 {
@@ -49,6 +50,8 @@ EOF
   cat "$OUT/reference.md"
   printf '\n---\nsource: docs/api/home-automation.md\n---\n\n'
   cat "$SOURCE_ROOT/docs/api/home-automation.md"
+  printf '\n---\nsource: docs/api/request-tools.md\n---\n\n'
+  cat "$SOURCE_ROOT/docs/api/request-tools.md"
   printf '\n---\nsource: docs/api/openapi.json\n---\n\n'
   cat "$SPEC"
 } > "$OUT/llms-full.txt"
