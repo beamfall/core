@@ -98,3 +98,31 @@ test("elapsed clock advances (CORE-1491)", async ({ page }) => {
   await expectPlaying(page);
   await expect(page.locator(".bf-time.is-start")).not.toHaveText("0:00", { timeout: 10_000 });
 });
+
+// CORE-1490: Home > Recently Added mixes the seeded tracks with the seed's video.
+// Playing a track from that shelf must queue only the audio items, so the audio
+// stage counts the tracks alone. Marked as an expected failure until the web
+// player narrows a shelf queue by class: it reads "1 of 4" today. When the fix
+// lands this test turns red; remove test.fail() then.
+test("a track from a mixed shelf queues only audio items (CORE-1490)", async ({ page }) => {
+  test.fail(true, "CORE-1490: the Recently Added queue still includes the video");
+  test.setTimeout(60_000);
+  const titles = library.tracks.map((track) => track.title);
+  const trackCard = new RegExp(titles.join("|"));
+  await page.goto("/web/");
+  const shelf = page
+    .locator("section")
+    .filter({ has: page.getByRole("button", { name: /Sample Media/ }) })
+    .filter({ has: page.getByRole("button", { name: trackCard }) })
+    .last();
+  const card = shelf.getByRole("button", { name: trackCard }).first();
+  const label = (await card.getAttribute("aria-label")) ?? (await card.innerText());
+  const title = titles.find((candidate) => label.includes(candidate));
+  await card.click();
+  await page.locator(".bf-detail-play").click();
+  await expect(page.locator(".bf-audio-title")).toHaveText(title ?? "");
+  await expectPlaying(page);
+  await expect(page.locator(".bf-audio-position")).toHaveText(new RegExp(` of ${titles.length}$`), {
+    timeout: 5_000,
+  });
+});
