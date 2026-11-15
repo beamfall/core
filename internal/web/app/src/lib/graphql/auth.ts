@@ -204,6 +204,64 @@ export async function fetchPairingRequests(signal?: AbortSignal): Promise<Pairin
   return data.requests ?? [];
 }
 
+/** A pending request this browser made (POST /api/pairing-requests, CORE-2070).
+ * `requestSecret` is the browser's private handle on it: keep it in memory
+ * only, never in storage, a URL or a log. */
+export interface JoinRequest {
+  code: string;
+  requestSecret: string;
+  expiresAt: string;
+  pollIntervalSeconds: number;
+}
+
+/** Ask the server to let this browser join as a viewer. Rejects with an
+ * ApiError: 404 = a server without device-initiated pairing, 429 = throttled,
+ * 401 = the server is not taking requests (remote enrollment or Viewer codes off). */
+export async function requestToJoin(
+  deviceName: string,
+  signal?: AbortSignal,
+): Promise<JoinRequest> {
+  return postJSON<JoinRequest>(
+    "/api/pairing-requests",
+    { deviceName, platform: "web", requestedRole: "viewer" },
+    signal,
+  );
+}
+
+/** Replace a pending request's code and secret
+ * (POST /api/pairing-requests/regenerate). 401 = expired or already decided. */
+export async function regenerateJoinRequest(
+  requestSecret: string,
+  signal?: AbortSignal,
+): Promise<JoinRequest> {
+  return postJSON<JoinRequest>("/api/pairing-requests/regenerate", { requestSecret }, signal);
+}
+
+export type JoinPoll =
+  | { status: "pending" }
+  | { status: "denied" }
+  | { status: "approved"; rebind: RebindOutcome };
+
+/** Poll a pending request (POST /api/pairing-requests/poll). The CSRF header
+ * postJSON sends makes it a browser poll: on approval the server sets the same
+ * credential cookies /api/web/enroll sets, so the browser is bound exactly as
+ * typed enrollment binds it, and the compatibility rebind follows. The body's
+ * enrollment is never read. Rejects with an ApiError: 401 = expired or spent,
+ * 429 = throttled. */
+export async function pollJoinRequest(
+  requestSecret: string,
+  signal?: AbortSignal,
+): Promise<JoinPoll> {
+  const data = await postJSON<{ status?: string }>(
+    "/api/pairing-requests/poll",
+    { requestSecret },
+    signal,
+  );
+  if (data.status === "approved") return { status: "approved", rebind: await settleRebind() };
+  if (data.status === "denied") return { status: "denied" };
+  return { status: "pending" };
+}
+
 /** Approve (POST /api/pairing-requests/approve) or deny (.../deny) one pending
  * request. With no options the server uses the role the device asked for.
  * Rejects with an ApiError; 404 = the request is gone or expired. */

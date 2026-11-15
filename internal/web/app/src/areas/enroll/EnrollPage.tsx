@@ -13,6 +13,7 @@ import {
 import { ApiError, fetchSetupStatus, type SignInSecurityMode } from "@/lib/api";
 import { adminSignIn, enroll } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
+import { AskToJoinPanel, useAskToJoin } from "./AskToJoin";
 import { FormFeedback, normalizePairingCode, PAIRING_CODE_INPUT } from "./AuthShell";
 import { defaultDeviceName } from "./deviceName";
 import { PairingCodeHelp } from "./PairingCodeHelp";
@@ -62,6 +63,10 @@ export function EnrollPage() {
   // admin-password sign-in, so the form stays hidden; it also stays hidden
   // until the probe settles so it never flashes on a Strict server.
   const [securityMode, setSecurityMode] = useState<SignInSecurityMode | null>(null);
+  // Ask to join (CORE-2070). Typed enrollment and asking are one attempt at a
+  // time: submitting a code cancels a pending ask, and asking clears the form's
+  // refusal; the Ask button waits while a typed code is in flight.
+  const ask = useAskToJoin();
 
   useEffect(() => {
     if (/(^#|&)code=/.test(window.location.hash)) {
@@ -92,6 +97,7 @@ export function EnrollPage() {
       showError(t("pairingCodeRequired"));
       return;
     }
+    ask.cancel();
     setBusy(true);
     setError(null);
     try {
@@ -174,6 +180,15 @@ export function EnrollPage() {
             <ArrowRight aria-hidden className="size-4" />
           </PrimaryAction>
         </form>
+        <AskToJoinPanel
+          ask={ask}
+          disabled={busy}
+          onStart={() => {
+            setError(null);
+            setRejected(false);
+            ask.start(deviceName.trim() || fallbackName);
+          }}
+        />
         {securityMode === "home" && (
           <AdminSignInForm deviceName={deviceName.trim() || fallbackName} />
         )}

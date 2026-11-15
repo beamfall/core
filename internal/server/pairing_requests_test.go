@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/pairing"
 	"github.com/beamfall/core/internal/store"
 )
@@ -231,5 +232,73 @@ func TestDevicePairingRequestShowsDeviceIdentityToAdmin(t *testing.T) {
 	wantDevicePairingStatus(t, approve, http.StatusOK, "approve")
 	if decision := decodeDevicePairing[pairing.DeviceRequestDecisionResponse](t, approve); decision.DeviceRole != "manager" {
 		t.Fatalf("approval role = %+v, want the requested manager role", decision)
+	}
+}
+
+// browserPoll is a poll the web app sends: the CSRF header marks it (CORE-2070).
+func browserPoll(req *http.Request) { req.Header.Set(auth.CSRFHeader, "1") }
+
+func TestDevicePairingBrowserPollBindsCookiesLikeWebEnroll(t *testing.T) {
+	srv := newTestServer(t)
+	req := requestDevicePairingOverHTTP(t, srv, "Chrome on macOS")
+	wantDevicePairingStatus(t, devicePairingCall(t, srv, http.MethodPost, "/api/pairing-requests/approve", codeBody(req.Code), authorizeManager), http.StatusOK, "approve")
+
+	poll := devicePairingCall(t, srv, http.MethodPost, "/api/pairing-requests/poll", secretBody(req.RequestSecret), browserPoll)
+	wantDevicePairingStatus(t, poll, http.StatusOK, "browser poll after approval")
+	got := decodeDevicePairing[pairing.DevicePollResponse](t, poll)
+	if got.Status != pairing.DeviceRequestApproved || got.Enrollment == nil || got.Enrollment.DeviceID == "" {
+		t.Fatalf("browser poll = %+v", got)
+	}
+	if got.Enrollment.DeviceSecret != "" || got.Enrollment.SessionID != "" {
+		t.Fatalf("browser poll body carries the credential: %+v", got.Enrollment)
+	}
+	byName := map[string]*http.Cookie{}
+	for _, cookie := range poll.Result().Cookies() {
+		byName[cookie.Name] = cookie
+	}
+	for _, name := range []string{auth.SessionCookie, auth.DeviceCookie, auth.DeviceSecretCookie} {
+		cookie := byName[name]
+		if cookie == nil || cookie.Value == "" {
+			t.Fatalf("cookie %q not set", name)
+		}
+		if !cookie.HttpOnly || cookie.SameSite != http.SameSiteStrictMode {
+			t.Fatalf("cookie %q HttpOnly:%v SameSite:%v, want HttpOnly Strict", name, cookie.HttpOnly, cookie.SameSite)
+		}
+	}
+	if strings.Contains(poll.Body.String(), byName[auth.DeviceSecretCookie].Value) {
+		t.Fatal("browser poll body leaks the device secret")
+	}
+
+	manifestReq := httptest.NewRequest(http.MethodGet, "/api/manifest", nil)
+	for _, cookie := range poll.Result().Cookies() {
+		manifestReq.AddCookie(cookie)
+	}
+	manifestRec := httptest.NewRecorder()
+	srv.ServeHTTP(manifestRec, manifestReq)
+	wantDevicePairingStatus(t, manifestRec, http.StatusOK, "manifest with the poll cookies")
+}
+
+func TestDevicePairingBrowserPollRefusesPublicPlainHTTPBeforePolling(t *testing.T) {
+	srv := newTestServer(t)
+	req := requestDevicePairingOverHTTP(t, srv, "Chrome on macOS")
+	wantDevicePairingStatus(t, devicePairingCall(t, srv, http.MethodPost, "/api/pairing-requests/approve", codeBody(req.Code), authorizeManager), http.StatusOK, "approve")
+
+	public := devicePairingCall(t, srv, http.MethodPost, "/api/pairing-requests/poll", secretBody(req.RequestSecret), func(r *http.Request) {
+		browserPoll(r)
+		r.RemoteAddr = "203.0.113.7:5000"
+	})
+	wantDevicePairingStatus(t, public, http.StatusForbidden, "public plain-HTTP browser poll")
+	if len(public.Result().Cookies()) != 0 {
+		t.Fatal("refused browser poll set cookies")
+	}
+
+	// The approval was not spent: the native poll still collects it, in the body and without cookies.
+	native := devicePairingCall(t, srv, http.MethodPost, "/api/pairing-requests/poll", secretBody(req.RequestSecret), nil)
+	wantDevicePairingStatus(t, native, http.StatusOK, "native poll after the refused browser poll")
+	if got := decodeDevicePairing[pairing.DevicePollResponse](t, native); got.Enrollment == nil || got.Enrollment.DeviceSecret == "" || got.Enrollment.SessionID == "" {
+		t.Fatalf("native poll = %+v", got)
+	}
+	if len(native.Result().Cookies()) != 0 {
+		t.Fatal("native poll set cookies")
 	}
 }

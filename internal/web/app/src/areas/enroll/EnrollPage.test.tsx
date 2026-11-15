@@ -10,6 +10,9 @@ import { EnrollPage } from "./EnrollPage";
 vi.mock("@/lib/graphql", () => ({
   enroll: vi.fn(),
   adminSignIn: vi.fn(),
+  requestToJoin: vi.fn(),
+  pollJoinRequest: vi.fn(),
+  regenerateJoinRequest: vi.fn(),
 }));
 
 vi.mock("@/lib/api", async (importOriginal) => ({

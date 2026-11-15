@@ -69,6 +69,14 @@ func (s *Server) pollDevicePairing(w http.ResponseWriter, r *http.Request) {
 		writeDecodeError(w, r, err)
 		return
 	}
+	// A browser poll (CORE-2070) carries the CSRF header every web request
+	// sends. It is bound like /api/web/enroll: refused over public plain HTTP
+	// before the request is touched, and on approval the credential goes into
+	// the HttpOnly cookies, never into page-readable JSON.
+	browser := r.Header.Get(auth.CSRFHeader) != ""
+	if browser && rejectPublicPlainHTTPWebCredentials(w, r) {
+		return
+	}
 	req := body.DevicePollRequest
 	req.RemoteAddr = r.RemoteAddr
 	req.IsLAN = requestIsLAN(r)
@@ -83,6 +91,14 @@ func (s *Server) pollDevicePairing(w http.ResponseWriter, r *http.Request) {
 		if err := s.bindEnrolledBuild(r.Context(), *resp.Enrollment, *body.ClientContract); err != nil {
 			slog.WarnContext(r.Context(), "enrollment build mapping failed", "device", resp.Enrollment.DeviceID, "surface", body.ClientContract.Surface, "build", body.ClientContract.BuildID, "err", err)
 		}
+	}
+	if browser && resp.Enrollment != nil {
+		enrolled := *resp.Enrollment
+		setWebSignInCookies(w, r, enrolled.SessionID, enrolled.SessionExpiresAt, enrolled.DeviceID, enrolled.DeviceSecret)
+		// Same fields, credential values blanked: the cookies carry them.
+		enrolled.DeviceSecret = ""
+		enrolled.SessionID = ""
+		resp.Enrollment = &enrolled
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

@@ -90,6 +90,13 @@ JSON. Secrets travel only in request bodies, never in a URL.
 the device both requested and collected on the LAN. `approved` and `denied` are delivered once:
 the request is gone after that poll, and a later poll with the same secret is `401`.
 
+A browser poll is one that carries the web app's CSRF header (`X-Beamfall-Csrf`). It is bound the
+way `POST /api/web/enroll` binds a browser: over plain HTTP from outside the local network it is
+refused with `403` before the request is touched, and an `approved` answer sets the session, device
+and device-secret cookies (HttpOnly, SameSite=Strict) and returns `deviceSecret` and `sessionID` as
+empty strings, so the credential never reaches page script. Native clients do not send the header
+and keep the credential in the body.
+
 **`POST /api/pairing-requests/regenerate`** → `201`
 
 ```json

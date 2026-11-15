@@ -23,6 +23,18 @@ export const appShellStrings = {
     deviceName: "Device name",
     webBrowser: "Web Browser",
     connect: "Connect",
+    // CORE-2070: ask to join without a pairing code.
+    askToJoin: "Ask to join",
+    askToJoinHint: "No code? Ask, and the server's owner can let this browser in from the Console.",
+    askToJoinCodeLabel: "Your code",
+    askToJoinApproveInConsole: "On the server, open the Console and approve this code.",
+    askToJoinWaiting: "Waiting for approval…",
+    askToJoinNewCode: "New code",
+    askToJoinDenied: "The server's owner declined this request.",
+    askToJoinExpired: "This code expired. Ask again for a new one.",
+    askToJoinThrottled: "Too many requests from this browser. Wait a few minutes, then try again.",
+    askToJoinRefused:
+      "This server isn't taking requests to join right now. Use a pairing code instead.",
     adminSignInTitle: "Sign in with the admin password",
     adminSignInLead: "The owner can sign this browser in with the admin password set during setup.",
     adminSignIn: "Sign in",
@@ -91,6 +103,19 @@ export const appShellStrings = {
     deviceName: "Nom de l’appareil",
     webBrowser: "Navigateur Web",
     connect: "Connecter",
+    askToJoin: "Demander à rejoindre",
+    askToJoinHint:
+      "Pas de code ? Faites une demande : le propriétaire du serveur peut autoriser ce navigateur depuis la Console.",
+    askToJoinCodeLabel: "Votre code",
+    askToJoinApproveInConsole: "Sur le serveur, ouvrez la Console et approuvez ce code.",
+    askToJoinWaiting: "En attente d’approbation…",
+    askToJoinNewCode: "Nouveau code",
+    askToJoinDenied: "Le propriétaire du serveur a refusé cette demande.",
+    askToJoinExpired: "Ce code a expiré. Faites une nouvelle demande.",
+    askToJoinThrottled:
+      "Trop de demandes depuis ce navigateur. Patientez quelques minutes, puis réessayez.",
+    askToJoinRefused:
+      "Ce serveur n’accepte pas de demandes pour le moment. Utilisez plutôt un code de jumelage.",
     adminSignInTitle: "Se connecter avec le mot de passe administrateur",
     adminSignInLead:
       "Le propriétaire peut connecter ce navigateur avec le mot de passe administrateur choisi à l’installation.",
@@ -160,6 +185,19 @@ export const appShellStrings = {
     deviceName: "Gerätename",
     webBrowser: "Webbrowser",
     connect: "Verbinden",
+    askToJoin: "Beitritt anfragen",
+    askToJoinHint:
+      "Kein Code? Frag an, dann kann der Eigentümer des Servers diesen Browser in der Console zulassen.",
+    askToJoinCodeLabel: "Dein Code",
+    askToJoinApproveInConsole: "Öffne auf dem Server die Console und bestätige diesen Code.",
+    askToJoinWaiting: "Warte auf Bestätigung…",
+    askToJoinNewCode: "Neuer Code",
+    askToJoinDenied: "Der Eigentümer des Servers hat diese Anfrage abgelehnt.",
+    askToJoinExpired: "Dieser Code ist abgelaufen. Frag erneut an, um einen neuen zu erhalten.",
+    askToJoinThrottled:
+      "Zu viele Anfragen von diesem Browser. Warte ein paar Minuten und versuche es dann erneut.",
+    askToJoinRefused:
+      "Dieser Server nimmt gerade keine Beitrittsanfragen an. Verwende stattdessen einen Kopplungscode.",
     adminSignInTitle: "Mit dem Admin-Passwort anmelden",
     adminSignInLead:
       "Der Eigentümer kann diesen Browser mit dem bei der Einrichtung gewählten Admin-Passwort anmelden.",
@@ -230,6 +268,19 @@ export const appShellStrings = {
     deviceName: "Nombre del dispositivo",
     webBrowser: "Navegador web",
     connect: "Conectar",
+    askToJoin: "Pedir acceso",
+    askToJoinHint:
+      "¿No tienes código? Pide acceso y el propietario del servidor puede admitir este navegador desde la Console.",
+    askToJoinCodeLabel: "Tu código",
+    askToJoinApproveInConsole: "En el servidor, abre la Console y aprueba este código.",
+    askToJoinWaiting: "Esperando aprobación…",
+    askToJoinNewCode: "Nuevo código",
+    askToJoinDenied: "El propietario del servidor rechazó esta solicitud.",
+    askToJoinExpired: "Este código caducó. Vuelve a pedir acceso para obtener uno nuevo.",
+    askToJoinThrottled:
+      "Demasiadas solicitudes desde este navegador. Espera unos minutos y vuelve a intentarlo.",
+    askToJoinRefused:
+      "Este servidor no acepta solicitudes de acceso ahora mismo. Usa un código de emparejamiento.",
     adminSignInTitle: "Iniciar sesión con la contraseña de administrador",
     adminSignInLead:
       "El propietario puede iniciar sesión en este navegador con la contraseña de administrador elegida en la configuración.",
@@ -299,6 +350,18 @@ export const appShellStrings = {
     deviceName: "Nome do dispositivo",
     webBrowser: "Navegador Web",
     connect: "Conectar",
+    askToJoin: "Pedir acesso",
+    askToJoinHint:
+      "Sem código? Peça acesso e o proprietário do servidor pode liberar este navegador pelo Console.",
+    askToJoinCodeLabel: "Seu código",
+    askToJoinApproveInConsole: "No servidor, abra o Console e aprove este código.",
+    askToJoinWaiting: "Aguardando aprovação…",
+    askToJoinNewCode: "Novo código",
+    askToJoinDenied: "O proprietário do servidor recusou este pedido.",
+    askToJoinExpired: "Este código expirou. Peça acesso de novo para receber um novo.",
+    askToJoinThrottled: "Pedidos demais deste navegador. Aguarde alguns minutos e tente de novo.",
+    askToJoinRefused:
+      "Este servidor não está aceitando pedidos de acesso agora. Use um código de pareamento.",
     adminSignInTitle: "Entrar com a senha de administrador",
     adminSignInLead:
       "O proprietário pode conectar este navegador com a senha de administrador definida na configuração.",
