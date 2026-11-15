@@ -120,9 +120,11 @@ func (r *Runner) TranscodeToPipe(ctx context.Context, in PipeInput, profile Conv
 
 // pipeArgs builds the FFmpeg argv for a pipe transcode: input options scoped to
 // the one loopback URL, the profile's encode, and fragmented MP4 to pipe:1.
+// -xerror makes a decode error fatal: without it FFmpeg exits 0 on a truncated
+// or corrupt input, having encoded only what it could read.
 func pipeArgs(inputURL string, timeout time.Duration, profile ConvertProfile) []string {
 	args := []string{
-		"-v", "error", "-nostdin",
+		"-v", "error", "-nostdin", "-xerror",
 		"-protocol_whitelist", pipeProtocolAllowlist,
 		"-max_redirects", "0",
 		"-rw_timeout", strconv.FormatInt(timeout.Microseconds(), 10),

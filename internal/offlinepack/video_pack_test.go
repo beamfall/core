@@ -27,7 +27,7 @@ func setFixtureClass(t *testing.T, st *store.Store, id store.MediaID, class stor
 	}
 	if _, _, err := st.ImportMediaFile(context.Background(), store.ImportMediaFile{
 		LibraryID: rows[id].LibraryID, Path: files[0].Path, Title: rows[id].Title, Container: "mkv", Codec: "hevc",
-		Class: class, ContentFingerprint: files[0].ContentFingerprint,
+		Class: class, ContentFingerprint: files[0].ContentFingerprint, DurationSecondsHint: rows[id].DurationSeconds,
 	}); err != nil {
 		t.Fatal(err)
 	}

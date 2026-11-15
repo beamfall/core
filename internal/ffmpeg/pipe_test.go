@@ -26,6 +26,9 @@ func TestPipeArgsScopeInputAndFragmentOutput(t *testing.T) {
 		t.Fatalf("args lack -i %s: %v", testPipeURL, args)
 	}
 	input := args[:i]
+	if !slices.Contains(input, "-xerror") {
+		t.Errorf("pipe args do not make decode errors fatal: %v", args)
+	}
 	for _, pair := range [][2]string{
 		{"-protocol_whitelist", "http,tcp"},
 		{"-max_redirects", "0"},

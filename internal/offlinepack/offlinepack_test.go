@@ -162,7 +162,7 @@ func newFixture(t *testing.T) (*Service, *auth.Service, *store.Store, func() tim
 		}
 		if _, _, err := st.ImportMediaFile(context.Background(), store.ImportMediaFile{
 			LibraryID: media.LibraryID, Path: path, Title: media.Title, Container: "flac", Codec: "flac",
-			Class: store.MediaClassAudio, ContentFingerprint: files[0].ContentFingerprint,
+			Class: store.MediaClassAudio, ContentFingerprint: files[0].ContentFingerprint, DurationSecondsHint: media.DurationSeconds,
 		}); err != nil {
 			t.Fatal(err)
 		}

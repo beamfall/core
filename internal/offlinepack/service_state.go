@@ -169,6 +169,9 @@ type packBuildSource struct {
 	transcode  bool
 	transcoded bool
 	staged     *encderiv.Result
+	// duration is the Media's playback length, which an encrypted transcode
+	// must cover.
+	duration time.Duration
 	// streams is the source file's stream inventory, read for transcodes.
 	streams []store.MediaFileStream
 }
@@ -185,8 +188,15 @@ func (s *Service) preflightBuildSources(ctx context.Context, ids []store.MediaID
 			return nil, errors.New("offline pack supports audio and video Media only")
 		}
 		transcode := media.Class == store.MediaClassVideo && quality != QualityOriginal
-		if transcode && s.isEncrypted(media.LibraryID) && s.pipeTranscode == nil {
-			return nil, fmt.Errorf("%w: encrypted-library transcoder is not configured", ErrTranscode)
+		if transcode && s.isEncrypted(media.LibraryID) {
+			if s.pipeTranscode == nil {
+				return nil, fmt.Errorf("%w: encrypted-library transcoder is not configured", ErrTranscode)
+			}
+			// Without it a transcode that stopped early could not be told
+			// from a complete one.
+			if media.DurationSeconds <= 0 {
+				return nil, fmt.Errorf("%w: the source's duration is unknown", ErrTranscode)
+			}
 		}
 		file, err := s.selectedVersionFile(ctx, id, filter, selectedVersions[id])
 		if err != nil {
@@ -195,6 +205,7 @@ func (s *Service) preflightBuildSources(ctx context.Context, ids []store.MediaID
 		source := packBuildSource{
 			mediaID: id, libraryID: media.LibraryID, path: file.Path,
 			selectedVersion: file.VersionLabel, transcode: transcode,
+			duration: time.Duration(media.DurationSeconds) * time.Second,
 		}
 		if transcode {
 			source.streams, err = s.store.MediaFileStreams(ctx, file.ContentFingerprint)
@@ -297,12 +308,13 @@ func (s *Service) transcodeEncrypted(ctx context.Context, scope auth.Scope, sour
 	}
 	mediaID, libraryID, path, streams := source.mediaID, source.libraryID, source.path, source.streams
 	result, err := encderiv.Run(ctx, encderiv.Job{
-		Open:         func() (io.ReadSeekCloser, error) { return s.openContent(libraryID, path) },
-		Size:         size,
-		StageDir:     stageDir,
-		StageName:    fmt.Sprintf("%04d", index),
-		MaxBytes:     int64(MaxItemSize),
-		PollInterval: s.pipePoll,
+		Open:           func() (io.ReadSeekCloser, error) { return s.openContent(libraryID, path) },
+		Size:           size,
+		StageDir:       stageDir,
+		StageName:      fmt.Sprintf("%04d", index),
+		MaxBytes:       int64(MaxItemSize),
+		SourceDuration: source.duration,
+		PollInterval:   s.pipePoll,
 		Revoked: func(ctx context.Context) error {
 			return s.buildRevoked(ctx, scope, mediaID, libraryID)
 		},

@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/encderiv"
+	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -122,12 +124,15 @@ func fmp4FullBox(typ string, version byte, flags uint32, parts ...[]byte) []byte
 func be32(v uint32) []byte { return binary.BigEndian.AppendUint32(nil, v) }
 
 const (
-	fmp4Timescale     = 12288
-	fmp4FrameDuration = 512
-	fmp4FrameCount    = 24
+	fmp4Timescale  = 12288
+	fmp4FrameCount = 24
+	// fmp4Seconds is media-alpha's seeded duration, which the output must
+	// cover.
+	fmp4Seconds = 120
 )
 
 func fragmentedMP4(payload []byte, fragments int) []byte {
+	frameDuration := fmp4Seconds * fmp4Timescale / (fragments * fmp4FrameCount)
 	trak := fmp4Box("trak",
 		fmp4FullBox("tkhd", 0, 3, be32(0), be32(0), be32(1), make([]byte, 68)),
 		fmp4Box("mdia",
@@ -140,16 +145,56 @@ func fragmentedMP4(payload []byte, fragments int) []byte {
 	for i := range fragments {
 		durations := make([]byte, 0, 4*fmp4FrameCount)
 		for range fmp4FrameCount {
-			durations = append(durations, be32(fmp4FrameDuration)...)
+			durations = append(durations, be32(uint32(frameDuration))...) //nolint:gosec // small test counts
 		}
 		traf := fmp4Box("traf",
 			fmp4FullBox("tfhd", 0, 0x020000, be32(1)),
-			fmp4FullBox("tfdt", 1, 0, binary.BigEndian.AppendUint64(nil, uint64(i*fmp4FrameCount*fmp4FrameDuration))), //nolint:gosec // small test counts
+			fmp4FullBox("tfdt", 1, 0, binary.BigEndian.AppendUint64(nil, uint64(i*fmp4FrameCount*frameDuration))), //nolint:gosec // small test counts
 			fmp4FullBox("trun", 0, 0x001|0x004|0x100, be32(fmp4FrameCount), be32(0), be32(0x02000000), durations))
 		out = append(out, fmp4Box("moof", fmp4FullBox("mfhd", 0, 0, be32(uint32(i+1))), traf)...) //nolint:gosec // small test counts
 		out = append(out, fmp4Box("mdat", payload[min(i*chunk, len(payload)):min((i+1)*chunk, len(payload))])...)
 	}
 	return out
+}
+
+// firstFragments cuts a fragmented MP4 before its (n+1)th moof, leaving a
+// well-formed stream that runs short.
+func firstFragments(t *testing.T, b []byte, n int) []byte {
+	t.Helper()
+	moofs := 0
+	for off := 0; off+8 <= len(b); off += int(binary.BigEndian.Uint32(b[off:])) {
+		if string(b[off+4:off+8]) != "moof" {
+			continue
+		}
+		if moofs == n {
+			return b[:off]
+		}
+		moofs++
+	}
+	t.Fatalf("stream has %d fragments, want more than %d", moofs, n)
+	return nil
+}
+
+// clearDuration re-imports media-alpha's file without a duration, as a scan
+// whose probe failed leaves it.
+func (fx *encryptedVideoFixture) clearDuration(t *testing.T) {
+	t.Helper()
+	filter := store.LibraryFilter{AllLibraries: true, Revealed: true}
+	rows, err := fx.st.VisibleMediaBatch(context.Background(), []store.MediaID{"media-alpha"}, filter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := fx.st.MediaFilesForMedia(context.Background(), "media-alpha", filter)
+	if err != nil || len(files) == 0 {
+		t.Fatalf("MediaFilesForMedia: %v", err)
+	}
+	media := rows["media-alpha"]
+	if _, _, err := fx.st.ImportMediaFile(context.Background(), store.ImportMediaFile{
+		LibraryID: media.LibraryID, Path: files[0].Path, Title: media.Title, Container: "mkv", Codec: "hevc",
+		Class: store.MediaClassVideo, ContentFingerprint: files[0].ContentFingerprint,
+	}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // topLevelBoxTypes lists b's top-level box types and the sidx's offset.
@@ -597,6 +642,17 @@ func TestBuildEncryptedTranscodeRefusals(t *testing.T) {
 			_, err = stdout.Write(src)
 			return err
 		},
+		// Three of four 30-second fragments: well formed, but short of the
+		// source by more than the tolerance, as FFmpeg leaves a source it
+		// could only partly decode.
+		"short output, clean exit": func(ctx context.Context, in encderiv.Input, stdout io.Writer, _ string, _ []store.MediaFileStream) error {
+			src, err := fetchSource(ctx, in.URL)
+			if err != nil {
+				return err
+			}
+			_, err = stdout.Write(firstFragments(t, fragmentedMP4(src, 4), 3))
+			return err
+		},
 		"truncated output": func(ctx context.Context, in encderiv.Input, stdout io.Writer, _ string, _ []store.MediaFileStream) error {
 			src, err := fetchSource(ctx, in.URL)
 			if err != nil {
@@ -617,6 +673,19 @@ func TestBuildEncryptedTranscodeRefusals(t *testing.T) {
 			fx.assertNothingLeft(t)
 		})
 	}
+	t.Run("unknown source duration", func(t *testing.T) {
+		fx := newEncryptedVideoFixture(t)
+		fx.clearDuration(t)
+		fx.svc.SetPipeTranscoder(func(context.Context, encderiv.Input, io.Writer, string, []store.MediaFileStream) error {
+			t.Error("transcoder ran for a source of unknown duration")
+			return nil
+		})
+		_, err := fx.build(QualityHigh)
+		if !errors.Is(err, ErrTranscode) || FailureReason(err) != FailureTranscode {
+			t.Fatalf("BuildPack err = %v, want ErrTranscode", err)
+		}
+		fx.assertNothingLeft(t)
+	})
 	t.Run("cancelled", func(t *testing.T) {
 		fx := newEncryptedVideoFixture(t)
 		ctx, cancel := context.WithCancel(context.Background())
@@ -640,6 +709,59 @@ func TestBuildEncryptedTranscodeRefusals(t *testing.T) {
 		}
 		fx.assertNothingLeft(t)
 	})
+}
+
+// TestBuildEncryptedTranscodeRefusesATruncatedSourceWithRealFFmpeg builds from
+// a faststart MP4 cut in half: FFmpeg reads the whole moov and then runs out of
+// media data, which it would otherwise encode as far as it could and exit 0.
+func TestBuildEncryptedTranscodeRefusesATruncatedSourceWithRealFFmpeg(t *testing.T) {
+	if testing.Short() {
+		t.Skip("encodes video")
+	}
+	ffmpegPath, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("ffmpeg is not installed")
+	}
+	path := filepath.Join(t.TempDir(), "source.mp4")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	gen := exec.CommandContext(ctx, ffmpegPath, "-hide_banner", "-loglevel", "error", "-nostdin", //nolint:gosec // fixed test argv
+		"-f", "lavfi", "-i", "testsrc=size=160x120:rate=24:duration=12",
+		"-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-movflags", "+faststart", path)
+	if out, err := gen.CombinedOutput(); err != nil {
+		t.Skipf("ffmpeg cannot generate the source: %v: %s", err, out)
+	}
+	full, err := os.ReadFile(path) //nolint:gosec // test temp file
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	profile, ok := ffmpeg.PackProfileByName("pack-480p")
+	if !ok {
+		t.Fatal("no pack-480p profile")
+	}
+	fx := newEncryptedVideoFixture(t)
+	fx.source.mu.Lock()
+	for name := range fx.source.bodies {
+		fx.source.bodies[name] = full[:len(full)/2]
+	}
+	fx.source.mu.Unlock()
+	fx.svc.SetPipeTranscoder(func(ctx context.Context, in encderiv.Input, stdout io.Writer, _ string, _ []store.MediaFileStream) error {
+		return ffmpeg.New().TranscodeToPipe(ctx, ffmpeg.PipeInput{URL: in.URL, Secret: in.Secret}, profile, stdout)
+	})
+	_, err = fx.svc.BuildPack(ctx, fx.scope, fx.request(QualityMedium))
+	if errors.Is(err, ffmpeg.ErrPipeConfinementUnavailable) {
+		t.Skip(err)
+	}
+	if !errors.Is(err, ErrTranscode) || FailureReason(err) != FailureTranscode {
+		t.Fatalf("BuildPack err = %v, want ErrTranscode", err)
+	}
+	if fx.source.openCount() == 0 {
+		t.Fatal("FFmpeg never read the source")
+	}
+	fx.assertNothingLeft(t)
 }
 
 func TestSweepStagingRemovesOnlyStagingFiles(t *testing.T) {

@@ -22,10 +22,10 @@ const (
 	fixtureRate    = 24
 )
 
-// moovAtEndFixture generates a short H.264/AAC MP4 whose moov box follows its
-// media data, the layout that makes a transcoder seek to the end of its input
-// before it can read the start.
-func moovAtEndFixture(t *testing.T) []byte {
+// ffmpegFixture generates a short H.264/AAC MP4. Without faststart its moov box
+// follows its media data, the layout that makes a transcoder seek to the end
+// of its input before it can read the start; with it, the moov comes first.
+func ffmpegFixture(t *testing.T, faststart bool) []byte {
 	t.Helper()
 	ffmpegPath, err := exec.LookPath("ffmpeg")
 	if err != nil {
@@ -34,11 +34,15 @@ func moovAtEndFixture(t *testing.T) []byte {
 	path := filepath.Join(t.TempDir(), "fixture.mp4")
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, ffmpegPath, "-hide_banner", "-loglevel", "error", "-nostdin", //nolint:gosec // fixed test argv
+	args := []string{"-hide_banner", "-loglevel", "error", "-nostdin",
 		"-f", "lavfi", "-i", "testsrc=size=160x120:rate=24:duration=12",
 		"-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=12",
 		"-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
-		"-c:a", "aac", "-shortest", path)
+		"-c:a", "aac", "-shortest"}
+	if faststart {
+		args = append(args, "-movflags", "+faststart")
+	}
+	cmd := exec.CommandContext(ctx, ffmpegPath, append(args, path)...) //nolint:gosec // fixed test argv
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Skipf("ffmpeg cannot generate the fixture: %v: %s", err, out)
 	}
@@ -58,8 +62,8 @@ func moovAtEndFixture(t *testing.T) []byte {
 			mdat = i
 		}
 	}
-	if moov < 0 || mdat < 0 || moov < mdat {
-		t.Fatalf("fixture boxes: moov at %d, mdat at %d; want moov after mdat", moov, mdat)
+	if moov < 0 || mdat < 0 || (moov < mdat) != faststart {
+		t.Fatalf("fixture boxes: moov at %d, mdat at %d; faststart %v", moov, mdat, faststart)
 	}
 	return data
 }
@@ -145,7 +149,7 @@ func TestRunTranscodesAMoovAtEndSourceWithRealFFmpeg(t *testing.T) {
 	if testing.Short() {
 		t.Skip("encodes video")
 	}
-	fixture := moovAtEndFixture(t)
+	fixture := ffmpegFixture(t, false)
 	stageDir, tmpDir := t.TempDir(), t.TempDir()
 	t.Setenv("TMPDIR", tmpDir)
 	profile, ok := ffmpeg.PackProfileByName("pack-480p")
@@ -160,10 +164,11 @@ func TestRunTranscodesAMoovAtEndSourceWithRealFFmpeg(t *testing.T) {
 			opens.Add(1)
 			return open()
 		},
-		Size:      int64(len(fixture)),
-		StageDir:  stageDir,
-		StageName: "0001",
-		Revoked:   func(context.Context) error { return nil },
+		Size:           int64(len(fixture)),
+		StageDir:       stageDir,
+		StageName:      "0001",
+		SourceDuration: fixtureSeconds * time.Second,
+		Revoked:        func(context.Context) error { return nil },
 		Transcode: func(ctx context.Context, in Input, w io.Writer) error {
 			tee = &teeScanner{w: w, scanAt: 64 << 10, dirs: []string{stageDir, tmpDir}, t: t}
 			// io:ffmpeg-transcode-to-pipe
@@ -228,4 +233,54 @@ func TestRunTranscodesAMoovAtEndSourceWithRealFFmpeg(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertNoFiles(t, stageDir, tmpDir)
+}
+
+// TestRunRefusesATruncatedSourceWithRealFFmpeg cuts a faststart source in half:
+// FFmpeg reads the whole moov, then runs out of media data partway. Left to
+// itself it exits 0 on what it could encode. -xerror makes the decode error
+// fatal, and the duration check refuses the short output on its own.
+func TestRunRefusesATruncatedSourceWithRealFFmpeg(t *testing.T) {
+	if testing.Short() {
+		t.Skip("encodes video")
+	}
+	full := ffmpegFixture(t, true)
+	truncated := full[:len(full)/2]
+	profile, ok := ffmpeg.PackProfileByName("pack-480p")
+	if !ok {
+		t.Fatal("no pack-480p profile")
+	}
+	for name, source := range map[string]time.Duration{
+		// A source duration the half-length output still covers leaves only
+		// -xerror to refuse it.
+		"decode error": time.Second,
+		"short output": fixtureSeconds * time.Second,
+	} {
+		t.Run(name, func(t *testing.T) {
+			stageDir, tmpDir := t.TempDir(), t.TempDir()
+			t.Setenv("TMPDIR", tmpDir)
+			job := Job{
+				Open:           encryptedSource(t, truncated),
+				Size:           int64(len(truncated)),
+				StageDir:       stageDir,
+				StageName:      "0001",
+				SourceDuration: source,
+				Revoked:        func(context.Context) error { return nil },
+				Transcode: func(ctx context.Context, in Input, w io.Writer) error {
+					return ffmpeg.New().TranscodeToPipe(ctx, ffmpeg.PipeInput{URL: in.URL, Secret: in.Secret}, profile, w)
+				},
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			defer cancel()
+			result, err := Run(ctx, job)
+			if errors.Is(err, ffmpeg.ErrPipeConfinementUnavailable) {
+				t.Skip(err)
+			}
+			if err == nil {
+				_ = result.Close()
+				t.Fatal("Run accepted a truncated source")
+			}
+			t.Logf("refused: %v", err)
+			assertNoFiles(t, stageDir, tmpDir)
+		})
+	}
 }
