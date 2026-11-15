@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { SurfaceSection } from "@/components/beamfall/surface";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { displayString } from "@/lib/display";
@@ -68,8 +69,9 @@ export function MigrationOffer({
   const loading = importers === null && !failed;
   const Heading = embedded ? "h2" : "h1";
 
-  return (
-    <section className={embedded ? "mt-6 border-t border-white/10 pt-5" : undefined}>
+  // Embedded in the scan step it is one more section of the setup card.
+  const offer = (
+    <section>
       <Heading className={embedded ? "m-0 text-[15px] font-semibold" : "m-0 text-xl font-semibold"}>
         {t("setupMigrateTitle")}
       </Heading>
@@ -131,4 +133,5 @@ export function MigrationOffer({
       )}
     </section>
   );
+  return embedded ? <SurfaceSection asChild>{offer}</SurfaceSection> : offer;
 }

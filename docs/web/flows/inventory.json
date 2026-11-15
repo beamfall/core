@@ -2623,14 +2623,6 @@
       "members": [
         {
           "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
-          "symbol": "FIELD"
-        },
-        {
-          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
-          "symbol": "FIELD_LABEL"
-        },
-        {
-          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
           "symbol": "STEP_KEYS"
         },
         {
@@ -2659,15 +2651,31 @@
         },
         {
           "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
-          "symbol": "StepHeading"
-        },
-        {
-          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
           "symbol": "consumeSetupToken"
         },
         {
           "path": "internal/web/app/src/components/beamfall/CinemaBackdrop.tsx",
           "symbol": "CinemaBackdrop"
+        },
+        {
+          "path": "internal/web/app/src/components/beamfall/surface/index.tsx",
+          "symbol": "FieldInput"
+        },
+        {
+          "path": "internal/web/app/src/components/beamfall/surface/index.tsx",
+          "symbol": "FieldLabel"
+        },
+        {
+          "path": "internal/web/app/src/components/beamfall/surface/index.tsx",
+          "symbol": "GlassCard"
+        },
+        {
+          "path": "internal/web/app/src/components/beamfall/surface/index.tsx",
+          "symbol": "PageShell"
+        },
+        {
+          "path": "internal/web/app/src/components/beamfall/surface/index.tsx",
+          "symbol": "SurfaceHeading"
         },
         {
           "path": "internal/web/app/src/lib/graphql/console.ts",
