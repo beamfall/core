@@ -294,7 +294,8 @@ func (s *Store) MergeApply(ctx context.Context, libraryID LibraryID, keepID Medi
 // the media_file.path record. A missing source (the file was moved again out of
 // band) leaves the record repointed to the journaled prior path without erroring
 // the batch — the next scan reconciles disk reality, and the catalog reflects
-// the intended post-undo location.
+// the intended post-undo location. Like applyFileMovesTx it clears the stored
+// mtime so the next scan re-derives path-dependent metadata.
 func (s *Store) undoFileMoveItemTx(ctx context.Context, tx *sql.Tx, item opBatchItem) (organizeMove, bool, error) {
 	var state fileMoveItemState
 	if err := json.Unmarshal([]byte(item.PriorState), &state); err != nil {
@@ -315,7 +316,7 @@ func (s *Store) undoFileMoveItemTx(ctx context.Context, tx *sql.Tx, item opBatch
 		moved = false
 	}
 	_, err = tx.ExecContext(ctx,
-		`UPDATE media_file SET path = ? WHERE media_id = ? AND path = ?`,
+		`UPDATE media_file SET path = ?, mtime_ms = 0 WHERE media_id = ? AND path = ?`,
 		state.OldPath, item.MediaID, state.NewPath)
 	if err != nil {
 		return move, moved, err
@@ -503,7 +504,9 @@ func (s *Store) organizePlanLocked(ctx context.Context, libraryID LibraryID, tem
 // media_file.path record, journaling the prior path. On any error mid-plan it
 // reverse-compensates disk moves it already made (the transaction the caller
 // will roll back covers the catalog side) and reports every compensation error.
-// Returns the number moved.
+// Returns the number moved. The stored mtime is cleared with the path so the
+// next scan takes the full path for the moved file and re-derives metadata that
+// depends on its path, as updateManagedMediaPathsTx does.
 func applyFileMovesTx(ctx context.Context, tx *sql.Tx, batchID string, plan []organizeMove) (int, error) {
 	seq := 0
 	for _, m := range plan {
@@ -515,7 +518,7 @@ func applyFileMovesTx(ctx context.Context, tx *sql.Tx, batchID string, plan []or
 			return 0, compensateFileMoves(err, plan[:seq])
 		}
 		if _, err := tx.ExecContext(ctx,
-			`UPDATE media_file SET path = ? WHERE media_id = ? AND path = ?`,
+			`UPDATE media_file SET path = ?, mtime_ms = 0 WHERE media_id = ? AND path = ?`,
 			m.newPath, m.mediaID, m.oldPath); err != nil {
 			return 0, compensateFileMoves(err, plan[:seq+1])
 		}

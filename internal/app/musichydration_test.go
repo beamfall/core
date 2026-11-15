@@ -1554,3 +1554,54 @@ func TestScanRehydratesMovedFileIntoDiscFolder(t *testing.T) {
 		t.Fatalf("fact-preserving move: %d writes, disc-number %v; want no write and disc 2", r.counted.writes-writes, r.number("disc-number"))
 	}
 }
+
+// CORE-1838: a managed move keeps the file's bytes, size and mtime and
+// repoints the stored path, so without invalidation the next scan took the
+// unchanged-file fast path and never re-derived the disc number.
+func TestScanRehydratesManagedMoveBetweenDiscFolders(t *testing.T) {
+	ctx := context.Background()
+	r := newRehydrationScan(t)
+	registry, err := plugin.NewRegistry([]plugin.Bundle{rehydrationBundle()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.adapter = newHydrationAdapters(registry, r.counted, map[string]HydrationMapper{testHydrationPluginID: discFolderTestMapper{}})[testHydrationPluginID].(*hydrationAdapter)
+	if r.root, err = filepath.EvalSymlinks(r.root); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.st.SetLibraryRoots(ctx, r.library, []string{r.root}); err != nil {
+		t.Fatal(err)
+	}
+	r.path = filepath.Join(r.root, "Set", "CD1", "01 track.flac")
+	discTwo := filepath.Join(r.root, "Set", "CD2")
+	for _, dir := range []string{filepath.Dir(r.path), discTwo} {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r.write("untagged audio bytes padding padding", 3*time.Hour, map[string]string{"title": "One"})
+	r.scan()
+	if got := r.number("disc-number"); got != 1 {
+		t.Fatalf("first scan disc-number = %v, want 1", got)
+	}
+	first := r.mediaID
+
+	moved, err := r.st.MoveManagedPath(ctx, r.library, r.path, discTwo, store.LibraryFilter{AllLibraries: true})
+	if err != nil {
+		t.Fatalf("MoveManagedPath: %v", err)
+	}
+	r.path = moved.Path
+	r.scan()
+	if r.mediaID != first {
+		t.Fatalf("moved file Media = %q, want the same Media %q", r.mediaID, first)
+	}
+	if got := r.number("disc-number"); got != 2 {
+		t.Fatalf("managed-moved file disc-number = %v, want 2 from the CD2 folder", got)
+	}
+
+	writes := r.counted.writes
+	r.scan()
+	if r.counted.writes != writes {
+		t.Fatalf("managed-moved file re-hydrated again with nothing changed: %d writes, want 0", r.counted.writes-writes)
+	}
+}

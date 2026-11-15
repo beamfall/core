@@ -1414,13 +1414,19 @@ func newManagedTrashID() (string, error) {
 	return hex.EncodeToString(raw[:]), nil
 }
 
+// updateManagedMediaPathsTx repoints the media_file rows a managed move or
+// rename relocated. It also clears their stored mtime: the move keeps bytes,
+// size and mtime, so the next scan would otherwise take the unchanged-file fast
+// path and never re-derive metadata that depends on the path (CORE-1838). The
+// cleared mtime sends each moved file through one full scan, which keeps its
+// identity by content fingerprint and restores the mtime.
 func updateManagedMediaPathsTx(ctx context.Context, tx *sql.Tx, oldPath, newPath, kind string, foldCase bool) error {
 	pairs, err := managedMediaPathPairs(ctx, tx, oldPath, newPath, kind, foldCase)
 	if err != nil {
 		return err
 	}
 	for old, next := range pairs {
-		if _, err := tx.ExecContext(ctx, `UPDATE media_file SET path = ? WHERE path = ?`, next, old); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE media_file SET path = ?, mtime_ms = 0 WHERE path = ?`, next, old); err != nil {
 			return err
 		}
 	}
