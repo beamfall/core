@@ -22,7 +22,7 @@
       "0012"
     ],
     "fixture": "conformance:unenrolled",
-    "intent": "An unenrolled browser sees only the enrollment view: a pairing-code field and device-name field with a submit affordance. No catalog, Profile, Manage, or Reveal affordance is present — nothing hints at restricted content. The device secret is never placed in JS-readable space (it rides HttpOnly cookies set by the server).",
+    "intent": "An unenrolled browser sees only the enrollment view: a pairing-code field and device-name field with a submit affordance, and a secondary owner form to sign in with the admin password (CORE-1106). No catalog, Profile, Manage, or Reveal affordance is present — nothing hints at restricted content. The device secret is never placed in JS-readable space (it rides HttpOnly cookies set by the server).",
     "screenshot": "images/web.enroll.signed-out.desktop.png",
     "hierarchy": "images/web.enroll.signed-out.desktop.txt",
     "baseline": "baselines/web.enroll.signed-out.desktop.png",
@@ -52,7 +52,7 @@
       "0012"
     ],
     "fixture": "conformance:unenrolled",
-    "intent": "The enrollment view reflows to a narrow viewport without truncation or horizontal scroll: pairing-code and device-name fields stack, the submit affordance stays reachable. Still no catalog/Manage/Reveal affordance.",
+    "intent": "The enrollment view reflows to a narrow viewport without truncation or horizontal scroll: pairing-code and device-name fields stack, the submit affordance and the secondary admin-password form stay reachable. Still no catalog/Manage/Reveal affordance.",
     "screenshot": "images/web.enroll.signed-out.mobile.png",
     "hierarchy": "images/web.enroll.signed-out.mobile.txt",
     "baseline": "baselines/web.enroll.signed-out.mobile.png",
@@ -400,6 +400,62 @@
     "baseline": "baselines/web.entity-detail.populated.desktop.png",
     "status": "listed",
     "note": "The conformance/development seed plants flat Media with no Entity rows (Kinds), so no entity-detail nav target renders. Capturable once the seed includes a plugin Entity. React catalog driver pending: this entry's legacy static-app selector driver is disabled so stale screenshots do not claim React coverage."
+  },
+  {
+    "id": "web.media-detail.populated.desktop",
+    "surface": "web",
+    "screen": "media-detail",
+    "state": "populated",
+    "features": [
+      "media-detail",
+      "artwork-slots"
+    ],
+    "viewport": {
+      "name": "desktop",
+      "w": 1280,
+      "h": 900
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007"
+    ],
+    "fixture": "conformance:adult-locked",
+    "intent": "One Media item's detail page: a single stage surface with the item's backdrop behind a scrim, the poster and copy laid on it directly (no nested card), the title, facts row and the only filled accent button (Play/Resume) above the fold, every other action a ghost button. Bookkeeping fields stay in Manage.",
+    "screenshot": "images/web.media-detail.populated.desktop.png",
+    "hierarchy": "images/web.media-detail.populated.desktop.txt",
+    "baseline": "baselines/web.media-detail.populated.desktop.png",
+    "status": "captured"
+  },
+  {
+    "id": "web.media-detail.populated.mobile",
+    "surface": "web",
+    "screen": "media-detail",
+    "state": "populated",
+    "features": [
+      "media-detail",
+      "artwork-slots"
+    ],
+    "viewport": {
+      "name": "mobile",
+      "w": 390,
+      "h": 844
+    },
+    "theme": "dark",
+    "locale": "en",
+    "a11y": "default",
+    "a11y_variants": [],
+    "adr": [
+      "0007"
+    ],
+    "fixture": "conformance:adult-locked",
+    "intent": "The media detail page on a phone: one column with a small poster above the copy and a full-width Play, so the title, facts, Play and the start of the overview fit the first screen.",
+    "screenshot": "images/web.media-detail.populated.mobile.png",
+    "hierarchy": "images/web.media-detail.populated.mobile.txt",
+    "baseline": "baselines/web.media-detail.populated.mobile.png",
+    "status": "captured"
   },
   {
     "id": "web.see-all.populated.desktop",

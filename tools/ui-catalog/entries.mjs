@@ -229,6 +229,36 @@ export const ENTRIES = [
       "An entity-detail view renders the Entity's display fields, its artwork, and its child Sections (e.g. the Media belonging to it) per the defensive Layout rules. Restricted children obey the same reveal filtering as browse.",
   },
 
+  // ── media detail (CORE-1785, React Viewer) ────────────────────────────────
+  {
+    id: "web.media-detail.populated.desktop",
+    screen: "media-detail",
+    state: "populated",
+    features: ["media-detail", "artwork-slots"],
+    viewport: "desktop",
+    session: "adult-locked",
+    adr: ["0007"],
+    fixture: "conformance:adult-locked",
+    drive: "mediaDetail",
+    reactDriver: true,
+    intent:
+      "One Media item's detail page: a single stage surface with the item's backdrop behind a scrim, the poster and copy laid on it directly (no nested card), the title, facts row and the only filled accent button (Play/Resume) above the fold, every other action a ghost button. Bookkeeping fields stay in Manage.",
+  },
+  {
+    id: "web.media-detail.populated.mobile",
+    screen: "media-detail",
+    state: "populated",
+    features: ["media-detail", "artwork-slots"],
+    viewport: "mobile",
+    session: "adult-locked",
+    adr: ["0007"],
+    fixture: "conformance:adult-locked",
+    drive: "mediaDetail",
+    reactDriver: true,
+    intent:
+      "The media detail page on a phone: one column with a small poster above the copy and a full-width Play, so the title, facts, Play and the start of the overview fit the first screen.",
+  },
+
   // ── see-all paging (features see-all-paging) ──────────────────────────────
   {
     id: "web.see-all.populated.desktop",
