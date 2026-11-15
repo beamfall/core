@@ -145,7 +145,7 @@ func tvdbSpec(endpoint string) plugin.ScraperSpec {
 func tvdbExtensions(plugin.ScraperSpec) plugin.ScraperExtensions {
 	return plugin.ScraperExtensions{ReferenceDocuments: map[string]plugin.ReferenceDocument{
 		"artwork-types": {Path: "/artwork/types"},
-	}, LookupByIDRecordIDPath: "data.0.series.id"}
+	}, LookupByIDRecordIDPaths: map[string]string{"imdb": "data.0.series.id"}}
 }
 
 func newTVDBEngine(credentials CredentialSource, language string) *Engine {
@@ -318,6 +318,7 @@ func TestTVDBLookupUsesConfiguredLanguageWithOriginalFallback(t *testing.T) {
 // CORE-1128 AC: a remote id (IMDb here) resolves through /search/remoteid to
 // the TVDB series id, then maps that series' extended record exactly like a
 // direct lookup: translated title and summary, and the extra artwork types.
+// A TheTVDB id has no record path and maps its extended record directly.
 func TestTVDBRemoteIDLookupResolvesTheSeries(t *testing.T) {
 	server := newTVDBServer(t)
 	engine := newTVDBEngine(pinCredentials(), "eng")
@@ -333,6 +334,13 @@ func TestTVDBRemoteIDLookupResolvesTheSeries(t *testing.T) {
 	}
 	if server.count("/search/remoteid/tt0700303") != 1 || server.count("/series/700303/extended") != 1 {
 		t.Fatalf("remote-id calls = %v, want one remote-id and one extended lookup", server.counts)
+	}
+	direct, err := engine.LookupByID(context.Background(), tvdbSpec(server.server.URL), "tvdb", "700303", pluginVars(0))
+	if err != nil || direct.Fields["title"] != "North Beacon" {
+		t.Fatalf("direct tvdb-id lookup = %v, %v; want the extended record mapped without resolving", direct.Fields, err)
+	}
+	if server.count("/series/700303/extended") != 2 {
+		t.Fatalf("direct tvdb-id calls = %v, want one more extended lookup", server.counts)
 	}
 	if _, err := engine.LookupByID(context.Background(), tvdbSpec(server.server.URL), "imdb", "tt0000000", pluginVars(0)); err == nil {
 		t.Fatal("an unknown remote id resolved, want an error")

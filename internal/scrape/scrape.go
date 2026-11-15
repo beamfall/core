@@ -384,7 +384,7 @@ func (e *Engine) Lookup(ctx context.Context, spec plugin.ScraperSpec, id string,
 // LookupByID executes spec's LookupByIDTemplate for provider (an external id
 // namespace the source can resolve) with {id} replaced by id, and maps the
 // document exactly like Lookup. When the scraper declares an id-lookup record
-// path, the document only resolves the scraper's own record id and the
+// path for provider, the document only resolves the scraper's own record id and the
 // result is the LookupTemplate lookup of that id, so an external id yields
 // the same full record as a search match. A provider the scraper does not
 // declare is an error; rss scrapers have no id lookups.
@@ -401,7 +401,7 @@ func (e *Engine) LookupByID(ctx context.Context, spec plugin.ScraperSpec, provid
 	if err != nil {
 		return Result{}, err
 	}
-	recordIDPath := e.extensions(spec).LookupByIDRecordIDPath
+	recordIDPath := e.extensions(spec).LookupByIDRecordIDPaths[provider]
 	if recordIDPath == "" {
 		return e.lookupDocument(ctx, spec, template, id, v, config)
 	}

@@ -64,7 +64,7 @@ The engine SHALL reuse a login-bearer token for 27 days and SHALL log in again a
 
 ### Requirement: External-id lookups resolve to the full record
 
-When a scraper declares an id-lookup record path, an external-id lookup SHALL read only the
+When a scraper declares an id-lookup record path for a provider, that provider's lookup SHALL read only the
 scraper's own record id from the `LookupByIDTemplate` document and SHALL map the `LookupTemplate`
 document of that id. An external id that resolves to no record SHALL be an error.
 

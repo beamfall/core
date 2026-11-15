@@ -34,9 +34,11 @@ through a static lookup document, and no multi-condition or fallback path syntax
 - **Remote IDs.** `Engine.LookupByID` runs a scraper's `LookupByIDTemplate` for an external ID
   scheme; the plugin maps IMDb and TMDB to `/search/remoteid/{id}`. That endpoint answers with a
   `SeriesBaseRecord`, which carries no overview and lists translations only as language codes, so
-  the scraper declares `LookupByIDRecordIDPath` (`data.0.series.id`, plugin-sdk v0.3.6): the engine
+  the scraper declares `LookupByIDRecordIDPaths` for `imdb` and `tmdb` (`data.0.series.id`,
+  plugin-sdk v0.3.6): the engine
   reads the TVDB series id from the remote-id document and maps that series' extended record, the
-  same document a search match gets. An id TheTVDB does not know is an error.
+  same document a search match gets. A TheTVDB id has no entry and maps its extended record
+  directly. An id TheTVDB does not know is an error.
 - **Artwork.** A scraper may declare `ReferenceDocuments` (plugin-sdk v0.3.6): static documents
   fetched with its authorization and read through `{ref.<name>:<path>}` placeholders in field and
   artwork paths. The artwork-type ids for background, banner and clearlogo come from
