@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/encderiv"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -91,6 +92,13 @@ func NormalizeQuality(quality string) (string, error) {
 // FFmpeg; nil (the default) refuses every non-original video build.
 type Transcoder func(ctx context.Context, src, dst, quality string, streams []store.MediaFileStream) error
 
+// PipeTranscoder transcodes a video item in an Encrypted Library. It reads the
+// decrypted source from input, a token-gated loopback URL, and writes a
+// fragmented MP4 to stdout, so no plaintext reaches disk (ADR-0235). quality
+// and streams are as for Transcoder. nil (the default) refuses every
+// non-original video build in an Encrypted Library.
+type PipeTranscoder func(ctx context.Context, input encderiv.Input, stdout io.Writer, quality string, streams []store.MediaFileStream) error
+
 // ExpireJobKind runs the server-side Offline Pack eviction/expiry sweep.
 const ExpireJobKind store.JobKind = "offline-pack-expire"
 
@@ -135,6 +143,7 @@ type Store interface {
 	MediaFilesForMedia(ctx context.Context, id store.MediaID, filter store.LibraryFilter) ([]store.MediaFile, error)
 	MediaFileStreams(ctx context.Context, fingerprint string) ([]store.MediaFileStream, error)
 	Libraries(ctx context.Context, filter store.LibraryFilter) ([]store.Library, error)
+	Profile(ctx context.Context, id store.ProfileID) (store.Profile, error)
 	TrackOfflinePackBuild(ctx context.Context, build store.OfflinePackBuild, now time.Time) (store.OfflinePackBuild, error)
 	SetOfflinePackBuildProgress(ctx context.Context, id store.OfflinePackID, progress float64, now time.Time) error
 	FailOfflinePackBuild(ctx context.Context, id store.OfflinePackID, reason string, now time.Time) error
@@ -192,10 +201,14 @@ type Service struct {
 	packRoot        string
 	buildByteBudget uint64
 	transcode       Transcoder
+	pipeTranscode   PipeTranscoder
 	deviceMu        sync.RWMutex
 	devices         map[string]deviceRegistration
 	// resolveContext binds each encrypted open to its immutable object identity.
 	resolveContext ObjectContextResolver
+	// pipePoll overrides the encrypted transcode's re-authorization interval;
+	// zero keeps the encderiv default.
+	pipePoll time.Duration
 }
 
 // NewService creates an Offline Pack service with the built-in generic "media"
@@ -458,10 +471,12 @@ func (s *Service) BuildPack(ctx context.Context, scope auth.Scope, req BuildPack
 		}
 	}()
 	progress := s.newBuildProgress(ctx, req.PackID, sources)
-	if err := s.transcodeSources(ctx, sources, packDir, quality, progress.step); err != nil {
+	// Registered first so a failure part-way through the transcodes still
+	// releases the ones already staged.
+	defer removeTranscodes(sources)
+	if err := s.transcodeSources(ctx, scope, sources, packDir, quality, progress.step); err != nil {
 		return store.OfflinePack{}, err
 	}
-	defer removeTranscodes(sources)
 	bytesTotal, err := s.checkBuildBytes(sources)
 	if err != nil {
 		return store.OfflinePack{}, err
@@ -475,7 +490,7 @@ func (s *Service) BuildPack(ctx context.Context, scope auth.Scope, req BuildPack
 	manifestItems := make([]ManifestItem, 0, len(sources))
 	librarySet := map[string]struct{}{}
 	for _, source := range sources {
-		sum, err := s.hashPackSource(source.libraryID, source.path, source.storageSize)
+		sum, err := s.packSourceDigest(source)
 		if err != nil {
 			return store.OfflinePack{}, err
 		}
@@ -531,7 +546,7 @@ func (s *Service) BuildPack(ctx context.Context, scope auth.Scope, req BuildPack
 		return store.OfflinePack{}, err
 	}
 	for i, source := range sources {
-		reader, err := s.openContent(source.libraryID, source.path)
+		reader, err := s.openPackSource(ctx, scope, source)
 		if err != nil {
 			return store.OfflinePack{}, err
 		}

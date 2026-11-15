@@ -226,24 +226,6 @@ func TestBuildTranscodeCancellationStaysVisible(t *testing.T) {
 	}
 }
 
-func TestBuildRefusesTranscodeInEncryptedLibrary(t *testing.T) {
-	svc, authService, st, _ := newFixture(t)
-	setFixtureClass(t, st, "media-alpha", store.MediaClassVideo)
-	fake := &fakeTranscoder{out: map[string][]byte{QualityHigh: []byte("x")}}
-	svc.SetTranscoder(fake.transcode)
-	svc.SetEncryptedContent(&observingDecryptSource{bodies: map[string][]byte{}}, func(store.LibraryID) bool { return true }, func(store.LibraryID, string) (string, string, error) {
-		return "media-file", "object-1", nil
-	})
-	scope := scopeFor(t, authService, "session-default")
-	_, err := svc.BuildPack(context.Background(), scope, BuildPackRequest{TargetKind: TargetKindMedia, TargetRef: "media-alpha", Quality: QualityHigh})
-	if err == nil || !strings.Contains(err.Error(), "encrypted Library") {
-		t.Fatalf("BuildPack err = %v, want the encrypted refusal", err)
-	}
-	if len(fake.calls) != 0 {
-		t.Fatalf("transcoder ran %v for an encrypted Library", fake.calls)
-	}
-}
-
 func TestBuildRejectsUnknownQuality(t *testing.T) {
 	svc, authService, _, _ := newFixture(t)
 	scope := scopeFor(t, authService, "session-default")

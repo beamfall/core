@@ -1237,6 +1237,11 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	offlinePackAuthority.SetIssueEnabled(!cfg.Role.Attached())
 	offlinePacks := offlinepack.NewService(st, offlinePackAuthority, readClock)
 	offlinePacks.SetPackRoot(filepath.Join(cfg.DataDir, "offline-packs"))
+	// A crash mid-build can leave encrypted staging files whose keys died
+	// with the process; reclaim them before any build runs.
+	if err := offlinePacks.SweepStaging(); err != nil {
+		logger.Warn("offline pack staging sweep failed", "error", err)
+	}
 	offlinePacks.SetDeviceKeyAttestationVerifier(hooks.OfflinePackAttestationVerifier)
 	// A Sealed Library serves NOTHING (ADR-0098 area 2): stamp the same Sealed
 	// predicate used by the byte routes so a Sealed Library's Media is never
@@ -1260,6 +1265,9 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		return "", "", errors.New("encrypted media object identity unavailable")
 	})
 	offlinePacks.SetTranscoder(offlinePackTranscoder(ffmpegRunner))
+	// An Encrypted Library's reduced qualities transcode through the loopback
+	// decrypt endpoint so no plaintext reaches disk (ADR-0235).
+	offlinePacks.SetPipeTranscoder(offlinePackPipeTranscoder(ffmpegRunner))
 	registerOfflinePackResolvers(offlinePacks, st, executablePlugins, hooks.OfflinePackResolvers)
 	jobRegistry.Register(offlinepack.BuildJobKind, func(ctx context.Context, job store.Job) (jobs.Result, error) {
 		_, err := offlinePacks.HandleBuildJob(ctx, job.Payload)
