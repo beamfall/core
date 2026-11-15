@@ -42,7 +42,9 @@ import { cn } from "@/lib/utils";
 import type { StringKey } from "@/strings";
 import { BackupExportPage } from "../manage/pages/BackupExportPage";
 import { AdminGate } from "./AdminGate";
+import { PairingRequestsProvider } from "./lib/pairingRequests";
 import { OwnerTasks } from "./OwnerTasks";
+import { PairingPrompt } from "./PairingPrompt";
 import { Section } from "./Section";
 import { AccessAdmin, ScheduleAdmin } from "./sections/AccessAdmin";
 import { ActivityLog } from "./sections/ActivityLog";
@@ -529,31 +531,34 @@ export function ConsoleArea() {
         <h1 className="sr-only">{t(routeTitle ?? "consoleHeading")}</h1>
         <AdminGate>
           {(lock) => (
-            <div className="console-layout">
-              <SectionMenu
-                label={t("consoleHeading")}
-                className="console-rail"
-                current={t(routeTitle ?? "consoleHeading")}
-                footer={<SessionBar onLock={lock} />}
-              >
-                <ConsoleNav groups={groups} />
-              </SectionMenu>
-              <div className="console-content">
-                <Routes>
-                  {allItems.map((item) => (
-                    <Route key={item.path} path={item.path} element={item.element} />
-                  ))}
-                  {ROUTE_ALIASES.map((route) => (
-                    <Route
-                      key={route.path}
-                      path={route.path}
-                      element={<Navigate to={route.to} replace />}
-                    />
-                  ))}
-                  <Route path="*" element={<Navigate to="/console" replace />} />
-                </Routes>
+            <PairingRequestsProvider>
+              <div className="console-layout">
+                <SectionMenu
+                  label={t("consoleHeading")}
+                  className="console-rail"
+                  current={t(routeTitle ?? "consoleHeading")}
+                  footer={<SessionBar onLock={lock} />}
+                >
+                  <ConsoleNav groups={groups} />
+                </SectionMenu>
+                <div className="console-content">
+                  <Routes>
+                    {allItems.map((item) => (
+                      <Route key={item.path} path={item.path} element={item.element} />
+                    ))}
+                    {ROUTE_ALIASES.map((route) => (
+                      <Route
+                        key={route.path}
+                        path={route.path}
+                        element={<Navigate to={route.to} replace />}
+                      />
+                    ))}
+                    <Route path="*" element={<Navigate to="/console" replace />} />
+                  </Routes>
+                </div>
+                <PairingPrompt />
               </div>
-            </div>
+            </PairingRequestsProvider>
           )}
         </AdminGate>
       </div>

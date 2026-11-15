@@ -1008,3 +1008,23 @@ a.console-step:hover {
   border-radius: 999px;
   background: var(--accent);
 }
+
+/* A device asking to join (CORE-2064): pinned above every Console screen. */
+.console-pairing-prompt {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 50;
+  width: min(360px, calc(100vw - 32px));
+  padding: 14px 16px;
+  box-shadow: 0 8px 28px oklch(0% 0 0 / 35%);
+}
+
+.console-pairing-code {
+  display: block;
+  flex: none;
+  margin-top: 4px;
+  font-size: 22px;
+  letter-spacing: 0.12em;
+  text-align: center;
+}
