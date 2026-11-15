@@ -172,11 +172,12 @@ func TestScanSkipsNonMediaExtensions(t *testing.T) {
 	// Regression guard for master #43: a folder containing mixed media and
 	// non-media files must import only the known media containers; documents,
 	// archives, and no-extension files must be silently dropped. Images now
-	// import (ADR-0043 image Media) — see cover.jpg below.
+	// import (ADR-0043 image Media) — see snapshot.jpg below; an artwork
+	// vocabulary name such as cover.jpg is a sidecar, never an item (CORE-1708).
 	root := t.TempDir()
 	writeScanFile(t, root, "movie.mp4", []byte("video bytes"))
 	writeScanFile(t, root, "song.flac", []byte("audio bytes"))
-	writeScanFile(t, root, "cover.jpg", []byte("image — ADR-0043 image Media, imported"))
+	writeScanFile(t, root, "snapshot.jpg", []byte("image — ADR-0043 image Media, imported"))
 	writeScanFile(t, root, "readme.txt", []byte("text"))
 	writeScanFile(t, root, "archive.zip", []byte("archive"))
 	writeScanFile(t, root, "metadata.nfo", []byte("nfo"))
@@ -200,7 +201,7 @@ func TestScanSkipsNonMediaExtensions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, title := range []string{"movie", "song", "cover"} {
+	for _, title := range []string{"movie", "song", "snapshot"} {
 		if !hasSourceItemWithTitle(items, title) {
 			t.Fatalf("sourceItems missing the %q import: %#v", title, items)
 		}

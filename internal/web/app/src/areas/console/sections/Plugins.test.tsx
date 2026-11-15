@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAdvancedSettings } from "@/lib/advancedSettings";
 import { graphql } from "@/lib/api";
 import {
+  disableScraperCredential,
   fetchConsoleConfig,
   setPluginActive,
   setPluginConfig,
@@ -332,6 +333,49 @@ describe("Plugins", () => {
       expect(setScraperCredential).toHaveBeenCalledWith("example-api-key", "test-key-value"),
     );
     await waitFor(() => expect(field).toHaveValue(""));
+  });
+
+  it("says Disable stops a built-in key and shows the disabled state", async () => {
+    // CORE-1540: an official build answers this AuthRef with a built-in key, so
+    // the row reads configured with no owner key saved. Disable must say it
+    // stops the provider rather than falling back to that key.
+    const user = userEvent.setup();
+    const withStatus = (credentialStatus: string): PluginStandingFixture => ({
+      ...keyedPlugin,
+      scrapers: (keyedPlugin.scrapers ?? []).map((row) => ({
+        ...row,
+        credentialConfigured: credentialStatus === "configured",
+        credentialStatus,
+      })),
+    });
+    mockConsoleConfig({ ...config, plugins: [withStatus("configured")] });
+    vi.mocked(disableScraperCredential).mockResolvedValue({
+      authRef: "example-api-key",
+      credentialConfigured: false,
+      credentialStatus: "disabled",
+      scraperIDs: ["catalog-movies", "catalog-tv"],
+    });
+    renderPanel();
+
+    const card = await screen.findByRole("article", { name: "Catalog Metadata" });
+    const disable = within(card).getByRole("button", { name: "Disable" });
+    expect(disable).toHaveAccessibleDescription(
+      "Disable stops all requests to this provider. It does not fall back to a key built into the server.",
+    );
+
+    mockConsoleConfig({ ...config, plugins: [withStatus("disabled")] });
+    await user.click(disable);
+    await waitFor(() => expect(disableScraperCredential).toHaveBeenCalledWith("example-api-key"));
+    expect(await within(card).findByText("Disabled")).toBeVisible();
+    expect(
+      within(card).getByText(
+        "Disabled: no requests go to this provider, even with a key built into the server. Save a key to turn it back on.",
+      ),
+    ).toBeVisible();
+    expect(within(card).queryByRole("button", { name: "Disable" })).not.toBeInTheDocument();
+    expect(within(card).queryByText("Key needed")).not.toBeInTheDocument();
+    // Saving an owner key is still the way back.
+    expect(within(card).getByLabelText("Example API key")).toBeEnabled();
   });
 
   it("renders typed config, permissions, status, and action descriptors", async () => {

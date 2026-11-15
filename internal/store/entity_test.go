@@ -850,6 +850,60 @@ func TestUpsertEntityRelationOneCardinalityReplaces(t *testing.T) {
 	}
 }
 
+// CORE-1654: replacing a Media's relations drops its previous rows for each
+// relation name rewritten, many-cardinality included, and keeps the others.
+func TestReplaceMediaRelationsRewritesNamedKindsOnly(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	for _, id := range []EntityID{"entity-a", "entity-b", "entity-c"} {
+		if err := st.UpsertEntity(ctx, widgetEntity(id, "library-local")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, relation := range []EntityRelation{
+		{FromEntityID: "entity-a", Name: "tagged", ToMediaID: "media-alpha"},
+		{FromEntityID: "entity-b", Name: "tagged", ToMediaID: "media-alpha"},
+		{FromEntityID: "entity-a", Name: "member-of", ToMediaID: "media-alpha", Cardinality: "one"},
+	} {
+		if err := st.UpsertEntityRelation(ctx, relation); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.ReplaceMediaRelations(ctx, "media-alpha", []EntityRelation{
+		{FromEntityID: "entity-c", Name: "tagged", ToMediaID: "media-alpha"},
+	}); err != nil {
+		t.Fatalf("ReplaceMediaRelations: %v", err)
+	}
+	ids := func(name string) []EntityID {
+		related, err := st.EntitiesForMedia(ctx, "media-alpha", name, LibraryFilter{AllLibraries: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := []EntityID{}
+		for _, entity := range related {
+			out = append(out, entity.Entity.ID)
+		}
+		return out
+	}
+	if got := ids("tagged"); len(got) != 1 || got[0] != "entity-c" {
+		t.Fatalf("replaced many-cardinality rows = %v, want only entity-c", got)
+	}
+	if got := ids("member-of"); len(got) != 1 || got[0] != "entity-a" {
+		t.Fatalf("untouched relation name = %v, want entity-a kept", got)
+	}
+
+	// A row aimed at another target is rejected before anything is deleted.
+	err := st.ReplaceMediaRelations(ctx, "media-alpha", []EntityRelation{
+		{FromEntityID: "entity-a", Name: "tagged", ToMediaID: "media-other"},
+	})
+	if err == nil {
+		t.Fatal("ReplaceMediaRelations accepted a row for another Media")
+	}
+	if got := ids("tagged"); len(got) != 1 || got[0] != "entity-c" {
+		t.Fatalf("rejected replace disturbed rows: %v", got)
+	}
+}
+
 func TestMediaForEntityOrdersBySortOrderThenTitle(t *testing.T) {
 	st := openSeeded(t)
 	ctx := context.Background()

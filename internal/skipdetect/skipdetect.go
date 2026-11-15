@@ -230,35 +230,46 @@ func (s *Service) importChapters(ctx context.Context, id store.MediaID, path str
 // match strength (run length and tightness) sets the confidence; a match below
 // the auto-apply threshold is dropped. A Media with no siblings (a standalone
 // film) yields nothing here — that is correct, not an error.
+//
+// Analysis is staged before any write: a detector error, store read error or
+// context cancellation returns with the prior detector-owned markers intact.
+// Only a completed analysis reconciles, replacing both fingerprint methods'
+// rows with the new (possibly empty) result.
 func (s *Service) fingerprintSiblings(ctx context.Context, media store.Media, path string) error {
-	// Remediation for pre-COREREV-12 output: old MethodFingerprint credits were
-	// computed from file heads. Invalidate all detector-owned fingerprint rows
-	// at the next sweep, then rebuild valid intro/credits below. Manual rows and
-	// suppression locks are preserved by the store reconciliation seams.
-	if err := s.store.ReplaceDetectedMarkers(ctx, media.ID, MethodFingerprint, nil, serverFilter, s.now()); err != nil {
-		return err
-	}
-	if err := s.store.ReplaceDetectedMarkers(ctx, media.ID, MethodReverseFingerprint, nil, serverFilter, s.now()); err != nil {
-		return err
-	}
-	siblings, err := s.store.OrderedSiblingMedia(ctx, media.ID)
+	result, err := s.analyzeFingerprints(ctx, media, path)
 	if err != nil {
 		return err
 	}
+	return s.reconcileFingerprints(ctx, media.ID, result)
+}
+
+// fingerprintResult is one completed fingerprint analysis, staged before any
+// marker is written.
+type fingerprintResult struct {
+	intro, credits, recap          segment
+	hasIntro, hasCredits, hasRecap bool
+}
+
+func (s *Service) analyzeFingerprints(ctx context.Context, media store.Media, path string) (fingerprintResult, error) {
+	var result fingerprintResult
+	siblings, err := s.store.OrderedSiblingMedia(ctx, media.ID)
+	if err != nil {
+		return result, err
+	}
 	if len(siblings) == 0 {
-		return nil
+		return result, ctx.Err()
 	}
 	headSelf, err := s.detector.AudioFingerprint(ctx, path, fingerprintHeadWindows)
 	if err != nil {
-		return err
+		return result, err
 	}
 	tailDetector, ok := s.detector.(tailFingerprinter)
 	if !ok {
-		return errors.New("skipdetect: detector does not support EOF-aligned audio fingerprints")
+		return result, errors.New("skipdetect: detector does not support EOF-aligned audio fingerprints")
 	}
 	tailSelf, err := tailDetector.AudioFingerprintTail(ctx, path, fingerprintTailWindows, media.DurationSeconds)
 	if err != nil {
-		return err
+		return result, err
 	}
 
 	// Best shared run across any sibling, per kind. Comparing against the
@@ -289,55 +300,75 @@ func (s *Service) fingerprintSiblings(ctx context.Context, media store.Media, pa
 			bestCredits = run
 		}
 	}
+	// A per-sibling failure is skipped, but a cancellation that caused it would
+	// make the result look empty: never reconcile a canceled analysis.
+	if err := ctx.Err(); err != nil {
+		return result, err
+	}
 
-	var errs []error
-	intro, hasIntro := bestIntro.segment(0)
-	if hasIntro {
-		if _, err := s.store.ReplaceDetectedSegment(ctx, media.ID, "intro",
-			intro.start, intro.end, MethodFingerprint, intro.confidence, store.FlavorNone, s.now()); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	credits, hasCredits := bestCredits.segment(creditsOffset(media.DurationSeconds))
-	if hasCredits {
-		if _, err := s.store.ReplaceDetectedSegment(ctx, media.ID, "credits",
-			credits.start, credits.end, MethodFingerprint, credits.confidence, store.FlavorNone, s.now()); err != nil {
-			errs = append(errs, err)
-		}
-	}
+	result.intro, result.hasIntro = bestIntro.segment(0)
+	result.credits, result.hasCredits = bestCredits.segment(creditsOffset(media.DurationSeconds))
 	prior, err := s.store.PriorOrderedSiblingMedia(ctx, media.ID)
 	if err != nil {
-		errs = append(errs, err)
-		return errors.Join(errs...)
+		return result, err
 	}
 	if len(prior) < 2 {
-		return errors.Join(errs...)
+		return result, nil
 	}
-	cue, cueErr := s.recapCue(ctx, path)
-	if cueErr != nil {
-		errs = append(errs, cueErr)
+	cue, err := s.recapCue(ctx, path)
+	if err != nil {
+		return result, err
 	}
 	recap, ok := s.reverseFingerprint(ctx, headSelf, prior, cue)
+	if err := ctx.Err(); err != nil {
+		return result, err
+	}
 	if !ok {
-		return errors.Join(errs...)
+		return result, nil
 	}
-	if hasIntro && overlaps(recap, intro) {
-		return errors.Join(errs...)
+	if result.hasIntro && overlaps(recap, result.intro) {
+		return result, nil
 	}
-	if hasCredits && overlaps(recap, credits) {
-		return errors.Join(errs...)
+	if result.hasCredits && overlaps(recap, result.credits) {
+		return result, nil
 	}
-	existing, markerErr := s.store.MarkersForMedia(ctx, media.ID, serverFilter)
-	if markerErr != nil {
-		errs = append(errs, markerErr)
-		return errors.Join(errs...)
+	existing, err := s.store.MarkersForMedia(ctx, media.ID, serverFilter)
+	if err != nil {
+		return result, err
 	}
 	if hasNonReverseRecap(existing) {
-		return errors.Join(errs...)
+		return result, nil
 	}
-	if _, err := s.store.ReplaceDetectedSegment(ctx, media.ID, "recap",
-		recap.start, recap.end, MethodReverseFingerprint, recap.confidence, store.FlavorNone, s.now()); err != nil {
-		errs = append(errs, err)
+	result.recap, result.hasRecap = recap, true
+	return result, nil
+}
+
+// reconcileFingerprints replaces the detector-owned fingerprint rows with a
+// completed analysis. Clearing both methods first also invalidates
+// pre-COREREV-12 MethodFingerprint credits computed from file heads. Manual
+// rows and suppression locks are preserved by the store reconciliation seams.
+func (s *Service) reconcileFingerprints(ctx context.Context, id store.MediaID, result fingerprintResult) error {
+	if err := s.store.ReplaceDetectedMarkers(ctx, id, MethodFingerprint, nil, serverFilter, s.now()); err != nil {
+		return err
+	}
+	if err := s.store.ReplaceDetectedMarkers(ctx, id, MethodReverseFingerprint, nil, serverFilter, s.now()); err != nil {
+		return err
+	}
+	var errs []error
+	write := func(kind string, seg segment, method string) {
+		if _, err := s.store.ReplaceDetectedSegment(ctx, id, kind,
+			seg.start, seg.end, method, seg.confidence, store.FlavorNone, s.now()); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if result.hasIntro {
+		write("intro", result.intro, MethodFingerprint)
+	}
+	if result.hasCredits {
+		write("credits", result.credits, MethodFingerprint)
+	}
+	if result.hasRecap {
+		write("recap", result.recap, MethodReverseFingerprint)
 	}
 	return errors.Join(errs...)
 }

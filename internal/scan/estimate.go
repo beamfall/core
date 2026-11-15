@@ -193,7 +193,7 @@ func estimateRoot(ctx context.Context, root string, est *Estimate) error {
 		if !mediaExtensions[ext] {
 			return nil
 		}
-		if isExtraPath(path) {
+		if isExtraPath(path) || isLocalArtworkSidecar(path) {
 			return nil
 		}
 		if videoExtensions[ext] {

@@ -76,6 +76,8 @@ func TestRoutesAreRecorded(t *testing.T) {
 		{Method: http.MethodGet, Pattern: "/health"},
 		{Method: http.MethodGet, Pattern: "/metrics", RevealClass: reveal.Aggregate},
 		{Method: http.MethodGet, Pattern: "/source"},
+		{Method: http.MethodGet, Pattern: "/api/docs"},
+		{Method: http.MethodGet, Pattern: "/api/docs/openapi.json"},
 		{Method: http.MethodPost, Pattern: "/api/graphql", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodPost, Pattern: "/api/compat/handshake", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodPost, Pattern: "/api/media/artwork-upload/{recordID}", RevealClass: reveal.ContentJSON},

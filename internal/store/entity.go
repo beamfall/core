@@ -324,17 +324,9 @@ func (s *Store) UpsertEntityRelation(ctx context.Context, relation EntityRelatio
 	default:
 		return errors.New("unknown relation cardinality " + relation.Cardinality)
 	}
-	var attributes any
-	if len(relation.Attributes) > 0 {
-		data, err := json.Marshal(relation.Attributes)
-		if err != nil {
-			return err
-		}
-		attributes = string(data)
-	}
-	var sortOrder any
-	if relation.SortOrder != nil {
-		sortOrder = *relation.SortOrder
+	attributes, sortOrder, err := entityRelationRowValues(relation)
+	if err != nil {
+		return err
 	}
 
 	s.mu.RLock()
@@ -388,15 +380,125 @@ func (s *Store) UpsertEntityRelation(ctx context.Context, relation EntityRelatio
 			return err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `
+	if err := insertMediaRelationTx(ctx, tx, relation, attributes, sortOrder); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// ReplaceMediaRelations rewrites the Media-target relations of one Media for
+// every relation name the given rows carry: the Media's previous rows under
+// each of those names are deleted, whatever their cardinality, and the given
+// rows inserted, in one transaction. Relation names absent from the rows are
+// left as they are. Every row must target mediaID; the source Entities must
+// already exist on the Media's catalog plane.
+func (s *Store) ReplaceMediaRelations(ctx context.Context, mediaID MediaID, relations []EntityRelation) error {
+	// Authority face: Entity-relation catalog rows are main-only.
+	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
+		return err
+	}
+	if mediaID == "" {
+		return errors.New("relation target media is required")
+	}
+	type row struct {
+		relation   EntityRelation
+		attributes any
+		sortOrder  any
+	}
+	rows := make([]row, 0, len(relations))
+	names := []string{}
+	seen := map[string]bool{}
+	for _, relation := range relations {
+		if relation.FromEntityID == "" {
+			return errors.New("relation source entity is required")
+		}
+		if relation.Name == "" {
+			return errors.New("relation name is required")
+		}
+		if relation.ToEntityID != "" || relation.ToMediaID != mediaID {
+			return errors.New("replaced relations must all target the media")
+		}
+		switch relation.Cardinality {
+		case "", "one", "many":
+		default:
+			return errors.New("unknown relation cardinality " + relation.Cardinality)
+		}
+		attributes, sortOrder, err := entityRelationRowValues(relation)
+		if err != nil {
+			return err
+		}
+		rows = append(rows, row{relation: relation, attributes: attributes, sortOrder: sortOrder})
+		if !seen[relation.Name] {
+			seen[relation.Name] = true
+			names = append(names, relation.Name)
+		}
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	toPlane, err := s.catalogPlaneForMediaLocked(ctx, mediaID)
+	if err != nil {
+		return err
+	}
+	for _, r := range rows {
+		fromPlane, err := s.catalogPlaneForEntityLocked(ctx, r.relation.FromEntityID)
+		if err != nil {
+			return err
+		}
+		if fromPlane.writer != toPlane.writer {
+			return errors.New("encrypted cross-library entity relations are not supported")
+		}
+	}
+	tx, err := toPlane.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, name := range names {
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM entity_relation WHERE relation = ? AND to_media_id = ?`, name, mediaID,
+		); err != nil {
+			return err
+		}
+	}
+	for _, r := range rows {
+		if err := insertMediaRelationTx(ctx, tx, r.relation, r.attributes, r.sortOrder); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// entityRelationRowValues encodes a relation's attributes and sort order as
+// their nullable column values.
+func entityRelationRowValues(relation EntityRelation) (attributes, sortOrder any, err error) {
+	if len(relation.Attributes) > 0 {
+		data, err := json.Marshal(relation.Attributes)
+		if err != nil {
+			return nil, nil, err
+		}
+		attributes = string(data)
+	}
+	if relation.SortOrder != nil {
+		sortOrder = *relation.SortOrder
+	}
+	return attributes, sortOrder, nil
+}
+
+func insertMediaRelationTx(ctx context.Context, tx *sql.Tx, relation EntityRelation, attributes, sortOrder any) error {
+	_, err := tx.ExecContext(ctx, `
 		INSERT INTO entity_relation(from_entity_id, relation, to_media_id, attributes, sort_order)
 		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(from_entity_id, relation, to_media_id) WHERE to_media_id IS NOT NULL
 		DO UPDATE SET attributes = excluded.attributes, sort_order = excluded.sort_order
-	`, relation.FromEntityID, relation.Name, relation.ToMediaID, attributes, sortOrder); err != nil {
-		return err
-	}
-	return tx.Commit()
+	`, relation.FromEntityID, relation.Name, relation.ToMediaID, attributes, sortOrder)
+	return err
 }
 
 // EntitiesForMedia returns the Entities related to one visible Media item by
