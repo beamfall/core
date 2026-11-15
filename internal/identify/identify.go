@@ -253,6 +253,28 @@ func (s *Service) SetMediaTitles(titles MediaTitleSource) {
 	s.titles = titles
 }
 
+// AppliedTitle is the title Apply writes for a scraper title: the plugin
+// parser's per-file title for mediaID when one is wired and non-blank, else
+// the scraper's. A blank scraper title stays blank (Apply writes no title).
+// A failed title read (say, a Media whose files are all missing) keeps the
+// scraper's title rather than failing the identification. The Fix-Match
+// preview reads it so the proposed title is the one Apply keeps.
+func (s *Service) AppliedTitle(ctx context.Context, mediaID store.MediaID, pluginID, scraperTitle string) string {
+	scraperTitle = strings.TrimSpace(scraperTitle)
+	if scraperTitle == "" || s.titles == nil || mediaID == "" {
+		return scraperTitle
+	}
+	title, err := s.titles.ParsedMediaTitle(ctx, mediaID, pluginID)
+	if err != nil {
+		slog.Debug("identify: parser title unavailable, keeping scraper title", "media", mediaID, "error", err.Error())
+		return scraperTitle
+	}
+	if title = strings.TrimSpace(title); title != "" {
+		return title
+	}
+	return scraperTitle
+}
+
 // Search resolves the plugin's scraper spec and returns the engine's
 // candidates mapped onto the core metadata fields. mediaID is the Media item
 // being identified; it sources the engine's fingerprint variables and may be
@@ -355,15 +377,9 @@ func (s *Service) Apply(ctx context.Context, mediaID store.MediaID, pluginID, sc
 	if metadata.Title == nil && metadata.Summary == nil && metadata.Year == nil {
 		return fmt.Errorf("identify: scraper %q returned no usable fields", scraperID)
 	}
-	if metadata.Title != nil && s.titles != nil {
-		// A failed title read (say, a Media whose files are all missing) keeps
-		// the scraper's title rather than failing the identification.
-		title, err := s.titles.ParsedMediaTitle(ctx, mediaID, pluginID)
-		if err != nil {
-			slog.Debug("identify: parser title unavailable, keeping scraper title", "media", mediaID, "error", err.Error())
-		} else if title = strings.TrimSpace(title); title != "" {
-			metadata.Title = &title
-		}
+	if metadata.Title != nil {
+		title := s.AppliedTitle(ctx, mediaID, pluginID, *metadata.Title)
+		metadata.Title = &title
 	}
 	if err := s.applyLocal(ctx, mediaID, pluginID, scraperID, candidateID, metadata, bundle, spec, result); err != nil {
 		return err

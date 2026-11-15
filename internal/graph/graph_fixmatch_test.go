@@ -227,6 +227,49 @@ func TestFixMatchPreviewDiffsWithoutWriting(t *testing.T) {
 	}
 }
 
+// stubMediaTitles reports one fixed parser-owned title for every Media.
+type stubMediaTitles string
+
+func (s stubMediaTitles) ParsedMediaTitle(context.Context, store.MediaID, string) (string, error) {
+	return string(s), nil
+}
+
+// TestFixMatchPreviewProposesTheAppliedTitle (CORE-1713): when the plugin's
+// parser owns the Media's display title, Apply keeps it, so the preview
+// proposes it too rather than the scraper's title.
+func TestFixMatchPreviewProposesTheAppliedTitle(t *testing.T) {
+	handler, st := newIdentifyTestHandler(t)
+	handler.identify.SetMediaTitles(stubMediaTitles("S01E03"))
+	ctx := context.Background()
+	media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: "library-local", Path: "/fixtures/episode.mkv", Title: "S01E03",
+		Container: "mkv", Codec: "h264", ContentFingerprint: "sha256:episode",
+	})
+	if err != nil {
+		t.Fatalf("ImportMediaFile: %v", err)
+	}
+	vars := map[string]any{"mediaID": string(media.ID), "pluginID": "demo", "scraperID": "lookup", "candidateID": "42"}
+	diff, err := handler.fixMatchPreview(ctx, managerScope(), request{Variables: vars})
+	if err != nil {
+		t.Fatalf("fixMatchPreview: %v", err)
+	}
+	for _, row := range diff {
+		if row.Field == "title" && (row.Proposed != "S01E03" || row.Changed) {
+			t.Fatalf("title diff = %#v, want the parser title kept unchanged", row)
+		}
+	}
+	if err := handler.identify.Apply(ctx, media.ID, "demo", "lookup", "42"); err != nil {
+		t.Fatal(err)
+	}
+	after, err := st.Media(ctx, media.ID, store.LibraryFilter{Revealed: true, AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Title != "S01E03" || after.Summary != "A classic." {
+		t.Fatalf("applied media = title %q summary %q, want the previewed title and the lookup summary", after.Title, after.Summary)
+	}
+}
+
 // TestFixMatchPreviewRejectsHiddenMedia keeps the preview on the same
 // reveal-and-Library posture as fixMatch — a preview must not leak a hidden
 // item's current metadata.

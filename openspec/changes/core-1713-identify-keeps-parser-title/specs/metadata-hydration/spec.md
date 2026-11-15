@@ -22,3 +22,8 @@ cannot be read. Every other identified value SHALL be applied as before.
 
 - **WHEN** the Media's primary file cannot be read
 - **THEN** the identification still applies and the Media takes the lookup's title
+
+#### Scenario: Preview matches the applied title
+
+- **WHEN** the operator previews a Fix-Match for a Media whose parser supplies a per-file title
+- **THEN** the preview proposes that title, the one the identification writes

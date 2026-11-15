@@ -17,10 +17,13 @@ identified sibling files become indistinguishable again.
   Summary, year, plugin fields, entities and artwork are applied as before.
 - A blank parser title, a plugin with no `MediaTitler`, or a failed read (for example a Media whose
   files are all missing) keeps the scraper's title. A lookup with no title is not affected.
-- The composition root wires the compiled filename parsers as the source.
+- The Fix-Match preview proposes the same title `Apply` writes (`Service.AppliedTitle`).
+- The composition root wires the compiled filename parsers as the source, reading the primary file
+  with the server-internal full-visibility filter, so restricted libraries behave the same.
 
 ## Impact
 
-- Code: `internal/identify` (title source and `Apply`), `internal/app` (parser adapter and wiring).
+- Code: `internal/identify` (title source, `AppliedTitle`, `Apply`), `internal/graph` (Fix-Match
+  preview title), `internal/app` (parser adapter and wiring).
 - No store method, migration, GraphQL or wire-contract change. Search and Lookup candidates keep the
-  scraper's title, so a Fix-Match preview still shows the container name for the title.
+  scraper's title: a candidate names what was matched.

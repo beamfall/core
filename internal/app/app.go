@@ -2825,7 +2825,9 @@ func (t parserMediaTitles) ParsedMediaTitle(ctx context.Context, mediaID store.M
 	if !ok {
 		return "", nil
 	}
-	file, err := t.store.PrimaryMediaFile(ctx, mediaID, store.LibraryFilter{AllLibraries: true})
+	// Apply's caller has already authorized the Media, so the read is
+	// unfiltered like the other identification-internal reads.
+	file, err := t.store.PrimaryMediaFile(ctx, mediaID, metadataLibraryFilter)
 	if err != nil {
 		return "", err
 	}

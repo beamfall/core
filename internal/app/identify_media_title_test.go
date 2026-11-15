@@ -60,13 +60,15 @@ func TestIdentifyKeepsParserMediaTitle(t *testing.T) {
 	bundles := singleBundle{ID: "demo", Scrapers: []plugin.ScraperSpec{spec}}
 
 	cases := []struct {
-		name   string
-		parser scanpkg.FilenameParser // nil wires no title source
-		want   string
+		name    string
+		library store.LibraryID
+		parser  scanpkg.FilenameParser // nil wires no title source
+		want    string
 	}{
-		{name: "parser title kept", parser: fileTitleParser{}, want: "2023-03-01"},
-		{name: "no title source", want: "Synthetic Group"},
-		{name: "parser without MediaTitle", parser: containerOnlyParser{}, want: "Synthetic Group"},
+		{name: "parser title kept", library: "library-local", parser: fileTitleParser{}, want: "2023-03-01"},
+		{name: "restricted library", library: "library-archive", parser: fileTitleParser{}, want: "2023-03-01"},
+		{name: "no title source", library: "library-local", want: "Synthetic Group"},
+		{name: "parser without MediaTitle", library: "library-local", parser: containerOnlyParser{}, want: "Synthetic Group"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -77,7 +79,7 @@ func TestIdentifyKeepsParserMediaTitle(t *testing.T) {
 			}
 			defer st.Close()
 			media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
-				LibraryID: "library-local", Path: "/synthetic/Synthetic Group/2023-03-01.mkv",
+				LibraryID: tc.library, Path: "/synthetic/Synthetic Group/2023-03-01.mkv",
 				Title: "2023-03-01", Container: "mkv", Codec: "h264", Class: store.MediaClassVideo,
 				ContentFingerprint: "fp-media-title-0001",
 			})
@@ -91,7 +93,7 @@ func TestIdentifyKeepsParserMediaTitle(t *testing.T) {
 			if err := service.Apply(ctx, media.ID, "demo", "group", "7"); err != nil {
 				t.Fatal(err)
 			}
-			got, err := st.Media(ctx, media.ID, store.LibraryFilter{AllLibraries: true})
+			got, err := st.Media(ctx, media.ID, metadataLibraryFilter)
 			if err != nil {
 				t.Fatal(err)
 			}
