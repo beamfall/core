@@ -32,7 +32,7 @@ not run a plan the manager never saw: an old, reused or out-of-date preview has 
 - `/health` gains `features: ["scan-preview"]` so clients can enable a Preview rescan control.
   Protocol features stay out of the capability registry and the compatibility policy.
 - Wire contract: two new admin fields and the `ScanPreviewInfo` type. Goldens are regenerated;
-  client-core-wire 2.10.0 must be published before merge.
+  client-core-wire 2.11.0 must be published before merge (2.10.0 was taken by the CORE-1717 batch on main).
 
 ## Non-goals
 
