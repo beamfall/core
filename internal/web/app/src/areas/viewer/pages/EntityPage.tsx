@@ -28,7 +28,7 @@ import { ViewerActions } from "../components/ViewerActions";
 import { nextUpChild, nextUpChildContainer } from "../lib/containerChildren";
 import { readEntityPreview } from "../lib/entityPreview";
 import { seeAllTargetFor } from "../lib/seeall";
-import { viewerFacingFields } from "../lib/viewerFields";
+import { fieldDisplayValue, viewerFacingFields } from "../lib/viewerFields";
 import { type PlayerNavState, playQueueOf, queueWindow } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import "./media-detail.css";
@@ -285,7 +285,7 @@ export function EntityPage() {
                     {fields.map((field, i) => (
                       <div key={`${field.name}-${i}`} className="contents">
                         <dt>{displayString(field.label, displayLocale)}</dt>
-                        <dd>{field.value}</dd>
+                        <dd>{fieldDisplayValue(field, displayLocale)}</dd>
                       </div>
                     ))}
                   </dl>

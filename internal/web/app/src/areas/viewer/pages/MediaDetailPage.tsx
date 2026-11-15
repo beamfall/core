@@ -33,7 +33,12 @@ import {
   readMediaPreview,
   resumeProgress,
 } from "../lib/mediaDetail";
-import { detailFacts, runtimeParts, viewerFacingFields } from "../lib/viewerFields";
+import {
+  detailFacts,
+  fieldDisplayValue,
+  runtimeParts,
+  viewerFacingFields,
+} from "../lib/viewerFields";
 import { type PlayerNavState, readPlayerNavState } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import { PlayOnButton } from "../remote/PlayOnButton";
@@ -331,7 +336,7 @@ export function MediaDetailPage() {
               {fields.map((field, i) => (
                 <div key={`${field.name}-${i}`} className="contents">
                   <dt>{displayString(field.label, locale)}</dt>
-                  <dd>{field.value}</dd>
+                  <dd>{fieldDisplayValue(field, locale)}</dd>
                 </div>
               ))}
             </dl>
