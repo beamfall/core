@@ -27,13 +27,3 @@ const (
 	SetupLANHintFinishSetup Key = "setup.lan_hint.finish_setup"
 	SetupLANHintSignIn      Key = "setup.lan_hint.sign_in"
 )
-
-// Default navigation and Home shelf titles in the client manifest.
-const (
-	ManifestNavHome               Key = "manifest.nav.home"
-	ManifestNavAmbient            Key = "manifest.nav.ambient"
-	ManifestShelfContinueWatching Key = "manifest.shelf.continue_watching"
-	ManifestShelfWatchlist        Key = "manifest.shelf.watchlist"
-	ManifestShelfRecentlyAdded    Key = "manifest.shelf.recently_added"
-	ManifestShelfMostPlayed       Key = "manifest.shelf.most_played"
-)

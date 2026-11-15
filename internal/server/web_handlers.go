@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/l10n"
 	"github.com/beamfall/core/internal/pairing"
 	"github.com/beamfall/core/internal/reveal"
 	"github.com/beamfall/core/internal/store"
@@ -158,7 +159,7 @@ func (s *Server) setupFirstRun(w http.ResponseWriter, r *http.Request) {
 			// (CORE-1600). A LAN source whose only fault is the missing token
 			// was denied the LAN claim by the hostname rule, so it gets the same
 			// code and addresses as the GET /api/setup probe.
-			writeCodedError(w, http.StatusBadRequest, "Open Beamfall by its IP address to finish setup without the setup token.",
+			writeCodedError(w, http.StatusBadRequest, l10n.Text(l10n.FromContext(r.Context()), l10n.SetupLANHintFinishSetup, nil),
 				lanHostnameNotAllowed, requestLANURLs(r))
 		case errors.Is(err, pairing.ErrInvalidRequest):
 			writeError(w, r, http.StatusBadRequest, "invalid setup request")
@@ -229,7 +230,7 @@ func rejectRebindablePlainHTTPSignIn(w http.ResponseWriter, r *http.Request) boo
 		// The refusal stands; only the explanation changes (CORE-1600). A LAN
 		// browser that addressed a hostname is told which IP addresses this
 		// server answers on, so the owner can sign in by address instead.
-		writeCodedError(w, http.StatusForbidden, "Open Beamfall by its IP address to sign in with the admin password.",
+		writeCodedError(w, http.StatusForbidden, l10n.Text(l10n.FromContext(r.Context()), l10n.SetupLANHintSignIn, nil),
 			lanHostnameNotAllowed, requestLANURLs(r))
 		return true
 	}
@@ -242,7 +243,8 @@ func rejectRebindablePlainHTTPSignIn(w http.ResponseWriter, r *http.Request) boo
 const lanHostnameNotAllowed = "lan_hostname_not_allowed"
 
 // writeCodedError is writeError plus a stable code and the LAN addresses the
-// browser can reopen Beamfall at. lanUrls is always present, possibly empty,
+// browser can reopen Beamfall at. Clients branch on code; msg is
+// server-localized text for clients that show it as is (CORE-2102). lanUrls is always present, possibly empty,
 // so clients can rely on its shape.
 func writeCodedError(w http.ResponseWriter, status int, msg, code string, lanURLs []string) {
 	if lanURLs == nil {

@@ -200,16 +200,6 @@ func Text(locale string, key Key, args Args) string {
 	return strings.NewReplacer(pairs...).Replace(template)
 }
 
-// LocaleMap renders key in every shipped locale, for wire fields that carry a
-// locale map the client resolves itself (the manifest's titles).
-func LocaleMap(key Key) map[string]string {
-	out := make(map[string]string, len(shipped))
-	for _, locale := range shipped {
-		out[locale] = Text(locale, key, nil)
-	}
-	return out
-}
-
 // Error is a refusal whose message is server-localized text. Error() is the
 // source-locale text from Err, so logs, error matching and code mapping keep
 // working on the English message; a response renders Localize instead.

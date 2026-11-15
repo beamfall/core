@@ -50,7 +50,7 @@ text unchanged, whatever the request locale.
 
 ### Requirement: New user-facing server text is guarded
 
-A conformance test SHALL fail when a server notification title, manifest locale string or
+A conformance test SHALL fail when a server notification title, locale map literal or
 sentence-style user message is added as an English literal instead of a catalog key, or when a
 catalog key is missing from a shipped locale.
 

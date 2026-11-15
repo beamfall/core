@@ -5,10 +5,9 @@
 
 ## 2. Server text
 
-- [ ] 2.1 Localize notification inbox titles by kind
+- [ ] 2.1 Localize notification inbox titles by kind and the participant fallback name
 - [ ] 2.2 Localize the library-folder check messages
 - [ ] 2.3 Localize the setup LAN hints carried with `lan_hostname_not_allowed`
-- [ ] 2.4 Build manifest default titles for every shipped locale from the catalog
 
 ## 3. Guard and inventory
 

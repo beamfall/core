@@ -31,6 +31,7 @@ import (
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/beam"
 	"github.com/beamfall/core/internal/capabilities"
+	"github.com/beamfall/core/internal/l10n"
 	"github.com/beamfall/core/internal/manifest"
 	"github.com/beamfall/core/internal/mediahttp"
 	"github.com/beamfall/core/internal/moderation"
@@ -893,6 +894,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	reqID := newRequestID()
 	w.Header().Set(requestIDHeader, reqID)
 	r = r.WithContext(auth.WithRefusalNote(context.WithValue(r.Context(), requestIDKey{}, reqID)))
+	// The locale for server-rendered text (CORE-2102). No profile preference
+	// is stored yet, so Accept-Language decides, then the source locale.
+	r = r.WithContext(l10n.WithLocale(r.Context(), l10n.Negotiate("", r.Header.Get("Accept-Language"))))
 	// r is reassigned below; the deferred access line reads its final value,
 	// whose Pattern the mux fills in place.
 	defer func() {

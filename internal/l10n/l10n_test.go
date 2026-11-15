@@ -197,11 +197,8 @@ func TestTextFillsPlaceholdersAndFallsBack(t *testing.T) {
 	if got, want := Text("de", LibraryRootNotFolder, Args{"path": "/m/{x}"}), "/m/{x} ist eine Datei, kein Ordner."; got != want {
 		t.Fatalf("Text(de) = %q, want %q", got, want)
 	}
-	if got, want := Text("xx", ManifestNavHome, nil), "Home"; got != want {
+	if got, want := Text("xx", WatchPartyParticipantFallback, nil), "Participant"; got != want {
 		t.Fatalf("Text(undeclared locale) = %q, want source %q", got, want)
-	}
-	if got := LocaleMap(ManifestShelfWatchlist); len(got) != len(Shipped()) || got["es"] != "Mi lista" {
-		t.Fatalf("LocaleMap = %v", got)
 	}
 }
 
