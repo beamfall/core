@@ -1,0 +1,8 @@
+- [x] `internal/pairing`: in-memory request table, request, poll, regenerate, list, approve, deny
+- [x] Throttle, caps, expiry, untrusted name validation, remote and Viewer gates
+- [x] `internal/server`: six routes, route classes, compat exemptions for the device routes, management contract notes
+- [x] Tests in `internal/pairing` and `internal/server`
+- [x] Regenerate wire goldens and the management manifest; publish wire contract 2.11.0
+- [x] `docs/api/lan-pairing.md` documents the routes
+- [ ] `make gate`
+- [ ] `openspec archive core-0316-device-pairing-requests` after landing

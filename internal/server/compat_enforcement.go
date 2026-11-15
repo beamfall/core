@@ -46,6 +46,11 @@ var compatExemptRoutes = map[string]string{
 	"GET /api/moderation/contact": "public moderation contact",
 	"POST /api/compat/handshake":  "compatibility handshake",
 	"POST /api/test/faults":       "test-only fault control",
+
+	// Device-initiated pairing (CORE-0316).
+	"POST /api/pairing-requests":            "pre-subject enrollment",
+	"POST /api/pairing-requests/poll":       "pre-subject enrollment",
+	"POST /api/pairing-requests/regenerate": "pre-subject enrollment",
 }
 
 func compatRouteExempt(method, pattern string) bool {

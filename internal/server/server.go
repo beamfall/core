@@ -317,6 +317,12 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 	s.handle(http.MethodPost, "/api/beam/claims", reveal.ContentJSON, s.claimBeamOffer)
 	s.handle(http.MethodPost, "/api/pairing-codes", reveal.ContentJSON, s.createPairingCode)
 	s.handle(http.MethodPost, "/api/enroll", reveal.ContentJSON, s.enrollDevice)
+	s.handle(http.MethodPost, "/api/pairing-requests", reveal.ContentJSON, s.requestDevicePairing)
+	s.handle(http.MethodPost, "/api/pairing-requests/poll", reveal.ContentJSON, s.pollDevicePairing)
+	s.handle(http.MethodPost, "/api/pairing-requests/regenerate", reveal.ContentJSON, s.regenerateDevicePairing)
+	s.handle(http.MethodGet, "/api/pairing-requests", reveal.ContentJSON, s.listDevicePairingRequests)
+	s.handle(http.MethodPost, "/api/pairing-requests/approve", reveal.ContentJSON, s.approveDevicePairingRequest)
+	s.handle(http.MethodPost, "/api/pairing-requests/deny", reveal.ContentJSON, s.denyDevicePairingRequest)
 	// Guideline 1.2 UGC moderation (NATIVEMGR-4, apple ADR-0004 §4): in-app
 	// content reporting + per-Profile content blocking for the self-hosted
 	// client. These are VIEWER content-safety surfaces consumed by the client

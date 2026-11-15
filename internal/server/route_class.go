@@ -142,6 +142,14 @@ var exactRouteClasses = map[string]AccessClass{
 	"POST /api/web/admin-signin":      AccessPrivateUI,
 	"POST /api/web/signin-security":   AccessPrivateUI,
 	"POST /api/setup":                 AccessPrivateUI,
+
+	// Device-initiated pairing (CORE-0316).
+	"POST /api/pairing-requests":            AccessPrivateUI,
+	"POST /api/pairing-requests/poll":       AccessPrivateUI,
+	"POST /api/pairing-requests/regenerate": AccessPrivateUI,
+	"GET /api/pairing-requests":             AccessPrivateUI,
+	"POST /api/pairing-requests/approve":    AccessPrivateUI,
+	"POST /api/pairing-requests/deny":       AccessPrivateUI,
 }
 
 // routeAccessClass classifies a mounted route. The /v1/ prefix is the single

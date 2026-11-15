@@ -182,6 +182,10 @@ type Service struct {
 	bootstrapInProgress bool
 	demo                DemoEnrollment
 
+	// deviceRequests holds device-initiated pairing requests (CORE-0316),
+	// in memory only, under its own lock.
+	deviceRequests deviceRequests
+
 	// afterAdminPasswordCheck, when set, runs after AdminSignIn's password
 	// check passes and before it enrolls. A test seam for races with that
 	// slow check.

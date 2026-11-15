@@ -33728,6 +33728,36 @@
       },
       {
         "method": "POST",
+        "pattern": "/api/pairing-requests",
+        "note": "Request device pairing: returns a short code for an administrator to approve"
+      },
+      {
+        "method": "POST",
+        "pattern": "/api/pairing-requests/poll",
+        "note": "Poll a device pairing request with its request secret; delivers the enrollment once approved"
+      },
+      {
+        "method": "POST",
+        "pattern": "/api/pairing-requests/regenerate",
+        "note": "Replace a pending device pairing request's code and request secret"
+      },
+      {
+        "method": "GET",
+        "pattern": "/api/pairing-requests",
+        "note": "List pending device pairing requests (admin)"
+      },
+      {
+        "method": "POST",
+        "pattern": "/api/pairing-requests/approve",
+        "note": "Approve a pending device pairing request (admin)"
+      },
+      {
+        "method": "POST",
+        "pattern": "/api/pairing-requests/deny",
+        "note": "Deny a pending device pairing request (admin)"
+      },
+      {
+        "method": "POST",
         "pattern": "/api/group/calibrate",
         "note": "Calibrate group watch sync"
       },
