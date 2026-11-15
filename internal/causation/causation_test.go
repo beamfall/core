@@ -1,6 +1,7 @@
 package causation
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"testing"
@@ -195,5 +196,186 @@ func TestDeadLetterNewRecordRateIsBounded(t *testing.T) {
 	}
 	if snapshot.Suppressed != 18 {
 		t.Fatalf("suppressed records = %d, want 18", snapshot.Suppressed)
+	}
+}
+
+func TestAdmitWithDescendantsBindsRowsToTheChain(t *testing.T) {
+	now := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+	cap := NewCausationCap(DefaultLimits(), func() time.Time { return now })
+	token, err := cap.TokenFor("root", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := cap.TokenFor("other", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cap.AdmitWithDescendants("worker", token, "write", []string{"a", "b"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := cap.Inherited("a"); got != token {
+		t.Fatalf("Inherited(a) = %q, want the admitting chain", got)
+	}
+	if got := cap.Inherited("unbound"); got != "" {
+		t.Fatalf("Inherited(unbound) = %q, want empty", got)
+	}
+	// A bound key collides for any chain, its own included, and the refusal
+	// spends nothing and records nothing: the caller restamps and retries.
+	for _, tok := range []Token{other, token} {
+		if err := cap.AdmitWithDescendants("worker", tok, "write", []string{"c", "a"}); !errors.Is(err, ErrDescendantCollision) {
+			t.Fatalf("admit over a bound key: err = %v, want %v", err, ErrDescendantCollision)
+		}
+	}
+	if got := cap.Inherited("a"); got != token {
+		t.Fatal("a later chain rebound a descendant already bound to another chain")
+	}
+	if got := cap.Inherited("c"); got != "" {
+		t.Fatal("a colliding admission bound its other keys")
+	}
+	if snapshot := cap.DeadLetters(); len(snapshot.Records) != 0 {
+		t.Fatalf("a collision recorded dead letters: %+v", snapshot.Records)
+	}
+	if got := cap.chains[mustChainID(t, cap, other, now)].actions; got != 0 {
+		t.Fatalf("a collision spent %d actions of the other chain", got)
+	}
+	now = now.Add(DefaultLimits().ChainLifetime + time.Millisecond)
+	if got := cap.Inherited("b"); got != "" {
+		t.Fatalf("Inherited(b) after the binding's window = %q, want empty", got)
+	}
+}
+
+func TestAdmitWithDescendantsFailsClosedWhenTheLedgerIsFull(t *testing.T) {
+	now := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+	limits := DefaultLimits()
+	limits.MaxTrackedDescendants = 2
+	limits.GlobalActions = 2
+	cap := NewCausationCap(limits, func() time.Time { return now })
+	token, err := cap.TokenFor("root", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cap.AdmitWithDescendants("worker", token, "write", []string{"a", "b", "c"}); !errors.Is(err, ErrTrackingCapacity) {
+		t.Fatalf("over-capacity admit: err = %v, want %v", err, ErrTrackingCapacity)
+	}
+	if got := cap.Inherited("a"); got != "" {
+		t.Fatal("a refused admission bound a descendant")
+	}
+	// The refusal spent no budget: both actions remain.
+	for i := 0; i < 2; i++ {
+		if err := cap.AdmitWithDescendants("worker", token, "write", []string{string(rune('a' + i))}); err != nil {
+			t.Fatalf("admit %d after refusal: %v", i, err)
+		}
+	}
+	snapshot := cap.DeadLetters()
+	if len(snapshot.Records) != 1 || snapshot.Records[0].Reason != DeadLetterTrackingCapacity {
+		t.Fatalf("dead letters = %+v, want one tracking-capacity record", snapshot.Records)
+	}
+}
+
+func TestAdmitWithDescendantsBoundsEachWorkersShare(t *testing.T) {
+	now := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+	limits := DefaultLimits()
+	limits.MaxDescendantsPerWorker = 2
+	cap := NewCausationCap(limits, func() time.Time { return now })
+	token, err := cap.TokenFor("root", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cap.AdmitWithDescendants("greedy", token, "write", []string{"a", "b"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cap.AdmitWithDescendants("greedy", token, "write", []string{"c"}); !errors.Is(err, ErrTrackingCapacity) {
+		t.Fatalf("over-share admit: err = %v, want %v", err, ErrTrackingCapacity)
+	}
+	if err := cap.AdmitWithDescendants("other", token, "write", []string{"c", "d"}); err != nil {
+		t.Fatalf("another worker was denied by the greedy worker's share: %v", err)
+	}
+	// Expiry returns the share.
+	now = now.Add(limits.ChainLifetime + time.Millisecond)
+	fresh, err := cap.TokenFor("fresh", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cap.AdmitWithDescendants("greedy", fresh, "write", []string{"e", "f"}); err != nil {
+		t.Fatalf("share not returned after expiry: %v", err)
+	}
+}
+
+func TestReleaseDescendantsUnbindsOnlyTheChainsKeys(t *testing.T) {
+	now := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+	limits := DefaultLimits()
+	limits.MaxDescendantsPerWorker = 2
+	cap := NewCausationCap(limits, func() time.Time { return now })
+	token, err := cap.TokenFor("root", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := cap.TokenFor("other", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cap.AdmitWithDescendants("worker", token, "write", []string{"a", "b"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cap.AdmitWithDescendants("peer", other, "write", []string{"c"}); err != nil {
+		t.Fatal(err)
+	}
+	cap.ReleaseDescendants(token, []string{"a", "b", "c"})
+	if cap.Inherited("a") != "" || cap.Inherited("b") != "" {
+		t.Fatal("released keys are still bound")
+	}
+	if cap.Inherited("c") != other {
+		t.Fatal("release unbound a key bound to another chain")
+	}
+	// The released keys returned the worker's share.
+	if err := cap.AdmitWithDescendants("worker", token, "write", []string{"a", "b"}); err != nil {
+		t.Fatalf("share not returned after release: %v", err)
+	}
+}
+
+func mustChainID(t *testing.T, cap *CausationCap, token Token, now time.Time) [sha256.Size]byte {
+	t.Helper()
+	id, _, err := cap.validateToken(token, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+// Codex review of CORE-1695: a row stamped after admission (a restamp after a
+// collision) keeps its binding until a fresh root started at its stamp would
+// be expired, so it never regains budget once its chain has expired.
+func TestRestampedDescendantNeverYieldsALiveRoot(t *testing.T) {
+	admittedAt := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+	now := admittedAt
+	limits := DefaultLimits()
+	cap := NewCausationCap(limits, func() time.Time { return now })
+	token, err := cap.TokenFor("root", admittedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stampedAt := admittedAt.Add(5 * time.Millisecond)
+	if err := cap.AdmitWithDescendantsAt("w", token, "write", []string{"row"}, stampedAt); err != nil {
+		t.Fatal(err)
+	}
+	// The chain has expired, but a root re-minted from the row would not have.
+	now = admittedAt.Add(limits.ChainLifetime + time.Millisecond)
+	if err := cap.Admit("w", token, "write"); !errors.Is(err, ErrChainExpired) {
+		t.Fatalf("original chain: err = %v, want %v", err, ErrChainExpired)
+	}
+	if got := cap.Inherited("row"); got != token {
+		t.Fatalf("row inherited %q before its fresh root expired, want the spent chain %q", got, token)
+	}
+	// Once the binding lapses, the root a delivery would mint is already expired.
+	now = stampedAt.Add(limits.ChainLifetime + time.Millisecond)
+	if got := cap.Inherited("row"); got != "" {
+		t.Fatalf("binding outlived its window: %q", got)
+	}
+	root, err := cap.TokenFor("outbox:1", stampedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cap.Admit("w", root, "write"); !errors.Is(err, ErrChainExpired) {
+		t.Fatalf("re-minted root: err = %v, want %v", err, ErrChainExpired)
 	}
 }

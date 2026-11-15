@@ -119,6 +119,16 @@ const (
 	// call carried through the enforced Host proxy. TargetID is the plugin id; the
 	// URL/host/headers/body are never written to the row (they may carry secrets).
 	ActivityPluginOutboundRequest = "plugin.outbound_request"
+	// Scoped Integration Worker writes and playback reads (CORE-1695). Each row is
+	// written before the change takes effect and carries the Library the target
+	// lives in, so the activity log Reveal-filters it like any content entry;
+	// profile-bound kinds also record the bound Profile. Field values, artwork
+	// bytes and collection names are never written to the row.
+	ActivityPluginMetadataWrite     = "plugin.metadata_write"
+	ActivityPluginCollectionWrite   = "plugin.collection_write"
+	ActivityPluginArtworkWrite      = "plugin.artwork_write"
+	ActivityPluginWatchStateWrite   = "plugin.watch_state_write"
+	ActivityPluginPlaybackStateRead = "plugin.playback_state_read"
 	// ActivityPluginDeadLetterRetry audits an operator-requested dead-letter
 	// retry lifecycle action.
 	ActivityPluginDeadLetterRetry = "plugin.dead_letter_retry"

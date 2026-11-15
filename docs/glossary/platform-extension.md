@@ -139,12 +139,18 @@ may request: `outbound-network` (declared host allowlist), `read-catalog` (Revea
 metadata reads), `read-events` (filtered event subscription), `write-status` (plugin
 health/status/dead-letter rows), `manage-secrets` (plugin-scoped secrets only),
 `enqueue-jobs` (plugin-owned job kinds only), `request-ingest` (Incoming Folder / scan
-handoff only), `request-file-mutation` (audited Core file mutations only; high-risk), and
-`profile-link` (per-Profile OAuth/account linking). The vocabulary is Core-owned and closed;
+handoff only), `request-file-mutation` (audited Core file mutations only; high-risk),
+`profile-link` (per-Profile OAuth/account linking), and the scoped writes and read added by
+CORE-1695: `write-metadata` (undoable field edits), `write-collections` (create collections and
+add media), `write-artwork` (import artwork into an unlocked slot), `write-watch-state` (watch
+marks for the one bound Profile) and `read-playback-state` (that Profile's progress). Each scoped
+call is confined to the Libraries the grant reveals, writes one activity row before it runs, and
+spends the caller's causation chain (ADR-0125). The vocabulary is Core-owned and closed;
 plugins never declare new permissions or auth scopes. No permission is product-disabled by
 default: if an operator chooses to grant it on their server, the server allows it. High-risk
-permissions (`read-catalog`, `profile-link`, `request-ingest`, `request-file-mutation`) require
-explicit approval and audit, and any update that expands permissions requires re-approval.
+permissions (`read-catalog`, `profile-link`, `request-ingest`, `request-file-mutation` and the
+five CORE-1695 kinds) require explicit approval and audit; `write-watch-state` and
+`read-playback-state` also require a grant bound to exactly one Profile. Any update that expands permissions requires re-approval.
 _Avoid_: raw DB access, arbitrary filesystem access, arbitrary GraphQL/admin calls,
 plugin-declared auth scopes, hiding permission expansion inside routine updates.
 
