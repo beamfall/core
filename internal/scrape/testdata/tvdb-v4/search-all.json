@@ -1,0 +1,4 @@
+{"status": "success", "data": [
+  {"tvdb_id": "700101", "name": "Harbor Lights", "year": "1998", "overview": "A coastal town keeps its lamps lit.", "image_url": "https://artworks.example.org/posters/700101.jpg"},
+  {"tvdb_id": "700202", "name": "Harbor Lights", "year": "2021", "overview": "A remake set on a different coast.", "image_url": "https://artworks.example.org/posters/700202.jpg"}
+]}

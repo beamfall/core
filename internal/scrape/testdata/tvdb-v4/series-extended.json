@@ -1,0 +1,24 @@
+{"status": "success", "data": {
+  "id": 700303,
+  "name": "Faro del Norte",
+  "overview": "Una guardiana de faro vigila la costa.",
+  "year": "2019",
+  "originalLanguage": "spa",
+  "image": "https://artworks.example.org/posters/700303.jpg",
+  "artworks": [
+    {"id": 1, "type": 2, "image": "https://artworks.example.org/posters/700303-alt.jpg", "language": "spa", "score": 10},
+    {"id": 2, "type": 3, "image": "https://artworks.example.org/backgrounds/700303.jpg", "language": null, "score": 9},
+    {"id": 3, "type": 1, "image": "https://artworks.example.org/banners/700303.jpg", "language": "eng", "score": 8},
+    {"id": 4, "type": 23, "image": "https://artworks.example.org/clearlogos/700303.png", "language": "eng", "score": 7}
+  ],
+  "translations": {
+    "nameTranslations": [
+      {"language": "spa", "name": "Faro del Norte"},
+      {"language": "eng", "name": "North Beacon"}
+    ],
+    "overviewTranslations": [
+      {"language": "spa", "overview": "Una guardiana de faro vigila la costa."},
+      {"language": "eng", "overview": "A lighthouse keeper watches the coast."}
+    ]
+  }
+}}

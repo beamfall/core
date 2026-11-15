@@ -66,4 +66,20 @@ describe("groupProviderKeys", () => {
     expect(key.status).toBe("disabled");
     expect(keyNeeded(key)).toBe(false);
   });
+
+  it("carries plugin-declared credential help from any row of the AuthRef", () => {
+    // CORE-1127: a plugin names its credential and links where to get one.
+    const help = {
+      label: { en: "Subscriber PIN" },
+      helpURL: "https://subscribe.example.org",
+      helpLabel: { en: "Subscribe at example.org" },
+    };
+    const [key, other] = groupProviderKeys([
+      scraper({ scraperID: "a" }),
+      scraper({ scraperID: "b", credentialHelp: help }),
+      scraper({ scraperID: "c", authRef: "other-key" }),
+    ]);
+    expect(key.credentialHelp).toEqual(help);
+    expect(other.credentialHelp).toBeUndefined();
+  });
 });
