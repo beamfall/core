@@ -207,6 +207,11 @@ type hlsSession struct {
 	// from its start keeps the source's priming (ffmpeg.Rendition.KeepPriming),
 	// so the output carries exactly the encoder delay playbackInfo reports.
 	audioSource bool
+	// primed, when set, is the exact uniform-grid layout of a primed AAC
+	// encode of an audio-only source (CORE-1863): the encoder's priming and
+	// end padding run past the source's whole seconds, so its last segment
+	// can lie beyond the grid the integer duration implies.
+	primed primedGrid
 	// composed, when set, is the composed picture the session's single rung
 	// draws over the source's audio (see StreamShape.ComposedPicture), and
 	// picture is its encoder input as laid out in the session directory.
@@ -341,6 +346,9 @@ func (h *hlsSession) keyframeTimeline(rung Rung) *keyframeTimeline {
 func (h *hlsSession) segmentCount(rung Rung) int {
 	if t := h.keyframeTimeline(rung); t != nil {
 		return t.segmentCount()
+	}
+	if h.primed.segments > 0 {
+		return h.primed.segments
 	}
 	return segmentCount(h.durationSeconds, rungSegmentSeconds(rung))
 }
@@ -934,7 +942,7 @@ func (s *Sessions) FilePathShaped(ctx context.Context, key SessionKey, src strin
 		}
 	}
 	audioOnlyPeak := audioOnlyBandwidth(audioProfile, shape.AudioSource, !shape.Adjust.IsZero())
-	session, err := s.session(key, src, durationSeconds, timeline, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, picture, shape.Adjust, shape.AudioOnly, audioOnlyPeak, priority)
+	session, err := s.session(key, src, durationSeconds, timeline, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, picture, shape.Adjust, shape.AudioOnly, shape.AudioSource, audioOnlyPeak, priority)
 	if err != nil {
 		return "", err
 	}
@@ -1225,7 +1233,7 @@ func (s *Sessions) transcodeLatencyBudget(session *hlsSession, path string) time
 // non-zero adjust stretches durationSeconds (a source duration) onto the
 // adjusted output timeline and, without a picture, offers the single
 // audio-only rung. audioOnly (an audio-class Media) offers that rung too.
-func (s *Sessions) session(key SessionKey, src string, durationSeconds int, timeline *keyframeTimeline, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, picture *ComposedPicture, adjust ffmpeg.AudioAdjust, audioOnly bool, audioOnlyPeak int, priority Priority) (*hlsSession, error) {
+func (s *Sessions) session(key SessionKey, src string, durationSeconds int, timeline *keyframeTimeline, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, picture *ComposedPicture, adjust ffmpeg.AudioAdjust, audioOnly bool, audioSourceStream store.MediaFileStream, audioOnlyPeak int, priority Priority) (*hlsSession, error) {
 	var teardowns []sessionTeardown
 	s.mu.Lock()
 	defer func() {
@@ -1246,8 +1254,13 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 		requestedRungs = []Rung{audioOnlyRung(audioOnlyPeak)}
 	}
 	durationSeconds = adjust.OutputSeconds(durationSeconds)
+	audioSource := videoWidth <= 0 && videoHeight <= 0 && picture == nil
+	var primed primedGrid
+	if audioOnly && audioSource && adjust.IsZero() && durationSeconds > 0 {
+		primed = primedAACGrid(audioSourceStream, audioProfile, segmentSeconds)
+	}
 	if existing, ok := s.sessions[key]; ok {
-		if existing.src != src || existing.durationSeconds != durationSeconds || existing.timeline != timeline || existing.degraded != degraded || !rungsEqual(existing.rungs, requestedRungs) || existing.sourceVideo != sourceVideo || existing.burnSubtitleIndex != burnSubtitleIndex || !audioProfilesEqual(existing.audioProfile, audioProfile) || !equalOptionalInt(existing.audioStreamIndex, audioStreamIndex) || (existing.composed != nil) != (picture != nil) || existing.adjust != adjust {
+		if existing.src != src || existing.durationSeconds != durationSeconds || existing.primed != primed || existing.timeline != timeline || existing.degraded != degraded || !rungsEqual(existing.rungs, requestedRungs) || existing.sourceVideo != sourceVideo || existing.burnSubtitleIndex != burnSubtitleIndex || !audioProfilesEqual(existing.audioProfile, audioProfile) || !equalOptionalInt(existing.audioStreamIndex, audioStreamIndex) || (existing.composed != nil) != (picture != nil) || existing.adjust != adjust {
 			teardowns = append(teardowns, *s.removeLocked(key)) // mode-shaping changed; old artifacts are incompatible
 		} else {
 			// A position noted while this session ran was kept only for a
@@ -1272,7 +1285,8 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 		audioStreamIndex:  audioStreamIndex,
 		sourceVideo:       sourceVideo,
 		burnSubtitleIndex: burnSubtitleIndex,
-		audioSource:       videoWidth <= 0 && videoHeight <= 0 && picture == nil,
+		audioSource:       audioSource,
+		primed:            primed,
 		lastAccess:        s.now(),
 		priority:          priority,
 		degraded:          degraded,
@@ -1284,7 +1298,7 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 			session.resumeSeconds = hint.seconds
 		}
 	}
-	err := writeSessionPlaylists(dir, requestedRungs, durationSeconds, timeline)
+	err := writeSessionPlaylists(dir, requestedRungs, durationSeconds, timeline, primed)
 	if err == nil && picture != nil {
 		session.composed = picture
 		session.picture, err = writeLivePicture(filepath.Join(dir, ComposedRungID), *picture)
@@ -1349,7 +1363,7 @@ func rungsEqual(left, right []Rung) bool {
 // one subdirectory per rung, and (for known durations) the synthesized VOD
 // playlist each variant serves before a single segment exists. The audio-copy
 // rung's playlist follows timeline when there is one.
-func writeSessionPlaylists(dir string, rungs []Rung, durationSeconds int, timeline *keyframeTimeline) error {
+func writeSessionPlaylists(dir string, rungs []Rung, durationSeconds int, timeline *keyframeTimeline, primed primedGrid) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
@@ -1362,7 +1376,7 @@ func writeSessionPlaylists(dir string, rungs []Rung, durationSeconds int, timeli
 			return err
 		}
 		if durationSeconds > 0 {
-			playlist := vodPlaylist(durationSeconds, rungSegmentSeconds(rung))
+			playlist := vodPlaylist(durationSeconds, rungSegmentSeconds(rung), primed)
 			if rung.CopyVideo && timeline != nil {
 				playlist = timeline.playlist()
 			}
@@ -1720,6 +1734,37 @@ func segmentCount(durationSeconds, segmentSeconds int) int {
 	return (durationSeconds + segmentSeconds - 1) / segmentSeconds
 }
 
+// primedGrid is the uniform-grid layout of a primed AAC encode: its segment
+// count and the length of its last segment. The zero value means the layout
+// follows the integer duration.
+type primedGrid struct {
+	segments    int
+	tailSeconds float64
+}
+
+// primedAACGrid lays out the live encode of an audio-only source that keeps
+// its priming (ffmpeg.Rendition.KeepPriming) on a grid of segmentSeconds
+// (CORE-1863). The AAC encoder emits whole frames covering its priming and
+// the source's decoded samples, each frame stamped from zero at the source's
+// rate, and the segmenter starts a segment at the first frame at or past each
+// grid line. The layout needs the same facts as the gapless trim
+// (stampGapless); without them it is the zero value.
+func primedAACGrid(source store.MediaFileStream, audioProfile ffmpeg.AudioProfile, segmentSeconds int) primedGrid {
+	codec := normalizedAudioCodec(audioProfile.Codec)
+	if source.Type != "audio" || source.DecodedSamples <= 0 || !aacSampleRates[source.SampleRate] || (codec != "aac" && codec != "") || segmentSeconds <= 0 {
+		return primedGrid{}
+	}
+	rate := int64(source.SampleRate)
+	frames := (aacEncoderDelaySamples + source.DecodedSamples + aacFrameSamples - 1) / aacFrameSamples
+	gridSamples := int64(segmentSeconds) * rate
+	segments := (frames-1)*aacFrameSamples/gridSamples + 1
+	tailFirstFrame := ((segments-1)*gridSamples + aacFrameSamples - 1) / aacFrameSamples
+	return primedGrid{
+		segments:    int(segments),
+		tailSeconds: float64((frames-tailFirstFrame)*aacFrameSamples) / float64(rate),
+	}
+}
+
 // masterPlaylist renders the multi-rendition entry point. Only rungs the
 // source can back appear (rungsFor already enforced the never-upscale rule),
 // and BANDWIDTH is the encoder's enforced ceiling — the advertisement is
@@ -1743,7 +1788,7 @@ func masterPlaylist(rungs []Rung) string {
 // vodPlaylist synthesizes the full VOD playlist for a known duration so the
 // player has the complete seek range before a single segment exists. Version 7
 // with an #EXT-X-MAP line: segments are fMP4 (CMAF), initialized by init.mp4.
-func vodPlaylist(durationSeconds, segmentSeconds int) string {
+func vodPlaylist(durationSeconds, segmentSeconds int, primed primedGrid) string {
 	var b strings.Builder
 	b.WriteString("#EXTM3U\n")
 	b.WriteString("#EXT-X-VERSION:7\n")
@@ -1752,15 +1797,20 @@ func vodPlaylist(durationSeconds, segmentSeconds int) string {
 	b.WriteString("#EXT-X-PLAYLIST-TYPE:VOD\n")
 	b.WriteString(fmt.Sprintf("#EXT-X-MAP:URI=%q\n", initSegmentName))
 	count := segmentCount(durationSeconds, segmentSeconds)
+	if primed.segments > 0 {
+		count = primed.segments
+	}
 	for i := 0; i < count; i++ {
-		length := segmentSeconds
+		length := float64(segmentSeconds)
 		if i == count-1 {
-			if remainder := durationSeconds - segmentSeconds*(count-1); remainder > 0 {
-				length = remainder
+			if primed.segments > 0 {
+				length = primed.tailSeconds
+			} else if remainder := durationSeconds - segmentSeconds*(count-1); remainder > 0 {
+				length = float64(remainder)
 			}
 		}
-		b.WriteString(fmt.Sprintf("#EXTINF:%d.000,\n", length))
-		b.WriteString(fmt.Sprintf("seg%05d.m4s\n", i))
+		fmt.Fprintf(&b, "#EXTINF:%.3f,\n", length)
+		fmt.Fprintf(&b, "seg%05d.m4s\n", i)
 	}
 	b.WriteString("#EXT-X-ENDLIST\n")
 	return b.String()
