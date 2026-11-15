@@ -544,7 +544,6 @@ func TestEnrollThrottleTreatsIPv4MappedIPv6AsIPv4(t *testing.T) {
 //	command: go test ./internal/pairing ./internal/server -run 'TestEnrollDistributedFailures' -count=1
 //	worktree: f0a4db6e3d7b07c33561cd3d65b4ef33ddc7acd9 + these tests uncommitted
 //	exit 1, elapsed 5s, UTC 2026-08-20T11:32:02Z..11:32:07Z
-//	log: .agent-evidence/SECAUDIT-20260817-ENROLL-LOCKOUT-DOS-1-red-first.log (untracked, human copy)
 //	observed: pairing_test.go: Enroll("BAD0025", "[2001:db8:19::1]:5000") error = pairing attempts throttled, want ErrInvalidCode
 //	— the 26th distributed failure spent the former server-wide lane and denied
 //	unrelated enrollment (the DoS this ticket removes).
@@ -554,7 +553,6 @@ func TestEnrollThrottleTreatsIPv4MappedIPv6AsIPv4(t *testing.T) {
 //	command: go vet ./internal/pairing ./internal/server && go test ./internal/pairing ./internal/server -count=1
 //	worktree: f0a4db6e3d7b07c33561cd3d65b4ef33ddc7acd9 + this change
 //	vet exit 0; test exit 0, elapsed 48s, UTC 2026-08-20T11:33:51Z..11:34:39Z
-//	log: .agent-evidence/SECAUDIT-20260817-ENROLL-LOCKOUT-DOS-1-green.log (untracked, human copy)
 //	ok internal/pairing 6.745s; ok internal/server 46.504s
 //
 // TestEnrollThrottleUsesGlobalFailedRedemptionLane was removed in the same

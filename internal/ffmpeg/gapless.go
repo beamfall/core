@@ -19,6 +19,11 @@ import (
 // and discard_padding on its last packet is the end padding. The probe reads
 // only the first packets and the end of the file, so a long file costs it a
 // few kilobytes of I/O.
+//
+// FFmpeg 8.0 does not export the MP4 end padding as side data (FFmpeg 9
+// does): its MP4 demuxer only shortens the last packet by it. For AAC, whose frames are all
+// one length, the shortfall of the last packet against the one before it is
+// that padding (CORE-1039).
 
 // gaplessHeadPackets is how many leading packets the gapless probe reads.
 // The delay rides on the first packet; the rest are margin.
@@ -34,7 +39,7 @@ func gaplessArgs(path string, durationSeconds int) []string {
 	args := []string{
 		"-v", "error",
 		"-select_streams", "a",
-		"-show_entries", "stream=index,sample_rate,time_base:packet=stream_index,pts,duration:packet_side_data=skip_samples,discard_padding",
+		"-show_entries", "stream=index,codec_name,sample_rate,time_base:packet=stream_index,pts,duration:packet_side_data=skip_samples,discard_padding",
 		"-print_format", "json",
 	}
 	if durationSeconds > 2*gaplessTailSeconds {
@@ -82,6 +87,7 @@ type gaplessDocument struct {
 	} `json:"packets"`
 	Streams []struct {
 		Index      int    `json:"index"`
+		CodecName  string `json:"codec_name"`
 		SampleRate string `json:"sample_rate"`
 		TimeBase   string `json:"time_base"`
 	} `json:"streams"`
@@ -97,6 +103,9 @@ type gaplessStream struct {
 	timeBase          *big.Rat
 	first, prev, last gaplessPacket
 	packets           int
+	// fixedFrames marks a codec whose every frame but the last is one
+	// length, so a short last packet measures the end padding.
+	fixedFrames bool
 }
 
 // parseGapless reads the gapless probe's JSON into per-stream facts, keyed by
@@ -116,7 +125,7 @@ func parseGapless(data []byte) (map[int]gaplessFacts, error) {
 		if !ok || timeBase.Sign() <= 0 {
 			continue
 		}
-		streams[stream.Index] = &gaplessStream{facts: gaplessFacts{SampleRate: rate}, timeBase: timeBase}
+		streams[stream.Index] = &gaplessStream{facts: gaplessFacts{SampleRate: rate}, timeBase: timeBase, fixedFrames: stream.CodecName == "aac"}
 	}
 	for _, packet := range doc.Packets {
 		stream, ok := streams[packet.StreamIndex]
@@ -147,10 +156,28 @@ func parseGapless(data []byte) (map[int]gaplessFacts, error) {
 		if stream.packets == 0 {
 			continue
 		}
+		if stream.facts.PaddingSamples == 0 {
+			stream.facts.PaddingSamples = stream.shortLastFrame()
+		}
 		stream.facts.DecodedSamples = stream.decodedSamples()
 		facts[index] = stream.facts
 	}
 	return facts, nil
+}
+
+// shortLastFrame is how many samples a fixed-frame stream's last packet falls
+// short of the packet before it: the end padding a demuxer trimmed without
+// declaring it. It is 0 for a variable-frame codec, a whole last frame, or a
+// time base coarser than one sample (Matroska's milliseconds), whose rounded
+// durations would mismeasure it.
+func (s *gaplessStream) shortLastFrame() int64 {
+	if !s.fixedFrames || s.packets < 2 || !s.prev.timed || !s.last.timed || s.last.duration >= s.prev.duration {
+		return 0
+	}
+	if samplesPerTick := new(big.Rat).Mul(s.timeBase, big.NewRat(int64(s.facts.SampleRate), 1)); samplesPerTick.Num().Cmp(big.NewInt(1)) != 0 {
+		return 0
+	}
+	return ticksToSamples(s.prev.duration-s.last.duration, s.timeBase, s.facts.SampleRate)
 }
 
 // decodedSamples is the stream's content length from its first packet to the

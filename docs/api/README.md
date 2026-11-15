@@ -24,5 +24,4 @@ embedded at build time (`openapi.go`), so the live document is the one the contr
 `/api/graphql` is a private, server-authoritative client surface, not a stable third-party
 integration contract. It may change without the `/v1` compatibility window. Third-party tools must
 use the documented `/v1` OpenAPI surface. Internal-client maintainers can start with
-[`../architecture/ARCHITECTURE.md`](../architecture/ARCHITECTURE.md) and ADR-0040 from the
-`../adr/README.md` index.
+[`../architecture/ARCHITECTURE.md`](../architecture/ARCHITECTURE.md) and ADR-0040.

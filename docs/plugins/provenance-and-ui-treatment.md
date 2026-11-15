@@ -1,8 +1,7 @@
 # Plugin provenance and how your plugin is presented
 
 Author-facing summary of the rules that govern how the Console presents your plugin. The full
-decision, rationale, and rejected alternatives live in
-`../plans/roadmap/evidence/gcr-008-plugin-ui.md`.
+decision, rationale, and rejected alternatives are recorded with GCR-008.
 Binding sources: ADR-0196 §3/§4, ADR-0130 §1, ADR-0191 §2.1/§2.5.
 
 ## You cannot declare your own standing

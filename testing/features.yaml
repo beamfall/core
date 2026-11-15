@@ -1241,18 +1241,15 @@ features:
 # Elapsed seconds: 1
 # UTC start: 2026-08-21T01:59:04Z
 # UTC end: 2026-08-21T01:59:05Z
-# Log path: .agent-evidence/GATE-UICATALOG-FEATURE-REGISTRY-ANDROIDTV-1/registry-assertion.log
 # Command: make coverage-ratchet
 # Head SHA: f52d0e4e15e616e814ac816d9a607b97a9332d99
 # Exit code: 0
 # Elapsed seconds: 0
 # UTC start: 2026-08-21T01:59:22Z
 # UTC end: 2026-08-21T01:59:22Z
-# Log path: .agent-evidence/GATE-UICATALOG-FEATURE-REGISTRY-ANDROIDTV-1/coverage-ratchet.log
 # Command: python3 -c "import subprocess,yaml; before=yaml.safe_load(subprocess.check_output(['git','show','HEAD:testing/features.yaml'])); after=yaml.safe_load(open('testing/features.yaml')); old=[f['id'] for f in before['features']]; new=[f['id'] for f in after['features']]; assert set(new)-set(old)=={'ambient-display','burn-in-mitigation'}; assert set(old)-set(new)==set(); assert len(new)==len(old)+2"
 # Head SHA: f52d0e4e15e616e814ac816d9a607b97a9332d99
 # Exit code: 0
 # Elapsed seconds: 1
 # UTC start: 2026-08-21T01:59:49Z
 # UTC end: 2026-08-21T01:59:50Z
-# Log path: .agent-evidence/GATE-UICATALOG-FEATURE-REGISTRY-ANDROIDTV-1/id-diff.log

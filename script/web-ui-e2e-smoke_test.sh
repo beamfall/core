@@ -14,6 +14,51 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# CORE-1062: fixture start-up waits poll for their ready condition up to a load-scaled ceiling: 60s
+# at or below one runnable task per CPU, stretched by load1/ncpu above that, capped at 600s. A
+# fixture whose runner has already exited fails at once instead of waiting out the ceiling.
+# BEAMFALL_WEB_E2E_SMOKE_TEST_LOAD1 overrides load1 so the stretch itself can be exercised.
+startup_wait_seconds() {
+  python3 - "${BEAMFALL_WEB_E2E_SMOKE_TEST_LOAD1:-}" <<'PY'
+import os, sys
+load1 = float(sys.argv[1]) if sys.argv[1] else os.getloadavg()[0]
+per_cpu = load1 / (os.cpu_count() or 1)
+print(int(min(600.0, 60.0 * max(1.0, per_cpu))))
+PY
+}
+
+# wait_until_started PID CONDITION...: poll CONDITION (a command) every 50ms until it succeeds,
+# PID exits, or the load-scaled ceiling passes. Returns 0 only when CONDITION succeeded.
+wait_until_started() {
+  local pid="$1" deadline
+  shift
+  deadline=$((SECONDS + $(startup_wait_seconds)))
+  while ((SECONDS < deadline)); do
+    "$@" && return 0
+    kill -0 "${pid}" 2>/dev/null || break
+    sleep 0.05
+  done
+  "$@"
+}
+
+nonempty() { [[ -s "$1" ]]; }
+both_nonempty() { [[ -s "$1" && -s "$2" ]]; }
+
+if [[ "$(BEAMFALL_WEB_E2E_SMOKE_TEST_LOAD1=0 startup_wait_seconds)" != 60 ]] \
+  || [[ "$(BEAMFALL_WEB_E2E_SMOKE_TEST_LOAD1=$((4 * $(getconf _NPROCESSORS_ONLN))) startup_wait_seconds)" != 240 ]] \
+  || [[ "$(BEAMFALL_WEB_E2E_SMOKE_TEST_LOAD1=100000 startup_wait_seconds)" != 600 ]]; then
+  echo "FAIL web-ui-e2e-smoke start-up wait is not load-scaled (60s floor, load1/ncpu stretch, 600s cap)" >&2
+  exit 1
+fi
+sleep 30 &
+never_ready_pid=$!
+if BEAMFALL_WEB_E2E_SMOKE_TEST_LOAD1=0 wait_until_started "${never_ready_pid}" false; then
+  echo "FAIL web-ui-e2e-smoke start-up wait reported ready for a condition that never held" >&2
+  exit 1
+fi
+kill "${never_ready_pid}" 2>/dev/null || true
+wait "${never_ready_pid}" 2>/dev/null || true
+
 mkdir -p "${fixture}/bin" "${fixture}/script" "${fixture}/internal/web/app/e2e/lib"
 cp "${ROOT}/script/web-ui-e2e-smoke.sh" "${fixture}/script/web-ui-e2e-smoke.sh"
 cp "${ROOT}/script/test-process-supervisor.py" "${fixture}/script/test-process-supervisor.py"
@@ -377,12 +422,7 @@ BEAMFALL_WEB_E2E_PUBLISH_BARRIER="${publisher_barrier}" \
   "${fixture}/script/web-ui-e2e-smoke.sh" >"${fixture}/publisher-a.stdout" \
   2>"${fixture}/publisher-a.stderr" &
 publisher_a_pid=$!
-# CORE-0941: fixture start-up waits are 60s, not 5s; under host load a fixture needs longer than 5s to start.
-for _ in $(seq 1 1200); do
-  [[ -s "${publisher_barrier}.ready" ]] && break
-  sleep 0.05
-done
-if [[ ! -s "${publisher_barrier}.ready" ]]; then
+if ! wait_until_started "${publisher_a_pid}" nonempty "${publisher_barrier}.ready"; then
   echo "FAIL web-ui-e2e-smoke first concurrent publisher did not start" >&2
   exit 1
 fi
@@ -434,11 +474,7 @@ export BEAMFALL_PROCESS_SUPERVISOR_STARTUP_BARRIER="${startup_barrier}"
 "${fixture}/script/web-ui-e2e-smoke.sh" >"${fixture}/startup.stdout" \
   2>"${fixture}/startup.stderr" &
 runner_pid=$!
-for _ in $(seq 1 1200); do
-  [[ -s "${startup_barrier}.ready" ]] && break
-  sleep 0.05
-done
-if [[ ! -s "${startup_barrier}.ready" ]]; then
+if ! wait_until_started "${runner_pid}" nonempty "${startup_barrier}.ready"; then
   echo "FAIL web-ui-e2e-smoke supervisor startup fixture did not start" >&2
   exit 1
 fi
@@ -493,11 +529,8 @@ export SMOKE_TEST_DESCENDANT_PID_FILE="${fixture}/interrupt-descendant.pid"
 "${fixture}/script/web-ui-e2e-smoke.sh" >"${fixture}/interrupt.stdout" \
   2>"${fixture}/interrupt.stderr" &
 runner_pid=$!
-for _ in $(seq 1 1200); do
-  [[ -s "${SMOKE_TEST_LEADER_PID_FILE}" && -s "${SMOKE_TEST_DESCENDANT_PID_FILE}" ]] && break
-  sleep 0.05
-done
-if [[ ! -s "${SMOKE_TEST_LEADER_PID_FILE}" || ! -s "${SMOKE_TEST_DESCENDANT_PID_FILE}" ]]; then
+if ! wait_until_started "${runner_pid}" both_nonempty "${SMOKE_TEST_LEADER_PID_FILE}" \
+  "${SMOKE_TEST_DESCENDANT_PID_FILE}"; then
   echo "FAIL web-ui-e2e-smoke interruption fixture did not start" >&2
   sed -n '1,80p' "${fixture}/interrupt.stderr" >&2
   exit 1

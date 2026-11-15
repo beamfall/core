@@ -242,6 +242,18 @@ for signal in INT KILL TERM; do
   esac
   grep -Fq "status=$expected_status" "$abort_receipt"
 done
+# CORE-1815: a TERM sent to the whole step group from outside the gate, which
+# also leaves a TERM-ignoring residual for retirement to reap, is reported as
+# an interrupted run naming the signal rather than as a red step.
+status=0
+GATE_INFRASTRUCTURE_ABORT_FILE="$1/external.receipt" \
+  run_step "external TERM" bash -c 'trap "" TERM; sleep 30 & trap - TERM
+    kill -TERM -- "-$(ps -o pgid= -p $$ | tr -d " ")"; sleep 5' || status=$?
+[ "$status" -eq 75 ] || {
+  echo "external TERM returned $status, want infrastructure-abort 75" >&2
+  exit 1
+}
+grep -Fq "status=143" "$1/external.receipt"
 '''
 )
 PY
@@ -251,6 +263,14 @@ AGENT_EVIDENCE_DIR="$TMP/abort-evidence" \
 grep -q '^gate infrastructure aborted: step=silent INT status=130$' "$TMP/abort-err"
 grep -q '^gate infrastructure aborted: step=silent KILL status=137$' "$TMP/abort-err"
 grep -q '^gate infrastructure aborted: step=silent TERM status=143$' "$TMP/abort-err"
+grep -q '^gate infrastructure aborted: step=external TERM status=143$' "$TMP/abort-err"
+grep -q '^NOTE gate step wrapper received SIGTERM at .*; exit status 143$' "$TMP/abort-err"
+grep -q '^NOTE the gate had not signalled this step yet, so the sender is outside this gate run' "$TMP/abort-err"
+grep -q 'residual process group' "$TMP/abort-err"
+if grep -q '^NOTE gate step wrapper received' "$TMP/abort-out" "$TMP/abort-evidence/gate-failures"/* 2>/dev/null; then
+  echo "external signal note leaked outside the step log" >&2
+  exit 1
+fi
 if grep -q '^FAIL silent ' "$TMP/abort-err"; then
   echo "signal abort was reported as a red gate step" >&2
   exit 1
@@ -261,7 +281,7 @@ import sys
 
 records = [json.loads(line) for line in open(sys.argv[1], encoding="utf-8") if line.strip()]
 terminal = [record for record in records if record["status"] == "abort"]
-if [record["exit_code"] for record in terminal] != [130, 137, 143]:
+if [record["exit_code"] for record in terminal] != [130, 137, 143, 143]:
     raise SystemExit(f"signal abort metrics lost raw statuses: {terminal}")
 PY
 

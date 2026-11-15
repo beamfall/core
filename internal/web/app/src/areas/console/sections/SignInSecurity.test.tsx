@@ -27,14 +27,19 @@ afterEach(() => {
   cleanup();
 });
 
+// Every wait in the strict-mode flow awaits one specific state with the same
+// explicit ceiling: under full parallel load a render can take well over the
+// one-second default (CORE-1116).
+const LOADED = { timeout: 10_000 };
+
 async function switchToStrict(password: string) {
   render(
     <I18nProvider>
       <SignInSecurity />
     </I18nProvider>,
   );
-  const strict = await screen.findByRole("radio", { name: /Strict/ });
-  await vi.waitFor(() => expect(strict).toBeEnabled());
+  const strict = await screen.findByRole("radio", { name: /Strict/ }, LOADED);
+  await vi.waitFor(() => expect(strict).toBeEnabled(), LOADED);
   await userEvent.click(strict);
   if (password) await userEvent.type(screen.getByLabelText("Admin password"), password);
 }
@@ -42,7 +47,7 @@ async function switchToStrict(password: string) {
 // Home to Strict asks for confirmation first (CORE-1608).
 async function submitStrict() {
   await userEvent.click(screen.getByRole("button", { name: "Change sign-in security" }));
-  await userEvent.click(await screen.findByRole("button", { name: "Switch to Strict" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Switch to Strict" }, LOADED));
 }
 
 describe("SignInSecurity", () => {
@@ -139,27 +144,23 @@ describe("SignInSecurity", () => {
 
     await switchToStrict("wrong");
     await submitStrict();
-    expect(await screen.findByRole("alert")).toHaveTextContent("Too many attempts.");
+    expect(await screen.findByRole("alert", {}, LOADED)).toHaveTextContent("Too many attempts.");
     // The refusal moves focus to the alert on the next frame; typing before
     // that frame lands loses keystrokes to the alert under load.
-    await vi.waitFor(() => expect(screen.getByRole("alert")).toHaveFocus(), { timeout: 5_000 });
+    await vi.waitFor(() => expect(screen.getByRole("alert")).toHaveFocus(), LOADED);
 
     await userEvent.type(screen.getByLabelText("Admin password"), "again");
     await submitStrict();
-    // Generous waits: under full-suite load the second refusal can take over
-    // the default second to render.
-    await vi.waitFor(() => expect(setSignInSecurityMode).toHaveBeenCalledTimes(2), {
-      timeout: 5_000,
-    });
+    await vi.waitFor(() => expect(setSignInSecurityMode).toHaveBeenCalledTimes(2), LOADED);
     await vi.waitFor(
       () =>
         expect(screen.getByRole("alert")).toHaveTextContent(
           "Only a Manager device can change sign-in security.",
         ),
-      { timeout: 5_000 },
+      LOADED,
     );
     // The test budget must outlast its own waits above.
-  }, 15_000);
+  }, 60_000);
 
   it("shows an error with a retry and offers no save when the probe fails", async () => {
     vi.mocked(fetchSetupStatus)

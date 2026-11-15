@@ -15,6 +15,7 @@ import {
 import { type Browser, expect, markProfilePicked, type Page, test } from "./lib/test";
 import { coverUiStates } from "./lib/ui-state-coverage";
 import { CONSOLE_ROUTES, MANAGE_ROUTES, SCREENS, UI_STATE_GAPS } from "./lib/ui-states.mjs";
+import { onVisualParityHost } from "./lib/visual-parity";
 
 const isMobile = (projectName: string) => projectName === "ui-states-mobile";
 
@@ -331,14 +332,18 @@ test.describe("UI state inventory goldens", () => {
     await page.goto("/web/search");
     await expect(page.getByRole("heading", { level: 1, name: "Search" })).toBeVisible();
     await expect(page.getByPlaceholder("Search your libraries")).toBeVisible();
-    await expect(page.locator("main")).toHaveScreenshot("viewer-search-prompt.png", shot);
+    if (onVisualParityHost(testInfo, "viewer-search-prompt.png")) {
+      await expect(page.locator("main")).toHaveScreenshot("viewer-search-prompt.png", shot);
+    }
     coverUiStates(testInfo, "/search");
   });
 
   test("setup first step golden", async ({ page }, testInfo) => {
     await gotoScreen(page, "/setup");
     await expectOneHeading(page);
-    await expect(page).toHaveScreenshot("setup-first-step.png", shot);
+    if (onVisualParityHost(testInfo, "setup-first-step.png")) {
+      await expect(page).toHaveScreenshot("setup-first-step.png", shot);
+    }
     coverUiStates(testInfo, "/setup");
   });
 });
@@ -354,7 +359,9 @@ test.describe("UI state inventory enroll golden", () => {
     await expect(
       page.getByRole("heading", { level: 1, name: "Connect this browser" }),
     ).toBeVisible();
-    await expect(page).toHaveScreenshot("enroll-page.png", shot);
+    if (onVisualParityHost(testInfo, "enroll-page.png")) {
+      await expect(page).toHaveScreenshot("enroll-page.png", shot);
+    }
     coverUiStates(testInfo, "/enroll");
   });
 });

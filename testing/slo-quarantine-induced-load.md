@@ -143,5 +143,5 @@ Step A (sustained induced load) was **not** re-run during this repair pass: the
 host was running concurrent `make gate` lanes, and adding sustained
 oversubscription would have injected false reds into unrelated agents' gates.
 The loaded direction was captured earlier in this ticket on the same host and
-is recorded in `.agent-evidence/GATE-TRANSCODE-SLO-LOAD-FALSE-RED-1.txt`. Re-run
+is recorded in the GATE-TRANSCODE-SLO-LOAD-FALSE-RED-1 ticket evidence. Re-run
 step A on a quiesced host when the quarantine policy changes again.

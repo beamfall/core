@@ -183,8 +183,11 @@ register_pid "${sentinel_pid}"
 
 run_case() {
   local runner_name="$1" mode="$2" signal="${3:-}" expected="$4"
+  # CORE-1063: the load-attribution threshold defaults far above any real host load so the hang
+  # cases stay hangs on a loaded machine; 0 makes every watchdog timeout load-attributed.
+  local load_attribution="${5:-1000000}"
   local runner="${ROOT}/script/web-ui-e2e-${runner_name}.sh"
-  local case_dir="${TMP}/${runner_name}-${mode}-${signal:-none}"
+  local case_dir="${TMP}/${runner_name}-${mode}-${signal:-none}${5:+-load${5}}"
   local runner_pid watchdog_pid status=0 pid_file pid runner_timeout_seconds=15
   if [[ "${mode}" == hang ]]; then
     runner_timeout_seconds=1
@@ -220,6 +223,7 @@ run_case() {
     BEAMFALL_WEB_E2E_OUTPUT_DIR="${case_dir}/output" \
     RELEASE_NIGHTLY_EVIDENCE_DIR="${case_dir}/evidence" \
     BEAMFALL_WEB_E2E_RUNNER_TIMEOUT_SECONDS="${runner_timeout_seconds}" \
+    BEAMFALL_WEB_E2E_LOAD_ATTRIBUTION_PER_CPU="${load_attribution}" \
     BEAMFALL_WEB_E2E_TERM_GRACE_TICKS=2 \
     BEAMFALL_WEB_E2E_KILL_WAIT_TICKS=20 \
     python3 -c '
@@ -318,6 +322,15 @@ except ProcessLookupError:
 run_case smoke slow "" 0
 run_case smoke leftover "" 23
 run_case smoke livesibling "" 23
+# CORE-1063: the same silent hang on a host at or above the load threshold exits 125, not 124,
+# and names itself load-attributed in the retained diagnostics.
+run_case smoke hang "" 125 0
+if grep -q '^reason=timeout-load$' "${TMP}/smoke-hang-none-load0/output/runner-diagnostics.txt" \
+  && grep -q '(load-attributed)' "${TMP}/smoke-hang-none-load0/output/runner-diagnostics.txt"; then
+  ok "smoke load-attributed timeout is recorded distinctly"
+else
+  bad "smoke load-attributed timeout is recorded distinctly"
+fi
 
 for runner_name in smoke full; do
   run_case "${runner_name}" success "" 0
@@ -326,6 +339,12 @@ for runner_name in smoke full; do
   run_case "${runner_name}" hang INT 130
   run_case "${runner_name}" hang TERM 143
 done
+if grep -q '^reason=timeout$' "${TMP}/smoke-hang-none/output/runner-diagnostics.txt" \
+  && grep -q '(hang)' "${TMP}/smoke-hang-none/output/runner-diagnostics.txt"; then
+  ok "smoke timeout below the load threshold is recorded as a hang"
+else
+  bad "smoke timeout below the load threshold is recorded as a hang"
+fi
 
 for runner_name in smoke full; do
   reuse_dir="${TMP}/${runner_name}-reuse"
