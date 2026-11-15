@@ -1317,7 +1317,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 			// direct play the ceiling refused would have beaten it.
 			// An unknown-height bar refuses that rung whatever the ceiling.
 			if !barred && bitrateCeilingRefusedDirectPlay(media, file, streams, profile, selectedSubtitleIndex, ov) {
-				reason = ov.ceilingReason()
+				reason = ov.ceilingReason(media)
 			}
 			return decision{
 				media:          media,
@@ -1416,7 +1416,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	reason := "requires-transcode"
 	// Under an unknown-height bar no passthrough rung was open to the ceiling.
 	if !barred && bitrateCeilingForced(media, file, streams, profile, selectedSubtitleIndex, ov) {
-		reason = ov.ceilingReason()
+		reason = ov.ceilingReason(media)
 	}
 	return decision{
 		media:          media,

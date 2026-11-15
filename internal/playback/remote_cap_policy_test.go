@@ -147,6 +147,18 @@ func TestPolicyCeilingOverlay(t *testing.T) {
 	if looser := (quirkOverlay{}).withClientCeiling(2_000_000).withPolicyCeiling(3_000_000); looser.policyCeiling || looser.streamCeiling() != 2_000_000 {
 		t.Fatalf("looser cap overlay = %+v, want the viewer ceiling binding with the cap still held", looser)
 	}
+	// The viewer's ceiling exempts audio-only items, so the admin's cap names
+	// itself for one even when the viewer's ceiling is tighter.
+	tighterViewer := (quirkOverlay{}).withClientCeiling(1_000_000).withPolicyCeiling(2 * ladderFloorBandwidth())
+	if got := tighterViewer.ceilingReason(media); got != policyBitrateCeilingReason {
+		t.Fatalf("audio-only ceiling reason = %q, want %s", got, policyBitrateCeilingReason)
+	}
+	if got := tighterViewer.ceilingCause(media); got != PlayReasonPolicyBitrate {
+		t.Fatalf("audio-only ceiling cause = %q, want %s", got, PlayReasonPolicyBitrate)
+	}
+	if got := tighterViewer.ceilingReason(store.Media{Class: store.MediaClassVideo}); got != bitrateCeilingReason {
+		t.Fatalf("video ceiling reason = %q, want %s", got, bitrateCeilingReason)
+	}
 	if base := both.withoutClientCeiling(); base.streamCeiling() != 0 {
 		t.Fatalf("withoutClientCeiling streamCeiling = %d, want 0", base.streamCeiling())
 	}
