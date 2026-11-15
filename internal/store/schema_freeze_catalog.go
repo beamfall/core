@@ -78,6 +78,10 @@ package store
 //     with an admin-set sort title (CORE-1715). The sort-title table is read
 //     once per catalog-plane library browse, by library, and is empty unless an
 //     admin set a sort title; neither touches an entity-query path.
+//   - 0120 adds api_token.access, the cli/diagnostics/agent tier that bounds
+//     the Console fields a token runs (CORE-2095). It is read once per
+//     token-authenticated request by the existing token-hash lookup; no index
+//     and no entity-query table changes.
 //
 // `make bench` passed on 2026-08-11 for the 0108 bump; the worst measured
 // query was search/fts/revealed at 30.875084 ms against a 60 ms budget (P95
@@ -94,4 +98,4 @@ package store
 // query was search/fts/revealed at 50.56275 ms against a 60 ms budget, on a
 // loaded shared host. 0113 adds no index or column on any benched table: the
 // provenance table is read only by the media(id) detail read.
-const schemaFreezeCatalogMigrations = 115
+const schemaFreezeCatalogMigrations = 116
