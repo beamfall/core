@@ -1,10 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Route, Routes, useLocation, useParams } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchEntity, fetchMediaForEntity } from "@/lib/graphql";
 import type { EntityInfo, Layout, SourceItem } from "@/lib/graphql/types";
+import { I18nProvider } from "@/lib/i18n";
 import { clearViewerCache, readViewerCache, writeViewerCache } from "@/lib/viewerCache";
 import { notifyEngagementChanged } from "../actions/engagementSync";
 import { sectionCacheKey } from "../components/HydratedSection";
@@ -24,7 +25,7 @@ vi.mock("@/lib/session", () => ({
   useSession: () => ({ manifest: { layouts: mocks.layouts } }),
   useViewerIdentity: () => mocks.identity,
 }));
-vi.mock("@/lib/i18n", () => ({ useDisplayLocale: () => "en" }));
+vi.mock("../player/preload", () => ({ preloadPlayer: vi.fn() }));
 vi.mock("@/components/chrome/AppShell", () => ({
   AppShell: ({ children }: { children: ReactNode }) => <main>{children}</main>,
 }));
@@ -44,7 +45,7 @@ const entity: EntityInfo = {
   id: "e1",
   kind: "Series",
   title: "Server title",
-  fields: [{ name: "Year", type: "string", value: "2001" }],
+  fields: [{ name: "Year", type: "string", value: "2001", label: { en: "Year" } }],
 };
 const related: SourceItem = {
   id: "m1",
@@ -53,13 +54,26 @@ const related: SourceItem = {
   artwork: { poster: "" },
 };
 
+function PlayerProbe() {
+  const { mediaId } = useParams();
+  const location = useLocation();
+  return (
+    <output aria-label="player">
+      {mediaId} {JSON.stringify(location.state)}
+    </output>
+  );
+}
+
 function renderEntity(state?: unknown) {
   return render(
-    <MemoryRouter initialEntries={[{ pathname: "/entity/e1", state }]}>
-      <Routes>
-        <Route path="/entity/:entityId" element={<EntityPage />} />
-      </Routes>
-    </MemoryRouter>,
+    <I18nProvider>
+      <MemoryRouter initialEntries={[{ pathname: "/entity/e1", state }]}>
+        <Routes>
+          <Route path="/entity/:entityId" element={<EntityPage />} />
+          <Route path="/watch/:mediaId" element={<PlayerProbe />} />
+        </Routes>
+      </MemoryRouter>
+    </I18nProvider>,
   );
 }
 
@@ -272,5 +286,127 @@ describe("EntityPage related Entities", () => {
     const box = await screen.findByText("Linked box");
     const layout = screen.getByText("detail layout rack-detail");
     expect(box.compareDocumentPosition(layout) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+// feature:container-entity-page (CORE-1786)
+describe("EntityPage container lockup", () => {
+  const child = (id: string, title: string, engagement?: SourceItem["engagement"]): SourceItem => ({
+    id,
+    kind: "media",
+    title,
+    artworkSlots: { thumb: `/art/${id}` },
+    engagement,
+  });
+  const children = [
+    child("c1", "First part", { durationSeconds: 2700, completed: true }),
+    child("c2", "Second part", { positionSeconds: 600, durationSeconds: 3000 }),
+    child("c3", "Third part", { durationSeconds: 5400 }),
+  ];
+  const container: EntityInfo = {
+    id: "e1",
+    kind: "set",
+    kindDisplayName: { en: "Collection" },
+    title: "Server title",
+    fields: [
+      { name: "studio", type: "text", value: "North", label: { en: "Studio" } },
+      { name: "sort_index", type: "text", value: "7" },
+    ],
+  };
+
+  it("shows a lockup with the plugin's kind label and viewer-facing fields only", async () => {
+    vi.mocked(fetchEntity).mockResolvedValue(container);
+    vi.mocked(fetchMediaForEntity).mockResolvedValue(children);
+    renderEntity();
+    await act(async () => {});
+
+    const facts = screen.getByRole("list", { name: "About this item" });
+    expect(within(facts).getByText("Collection")).toBeInTheDocument();
+    expect(screen.getByText("Studio")).toBeInTheDocument();
+    expect(screen.queryByText("sort_index")).toBeNull();
+    expect(screen.queryByText("7")).toBeNull();
+  });
+
+  it("offers one accent-filled action that resumes the next-up child with the container as queue", async () => {
+    vi.mocked(fetchEntity).mockResolvedValue(container);
+    vi.mocked(fetchMediaForEntity).mockResolvedValue(children);
+    const { container: root } = renderEntity();
+    await act(async () => {});
+
+    const filled = root.querySelectorAll(".bg-primary");
+    expect(filled).toHaveLength(1);
+    const resume = screen.getByRole("button", { name: "Resume Second part" });
+    expect(filled[0]).toBe(resume);
+    expect(resume).toHaveClass("h-11");
+    expect(screen.getByText("Next up: Second part")).toBeInTheDocument();
+
+    fireEvent.click(resume);
+    const player = screen.getByRole("status", { name: "player" }).textContent ?? "";
+    expect(player.startsWith("c2 ")).toBe(true);
+    const state = JSON.parse(player.slice(3));
+    expect(state.title).toBe("Second part");
+    expect(state.queueIdentity).toBe(identity);
+    expect(state.queue.map((item: { id: string }) => item.id)).toEqual(["c1", "c2", "c3"]);
+  });
+
+  it("plays the first unfinished child when none is in progress", async () => {
+    vi.mocked(fetchEntity).mockResolvedValue(container);
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([
+      children[0],
+      child("c3", "Third part", { durationSeconds: 5400 }),
+    ]);
+    renderEntity();
+    await act(async () => {});
+    expect(screen.getByRole("button", { name: "Play Third part" })).toHaveTextContent("Play");
+  });
+
+  it("lists the children as numbered links in order with runtime, progress and watched state", async () => {
+    vi.mocked(fetchEntity).mockResolvedValue(container);
+    vi.mocked(fetchMediaForEntity).mockResolvedValue(children);
+    renderEntity();
+    await act(async () => {});
+
+    const list = screen.getByRole("list", { name: "In Server title" });
+    expect(list.tagName).toBe("OL");
+    const links = within(list).getAllByRole("link");
+    // One link per child in document order, none with a positive tabindex, so
+    // keyboard focus follows the visual order.
+    expect(links.map((link) => link.getAttribute("href"))).toEqual([
+      "/media/c1",
+      "/media/c2",
+      "/media/c3",
+    ]);
+    for (const link of links) expect(link.getAttribute("tabindex")).toBeNull();
+    expect(links[0]).toHaveTextContent("1First part45 minWatched");
+    expect(links[2]).toHaveTextContent("3Third part1 h 30 min");
+    expect(within(links[1]).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "20");
+    expect(links[0].querySelector("img")?.getAttribute("src")).toBe("/art/c1?bucket=w320");
+  });
+
+  it("groups children by kind in first-seen order", async () => {
+    vi.mocked(fetchEntity).mockResolvedValue(container);
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([
+      children[0],
+      { ...children[1], kind: "extra" },
+      children[2],
+    ]);
+    renderEntity();
+    await act(async () => {});
+
+    const headings = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
+    expect(headings).toEqual(["media", "extra"]);
+    expect(
+      within(screen.getByRole("list", { name: "media" }))
+        .getAllByRole("link")
+        .map((link) => link.getAttribute("href")),
+    ).toEqual(["/media/c1", "/media/c3"]);
+  });
+
+  it("has no primary action when nothing in the container can play", async () => {
+    vi.mocked(fetchEntity).mockResolvedValue(container);
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([]);
+    const { container: root } = renderEntity();
+    await act(async () => {});
+    expect(root.querySelectorAll(".bg-primary")).toHaveLength(0);
   });
 });

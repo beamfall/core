@@ -4,14 +4,14 @@ import { viewerCacheEntries } from "@/lib/viewerCache";
 
 // Data for the Media detail page (/media/:mediaId, CORE-1144).
 //
-// The server's media(id) carries no artwork and no playback position, so the
-// page paints those only from the card that opened it. The card travels in
-// navigation state bound to the identity that rendered it, as entity previews
-// do (entityPreview.ts): a Back after relock or a Profile switch must not show
+// The server's media(id) carries the item's artwork slots and credits but no
+// playback position, so the page paints progress only from the card that
+// opened it. The card travels in navigation state bound to the identity that
+// rendered it, as entity previews do (entityPreview.ts): a Back after relock or a Profile switch must not show
 // another identity's item.
 
 const MEDIA_QUERY =
-  "query Media($id: String!) { media(id: $id) { id title summary year favorited } }";
+  "query Media($id: String!) { media(id: $id) { id title summary year favorited artworkSlots credits { entityID title kind kindDisplayName archetype relation } } }";
 const MEDIA_FIELDS_QUERY =
   "query MediaFields($mediaID: String!) { mediaFields(mediaID: $mediaID) { name type value label } }";
 

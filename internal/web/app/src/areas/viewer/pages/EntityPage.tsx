@@ -1,12 +1,14 @@
+import { Play } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useLocation, useParams } from "react-router";
+import { useLocation, useNavigate, useParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
+import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isAuthRejection } from "@/lib/api";
 import { displayString } from "@/lib/display";
 import { fetchEntity, fetchMediaForEntity } from "@/lib/graphql";
 import type { EntityInfo, Layout, Section, SourceItem } from "@/lib/graphql/types";
-import { useDisplayLocale } from "@/lib/i18n";
+import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
 import {
   clearViewerCache,
@@ -16,15 +18,21 @@ import {
 } from "@/lib/viewerCache";
 import { ItemActions } from "../actions";
 import { useEngagementEpoch } from "../actions/engagementSync";
+import { ContainerChildren } from "../components/ContainerChildren";
 import { findCachedSectionItem } from "../components/HydratedSection";
 import { LayoutView } from "../components/LayoutView";
 import { MediaItemCard } from "../components/MediaItemCard";
 import { NotAvailable } from "../components/NotAvailable";
 import type { SeeAllTarget } from "../components/SectionView";
 import { ViewerActions } from "../components/ViewerActions";
+import { nextUpChild } from "../lib/containerChildren";
 import { readEntityPreview } from "../lib/entityPreview";
 import { seeAllTargetFor } from "../lib/seeall";
-import { playQueueOf } from "../lib/watchQueue";
+import { viewerFacingFields } from "../lib/viewerFields";
+import { type PlayerNavState, playQueueOf, queueWindow } from "../lib/watchQueue";
+import { preloadPlayer } from "../player/preload";
+import "./media-detail.css";
+import "./entity-detail.css";
 
 const entityCacheKey = (id: string) => `entity:${id}`;
 const entityMediaCacheKey = (id: string) => `entity-media:${id}`;
@@ -39,6 +47,13 @@ const entityMediaCacheKey = (id: string) => `entity-media:${id}`;
 // so an Entity linked only to other Entities never opens empty. `kind` is a
 // plugin display label, rendered as text only (invariant #1 / #5).
 //
+// Container lockup (CORE-1786): the header is the media detail stage (title,
+// a kind chip, viewer-facing fields only) with one accent-filled action that
+// plays or resumes the next-up child of the ordered Media list, and the list
+// itself renders as ContainerChildren, grouped by kind in order (list rows on
+// a phone). Related Entities stay cards, so a container's own containers read
+// as one card each.
+//
 // Instant paint: an entity (and its related list) already loaded for the bound
 // identity renders from the identity-scoped viewer cache and revalidates
 // behind it; otherwise the header paints a title from identity-matched
@@ -52,6 +67,8 @@ export function EntityPage() {
   const { manifest } = useSession();
   const identity = useViewerIdentity();
   const displayLocale = useDisplayLocale();
+  const t = useT();
+  const navigate = useNavigate();
   const [entity, setEntity] = useState<EntityInfo | null>(
     () => readViewerCache<EntityInfo>(identity, entityCacheKey(entityId)) ?? null,
   );
@@ -62,10 +79,13 @@ export function EntityPage() {
   );
 
   const fallbackQueue = useMemo(() => (fallback ? playQueueOf(fallback) : undefined), [fallback]);
+  const nextUp = useMemo(() => (fallback ? nextUpChild(fallback) : null), [fallback]);
 
   const navPreview = readEntityPreview(location.state, identity, entityId);
   const previewTitle = navPreview?.title ?? findCachedSectionItem(identity, entityId)?.title ?? "";
   const kindHint = entity?.kind ?? navPreview?.kind;
+  const kindLabel = displayString(entity?.kindDisplayName, displayLocale) || kindHint;
+  const fields = entity ? viewerFacingFields(entity.fields) : [];
   const layouts = manifest?.layouts || [];
   const detailLayout: Layout | null =
     (kindHint && layouts.find((l) => l.role === "detail" && l.entityKind === kindHint)) || null;
@@ -142,6 +162,18 @@ export function EntityPage() {
     };
   }, [identity, entityId, needsFallback, engagementEpoch]);
 
+  // Plays or resumes the next-up child with the container's order as the queue.
+  function playNext() {
+    if (!nextUp) return;
+    const { item } = nextUp;
+    const state: PlayerNavState = { title: item.title };
+    if (identity && fallbackQueue && fallbackQueue.length > 0) {
+      state.queue = queueWindow(fallbackQueue, item.id);
+      state.queueIdentity = identity;
+    }
+    navigate(`/watch/${encodeURIComponent(item.id)}`, { state });
+  }
+
   function buildSeeAll(section: Section): SeeAllTarget {
     return seeAllTargetFor({
       section,
@@ -169,23 +201,53 @@ export function EntityPage() {
       {notFound && !loading && <NotAvailable />}
       {!notFound && (entity || previewTitle) && (
         <div className="flex flex-col gap-8">
-          <header className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1">
-              <h1 className="bf-page-title">{entity?.title ?? previewTitle}</h1>
-              {kindHint && <p className="bf-entity-kind">{kindHint}</p>}
-            </div>
-            {!entity && <Skeleton aria-hidden className="bf-shimmer h-10 w-80 max-w-full" />}
-            {entity && <ItemActions target={{ entityID: entityId }} />}
-            {entity && entity.fields.length > 0 && (
-              <dl className="bf-metadata">
-                {entity.fields.map((field, i) => (
-                  <div key={`${field.name}-${i}`} className="contents">
-                    <dt>{field.name}</dt>
-                    <dd>{field.value}</dd>
+          <header className="bf-detail-stage">
+            <div className="bf-detail-lockup bf-entity-lockup">
+              <div className="bf-detail-copy">
+                <h1 className="bf-page-title">{entity?.title ?? previewTitle}</h1>
+                {kindLabel && (
+                  <ul className="bf-detail-facts" aria-label={t("mediaDetailFacts")}>
+                    <li className="bf-detail-fact bf-entity-kind">{kindLabel}</li>
+                  </ul>
+                )}
+                {!entity && <Skeleton aria-hidden className="bf-shimmer h-10 w-80 max-w-full" />}
+                {nextUp && (
+                  <div className="bf-detail-actions">
+                    {/* The one accent-filled action: the next-up child. */}
+                    <button
+                      type="button"
+                      className={`${buttonVariants({ size: "lg" })} bf-detail-play`}
+                      aria-label={t(
+                        nextUp.resume ? "mediaDetailResumeLabel" : "mediaDetailPlayLabel",
+                        {
+                          title: nextUp.item.title,
+                        },
+                      )}
+                      onClick={playNext}
+                      onPointerEnter={preloadPlayer}
+                      onFocus={preloadPlayer}
+                    >
+                      <Play aria-hidden />
+                      {nextUp.resume ? t("mediaDetailResume") : t("play")}
+                    </button>
+                    <p className="bf-entity-next">
+                      {t("entityDetailNextUp", { title: nextUp.item.title })}
+                    </p>
                   </div>
-                ))}
-              </dl>
-            )}
+                )}
+                {entity && <ItemActions target={{ entityID: entityId }} />}
+                {fields.length > 0 && (
+                  <dl className="bf-metadata">
+                    {fields.map((field, i) => (
+                      <div key={`${field.name}-${i}`} className="contents">
+                        <dt>{displayString(field.label, displayLocale)}</dt>
+                        <dd>{field.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+              </div>
+            </div>
           </header>
 
           {entity?.relatedEntities?.map((group) => (
@@ -217,17 +279,10 @@ export function EntityPage() {
           ) : (
             fallback &&
             fallback.length > 0 && (
-              <ul className="bf-grid">
-                {fallback.map((item, index) => (
-                  <MediaItemCard
-                    key={`${item.id}-${index}`}
-                    item={item}
-                    posInSet={index + 1}
-                    setSize={fallback.length}
-                    queue={fallbackQueue}
-                  />
-                ))}
-              </ul>
+              <ContainerChildren
+                items={fallback}
+                label={t("entityDetailChildrenLabel", { title: entity?.title ?? previewTitle })}
+              />
             )
           )}
         </div>

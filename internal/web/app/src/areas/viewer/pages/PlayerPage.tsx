@@ -49,6 +49,7 @@ import {
   readPlayerNavState,
   withQueueClasses,
 } from "../lib/watchQueue";
+import { readWatchPartyIntent } from "../lib/watchTogether";
 import { AudioStage } from "../player/AudioStage";
 import { KaraokeControls } from "../player/KaraokeControls";
 import { PlayerTransport } from "../player/PlayerTransport";
@@ -138,7 +139,9 @@ function FeaturePlayer() {
   const identity = useViewerIdentity();
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [partyOpen, setPartyOpen] = useState(false);
+  // Watch together on the detail page (CORE-1764) arrives with the party started
+  // and asks for the invite panel open.
+  const [partyOpen, setPartyOpen] = useState(() => readWatchPartyIntent(location.state));
   const [clientPrefs, setClientPrefs] = useState<ClientPref[]>([]);
   const [media, setMedia] = useState<GenericMediaInfo | null>(null);
 
