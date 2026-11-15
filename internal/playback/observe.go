@@ -20,10 +20,14 @@ const (
 // Play reasons: the closed vocabulary saying why a session is not direct
 // playing. The empty reason means nothing stood in the way.
 const (
-	PlayReasonContainer       = "container"
-	PlayReasonVideoCodec      = "video-codec"
-	PlayReasonResolution      = "resolution"
-	PlayReasonBitrate         = "bitrate"
+	PlayReasonContainer  = "container"
+	PlayReasonVideoCodec = "video-codec"
+	PlayReasonResolution = "resolution"
+	PlayReasonBitrate    = "bitrate"
+	// PlayReasonPolicyBitrate is a ceiling-forced verdict whose ceiling is
+	// the admin's remote bitrate cap (CORE-1717), not the client's own, so
+	// the dashboard can tell the two apart (CORE-1854).
+	PlayReasonPolicyBitrate   = "policy-bitrate"
 	PlayReasonVideoProfile    = "video-profile"
 	PlayReasonHDR             = "hdr"
 	PlayReasonAudio           = "audio"
@@ -197,15 +201,24 @@ func directPlayRefusalCause(media store.Media, file store.MediaFile, streams []s
 	base := ov.withoutClientCeiling()
 	if ov.clientMaxBitrate > 0 && dolbyVisionP7BaseLayer(media, file, streams, profile, selectedSubtitleIndex, base) &&
 		!dolbyVisionP7BaseLayer(media, file, streams, profile, selectedSubtitleIndex, ov) {
-		return PlayReasonBitrate
+		return ov.ceilingCause()
 	}
 	if cause := deviceRefusalCause(media, file, streams, profile, selectedSubtitleIndex, base); cause != "" {
 		return cause
 	}
 	if ov.vetoesVideoPassthrough(media, file, streams) {
-		return PlayReasonBitrate
+		return ov.ceilingCause()
 	}
 	return ""
+}
+
+// ceilingCause is the dashboard cause for a refusal the streaming ceiling
+// alone forced, naming the admin's remote cap apart from the client's.
+func (ov quirkOverlay) ceilingCause() string {
+	if ov.policyCeiling {
+		return PlayReasonPolicyBitrate
+	}
+	return PlayReasonBitrate
 }
 
 // deviceRefusalCause is directPlayRefusalCause under an overlay that carries

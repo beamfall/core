@@ -123,7 +123,10 @@ const REASON: Record<string, StringKey> = {
   container: "playReasonContainer",
   "video-codec": "playReasonVideoCodec",
   resolution: "playReasonResolution",
+  // The client/device bitrate limit; "policy-bitrate" is the admin's remote
+  // cap forcing the transcode instead (CORE-1854).
   bitrate: "playReasonBitrate",
+  "policy-bitrate": "playReasonPolicyBitrate",
   "video-profile": "playReasonVideoProfile",
   hdr: "playReasonHdr",
   audio: "playReasonAudio",
