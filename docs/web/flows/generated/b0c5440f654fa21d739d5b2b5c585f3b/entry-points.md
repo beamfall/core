@@ -1,6 +1,6 @@
 # Manage trash: restore, purge and reversible activity — entry-points
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:f3074f8cb405f1a052c7d184019fe007 -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.

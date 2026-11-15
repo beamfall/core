@@ -1,6 +1,6 @@
 # First\-run setup wizard shell: token intake, step navigation — technical-deep-dive
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:98d0e1f102d40ce83c4a6d1ab1865d73 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -16,6 +16,11 @@ Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:1391; symbol: FIELD; s
 Declared member: source declares FIELD\_LABEL; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:1392; symbol: FIELD\_LABEL; span SHA256: 05f3b7ec60805c9ccc462ebdab9e7ec68c11d0e14073c7c8fc6638ece4ec9aee.
+
+<!-- flowdocs:paragraph:d72b65fae8c662814eb399524e52930c -->
+Declared member: source declares RAIL\_KEYS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:63; symbol: RAIL\_KEYS; span SHA256: 804954213aa2717a6c23209fede7901c533f7b7fd28f7c125a105f66b861217d.
 
 <!-- flowdocs:paragraph:59119b644e0e6e73ba32d1c39b0c10f9 -->
 Declared member: source declares STEP\_LIBRARY; membership is caller\-declared, not runtime evidence\.

@@ -1,11 +1,11 @@
 # Console libraries: add a library, roots, preview clips, skip detection — functional-overview
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:9ea0d51f81e626208718abffa4829189 -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
 
-Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:455; symbol: Libraries; span SHA256: dcacd18f36956aa52c5168ebf0196dd16fafd6bb483c3909245351f3fcd05dc3.
+Source: internal/web/app/src/areas/console/sections/AddLibrary\.tsx:28; symbol: AddLibrary; span SHA256: ab9e95397d7ea3dbc166cab13fb5e5af59c6450dda53e1165bc373941260ee2f.
 
 <!-- flowdocs:paragraph:3c7c17b0083548e543aaa3a84677f71c -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.

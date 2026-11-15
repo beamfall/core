@@ -1,6 +1,6 @@
 # Viewer full library browse: sort, filters, grouping, virtual grid — technical-deep-dive
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:efe4d491b636734d616308a092ec5ff6 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -46,6 +46,11 @@ Source: internal/web/app/src/areas/viewer/components/useVirtualGrid\.ts:37; symb
 Declared member: source declares readGap; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/viewer/components/useVirtualGrid\.ts:29; symbol: readGap; span SHA256: adb95155ecf3544420d1f7fd19c2cf4f8422241e75f14e68b50941f257711f21.
+
+<!-- flowdocs:paragraph:2f670c7281f556cab0af00838999a907 -->
+Declared member: source declares readCardHeight; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/components/useVirtualGrid\.ts:52; symbol: readCardHeight; span SHA256: 8beb8aee3b5aa668f3a33e6730964df96ac436b38d37fe214367893f046f6eff.
 
 <!-- flowdocs:paragraph:e968b85fc2065c078f5ea648a66e72ec -->
 Declared member: source declares useVirtualGrid; membership is caller\-declared, not runtime evidence\.

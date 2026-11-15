@@ -1,6 +1,6 @@
 # Playback engine: playback\-info, capability probe, HLS selection and recovery, progress reports — technical-deep-dive
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:0dba614742002a4ca6c0bbcbdd7b4dda -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -311,6 +311,11 @@ Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:386; symbol: STRE
 Declared member: source declares SwitchResult; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:344; symbol: SwitchResult; span SHA256: 40ef3d399a9e06726abc902dea0dadcada6cdab821142e5cb586353cb559cf55.
+
+<!-- flowdocs:paragraph:81917910a4e81c0386ed9d68ceb438c7 -->
+Declared member: source declares TrackPreferencePolicy; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/streamTracks\.ts:48; symbol: TrackPreferencePolicy; span SHA256: d93691a0a96503dd40d8f5caab19877a04aa3aa9f7a62c7f6ddc3161f0b33ccb.
 
 <!-- flowdocs:paragraph:daa19b8fe82d10db60838e9f1a615c71 -->
 Declared member: source declares applyTrackPreferences; membership is caller\-declared, not runtime evidence\.

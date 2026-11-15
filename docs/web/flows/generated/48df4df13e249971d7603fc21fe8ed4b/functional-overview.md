@@ -1,6 +1,6 @@
 # Manage navigation overrides: nodes, theme, sections, history — functional-overview
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1deeb1b83c7305a82bf12318207101ef -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.

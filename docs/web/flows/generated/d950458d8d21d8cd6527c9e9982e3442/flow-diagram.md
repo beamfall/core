@@ -1,6 +1,6 @@
 # Player route: lazy load, timestamp links, info overlay, audio stage — flow-diagram
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:8f08f6465223fb0da070854aacfafa6d -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -28,15 +28,15 @@ sequenceDiagram
     Note over S,U: Source contains call then in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 111 - order unresolved
     Note over S,U: Source contains call setDecided in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 112 - order unresolved
     Note over S,U: Source contains call abort in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 114 - order unresolved
-    Note over S,U: Source contains call URL in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 866 - order unresolved
-    Note over S,U: Source contains call set in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 870 - order unresolved
-    Note over S,U: Source contains call String in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 870 - order unresolved
-    Note over S,U: Source contains call max in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 870 - order unresolved
-    Note over S,U: Source contains call floor in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 870 - order unresolved
-    Note over S,U: Source contains call trim in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 860 - order unresolved
-    Note over S,U: Source contains call Number in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 861 - order unresolved
-    Note over S,U: Source contains call isFinite in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 862 - order unresolved
-    Note over S,U: Source contains call floor in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 862 - order unresolved
+    Note over S,U: Source contains call URL in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 869 - order unresolved
+    Note over S,U: Source contains call set in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 873 - order unresolved
+    Note over S,U: Source contains call String in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 873 - order unresolved
+    Note over S,U: Source contains call max in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 873 - order unresolved
+    Note over S,U: Source contains call floor in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 873 - order unresolved
+    Note over S,U: Source contains call trim in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 863 - order unresolved
+    Note over S,U: Source contains call Number in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 864 - order unresolved
+    Note over S,U: Source contains call isFinite in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 865 - order unresolved
+    Note over S,U: Source contains call floor in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 865 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/areas/viewer/player/AudioStage.tsx at line 23 - order unresolved
     Note over S,U: Source contains call creditLine in internal/web/app/src/areas/viewer/player/AudioStage.tsx at line 25 - order unresolved
     Note over S,U: Source contains call creditLine in internal/web/app/src/areas/viewer/player/AudioStage.tsx at line 26 - order unresolved

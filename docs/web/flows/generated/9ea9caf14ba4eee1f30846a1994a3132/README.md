@@ -1,6 +1,6 @@
 # Manage unmatched records: inbox, fix match, suppression — readme
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:42d4f466c1cea153881a23233c4af8e4 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -13,8 +13,6 @@ Security summaries: not collected; absence is not a clean security finding.
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
 - Declared inventory flows: structural and lexical relations between flows are not derived\.
-
-- Declared inventory members that do not resolve are listed in generation\.json inventory\.flows\[\]\.unresolved and in their flow README\.
 
 - Gitlinks are opaque superproject identities; their contents are not inspected\.
 

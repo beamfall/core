@@ -1,6 +1,6 @@
 # Console live sessions and host graphs — entities
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:3f1941b51c6e3716d10080646c77ce37 -->
 Runtime entities and persistence effects are unresolved; lexical calls are listed separately\.

@@ -1,16 +1,31 @@
 # Console libraries: add a library, roots, preview clips, skip detection — technical-deep-dive
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b339e8eea91d08cbbdda27d052e4f8fd -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:455; symbol: Libraries; span SHA256: dcacd18f36956aa52c5168ebf0196dd16fafd6bb483c3909245351f3fcd05dc3.
+Source: internal/web/app/src/areas/console/sections/AddLibrary\.tsx:28; symbol: AddLibrary; span SHA256: ab9e95397d7ea3dbc166cab13fb5e5af59c6450dda53e1165bc373941260ee2f.
+
+<!-- flowdocs:paragraph:61bf0c257d7cbcedf34252c899a66abd -->
+Declared member: source declares AddLibrary; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/AddLibrary\.tsx:28; symbol: AddLibrary; span SHA256: ab9e95397d7ea3dbc166cab13fb5e5af59c6450dda53e1165bc373941260ee2f.
+
+<!-- flowdocs:paragraph:c09a762524390286dd3d15eeb191ec50 -->
+Declared member: source declares CARD; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/libraryStyles\.ts:4; symbol: CARD; span SHA256: 8f865116727ff6484bb95e5462188dccaa44c096213258108772e8412bbe746f.
 
 <!-- flowdocs:paragraph:63449bfcd2af54473e45deb360dbfd5a -->
 Declared member: source declares LibraryCard; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:110; symbol: LibraryCard; span SHA256: 0eef856b8120a2f9220360db393e826a75027ce143207e3b633d474ebf8db3cf.
+
+<!-- flowdocs:paragraph:5ad391efaae3baa47df24ddae8c421f7 -->
+Declared member: source declares libraryTypeOptions; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/libraryTypes\.ts:71; symbol: libraryTypeOptions; span SHA256: cc500eb0feb9df9a9562a04f469fd1912d52b4ed79882f5d55b42ba8c33baa8e.
 
 <!-- flowdocs:paragraph:bcec644aacbc3336bbfd45d77e927b4d -->
 Declared member: source declares SettingRow; membership is caller\-declared, not runtime evidence\.

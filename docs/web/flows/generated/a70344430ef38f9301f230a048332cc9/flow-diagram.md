@@ -1,6 +1,6 @@
 # Player transport: seek bar, trickplay, markers, chapters, renditions, touch gestures — flow-diagram
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:e56c4e24895f7bfec80b11f456e2848e -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -91,6 +91,12 @@ sequenceDiagram
     Note over S,U: Source contains call setPlaybackPosition in internal/web/app/src/areas/viewer/player/PlayerTransport.tsx at line 617 - order unresolved
     Note over S,U: Source contains call setPipActive in internal/web/app/src/areas/viewer/player/PlayerTransport.tsx at line 382 - order unresolved
     Note over S,U: Source contains call setPipFailure in internal/web/app/src/areas/viewer/player/PlayerTransport.tsx at line 383 - order unresolved
+    Note over S,U: Source contains call Boolean in internal/web/app/src/areas/viewer/player/usePlayerShortcuts.ts at line 45 - order unresolved
+    Note over S,U: Source contains call closest in internal/web/app/src/areas/viewer/player/usePlayerShortcuts.ts at line 45 - order unresolved
+    Note over S,U: Source contains call useRef in internal/web/app/src/areas/viewer/player/usePlayerShortcuts.ts at line 49 - order unresolved
+    Note over S,U: Source contains call find in internal/web/app/src/areas/viewer/player/usePlayerShortcuts.ts at line 53 - order unresolved
+    Note over S,U: Source contains call useFrameClock in internal/web/app/src/areas/viewer/player/usePlayerShortcuts.ts at line 55 - order unresolved
+    Note over S,U: Source contains call useEffect in internal/web/app/src/areas/viewer/player/usePlayerShortcuts.ts at line 57 - order unresolved
     Note over S,U: Source contains call setPipActive in internal/web/app/src/areas/viewer/player/PlayerTransport.tsx at line 385 - order unresolved
     Note over S,U: Source contains call abs in internal/web/app/src/areas/viewer/player/PlayerTransport.tsx at line 466 - order unresolved
     Note over S,U: Source contains call preventDefault in internal/web/app/src/areas/viewer/player/PlayerTransport.tsx at line 468 - order unresolved

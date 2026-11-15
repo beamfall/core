@@ -1,6 +1,6 @@
 # Player transport: seek bar, trickplay, markers, chapters, renditions, touch gestures — readme
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:626416637ec0e092b486cf87ec5c9048 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -13,8 +13,6 @@ Security summaries: not collected; absence is not a clean security finding.
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
 - Declared inventory flows: structural and lexical relations between flows are not derived\.
-
-- Declared inventory members that do not resolve are listed in generation\.json inventory\.flows\[\]\.unresolved and in their flow README\.
 
 - Gitlinks are opaque superproject identities; their contents are not inspected\.
 
@@ -30,8 +28,4 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow player\.transport: 76 resolved, 2 unresolved members.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx interactive: symbol is not a top\-level declaration in this path at this revision; name a class or object member&\#39;s enclosing declaration.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx keydown: symbol is not a top\-level declaration in this path at this revision; name a class or object member&\#39;s enclosing declaration.
+Declared inventory flow player\.transport: 78 resolved, 0 unresolved members.

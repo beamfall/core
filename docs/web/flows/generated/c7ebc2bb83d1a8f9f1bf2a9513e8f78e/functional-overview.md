@@ -1,6 +1,6 @@
 # Console plugins: standing, lifecycle, config editor, provider keys — functional-overview
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:ab4d05d866c55714a9cb14081bc1ae52 -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
@@ -11,6 +11,11 @@ Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:808; symbol: Ac
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
 
 Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:760; symbol: ; span SHA256: 99fbe307329c2699666a523bc41d65f1e43fb1473a79781a28160930f83abfbc.
+
+<!-- flowdocs:paragraph:eb12881b7f7275e28ed6b521f044bc54 -->
+Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
+
+Source: internal/web/app/src/areas/console/ProviderKeys\.tsx:35; symbol: ; span SHA256: 80fe1b9c9112f1b459ff902dc46cf01aa8be80fe4acc19ff2eca2e90bd0c7db3.
 
 <!-- flowdocs:paragraph:9278bfef33df52397a91e573d77cca88 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.

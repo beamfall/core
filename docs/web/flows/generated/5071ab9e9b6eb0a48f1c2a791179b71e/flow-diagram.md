@@ -1,6 +1,6 @@
 # Console access: sign\-in security mode — flow-diagram
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:4e6f76a2bfc906a4baf513653da37290 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.

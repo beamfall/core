@@ -33,12 +33,13 @@ commits the result. The record was generated at the revision recorded in
 version 6 (member declarations of every kind, and the JSX fragment mask fix); run it with an
 older generator and members go unresolved.
 
-Summary at that revision: 89 flows, all generated; 2,367 declared members, 2,366 resolved and
-1 unresolved; 788 in-scope declarations unassigned: 689 in unit tests, e2e specs and test setup,
-8 in the Playwright and Vite configs, and 91 product declarations no flow names yet. Most of
-those 91 arrived with the CORE-1117 design pass (advanced settings, viewer access config,
-metadata credits, setup and enroll error helpers, library delete); CORE-1487 and CORE-1486 track
-naming them. The application map has 44 screens and 0 edges.
+Summary at that revision: 89 flows, all generated; 2,361 declared members, all resolved;
+1,999 in-scope declarations unassigned: 968 in unit tests, e2e specs and test setup, 8 in the
+Playwright and Vite configs, and 1,023 product declarations no flow names yet (most under
+`areas/viewer/player`, `areas/viewer/lib` and the console sections; CORE-1487 tracks naming the
+ones the CORE-1117 design pass added). When a refactor moves or renames a member declaration, repoint its
+`inventory.json` entry and regenerate; an unresolved member means the curation has drifted from
+the source (CORE-1762). The application map has 54 screens and 0 edges.
 
 ## Flows
 

@@ -1,6 +1,6 @@
 # Viewer My Data / privacy: summary, event log, sessions, stream tokens, export — functional-overview
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:574944a13f265510b781df9a19ede4f4 -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.

@@ -1,6 +1,6 @@
 # Player transport: seek bar, trickplay, markers, chapters, renditions, touch gestures — technical-deep-dive
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:ebb23304efe52dc24f2bbb0c3b2b015d -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -286,6 +286,16 @@ Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:381; symbo
 Declared member: source declares excluded; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/viewer/player/PlayerTransport\.tsx:448; symbol: excluded; span SHA256: ee45fd88f04641fff1ce4c65fecb1096ef7e315724088b6c509826f14c4f5b66.
+
+<!-- flowdocs:paragraph:3db16bd58bf0420a786b9e6f1830ba88 -->
+Declared member: source declares interactive; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/usePlayerShortcuts\.ts:41; symbol: interactive; span SHA256: 705afb0298f41354b263c9eb2f01a4213cc2f3c0692eec07b40db9cd2f64d558.
+
+<!-- flowdocs:paragraph:a8a22853430a350128bcc2efde4b7d37 -->
+Declared member: source declares usePlayerShortcuts; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/usePlayerShortcuts\.ts:48; symbol: usePlayerShortcuts; span SHA256: 6716b3bb7a374bc130498bb11cb45c35497971d68d39f03ebf94b70cbf4f8b2a.
 
 <!-- flowdocs:paragraph:a2831116dd82b110c4923c568e766eb8 -->
 Declared member: source declares leave; membership is caller\-declared, not runtime evidence\.

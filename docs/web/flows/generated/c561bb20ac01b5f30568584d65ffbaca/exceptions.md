@@ -1,6 +1,6 @@
 # Console live sessions and host graphs — exceptions
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:f523375aa83d428e5c2ef54cf6a921b1 -->
 Error reachability, rescue behavior and completeness are unresolved\.

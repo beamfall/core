@@ -1,6 +1,6 @@
 # Manage markers: segment edit, bulk delete, trashed markers — entities
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:de724260555446365b399108425ac6ff -->
 Runtime entities and persistence effects are unresolved; lexical calls are listed separately\.

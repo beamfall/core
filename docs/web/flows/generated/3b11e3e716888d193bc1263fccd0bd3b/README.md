@@ -1,11 +1,11 @@
 # Console access: devices and pairing codes — readme
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1bb92a991339a7e92cbf35d6e9bdfe5f -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/console/sections/Devices\.tsx:148; symbol: Devices; span SHA256: 91122bd481a61a50c8979c2c0c3e5c18a73f7bcb28014fd595308c1dee7ffbf5.
+Source: internal/web/app/src/areas/console/sections/Devices\.tsx:192; symbol: Devices; span SHA256: 91122bd481a61a50c8979c2c0c3e5c18a73f7bcb28014fd595308c1dee7ffbf5.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -13,8 +13,6 @@ Security summaries: not collected; absence is not a clean security finding.
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
 - Declared inventory flows: structural and lexical relations between flows are not derived\.
-
-- Declared inventory members that do not resolve are listed in generation\.json inventory\.flows\[\]\.unresolved and in their flow README\.
 
 - Gitlinks are opaque superproject identities; their contents are not inspected\.
 

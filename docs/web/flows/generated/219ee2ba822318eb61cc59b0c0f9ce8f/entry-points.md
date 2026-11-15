@@ -1,6 +1,6 @@
 # Viewer header live search with keyboard shortcut — entry-points
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:9cfd25608f4ba038377f50fabb4ee436 -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.

@@ -1,6 +1,6 @@
 # Display helpers: activity, job, provider\-key and string formatting — flow-diagram
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:2be4f055260fe96658c7617ba9dda609 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.

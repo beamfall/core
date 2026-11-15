@@ -1,6 +1,6 @@
 # Player audio and subtitle tracks, subtitle styling — technical-deep-dive
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a0e801acdf2855edc648f556d5668f3f -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -36,6 +36,16 @@ Source: internal/web/app/src/areas/viewer/lib/transport\.ts:466; symbol: buildTr
 Declared member: source declares pickTrackSource; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/viewer/lib/transport\.ts:448; symbol: pickTrackSource; span SHA256: 4e211b58d74d3f8f12696b30b15183377334a03676ddccc35c31eade974e272f.
+
+<!-- flowdocs:paragraph:a38504abd628b6b4e90ecbe9dabfef11 -->
+Declared member: source declares SUBTITLE\_BACKGROUNDS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/subtitleAppearance\.ts:25; symbol: SUBTITLE\_BACKGROUNDS; span SHA256: bb81abbba2751883f7865e9b45bc259174475706dd586dca52fcdf98ca584f08.
+
+<!-- flowdocs:paragraph:ef68434e22bc918f687ed96d1e76010e -->
+Declared member: source declares SUBTITLE\_SIZES; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/subtitleAppearance\.ts:24; symbol: SUBTITLE\_SIZES; span SHA256: eb2376ed50a08d9486513bccbe1c23da21c3f3f3bdc42e8cb38b847c1bd912db.
 
 <!-- flowdocs:paragraph:ee94d85d3e423d9f1002f08571645207 -->
 Declared member: source declares SubtitleStylePanel; membership is caller\-declared, not runtime evidence\.
@@ -86,6 +96,11 @@ Source: internal/web/app/src/areas/viewer/player/useLiveTracks\.ts:60; symbol: n
 Declared member: source declares CueWithBase; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/viewer/player/useSubtitleStyling\.ts:17; symbol: CueWithBase; span SHA256: 77d9ae3c25f0872c9e88ad43043ba7acd283e8f55be06304173a0d93663c5c84.
+
+<!-- flowdocs:paragraph:72fe5286c3344959e28dfd8f9dd70780 -->
+Declared member: source declares SubtitleAppearance; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/subtitleAppearance\.ts:41; symbol: SubtitleAppearance; span SHA256: d330c7d9a0ed354ecb9933df323a96d12556f0e53ef9076dd0f79f2517d58335.
 
 <!-- flowdocs:paragraph:5786fbe0e3680e547cded5b4bbfd3b31 -->
 Declared member: source declares useSubtitleStyling; membership is caller\-declared, not runtime evidence\.

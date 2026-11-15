@@ -1,6 +1,6 @@
 # Console plugins: standing, lifecycle, config editor, provider keys — technical-deep-dive
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:6c40ca56526c648a3f4525a94d97a615 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -26,6 +26,16 @@ Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:268; symbol: CA
 Declared member: source declares ConfigField; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:669; symbol: ConfigField; span SHA256: be6bd6d8f7a36079968e537a0038d396e05a38a662a78f08bb66c1af01085e27.
+
+<!-- flowdocs:paragraph:3f8807117526bd115d6a05323f3023a3 -->
+Declared member: source declares KEY\_INPUT; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/ProviderKeys\.tsx:38; symbol: KEY\_INPUT; span SHA256: 5ad824da19e8045b45ea9ee15e2bb35975586c520396f1e034ae19fccfb8b3e5.
+
+<!-- flowdocs:paragraph:766f52a3c6ed06353b346b8d6039e402 -->
+Declared member: source declares KEY\_STATUS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/ProviderKeys\.tsx:22; symbol: KEY\_STATUS; span SHA256: a5674b0e5faef97c0552d1abc0cfc14eace963faf3205e5e1a722a1bc267f29c.
 
 <!-- flowdocs:paragraph:b1b34a4add5f1564d226d877b1fd3f57 -->
 Declared member: source declares PLUGIN\_STANDING\_QUERY; membership is caller\-declared, not runtime evidence\.
@@ -72,6 +82,11 @@ Declared member: source declares PluginWithStanding; membership is caller\-decla
 
 Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:70; symbol: PluginWithStanding; span SHA256: 319f915972f8406f756f5fe3392b4b2fe89379bbb253f70baa77cd9c1b9da739.
 
+<!-- flowdocs:paragraph:e4f0053733c53f079fc1a6aaf96cf66c -->
+Declared member: source declares ProviderKeyRow; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/ProviderKeys\.tsx:42; symbol: ProviderKeyRow; span SHA256: 0058d9241430151fa6f1abf55c30d708115aebab0b366f2dbf3fa4650e9ff6a0.
+
 <!-- flowdocs:paragraph:9922d3fb19d539beec261a61982ffbf6 -->
 Declared member: source declares RISK\_LABELS; membership is caller\-declared, not runtime evidence\.
 
@@ -111,6 +126,11 @@ Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:114; symbol: fe
 Declared member: source declares fieldValues; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:886; symbol: fieldValues; span SHA256: 1c35518332a5266a08d456b8ec53bfaf73ab85dee14fe0158b53162584707eef.
+
+<!-- flowdocs:paragraph:5fc2f63aeccfb00789dc8016d8527766 -->
+Declared member: source declares KeyStatusChip; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/ProviderKeys\.tsx:32; symbol: KeyStatusChip; span SHA256: a0191e0de5a52113487f972c8a9f73383c6497b98f90ad207229096566214ddc.
 
 <!-- flowdocs:paragraph:d5a25c05b4980ea790890f08041a6ee7 -->
 Declared member: source declares provenanceChip; membership is caller\-declared, not runtime evidence\.

@@ -1,6 +1,6 @@
 # Setup: pick a library type and folder, create the first Library and scan — readme
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:c31214bd362cae6a37c75010375d5bc6 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -13,8 +13,6 @@ Security summaries: not collected; absence is not a clean security finding.
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
 - Declared inventory flows: structural and lexical relations between flows are not derived\.
-
-- Declared inventory members that do not resolve are listed in generation\.json inventory\.flows\[\]\.unresolved and in their flow README\.
 
 - Gitlinks are opaque superproject identities; their contents are not inspected\.
 
@@ -30,16 +28,4 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow setup\.first\-library: 14 resolved, 6 unresolved members.
-
-- Unresolved member internal/web/app/src/areas/setup/SetupWizard\.tsx TYPE\_ICON: symbol is not a top\-level declaration in this path at this revision; name a class or object member&\#39;s enclosing declaration.
-
-- Unresolved member internal/web/app/src/areas/setup/SetupWizard\.tsx TYPE\_LABEL: symbol is not a top\-level declaration in this path at this revision; name a class or object member&\#39;s enclosing declaration.
-
-- Unresolved member internal/web/app/src/areas/setup/orchestrate\.ts LIBRARY\_TYPES: symbol is not a top\-level declaration in this path at this revision; name a class or object member&\#39;s enclosing declaration.
-
-- Unresolved member internal/web/app/src/areas/setup/orchestrate\.ts LibraryType: symbol is not a top\-level declaration in this path at this revision; name a class or object member&\#39;s enclosing declaration.
-
-- Unresolved member internal/web/app/src/areas/setup/orchestrate\.ts LibraryTypeSpec: symbol is not a top\-level declaration in this path at this revision; name a class or object member&\#39;s enclosing declaration.
-
-- Unresolved member internal/web/app/src/areas/setup/orchestrate\.ts libraryTypeSpec: symbol is not a top\-level declaration in this path at this revision; name a class or object member&\#39;s enclosing declaration.
+Declared inventory flow setup\.first\-library: 18 resolved, 0 unresolved members.

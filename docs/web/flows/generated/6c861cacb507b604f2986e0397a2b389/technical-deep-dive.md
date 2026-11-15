@@ -1,11 +1,16 @@
 # Setup: activate plugins and enter provider keys — technical-deep-dive
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:7403b0849a6cbaa4d10c56af9e017e3f -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/setup/orchestrate\.ts:160; symbol: activatePlugins; span SHA256: d93b01c0df3736470e7bed2b2264605f54e8b4ef2d319cbba4071191a9acea7f.
+Source: internal/web/app/src/lib/libraryTypes\.ts:65; symbol: pluginIcon; span SHA256: 24dbee9d300e4d833d40769accb0c7369effc90f0baf6eca40df7010841f8dc4.
+
+<!-- flowdocs:paragraph:f2c76c1370fbd75c7a73f4ad5d740995 -->
+Declared member: source declares pluginIcon; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/libraryTypes\.ts:65; symbol: pluginIcon; span SHA256: 24dbee9d300e4d833d40769accb0c7369effc90f0baf6eca40df7010841f8dc4.
 
 <!-- flowdocs:paragraph:d09ffaeac020573801eba56bda0b42b1 -->
 Declared member: source declares loadProviderKeys; membership is caller\-declared, not runtime evidence\.

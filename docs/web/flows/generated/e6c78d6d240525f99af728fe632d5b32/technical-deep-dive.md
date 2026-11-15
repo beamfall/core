@@ -1,6 +1,6 @@
 # App shell chrome: header, library sidebar, account menu, phone layout — technical-deep-dive
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1d9fa88dbb23c673f79fccc995bb9f88 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -11,6 +11,11 @@ Source: internal/web/app/src/components/chrome/AccountMenu\.tsx:25; symbol: Acco
 Declared member: source declares AccountMenu; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/components/chrome/AccountMenu\.tsx:25; symbol: AccountMenu; span SHA256: 3ae2d92653644346e79885513d786afc911035dc3291892385bd9270402e1e95.
+
+<!-- flowdocs:paragraph:16d7bf4cff186a7619638185b21a9c83 -->
+Declared member: source declares NOTIFICATION\_BADGE\_LIMIT; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/components/chrome/unreadNotifications\.ts:4; symbol: NOTIFICATION\_BADGE\_LIMIT; span SHA256: 2c2c2d64326bad5d5ef56c15c66771499533c75336a1ce8443fd63074e7d6497.
 
 <!-- flowdocs:paragraph:246452ee1fceebecaa54069e24eb5465 -->
 Declared member: source declares PHONE\_QUERY; membership is caller\-declared, not runtime evidence\.
@@ -36,6 +41,11 @@ Source: internal/web/app/src/components/chrome/AppShell\.tsx:42; symbol: usePhon
 Declared member: source declares writeCollapsedPref; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/components/chrome/AppShell\.tsx:34; symbol: writeCollapsedPref; span SHA256: 77f6f785e65f386bb897d5dcebcf7c709424380c10429a30441b20438be0c902.
+
+<!-- flowdocs:paragraph:262446bb0808ea552e1685b0b286b2b6 -->
+Declared member: source declares libraryMonograms; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/components/chrome/LibrarySidebar\.tsx:124; symbol: libraryMonograms; span SHA256: e8b3df65e696fd50f592f839f1ca9941fa98e6316281ce12bead0bf9eb486cfc.
 
 <!-- flowdocs:paragraph:916e9a10410b1a46d5bf290233ef63ba -->
 Declared member: source declares LibrarySidebar; membership is caller\-declared, not runtime evidence\.
@@ -71,6 +81,16 @@ Source: internal/web/app/src/components/chrome/AccountMenu\.tsx:50; symbol: onPo
 Declared member: source declares onChange; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/components/chrome/AppShell\.tsx:49; symbol: onChange; span SHA256: b82964649e0cce2b708b2b64508d5d1035b2acba6c20fe76fc6053cf1e5d7393.
+
+<!-- flowdocs:paragraph:722ff74de3a83cc4903c205ed0f581d9 -->
+Declared member: source declares revalidate; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/components/chrome/unreadNotifications\.ts:37; symbol: revalidate; span SHA256: a0a9312291b9eede694fee6cc429151336ccfb45a21428145fdafca1a40141bc.
+
+<!-- flowdocs:paragraph:bc7c12215e47e7791852e651ac216db6 -->
+Declared member: source declares useUnreadNotifications; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/components/chrome/unreadNotifications\.ts:82; symbol: useUnreadNotifications; span SHA256: 8903047e304d9a399c09366e3764a41ef2630fb54f60507a296ee1b5d9d54ed4.
 
 <!-- flowdocs:paragraph:9953c61336d288c2f44b6843a84c297b -->
 Declared member: source declares toggleSidebar; membership is caller\-declared, not runtime evidence\.

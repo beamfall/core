@@ -1,6 +1,6 @@
 # Viewer media card: preview dwell, state overlay, card menu, artwork — exceptions
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a47aafbbc1e77d84e0c3c894fb287545 -->
 Error reachability, rescue behavior and completeness are unresolved\.

@@ -1,11 +1,11 @@
 # Console access: devices and pairing codes — functional-overview
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:31cd0a5846ae0a96ee885b31921487bd -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
 
-Source: internal/web/app/src/areas/console/sections/Devices\.tsx:148; symbol: Devices; span SHA256: 91122bd481a61a50c8979c2c0c3e5c18a73f7bcb28014fd595308c1dee7ffbf5.
+Source: internal/web/app/src/areas/console/sections/Devices\.tsx:192; symbol: Devices; span SHA256: 91122bd481a61a50c8979c2c0c3e5c18a73f7bcb28014fd595308c1dee7ffbf5.
 
 <!-- flowdocs:paragraph:de076c7d3c2165da570c7f69fbc746d8 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.

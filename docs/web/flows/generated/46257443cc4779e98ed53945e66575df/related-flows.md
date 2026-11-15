@@ -1,6 +1,6 @@
 # Playback engine: playback\-info, capability probe, HLS selection and recovery, progress reports — related-flows
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b347231c253adc6dcd1a2ace753bfbe7 -->
 Relations are static lexical candidates; computed dispatch remains unresolved\.

@@ -1,6 +1,6 @@
 # App shell chrome: header, library sidebar, account menu, phone layout — flow-diagram
 
-Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 314d15477e23e7491b4680a9142d17833b11db50. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:d615ec7ce0e551eeb17c139b8e1f7423 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -45,6 +45,12 @@ sequenceDiagram
     Note over S,U: Source contains call useEffect in internal/web/app/src/components/chrome/AppShell.tsx at line 46 - order unresolved
     Note over S,U: Source contains call matchMedia in internal/web/app/src/components/chrome/AppShell.tsx at line 48 - order unresolved
     Note over S,U: Source contains call setItem in internal/web/app/src/components/chrome/AppShell.tsx at line 36 - order unresolved
+    Note over S,U: Source contains call map in internal/web/app/src/components/chrome/LibrarySidebar.tsx at line 125 - order unresolved
+    Note over S,U: Source contains call monogram in internal/web/app/src/components/chrome/LibrarySidebar.tsx at line 125 - order unresolved
+    Note over S,U: Source contains call map in internal/web/app/src/components/chrome/LibrarySidebar.tsx at line 126 - order unresolved
+    Note over S,U: Source contains call indexOf in internal/web/app/src/components/chrome/LibrarySidebar.tsx at line 127 - order unresolved
+    Note over S,U: Source contains call lastIndexOf in internal/web/app/src/components/chrome/LibrarySidebar.tsx at line 127 - order unresolved
+    Note over S,U: Source contains call monogram in internal/web/app/src/components/chrome/LibrarySidebar.tsx at line 128 - order unresolved
     Note over S,U: Source contains call useT in internal/web/app/src/components/chrome/LibrarySidebar.tsx at line 43 - order unresolved
     Note over S,U: Source contains call useDisplayLocale in internal/web/app/src/components/chrome/LibrarySidebar.tsx at line 44 - order unresolved
     Note over S,U: Source contains call Map in internal/web/app/src/components/chrome/LibrarySidebar.tsx at line 45 - order unresolved
@@ -67,6 +73,17 @@ sequenceDiagram
     Note over S,U: Source contains call contains in internal/web/app/src/components/chrome/AccountMenu.tsx at line 51 - order unresolved
     Note over S,U: Source contains call setOpen in internal/web/app/src/components/chrome/AccountMenu.tsx at line 51 - order unresolved
     Note over S,U: Source contains call setPhone in internal/web/app/src/components/chrome/AppShell.tsx at line 49 - order unresolved
+    Note over S,U: Source contains call emit in internal/web/app/src/components/chrome/unreadNotifications.ts at line 40 - order unresolved
+    Note over S,U: Source contains call now in internal/web/app/src/components/chrome/unreadNotifications.ts at line 50 - order unresolved
+    Note over S,U: Source contains call fetchNotifications in internal/web/app/src/components/chrome/unreadNotifications.ts at line 54 - order unresolved
+    Note over S,U: Source contains call then in internal/web/app/src/components/chrome/unreadNotifications.ts at line 55 - order unresolved
+    Note over S,U: Source contains call now in internal/web/app/src/components/chrome/unreadNotifications.ts at line 58 - order unresolved
+    Note over S,U: Source contains call finally in internal/web/app/src/components/chrome/unreadNotifications.ts at line 65 - order unresolved
+    Note over S,U: Source contains call emit in internal/web/app/src/components/chrome/unreadNotifications.ts at line 68 - order unresolved
+    Note over S,U: Source contains call revalidate in internal/web/app/src/components/chrome/unreadNotifications.ts at line 71 - order unresolved
+    Note over S,U: Source contains call useSyncExternalStore in internal/web/app/src/components/chrome/unreadNotifications.ts at line 83 - order unresolved
+    Note over S,U: Source contains call useEffect in internal/web/app/src/components/chrome/unreadNotifications.ts at line 87 - order unresolved
+    Note over S,U: Source contains call revalidate in internal/web/app/src/components/chrome/unreadNotifications.ts at line 89 - order unresolved
     Note over S,U: Source contains call setDrawerOpen in internal/web/app/src/components/chrome/AppShell.tsx at line 105 - order unresolved
     Note over S,U: Source contains call setCollapsed in internal/web/app/src/components/chrome/AppShell.tsx at line 108 - order unresolved
     Note over S,U: Source contains call writeCollapsedPref in internal/web/app/src/components/chrome/AppShell.tsx at line 109 - order unresolved
