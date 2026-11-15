@@ -10,6 +10,6 @@
 - [x] Recorded-fixture tests: year picks the right same-titled series, configured language with
       original fallback, remote-ID lookup, extra artwork from cached artwork types, artwork types
       unavailable keeps the poster, token reuse and expiry
-- [ ] After plugin-sdk v0.3.6 is tagged and pinned: map `ScraperSpec.ReferenceDocuments` and
+- [x] Pin plugin-sdk v0.3.7 and map `ScraperSpec.ReferenceDocuments` and
       `ScraperSpec.LookupByIDRecordIDPaths` in
-      `ScraperExtensionsOf`, then repin filmtv to the release carrying the tvdb-series update
+      `ScraperExtensionsOf`, then repin filmtv v0.1.10, which carries the tvdb-series update
