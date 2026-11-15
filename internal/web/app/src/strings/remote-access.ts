@@ -2,36 +2,36 @@ export const remoteAccessStrings = {
   en: {
     remoteAccessHeading: "Remote access",
     remoteAccessLead:
-      "How this server is reachable from outside the LAN. Status only: no secret or token is ever shown here.",
+      "How this server can be reached from outside your home network. This page only shows status. It never shows passwords or keys.",
     watchAwayHeading: "Watch away from home",
     watchAwayLead:
-      "Start with Tailscale or WireGuard. Use Direct HTTPS only when DNS and router forwarding are under your control; relay stays advanced.",
+      "Start with Tailscale or WireGuard. Use Direct HTTPS only if you can change your domain settings and your router. The relay is for advanced setups.",
     watchAwayOverlayTitle: "Tailscale or WireGuard",
     watchAwayVerified: "Verified",
     watchAwayDetected: "Detected",
     watchAwayNotDetected: "Not detected",
     watchAwayOverlayVerifiedDetail:
-      "This browser is already reaching Beamfall through an overlay address. Use the same mesh on your phone before switching to cellular.",
+      "This browser already reaches Beamfall through Tailscale or WireGuard. Set up the same network on your phone before you switch it to cellular.",
     watchAwayOverlayDetectedDetail:
-      "An overlay address is available. Open it on your phone after the phone joins the same mesh, then switch the phone to cellular to confirm playback.",
+      "Tailscale or WireGuard is running on this server. Join your phone to the same network, open the address below on it, then switch the phone to cellular to check playback.",
     watchAwayOverlayMissingDetail:
-      "Install Tailscale or WireGuard on this server and your phone, join both to the same mesh, then refresh until Beamfall sees the overlay address.",
+      "Install Tailscale or WireGuard on this server and on your phone, sign both in to the same network, then check again until Beamfall finds it.",
     watchAwayInstallTailscale: "Install Tailscale",
-    watchAwayPollOverlay: "Poll for overlay",
+    watchAwayPollOverlay: "Check again",
     watchAwayPhoneTest: "Phone test URL",
     watchAwayDirectTitle: "Direct HTTPS",
     watchAwayReady: "Ready",
     watchAwayNotConfigured: "Not configured",
-    watchAwayPreflightPending: "Preflight pending",
+    watchAwayPreflightPending: "No certificate yet",
     watchAwayDirectDetail:
-      "Second choice: point DNS at home, forward TCP 443 to this server, then wait for the certificate state to become issued.",
+      "Second choice: point your domain at your home address and forward port 443 on your router to this server. Then open your domain with https once, for example from your phone on cellular, so Beamfall requests its certificate.",
     watchAwayAdvancedRelay: "Self-hosted relay",
     remoteAccessReachableVia: "Reachable through",
     watchAwayRelayDetail:
-      "Use this only when overlay and Direct HTTPS are not workable. The relay forwards encrypted bytes; it does not terminate media TLS.",
+      "Use this only when Tailscale, WireGuard and Direct HTTPS won't work. The relay passes your traffic along without being able to read it.",
     remoteAccessRefresh: "Refresh",
-    remoteAccessLanDirect: "LAN (direct)",
-    remoteAccessLanDirectDetail: "Always reachable on the local network over HTTP.",
+    remoteAccessLanDirect: "Home network",
+    remoteAccessLanDirectDetail: "Always reachable on your home network.",
     remoteBitrateLimitLabel: "Remote bitrate cap (Mbit/s)",
     remoteBitrateLimitHint:
       "Highest bitrate for streams away from the local network, for every profile. 0 removes the cap. A profile’s own cap applies when it is lower.",
@@ -59,36 +59,36 @@ export const remoteAccessStrings = {
   fr: {
     remoteAccessHeading: "Accès à distance",
     remoteAccessLead:
-      "Comment ce serveur est joignable depuis l'extérieur du réseau local. État seulement : aucun secret ni jeton n'est jamais affiché ici.",
+      "Comment ce serveur peut être joint depuis l’extérieur de votre réseau domestique. Cette page n’affiche que l’état. Elle n’affiche jamais de mots de passe ni de clés.",
     watchAwayHeading: "Regarder hors de chez vous",
     watchAwayLead:
-      "Commencez par Tailscale ou WireGuard. N’utilisez HTTPS direct que si vous maîtrisez le DNS et la redirection du routeur ; le relais reste un réglage avancé.",
+      "Commencez par Tailscale ou WireGuard. N’utilisez HTTPS direct que si vous pouvez modifier les réglages de votre domaine et de votre routeur. Le relais est destiné aux configurations avancées.",
     watchAwayOverlayTitle: "Tailscale ou WireGuard",
     watchAwayVerified: "Vérifié",
     watchAwayDetected: "Détecté",
     watchAwayNotDetected: "Non détecté",
     watchAwayOverlayVerifiedDetail:
-      "Ce navigateur accède déjà à Beamfall via une adresse de réseau superposé. Utilisez le même réseau maillé sur votre téléphone avant de passer en données mobiles.",
+      "Ce navigateur accède déjà à Beamfall via Tailscale ou WireGuard. Configurez le même réseau sur votre téléphone avant de le passer en données mobiles.",
     watchAwayOverlayDetectedDetail:
-      "Une adresse de réseau superposé est disponible. Ouvrez-la sur votre téléphone une fois celui-ci connecté au même réseau maillé, puis passez en données mobiles pour confirmer la lecture.",
+      "Tailscale ou WireGuard fonctionne sur ce serveur. Connectez votre téléphone au même réseau, ouvrez-y l’adresse ci-dessous, puis passez le téléphone en données mobiles pour vérifier la lecture.",
     watchAwayOverlayMissingDetail:
-      "Installez Tailscale ou WireGuard sur ce serveur et sur votre téléphone, connectez-les au même réseau maillé, puis actualisez jusqu’à ce que Beamfall voie l’adresse du réseau superposé.",
+      "Installez Tailscale ou WireGuard sur ce serveur et sur votre téléphone, connectez les deux au même réseau, puis vérifiez à nouveau jusqu’à ce que Beamfall le trouve.",
     watchAwayInstallTailscale: "Installer Tailscale",
-    watchAwayPollOverlay: "Rechercher le réseau superposé",
+    watchAwayPollOverlay: "Vérifier à nouveau",
     watchAwayPhoneTest: "URL de test pour le téléphone",
     watchAwayDirectTitle: "HTTPS direct",
     watchAwayReady: "Prêt",
     watchAwayNotConfigured: "Non configuré",
-    watchAwayPreflightPending: "Vérification préalable en attente",
+    watchAwayPreflightPending: "Pas encore de certificat",
     watchAwayDirectDetail:
-      "Second choix : faites pointer le DNS vers votre domicile, redirigez le port TCP 443 vers ce serveur, puis attendez que l’état du certificat passe à « émis ».",
+      "Deuxième choix : faites pointer votre domaine vers l’adresse de votre domicile et redirigez le port 443 de votre routeur vers ce serveur. Ouvrez ensuite votre domaine en https une fois, par exemple depuis votre téléphone en données mobiles, pour que Beamfall demande son certificat.",
     watchAwayAdvancedRelay: "Relais auto-hébergé",
     remoteAccessReachableVia: "Joignable via",
     watchAwayRelayDetail:
-      "N’utilisez ceci que si le réseau superposé et HTTPS direct ne sont pas envisageables. Le relais transmet des octets chiffrés ; il ne termine pas le TLS des médias.",
+      "N’utilisez ceci que si Tailscale, WireGuard et HTTPS direct ne fonctionnent pas. Le relais transmet votre trafic sans pouvoir le lire.",
     remoteAccessRefresh: "Actualiser",
-    remoteAccessLanDirect: "Réseau local (direct)",
-    remoteAccessLanDirectDetail: "Toujours joignable sur le réseau local en HTTP.",
+    remoteAccessLanDirect: "Réseau domestique",
+    remoteAccessLanDirectDetail: "Toujours joignable sur votre réseau domestique.",
     remoteBitrateLimitLabel: "Débit distant maximal (Mbit/s)",
     remoteBitrateLimitHint:
       "Débit maximal des flux hors du réseau local, pour tous les profils. 0 supprime la limite. La limite propre d’un profil s’applique si elle est plus basse.",
@@ -116,36 +116,36 @@ export const remoteAccessStrings = {
   de: {
     remoteAccessHeading: "Fernzugriff",
     remoteAccessLead:
-      "Wie dieser Server von außerhalb des LANs erreichbar ist. Nur Status: hier werden niemals Geheimnisse oder Token angezeigt.",
+      "Wie dieser Server von außerhalb deines Heimnetzes erreichbar ist. Diese Seite zeigt nur den Status. Passwörter oder Schlüssel zeigt sie nie an.",
     watchAwayHeading: "Unterwegs schauen",
     watchAwayLead:
-      "Beginne mit Tailscale oder WireGuard. Nutze Direktes HTTPS nur, wenn du DNS und die Router-Weiterleitung selbst steuerst; das Relay bleibt für Fortgeschrittene.",
+      "Beginne mit Tailscale oder WireGuard. Nutze Direktes HTTPS nur, wenn du die Einstellungen deiner Domain und deines Routers ändern kannst. Das Relay ist für fortgeschrittene Setups gedacht.",
     watchAwayOverlayTitle: "Tailscale oder WireGuard",
     watchAwayVerified: "Verifiziert",
     watchAwayDetected: "Erkannt",
     watchAwayNotDetected: "Nicht erkannt",
     watchAwayOverlayVerifiedDetail:
-      "Dieser Browser erreicht Beamfall bereits über eine Overlay-Adresse. Nutze dasselbe Mesh auf deinem Smartphone, bevor du auf Mobilfunk wechselst.",
+      "Dieser Browser erreicht Beamfall bereits über Tailscale oder WireGuard. Richte dasselbe Netzwerk auf deinem Smartphone ein, bevor du es auf Mobilfunk umstellst.",
     watchAwayOverlayDetectedDetail:
-      "Eine Overlay-Adresse ist verfügbar. Öffne sie auf deinem Smartphone, sobald es dem gleichen Mesh beigetreten ist, und wechsle dann auf Mobilfunk, um die Wiedergabe zu bestätigen.",
+      "Tailscale oder WireGuard läuft auf diesem Server. Verbinde dein Smartphone mit demselben Netzwerk, öffne dort die Adresse unten und stelle das Smartphone dann auf Mobilfunk um, um die Wiedergabe zu prüfen.",
     watchAwayOverlayMissingDetail:
-      "Installiere Tailscale oder WireGuard auf diesem Server und deinem Smartphone, tritt mit beiden demselben Mesh bei und aktualisiere, bis Beamfall die Overlay-Adresse erkennt.",
+      "Installiere Tailscale oder WireGuard auf diesem Server und auf deinem Smartphone, melde beide im selben Netzwerk an und prüfe dann erneut, bis Beamfall es findet.",
     watchAwayInstallTailscale: "Tailscale installieren",
-    watchAwayPollOverlay: "Nach Overlay suchen",
+    watchAwayPollOverlay: "Erneut prüfen",
     watchAwayPhoneTest: "Test-URL fürs Smartphone",
     watchAwayDirectTitle: "Direktes HTTPS",
     watchAwayReady: "Bereit",
     watchAwayNotConfigured: "Nicht konfiguriert",
-    watchAwayPreflightPending: "Vorabprüfung steht aus",
+    watchAwayPreflightPending: "Noch kein Zertifikat",
     watchAwayDirectDetail:
-      "Zweite Wahl: Richte DNS auf dein Zuhause, leite TCP 443 an diesen Server weiter und warte, bis der Zertifikatsstatus auf „ausgestellt“ wechselt.",
+      "Zweite Wahl: Richte deine Domain auf deine Heimadresse und leite Port 443 deines Routers an diesen Server weiter. Öffne deine Domain dann einmal mit https, zum Beispiel vom Smartphone über Mobilfunk, damit Beamfall sein Zertifikat anfordert.",
     watchAwayAdvancedRelay: "Selbst gehostetes Relay",
     remoteAccessReachableVia: "Erreichbar über",
     watchAwayRelayDetail:
-      "Nutze das nur, wenn Overlay und Direktes HTTPS nicht infrage kommen. Das Relay leitet verschlüsselte Bytes weiter; es beendet kein Medien-TLS.",
+      "Nutze das nur, wenn Tailscale, WireGuard und Direktes HTTPS nicht funktionieren. Das Relay leitet deinen Datenverkehr weiter, ohne ihn lesen zu können.",
     remoteAccessRefresh: "Aktualisieren",
-    remoteAccessLanDirect: "LAN (direkt)",
-    remoteAccessLanDirectDetail: "Im lokalen Netzwerk immer über HTTP erreichbar.",
+    remoteAccessLanDirect: "Heimnetz",
+    remoteAccessLanDirectDetail: "In deinem Heimnetz immer erreichbar.",
     remoteBitrateLimitLabel: "Maximale Remote-Bitrate (Mbit/s)",
     remoteBitrateLimitHint:
       "Höchste Bitrate für Streams außerhalb des lokalen Netzwerks, für alle Profile. 0 entfernt die Begrenzung. Die eigene Begrenzung eines Profils gilt, wenn sie niedriger ist.",
@@ -173,36 +173,36 @@ export const remoteAccessStrings = {
   es: {
     remoteAccessHeading: "Acceso remoto",
     remoteAccessLead:
-      "Cómo es accesible este servidor desde fuera de la red local. Solo estado: aquí nunca se muestra ningún secreto ni token.",
+      "Cómo se puede acceder a este servidor desde fuera de tu red doméstica. Esta página solo muestra el estado. Nunca muestra contraseñas ni claves.",
     watchAwayHeading: "Ver fuera de casa",
     watchAwayLead:
-      "Empieza con Tailscale o WireGuard. Usa HTTPS directo solo si controlas el DNS y la redirección del router; el relay sigue siendo una opción avanzada.",
+      "Empieza con Tailscale o WireGuard. Usa HTTPS directo solo si puedes cambiar los ajustes de tu dominio y de tu router. El relay es para configuraciones avanzadas.",
     watchAwayOverlayTitle: "Tailscale o WireGuard",
     watchAwayVerified: "Verificado",
     watchAwayDetected: "Detectado",
     watchAwayNotDetected: "No detectado",
     watchAwayOverlayVerifiedDetail:
-      "Este navegador ya accede a Beamfall mediante una dirección de red superpuesta. Usa la misma malla en tu teléfono antes de pasar a datos móviles.",
+      "Este navegador ya accede a Beamfall mediante Tailscale o WireGuard. Configura la misma red en tu teléfono antes de pasarlo a datos móviles.",
     watchAwayOverlayDetectedDetail:
-      "Hay una dirección de red superpuesta disponible. Ábrela en tu teléfono cuando se una a la misma malla y luego pasa a datos móviles para confirmar la reproducción.",
+      "Tailscale o WireGuard está en marcha en este servidor. Une tu teléfono a la misma red, abre en él la dirección de abajo y luego pásalo a datos móviles para comprobar la reproducción.",
     watchAwayOverlayMissingDetail:
-      "Instala Tailscale o WireGuard en este servidor y en tu teléfono, une ambos a la misma malla y actualiza hasta que Beamfall vea la dirección de la red superpuesta.",
+      "Instala Tailscale o WireGuard en este servidor y en tu teléfono, inicia sesión con ambos en la misma red y vuelve a comprobar hasta que Beamfall la encuentre.",
     watchAwayInstallTailscale: "Instalar Tailscale",
-    watchAwayPollOverlay: "Buscar red superpuesta",
+    watchAwayPollOverlay: "Comprobar de nuevo",
     watchAwayPhoneTest: "URL de prueba para el teléfono",
     watchAwayDirectTitle: "HTTPS directo",
     watchAwayReady: "Listo",
     watchAwayNotConfigured: "Sin configurar",
-    watchAwayPreflightPending: "Comprobación previa pendiente",
+    watchAwayPreflightPending: "Aún no hay certificado",
     watchAwayDirectDetail:
-      "Segunda opción: apunta el DNS a tu casa, redirige el TCP 443 a este servidor y espera a que el estado del certificado pase a «emitido».",
+      "Segunda opción: apunta tu dominio a la dirección de tu casa y redirige el puerto 443 de tu router a este servidor. Después abre tu dominio con https una vez, por ejemplo desde el teléfono con datos móviles, para que Beamfall solicite su certificado.",
     watchAwayAdvancedRelay: "Relay autoalojado",
     remoteAccessReachableVia: "Accesible mediante",
     watchAwayRelayDetail:
-      "Usa esto solo cuando la red superpuesta y HTTPS directo no sean viables. El relay reenvía bytes cifrados; no termina el TLS de los medios.",
+      "Usa esto solo cuando Tailscale, WireGuard y HTTPS directo no funcionen. El relay reenvía tu tráfico sin poder leerlo.",
     remoteAccessRefresh: "Actualizar",
-    remoteAccessLanDirect: "Red local (directo)",
-    remoteAccessLanDirectDetail: "Siempre accesible en la red local mediante HTTP.",
+    remoteAccessLanDirect: "Red doméstica",
+    remoteAccessLanDirectDetail: "Siempre accesible en tu red doméstica.",
     remoteBitrateLimitLabel: "Tasa de bits remota máxima (Mbit/s)",
     remoteBitrateLimitHint:
       "Tasa de bits máxima de los streams fuera de la red local, para todos los perfiles. 0 elimina el límite. Se aplica el límite propio de un perfil si es menor.",
@@ -230,36 +230,36 @@ export const remoteAccessStrings = {
   pt: {
     remoteAccessHeading: "Acesso remoto",
     remoteAccessLead:
-      "Como este servidor é acessível de fora da rede local. Apenas status: nenhum segredo ou token é exibido aqui.",
+      "Como este servidor pode ser acessado de fora da sua rede doméstica. Esta página mostra apenas o status. Ela nunca mostra senhas nem chaves.",
     watchAwayHeading: "Assistir fora de casa",
     watchAwayLead:
-      "Comece com Tailscale ou WireGuard. Use HTTPS direto só se você controlar o DNS e o redirecionamento do roteador; o relay continua sendo uma opção avançada.",
+      "Comece com Tailscale ou WireGuard. Use HTTPS direto só se você puder alterar as configurações do seu domínio e do roteador. O relay é para configurações avançadas.",
     watchAwayOverlayTitle: "Tailscale ou WireGuard",
     watchAwayVerified: "Verificado",
     watchAwayDetected: "Detectado",
     watchAwayNotDetected: "Não detectado",
     watchAwayOverlayVerifiedDetail:
-      "Este navegador já acessa o Beamfall por um endereço de rede sobreposta. Use a mesma malha no celular antes de mudar para dados móveis.",
+      "Este navegador já acessa o Beamfall pelo Tailscale ou WireGuard. Configure a mesma rede no celular antes de mudá-lo para dados móveis.",
     watchAwayOverlayDetectedDetail:
-      "Há um endereço de rede sobreposta disponível. Abra-o no celular depois que ele entrar na mesma malha e, em seguida, mude o celular para dados móveis para confirmar a reprodução.",
+      "O Tailscale ou o WireGuard está em execução neste servidor. Conecte o celular à mesma rede, abra nele o endereço abaixo e depois mude o celular para dados móveis para conferir a reprodução.",
     watchAwayOverlayMissingDetail:
-      "Instale o Tailscale ou o WireGuard neste servidor e no celular, conecte os dois à mesma malha e atualize até o Beamfall enxergar o endereço da rede sobreposta.",
+      "Instale o Tailscale ou o WireGuard neste servidor e no celular, entre com os dois na mesma rede e verifique de novo até o Beamfall encontrá-la.",
     watchAwayInstallTailscale: "Instalar o Tailscale",
-    watchAwayPollOverlay: "Procurar rede sobreposta",
+    watchAwayPollOverlay: "Verificar de novo",
     watchAwayPhoneTest: "URL de teste para o celular",
     watchAwayDirectTitle: "HTTPS direto",
     watchAwayReady: "Pronto",
     watchAwayNotConfigured: "Não configurado",
-    watchAwayPreflightPending: "Verificação prévia pendente",
+    watchAwayPreflightPending: "Ainda sem certificado",
     watchAwayDirectDetail:
-      "Segunda opção: aponte o DNS para sua casa, redirecione a porta TCP 443 para este servidor e aguarde o estado do certificado mudar para “emitido”.",
+      "Segunda opção: aponte seu domínio para o endereço da sua casa e encaminhe a porta 443 do roteador para este servidor. Depois abra seu domínio com https uma vez, por exemplo pelo celular usando dados móveis, para que o Beamfall solicite o certificado.",
     watchAwayAdvancedRelay: "Relay auto-hospedado",
     remoteAccessReachableVia: "Acessível por",
     watchAwayRelayDetail:
-      "Use isto só quando a rede sobreposta e o HTTPS direto não forem viáveis. O relay encaminha bytes criptografados; ele não encerra o TLS da mídia.",
+      "Use isto só quando o Tailscale, o WireGuard e o HTTPS direto não funcionarem. O relay repassa seu tráfego sem conseguir lê-lo.",
     remoteAccessRefresh: "Atualizar",
-    remoteAccessLanDirect: "Rede local (direto)",
-    remoteAccessLanDirectDetail: "Sempre acessível na rede local via HTTP.",
+    remoteAccessLanDirect: "Rede doméstica",
+    remoteAccessLanDirectDetail: "Sempre acessível na sua rede doméstica.",
     remoteBitrateLimitLabel: "Taxa de bits remota máxima (Mbit/s)",
     remoteBitrateLimitHint:
       "Taxa de bits máxima dos streams fora da rede local, para todos os perfis. 0 remove o limite. Aplica-se o limite próprio de um perfil se for menor.",

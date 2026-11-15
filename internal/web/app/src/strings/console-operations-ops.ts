@@ -2,7 +2,7 @@ export const consoleOperationsOpsStrings = {
   en: {
     operationsControlsHeading: "Operations controls",
     operationsControlsLead:
-      "The resource governor and the job queue: live posture, background-worker settings, low-power mode, and per-job cancel, retry, and logs.",
+      "How much background work the server does, low-power mode, and the job list. Cancel, retry, or read the log for any job.",
     governorHeading: "Resource governor",
     governorRefresh: "Refresh",
     governorUnavailable: "The resource governor is unavailable right now.",
@@ -10,7 +10,7 @@ export const consoleOperationsOpsStrings = {
     governorInactive: "Unavailable",
     governorUnwiredLine: "The resource governor is not active on this server.",
     governorUnwiredHelp:
-      "The configured background worker count is shown. Governor preemption metrics appear once the governor is wired.",
+      "This shows the background worker count from the server settings. Live load figures appear once the resource governor is running.",
     governorWorkers: "Generation workers",
     governorCPUBudget: "CPU budget",
     governorActiveTranscodes: "Active transcodes",
@@ -18,17 +18,17 @@ export const consoleOperationsOpsStrings = {
     governorCPUBudgetUnit: "cores",
     governorGenerationAllowed: "Generation allowed",
     governorGenerationPaused: "Generation paused",
-    governorPreempting: "Transcode preempting background",
+    governorPreempting: "Background work paused for playback",
     governorLowPower: "Low-power mode",
     governorSettingsHeading: "Background work",
     governorBackgroundWorkers: "Background workers",
     governorBackgroundWorkersSave: "Save background workers",
     governorBackgroundWorkersHelp:
-      "Concurrent generation slots against the CPU budget. Realtime playback always preempts.",
+      "How many background jobs can run at once within the CPU budget. Playback always comes first.",
     eventsRetentionDays: "Events retention days",
     eventsRetentionDaysSave: "Save events retention days",
     eventsRetentionDaysHelp:
-      "Age cutoff for disposable events.db rows. Activity and engagement history are never pruned here.",
+      "How many days to keep routine server events. Watch history and activity are never deleted here.",
     eventsCompactionRun: "Compact events now",
     eventsCompactionQueued: "Queued",
     eventsCompactionFailed: "Could not queue events compaction.",
@@ -61,7 +61,7 @@ export const consoleOperationsOpsStrings = {
   fr: {
     operationsControlsHeading: "Contrôles d’exploitation",
     operationsControlsLead:
-      "Le gouverneur de ressources et la file de tâches : état en direct, réglages des travailleurs d’arrière-plan, mode économie d’énergie, et annulation, nouvelle tentative et journaux par tâche.",
+      "La quantité de travail en arrière-plan effectuée par le serveur, le mode économie d’énergie et la liste des tâches. Annulez, relancez ou consultez le journal de n’importe quelle tâche.",
     governorHeading: "Gouverneur de ressources",
     governorRefresh: "Actualiser",
     governorUnavailable: "Le gouverneur de ressources est indisponible pour le moment.",
@@ -69,7 +69,7 @@ export const consoleOperationsOpsStrings = {
     governorInactive: "Indisponible",
     governorUnwiredLine: "Le gouverneur de ressources n’est pas actif sur ce serveur.",
     governorUnwiredHelp:
-      "Le nombre configuré de travailleurs d’arrière-plan est affiché. Les métriques de préemption du gouverneur apparaîtront une fois celui-ci raccordé.",
+      "Affiche le nombre de travailleurs d’arrière-plan défini dans les réglages du serveur. Les chiffres de charge en direct apparaissent une fois le gouverneur de ressources en marche.",
     governorWorkers: "Travailleurs de génération",
     governorCPUBudget: "Budget CPU",
     governorActiveTranscodes: "Transcodages actifs",
@@ -77,17 +77,17 @@ export const consoleOperationsOpsStrings = {
     governorCPUBudgetUnit: "cœurs",
     governorGenerationAllowed: "Génération autorisée",
     governorGenerationPaused: "Génération en pause",
-    governorPreempting: "Le transcodage prend le pas sur l’arrière-plan",
+    governorPreempting: "Travail en arrière-plan suspendu pour la lecture",
     governorLowPower: "Mode économie d’énergie",
     governorSettingsHeading: "Travail d’arrière-plan",
     governorBackgroundWorkers: "Travailleurs d’arrière-plan",
     governorBackgroundWorkersSave: "Enregistrer les travailleurs d’arrière-plan",
     governorBackgroundWorkersHelp:
-      "Emplacements de génération simultanés dans la limite du budget CPU. La lecture en temps réel est toujours prioritaire.",
+      "Nombre de tâches d’arrière-plan pouvant s’exécuter en même temps dans la limite du budget CPU. La lecture passe toujours en premier.",
     eventsRetentionDays: "Jours de conservation des événements",
     eventsRetentionDaysSave: "Enregistrer les jours de conservation des événements",
     eventsRetentionDaysHelp:
-      "Limite d’ancienneté des lignes jetables d’events.db. L’historique d’activité et d’engagement n’est jamais purgé ici.",
+      "Nombre de jours de conservation des événements courants du serveur. L’historique de visionnage et l’activité ne sont jamais supprimés ici.",
     eventsCompactionRun: "Compacter les événements maintenant",
     eventsCompactionQueued: "En file d’attente",
     eventsCompactionFailed: "Impossible de mettre le compactage des événements en file d’attente.",
@@ -121,7 +121,7 @@ export const consoleOperationsOpsStrings = {
   de: {
     operationsControlsHeading: "Betriebssteuerung",
     operationsControlsLead:
-      "Der Ressourcen-Governor und die Job-Warteschlange: Live-Zustand, Einstellungen für Hintergrund-Worker, Energiesparmodus sowie Abbrechen, Wiederholen und Logs pro Job.",
+      "Wie viel Hintergrundarbeit der Server erledigt, der Energiesparmodus und die Job-Liste. Brich einen Job ab, wiederhole ihn oder lies sein Log.",
     governorHeading: "Ressourcen-Governor",
     governorRefresh: "Aktualisieren",
     governorUnavailable: "Der Ressourcen-Governor ist momentan nicht verfügbar.",
@@ -129,7 +129,7 @@ export const consoleOperationsOpsStrings = {
     governorInactive: "Nicht verfügbar",
     governorUnwiredLine: "Der Ressourcen-Governor ist auf diesem Server nicht aktiv.",
     governorUnwiredHelp:
-      "Die konfigurierte Anzahl der Hintergrund-Worker wird angezeigt. Preemption-Metriken des Governors erscheinen, sobald er angebunden ist.",
+      "Zeigt die Anzahl der Hintergrund-Worker aus den Servereinstellungen. Live-Lastwerte erscheinen, sobald der Ressourcen-Governor läuft.",
     governorWorkers: "Erzeugungs-Worker",
     governorCPUBudget: "CPU-Budget",
     governorActiveTranscodes: "Aktive Transcodierungen",
@@ -137,17 +137,17 @@ export const consoleOperationsOpsStrings = {
     governorCPUBudgetUnit: "Kerne",
     governorGenerationAllowed: "Erzeugung erlaubt",
     governorGenerationPaused: "Erzeugung pausiert",
-    governorPreempting: "Transcodierung verdrängt Hintergrundarbeit",
+    governorPreempting: "Hintergrundarbeit für die Wiedergabe pausiert",
     governorLowPower: "Energiesparmodus",
     governorSettingsHeading: "Hintergrundarbeit",
     governorBackgroundWorkers: "Hintergrund-Worker",
     governorBackgroundWorkersSave: "Hintergrund-Worker speichern",
     governorBackgroundWorkersHelp:
-      "Gleichzeitige Erzeugungsplätze innerhalb des CPU-Budgets. Echtzeit-Wiedergabe hat immer Vorrang.",
+      "Wie viele Hintergrund-Jobs gleichzeitig innerhalb des CPU-Budgets laufen können. Die Wiedergabe hat immer Vorrang.",
     eventsRetentionDays: "Aufbewahrungstage für Ereignisse",
     eventsRetentionDaysSave: "Aufbewahrungstage für Ereignisse speichern",
     eventsRetentionDaysHelp:
-      "Altersgrenze für verzichtbare Zeilen in events.db. Aktivitäts- und Engagement-Verlauf wird hier nie bereinigt.",
+      "Wie viele Tage routinemäßige Serverereignisse aufbewahrt werden. Wiedergabeverlauf und Aktivität werden hier nie gelöscht.",
     eventsCompactionRun: "Ereignisse jetzt komprimieren",
     eventsCompactionQueued: "In Warteschlange",
     eventsCompactionFailed:
@@ -182,7 +182,7 @@ export const consoleOperationsOpsStrings = {
   es: {
     operationsControlsHeading: "Controles de operaciones",
     operationsControlsLead:
-      "El gobernador de recursos y la cola de trabajos: estado en vivo, ajustes de los procesos en segundo plano, modo de bajo consumo y cancelación, reintento y registros por trabajo.",
+      "Cuánto trabajo en segundo plano hace el servidor, el modo de bajo consumo y la lista de trabajos. Cancela, reintenta o lee el registro de cualquier trabajo.",
     governorHeading: "Gobernador de recursos",
     governorRefresh: "Actualizar",
     governorUnavailable: "El gobernador de recursos no está disponible ahora mismo.",
@@ -190,7 +190,7 @@ export const consoleOperationsOpsStrings = {
     governorInactive: "No disponible",
     governorUnwiredLine: "El gobernador de recursos no está activo en este servidor.",
     governorUnwiredHelp:
-      "Se muestra el número configurado de procesos en segundo plano. Las métricas de preferencia del gobernador aparecerán cuando esté conectado.",
+      "Muestra el número de procesos en segundo plano definido en los ajustes del servidor. Las cifras de carga en vivo aparecen cuando el gobernador de recursos está en marcha.",
     governorWorkers: "Procesos de generación",
     governorCPUBudget: "Presupuesto de CPU",
     governorActiveTranscodes: "Transcodificaciones activas",
@@ -198,17 +198,17 @@ export const consoleOperationsOpsStrings = {
     governorCPUBudgetUnit: "núcleos",
     governorGenerationAllowed: "Generación permitida",
     governorGenerationPaused: "Generación en pausa",
-    governorPreempting: "La transcodificación tiene prioridad sobre el segundo plano",
+    governorPreempting: "Trabajo en segundo plano en pausa por la reproducción",
     governorLowPower: "Modo de bajo consumo",
     governorSettingsHeading: "Trabajo en segundo plano",
     governorBackgroundWorkers: "Procesos en segundo plano",
     governorBackgroundWorkersSave: "Guardar procesos en segundo plano",
     governorBackgroundWorkersHelp:
-      "Ranuras de generación simultáneas dentro del presupuesto de CPU. La reproducción en tiempo real siempre tiene prioridad.",
+      "Cuántos trabajos en segundo plano pueden ejecutarse a la vez dentro del presupuesto de CPU. La reproducción siempre va primero.",
     eventsRetentionDays: "Días de retención de eventos",
     eventsRetentionDaysSave: "Guardar días de retención de eventos",
     eventsRetentionDaysHelp:
-      "Límite de antigüedad de las filas desechables de events.db. El historial de actividad y de interacción nunca se depura aquí.",
+      "Cuántos días se conservan los eventos rutinarios del servidor. El historial de reproducción y la actividad nunca se eliminan aquí.",
     eventsCompactionRun: "Compactar eventos ahora",
     eventsCompactionQueued: "En cola",
     eventsCompactionFailed: "No se pudo poner en cola la compactación de eventos.",
@@ -241,7 +241,7 @@ export const consoleOperationsOpsStrings = {
   pt: {
     operationsControlsHeading: "Controles de operações",
     operationsControlsLead:
-      "O governador de recursos e a fila de tarefas: estado ao vivo, configurações dos workers em segundo plano, modo de baixo consumo e cancelamento, nova tentativa e logs por tarefa.",
+      "Quanto trabalho em segundo plano o servidor faz, o modo de baixo consumo e a lista de tarefas. Cancele, tente de novo ou leia o log de qualquer tarefa.",
     governorHeading: "Governador de recursos",
     governorRefresh: "Atualizar",
     governorUnavailable: "O governador de recursos está indisponível no momento.",
@@ -249,7 +249,7 @@ export const consoleOperationsOpsStrings = {
     governorInactive: "Indisponível",
     governorUnwiredLine: "O governador de recursos não está ativo neste servidor.",
     governorUnwiredHelp:
-      "O número configurado de workers em segundo plano é exibido. As métricas de preempção do governador aparecem quando ele for conectado.",
+      "Mostra o número de workers em segundo plano definido nas configurações do servidor. Os números de carga ao vivo aparecem quando o governador de recursos estiver em execução.",
     governorWorkers: "Workers de geração",
     governorCPUBudget: "Orçamento de CPU",
     governorActiveTranscodes: "Transcodificações ativas",
@@ -257,17 +257,17 @@ export const consoleOperationsOpsStrings = {
     governorCPUBudgetUnit: "núcleos",
     governorGenerationAllowed: "Geração permitida",
     governorGenerationPaused: "Geração pausada",
-    governorPreempting: "A transcodificação tem prioridade sobre o segundo plano",
+    governorPreempting: "Trabalho em segundo plano pausado para a reprodução",
     governorLowPower: "Modo de baixo consumo",
     governorSettingsHeading: "Trabalho em segundo plano",
     governorBackgroundWorkers: "Workers em segundo plano",
     governorBackgroundWorkersSave: "Salvar workers em segundo plano",
     governorBackgroundWorkersHelp:
-      "Vagas de geração simultâneas dentro do orçamento de CPU. A reprodução em tempo real sempre tem prioridade.",
+      "Quantas tarefas em segundo plano podem rodar ao mesmo tempo dentro do orçamento de CPU. A reprodução sempre vem primeiro.",
     eventsRetentionDays: "Dias de retenção de eventos",
     eventsRetentionDaysSave: "Salvar dias de retenção de eventos",
     eventsRetentionDaysHelp:
-      "Limite de idade das linhas descartáveis do events.db. O histórico de atividade e de engajamento nunca é limpo aqui.",
+      "Por quantos dias manter os eventos rotineiros do servidor. O histórico de exibição e a atividade nunca são excluídos aqui.",
     eventsCompactionRun: "Compactar eventos agora",
     eventsCompactionQueued: "Na fila",
     eventsCompactionFailed: "Não foi possível enfileirar a compactação de eventos.",

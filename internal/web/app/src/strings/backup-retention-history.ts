@@ -3,7 +3,7 @@ export const backupRetentionHistoryStrings = {
     // MIGREV-3 — Backup panel: history + verify + manifest + restore assistant.
     backupHistoryHeading: "Backup history",
     backupHistoryLead:
-      "The run record of the backup sets written to this destination: when each ran, its size, and its last integrity verify status. Enter a destination and load its history, or run a backup to publish a new set.",
+      "Backups saved in this destination, with when each ran, its size, and whether it passed its last check. Enter a destination and load its history, or run a backup to add one.",
     backupHistoryLoad: "Load history",
     backupHistoryLoading: "Loading…",
     backupHistoryEmpty: "No backup sets under this destination yet.",
@@ -25,7 +25,7 @@ export const backupRetentionHistoryStrings = {
       "Integrity check failed. This set is incomplete or was modified after capture and cannot be trusted for restore.",
     backupManifestHeading: "Manifest detail",
     backupManifestLead:
-      "The contents of the selected set: its published manifest path and the recovery-key exclusion that restore depends on. Select a set from the history above.",
+      "What the selected backup holds and where its file list is saved. Recovery Keys are always left out, so keep them somewhere safe. Select a backup from the history above.",
     backupManifestNone: "Select a backup set to see its manifest detail.",
     backupManifestPathLabel: "Manifest path",
     backupKeysCalloutTitle: "Recovery Keys are NOT in this backup",
@@ -35,7 +35,7 @@ export const backupRetentionHistoryStrings = {
   fr: {
     backupHistoryHeading: "Historique des sauvegardes",
     backupHistoryLead:
-      "La trace d’exécution des jeux de sauvegarde écrits dans cette destination : date de chaque exécution, taille et dernier état de vérification d’intégrité. Saisissez une destination et chargez son historique, ou lancez une sauvegarde pour publier un nouveau jeu.",
+      "Les sauvegardes enregistrées dans cette destination, avec la date de chacune, sa taille et le résultat de sa dernière vérification. Saisissez une destination et chargez son historique, ou lancez une sauvegarde pour en ajouter une.",
     backupHistoryLoad: "Charger l’historique",
     backupHistoryLoading: "Chargement…",
     backupHistoryEmpty: "Aucun jeu de sauvegarde dans cette destination pour l’instant.",
@@ -58,7 +58,7 @@ export const backupRetentionHistoryStrings = {
       "Échec de la vérification d’intégrité. Ce jeu est incomplet ou a été modifié après sa capture ; on ne peut pas s’y fier pour une restauration.",
     backupManifestHeading: "Détail du manifeste",
     backupManifestLead:
-      "Le contenu du jeu sélectionné : le chemin de son manifeste publié et l’exclusion des clés de récupération dont dépend la restauration. Sélectionnez un jeu dans l’historique ci-dessus.",
+      "Ce que contient la sauvegarde sélectionnée et l’emplacement de sa liste de fichiers. Les clés de récupération en sont toujours exclues : conservez-les en lieu sûr. Sélectionnez une sauvegarde dans l’historique ci-dessus.",
     backupManifestNone: "Sélectionnez un jeu de sauvegarde pour voir le détail de son manifeste.",
     backupManifestPathLabel: "Chemin du manifeste",
     backupKeysCalloutTitle: "Les clés de récupération ne sont PAS dans cette sauvegarde",
@@ -68,7 +68,7 @@ export const backupRetentionHistoryStrings = {
   de: {
     backupHistoryHeading: "Backup-Verlauf",
     backupHistoryLead:
-      "Das Ausführungsprotokoll der in dieses Ziel geschriebenen Backup-Sets: wann jedes lief, seine Größe und sein letzter Integritätsprüfstatus. Gib ein Ziel ein und lade den Verlauf, oder starte ein Backup, um ein neues Set zu veröffentlichen.",
+      "Die in diesem Ziel gespeicherten Backups, jeweils mit Zeitpunkt, Größe und dem Ergebnis der letzten Prüfung. Gib ein Ziel ein und lade den Verlauf, oder starte ein Backup, um eines hinzuzufügen.",
     backupHistoryLoad: "Verlauf laden",
     backupHistoryLoading: "Wird geladen…",
     backupHistoryEmpty: "In diesem Ziel gibt es noch keine Backup-Sets.",
@@ -90,7 +90,7 @@ export const backupRetentionHistoryStrings = {
       "Integritätsprüfung fehlgeschlagen. Dieses Set ist unvollständig oder wurde nach der Erstellung verändert und kann für die Wiederherstellung nicht als vertrauenswürdig gelten.",
     backupManifestHeading: "Manifest-Details",
     backupManifestLead:
-      "Der Inhalt des ausgewählten Sets: sein veröffentlichter Manifest-Pfad und der Ausschluss der Wiederherstellungsschlüssel, auf dem die Wiederherstellung beruht. Wähle oben im Verlauf ein Set aus.",
+      "Was das ausgewählte Backup enthält und wo seine Dateiliste gespeichert ist. Wiederherstellungsschlüssel sind nie enthalten, bewahre sie also sicher auf. Wähle oben im Verlauf ein Backup aus.",
     backupManifestNone: "Wähle ein Backup-Set aus, um die Manifest-Details zu sehen.",
     backupManifestPathLabel: "Manifest-Pfad",
     backupKeysCalloutTitle: "Wiederherstellungsschlüssel sind NICHT in diesem Backup enthalten",
@@ -100,7 +100,7 @@ export const backupRetentionHistoryStrings = {
   es: {
     backupHistoryHeading: "Historial de copias de seguridad",
     backupHistoryLead:
-      "El registro de ejecución de los conjuntos de copia escritos en este destino: cuándo se ejecutó cada uno, su tamaño y el estado de su última verificación de integridad. Introduce un destino y carga su historial, o ejecuta una copia para publicar un conjunto nuevo.",
+      "Las copias de seguridad guardadas en este destino, con cuándo se ejecutó cada una, su tamaño y si superó su última comprobación. Introduce un destino y carga su historial, o ejecuta una copia para añadir una.",
     backupHistoryLoad: "Cargar historial",
     backupHistoryLoading: "Cargando…",
     backupHistoryEmpty: "Aún no hay conjuntos de copia de seguridad en este destino.",
@@ -123,7 +123,7 @@ export const backupRetentionHistoryStrings = {
       "La verificación de integridad ha fallado. Este conjunto está incompleto o se modificó tras la captura, y no es fiable para una restauración.",
     backupManifestHeading: "Detalle del manifiesto",
     backupManifestLead:
-      "El contenido del conjunto seleccionado: la ruta de su manifiesto publicado y la exclusión de las claves de recuperación de la que depende la restauración. Selecciona un conjunto en el historial de arriba.",
+      "Qué contiene la copia de seguridad seleccionada y dónde se guarda su lista de archivos. Las claves de recuperación nunca se incluyen, así que guárdalas en un lugar seguro. Selecciona una copia en el historial de arriba.",
     backupManifestNone:
       "Selecciona un conjunto de copia de seguridad para ver el detalle de su manifiesto.",
     backupManifestPathLabel: "Ruta del manifiesto",
@@ -134,7 +134,7 @@ export const backupRetentionHistoryStrings = {
   pt: {
     backupHistoryHeading: "Histórico de backups",
     backupHistoryLead:
-      "O registro de execução dos conjuntos de backup gravados neste destino: quando cada um foi executado, seu tamanho e o status da última verificação de integridade. Informe um destino e carregue o histórico, ou execute um backup para publicar um novo conjunto.",
+      "Os backups salvos neste destino, com a data de cada um, o tamanho e se passou na última verificação. Informe um destino e carregue o histórico, ou execute um backup para adicionar um.",
     backupHistoryLoad: "Carregar histórico",
     backupHistoryLoading: "Carregando…",
     backupHistoryEmpty: "Ainda não há conjuntos de backup neste destino.",
@@ -156,7 +156,7 @@ export const backupRetentionHistoryStrings = {
       "A verificação de integridade falhou. Este conjunto está incompleto ou foi modificado após a captura e não é confiável para restauração.",
     backupManifestHeading: "Detalhes do manifesto",
     backupManifestLead:
-      "O conteúdo do conjunto selecionado: o caminho do manifesto publicado e a exclusão das chaves de recuperação da qual a restauração depende. Selecione um conjunto no histórico acima.",
+      "O que o backup selecionado contém e onde a lista de arquivos dele está salva. As chaves de recuperação nunca são incluídas, então guarde-as em um lugar seguro. Selecione um backup no histórico acima.",
     backupManifestNone: "Selecione um conjunto de backup para ver os detalhes do manifesto.",
     backupManifestPathLabel: "Caminho do manifesto",
     backupKeysCalloutTitle: "As chaves de recuperação NÃO estão neste backup",

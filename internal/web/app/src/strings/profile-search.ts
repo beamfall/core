@@ -63,7 +63,7 @@ export const profileSearchStrings = {
     settingsPlaybackSpeedLabel: "Vitesse de lecture par défaut",
     settingsTrimSilence: "Supprimer les longues pauses",
     settingsTrimSilenceLead:
-      "Saute les longs silences entre les segments lorsqu’une carte des silences est disponible. La vitesse intelligente est prévue à part.",
+      "Saute les longs silences lorsque le serveur les a repérés dans le fichier.",
     settingsPrePlay: "Lire d’abord les intros et les aperçus",
     settingsPrePlayLead:
       "Lit les clips d’intro du serveur, puis les aperçus proposés par une extension, avant le début d’un titre.",
@@ -103,7 +103,7 @@ export const profileSearchStrings = {
   de: {
     settingsTitle: "Profileinstellungen",
     settingsLead:
-      "Einstellungen für dieses Profil auf diesem Gerät. Betreiberrichtlinien werden in der Console verwaltet.",
+      "Einstellungen für dieses Profil auf diesem Gerät. Einstellungen für den gesamten Server findest du in der Console.",
     settingsPlaybackHeading: "Wiedergabe",
     settingsAutoSkipHeading: "Automatisch überspringen",
     settingsAutoSkipLead:
@@ -114,7 +114,7 @@ export const profileSearchStrings = {
     settingsPlaybackSpeedLabel: "Standard-Wiedergabegeschwindigkeit",
     settingsTrimSilence: "Lange Pausen entfernen",
     settingsTrimSilenceLead:
-      "Überspringt lange stille Lücken zwischen Abschnitten, wenn eine Stille-Karte vorliegt. Intelligente Geschwindigkeit ist separat geplant.",
+      "Überspringt lange stille Lücken, wenn der Server sie in der Datei gefunden hat.",
     settingsPrePlay: "Intros und Vorschauen zuerst abspielen",
     settingsPrePlayLead:
       "Spielt die Intro-Clips des Servers und dann Vorschauen, die eine Erweiterung anbietet, bevor ein Titel startet.",
@@ -136,26 +136,26 @@ export const profileSearchStrings = {
     settingsRecommendHeading: "Empfehlungen",
     settingsRecommendOptIn: "Personalisierte Empfehlungen",
     settingsRecommendOptInLead:
-      "Erlaubt der Empfehlungssuche, die Aktivität dieses Profils zu nutzen.",
+      "Erlaubt der Suche „Für dich vorgeschlagen“, zu nutzen, was dieses Profil angesehen hat.",
     settingsCreditsHeading: "Quellenangaben",
     settingsCreditsLead: "Die Metadaten auf diesem Server stammen aus diesen Quellen.",
     settingsManagedNote:
-      "Einige Einstellungen werden von deinem Betreiber verwaltet und hier nicht angezeigt.",
+      "Einige Einstellungen legt die Person fest, die den Server betreibt; sie werden hier nicht angezeigt.",
     settingsSaveFailed: "Diese Einstellung konnte nicht gespeichert werden.",
     settingsUnavailable: "Einstellungen sind gerade nicht verfügbar.",
-    searchModeLabel: "Suchmodus",
-    searchModeKeyword: "Stichwort",
-    searchModeSemantic: "Semantisch",
-    searchModeRecommend: "Empfehlen",
+    searchModeLabel: "Suchen nach",
+    searchModeKeyword: "Passende Wörter",
+    searchModeSemantic: "Ähnliche Bedeutung",
+    searchModeRecommend: "Für dich vorgeschlagen",
     searchModeFellBackToKeyword:
-      "Semantische Suche nicht verfügbar. Stichwortergebnisse werden angezeigt.",
+      "Die Suche nach Bedeutung ist gerade nicht verfügbar, deshalb passen diese Ergebnisse zu deinen Wörtern.",
     searchRestrictedNotice:
       "Einige Ergebnisse sind durch deine Zugriffseinstellungen möglicherweise ausgeblendet.",
   },
   es: {
     settingsTitle: "Ajustes del perfil",
     settingsLead:
-      "Preferencias de este perfil en este dispositivo. La política del operador se gestiona en la Console.",
+      "Preferencias de este perfil en este dispositivo. Los ajustes de todo el servidor están en la Console.",
     settingsPlaybackHeading: "Reproducción",
     settingsAutoSkipHeading: "Omisión automática",
     settingsAutoSkipLead:
@@ -166,7 +166,7 @@ export const profileSearchStrings = {
     settingsPlaybackSpeedLabel: "Velocidad de reproducción predeterminada",
     settingsTrimSilence: "Quitar pausas largas",
     settingsTrimSilenceLead:
-      "Omite los silencios largos entre segmentos cuando hay un mapa de silencios disponible. La velocidad inteligente está prevista aparte.",
+      "Omite los silencios largos cuando el servidor los ha encontrado en el archivo.",
     settingsPrePlay: "Reproducir antes intros y avances",
     settingsPrePlayLead:
       "Reproduce los clips de introducción del servidor y luego los avances que ofrezca una extensión, antes de que empiece un título.",
@@ -189,24 +189,25 @@ export const profileSearchStrings = {
     settingsRecommendHeading: "Recomendaciones",
     settingsRecommendOptIn: "Recomendaciones personalizadas",
     settingsRecommendOptInLead:
-      "Permite que la búsqueda en modo recomendación use la actividad de este perfil.",
+      "Permite que la búsqueda «Sugerencias para ti» use lo que este perfil ha visto.",
     settingsCreditsHeading: "Créditos",
     settingsCreditsLead: "Los metadatos de este servidor provienen de estas fuentes.",
-    settingsManagedNote: "Algunos ajustes los gestiona tu operador y no se muestran aquí.",
+    settingsManagedNote:
+      "Algunos ajustes los define la persona que administra el servidor y no se muestran aquí.",
     settingsSaveFailed: "No se pudo guardar esta preferencia.",
     settingsUnavailable: "Las preferencias no están disponibles ahora mismo.",
-    searchModeLabel: "Modo de búsqueda",
-    searchModeKeyword: "Palabras clave",
-    searchModeSemantic: "Semántica",
-    searchModeRecommend: "Recomendar",
+    searchModeLabel: "Buscar por",
+    searchModeKeyword: "Palabras coincidentes",
+    searchModeSemantic: "Significado similar",
+    searchModeRecommend: "Sugerencias para ti",
     searchModeFellBackToKeyword:
-      "La búsqueda semántica no está disponible. Se muestran resultados por palabras clave.",
+      "La búsqueda por significado no está disponible en este momento, así que estos resultados coinciden con tus palabras.",
     searchRestrictedNotice: "Es posible que tus ajustes de acceso oculten algunos resultados.",
   },
   pt: {
     settingsTitle: "Configurações do perfil",
     settingsLead:
-      "Preferências deste perfil neste dispositivo. A política do operador é gerenciada no Console.",
+      "Preferências deste perfil neste dispositivo. As configurações de todo o servidor ficam no Console.",
     settingsPlaybackHeading: "Reprodução",
     settingsAutoSkipHeading: "Pular automaticamente",
     settingsAutoSkipLead:
@@ -217,7 +218,7 @@ export const profileSearchStrings = {
     settingsPlaybackSpeedLabel: "Velocidade de reprodução padrão",
     settingsTrimSilence: "Remover pausas longas",
     settingsTrimSilenceLead:
-      "Pula longos intervalos de silêncio entre trechos quando há um mapa de silêncio disponível. A velocidade inteligente está planejada à parte.",
+      "Pula longos intervalos de silêncio quando o servidor os encontrou no arquivo.",
     settingsPrePlay: "Reproduzir aberturas e prévias primeiro",
     settingsPrePlayLead:
       "Reproduz os clipes de abertura do servidor e depois as prévias oferecidas por uma extensão, antes de um título começar.",
@@ -239,19 +240,19 @@ export const profileSearchStrings = {
     settingsRecommendHeading: "Recomendações",
     settingsRecommendOptIn: "Recomendações personalizadas",
     settingsRecommendOptInLead:
-      "Permite que a busca no modo recomendação use a atividade deste perfil.",
+      "Permite que a busca “Sugestões para você” use o que este perfil assistiu.",
     settingsCreditsHeading: "Créditos",
     settingsCreditsLead: "Os metadados deste servidor vêm destas fontes.",
     settingsManagedNote:
-      "Algumas configurações são gerenciadas pelo seu operador e não aparecem aqui.",
+      "Algumas configurações são definidas pela pessoa que administra o servidor e não aparecem aqui.",
     settingsSaveFailed: "Não foi possível salvar esta preferência.",
     settingsUnavailable: "As preferências não estão disponíveis agora.",
-    searchModeLabel: "Modo de busca",
-    searchModeKeyword: "Palavra-chave",
-    searchModeSemantic: "Semântica",
-    searchModeRecommend: "Recomendar",
+    searchModeLabel: "Buscar por",
+    searchModeKeyword: "Palavras correspondentes",
+    searchModeSemantic: "Significado parecido",
+    searchModeRecommend: "Sugestões para você",
     searchModeFellBackToKeyword:
-      "A busca semântica não está disponível. Mostrando resultados por palavra-chave.",
+      "A busca por significado não está disponível no momento, então estes resultados correspondem às suas palavras.",
     searchRestrictedNotice:
       "Alguns resultados podem estar ocultos pelas suas configurações de acesso.",
   },

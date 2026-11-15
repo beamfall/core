@@ -31,12 +31,12 @@ export const remoteAccessMappingStrings = {
     reachabilityReasonProbeError: "The probe could not run.",
     reachabilityHint:
       "The probe sends only a TLS greeting, never library data. The direct check needs a router that loops connections to its own public address back to the LAN; without that it can report unreachable even when outside clients can connect.",
-    remoteAccessDirectHTTPS: "Direct HTTPS (ACME)",
+    remoteAccessDirectHTTPS: "Direct HTTPS",
     remoteAccessRelay: "Self-hosted relay",
     remoteAccessHostedRelay: "Hosted relay",
-    remoteAccessOverlay: "Overlay network",
+    remoteAccessOverlay: "Private network",
     remoteAccessOverlayDetail:
-      "Reachable through a blessed overlay network (Tailscale/WireGuard) where the device joins the same mesh.",
+      "Reachable through Tailscale or WireGuard from any device signed in to the same private network.",
     remoteAccessDomain: "Domain",
     remoteAccessEndpoint: "Relay endpoint",
     remoteAccessPublicHost: "Public host",
@@ -44,7 +44,7 @@ export const remoteAccessMappingStrings = {
     remoteAccessLastError: "Last error",
     remoteAccessOff: "Not configured",
     remoteAccessPlainHTTPPublicWarning:
-      "This Console is being reached over plain HTTP from a public address. Use Direct HTTPS, relay, or a private LAN/overlay path before entering credentials.",
+      "This Console is open over an unencrypted connection from the internet. Before you sign in, connect through Direct HTTPS, the relay, Tailscale or WireGuard, or your home network.",
     remoteAccessUnavailable: "Could not load remote-access status.",
     certPending: "Pending (issued on first connection)",
     certIssued: "Issued",
@@ -86,12 +86,12 @@ export const remoteAccessMappingStrings = {
     reachabilityReasonProbeError: "La sonde n’a pas pu s’exécuter.",
     reachabilityHint:
       "La sonde n’envoie qu’une salutation TLS, jamais de données de bibliothèque. La vérification directe exige un routeur qui renvoie vers le réseau local les connexions à sa propre adresse publique ; sans cela, elle peut indiquer injoignable alors que des clients extérieurs peuvent se connecter.",
-    remoteAccessDirectHTTPS: "HTTPS direct (ACME)",
+    remoteAccessDirectHTTPS: "HTTPS direct",
     remoteAccessRelay: "Relais auto-hébergé",
     remoteAccessHostedRelay: "Relais hébergé",
-    remoteAccessOverlay: "Réseau overlay",
+    remoteAccessOverlay: "Réseau privé",
     remoteAccessOverlayDetail:
-      "Joignable via un réseau overlay approuvé (Tailscale/WireGuard) où l'appareil rejoint le même maillage.",
+      "Joignable via Tailscale ou WireGuard depuis tout appareil connecté au même réseau privé.",
     remoteAccessDomain: "Domaine",
     remoteAccessEndpoint: "Point d'accès du relais",
     remoteAccessPublicHost: "Hôte public",
@@ -99,7 +99,7 @@ export const remoteAccessMappingStrings = {
     remoteAccessLastError: "Dernière erreur",
     remoteAccessOff: "Non configuré",
     remoteAccessPlainHTTPPublicWarning:
-      "Cette console est atteinte en HTTP non chiffré depuis une adresse publique. Utilisez HTTPS direct, un relais ou un chemin privé LAN/overlay avant de saisir des identifiants.",
+      "Cette console est ouverte sur une connexion non chiffrée depuis Internet. Avant de vous connecter, passez par HTTPS direct, le relais, Tailscale ou WireGuard, ou votre réseau domestique.",
     remoteAccessUnavailable: "Impossible de charger l'état de l'accès à distance.",
     certPending: "En attente (émis à la première connexion)",
     certIssued: "Émis",
@@ -142,12 +142,12 @@ export const remoteAccessMappingStrings = {
     reachabilityReasonProbeError: "Die Prüfung konnte nicht ausgeführt werden.",
     reachabilityHint:
       "Die Prüfung sendet nur eine TLS-Begrüßung, niemals Bibliotheksdaten. Die direkte Prüfung braucht einen Router, der Verbindungen zu seiner eigenen öffentlichen Adresse ins LAN zurückleitet; ohne das kann sie „nicht erreichbar“ melden, obwohl externe Clients sich verbinden können.",
-    remoteAccessDirectHTTPS: "Direktes HTTPS (ACME)",
+    remoteAccessDirectHTTPS: "Direktes HTTPS",
     remoteAccessRelay: "Selbstgehostetes Relais",
     remoteAccessHostedRelay: "Gehostetes Relay",
-    remoteAccessOverlay: "Overlay-Netzwerk",
+    remoteAccessOverlay: "Privates Netzwerk",
     remoteAccessOverlayDetail:
-      "Erreichbar über ein freigegebenes Overlay-Netzwerk (Tailscale/WireGuard), in dem das Gerät demselben Mesh beitritt.",
+      "Über Tailscale oder WireGuard von jedem Gerät erreichbar, das im selben privaten Netzwerk angemeldet ist.",
     remoteAccessDomain: "Domäne",
     remoteAccessEndpoint: "Relais-Endpunkt",
     remoteAccessPublicHost: "Öffentlicher Host",
@@ -155,7 +155,7 @@ export const remoteAccessMappingStrings = {
     remoteAccessLastError: "Letzter Fehler",
     remoteAccessOff: "Nicht konfiguriert",
     remoteAccessPlainHTTPPublicWarning:
-      "Diese Konsole wird über unverschlüsseltes HTTP von einer öffentlichen Adresse erreicht. Verwenden Sie direktes HTTPS, ein Relais oder einen privaten LAN-/Overlay-Pfad, bevor Sie Zugangsdaten eingeben.",
+      "Diese Konsole ist über eine unverschlüsselte Verbindung aus dem Internet geöffnet. Verbinden Sie sich vor der Anmeldung über direktes HTTPS, das Relais, Tailscale oder WireGuard oder Ihr Heimnetz.",
     remoteAccessUnavailable: "Status des Fernzugriffs konnte nicht geladen werden.",
     certPending: "Ausstehend (bei erster Verbindung ausgestellt)",
     certIssued: "Ausgestellt",
@@ -197,12 +197,12 @@ export const remoteAccessMappingStrings = {
     reachabilityReasonProbeError: "No se pudo ejecutar la sonda.",
     reachabilityHint:
       "La sonda solo envía un saludo TLS, nunca datos de la biblioteca. La comprobación directa necesita un router que devuelva a la LAN las conexiones dirigidas a su propia dirección pública; sin eso puede indicar inaccesible aunque los clientes externos sí se conecten.",
-    remoteAccessDirectHTTPS: "HTTPS directo (ACME)",
+    remoteAccessDirectHTTPS: "HTTPS directo",
     remoteAccessRelay: "Relé autoalojado",
     remoteAccessHostedRelay: "Relay alojado",
-    remoteAccessOverlay: "Red superpuesta",
+    remoteAccessOverlay: "Red privada",
     remoteAccessOverlayDetail:
-      "Accesible a través de una red superpuesta autorizada (Tailscale/WireGuard) donde el dispositivo se une a la misma malla.",
+      "Accesible mediante Tailscale o WireGuard desde cualquier dispositivo conectado a la misma red privada.",
     remoteAccessDomain: "Dominio",
     remoteAccessEndpoint: "Punto de acceso del relé",
     remoteAccessPublicHost: "Host público",
@@ -210,7 +210,7 @@ export const remoteAccessMappingStrings = {
     remoteAccessLastError: "Último error",
     remoteAccessOff: "Sin configurar",
     remoteAccessPlainHTTPPublicWarning:
-      "Esta consola se está alcanzando por HTTP sin cifrar desde una dirección pública. Usa HTTPS directo, relé o una ruta privada LAN/superpuesta antes de introducir credenciales.",
+      "Esta consola está abierta con una conexión sin cifrar desde internet. Antes de iniciar sesión, conéctate mediante HTTPS directo, el relé, Tailscale o WireGuard, o tu red doméstica.",
     remoteAccessUnavailable: "No se pudo cargar el estado del acceso remoto.",
     certPending: "Pendiente (emitido en la primera conexión)",
     certIssued: "Emitido",
@@ -252,12 +252,12 @@ export const remoteAccessMappingStrings = {
     reachabilityReasonProbeError: "Não foi possível executar a sondagem.",
     reachabilityHint:
       "A sondagem envia apenas uma saudação TLS, nunca dados da biblioteca. A verificação direta exige um roteador que devolva à LAN as conexões ao próprio endereço público; sem isso, ela pode indicar inacessível mesmo quando clientes externos conseguem se conectar.",
-    remoteAccessDirectHTTPS: "HTTPS direto (ACME)",
+    remoteAccessDirectHTTPS: "HTTPS direto",
     remoteAccessRelay: "Relay auto-hospedado",
     remoteAccessHostedRelay: "Relay hospedado",
-    remoteAccessOverlay: "Rede de sobreposição",
+    remoteAccessOverlay: "Rede privada",
     remoteAccessOverlayDetail:
-      "Acessível por uma rede de sobreposição aprovada (Tailscale/WireGuard) em que o dispositivo entra na mesma malha.",
+      "Acessível pelo Tailscale ou WireGuard a partir de qualquer dispositivo conectado à mesma rede privada.",
     remoteAccessDomain: "Domínio",
     remoteAccessEndpoint: "Endpoint do relay",
     remoteAccessPublicHost: "Host público",
@@ -265,7 +265,7 @@ export const remoteAccessMappingStrings = {
     remoteAccessLastError: "Último erro",
     remoteAccessOff: "Não configurado",
     remoteAccessPlainHTTPPublicWarning:
-      "Este Console está sendo acessado por HTTP sem criptografia a partir de um endereço público. Use HTTPS direto, relay ou um caminho privado LAN/sobreposição antes de inserir credenciais.",
+      "Este Console está aberto por uma conexão sem criptografia vinda da internet. Antes de entrar, conecte-se por HTTPS direto, pelo relay, pelo Tailscale ou WireGuard, ou pela sua rede doméstica.",
     remoteAccessUnavailable: "Não foi possível carregar o status do acesso remoto.",
     certPending: "Pendente (emitido na primeira conexão)",
     certIssued: "Emitido",

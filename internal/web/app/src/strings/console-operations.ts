@@ -2,8 +2,7 @@ export const consoleOperationsStrings = {
   en: {
     updateMigrationCautionLabel: "Migration caution",
     updateMigrationCautionAria: "Migration caution for available Core update",
-    updateMigrationImpactUnknown:
-      "Migration impact is unknown. The signed release manifest does not represent migrations.",
+    updateMigrationImpactUnknown: "Beamfall can't tell whether this release changes the database.",
     updateMigrationPossible:
       "This release may contain forward-only migrations. Backup freshness is unknown.",
     updateBackupRequired: "Take and verify a backup before installing.",
@@ -32,14 +31,15 @@ export const consoleOperationsStrings = {
     updateExportMetadata: "Export metadata",
     updateOfflineRestoreGuidance: "Offline restore guidance",
     updateRollbackSelectVersion:
-      "Select the prior Beamfall version you intend to run. Confirm the trusted pre-migration manifest's fromVersions/toVersions tuple belongs to that exact upgrade session; do not guess from its filename.",
-    updateRollbackStop: "Stop Beamfall before restore. The command refuses a live server lock.",
+      "Select the earlier Beamfall version you want to run. Check that the versions listed inside the pre-migration manifest match that exact upgrade. Don't go by the file name.",
+    updateRollbackStop:
+      "Stop Beamfall before restore. The command won't run while Beamfall is running.",
     updateRollbackRun:
-      "Run the guarded rollback command. It verifies the pre-migration manifest before replacing the database tree:",
+      "Run the rollback command. It checks the pre-migration manifest before it replaces the database folder:",
     updateRollbackCommand:
       "beamfall restore --rollback-manifest /path/to/pre-migration/manifest.json --data-dir /var/lib/beamfall",
     updateRollbackRestart:
-      "Restart Beamfall and verify health and an authenticated read before removing the retained pre-rollback database tree.",
+      "Restart Beamfall, check that it is healthy and that you can sign in, then remove the old database folder it kept.",
     updateCanonicalRestoreProcedure: "Canonical restore procedure",
     updateCanonicalRestoreHref:
       "https://github.com/beamfall/core/blob/main/docs/operations/restore.md",
@@ -48,7 +48,7 @@ export const consoleOperationsStrings = {
     updateMigrationCautionLabel: "Précaution de migration",
     updateMigrationCautionAria: "Précaution de migration pour la mise à jour de Core disponible",
     updateMigrationImpactUnknown:
-      "L’impact de la migration est inconnu. Le manifeste de version signé ne décrit pas les migrations.",
+      "Beamfall ne peut pas déterminer si cette version modifie la base de données.",
     updateMigrationPossible:
       "Cette version peut contenir des migrations irréversibles. La fraîcheur de la sauvegarde est inconnue.",
     updateBackupRequired: "Créez et vérifiez une sauvegarde avant l’installation.",
@@ -77,15 +77,15 @@ export const consoleOperationsStrings = {
     updateExportMetadata: "Exporter les métadonnées",
     updateOfflineRestoreGuidance: "Guide de restauration hors ligne",
     updateRollbackSelectVersion:
-      "Sélectionnez la version antérieure de Beamfall que vous comptez exécuter. Vérifiez que le couple fromVersions/toVersions du manifeste de pré-migration approuvé appartient bien à cette session de mise à niveau ; ne le devinez pas d’après son nom de fichier.",
+      "Sélectionnez la version antérieure de Beamfall que vous voulez exécuter. Vérifiez que les versions indiquées dans le manifeste de pré-migration correspondent exactement à cette mise à niveau. Ne vous fiez pas au nom du fichier.",
     updateRollbackStop:
-      "Arrêtez Beamfall avant la restauration. La commande refuse un verrou de serveur actif.",
+      "Arrêtez Beamfall avant la restauration. La commande ne s’exécute pas tant que Beamfall est en cours d’exécution.",
     updateRollbackRun:
-      "Exécutez la commande de restauration protégée. Elle vérifie le manifeste de pré-migration avant de remplacer l’arborescence de la base de données :",
+      "Exécutez la commande de restauration. Elle vérifie le manifeste de pré-migration avant de remplacer le dossier de la base de données :",
     updateRollbackCommand:
       "beamfall restore --rollback-manifest /path/to/pre-migration/manifest.json --data-dir /var/lib/beamfall",
     updateRollbackRestart:
-      "Redémarrez Beamfall et vérifiez l’état de santé ainsi qu’une lecture authentifiée avant de supprimer l’arborescence de base de données conservée d’avant la restauration.",
+      "Redémarrez Beamfall, vérifiez qu’il fonctionne correctement et que vous pouvez vous connecter, puis supprimez l’ancien dossier de base de données qu’il a conservé.",
     updateCanonicalRestoreProcedure: "Procédure de restauration canonique",
     updateCanonicalRestoreHref:
       "https://github.com/beamfall/core/blob/main/docs/operations/restore.md",
@@ -94,7 +94,7 @@ export const consoleOperationsStrings = {
     updateMigrationCautionLabel: "Migrationshinweis",
     updateMigrationCautionAria: "Migrationshinweis zum verfügbaren Core-Update",
     updateMigrationImpactUnknown:
-      "Die Auswirkungen der Migration sind unbekannt. Das signierte Release-Manifest beschreibt keine Migrationen.",
+      "Beamfall kann nicht feststellen, ob dieses Release die Datenbank ändert.",
     updateMigrationPossible:
       "Dieses Release kann nur vorwärts gerichtete Migrationen enthalten. Die Aktualität des Backups ist unbekannt.",
     updateBackupRequired: "Erstelle und prüfe vor der Installation ein Backup.",
@@ -123,15 +123,15 @@ export const consoleOperationsStrings = {
     updateExportMetadata: "Metadaten exportieren",
     updateOfflineRestoreGuidance: "Hinweise zur Offline-Wiederherstellung",
     updateRollbackSelectVersion:
-      "Wähle die frühere Beamfall-Version aus, die du ausführen willst. Bestätige, dass das fromVersions/toVersions-Tupel des vertrauenswürdigen Vor-Migrations-Manifests zu genau dieser Upgrade-Sitzung gehört; rate nicht anhand des Dateinamens.",
+      "Wähle die frühere Beamfall-Version aus, die du ausführen willst. Prüfe, ob die im Vor-Migrations-Manifest aufgeführten Versionen zu genau diesem Upgrade passen. Verlass dich nicht auf den Dateinamen.",
     updateRollbackStop:
-      "Beende Beamfall vor der Wiederherstellung. Der Befehl verweigert die Ausführung bei aktiver Server-Sperre.",
+      "Beende Beamfall vor der Wiederherstellung. Der Befehl läuft nicht, solange Beamfall ausgeführt wird.",
     updateRollbackRun:
-      "Führe den geschützten Rollback-Befehl aus. Er prüft das Vor-Migrations-Manifest, bevor er den Datenbankbaum ersetzt:",
+      "Führe den Rollback-Befehl aus. Er prüft das Vor-Migrations-Manifest, bevor er den Datenbankordner ersetzt:",
     updateRollbackCommand:
       "beamfall restore --rollback-manifest /path/to/pre-migration/manifest.json --data-dir /var/lib/beamfall",
     updateRollbackRestart:
-      "Starte Beamfall neu und prüfe den Zustand sowie einen authentifizierten Lesezugriff, bevor du den aufbewahrten Datenbankbaum von vor dem Rollback entfernst.",
+      "Starte Beamfall neu, prüfe, ob es fehlerfrei läuft und du dich anmelden kannst, und entferne dann den alten Datenbankordner, den es aufbewahrt hat.",
     updateCanonicalRestoreProcedure: "Kanonisches Wiederherstellungsverfahren",
     updateCanonicalRestoreHref:
       "https://github.com/beamfall/core/blob/main/docs/operations/restore.md",
@@ -140,7 +140,7 @@ export const consoleOperationsStrings = {
     updateMigrationCautionLabel: "Precaución de migración",
     updateMigrationCautionAria: "Precaución de migración para la actualización de Core disponible",
     updateMigrationImpactUnknown:
-      "Se desconoce el impacto de la migración. El manifiesto de versión firmado no describe migraciones.",
+      "Beamfall no puede saber si esta versión modifica la base de datos.",
     updateMigrationPossible:
       "Esta versión puede contener migraciones que solo avanzan. Se desconoce la antigüedad de la copia de seguridad.",
     updateBackupRequired: "Crea y verifica una copia de seguridad antes de instalar.",
@@ -169,15 +169,15 @@ export const consoleOperationsStrings = {
     updateExportMetadata: "Exportar metadatos",
     updateOfflineRestoreGuidance: "Guía de restauración sin conexión",
     updateRollbackSelectVersion:
-      "Selecciona la versión anterior de Beamfall que quieres ejecutar. Confirma que la tupla fromVersions/toVersions del manifiesto previo a la migración de confianza pertenece a esa sesión de actualización exacta; no la deduzcas por el nombre del archivo.",
+      "Selecciona la versión anterior de Beamfall que quieres ejecutar. Comprueba que las versiones indicadas en el manifiesto previo a la migración corresponden exactamente a esa actualización. No te guíes por el nombre del archivo.",
     updateRollbackStop:
-      "Detén Beamfall antes de restaurar. El comando se niega a continuar si hay un bloqueo de servidor activo.",
+      "Detén Beamfall antes de restaurar. El comando no se ejecuta mientras Beamfall está en marcha.",
     updateRollbackRun:
-      "Ejecuta el comando de reversión protegida. Verifica el manifiesto previo a la migración antes de reemplazar el árbol de la base de datos:",
+      "Ejecuta el comando de reversión. Comprueba el manifiesto previo a la migración antes de reemplazar la carpeta de la base de datos:",
     updateRollbackCommand:
       "beamfall restore --rollback-manifest /path/to/pre-migration/manifest.json --data-dir /var/lib/beamfall",
     updateRollbackRestart:
-      "Reinicia Beamfall y verifica el estado de salud y una lectura autenticada antes de eliminar el árbol de la base de datos conservado de antes de la reversión.",
+      "Reinicia Beamfall, comprueba que funciona correctamente y que puedes iniciar sesión, y luego elimina la carpeta antigua de la base de datos que conservó.",
     updateCanonicalRestoreProcedure: "Procedimiento de restauración canónico",
     updateCanonicalRestoreHref:
       "https://github.com/beamfall/core/blob/main/docs/operations/restore.md",
@@ -186,7 +186,7 @@ export const consoleOperationsStrings = {
     updateMigrationCautionLabel: "Cuidado com a migração",
     updateMigrationCautionAria: "Cuidado com a migração para a atualização do Core disponível",
     updateMigrationImpactUnknown:
-      "O impacto da migração é desconhecido. O manifesto de versão assinado não descreve migrações.",
+      "O Beamfall não consegue saber se esta versão altera o banco de dados.",
     updateMigrationPossible:
       "Esta versão pode conter migrações sem volta. A atualidade do backup é desconhecida.",
     updateBackupRequired: "Crie e verifique um backup antes de instalar.",
@@ -215,15 +215,15 @@ export const consoleOperationsStrings = {
     updateExportMetadata: "Exportar metadados",
     updateOfflineRestoreGuidance: "Orientações de restauração offline",
     updateRollbackSelectVersion:
-      "Selecione a versão anterior do Beamfall que você pretende executar. Confirme que a tupla fromVersions/toVersions do manifesto de pré-migração confiável pertence a essa sessão de upgrade exata; não deduza pelo nome do arquivo.",
+      "Selecione a versão anterior do Beamfall que você quer executar. Confira se as versões listadas no manifesto de pré-migração correspondem exatamente a esse upgrade. Não se guie pelo nome do arquivo.",
     updateRollbackStop:
-      "Pare o Beamfall antes de restaurar. O comando recusa continuar se houver um bloqueio de servidor ativo.",
+      "Pare o Beamfall antes de restaurar. O comando não é executado enquanto o Beamfall está em execução.",
     updateRollbackRun:
-      "Execute o comando de reversão protegida. Ele verifica o manifesto de pré-migração antes de substituir a árvore do banco de dados:",
+      "Execute o comando de reversão. Ele verifica o manifesto de pré-migração antes de substituir a pasta do banco de dados:",
     updateRollbackCommand:
       "beamfall restore --rollback-manifest /path/to/pre-migration/manifest.json --data-dir /var/lib/beamfall",
     updateRollbackRestart:
-      "Reinicie o Beamfall e verifique a integridade e uma leitura autenticada antes de remover a árvore do banco de dados retida de antes da reversão.",
+      "Reinicie o Beamfall, confira se ele está íntegro e se você consegue entrar, e depois remova a pasta antiga do banco de dados que ele manteve.",
     updateCanonicalRestoreProcedure: "Procedimento de restauração canônico",
     updateCanonicalRestoreHref:
       "https://github.com/beamfall/core/blob/main/docs/operations/restore.md",

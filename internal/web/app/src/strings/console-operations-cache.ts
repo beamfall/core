@@ -2,12 +2,12 @@ export const consoleOperationsCacheStrings = {
   en: {
     playbackCacheHeading: "Playback rendition cache",
     playbackCacheLead:
-      "Precomputed playback renditions: the cache-health snapshot, explicit generation, and budget eviction.",
+      "Copies of your videos prepared ahead of time so they start faster. Check how much space they use, prepare one title now, or free up space.",
     playbackCacheRefresh: "Refresh",
     playbackCacheUnavailable: "The playback rendition cache is unavailable right now.",
     playbackCacheUnconfigured: "The playback rendition cache is not configured.",
     playbackCacheUnconfiguredHelp:
-      "Set a cache root and disk budget on the server to precompute and govern playback renditions.",
+      "Set a cache folder and a disk budget on the server to prepare playback copies ahead of time.",
     playbackCacheConfigured: "Configured",
     playbackCacheOverBudget: "Over budget",
     playbackCacheStatusReady: "Ready",
@@ -17,16 +17,17 @@ export const consoleOperationsCacheStrings = {
     playbackCacheDiskUsed: "Disk used / budget",
     playbackCachePrecompute: "Precompute renditions",
     playbackCachePrecomputeHelp:
-      "Explicit operator generation for one Media's honest ladder. Never automatic.",
+      "Prepares every playback quality for one title now. Beamfall never does this on its own.",
     playbackCacheMediaPlaceholder: "Media ID",
     playbackCachePrecomputeAction: "Precompute",
     playbackCacheEvict: "Evict over budget",
-    playbackCacheEvictHelp: "Immediate disk-budget eviction pass. Cache objects are rebuildable.",
+    playbackCacheEvictHelp:
+      "Removes prepared copies until the cache fits its disk budget. Beamfall can prepare them again later.",
     playbackCacheEvictAction: "Evict over budget",
     playbackCacheEvictConfirm: "Evict cache objects over the disk budget?",
     capabilitiesHeading: "Capabilities",
     capabilitiesLead:
-      "Workflow capabilities are enabled by config and flippable here; probe-detected capabilities are auto-detected and shown read-only.",
+      "Turn workflow features on or off here. Detected features depend on this computer, so they can only be viewed.",
     capabilitiesRefresh: "Refresh",
     capabilitiesUnavailable: "Capabilities are unavailable right now.",
     capabilitiesEmpty: "No capabilities are compiled into this server.",
@@ -40,12 +41,12 @@ export const consoleOperationsCacheStrings = {
   fr: {
     playbackCacheHeading: "Cache des versions de lecture",
     playbackCacheLead:
-      "Versions de lecture précalculées : l’état du cache, la génération explicite et l’éviction selon le budget.",
+      "Des copies de vos vidéos préparées à l’avance pour qu’elles démarrent plus vite. Vérifiez l’espace qu’elles occupent, préparez un titre maintenant ou libérez de l’espace.",
     playbackCacheRefresh: "Actualiser",
     playbackCacheUnavailable: "Le cache des versions de lecture est indisponible pour le moment.",
     playbackCacheUnconfigured: "Le cache des versions de lecture n’est pas configuré.",
     playbackCacheUnconfiguredHelp:
-      "Définissez une racine de cache et un budget disque sur le serveur pour précalculer et gérer les versions de lecture.",
+      "Définissez un dossier de cache et un budget disque sur le serveur pour préparer à l’avance des copies de lecture.",
     playbackCacheConfigured: "Configuré",
     playbackCacheOverBudget: "Budget dépassé",
     playbackCacheStatusReady: "Prêt",
@@ -55,17 +56,17 @@ export const consoleOperationsCacheStrings = {
     playbackCacheDiskUsed: "Disque utilisé / budget",
     playbackCachePrecompute: "Précalculer les versions",
     playbackCachePrecomputeHelp:
-      "Génération explicite par l’opérateur pour l’échelle honnête d’un média. Jamais automatique.",
+      "Prépare dès maintenant toutes les qualités de lecture d’un titre. Beamfall ne le fait jamais de lui-même.",
     playbackCacheMediaPlaceholder: "ID du média",
     playbackCachePrecomputeAction: "Précalculer",
     playbackCacheEvict: "Évincer au-delà du budget",
     playbackCacheEvictHelp:
-      "Passe immédiate d’éviction selon le budget disque. Les objets du cache peuvent être reconstruits.",
+      "Supprime des copies préparées jusqu’à ce que le cache respecte son budget disque. Beamfall pourra les préparer à nouveau plus tard.",
     playbackCacheEvictAction: "Évincer au-delà du budget",
     playbackCacheEvictConfirm: "Évincer les objets du cache qui dépassent le budget disque ?",
     capabilitiesHeading: "Capacités",
     capabilitiesLead:
-      "Les capacités de flux de travail sont activées par la configuration et modifiables ici ; les capacités détectées par sonde le sont automatiquement et s’affichent en lecture seule.",
+      "Activez ou désactivez ici les fonctions de flux de travail. Les fonctions détectées dépendent de cet ordinateur et ne peuvent donc qu’être consultées.",
     capabilitiesRefresh: "Actualiser",
     capabilitiesUnavailable: "Les capacités sont indisponibles pour le moment.",
     capabilitiesEmpty: "Aucune capacité n’est compilée dans ce serveur.",
@@ -79,12 +80,12 @@ export const consoleOperationsCacheStrings = {
   de: {
     playbackCacheHeading: "Cache für Wiedergabeversionen",
     playbackCacheLead:
-      "Vorberechnete Wiedergabeversionen: Cache-Zustand, explizite Erzeugung und Bereinigung nach Budget.",
+      "Kopien deiner Videos, die im Voraus vorbereitet werden, damit sie schneller starten. Prüfe, wie viel Platz sie belegen, bereite jetzt einen Titel vor oder gib Speicherplatz frei.",
     playbackCacheRefresh: "Aktualisieren",
     playbackCacheUnavailable: "Der Cache für Wiedergabeversionen ist momentan nicht verfügbar.",
     playbackCacheUnconfigured: "Der Cache für Wiedergabeversionen ist nicht konfiguriert.",
     playbackCacheUnconfiguredHelp:
-      "Lege auf dem Server ein Cache-Stammverzeichnis und ein Festplattenbudget fest, um Wiedergabeversionen vorzuberechnen und zu verwalten.",
+      "Lege auf dem Server einen Cache-Ordner und ein Festplattenbudget fest, um Wiedergabekopien im Voraus vorzubereiten.",
     playbackCacheConfigured: "Konfiguriert",
     playbackCacheOverBudget: "Über Budget",
     playbackCacheStatusReady: "Bereit",
@@ -94,17 +95,17 @@ export const consoleOperationsCacheStrings = {
     playbackCacheDiskUsed: "Festplatte belegt / Budget",
     playbackCachePrecompute: "Versionen vorberechnen",
     playbackCachePrecomputeHelp:
-      "Explizite Erzeugung durch den Betreiber für die ehrliche Stufenleiter eines Mediums. Nie automatisch.",
+      "Bereitet jetzt alle Wiedergabequalitäten für einen Titel vor. Beamfall macht das nie von selbst.",
     playbackCacheMediaPlaceholder: "Medien-ID",
     playbackCachePrecomputeAction: "Vorberechnen",
     playbackCacheEvict: "Über Budget bereinigen",
     playbackCacheEvictHelp:
-      "Sofortiger Bereinigungslauf nach Festplattenbudget. Cache-Objekte lassen sich neu erzeugen.",
+      "Entfernt vorbereitete Kopien, bis der Cache in sein Festplattenbudget passt. Beamfall kann sie später erneut vorbereiten.",
     playbackCacheEvictAction: "Über Budget bereinigen",
     playbackCacheEvictConfirm: "Cache-Objekte entfernen, die das Festplattenbudget überschreiten?",
     capabilitiesHeading: "Funktionen",
     capabilitiesLead:
-      "Workflow-Funktionen werden per Konfiguration freigegeben und lassen sich hier umschalten; per Probe erkannte Funktionen werden automatisch erkannt und nur lesend angezeigt.",
+      "Schalte Workflow-Funktionen hier ein oder aus. Erkannte Funktionen hängen von diesem Computer ab und lassen sich deshalb nur ansehen.",
     capabilitiesRefresh: "Aktualisieren",
     capabilitiesUnavailable: "Funktionen sind momentan nicht verfügbar.",
     capabilitiesEmpty: "In diesen Server sind keine Funktionen einkompiliert.",
@@ -118,13 +119,13 @@ export const consoleOperationsCacheStrings = {
   es: {
     playbackCacheHeading: "Caché de versiones de reproducción",
     playbackCacheLead:
-      "Versiones de reproducción precalculadas: el estado del caché, la generación explícita y la expulsión por presupuesto.",
+      "Copias de tus videos preparadas de antemano para que empiecen más rápido. Consulta cuánto espacio ocupan, prepara un título ahora o libera espacio.",
     playbackCacheRefresh: "Actualizar",
     playbackCacheUnavailable:
       "El caché de versiones de reproducción no está disponible ahora mismo.",
     playbackCacheUnconfigured: "El caché de versiones de reproducción no está configurado.",
     playbackCacheUnconfiguredHelp:
-      "Define una raíz de caché y un presupuesto de disco en el servidor para precalcular y gestionar las versiones de reproducción.",
+      "Define una carpeta de caché y un presupuesto de disco en el servidor para preparar copias de reproducción de antemano.",
     playbackCacheConfigured: "Configurado",
     playbackCacheOverBudget: "Presupuesto excedido",
     playbackCacheStatusReady: "Listo",
@@ -134,18 +135,18 @@ export const consoleOperationsCacheStrings = {
     playbackCacheDiskUsed: "Disco usado / presupuesto",
     playbackCachePrecompute: "Precalcular versiones",
     playbackCachePrecomputeHelp:
-      "Generación explícita por parte del operador para la escalera honesta de un medio. Nunca automática.",
+      "Prepara ahora todas las calidades de reproducción de un título. Beamfall nunca lo hace por su cuenta.",
     playbackCacheMediaPlaceholder: "ID del medio",
     playbackCachePrecomputeAction: "Precalcular",
     playbackCacheEvict: "Expulsar el exceso de presupuesto",
     playbackCacheEvictHelp:
-      "Pasada inmediata de expulsión según el presupuesto de disco. Los objetos del caché se pueden reconstruir.",
+      "Elimina copias preparadas hasta que el caché se ajuste a su presupuesto de disco. Beamfall puede volver a prepararlas más adelante.",
     playbackCacheEvictAction: "Expulsar el exceso de presupuesto",
     playbackCacheEvictConfirm:
       "¿Expulsar los objetos del caché que superan el presupuesto de disco?",
     capabilitiesHeading: "Capacidades",
     capabilitiesLead:
-      "Las capacidades de flujo de trabajo se habilitan por configuración y se pueden cambiar aquí; las detectadas por sondeo se detectan automáticamente y se muestran en solo lectura.",
+      "Activa o desactiva aquí las funciones de flujo de trabajo. Las funciones detectadas dependen de este equipo, así que solo se pueden consultar.",
     capabilitiesRefresh: "Actualizar",
     capabilitiesUnavailable: "Las capacidades no están disponibles ahora mismo.",
     capabilitiesEmpty: "No hay capacidades compiladas en este servidor.",
@@ -159,12 +160,12 @@ export const consoleOperationsCacheStrings = {
   pt: {
     playbackCacheHeading: "Cache de versões de reprodução",
     playbackCacheLead:
-      "Versões de reprodução pré-calculadas: o estado do cache, a geração explícita e a remoção por orçamento.",
+      "Cópias dos seus vídeos preparadas com antecedência para que comecem mais rápido. Veja quanto espaço elas ocupam, prepare um título agora ou libere espaço.",
     playbackCacheRefresh: "Atualizar",
     playbackCacheUnavailable: "O cache de versões de reprodução está indisponível no momento.",
     playbackCacheUnconfigured: "O cache de versões de reprodução não está configurado.",
     playbackCacheUnconfiguredHelp:
-      "Defina uma raiz de cache e um orçamento de disco no servidor para pré-calcular e gerenciar as versões de reprodução.",
+      "Defina uma pasta de cache e um orçamento de disco no servidor para preparar cópias de reprodução com antecedência.",
     playbackCacheConfigured: "Configurado",
     playbackCacheOverBudget: "Acima do orçamento",
     playbackCacheStatusReady: "Pronto",
@@ -174,17 +175,17 @@ export const consoleOperationsCacheStrings = {
     playbackCacheDiskUsed: "Disco usado / orçamento",
     playbackCachePrecompute: "Pré-calcular versões",
     playbackCachePrecomputeHelp:
-      "Geração explícita pelo operador para a escada honesta de uma mídia. Nunca automática.",
+      "Prepara agora todas as qualidades de reprodução de um título. O Beamfall nunca faz isso por conta própria.",
     playbackCacheMediaPlaceholder: "ID da mídia",
     playbackCachePrecomputeAction: "Pré-calcular",
     playbackCacheEvict: "Remover o excedente do orçamento",
     playbackCacheEvictHelp:
-      "Passagem imediata de remoção pelo orçamento de disco. Os objetos do cache podem ser reconstruídos.",
+      "Remove cópias preparadas até o cache caber no orçamento de disco. O Beamfall pode prepará-las de novo depois.",
     playbackCacheEvictAction: "Remover o excedente do orçamento",
     playbackCacheEvictConfirm: "Remover os objetos do cache que excedem o orçamento de disco?",
     capabilitiesHeading: "Recursos",
     capabilitiesLead:
-      "Os recursos de fluxo de trabalho são ativados pela configuração e podem ser alternados aqui; os detectados por sondagem são detectados automaticamente e aparecem somente para leitura.",
+      "Ative ou desative aqui os recursos de fluxo de trabalho. Os recursos detectados dependem deste computador, por isso só podem ser consultados.",
     capabilitiesRefresh: "Atualizar",
     capabilitiesUnavailable: "Os recursos estão indisponíveis no momento.",
     capabilitiesEmpty: "Nenhum recurso está compilado neste servidor.",
