@@ -297,7 +297,7 @@ func (h *Handler) retryOfflinePack(ctx context.Context, scope auth.Scope, req re
 		if err := json.Unmarshal(payload, &job); err != nil {
 			return OfflinePackInfo{}, err
 		}
-		if _, err := h.store.EnqueueJob(ctx, store.Job{
+		queued, err := h.store.EnqueueJob(ctx, store.Job{
 			Kind:  offlinepack.BuildJobKind,
 			Class: store.JobClassBackground,
 			// The original build's key: an operator jobRetry keeps that key, so
@@ -306,11 +306,22 @@ func (h *Handler) retryOfflinePack(ctx context.Context, scope auth.Scope, req re
 			DedupeKey: offlinePackQueueDedupeKey(scope, job.TargetKind, job.TargetRef, job.Quality, job.SelectedVersions),
 			Payload:   payload,
 			CreatedAt: time.Now().UTC(),
-		}); err != nil {
+		})
+		if err != nil {
 			if failErr := h.offlinePacks.FailBuild(context.WithoutCancel(ctx), id, offlinepack.FailureBuild); failErr != nil {
 				return OfflinePackInfo{}, errors.Join(err, failErr)
 			}
 			return OfflinePackInfo{}, err
+		}
+		// The key also matches a newer pack built from the same selection.
+		// Joining its job would leave this pack building with no worker, so
+		// put it back to failed, where it stays retryable.
+		var matched offlinepack.BuildJobPayload
+		if err := json.Unmarshal(queued.Payload, &matched); err != nil || matched.PackID != id {
+			if failErr := h.offlinePacks.FailBuild(context.WithoutCancel(ctx), id, offlinepack.FailureBuild); failErr != nil {
+				return OfflinePackInfo{}, failErr
+			}
+			return OfflinePackInfo{}, clientError("another offline pack build for the same selection is running; retry when it finishes")
 		}
 	}
 	return offlinePackBuildInfo(build), nil

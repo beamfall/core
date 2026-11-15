@@ -198,6 +198,55 @@ func TestOfflinePackRetryJoinsOperatorJobRetry(t *testing.T) {
 	}
 }
 
+// TestOfflinePackRetryRefusesToJoinAnotherPacksJob pins that retrying a failed
+// pack while a newer pack of the same selection is building does not join
+// that pack's job: the retry is refused, the failed pack stays retryable, and
+// it rebuilds under its own ID once the newer build finishes.
+func TestOfflinePackRetryRefusesToJoinAnotherPacksJob(t *testing.T) {
+	handler, st := newOfflinePackHandler(t)
+	file, err := st.PrimaryMediaFile(t.Context(), "media-alpha", store.LibraryFilter{AllLibraries: true, Revealed: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	original, err := os.ReadFile(file.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failed := queueOfflinePackBuildForTest(t, handler)
+	if err := os.Remove(file.Path); err != nil {
+		t.Fatal(err)
+	}
+	runOfflinePackBuildJob(t, handler)
+	if err := os.WriteFile(file.Path, original, 0o600); err != nil { // #nosec G703 -- test fixture path from the seeded catalog under t.TempDir()
+		t.Fatal(err)
+	}
+	newer := queueOfflinePackBuildForTest(t, handler)
+	if newer.ID == failed.ID {
+		t.Fatalf("newer build reused the failed pack ID %q", failed.ID)
+	}
+	if _, errs := retryOfflinePackForTest(t, handler, failed.ID); len(errs) == 0 {
+		t.Fatal("retry while another pack of the same selection is building succeeded")
+	}
+	states := map[string]string{}
+	for _, pack := range listOfflinePackBuilds(t, handler) {
+		states[pack.ID] = pack.State
+	}
+	if states[failed.ID] != "failed" || states[newer.ID] != "building" {
+		t.Fatalf("states after the refused retry = %v, want %q failed and %q building", states, failed.ID, newer.ID)
+	}
+	runOfflinePackBuildJob(t, handler)
+	retried, errs := retryOfflinePackForTest(t, handler, failed.ID)
+	if len(errs) != 0 || retried.State != "building" {
+		t.Fatalf("retry after the newer build = %+v / %#v, want building", retried, errs)
+	}
+	runOfflinePackBuildJob(t, handler)
+	for _, pack := range listOfflinePackBuilds(t, handler) {
+		if pack.State != "ready" {
+			t.Fatalf("pack %q = %q after both builds, want ready", pack.ID, pack.State)
+		}
+	}
+}
+
 // TestOfflinePackRetryAndRevokeOfUnknownOrBuildingIDs pins the edges: an ID
 // with no build is not found, a building build cannot be revoked, and revoking
 // a failed build dismisses it from the list.
