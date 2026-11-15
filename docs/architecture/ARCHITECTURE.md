@@ -147,6 +147,7 @@ resolver over `store` typed methods. No `internal/util`, no `internal/model`, no
 | `graphshape` | Generic JSON-shape reflection walker used by graph's nested schema artifact | 0011 §8 |
 | `hostmetrics` | In-memory one-hour ring of host CPU, memory and this server's own network traffic for the console graphs; never persisted or sent off the server | — |
 | `redact` | Secret-class and personal-detail redaction for operational log text (API keys, auth headers, URL tokens, content paths, secret-named values, home-directory user names, IP addresses) | — |
+| `l10n` | Server-text localization: the vendored shared locale declaration, per-locale catalogs, request locale negotiation (profile preference, `Accept-Language`, source locale) | — |
 | `logtail` | Bounded in-memory tail of the most recent operator log lines, redacted before they are kept, for the console server-log read (CORE-1716) | — |
 | `restorestage` | Staged restore from the console: decrypts a backup into the data directory and leaves a staged marker; the next start applies it under the server lock, and a restore journal left by an interrupted apply blocks later starts (CORE-1720) | 0115 |
 | `identify` | Identify/apply pipeline, confidence thresholds, Unmatched queue, match pinning, and per-field source precedence | 0003 §4, 0009 §8 |
@@ -213,6 +214,7 @@ arch test ever disagree, **the test wins** — the test is the law, this table i
 | `capabilities` | — (leaf; compile/runtime capability self-report for clients and CI manifest checks) |
 | `hostmetrics` | — (leaf; host CPU, memory and own-traffic sampler behind the console graphs, CORE-1195; stdlib only, no internal deps) |
 | `redact` | — (leaf; log-text redaction shared by `jobs` and `logtail`; stdlib only, no internal deps) |
+| `l10n` | — (leaf; server-text catalogs and locale negotiation, CORE-2102; stdlib and `golang.org/x/text` only) |
 | `logtail` | redact (in-memory tail of redacted operator log lines for the console server-log read, CORE-1716) |
 | `restorestage` | store, backup (staged restore, CORE-1720: `backup` decrypts the set, `store` reads the manifest and checks the restore identity; the apply runs in `cmd/beamfall` under the server lock) |
 | `causation` | — (leaf; ADR-0125 Integration Worker global-chain budget, per-worker action rate, authenticated causation tokens, and bounded/coalesced abort feed; stdlib only) |
@@ -261,11 +263,11 @@ arch test ever disagree, **the test wins** — the test is the law, this table i
 | `webhook` | store, jsonstate |
 | `watcher` | store |
 | `schedule` | store |
-| `manifest` | store, plugin, auth |
+| `manifest` | store, plugin, auth, l10n |
 | `graphquery` | — |
 | `graphshape` | — |
 | `graph` | any capability above (incl. store, graphquery); never server, app |
-| `server` | auth, beam, manifest, moderation, pairing, mediahttp, playback, reveal, store, web |
+| `server` | auth, beam, l10n, manifest, moderation, pairing, mediahttp, playback, reveal, store, web |
 | `app` | anything except conformance |
 | `conformance` | anything (it is the enforcement layer) |
 | `cmd/beamfall` | anything (sole importer of `plugin/firstparty/**`) |

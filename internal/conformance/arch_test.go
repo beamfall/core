@@ -34,6 +34,7 @@ var archWhitelist = map[string][]string{
 	"discovery":         {},
 	"hostmetrics":       {},                  // leaf; in-memory one-hour ring of host CPU, memory and this server's own network traffic for the console (CORE-1195), stdlib only, never persisted or sent off the server
 	"redact":            {},                  // leaf; log-text redaction shared by jobs and logtail (CORE-1716), stdlib only
+	"l10n":              {},                  // leaf; server-text locale negotiation and catalogs over the vendored shared locale declaration (CORE-2102)
 	"logtail":           {"redact"},          // in-memory tail of redacted operator log lines for the console server-log read (CORE-1716)
 	"restorestage":      {"store", "backup"}, // staged restore (CORE-1720): backup decrypts the set, store reads the manifest and checks the restore identity; the apply runs in cmd/beamfall under the server lock
 	"graphquery":        {},                  // leaf; pure GraphQL operation selection and top-level field parsing for the hand-written graph dispatcher
@@ -80,11 +81,11 @@ var archWhitelist = map[string][]string{
 
 	"watcher":      {"store"},
 	"schedule":     {"store"},
-	"manifest":     {"store", "plugin", "auth"},
+	"manifest":     {"store", "plugin", "auth", "l10n"},
 	"web":          {},                     // leaf; the go:embed shim only
 	"remoteaccess": {"config"},             // direct-HTTPS/ACME + relay carrier; reads config, owns autocert (ADR-0012/0018/0025)
 	"moderation":   {"store", "jsonstate"}, // App Store Guideline 1.2 UGC substrate (NATIVEMGR-4): file-backed report/block/contact store; imports store only for its ProfileID/DeviceID id types (no schema/graph)
-	"server":       {"auth", "beam", "capabilities", "manifest", "moderation", "pairing", "mediahttp", "playback", "reveal", "store", "streamtoken", "web"},
+	"server":       {"auth", "beam", "capabilities", "l10n", "manifest", "moderation", "pairing", "mediahttp", "playback", "reveal", "store", "streamtoken", "web"},
 }
 
 // archAnythingExcept lists packages whose §4 row is "anything except …".

@@ -1,0 +1,19 @@
+{
+  "library_root.cant_open": "El servidor no puede abrir {path}.",
+  "library_root.missing": "La carpeta {path} no existe en el servidor.",
+  "library_root.not_folder": "{path} es un archivo, no una carpeta.",
+  "library_root.unreadable": "El servidor no tiene permiso para leer {path}.",
+  "manifest.nav.ambient": "Ambiente",
+  "manifest.nav.home": "Inicio",
+  "manifest.shelf.continue_watching": "Seguir viendo",
+  "manifest.shelf.most_played": "Lo que más reproduces",
+  "manifest.shelf.recently_added": "Añadidos recientemente",
+  "manifest.shelf.watchlist": "Mi lista",
+  "notification.access_request.title": "Acceso solicitado",
+  "notification.extension_request.title": "Más tiempo solicitado",
+  "notification.watch_party_invite.title": "Invitación Watch Party",
+  "notification.watch_party_request.title": "Solicitud de salto en Watch Party",
+  "setup.lan_hint.finish_setup": "Abre Beamfall con su dirección IP para terminar la configuración sin el token de configuración.",
+  "setup.lan_hint.sign_in": "Abre Beamfall con su dirección IP para iniciar sesión con la contraseña de administrador.",
+  "watch_party.participant_fallback": "Participante"
+}
