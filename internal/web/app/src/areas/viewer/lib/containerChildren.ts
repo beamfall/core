@@ -1,0 +1,52 @@
+import type { SourceItem } from "@/lib/graphql/types";
+import { artworkSlotURL } from "./artwork";
+import { resumeProgress } from "./mediaDetail";
+
+// A container Entity's children (CORE-1786): the ordered Media list
+// mediaForEntity returns, grouped by the plugin's kind in first-seen order and
+// read for the one child to play next. Nothing here names a plugin kind.
+
+export interface ChildGroup {
+  kind: string;
+  items: SourceItem[];
+}
+
+/** Groups children by kind, keeping the server's order within and across groups. */
+export function groupChildrenByKind(items: readonly SourceItem[]): ChildGroup[] {
+  const groups: ChildGroup[] = [];
+  for (const item of items) {
+    const group = groups.find((g) => g.kind === item.kind);
+    if (group) group.items.push(item);
+    else groups.push({ kind: item.kind, items: [item] });
+  }
+  return groups;
+}
+
+export interface NextUpChild {
+  item: SourceItem;
+  /** True when the child has a saved position to resume from. */
+  resume: boolean;
+}
+
+/**
+ * The child the container's primary action plays: the first one in progress,
+ * else the first not yet finished, else (all finished) the first. Locked and
+ * non-playable children are skipped. Null when nothing can play.
+ */
+export function nextUpChild(items: readonly SourceItem[]): NextUpChild | null {
+  const playable = items.filter((item) => item.kind === "media" && !item.locked);
+  const inProgress = playable.find((item) => resumeProgress(item));
+  if (inProgress) return { item: inProgress, resume: true };
+  const unfinished = playable.find((item) => item.engagement?.completed !== true);
+  if (unfinished) return { item: unfinished, resume: false };
+  return playable.length > 0 ? { item: playable[0], resume: false } : null;
+}
+
+/** The child's still: a thumb slot first, then its backdrop, then its poster. */
+export function childThumbURL(item: SourceItem): string {
+  return (
+    artworkSlotURL(item, "thumb") ||
+    artworkSlotURL(item, "backdrop") ||
+    artworkSlotURL(item, "poster")
+  );
+}
