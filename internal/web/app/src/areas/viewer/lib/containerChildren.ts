@@ -55,8 +55,9 @@ export function childThumbURL(item: SourceItem): string {
  * The child container a container with no Media of its own plays next: the
  * first related group whose archetype is a container, then its first item with
  * children left to finish, else (all finished) its first. Null when there is
- * no such group. Only read when the Entity has no direct Media, so a parent
- * container among the related groups never stands in for a child.
+ * no such group. Only read when the Entity has no direct Media. Related groups
+ * carry no relation direction, so in a tree three or more containers deep a
+ * parent group sorting first could stand in for a child (CORE-2036).
  */
 export function nextUpChildContainer(
   groups: readonly { archetype?: string; items: readonly SourceItem[] }[] | undefined,
@@ -64,5 +65,17 @@ export function nextUpChildContainer(
   const group = groups?.find((g) => g.archetype === "container" && g.items.length > 0);
   if (!group) return null;
   const items = group.items.filter((item) => !item.locked);
-  return items.find((item) => (item.engagement?.remainingCount ?? 1) > 0) ?? items[0] ?? null;
+  return items.find(hasChildrenLeft) ?? items[0] ?? null;
+}
+
+/**
+ * Whether a container still has children to finish. The server omits zero
+ * counts, so a container with a total but no remaining count is finished; one
+ * with no counts at all is unknown and counts as unfinished.
+ */
+function hasChildrenLeft(item: SourceItem): boolean {
+  const engagement = item.engagement;
+  if (engagement?.completed === true) return false;
+  if (engagement?.remainingCount !== undefined) return engagement.remainingCount > 0;
+  return !engagement?.totalCount;
 }

@@ -84,6 +84,18 @@ describe("nextUpChildContainer", () => {
     ).toBe("s1");
   });
 
+  it("treats an omitted zero remaining count, or completed, as finished", () => {
+    const finished = box("s1", undefined, { engagement: { totalCount: 4 } });
+    const completed = box("s2", undefined, { engagement: { completed: true } });
+    expect(
+      nextUpChildContainer([{ archetype: "container", items: [finished, completed, box("s3", 2)] }])
+        ?.id,
+    ).toBe("s3");
+    expect(
+      nextUpChildContainer([{ archetype: "container", items: [box("s1"), box("s2", 2)] }])?.id,
+    ).toBe("s1");
+  });
+
   it("skips locked children and returns null without a container group", () => {
     expect(
       nextUpChildContainer([
