@@ -2,9 +2,10 @@
 // without its plaintext leaving the protected plane (ADR-0235, amending
 // ADR-0045 §2.2).
 //
-// A job serves the decrypted source to the transcoder over a loopback-only,
-// per-job HTTP endpoint guarded by a 256-bit bearer token, reads the
-// transcoder's fragmented MP4 from a pipe, and encrypts it under an ephemeral
+// A job serves the decrypted source over a loopback-only, per-job HTTP
+// endpoint guarded by a 256-bit bearer token, first to a probe that measures
+// its playback length and then to the transcoder, reads the transcoder's
+// fragmented MP4 from a pipe, and encrypts it under an ephemeral
 // per-job key into a staging file the moment it arrives. The staging file is
 // owner-only and created exclusively; it is removed and the key zeroed on
 // success, failure and cancellation alike. A segment index is built from the
@@ -15,5 +16,7 @@
 // The endpoint and the job stop the moment authorization ends: the caller's
 // revocation check is polled throughout, and a revoked or expired token refuses
 // new requests and aborts responses mid-body. A source that fails to decrypt or
-// ends early fails the job even when the transcoder itself exits cleanly.
+// ends early fails the job even when the transcoder itself exits cleanly, as
+// does an output that runs short of the probed length or a source whose length
+// the probe cannot name.
 package encderiv

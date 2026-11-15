@@ -169,9 +169,6 @@ type packBuildSource struct {
 	transcode  bool
 	transcoded bool
 	staged     *encderiv.Result
-	// duration is the selected file's playback length, which an encrypted
-	// transcode must cover. Only an encrypted transcode sets it.
-	duration time.Duration
 	// streams is the source file's stream inventory, read for transcodes.
 	streams []store.MediaFileStream
 }
@@ -192,6 +189,9 @@ func (s *Service) preflightBuildSources(ctx context.Context, ids []store.MediaID
 		if encryptedTranscode && s.pipeTranscode == nil {
 			return nil, fmt.Errorf("%w: encrypted-library transcoder is not configured", ErrTranscode)
 		}
+		if encryptedTranscode && s.pipeProbe == nil {
+			return nil, fmt.Errorf("%w: encrypted-library duration probe is not configured", ErrTranscode)
+		}
 		if encryptedTranscode && s.reauthorize == nil {
 			return nil, fmt.Errorf("%w: encrypted-library re-authorization is not configured", ErrTranscode)
 		}
@@ -202,11 +202,6 @@ func (s *Service) preflightBuildSources(ctx context.Context, ids []store.MediaID
 		source := packBuildSource{
 			mediaID: id, libraryID: media.LibraryID, path: file.Path,
 			selectedVersion: file.VersionLabel, transcode: transcode,
-		}
-		if encryptedTranscode {
-			if source.duration, err = s.selectedFileDuration(ctx, media, file); err != nil {
-				return nil, err
-			}
 		}
 		if transcode {
 			source.streams, err = s.store.MediaFileStreams(ctx, file.ContentFingerprint)
@@ -235,25 +230,6 @@ func (s *Service) preflightBuildSources(ctx context.Context, ids []store.MediaID
 		sources = append(sources, source)
 	}
 	return sources, nil
-}
-
-// selectedFileDuration is the playback length of the file an encrypted
-// transcode reads. Without it a transcode that stopped early could not be told
-// from a complete one, so a file of unknown duration is refused. The catalog
-// keeps one duration per Media, probed from its first Version's file (the one
-// MediaFactsFingerprint names), so any other Version has none.
-func (s *Service) selectedFileDuration(ctx context.Context, media store.Media, file store.MediaFile) (time.Duration, error) {
-	if media.DurationSeconds <= 0 {
-		return 0, fmt.Errorf("%w: the source's duration is unknown", ErrTranscode)
-	}
-	factsFingerprint, _, err := s.store.MediaFactsFingerprint(ctx, media.ID)
-	if err != nil {
-		return 0, err
-	}
-	if factsFingerprint == "" || file.ContentFingerprint != factsFingerprint {
-		return 0, fmt.Errorf("%w: the selected Version's duration is unknown", ErrTranscode)
-	}
-	return time.Duration(media.DurationSeconds) * time.Second, nil
 }
 
 // transcodeSources replaces each marked source with its transcode in packDir
@@ -308,11 +284,16 @@ func (s *Service) isEncrypted(libraryID store.LibraryID) bool {
 // transcodeEncrypted transcodes one item of an Encrypted Library without
 // plaintext leaving the protected plane (ADR-0235): the transcoder reads the
 // decrypted source from a token-gated loopback endpoint and its output is
-// staged encrypted under a per-item key. The build re-checks the scope's
-// authorization throughout, and a Seal or a lost grant ends the transcode.
+// staged encrypted under a per-item key. The output must cover the length the
+// duration probe measures from those same bytes first. The build re-checks the
+// scope's authorization throughout, and a Seal or a lost grant ends the
+// transcode.
 func (s *Service) transcodeEncrypted(ctx context.Context, scope auth.Scope, source *packBuildSource, packDir string, index int, quality string) error {
 	if s.pipeTranscode == nil {
 		return fmt.Errorf("%w: encrypted-library transcoder is not configured", ErrTranscode)
+	}
+	if s.pipeProbe == nil {
+		return fmt.Errorf("%w: encrypted-library duration probe is not configured", ErrTranscode)
 	}
 	stageDir, err := filepath.Abs(packDir)
 	if err != nil {
@@ -328,13 +309,13 @@ func (s *Service) transcodeEncrypted(ctx context.Context, scope auth.Scope, sour
 	}
 	mediaID, libraryID, path, streams := source.mediaID, source.libraryID, source.path, source.streams
 	result, err := encderiv.Run(ctx, encderiv.Job{
-		Open:           func() (io.ReadSeekCloser, error) { return s.openContent(libraryID, path) },
-		Size:           size,
-		StageDir:       stageDir,
-		StageName:      fmt.Sprintf("%04d", index),
-		MaxBytes:       int64(MaxItemSize),
-		SourceDuration: source.duration,
-		PollInterval:   s.pipePoll,
+		Open:          func() (io.ReadSeekCloser, error) { return s.openContent(libraryID, path) },
+		Size:          size,
+		StageDir:      stageDir,
+		StageName:     fmt.Sprintf("%04d", index),
+		MaxBytes:      int64(MaxItemSize),
+		ProbeDuration: s.pipeProbe,
+		PollInterval:  s.pipePoll,
 		Revoked: func(ctx context.Context) error {
 			return s.buildRevoked(ctx, scope, mediaID, libraryID)
 		},

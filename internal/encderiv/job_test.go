@@ -61,6 +61,14 @@ func synthTranscoder(tolerant bool, during func()) func(context.Context, Input, 
 	}
 }
 
+// testSourceDuration is the length of synthFrags' 60 frames.
+const testSourceDuration = 60 * testFrameDuration * time.Second / testVideoTimescale
+
+// probeReturning is a duration probe that reports d and err without reading.
+func probeReturning(d time.Duration, err error) func(context.Context, Input) (time.Duration, error) {
+	return func(context.Context, Input) (time.Duration, error) { return d, err }
+}
+
 type jobFixture struct {
 	stageDir string
 	tmpDir   string
@@ -83,15 +91,14 @@ func newJobFixture(t *testing.T) (*jobFixture, Job) {
 		fx.needles = append(fx.needles, fx.stream.raw[at:at+16])
 	}
 	job := Job{
-		Open:         func() (io.ReadSeekCloser, error) { return memSource{bytes.NewReader(fx.source)}, nil },
-		Size:         int64(len(fx.source)),
-		StageDir:     fx.stageDir,
-		StageName:    "0001",
-		PollInterval: time.Millisecond,
-		// synthFrags' 60 frames.
-		SourceDuration: 60 * testFrameDuration * time.Second / testVideoTimescale,
-		Revoked:        func(context.Context) error { return nil },
-		Transcode:      synthTranscoder(false, nil),
+		Open:          func() (io.ReadSeekCloser, error) { return memSource{bytes.NewReader(fx.source)}, nil },
+		Size:          int64(len(fx.source)),
+		StageDir:      fx.stageDir,
+		StageName:     "0001",
+		PollInterval:  time.Millisecond,
+		ProbeDuration: probeReturning(testSourceDuration, nil),
+		Revoked:       func(context.Context) error { return nil },
+		Transcode:     synthTranscoder(false, nil),
 	}
 	return fx, job
 }
@@ -329,14 +336,43 @@ func TestRunLeavesNoStagingOnFailure(t *testing.T) {
 			}
 		}, ErrInvalidOutput},
 		"output short of the source, clean exit": {func(_ *jobFixture, job *Job, _ context.CancelFunc) {
-			job.SourceDuration += 1500 * time.Millisecond
+			job.ProbeDuration = probeReturning(testSourceDuration+1500*time.Millisecond, nil)
 		}, ErrInvalidOutput},
 		"no source duration": {func(_ *jobFixture, job *Job, _ context.CancelFunc) {
-			job.SourceDuration = 0
+			job.ProbeDuration = probeReturning(0, nil)
 			job.Transcode = func(context.Context, Input, io.Writer) error {
 				panic("transcoder started without a source duration")
 			}
-		}, nil},
+		}, ErrSourceDuration},
+		"negative source duration": {func(_ *jobFixture, job *Job, _ context.CancelFunc) {
+			job.ProbeDuration = probeReturning(-time.Second, nil)
+			job.Transcode = func(context.Context, Input, io.Writer) error {
+				panic("transcoder started without a source duration")
+			}
+		}, ErrSourceDuration},
+		"duration probe fails": {func(_ *jobFixture, job *Job, _ context.CancelFunc) {
+			job.ProbeDuration = probeReturning(0, errors.New("duration is N/A"))
+			job.Transcode = func(context.Context, Input, io.Writer) error {
+				panic("transcoder started without a source duration")
+			}
+		}, ErrSourceDuration},
+		"revoked during the duration probe": {func(_ *jobFixture, job *Job, _ context.CancelFunc) {
+			var revoked atomic.Bool
+			job.Revoked = func(context.Context) error {
+				if revoked.Load() {
+					return errors.New("sealed")
+				}
+				return nil
+			}
+			job.ProbeDuration = func(ctx context.Context, _ Input) (time.Duration, error) {
+				revoked.Store(true)
+				<-ctx.Done()
+				return 0, ctx.Err()
+			}
+			job.Transcode = func(context.Context, Input, io.Writer) error {
+				panic("transcoder started for a revoked job")
+			}
+		}, ErrRevoked},
 		"cancelled": {func(fx *jobFixture, job *Job, cancel context.CancelFunc) {
 			job.Transcode = func(ctx context.Context, _ Input, w io.Writer) error {
 				_, _ = w.Write(fx.stream.raw[:len(fx.stream.raw)/2])
@@ -355,6 +391,9 @@ func TestRunLeavesNoStagingOnFailure(t *testing.T) {
 		}, ErrExpired},
 		"revoked before start": {func(_ *jobFixture, job *Job, _ context.CancelFunc) {
 			job.Revoked = func(context.Context) error { return errors.New("sealed") }
+			job.ProbeDuration = func(context.Context, Input) (time.Duration, error) {
+				panic("duration probe started for a revoked job")
+			}
 			job.Transcode = func(context.Context, Input, io.Writer) error {
 				panic("transcoder started for a revoked job")
 			}
@@ -479,24 +518,65 @@ func TestRunRevocationMidJobEndsTokenAndTranscode(t *testing.T) {
 }
 
 func TestRunRedactsTokenFromErrors(t *testing.T) {
-	fx, job := newJobFixture(t)
 	errBoom := errors.New("input failed")
-	var secret string
-	job.Transcode = func(_ context.Context, in Input, _ io.Writer) error {
-		secret = in.Secret
-		return fmt.Errorf("reading %s (token %s): %w", in.URL, in.Secret, errBoom)
+	for name, inProbe := range map[string]bool{"transcoder": false, "duration probe": true} {
+		t.Run(name, func(t *testing.T) {
+			fx, job := newJobFixture(t)
+			var secret string
+			fail := func(in Input) error {
+				secret = in.Secret
+				return fmt.Errorf("reading %s (token %s): %w", in.URL, in.Secret, errBoom)
+			}
+			if inProbe {
+				job.ProbeDuration = func(_ context.Context, in Input) (time.Duration, error) { return 0, fail(in) }
+			} else {
+				job.Transcode = func(_ context.Context, in Input, _ io.Writer) error { return fail(in) }
+			}
+			_, err := Run(context.Background(), job)
+			if err == nil || secret == "" {
+				t.Fatal("Run succeeded")
+			}
+			if strings.Contains(err.Error(), secret) {
+				t.Fatal("error message carries the token")
+			}
+			if !errors.Is(err, errBoom) || !strings.Contains(err.Error(), "[redacted]") {
+				t.Fatalf("err = %v; want the redacted original", err)
+			}
+			assertNoFiles(t, fx.stageDir)
+		})
 	}
-	_, err := Run(context.Background(), job)
-	if err == nil || secret == "" {
-		t.Fatal("Run succeeded")
+}
+
+func TestRunProbesTheServedSourceBeforeTheTranscoder(t *testing.T) {
+	fx, job := newJobFixture(t)
+	var probed Input
+	var probedBytes []byte
+	job.ProbeDuration = func(ctx context.Context, in Input) (time.Duration, error) {
+		src, err := fetchAll(ctx, in.URL)
+		if err != nil {
+			return 0, err
+		}
+		probed, probedBytes = in, src
+		return testSourceDuration, nil
 	}
-	if strings.Contains(err.Error(), secret) {
-		t.Fatal("error message carries the token")
+	inner := job.Transcode
+	job.Transcode = func(ctx context.Context, in Input, w io.Writer) error {
+		if probedBytes == nil {
+			return errors.New("transcoder started before the duration probe")
+		}
+		if in != probed {
+			return errors.New("transcoder was handed another endpoint than the probe")
+		}
+		return inner(ctx, in, w)
 	}
-	if !errors.Is(err, errBoom) || !strings.Contains(err.Error(), "[redacted]") {
-		t.Fatalf("err = %v; want the redacted original", err)
+	result, err := Run(context.Background(), job)
+	if err != nil {
+		t.Fatal(err)
 	}
-	assertNoFiles(t, fx.stageDir)
+	defer func() { _ = result.Close() }()
+	if !bytes.Equal(probedBytes, fx.source) {
+		t.Fatal("the duration probe did not read the served source")
+	}
 }
 
 func TestRunRefusesAnExistingStagingFile(t *testing.T) {
@@ -516,6 +596,7 @@ func TestRunValidatesJob(t *testing.T) {
 	for name, edit := range map[string]func(*Job){
 		"no source":           func(j *Job) { j.Open = nil },
 		"no transcoder":       func(j *Job) { j.Transcode = nil },
+		"no duration probe":   func(j *Job) { j.ProbeDuration = nil },
 		"no revocation check": func(j *Job) { j.Revoked = nil },
 		"negative size":       func(j *Job) { j.Size = -1 },
 		"relative directory":  func(j *Job) { j.StageDir = "packs/1" },

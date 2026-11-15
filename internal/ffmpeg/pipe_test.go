@@ -56,6 +56,70 @@ func TestPipeArgsScopeInputAndFragmentOutput(t *testing.T) {
 	}
 }
 
+func TestPipeProbeArgsScopeInputLikeTheTranscode(t *testing.T) {
+	profile, _ := PackProfileByName("pack-720p")
+	transcode := pipeArgs(testPipeURL, 10*time.Second, profile)
+	args := pipeProbeArgs(testPipeURL, 10*time.Second)
+	if n := len(args); n < 2 || args[n-2] != "-i" || args[n-1] != testPipeURL || slices.Index(args, "-i") != n-2 {
+		t.Fatalf("probe args do not end in their one input -i %s: %v", testPipeURL, args)
+	}
+	for _, pair := range [][2]string{
+		{"-protocol_whitelist", "http,tcp"},
+		{"-max_redirects", "0"},
+		{"-rw_timeout", "10000000"},
+		{"-format_whitelist", pipeFormatAllowlist},
+		{"-show_entries", "format=duration"},
+		{"-of", "default=noprint_wrappers=1:nokey=1"},
+	} {
+		j := slices.Index(args, pair[0])
+		if j < 0 || args[j+1] != pair[1] {
+			t.Errorf("probe args lack %s %s: %v", pair[0], pair[1], args)
+		}
+		if k := slices.Index(transcode, pair[0]); k >= 0 && transcode[k+1] != args[j+1] {
+			t.Errorf("probe and transcode disagree on %s: %q and %q", pair[0], args[j+1], transcode[k+1])
+		}
+	}
+	joined := strings.Join(args, " ")
+	for _, banned := range []string{"-nostdin", "file", "pipe:", "-f "} {
+		if strings.Contains(joined, banned) {
+			t.Errorf("probe args contain %q: %v", banned, args)
+		}
+	}
+}
+
+func TestParsePipeDurationAcceptsOnlyAPositiveFiniteLength(t *testing.T) {
+	for out, want := range map[string]time.Duration{
+		"12.000000\n": 12 * time.Second,
+		"0.041667":    41_667 * time.Microsecond,
+		" 7200.5 \n":  7200*time.Second + 500*time.Millisecond,
+	} {
+		if got, err := parsePipeDuration([]byte(out)); err != nil || got != want {
+			t.Errorf("parsePipeDuration(%q) = %v, %v; want %v", out, got, err, want)
+		}
+	}
+	for _, out := range []string{
+		"", "\n", "N/A", "N/A\n", "0", "0.000000", "-1.5", "nan", "NaN", "inf", "+Inf", "-Inf",
+		"1e300", "1e-12", "12.0\n13.0", "12s", "duration=12.0",
+	} {
+		got, err := parsePipeDuration([]byte(out))
+		if !errors.Is(err, errPipeDuration) {
+			t.Errorf("parsePipeDuration(%q) = %v, %v; want errPipeDuration", out, got, err)
+			continue
+		}
+		if out != "" && strings.Contains(err.Error(), out) {
+			t.Errorf("parsePipeDuration error echoes its input: %v", err)
+		}
+	}
+}
+
+func TestProbePipeDurationRefusesNonLoopbackInputHost(t *testing.T) {
+	for _, raw := range []string{"http://192.168.1.10:8080/token/source", "http://169.254.169.254/latest", "file:///etc/passwd"} {
+		if d, err := New().ProbePipeDuration(context.Background(), PipeInput{URL: raw}); !errors.Is(err, errPipeInput) || d != 0 {
+			t.Fatalf("ProbePipeDuration(%q) = %v, %v; want errPipeInput", raw, d, err)
+		}
+	}
+}
+
 func TestLoopbackPortAcceptsOnlyPlainLoopbackHTTP(t *testing.T) {
 	if port, err := loopbackPort(testPipeURL); err != nil || port != 4321 {
 		t.Fatalf("loopbackPort(valid) = %d, %v", port, err)
