@@ -573,10 +573,14 @@ func (s *Sessions) releaseTranscodeLease(session *hlsSession) {
 	}
 }
 
-var segmentName = regexp.MustCompile(`^seg(\d{5})\.m4s$`)
+// segmentName matches a media segment as FFmpeg and the playlists spell it
+// (seg%05d.m4s): five digits, or more past seg99999 without a leading zero.
+// Capping the digits keeps the number within int, and rejecting padded aliases
+// keeps one file name per segment.
+var segmentName = regexp.MustCompile(`^seg(\d{5}|[1-9]\d{5,8})\.m4s$`)
 
 // rungFileName matches the per-rendition artifacts under a rung directory.
-var rungFileName = regexp.MustCompile(`^(index\.m3u8|init\.mp4|seg\d{5}\.m4s)$`)
+var rungFileName = regexp.MustCompile(`^(index\.m3u8|init\.mp4|seg(?:\d{5}|[1-9]\d{5,8})\.m4s)$`)
 
 // initSegmentName is the fMP4 initialization segment every #EXT-X-MAP line
 // points at; ffmpeg writes it once per (re)start with identical parameters.
