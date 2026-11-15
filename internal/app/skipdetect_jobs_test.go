@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"math"
@@ -162,6 +163,76 @@ func TestAbsentAudioAdModelLogsInfoNotWarn(t *testing.T) {
 	}
 	if !sawAbsent {
 		t.Fatalf("missing INFO model-absent record in %q", logs.String())
+	}
+}
+
+// CORE-1502: the model-root stat error must stay wrapped through the loader
+// so an absent model directory classifies as model-absent (INFO), while a
+// directory that exists but holds no valid artifact stays model-rejected (WARN).
+func TestAudioAdModelLoadClassifiesAbsentVersusInvalid(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		setup      func(*testing.T, string)
+		wantAbsent bool
+	}{
+		{name: "absent directory", wantAbsent: true},
+		{name: "empty directory", setup: func(t *testing.T, root string) {
+			if err := os.MkdirAll(root, 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "invalid manifest", setup: func(t *testing.T, root string) {
+			if err := os.MkdirAll(root, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, integrationhost.ModelManifestFilename), []byte("not-json"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dataDir := t.TempDir()
+			root := filepath.Join(dataDir, "models", audioAdModelDirectory)
+			if test.setup != nil {
+				test.setup(t, root)
+			}
+			_, err := loadAudioAdProjection(root)
+			if err == nil {
+				t.Fatal("loadAudioAdProjection accepted a missing or invalid model")
+			}
+			if got := errors.Is(err, os.ErrNotExist); got != test.wantAbsent {
+				t.Fatalf("errors.Is(%v, os.ErrNotExist) = %v, want %v", err, got, test.wantAbsent)
+			}
+			if !errors.Is(err, integrationhost.ErrModelArtifactInvalid) {
+				t.Fatalf("error %v does not wrap ErrModelArtifactInvalid", err)
+			}
+
+			var logs bytes.Buffer
+			logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+			st := storetest.Open(t)
+			configureSkipDetectionJobs(dataDir, st, ffmpeg.New(), jobs.NewRegistry(st, "classify"), governor.New(), newJobWake(), logger)
+			wantLevel, wantReason := slog.LevelWarn.String(), "model-rejected"
+			if test.wantAbsent {
+				wantLevel, wantReason = slog.LevelInfo.String(), "model-absent"
+			}
+			var found bool
+			for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+				var record struct{ Level, Msg, Reason string }
+				if err := json.Unmarshal([]byte(line), &record); err != nil {
+					t.Fatalf("log line %q: %v", line, err)
+				}
+				if record.Msg != "audio ad detector inactive" {
+					continue
+				}
+				if record.Level != wantLevel || record.Reason != wantReason {
+					t.Fatalf("inactive record = %s reason=%s, want %s reason=%s", record.Level, record.Reason, wantLevel, wantReason)
+				}
+				found = true
+			}
+			if !found {
+				t.Fatalf("missing audio ad detector inactive record in %q", logs.String())
+			}
+		})
 	}
 }
 
