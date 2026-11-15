@@ -1,6 +1,6 @@
 import { RefreshCw } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
-import { RescanAllButton } from "@/components/beamfall/LibraryRescan";
+import { RescanAllButton, useRescanState } from "@/components/beamfall/LibraryRescan";
 import {
   ControlRow,
   EmptyState,
@@ -333,6 +333,20 @@ function JobLog({ jobID }: { jobID: string }) {
 // any server-side job event triggers a refresh. Each row says what the job does
 // and, when the session may see it, which Library folder it works on; Scan now
 // force-queues a scan of every library folder.
+/** Why Scan now could not queue a Library's folders; those folders get no job row to show it. */
+function RescanQueueFailure({ libraryID, title }: { libraryID: string; title: string }) {
+  const t = useT();
+  const state = useRescanState(libraryID);
+  const error =
+    state.queueError || (state.phase === "failed" && state.jobs.length === 0 ? state.error : "");
+  if (!error) return null;
+  return (
+    <p role="alert" className="console-job-help">
+      {title}: {t("rescanFailed")} — {error}
+    </p>
+  );
+}
+
 function JobQueue() {
   const t = useT();
   const { data, loading, failed, refresh } = useAsync(fetchJobs);
@@ -374,6 +388,9 @@ function JobQueue() {
       }
     >
       <p className="console-job-help">{t("jobQueueScanHelp")}</p>
+      {(libraries.data ?? []).map((library) => (
+        <RescanQueueFailure key={library.id} libraryID={library.id} title={library.title} />
+      ))}
       {loading ? (
         <Skeleton className="h-32 w-full" />
       ) : failed ? (

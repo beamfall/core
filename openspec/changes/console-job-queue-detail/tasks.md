@@ -5,4 +5,4 @@
 - [x] Web: Scan now control in the Job queue
 - [x] Web tests: job display helpers and Job queue rows and Scan now; string baselines
 - [x] Verify in the browser
-- [ ] Pin client-core-wire 2.12.0 in the registry once consumers re-vendor (batch lander)
+- [x] Pin client-core-wire 2.12.0 in the registry (additive optional field; consumers re-vendor at their pace)

@@ -529,6 +529,7 @@
         "progress",
         "startedAt",
         "status",
+        "target",
         "updatedAt"
       ]
     },
@@ -1245,6 +1246,7 @@
         "progress",
         "startedAt",
         "status",
+        "target",
         "unmatchedRecords",
         "updatedAt"
       ]
@@ -1306,6 +1308,7 @@
         "progress",
         "startedAt",
         "status",
+        "target",
         "updatedAt"
       ]
     },
@@ -1324,6 +1327,7 @@
         "progress",
         "startedAt",
         "status",
+        "target",
         "updatedAt"
       ]
     },
@@ -1354,6 +1358,7 @@
         "progress",
         "startedAt",
         "status",
+        "target",
         "updatedAt"
       ]
     },
@@ -1372,6 +1377,7 @@
         "progress",
         "startedAt",
         "status",
+        "target",
         "updatedAt"
       ]
     },
@@ -2684,6 +2690,7 @@
         "progress",
         "startedAt",
         "status",
+        "target",
         "updatedAt"
       ]
     },
@@ -2702,6 +2709,7 @@
         "progress",
         "startedAt",
         "status",
+        "target",
         "updatedAt"
       ]
     },
@@ -2720,6 +2728,7 @@
         "progress",
         "startedAt",
         "status",
+        "target",
         "updatedAt"
       ]
     },
@@ -2800,6 +2809,7 @@
         "progress",
         "startedAt",
         "status",
+        "target",
         "updatedAt"
       ]
     },

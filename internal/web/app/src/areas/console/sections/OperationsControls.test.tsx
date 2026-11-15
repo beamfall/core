@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetRescansForTest } from "@/components/beamfall/LibraryRescan";
 import { setAdvancedSettings } from "@/lib/advancedSettings";
 import {
   cancelJob,
@@ -261,6 +262,22 @@ describe("OperationsControls", () => {
     await waitFor(() => expect(scanLibrary).toHaveBeenCalledTimes(2));
     expect(scanLibrary).toHaveBeenCalledWith("lib-1", "/media/films");
     expect(scanLibrary).toHaveBeenCalledWith("lib-1", "/media/more");
+  });
+
+  it("says when Scan now could not queue a library folder", async () => {
+    resetRescansForTest();
+    vi.mocked(scanLibrary)
+      .mockResolvedValueOnce(job({ id: "job-scan", status: "queued" }) as never)
+      .mockRejectedValueOnce(new Error("folder is missing"));
+    renderPanel();
+    const scanNow = await screen.findByRole("button", { name: "Rescan all libraries" });
+    await waitFor(() => expect(scanNow).toBeEnabled());
+    await userEvent.click(scanNow);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Films: Scan failed — folder is missing",
+    );
+    resetRescansForTest();
   });
 
   it("cancels a live job through the confirm dialog", async () => {

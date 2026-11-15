@@ -855,6 +855,40 @@ func TestJobsQueryRedactsRestrictedLibraryErrorsUntilRevealed(t *testing.T) {
 	}
 }
 
+// Reveal skips jobNeedsRedaction, so the Library grant is the only thing
+// keeping a revealed admin from seeing an ungranted Library's title and root.
+func TestJobTargetOmitsLibrariesOutsideTheSessionGrant(t *testing.T) {
+	st := storetest.Open(t)
+	handler := newTestHandlerWithStore(st)
+	job := store.Job{
+		ID:      "job-archive",
+		Kind:    "scan",
+		Payload: []byte(`{"version":1,"library_id":"library-archive","root":"/media/archive"}`),
+	}
+	granted := auth.Scope{Revealed: true, Admin: true, LibraryIDs: []store.LibraryID{"library-local"}}
+
+	// job(id:) loads titles lazily; jobs preloads them once for the list.
+	if got := handler.jobInfo(t.Context(), granted, job).Target; got != nil {
+		t.Fatalf("lazy target = %#v, want nil for an ungranted Library", got)
+	}
+	titles, err := handler.visibleLibraryTitles(t.Context(), granted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := titles["library-archive"]; ok {
+		t.Fatalf("visible titles = %#v, want no ungranted Library", titles)
+	}
+	if got := handler.jobInfoWithTitles(t.Context(), granted, job, titles).Target; got != nil {
+		t.Fatalf("preloaded target = %#v, want nil for an ungranted Library", got)
+	}
+
+	// Control: the same scope granted the Library sees the target.
+	granted.LibraryIDs = append(granted.LibraryIDs, "library-archive")
+	if got := handler.jobInfo(t.Context(), granted, job).Target; got == nil || got.Root != "/media/archive" {
+		t.Fatalf("granted target = %#v, want /media/archive", got)
+	}
+}
+
 func TestScanLibraryMutationRequiresAdminSession(t *testing.T) {
 	handler := newTestHandler(t)
 	body := []byte(`{"query":"mutation { scanLibrary(libraryID: \"library-local\", root: \"/media\") { id } }","variables":{"libraryID":"library-local","root":"/media"}}`)
