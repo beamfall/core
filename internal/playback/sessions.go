@@ -1494,6 +1494,7 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 		// keyframe's real time, so the media matches the playlist (CORE-0021).
 		proc, err = s.transcoder.(keyframeTranscoder).StartHLSKeyframeSegments(procCtx, session.src, rungDir, segment, t.segmentStart(segment), session.rendition(rung))
 	} else if session.durationSeconds > 0 {
+		segment = session.primed.restartSegment(segment)
 		proc, err = s.transcoder.StartHLSSegments(procCtx, session.src, rungDir, segment, rungSegmentSeconds(rung), session.rendition(rung))
 	} else {
 		proc, err = s.transcoder.StartHLS(procCtx, session.src, rungDir, session.rendition(rung))
@@ -1738,8 +1739,30 @@ func segmentCount(durationSeconds, segmentSeconds int) int {
 // count and the length of its last segment. The zero value means the layout
 // follows the integer duration.
 type primedGrid struct {
-	segments    int
-	tailSeconds float64
+	segments       int
+	tailSeconds    float64
+	decodedSamples int64
+	gridSamples    int64
+}
+
+// restartSegment returns the segment a primed encode asked to start at
+// segment must start from so it still writes the advertised tail. An encode
+// started past segment zero seeks, primes afresh and counts its frames from
+// its own start, so it can end a segment short of a grid laid out from zero;
+// starting it earlier writes the tail, and segments past the playlist are
+// never requested.
+func (g primedGrid) restartSegment(segment int) int {
+	if g.segments <= 0 || g.gridSamples <= 0 || segment <= 0 || segment >= g.segments {
+		return segment
+	}
+	for j := segment; j > 0; j-- {
+		start := int64(j) * g.gridSamples
+		frames := (aacEncoderDelaySamples + g.decodedSamples - start + aacFrameSamples - 1) / aacFrameSamples
+		if int((start+(frames-1)*aacFrameSamples)/g.gridSamples)+1 >= g.segments {
+			return j
+		}
+	}
+	return 0
 }
 
 // primedAACGrid lays out the live encode of an audio-only source that keeps
@@ -1760,8 +1783,10 @@ func primedAACGrid(source store.MediaFileStream, audioProfile ffmpeg.AudioProfil
 	segments := (frames-1)*aacFrameSamples/gridSamples + 1
 	tailFirstFrame := ((segments-1)*gridSamples + aacFrameSamples - 1) / aacFrameSamples
 	return primedGrid{
-		segments:    int(segments),
-		tailSeconds: float64((frames-tailFirstFrame)*aacFrameSamples) / float64(rate),
+		segments:       int(segments),
+		tailSeconds:    float64((frames-tailFirstFrame)*aacFrameSamples) / float64(rate),
+		decodedSamples: source.DecodedSamples,
+		gridSamples:    gridSamples,
 	}
 }
 

@@ -147,3 +147,63 @@ func TestTranscodedGaplessTailSegmentIsServed(t *testing.T) {
 		t.Fatalf("served audio trims to %d samples (decoded %d, delay %d, padding %d), want %d", got, len(samples), trim.EncoderDelaySamples, trim.EncoderPaddingSamples, sourceSamples)
 	}
 }
+
+// TestResumedPrimedEncodeServesTheTailSegment covers a primed session whose
+// first encoder starts past segment zero, as a resume or far seek starts it.
+// The 7.99 s source's playlist lists three segments; an encode started at 4 s
+// with its own priming ends inside the second, so the tail must still be
+// written and served.
+func TestResumedPrimedEncodeServesTheTailSegment(t *testing.T) {
+	for _, bin := range []string{"ffmpeg", "ffprobe"} {
+		if _, err := exec.LookPath(bin); err != nil {
+			t.Skipf("%s not installed", bin)
+		}
+	}
+	const rate = 44100
+	dir := t.TempDir()
+	tone := filepath.Join(dir, "tone.wav")
+	runFFmpeg(t, "-f", "lavfi", "-i", "sine=frequency=440:sample_rate="+strconv.Itoa(rate)+":duration=7.99", "-ac", "1", tone)
+	source := filepath.Join(dir, "piece.m4a")
+	runFFmpeg(t, "-i", tone, "-c:a", "aac", source)
+	probe, err := ffmpeg.New().Probe(context.Background(), source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	streams := gaplessStoreStreams(probe)
+	if len(streams) == 0 || streams[0].DecodedSamples <= 0 {
+		t.Fatalf("source streams = %+v, want measured decoded samples", streams)
+	}
+	aac := ffmpeg.AudioProfile{Codec: "aac", Channels: 2}
+	if grid := primedAACGrid(streams[0], aac, segmentSeconds); grid.segments != 3 {
+		t.Fatalf("grid = %+v, want three segments", grid)
+	}
+	sessions := NewSessions(ffmpeg.New(), t.TempDir(), nil)
+	defer sessions.Close()
+	key := SessionKey{SessionID: "session-gapless-resume", MediaID: "media-piece"}
+	shape := StreamShape{AudioOnly: true, AudioSource: streams[0]}
+	for _, name := range []string{"index.m3u8", "seg00001.m4s", "seg00002.m4s"} {
+		if _, err := sessions.FilePathShaped(context.Background(), key, source, 7, 0, 0, false, false, ladderCaps{}, VideoSignal{}, -1, aac, nil, shape, PriorityNormal, audioOnlyRungID+"/"+name); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+}
+
+func TestPrimedRestartSegmentReachesTheTail(t *testing.T) {
+	const rate = 44100
+	grid := primedAACGrid(store.MediaFileStream{Type: "audio", SampleRate: rate, DecodedSamples: 352359}, ffmpeg.AudioProfile{Codec: "aac"}, segmentSeconds)
+	if grid.segments != 3 {
+		t.Fatalf("grid = %+v, want three segments", grid)
+	}
+	for _, tc := range []struct{ asked, want int }{{0, 0}, {1, 0}, {2, 2}, {3, 3}} {
+		if got := grid.restartSegment(tc.asked); got != tc.want {
+			t.Errorf("restartSegment(%d) = %d, want %d", tc.asked, got, tc.want)
+		}
+	}
+	long := primedAACGrid(store.MediaFileStream{Type: "audio", SampleRate: rate, DecodedSamples: 60 * rate}, ffmpeg.AudioProfile{Codec: "aac"}, segmentSeconds)
+	if got := long.restartSegment(5); got != 5 {
+		t.Errorf("long restartSegment(5) = %d, want 5 (no step back away from the tail)", got)
+	}
+	if got := (primedGrid{}).restartSegment(4); got != 4 {
+		t.Errorf("unprimed restartSegment(4) = %d, want 4", got)
+	}
+}

@@ -897,7 +897,10 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 // A LAN request gets the declared profile unchanged. A remote request gets
 // the lowest non-zero of the server-wide remote cap, the Profile's remote
 // cap and the client's MaxStreamingBitrate as its streaming ceiling; the int
-// is the admin cap when it, not the client, set that ceiling (0 otherwise).
+// is the admin cap (0 when none applies). It is returned even when the
+// client's own ceiling is tighter: that ceiling is raised to the ladder floor
+// and exempts audio-only items, so the admin cap must still be enforced on its
+// own terms (CORE-1864).
 func (s *Service) remoteCappedProfile(ctx context.Context, req InfoRequest, policy store.Profile) (CapabilityProfile, int, error) {
 	capability := req.CapabilityProfile
 	if !req.RemoteClient {
@@ -908,10 +911,12 @@ func (s *Service) remoteCappedProfile(ctx context.Context, req InfoRequest, poli
 		return CapabilityProfile{}, 0, err
 	}
 	limit := minNonZero(cfg.RemoteMaxBitrate, policy.RemoteMaxBitrate)
-	if limit <= 0 || (capability.MaxStreamingBitrate > 0 && capability.MaxStreamingBitrate <= limit) {
+	if limit <= 0 {
 		return capability, 0, nil
 	}
-	capability.MaxStreamingBitrate = limit
+	if capability.MaxStreamingBitrate <= 0 || capability.MaxStreamingBitrate > limit {
+		capability.MaxStreamingBitrate = limit
+	}
 	return capability, limit, nil
 }
 
@@ -1187,7 +1192,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	// neither stream carries the source's arithmetic.
 	defer func() {
 		if err == nil && dec.reason != "composed-picture" && dec.adjustment.IsZero() {
-			stampGapless(dec.streams, streams, hlsAudio, dec.timeline.PositionSeconds)
+			stampGapless(dec.streams, audio.chosenStreams(streams), hlsAudio, dec.timeline.PositionSeconds)
 		}
 	}()
 
